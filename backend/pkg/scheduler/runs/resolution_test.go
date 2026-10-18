@@ -15,7 +15,7 @@ import (
 	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
 )
 
-func newResolutionQueueInternal(t *testing.T) *Coordinator {
+func newResolutionQueue(t *testing.T) *Coordinator {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -32,7 +32,7 @@ func newResolutionQueueInternal(t *testing.T) *Coordinator {
 }
 
 func TestResolvePreservesEvidenceWithoutBlockingSchedule(t *testing.T) {
-	q := newResolutionQueueInternal(t)
+	q := newResolutionQueue(t)
 	ctx := t.Context()
 	run, err := q.Submit(ctx, st.Request{JobID: "auto-update", Trigger: "manual"})
 	require.NoError(t, err)
@@ -48,7 +48,7 @@ func TestResolvePreservesEvidenceWithoutBlockingSchedule(t *testing.T) {
 	require.NoError(t, err)
 	history, err := q.List(ctx, "0", "auto-update", 1, 20)
 	require.NoError(t, err)
-	selected, _ := q.nextRunInternal(history.Runs)
+	selected, _ := q.nextRun(history.Runs)
 	require.NotNil(t, selected)
 	require.Equal(t, pending.ID, selected.ID)
 	for len(q.wake) > 0 {
@@ -69,7 +69,7 @@ func TestResolvePreservesEvidenceWithoutBlockingSchedule(t *testing.T) {
 	}
 	history, err = q.List(ctx, "0", "auto-update", 1, 20)
 	require.NoError(t, err)
-	selected, _ = q.nextRunInternal(history.Runs)
+	selected, _ = q.nextRun(history.Runs)
 	require.NotNil(t, selected)
 	require.Equal(t, pending.ID, selected.ID)
 	duplicate, err := q.Resolve(ctx, "0", "auto-update", run.ID, "different operator")
@@ -139,7 +139,7 @@ func TestResolveRejectsUnsafeStates(t *testing.T) {
 		{name: "uncertain remote", status: st.NeedsAttention, environment: "remote", delivered: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			q := newResolutionQueueInternal(t)
+			q := newResolutionQueue(t)
 			run, err := q.Submit(t.Context(), st.Request{JobID: "auto-update", EnvironmentID: test.environment})
 			require.NoError(t, err)
 			require.NoError(t, q.UpdateRun(t.Context(), run, func(current *st.Run) error {

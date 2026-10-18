@@ -1,6 +1,7 @@
 package runs
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -22,51 +23,51 @@ import (
 )
 
 const (
-	coordinatorTypeInternal    = "job-coordinator"
-	executorTypeInternal       = "job-executor"
-	healthExecutorTypeInternal = "job-health-executor"
-	orphanedDispatchAge        = 15 * time.Minute
-	outcomePersistGrace        = 30 * time.Second
+	coordinatorType     = "job-coordinator"
+	executorType        = "job-executor"
+	healthExecutorType  = "job-health-executor"
+	orphanedDispatchAge = 15 * time.Minute
+	outcomePersistGrace = 30 * time.Second
 )
 
-type coordinatorActorInternal struct {
+type coordinatorActor struct {
 	id string
 	q  *Coordinator
 }
-type executorActorInternal struct {
+type executorActor struct {
 	q *Coordinator
 }
 
 func (q *Coordinator) Register(runtime *francis.Runtime) error {
 	q.runtime = runtime
-	if err := runtime.RegisterActor(coordinatorTypeInternal, func(id string, _ *actor.Service) actor.Actor {
-		return &coordinatorActorInternal{id: id, q: q}
+	if err := runtime.RegisterActor(coordinatorType, func(id string, _ *actor.Service) actor.Actor {
+		return &coordinatorActor{id: id, q: q}
 	}); err != nil {
 		return err
 	}
 	executorFactory := func(_ string, _ *actor.Service) actor.Actor {
-		return &executorActorInternal{q: q}
+		return &executorActor{q: q}
 	}
 	if err := runtime.RegisterActor(
-		executorTypeInternal, executorFactory,
+		executorType, executorFactory,
 		local.WithCapacityGroup("jobs", 4),
 		local.WithCompletedJobRetention(7*24*time.Hour),
 	); err != nil {
 		return err
 	}
 	return runtime.RegisterActor(
-		healthExecutorTypeInternal, executorFactory,
+		healthExecutorType, executorFactory,
 		local.WithCapacityGroup("jobs-health", 2),
 		local.WithCompletedJobRetention(7*24*time.Hour),
 	)
 }
 
-func (a *coordinatorActorInternal) Invoke(ctx context.Context, method string, data actor.Envelope) (any, error) {
+func (a *coordinatorActor) Invoke(ctx context.Context, method string, data actor.Envelope) (any, error) {
 	var state st.CoordinatorState
-	if err := a.q.service.GetState(ctx, coordinatorTypeInternal, a.id, &state); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
+	if err := a.q.service.GetState(ctx, coordinatorType, a.id, &state); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
 		return nil, err
 	}
-	normalizeRecordTimesInternal(&state.Record)
+	normalizeRecordTimes(&state.Record)
 	switch method {
 	case "replace":
 		var next st.CoordinatorState
@@ -77,13 +78,13 @@ func (a *coordinatorActorInternal) Invoke(ctx context.Context, method string, da
 			return false, nil
 		}
 		next.Revision++
-		if err := a.q.service.SetState(ctx, coordinatorTypeInternal, a.id, next, nil); err != nil {
+		if err := a.q.service.SetState(ctx, coordinatorType, a.id, next, nil); err != nil {
 			return nil, err
 		}
 		// Acceptance is persisted; dispatch failures are retried.
-		if err := a.flushInternal(ctx, &next); err != nil {
+		if err := a.flush(ctx, &next); err != nil {
 			slog.WarnContext(ctx, "Job dispatch requires reconciliation", "jobId", next.Record.JobID, "environmentId", next.Record.EnvironmentID, "error", err)
-			a.q.signalInternal()
+			a.q.signal()
 		}
 		return true, nil
 	case "activity-synced":
@@ -97,9 +98,9 @@ func (a *coordinatorActorInternal) Invoke(ctx context.Context, method string, da
 		}
 		delete(state.PendingActivitySync, command.RunID)
 		state.Revision++
-		return nil, a.q.service.SetState(ctx, coordinatorTypeInternal, a.id, state, nil)
+		return nil, a.q.service.SetState(ctx, coordinatorType, a.id, state, nil)
 	case "repair":
-		return nil, a.flushInternal(ctx, &state)
+		return nil, a.flush(ctx, &state)
 	case "import":
 		var command st.CoordinatorImport
 		if err := data.Decode(&command); err != nil {
@@ -117,17 +118,17 @@ func (a *coordinatorActorInternal) Invoke(ctx context.Context, method string, da
 		state.ImportHash = command.SourceHash
 		state.Record = command.Record
 		for _, run := range state.Record.Runs {
-			markActivitySyncInternal(&state, run)
+			markActivitySync(&state, run)
 		}
 		state.Imported = true
 		state.Revision = 1
-		return true, a.q.service.SetState(ctx, coordinatorTypeInternal, a.id, state, nil)
+		return true, a.q.service.SetState(ctx, coordinatorType, a.id, state, nil)
 	default:
 		return nil, fmt.Errorf("unknown coordinator command: %s", method)
 	}
 }
 
-func (a *coordinatorActorInternal) flushInternal(ctx context.Context, state *st.CoordinatorState) error {
+func (a *coordinatorActor) flush(ctx context.Context, state *st.CoordinatorState) error {
 	if !a.q.enabled.Load() {
 		return nil
 	}
@@ -138,7 +139,7 @@ func (a *coordinatorActorInternal) flushInternal(ctx context.Context, state *st.
 			DueTime: record.NextRun,
 			Data:    st.ScheduleOccurrence{Generation: record.Generation, Sequence: record.Sequence},
 		}
-		if err := a.q.service.SetAlarm(ctx, coordinatorTypeInternal, a.id, name, properties); err != nil {
+		if err := a.q.service.SetAlarm(ctx, coordinatorType, a.id, name, properties); err != nil {
 			return err
 		}
 	}
@@ -151,14 +152,14 @@ func (a *coordinatorActorInternal) flushInternal(ctx context.Context, state *st.
 	}
 	var retryAt time.Time
 	if selected == nil {
-		selected, retryAt = a.q.nextRunInternal(record.Runs)
+		selected, retryAt = a.q.nextRun(record.Runs)
 	}
 	if selected == nil {
 		if retryAt.IsZero() {
 			return nil
 		}
 		name := fmt.Sprintf("retry-%d", retryAt.UnixNano())
-		return a.q.service.SetAlarm(ctx, coordinatorTypeInternal, a.id, name, actor.AlarmProperties{DueTime: retryAt})
+		return a.q.service.SetAlarm(ctx, coordinatorType, a.id, name, actor.AlarmProperties{DueTime: retryAt})
 	}
 	if selected.Status == st.Running {
 		active, err := a.reconcileDispatch(ctx, state, *selected)
@@ -173,7 +174,7 @@ func (a *coordinatorActorInternal) flushInternal(ctx context.Context, state *st.
 }
 
 // reconcileDispatch recovers a lost job ID before considering redelivery.
-func (a *coordinatorActorInternal) reconcileDispatch(ctx context.Context, state *st.CoordinatorState, run st.Run) (bool, error) {
+func (a *coordinatorActor) reconcileDispatch(ctx context.Context, state *st.CoordinatorState, run st.Run) (bool, error) {
 	key := fmt.Sprintf("%s-%d", run.ID, run.AttemptCount)
 	previous, exists := state.Dispatches[key]
 	if !exists {
@@ -181,8 +182,8 @@ func (a *coordinatorActorInternal) reconcileDispatch(ctx context.Context, state 
 	}
 	actorType := kit.Ternary(
 		strings.HasPrefix(run.JobID, "environment-health") || run.JobID == "docker-client-refresh" || run.JobID == "activity-sweep",
-		healthExecutorTypeInternal,
-		executorTypeInternal,
+		healthExecutorType,
+		executorType,
 	)
 	if previous.JobID == "" {
 		command := st.ExecutionCommand{
@@ -198,7 +199,7 @@ func (a *coordinatorActorInternal) reconcileDispatch(ctx context.Context, state 
 		previous.JobID = id
 		state.Dispatches[key] = previous
 		state.Revision++
-		if setStateErr := a.q.service.SetState(ctx, coordinatorTypeInternal, a.id, *state, nil); setStateErr != nil {
+		if setStateErr := a.q.service.SetState(ctx, coordinatorType, a.id, *state, nil); setStateErr != nil {
 			return false, setStateErr
 		}
 	}
@@ -219,15 +220,15 @@ func (a *coordinatorActorInternal) reconcileDispatch(ctx context.Context, state 
 	return false, nil
 }
 
-func (a *coordinatorActorInternal) dispatchRun(ctx context.Context, state *st.CoordinatorState, run st.Run, attempt int) error {
+func (a *coordinatorActor) dispatchRun(ctx context.Context, state *st.CoordinatorState, run st.Run, attempt int) error {
 	key := fmt.Sprintf("%s-%d", run.ID, attempt)
 	if state.Dispatches == nil {
 		state.Dispatches = make(map[string]st.DispatchIntent)
 	}
 	actorType := kit.Ternary(
 		strings.HasPrefix(run.JobID, "environment-health") || run.JobID == "docker-client-refresh" || run.JobID == "activity-sweep",
-		healthExecutorTypeInternal,
-		executorTypeInternal,
+		healthExecutorType,
+		executorType,
 	)
 	intent := state.Dispatches[key]
 	if intent.JobID != "" {
@@ -244,10 +245,9 @@ func (a *coordinatorActorInternal) dispatchRun(ctx context.Context, state *st.Co
 			}
 		}
 	}
-	intent = st.DispatchIntent{RunID: run.ID, Attempt: attempt}
-	state.Dispatches[key] = intent
+	state.Dispatches[key] = st.DispatchIntent{RunID: run.ID, Attempt: attempt}
 	state.Revision++
-	if err := a.q.service.SetState(ctx, coordinatorTypeInternal, a.id, *state, nil); err != nil {
+	if err := a.q.service.SetState(ctx, coordinatorType, a.id, *state, nil); err != nil {
 		return err
 	}
 	options := []actor.JobOption{actor.WithIdempotencyKey(key)}
@@ -277,23 +277,22 @@ func (a *coordinatorActorInternal) dispatchRun(ctx context.Context, state *st.Co
 			return err
 		}
 	}
-	intent.JobID = id
-	state.Dispatches[key] = intent
+	state.Dispatches[key] = st.DispatchIntent{RunID: run.ID, Attempt: attempt, JobID: id}
 	state.Revision++
-	return a.q.service.SetState(ctx, coordinatorTypeInternal, a.id, *state, nil)
+	return a.q.service.SetState(ctx, coordinatorType, a.id, *state, nil)
 }
 
-func (a *coordinatorActorInternal) Alarm(ctx context.Context, name string, data actor.Envelope) error {
+func (a *coordinatorActor) Alarm(ctx context.Context, name string, data actor.Envelope) error {
 	if !a.q.enabled.Load() {
 		return nil
 	}
 	var state st.CoordinatorState
-	if err := a.q.service.GetState(ctx, coordinatorTypeInternal, a.id, &state); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
+	if err := a.q.service.GetState(ctx, coordinatorType, a.id, &state); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
 		return err
 	}
-	normalizeRecordTimesInternal(&state.Record)
+	normalizeRecordTimes(&state.Record)
 	if strings.HasPrefix(name, "retry-") {
-		return a.flushInternal(ctx, &state)
+		return a.flush(ctx, &state)
 	}
 	var occurrence st.ScheduleOccurrence
 	if err := data.Decode(&occurrence); err != nil {
@@ -319,17 +318,9 @@ func (a *coordinatorActorInternal) Alarm(ctx context.Context, name string, data 
 	if !nextOccurrence.After(now) {
 		trigger = "recovery"
 	}
-	pending := false
-	for _, run := range record.Runs {
-		if separateTriggerInternal(run.Trigger) {
-			continue
-		}
-		if run.Status.Terminal() || run.Status == st.NeedsAttention {
-			continue
-		}
-		pending = true
-		break
-	}
+	pending := slices.ContainsFunc(record.Runs, func(run st.Run) bool {
+		return !separateTrigger(run.Trigger) && !run.Status.Terminal() && run.Status != st.NeedsAttention
+	})
 	if !pending {
 		run := st.Run{
 			ID:            uuid.New().String(),
@@ -340,23 +331,23 @@ func (a *coordinatorActorInternal) Alarm(ctx context.Context, name string, data 
 			CreatedAt:     now,
 			UpdatedAt:     now,
 		}
-		a.q.associateActivityInternal(&run)
+		a.q.associateActivity(&run)
 		record.Runs = append(record.Runs, run)
-		markActivitySyncInternal(&state, run)
+		markActivitySync(&state, run)
 	}
 	record.LastEnqueuedAt = now
 	record.NextRun = schedule.Next(now.In(a.q.location))
 	record.Sequence++
 	state.Revision++
-	if setStateErr := a.q.service.SetState(ctx, coordinatorTypeInternal, a.id, state, nil); setStateErr != nil {
+	if setStateErr := a.q.service.SetState(ctx, coordinatorType, a.id, state, nil); setStateErr != nil {
 		return setStateErr
 	}
-	return a.flushInternal(ctx, &state)
+	return a.flush(ctx, &state)
 }
 
-// repairInternal flushes coordinators so schedule alarms and dispatches are restored.
+// repair flushes coordinators so schedule alarms and dispatches are restored.
 // Unless all is set, it skips records without unfinished runs so idle coordinators can deactivate.
-func (q *Coordinator) repairInternal(ctx context.Context, all bool) error {
+func (q *Coordinator) repair(ctx context.Context, all bool) error {
 	records, err := q.Records(ctx)
 	if err != nil {
 		return err
@@ -365,15 +356,15 @@ func (q *Coordinator) repairInternal(ctx context.Context, all bool) error {
 		if !all && !slices.ContainsFunc(record.Runs, func(run st.Run) bool { return !run.Status.Terminal() && run.Status != st.NeedsAttention }) {
 			continue
 		}
-		if _, invokeErr := q.service.Invoke(ctx, coordinatorTypeInternal, kit.SHA256Hex(record.EnvironmentID+"\x00"+record.JobID), "repair", nil); invokeErr != nil {
+		if _, invokeErr := q.service.Invoke(ctx, coordinatorType, kit.SHA256Hex(record.EnvironmentID+"\x00"+record.JobID), "repair", nil); invokeErr != nil {
 			return invokeErr
 		}
 	}
 	return nil
 }
 
-func (q *Coordinator) importLegacyInternal(ctx context.Context) error {
-	entries, err := q.store.ListByPrefix(ctx, queuePrefixInternal)
+func (q *Coordinator) importLegacy(ctx context.Context) error {
+	entries, err := q.store.ListByPrefix(ctx, queuePrefix)
 	if err != nil {
 		return fmt.Errorf("list legacy job records: %w", err)
 	}
@@ -391,16 +382,16 @@ func (q *Coordinator) importLegacyInternal(ctx context.Context) error {
 			return fmt.Errorf("decode legacy job record %q: %w", entry.Key, unmarshalErr)
 		}
 		id := kit.SHA256Hex(record.EnvironmentID + "\x00" + record.JobID)
-		if entry.Key != queuePrefixInternal+id {
+		if entry.Key != queuePrefix+id {
 			return fmt.Errorf("invalid legacy job key %q for job %q in environment %q", entry.Key, record.JobID, record.EnvironmentID)
 		}
 		sourceHash := kit.SHA256Hex(entry.Value)
 		command := st.CoordinatorImport{Record: record, SourceHash: sourceHash}
-		if _, invokeErr := q.service.Invoke(ctx, coordinatorTypeInternal, id, "import", command); invokeErr != nil {
+		if _, invokeErr := q.service.Invoke(ctx, coordinatorType, id, "import", command); invokeErr != nil {
 			return fmt.Errorf("import legacy job record %q: %w", entry.Key, invokeErr)
 		}
 		var imported st.CoordinatorState
-		if getStateErr := q.service.GetState(ctx, coordinatorTypeInternal, id, &imported); getStateErr != nil {
+		if getStateErr := q.service.GetState(ctx, coordinatorType, id, &imported); getStateErr != nil {
 			return fmt.Errorf("import legacy job record %q: %w", entry.Key, getStateErr)
 		}
 		if !imported.Imported || imported.ImportHash != sourceHash {
@@ -416,7 +407,7 @@ func (q *Coordinator) importLegacyInternal(ctx context.Context) error {
 	return nil
 }
 
-func (a *executorActorInternal) Job(ctx context.Context, _ string, data actor.Envelope) error {
+func (a *executorActor) Job(ctx context.Context, _ string, data actor.Envelope) error {
 	q := a.q
 	q.mu.Lock()
 	lifetime := q.lifecycleCtx
@@ -438,7 +429,7 @@ func (a *executorActorInternal) Job(ctx context.Context, _ string, data actor.En
 	if err := data.Decode(&command); err != nil {
 		return errors.Join(err, actor.ErrJobPermanentFailure)
 	}
-	claim, err := q.claimExecutionInternal(ctx, command)
+	claim, err := q.claimExecution(ctx, command)
 	if err != nil {
 		return err
 	}
@@ -448,38 +439,43 @@ func (a *executorActorInternal) Job(ctx context.Context, _ string, data actor.En
 	if !claim.Claimed {
 		return nil
 	}
-	outcome, runErr := q.invokeInternal(ctx, claim.Run, claim.Reconcile)
-	if outcome.Status == "" {
-		if runErr != nil {
-			outcome.Status = st.Failed
-		} else {
-			outcome.Status = st.Succeeded
+	outcome, runErr := func() (outcome st.Outcome, err error) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				outcome = st.Outcome{Status: st.Failed, Message: "Job panicked; inspect logs before retrying"}
+				err = fmt.Errorf("job panic: %v", recovered)
+				slog.ErrorContext(ctx, "Job panicked", "runId", claim.Run.ID, "error", err)
+			}
+		}()
+		if claim.Reconcile && q.reconcile != nil {
+			return q.reconcile(ctx, claim.Run)
 		}
-	}
+		return q.execute(ctx, claim.Run)
+	}()
 	// Domain recovery may still report uncertainty; job runs finish as failures.
-	if outcome.Status == st.NeedsAttention {
-		outcome.Status = st.Failed
-	}
-	if runErr != nil && outcome.Message == "" {
-		outcome.Message = runErr.Error()
+	status := cmp.Or(outcome.Status, kit.Ternary(runErr != nil, st.Failed, st.Succeeded))
+	outcome = st.Outcome{
+		Status:     kit.Ternary(status == st.NeedsAttention, st.Failed, status),
+		Message:    cmp.Or(outcome.Message, kit.Ternary(runErr != nil, fmt.Sprint(runErr), "")),
+		ActivityID: outcome.ActivityID,
+		Targets:    outcome.Targets,
+		Steps:      outcome.Steps,
 	}
 	if runErr != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		q.persistOutcome(ctx, claim.Run, outcome)
-		return ctx.Err()
+		return cmp.Or(q.persistOutcome(ctx, claim.Run, outcome), ctx.Err())
 	}
 	persistCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
 	defer context.AfterFunc(ctx, func() { time.AfterFunc(outcomePersistGrace, cancel) })()
-	q.persistOutcome(persistCtx, claim.Run, outcome)
-	return ctx.Err()
+	return cmp.Or(q.persistOutcome(persistCtx, claim.Run, outcome), ctx.Err())
 }
 
-func (q *Coordinator) claimExecutionInternal(ctx context.Context, command st.ExecutionCommand) (st.ExecutionClaim, error) {
+func (q *Coordinator) claimExecution(ctx context.Context, command st.ExecutionCommand) (st.ExecutionClaim, error) {
 	var claim st.ExecutionClaim
-	err := q.mutateInternal(ctx, command.EnvironmentID, command.JobID, func(record *st.QueueRecord) error {
+	err := q.mutate(ctx, command.EnvironmentID, command.JobID, func(record *st.QueueRecord) error {
 		claim = st.ExecutionClaim{}
 		for i := range record.Runs {
 			current := &record.Runs[i]
@@ -498,10 +494,10 @@ func (q *Coordinator) claimExecutionInternal(ctx context.Context, command st.Exe
 			// Executor turns serialize attempts for this coordinator.
 			now := time.Now().UTC()
 			if current.NextAttempt != nil && current.NextAttempt.After(now) {
-				claim.Deferred = true
+				claim = st.ExecutionClaim{Deferred: true}
 				return nil
 			}
-			claim.Reconcile = current.Status == st.Running
+			reconcile := current.Status == st.Running
 			current.Status = st.Running
 			current.Owner = q.owner + "/" + uuid.New().String()
 			current.UpdatedAt = now
@@ -515,8 +511,11 @@ func (q *Coordinator) claimExecutionInternal(ctx context.Context, command st.Exe
 			if len(current.Attempts) > 100 {
 				current.Attempts = current.Attempts[len(current.Attempts)-100:]
 			}
-			claim.Run = *current
-			claim.Claimed = true
+			claim = st.ExecutionClaim{
+				Run:       *current,
+				Claimed:   true,
+				Reconcile: reconcile,
+			}
 			return nil
 		}
 		return nil

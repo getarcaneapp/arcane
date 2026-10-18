@@ -66,7 +66,7 @@ func StoreURL(databaseURL string) (string, error) {
 		// The sibling file must be creatable and writable whatever mode opens arcane.db.
 		query.Del("mode")
 		if !sqliteutil.HasPragma(query, "busy_timeout") {
-			query.Add("_pragma", "busy_timeout(2500)")
+			query.Add("_pragma", "busy_timeout(10000)")
 		}
 		// NORMAL stops WAL commits from holding the write lock through an fsync.
 		if !sqliteutil.HasPragma(query, "synchronous") {

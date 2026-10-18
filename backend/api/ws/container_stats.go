@@ -42,10 +42,14 @@ func (h *WebSocketHandler) ContainerStats(c *echo.Context) error {
 	// A reconnect can land exactly on the 5s idle-teardown boundary and load a
 	// hub whose Run has already exited. Drop that hub and retry once so the
 	// client gets a live producer instead of a silent socket.
-	// The hub owns connection cleanup; preserve request values without request cancellation.
+	// The hub owns connection cleanup, so it outlives the request and ends with the app.
 	for attempt := range 2 {
-		hub := h.getOrCreateContainerStatsHub(containerID)
-		if wshub.ServeClientWithOnRemove(context.WithoutCancel(c.Request().Context()), hub, conn, onRemove) {
+		actual, loaded := h.containerStatsHubs.LoadOrStore(containerID, wshub.NewHub(64))
+		hub, _ := actual.(*wshub.Hub)
+		if !loaded {
+			h.runContainerStatsHub(containerID, hub)
+		}
+		if wshub.ServeClientWithOnRemove(h.ctx, hub, conn, onRemove) {
 			return nil
 		}
 		h.containerStatsHubs.CompareAndDelete(containerID, hub)
@@ -59,34 +63,12 @@ func (h *WebSocketHandler) ContainerStats(c *echo.Context) error {
 	return nil
 }
 
-func (h *WebSocketHandler) getOrCreateContainerStatsHub(containerID string) *wshub.Hub {
-	if existing, ok := h.containerStatsHubs.Load(containerID); ok {
-		if hub, localOk := existing.(*wshub.Hub); localOk {
-			return hub
-		}
-	}
-
-	hub := wshub.NewHub(64)
-	actual, loaded := h.containerStatsHubs.LoadOrStore(containerID, hub)
-	if loaded {
-		if existingHub, ok := actual.(*wshub.Hub); ok {
-			return existingHub
-		}
-		// type assertion failure is impossible in practice, but avoid running
-		// an unregistered hub if it somehow occurs
-		return hub
-	}
-
-	h.runContainerStatsHub(containerID, hub)
-	return hub
-}
-
 // containerStatsErrorDrainGrace is how long a failed stats hub stays alive after
 // broadcasting its error frame, so clients receive it before the hub shuts down.
 const containerStatsErrorDrainGrace = 2 * time.Second
 
 func (h *WebSocketHandler) runContainerStatsHub(containerID string, hub *wshub.Hub) {
-	ctx, cancel := context.WithCancel(context.Background()) //nolint:forbidigo // Shared stats hubs own their lifecycle and idle cancellation across requests.
+	ctx, cancel := context.WithCancel(h.ctx)
 	var cleanupTimer *time.Timer
 	var cleanupTimerMu sync.Mutex
 

@@ -1,7 +1,6 @@
 package system
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"strings"
@@ -11,20 +10,15 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/getarcaneapp/arcane/types/v2/dockerinfo"
 	"github.com/getarcaneapp/arcane/types/v2/system"
-	dockersystem "github.com/moby/moby/api/types/system"
-	"github.com/moby/moby/client"
 	"go.getarcane.app/docker/convert"
 	"go.getarcane.app/docker/convert/types"
-	"go.getarcane.app/sys/cgroup"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
 
 // SystemHandler handles system management endpoints.
 type SystemHandler struct {
-	dockerService *docker.DockerClientService
 	systemService *SystemService
 	appCtx        context.Context
 }
@@ -62,19 +56,13 @@ type ConvertDockerRunOutput struct {
 	Body system.ConvertDockerRunResponse
 }
 
-func NewHandler(dockerService *docker.DockerClientService, systemService *SystemService, appCtx context.Context) *SystemHandler {
-	return &SystemHandler{dockerService: dockerService, systemService: systemService, appCtx: appCtx}
+func NewHandler(systemService *SystemService, appCtx context.Context) *SystemHandler {
+	return &SystemHandler{systemService: systemService, appCtx: appCtx}
 }
 
 // Health checks if the Docker daemon is responsive.
 func (h *SystemHandler) Health(ctx context.Context, input *SystemHealthInput) (*struct{}, error) {
-	dockerClient, err := h.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, huma.Error503ServiceUnavailable("Failed to connect to Docker: " + err.Error())
-	}
-
-	_, err = dockerClient.Ping(ctx, client.PingOptions{})
-	if err != nil {
+	if err := h.systemService.PingDocker(ctx); err != nil {
 		return nil, huma.Error503ServiceUnavailable("Docker is not responsive: " + err.Error())
 	}
 
@@ -83,75 +71,12 @@ func (h *SystemHandler) Health(ctx context.Context, input *SystemHealthInput) (*
 
 // GetDockerInfo returns Docker daemon version and system information.
 func (h *SystemHandler) GetDockerInfo(ctx context.Context, input *GetDockerInfoInput) (*GetDockerInfoOutput, error) {
-	dockerClient, err := h.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to connect to Docker: " + err.Error())
-	}
-
-	version, err := dockerClient.ServerVersion(ctx, client.ServerVersionOptions{})
-	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to get Docker version: " + err.Error())
-	}
-
-	infoResult, err := dockerClient.Info(ctx, client.InfoOptions{})
+	info, err := h.systemService.GetDockerInfo(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get Docker info: " + err.Error())
 	}
-	info := infoResult.Info
 
-	// Apply cgroup limits only when running outside Docker (e.g. in LXC).
-	// In Docker, --cpus/--memory are artificial operator constraints that
-	// should not cap the host totals shown in the dashboard. The Docker
-	// daemon's NCPU/MemTotal already reflect the real host. In LXC the
-	// daemon may report the physical machine's full capacity while the
-	// LXC guest has a smaller cgroup budget — apply those limits so the
-	// dashboard shows what Arcane's host actually has available.
-	if !cgroup.IsDockerContainer() {
-		if cgroupLimits, detectLimitsErr := cgroup.DetectLimits(); detectLimitsErr == nil {
-			if limit := cgroupLimits.MemoryLimit; limit > 0 && (info.MemTotal == 0 || limit < info.MemTotal) {
-				info.MemTotal = limit // keep: copying Docker's ~70-field system.Info as a literal is unreadable
-			}
-			if cgroupLimits.CPUCount > 0 && (info.NCPU == 0 || cgroupLimits.CPUCount < info.NCPU) {
-				info.NCPU = cgroupLimits.CPUCount // keep: copying Docker's ~70-field system.Info as a literal is unreadable
-			}
-		}
-	}
-
-	gitCommit, goVersion, buildTime := extractVersionDetailsFromComponents(version.Components)
-
-	return &GetDockerInfoOutput{
-		Body: dockerinfo.Info{
-			Success:    true,
-			APIVersion: version.APIVersion,
-			GitCommit:  gitCommit,
-			GoVersion:  goVersion,
-			Os:         version.Os,
-			Arch:       version.Arch,
-			BuildTime:  buildTime,
-			Info:       info,
-		},
-	}, nil
-}
-
-func extractVersionDetailsFromComponents(components []dockersystem.ComponentVersion) (gitCommit, goVersion, buildTime string) {
-	for _, component := range components {
-		if component.Details == nil {
-			continue
-		}
-
-		for key, value := range component.Details {
-			switch strings.ToLower(key) {
-			case "gitcommit":
-				gitCommit = cmp.Or(gitCommit, value)
-			case "goversion":
-				goVersion = cmp.Or(goVersion, value)
-			case "buildtime":
-				buildTime = cmp.Or(buildTime, value)
-			}
-		}
-	}
-
-	return gitCommit, goVersion, buildTime
+	return &GetDockerInfoOutput{Body: info}, nil
 }
 
 // StartAllContainers starts all Docker containers.

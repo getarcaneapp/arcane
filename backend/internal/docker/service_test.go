@@ -274,6 +274,62 @@ func TestDockerClientService_EventActorStopCancelsAndJoinsStream(t *testing.T) {
 	}, time.Second, time.Millisecond)
 }
 
+func TestDockerClientService_WatchEventsResumesFromLastEventAfterRefresh(t *testing.T) {
+	first := events.Message{
+		Type:     events.ImageEventType,
+		Action:   events.ActionPull,
+		TimeNano: 1_700_000_000_123_456_789,
+	}
+	payload, err := json.Marshal(first)
+	require.NoError(t, err)
+	var pings, eventCalls atomic.Int32
+	type reconnect struct {
+		since string
+		pings int32
+	}
+	reconnected := make(chan reconnect, 1)
+	server := newDockerPingTestServerWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		switch path.Base(r.URL.Path) {
+		case "_ping":
+			pings.Add(1)
+			w.Header().Set("Api-Version", "1.41")
+			w.WriteHeader(http.StatusOK)
+		case "events":
+			w.Header().Set("Content-Type", "application/json")
+			if eventCalls.Add(1) == 1 {
+				assert.Empty(t, r.URL.Query().Get("since"))
+				_, _ = w.Write(payload)
+				return
+			}
+			select {
+			case reconnected <- reconnect{since: r.URL.Query().Get("since"), pings: pings.Load()}:
+			default:
+			}
+			w.WriteHeader(http.StatusOK)
+			<-r.Context().Done()
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	svc := newDockerClientServiceForTest(t, server.URL)
+	t.Cleanup(svc.Close)
+	stop, err := concurrency.StartSupervised(t.Context(), "Docker event watcher", func(ctx context.Context) error {
+		svc.WatchEvents(ctx)
+		return nil
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = stop(context.WithoutCancel(t.Context())) })
+
+	select {
+	case got := <-reconnected:
+		assert.Equal(t, "1700000000.123456789", got.since)
+		// One probe from the initial GetClient, one from the RefreshClient before reconnecting.
+		assert.GreaterOrEqual(t, got.pings, int32(2))
+	case <-time.After(5 * time.Second):
+		t.Fatal("event stream did not reconnect")
+	}
+}
+
 func TestCountImageUsage_UsesContainerImageIDs(t *testing.T) {
 	images := []image.Summary{
 		{ID: "sha256:image-a", Containers: -1, Size: 100},

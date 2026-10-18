@@ -69,20 +69,20 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 		}
 		data, marshalErr := json.Marshal(record)
 		require.NoError(t, marshalErr)
-		require.NoError(t, store.Set(t.Context(), queuePrefixInternal+kit.SHA256Hex("0\x00"+jobID), string(data)))
+		require.NoError(t, store.Set(t.Context(), queuePrefix+kit.SHA256Hex("0\x00"+jobID), string(data)))
 	}
 	encoded, err := json.Marshal(legacy)
 	require.NoError(t, err)
-	key := queuePrefixInternal + kit.SHA256Hex("0\x00"+legacy.JobID)
+	key := queuePrefix + kit.SHA256Hex("0\x00"+legacy.JobID)
 	require.NoError(t, store.Set(t.Context(), key, string(encoded)))
 	databaseURL := "file:" + filepath.ToSlash(filepath.Join(t.TempDir(), "actors.db"))
 	first := francistest.New(t, databaseURL)
 	q := New(store, first.Service(), time.UTC)
 	require.NoError(t, q.Register(first))
 	francistest.Start(t, first)
-	require.NoError(t, q.importLegacyInternal(t.Context()))
-	require.NoError(t, q.importLegacyInternal(t.Context()))
-	observer := &activityObserverFakeInternal{existingOnly: true}
+	require.NoError(t, q.importLegacy(t.Context()))
+	require.NoError(t, q.importLegacy(t.Context()))
+	observer := &activityObserverFake{existingOnly: true}
 	observer.unavailable.Store(true)
 	q.SetObserver(observer)
 	_, err = q.Submit(t.Context(), st.Request{JobID: legacy.JobID, RunID: legacy.Runs[0].ID, Trigger: "manual"})
@@ -91,7 +91,7 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 		run.Outcome.Targets = []st.TargetOutcome{{ID: "artifact", Status: st.Succeeded, RecoveryData: jsontext.Value(`{"backupId":"artifact"}`)}}
 		return nil
 	}))
-	require.True(t, q.hasPendingActivitySyncInternal(t.Context()))
+	require.True(t, q.hasPendingActivitySync(t.Context()))
 	q.SetExecutor(func(context.Context, st.Run) (st.Outcome, error) {
 		t.Error("startup must not execute jobs before activation")
 		return st.Outcome{Status: st.Failed}, nil
@@ -106,7 +106,7 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 	restored.SetExecutor(q.execute, nil)
 	require.NoError(t, restored.Register(second))
 	francistest.Start(t, second)
-	require.NoError(t, restored.importLegacyInternal(t.Context()))
+	require.NoError(t, restored.importLegacy(t.Context()))
 	require.NoError(t, restored.Start(t.Context(), t.Context()))
 	t.Cleanup(func() { require.NoError(t, restored.Stop(context.WithoutCancel(t.Context()))) })
 	for _, jobID := range []string{"gitops-sync:first", "gitops-sync:second"} {
@@ -128,31 +128,31 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 	require.Equal(t, 1, history.Total)
 	require.Equal(t, time.UTC, history.Runs[0].CreatedAt.Location())
 	observer.unavailable.Store(false)
-	restored.retryActivitySyncInternal(t.Context())
-	require.False(t, restored.hasPendingActivitySyncInternal(t.Context()))
+	restored.retryActivitySync(t.Context())
+	require.False(t, restored.hasPendingActivitySync(t.Context()))
 	require.Positive(t, observer.observed.Load())
 	_, exists, err := store.Get(t.Context(), key)
 	require.NoError(t, err)
 	require.True(t, exists)
 }
 
-type occurrenceEnvelopeInternal struct{ occurrence st.ScheduleOccurrence }
+type occurrenceEnvelope struct{ occurrence st.ScheduleOccurrence }
 
-func (e occurrenceEnvelopeInternal) Decode(value any) error {
+func (e occurrenceEnvelope) Decode(value any) error {
 	*value.(*st.ScheduleOccurrence) = e.occurrence
 	return nil
 }
 
 func TestAlarmIgnoresStaleGeneration(t *testing.T) {
-	q := newResolutionQueueInternal(t)
+	q := newResolutionQueue(t)
 	next := time.Now().UTC().Add(time.Hour)
 	require.NoError(t, q.Checkpoint(t.Context(), "schedule", "0 * * * * *", next))
 	before, err := q.ScheduleState(t.Context(), "schedule")
 	require.NoError(t, err)
 	q.enabled.Store(true)
 	defer q.enabled.Store(false)
-	coordinator := &coordinatorActorInternal{id: kit.SHA256Hex("0\x00schedule"), q: q}
-	require.NoError(t, coordinator.Alarm(t.Context(), "old", occurrenceEnvelopeInternal{st.ScheduleOccurrence{Generation: before.Generation - 1, Sequence: before.Sequence}}))
+	coordinator := &coordinatorActor{id: kit.SHA256Hex("0\x00schedule"), q: q}
+	require.NoError(t, coordinator.Alarm(t.Context(), "old", occurrenceEnvelope{st.ScheduleOccurrence{Generation: before.Generation - 1, Sequence: before.Sequence}}))
 	after, err := q.ScheduleState(t.Context(), "schedule")
 	require.NoError(t, err)
 	require.Equal(t, before.Generation, after.Generation)
@@ -168,7 +168,7 @@ func TestDuplicateDispatchAndCanceledDelivery(t *testing.T) {
 			name = "canceled"
 		}
 		t.Run(name, func(t *testing.T) {
-			q := newResolutionQueueInternal(t)
+			q := newResolutionQueue(t)
 			var executed atomic.Int32
 			q.SetExecutor(func(context.Context, st.Run) (st.Outcome, error) {
 				executed.Add(1)
@@ -178,10 +178,10 @@ func TestDuplicateDispatchAndCanceledDelivery(t *testing.T) {
 			require.NoError(t, err)
 			id := kit.SHA256Hex("0\x00" + run.JobID)
 			command := st.ExecutionCommand{EnvironmentID: "0", JobID: run.JobID, RunID: run.ID, Attempt: 1}
-			jobID, created, err := q.service.Dispatch(t.Context(), executorTypeInternal, id, "execute", command, actor.WithIdempotencyKey(run.ID+"-1"))
+			jobID, created, err := q.service.Dispatch(t.Context(), executorType, id, "execute", command, actor.WithIdempotencyKey(run.ID+"-1"))
 			require.NoError(t, err)
 			require.True(t, created)
-			duplicateID, created, err := q.service.Dispatch(t.Context(), executorTypeInternal, id, "execute", command, actor.WithIdempotencyKey(run.ID+"-1"))
+			duplicateID, created, err := q.service.Dispatch(t.Context(), executorType, id, "execute", command, actor.WithIdempotencyKey(run.ID+"-1"))
 			require.NoError(t, err)
 			require.False(t, created)
 			require.Equal(t, jobID, duplicateID)
@@ -215,7 +215,7 @@ func TestDuplicateDispatchAndCanceledDelivery(t *testing.T) {
 }
 
 func TestCapacityGroupsReserveHealthSlots(t *testing.T) {
-	q := newResolutionQueueInternal(t)
+	q := newResolutionQueue(t)
 	var ordinary, health atomic.Int32
 	release := make(chan struct{})
 	var once sync.Once
@@ -261,19 +261,19 @@ func TestCapacityGroupsReserveHealthSlots(t *testing.T) {
 }
 
 func TestReconciliationRepairsMissingAlarm(t *testing.T) {
-	q := newResolutionQueueInternal(t)
+	q := newResolutionQueue(t)
 	require.NoError(t, q.Checkpoint(t.Context(), "repair", "0 * * * * *", time.Now().UTC().Add(time.Hour)))
 	q.enabled.Store(true)
 	defer q.enabled.Store(false)
 	record, err := q.ScheduleState(t.Context(), "repair")
 	require.NoError(t, err)
 	id := kit.SHA256Hex("0\x00repair")
-	err = q.repairInternal(t.Context(), true)
+	err = q.repair(t.Context(), true)
 	require.NoError(t, err)
-	require.NoError(t, q.service.DeleteAlarm(t.Context(), coordinatorTypeInternal, id, fmt.Sprintf("schedule-%d-%d", record.Generation, record.Sequence)))
-	err = q.repairInternal(t.Context(), true)
+	require.NoError(t, q.service.DeleteAlarm(t.Context(), coordinatorType, id, fmt.Sprintf("schedule-%d-%d", record.Generation, record.Sequence)))
+	err = q.repair(t.Context(), true)
 	require.NoError(t, err)
-	require.NoError(t, q.service.DeleteAlarm(t.Context(), coordinatorTypeInternal, id, fmt.Sprintf("schedule-%d-%d", record.Generation, record.Sequence)))
+	require.NoError(t, q.service.DeleteAlarm(t.Context(), coordinatorType, id, fmt.Sprintf("schedule-%d-%d", record.Generation, record.Sequence)))
 	after, err := q.ScheduleState(t.Context(), "repair")
 	require.NoError(t, err)
 	require.Equal(t, record.Generation, after.Generation)
@@ -307,12 +307,12 @@ func TestAdmissionAndCompletionRejectStaleTokens(t *testing.T) {
 	require.True(t, admitted)
 	replacement.Release(t.Context())
 
-	q := newResolutionQueueInternal(t)
+	q := newResolutionQueue(t)
 	run, err := q.Submit(t.Context(), st.Request{JobID: "tokens"})
 	require.NoError(t, err)
 	require.NoError(t, q.UpdateRun(t.Context(), run, func(current *st.Run) error { current.Status = st.Running; current.Owner = "new-token"; return nil }))
 	run.Owner = "stale-token"
-	q.persistOutcome(t.Context(), run, st.Outcome{Status: st.Succeeded})
+	require.NoError(t, q.persistOutcome(t.Context(), run, st.Outcome{Status: st.Succeeded}))
 	persisted, err := q.Get(t.Context(), "0", run.JobID, run.ID)
 	require.NoError(t, err)
 	require.Equal(t, st.Running, persisted.Status)
@@ -320,7 +320,7 @@ func TestAdmissionAndCompletionRejectStaleTokens(t *testing.T) {
 }
 
 func TestLostDispatchAcknowledgementRetainsOneExecution(t *testing.T) {
-	q := newResolutionQueueInternal(t)
+	q := newResolutionQueue(t)
 	entered := make(chan struct{})
 	finish := make(chan struct{})
 	var once sync.Once
@@ -349,7 +349,7 @@ func TestLostDispatchAcknowledgementRetainsOneExecution(t *testing.T) {
 	}
 	id := kit.SHA256Hex("0\x00" + run.JobID)
 	var state st.CoordinatorState
-	require.NoError(t, q.service.GetState(t.Context(), coordinatorTypeInternal, id, &state))
+	require.NoError(t, q.service.GetState(t.Context(), coordinatorType, id, &state))
 	key := run.ID + "-1"
 	original := state.Dispatches[key].JobID
 	require.NotEmpty(t, original)
@@ -357,12 +357,12 @@ func TestLostDispatchAcknowledgementRetainsOneExecution(t *testing.T) {
 	intent.JobID = ""
 	state.Dispatches[key] = intent
 	state.Revision++
-	require.NoError(t, q.service.SetState(t.Context(), coordinatorTypeInternal, id, state, nil))
-	err = q.repairInternal(t.Context(), false)
+	require.NoError(t, q.service.SetState(t.Context(), coordinatorType, id, state, nil))
+	err = q.repair(t.Context(), false)
 	require.NoError(t, err)
-	require.NoError(t, q.service.GetState(t.Context(), coordinatorTypeInternal, id, &state))
+	require.NoError(t, q.service.GetState(t.Context(), coordinatorType, id, &state))
 	require.Equal(t, original, state.Dispatches[key].JobID)
-	deliveries, err := q.service.ListJobs(t.Context(), executorTypeInternal, id)
+	deliveries, err := q.service.ListJobs(t.Context(), executorType, id)
 	require.NoError(t, err)
 	require.Len(t, deliveries, 1)
 	once.Do(func() { close(finish) })

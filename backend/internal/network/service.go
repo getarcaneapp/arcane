@@ -69,12 +69,9 @@ func NewNetworkService(db *database.DB, dockerService *dockerInternal.DockerClie
 }
 
 func (s *NetworkService) GetNetworkByID(ctx context.Context, id string) (*network.Inspect, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	networkInspect, err := compat.NetworkInspectWithCompatibility(ctx, dockerClient, id, client.NetworkInspectOptions{})
+	networkInspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkInspectResult, error) {
+		return compat.NetworkInspectWithCompatibility(ctx, dockerClient, id, client.NetworkInspectOptions{})
+	})
 	if err != nil {
 		return nil, fmt.Errorf("network not found: %w", err)
 	}
@@ -122,11 +119,6 @@ func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*networktypes.
 }
 
 func (s *NetworkService) buildTopology(ctx context.Context) (*networktypes.Topology, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
 	containers, err := s.dockerService.ListContainers(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list containers: %w", err)
@@ -137,7 +129,9 @@ func (s *NetworkService) buildTopology(ctx context.Context) (*networktypes.Topol
 		containersByID[rawContainer.ID] = rawContainer
 	}
 
-	networkList, err := compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
+	networkList, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkListResult, error) {
+		return compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Docker networks: %w", err)
 	}
@@ -151,7 +145,9 @@ func (s *NetworkService) buildTopology(ctx context.Context) (*networktypes.Topol
 		g.Go(func() (workerErr error) {
 			defer utils.RecoverToError(&workerErr, "network worker")
 
-			inspected, inspectErr := compat.NetworkInspectWithCompatibility(groupCtx, dockerClient, rawNetwork.ID, client.NetworkInspectOptions{})
+			inspected, inspectErr := s.dockerService.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkInspectResult, error) {
+				return compat.NetworkInspectWithCompatibility(ctx, dockerClient, rawNetwork.ID, client.NetworkInspectOptions{})
+			})
 			if inspectErr != nil {
 				return fmt.Errorf("failed to inspect network %s: %w", rawNetwork.Name, inspectErr)
 			}
@@ -219,14 +215,10 @@ func (s *NetworkService) buildTopology(ctx context.Context) (*networktypes.Topol
 }
 
 func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options client.NetworkCreateOptions, user usertypes.Actor) (*network.CreateResponse, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", "", name, user.ID, user.Username, "0", err, database.JSON{"action": "create", "driver": options.Driver})
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
 	defer s.eventService.BeginDockerResourceSuppressionWindow("network", "", name)()
-	response, err := dockerClient.NetworkCreate(ctx, name, options)
+	response, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkCreateResult, error) {
+		return dockerClient.NetworkCreate(ctx, name, options)
+	})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", "", name, user.ID, user.Username, "0", err, database.JSON{"action": "create", "driver": options.Driver})
 		return nil, fmt.Errorf("failed to create network: %w", err)
@@ -248,17 +240,15 @@ func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options
 }
 
 func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user usertypes.Actor) error {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", id, "", user.ID, user.Username, "0", err, database.JSON{"action": "delete"})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	networkInfo, err := compat.NetworkInspectWithCompatibility(ctx, dockerClient, id, client.NetworkInspectOptions{})
+	networkInfo, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkInspectResult, error) {
+		return compat.NetworkInspectWithCompatibility(ctx, dockerClient, id, client.NetworkInspectOptions{})
+	})
 	networkName := kit.Ternary(err == nil, networkInfo.Network.Name, id)
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("network", id, networkName)()
-	if _, networkRemoveErr := dockerClient.NetworkRemove(ctx, id, client.NetworkRemoveOptions{}); networkRemoveErr != nil {
+	if _, networkRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkRemoveResult, error) {
+		return dockerClient.NetworkRemove(ctx, id, client.NetworkRemoveOptions{})
+	}); networkRemoveErr != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", id, networkName, user.ID, user.Username, "0", networkRemoveErr, database.JSON{"action": "delete"})
 		return fmt.Errorf("failed to remove network: %w", networkRemoveErr)
 	}
@@ -276,12 +266,6 @@ func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user user
 
 // ConnectContainer connects a container to a network without recreating it.
 func (s *NetworkService) ConnectContainer(ctx context.Context, networkID string, req networktypes.ConnectContainerRequest, user usertypes.Actor) error {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", networkID, "", user.ID, user.Username, "0", err, database.JSON{"action": "connect", "containerId": req.ContainerID})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
 	ipv4, ipv4Err := netip.ParseAddr(strings.TrimSpace(req.IPv4Address))
 	if ipv4Err != nil && strings.TrimSpace(req.IPv4Address) != "" {
 		return common.Classify(common.ErrValidation, fmt.Errorf("invalid IPv4 address %s: %w", strings.TrimSpace(req.IPv4Address), ipv4Err))
@@ -291,20 +275,22 @@ func (s *NetworkService) ConnectContainer(ctx context.Context, networkID string,
 		return common.Classify(common.ErrValidation, fmt.Errorf("invalid IPv6 address %s: %w", strings.TrimSpace(req.IPv6Address), ipv6Err))
 	}
 
-	if _, networkConnectErr := dockerClient.NetworkConnect(ctx, networkID, client.NetworkConnectOptions{
-		Container: req.ContainerID,
-		EndpointConfig: &network.EndpointSettings{
-			Aliases: req.Aliases,
-			IPAMConfig: func() *network.EndpointIPAMConfig {
-				if !ipv4.IsValid() && !ipv6.IsValid() {
-					return nil
-				}
-				return &network.EndpointIPAMConfig{
-					IPv4Address: ipv4,
-					IPv6Address: ipv6,
-				}
-			}(),
-		},
+	if _, networkConnectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkConnectResult, error) {
+		return dockerClient.NetworkConnect(ctx, networkID, client.NetworkConnectOptions{
+			Container: req.ContainerID,
+			EndpointConfig: &network.EndpointSettings{
+				Aliases: req.Aliases,
+				IPAMConfig: func() *network.EndpointIPAMConfig {
+					if !ipv4.IsValid() && !ipv6.IsValid() {
+						return nil
+					}
+					return &network.EndpointIPAMConfig{
+						IPv4Address: ipv4,
+						IPv6Address: ipv6,
+					}
+				}(),
+			},
+		})
 	}); networkConnectErr != nil {
 		s.eventService.LogErrorEvent(
 			ctx,
@@ -338,15 +324,11 @@ func (s *NetworkService) ConnectContainer(ctx context.Context, networkID string,
 
 // DisconnectContainer disconnects a container from a network.
 func (s *NetworkService) DisconnectContainer(ctx context.Context, networkID string, req networktypes.DisconnectContainerRequest, user usertypes.Actor) error {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeNetworkError, "network", networkID, "", user.ID, user.Username, "0", err, database.JSON{"action": "disconnect", "containerId": req.ContainerID})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	if _, networkDisconnectErr := dockerClient.NetworkDisconnect(ctx, networkID, client.NetworkDisconnectOptions{
-		Container: req.ContainerID,
-		Force:     req.Force,
+	if _, networkDisconnectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkDisconnectResult, error) {
+		return dockerClient.NetworkDisconnect(ctx, networkID, client.NetworkDisconnectOptions{
+			Container: req.ContainerID,
+			Force:     req.Force,
+		})
 	}); networkDisconnectErr != nil {
 		s.eventService.LogErrorEvent(
 			ctx,
@@ -380,12 +362,9 @@ func (s *NetworkService) DisconnectContainer(ctx context.Context, networkID stri
 }
 
 func (s *NetworkService) PruneNetworks(ctx context.Context) (*network.PruneReport, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	report, err := dockerClient.NetworkPrune(ctx, client.NetworkPruneOptions{Filters: make(client.Filters)})
+	report, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkPruneResult, error) {
+		return dockerClient.NetworkPrune(ctx, client.NetworkPruneOptions{Filters: make(client.Filters)})
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to prune networks: %w", err)
 	}
@@ -402,11 +381,6 @@ func (s *NetworkService) PruneNetworks(ctx context.Context) (*network.PruneRepor
 }
 
 func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagination.QueryParams) ([]networktypes.Summary, pagination.Response, networktypes.UsageCounts, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, pagination.Response{}, networktypes.UsageCounts{}, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
 	containers, err := s.dockerService.ListContainers(ctx)
 	if err != nil {
 		return nil, pagination.Response{}, networktypes.UsageCounts{}, fmt.Errorf("failed to list containers: %w", err)
@@ -414,7 +388,9 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 
 	inUseByID, inUseByName := docker.BuildNetworkUsageMaps(containers)
 
-	networkList, err := compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
+	networkList, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkListResult, error) {
+		return compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
+	})
 	if err != nil {
 		return nil, pagination.Response{}, networktypes.UsageCounts{}, fmt.Errorf("failed to list Docker networks: %w", err)
 	}

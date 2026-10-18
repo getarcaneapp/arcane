@@ -20,6 +20,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -31,7 +32,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/backupbrowser"
 )
 
-const restoreBackupFilesScriptInternal = `set -e
+const restoreBackupFilesScript = `set -e
 archive="$1"
 shift
 archive_mode=$(stat -c '%A' -- "$archive" 2>/dev/null) || { echo ARCANE_NOT_FOUND >&2; exit 44; }
@@ -50,12 +51,12 @@ type Dependencies struct {
 	Run             func(ctx context.Context, backupID string) (*volume.Backup, error)
 	Repository      func(ctx context.Context, dockerClient *client.Client, entry *volume.Backup) (backup.Repository, string, error)
 	Password        func(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error)
-	StopContainers  func(ctx context.Context, dockerClient *client.Client, volumeName string, user usertypes.Actor, refuseArcaneWriters bool) ([]container.Summary, error)
-	StartContainers func(ctx context.Context, dockerClient *client.Client, stopped []container.Summary, user usertypes.Actor) ([]container.Summary, error)
+	StopContainers  func(ctx context.Context, volumeName string, user usertypes.Actor, refuseArcaneWriters bool) ([]container.Summary, error)
+	StartContainers func(ctx context.Context, stopped []container.Summary, user usertypes.Actor) ([]container.Summary, error)
 	SafetyBackup    func(ctx context.Context, volumeName string, user usertypes.Actor) (string, error)
 	ArchivePaths    func(ctx context.Context, backupID string) ([]string, error)
 	ArchiveFilename func(backupID string) (string, error)
-	HelperImage     func(ctx context.Context, dockerClient *client.Client) (string, error)
+	HelperImage     func(ctx context.Context) (string, error)
 	StorageMount    func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error)
 	AcquireHelper   func(ctx context.Context, volumeName string) (string, func(), error)
 	Exec            func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
@@ -96,11 +97,11 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 			return err
 		}
 	}
-	stopped, err := s.deps.StopContainers(ctx, dockerClient, volumeName, user, true)
+	stopped, err := s.deps.StopContainers(ctx, volumeName, user, true)
 	containersStopped := len(stopped) > 0
 	defer func() {
 		if containersStopped {
-			_, restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), dockerClient, stopped, user)
+			_, restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), stopped, user)
 			err = errors.Join(err, restartErr)
 		}
 	}()
@@ -110,11 +111,15 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 	// A discovered backup may target a volume missing on this instance; create it and skip the safety backup of an empty volume.
 	preBackupID := ""
 	var createdVolume bool
-	if _, inspectErr := dockerClient.VolumeInspect(ctx, volumeName, client.VolumeInspectOptions{}); inspectErr != nil {
+	if _, inspectErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
+		return dockerClient.VolumeInspect(ctx, volumeName, client.VolumeInspectOptions{})
+	}); inspectErr != nil {
 		if !errdefs.IsNotFound(inspectErr) {
 			return fmt.Errorf("failed to inspect volume for restore: %w", inspectErr)
 		}
-		if _, createErr := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: volumeName}); createErr != nil {
+		if _, createErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
+			return dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: volumeName})
+		}); createErr != nil {
 			return fmt.Errorf("failed to create missing volume for restore: %w", createErr)
 		}
 		createdVolume = true
@@ -126,7 +131,7 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 		}
 	}
 	if entry.Format == volume.BackupFormatArchive {
-		if restoreArchiveBackupErr := s.restoreArchiveBackupInternal(ctx, dockerClient, volumeName, backupID); restoreArchiveBackupErr != nil {
+		if restoreArchiveBackupErr := s.restoreArchiveBackup(ctx, dockerClient, volumeName, backupID, nil); restoreArchiveBackupErr != nil {
 			return restoreArchiveBackupErr
 		}
 	} else if restoreSnapshotErr := s.deps.Engine.RestoreSnapshot(
@@ -147,7 +152,7 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 		return fmt.Errorf("failed to restore Rustic snapshot: %w", restoreSnapshotErr)
 	}
 	if containersStopped {
-		stopped, err = s.deps.StartContainers(context.WithoutCancel(ctx), dockerClient, stopped, user)
+		stopped, err = s.deps.StartContainers(context.WithoutCancel(ctx), stopped, user)
 		containersStopped = len(stopped) > 0
 		if err != nil {
 			return err
@@ -163,57 +168,50 @@ func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string
 	return nil
 }
 
-type selectionInternal struct {
+type selectionPlan struct {
 	entries      []backuptypes.BackupFileEntry
 	archivePaths []string
 	globalRoot   bool
 }
 
-func (
-	s *Service,
-) resolveRestoreSelectionInternal(
+func (s *Service) resolveRestoreSelection(
 	ctx context.Context,
 	dockerClient *client.Client,
 	entry *volume.Backup,
 	repository backup.Repository,
 	snapshotID string,
 	selection backuptypes.RestoreSelection,
-) (
-	selectionInternal,
-	error,
-) {
+) (selectionPlan, error) {
 	if selection.SelectAll && strings.TrimSpace(selection.Search) == "" {
 		if _, err := backupbrowser.NormalizeSelection(selection, []backuptypes.BackupFileEntry{{Path: "", IsDirectory: true}}); err != nil {
-			return selectionInternal{}, fmt.Errorf("%w: %w", common.ErrInvalidBackupSelection, err)
+			return selectionPlan{}, fmt.Errorf("%w: %w", common.ErrInvalidBackupSelection, err)
 		}
-		return selectionInternal{globalRoot: true}, nil
+		return selectionPlan{globalRoot: true}, nil
 	}
-	resolved := selectionInternal{}
-	var eligible []backuptypes.BackupFileEntry
-	var err error
-	if entry.Format == volume.BackupFormatArchive {
-		resolved.archivePaths, err = s.deps.ArchivePaths(ctx, entry.ID)
-		eligible = backupbrowser.BuildEntries(resolved.archivePaths, "", true)
-	} else {
-		var listed []string
+	paths, err := func() ([]string, error) {
+		if entry.Format == volume.BackupFormatArchive {
+			return s.deps.ArchivePaths(ctx, entry.ID)
+		}
 		password, passwordErr := s.deps.Password(ctx, dockerClient, repository)
 		if passwordErr != nil {
-			return selectionInternal{}, passwordErr
+			return nil, passwordErr
 		}
-		listed, err = s.deps.Engine.ListSnapshotFiles(ctx, dockerClient, repository, password, snapshotID, "", true)
-		eligible = backupbrowser.BuildEntries(listed, "", true)
-	}
+		return s.deps.Engine.ListSnapshotFiles(ctx, dockerClient, repository, password, snapshotID, "", true)
+	}()
 	if err != nil {
-		return selectionInternal{}, err
+		return selectionPlan{}, err
 	}
-	resolved.entries, err = backupbrowser.NormalizeSelection(selection, eligible)
+	entries, err := backupbrowser.NormalizeSelection(selection, backupbrowser.BuildEntries(paths, "", true))
 	if err != nil {
-		return selectionInternal{}, fmt.Errorf("%w: %w", common.ErrInvalidBackupSelection, err)
+		return selectionPlan{}, fmt.Errorf("%w: %w", common.ErrInvalidBackupSelection, err)
 	}
-	return resolved, nil
+	return selectionPlan{
+		entries:      entries,
+		archivePaths: kit.Ternary(entry.Format == volume.BackupFormatArchive, paths, nil),
+	}, nil
 }
 
-func archiveMembersForSelectionInternal(paths []string, selected []backuptypes.BackupFileEntry) []string {
+func archiveMembersForSelection(paths []string, selected []backuptypes.BackupFileEntry) []string {
 	files := make([]string, 0, len(paths))
 	for _, raw := range paths {
 		directory := strings.HasSuffix(strings.TrimSpace(raw), "/")
@@ -235,23 +233,18 @@ func archiveMembersForSelectionInternal(paths []string, selected []backuptypes.B
 	return slices.Compact(files)
 }
 
-func (
-	s *Service,
-) restoreSelectionInternal(
+func (s *Service) restoreSelection(
 	ctx context.Context,
 	dockerClient *client.Client,
 	volumeName, backupID string,
 	entry *volume.Backup,
 	repository backup.Repository,
 	snapshotID string,
-	selection selectionInternal,
+	selection selectionPlan,
 ) error {
 	if entry.Format == volume.BackupFormatArchive {
-		if selection.globalRoot {
-			return s.restoreArchiveBackupInternal(ctx, dockerClient, volumeName, backupID)
-		}
-		members := archiveMembersForSelectionInternal(selection.archivePaths, selection.entries)
-		return s.restoreArchiveBackupFilesInternal(ctx, dockerClient, volumeName, backupID, members)
+		// nil members restores the whole archive.
+		return s.restoreArchiveBackup(ctx, dockerClient, volumeName, backupID, kit.Ternary(selection.globalRoot, nil, archiveMembersForSelection(selection.archivePaths, selection.entries)))
 	}
 	password, err := s.deps.Password(ctx, dockerClient, repository)
 	if err != nil {
@@ -299,15 +292,15 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, volumeName, backupID s
 			return err
 		}
 	}
-	resolvedSelection, err := s.resolveRestoreSelectionInternal(ctx, dockerClient, entry, repository, snapshotID, selection)
+	resolvedSelection, err := s.resolveRestoreSelection(ctx, dockerClient, entry, repository, snapshotID, selection)
 	if err != nil {
 		return err
 	}
-	stopped, err := s.deps.StopContainers(ctx, dockerClient, volumeName, user, true)
+	stopped, err := s.deps.StopContainers(ctx, volumeName, user, true)
 	containersStopped := len(stopped) > 0
 	defer func() {
 		if containersStopped {
-			_, restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), dockerClient, stopped, user)
+			_, restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), stopped, user)
 			err = errors.Join(err, restartErr)
 		}
 	}()
@@ -318,7 +311,7 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, volumeName, backupID s
 	if err != nil {
 		return fmt.Errorf("failed to create pre-restore backup: %w", err)
 	}
-	if restoreSelectionErr := s.restoreSelectionInternal(
+	if restoreSelectionErr := s.restoreSelection(
 		ctx,
 		dockerClient,
 		volumeName,
@@ -331,7 +324,7 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, volumeName, backupID s
 		return restoreSelectionErr
 	}
 	if containersStopped {
-		stopped, err = s.deps.StartContainers(context.WithoutCancel(ctx), dockerClient, stopped, user)
+		stopped, err = s.deps.StartContainers(context.WithoutCancel(ctx), stopped, user)
 		containersStopped = len(stopped) > 0
 		if err != nil {
 			return err
@@ -353,12 +346,13 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, volumeName, backupID s
 	return nil
 }
 
-func (s *Service) restoreArchiveBackupInternal(ctx context.Context, dockerClient *client.Client, volumeName, backupID string) error {
+// restoreArchiveBackup restores a legacy archive into volumeName: all of it when members is nil, otherwise only members.
+func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client.Client, volumeName, backupID string, members []string) error {
 	filename, err := s.deps.ArchiveFilename(backupID)
 	if err != nil {
 		return err
 	}
-	helperImage, err := s.deps.HelperImage(ctx, dockerClient)
+	helperImage, err := s.deps.HelperImage(ctx)
 	if err != nil {
 		return err
 	}
@@ -366,36 +360,51 @@ func (s *Service) restoreArchiveBackupInternal(ctx context.Context, dockerClient
 	if err != nil {
 		return err
 	}
-	config := &container.Config{
-		Image: helperImage,
-		Cmd: []string{
-			"sh",
-			"-c",
-			fmt.Sprintf(
-				"set -e; tmp=$(mktemp -d /volume/.restore_tmp.XXXXXX); tar -tzf /backups/%s >/dev/null; tar -xzf "+
-					"/backups/%s -C \"$tmp\"; find /volume -mindepth 1 -maxdepth 1 -not -path \"$tmp\" -exec rm -rf -- {} +; "+
-					"find \"$tmp\" -mindepth 1 -maxdepth 1 -exec mv -- {} /volume/ \\;; rmdir \"$tmp\"",
-				filename,
-				filename,
-			),
-		},
-		Labels: volumehelper.Labels(),
+	// A full restore runs the replace script as the container command; a partial one execs into a sleeping helper.
+	fullRestoreCmd := []string{
+		"sh",
+		"-c",
+		fmt.Sprintf(
+			"set -e; tmp=$(mktemp -d /volume/.restore_tmp.XXXXXX); tar -tzf /backups/%s >/dev/null; tar -xzf "+
+				"/backups/%s -C \"$tmp\"; find /volume -mindepth 1 -maxdepth 1 -not -path \"$tmp\" -exec rm -rf -- {} +; "+
+				"find \"$tmp\" -mindepth 1 -maxdepth 1 -exec mv -- {} /volume/ \\;; rmdir \"$tmp\"",
+			filename,
+			filename,
+		),
 	}
-	hostConfig := volumehelper.HostConfig(helperImage, []string{
-		volumeName + ":/volume",
-	}, []mount.Mount{backupMount})
-	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config:     config,
-		HostConfig: hostConfig,
+	resp, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
+		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
+			Config: &container.Config{
+				Image:           helperImage,
+				Cmd:             kit.Ternary(members == nil, fullRestoreCmd, []string{"sleep", "infinity"}),
+				NetworkDisabled: true,
+				Labels:          volumehelper.Labels(),
+			},
+			HostConfig: volumehelper.HostConfig(helperImage, []string{volumeName + ":/volume"}, []mount.Mount{backupMount}),
+		})
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create restore container: %w", err)
 	}
 	defer func() {
-		_, _ = dockerClient.ContainerRemove(context.WithoutCancel(ctx), resp.ID, volumehelper.RemoveOptions())
+		_, _ = s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+			return dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
+		})
 	}()
-	if _, containerStartErr := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); containerStartErr != nil {
+	if _, containerStartErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
+		return dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
+	}); containerStartErr != nil {
 		return fmt.Errorf("failed to start restore container: %w", containerStartErr)
+	}
+	if members != nil {
+		stderr, restoreErr := s.RestoreArchiveMembers(ctx, resp.ID, filename, members)
+		if restoreErr != nil {
+			return restoreErr
+		}
+		if strings.TrimSpace(stderr) != "" {
+			slog.DebugContext(ctx, "volume service: restore files stderr", "backupId", backupID, "stderr", strings.TrimSpace(stderr))
+		}
+		return nil
 	}
 	waitResult := dockerClient.ContainerWait(ctx, resp.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
 	var waitBody container.WaitResponse
@@ -416,7 +425,7 @@ func (s *Service) restoreArchiveBackupInternal(ctx context.Context, dockerClient
 // container's /volume; the container must mount backup storage at /backups.
 func (s *Service) RestoreArchiveMembers(ctx context.Context, containerID, filename string, cleanedPaths []string) (string, error) {
 	args := make([]string, 0, len(cleanedPaths)+5)
-	args = append(args, "sh", "-c", restoreBackupFilesScriptInternal, "sh", path.Join("/backups", filename))
+	args = append(args, "sh", "-c", restoreBackupFilesScript, "sh", path.Join("/backups", filename))
 	for _, cleaned := range cleanedPaths {
 		args = append(args, "./"+cleaned)
 	}
@@ -425,51 +434,6 @@ func (s *Service) RestoreArchiveMembers(ctx context.Context, containerID, filena
 		return stderr, fmt.Errorf("failed to restore files: %w", err)
 	}
 	return stderr, nil
-}
-
-func (s *Service) restoreArchiveBackupFilesInternal(ctx context.Context, dockerClient *client.Client, volumeName, backupID string, cleanedPaths []string) error {
-	filename, err := s.deps.ArchiveFilename(backupID)
-	if err != nil {
-		return err
-	}
-	helperImage, err := s.deps.HelperImage(ctx, dockerClient)
-	if err != nil {
-		return err
-	}
-	backupMount, err := s.deps.StorageMount(ctx, dockerClient, "/backups", true)
-	if err != nil {
-		return err
-	}
-	config := &container.Config{
-		Image:           helperImage,
-		Cmd:             []string{"sleep", "infinity"},
-		NetworkDisabled: true,
-		Labels:          volumehelper.Labels(),
-	}
-	hostConfig := volumehelper.HostConfig(helperImage, []string{
-		volumeName + ":/volume",
-	}, []mount.Mount{backupMount})
-	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config:     config,
-		HostConfig: hostConfig,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create restore container: %w", err)
-	}
-	defer func() {
-		_, _ = dockerClient.ContainerRemove(context.WithoutCancel(ctx), resp.ID, volumehelper.RemoveOptions())
-	}()
-	if _, containerStartErr := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); containerStartErr != nil {
-		return fmt.Errorf("failed to start restore container: %w", containerStartErr)
-	}
-	stderr, err := s.RestoreArchiveMembers(ctx, resp.ID, filename, cleanedPaths)
-	if err != nil {
-		return fmt.Errorf("failed to restore files: %w", err)
-	}
-	if strings.TrimSpace(stderr) != "" {
-		slog.DebugContext(ctx, "volume service: restore files stderr", "backupId", backupID, "stderr", strings.TrimSpace(stderr))
-	}
-	return nil
 }
 
 func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, user usertypes.Actor) error {

@@ -69,6 +69,7 @@ func TestSystemStatsSamplerEffectiveInterval(t *testing.T) {
 func TestSystemStatsSamplerRearmsOnFasterSubscriber(t *testing.T) {
 	collections := make(chan struct{}, 16)
 	h := &WebSocketHandler{
+		ctx:            t.Context(),
 		cpuUsageReader: func(time.Duration) (float64, bool) { return 0, true },
 		systemStatsCollector: func(context.Context) systemtypes.SystemStats {
 			select {

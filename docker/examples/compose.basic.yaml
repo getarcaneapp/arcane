@@ -1,6 +1,6 @@
 services:
   arcane:
-    image: ghcr.io/getarcaneapp/manager:latest
+    image: getarcaneapp/manager:latest
     container_name: arcane
     ports:
       - '3552:3552'
@@ -29,6 +29,7 @@ services:
       retries: 5
       start_period: 15s
     restart: unless-stopped
+    stop_grace_period: 15s
 
 volumes:
   arcane-data:

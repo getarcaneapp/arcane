@@ -172,14 +172,12 @@ func (s *Service) startPatch(
 		}
 	}
 
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-	if storeErr := requireContainerdImageStore(ctx, dockerClient); storeErr != nil {
+	if storeErr := s.requireContainerdImageStore(ctx); storeErr != nil {
 		return nil, nil, storeErr
 	}
-	imageInspect, err := dockerClient.ImageInspect(ctx, imageID)
+	imageInspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		return dockerClient.ImageInspect(ctx, imageID)
+	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to inspect image: %w", err)
 	}
@@ -435,15 +433,15 @@ func (s *Service) runPatch(ctx context.Context, record *ImagePatchRecord, opts i
 // verifyPatchedImage warns when the expected tag is missing (copa may arch-suffix
 // multi-platform tags) and otherwise re-scans it to show whether the patch worked.
 func (s *Service) verifyPatchedImage(ctx context.Context, record *ImagePatchRecord, activityID string) {
-	if dockerClient, err := s.dockerService.GetClient(ctx); err == nil {
-		if patchedInspect, inspectErr := dockerClient.ImageInspect(ctx, record.PatchedRef); inspectErr != nil {
-			slog.WarnContext(ctx, "patched image tag not found after patching", "patchedRef", record.PatchedRef, "error", inspectErr)
-			s.appendPatchActivity(ctx, activityID, 95, "Patched image was created but the expected tag "+record.PatchedRef+" was not found; check the image list")
-		} else if s.settingsService.IsFeatureEnabled(ctx, features.VulnerabilityManagement) {
-			s.appendPatchActivity(ctx, activityID, 95, "Re-scanning patched image to verify the patch")
-			if _, scanErr := s.vulnerabilityService.ScanImage(context.WithoutCancel(ctx), record.EnvironmentID, patchedInspect.ID, scheduledPatchUser); scanErr != nil {
-				slog.WarnContext(ctx, "failed to start verification scan of patched image", "patchedRef", record.PatchedRef, "error", scanErr)
-			}
+	if patchedInspect, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		return dockerClient.ImageInspect(ctx, record.PatchedRef)
+	}); inspectErr != nil {
+		slog.WarnContext(ctx, "patched image tag not found after patching", "patchedRef", record.PatchedRef, "error", inspectErr)
+		s.appendPatchActivity(ctx, activityID, 95, "Patched image was created but the expected tag "+record.PatchedRef+" was not found; check the image list")
+	} else if s.settingsService.IsFeatureEnabled(ctx, features.VulnerabilityManagement) {
+		s.appendPatchActivity(ctx, activityID, 95, "Re-scanning patched image to verify the patch")
+		if _, scanErr := s.vulnerabilityService.ScanImage(context.WithoutCancel(ctx), record.EnvironmentID, patchedInspect.ID, scheduledPatchUser); scanErr != nil {
+			slog.WarnContext(ctx, "failed to start verification scan of patched image", "patchedRef", record.PatchedRef, "error", scanErr)
 		}
 	}
 }
@@ -844,11 +842,7 @@ func (s *Service) Targets(ctx context.Context, envID string) ([]Target, error) {
 	if err := s.settingsService.RequireFeature(ctx, features.VulnerabilityManagement); err != nil {
 		return nil, err
 	}
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-	if storeErr := requireContainerdImageStore(ctx, dockerClient); storeErr != nil {
+	if storeErr := s.requireContainerdImageStore(ctx); storeErr != nil {
 		return nil, storeErr
 	}
 	var scans []vulnerability.VulnerabilityScanRecord
@@ -885,8 +879,10 @@ func (s *Service) Targets(ctx context.Context, envID string) ([]Target, error) {
 }
 
 // Copa needs BuildKit's docker exporter, which dockerd only offers with the containerd image store.
-func requireContainerdImageStore(ctx context.Context, dockerClient *client.Client) error {
-	info, err := dockerClient.Info(ctx, client.InfoOptions{})
+func (s *Service) requireContainerdImageStore(ctx context.Context) error {
+	info, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {
+		return dockerClient.Info(ctx, client.InfoOptions{})
+	})
 	if err != nil {
 		return fmt.Errorf("failed to inspect Docker: %w", err)
 	}

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/types"
+	"github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
@@ -83,6 +84,8 @@ const (
 	// inferredServiceCountBatchSize keeps one inferred count update under
 	// SQLite's bound variable limit (three placeholders per id).
 	inferredServiceCountBatchSize = 200
+	// leaseWaitTimeout bounds how long a project operation waits for one already running on the same project.
+	leaseWaitTimeout = 30 * time.Second
 )
 
 var (
@@ -110,6 +113,8 @@ type ProjectService struct {
 	// syncMu serializes SyncProjectsFromFileSystem: its discovery walk and its
 	// cleanup pass must not interleave with another run's.
 	syncMu sync.Mutex
+	// opLock serializes mutating operations on the same project.
+	opLock utils.KeyedMutex
 
 	composeNames  composeNameCache
 	parsedCompose projecttypes.ComposeCache[*types.Project]
@@ -358,7 +363,7 @@ func NewProjectService(
 				return buildUpdateInfoSummary(imageRefs, projectdetails.MergeProjectContainerUpdateInfo(nil, services, scoped), nil)
 			},
 		),
-		deployment: deployment.New(settingsService, imageService, dockerService, buildService),
+		deployment: deployment.New(imageService, dockerService, buildService),
 		// Rename recovery compares the stored name and path against its journal and rolls the row back.
 		updates: update.New(
 			kvService,
@@ -396,6 +401,50 @@ func (s *ProjectService) RecoverProjectRenameJournals(ctx context.Context) error
 	return s.updates.RecoverAll(ctx)
 }
 
+// RecoverStuckProjectStatuses re-derives the status of projects left Deploying or Restarting by a restart.
+func (s *ProjectService) RecoverStuckProjectStatuses(ctx context.Context) error {
+	var stuck []Project
+	if err := s.db.WithContext(ctx).Where("status IN ?", []ProjectStatus{ProjectStatusDeploying, ProjectStatusRestarting}).Find(&stuck).Error; err != nil {
+		return fmt.Errorf("list projects with interrupted status: %w", err)
+	}
+
+	var firstErr error
+	recovered := 0
+	for _, proj := range stuck {
+		err := func() error {
+			unlock, err := s.lockProject(ctx, "recover project status", proj.ID)
+			if err != nil {
+				return err
+			}
+			defer unlock()
+
+			services, err := s.projectServices(ctx, proj.ID)
+			if err != nil {
+				return fmt.Errorf("load services for project %s: %w", proj.ID, err)
+			}
+			status := ProjectStatus(listing.ProjectStatus(services))
+			if status == ProjectStatusUnknown {
+				slog.WarnContext(ctx, "Leaving interrupted project status unchanged: runtime status unknown", "projectId", proj.ID, "status", proj.Status)
+				return nil
+			}
+			if updateErr := s.updateProjectStatusAndCounts(ctx, proj.ID, status); updateErr != nil {
+				return updateErr
+			}
+			recovered++
+			return nil
+		}()
+		if err != nil {
+			slog.WarnContext(ctx, "Failed to recover interrupted project status", "projectId", proj.ID, "error", err)
+			firstErr = cmp.Or(firstErr, err)
+		}
+	}
+
+	if len(stuck) > 0 {
+		slog.InfoContext(ctx, "Recovered interrupted project statuses", "found", len(stuck), "recovered", recovered)
+	}
+	return firstErr
+}
+
 func (s *ProjectService) ResolveRegistryCredentials(ctx context.Context) ([]containerregistry.Credential, error) {
 	credentials, err := s.RegistryCredentialsProvider(ctx)
 	if err != nil {
@@ -423,6 +472,17 @@ func (s *ProjectService) getMutableProject(ctx context.Context, projectID string
 		return nil, common.Classify(common.ErrProjectArchived, errors.New("project is archived and must be unarchived before this action"))
 	}
 	return proj, nil
+}
+
+// lockProject takes the project's operation lease, waiting up to leaseWaitTimeout for an operation already running on it.
+func (s *ProjectService) lockProject(ctx context.Context, op, projectID string) (func(), error) {
+	waitCtx, cancel := context.WithTimeout(ctx, leaseWaitTimeout)
+	defer cancel()
+	unlock, err := s.opLock.LockContext(waitCtx, "0:project:"+projectID)
+	if err != nil {
+		return nil, fmt.Errorf("%s %s: waiting for in-progress operation: %w", op, projectID, err)
+	}
+	return unlock, nil
 }
 
 func (s *ProjectService) logProjectEvent(ctx context.Context, eventType event.EventType, projectID, projectName string, user usertypes.Actor, metadata database.JSON, action string) {
@@ -797,7 +857,7 @@ func NewLifecycleService(
 		db:              db,
 		settingsService: settingsService,
 		eventService:    eventService,
-		hooks:           lifecycle.New(settingsService, dockerService, imageService),
+		hooks:           lifecycle.New(dockerService, imageService),
 	}
 }
 
@@ -983,6 +1043,12 @@ func ParseExtraMountsText(raw *string) ([]lifecycletype.ExtraMount, error) {
 }
 
 func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID string, servicesToUpdate []string, user usertypes.Actor, discoverTags bool) error {
+	unlock, err := s.lockProject(ctx, "update project services", projectID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	proj, err := s.getMutableProject(ctx, projectID)
 	if err != nil {
 		return err
@@ -1048,25 +1114,7 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 			}
 		},
 		Recover: func(ctx context.Context) {
-			services, servicesErr := s.projectServices(ctx, projectID)
-			if servicesErr != nil {
-				slog.WarnContext(ctx, "failed to inspect project services after deploy failure", "projectId", projectID, "error", servicesErr)
-			} else {
-				serviceCount, runningCount := listing.ServiceCounts(services)
-				updateErr := s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", projectID).Updates(map[string]any{
-					"status":        ProjectStatus(listing.ProjectStatus(services)),
-					"service_count": serviceCount,
-					"running_count": runningCount,
-					"updated_at":    time.Now(),
-				}).Error
-				if updateErr == nil {
-					return
-				}
-				slog.WarnContext(ctx, "failed to restore project status after deploy failure", "projectId", projectID, "error", updateErr)
-			}
-			if updateErr := s.updateProjectStatus(ctx, projectID, ProjectStatusStopped); updateErr != nil {
-				slog.WarnContext(ctx, "failed to set stopped status after deploy failure", "projectId", projectID, "error", updateErr)
-			}
+			s.restoreRuntimeProjectStatus(ctx, projectID)
 		},
 	}); updateServicesErr != nil {
 		return updateServicesErr
@@ -1159,6 +1207,15 @@ func (s *ProjectService) UnarchiveProject(ctx context.Context, projectID string,
 }
 
 func (s *ProjectService) DeployProject(ctx context.Context, projectID string, user usertypes.Actor, options *projecttypes.DeployOptions) error {
+	unlock, err := s.lockProject(ctx, "deploy project", projectID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return s.deployProject(ctx, projectID, user, options)
+}
+
+func (s *ProjectService) deployProject(ctx context.Context, projectID string, user usertypes.Actor, options *projecttypes.DeployOptions) error {
 	projectFromDb, err := s.getMutableProject(ctx, projectID)
 	switch {
 	case errors.Is(err, common.ErrProjectArchived):
@@ -1215,25 +1272,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 			}, resolveRegistryCredentialsErr
 		},
 		Recover: func(ctx context.Context) {
-			services, servicesErr := s.projectServices(ctx, projectID)
-			if servicesErr != nil {
-				slog.WarnContext(ctx, "failed to inspect project services after deploy failure", "projectId", projectID, "error", servicesErr)
-			} else {
-				serviceCount, runningCount := listing.ServiceCounts(services)
-				updateErr := s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", projectID).Updates(map[string]any{
-					"status":        ProjectStatus(listing.ProjectStatus(services)),
-					"service_count": serviceCount,
-					"running_count": runningCount,
-					"updated_at":    time.Now(),
-				}).Error
-				if updateErr == nil {
-					return
-				}
-				slog.WarnContext(ctx, "failed to restore project status after deploy failure", "projectId", projectID, "error", updateErr)
-			}
-			if updateErr := s.updateProjectStatus(ctx, projectID, ProjectStatusStopped); updateErr != nil {
-				slog.WarnContext(ctx, "failed to set stopped status after deploy failure", "projectId", projectID, "error", updateErr)
-			}
+			s.restoreRuntimeProjectStatus(ctx, projectID)
 		},
 	})
 	if err != nil {
@@ -1254,14 +1293,24 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 }
 
 func (s *ProjectService) DownProject(ctx context.Context, projectID string, user usertypes.Actor) error {
+	unlock, err := s.lockProject(ctx, "down project", projectID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	projectFromDb, err := s.getMutableProject(ctx, projectID)
 	if err != nil {
 		return err
 	}
+	return s.downProject(ctx, projectFromDb, user)
+}
 
+// downProject brings the project down and restores its previous status on failure.
+func (s *ProjectService) downProject(ctx context.Context, projectFromDb *Project, user usertypes.Actor) error {
+	projectID := projectFromDb.ID
 	proj, _, lerr := s.loadComposeProjectForProject(ctx, projectFromDb, nil)
 	if lerr != nil {
-		_ = s.updateProjectStatus(ctx, projectID, ProjectStatusRunning)
 		return fmt.Errorf("failed to load compose project: %w", lerr)
 	}
 
@@ -1272,7 +1321,7 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 	defer s.eventService.BeginComposeSuppressionWindow(proj.Name)()
 
 	if composeDownErr := projects.ComposeDown(ctx, proj, false); composeDownErr != nil {
-		_ = s.updateProjectStatus(ctx, projectID, ProjectStatusRunning)
+		_ = s.updateProjectStatus(ctx, projectID, projectFromDb.Status)
 		return fmt.Errorf("failed to bring down project: %w", composeDownErr)
 	}
 
@@ -1478,6 +1527,12 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		"userId", user.ID,
 		"username", user.Username)
 
+	unlock, err := s.lockProject(ctx, "destroy project", projectID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -1487,18 +1542,25 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		"projectName", proj.Name,
 		"projectPath", proj.Path)
 
-	if downProjectErr := s.DownProject(ctx, projectID, usertypes.SystemUser); downProjectErr != nil {
-		slog.WarnContext(ctx, "failed to bring down project", "error", downProjectErr)
+	// Teardown runs down, volumes, files, then the DB row, stopping at the first real failure.
+	// Missing Docker resources and a missing compose file leave nothing to tear down.
+	missing := func(err error) bool {
+		return errdefs.IsNotFound(err) || errors.Is(err, common.ErrProjectComposeFileNotFound)
+	}
+	if downErr := s.downProject(ctx, proj, usertypes.SystemUser); downErr != nil && !missing(downErr) {
+		return fmt.Errorf("failed to bring down project: %w", downErr)
 	}
 
 	if removeVolumes {
-		if compProj, _, lerr := s.loadComposeProjectForProject(ctx, proj, nil); lerr == nil {
+		compProj, _, lerr := s.loadComposeProjectForProject(ctx, proj, nil)
+		switch {
+		case lerr == nil:
 			defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
-			if derr := projects.ComposeDown(ctx, compProj, true); derr != nil {
-				slog.WarnContext(ctx, "failed to remove volumes", "error", derr)
+			if derr := projects.ComposeDown(ctx, compProj, true); derr != nil && !missing(derr) {
+				return fmt.Errorf("failed to remove project volumes: %w", derr)
 			}
-		} else {
-			slog.WarnContext(ctx, "failed to load compose project for volume removal", "error", lerr)
+		case !missing(lerr):
+			return fmt.Errorf("failed to load compose project for volume removal: %w", lerr)
 		}
 	}
 
@@ -1546,6 +1608,12 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 }
 
 func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, user usertypes.Actor, options *projecttypes.DeployOptions) error {
+	unlock, err := s.lockProject(ctx, "redeploy project", projectID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	proj, err := s.getMutableProject(ctx, projectID)
 	if err != nil {
 		return err
@@ -1578,7 +1646,7 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		slog.WarnContext(ctx, "failed to pull project images", "error", pullProjectImagesErr)
 	}
 
-	return s.DeployProject(ctx, projectID, user, options)
+	return s.deployProject(ctx, projectID, user, options)
 }
 
 func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string, progressWriter io.Writer, user usertypes.Actor, credentials []containerregistry.Credential) error {
@@ -1595,7 +1663,12 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 	defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
 
 	for _, imageRef := range projects.PullableImageRefs(compProj) {
-		if pullErr := s.deployment.Pull(ctx, imageRef, progressWriter, user, credentials); pullErr != nil {
+		if pullErr := s.imageService.Pull(ctx, image.PullRequest{
+			Ref:         imageRef,
+			Progress:    progressWriter,
+			User:        user,
+			Credentials: credentials,
+		}); pullErr != nil {
 			return pullErr
 		}
 	}
@@ -1619,6 +1692,12 @@ func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID str
 }
 
 func (s *ProjectService) RestartProject(ctx context.Context, projectID string, services []string, user usertypes.Actor) error {
+	unlock, err := s.lockProject(ctx, "restart project", projectID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	proj, err := s.getMutableProject(ctx, projectID)
 	if err != nil {
 		return err
@@ -1627,20 +1706,19 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 		return resolveProjectComposeFileErr
 	}
 
-	if updateProjectStatusErr := s.updateProjectStatus(ctx, projectID, ProjectStatusRestarting); updateProjectStatusErr != nil {
-		return fmt.Errorf("failed to update project status to restarting: %w", updateProjectStatusErr)
-	}
-
 	compProj, _, lerr := s.loadComposeProjectForProject(ctx, proj, nil)
 	if lerr != nil {
-		_ = s.updateProjectStatus(ctx, projectID, ProjectStatusRunning)
 		return fmt.Errorf("failed to load compose project: %w", lerr)
+	}
+
+	if updateProjectStatusErr := s.updateProjectStatus(ctx, projectID, ProjectStatusRestarting); updateProjectStatusErr != nil {
+		return fmt.Errorf("failed to update project status to restarting: %w", updateProjectStatusErr)
 	}
 
 	defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
 
 	if composeRestartErr := projects.ComposeRestart(ctx, compProj, services); composeRestartErr != nil {
-		_ = s.updateProjectStatus(ctx, projectID, ProjectStatusRunning)
+		_ = s.updateProjectStatus(ctx, projectID, proj.Status)
 		return fmt.Errorf("failed to restart project: %w", composeRestartErr)
 	}
 
@@ -1674,6 +1752,20 @@ func (s *ProjectService) updateProjectStatusAndCounts(ctx context.Context, proje
 		return fmt.Errorf("failed to update project status and counts: %w", updateStatusErr)
 	}
 	return nil
+}
+
+// restoreRuntimeProjectStatus re-derives status from the running services after a failed deploy, falling back to Stopped.
+func (s *ProjectService) restoreRuntimeProjectStatus(ctx context.Context, projectID string) {
+	services, err := s.projectServices(ctx, projectID)
+	if err == nil {
+		if err = s.updateProjectStatusAndCounts(ctx, projectID, ProjectStatus(listing.ProjectStatus(services))); err == nil {
+			return
+		}
+	}
+	slog.WarnContext(ctx, "failed to restore project status after deploy failure", "projectId", projectID, "error", err)
+	if updateErr := s.updateProjectStatus(ctx, projectID, ProjectStatusStopped); updateErr != nil {
+		slog.WarnContext(ctx, "failed to set stopped status after deploy failure", "projectId", projectID, "error", updateErr)
+	}
 }
 
 func (s *ProjectService) updateProjectStatus(ctx context.Context, id string, status ProjectStatus) error {
@@ -2734,6 +2826,12 @@ func (s *ProjectService) reconcileComposeTagsForProject(ctx context.Context, pro
 }
 
 func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, name, composeContent, envContent, overrideContent *string, user usertypes.Actor) (*Project, error) {
+	unlock, err := s.lockProject(ctx, "update project", projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
 	recoverErr := s.updates.RecoverProject(ctx, projectID)
 	proj, err := s.getMutableProject(ctx, projectID)
 	if err != nil {
@@ -2945,6 +3043,12 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(
 	gitOverrideFileName string,
 	user usertypes.Actor,
 ) (*Project, bool, error) {
+	unlock, err := s.lockProject(ctx, "apply git sync project files", projectID)
+	if err != nil {
+		return nil, false, err
+	}
+	defer unlock()
+
 	proj, err := s.getMutableProject(ctx, projectID)
 	if err != nil {
 		return nil, false, err
@@ -3202,6 +3306,12 @@ func (s *ProjectService) UpdateProjectWorkspace(
 	if err := workspacepkg.ValidateUpdateManifest(manifest.FileTreeRevision, len(manifest.FileChanges), 500); err != nil {
 		return nil, common.Classify(common.ErrProjectWorkspaceBadRequest, err)
 	}
+	unlock, err := s.lockProject(ctx, "update project workspace", projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+
 	proj, err := s.getMutableProject(ctx, projectID)
 	if err != nil {
 		return nil, err

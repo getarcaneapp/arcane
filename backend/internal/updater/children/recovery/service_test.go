@@ -3,11 +3,13 @@ package recovery
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/scheduler"
 	arcaneupdater "github.com/getarcaneapp/arcane/types/v2/updater"
 	"github.com/moby/moby/api/types/container"
@@ -17,8 +19,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/updater"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 )
+
+// unresolvedDigests fails every registry digest lookup.
+type unresolvedDigests struct{}
+
+func (unresolvedDigests) RemoteDigest(context.Context, string, []containerregistry.Credential) (string, error) {
+	return "", errors.New("registry digest unavailable")
+}
 
 var neverDeferred = func(updater.ImageUpdateRecord, container.Summary) bool { return false }
 
@@ -28,8 +38,8 @@ func newTestService(t *testing.T, server *httptest.Server, pending func(context.
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dockerClient.Close() })
 	return NewService(
-		func(context.Context) (*client.Client, error) { return dockerClient, nil },
-		func() updater.RegistryDigestResolver { return nil },
+		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient),
+		unresolvedDigests{},
 		pending,
 		func(context.Context) string { return "" },
 		func(ctx context.Context) (context.Context, func(), error) { return ctx, func() {}, nil },

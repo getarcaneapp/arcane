@@ -4,13 +4,21 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
 )
 
-// RegisterRoutes registers the health check routes.
-func RegisterRoutes(api huma.API, actors *francis.Runtime) {
-	handler := &healthHandler{actors: actors}
+// Module owns the liveness and readiness routes.
+type Module struct {
+	service *Service
+}
+
+// New builds the health module that registers the liveness and readiness routes.
+func New(service *Service) *Module {
+	return &Module{service: service}
+}
+
+// RegisterRoutes registers the liveness and readiness routes; readiness is hidden from the OpenAPI spec.
+func (m *Module) RegisterRoutes(api huma.API) {
+	handler := &healthHandler{service: m.service}
 
 	huma.Register(api, huma.Operation{
 		OperationID: "health-check",
@@ -31,4 +39,15 @@ func RegisterRoutes(api huma.API, actors *francis.Runtime) {
 		Tags:        []string{"Health"},
 		Security:    []map[string][]string{},
 	}, health[headHealthOutput](handler))
+
+	huma.Register(api, huma.Operation{
+		OperationID: "health-ready",
+		Method:      http.MethodGet,
+		Path:        "/health/ready",
+		Summary:     "Readiness probe",
+		Description: "Report whether the database and Docker daemon are reachable",
+		Tags:        []string{"Health"},
+		Security:    []map[string][]string{},
+		Hidden:      true,
+	}, handler.ready)
 }

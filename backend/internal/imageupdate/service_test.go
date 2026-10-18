@@ -781,7 +781,7 @@ func TestImageUpdateService_CheckImageUpdate_SkipsDigestPinnedReference(t *testi
 	pinnedDigest := digest.FromString("pinned-newt").String()
 	imageRef := "ghcr.io/fosrl/newt@" + pinnedDigest
 	eventService := event.NewEventService(db, nil, nil)
-	svc := NewImageUpdateService(db, nil, nil, nil, eventService, notification.NewNotificationService(db, nil, nil, nil, nil), nil)
+	svc := NewImageUpdateService(db, nil, nil, newImageUpdateNotificationDockerService(t, nil), eventService, notification.NewNotificationService(db, nil, nil, nil, nil), nil)
 
 	result, err := svc.CheckImageUpdate(t.Context(), imageRef)
 	require.NoError(t, err)
@@ -797,7 +797,7 @@ func TestImageUpdateService_CheckImages_SkipsDigestPinnedReference(t *testing.T)
 	db := setupImageUpdateTestDB(t)
 	pinnedDigest := digest.FromString("batch-pinned-newt").String()
 	imageRef := "ghcr.io/fosrl/newt@" + pinnedDigest
-	svc := NewImageUpdateService(db, nil, nil, nil, nil, notification.NewNotificationService(db, nil, nil, nil, nil), nil)
+	svc := NewImageUpdateService(db, nil, nil, newImageUpdateNotificationDockerService(t, nil), nil, notification.NewNotificationService(db, nil, nil, nil, nil), nil)
 
 	require.Equal(t, [][]string{{imageRef}}, svc.groupImageRefs([]string{imageRef}))
 
@@ -828,7 +828,7 @@ func TestImageUpdateService_CheckImages_SkippedDigestPinnedReferenceClearsStaleE
 		LastError:      new("failed to get remote digest"),
 		CheckTime:      time.Now().Add(-time.Hour),
 	}).Error)
-	svc := NewImageUpdateService(db, nil, nil, nil, nil, notification.NewNotificationService(db, nil, nil, nil, nil), nil)
+	svc := NewImageUpdateService(db, nil, nil, newImageUpdateNotificationDockerService(t, nil), nil, notification.NewNotificationService(db, nil, nil, nil, nil), nil)
 
 	results, err := checkImages(t, t.Context(), svc, imageRef)
 	require.NoError(t, err)
@@ -1126,7 +1126,7 @@ func TestImageUpdateService_GetAllImageRefsUsesDockerAPITimeout(t *testing.T) {
 		db,
 		settingsService,
 		nil,
-		&docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)},
+		docker.NewDockerClientService(t.Context(), nil, nil, settingsService).WithClient(newImageUpdateTestDockerClient(t, server)),
 		nil,
 		notification.NewNotificationService(db, nil, nil, nil, nil),
 		nil,
@@ -1152,7 +1152,7 @@ func TestImageUpdateService_InspectLocalImageSnapshotUsesDockerAPITimeout(t *tes
 		db,
 		settingsService,
 		nil,
-		&docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)},
+		docker.NewDockerClientService(t.Context(), nil, nil, settingsService).WithClient(newImageUpdateTestDockerClient(t, server)),
 		nil,
 		notification.NewNotificationService(db, nil, nil, nil, nil),
 		nil,
@@ -1962,10 +1962,14 @@ func TestImageUpdateService_SendBatchNotifications_UnresolvedEligibilityLeavesUn
 	calls := newImageUpdateGenericWebhookProvider(t, db)
 
 	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
-	svc := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(server.Close)
+	svc := NewImageUpdateService(db, nil, nil, &docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)}, nil, notif, nil)
 	require.NoError(t, db.Create(&ImageUpdateRecord{ID: "sha256:img", Repository: "test/repo", Tag: "latest", HasUpdate: true}).Error)
 
-	require.ErrorContains(t, svc.SendBatchUpdateNotifications(t.Context()), "resolve update-check eligibility: docker service unavailable")
+	require.ErrorContains(t, svc.SendBatchUpdateNotifications(t.Context()), "list containers for update-check eligibility")
 
 	require.Zero(t, calls.Load(), "nothing is sent when eligibility cannot be resolved")
 	var reloaded ImageUpdateRecord

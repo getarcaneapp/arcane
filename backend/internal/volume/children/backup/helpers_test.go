@@ -165,7 +165,7 @@ func TestBackupMountWarningFromArcaneMounts(t *testing.T) {
 	}
 }
 
-func setupVolumeBackupLifecycleTest(t *testing.T, handler http.Handler) (*Service, *client.Client) {
+func setupVolumeBackupLifecycleTest(t *testing.T, handler http.Handler) *Service {
 	t.Helper()
 
 	server := httptest.NewServer(handler)
@@ -180,8 +180,12 @@ func setupVolumeBackupLifecycleTest(t *testing.T, handler http.Handler) (*Servic
 	db := &database.DB{DB: gormDB}
 	dockerService := docker.NewDockerClientService(t.Context(), db, &config.Config{}, nil).WithClient(dockerClient)
 	eventService := event.NewEventService(db, &config.Config{}, nil)
-	containerService := containerdomain.NewContainerService(eventService, dockerService, nil, nil, nil)
-	return NewService(Dependencies{StopContainer: containerService.StopContainer, StartContainer: containerService.StartContainer}), dockerClient
+	containerService := containerdomain.NewContainerService(eventService, dockerService, nil, nil, nil, nil)
+	return NewService(Dependencies{
+		Docker:         dockerService,
+		StopContainer:  containerService.StopContainer,
+		StartContainer: containerService.StartContainer,
+	})
 }
 
 func TestVolumeBackupContainerLifecycleStopsAndRestartsOnlyRunningContainersUsingVolume(t *testing.T) {
@@ -211,14 +215,14 @@ func TestVolumeBackupContainerLifecycleStopsAndRestartsOnlyRunningContainersUsin
 		}
 	})
 
-	service, dockerClient := setupVolumeBackupLifecycleTest(t, serverHandler)
+	service := setupVolumeBackupLifecycleTest(t, serverHandler)
 	actor := user.Actor{ID: "user-1", Username: "tester"}
-	stopped, err := service.stopRunningContainersForBackup(t.Context(), dockerClient, "app-data", actor, false)
+	stopped, err := service.stopRunningContainersForBackup(t.Context(), "app-data", actor, false)
 	require.NoError(t, err)
 	require.Len(t, stopped, 1)
 	require.Equal(t, "uses-volume", stopped[0].ID)
 
-	remaining, err := service.startContainersAfterBackup(t.Context(), dockerClient, stopped, actor)
+	remaining, err := service.startContainersAfterBackup(t.Context(), stopped, actor)
 	require.NoError(t, err)
 	require.Empty(t, remaining)
 	require.Equal(t, []string{"stop:uses-volume", "start:uses-volume"}, operations)
@@ -255,9 +259,9 @@ func TestVolumeBackupContainerLifecycleRollsBackStoppedContainersOnStopFailure(t
 		}
 	})
 
-	service, dockerClient := setupVolumeBackupLifecycleTest(t, serverHandler)
+	service := setupVolumeBackupLifecycleTest(t, serverHandler)
 	actor := user.Actor{ID: "user-1", Username: "tester"}
-	stillStopped, err := service.stopRunningContainersForBackup(t.Context(), dockerClient, "app-data", actor, false)
+	stillStopped, err := service.stopRunningContainersForBackup(t.Context(), "app-data", actor, false)
 	require.ErrorContains(t, err, "failed to stop container second")
 	require.Empty(t, stillStopped)
 	require.Equal(t, []string{"stop:first", "stop:second", "start:first"}, operations)
@@ -315,14 +319,14 @@ func TestVolumeBackupContainerLifecycleWaitsForRunningComposeReplacement(t *test
 		}
 	})
 
-	service, dockerClient := setupVolumeBackupLifecycleTest(t, serverHandler)
+	service := setupVolumeBackupLifecycleTest(t, serverHandler)
 	actor := user.Actor{ID: "user-1", Username: "tester"}
-	stopped, err := service.stopRunningContainersForBackup(t.Context(), dockerClient, "app-data", actor, false)
+	stopped, err := service.stopRunningContainersForBackup(t.Context(), "app-data", actor, false)
 	require.NoError(t, err)
 	require.Len(t, stopped, 1)
 	require.Equal(t, "old-id", stopped[0].ID)
 
-	remaining, err := service.startContainersAfterBackup(t.Context(), dockerClient, stopped, actor)
+	remaining, err := service.startContainersAfterBackup(t.Context(), stopped, actor)
 	require.NoError(t, err)
 	require.Empty(t, remaining)
 	require.Equal(t, []string{"stop:old-id"}, operations)

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -439,6 +440,7 @@ func TestDaemonEventForwardingPreservesMetadata(t *testing.T) {
 	require.True(t, ok)
 	svc.RecordDockerEvent(t.Context(), message)
 	svc.RecordDockerEvent(t.Context(), message)
+	require.NoError(t, svc.Stop(t.Context()))
 	select {
 	case payload := <-requests:
 		require.Equal(t, req.Metadata, payload.Metadata)
@@ -707,7 +709,7 @@ func TestMapDaemonEvent(t *testing.T) {
 	}
 }
 
-func TestDaemonEventsPersistEveryOccurrenceImmediately(t *testing.T) {
+func TestDaemonEventsPersistEveryOccurrence(t *testing.T) {
 	db := setupEventServiceTestDB(t)
 	svc := NewEventService(db, nil, nil)
 	die := events.Message{Type: events.ContainerEventType, Action: events.ActionDie, Actor: events.Actor{ID: "web", Attributes: map[string]string{"exitCode": "0"}}}
@@ -716,8 +718,9 @@ func TestDaemonEventsPersistEveryOccurrenceImmediately(t *testing.T) {
 	for index, msg := range []events.Message{die, stop, die, stop} {
 		msg.TimeNano = int64(index + 1)
 		svc.RecordDockerEvent(t.Context(), msg)
-		requireDaemonCount(t, db, int64(index+1))
 	}
+	require.NoError(t, svc.Stop(t.Context()))
+	requireDaemonCount(t, db, 4)
 	var rows []Event
 	require.NoError(t, db.Find(&rows).Error)
 	for _, row := range rows {
@@ -746,6 +749,7 @@ func TestDaemonSuppressionAndFailureAllowLaterObservations(t *testing.T) {
 				svc.MarkDockerExpectation("container", "web", "")
 			}
 			svc.RecordDockerEvent(t.Context(), msg)
+			require.NoError(t, svc.Stop(t.Context()))
 			requireDaemonCount(t, db, 0)
 			if failure {
 				require.NoError(t, db.Callback().Create().Remove("daemon_failure"))
@@ -798,9 +802,13 @@ func TestDockerEventSubscriptionsReadyAndStop(t *testing.T) {
 				done := make(chan error, 1)
 				go func() { done <- run(ctx) }()
 				synctest.Wait()
+				time.Sleep(daemonEventFlushInterval)
+				synctest.Wait()
 				requireDaemonCount(t, db, 4*occurrences)
 				require.Equal(t, int64(4*occurrences), published.Load())
 				publishBurst(occurrences)
+				synctest.Wait()
+				time.Sleep(daemonEventFlushInterval)
 				synctest.Wait()
 				requireDaemonCount(t, db, 8*occurrences)
 				require.Equal(t, int64(8*occurrences), published.Load())
@@ -811,11 +819,55 @@ func TestDockerEventSubscriptionsReadyAndStop(t *testing.T) {
 				}
 				synctest.Wait()
 				require.NoError(t, <-done)
+				require.NoError(t, svc.Stop(t.Context()))
 				cleanup()
 				cleanup()
 			})
 		})
 	}
+}
+
+func TestDaemonEventWriterBatchesAndFlushesOnStop(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		db := setupEventServiceTestDB(t)
+		sqlDB, err := db.DB.DB()
+		require.NoError(t, err)
+		defer func() { assert.NoError(t, sqlDB.Close()) }()
+		sqlDB.SetMaxOpenConns(1)
+		svc := NewEventService(db, nil, nil)
+		defer func() { assert.NoError(t, svc.Stop(t.Context())) }()
+		var published atomic.Int64
+		stopChanges := svc.changes.Subscribe(func(struct{}) { published.Add(1) })
+		defer stopChanges()
+		record := func(timeNano int64) {
+			svc.RecordDockerEvent(t.Context(), events.Message{Type: events.ContainerEventType, Action: events.ActionStart, TimeNano: timeNano, Actor: events.Actor{ID: "web"}})
+		}
+
+		const occurrences = daemonEventBatchSize*3 + 5
+		var wg sync.WaitGroup
+		for occurrence := range int64(occurrences) {
+			for range 2 {
+				wg.Go(func() { record(occurrence + 1) })
+			}
+		}
+		wg.Wait()
+		synctest.Wait()
+		time.Sleep(daemonEventFlushInterval)
+		synctest.Wait()
+		requireDaemonCount(t, db, occurrences)
+		require.Equal(t, int64(occurrences), published.Load())
+
+		// Fewer than a batch stays queued until the flush timer, which Stop preempts.
+		for occurrence := range int64(5) {
+			record(occurrences + occurrence + 1)
+		}
+		require.NoError(t, svc.Stop(t.Context()))
+		requireDaemonCount(t, db, occurrences+5)
+
+		record(occurrences + 6)
+		requireDaemonCount(t, db, occurrences+6)
+		require.Equal(t, int64(occurrences+6), published.Load())
+	})
 }
 
 func requireDaemonCount(t *testing.T, db *database.DB, want int64) {

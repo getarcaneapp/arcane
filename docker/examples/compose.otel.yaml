@@ -1,6 +1,6 @@
 services:
   arcane:
-    image: ghcr.io/getarcaneapp/manager:latest
+    image: getarcaneapp/manager:latest
     container_name: arcane
     ports:
       - '3552:3552'
@@ -20,6 +20,7 @@ services:
     depends_on:
       - otel-collector
     restart: unless-stopped
+    stop_grace_period: 15s
 
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest

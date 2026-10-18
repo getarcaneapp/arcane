@@ -42,15 +42,14 @@ func New(
 	uploadService *upload.UploadService,
 ) *Module {
 	return &Module{
-		service:     service,
-		docker:      dockerService,
-		imageUpdate: imageUpdate,
-		settings:    settingsService,
-		build:       buildService,
-		activity:    activityService,
-		upload:      uploadService,
-		// The attestation reader uses the image service's Docker client and registry credentials.
-		attestationsHandler: attestations.NewHandler(attestations.NewService(service.dockerService.GetClient, service.registryService.GetRegistryAuthForHost)),
+		service:             service,
+		docker:              dockerService,
+		imageUpdate:         imageUpdate,
+		settings:            settingsService,
+		build:               buildService,
+		activity:            activityService,
+		upload:              uploadService,
+		attestationsHandler: attestations.NewHandler(attestations.NewService(service.dockerService, service.registryService.GetRegistryAuthForHost)),
 	}
 }
 

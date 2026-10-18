@@ -26,6 +26,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
@@ -38,7 +39,7 @@ import (
 // Service runs manual and scheduled prunes, serializing them per environment.
 type Service struct {
 	location           *time.Location
-	dockerClient       func(ctx context.Context) (*client.Client, error)
+	dockerService      *docker.DockerClientService
 	activityService    *activity.ActivityService
 	imageUpdateService *imageupdate.ImageUpdateService
 	volumeService      *volume.VolumeService
@@ -49,7 +50,7 @@ type Service struct {
 
 func NewService(
 	location *time.Location,
-	dockerClient func(ctx context.Context) (*client.Client, error),
+	dockerService *docker.DockerClientService,
 	activityService *activity.ActivityService,
 	imageUpdateService *imageupdate.ImageUpdateService,
 	volumeService *volume.VolumeService,
@@ -57,7 +58,7 @@ func NewService(
 ) *Service {
 	return &Service{
 		location:           location,
-		dockerClient:       dockerClient,
+		dockerService:      dockerService,
 		activityService:    activityService,
 		imageUpdateService: imageUpdateService,
 		volumeService:      volumeService,
@@ -340,11 +341,6 @@ func (s *Service) completeSystemPruneActivity(ctx context.Context, activityID st
 }
 
 func (s *Service) pruneContainers(ctx context.Context, options system.PruneContainersOptions) (system.PruneAllResult, error) {
-	dockerClient, err := s.dockerClient(ctx)
-	if err != nil {
-		return system.PruneAllResult{}, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
 	filterArgs := make(client.Filters)
 	if options.Mode == system.PruneContainerModeOlderThan {
 		if strings.TrimSpace(options.Until) == "" {
@@ -353,7 +349,11 @@ func (s *Service) pruneContainers(ctx context.Context, options system.PruneConta
 		filterArgs = filterArgs.Add("until", options.Until)
 	}
 
-	report, err := dockerClient.ContainerPrune(ctx, client.ContainerPruneOptions{Filters: filterArgs})
+	cli, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return system.PruneAllResult{}, fmt.Errorf("failed to prune containers: %w", err)
+	}
+	report, err := cli.ContainerPrune(ctx, client.ContainerPruneOptions{Filters: filterArgs})
 	if err != nil {
 		return system.PruneAllResult{}, fmt.Errorf("failed to prune containers: %w", err)
 	}
@@ -366,11 +366,6 @@ func (s *Service) pruneContainers(ctx context.Context, options system.PruneConta
 }
 
 func (s *Service) pruneImages(ctx context.Context, options system.PruneImagesOptions) (system.PruneAllResult, error) {
-	dockerClient, err := s.dockerClient(ctx)
-	if err != nil {
-		return system.PruneAllResult{}, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
 	filterArgs := make(client.Filters)
 	switch options.Mode {
 	case system.PruneImageModeNone:
@@ -389,7 +384,11 @@ func (s *Service) pruneImages(ctx context.Context, options system.PruneImagesOpt
 		return system.PruneAllResult{}, fmt.Errorf("unsupported image prune mode: %s", options.Mode)
 	}
 
-	report, err := dockerClient.ImagePrune(ctx, client.ImagePruneOptions{Filters: filterArgs})
+	cli, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return system.PruneAllResult{}, fmt.Errorf("failed to prune images: %w", err)
+	}
+	report, err := cli.ImagePrune(ctx, client.ImagePruneOptions{Filters: filterArgs})
 	if err != nil {
 		return system.PruneAllResult{}, fmt.Errorf("failed to prune images: %w", err)
 	}
@@ -418,17 +417,17 @@ func (s *Service) pruneImages(ctx context.Context, options system.PruneImagesOpt
 }
 
 func (s *Service) pruneBuildCache(ctx context.Context, options system.PruneBuildCacheOptions) (system.PruneAllResult, error) {
-	dockerClient, err := s.dockerClient(ctx)
-	if err != nil {
-		slog.ErrorContext(ctx, "Error connecting to Docker for build cache prune", "error", err.Error())
-		return system.PruneAllResult{}, fmt.Errorf("failed to connect to Docker for build cache prune: %w", err)
-	}
 	if options.Mode == system.PruneBuildCacheModeOlderThan && strings.TrimSpace(options.Until) == "" {
 		return system.PruneAllResult{}, errors.New("build cache prune mode olderThan requires until")
 	}
 
 	slog.DebugContext(ctx, "starting build cache pruning", "mode", options.Mode, "until", options.Until)
-	report, err := dockerClient.BuildCachePrune(ctx, client.BuildCachePruneOptions{
+	cli, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "Error pruning build cache", "error", err.Error())
+		return system.PruneAllResult{}, fmt.Errorf("failed to prune build cache: %w", err)
+	}
+	report, err := cli.BuildCachePrune(ctx, client.BuildCachePruneOptions{
 		All:     options.Mode == system.PruneBuildCacheModeAll,
 		Filters: kit.Ternary(options.Mode == system.PruneBuildCacheModeOlderThan, make(client.Filters).Add("until", options.Until), nil),
 	})
@@ -461,11 +460,6 @@ func (s *Service) pruneVolumes(ctx context.Context, options system.PruneVolumesO
 }
 
 func (s *Service) pruneNetworks(ctx context.Context, options system.PruneNetworksOptions) (system.PruneAllResult, error) {
-	dockerClient, err := s.dockerClient(ctx)
-	if err != nil {
-		return system.PruneAllResult{}, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
 	filterArgs := make(client.Filters)
 	if options.Mode == system.PruneNetworkModeOlderThan {
 		if strings.TrimSpace(options.Until) == "" {
@@ -474,7 +468,11 @@ func (s *Service) pruneNetworks(ctx context.Context, options system.PruneNetwork
 		filterArgs = filterArgs.Add("until", options.Until)
 	}
 
-	report, err := dockerClient.NetworkPrune(ctx, client.NetworkPruneOptions{Filters: filterArgs})
+	cli, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return system.PruneAllResult{}, fmt.Errorf("failed to prune networks: %w", err)
+	}
+	report, err := cli.NetworkPrune(ctx, client.NetworkPruneOptions{Filters: filterArgs})
 	if err != nil {
 		return system.PruneAllResult{}, fmt.Errorf("failed to prune networks: %w", err)
 	}
@@ -546,19 +544,17 @@ func (s *Service) PruneScheduled(ctx context.Context, environmentID string, req 
 }
 
 func (s *Service) preparePrunePlan(ctx context.Context, req system.PruneAllRequest) (prunePlan, error) {
-	dockerClient, err := s.dockerClient(ctx)
-	if err != nil {
-		return prunePlan{}, err
-	}
 	if req.Volumes != nil {
 		s.volumeService.CleanupHelperContainers(ctx)
 	}
-	usage, err := dockerClient.DiskUsage(ctx, client.DiskUsageOptions{
-		Containers: true,
-		Images:     true,
-		Volumes:    true,
-		BuildCache: req.BuildCache != nil,
-		Verbose:    true,
+	usage, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.DiskUsageResult, error) {
+		return cli.DiskUsage(ctx, client.DiskUsageOptions{
+			Containers: true,
+			Images:     true,
+			Volumes:    true,
+			BuildCache: req.BuildCache != nil,
+			Verbose:    true,
+		})
 	})
 	if err != nil {
 		return prunePlan{}, err
@@ -572,7 +568,7 @@ func (s *Service) preparePrunePlan(ctx context.Context, req system.PruneAllReque
 	if err != nil {
 		return prunePlan{}, err
 	}
-	networks, err := s.selectPruneNetworks(ctx, dockerClient, req, selectedContainers)
+	networks, err := s.selectPruneNetworks(ctx, req, selectedContainers)
 	if err != nil {
 		return prunePlan{}, err
 	}
@@ -656,7 +652,7 @@ func (s *Service) selectPruneVolumes(req system.PruneAllRequest, usage client.Di
 	return resources
 }
 
-func (s *Service) selectPruneNetworks(ctx context.Context, dockerClient *client.Client, req system.PruneAllRequest, selectedContainers map[string]bool) ([]pruneResource, error) {
+func (s *Service) selectPruneNetworks(ctx context.Context, req system.PruneAllRequest, selectedContainers map[string]bool) ([]pruneResource, error) {
 	if req.Networks == nil || req.Networks.Mode == system.PruneNetworkModeNone {
 		return nil, nil
 	}
@@ -664,7 +660,9 @@ func (s *Service) selectPruneNetworks(ctx context.Context, dockerClient *client.
 	if err != nil {
 		return nil, err
 	}
-	networks, err := dockerClient.NetworkList(ctx, client.NetworkListOptions{})
+	networks, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.NetworkListResult, error) {
+		return cli.NetworkList(ctx, client.NetworkListOptions{})
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -674,7 +672,9 @@ nextNetwork:
 		if item.Name == "bridge" || item.Name == "host" || item.Name == "none" || item.Ingress || item.Scope != "local" || (!until.IsZero() && !item.Created.Before(until)) {
 			continue
 		}
-		inspect, networkInspectWithCompatibilityErr := compat.NetworkInspectWithCompatibility(ctx, dockerClient, item.ID, client.NetworkInspectOptions{})
+		inspect, networkInspectWithCompatibilityErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.NetworkInspectResult, error) {
+			return compat.NetworkInspectWithCompatibility(ctx, cli, item.ID, client.NetworkInspectOptions{})
+		})
 		if networkInspectWithCompatibilityErr != nil {
 			return nil, networkInspectWithCompatibilityErr
 		}
@@ -778,10 +778,6 @@ func (s *Service) executePrunePlan(
 			ActivityID:               mo.EmptyableToOption(activityID).ToPointer(),
 		}, err
 	}
-	dockerClient, err := s.dockerClient(ctx)
-	if err != nil {
-		return finish(err)
-	}
 	for _, resource := range plan.Resources {
 		if resource.Kind == "build_cache" {
 			continue
@@ -799,7 +795,7 @@ func (s *Service) executePrunePlan(
 		}); progressErr != nil {
 			return finish(progressErr)
 		}
-		size, eligible, exists, eligibleErr := s.pruneResourceEligible(ctx, dockerClient, plan, resource)
+		size, eligible, exists, eligibleErr := s.pruneResourceEligible(ctx, plan, resource)
 		if eligibleErr != nil {
 			return finish(eligibleErr)
 		}
@@ -807,7 +803,7 @@ func (s *Service) executePrunePlan(
 			if !exists || !eligible {
 				return nil
 			}
-			return s.removePruneResource(ctx, dockerClient, resource)
+			return s.removePruneResource(ctx, resource)
 		}()
 		removeFailed := removeErr != nil && !errdefs.IsNotFound(removeErr)
 		if removeFailed {
@@ -856,20 +852,24 @@ func (s *Service) executePrunePlan(
 			return finish(deleteRecordsForImagesErr)
 		}
 	}
-	reclaimed, err := s.executePruneCache(ctx, dockerClient, plan, recovery)
+	reclaimed, err := s.executePruneCache(ctx, plan, recovery)
 	spaceReclaimed += reclaimed
 	buildCacheSpace += reclaimed
 	return finish(err)
 }
 
-func (s *Service) removePruneResource(ctx context.Context, dockerClient *client.Client, resource pruneResource) error {
+func (s *Service) removePruneResource(ctx context.Context, resource pruneResource) error {
 	switch resource.Kind {
 	case "container":
-		_, err := dockerClient.ContainerRemove(ctx, resource.ID, client.ContainerRemoveOptions{})
+		_, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerRemoveResult, error) {
+			return cli.ContainerRemove(ctx, resource.ID, client.ContainerRemoveOptions{})
+		})
 		return err
 	case "image":
 		for _, name := range resource.Names {
-			inspected, inspectErr := dockerClient.ImageInspect(ctx, name)
+			inspected, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ImageInspectResult, error) {
+				return cli.ImageInspect(ctx, name)
+			})
 			if errdefs.IsNotFound(inspectErr) {
 				continue
 			}
@@ -879,11 +879,15 @@ func (s *Service) removePruneResource(ctx context.Context, dockerClient *client.
 			if inspected.ID != resource.ID {
 				continue
 			}
-			if _, err := dockerClient.ImageRemove(ctx, name, client.ImageRemoveOptions{PruneChildren: false}); err != nil {
+			if _, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ImageRemoveResult, error) {
+				return cli.ImageRemove(ctx, name, client.ImageRemoveOptions{PruneChildren: false})
+			}); err != nil {
 				return err
 			}
 		}
-		_, err := dockerClient.ImageRemove(ctx, resource.ID, client.ImageRemoveOptions{PruneChildren: false})
+		_, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ImageRemoveResult, error) {
+			return cli.ImageRemove(ctx, resource.ID, client.ImageRemoveOptions{PruneChildren: false})
+		})
 		return err
 	case "volume":
 		return s.volumeService.DeleteVolume(ctx, resource.ID, false, user.SystemUser)
@@ -894,13 +898,15 @@ func (s *Service) removePruneResource(ctx context.Context, dockerClient *client.
 	}
 }
 
-func (s *Service) executePruneCache(ctx context.Context, dockerClient *client.Client, plan prunePlan, recovery bool) (uint64, error) {
+func (s *Service) executePruneCache(ctx context.Context, plan prunePlan, recovery bool) (uint64, error) {
 	request := plan.Request.BuildCache
 	if request == nil || request.Mode == system.PruneBuildCacheModeNone {
 		return 0, nil
 	}
 	if recovery {
-		usage, err := dockerClient.DiskUsage(ctx, client.DiskUsageOptions{BuildCache: true, Verbose: true})
+		usage, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.DiskUsageResult, error) {
+			return cli.DiskUsage(ctx, client.DiskUsageOptions{BuildCache: true, Verbose: true})
+		})
 		if err != nil {
 			return 0, err
 		}
@@ -927,7 +933,11 @@ func (s *Service) executePruneCache(ctx context.Context, dockerClient *client.Cl
 		if request.Mode == system.PruneBuildCacheModeOlderThan {
 			filters = filters.Add("until", request.Until)
 		}
-		report, err := dockerClient.BuildCachePrune(ctx, client.BuildCachePruneOptions{
+		cli, err := s.dockerService.GetClient(ctx)
+		if err != nil {
+			return reclaimed, err
+		}
+		report, err := cli.BuildCachePrune(ctx, client.BuildCachePruneOptions{
 			All:     request.Mode == system.PruneBuildCacheModeAll,
 			Filters: filters,
 		})
@@ -940,9 +950,11 @@ func (s *Service) executePruneCache(ctx context.Context, dockerClient *client.Cl
 }
 
 // pruneResourceEligible re-checks a planned resource against live state and returns its size from that snapshot.
-func (s *Service) pruneResourceEligible(ctx context.Context, dockerClient *client.Client, plan prunePlan, resource pruneResource) (size int64, eligible, exists bool, err error) {
+func (s *Service) pruneResourceEligible(ctx context.Context, plan prunePlan, resource pruneResource) (size int64, eligible, exists bool, err error) {
 	if resource.Kind == "network" {
-		inspected, networkInspectWithCompatibilityErr := compat.NetworkInspectWithCompatibility(ctx, dockerClient, resource.ID, client.NetworkInspectOptions{})
+		inspected, networkInspectWithCompatibilityErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.NetworkInspectResult, error) {
+			return compat.NetworkInspectWithCompatibility(ctx, cli, resource.ID, client.NetworkInspectOptions{})
+		})
 		if errdefs.IsNotFound(networkInspectWithCompatibilityErr) {
 			return resource.Size, false, false, nil
 		}
@@ -951,11 +963,13 @@ func (s *Service) pruneResourceEligible(ctx context.Context, dockerClient *clien
 		}
 		return resource.Size, len(inspected.Network.Containers) == 0 && !inspected.Network.Ingress, true, nil
 	}
-	usage, err := dockerClient.DiskUsage(ctx, client.DiskUsageOptions{
-		Containers: resource.Kind == "container",
-		Images:     resource.Kind == "image",
-		Volumes:    resource.Kind == "volume",
-		Verbose:    true,
+	usage, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.DiskUsageResult, error) {
+		return cli.DiskUsage(ctx, client.DiskUsageOptions{
+			Containers: resource.Kind == "container",
+			Images:     resource.Kind == "image",
+			Volumes:    resource.Kind == "volume",
+			Verbose:    true,
+		})
 	})
 	if err != nil {
 		return resource.Size, false, false, err

@@ -17,7 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 )
 
-func newSwarmTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.Client {
+func newSwarmTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	t.Helper()
 	cli, err := client.New(
 		client.WithHost(server.URL),
@@ -29,7 +29,7 @@ func newSwarmTestDockerClientInternal(t *testing.T, server *httptest.Server) *cl
 	return cli
 }
 
-func TestService_ScaleService_HandlesServiceModesInternal(t *testing.T) {
+func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 	ctx := t.Context()
 	replicas := uint64(5)
 	maxConcurrent := uint64(2)
@@ -122,8 +122,8 @@ func TestService_ScaleService_HandlesServiceModesInternal(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			dockerService := &docker.DockerClientService{Client: newSwarmTestDockerClientInternal(t, server)}
-			svc := NewService(dockerService.GetClient, func(context.Context) error { return nil }, nil)
+			dockerService := &docker.DockerClientService{Client: newSwarmTestDockerClient(t, server)}
+			svc := NewService(dockerService, func(context.Context) error { return nil }, nil)
 
 			resp, err := svc.ScaleService(ctx, "service-1", replicas)
 			if tt.wantErr {

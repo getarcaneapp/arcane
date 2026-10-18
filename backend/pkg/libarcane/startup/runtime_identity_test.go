@@ -14,7 +14,7 @@ import (
 
 func TestLoadRuntimeIdentityRequest(t *testing.T) {
 	t.Run("disabled when unset outside a container", func(t *testing.T) {
-		req, warning, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{
+		req, warning, err := loadRuntimeIdentityRequest(&RuntimeIdentityConfig{
 			DockerHost: "unix:///tmp/docker.sock",
 		}, false)
 		require.NoError(t, err)
@@ -24,7 +24,7 @@ func TestLoadRuntimeIdentityRequest(t *testing.T) {
 	})
 
 	t.Run("enabled with default non-root runtime when unset in container", func(t *testing.T) {
-		req, warning, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{
+		req, warning, err := loadRuntimeIdentityRequest(&RuntimeIdentityConfig{
 			DockerHost: "unix:///tmp/docker.sock",
 		}, true)
 		require.NoError(t, err)
@@ -38,7 +38,7 @@ func TestLoadRuntimeIdentityRequest(t *testing.T) {
 	})
 
 	t.Run("warning when partial config", func(t *testing.T) {
-		req, warning, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{PUID: "1001"}, true)
+		req, warning, err := loadRuntimeIdentityRequest(&RuntimeIdentityConfig{PUID: "1001"}, true)
 		require.NoError(t, err)
 		require.Contains(t, warning, "PUID and PGID must both be set")
 		require.True(t, req.Enabled)
@@ -49,7 +49,7 @@ func TestLoadRuntimeIdentityRequest(t *testing.T) {
 	})
 
 	t.Run("warning when partial config outside container", func(t *testing.T) {
-		req, warning, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{PUID: "1001"}, false)
+		req, warning, err := loadRuntimeIdentityRequest(&RuntimeIdentityConfig{PUID: "1001"}, false)
 		require.NoError(t, err)
 		require.Contains(t, warning, "PUID and PGID must both be set to enable runtime identity outside containers")
 		require.False(t, req.Enabled)
@@ -60,7 +60,7 @@ func TestLoadRuntimeIdentityRequest(t *testing.T) {
 	})
 
 	t.Run("error when invalid numeric value", func(t *testing.T) {
-		_, _, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{PUID: "abc", PGID: "1001"}, false)
+		_, _, err := loadRuntimeIdentityRequest(&RuntimeIdentityConfig{PUID: "abc", PGID: "1001"}, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid PUID")
 	})
@@ -68,13 +68,13 @@ func TestLoadRuntimeIdentityRequest(t *testing.T) {
 	t.Run("error when value exceeds uint32", func(t *testing.T) {
 		tooLarge := strconv.FormatUint(uint64(math.MaxUint32)+1, 10)
 
-		_, _, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{PUID: tooLarge, PGID: "1001"}, false)
+		_, _, err := loadRuntimeIdentityRequest(&RuntimeIdentityConfig{PUID: tooLarge, PGID: "1001"}, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid PUID")
 	})
 
 	t.Run("enabled when both set", func(t *testing.T) {
-		req, warning, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{
+		req, warning, err := loadRuntimeIdentityRequest(&RuntimeIdentityConfig{
 			PUID:       "1001",
 			PGID:       "2001",
 			DockerHost: "unix:///tmp/docker.sock",
@@ -90,15 +90,15 @@ func TestLoadRuntimeIdentityRequest(t *testing.T) {
 	})
 
 	t.Run("error when value is negative", func(t *testing.T) {
-		_, _, err := loadRuntimeIdentityRequestInternal(&RuntimeIdentityConfig{PUID: "-1", PGID: "1001"}, false)
+		_, _, err := loadRuntimeIdentityRequest(&RuntimeIdentityConfig{PUID: "-1", PGID: "1001"}, false)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid PUID")
 	})
 }
 
-func TestRunningInContainerInternal(t *testing.T) {
+func TestRunningInContainer(t *testing.T) {
 	t.Run("explicit arcane env enables container mode", func(t *testing.T) {
-		inContainer := runningInContainerInternal(
+		inContainer := runningInContainer(
 			func(key string) string {
 				return kit.Ternary(key == "ARCANE_IN_CONTAINER", "true", "")
 			},
@@ -111,7 +111,7 @@ func TestRunningInContainerInternal(t *testing.T) {
 	})
 
 	t.Run("container env enables container mode", func(t *testing.T) {
-		inContainer := runningInContainerInternal(
+		inContainer := runningInContainer(
 			func(key string) string {
 				return kit.Ternary(key == "container", "podman", "")
 			},
@@ -124,7 +124,7 @@ func TestRunningInContainerInternal(t *testing.T) {
 	})
 
 	t.Run("container marker file enables container mode", func(t *testing.T) {
-		inContainer := runningInContainerInternal(
+		inContainer := runningInContainer(
 			func(string) string { return "" },
 			func(path string) (os.FileInfo, error) {
 				return nil, kit.Ternary(path == "/run/.containerenv", nil, os.ErrNotExist)
@@ -135,7 +135,7 @@ func TestRunningInContainerInternal(t *testing.T) {
 	})
 
 	t.Run("no signal disables container mode", func(t *testing.T) {
-		inContainer := runningInContainerInternal(
+		inContainer := runningInContainer(
 			func(string) string { return "" },
 			func(string) (os.FileInfo, error) {
 				return nil, os.ErrNotExist
@@ -151,7 +151,7 @@ func TestConfigureRuntimeDockerConfigEnv(t *testing.T) {
 		cfg := &RuntimeIdentityConfig{}
 		env := map[string]string{}
 
-		configDir, err := configureRuntimeDockerConfigEnvInternal(
+		configDir, err := configureRuntimeDockerConfigEnv(
 			cfg,
 			func(key, value string) error {
 				env[key] = value
@@ -173,7 +173,7 @@ func TestConfigureRuntimeDockerConfigEnv(t *testing.T) {
 		env := map[string]string{}
 		setCalled := false
 
-		configDir, err := configureRuntimeDockerConfigEnvInternal(
+		configDir, err := configureRuntimeDockerConfigEnv(
 			cfg,
 			func(key, value string) error {
 				setCalled = true
@@ -197,7 +197,7 @@ func TestConfigureRuntimeDockerConfigEnv(t *testing.T) {
 		env := map[string]string{}
 		setCalled := false
 
-		configDir, err := configureRuntimeDockerConfigEnvInternal(
+		configDir, err := configureRuntimeDockerConfigEnv(
 			cfg,
 			func(key, value string) error {
 				setCalled = true
@@ -221,7 +221,7 @@ func TestConfigureRuntimeDockerConfigEnv(t *testing.T) {
 		env := map[string]string{}
 		setCalled := false
 
-		configDir, err := configureRuntimeDockerConfigEnvInternal(
+		configDir, err := configureRuntimeDockerConfigEnv(
 			cfg,
 			func(key, value string) error {
 				setCalled = true
@@ -244,7 +244,7 @@ func TestConfigureRuntimeDockerConfigEnv(t *testing.T) {
 		cfg := &RuntimeIdentityConfig{}
 		env := map[string]string{}
 
-		configDir, err := configureRuntimeDockerConfigEnvInternal(
+		configDir, err := configureRuntimeDockerConfigEnv(
 			cfg,
 			func(key, value string) error {
 				env[key] = value
@@ -266,7 +266,7 @@ func TestEnsureRuntimeDockerConfigCreatesCustomDirectory(t *testing.T) {
 	customDir := filepath.Join(t.TempDir(), "custom-docker-config")
 	cfg := &RuntimeIdentityConfig{DockerConfig: customDir}
 
-	require.NoError(t, ensureRuntimeDockerConfigInternal(
+	require.NoError(t, ensureRuntimeDockerConfig(
 		cfg,
 		func(string, string) error {
 			require.FailNow(t, "setenv should not be called for explicit DOCKER_CONFIG")
@@ -285,7 +285,7 @@ func TestEnsureRuntimeDockerConfigCreatesCustomDirectory(t *testing.T) {
 
 func TestRuntimeIdentitySupplementaryGroups(t *testing.T) {
 	t.Run("maps default docker socket group when docker host unset", func(t *testing.T) {
-		groups := runtimeIdentitySupplementaryGroupsInternal(
+		groups := runtimeIdentitySupplementaryGroups(
 			"",
 			func(socketPath string) mo.Option[uint32] {
 				require.Equal(t, defaultDockerSocketPath, socketPath)
@@ -297,7 +297,7 @@ func TestRuntimeIdentitySupplementaryGroups(t *testing.T) {
 	})
 
 	t.Run("maps custom unix docker host socket group", func(t *testing.T) {
-		groups := runtimeIdentitySupplementaryGroupsInternal(
+		groups := runtimeIdentitySupplementaryGroups(
 			"unix:///tmp/docker.sock",
 			func(socketPath string) mo.Option[uint32] {
 				require.Equal(t, "/tmp/docker.sock", socketPath)
@@ -311,7 +311,7 @@ func TestRuntimeIdentitySupplementaryGroups(t *testing.T) {
 	t.Run("skips non unix docker host", func(t *testing.T) {
 		called := false
 
-		groups := runtimeIdentitySupplementaryGroupsInternal(
+		groups := runtimeIdentitySupplementaryGroups(
 			"tcp://docker:2375",
 			func(string) mo.Option[uint32] {
 				called = true
@@ -324,7 +324,7 @@ func TestRuntimeIdentitySupplementaryGroups(t *testing.T) {
 	})
 
 	t.Run("skips socket group when socket lookup fails", func(t *testing.T) {
-		groups := runtimeIdentitySupplementaryGroupsInternal(
+		groups := runtimeIdentitySupplementaryGroups(
 			"unix:///tmp/missing.sock",
 			func(string) mo.Option[uint32] { return mo.None[uint32]() },
 		)
@@ -340,7 +340,7 @@ func TestParseMountpoints(t *testing.T) {
 99 92 0:46 / /builds rw,relatime - ext4 /dev/sdc1 rw
 `
 
-	parsed := parseMountpointsInternal(data)
+	parsed := parseMountpoints(data)
 	require.Contains(t, parsed, "/app/data")
 	require.Contains(t, parsed, "/app/data/projects")
 	require.Contains(t, parsed, "/builds")
@@ -348,39 +348,39 @@ func TestParseMountpoints(t *testing.T) {
 
 func TestSQLiteDatabasePath(t *testing.T) {
 	t.Run("uses default sqlite path when unset", func(t *testing.T) {
-		path, ok, err := sqliteDatabasePathInternal("")
+		path, ok, err := sqliteDatabasePath("")
 		require.NoError(t, err)
 		require.True(t, ok)
 		require.Equal(t, "data/arcane.db", path)
 	})
 
 	t.Run("preserves absolute sqlite path", func(t *testing.T) {
-		path, ok, err := sqliteDatabasePathInternal("file:/app/custom/arcane.db?_pragma=journal_mode(WAL)")
+		path, ok, err := sqliteDatabasePath("file:/app/custom/arcane.db?_pragma=journal_mode(WAL)")
 		require.NoError(t, err)
 		require.True(t, ok)
 		require.Equal(t, "/app/custom/arcane.db", path)
 	})
 
 	t.Run("returns relative sqlite path", func(t *testing.T) {
-		path, ok, err := sqliteDatabasePathInternal("file:data/arcane.db?_pragma=journal_mode(WAL)")
+		path, ok, err := sqliteDatabasePath("file:data/arcane.db?_pragma=journal_mode(WAL)")
 		require.NoError(t, err)
 		require.True(t, ok)
 		require.Equal(t, "data/arcane.db", path)
 	})
 
 	t.Run("skips non sqlite database urls", func(t *testing.T) {
-		path, ok, err := sqliteDatabasePathInternal("postgres://arcane:secret@db/arcane")
+		path, ok, err := sqliteDatabasePath("postgres://arcane:secret@db/arcane")
 		require.NoError(t, err)
 		require.False(t, ok)
 		require.Empty(t, path)
 	})
 }
 
-func TestEnsureSQLiteFilesExistInternal(t *testing.T) {
+func TestEnsureSQLiteFilesExist(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "arcane.db")
 
-	require.NoError(t, ensureSQLiteFilesExistInternal("file:"+dbPath))
+	require.NoError(t, ensureSQLiteFilesExist("file:"+dbPath))
 
 	require.FileExists(t, dbPath)
 	require.NoFileExists(t, dbPath+"-wal")
@@ -391,7 +391,7 @@ func TestEnsureSQLiteFilesExistInternalCreatesParentDir(t *testing.T) {
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "subdir", "arcane.db")
 
-	require.NoError(t, ensureSQLiteFilesExistInternal("file:"+dbPath))
+	require.NoError(t, ensureSQLiteFilesExist("file:"+dbPath))
 
 	require.FileExists(t, dbPath)
 }
@@ -411,7 +411,7 @@ func TestUnescapeMountInfoPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.expect, unescapeMountInfoPathInternal(tt.input))
+			require.Equal(t, tt.expect, unescapeMountInfoPath(tt.input))
 		})
 	}
 }
@@ -446,7 +446,7 @@ func TestChownRecursiveInternalSkipsProjects(t *testing.T) {
 	})
 
 	mountpoints := make(map[string]struct{})
-	err := chownRecursiveInternal(tempDir, 1000, 1000, mountpoints, filepath.Clean(projectsDir))
+	err := chownRecursive(tempDir, 1000, 1000, mountpoints, filepath.Clean(projectsDir))
 	require.NoError(t, err)
 
 	cleanedTempDir := filepath.Clean(tempDir)
@@ -490,7 +490,7 @@ func TestPrepareWritablePathsInternalChownsTopLevelProjectsShallowly(t *testing.
 		lchownFn = oldLchownFn
 	})
 
-	err := prepareWritablePathsWithRootsInternal(os.Getuid(), os.Getgid(), map[string]struct{}{}, filepath.Clean(projectsDir), dataDir, buildsDir)
+	err := prepareWritablePathsWithRoots(os.Getuid(), os.Getgid(), map[string]struct{}{}, filepath.Clean(projectsDir), dataDir, buildsDir)
 	require.NoError(t, err)
 
 	require.True(t, visited[filepath.Clean(projectsDir)], "top-level projects dir must be chowned")

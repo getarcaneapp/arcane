@@ -467,16 +467,16 @@ func (s *DashboardService) ObserveInventory(meter metric.Meter) error {
 
 // observeSwarm reports nodes and services only when the local engine is a swarm manager; the ping keeps non-swarm hosts cheap.
 func (s *DashboardService) observeSwarm(ctx context.Context, o metric.Observer, g *inventoryGauges) {
-	cli, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return
-	}
-	ping, err := cli.Ping(ctx, client.PingOptions{})
+	ping, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.PingResult, error) {
+		return cli.Ping(ctx, client.PingOptions{})
+	})
 	if err != nil || ping.SwarmStatus == nil || !ping.SwarmStatus.ControlAvailable {
 		return
 	}
 
-	if nodes, nodeErr := cli.NodeList(ctx, client.NodeListOptions{}); nodeErr != nil {
+	if nodes, nodeErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.NodeListResult, error) {
+		return cli.NodeList(ctx, client.NodeListOptions{})
+	}); nodeErr != nil {
 		slog.DebugContext(ctx, "Skipping swarm node metrics", "error", nodeErr)
 	} else {
 		counts := map[[2]string]int64{}
@@ -488,7 +488,9 @@ func (s *DashboardService) observeSwarm(ctx context.Context, o metric.Observer, 
 		}
 	}
 
-	services, err := cli.ServiceList(ctx, client.ServiceListOptions{Status: true})
+	services, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ServiceListResult, error) {
+		return cli.ServiceList(ctx, client.ServiceListOptions{Status: true})
+	})
 	if err != nil {
 		slog.DebugContext(ctx, "Skipping swarm service metrics", "error", err)
 		return

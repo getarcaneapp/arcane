@@ -77,7 +77,7 @@ type Dependencies struct {
 	AlreadyRunning   error
 	StopContainer    func(ctx context.Context, containerID string, user usertypes.Actor) error
 	StartContainer   func(ctx context.Context, containerID string, user usertypes.Actor) error
-	HelperImage      func(ctx context.Context, dockerClient *client.Client) (string, error)
+	HelperImage      func(ctx context.Context) (string, error)
 	AcquireHelper    func(ctx context.Context, volumeName string) (string, func(), error)
 	Exec             func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
 	BackupVolumeName string
@@ -335,11 +335,16 @@ func (s *Service) CreateSystemManagedBackup(ctx context.Context, volumeName stri
 	}
 	trigger = cmp.Or(trigger, backuptypes.VolumeBackupTriggerManual)
 	transient := &policies.VolumeBackupPolicy{
-		VolumeName: volumeName, Enabled: true, Schedule: policy.Schedule, RetentionCount: policy.RetentionCount,
-		StopContainers: policy.StopContainers, LocalEnabled: policy.LocalEnabled, S3Enabled: policy.S3Enabled,
+		ID:              policyID,
+		VolumeName:      volumeName,
+		Enabled:         true,
+		Schedule:        policy.Schedule,
+		RetentionCount:  policy.RetentionCount,
+		StopContainers:  policy.StopContainers,
+		LocalEnabled:    policy.LocalEnabled,
+		S3Enabled:       policy.S3Enabled,
 		S3DestinationID: policy.S3DestinationID,
 	}
-	transient.ID = policyID
 	plan, err := s.resolveBackupPlan(ctx, volumeName, trigger, volume.CreateBackupRequest{}, transient)
 	if err != nil {
 		return nil, err
@@ -359,12 +364,17 @@ func (s *Service) prepareBackup(ctx context.Context, volumeName, trigger, policy
 		return nil, nil, err
 	}
 	entry := &volume.Backup{
-		VolumeName: volumeName, CreatedAt: time.Now(), Status: backuptypes.VolumeBackupStatusRunning,
-		Trigger: trigger, Destination: backupDestination(plan.LocalEnabled, plan.S3Enabled), Format: volume.BackupFormatRustic,
-		S3DestinationID: plan.S3DestinationID, PolicyID: policyID,
-		Type: backuptypes.ManagementTypeForPolicy(policyID),
+		ID:              fmt.Sprintf("%s-%d-%s", volumeName, time.Now().UnixNano(), uuid.New().String()[:8]),
+		VolumeName:      volumeName,
+		CreatedAt:       time.Now(),
+		Status:          backuptypes.VolumeBackupStatusRunning,
+		Trigger:         trigger,
+		Destination:     backupDestination(plan.LocalEnabled, plan.S3Enabled),
+		Format:          volume.BackupFormatRustic,
+		S3DestinationID: plan.S3DestinationID,
+		PolicyID:        policyID,
+		Type:            backuptypes.ManagementTypeForPolicy(policyID),
 	}
-	entry.ID = fmt.Sprintf("%s-%d-%s", volumeName, time.Now().UnixNano(), uuid.New().String()[:8])
 	if createBackupErr := s.deps.Store.Create(ctx, entry); createBackupErr != nil {
 		lease.Release(ctx)
 		return nil, nil, createBackupErr
@@ -420,10 +430,10 @@ func (s *Service) executeBackup(ctx context.Context, entry *volume.Backup, user 
 	// stopped holds the containers still awaiting a restart.
 	var stopped []container.Summary
 	if plan.Policy != nil && plan.Policy.StopContainers {
-		stopped, err = s.stopRunningContainersForBackup(ctx, dockerClient, volumeName, user, false)
+		stopped, err = s.stopRunningContainersForBackup(ctx, volumeName, user, false)
 		defer func() {
 			if len(stopped) > 0 {
-				_, restartErr := s.startContainersAfterBackup(context.WithoutCancel(ctx), dockerClient, stopped, user)
+				_, restartErr := s.startContainersAfterBackup(context.WithoutCancel(ctx), stopped, user)
 				err = errors.Join(err, restartErr)
 			}
 		}()
@@ -435,7 +445,7 @@ func (s *Service) executeBackup(ctx context.Context, entry *volume.Backup, user 
 		return snapshotErr
 	}
 	if len(stopped) > 0 {
-		if stopped, err = s.startContainersAfterBackup(context.WithoutCancel(ctx), dockerClient, stopped, user); err != nil {
+		if stopped, err = s.startContainersAfterBackup(context.WithoutCancel(ctx), stopped, user); err != nil {
 			return err
 		}
 	}
@@ -741,11 +751,15 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *use
 			return nil, 0, passwordErr
 		}
 		scratchVolume := "arcane-rustic-download-" + uuid.New().String()
-		if _, volumeCreateErr := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: scratchVolume, Labels: volumehelper.Labels()}); volumeCreateErr != nil {
+		if _, volumeCreateErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
+			return dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: scratchVolume, Labels: volumehelper.Labels()})
+		}); volumeCreateErr != nil {
 			return nil, 0, fmt.Errorf("failed to create download scratch volume: %w", volumeCreateErr)
 		}
 		removeScratch := func() {
-			_, _ = dockerClient.VolumeRemove(context.WithoutCancel(ctx), scratchVolume, client.VolumeRemoveOptions{Force: true})
+			_, _ = s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.VolumeRemoveResult, error) {
+				return dockerClient.VolumeRemove(ctx, scratchVolume, client.VolumeRemoveOptions{Force: true})
+			})
 		}
 		scratchMount := mount.Mount{Type: mount.TypeVolume, Source: scratchVolume, Target: "/volume"}
 		restoreOptions := backup.RestoreOptions{DeleteExtra: true}
@@ -754,7 +768,7 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *use
 			return nil, 0, fmt.Errorf("failed to restore Rustic snapshot for download: %w", restoreErr)
 		}
 		var removeContainer func()
-		if containerID, removeContainer, err = s.createBackupTempContainerWithMount(ctx, dockerClient, scratchMount); err != nil {
+		if containerID, removeContainer, err = s.createBackupTempContainerWithMount(ctx, scratchMount); err != nil {
 			removeScratch()
 			return nil, 0, err
 		}

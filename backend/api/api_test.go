@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/health"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
@@ -342,7 +343,7 @@ func TestVariableMaterializationRoutesAreAgentOnly(t *testing.T) {
 		router.Group("/api"),
 		handlerutil.NewActivityAppContext(t.Context()),
 		&config.Config{AgentMode: true},
-		HandlerDeps{},
+		HandlerDeps{Health: health.New(&health.Service{})},
 	)
 	require.Nil(t, agentAPI.OpenAPI().Paths["/variables"])
 	materialized := agentAPI.OpenAPI().Paths["/environments/{id}/templates/variables"]

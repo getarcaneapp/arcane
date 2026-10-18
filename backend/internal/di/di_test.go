@@ -143,7 +143,7 @@ func TestOptionsValidate(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestDockerEventLifecycleInternal(t *testing.T) {
+func TestDockerEventLifecycle(t *testing.T) {
 	for _, mode := range []string{"manager", "agent", "edge"} {
 		t.Run(mode, func(t *testing.T) {
 			streamStopped := make(chan struct{})
@@ -188,7 +188,7 @@ func TestDockerEventLifecycleInternal(t *testing.T) {
 			cfg := &config.Config{DockerHost: server.URL, AgentMode: mode != "manager", EdgeAgent: mode == "edge"}
 			lifecycle := fxtest.NewLifecycle(t)
 			eventService := event.NewEventService(databaseDB, cfg, nil)
-			provideDockerClientServiceInternal(t.Context(), lifecycle, databaseDB, cfg, nil, eventService)
+			provideDockerClientService(t.Context(), lifecycle, databaseDB, cfg, nil, eventService)
 			t.Cleanup(func() {
 				ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 3*time.Second)
 				defer cancel()

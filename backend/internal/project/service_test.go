@@ -417,6 +417,93 @@ func TestProjectService_DestroyProject_PreservesFilesWhenRequested(t *testing.T)
 	assert.FileExists(t, filepath.Join(projectsDir, trashName, "project-data.txt"))
 }
 
+func TestProjectService_LockProject_SerializesSameProject(t *testing.T) {
+	svc, _, _ := setupProjectDestroyTestService(t)
+
+	unlock, err := svc.lockProject(t.Context(), "test", "project-a")
+	require.NoError(t, err)
+
+	done := make(chan error, 1)
+	go func() { done <- svc.DownProject(t.Context(), "project-a", usertypes.Actor{}) }()
+
+	select {
+	case downErr := <-done:
+		t.Fatalf("DownProject ran while another operation held the project lease: %v", downErr)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	otherCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	otherErr := svc.DownProject(otherCtx, "project-b", usertypes.Actor{})
+	require.Error(t, otherErr)
+	require.NotErrorIs(t, otherErr, context.DeadlineExceeded, "a different project must not wait on the held lease")
+
+	unlock()
+	select {
+	case downErr := <-done:
+		require.Error(t, downErr)
+		require.NotErrorIs(t, downErr, context.DeadlineExceeded)
+	case <-time.After(2 * time.Second):
+		t.Fatal("DownProject did not run after the project lease was released")
+	}
+}
+
+func TestProjectService_LockProject_ReturnsWaitErrorOnDeadline(t *testing.T) {
+	svc, _, _ := setupProjectDestroyTestService(t)
+
+	unlock, err := svc.lockProject(t.Context(), "test", "project-a")
+	require.NoError(t, err)
+	defer unlock()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	downErr := svc.DownProject(ctx, "project-a", usertypes.Actor{})
+	require.ErrorIs(t, downErr, context.DeadlineExceeded)
+	assert.Contains(t, downErr.Error(), "down project project-a: waiting for in-progress operation")
+}
+
+func TestProjectService_DownProject_RestoresPreviousStatusOnFailure(t *testing.T) {
+	ctx := t.Context()
+	svc, db, projectsDir := setupProjectDestroyTestService(t)
+	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:1")
+
+	require.NoError(t, db.Create(&Project{
+		ID:      "project-down-fails",
+		Name:    "down-fails",
+		DirName: new("down-fails"),
+		Path:    createComposeProjectDir(t, projectsDir, "down-fails"),
+		Status:  ProjectStatusStopped,
+	}).Error)
+
+	require.Error(t, svc.DownProject(ctx, "project-down-fails", usertypes.Actor{}))
+
+	var stored Project
+	require.NoError(t, db.First(&stored, "id = ?", "project-down-fails").Error)
+	assert.Equal(t, ProjectStatusStopped, stored.Status)
+}
+
+func TestProjectService_DestroyProject_KeepsRowWhenDownFails(t *testing.T) {
+	ctx := t.Context()
+	svc, db, projectsDir := setupProjectDestroyTestService(t)
+	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:1")
+
+	projectPath := createComposeProjectDir(t, projectsDir, "destroy-down-fails")
+	require.NoError(t, db.Create(&Project{
+		ID:      "project-destroy-down-fails",
+		Name:    "destroy-down-fails",
+		DirName: new("destroy-down-fails"),
+		Path:    projectPath,
+		Status:  ProjectStatusRunning,
+	}).Error)
+
+	require.Error(t, svc.DestroyProject(ctx, "project-destroy-down-fails", true, true, usertypes.Actor{}))
+
+	var stored Project
+	require.NoError(t, db.First(&stored, "id = ?", "project-destroy-down-fails").Error)
+	assert.Equal(t, ProjectStatusRunning, stored.Status)
+	assert.DirExists(t, projectPath)
+}
+
 func TestProjectService_GetProjectFromDatabaseByID(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
@@ -701,7 +788,7 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	eventService := event.NewEventService(db, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, nil, nil)
+	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -809,7 +896,7 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	eventService := event.NewEventService(db, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, nil, nil)
+	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -889,7 +976,7 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	eventService := event.NewEventService(db, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, nil, nil)
+	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -914,7 +1001,7 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 		CheckTime:      time.Now().UTC().Add(-time.Hour),
 	}).Error)
 
-	require.NoError(t, svc.deployment.Pull(ctx, imageRef, io.Discard, usertypes.SystemUser, nil))
+	require.NoError(t, svc.deployment.ImageOperations(nil, nil).Pull(ctx, imageRef, io.Discard))
 
 	// sha256:old-worker may still be in use by another container — must not be cleared (fixes #2453).
 	var oldRecord imageupdate.ImageUpdateRecord
@@ -964,7 +1051,7 @@ func TestProjectService_ComposePullSelectedServices_ReconcilesOnlyOnSuccess(t *t
 	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	eventService := event.NewEventService(db, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, nil, nil)
+	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -1080,7 +1167,7 @@ func TestProjectService_ComposePullSelectedServices_LeavesRecordsWhenPullFails(t
 
 	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, failingServer)}
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, event.NewEventService(db, nil, nil), nil, nil)
+	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, event.NewEventService(db, nil, nil), settingsService, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -1150,7 +1237,7 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFails(t *testing.T
 
 	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, failingServer)}
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, event.NewEventService(db, nil, nil), nil, nil)
+	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, event.NewEventService(db, nil, nil), settingsService, nil)
 
 	projectPath := createComposeProjectDir(t, projectsDir, "compose-update-pull-fail")
 	require.NoError(
@@ -1250,7 +1337,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreate(t *testing.T) {
 	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	eventService := event.NewEventService(db, nil, nil)
-	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, nil, nil)
+	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil)
 
 	projectPath := createComposeProjectDir(t, projectsDir, "compose-update-force")
 	require.NoError(
@@ -2153,6 +2240,85 @@ func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunn
 	assert.Equal(t, "Foo", fromDB.Name)
 	assert.Equal(t, originalPath, fromDB.Path)
 	assert.Equal(t, ProjectStatusStopped, fromDB.Status)
+}
+
+func TestProjectService_RecoverStuckProjectStatuses(t *testing.T) {
+	tests := []struct {
+		name       string
+		saved      ProjectStatus
+		containers []container.Summary
+		want       ProjectStatus
+	}{
+		{
+			name:  "deploying with running containers becomes running",
+			saved: ProjectStatusDeploying,
+			containers: []container.Summary{
+				{
+					ID:     "app-container",
+					Names:  []string{"/foo-app-1"},
+					Image:  "nginx:alpine",
+					State:  container.StateRunning,
+					Status: "Up 30 seconds",
+					Labels: map[string]string{
+						api.ProjectLabel: "foo",
+						api.ServiceLabel: "app",
+					},
+				},
+			},
+			want: ProjectStatusRunning,
+		},
+		{
+			// Compose services without a container are reported as stopped.
+			name:  "restarting without containers becomes stopped",
+			saved: ProjectStatusRestarting,
+			want:  ProjectStatusStopped,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupProjectTestDB(t)
+			ctx := t.Context()
+
+			projectsDir := t.TempDir()
+			t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+			settingsService, err := newSettingsServiceForTest(t, ctx, db)
+			require.NoError(t, err)
+			require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+			server := configureProjectRuntimeDocker(t, tt.containers)
+			svc := NewProjectService(
+				db,
+				settingsService,
+				event.NewEventService(db, nil, nil),
+				image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+				&docker.DockerClientService{Client: newTestDockerClient(t, server)},
+				testBuildBuilder{},
+				nil,
+				nil,
+				config.Load(),
+				kv.NewKVService(db),
+				testRegistryCredentials,
+			)
+
+			dirName := "foo"
+			project := &Project{
+				ID:      "proj-stuck",
+				Name:    "foo",
+				DirName: &dirName,
+				Path:    createComposeProjectDir(t, projectsDir, dirName),
+				Status:  tt.saved,
+			}
+			require.NoError(t, db.Create(project).Error)
+
+			require.NoError(t, svc.RecoverStuckProjectStatuses(ctx))
+
+			var fromDB Project
+			require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+			assert.Equal(t, tt.want, fromDB.Status)
+		})
+	}
 }
 
 func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVolumeMigration(t *testing.T) {
@@ -8670,7 +8836,7 @@ func TestUpdateProjectServiceImagesPersistsBeforeDeploymentAndRetries(t *testing
 		db,
 		settingsService,
 		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, pullDocker, nil, imageupdate.NewImageUpdateService(db, nil, nil, pullDocker, nil, nil, nil), nil, event.NewEventService(db, nil, nil), nil, nil),
+		image.NewImageService(db, pullDocker, nil, imageupdate.NewImageUpdateService(db, nil, nil, pullDocker, nil, nil, nil), nil, event.NewEventService(db, nil, nil), settingsService, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
@@ -9058,7 +9224,7 @@ func TestProjectServiceManualUpdateDiscoversTags(t *testing.T) {
 				db,
 				settingsService,
 				event.NewEventService(db, nil, nil),
-				image.NewImageService(db, pullDocker, nil, imageupdate.NewImageUpdateService(db, nil, nil, pullDocker, nil, nil, nil), nil, event.NewEventService(db, nil, nil), nil, nil),
+				image.NewImageService(db, pullDocker, nil, imageupdate.NewImageUpdateService(db, nil, nil, pullDocker, nil, nil, nil), nil, event.NewEventService(db, nil, nil), settingsService, nil),
 				testDockerService,
 				testBuildBuilder{},
 				nil,

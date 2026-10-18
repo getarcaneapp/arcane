@@ -1,6 +1,6 @@
 services:
   arcane-edge-agent:
-    image: ghcr.io/getarcaneapp/agent:latest
+    image: getarcaneapp/agent:latest
     container_name: arcane-edge-agent
     # No ports exposed - agent connects outbound to manager tunnel transport
     environment:
@@ -20,6 +20,7 @@ services:
     # This allows Arcane to detect its own container ID more reliably
     cgroup: host
     restart: unless-stopped
+    stop_grace_period: 15s
 
 volumes:
   agent-data:

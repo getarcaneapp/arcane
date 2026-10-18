@@ -28,6 +28,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.getarcane.app/kit/pkg"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
 )
 
@@ -42,8 +43,8 @@ var zstdDecoder = sync.OnceValues(func() (*zstd.Decoder, error) { return zstd.Ne
 
 // Service reads in-toto attestations attached to local images and registry references.
 type Service struct {
-	dockerClient func(ctx context.Context) (*client.Client, error)
-	registryAuth func(ctx context.Context, registryHost string) (string, error)
+	dockerService *docker.DockerClientService
+	registryAuth  func(ctx context.Context, registryHost string) (string, error)
 }
 
 type Query struct {
@@ -71,10 +72,10 @@ type attestationStatementEnvelope struct {
 }
 
 func NewService(
-	dockerClient func(ctx context.Context) (*client.Client, error),
+	dockerService *docker.DockerClientService,
 	registryAuth func(ctx context.Context, registryHost string) (string, error),
 ) *Service {
-	return &Service{dockerClient: dockerClient, registryAuth: registryAuth}
+	return &Service{dockerService: dockerService, registryAuth: registryAuth}
 }
 
 // GetImageAttestations returns in-toto attestations attached to a local image or registry reference.
@@ -198,28 +199,28 @@ func (s *Service) resolveImageAttestationReference(ctx context.Context, imageNam
 		return reference{}, errors.New("image name is required")
 	}
 
-	if dockerClient, err := s.dockerClient(ctx); err == nil {
-		if inspect, inspectErr := dockerClient.ImageInspect(ctx, imageName); inspectErr == nil {
-			imageRef := func() string {
-				for _, candidate := range slices.Concat(
-					slices.DeleteFunc(slices.Clone(inspect.RepoDigests), func(repoDigest string) bool { return !strings.Contains(repoDigest, "@sha256:") }),
-					inspect.RepoTags,
-				) {
-					if trimmed := strings.TrimSpace(candidate); trimmed != "" && !strings.Contains(trimmed, "<none>") {
-						return trimmed
-					}
+	if inspect, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		return dockerClient.ImageInspect(ctx, imageName)
+	}); inspectErr == nil {
+		imageRef := func() string {
+			for _, candidate := range slices.Concat(
+				slices.DeleteFunc(slices.Clone(inspect.RepoDigests), func(repoDigest string) bool { return !strings.Contains(repoDigest, "@sha256:") }),
+				inspect.RepoTags,
+			) {
+				if trimmed := strings.TrimSpace(candidate); trimmed != "" && !strings.Contains(trimmed, "<none>") {
+					return trimmed
 				}
-				return ""
-			}()
-			if imageRef == "" {
-				return reference{ImageRef: imageName, Empty: true}, nil
 			}
-			_, subjectDigest, _ := strings.Cut(imageRef, "@")
-			return reference{
-				ImageRef:      imageRef,
-				SubjectDigest: subjectDigest,
-			}, nil
+			return ""
+		}()
+		if imageRef == "" {
+			return reference{ImageRef: imageName, Empty: true}, nil
 		}
+		_, subjectDigest, _ := strings.Cut(imageRef, "@")
+		return reference{
+			ImageRef:      imageRef,
+			SubjectDigest: subjectDigest,
+		}, nil
 	}
 
 	if strings.HasPrefix(imageName, "sha256:") || (len(imageName) == 64 && !strings.ContainsFunc(imageName, func(r rune) bool {

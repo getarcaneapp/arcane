@@ -13,7 +13,7 @@ import (
 // SetObserver connects activity projection before accepting work.
 func (q *Coordinator) SetObserver(observer scheduler.RunObserver) { q.observer = observer }
 
-func (q *Coordinator) associateActivityInternal(run *scheduler.Run) {
+func (q *Coordinator) associateActivity(run *scheduler.Run) {
 	if q.observer != nil && run.ActivityID == "" {
 		run.ActivityID = q.observer.ActivityID(*run)
 	}
@@ -22,22 +22,22 @@ func (q *Coordinator) associateActivityInternal(run *scheduler.Run) {
 	}
 }
 
-func (q *Coordinator) observeRunInternal(ctx context.Context, run scheduler.Run) {
+func (q *Coordinator) observeRun(ctx context.Context, run scheduler.Run) {
 	if q.observer == nil {
 		return
 	}
 	q.observerMu.Lock()
 	defer q.observerMu.Unlock()
-	q.syncActivityInternal(ctx, run)
-	q.signalInternal()
+	q.syncActivity(ctx, run)
+	q.signal()
 }
 
-func (q *Coordinator) syncActivityInternal(ctx context.Context, run scheduler.Run) {
+func (q *Coordinator) syncActivity(ctx context.Context, run scheduler.Run) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	var state scheduler.CoordinatorState
 	id := kit.SHA256Hex(run.EnvironmentID + "\x00" + run.JobID)
-	if err := q.service.GetState(ctx, coordinatorTypeInternal, id, &state); err != nil {
+	if err := q.service.GetState(ctx, coordinatorType, id, &state); err != nil {
 		return
 	}
 	version, pending := state.PendingActivitySync[run.ID]
@@ -49,20 +49,20 @@ func (q *Coordinator) syncActivityInternal(ctx context.Context, run scheduler.Ru
 		err = q.observer.SyncRunActivity(ctx, current)
 	}
 	if err == nil {
-		_, err = q.service.Invoke(ctx, coordinatorTypeInternal, id, "activity-synced", scheduler.ActivitySyncCommand{RunID: run.ID, UpdatedAt: version})
+		_, err = q.service.Invoke(ctx, coordinatorType, id, "activity-synced", scheduler.ActivitySyncCommand{RunID: run.ID, UpdatedAt: version})
 	}
 	if err != nil {
 		slog.ErrorContext(ctx, "Job activity synchronization failed; will retry", "runId", run.ID, "error", err)
 	}
 }
 
-func (q *Coordinator) retryActivitySyncInternal(ctx context.Context) {
+func (q *Coordinator) retryActivitySync(ctx context.Context) {
 	if q.observer == nil {
 		return
 	}
 	cursor := ""
 	for {
-		page, err := q.service.ListStates(ctx, coordinatorTypeInternal, &actor.ListStatesOpts{IncludeData: true, After: cursor, Limit: 100})
+		page, err := q.service.ListStates(ctx, coordinatorType, &actor.ListStatesOpts{IncludeData: true, After: cursor, Limit: 100})
 		if err != nil {
 			slog.ErrorContext(ctx, "List pending job activities", "error", err)
 			return
@@ -78,7 +78,7 @@ func (q *Coordinator) retryActivitySyncInternal(ctx context.Context) {
 					return
 				}
 				q.observerMu.Lock()
-				q.syncActivityInternal(ctx, scheduler.Run{ID: runID, EnvironmentID: state.Record.EnvironmentID, JobID: state.Record.JobID})
+				q.syncActivity(ctx, scheduler.Run{ID: runID, EnvironmentID: state.Record.EnvironmentID, JobID: state.Record.JobID})
 				q.observerMu.Unlock()
 			}
 		}
@@ -89,12 +89,12 @@ func (q *Coordinator) retryActivitySyncInternal(ctx context.Context) {
 	}
 }
 
-func (q *Coordinator) hasPendingActivitySyncInternal(ctx context.Context) bool {
+func (q *Coordinator) hasPendingActivitySync(ctx context.Context) bool {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	cursor := ""
 	for {
-		page, err := q.service.ListStates(ctx, coordinatorTypeInternal, &actor.ListStatesOpts{IncludeData: true, After: cursor, Limit: 100})
+		page, err := q.service.ListStates(ctx, coordinatorType, &actor.ListStatesOpts{IncludeData: true, After: cursor, Limit: 100})
 		if err != nil {
 			return true
 		}

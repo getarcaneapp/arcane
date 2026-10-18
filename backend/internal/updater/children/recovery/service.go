@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/scheduler"
 	arcaneupdater "github.com/getarcaneapp/arcane/types/v2/updater"
 	"github.com/moby/moby/api/types/container"
@@ -17,6 +18,7 @@ import (
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/refs"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 )
@@ -27,12 +29,17 @@ var errNoFrozenPlan = errors.New("interrupted update has no frozen target plan")
 // Service freezes update targets before any pull, pins pulls to the frozen
 // digests, and confirms or resumes interrupted updates.
 type Service struct {
-	dockerClient   func(ctx context.Context) (*client.Client, error)
-	digestResolver func() updater.RegistryDigestResolver
+	dockerService  *docker.DockerClientService
+	images         remoteDigester
 	pendingUpdates func(ctx context.Context) ([]updater.ImageUpdateRecord, error)
 	activityID     func(ctx context.Context) string
 	acquireUpdate  func(ctx context.Context) (context.Context, func(), error)
 	applyPending   func(ctx context.Context, options arcaneupdater.Options) (*arcaneupdater.Result, error)
+}
+
+// remoteDigester resolves registry digests; the image service implements it.
+type remoteDigester interface {
+	RemoteDigest(ctx context.Context, imageRef string, credentials []containerregistry.Credential) (string, error)
 }
 
 type (
@@ -50,16 +57,16 @@ type frozenSingle struct {
 }
 
 func NewService(
-	dockerClient func(ctx context.Context) (*client.Client, error),
-	digestResolver func() updater.RegistryDigestResolver,
+	dockerService *docker.DockerClientService,
+	images remoteDigester,
 	pendingUpdates func(ctx context.Context) ([]updater.ImageUpdateRecord, error),
 	activityID func(ctx context.Context) string,
 	acquireUpdate func(ctx context.Context) (context.Context, func(), error),
 	applyPending func(ctx context.Context, options arcaneupdater.Options) (*arcaneupdater.Result, error),
 ) *Service {
 	return &Service{
-		dockerClient:   dockerClient,
-		digestResolver: digestResolver,
+		dockerService:  dockerService,
+		images:         images,
 		pendingUpdates: pendingUpdates,
 		activityID:     activityID,
 		acquireUpdate:  acquireUpdate,
@@ -123,18 +130,19 @@ func (s *Service) FreezePending(ctx context.Context, run scheduler.Run, excluded
 	selected := make([]updater.ImageUpdateRecord, 0, len(records))
 	var targets []arcaneupdater.FrozenUpdateTarget
 	if len(records) > 0 {
-		dockerClient, clientErr := s.dockerClient(ctx)
-		if clientErr != nil {
-			return ctx, clientErr
-		}
-		listed, listErr := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: false})
+		listed, listErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
+			return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: false})
+		})
 		if listErr != nil {
 			return ctx, listErr
 		}
 		// Resolve each candidate's configured image once, not per record.
 		candidateRefs := make(map[string]string, len(listed.Items))
 		for _, candidate := range listed.Items {
-			candidateRefs[candidate.ID] = refs.NormalizeImageUpdateRef(imageref.ConfiguredImage(ctx, dockerClient, candidate))
+			configured, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
+				return imageref.ConfiguredImage(ctx, dockerClient, candidate), nil
+			})
+			candidateRefs[candidate.ID] = refs.NormalizeImageUpdateRef(configured)
 		}
 		for _, record := range records {
 			for _, candidate := range listed.Items {
@@ -205,11 +213,7 @@ func (s *Service) freezeRecordTarget(ctx context.Context, record updater.ImageUp
 		if pinned := kit.Ternary(record.IsTagUpdate(), "", kit.FromPtr(record.LatestDigest)); pinned != "" {
 			return pinned, nil
 		}
-		resolver := s.digestResolver()
-		if resolver == nil {
-			return "", errors.New("cannot freeze update without registry digest resolver")
-		}
-		return resolver.ImageDigest(ctx, record.NewImageRef())
+		return s.images.RemoteDigest(ctx, record.NewImageRef(), nil)
 	}()
 	if err != nil {
 		return nil, record, err
@@ -247,11 +251,9 @@ func (s *Service) freezeRecordTarget(ctx context.Context, record updater.ImageUp
 
 // FreezeContainer captures the identity evidence of one container.
 func (s *Service) FreezeContainer(ctx context.Context, id string) (*arcaneupdater.FrozenUpdateTarget, error) {
-	dockerClient, err := s.dockerClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	result, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, id, client.ContainerInspectOptions{})
+	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, id, client.ContainerInspectOptions{})
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -271,11 +273,7 @@ func (s *Service) FreezeContainer(ctx context.Context, id string) (*arcaneupdate
 func (s *Service) PreparePull(ctx context.Context, imageRef string) (string, error) {
 	if single, ok := ctx.Value(frozenSingleKey{}).(*frozenSingle); ok {
 		if single.Target.DesiredImageRef == "" {
-			resolver := s.digestResolver()
-			if resolver == nil {
-				return "", errors.New("cannot freeze update without registry digest resolver")
-			}
-			digest, err := resolver.ImageDigest(ctx, imageRef)
+			digest, err := s.images.RemoteDigest(ctx, imageRef, nil)
 			if err != nil {
 				return "", err
 			}
@@ -334,11 +332,9 @@ func (s *Service) PreparePull(ctx context.Context, imageRef string) (string, err
 // ConfirmTarget returns whether the desired effect is confirmed,
 // or whether the exact original container is unchanged and safe to resume.
 func (s *Service) ConfirmTarget(ctx context.Context, target arcaneupdater.FrozenUpdateTarget) (bool, bool, error) {
-	dockerClient, err := s.dockerClient(ctx)
-	if err != nil {
-		return false, false, err
-	}
-	listed, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	listed, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
+		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	})
 	if err != nil {
 		return false, false, err
 	}
@@ -347,17 +343,21 @@ func (s *Service) ConfirmTarget(ctx context.Context, target arcaneupdater.Frozen
 		if imageErr != nil {
 			return ""
 		}
-		image, imageInspectErr := dockerClient.ImageInspect(ctx, immutable)
+		inspected, imageInspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+			return dockerClient.ImageInspect(ctx, immutable)
+		})
 		if imageInspectErr != nil {
 			return ""
 		}
-		return image.ID
+		return inspected.ID
 	}()
 	for _, candidate := range listed.Items {
 		if !slices.ContainsFunc(candidate.Names, func(name string) bool { return strings.TrimPrefix(name, "/") == target.ContainerName }) {
 			continue
 		}
-		result, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, candidate.ID, client.ContainerInspectOptions{})
+		result, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
+			return compat.ContainerInspectWithCompatibility(ctx, dockerClient, candidate.ID, client.ContainerInspectOptions{})
+		})
 		if inspectErr != nil {
 			return false, false, inspectErr
 		}

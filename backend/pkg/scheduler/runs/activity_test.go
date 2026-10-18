@@ -11,20 +11,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type activityObserverFakeInternal struct {
+type activityObserverFake struct {
 	unavailable  atomic.Bool
 	observed     atomic.Int32
 	existingOnly bool
 }
 
-func (o *activityObserverFakeInternal) ActivityID(run st.Run) string {
+func (o *activityObserverFake) ActivityID(run st.Run) string {
 	if o.existingOnly {
 		return run.ActivityID
 	}
 	return run.ID
 }
 
-func (o *activityObserverFakeInternal) SyncRunActivity(context.Context, st.Run) error {
+func (o *activityObserverFake) SyncRunActivity(context.Context, st.Run) error {
 	if o.unavailable.Load() {
 		return errors.New("activity storage unavailable")
 	}
@@ -33,8 +33,8 @@ func (o *activityObserverFakeInternal) SyncRunActivity(context.Context, st.Run) 
 }
 
 func TestActivityFailureNeverReplaysAcceptedExecution(t *testing.T) {
-	q := newResolutionQueueInternal(t)
-	observer := &activityObserverFakeInternal{}
+	q := newResolutionQueue(t)
+	observer := &activityObserverFake{}
 	observer.unavailable.Store(true)
 	q.SetObserver(observer)
 	var executions atomic.Int32
@@ -56,10 +56,10 @@ func TestActivityFailureNeverReplaysAcceptedExecution(t *testing.T) {
 		persisted, getErr := q.Get(t.Context(), "0", run.JobID, run.ID)
 		return getErr == nil && persisted.Status == st.Succeeded
 	}, 5*time.Second, 10*time.Millisecond)
-	require.True(t, q.hasPendingActivitySyncInternal(t.Context()))
+	require.True(t, q.hasPendingActivitySync(t.Context()))
 	observer.unavailable.Store(false)
-	q.retryActivitySyncInternal(t.Context())
-	require.False(t, q.hasPendingActivitySyncInternal(t.Context()))
+	q.retryActivitySync(t.Context())
+	require.False(t, q.hasPendingActivitySync(t.Context()))
 	require.Positive(t, observer.observed.Load())
 	duplicate, err := q.Submit(t.Context(), st.Request{JobID: run.JobID, RunID: run.ID, Trigger: "manual"})
 	require.NoError(t, err)

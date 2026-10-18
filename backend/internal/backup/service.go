@@ -520,6 +520,10 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *client.Clien
 			command = append(command, listedID)
 		}
 	}
+	if len(command) == 2 && len(requested) > 0 {
+		slog.DebugContext(ctx, "No requested snapshots found in repository; skipping forget", "repositoryId", repository.ID, "requested", requested)
+		return nil
+	}
 	if len(command) == 2 {
 		command = []string{"prune"}
 	}

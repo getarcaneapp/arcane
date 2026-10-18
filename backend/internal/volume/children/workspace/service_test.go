@@ -31,7 +31,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 )
 
-func newVolumeWorkspaceTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.Client {
+func newVolumeWorkspaceTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	t.Helper()
 	dockerClient, err := client.New(
 		client.WithHost(server.URL),
@@ -43,7 +43,7 @@ func newVolumeWorkspaceTestDockerClientInternal(t *testing.T, server *httptest.S
 	return dockerClient
 }
 
-func TestValidateVolumeHelperSupportInternal(t *testing.T) {
+func TestValidateVolumeHelperSupport(t *testing.T) {
 	var requests []string
 	var options map[string]string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -59,18 +59,18 @@ func TestValidateVolumeHelperSupportInternal(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newVolumeWorkspaceTestDockerClientInternal(t, server))
+	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newVolumeWorkspaceTestDockerClient(t, server))
 	service := NewService(Dependencies{Docker: dockerService})
 
-	require.NoError(t, service.validateVolumeHelperSupportInternal(t.Context(), "workspace-volume"))
+	require.NoError(t, service.validateVolumeHelperSupport(t.Context(), "workspace-volume"))
 	require.Equal(t, []string{"GET /v1.41/volumes/workspace-volume"}, requests)
 
 	options = map[string]string{"type": "nfs"}
-	require.NoError(t, service.validateVolumeHelperSupportInternal(t.Context(), "workspace-volume"))
+	require.NoError(t, service.validateVolumeHelperSupport(t.Context(), "workspace-volume"))
 	options = map[string]string{"type": "none"}
-	require.Error(t, service.validateVolumeHelperSupportInternal(t.Context(), "workspace-volume"))
+	require.Error(t, service.validateVolumeHelperSupport(t.Context(), "workspace-volume"))
 	options = map[string]string{"o": "bind,rw"}
-	require.Error(t, service.validateVolumeHelperSupportInternal(t.Context(), "workspace-volume"))
+	require.Error(t, service.validateVolumeHelperSupport(t.Context(), "workspace-volume"))
 }
 
 func TestUpdateVolumeWorkspaceValidationFailureReturnsNoWorkspace(t *testing.T) {
@@ -86,33 +86,33 @@ func TestUpdateVolumeWorkspaceValidationFailureReturnsNoWorkspace(t *testing.T) 
 	require.ErrorIs(t, err, common.ErrVolumeWorkspaceBadRequest)
 }
 
-func TestVolumeWorkspaceFileContentResponseInternal(t *testing.T) {
+func TestVolumeWorkspaceFileContentResponse(t *testing.T) {
 	const maxFileSizeBytes int64 = 10 * 1024 * 1024
 	text := []byte("hello")
-	below, err := volumeWorkspaceFileContentResponseInternal("notes.txt", "regular", maxFileSizeBytes-1, text, maxFileSizeBytes)
+	below, err := volumeWorkspaceFileContentResponse("notes.txt", "regular", maxFileSizeBytes-1, text, maxFileSizeBytes)
 	require.NoError(t, err)
 	require.True(t, below.Editable)
 	require.Equal(t, "hello", below.Content)
 
-	atLimit, err := volumeWorkspaceFileContentResponseInternal("notes.txt", "regular", maxFileSizeBytes, text, maxFileSizeBytes)
+	atLimit, err := volumeWorkspaceFileContentResponse("notes.txt", "regular", maxFileSizeBytes, text, maxFileSizeBytes)
 	require.NoError(t, err)
 	require.True(t, atLimit.Editable)
 
-	above, err := volumeWorkspaceFileContentResponseInternal("notes.txt", "regular", maxFileSizeBytes+1, text, maxFileSizeBytes)
+	above, err := volumeWorkspaceFileContentResponse("notes.txt", "regular", maxFileSizeBytes+1, text, maxFileSizeBytes)
 	require.NoError(t, err)
 	require.False(t, above.Editable)
 	require.Equal(t, workspace.FileReadOnlyTooLarge, above.ReadOnlyReason)
 
-	binaryContent, err := volumeWorkspaceFileContentResponseInternal("data.bin", "regular", 2, []byte{0xff, 0x00}, maxFileSizeBytes)
+	binaryContent, err := volumeWorkspaceFileContentResponse("data.bin", "regular", 2, []byte{0xff, 0x00}, maxFileSizeBytes)
 	require.NoError(t, err)
 	require.Equal(t, workspace.FileReadOnlyBinary, binaryContent.ReadOnlyReason)
 
-	special, err := volumeWorkspaceFileContentResponseInternal("pipe", "special", 0, nil, maxFileSizeBytes)
+	special, err := volumeWorkspaceFileContentResponse("pipe", "special", 0, nil, maxFileSizeBytes)
 	require.NoError(t, err)
 	require.Equal(t, workspace.FileReadOnlySpecial, special.ReadOnlyReason)
 }
 
-func TestValidateVolumeWorkspaceFileChangeInternalOperationsAndMultipartMapping(t *testing.T) {
+func TestValidateVolumeWorkspaceFileChangeOperationsAndMultipartMapping(t *testing.T) {
 	first := 0
 	second := 1
 	tests := []volumetypes.WorkspaceFileChange{
@@ -126,36 +126,36 @@ func TestValidateVolumeWorkspaceFileChangeInternalOperationsAndMultipartMapping(
 		{Operation: volumetypes.FileOpRestoreFile, RelativePath: "restored.txt", BackupID: "backup-id"},
 	}
 	for _, change := range tests {
-		require.NoError(t, validateVolumeWorkspaceFileChangeInternal(change), change.Operation)
+		require.NoError(t, validateVolumeWorkspaceFileChange(change), change.Operation)
 	}
 
-	require.Error(t, validateVolumeWorkspaceFileChangeInternal(volumetypes.WorkspaceFileChange{
+	require.Error(t, validateVolumeWorkspaceFileChange(volumetypes.WorkspaceFileChange{
 		Operation: volumetypes.FileOpUpdateFile, RelativePath: "missing.bin",
 	}))
-	require.Error(t, validateVolumeWorkspaceFileChangeInternal(volumetypes.WorkspaceFileChange{
+	require.Error(t, validateVolumeWorkspaceFileChange(volumetypes.WorkspaceFileChange{
 		Operation: volumetypes.FileOpRestoreFile, RelativePath: "file.txt",
 	}))
-	require.Error(t, validateVolumeWorkspaceFileChangeInternal(volumetypes.WorkspaceFileChange{
+	require.Error(t, validateVolumeWorkspaceFileChange(volumetypes.WorkspaceFileChange{
 		Operation: "unknown", RelativePath: "file.txt",
 	}))
-	require.Error(t, validateVolumeWorkspaceFileChangeInternal(volumetypes.WorkspaceFileChange{
+	require.Error(t, validateVolumeWorkspaceFileChange(volumetypes.WorkspaceFileChange{
 		Operation: volumetypes.FileOpDelete, RelativePath: "../escape",
 	}))
 }
 
-func TestVolumeWorkspaceBackupScopeInternalCoversSourcesAndDestinations(t *testing.T) {
+func TestVolumeWorkspaceBackupScopeCoversSourcesAndDestinations(t *testing.T) {
 	changes := []volumetypes.WorkspaceFileChange{
 		{Operation: volumetypes.FileOpRename, RelativePath: "docs/a.txt", NewName: "b.txt"},
 		{Operation: volumetypes.FileOpMove, RelativePath: "cache", NewParentPath: "docs"},
 		{Operation: volumetypes.FileOpCreateFile, RelativePath: "docs/a.txt/child", UploadIndex: new(0)},
 	}
-	scope, err := volumeWorkspaceBackupScopeInternal(changes)
+	scope, err := volumeWorkspaceBackupScope(changes)
 	require.NoError(t, err)
 	require.Equal(t, []string{"cache", "docs/a.txt", "docs/b.txt", "docs/cache"}, scope)
 }
 
-func TestNormalizeVolumeWorkspaceScopeInternalCollapsesAbsentAncestors(t *testing.T) {
-	require.Equal(t, []string{"cache", "docs"}, normalizeVolumeWorkspaceScopeInternal([]string{
+func TestNormalizeVolumeWorkspaceScopeCollapsesAbsentAncestors(t *testing.T) {
+	require.Equal(t, []string{"cache", "docs"}, normalizeVolumeWorkspaceScope([]string{
 		"docs/b.txt",
 		"docs",
 		"cache/item",
@@ -165,21 +165,21 @@ func TestNormalizeVolumeWorkspaceScopeInternalCollapsesAbsentAncestors(t *testin
 	}))
 }
 
-func TestVolumeWorkspaceRollbackPathsInternalRemovesDeepestFirst(t *testing.T) {
-	backup := &volumeWorkspaceBackupInternal{
-		archives: []volumeWorkspaceBackupArchiveInternal{
+func TestVolumeWorkspaceRollbackPathsRemovesDeepestFirst(t *testing.T) {
+	backup := &volumeWorkspaceBackup{
+		archives: []volumeWorkspaceBackupArchive{
 			{relativePath: "docs/file.txt", archivePath: "/tmp/file.tar"},
 			{relativePath: "cache", archivePath: "/tmp/cache.tar"},
 		},
 		absentEntries: []string{"docs/new/deep", "other"},
 	}
-	require.Equal(t, []string{"docs/new/deep", "docs/file.txt", "other", "cache"}, volumeWorkspaceRollbackPathsInternal(backup))
+	require.Equal(t, []string{"docs/new/deep", "docs/file.txt", "other", "cache"}, volumeWorkspaceRollbackPaths(backup))
 }
 
 func TestVolumeWorkspaceHelperScriptsUseSupportedTooling(t *testing.T) {
 	helperScripts := []string{
-		volumeWorkspaceValidatePathScriptInternal,
-		volumeWorkspaceBackupCreateScriptInternal,
+		volumeWorkspaceValidatePathScript,
+		volumeWorkspaceBackupCreateScript,
 	}
 	scripts := strings.Join(helperScripts, "\n")
 	for _, unsupported := range []string{
@@ -201,9 +201,9 @@ func TestVolumeWorkspaceHelperScriptsUseSupportedTooling(t *testing.T) {
 	} {
 		require.NotContains(t, scripts, unsupported)
 	}
-	require.Contains(t, volumeWorkspaceBackupCreateScriptInternal, `printf 'absent\0%s\0'`)
-	require.Contains(t, volumeWorkspaceBackupCreateScriptInternal, `cd "$parent"`)
-	require.NotContains(t, volumeWorkspaceBackupCreateScriptInternal, " -C ")
+	require.Contains(t, volumeWorkspaceBackupCreateScript, `printf 'absent\0%s\0'`)
+	require.Contains(t, volumeWorkspaceBackupCreateScript, `cd "$parent"`)
+	require.NotContains(t, volumeWorkspaceBackupCreateScript, " -C ")
 	if shellPath, err := exec.LookPath("sh"); err == nil {
 		for index, script := range helperScripts {
 			output, syntaxErr := exec.Command(shellPath, "-n", "-c", script).CombinedOutput()
@@ -212,24 +212,19 @@ func TestVolumeWorkspaceHelperScriptsUseSupportedTooling(t *testing.T) {
 	}
 }
 
-func TestClassifyVolumeWorkspaceExecErrorInternal(t *testing.T) {
+func TestClassifyVolumeWorkspaceExecError(t *testing.T) {
 	base := errors.New("exit status 1")
-	require.ErrorIs(t, classifyVolumeWorkspaceExecErrorInternal(base, "ARCANE_SYMLINK", "execute"), common.ErrVolumeWorkspaceForbidden)
-	require.ErrorIs(t, classifyVolumeWorkspaceExecErrorInternal(base, "ARCANE_NOT_FOUND", "execute"), common.ErrVolumeWorkspaceNotFound)
-	require.ErrorIs(t, classifyVolumeWorkspaceExecErrorInternal(base, "ARCANE_COLLISION", "execute"), common.ErrVolumeWorkspaceBadRequest)
-	require.ErrorIs(t, classifyVolumeWorkspaceExecErrorInternal(base, "unexpected", "execute"), base)
+	require.ErrorIs(t, classifyVolumeWorkspaceExecError(base, "ARCANE_SYMLINK", "execute"), common.ErrVolumeWorkspaceForbidden)
+	require.ErrorIs(t, classifyVolumeWorkspaceExecError(base, "ARCANE_NOT_FOUND", "execute"), common.ErrVolumeWorkspaceNotFound)
+	require.ErrorIs(t, classifyVolumeWorkspaceExecError(base, "ARCANE_COLLISION", "execute"), common.ErrVolumeWorkspaceBadRequest)
+	require.ErrorIs(t, classifyVolumeWorkspaceExecError(base, "unexpected", "execute"), base)
 }
 
-func TestClassifyVolumeWorkspaceHelperSupportErrorInternal(t *testing.T) {
-	require.ErrorIs(t, classifyVolumeWorkspaceHelperSupportErrorInternal(errdefs.ErrNotFound), common.ErrVolumeWorkspaceNotFound)
-	require.ErrorIs(t, classifyVolumeWorkspaceHelperSupportErrorInternal(errors.New("volume uses a custom mount configuration")), common.ErrVolumeWorkspaceBadRequest)
+func TestClassifyVolumeWorkspaceHelperSupportError(t *testing.T) {
+	require.ErrorIs(t, classifyVolumeWorkspaceHelperSupportError(errdefs.ErrNotFound), common.ErrVolumeWorkspaceNotFound)
+	require.ErrorIs(t, classifyVolumeWorkspaceHelperSupportError(errors.New("volume uses a custom mount configuration")), common.ErrVolumeWorkspaceBadRequest)
 	unexpected := errors.New("docker unavailable")
-	require.ErrorIs(t, classifyVolumeWorkspaceHelperSupportErrorInternal(unexpected), unexpected)
-}
-
-func TestValidateVolumeWorkspaceRevisionInternal(t *testing.T) {
-	require.NoError(t, validateVolumeWorkspaceRevisionInternal(" revision ", "revision"))
-	require.ErrorIs(t, validateVolumeWorkspaceRevisionInternal("stale", "current"), common.ErrVolumeWorkspaceConflict)
+	require.ErrorIs(t, classifyVolumeWorkspaceHelperSupportError(unexpected), unexpected)
 }
 
 func TestStageVolumeWorkspaceChangesClearsAndCopiesContentsInOneArchive(t *testing.T) {
@@ -267,7 +262,7 @@ func TestStageVolumeWorkspaceChangesClearsAndCopiesContentsInOneArchive(t *testi
 	}))
 	t.Cleanup(server.Close)
 
-	dockerClient := newVolumeWorkspaceTestDockerClientInternal(t, server)
+	dockerClient := newVolumeWorkspaceTestDockerClient(t, server)
 	service := NewService(Dependencies{
 		Docker: docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient),
 		Exec: func(_ context.Context, containerID, _ string, cmd []string) (string, string, error) {
@@ -278,16 +273,16 @@ func TestStageVolumeWorkspaceChangesClearsAndCopiesContentsInOneArchive(t *testi
 	})
 	firstUpload := 0
 	secondUpload := 1
-	firstStaged, err := service.stageVolumeWorkspaceChangesInternal(t.Context(), dockerClient, "helper", []volumetypes.WorkspaceFileChange{
+	firstStaged, err := service.stageVolumeWorkspaceChanges(t.Context(), dockerClient, "helper", []volumetypes.WorkspaceFileChange{
 		{UploadIndex: &firstUpload},
 		{},
 		{UploadIndex: &secondUpload},
-	}, map[int][]byte{0: []byte("alpha"), 1: {}}, volumeWorkspaceWriteIdentityInternal{})
+	}, map[int][]byte{0: []byte("alpha"), 1: {}}, volumeWorkspaceWriteIdentity{})
 	require.NoError(t, err)
-	require.Equal(t, volumeWorkspaceStagedFileInternal{path: "/tmp/arcane-workspace/change-0", size: 5}, firstStaged[0])
-	require.Equal(t, volumeWorkspaceStagedFileInternal{path: "/tmp/arcane-workspace/change-2", size: 0}, firstStaged[2])
+	require.Equal(t, volumeWorkspaceStagedFile{path: "/tmp/arcane-workspace/change-0", size: 5}, firstStaged[0])
+	require.Equal(t, volumeWorkspaceStagedFile{path: "/tmp/arcane-workspace/change-2", size: 0}, firstStaged[2])
 
-	secondStaged, err := service.stageVolumeWorkspaceChangesInternal(
+	secondStaged, err := service.stageVolumeWorkspaceChanges(
 		t.Context(),
 		dockerClient,
 		"helper",
@@ -301,10 +296,10 @@ func TestStageVolumeWorkspaceChangesClearsAndCopiesContentsInOneArchive(t *testi
 				"second",
 			),
 		},
-		volumeWorkspaceWriteIdentityInternal{},
+		volumeWorkspaceWriteIdentity{},
 	)
 	require.NoError(t, err)
-	require.Equal(t, volumeWorkspaceStagedFileInternal{path: "/tmp/arcane-workspace/change-0", size: 6}, secondStaged[0])
+	require.Equal(t, volumeWorkspaceStagedFile{path: "/tmp/arcane-workspace/change-0", size: 6}, secondStaged[0])
 
 	require.Equal(t, [][]string{
 		{"sh", "-c", "rm -rf -- /tmp/arcane-workspace && mkdir -p -- /tmp/arcane-workspace"},
@@ -316,22 +311,22 @@ func TestStageVolumeWorkspaceChangesClearsAndCopiesContentsInOneArchive(t *testi
 	}, copiedArchives)
 }
 
-func TestVolumeWorkspaceWriteIdentityFromConfigUserInternal(t *testing.T) {
-	root := volumeWorkspaceWriteIdentityInternal{}
+func TestVolumeWorkspaceWriteIdentityFromConfigUser(t *testing.T) {
+	root := volumeWorkspaceWriteIdentity{}
 	for _, configUser := range []string{"", "root", "0", "0:0", "0:1000", "node", "1000:node", "99999999999999999999"} {
-		require.Equalf(t, root, volumeWorkspaceWriteIdentityFromConfigUserInternal(configUser), "config user %q", configUser)
+		require.Equalf(t, root, volumeWorkspaceWriteIdentityFromConfigUser(configUser), "config user %q", configUser)
 	}
-	require.Equal(t, volumeWorkspaceWriteIdentityInternal{execUser: "1000", uid: 1000}, volumeWorkspaceWriteIdentityFromConfigUserInternal("1000"))
-	require.Equal(t, volumeWorkspaceWriteIdentityInternal{execUser: "1000:1000", uid: 1000, gid: 1000}, volumeWorkspaceWriteIdentityFromConfigUserInternal(" 1000:1000 "))
-	require.Equal(t, volumeWorkspaceWriteIdentityInternal{execUser: "1000:0", uid: 1000, gid: 0}, volumeWorkspaceWriteIdentityFromConfigUserInternal("1000:0"))
+	require.Equal(t, volumeWorkspaceWriteIdentity{execUser: "1000", uid: 1000}, volumeWorkspaceWriteIdentityFromConfigUser("1000"))
+	require.Equal(t, volumeWorkspaceWriteIdentity{execUser: "1000:1000", uid: 1000, gid: 1000}, volumeWorkspaceWriteIdentityFromConfigUser(" 1000:1000 "))
+	require.Equal(t, volumeWorkspaceWriteIdentity{execUser: "1000:0", uid: 1000, gid: 0}, volumeWorkspaceWriteIdentityFromConfigUser("1000:0"))
 }
 
 func TestVolumeWorkspaceWritesUseRuntimeIdentity(t *testing.T) {
-	type execRequestInternal struct {
+	type execRequest struct {
 		user string
 		cmd  []string
 	}
-	var execRequests []execRequestInternal
+	var execRequests []execRequest
 	var archiveQueries []string
 	var archiveHeaders []*tar.Header
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -361,22 +356,22 @@ func TestVolumeWorkspaceWritesUseRuntimeIdentity(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	dockerClient := newVolumeWorkspaceTestDockerClientInternal(t, server)
+	dockerClient := newVolumeWorkspaceTestDockerClient(t, server)
 	applyResponse, err := json.Marshal(types.ApplyResponse{Version: types.ProtocolVersion, Applied: 1})
 	require.NoError(t, err)
 	service := NewService(Dependencies{
 		Docker: docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient),
 		Exec: func(_ context.Context, _, execUser string, cmd []string) (string, string, error) {
-			execRequests = append(execRequests, execRequestInternal{user: execUser, cmd: cmd})
+			execRequests = append(execRequests, execRequest{user: execUser, cmd: cmd})
 			return string(applyResponse), "", nil
 		},
 	})
-	identity := volumeWorkspaceWriteIdentityFromConfigUserInternal("1000:1000")
+	identity := volumeWorkspaceWriteIdentityFromConfigUser("1000:1000")
 	uploadIndex := 0
 	changes := []volumetypes.WorkspaceFileChange{{Operation: volumetypes.FileOpCreateFile, RelativePath: "config.txt", UploadIndex: &uploadIndex}}
-	stagedFiles, err := service.stageVolumeWorkspaceChangesInternal(t.Context(), dockerClient, "helper", changes, map[int][]byte{0: []byte("content")}, identity)
+	stagedFiles, err := service.stageVolumeWorkspaceChanges(t.Context(), dockerClient, "helper", changes, map[int][]byte{0: []byte("content")}, identity)
 	require.NoError(t, err)
-	require.NoError(t, service.executeVolumeWorkspaceACFSBatchInternal(t.Context(), dockerClient, "helper", changes, stagedFiles, 0, identity))
+	require.NoError(t, service.executeVolumeWorkspaceACFSBatch(t.Context(), dockerClient, "helper", changes, stagedFiles, 0, identity))
 
 	require.Len(t, execRequests, 2)
 	require.Empty(t, execRequests[0].user)
@@ -417,7 +412,7 @@ func TestCreateVolumeWorkspaceMutationContainerUsesDedicatedBackupHelper(t *test
 	}))
 	t.Cleanup(server.Close)
 
-	dockerClient := newVolumeWorkspaceTestDockerClientInternal(t, server)
+	dockerClient := newVolumeWorkspaceTestDockerClient(t, server)
 	acquireCalls := 0
 	service := NewService(Dependencies{
 		Docker: docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient),
@@ -425,7 +420,7 @@ func TestCreateVolumeWorkspaceMutationContainerUsesDedicatedBackupHelper(t *test
 			acquireCalls++
 			return "cached-helper", func() {}, nil
 		},
-		HelperImage: func(context.Context, *client.Client) (string, error) {
+		HelperImage: func(context.Context) (string, error) {
 			return volumehelper.ToolsImage(""), nil
 		},
 		BackupStorageMount: func(_ context.Context, _ *client.Client, target string, readOnly bool) (mount.Mount, error) {
@@ -433,7 +428,7 @@ func TestCreateVolumeWorkspaceMutationContainerUsesDedicatedBackupHelper(t *test
 		},
 	})
 
-	containerID, cleanup, err := service.createVolumeWorkspaceMutationContainerInternal(t.Context(), "workspace-volume", true)
+	containerID, cleanup, err := service.createVolumeWorkspaceMutationContainer(t.Context(), "workspace-volume", true)
 	require.NoError(t, err)
 	require.Equal(t, "restore-helper", containerID)
 	require.Equal(t, 1, createCalls)
@@ -508,7 +503,7 @@ acfs apply --root /volume --staging /tmp/staging --manifest manifest.json >/dev/
 sh -c "$1" sh dest/b.txt /tmp/backup.tar >/dev/null
 acfs remove --root /volume --path /dest/b.txt
 tar -xf /tmp/backup.tar -C /volume/dest
-head -c 7 /volume/dest/b.txt`, volumeWorkspaceBackupCreateScriptInternal)
+head -c 7 /volume/dest/b.txt`, volumeWorkspaceBackupCreateScript)
 	require.Equal(t, "updated", restored)
 
 	runInVolume(volumeName, `mkdir -p "/volume/Test Folder"
@@ -517,16 +512,16 @@ printf spaced > "/volume/Test Folder/file.txt"`)
 sh -c "$1" sh "Test Folder" /tmp/space-backup.tar >/dev/null
 rm -rf "/volume/Test Folder"
 tar -xf /tmp/space-backup.tar -C /volume
-head -c 6 "/volume/Test Folder/file.txt"`, volumeWorkspaceBackupCreateScriptInternal)
+head -c 6 "/volume/Test Folder/file.txt"`, volumeWorkspaceBackupCreateScript)
 	require.Equal(t, "spaced", spacedRestored)
 
 	missing := runInVolume(volumeName, `set -e
 sh -c "$1" sh test.txt /tmp/missing-backup.tar
-if stat -c '%A' -- /tmp/missing-backup.tar >/dev/null 2>&1; then exit 1; fi`, volumeWorkspaceBackupCreateScriptInternal)
+if stat -c '%A' -- /tmp/missing-backup.tar >/dev/null 2>&1; then exit 1; fi`, volumeWorkspaceBackupCreateScript)
 	require.Equal(t, "absent\x00test.txt\x00", missing)
 
 	missingNested := runInVolume(volumeName, `set -e
 sh -c "$1" sh "New Folder/test.txt" /tmp/missing-nested-backup.tar
-if stat -c '%A' -- /tmp/missing-nested-backup.tar >/dev/null 2>&1; then exit 1; fi`, volumeWorkspaceBackupCreateScriptInternal)
+if stat -c '%A' -- /tmp/missing-nested-backup.tar >/dev/null 2>&1; then exit 1; fi`, volumeWorkspaceBackupCreateScript)
 	require.Equal(t, "absent\x00New Folder\x00", missingNested)
 }

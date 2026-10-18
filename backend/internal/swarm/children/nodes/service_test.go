@@ -21,7 +21,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 )
 
-func setupSwarmServiceTestDBInternal(t *testing.T) *database.DB {
+func setupSwarmServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -29,7 +29,7 @@ func setupSwarmServiceTestDBInternal(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
-func newSettingsServiceForSwarmTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
+func newSettingsServiceForSwarmTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
 	svc, err := settings.NewSettingsService(ctx, db)
 	if err == nil {
@@ -38,7 +38,7 @@ func newSettingsServiceForSwarmTestInternal(t testing.TB, ctx context.Context, d
 	return svc, err
 }
 
-func createSwarmTestEnvironmentInternal(t *testing.T, db *database.DB, id, apiURL, status string, isEdge bool, accessToken *string) {
+func createSwarmTestEnvironment(t *testing.T, db *database.DB, id, apiURL, status string, isEdge bool, accessToken *string) {
 	t.Helper()
 	now := time.Now()
 	require.NoError(t, db.Create(&environment.Environment{
@@ -52,26 +52,26 @@ func createSwarmTestEnvironmentInternal(t *testing.T, db *database.DB, id, apiUR
 	}).Error)
 }
 
-func TestSelectSwarmManagerAddressesInternal(t *testing.T) {
+func TestSelectSwarmManagerAddresses(t *testing.T) {
 	nodes := []swarm.NodeSummary{
 		{ID: "manager-1", ManagerAddress: "10.0.0.1:2377"},
 		{ID: "worker-1"},
 		{ID: "manager-2", ManagerAddress: "10.0.0.2:2377"},
 	}
 
-	addrs, err := selectSwarmManagerAddressesInternal([]string{" 100.64.0.10:2377 ", "", "100.64.0.11:2377"}, nodes)
+	addrs, err := selectSwarmManagerAddresses([]string{" 100.64.0.10:2377 ", "", "100.64.0.11:2377"}, nodes)
 	require.NoError(t, err)
 	require.Equal(t, []string{"100.64.0.10:2377", "100.64.0.11:2377"}, addrs)
 
-	addrs, err = selectSwarmManagerAddressesInternal([]string{"  "}, nodes)
+	addrs, err = selectSwarmManagerAddresses([]string{"  "}, nodes)
 	require.NoError(t, err)
 	require.Equal(t, []string{"10.0.0.1:2377", "10.0.0.2:2377"}, addrs)
 
-	_, err = selectSwarmManagerAddressesInternal(nil, []swarm.NodeSummary{{ID: "worker-1"}})
+	_, err = selectSwarmManagerAddresses(nil, []swarm.NodeSummary{{ID: "worker-1"}})
 	require.ErrorIs(t, err, common.ErrBadRequest)
 }
 
-func TestDescribeSwarmJoinFailureInternal(t *testing.T) {
+func TestDescribeSwarmJoinFailure(t *testing.T) {
 	const token = "SWMTKN-1-secret"
 	statusErr := func(code int, body string) error {
 		return errors.Join(&remenv.StatusError{StatusCode: code, Body: []byte(body)})
@@ -79,7 +79,7 @@ func TestDescribeSwarmJoinFailureInternal(t *testing.T) {
 
 	require.Equal(t,
 		"failed to join swarm: Timeout was reached before node joined using [redacted]",
-		describeSwarmJoinFailureInternal(
+		describeSwarmJoinFailure(
 			statusErr(
 				500,
 				"{\"title\":\"Internal Server Error\",\"status\":500,\"detail\":\"failed to join swarm: Timeout was reached be"+
@@ -88,20 +88,20 @@ func TestDescribeSwarmJoinFailureInternal(t *testing.T) {
 			token,
 		),
 	)
-	require.Equal(t, "legacy join failure", describeSwarmJoinFailureInternal(statusErr(400, `{"success":false,"error":"legacy join failure"}`), token))
-	require.Equal(t, "swarm join failed with HTTP 502 from the target agent", describeSwarmJoinFailureInternal(statusErr(502, "<html>bad gateway</html>"), token))
-	require.Equal(t, "swarm join failed with HTTP 404 from the target agent", describeSwarmJoinFailureInternal(statusErr(404, ""), token))
+	require.Equal(t, "legacy join failure", describeSwarmJoinFailure(statusErr(400, `{"success":false,"error":"legacy join failure"}`), token))
+	require.Equal(t, "swarm join failed with HTTP 502 from the target agent", describeSwarmJoinFailure(statusErr(502, "<html>bad gateway</html>"), token))
+	require.Equal(t, "swarm join failed with HTTP 404 from the target agent", describeSwarmJoinFailure(statusErr(404, ""), token))
 	require.Equal(t,
 		"failed to send request to environment edge: dial tcp 10.0.0.9:3552: connect: connection refused",
-		describeSwarmJoinFailureInternal(errors.New("failed to send request to environment edge: dial tcp 10.0.0.9:3552: connect: connection refused"), token),
+		describeSwarmJoinFailure(errors.New("failed to send request to environment edge: dial tcp 10.0.0.9:3552: connect: connection refused"), token),
 	)
-	require.Equal(t, "token [redacted] rejected", describeSwarmJoinFailureInternal(errors.New("token "+token+" rejected"), token))
+	require.Equal(t, "token [redacted] rejected", describeSwarmJoinFailure(errors.New("token "+token+" rejected"), token))
 }
 
-func TestService_FetchSwarmNodeIdentityViaEdgeInternal_UsesEnvironmentAccessToken(t *testing.T) {
+func TestService_FetchSwarmNodeIdentityViaEdge_UsesEnvironmentAccessToken(t *testing.T) {
 	ctx := t.Context()
-	db := setupSwarmServiceTestDBInternal(t)
-	settingsSvc, err := newSettingsServiceForSwarmTestInternal(t, ctx, db)
+	db := setupSwarmServiceTestDB(t)
+	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
 	require.NoError(t, err)
 	envSvc := environment.NewEnvironmentService(db, nil, nil, nil, settingsSvc, nil)
 
@@ -125,7 +125,7 @@ func TestService_FetchSwarmNodeIdentityViaEdgeInternal_UsesEnvironmentAccessToke
 	}))
 	defer server.Close()
 
-	createSwarmTestEnvironmentInternal(
+	createSwarmTestEnvironment(
 		t,
 		db,
 		"env-1",
@@ -137,7 +137,7 @@ func TestService_FetchSwarmNodeIdentityViaEdgeInternal_UsesEnvironmentAccessToke
 
 	svc := NewService(nil, nil, nil, nil, envSvc)
 
-	identity, err := svc.fetchSwarmNodeIdentityViaEdgeInternal(ctx, "env-1")
+	identity, err := svc.fetchSwarmNodeIdentityViaEdge(ctx, "env-1")
 	require.NoError(t, err)
 	require.NotNil(t, identity)
 	require.Equal(t, "node-1", identity.SwarmNodeID)
@@ -151,7 +151,7 @@ func TestService_FetchSwarmNodeIdentityViaEdgeInternal_UsesEnvironmentAccessToke
 // The regression case is a poll-mode agent: its persisted env.Status never leaves
 // "pending" (HandlePoll only updates the in-memory poll registry), so a fresh
 // lastPollAt must still resolve to "connected" rather than "pending".
-func TestService_BuildNodeAgentStatusInternal(t *testing.T) {
+func TestService_BuildNodeAgentStatus(t *testing.T) {
 	const nodeID = "node-abc"
 	now := time.Now()
 	svc := &Service{}
@@ -196,7 +196,7 @@ func TestService_BuildNodeAgentStatusInternal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := svc.buildNodeAgentStatusInternal(nodeID, tt.env, tt.runtime)
+			got := svc.buildNodeAgentStatus(nodeID, tt.env, tt.runtime)
 			require.Equal(t, tt.want, got.State)
 		})
 	}

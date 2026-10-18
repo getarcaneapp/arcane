@@ -18,8 +18,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v2/event"
 	"github.com/moby/moby/api/types/events"
-	"github.com/samber/mo"
-	"github.com/samber/mo/option"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
 	"go.getarcane.app/streams/agg"
@@ -43,6 +41,12 @@ import (
 // maxConcurrentEdgeSyncs bounds in-flight event forwards to the manager.
 const maxConcurrentEdgeSyncs = 16
 
+const (
+	daemonEventQueueSize     = 1024
+	daemonEventBatchSize     = 64
+	daemonEventFlushInterval = 250 * time.Millisecond
+)
+
 type EventService struct {
 	changes     *concurrency.Signal[struct{}]
 	correlation *correlation.Service
@@ -50,6 +54,12 @@ type EventService struct {
 	cfg         *config.Config
 	httpClient  *http.Client
 	edgeSyncs   *semaphore.Weighted
+	// Daemon events are persisted in batches by a writer started on first use.
+	daemonQueue   chan CreateEventRequest
+	daemonStart   sync.Once
+	daemonDone    chan struct{}
+	daemonMu      sync.RWMutex
+	daemonStopped bool
 }
 
 func NewEventService(db *database.DB, cfg *config.Config, httpClient *http.Client) *EventService {
@@ -65,6 +75,8 @@ func NewEventService(db *database.DB, cfg *config.Config, httpClient *http.Clien
 		cfg:         cfg,
 		httpClient:  httpClient,
 		edgeSyncs:   semaphore.NewWeighted(maxConcurrentEdgeSyncs),
+		daemonQueue: make(chan CreateEventRequest, daemonEventQueueSize),
+		daemonDone:  make(chan struct{}),
 	}
 }
 
@@ -85,53 +97,62 @@ type CreateEventRequest struct {
 }
 
 func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) (*Event, error) {
-	severity := cmp.Or(req.Severity, EventSeverityInfo)
-	userID, username := normalizeEventActor(req.UserID, req.Username)
-
-	eventRecord := &Event{
-		CreatedAt:     time.Now(),
-		Type:          req.Type,
-		Severity:      severity,
-		Title:         req.Title,
-		Description:   req.Description,
-		ResourceType:  req.ResourceType,
-		ResourceID:    req.ResourceID,
-		ResourceName:  req.ResourceName,
-		UserID:        userID,
-		Username:      username,
-		EnvironmentID: req.EnvironmentID,
-		Metadata:      req.Metadata,
-		Timestamp:     time.Now(),
+	records, err := s.persistEvents(ctx, []CreateEventRequest{req})
+	if err != nil {
+		return nil, err
 	}
+	return records[0], nil
+}
 
-	if req.deduplicationKey != "" {
-		eventRecord.DeduplicationKey = &req.deduplicationKey
-	}
-
-	var inserted bool
+// persistEvents inserts requests in one transaction, skipping replayed deduplication keys.
+func (s *EventService) persistEvents(ctx context.Context, reqs []CreateEventRequest) ([]*Event, error) {
+	records := make([]*Event, len(reqs))
+	inserted := make([]bool, len(reqs))
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if req.deduplicationKey != "" {
-			tx = tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "deduplication_key"}}, DoNothing: true})
+		for index, req := range reqs {
+			// A missing actor half mirrors the other; no actor at all is the system.
+			userID, username := strings.TrimSpace(kit.FromPtr(req.UserID)), strings.TrimSpace(kit.FromPtr(req.Username))
+			records[index] = &Event{
+				CreatedAt:        time.Now(),
+				Type:             req.Type,
+				Severity:         cmp.Or(req.Severity, EventSeverityInfo),
+				Title:            req.Title,
+				Description:      req.Description,
+				ResourceType:     req.ResourceType,
+				ResourceID:       req.ResourceID,
+				ResourceName:     req.ResourceName,
+				UserID:           new(cmp.Or(userID, username, "system")),
+				Username:         new(cmp.Or(username, userID, "System")),
+				EnvironmentID:    req.EnvironmentID,
+				Metadata:         req.Metadata,
+				Timestamp:        time.Now(),
+				DeduplicationKey: kit.Ternary(req.deduplicationKey != "", &req.deduplicationKey, nil),
+			}
+			create := tx
+			if req.deduplicationKey != "" {
+				create = tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "deduplication_key"}}, DoNothing: true})
+			}
+			result := create.Create(records[index])
+			if result.Error != nil {
+				return fmt.Errorf("failed to create event: %w", result.Error)
+			}
+			inserted[index] = result.RowsAffected > 0
 		}
-		result := tx.Create(eventRecord)
-		if result.Error != nil {
-			return fmt.Errorf("failed to create event: %w", result.Error)
-		}
-		inserted = result.RowsAffected > 0
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	if !inserted {
-		return eventRecord, nil
+	for index, req := range reqs {
+		if !inserted[index] {
+			continue
+		}
+		s.correlateCreatedEvent(req)
+		s.changes.Publish(struct{}{})
+		s.forwardEventToManager(ctx, records[index])
 	}
-	s.correlateCreatedEvent(req)
-	s.changes.Publish(struct{}{})
-	s.forwardEventToManager(ctx, eventRecord)
-
-	return eventRecord, nil
+	return records, nil
 }
 
 // IngestAgentEvent assigns the authenticated environment instead of trusting the agent's local ID.
@@ -145,38 +166,30 @@ func (s *EventService) IngestAgentEvent(ctx context.Context, environmentID strin
 }
 
 func (s *EventService) forwardEventToManager(ctx context.Context, eventModel *Event) {
-	if eventModel == nil || s.cfg == nil || !s.cfg.AgentMode {
+	if s.cfg == nil || !s.cfg.AgentMode {
 		return
 	}
 
 	evt := &edge.TunnelEvent{
-		Type:        string(eventModel.Type),
-		Severity:    string(eventModel.Severity),
-		Title:       eventModel.Title,
-		Description: eventModel.Description,
-	}
-	if eventModel.ResourceType != nil {
-		evt.ResourceType = *eventModel.ResourceType
-	}
-	if eventModel.ResourceID != nil {
-		evt.ResourceID = *eventModel.ResourceID
-	}
-	if eventModel.ResourceName != nil {
-		evt.ResourceName = *eventModel.ResourceName
-	}
-	if eventModel.UserID != nil {
-		evt.UserID = *eventModel.UserID
-	}
-	if eventModel.Username != nil {
-		evt.Username = *eventModel.Username
-	}
-	if eventModel.Metadata != nil {
-		metadataBytes, err := json.Marshal(map[string]any(eventModel.Metadata))
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to marshal event metadata for edge sync", "type", eventModel.Type, "error", err)
-		} else {
-			evt.MetadataJSON = metadataBytes
-		}
+		Type:         string(eventModel.Type),
+		Severity:     string(eventModel.Severity),
+		Title:        eventModel.Title,
+		Description:  eventModel.Description,
+		ResourceType: kit.FromPtr(eventModel.ResourceType),
+		ResourceID:   kit.FromPtr(eventModel.ResourceID),
+		ResourceName: kit.FromPtr(eventModel.ResourceName),
+		UserID:       kit.FromPtr(eventModel.UserID),
+		Username:     kit.FromPtr(eventModel.Username),
+		MetadataJSON: func() []byte {
+			if eventModel.Metadata == nil {
+				return nil
+			}
+			metadataBytes, err := json.Marshal(map[string]any(eventModel.Metadata))
+			if err != nil {
+				slog.WarnContext(ctx, "Failed to marshal event metadata for edge sync", "type", eventModel.Type, "error", err)
+			}
+			return metadataBytes
+		}(),
 	}
 
 	go func(parentCtx context.Context, outgoing *edge.TunnelEvent) {
@@ -194,7 +207,7 @@ func (s *EventService) forwardEventToManager(ctx context.Context, eventModel *Ev
 				slog.WarnContext(syncCtx, "Failed to sync event to manager over edge tunnel", "type", outgoing.Type, "error", err)
 				return
 			}
-			if !s.canForwardEventToManagerHTTP() {
+			if strings.TrimSpace(s.cfg.AgentToken) == "" || strings.TrimSpace(httpx.ManagerBaseURL(s.cfg.ManagerApiUrl)) == "" {
 				return
 			}
 			if httpErr := s.forwardEventToManagerHTTP(syncCtx, eventModel); httpErr != nil {
@@ -205,30 +218,19 @@ func (s *EventService) forwardEventToManager(ctx context.Context, eventModel *Ev
 	}(ctx, evt)
 }
 
-func (s *EventService) canForwardEventToManagerHTTP() bool {
-	if s.cfg == nil {
-		return false
-	}
-	if strings.TrimSpace(s.cfg.AgentToken) == "" {
-		return false
-	}
-	return strings.TrimSpace(httpx.ManagerBaseURL(s.cfg.ManagerApiUrl)) != ""
-}
-
 func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel *Event) error {
-	if eventModel == nil {
-		return errors.New("event is required")
-	}
-	if s.cfg == nil || strings.TrimSpace(s.cfg.AgentToken) == "" {
-		return errors.New("agent token is required for manager event sync")
-	}
-
-	managerEventsURL, err := managerEventEndpointURL(httpx.ManagerBaseURL(s.cfg.ManagerApiUrl))
+	baseURL, err := url.Parse(strings.TrimSpace(httpx.ManagerBaseURL(s.cfg.ManagerApiUrl)))
 	if err != nil {
-		return fmt.Errorf("manager API URL is invalid for manager event sync: %w", err)
+		return fmt.Errorf("manager API URL is invalid for manager event sync: failed to parse manager API URL: %w", err)
+	}
+	if baseURL.Scheme != "http" && baseURL.Scheme != "https" {
+		return fmt.Errorf("manager API URL is invalid for manager event sync: unsupported scheme %q", baseURL.Scheme)
+	}
+	if baseURL.Host == "" {
+		return errors.New("manager API URL is invalid for manager event sync: manager API URL host is required")
 	}
 
-	payload := CreateEventRequest{
+	body, err := json.Marshal(CreateEventRequest{
 		Type:          eventModel.Type,
 		Severity:      eventModel.Severity,
 		Title:         eventModel.Title,
@@ -239,18 +241,18 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 		UserID:        eventModel.UserID,
 		Username:      eventModel.Username,
 		EnvironmentID: eventModel.EnvironmentID,
-	}
-
-	if len(eventModel.Metadata) > 0 {
-		payload.Metadata = eventModel.Metadata
-	}
-
-	body, err := json.Marshal(payload)
+		Metadata:      eventModel.Metadata,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to marshal event payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, managerEventsURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, (&url.URL{
+		Scheme: baseURL.Scheme,
+		User:   baseURL.User,
+		Host:   baseURL.Host,
+		Path:   strings.TrimRight(baseURL.Path, "/") + "/api/events",
+	}).String(), bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to create manager event request: %w", err)
 	}
@@ -274,93 +276,16 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 	return fmt.Errorf("manager event sync failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
 }
 
-func managerEventEndpointURL(rawBaseURL string) (string, error) {
-	trimmed := strings.TrimSpace(rawBaseURL)
-	if trimmed == "" {
-		return "", errors.New("manager API URL is required")
-	}
-
-	baseURL, err := url.Parse(trimmed)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse manager API URL: %w", err)
-	}
-	if baseURL.Scheme != "http" && baseURL.Scheme != "https" {
-		return "", fmt.Errorf("unsupported scheme %q", baseURL.Scheme)
-	}
-	if baseURL.Host == "" {
-		return "", errors.New("manager API URL host is required")
-	}
-
-	baseURL.RawQuery = ""
-	baseURL.Fragment = ""
-	baseURL.Path = strings.TrimRight(baseURL.Path, "/") + "/api/events"
-	return baseURL.String(), nil
-}
-
-func normalizeEventActor(userID, username *string) (*string, *string) {
-	normalizedUserID := normalizeOptionalStringPtr(userID)
-	normalizedUsername := normalizeOptionalStringPtr(username)
-
-	if normalizedUsername == nil && normalizedUserID != nil {
-		normalizedUsername = new(*normalizedUserID)
-	}
-	if normalizedUserID == nil && normalizedUsername != nil {
-		normalizedUserID = new(*normalizedUsername)
-	}
-	if normalizedUserID == nil && normalizedUsername == nil {
-		normalizedUserID = new("system")
-		normalizedUsername = new("System")
-	}
-
-	return normalizedUserID, normalizedUsername
-}
-
-func normalizeOptionalStringPtr(value *string) *string {
-	if value == nil {
-		return nil
-	}
-	trimmed := strings.TrimSpace(*value)
-	if trimmed == "" {
-		return nil
-	}
-	return &trimmed
-}
-
 func (s *EventService) ListEventsPaginated(ctx context.Context, params pagination.QueryParams) ([]event.Event, pagination.Response, error) {
-	var eventRecords []Event
-	q := s.db.WithContext(ctx).Model(&Event{})
-
-	if term := strings.TrimSpace(params.Search); term != "" {
-		searchPattern := "%" + term + "%"
-		q = q.Where(
-			"title LIKE ? OR description LIKE ? OR COALESCE(resource_name, '') LIKE ? OR COALESCE(username, '') LIKE ?",
-			searchPattern, searchPattern, searchPattern, searchPattern,
-		)
-	}
-
-	q = pagination.ApplyFilter(q, "severity", params.Filters["severity"])
-	q = applyEventTypeFilter(q, params.Filters["type"])
-	q = pagination.ApplyFilter(q, "resource_type", params.Filters["resourceType"])
-	q = pagination.ApplyFilter(q, "username", params.Filters["username"])
-	q = pagination.ApplyFilter(q, "environment_id", params.Filters["environmentId"])
-
-	paginationResp, err := pagination.PaginateAndSortDB(params, q, &eventRecords)
-	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to paginate events: %w", err)
-	}
-
-	eventDtos, mapErr := mapping.MapSlice[Event, event.Event](eventRecords)
-	if mapErr != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to map events: %w", mapErr)
-	}
-
-	return eventDtos, paginationResp, nil
+	return paginateEvents(pagination.ApplyFilter(s.db.WithContext(ctx).Model(&Event{}), "environment_id", params.Filters["environmentId"]), params)
 }
 
 func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]event.Event, pagination.Response, error) {
-	var eventRecords []Event
-	q := s.db.WithContext(ctx).Model(&Event{}).Where("environment_id = ?", environmentID)
+	return paginateEvents(s.db.WithContext(ctx).Model(&Event{}).Where("environment_id = ?", environmentID), params)
+}
 
+// paginateEvents applies the shared search and filters to q, then pages and maps the rows.
+func paginateEvents(q *gorm.DB, params pagination.QueryParams) ([]event.Event, pagination.Response, error) {
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
 		q = q.Where(
@@ -369,11 +294,34 @@ func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, envi
 		)
 	}
 
+	// Type values with a '.' are exact types; others are category prefixes. Comma-separated values are OR-ed.
+	var typeConds []string
+	var typeArgs []any
+	var exactTypes []string
+	for part := range strings.SplitSeq(params.Filters["type"], ",") {
+		part = strings.TrimSpace(part)
+		switch {
+		case part == "":
+		case strings.Contains(part, "."):
+			exactTypes = append(exactTypes, part)
+		default:
+			typeConds = append(typeConds, "type LIKE ?")
+			typeArgs = append(typeArgs, part+".%")
+		}
+	}
+	if len(exactTypes) > 0 {
+		typeConds = append(typeConds, "type IN ?")
+		typeArgs = append(typeArgs, exactTypes)
+	}
+	if len(typeConds) > 0 {
+		q = q.Where(strings.Join(typeConds, " OR "), typeArgs...)
+	}
+
 	q = pagination.ApplyFilter(q, "severity", params.Filters["severity"])
-	q = applyEventTypeFilter(q, params.Filters["type"])
 	q = pagination.ApplyFilter(q, "resource_type", params.Filters["resourceType"])
 	q = pagination.ApplyFilter(q, "username", params.Filters["username"])
 
+	var eventRecords []Event
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &eventRecords)
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate events: %w", err)
@@ -385,41 +333,6 @@ func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, envi
 	}
 
 	return eventDtos, paginationResp, nil
-}
-
-// applyEventTypeFilter filters by event type. Values containing a '.' are
-// exact types (e.g. "container.start"); values without one are category
-// prefixes (e.g. "container" matches "container.%"). Comma-separated values
-// are OR-ed together, mirroring pagination.ApplyFilter's multi-value handling.
-func applyEventTypeFilter(q *gorm.DB, value string) *gorm.DB {
-	if value == "" {
-		return q
-	}
-	var (
-		exact []string
-		conds []string
-		args  []any
-	)
-	for part := range strings.SplitSeq(value, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		if strings.Contains(part, ".") {
-			exact = append(exact, part)
-		} else {
-			conds = append(conds, "type LIKE ?")
-			args = append(args, part+".%")
-		}
-	}
-	if len(exact) > 0 {
-		conds = append(conds, "type IN ?")
-		args = append(args, exact)
-	}
-	if len(conds) == 0 {
-		return q
-	}
-	return q.Where(strings.Join(conds, " OR "), args...)
 }
 
 func (s *EventService) GetEventSeverityCounts(ctx context.Context) (event.SeverityCounts, error) {
@@ -489,60 +402,28 @@ func (s *EventService) DeleteOldEvents(ctx context.Context, olderThan time.Durat
 }
 
 func (s *EventService) LogContainerEvent(ctx context.Context, eventType EventType, containerID, containerName, userID, username, environmentID string, metadata database.JSON) error {
-	title := s.generateEventTitle(eventType, containerName)
-	description := s.generateEventDescription(eventType, "container", containerName)
-	severity := s.getEventSeverity(eventType)
-
-	_, err := s.CreateEvent(ctx, CreateEventRequest{
-		Type:          eventType,
-		Severity:      severity,
-		Title:         title,
-		Description:   description,
-		ResourceType:  new("container"),
-		ResourceID:    new(containerID),
-		ResourceName:  new(containerName),
-		UserID:        new(userID),
-		Username:      new(username),
-		EnvironmentID: new(environmentID),
-		Metadata:      metadata,
-	})
-	return err
+	return s.logResourceEvent(ctx, eventType, "container", containerID, containerName, userID, username, environmentID, metadata)
 }
 
 func (s *EventService) LogImageEvent(ctx context.Context, eventType EventType, imageID, imageName, userID, username, environmentID string, metadata database.JSON) error {
-	title := s.generateEventTitle(eventType, imageName)
-	description := s.generateEventDescription(eventType, "image", imageName)
-	severity := s.getEventSeverity(eventType)
-
-	_, err := s.CreateEvent(ctx, CreateEventRequest{
-		Type:          eventType,
-		Severity:      severity,
-		Title:         title,
-		Description:   description,
-		ResourceType:  new("image"),
-		ResourceID:    new(imageID),
-		ResourceName:  new(imageName),
-		UserID:        new(userID),
-		Username:      new(username),
-		EnvironmentID: new(environmentID),
-		Metadata:      metadata,
-	})
-	return err
+	return s.logResourceEvent(ctx, eventType, "image", imageID, imageName, userID, username, environmentID, metadata)
 }
 
 func (s *EventService) LogProjectEvent(ctx context.Context, eventType EventType, projectID, projectName, userID, username, environmentID string, metadata database.JSON) error {
-	title := s.generateEventTitle(eventType, projectName)
-	description := s.generateEventDescription(eventType, "project", projectName)
-	severity := s.getEventSeverity(eventType)
+	return s.logResourceEvent(ctx, eventType, "project", projectID, projectName, userID, username, environmentID, metadata)
+}
 
+// logResourceEvent records a successful operation on a resource using its eventDefinitions entry.
+func (s *EventService) logResourceEvent(ctx context.Context, eventType EventType, resourceType, resourceID, resourceName, userID, username, environmentID string, metadata database.JSON) error {
+	title, description, severity := describeEvent(eventType, resourceType, resourceName)
 	_, err := s.CreateEvent(ctx, CreateEventRequest{
 		Type:          eventType,
 		Severity:      severity,
 		Title:         title,
 		Description:   description,
-		ResourceType:  new("project"),
-		ResourceID:    new(projectID),
-		ResourceName:  new(projectName),
+		ResourceType:  new(resourceType),
+		ResourceID:    new(resourceID),
+		ResourceName:  new(resourceName),
 		UserID:        new(userID),
 		Username:      new(username),
 		EnvironmentID: new(environmentID),
@@ -552,10 +433,7 @@ func (s *EventService) LogProjectEvent(ctx context.Context, eventType EventType,
 }
 
 func (s *EventService) LogUserEvent(ctx context.Context, eventType EventType, userID, username string, metadata database.JSON) error {
-	title := s.generateEventTitle(eventType, username)
-	description := s.generateEventDescription(eventType, "user", username)
-	severity := s.getEventSeverity(eventType)
-
+	title, description, severity := describeEvent(eventType, "user", username)
 	_, err := s.CreateEvent(ctx, CreateEventRequest{
 		Type:        eventType,
 		Severity:    severity,
@@ -569,45 +447,11 @@ func (s *EventService) LogUserEvent(ctx context.Context, eventType EventType, us
 }
 
 func (s *EventService) LogVolumeEvent(ctx context.Context, eventType EventType, volumeID, volumeName, userID, username, environmentID string, metadata database.JSON) error {
-	title := s.generateEventTitle(eventType, volumeName)
-	description := s.generateEventDescription(eventType, "volume", volumeName)
-	severity := s.getEventSeverity(eventType)
-
-	_, err := s.CreateEvent(ctx, CreateEventRequest{
-		Type:          eventType,
-		Severity:      severity,
-		Title:         title,
-		Description:   description,
-		ResourceType:  new("volume"),
-		ResourceID:    new(volumeID),
-		ResourceName:  new(volumeName),
-		UserID:        new(userID),
-		Username:      new(username),
-		EnvironmentID: new(environmentID),
-		Metadata:      metadata,
-	})
-	return err
+	return s.logResourceEvent(ctx, eventType, "volume", volumeID, volumeName, userID, username, environmentID, metadata)
 }
 
 func (s *EventService) LogNetworkEvent(ctx context.Context, eventType EventType, networkID, networkName, userID, username, environmentID string, metadata database.JSON) error {
-	title := s.generateEventTitle(eventType, networkName)
-	description := s.generateEventDescription(eventType, "network", networkName)
-	severity := s.getEventSeverity(eventType)
-
-	_, err := s.CreateEvent(ctx, CreateEventRequest{
-		Type:          eventType,
-		Severity:      severity,
-		Title:         title,
-		Description:   description,
-		ResourceType:  new("network"),
-		ResourceID:    new(networkID),
-		ResourceName:  new(networkName),
-		UserID:        new(userID),
-		Username:      new(username),
-		EnvironmentID: new(environmentID),
-		Metadata:      metadata,
-	})
-	return err
+	return s.logResourceEvent(ctx, eventType, "network", networkID, networkName, userID, username, environmentID, metadata)
 }
 
 func (s *EventService) LogErrorEvent(ctx context.Context, eventType EventType, resourceType, resourceID, resourceName, userID, username, environmentID string, err error, metadata database.JSON) {
@@ -737,27 +581,13 @@ var eventDefinitions = map[EventType]eventDefinition{
 	EventTypeFederatedExchange: {"Federated credential exchange: %s", "Federated credential exchange for '%s'", EventSeverityInfo},
 }
 
-func (s *EventService) generateEventTitle(eventType EventType, resourceName string) string {
+// describeEvent formats an event's title, description, and severity, with a generic fallback for undefined types.
+func describeEvent(eventType EventType, resourceType, resourceName string) (string, string, EventSeverity) {
 	definition, ok := eventDefinitions[eventType]
-	return option.Map(func(def eventDefinition) string {
-		return fmt.Sprintf(def.TitleFormat, resourceName)
-	})(mo.TupleToOption(definition, ok)).OrElse("Event: " + string(eventType))
-}
-
-func (s *EventService) generateEventDescription(eventType EventType, resourceType, resourceName string) string {
-	definition, ok := eventDefinitions[eventType]
-	return option.Map(func(def eventDefinition) string {
-		return fmt.Sprintf(def.DescriptionFormat, resourceName)
-	})(mo.TupleToOption(definition, ok)).OrElse(
-		fmt.Sprintf("%s operation performed on %s '%s'", string(eventType), resourceType, resourceName),
-	)
-}
-
-func (s *EventService) getEventSeverity(eventType EventType) EventSeverity {
-	definition, ok := eventDefinitions[eventType]
-	return option.Map(func(def eventDefinition) EventSeverity {
-		return def.Severity
-	})(mo.TupleToOption(definition, ok)).OrElse(EventSeverityInfo)
+	if !ok {
+		return "Event: " + string(eventType), fmt.Sprintf("%s operation performed on %s '%s'", string(eventType), resourceType, resourceName), EventSeverityInfo
+	}
+	return fmt.Sprintf(definition.TitleFormat, resourceName), fmt.Sprintf(definition.DescriptionFormat, resourceName), definition.Severity
 }
 
 // RunStreamProducer signals committed event changes so clients can refresh their current query.
@@ -866,8 +696,74 @@ func (s *EventService) RecordDockerEvent(ctx context.Context, msg events.Message
 		}
 		req.deduplicationKey = fmt.Sprintf("%x", sha256.Sum256(identity))
 	}
+	s.daemonStart.Do(func() { go s.writeDaemonEvents(context.WithoutCancel(ctx)) })
+	s.daemonMu.RLock()
+	queued := false
+	if !s.daemonStopped {
+		select {
+		case s.daemonQueue <- req:
+			queued = true
+		default:
+		}
+	}
+	s.daemonMu.RUnlock()
+	if queued {
+		return
+	}
+	// A full queue or stopped writer falls back to a direct insert rather than dropping the event.
 	if _, err := s.CreateEvent(ctx, req); err != nil {
 		slog.WarnContext(ctx, "Failed to log Docker daemon event", "type", req.Type, "resourceId", msg.Actor.ID, "error", err)
+	}
+}
+
+func (s *EventService) writeDaemonEvents(ctx context.Context) {
+	defer close(s.daemonDone)
+	batch := make([]CreateEventRequest, 0, daemonEventBatchSize)
+	var flush <-chan time.Time
+	for open := true; open; {
+		select {
+		case req, ok := <-s.daemonQueue:
+			open = ok
+			if ok {
+				batch = append(batch, req)
+				if flush == nil {
+					flush = time.After(daemonEventFlushInterval)
+				}
+				if len(batch) < daemonEventBatchSize {
+					continue
+				}
+			}
+		case <-flush:
+		}
+		if _, err := s.persistEvents(ctx, batch); err != nil {
+			slog.WarnContext(ctx, "Failed to persist Docker daemon event batch; retrying individually", "count", len(batch), "error", err)
+			for _, req := range batch {
+				if _, createErr := s.CreateEvent(ctx, req); createErr != nil {
+					slog.WarnContext(ctx, "Failed to log Docker daemon event", "type", req.Type, "resourceId", kit.FromPtr(req.ResourceID), "error", createErr)
+				}
+			}
+		}
+		batch = batch[:0]
+		flush = nil
+	}
+}
+
+// Stop flushes queued daemon events; later observations are persisted directly.
+func (s *EventService) Stop(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	s.daemonMu.Lock()
+	if !s.daemonStopped {
+		s.daemonStopped = true
+		close(s.daemonQueue)
+	}
+	s.daemonMu.Unlock()
+	s.daemonStart.Do(func() { close(s.daemonDone) })
+	select {
+	case <-s.daemonDone:
+		return nil
+	case <-ctx.Done():
+		return fmt.Errorf("failed to flush Docker daemon events: %w", ctx.Err())
 	}
 }
 
@@ -992,7 +888,7 @@ func (s *EventService) correlateCreatedEvent(req CreateEventRequest) {
 	if req.ResourceType == nil || req.Metadata["source"] == "docker" {
 		return
 	}
-	if req.EnvironmentID != nil && *req.EnvironmentID != "" && *req.EnvironmentID != "0" {
+	if cmp.Or(kit.FromPtr(req.EnvironmentID), "0") != "0" {
 		return
 	}
 	// Failure and observational records do not identify a successful Docker mutation.
@@ -1007,12 +903,5 @@ func (s *EventService) correlateCreatedEvent(req CreateEventRequest) {
 	default:
 		return
 	}
-	var id, name string
-	if req.ResourceID != nil {
-		id = *req.ResourceID
-	}
-	if req.ResourceName != nil {
-		name = *req.ResourceName
-	}
-	s.MarkDockerExpectation(*req.ResourceType, id, name)
+	s.correlation.MarkExpectation(*req.ResourceType, kit.FromPtr(req.ResourceID), kit.FromPtr(req.ResourceName))
 }

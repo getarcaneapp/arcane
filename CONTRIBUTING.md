@@ -290,7 +290,10 @@ When `./scripts/development/dev.sh start` fails or the app does not load, valida
    ```bash
    curl -f http://localhost:3000
    curl -f http://localhost:3552/api/health
+   curl -f http://localhost:3552/api/health/ready
    ```
+
+   `/api/health` reports process liveness. `/api/health/ready` also pings the database and Docker and returns 503 until both answer; use it for orchestrator readiness probes if you need one.
 
 5. If a service is unhealthy, read the targeted logs first:
 

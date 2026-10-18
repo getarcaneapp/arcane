@@ -16,7 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 )
 
-func setupSwarmServiceTestDBInternal(t *testing.T) *database.DB {
+func setupSwarmServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -24,7 +24,7 @@ func setupSwarmServiceTestDBInternal(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
-func newSettingsServiceForSwarmTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
+func newSettingsServiceForSwarmTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
 	svc, err := settings.NewSettingsService(ctx, db)
 	if err == nil {
@@ -38,12 +38,12 @@ type stackSourceDeployRecorder struct {
 	lastReq swarm.StackDeployRequest
 }
 
-func stubStackSourceUpdateDeployInternal(t *testing.T) *stackSourceDeployRecorder {
+func stubStackSourceUpdateDeploy(t *testing.T) *stackSourceDeployRecorder {
 	t.Helper()
-	original := deployStackAfterSourceUpdateInternal
-	t.Cleanup(func() { deployStackAfterSourceUpdateInternal = original })
+	original := deployStackAfterSourceUpdate
+	t.Cleanup(func() { deployStackAfterSourceUpdate = original })
 	rec := &stackSourceDeployRecorder{}
-	deployStackAfterSourceUpdateInternal = func(_ *Service, _ context.Context, _ string, req swarm.StackDeployRequest) (*swarm.StackDeployResponse, error) {
+	deployStackAfterSourceUpdate = func(_ *Service, _ context.Context, _ string, req swarm.StackDeployRequest) (*swarm.StackDeployResponse, error) {
 		rec.calls++
 		rec.lastReq = req
 		return &swarm.StackDeployResponse{Name: req.Name}, nil
@@ -53,15 +53,15 @@ func stubStackSourceUpdateDeployInternal(t *testing.T) *stackSourceDeployRecorde
 
 func TestService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager(t *testing.T) {
 	ctx := t.Context()
-	db := setupSwarmServiceTestDBInternal(t)
+	db := setupSwarmServiceTestDB(t)
 	rootDir := t.TempDir()
 	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
 
-	settingsSvc, err := newSettingsServiceForSwarmTestInternal(t, ctx, db)
+	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
 	require.NoError(t, err)
 
 	svc := NewService(nil, nil, nil, nil, nil, settingsSvc)
-	deployRec := stubStackSourceUpdateDeployInternal(t)
+	deployRec := stubStackSourceUpdateDeploy(t)
 
 	updated, err := svc.UpdateStackSource(ctx, "0", "demo-stack", swarm.StackSourceUpdateRequest{
 		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
@@ -117,15 +117,15 @@ func TestService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager(t *t
 
 func TestService_UpdateAndGetStackSource_RoundTripsOverride(t *testing.T) {
 	ctx := t.Context()
-	db := setupSwarmServiceTestDBInternal(t)
+	db := setupSwarmServiceTestDB(t)
 	rootDir := t.TempDir()
 	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
 
-	settingsSvc, err := newSettingsServiceForSwarmTestInternal(t, ctx, db)
+	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
 	require.NoError(t, err)
 
 	svc := NewService(nil, nil, nil, nil, nil, settingsSvc)
-	stubStackSourceUpdateDeployInternal(t)
+	stubStackSourceUpdateDeploy(t)
 
 	overridePath := filepath.Join(rootDir, "0", "demo-stack", "compose.override.yaml")
 
@@ -157,20 +157,20 @@ func TestService_UpdateAndGetStackSource_RoundTripsOverride(t *testing.T) {
 
 func TestService_UpdateStackSource_PrunesAndRestoresOnDeployFailure(t *testing.T) {
 	ctx := t.Context()
-	db := setupSwarmServiceTestDBInternal(t)
+	db := setupSwarmServiceTestDB(t)
 	rootDir := t.TempDir()
 	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
 
-	settingsSvc, err := newSettingsServiceForSwarmTestInternal(t, ctx, db)
+	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
 	require.NoError(t, err)
 
 	svc := NewService(nil, nil, nil, nil, nil, settingsSvc)
 
-	original := deployStackAfterSourceUpdateInternal
-	t.Cleanup(func() { deployStackAfterSourceUpdateInternal = original })
+	original := deployStackAfterSourceUpdate
+	t.Cleanup(func() { deployStackAfterSourceUpdate = original })
 	var lastReq swarm.StackDeployRequest
 	var deployErr error
-	deployStackAfterSourceUpdateInternal = func(_ *Service, _ context.Context, _ string, req swarm.StackDeployRequest) (*swarm.StackDeployResponse, error) {
+	deployStackAfterSourceUpdate = func(_ *Service, _ context.Context, _ string, req swarm.StackDeployRequest) (*swarm.StackDeployResponse, error) {
 		lastReq = req
 		if deployErr != nil {
 			return nil, deployErr

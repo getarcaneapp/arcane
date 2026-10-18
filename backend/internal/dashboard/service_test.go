@@ -394,7 +394,7 @@ func TestDashboardService_GetSnapshot_CachesFullSnapshotsPerIconCatalog(t *testi
 
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images, nil)
 	require.NoError(t, settingsSvc.SetStringSetting(t.Context(), "autoUpdateExcludedContainers", "running-app"))
-	containerSvc := container.NewContainerService(nil, dockerSvc, nil, settingsSvc, nil)
+	containerSvc := container.NewContainerService(nil, dockerSvc, nil, settingsSvc, nil, nil)
 	svc := NewDashboardService(db, dockerSvc, containerSvc, nil, nil, settingsSvc, nil, nil, nil, nil)
 
 	defaultSnapshot, err := svc.GetSnapshot(t.Context(), DashboardActionItemsOptions{}, true)

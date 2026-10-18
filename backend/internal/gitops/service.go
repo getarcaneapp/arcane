@@ -46,6 +46,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 )
 
@@ -827,7 +828,7 @@ func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id
 		return nil, err
 	}
 
-	status := &gitops.SyncStatus{
+	return &gitops.SyncStatus{
 		ID:                  syncRecord.ID,
 		AutoSync:            syncRecord.AutoSync,
 		LastSyncAt:          syncRecord.LastSyncAt,
@@ -839,14 +840,13 @@ func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id
 		BackupPending:       syncRecord.BackupPending,
 		BackupFailureReason: syncRecord.BackupFailureReason,
 		LastBackupAt:        syncRecord.LastBackupAt,
-	}
-
-	// Calculate next sync time
-	if syncRecord.AutoSync && syncRecord.LastSyncAt != nil {
-		status.NextSyncAt = new(syncRecord.LastSyncAt.Add(time.Duration(syncRecord.SyncInterval) * time.Minute))
-	}
-
-	return status, nil
+		NextSyncAt: func() *time.Time {
+			if !syncRecord.AutoSync || syncRecord.LastSyncAt == nil {
+				return nil
+			}
+			return new(syncRecord.LastSyncAt.Add(time.Duration(syncRecord.SyncInterval) * time.Minute))
+		}(),
+	}, nil
 }
 
 // CleanupLeakedScratchDirsOnStartup removes GitOps scratch directories an interrupted sync left in the projects
@@ -1063,6 +1063,7 @@ func (r *backupRuntime) schedule(syncID string, run func()) {
 		timer.Stop()
 	}
 	r.timers[syncID] = time.AfterFunc(r.debounce, func() {
+		defer utils.RecoverToError(nil, "git backup debounce", "syncId", syncID)
 		r.mu.Lock()
 		delete(r.timers, syncID)
 		r.mu.Unlock()
@@ -1122,6 +1123,7 @@ func (s *GitOpsSyncService) SubscribeProjectFileChanges(ctx context.Context) {
 					return
 				}
 				go func() {
+					defer utils.RecoverToError(nil, "git backup after save", "syncId", syncID, "projectId", projectID)
 					if _, err := s.PerformSync(runCtx, environmentID, syncID, user.SystemUser); err != nil {
 						slog.ErrorContext(runCtx, "git backup after save failed", "syncId", syncID, "error", err)
 					}

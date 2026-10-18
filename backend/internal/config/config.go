@@ -35,7 +35,7 @@ type Config struct {
 	BuildablesConfig
 
 	AppUrl                string         `env:"APP_URL" default:"http://localhost:3552"`
-	DatabaseURL           string         `env:"DATABASE_URL" default:"file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate" options:"file"`
+	DatabaseURL           string         `env:"DATABASE_URL" default:"file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_txlock=immediate" options:"file"`
 	AllowDowngrade        bool           `env:"ALLOW_DOWNGRADE" default:"false"`
 	AllowCLIPasswordReset bool           `env:"ALLOW_CLI_PASSWORD_RESET" default:"false"`
 	AllowCLIMFAReset      bool           `env:"ALLOW_CLI_MFA_RESET" default:"false"`
@@ -118,7 +118,7 @@ func Load() *Config {
 	cfg := &Config{}
 	loadFromEnv(cfg)
 	applyOptions(cfg)
-	applyAgentModeDefaults(cfg)
+	cfg.AgentMode = cfg.AgentMode || cfg.EdgeAgent
 	applyProxyDefaults(cfg)
 	applyWorkspaceDefaults(cfg)
 
@@ -172,12 +172,6 @@ func applyWorkspaceDefaults(cfg *Config) {
 	}
 }
 
-func applyAgentModeDefaults(cfg *Config) {
-	if cfg.EdgeAgent {
-		cfg.AgentMode = true
-	}
-}
-
 // applyProxyDefaults auto-trusts loopback proxies when LISTEN binds to a
 // loopback address. This is the canonical convenience-script setup
 // (LISTEN=127.0.0.1 + local reverse proxy like Caddy/Nginx/Traefik); auto-
@@ -216,7 +210,7 @@ func loadFromEnv(cfg *Config) {
 
 		envValue := os.Getenv(envTag)
 		var fromFile bool
-		if hasOptionInternal(fieldType, "file") {
+		if hasOption(fieldType, "file") {
 			envValue, _, fromFile = utils.LookupEnvOrFile(envTag)
 		}
 		if !fromFile {
@@ -226,12 +220,12 @@ func loadFromEnv(cfg *Config) {
 			}
 		}
 
-		setFieldValueInternal(field, fieldType, envValue)
+		setFieldValue(field, fieldType, envValue)
 	})
 }
 
-// hasOptionInternal reports whether the field's `options` tag lists option.
-func hasOptionInternal(fieldType reflect.StructField, option string) bool {
+// hasOption reports whether the field's `options` tag lists option.
+func hasOption(fieldType reflect.StructField, option string) bool {
 	return slices.Contains(strings.Split(fieldType.Tag.Get("options"), ","), option)
 }
 
@@ -241,7 +235,7 @@ func (c *Config) DeprecatedEnvVarsSet() []string {
 	var envNames []string
 	v := reflect.ValueOf(c).Elem()
 	visitConfigFields(v, func(field reflect.Value, fieldType reflect.StructField) {
-		if !hasOptionInternal(fieldType, "deprecated") {
+		if !hasOption(fieldType, "deprecated") {
 			return
 		}
 		if field.Kind() == reflect.String && field.String() == "" {
@@ -315,8 +309,8 @@ func visitConfigFields(v reflect.Value, fn func(reflect.Value, reflect.StructFie
 	}
 }
 
-// setFieldValueInternal sets a reflect.Value from a string based on the field's type.
-func setFieldValueInternal(field reflect.Value, fieldType reflect.StructField, value string) {
+// setFieldValue sets a reflect.Value from a string based on the field's type.
+func setFieldValue(field reflect.Value, fieldType reflect.StructField, value string) {
 	ctx := context.Background() //nolint:forbidigo // Configuration loads before any request context exists.
 	if !field.CanSet() {
 		return
@@ -350,47 +344,26 @@ func setFieldValueInternal(field reflect.Value, fieldType reflect.StructField, v
 	}
 
 	if field.Type() == reflect.TypeFor[time.Duration]() {
-		applyDurationDefault := func(reason string) {
-			envTag := fieldType.Tag.Get("env")
-			defaultValue := fieldType.Tag.Get("default")
-
-			if fallback, fallbackErr := time.ParseDuration(defaultValue); fallbackErr == nil {
-				slog.WarnContext(ctx, "Invalid duration for config field, using tagged default",
-					"reason", reason,
-					"field", envTag,
-					"value", value,
-					"default", defaultValue)
-				field.SetInt(int64(fallback))
-			} else {
-				slog.WarnContext(ctx, "Invalid duration for config field and invalid tagged default",
-					"reason", reason,
-					"field", envTag,
-					"value", value,
-					"default", defaultValue)
-			}
+		d, err := time.ParseDuration(value)
+		if err == nil && d > 0 {
+			field.SetInt(int64(d))
+			return
 		}
-
-		if d, err := time.ParseDuration(value); err == nil {
-			if d > 0 {
-				field.SetInt(int64(d))
-			} else {
-				applyDurationDefault("Non-positive duration for config field")
-			}
-		} else {
-			applyDurationDefault("Invalid duration for config field")
+		reason := kit.Ternary(err == nil, "Non-positive duration for config field", "Invalid duration for config field")
+		envTag, defaultValue := fieldType.Tag.Get("env"), fieldType.Tag.Get("default")
+		fallback, fallbackErr := time.ParseDuration(defaultValue)
+		if fallbackErr != nil {
+			slog.WarnContext(ctx, "Invalid duration for config field and invalid tagged default", "reason", reason, "field", envTag, "value", value, "default", defaultValue)
+			return
 		}
+		slog.WarnContext(ctx, "Invalid duration for config field, using tagged default", "reason", reason, "field", envTag, "value", value, "default", defaultValue)
+		field.SetInt(int64(fallback))
 		return
 	}
 
-	// Handle custom types based on underlying kind
+	// String-based types like AppEnvironment; os.FileMode is handled as Uint32 above.
 	if field.Type().ConvertibleTo(reflect.TypeFor[string]()) {
-		// String-based types like AppEnvironment
 		field.Set(reflect.ValueOf(value).Convert(field.Type()))
-	} else if field.Type() == reflect.TypeFor[os.FileMode]() {
-		// os.FileMode
-		if i, err := strconv.ParseUint(value, 8, 32); err == nil {
-			field.Set(reflect.ValueOf(os.FileMode(i)))
-		}
 	}
 }
 
@@ -463,10 +436,7 @@ func (c *Config) MaskSensitive() map[string]any {
 		envTag := cmp.Or(fieldType.Tag.Get("env"), fieldType.Name)
 
 		// Fields with "file" option are considered sensitive
-		optionsTag := fieldType.Tag.Get("options")
-		isSensitive := strings.Contains(optionsTag, "file")
-
-		if isSensitive {
+		if hasOption(fieldType, "file") {
 			// Mask sensitive values
 			strVal := fmt.Sprintf("%v", field.Interface())
 			result[envTag] = kit.Ternary(strVal != "", "****", "(empty)")

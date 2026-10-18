@@ -24,8 +24,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
@@ -38,45 +36,17 @@ type Builder interface {
 
 // Service runs the image side of deployments: pulls, update reconciliation, builds and dependents.
 type Service struct {
-	settingsService *settings.SettingsService
-	imageService    *image.ImageService
-	dockerService   *docker.DockerClientService
-	buildService    Builder
+	imageService  *image.ImageService
+	dockerService *docker.DockerClientService
+	buildService  Builder
 }
 
-func New(settingsService *settings.SettingsService, imageService *image.ImageService, dockerService *docker.DockerClientService, buildService Builder) *Service {
+func New(imageService *image.ImageService, dockerService *docker.DockerClientService, buildService Builder) *Service {
 	return &Service{
-		settingsService: settingsService,
-		imageService:    imageService,
-		dockerService:   dockerService,
-		buildService:    buildService,
+		imageService:  imageService,
+		dockerService: dockerService,
+		buildService:  buildService,
 	}
-}
-
-// Pull pulls one image within the configured pull timeout and reconciles its update state.
-func (s *Service) Pull(
-	ctx context.Context,
-	imageRef string,
-	progressWriter io.Writer,
-	user usertypes.Actor,
-	credentials []containerregistry.Credential,
-) error {
-	cfg := s.settingsService.GetSettingsConfig()
-
-	pullCtx, pullCancel := context.WithTimeout(ctx, timeouts.GetDuration(cfg.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull))
-	defer pullCancel()
-
-	if err := s.imageService.PullImage(pullCtx, imageRef, progressWriter, user, credentials); err != nil {
-		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
-			return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", imageRef)
-		}
-		return fmt.Errorf("failed to pull image %s: %w", imageRef, err)
-	}
-
-	if err := s.imageService.ReconcilePulledImageUpdate(ctx, imageRef); err != nil {
-		slog.WarnContext(ctx, "failed to reconcile pulled image update state", "image", imageRef, "error", err)
-	}
-	return nil
 }
 
 // NamespaceDependents splits dependents into running and stopped-only services; never-created ones are skipped.
@@ -114,8 +84,13 @@ func (s *Service) ImageOperations(user *usertypes.Actor, credentials []container
 	return projecttypes.ComposeImageOperations{
 		Exists:     s.imageService.ImageExistsLocally,
 		LastTagged: s.imageService.ImageLastTagTime,
-		Pull: func(ctx context.Context, image string, progress io.Writer) error {
-			return s.Pull(ctx, image, progress, *cmp.Or(user, &usertypes.SystemUser), credentials)
+		Pull: func(ctx context.Context, ref string, progress io.Writer) error {
+			return s.imageService.Pull(ctx, image.PullRequest{
+				Ref:         ref,
+				Progress:    progress,
+				User:        *cmp.Or(user, &usertypes.SystemUser),
+				Credentials: credentials,
+			})
 		},
 		Build: func(ctx context.Context, request buildtypes.BuildRequest, progress io.Writer, service string) error {
 			_, err := s.buildService.BuildImage(ctx, types.LocalDockerEnvironmentID, request, progress, service, user)

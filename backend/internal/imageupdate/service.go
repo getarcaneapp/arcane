@@ -171,13 +171,6 @@ func NewImageUpdateService(
 	}
 }
 
-func (s *ImageUpdateService) dockerAPIContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	if s.settingsService == nil {
-		return context.WithTimeout(ctx, timeouts.DefaultDockerAPI)
-	}
-	return context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
-}
-
 func (s *ImageUpdateService) registryContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	if s.settingsService == nil {
 		return context.WithTimeout(ctx, timeouts.DefaultRegistry)
@@ -185,19 +178,7 @@ func (s *ImageUpdateService) registryContext(ctx context.Context) (context.Conte
 	return context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry))
 }
 
-func (s *ImageUpdateService) dockerClient(ctx context.Context) (*client.Client, error) {
-	if s.dockerService == nil {
-		return nil, errors.New("docker service unavailable")
-	}
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-	return dockerClient, nil
-}
-
 func (s *ImageUpdateService) composeBuildImageRefs(ctx context.Context) (map[string]struct{}, error) {
-	buildRefs := make(map[string]struct{})
 	var projectRows []struct {
 		ID                 string
 		BuildImageRefsJSON *string `gorm:"column:build_image_refs_json"`
@@ -208,15 +189,6 @@ func (s *ImageUpdateService) composeBuildImageRefs(ctx context.Context) (map[str
 		Where("build_image_refs_json IS NOT NULL AND build_image_refs_json <> ''").
 		Find(&projectRows).Error; err != nil {
 		return nil, fmt.Errorf("load project build image references: %w", err)
-	}
-
-	for _, row := range projectRows {
-		for _, imageRef := range projects.ParseImageRefsJSON(kit.FromPtr(row.BuildImageRefsJSON)) {
-			normalized := refs.NormalizeImageUpdateRef(imageRef)
-			if normalized != "" {
-				buildRefs[normalized] = struct{}{}
-			}
-		}
 	}
 
 	// Copacetic-patched tags only exist in the local daemon, so treat them like
@@ -230,9 +202,13 @@ func (s *ImageUpdateService) composeBuildImageRefs(ctx context.Context) (map[str
 		Pluck("patched_ref", &patchedRefs).Error; err != nil {
 		slog.DebugContext(ctx, "failed to load patched image references", "error", err)
 	}
+	for _, row := range projectRows {
+		patchedRefs = append(patchedRefs, projects.ParseImageRefsJSON(kit.FromPtr(row.BuildImageRefsJSON))...)
+	}
+
+	buildRefs := make(map[string]struct{}, len(patchedRefs))
 	for _, imageRef := range patchedRefs {
-		normalized := refs.NormalizeImageUpdateRef(imageRef)
-		if normalized != "" {
+		if normalized := refs.NormalizeImageUpdateRef(imageRef); normalized != "" {
 			buildRefs[normalized] = struct{}{}
 		}
 	}
@@ -404,7 +380,13 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 				if kit.FromPtr(snapshot).ImageID != "" {
 					return snapshot.ImageID, nil
 				}
-				return s.getImageIDByRef(ctx, imageRef)
+				inspectResponse, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+					return dockerClient.ImageInspect(ctx, imageRef)
+				})
+				if inspectErr != nil {
+					return "", fmt.Errorf("image not found: %w", inspectErr)
+				}
+				return inspectResponse.ID, nil
 			}()
 			switch {
 			case imageIDErr != nil:
@@ -533,18 +515,12 @@ func (s *ImageUpdateService) parseImageReference(imageRef string) *ImageParts {
 }
 
 func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string) (string, error) {
-	dockerClient, err := s.dockerClient(ctx)
-	if err != nil {
-		return "", err
-	}
-
 	imageID = strings.TrimPrefix(imageID, "sha256:")
 
 	if imageRef, ok := func() (string, bool) {
-		apiCtx, cancel := s.dockerAPIContext(ctx)
-		defer cancel()
-
-		inspectResponse, inspectErr := dockerClient.ImageInspect(apiCtx, imageID)
+		inspectResponse, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+			return dockerClient.ImageInspect(ctx, imageID)
+		})
 		if inspectErr != nil {
 			return "", false
 		}
@@ -556,12 +532,8 @@ func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string
 				}
 			}
 		}
-		for _, digestValue := range inspectResponse.RepoDigests {
-			if digestValue != "<none>@<none>" {
-				if repo, _, found := strings.Cut(digestValue, "@"); found {
-					return repo + ":latest", true
-				}
-			}
+		if repo, found := imageref.RepoDigestRepository(inspectResponse.RepoDigests); found {
+			return repo + ":latest", true
 		}
 		return "", false
 	}(); ok {
@@ -571,10 +543,9 @@ func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string
 	// Fallback: if the image was pruned, look up the image reference from
 	// running containers that were started from this image ID.
 	if imageRef, ok := func() (string, bool) {
-		apiCtx, cancel := s.dockerAPIContext(ctx)
-		defer cancel()
-
-		containers, listErr := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
+		containers, listErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
+			return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+		})
 		if listErr != nil {
 			return "", false
 		}
@@ -595,21 +566,15 @@ func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string
 }
 
 func (s *ImageUpdateService) getAllImageRefs(ctx context.Context, limit int) ([]string, error) {
-	imageCtx, cancelImage := s.dockerAPIContext(ctx)
-	images, err := s.dockerService.ListImages(imageCtx)
-	cancelImage()
+	images, err := s.dockerService.ListImages(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Docker images: %w", err)
 	}
 
-	containerCtx, cancelContainers := s.dockerAPIContext(ctx)
-	containers, err := s.dockerService.ListContainers(containerCtx)
-	cancelContainers()
+	containers, err := s.dockerService.ListContainers(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to list Docker containers; continuing without update-check opt-out filtering", "error", err.Error())
-		return filterImageSummariesByContainerOptOut(images, nil, limit), nil
 	}
-
 	return filterImageSummariesByContainerOptOut(images, containers, limit), nil
 }
 
@@ -695,15 +660,9 @@ func filterImageSummariesByContainerOptOut(images []image.Summary, containers []
 }
 
 func (s *ImageUpdateService) inspectLocalImageSnapshot(ctx context.Context, imageRef string, composeBuildRefs map[string]struct{}) (*localImageSnapshot, error) {
-	dockerClient, err := s.dockerClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	apiCtx, cancel := s.dockerAPIContext(ctx)
-	defer cancel()
-
-	inspectResponse, err := dockerClient.ImageInspect(apiCtx, imageRef)
+	inspectResponse, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		return dockerClient.ImageInspect(ctx, imageRef)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect image: %w", err)
 	}
@@ -725,12 +684,12 @@ func (s *ImageUpdateService) inspectLocalImageSnapshot(ctx context.Context, imag
 		}
 	}
 
-	repo, tag := extractRepoAndTagFromImage(inspectResponse.InspectResponse)
+	repo, tag := extractRepoAndTagFromImage(inspectResponse.InspectResponse, s.parseImageReference(imageRef))
 
 	return &localImageSnapshot{
 		ImageID:    inspectResponse.ID,
 		Repository: repo,
-		Tag:        tagWithFallback(tag, s.parseImageReference(imageRef)),
+		Tag:        tag,
 		// Use the first repository digest, else the first digest; fallback to image ID if no repo digests available
 		PrimaryDigest:     slices.Concat(repositoryDigests, allDigests, []string{inspectResponse.ID})[0],
 		AllDigests:        kit.Ternary(len(allDigests) > 0, allDigests, []string{inspectResponse.ID}),
@@ -756,7 +715,17 @@ func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID s
 		return nil, err
 	}
 	if len(result.ContainerUpdates) == 0 {
-		if saveErr := s.saveUpdateResultByID(ctx, imageID, result, s.parseImageReference(imageRef)); saveErr != nil {
+		saveErr := func() error {
+			dockerImage, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+				return dockerClient.ImageInspect(ctx, imageID)
+			})
+			if inspectErr != nil {
+				return fmt.Errorf("failed to inspect image: %w", inspectErr)
+			}
+			repo, tag := extractRepoAndTagFromImage(dockerImage.InspectResponse, s.parseImageReference(imageRef))
+			return s.savePreparedUpdateResult(ctx, imageID, repo, tag, result)
+		}()
+		if saveErr != nil {
 			slog.WarnContext(ctx, "Failed to save update result by ID", "imageId", imageID, "error", saveErr.Error())
 		}
 	}
@@ -772,7 +741,9 @@ func (s *ImageUpdateService) saveUpdateResultWithSnapshot(ctx context.Context, i
 	if parts == nil {
 		return errors.New("invalid image reference")
 	}
-	imageID, err := s.getImageIDByRef(ctx, imageRef)
+	inspectResponse, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		return dockerClient.ImageInspect(ctx, imageRef)
+	})
 	if err != nil {
 		repository := func() string {
 			repositoryPath := strings.TrimSpace(parts.Repository)
@@ -796,10 +767,13 @@ func (s *ImageUpdateService) saveUpdateResultWithSnapshot(ctx context.Context, i
 		return s.savePreparedUpdateResult(ctx, syntheticID, repository, parts.Tag, result)
 	}
 
-	return s.saveUpdateResultByID(ctx, imageID, result, parts)
+	repo, tag := extractRepoAndTagFromImage(inspectResponse.InspectResponse, parts)
+	return s.savePreparedUpdateResult(ctx, inspectResponse.ID, repo, tag, result)
 }
 
-func extractRepoAndTagFromImage(dockerImage image.InspectResponse) (repo, tag string) {
+// extractRepoAndTagFromImage reads the image's first usable tag; an untagged image uses fallback's tag when set.
+func extractRepoAndTagFromImage(dockerImage image.InspectResponse, fallback *ImageParts) (repo, tag string) {
+	untagged := cmp.Or(strings.TrimSpace(kit.FromPtr(fallback).Tag), "<none>")
 	if len(dockerImage.RepoTags) > 0 && dockerImage.RepoTags[0] != "<none>:<none>" {
 		if named, err := reference.ParseNormalizedNamed(dockerImage.RepoTags[0]); err == nil {
 			if tagged, ok := named.(reference.NamedTagged); ok {
@@ -815,16 +789,11 @@ func extractRepoAndTagFromImage(dockerImage image.InspectResponse) (repo, tag st
 		return parts[0], "latest"
 	}
 
-	for _, rd := range dockerImage.RepoDigests {
-		if rd == "<none>@<none>" {
-			continue
-		}
-		if repoCandidate, _, found := strings.CutLast(rd, "@"); found && repoCandidate != "" {
-			return repoCandidate, "<none>"
-		}
+	if repoCandidate, found := imageref.RepoDigestRepository(dockerImage.RepoDigests); found {
+		return repoCandidate, untagged
 	}
 
-	return "<none>", "<none>"
+	return "<none>", untagged
 }
 
 func buildImageUpdateRecord(imageID, repo, tag string, result *imageupdate.Response, notificationSent bool, latestSeenAt *time.Time, carried *ImageUpdateRecord) *ImageUpdateRecord {
@@ -904,51 +873,10 @@ func savePreparedUpdateResultWithTx(tx *gorm.DB, imageID, repo, tag string, resu
 	)).Error
 }
 
-func (s *ImageUpdateService) saveUpdateResultByID(ctx context.Context, imageID string, result *imageupdate.Response, fallback *ImageParts) error {
-	dockerClient, err := s.dockerClient(ctx)
-	if err != nil {
-		return err
-	}
-
-	apiCtx, cancel := s.dockerAPIContext(ctx)
-	defer cancel()
-
-	dockerImage, err := dockerClient.ImageInspect(apiCtx, imageID)
-	if err != nil {
-		return fmt.Errorf("failed to inspect image: %w", err)
-	}
-
-	repo, tag := extractRepoAndTagFromImage(dockerImage.InspectResponse)
-	return s.savePreparedUpdateResult(ctx, imageID, repo, tagWithFallback(tag, fallback), result)
-}
-
-func tagWithFallback(tag string, fallback *ImageParts) string {
-	if tag == "<none>" && strings.TrimSpace(kit.FromPtr(fallback).Tag) != "" {
-		return fallback.Tag
-	}
-	return tag
-}
-
 func (s *ImageUpdateService) savePreparedUpdateResult(ctx context.Context, imageID, repo, tag string, result *imageupdate.Response) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return savePreparedUpdateResultWithTx(tx, imageID, repo, tag, result)
 	})
-}
-
-func (s *ImageUpdateService) getImageIDByRef(ctx context.Context, imageRef string) (string, error) {
-	dockerClient, err := s.dockerClient(ctx)
-	if err != nil {
-		return "", err
-	}
-
-	apiCtx, cancel := s.dockerAPIContext(ctx)
-	defer cancel()
-
-	inspectResponse, err := dockerClient.ImageInspect(apiCtx, imageRef)
-	if err != nil {
-		return "", fmt.Errorf("image not found: %w", err)
-	}
-	return inspectResponse.ID, nil
 }
 
 func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, imageRef string) error {
@@ -1404,13 +1332,9 @@ func (s *ImageUpdateService) CheckImages(ctx context.Context, request imageupdat
 
 // MonitoredImageRefs keeps the refs whose containers still permit update checks.
 func (s *ImageUpdateService) MonitoredImageRefs(ctx context.Context, imageRefs []string) ([]string, error) {
-	dockerClient, err := s.dockerClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	apiCtx, cancel := s.dockerAPIContext(ctx)
-	listed, err := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
-	cancel()
+	listed, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
+		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list containers for update-check eligibility: %w", err)
 	}
@@ -1683,13 +1607,9 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) e
 		// Records for resources that opted out of monitoring since the check, or
 		// whose container is gone, stay unnotified: they resurface if monitoring
 		// is re-enabled and are otherwise removed by orphan cleanup.
-		dockerClient, clientErr := s.dockerClient(notifCtx)
-		if clientErr != nil {
-			return records, fmt.Errorf("resolve update-check eligibility: %w", clientErr)
-		}
-		apiCtx, apiCancel := s.dockerAPIContext(notifCtx)
-		listed, listErr := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
-		apiCancel()
+		listed, listErr := s.dockerService.Call(notifCtx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
+			return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+		})
 		if listErr != nil {
 			return records, fmt.Errorf("list containers for update-check eligibility: %w", listErr)
 		}
@@ -1869,13 +1789,9 @@ func (s *ImageUpdateService) checkContainerTagUpdates(ctx context.Context, image
 	if len(wanted) == 0 {
 		return map[string]*imageupdate.Response{}, nil
 	}
-	dockerClient, err := s.dockerClient(ctx)
-	if err != nil {
-		return map[string]*imageupdate.Response{}, err
-	}
-	apiCtx, cancel := s.dockerAPIContext(ctx)
-	listed, err := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
-	cancel()
+	listed, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
+		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+	})
 	if err != nil {
 		return map[string]*imageupdate.Response{}, fmt.Errorf("list containers for tag update checks: %w", err)
 	}

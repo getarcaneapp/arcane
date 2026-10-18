@@ -13,13 +13,13 @@ import (
 	"github.com/samber/mo"
 )
 
-func reexecWithRuntimeIdentityInternal(ctx context.Context, req runtimeIdentityRequest) error {
+func reexecWithRuntimeIdentity(ctx context.Context, req runtimeIdentityRequest) error {
 	executable, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve executable: %w", err)
 	}
 
-	groups := runtimeIdentitySupplementaryGroupsInternal(req.DockerHost, resolveSocketGroupInternal)
+	groups := runtimeIdentitySupplementaryGroups(req.DockerHost, resolveSocketGroup)
 
 	cmd := exec.CommandContext(ctx, executable, os.Args[1:]...) //nolint:gosec // re-executing our own binary with the same args under a different UID/GID
 	// Forward shutdown instead of the default SIGKILL so the child can unregister its actor host.
@@ -59,7 +59,7 @@ func reexecWithRuntimeIdentityInternal(ctx context.Context, req runtimeIdentityR
 	return fmt.Errorf("wait for runtime identity child: %w", waitErr)
 }
 
-func resolveSocketGroupInternal(socketPath string) mo.Option[uint32] {
+func resolveSocketGroup(socketPath string) mo.Option[uint32] {
 	// os.* rather than acfs: the docker socket is a host-configured system path
 	// probed during identity bootstrap, not under any acfs root.
 	info, err := os.Stat(socketPath)

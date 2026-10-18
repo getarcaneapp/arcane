@@ -8,7 +8,7 @@ import (
 	"strconv"
 )
 
-func parseRuntimeIdentityValueInternal(raw, key string) (int, uint32, error) {
+func parseRuntimeIdentityValue(raw, key string) (int, uint32, error) {
 	value, err := strconv.Atoi(raw)
 	if err != nil {
 		return 0, 0, fmt.Errorf("parse %s: %w", key, err)

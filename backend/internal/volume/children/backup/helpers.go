@@ -56,9 +56,8 @@ func resolveBackupStorageMountFromMounts(ctx context.Context, mounts []container
 	return mirroredMount
 }
 
-// localRusticRepositoryInitialized reports whether the local volume repository
-// has a Rustic config file. Only a /backups mount in the Arcane container can be
-// checked without starting Rustic, so any other setup counts as initialized.
+// localRusticRepositoryInitialized reports whether the local repository has a Rustic config.
+// Only a /backups mount in the Arcane container can be checked without Rustic; other setups count as initialized.
 func (s *Service) localRusticRepositoryInitialized(ctx context.Context, dockerClient *client.Client) bool {
 	inspect, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
 	if err != nil || docker.MountForDestination(inspect.Mounts, "/backups", "/backups") == nil {
@@ -78,12 +77,8 @@ func backupMountWarningFromArcaneMounts(mounts []container.MountPoint) string {
 }
 
 func (s *Service) backupMountWarning(ctx context.Context) string {
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return ""
-	}
 	// Cannot determine Arcane mount status (e.g. running outside Docker); suppress warning.
-	inspect, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
+	inspect, err := s.deps.Docker.Call(ctx, libarcane.InspectCurrentArcaneContainer)
 	if err != nil {
 		return ""
 	}
@@ -102,23 +97,25 @@ func (s *Service) StorageMount(ctx context.Context, dockerClient *client.Client,
 		}
 	}
 	slog.DebugContext(ctx, "volume service: ensure backup volume", "backupVolume", s.deps.BackupVolumeName)
-	ensureClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return mount.Mount{}, err
-	}
-	if _, inspectErr := ensureClient.VolumeInspect(ctx, s.deps.BackupVolumeName, client.VolumeInspectOptions{}); inspectErr != nil {
-		if _, createErr := ensureClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: s.deps.BackupVolumeName}); createErr != nil {
+	if _, inspectErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
+		return dockerClient.VolumeInspect(ctx, s.deps.BackupVolumeName, client.VolumeInspectOptions{})
+	}); inspectErr != nil {
+		if _, createErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
+			return dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: s.deps.BackupVolumeName})
+		}); createErr != nil {
 			return mount.Mount{}, fmt.Errorf("failed to create backup volume: %w", createErr)
 		}
 	}
 	return mount.Mount{Type: mount.TypeVolume, Source: s.deps.BackupVolumeName, Target: target, ReadOnly: readOnly}, nil
 }
 
-func (s *Service) stopRunningContainersForBackup(ctx context.Context, dockerClient *client.Client, volumeName string, user usertypes.Actor, refuseArcaneWriters bool) ([]container.Summary, error) {
+func (s *Service) stopRunningContainersForBackup(ctx context.Context, volumeName string, user usertypes.Actor, refuseArcaneWriters bool) ([]container.Summary, error) {
 	if s.deps.StopContainer == nil || s.deps.StartContainer == nil {
 		return nil, errors.New("container service is unavailable")
 	}
-	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{})
+	containers, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
+		return dockerClient.ContainerList(ctx, client.ContainerListOptions{})
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list running containers before volume backup: %w", err)
 	}
@@ -151,7 +148,7 @@ func (s *Service) stopRunningContainersForBackup(ctx context.Context, dockerClie
 			continue
 		}
 		if stopContainerErr := s.deps.StopContainer(ctx, candidate.ID, user); stopContainerErr != nil {
-			stillStopped, restartErr := s.startContainersAfterBackup(context.WithoutCancel(ctx), dockerClient, stopped, user)
+			stillStopped, restartErr := s.startContainersAfterBackup(context.WithoutCancel(ctx), stopped, user)
 			return stillStopped, errors.Join(fmt.Errorf("failed to stop container %s before volume backup: %w", candidate.ID, stopContainerErr), restartErr)
 		}
 		stopped = append(stopped, candidate)
@@ -160,14 +157,16 @@ func (s *Service) stopRunningContainersForBackup(ctx context.Context, dockerClie
 }
 
 //nolint:gocognit // recovery retries must reconcile IDs, names, and Compose identities in one bounded loop
-func (s *Service) startContainersAfterBackup(ctx context.Context, dockerClient *client.Client, stoppedContainers []container.Summary, user usertypes.Actor) ([]container.Summary, error) {
+func (s *Service) startContainersAfterBackup(ctx context.Context, stoppedContainers []container.Summary, user usertypes.Actor) ([]container.Summary, error) {
 	recoveryCtx, cancel := context.WithTimeout(ctx, volumeBackupContainerRecoveryTimeout)
 	defer cancel()
 
 	remaining := append([]container.Summary(nil), stoppedContainers...)
 	lastErrors := make(map[string]error, len(stoppedContainers))
 	for len(remaining) > 0 {
-		currentContainers, listErr := dockerClient.ContainerList(recoveryCtx, client.ContainerListOptions{All: true})
+		currentContainers, listErr := s.deps.Docker.Call(recoveryCtx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
+			return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+		})
 		if listErr == nil {
 			currentByID := make(map[string]container.Summary, len(currentContainers.Items))
 			currentByName := make(map[string]container.Summary, len(currentContainers.Items))
@@ -355,24 +354,32 @@ func (s *Service) logBackupEvent(ctx context.Context, eventType event.EventType,
 	}
 }
 
-func (s *Service) createBackupTempContainerWithMount(ctx context.Context, dockerClient *client.Client, backupMount mount.Mount) (string, func(), error) {
-	helperImage, err := s.deps.HelperImage(ctx, dockerClient)
+func (s *Service) createBackupTempContainerWithMount(ctx context.Context, backupMount mount.Mount) (string, func(), error) {
+	helperImage, err := s.deps.HelperImage(ctx)
 	if err != nil {
 		return "", nil, err
 	}
-	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config:     &container.Config{Image: helperImage, Cmd: []string{"sleep", "infinity"}, NetworkDisabled: true, Labels: volumehelper.Labels()},
-		HostConfig: volumehelper.HostConfig(helperImage, nil, []mount.Mount{backupMount}),
+	resp, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
+		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
+			Config:     &container.Config{Image: helperImage, Cmd: []string{"sleep", "infinity"}, NetworkDisabled: true, Labels: volumehelper.Labels()},
+			HostConfig: volumehelper.HostConfig(helperImage, nil, []mount.Mount{backupMount}),
+		})
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to create backup temp container: %w", err)
 	}
-	if _, containerStartErr := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); containerStartErr != nil {
-		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
+	if _, containerStartErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
+		return dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
+	}); containerStartErr != nil {
+		_, _ = s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+			return dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
+		})
 		return "", nil, fmt.Errorf("failed to start backup temp container: %w", containerStartErr)
 	}
 	return resp.ID, func() {
-		_, _ = dockerClient.ContainerRemove(context.WithoutCancel(ctx), resp.ID, volumehelper.RemoveOptions())
+		_, _ = s.deps.Docker.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+			return dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
+		})
 	}, nil
 }
 
@@ -388,5 +395,5 @@ func (s *Service) createBackupTempContainer(ctx context.Context, dockerClient *c
 	if err != nil {
 		return "", nil, err
 	}
-	return s.createBackupTempContainerWithMount(ctx, dockerClient, backupMount)
+	return s.createBackupTempContainerWithMount(ctx, backupMount)
 }

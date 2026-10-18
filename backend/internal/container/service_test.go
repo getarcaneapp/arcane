@@ -41,6 +41,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	imagedomain "github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -144,7 +145,7 @@ func TestContainerSummaryIconsAppliedAfterGrouping(t *testing.T) {
 	db := setupProjectTestDB(t)
 	settingsService, err := settings.NewSettingsService(t.Context(), db)
 	require.NoError(t, err)
-	service := NewContainerService(nil, nil, nil, settingsService, project.NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, nil, nil, nil))
+	service := NewContainerService(nil, nil, nil, settingsService, project.NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, nil, nil, nil), nil)
 	dockerContainers := []container.Summary{
 		{ID: "app", Names: []string{"/app"}, Labels: map[string]string{
 			"com.docker.compose.project": "media",
@@ -323,6 +324,7 @@ func TestContainerServiceCommitContainerCallsDockerAPI(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 
 	out, err := svc.CommitContainer(t.Context(), "container-1", containertypes.CommitRequest{
@@ -367,6 +369,7 @@ func TestContainerServiceCommitContainerOmitsReferenceWhenRepositoryEmpty(t *tes
 	svc := NewContainerService(
 		event.NewEventService(db, nil, nil),
 		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)),
+		nil,
 		nil,
 		nil,
 		nil,
@@ -427,7 +430,7 @@ func setupProjectTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&project.Project{}, &settings.SettingVariable{}, &imageupdate.ImageUpdateRecord{}, &event.Event{}))
+	require.NoError(t, db.AutoMigrate(&project.Project{}, &settings.SettingVariable{}, &imageupdate.ImageUpdateRecord{}, &event.Event{}, &kv.KVEntry{}))
 	return &database.DB{DB: db}
 }
 
@@ -629,8 +632,8 @@ func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	t.Cleanup(server.Close)
-	dockerClient := newTestDockerClient(t, server)
-	svc := NewContainerService(events, nil, nil, nil, nil)
+	kvService := kv.NewKVService(db)
+	svc := NewContainerService(events, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService)
 	info := container.InspectResponse{
 		ID:         "old-id",
 		Name:       "/web",
@@ -640,7 +643,6 @@ func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 	}
 	id, err := svc.recreateContainer(
 		t.Context(),
-		dockerClient,
 		info,
 		"redeploy",
 		"web",
@@ -673,12 +675,171 @@ func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 	)
 	require.True(t, events.ShouldSuppressDaemonEvent("container", "old-id", "", ""))
 	require.True(t, events.ShouldSuppressDaemonEvent("container", "new-id", "", ""))
+	journals, err := kvService.ListByPrefix(t.Context(), redeployJournalKeyPrefix)
+	require.NoError(t, err)
+	require.Empty(t, journals)
+}
+
+func TestRecreateContainerRollsBackAfterRequestCancellation(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var mu sync.Mutex
+	var observed []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := dockerTestPath(r.URL.Path)
+		mu.Lock()
+		observed = append(observed, r.Method+" "+path)
+		mu.Unlock()
+		switch path {
+		case "/containers/create":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			if err := json.NewEncoder(w).Encode(map[string]any{"Id": "new-id", "Warnings": []string{}}); err != nil {
+				t.Errorf("encode container creation response: %v", err)
+			}
+		case "/containers/new-id/start":
+			cancel()
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	t.Cleanup(server.Close)
+	kvService := kv.NewKVService(db)
+	svc := NewContainerService(event.NewEventService(db, nil, nil), docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService)
+	info := container.InspectResponse{
+		ID:         "old-id",
+		Name:       "/web",
+		State:      &container.State{Running: true},
+		Config:     &container.Config{Image: "app:latest"},
+		HostConfig: &container.HostConfig{},
+	}
+
+	_, err := svc.recreateContainer(ctx, info, "redeploy", "web", info.Config, info.HostConfig, nil, "1.41", event.EventTypeContainerDeploy, user.SystemUser)
+	require.Error(t, err)
+	require.ErrorIs(t, ctx.Err(), context.Canceled)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Equal(
+		t,
+		[]string{
+			"POST /containers/old-id/rename",
+			"POST /containers/old-id/stop",
+			"POST /containers/create",
+			"POST /containers/new-id/start",
+			"DELETE /containers/new-id",
+			"POST /containers/old-id/start",
+			"POST /containers/old-id/rename",
+		},
+		observed,
+	)
+	journals, err := kvService.ListByPrefix(t.Context(), redeployJournalKeyPrefix)
+	require.NoError(t, err)
+	require.Empty(t, journals)
+}
+
+func TestRecoverInterruptedRedeploys(t *testing.T) {
+	backupName := "web" + redeployBackupInfix + "1700000000"
+	backup := container.Summary{
+		ID:    "backup-id",
+		Names: []string{"/" + backupName},
+		State: container.StateExited,
+	}
+	journal := RedeployJournal{
+		OriginalID:   "backup-id",
+		OriginalName: "web",
+		BackupName:   backupName,
+		NewName:      "web",
+	}
+	tests := []struct {
+		name         string
+		journals     []RedeployJournal
+		containers   []container.Summary
+		want         []string
+		wantJournals int
+	}{
+		{
+			name:     "replacement running removes backup",
+			journals: []RedeployJournal{journal},
+			containers: []container.Summary{
+				backup,
+				{ID: "new-id", Names: []string{"/web"}, State: container.StateRunning},
+			},
+			want: []string{"DELETE /containers/backup-id?force=1"},
+		},
+		{
+			name:       "missing replacement restores original name",
+			journals:   []RedeployJournal{journal},
+			containers: []container.Summary{backup},
+			want:       []string{"POST /containers/backup-id/rename?name=web"},
+		},
+		{
+			name:     "stopped replacement leaves both",
+			journals: []RedeployJournal{journal},
+			containers: []container.Summary{
+				backup,
+				{ID: "new-id", Names: []string{"/web"}, State: container.StateExited},
+			},
+			wantJournals: 1,
+		},
+		{
+			name:     "backup with a different ID is skipped",
+			journals: []RedeployJournal{journal},
+			containers: []container.Summary{
+				{ID: "other-id", Names: []string{"/" + backupName}, State: container.StateExited},
+			},
+		},
+		{
+			name:       "name-matching container without a journal is left alone",
+			containers: []container.Summary{backup},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			kvService := kv.NewKVService(setupProjectTestDB(t))
+			for _, j := range tt.journals {
+				payload, err := json.Marshal(j)
+				require.NoError(t, err)
+				require.NoError(t, kvService.Set(t.Context(), redeployJournalKeyPrefix+j.OriginalID, string(payload)))
+			}
+			var mu sync.Mutex
+			var mutations []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				path := dockerTestPath(r.URL.Path)
+				if path == "/containers/json" {
+					w.Header().Set("Content-Type", "application/json")
+					if err := json.NewEncoder(w).Encode(tt.containers); err != nil {
+						t.Errorf("encode container list: %v", err)
+					}
+					return
+				}
+				mu.Lock()
+				mutations = append(mutations, r.Method+" "+path+kit.Ternary(r.URL.RawQuery != "", "?"+r.URL.RawQuery, ""))
+				mu.Unlock()
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			t.Cleanup(server.Close)
+			svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService)
+
+			require.NoError(t, svc.RecoverInterruptedRedeploys(t.Context()))
+
+			mu.Lock()
+			defer mu.Unlock()
+			require.Equal(t, tt.want, mutations)
+			journals, err := kvService.ListByPrefix(t.Context(), redeployJournalKeyPrefix)
+			require.NoError(t, err)
+			require.Len(t, journals, tt.wantJournals)
+		})
+	}
 }
 
 func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
 	settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t))
 	require.NoError(t, err)
-	service := NewContainerService(nil, nil, nil, settingsService, nil)
+	service := NewContainerService(nil, nil, nil, settingsService, nil, nil)
 	strategyLabel := "com.getarcaneapp.arcane.updater.strategy"
 	containers := []container.Summary{
 		{ID: "first", Image: "app:3.1.0", ImageID: "shared-image"},
@@ -790,7 +951,7 @@ func TestContainerServiceGetContainerProcesses(t *testing.T) {
 			t.Cleanup(server.Close)
 			settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t))
 			require.NoError(t, err)
-			svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, settingsService, nil)
+			svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, settingsService, nil, nil)
 
 			processes, err := svc.GetContainerProcesses(t.Context(), "container-1")
 			wantArgs := []string{strings.Join(containerProcessesPsArgs[0], " ")}
@@ -818,7 +979,7 @@ func TestContainerServiceGetContainerProcessesPropagatesContext(t *testing.T) {
 	t.Cleanup(server.Close)
 	settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t))
 	require.NoError(t, err)
-	svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, settingsService, nil)
+	svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, settingsService, nil, nil)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
@@ -965,6 +1126,7 @@ func newResourceSortService(t *testing.T, fixture *resourceStatsServer) *Contain
 		dockerService,
 		imagedomain.NewImageService(db, dockerService, nil, nil, nil, nil, settingsService, nil),
 		settingsService,
+		nil,
 		nil,
 	)
 }
@@ -1306,6 +1468,7 @@ func newLogsTestService(t *testing.T, tty bool, logsBody []byte, gotQuery *url.V
 	return NewContainerService(
 		event.NewEventService(setupProjectTestDB(t), nil, nil),
 		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)),
+		nil,
 		nil,
 		nil,
 		nil,

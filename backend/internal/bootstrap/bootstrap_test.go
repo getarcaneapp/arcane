@@ -28,6 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/health"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
@@ -200,7 +201,8 @@ func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 			Project:   project.New(&project.ProjectService{}, nil),
 			Container: container.New(&container.ContainerService{}, nil, nil, nil),
 			Swarm:     swarm.New(&swarm.SwarmService{}, nil, nil, nil),
-			System:    system.New(&system.SystemService{}, nil, nil, nil),
+			System:    system.New(&system.SystemService{}, nil, nil),
+			Health:    health.New(&health.Service{}),
 		},
 		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
 		TunnelRegistry: edge.NewTunnelRegistry(),

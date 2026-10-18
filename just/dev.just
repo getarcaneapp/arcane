@@ -28,7 +28,7 @@ agent:
     manager_api_url="${MANAGER_API_URL:-https://localhost:3552}"
     edge_mtls_assets_dir="${EDGE_MTLS_ASSETS_DIR:-./.tmp/edge-test-agent/edge-mtls-agent}"
     edge_mtls_ca_file="${EDGE_MTLS_CA_FILE:-./backend/local-manager.crt}"
-    database_url="${DATABASE_URL:-file:./.tmp/edge-test-agent/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate}"
+    database_url="${DATABASE_URL:-file:./.tmp/edge-test-agent/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_txlock=immediate}"
     projects_directory="${PROJECTS_DIRECTORY:-./.tmp/edge-test-agent/projects}"
     git_work_dir="${GIT_WORK_DIR:-./.tmp/edge-test-agent/git}"
     jwt_secret="${JWT_SECRET:-local-edge-test-jwt-secret-please-change}"

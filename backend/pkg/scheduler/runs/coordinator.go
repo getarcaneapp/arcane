@@ -63,9 +63,7 @@ func (q *Coordinator) Submit(ctx context.Context, request st.Request) (st.Run, e
 		return st.Run{}, errors.New("job ID required")
 	}
 	request.Trigger = cmp.Or(request.Trigger, "manual")
-	if request.RunID == "" {
-		request.RunID = uuid.New().String()
-	}
+	request.RunID = cmp.Or(request.RunID, uuid.New().String())
 	if _, err := uuid.Parse(request.RunID); err != nil {
 		return st.Run{}, errors.New("invalid run ID")
 	}
@@ -84,8 +82,13 @@ func (q *Coordinator) Submit(ctx context.Context, request st.Request) (st.Run, e
 			return st.Run{}, errors.New("observed agent run is not awaiting legacy resolution")
 		}
 		observed = *agentRun
-		remoteOutcome = new(observed.Outcome)
-		remoteOutcome.Status = observed.Status
+		remoteOutcome = &st.Outcome{
+			Status:     observed.Status,
+			Message:    observed.Outcome.Message,
+			ActivityID: observed.Outcome.ActivityID,
+			Targets:    observed.Outcome.Targets,
+			Steps:      observed.Outcome.Steps,
+		}
 	}
 	result := st.Run{
 		ID:                      request.RunID,
@@ -106,13 +109,16 @@ func (q *Coordinator) Submit(ctx context.Context, request st.Request) (st.Run, e
 		RemoteAttemptCount:      observed.AttemptCount,
 		RemoteOutcome:           remoteOutcome,
 	}
-	q.associateActivityInternal(&result)
-	err := q.mutateInternal(ctx, request.EnvironmentID, request.JobID, func(record *st.QueueRecord) error {
+	q.associateActivity(&result)
+	err := q.mutate(ctx, request.EnvironmentID, request.JobID, func(record *st.QueueRecord) error {
 		if request.Trigger == "scheduled" || request.Trigger == "recovery" {
 			record.LastEnqueuedAt = now
 		}
 		for _, existing := range record.Runs {
-			if existing.ID == request.RunID || coalescesPendingInternal(request, existing) {
+			// Manual and remote work never joins another run; other triggers join runs still waiting to start.
+			coalesces := request.ObservedAgentRun == nil && !separateTrigger(request.Trigger) && !separateTrigger(existing.Trigger) &&
+				(existing.Status == st.Queued || existing.Status == st.Waiting || existing.Status == st.Retrying)
+			if existing.ID == request.RunID || coalesces {
 				result = existing
 				return nil
 			}
@@ -121,34 +127,25 @@ func (q *Coordinator) Submit(ctx context.Context, request st.Request) (st.Run, e
 			result = existing
 			return nil
 		}
-		pruneRunsInternal(record, now)
+		pruneRuns(record, now)
 		record.Runs = append(record.Runs, result)
 		return nil
 	})
 	if err == nil {
-		q.observeRunInternal(ctx, result)
-		q.signalInternal()
+		q.observeRun(ctx, result)
+		q.signal()
 	}
 	return result, err
 }
 
-func (q *Coordinator) signalInternal() {
+func (q *Coordinator) signal() {
 	select {
 	case q.wake <- struct{}{}:
 	default:
 	}
 }
 
-// Manual and remote work never joins another run. Scheduled and recovery work
-// joins an existing run only while it is still waiting to start.
-func coalescesPendingInternal(request st.Request, existing st.Run) bool {
-	if request.ObservedAgentRun != nil || separateTriggerInternal(request.Trigger) || separateTriggerInternal(existing.Trigger) {
-		return false
-	}
-	return existing.Status == st.Queued || existing.Status == st.Waiting || existing.Status == st.Retrying
-}
-
-func separateTriggerInternal(trigger string) bool {
+func separateTrigger(trigger string) bool {
 	switch trigger {
 	case "manual", "remote":
 		return true
@@ -164,22 +161,23 @@ func (q *Coordinator) Checkpoint(ctx context.Context, jobID, schedule string, ne
 	first := !q.checkpointed[jobID]
 	recovered := false
 	var recoveredRun st.Run
-	err := q.mutateInternal(ctx, "0", jobID, func(record *st.QueueRecord) error {
+	err := q.mutate(ctx, "0", jobID, func(record *st.QueueRecord) error {
 		recovered = false
 		recoveredRun = st.Run{}
 		now := time.Now().UTC()
 		if first && record.Schedule == schedule && !record.NextRun.IsZero() && !record.NextRun.After(now) && record.LastEnqueuedAt.Before(record.NextRun) {
-			pending := false
-			for _, run := range record.Runs {
-				if !run.Status.Terminal() && run.Status != st.NeedsAttention {
-					pending = true
-					break
-				}
-			}
-			if !pending {
+			if !slices.ContainsFunc(record.Runs, func(run st.Run) bool { return !run.Status.Terminal() && run.Status != st.NeedsAttention }) {
 				recovered = true
 				record.LastEnqueuedAt = now
-				recoveredRun = st.Run{ID: uuid.New().String(), JobID: jobID, EnvironmentID: "0", Trigger: "recovery", Status: st.Queued, CreatedAt: now, UpdatedAt: now}
+				recoveredRun = st.Run{
+					ID:            uuid.New().String(),
+					JobID:         jobID,
+					EnvironmentID: "0",
+					Trigger:       "recovery",
+					Status:        st.Queued,
+					CreatedAt:     now,
+					UpdatedAt:     now,
+				}
 				record.Runs = append(record.Runs, recoveredRun)
 			}
 		}
@@ -194,8 +192,8 @@ func (q *Coordinator) Checkpoint(ctx context.Context, jobID, schedule string, ne
 	if err == nil {
 		q.checkpointed[jobID] = true
 		if recovered {
-			q.observeRunInternal(ctx, recoveredRun)
-			q.signalInternal()
+			q.observeRun(ctx, recoveredRun)
+			q.signal()
 		}
 	}
 	return err
@@ -218,7 +216,7 @@ func (q *Coordinator) Start(ctx, appCtx context.Context) error {
 	if q.execute == nil {
 		return errors.New("job executor unavailable")
 	}
-	if err := q.importLegacyInternal(ctx); err != nil {
+	if err := q.importLegacy(ctx); err != nil {
 		return fmt.Errorf("import legacy job history: %w", err)
 	}
 	// Fail startup if persisted state cannot be read. Never replace it with empty state.
@@ -229,7 +227,7 @@ func (q *Coordinator) Start(ctx, appCtx context.Context) error {
 	for _, record := range records {
 		changed := false
 		for _, run := range record.Runs {
-			if normalizeLegacyRunInternal(&run) {
+			if normalizeLegacyRun(&run) {
 				changed = true
 				break
 			}
@@ -237,16 +235,16 @@ func (q *Coordinator) Start(ctx, appCtx context.Context) error {
 		if !changed {
 			continue
 		}
-		if mutateErr := q.mutateInternal(ctx, record.EnvironmentID, record.JobID, func(current *st.QueueRecord) error {
+		if mutateErr := q.mutate(ctx, record.EnvironmentID, record.JobID, func(current *st.QueueRecord) error {
 			for i := range current.Runs {
-				normalizeLegacyRunInternal(&current.Runs[i])
+				normalizeLegacyRun(&current.Runs[i])
 			}
 			return nil
 		}); mutateErr != nil {
 			return fmt.Errorf("normalize startup job %q in environment %q: %w", record.JobID, record.EnvironmentID, mutateErr)
 		}
 	}
-	if pruneErr := q.pruneInternal(ctx); pruneErr != nil {
+	if pruneErr := q.prune(ctx); pruneErr != nil {
 		return fmt.Errorf("prune startup job history: %w", pruneErr)
 	}
 	if errErr := ctx.Err(); errErr != nil {
@@ -260,7 +258,7 @@ func (q *Coordinator) Start(ctx, appCtx context.Context) error {
 	q.cancel = cancel
 	q.lifecycleCtx = runCtx
 	q.started = true
-	go q.dispatchInternal(runCtx)
+	go q.dispatch(runCtx)
 	return nil
 }
 
@@ -286,7 +284,7 @@ func (q *Coordinator) Stop(ctx context.Context) error {
 	}
 }
 
-func (q *Coordinator) dispatchInternal(ctx context.Context) {
+func (q *Coordinator) dispatch(ctx context.Context) {
 	defer close(q.done)
 
 	initialRetention := true
@@ -294,20 +292,20 @@ func (q *Coordinator) dispatchInternal(ctx context.Context) {
 	fullRepair := true
 	nextRetention := time.Now()
 	for ctx.Err() == nil {
-		q.retryActivitySyncInternal(ctx)
+		q.retryActivitySync(ctx)
 		if initialRetention || !time.Now().Before(nextRetention) {
-			if err := q.pruneInternal(ctx); err != nil {
+			if err := q.prune(ctx); err != nil {
 				if ctx.Err() == nil {
 					slog.ErrorContext(ctx, "Job retention failed", "error", err)
 				}
 			} else {
-				initialRetention = q.hasPendingActivitySyncInternal(ctx)
+				initialRetention = q.hasPendingActivitySync(ctx)
 			}
 			nextRetention = time.Now().Add(time.Hour)
 		}
 		nextWake := time.Now().Add(15 * time.Second)
 		enabled := q.enabled.Load()
-		if err := q.repairInternal(ctx, fullRepair); err != nil {
+		if err := q.repair(ctx, fullRepair); err != nil {
 			if ctx.Err() == nil {
 				slog.ErrorContext(ctx, "Job queue dispatch failed", "error", err)
 			}
@@ -318,7 +316,7 @@ func (q *Coordinator) dispatchInternal(ctx context.Context) {
 		if nextRetention.Before(nextWake) {
 			nextWake = nextRetention
 		}
-		if q.hasPendingActivitySyncInternal(ctx) {
+		if q.hasPendingActivitySync(ctx) {
 			activityRetry := time.Now().Add(5 * time.Second)
 			if activityRetry.Before(nextWake) {
 				nextWake = activityRetry
@@ -336,9 +334,10 @@ func (q *Coordinator) dispatchInternal(ctx context.Context) {
 	}
 }
 
-func (q *Coordinator) persistOutcome(ctx context.Context, run st.Run, outcome st.Outcome) {
-	// Keep the execution slot until the terminal result has been durably recorded.
-	for {
+func (q *Coordinator) persistOutcome(ctx context.Context, run st.Run, outcome st.Outcome) error {
+	// Keep the execution slot while retrying, but release it after a bounded backoff.
+	wait := time.Second
+	for attempt := 1; ; attempt++ {
 		var conflictOwner string
 		var conflictStatus st.RunStatus
 		err := q.UpdateRun(ctx, run, func(current *st.Run) error {
@@ -349,7 +348,15 @@ func (q *Coordinator) persistOutcome(ctx context.Context, run st.Run, outcome st
 			now := time.Now().UTC()
 			current.Status = outcome.Status
 			current.UpdatedAt = now
-			outcome = mergeTargetProgressInternal(current.Outcome, outcome)
+			for _, target := range current.Outcome.Targets {
+				if !slices.ContainsFunc(outcome.Targets, func(updated st.TargetOutcome) bool { return updated.ID == target.ID }) {
+					outcome.Targets = append(outcome.Targets, target)
+				}
+			}
+			outcome.ActivityID = cmp.Or(outcome.ActivityID, current.Outcome.ActivityID)
+			if len(outcome.Steps) == 0 {
+				outcome.Steps = current.Outcome.Steps
+			}
 			current.Outcome = outcome
 			if outcome.Status == st.Retrying || outcome.Status == st.Waiting {
 				delay := 5 * time.Second * time.Duration(1<<min(run.AttemptCount-1, 6))
@@ -384,34 +391,25 @@ func (q *Coordinator) persistOutcome(ctx context.Context, run st.Run, outcome st
 				"currentOwner", conflictOwner,
 				"currentStatus", conflictStatus,
 				"outcomeStatus", outcome.Status)
-			return
+			return nil
 		}
 		if err == nil {
-			return
+			return nil
 		}
-		slog.ErrorContext(ctx, "Unable to persist job result; retaining execution guard", "runId", run.ID, "error", err)
-		timer := time.NewTimer(time.Second)
+		if attempt >= 10 {
+			slog.ErrorContext(ctx, "Giving up persisting job result; releasing execution guard", "runId", run.ID, "attempts", attempt, "error", err)
+			return fmt.Errorf("persist job result: %w", err)
+		}
+		slog.WarnContext(ctx, "Unable to persist job result; retaining execution guard", "runId", run.ID, "attempt", attempt, "retryIn", wait, "error", err)
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return
+			return fmt.Errorf("persist job result: %w", err)
 		case <-timer.C:
 		}
+		wait = min(wait*2, 30*time.Second)
 	}
-}
-
-func (q *Coordinator) invokeInternal(ctx context.Context, run st.Run, reconcile bool) (outcome st.Outcome, err error) {
-	defer func() {
-		if recovered := recover(); recovered != nil {
-			outcome = st.Outcome{Status: st.Failed, Message: "Job panicked; inspect logs before retrying"}
-			err = fmt.Errorf("job panic: %v", recovered)
-			slog.ErrorContext(ctx, "Job panicked", "runId", run.ID, "error", err)
-		}
-	}()
-	if reconcile && q.reconcile != nil {
-		return q.reconcile(ctx, run)
-	}
-	return q.execute(ctx, run)
 }
 
 // Cancel marks an unstarted queued run canceled. Runs already attempted locally
@@ -435,11 +433,12 @@ func (q *Coordinator) Cancel(ctx context.Context, environmentID, jobID, runID st
 	if err == nil {
 		var state st.CoordinatorState
 		id := kit.SHA256Hex(environmentID + "\x00" + jobID)
-		actorType := executorTypeInternal
-		if strings.HasPrefix(jobID, "environment-health") || jobID == "docker-client-refresh" || jobID == "activity-sweep" {
-			actorType = healthExecutorTypeInternal
-		}
-		if readErr := q.service.GetState(ctx, coordinatorTypeInternal, id, &state); readErr == nil {
+		actorType := kit.Ternary(
+			strings.HasPrefix(jobID, "environment-health") || jobID == "docker-client-refresh" || jobID == "activity-sweep",
+			healthExecutorType,
+			executorType,
+		)
+		if readErr := q.service.GetState(ctx, coordinatorType, id, &state); readErr == nil {
 			for _, intent := range state.Dispatches {
 				if intent.RunID == runID && intent.JobID != "" {
 					_ = q.service.DeleteJob(ctx, actorType, id, intent.JobID, actor.WithLiveJobsOnly())
@@ -473,12 +472,12 @@ func (q *Coordinator) Retry(ctx context.Context, environmentID, jobID, runID str
 		return nil
 	})
 	if err == nil {
-		q.signalInternal()
+		q.signal()
 	}
 	return run, err
 }
 
-func (q *Coordinator) nextRunInternal(runs []st.Run) (*st.Run, time.Time) {
+func (q *Coordinator) nextRun(runs []st.Run) (*st.Run, time.Time) {
 	var interrupted *st.Run
 	blocked := false
 	for index := range runs {
@@ -510,33 +509,13 @@ func (q *Coordinator) nextRunInternal(runs []st.Run) (*st.Run, time.Time) {
 	return nil, nextRetry
 }
 
-func mergeTargetProgressInternal(previous, outcome st.Outcome) st.Outcome {
-	for _, target := range previous.Targets {
-		found := false
-		for _, updated := range outcome.Targets {
-			if updated.ID == target.ID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			outcome.Targets = append(outcome.Targets, target)
-		}
-	}
-	outcome.ActivityID = cmp.Or(outcome.ActivityID, previous.ActivityID)
-	if len(outcome.Steps) == 0 {
-		outcome.Steps = previous.Steps
-	}
-	return outcome
-}
-
 // ExecutionContext binds durable progress for work executing a run. An empty
 // instanceID fences writes by run owner; otherwise by the active workflow instance.
 func (q *Coordinator) ExecutionContext(ctx context.Context, run st.Run, instanceID string) context.Context {
 	ctx = utils.WithActivityBatchID(ctx, run.ID)
 	return jobcontext.WithExecution(ctx, run, func(target st.TargetOutcome) error {
 		return q.UpdateRun(ctx, run, func(current *st.Run) error {
-			if !fencedInternal(current, run, instanceID) {
+			if !kit.Ternary(instanceID == "", current.Status == st.Running && current.Owner == run.Owner, ActiveWorkflow(*current, instanceID)) {
 				return ErrRunConflict
 			}
 			current.Outcome.Targets = jobcontext.Merge(current.Outcome.Targets, target)
@@ -545,23 +524,15 @@ func (q *Coordinator) ExecutionContext(ctx context.Context, run st.Run, instance
 	})
 }
 
-// RecordSteps projects workflow step progress onto a running run.
+// RecordSteps projects workflow step progress onto a running run, fenced like ExecutionContext.
 func (q *Coordinator) RecordSteps(ctx context.Context, run st.Run, instanceID string, steps []st.StepOutcome) error {
 	return q.UpdateRun(ctx, run, func(current *st.Run) error {
-		if !fencedInternal(current, run, instanceID) {
+		if !kit.Ternary(instanceID == "", current.Status == st.Running && current.Owner == run.Owner, ActiveWorkflow(*current, instanceID)) {
 			return ErrRunConflict
 		}
 		current.Outcome.Steps = steps
 		return nil
 	})
-}
-
-// fencedInternal reports whether work may still write to a run.
-func fencedInternal(current *st.Run, run st.Run, instanceID string) bool {
-	if instanceID == "" {
-		return current.Status == st.Running && current.Owner == run.Owner
-	}
-	return ActiveWorkflow(*current, instanceID)
 }
 
 // ActiveWorkflow reports whether a running run still follows a workflow instance.
@@ -602,7 +573,7 @@ func (q *Coordinator) Resolve(ctx context.Context, environmentID, jobID, runID, 
 		return nil
 	})
 	if err == nil {
-		q.signalInternal()
+		q.signal()
 	}
 	return run, err
 }

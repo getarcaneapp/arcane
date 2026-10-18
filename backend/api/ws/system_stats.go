@@ -12,7 +12,6 @@ import (
 	"github.com/coder/websocket"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/labstack/echo/v5"
-	"github.com/samber/hot"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/host"
@@ -37,31 +36,6 @@ const (
 // System WebSocket Endpoints
 // ============================================================================
 
-// checkRateLimit checks and applies rate limiting for WebSocket connections.
-func (h *WebSocketHandler) checkRateLimit(clientIP string) bool {
-	h.activeConnectionsMu.Lock()
-	defer h.activeConnectionsMu.Unlock()
-	if h.activeConnections[clientIP] >= 5 {
-		return false
-	}
-	if h.activeConnections == nil {
-		h.activeConnections = make(map[string]int)
-	}
-	h.activeConnections[clientIP]++
-	return true
-}
-
-// releaseRateLimit decrements the connection counter and cleans up if needed.
-func (h *WebSocketHandler) releaseRateLimit(clientIP string) {
-	h.activeConnectionsMu.Lock()
-	defer h.activeConnectionsMu.Unlock()
-	if count := h.activeConnections[clientIP]; count > 1 {
-		h.activeConnections[clientIP] = count - 1
-	} else {
-		delete(h.activeConnections, clientIP)
-	}
-}
-
 func (h *WebSocketHandler) acquireSystemStatsSampler(ctx context.Context, interval time.Duration) bool {
 	h.systemStatsSampler.lifecycleMu.Lock()
 
@@ -77,7 +51,7 @@ func (h *WebSocketHandler) acquireSystemStatsSampler(ctx context.Context, interv
 		return waitForSystemStatsSamplerReady(ctx, ready)
 	}
 
-	samplerCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	samplerCtx, cancel := context.WithCancel(h.ctx)
 	ready := make(chan struct{})
 	wake := make(chan struct{}, 1)
 	h.systemStatsSampler.cancel = cancel
@@ -206,7 +180,9 @@ func (h *WebSocketHandler) runSystemStatsSampler(ctx context.Context, wake <-cha
 		case <-wake:
 			rearm()
 		case <-ticker.C:
-			h.updateCPUCache(0)
+			if val, ok := h.readCPUUsage(0); ok {
+				h.cpuCache.Store(val)
+			}
 			h.systemStatsSampler.latest.Store(collect(ctx))
 			rearm()
 		}
@@ -217,73 +193,62 @@ func (h *WebSocketHandler) runSystemStatsSampler(ctx context.Context, wake <-cha
 func (h *WebSocketHandler) collectSystemStats(ctx context.Context) systemtypes.SystemStats {
 	cpuUsage, _ := h.cpuCache.Load()
 
-	cpuCount := h.getCPUCount()
-	memUsed, memTotal := h.getMemoryInfo()
-	cpuCount, memUsed, memTotal = h.applyCgroupLimits(ctx, cpuCount, memUsed, memTotal)
-	diskUsed, diskTotal := h.getDiskInfo(ctx)
-	hostname := h.getHostname()
-	gpuStats, gpuCount := h.getGPUInfo(ctx)
-
-	return systemtypes.SystemStats{
-		CPUUsage:     cpuUsage,
-		MemoryUsage:  memUsed,
-		MemoryTotal:  memTotal,
-		DiskUsage:    diskUsed,
-		DiskTotal:    diskTotal,
-		CPUCount:     cpuCount,
-		Architecture: runtime.GOARCH,
-		Platform:     runtime.GOOS,
-		Hostname:     hostname,
-		GPUCount:     gpuCount,
-		GPUs:         gpuStats,
-	}
-}
-
-// getCPUCount returns the number of CPUs.
-func (h *WebSocketHandler) getCPUCount() int {
-	h.initSystemStaticInfo()
-	return h.systemStaticInfo.cpuCount
-}
-
-func (h *WebSocketHandler) initSystemStaticInfo() {
 	h.systemStaticInfo.once.Do(func() {
 		cpuCount, err := cpu.Counts(true)
 		if err != nil {
 			cpuCount = runtime.NumCPU()
 		}
-
 		hostInfo, _ := host.Info()
-		hostname := ""
-		if hostInfo != nil {
-			hostname = hostInfo.Hostname
-		}
-
 		h.systemStaticInfo.cpuCount = cpuCount
-		h.systemStaticInfo.hostname = hostname
+		h.systemStaticInfo.hostname = kit.FromPtr(hostInfo).Hostname
 	})
-}
 
-// getMemoryInfo returns memory usage and total.
-func (h *WebSocketHandler) getMemoryInfo() (uint64, uint64) {
-	memInfo, _ := mem.VirtualMemory()
-	if memInfo == nil {
-		return 0, 0
+	var memUsed, memTotal uint64
+	if memInfo, _ := mem.VirtualMemory(); memInfo != nil {
+		// gopsutil counts ZFS ARC as used memory; treat the reclaimable portion as cache, matching btop/htop.
+		memUsed = memInfo.Used - min(memInfo.Used, cgroup.ZFSARCReclaimable())
+		memTotal = memInfo.Total
 	}
-	// gopsutil counts ZFS ARC as used memory (the kernel excludes it from
-	// MemAvailable). Treat the reclaimable portion as cache, matching
-	// btop/htop, so the dashboard does not over-report usage on ZFS hosts.
-	used := memInfo.Used
-	if arc := cgroup.ZFSARCReclaimable(); arc > 0 {
-		used -= min(used, arc)
+	cpuCount, memUsed, memTotal := h.applyCgroupLimits(ctx, h.systemStaticInfo.cpuCount, memUsed, memTotal)
+
+	diskUsagePath, found, err := h.diskUsagePathCache.GetWithLoaders(struct{}{}, func(_ []struct{}) (map[struct{}]string, error) {
+		path := "/"
+		if h.systemService != nil {
+			path = h.systemService.GetDiskUsagePath(ctx)
+		}
+		return map[struct{}]string{{}: path}, nil
+	})
+	diskUsagePath = kit.Ternary(err != nil || !found, "/", diskUsagePath)
+	diskInfo, err := disk.Usage(diskUsagePath)
+	if (err != nil || diskInfo == nil || diskInfo.Total == 0) && diskUsagePath != "/" {
+		diskInfo, _ = disk.Usage("/")
 	}
-	return used, memInfo.Total
+
+	var gpuStats []systemtypes.GPUStats
+	if h.gpuMonitor != nil && h.gpuMonitor.Enabled() {
+		if stats, statsErr := h.gpuMonitor.Stats(ctx); statsErr == nil {
+			gpuStats = stats
+		}
+	}
+
+	return systemtypes.SystemStats{
+		CPUUsage:     cpuUsage,
+		MemoryUsage:  memUsed,
+		MemoryTotal:  memTotal,
+		DiskUsage:    kit.FromPtr(diskInfo).Used,
+		DiskTotal:    kit.FromPtr(diskInfo).Total,
+		CPUCount:     cpuCount,
+		Architecture: runtime.GOARCH,
+		Platform:     runtime.GOOS,
+		Hostname:     h.systemStaticInfo.hostname,
+		GPUCount:     len(gpuStats),
+		GPUs:         gpuStats,
+	}
 }
 
 // applyCgroupLimits uses guest resources without applying Docker's
 // per-container limits to host statistics.
-func (h *WebSocketHandler) applyCgroupLimits(
-	ctx context.Context, cpuCount int, memUsed, memTotal uint64,
-) (int, uint64, uint64) {
+func (h *WebSocketHandler) applyCgroupLimits(ctx context.Context, cpuCount int, memUsed, memTotal uint64) (int, uint64, uint64) {
 	if cgroup.IsDockerContainer() {
 		if h.systemService != nil {
 			if used, total, ok := h.systemService.GetDockerHostMemory(ctx); ok {
@@ -293,7 +258,7 @@ func (h *WebSocketHandler) applyCgroupLimits(
 		return cpuCount, memUsed, memTotal
 	}
 	cpuCount = applyCPUAffinityLimit(cpuCount)
-	cgroupLimits := h.getCachedCgroupLimits()
+	cgroupLimits := h.cgroupCache.Get()
 	if cgroupLimits == nil {
 		return cpuCount, memUsed, memTotal
 	}
@@ -327,39 +292,6 @@ func applyCPUAffinityLimit(cpuCount int) int {
 	return cpuCount
 }
 
-// getDiskInfo returns disk usage and total.
-func (h *WebSocketHandler) getDiskInfo(ctx context.Context) (uint64, uint64) {
-	diskUsagePath := h.getDiskUsagePath(ctx)
-	diskInfo, err := disk.Usage(diskUsagePath)
-	if err != nil || diskInfo == nil || diskInfo.Total == 0 {
-		if diskUsagePath != "/" {
-			diskInfo, _ = disk.Usage("/")
-		}
-	}
-	if diskInfo == nil {
-		return 0, 0
-	}
-	return diskInfo.Used, diskInfo.Total
-}
-
-// getHostname returns the system hostname.
-func (h *WebSocketHandler) getHostname() string {
-	h.initSystemStaticInfo()
-	return h.systemStaticInfo.hostname
-}
-
-// getGPUInfo returns GPU statistics if monitoring is enabled.
-func (h *WebSocketHandler) getGPUInfo(ctx context.Context) ([]systemtypes.GPUStats, int) {
-	if h.gpuMonitor == nil || !h.gpuMonitor.Enabled() {
-		return nil, 0
-	}
-	gpuData, err := h.gpuMonitor.Stats(ctx)
-	if err != nil {
-		return nil, 0
-	}
-	return gpuData, len(gpuData)
-}
-
 // initializeCPUCache permits unavailable CPU samples but stops on cancellation.
 func (h *WebSocketHandler) initializeCPUCache(ctx context.Context) bool {
 	result := make(chan float64, 1)
@@ -385,33 +317,14 @@ func (h *WebSocketHandler) initializeCPUCache(ctx context.Context) bool {
 	}
 }
 
-func (h *WebSocketHandler) updateCPUCache(interval time.Duration) {
-	if val, ok := h.readCPUUsage(interval); ok {
-		h.cpuCache.Store(val)
-	}
-}
-
 func (h *WebSocketHandler) readCPUUsage(interval time.Duration) (float64, bool) {
 	if h.cpuUsageReader != nil {
 		return h.cpuUsageReader(interval)
 	}
-
-	return defaultReadCPUUsage(interval)
-}
-
-func defaultReadCPUUsage(interval time.Duration) (float64, bool) {
 	if vals, err := cpu.Percent(interval, false); err == nil && len(vals) > 0 {
 		return vals[0], true
 	}
-
 	return 0, false
-}
-
-func (h *WebSocketHandler) getCachedCgroupLimits() *cgroup.Limits {
-	if h.cgroupCache == nil {
-		return nil
-	}
-	return h.cgroupCache.Get()
 }
 
 // SystemStats streams system stats over WebSocket.
@@ -424,10 +337,25 @@ func (h *WebSocketHandler) getCachedCgroupLimits() *cgroup.Limits {
 func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 	clientIP := c.RealIP()
 
-	if !h.checkRateLimit(clientIP) {
+	h.activeConnectionsMu.Lock()
+	if h.activeConnections[clientIP] >= 5 {
+		h.activeConnectionsMu.Unlock()
 		return c.JSON(http.StatusTooManyRequests, map[string]any{"success": false, "error": "Too many concurrent stats connections from this IP"})
 	}
-	defer h.releaseRateLimit(clientIP)
+	if h.activeConnections == nil {
+		h.activeConnections = make(map[string]int)
+	}
+	h.activeConnections[clientIP]++
+	h.activeConnectionsMu.Unlock()
+	defer func() {
+		h.activeConnectionsMu.Lock()
+		defer h.activeConnectionsMu.Unlock()
+		if count := h.activeConnections[clientIP]; count > 1 {
+			h.activeConnections[clientIP] = count - 1
+		} else {
+			delete(h.activeConnections, clientIP)
+		}
+	}()
 
 	conn, unregister, ok := h.acceptWS(c, systemtypes.WSKindSystemStats, "")
 	if !ok {
@@ -459,8 +387,15 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 	}
 	defer h.releaseSystemStatsSampler(sampleInterval)
 
-	go h.readSystemStatsPump(ctx, cancel, conn)
-	// The pong is serviced by readSystemStatsPump.
+	// Single reader for this connection; it also services the keepalive pong. Do not add others.
+	go func() {
+		for {
+			if _, _, err := conn.Read(ctx); err != nil {
+				cancel()
+				return
+			}
+		}
+	}()
 	go wshub.KeepAlive(ctx, cancel, conn)
 
 	send := func() error {
@@ -488,31 +423,4 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 			}
 		}
 	}
-}
-
-// readSystemStatsPump is the single reader for the SystemStats websocket.
-// Do not add additional readers for this connection.
-func (h *WebSocketHandler) readSystemStatsPump(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn) {
-	for {
-		if _, _, err := conn.Read(ctx); err != nil {
-			cancel()
-			return
-		}
-	}
-}
-
-func (h *WebSocketHandler) getDiskUsagePath(ctx context.Context) string {
-	if h.diskUsagePathCache == nil {
-		h.diskUsagePathCache = hot.NewHotCache[struct{}, string](hot.LRU, 1).
-			WithTTL(5 * time.Minute).
-			Build()
-	}
-	path, found, err := h.diskUsagePathCache.GetWithLoaders(struct{}{}, func(_ []struct{}) (map[struct{}]string, error) {
-		path := "/"
-		if h.systemService != nil {
-			path = h.systemService.GetDiskUsagePath(ctx)
-		}
-		return map[struct{}]string{{}: path}, nil
-	})
-	return kit.Ternary(err != nil || !found, "/", path)
 }

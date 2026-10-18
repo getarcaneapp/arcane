@@ -262,12 +262,16 @@ func (s *Service) prepareUpgrade(ctx context.Context, user usertypes.Actor, targ
 			}
 			return *self, nil
 		}
-		inspect, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+		inspect, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerInspectResult, error) {
+			return compat.ContainerInspectWithCompatibility(ctx, cli, containerID, client.ContainerInspectOptions{})
+		})
 		if inspectErr == nil {
 			return inspect.Container, nil
 		}
 		// Fall back to a prefix match across every container.
-		containers, listErr := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+		containers, listErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerListResult, error) {
+			return cli.ContainerList(ctx, client.ContainerListOptions{All: true})
+		})
 		if listErr != nil {
 			return container.InspectResponse{}, fmt.Errorf("inspect container: %w", listErr)
 		}
@@ -275,7 +279,9 @@ func (s *Service) prepareUpgrade(ctx context.Context, user usertypes.Actor, targ
 		if idx < 0 {
 			return container.InspectResponse{}, fmt.Errorf("inspect container: %w", common.Classify(common.ErrNotFound, errors.New("could not find Arcane container")))
 		}
-		if inspect, inspectErr = compat.ContainerInspectWithCompatibility(ctx, dockerClient, containers.Items[idx].ID, client.ContainerInspectOptions{}); inspectErr != nil {
+		if inspect, inspectErr = s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerInspectResult, error) {
+			return compat.ContainerInspectWithCompatibility(ctx, cli, containers.Items[idx].ID, client.ContainerInspectOptions{})
+		}); inspectErr != nil {
 			return container.InspectResponse{}, fmt.Errorf("inspect container: %w", inspectErr)
 		}
 		return inspect.Container, nil
@@ -409,7 +415,9 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 	// On SELinux-enforcing hosts the socket is container_var_run_t, so without a label opt the upgrader exits with EACCES.
 	if !kit.FromPtr(prepared.current.HostConfig).Privileged &&
 		!slices.ContainsFunc(securityOpt, func(opt string) bool { return strings.HasPrefix(strings.TrimSpace(opt), "label") }) {
-		infoResult, infoErr := dockerClient.Info(ctx, client.InfoOptions{})
+		infoResult, infoErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.SystemInfoResult, error) {
+			return cli.Info(ctx, client.InfoOptions{})
+		})
 		if infoErr != nil {
 			slog.DebugContext(ctx, "Failed to query daemon info for SELinux detection", "error", infoErr)
 		} else if slices.Contains(infoResult.Info.SecurityOptions, "name=selinux") {
@@ -418,43 +426,49 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 	}
 
 	upgraderName := fmt.Sprintf("%s-upgrader-%d", prepared.containerName, time.Now().Unix())
-	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config: &container.Config{
-			Image: prepared.pullImage,
-			Cmd:   upgradeCmd,
-			// Root for the Docker socket: the short-lived upgrader never goes through the runtime-identity drop.
-			User: "0:0",
-			Env:  containerEnv,
-			Labels: map[string]string{
-				"com.getarcaneapp.arcane.upgrader": "true",
-				"com.getarcaneapp.arcane":          "true",
-			},
-		},
-		HostConfig: &container.HostConfig{
-			AutoRemove:  !keepUpgraderContainer,
-			Mounts:      mounts,
-			NetworkMode: networkMode,
-			SecurityOpt: securityOpt,
-			Privileged:  kit.FromPtr(prepared.current.HostConfig).Privileged,
-		},
-		NetworkingConfig: func() *network.NetworkingConfig {
-			if networkMode == "" || !networkMode.IsUserDefined() {
-				return nil
-			}
-			return &network.NetworkingConfig{
-				EndpointsConfig: map[string]*network.EndpointSettings{
-					string(networkMode): {Aliases: []string{"arcane-upgrader"}},
+	resp, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerCreateResult, error) {
+		return cli.ContainerCreate(ctx, client.ContainerCreateOptions{
+			Config: &container.Config{
+				Image: prepared.pullImage,
+				Cmd:   upgradeCmd,
+				// Root for the Docker socket: the short-lived upgrader never goes through the runtime-identity drop.
+				User: "0:0",
+				Env:  containerEnv,
+				Labels: map[string]string{
+					"com.getarcaneapp.arcane.upgrader": "true",
+					"com.getarcaneapp.arcane":          "true",
 				},
-			}
-		}(),
-		Name: upgraderName,
+			},
+			HostConfig: &container.HostConfig{
+				AutoRemove:  !keepUpgraderContainer,
+				Mounts:      mounts,
+				NetworkMode: networkMode,
+				SecurityOpt: securityOpt,
+				Privileged:  kit.FromPtr(prepared.current.HostConfig).Privileged,
+			},
+			NetworkingConfig: func() *network.NetworkingConfig {
+				if networkMode == "" || !networkMode.IsUserDefined() {
+					return nil
+				}
+				return &network.NetworkingConfig{
+					EndpointsConfig: map[string]*network.EndpointSettings{
+						string(networkMode): {Aliases: []string{"arcane-upgrader"}},
+					},
+				}
+			}(),
+			Name: upgraderName,
+		})
 	})
 	if err != nil {
 		return "", fmt.Errorf("create upgrader container: %w", err)
 	}
 
-	if _, containerStartErr := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); containerStartErr != nil {
-		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, client.ContainerRemoveOptions{Force: true})
+	if _, containerStartErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerStartResult, error) {
+		return cli.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
+	}); containerStartErr != nil {
+		_, _ = s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerRemoveResult, error) {
+			return cli.ContainerRemove(ctx, resp.ID, client.ContainerRemoveOptions{Force: true})
+		})
 		return "", fmt.Errorf("start upgrader container: %w", containerStartErr)
 	}
 

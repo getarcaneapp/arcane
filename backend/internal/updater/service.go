@@ -160,7 +160,6 @@ func NewUpdaterService(
 	upgrade selfUpgradeService,
 	activityService *activity.ActivityService,
 	cfg *config.Config,
-	_ *runs.Coordinator,
 	admission *runs.Admission,
 	roles *role.RoleService,
 ) (*UpdaterService, error) {
@@ -183,8 +182,8 @@ func NewUpdaterService(
 	}
 	// keep: recovery callbacks bind to the allocated service
 	service.recovery = recovery.NewService(
-		service.DockerClient,
-		func() updater.RegistryDigestResolver { return registries },
+		localDocker,
+		imageSvc,
 		service.PendingImageUpdates,
 		activityIDFromContext,
 		service.acquireUpdate,
@@ -396,12 +395,11 @@ func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options arcaneu
 			return docker.ComposeServiceLabel(summary.Labels) != "" && wanted[strings.ToLower(strings.TrimSpace(docker.ComposeProjectLabel(summary.Labels)))]
 		}
 		if scope == "image" {
-			dockerClient, clientErr := s.DockerClient(ctx)
-			if clientErr != nil {
-				return nil, clientErr
-			}
 			matches = func(summary container.Summary) bool {
-				return wanted[summary.ImageID] || wanted[refs.NormalizeImageUpdateRef(imageref.ConfiguredImage(ctx, dockerClient, summary))]
+				configured, _ := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
+					return imageref.ConfiguredImage(ctx, dockerClient, summary), nil
+				})
+				return wanted[summary.ImageID] || wanted[refs.NormalizeImageUpdateRef(configured)]
 			}
 		}
 		var matched []string
@@ -646,12 +644,12 @@ func (s *UpdaterService) recordAutoUpdateEvent(ctx context.Context, severity eve
 	}
 }
 
-// DockerClient returns Arcane's configured Docker client for the updater engine.
+// DockerClient implements updater.DockerClientProvider for the updater engine.
 func (s *UpdaterService) DockerClient(ctx context.Context) (*client.Client, error) {
 	return s.deps.Docker.GetClient(ctx)
 }
 
-// PullImage pulls an image through Arcane's image service, bounded by the
+// PullImage pulls an image through Arcane's image service, which bounds it by the
 // dockerImagePullTimeout setting so a stuck pull cannot hold the auto-update run.
 func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progress io.Writer) error {
 	pulledRef, err := s.recovery.PreparePull(ctx, imageRef)
@@ -661,33 +659,17 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 	writer := activitylib.NewWriter(ctx, s.deps.Activity, activityIDFromContext(ctx), progress, "Pulling updated images")
 	defer activitylib.FlushWriter(writer)
 
-	pullCtx, cancelPull := context.WithTimeout(ctx, timeouts.GetDuration(s.deps.Settings.GetSettingsConfig().DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull))
-	defer cancelPull()
-
-	credentials, err := s.deps.Projects.ResolveRegistryCredentials(pullCtx)
+	credentials, err := s.deps.Projects.ResolveRegistryCredentials(ctx)
 	if err != nil {
 		return fmt.Errorf("resolve registry credentials: %w", err)
 	}
-	pull := func(ctx context.Context) error {
-		return s.deps.ImagePuller.PullImage(ctx, pulledRef, writer, s.deps.SystemUser, credentials)
-	}
-	// A frozen digest pull is tagged back to the reference the engine asked for.
-	if pulledRef != imageRef {
-		dockerClient, clientErr := s.DockerClient(pullCtx)
-		if clientErr != nil {
-			return clientErr
-		}
-		if pullErr := imageref.PullAsTag(pullCtx, dockerClient, pulledRef, imageRef, pull); pullErr != nil {
-			return pullErr
-		}
-	} else if pullErr := pull(pullCtx); pullErr != nil {
-		return pullErr
-	}
-	// Reconcile by tag on the run context so a late pull still clears its update records (#4306).
-	if reconcileErr := s.deps.ImagePuller.ReconcilePulledImageUpdate(ctx, imageRef); reconcileErr != nil {
-		slog.WarnContext(ctx, "failed to reconcile pulled image update state", "image", imageRef, "error", reconcileErr)
-	}
-	return nil
+	return s.deps.ImagePuller.Pull(ctx, image.PullRequest{
+		Ref:         pulledRef,
+		Tag:         imageRef,
+		Progress:    writer,
+		User:        s.deps.SystemUser,
+		Credentials: credentials,
+	})
 }
 
 // PendingImageUpdates returns pending image update records from Arcane's database.
@@ -721,17 +703,17 @@ func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]updater.Ima
 		if scopedCount == 0 {
 			return nil, nil
 		}
-		dockerClient, clientErr := s.DockerClient(ctx)
-		if clientErr != nil {
-			return nil, clientErr
-		}
-		listed, listErr := dockerClient.ContainerList(ctx, client.ContainerListOptions{})
+		listed, listErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
+			return dockerClient.ContainerList(ctx, client.ContainerListOptions{})
+		})
 		if listErr != nil {
 			return nil, listErr
 		}
 		matched := make([]eligibleContainer, 0, len(listed.Items))
 		for _, cnt := range listed.Items {
-			configured := imageref.ConfiguredImage(ctx, dockerClient, cnt)
+			configured, _ := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
+				return imageref.ConfiguredImage(ctx, dockerClient, cnt), nil
+			})
 			resolved, policyErr := tagpolicy.Resolve(configured, updater.DefaultLabelPolicy().TagPolicy(cnt.Labels))
 			if policyErr != nil || resolved.Strategy == "tag" {
 				continue
@@ -787,21 +769,23 @@ func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record upda
 	}
 
 	// A shared record stays pending while another non-tag-policy container still runs an older image.
-	dockerClient, err := s.DockerClient(ctx)
+	target, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		return dockerClient.ImageInspect(ctx, record.NewImageRef())
+	})
 	if err != nil {
 		return err
 	}
-	target, err := dockerClient.ImageInspect(ctx, record.NewImageRef())
-	if err != nil {
-		return err
-	}
-	listed, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{})
+	listed, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
+		return dockerClient.ContainerList(ctx, client.ContainerListOptions{})
+	})
 	if err != nil {
 		return err
 	}
 	for _, cnt := range listed.Items {
 		// Untagged images list by ID, so an orphaned container matches by its configured image.
-		configured := imageref.ConfiguredImage(ctx, dockerClient, cnt)
+		configured, _ := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
+			return imageref.ConfiguredImage(ctx, dockerClient, cnt), nil
+		})
 		resolved, policyErr := tagpolicy.Resolve(configured, updater.DefaultLabelPolicy().TagPolicy(cnt.Labels))
 		if policyErr != nil || resolved.Strategy == "tag" {
 			continue
@@ -948,11 +932,9 @@ func (s *UpdaterService) singleContainerActivityRequest(ctx context.Context, con
 	name := func() string {
 		lookupCtx, cancelLookup := context.WithTimeout(ctx, 2*time.Second)
 		defer cancelLookup()
-		dockerClient, dockerErr := s.DockerClient(lookupCtx)
-		if dockerErr != nil {
-			return containerID
-		}
-		inspected, inspectErr := compat.ContainerInspectWithCompatibility(lookupCtx, dockerClient, containerID, client.ContainerInspectOptions{})
+		inspected, inspectErr := s.deps.Docker.Call(lookupCtx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
+			return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+		})
 		if inspectErr != nil {
 			return containerID
 		}
@@ -1186,12 +1168,10 @@ func (s *UpdaterService) CollectUsedImages(ctx context.Context) (map[string]stru
 }
 
 func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, out map[string]struct{}) error {
-	dcli, err := s.DockerClient(ctx)
-	if err != nil {
-		return err
-	}
 	excludedContainers := docker.ExcludedContainerNameSet(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""))
-	listResult, err := dcli.ContainerList(ctx, client.ContainerListOptions{})
+	listResult, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
+		return dockerClient.ContainerList(ctx, client.ContainerListOptions{})
+	})
 	if err != nil {
 		return err
 	}
@@ -1216,7 +1196,9 @@ func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, ou
 		}
 
 		// The summary only names an image ID, so the image's tags and the configured reference stand in.
-		inspectResult, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dcli, summary.ID, client.ContainerInspectOptions{})
+		inspectResult, inspectErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
+			return compat.ContainerInspectWithCompatibility(ctx, dockerClient, summary.ID, client.ContainerInspectOptions{})
+		})
 		if inspectErr != nil {
 			slog.DebugContext(ctx, "collectUsedImagesFromContainers: container inspect failed", "containerId", summary.ID, "error", inspectErr)
 			continue
@@ -1227,7 +1209,9 @@ func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, ou
 		}
 		if _, inspected := inspectedImages[inspectResult.Container.Image]; !inspected {
 			inspectedImages[inspectResult.Container.Image] = struct{}{}
-			if imageInspect, imageErr := dcli.ImageInspect(ctx, inspectResult.Container.Image); imageErr == nil {
+			if imageInspect, imageErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+				return dockerClient.ImageInspect(ctx, inspectResult.Container.Image)
+			}); imageErr == nil {
 				for _, tag := range imageInspect.RepoTags {
 					if strings.TrimSpace(tag) != "" && tag != "<none>:<none>" {
 						addNormalizedImageUpdateRef(ctx, out, tag, "normalizedTagsForContainer repo tag", "imageId", inspectResult.Container.Image)
@@ -1250,13 +1234,14 @@ func (s *UpdaterService) collectUsedImagesFromProjects(ctx context.Context, out 
 
 	activeProjectNames := map[string]struct{}{}
 	for _, project := range allProjects {
+		name := strings.TrimSpace(project.Name)
 		if project.IsArchived ||
 			(project.Status != projectpkg.ProjectStatusRunning && project.Status != projectpkg.ProjectStatusPartiallyRunning) ||
-			strings.TrimSpace(project.Name) == "" {
+			name == "" {
 			continue
 		}
-		activeProjectNames[strings.TrimSpace(project.Name)] = struct{}{}
-		if normalized := projects.NormalizeProjectName(strings.TrimSpace(project.Name)); normalized != "" {
+		activeProjectNames[name] = struct{}{}
+		if normalized := projects.NormalizeProjectName(name); normalized != "" {
 			activeProjectNames[normalized] = struct{}{}
 		}
 	}
@@ -1264,11 +1249,9 @@ func (s *UpdaterService) collectUsedImagesFromProjects(ctx context.Context, out 
 		return nil
 	}
 
-	dockerClient, err := s.deps.Docker.GetClient(ctx)
-	if err != nil {
-		return err
-	}
-	composeContainers, err := projects.ListGlobalComposeContainers(ctx, dockerClient, s.deps.Docker.DockerHost())
+	composeContainers, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
+		return projects.ListGlobalComposeContainers(ctx, dockerClient, s.deps.Docker.DockerHost())
+	})
 	if err != nil {
 		return err
 	}

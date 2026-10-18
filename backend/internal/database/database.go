@@ -96,7 +96,8 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 	}
 
 	var gormDB *gorm.DB
-	for attempt := 1; attempt <= 3; attempt++ {
+	connectStart := time.Now()
+	for attempt := 1; ; attempt++ {
 		if err = ctx.Err(); err != nil {
 			return nil, fmt.Errorf("failed to connect to database: %w", err)
 		}
@@ -113,13 +114,16 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 		if err == nil {
 			break
 		}
-		slog.InfoContext(ctx, "Failed to initialize database", "attempt", attempt)
-		if attempt < 3 {
-			select {
-			case <-time.After(3 * time.Second):
-			case <-ctx.Done():
-				return nil, fmt.Errorf("failed to connect to database: %w", ctx.Err())
-			}
+		wait := min(time.Second<<min(attempt-1, 4), 15*time.Second)
+		if time.Since(connectStart)+wait > time.Minute {
+			err = fmt.Errorf("gave up after %d attempts: %w", attempt, err)
+			break
+		}
+		slog.InfoContext(ctx, "Failed to initialize database", "attempt", attempt, "retryIn", wait, "error", err)
+		select {
+		case <-time.After(wait):
+		case <-ctx.Done():
+			return nil, fmt.Errorf("failed to connect to database: %w", ctx.Err())
 		}
 	}
 	if err != nil {
@@ -161,16 +165,15 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 	if err != nil {
 		return nil, fmt.Errorf("failed to register database instrumentation: %w", err)
 	}
+	sqlDB.SetMaxIdleConns(kit.Ternary(dbProvider == dbProviderPostgres, 15, 5))
+	sqlDB.SetMaxOpenConns(kit.Ternary(dbProvider == dbProviderPostgres, 50, 20))
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
+	sqlDB.SetConnMaxIdleTime(3 * time.Minute)
 	metrics.ReportDBStatsMetrics(sqlDB)
 	if migrationErr := migrateDatabase(ctx, sqlDB, dbProvider, options, latestMigrationVersion); migrationErr != nil {
 		slog.ErrorContext(ctx, "Failed to run migrations", "error", migrationErr)
 		return nil, fmt.Errorf("failed to run migrations: %w", migrationErr)
 	}
-
-	sqlDB.SetMaxIdleConns(kit.Ternary(dbProvider == dbProviderPostgres, 15, 5))
-	sqlDB.SetMaxOpenConns(kit.Ternary(dbProvider == dbProviderPostgres, 50, 20))
-	sqlDB.SetConnMaxLifetime(5 * time.Minute)
-	sqlDB.SetConnMaxIdleTime(3 * time.Minute)
 	return db, nil
 }
 
@@ -452,8 +455,16 @@ func ParseSQLiteConnectionString(connString string) (string, error) {
 	qs := sqliteutil.NormalizeQuery(connStringUrl.Query())
 	// Foreign-key enforcement is required on every pooled connection.
 	qs.Add("_pragma", "foreign_keys(1)")
-	connStringUrl.RawQuery = qs.Encode()
-	return connStringUrl.String(), nil
+	return (&url.URL{
+		Scheme:   connStringUrl.Scheme,
+		Opaque:   connStringUrl.Opaque,
+		User:     connStringUrl.User,
+		Host:     connStringUrl.Host,
+		Path:     connStringUrl.Path,
+		RawPath:  connStringUrl.RawPath,
+		RawQuery: qs.Encode(),
+		Fragment: connStringUrl.Fragment,
+	}).String(), nil
 }
 
 // FindEnvironmentIDByApiKey finds the environment ID that is associated with the given API key.

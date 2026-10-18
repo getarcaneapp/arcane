@@ -77,30 +77,6 @@ func (s *DockerClientService) WithClient(dockerClient *client.Client) *DockerCli
 	}
 }
 
-func detectDockerAPIVersion(ctx context.Context, host string) (string, error) {
-	probeClient, err := client.New(client.WithHost(host))
-	if err != nil {
-		return "", fmt.Errorf("failed to create Docker probe client: %w", err)
-	}
-	defer closeDockerClient(ctx, probeClient, "probe")
-
-	ctx, cancel := context.WithTimeout(ctx, dockerClientNegotiationTimeout)
-	defer cancel()
-
-	pingResult, err := probeClient.Ping(ctx, client.PingOptions{})
-	if err != nil {
-		return "", fmt.Errorf("failed to negotiate Docker API version: %w", err)
-	}
-
-	apiVersion := strings.TrimSpace(pingResult.APIVersion)
-	if apiVersion == "" {
-		slog.WarnContext(ctx, "Docker ping did not report an API version, using minimum supported client API version", "apiVersion", client.MinAPIVersion)
-		return client.MinAPIVersion, nil
-	}
-
-	return apiVersion, nil
-}
-
 func closeDockerClient(ctx context.Context, cli *client.Client, purpose string) {
 	if cli == nil {
 		return
@@ -115,44 +91,40 @@ func closeDockerClient(ctx context.Context, cli *client.Client, purpose string) 
 // It initializes the client on the first call.
 func (s *DockerClientService) GetClient(ctx context.Context) (*client.Client, error) {
 	s.mu.Lock()
-	if s.Client != nil {
-		cli := s.Client
-		s.mu.Unlock()
+	cli := s.Client
+	s.mu.Unlock()
+	if cli != nil {
 		return cli, nil
 	}
-	s.mu.Unlock()
 
-	apiVersion, err := detectDockerAPIVersion(ctx, s.config.DockerHost)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Docker client: %w", err)
-	}
-	cli, err := client.New(client.WithHost(s.config.DockerHost), client.WithAPIVersion(apiVersion))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Docker client: failed to configure Docker client API version %s: %w", apiVersion, err)
+	if err := s.RefreshClient(ctx); err != nil {
+		return nil, err
 	}
 
 	s.mu.Lock()
-	if s.Client != nil {
-		existingClient := s.Client
-		s.mu.Unlock()
-		closeDockerClient(ctx, cli, "unused after concurrent initialization")
-		return existingClient, nil
-	}
-
-	s.Client = cli
-	s.clientVersion = cli.ClientVersion()
-	s.clientLastProbe = time.Now()
-	s.mu.Unlock()
-
-	return cli, nil
+	defer s.mu.Unlock()
+	return s.Client, nil
 }
 
 // RefreshClient probes the Docker daemon and recreates the cached client when
 // the daemon's effective API version changed.
 func (s *DockerClientService) RefreshClient(ctx context.Context) error {
-	apiVersion, err := detectDockerAPIVersion(ctx, s.config.DockerHost)
+	probeClient, err := client.New(client.WithHost(s.config.DockerHost))
 	if err != nil {
-		return fmt.Errorf("failed to refresh Docker client: %w", err)
+		return fmt.Errorf("failed to refresh Docker client: failed to create Docker probe client: %w", err)
+	}
+	pingCtx, cancel := context.WithTimeout(ctx, dockerClientNegotiationTimeout)
+	pingResult, err := probeClient.Ping(pingCtx, client.PingOptions{})
+	cancel()
+	closeDockerClient(ctx, probeClient, "probe")
+	if err != nil {
+		return fmt.Errorf("failed to refresh Docker client: failed to negotiate Docker API version: %w", err)
+	}
+
+	apiVersion := strings.TrimSpace(pingResult.APIVersion)
+	if apiVersion == "" {
+		slog.WarnContext(ctx, "Docker ping did not report an API version, using minimum supported client API version", "apiVersion", client.MinAPIVersion)
+		apiVersion = client.MinAPIVersion
 	}
 
 	s.mu.Lock()
@@ -219,11 +191,15 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 	eventBackoff.InitialInterval = 500 * time.Millisecond
 	eventBackoff.MaxInterval = 30 * time.Second
 
+	// Resume from the last received event so a reconnect replays events missed during the gap.
+	var lastEventNano int64
 	for ctx.Err() == nil {
 		if dockerClient, err := s.GetClient(ctx); err != nil {
 			slog.WarnContext(ctx, "failed to connect to Docker event stream", "error", err)
 		} else {
-			result := dockerClient.Events(ctx, client.EventsListOptions{})
+			result := dockerClient.Events(ctx, client.EventsListOptions{
+				Since: kit.Ternary(lastEventNano == 0, "", fmt.Sprintf("%d.%09d", lastEventNano/int64(time.Second), lastEventNano%int64(time.Second))),
+			})
 			streamStart := time.Now()
 			var streamErr error
 		stream:
@@ -239,6 +215,7 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 					if msg.TimeNano == 0 {
 						msg.TimeNano = time.Now().UnixNano()
 					}
+					lastEventNano = msg.TimeNano
 					s.EventBus().Publish(msg)
 				case recvErr, ok := <-result.Err:
 					streamErr = kit.Ternary(ok, recvErr, nil)
@@ -261,16 +238,21 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 			return
 		case <-timer.C:
 		}
+		// A restarted daemon may report a different API version, so re-probe before reconnecting.
+		if err := s.RefreshClient(ctx); err != nil {
+			slog.DebugContext(ctx, "failed to refresh Docker client before event stream reconnect", "error", err)
+		}
 	}
 }
 
-// listCoalesced shares one detached op among concurrent callers; each waiter stops on its own
+// ListCoalesced shares one detached Call among concurrent callers; each waiter stops on its own
 // context, nothing is cached, and the shared result must be treated as immutable.
-func listCoalesced[T any](ctx context.Context, group *singleflight.Group, op func(context.Context) (T, error)) (T, error) {
+// Streaming calls (logs, events, attach, pull, exec, stats, wait) must not use it because Call applies a deadline.
+func (s *DockerClientService) ListCoalesced[T any](ctx context.Context, group *singleflight.Group, op func(context.Context, *client.Client) (T, error)) (T, error) {
 	var zero T
 
 	ch := group.DoChan("list", func() (any, error) {
-		return op(context.WithoutCancel(ctx))
+		return s.Call(context.WithoutCancel(ctx), op)
 	})
 
 	select {
@@ -288,8 +270,9 @@ func listCoalesced[T any](ctx context.Context, group *singleflight.Group, op fun
 	}
 }
 
-// callAPI runs op against the cached client under the configured Docker API timeout.
-func callAPI[T any](ctx context.Context, s *DockerClientService, op func(context.Context, *client.Client) (T, error)) (T, error) {
+// Call runs op against the cached client under the configured Docker API timeout.
+// Streaming calls (logs, events, attach, pull, exec, stats, wait) must not use it because it applies a deadline.
+func (s *DockerClientService) Call[T any](ctx context.Context, op func(context.Context, *client.Client) (T, error)) (T, error) {
 	dockerClient, err := s.GetClient(ctx)
 	if err != nil {
 		var zero T
@@ -305,36 +288,22 @@ func callAPI[T any](ctx context.Context, s *DockerClientService, op func(context
 }
 
 func (s *DockerClientService) ListContainers(ctx context.Context) ([]container.Summary, error) {
-	return listCoalesced(ctx, &s.containerListFlight, func(ctx context.Context) ([]container.Summary, error) {
-		return callAPI(ctx, s, func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
-			containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
-			if err != nil {
-				return nil, fmt.Errorf("failed to list Docker containers: %w", err)
-			}
-			return containerList.Items, nil
-		})
+	return s.ListCoalesced(ctx, &s.containerListFlight, func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
+		containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list Docker containers: %w", err)
+		}
+		return containerList.Items, nil
 	})
 }
 
 func (s *DockerClientService) ListImages(ctx context.Context) ([]image.Summary, error) {
-	return listCoalesced(ctx, &s.imageListFlight, func(ctx context.Context) ([]image.Summary, error) {
-		return callAPI(ctx, s, func(ctx context.Context, dockerClient *client.Client) ([]image.Summary, error) {
-			imageList, err := dockerClient.ImageList(ctx, client.ImageListOptions{All: true})
-			if err != nil {
-				return nil, fmt.Errorf("failed to list Docker images: %w", err)
-			}
-			return imageList.Items, nil
-		})
-	})
-}
-
-func (s *DockerClientService) listNetworks(ctx context.Context) ([]network.Summary, error) {
-	return callAPI(ctx, s, func(ctx context.Context, dockerClient *client.Client) ([]network.Summary, error) {
-		networkList, err := compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
+	return s.ListCoalesced(ctx, &s.imageListFlight, func(ctx context.Context, dockerClient *client.Client) ([]image.Summary, error) {
+		imageList, err := dockerClient.ImageList(ctx, client.ImageListOptions{All: true})
 		if err != nil {
-			return nil, fmt.Errorf("failed to list Docker networks: %w", err)
+			return nil, fmt.Errorf("failed to list Docker images: %w", err)
 		}
-		return networkList.Items, nil
+		return imageList.Items, nil
 	})
 }
 
@@ -364,7 +333,13 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*d
 		defer utils.RecoverToError(&workerErr, "docker snapshot worker")
 
 		var err error
-		networks, err = s.listNetworks(groupCtx)
+		networks, err = s.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) ([]network.Summary, error) {
+			networkList, listErr := compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
+			if listErr != nil {
+				return nil, fmt.Errorf("failed to list Docker networks: %w", listErr)
+			}
+			return networkList.Items, nil
+		})
 		if err != nil {
 			slog.WarnContext(groupCtx, "failed to list Docker networks for snapshot", "error", err)
 		}
@@ -374,7 +349,7 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*d
 		defer utils.RecoverToError(&workerErr, "docker snapshot worker")
 
 		var err error
-		volumes, err = callAPI(groupCtx, s, func(ctx context.Context, dockerClient *client.Client) (*client.VolumeListResult, error) {
+		volumes, err = s.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) (*client.VolumeListResult, error) {
 			volResp, listErr := dockerClient.VolumeList(ctx, client.VolumeListOptions{})
 			if listErr != nil {
 				return nil, fmt.Errorf("failed to list Docker volumes: %w", listErr)
@@ -476,7 +451,13 @@ func (s *DockerClientService) GetAllNetworks(ctx context.Context) ([]network.Sum
 	if err != nil {
 		return nil, 0, 0, 0, err
 	}
-	networks, err := s.listNetworks(ctx)
+	networks, err := s.Call(ctx, func(ctx context.Context, dockerClient *client.Client) ([]network.Summary, error) {
+		networkList, listErr := compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
+		if listErr != nil {
+			return nil, fmt.Errorf("failed to list Docker networks: %w", listErr)
+		}
+		return networkList.Items, nil
+	})
 	if err != nil {
 		return nil, 0, 0, 0, err
 	}

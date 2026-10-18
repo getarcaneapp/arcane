@@ -61,7 +61,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/userctx"
 )
@@ -227,7 +226,7 @@ type HandlerDeps struct {
 	Role              *role.Module
 	Variable          *variable.Module
 	Upload            *upload.Module
-	Actors            *francis.Runtime
+	Health            *health.Module
 }
 
 // SetupAPI creates and configures the Huma API attached to the Echo router.
@@ -274,7 +273,7 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityApp
 	api.UseMiddleware(middleware.NewActivityBatchID())
 	registerNormalization(api)
 
-	health.RegisterRoutes(api, deps.Actors)
+	deps.Health.RegisterRoutes(api)
 	deps.Auth.RegisterRoutes(api)
 	passkey.RegisterPasskeys(api, deps.Passkey, deps.Auth.Service(), deps.User.Service())
 	deps.ApiKey.RegisterRoutes(api)
@@ -328,5 +327,5 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityApp
 func SetupAPIForSpec() huma.API {
 	e := echo.New()
 	appCtx := handlerutil.NewActivityAppContext(context.Background()) //nolint:forbidigo // Schema discovery has no running request or application lifecycle.
-	return SetupAPI(e, e.Group("/api"), appCtx, &config.Config{}, HandlerDeps{})
+	return SetupAPI(e, e.Group("/api"), appCtx, &config.Config{}, HandlerDeps{Health: health.New(&health.Service{})})
 }

@@ -3,6 +3,7 @@ package container
 import (
 	"cmp"
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -42,12 +43,14 @@ import (
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
@@ -57,6 +60,12 @@ const (
 	containerGroupByProject  = "project"
 	containerNoProjectGroup  = "No Project"
 	containerIconMetadataTTL = 5 * time.Second
+	// leaseWaitTimeout bounds how long a container operation waits for one already running on the same container.
+	leaseWaitTimeout = 30 * time.Second
+	// rollbackTimeout bounds a redeploy rollback, which runs detached from the request so it completes after cancellation.
+	rollbackTimeout = 2 * timeouts.DefaultDockerAPI
+	// redeployBackupInfix joins a container's name and a Unix timestamp to name the original kept during a redeploy.
+	redeployBackupInfix = "-arcane-redeploy-"
 )
 
 type ContainerService struct {
@@ -65,8 +74,11 @@ type ContainerService struct {
 	imageService    *image.ImageService
 	settingsService *settings.SettingsService
 	projectService  *project.ProjectService
+	kvService       *kv.KVService
 	iconMetaCache   *hot.HotCache[string, projects.ArcaneComposeMetadata]
 	stats           *stats.Service
+	// opLock serializes mutating operations on the same container.
+	opLock utils.KeyedMutex
 }
 
 type ContainerListResult struct {
@@ -81,7 +93,7 @@ type containerLifecycleAction struct {
 	eventType          event.EventType
 	metadata           database.JSON
 	warnOnLogError     bool
-	runContainerAction func(*client.Client) error
+	runContainerAction func(context.Context) error
 }
 
 type ExecSession struct {
@@ -105,6 +117,7 @@ func NewContainerService(
 	imageService *image.ImageService,
 	settingsService *settings.SettingsService,
 	projectService *project.ProjectService,
+	kvService *kv.KVService,
 ) *ContainerService {
 	return &ContainerService{
 		eventService:    eventService,
@@ -112,6 +125,7 @@ func NewContainerService(
 		imageService:    imageService,
 		settingsService: settingsService,
 		projectService:  projectService,
+		kvService:       kvService,
 		iconMetaCache: hot.NewHotCache[string, projects.ArcaneComposeMetadata](hot.LRU, 1024).
 			WithTTL(containerIconMetadataTTL).
 			WithJanitor().
@@ -162,125 +176,133 @@ func buildCleanNetworkingConfig(containerInspect container.InspectResponse, apiV
 
 func (s *ContainerService) pullRedeployImage(
 	ctx context.Context,
-	dockerClient *client.Client,
 	imageName, containerID, containerName, action string,
 	credentials []containerregistry.Credential,
 	user usertypes.Actor,
 ) error {
-	pullCtx, pullCancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull))
-	defer pullCancel()
-
-	pullOptions, authErr := s.imageService.PullOptionsWithAuth(ctx, imageName, credentials)
-	if authErr != nil {
-		slog.WarnContext(
-			ctx, "failed to get registry authentication for container recreate pull; proceeding without auth",
-			"image", imageName,
-			"error", authErr.Error(),
-		)
-		pullOptions = client.ImagePullOptions{}
-	}
-
-	defer s.eventService.BeginDockerResourceSuppressionWindow("image", "", imageName)()
-	reader, pullErr := dockerClient.ImagePull(pullCtx, imageName, pullOptions)
-	if pullErr != nil && image.ShouldRetryAnonymousPull(pullOptions, pullErr) {
-		slog.WarnContext(
-			ctx, "container recreate image pull failed with registry auth; retrying anonymously",
-			"image", imageName,
-			"error", pullErr.Error(),
-		)
-		pullOptions = client.ImagePullOptions{}
-		reader, pullErr = dockerClient.ImagePull(pullCtx, imageName, pullOptions)
-	}
+	progressWriter, _ := ctx.Value(types.ProgressWriterKey{}).(io.Writer)
+	pullErr := s.imageService.Pull(ctx, image.PullRequest{
+		Ref:         imageName,
+		Progress:    progressWriter,
+		User:        user,
+		Credentials: credentials,
+	})
 	if pullErr != nil {
-		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
-			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", pullErr, database.JSON{
-				"action": action,
-				"step":   "pull_image_timeout",
-				"image":  imageName,
-			})
-			return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", imageName)
-		}
-
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", pullErr, database.JSON{
 			"action": action,
-			"step":   "pull_image",
+			"step":   kit.Ternary(errors.Is(pullErr, context.DeadlineExceeded), "pull_image_timeout", "pull_image"),
 			"image":  imageName,
 		})
-		return fmt.Errorf("failed to pull image %s: %w", imageName, pullErr)
 	}
-	defer func() { _ = reader.Close() }()
-
-	progressWriter, _ := ctx.Value(types.ProgressWriterKey{}).(io.Writer)
-	logWriter := docker.NewLogLineWriter(progressWriter)
-	defer func() { _ = logWriter.Close() }()
-
-	streamErr := docker.RenderJSONMessageStream(reader, logWriter)
-	if streamErr != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", streamErr, database.JSON{
-			"action": action,
-			"step":   "complete_pull",
-			"image":  imageName,
-		})
-		return fmt.Errorf("failed to complete image pull: %w", streamErr)
-	}
-
-	return nil
+	return pullErr
 }
 
-func (s *ContainerService) prepareContainerForRedeploy(
-	ctx context.Context,
-	dockerClient *client.Client,
-	containerID, containerName, backupName string,
-	wasRunning bool,
-	user usertypes.Actor,
-) error {
-	s.eventService.MarkDockerExpectation("container", containerID, containerName)
-	if containerName != "" {
-		if _, err := dockerClient.ContainerRename(ctx, containerID, client.ContainerRenameOptions{NewName: backupName}); err != nil {
-			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, database.JSON{
-				"action":     "redeploy",
-				"step":       "rename_old",
-				"backupName": backupName,
-			})
-			return fmt.Errorf("failed to rename existing container: %w", err)
-		}
+// RecoverInterruptedRedeploys resolves journaled redeploy backups a restart left behind: a backup whose replacement
+// is running is removed, and a backup with no replacement gets its original name back but stays stopped.
+func (s *ContainerService) RecoverInterruptedRedeploys(ctx context.Context) error {
+	entries, err := s.kvService.ListByPrefix(ctx, redeployJournalKeyPrefix)
+	if err != nil {
+		return fmt.Errorf("list redeploy journals: %w", err)
 	}
-
-	if !wasRunning {
+	if len(entries) == 0 {
 		return nil
 	}
 
-	_, err := dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: new(30)})
-	if err == nil {
-		return nil
-	}
-
-	if containerName != "" {
-		if _, renameErr := dockerClient.ContainerRename(ctx, containerID, client.ContainerRenameOptions{NewName: containerName}); renameErr != nil {
-			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", renameErr, database.JSON{
-				"action": "redeploy",
-				"step":   "restore_name_after_stop_failure",
-			})
-		}
-	}
-
-	s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, database.JSON{
-		"action": "redeploy",
-		"step":   "stop",
+	list, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
+		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	})
-	return fmt.Errorf("failed to stop container: %w", err)
+	if err != nil {
+		return fmt.Errorf("list containers for redeploy recovery: %w", err)
+	}
+
+	byName := make(map[string]container.Summary, len(list.Items))
+	for _, c := range list.Items {
+		for _, name := range c.Names {
+			byName[strings.TrimPrefix(name, "/")] = c
+		}
+	}
+
+	var firstErr error
+	var removed, restored, skipped int
+	for _, entry := range entries {
+		var journal RedeployJournal
+		if unmarshalErr := json.Unmarshal([]byte(entry.Value), &journal); unmarshalErr != nil {
+			slog.WarnContext(ctx, "Failed to decode redeploy journal", "key", entry.Key, "error", unmarshalErr)
+			continue
+		}
+
+		backup, backupExists := byName[journal.BackupName]
+		if !backupExists {
+			s.clearRedeployJournal(ctx, journal.OriginalID)
+			continue
+		}
+		if backup.ID != journal.OriginalID {
+			slog.WarnContext(ctx, "Skipping redeploy backup recovery: container is not the one Arcane renamed", "container", journal.BackupName, "id", backup.ID, "journaledId", journal.OriginalID)
+			s.clearRedeployJournal(ctx, journal.OriginalID)
+			skipped++
+			continue
+		}
+
+		replacement, exists := byName[cmp.Or(journal.NewName, journal.OriginalName)]
+		switch {
+		case exists && replacement.State == container.StateRunning:
+			if _, removeErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+				return dockerClient.ContainerRemove(ctx, backup.ID, client.ContainerRemoveOptions{Force: true})
+			}); removeErr != nil {
+				slog.WarnContext(ctx, "Failed to remove leftover redeploy backup", "container", journal.BackupName, "error", removeErr)
+				firstErr = cmp.Or(firstErr, fmt.Errorf("remove redeploy backup %s: %w", journal.BackupName, removeErr))
+				continue
+			}
+			s.clearRedeployJournal(ctx, journal.OriginalID)
+			removed++
+		case exists:
+			slog.WarnContext(ctx, "Leaving redeploy backup in place: replacement exists but is not running",
+				"container", journal.BackupName,
+				"replacement", cmp.Or(journal.NewName, journal.OriginalName),
+				"state", replacement.State)
+			skipped++
+		default:
+			if _, renameErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRenameResult, error) {
+				return dockerClient.ContainerRename(ctx, backup.ID, client.ContainerRenameOptions{NewName: journal.OriginalName})
+			}); renameErr != nil {
+				slog.WarnContext(ctx, "Failed to restore leftover redeploy backup", "container", journal.BackupName, "error", renameErr)
+				firstErr = cmp.Or(firstErr, fmt.Errorf("restore redeploy backup %s: %w", journal.BackupName, renameErr))
+				continue
+			}
+			s.clearRedeployJournal(ctx, journal.OriginalID)
+			byName[journal.OriginalName] = backup
+			restored++
+			slog.WarnContext(ctx, "Restored original container from interrupted redeploy; start it manually if it should be running", "container", journal.OriginalName, "state", backup.State)
+		}
+	}
+
+	if removed+restored+skipped > 0 {
+		slog.InfoContext(ctx, "Recovered interrupted container redeploys", "removed", removed, "restored", restored, "skipped", skipped)
+	}
+	return firstErr
+}
+
+// clearRedeployJournal drops the journal once its backup is resolved; a leftover entry is retried at startup.
+func (s *ContainerService) clearRedeployJournal(ctx context.Context, originalID string) {
+	if err := s.kvService.Delete(ctx, redeployJournalKeyPrefix+originalID); err != nil {
+		slog.WarnContext(ctx, "Failed to clear redeploy journal", "containerId", originalID, "error", err)
+	}
 }
 
 func (s *ContainerService) restoreContainerAfterRedeployFailure(
 	ctx context.Context,
-	dockerClient *client.Client,
 	containerID, containerName, backupName, failedStep string,
 	wasRunning bool,
 	user usertypes.Actor,
 ) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
+	defer cancel()
+
 	s.eventService.MarkDockerExpectation("container", containerID, containerName)
 	if wasRunning {
-		if _, startErr := dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{}); startErr != nil {
+		if _, startErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
+			return dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
+		}); startErr != nil {
 			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", startErr, database.JSON{
 				"action":     "redeploy",
 				"step":       "restore_start_original",
@@ -293,21 +315,77 @@ func (s *ContainerService) restoreContainerAfterRedeployFailure(
 		return
 	}
 
-	if _, renameErr := dockerClient.ContainerRename(ctx, containerID, client.ContainerRenameOptions{NewName: containerName}); renameErr != nil {
+	if _, renameErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRenameResult, error) {
+		return dockerClient.ContainerRename(ctx, containerID, client.ContainerRenameOptions{NewName: containerName})
+	}); renameErr != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, backupName, user.ID, user.Username, "0", renameErr, database.JSON{
 			"action":     "redeploy",
 			"step":       "restore_name",
 			"failedStep": failedStep,
 		})
+		return
 	}
+	s.clearRedeployJournal(ctx, containerID)
+}
+
+// renameToRedeployBackup journals the original before renaming it to its backup name, so startup
+// recovery only acts on backups Arcane created.
+func (s *ContainerService) renameToRedeployBackup(ctx context.Context, containerID, containerName, backupName, newName string, user usertypes.Actor) error {
+	journal, err := json.Marshal(RedeployJournal{
+		OriginalID:   containerID,
+		OriginalName: containerName,
+		BackupName:   backupName,
+		NewName:      newName,
+		StartedAt:    time.Now().UTC(),
+	})
+	if err != nil {
+		return fmt.Errorf("marshal redeploy journal: %w", err)
+	}
+	if setErr := s.kvService.Set(ctx, redeployJournalKeyPrefix+containerID, string(journal)); setErr != nil {
+		return fmt.Errorf("write redeploy journal: %w", setErr)
+	}
+
+	if _, renameErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRenameResult, error) {
+		return dockerClient.ContainerRename(ctx, containerID, client.ContainerRenameOptions{NewName: backupName})
+	}); renameErr != nil {
+		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", renameErr, database.JSON{
+			"action":     "redeploy",
+			"step":       "rename_old",
+			"backupName": backupName,
+		})
+		s.clearRedeployJournal(context.WithoutCancel(ctx), containerID)
+		return fmt.Errorf("failed to rename existing container: %w", renameErr)
+	}
+	return nil
+}
+
+// stopContainer waits out a 30s grace period, so it runs without the Docker API deadline.
+func (s *ContainerService) stopContainer(ctx context.Context, containerID string) error {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+	_, err = dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: new(30)})
+	return err
+}
+
+// lockContainer takes the container's operation lease, waiting up to leaseWaitTimeout for an operation already running on it.
+func (s *ContainerService) lockContainer(ctx context.Context, op, containerID string) (func(), error) {
+	waitCtx, cancel := context.WithTimeout(ctx, leaseWaitTimeout)
+	defer cancel()
+	unlock, err := s.opLock.LockContext(waitCtx, "0:container:"+containerID)
+	if err != nil {
+		return nil, fmt.Errorf("%s %s: waiting for in-progress operation: %w", op, containerID, err)
+	}
+	return unlock, nil
 }
 
 func (s *ContainerService) runContainerLifecycleAction(ctx context.Context, containerID string, user usertypes.Actor, cfg containerLifecycleAction) error {
-	dockerClient, err := s.dockerService.GetClient(ctx)
+	unlock, err := s.lockContainer(ctx, cfg.action+" container", containerID)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{"action": cfg.action})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return err
 	}
+	defer unlock()
 
 	metadata := database.JSON{
 		"action":      cfg.action,
@@ -324,7 +402,7 @@ func (s *ContainerService) runContainerLifecycleAction(ctx context.Context, cont
 	}
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("container", containerID, "")()
-	err = cfg.runContainerAction(dockerClient)
+	err = cfg.runContainerAction(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{"action": cfg.action})
 	}
@@ -336,8 +414,10 @@ func (s *ContainerService) StartContainer(ctx context.Context, containerID strin
 		action:         "start",
 		eventType:      event.EventTypeContainerStart,
 		warnOnLogError: true,
-		runContainerAction: func(dockerClient *client.Client) error {
-			_, err := dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
+		runContainerAction: func(ctx context.Context) error {
+			_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
+				return dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
+			})
 			return err
 		},
 	})
@@ -347,9 +427,8 @@ func (s *ContainerService) StopContainer(ctx context.Context, containerID string
 	return s.runContainerLifecycleAction(ctx, containerID, user, containerLifecycleAction{
 		action:    "stop",
 		eventType: event.EventTypeContainerStop,
-		runContainerAction: func(dockerClient *client.Client) error {
-			_, err := dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: new(30)})
-			return err
+		runContainerAction: func(ctx context.Context) error {
+			return s.stopContainer(ctx, containerID)
 		},
 	})
 }
@@ -358,8 +437,12 @@ func (s *ContainerService) RestartContainer(ctx context.Context, containerID str
 	return s.runContainerLifecycleAction(ctx, containerID, user, containerLifecycleAction{
 		action:    "restart",
 		eventType: event.EventTypeContainerRestart,
-		runContainerAction: func(dockerClient *client.Client) error {
-			_, err := dockerClient.ContainerRestart(ctx, containerID, client.ContainerRestartOptions{})
+		runContainerAction: func(ctx context.Context) error {
+			dockerClient, err := s.dockerService.GetClient(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to connect to Docker: %w", err)
+			}
+			_, err = dockerClient.ContainerRestart(ctx, containerID, client.ContainerRestartOptions{})
 			return err
 		},
 	})
@@ -373,8 +456,10 @@ func (s *ContainerService) KillContainer(ctx context.Context, containerID, signa
 		eventType:      event.EventTypeContainerKill,
 		metadata:       database.JSON{"signal": signal},
 		warnOnLogError: true,
-		runContainerAction: func(dockerClient *client.Client) error {
-			_, err := dockerClient.ContainerKill(ctx, containerID, client.ContainerKillOptions{Signal: signal})
+		runContainerAction: func(ctx context.Context) error {
+			_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerKillResult, error) {
+				return dockerClient.ContainerKill(ctx, containerID, client.ContainerKillOptions{Signal: signal})
+			})
 			return err
 		},
 	})
@@ -386,8 +471,10 @@ func (s *ContainerService) PauseContainer(ctx context.Context, containerID strin
 		action:         "pause",
 		eventType:      event.EventTypeContainerPause,
 		warnOnLogError: true,
-		runContainerAction: func(dockerClient *client.Client) error {
-			_, err := dockerClient.ContainerPause(ctx, containerID, client.ContainerPauseOptions{})
+		runContainerAction: func(ctx context.Context) error {
+			_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerPauseResult, error) {
+				return dockerClient.ContainerPause(ctx, containerID, client.ContainerPauseOptions{})
+			})
 			return err
 		},
 	})
@@ -399,8 +486,10 @@ func (s *ContainerService) UnpauseContainer(ctx context.Context, containerID str
 		action:         "unpause",
 		eventType:      event.EventTypeContainerUnpause,
 		warnOnLogError: true,
-		runContainerAction: func(dockerClient *client.Client) error {
-			_, err := dockerClient.ContainerUnpause(ctx, containerID, client.ContainerUnpauseOptions{})
+		runContainerAction: func(ctx context.Context) error {
+			_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerUnpauseResult, error) {
+				return dockerClient.ContainerUnpause(ctx, containerID, client.ContainerUnpauseOptions{})
+			})
 			return err
 		},
 	})
@@ -451,16 +540,15 @@ func (s *ContainerService) CommitContainer(ctx context.Context, containerID stri
 }
 
 func (s *ContainerService) RedeployContainer(ctx context.Context, containerID string, user usertypes.Actor) (string, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
+	unlock, err := s.lockContainer(ctx, "redeploy container", containerID)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{
-			"action": "redeploy",
-			"step":   "get_client",
-		})
-		return "", fmt.Errorf("failed to connect to Docker: %w", err)
+		return "", err
 	}
+	defer unlock()
 
-	containerJSON, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	containerJSON, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{
 			"action": "redeploy",
@@ -480,7 +568,9 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	}
 
 	containerName := strings.TrimPrefix(containerInfo.Name, "/")
-	apiVersion := compat.DetectDockerAPIVersion(ctx, dockerClient)
+	apiVersion, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
+		return compat.DetectDockerAPIVersion(ctx, dockerClient), nil
+	})
 
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 	if labels.ShouldDisableArcaneServerRedeploy(containerInfo.Config.Labels, containerInfo.ID, currentContainerID, currentContainerErr) {
@@ -550,14 +640,13 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	}
 
 	if containerInfo.Config.Image != "" {
-		if pullRedeployImageErr := s.pullRedeployImage(ctx, dockerClient, containerInfo.Config.Image, containerID, containerName, "redeploy", nil, user); pullRedeployImageErr != nil {
+		if pullRedeployImageErr := s.pullRedeployImage(ctx, containerInfo.Config.Image, containerID, containerName, "redeploy", nil, user); pullRedeployImageErr != nil {
 			return "", pullRedeployImageErr
 		}
 	}
 
 	return s.recreateContainer(
 		ctx,
-		dockerClient,
 		containerInfo,
 		"redeploy",
 		containerName,
@@ -574,7 +663,6 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 // rename-as-backup so the original can be restored when create or start fails. Shared by redeploy and edit.
 func (s *ContainerService) recreateContainer(
 	ctx context.Context,
-	dockerClient *client.Client,
 	containerInfo container.InspectResponse,
 	action, newName string,
 	newConfig *container.Config,
@@ -583,10 +671,7 @@ func (s *ContainerService) recreateContainer(
 	apiVersion string,
 	eventType event.EventType,
 	user usertypes.Actor,
-) (
-	string,
-	error,
-) {
+) (string, error) {
 	containerName := strings.TrimPrefix(containerInfo.Name, "/")
 	wasRunning := kit.FromPtr(containerInfo.State).Running
 
@@ -595,28 +680,25 @@ func (s *ContainerService) recreateContainer(
 	stopAfterCreate := wasRunning && kit.FromPtr(containerInfo.HostConfig).AutoRemove
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("container", containerInfo.ID, containerName)()
-	backupName := fmt.Sprintf("%s-arcane-redeploy-%d", cmp.Or(containerName, func() string {
-		if len(containerInfo.ID) < 12 {
-			return "arcane-redeploy"
-		}
-		return "arcane-redeploy-" + containerInfo.ID[:12]
-	}()), time.Now().Unix())
+	backupName := fmt.Sprintf("%s%s%d", cmp.Or(containerName, "arcane-redeploy-"+containerInfo.ID[:min(12, len(containerInfo.ID))]), redeployBackupInfix, time.Now().Unix())
 
 	// Stopping the original made the daemon delete it, so rebuild it from the inspected config.
 	// A returned error means the workload is down and is joined into the start error.
-	restoreAutoRemoveOriginal := func() error {
+	restoreAutoRemoveOriginal := func(ctx context.Context) error {
 		originalConfig := *containerInfo.Config
 		if len(containerInfo.ID) >= 12 && originalConfig.Hostname == containerInfo.ID[:12] {
 			originalConfig.Hostname = "" // keep: copying Docker's 24-field container.Config to clear one field is unreadable
 		}
 
 		defer s.eventService.BeginDockerResourceSuppressionWindow("container", "", containerName)()
-		restoreResp, restoreCreateErr := compat.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
-			Config:           &originalConfig,
-			HostConfig:       containerInfo.HostConfig,
-			NetworkingConfig: buildCleanNetworkingConfig(containerInfo, apiVersion),
-			Name:             containerName,
-		}, apiVersion)
+		restoreResp, restoreCreateErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
+			return compat.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
+				Config:           &originalConfig,
+				HostConfig:       containerInfo.HostConfig,
+				NetworkingConfig: buildCleanNetworkingConfig(containerInfo, apiVersion),
+				Name:             containerName,
+			}, apiVersion)
+		})
 		if restoreCreateErr != nil {
 			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerInfo.ID, containerName, user.ID, user.Username, "0", restoreCreateErr, database.JSON{
 				"action": "redeploy",
@@ -626,7 +708,9 @@ func (s *ContainerService) recreateContainer(
 		}
 
 		defer s.eventService.BeginDockerResourceSuppressionWindow("container", restoreResp.ID, containerName)()
-		if _, restoreStartErr := dockerClient.ContainerStart(ctx, restoreResp.ID, client.ContainerStartOptions{}); restoreStartErr != nil {
+		if _, restoreStartErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
+			return dockerClient.ContainerStart(ctx, restoreResp.ID, client.ContainerStartOptions{})
+		}); restoreStartErr != nil {
 			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", restoreResp.ID, containerName, user.ID, user.Username, "0", restoreStartErr, database.JSON{
 				"action": "redeploy",
 				"step":   "restore_start_original",
@@ -643,8 +727,21 @@ func (s *ContainerService) recreateContainer(
 		return nil
 	}
 
-	if err := s.prepareContainerForRedeploy(ctx, dockerClient, containerInfo.ID, containerName, backupName, wasRunning && !stopAfterCreate, user); err != nil {
-		return "", err
+	s.eventService.MarkDockerExpectation("container", containerInfo.ID, containerName)
+	if containerName != "" {
+		if err := s.renameToRedeployBackup(ctx, containerInfo.ID, containerName, backupName, newName, user); err != nil {
+			return "", err
+		}
+	}
+	if wasRunning && !stopAfterCreate {
+		if err := s.stopContainer(ctx, containerInfo.ID); err != nil {
+			s.restoreContainerAfterRedeployFailure(ctx, containerInfo.ID, containerName, backupName, "stop", false, user)
+			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerInfo.ID, containerName, user.ID, user.Username, "0", err, database.JSON{
+				"action": "redeploy",
+				"step":   "stop",
+			})
+			return "", fmt.Errorf("failed to stop container: %w", err)
+		}
 	}
 
 	if len(containerInfo.ID) >= 12 && newConfig.Hostname == containerInfo.ID[:12] {
@@ -652,14 +749,16 @@ func (s *ContainerService) recreateContainer(
 	}
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("container", "", newName)()
-	createResp, err := compat.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
-		Config:           newConfig,
-		HostConfig:       newHostConfig,
-		NetworkingConfig: networkingConfig,
-		Name:             newName,
-	}, apiVersion)
+	createResp, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
+		return compat.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
+			Config:           newConfig,
+			HostConfig:       newHostConfig,
+			NetworkingConfig: networkingConfig,
+			Name:             newName,
+		}, apiVersion)
+	})
 	if err != nil {
-		s.restoreContainerAfterRedeployFailure(ctx, dockerClient, containerInfo.ID, containerName, backupName, "create", wasRunning && !stopAfterCreate, user)
+		s.restoreContainerAfterRedeployFailure(ctx, containerInfo.ID, containerName, backupName, "create", wasRunning && !stopAfterCreate, user)
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerInfo.ID, containerName, user.ID, user.Username, "0", err, database.JSON{
 			"action": action,
 			"step":   "create",
@@ -671,14 +770,16 @@ func (s *ContainerService) recreateContainer(
 	defer s.eventService.BeginDockerResourceSuppressionWindow("container", createResp.ID, newName)()
 
 	if stopAfterCreate {
-		if _, containerStopErr := dockerClient.ContainerStop(ctx, containerInfo.ID, client.ContainerStopOptions{Timeout: new(30)}); containerStopErr != nil {
-			if _, removeErr := dockerClient.ContainerRemove(ctx, createResp.ID, client.ContainerRemoveOptions{Force: true}); removeErr != nil {
+		if containerStopErr := s.stopContainer(ctx, containerInfo.ID); containerStopErr != nil {
+			if _, removeErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+				return dockerClient.ContainerRemove(ctx, createResp.ID, client.ContainerRemoveOptions{Force: true})
+			}); removeErr != nil {
 				s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", createResp.ID, containerName, user.ID, user.Username, "0", removeErr, database.JSON{
 					"action": action,
 					"step":   "cleanup_failed_stop",
 				})
 			}
-			s.restoreContainerAfterRedeployFailure(ctx, dockerClient, containerInfo.ID, containerName, backupName, "stop", false, user)
+			s.restoreContainerAfterRedeployFailure(ctx, containerInfo.ID, containerName, backupName, "stop", false, user)
 			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerInfo.ID, containerName, user.ID, user.Username, "0", containerStopErr, database.JSON{
 				"action": action,
 				"step":   "stop",
@@ -689,11 +790,17 @@ func (s *ContainerService) recreateContainer(
 
 	restartPolicies := []container.RestartPolicyMode{container.RestartPolicyAlways, container.RestartPolicyUnlessStopped, container.RestartPolicyOnFailure}
 	if wasRunning || slices.Contains(restartPolicies, kit.FromPtr(containerInfo.HostConfig).RestartPolicy.Name) {
-		if _, err = dockerClient.ContainerStart(ctx, createResp.ID, client.ContainerStartOptions{}); err != nil {
+		if _, err = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
+			return dockerClient.ContainerStart(ctx, createResp.ID, client.ContainerStartOptions{})
+		}); err != nil {
 			// Remove the replacement and roll back to the original. A deferred-stop auto-remove original
 			// is rebuilt from its inspected config; a failed restore joins the start error.
+			rollbackCtx, cancelRollback := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
+			defer cancelRollback()
 			s.eventService.MarkDockerExpectation("container", createResp.ID, containerName)
-			_, removeErr := dockerClient.ContainerRemove(ctx, createResp.ID, client.ContainerRemoveOptions{Force: true})
+			_, removeErr := s.dockerService.Call(rollbackCtx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+				return dockerClient.ContainerRemove(ctx, createResp.ID, client.ContainerRemoveOptions{Force: true})
+			})
 			if removeErr != nil {
 				s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", createResp.ID, containerName, user.ID, user.Username, "0", removeErr, database.JSON{
 					"action": action,
@@ -701,11 +808,12 @@ func (s *ContainerService) recreateContainer(
 				})
 			}
 			if stopAfterCreate {
-				if restoreErr := restoreAutoRemoveOriginal(); restoreErr != nil {
+				if restoreErr := restoreAutoRemoveOriginal(rollbackCtx); restoreErr != nil {
 					err = errors.Join(err, kit.Ternary(removeErr != nil, fmt.Errorf("failed to remove replacement container: %w", removeErr), nil), restoreErr)
 				}
+				s.clearRedeployJournal(rollbackCtx, containerInfo.ID)
 			} else {
-				s.restoreContainerAfterRedeployFailure(ctx, dockerClient, containerInfo.ID, containerName, backupName, "start", wasRunning, user)
+				s.restoreContainerAfterRedeployFailure(rollbackCtx, containerInfo.ID, containerName, backupName, "start", wasRunning, user)
 			}
 			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", createResp.ID, containerName, user.ID, user.Username, "0", err, database.JSON{
 				"action": action,
@@ -725,20 +833,25 @@ func (s *ContainerService) recreateContainer(
 		"image", newConfig.Image,
 	)
 
-	// After a deferred stop the daemon has already auto-removed the original.
-	if !stopAfterCreate {
-		if _, containerRemoveErr := dockerClient.ContainerRemove(ctx, containerInfo.ID, client.ContainerRemoveOptions{
+	// After a deferred stop the daemon has already auto-removed the original. A failed removal
+	// keeps the journal so startup recovery removes the backup.
+	if stopAfterCreate {
+		s.clearRedeployJournal(ctx, containerInfo.ID)
+	} else if _, containerRemoveErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+		return dockerClient.ContainerRemove(ctx, containerInfo.ID, client.ContainerRemoveOptions{
 			Force:         true,
 			RemoveVolumes: false,
 			RemoveLinks:   false,
-		}); containerRemoveErr != nil {
-			slog.WarnContext(
-				ctx, "failed to remove old container after successful recreate",
-				"containerId", containerInfo.ID,
-				"backupName", backupName,
-				"error", containerRemoveErr,
-			)
-		}
+		})
+	}); containerRemoveErr != nil {
+		slog.WarnContext(
+			ctx, "failed to remove old container after successful recreate",
+			"containerId", containerInfo.ID,
+			"backupName", backupName,
+			"error", containerRemoveErr,
+		)
+	} else {
+		s.clearRedeployJournal(ctx, containerInfo.ID)
 	}
 
 	if logErr := s.eventService.LogContainerEvent(ctx, eventType, createResp.ID, newName, user.ID, user.Username, "0", database.JSON{
@@ -960,12 +1073,9 @@ func buildEditNetworkingConfig(containerInspect container.InspectResponse, req *
 // GetContainerEditConfig returns the purpose-built DTO backing the container
 // edit form.
 func (s *ContainerService) GetContainerEditConfig(ctx context.Context, containerID string) (containertypes.EditConfig, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return containertypes.EditConfig{}, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	containerJSON, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	containerJSON, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	})
 	if err != nil {
 		return containertypes.EditConfig{}, fmt.Errorf("failed to inspect container: %w", err)
 	}
@@ -982,16 +1092,15 @@ func (s *ContainerService) GetContainerEditConfig(ctx context.Context, container
 // inspected config and recreates it. Sections not owned by the edit form are
 // preserved from the existing container.
 func (s *ContainerService) EditContainer(ctx context.Context, containerID string, req containertypes.Edit, user usertypes.Actor) (string, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
+	unlock, err := s.lockContainer(ctx, "edit container", containerID)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{
-			"action": "edit",
-			"step":   "get_client",
-		})
-		return "", fmt.Errorf("failed to connect to Docker: %w", err)
+		return "", err
 	}
+	defer unlock()
 
-	containerJSON, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	containerJSON, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{
 			"action": "edit",
@@ -1023,12 +1132,16 @@ func (s *ContainerService) EditContainer(ctx context.Context, containerID string
 
 	newName := cmp.Or(strings.TrimPrefix(strings.TrimSpace(kit.FromPtr(req.Name)), "/"), containerName)
 	if newName != containerName {
-		if _, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, newName, client.ContainerInspectOptions{}); inspectErr == nil {
+		if _, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
+			return compat.ContainerInspectWithCompatibility(ctx, dockerClient, newName, client.ContainerInspectOptions{})
+		}); inspectErr == nil {
 			return "", fmt.Errorf("container name %s: %w", newName, common.ErrContainerNameTaken)
 		}
 	}
 
-	apiVersion := compat.DetectDockerAPIVersion(ctx, dockerClient)
+	apiVersion, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
+		return compat.DetectDockerAPIVersion(ctx, dockerClient), nil
+	})
 
 	newHostConfig := kit.FromPtr(containerInfo.HostConfig)
 	newConfig, err := applyEditToContainerConfig(*containerInfo.Config, newHostConfig.PortBindings, req)
@@ -1046,23 +1159,22 @@ func (s *ContainerService) EditContainer(ctx context.Context, containerID string
 	// Unlike redeploy, edit only pulls when the effective image is missing
 	// locally so an unrelated config change never surprise-upgrades the image.
 	if newConfig.Image != "" {
-		if _, inspectErr := dockerClient.ImageInspect(ctx, newConfig.Image); inspectErr != nil {
-			if pullRedeployImageErr := s.pullRedeployImage(ctx, dockerClient, newConfig.Image, containerID, containerName, "edit", req.Credentials, user); pullRedeployImageErr != nil {
+		if _, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+			return dockerClient.ImageInspect(ctx, newConfig.Image)
+		}); inspectErr != nil {
+			if pullRedeployImageErr := s.pullRedeployImage(ctx, newConfig.Image, containerID, containerName, "edit", req.Credentials, user); pullRedeployImageErr != nil {
 				return "", pullRedeployImageErr
 			}
 		}
 	}
 
-	return s.recreateContainer(ctx, dockerClient, containerInfo, "edit", newName, &newConfig, &newHostConfig, networkingConfig, apiVersion, event.EventTypeContainerUpdate, user)
+	return s.recreateContainer(ctx, containerInfo, "edit", newName, &newConfig, &newHostConfig, networkingConfig, apiVersion, event.EventTypeContainerUpdate, user)
 }
 
 func (s *ContainerService) GetContainerByReference(ctx context.Context, ref string) (*container.InspectResponse, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	containerInspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, ref, client.ContainerInspectOptions{})
+	containerInspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, ref, client.ContainerInspectOptions{})
+	})
 	if err != nil {
 		return nil, fmt.Errorf("container not found: %w", err)
 	}
@@ -1126,21 +1238,17 @@ var containerProcessesPsArgs = [][]string{
 
 // GetContainerProcesses returns Docker's `top` snapshot for a container.
 func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerID string) (containertypes.Processes, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return containertypes.Processes{}, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	topCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
-	defer cancel()
-
-	var result client.ContainerTopResult
-	for _, args := range containerProcessesPsArgs {
-		result, err = dockerClient.ContainerTop(topCtx, containerID, client.ContainerTopOptions{Arguments: args})
-		if err == nil || errdefs.IsNotFound(err) || errdefs.IsConflict(err) || topCtx.Err() != nil {
-			break
+	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerTopResult, error) {
+		var result client.ContainerTopResult
+		var err error
+		for _, args := range containerProcessesPsArgs {
+			result, err = dockerClient.ContainerTop(ctx, containerID, client.ContainerTopOptions{Arguments: args})
+			if err == nil || errdefs.IsNotFound(err) || errdefs.IsConflict(err) || ctx.Err() != nil {
+				break
+			}
 		}
-	}
+		return result, err
+	})
 	if err != nil {
 		return containertypes.Processes{}, common.Classify(func() error {
 			switch {
@@ -1176,31 +1284,18 @@ func (s *ContainerService) GetContainerNameByID(ctx context.Context, id string) 
 }
 
 func (s *ContainerService) DeleteContainer(ctx context.Context, containerID string, force, removeVolumes bool, user usertypes.Actor) error {
-	dockerClient, err := s.dockerService.GetClient(ctx)
+	unlock, err := s.lockContainer(ctx, "delete container", containerID)
 	if err != nil {
-		s.eventService.LogErrorEvent(
-			ctx,
-			event.EventTypeContainerError,
-			"container",
-			containerID,
-			"",
-			user.ID,
-			user.Username,
-			"0",
-			err,
-			database.JSON{
-				"action":        "delete",
-				"force":         force,
-				"removeVolumes": removeVolumes,
-			},
-		)
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return err
 	}
+	defer unlock()
 
 	// Get container mounts before deletion if we need to remove volumes
 	var volumesToRemove []string
 	if removeVolumes {
-		containerJSON, inspectErr := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+		containerJSON, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
+			return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+		})
 		if inspectErr == nil {
 			for _, mount := range containerJSON.Container.Mounts {
 				// Only collect named volumes (not bind mounts or tmpfs)
@@ -1214,17 +1309,19 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	defer s.eventService.BeginDockerResourceSuppressionWindow("container", containerID, "")()
 	volumeReleases := make([]func(), 0, len(volumesToRemove))
 	defer func() {
-		for i := len(volumeReleases) - 1; i >= 0; i-- {
-			volumeReleases[i]()
+		for _, release := range slices.Backward(volumeReleases) {
+			release()
 		}
 	}()
 	for _, volumeName := range volumesToRemove {
 		volumeReleases = append(volumeReleases, s.eventService.BeginDockerResourceSuppressionWindow("volume", volumeName, volumeName))
 	}
-	_, err = dockerClient.ContainerRemove(ctx, containerID, client.ContainerRemoveOptions{
-		Force:         force,
-		RemoveVolumes: removeVolumes,
-		RemoveLinks:   false,
+	_, err = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+		return dockerClient.ContainerRemove(ctx, containerID, client.ContainerRemoveOptions{
+			Force:         force,
+			RemoveVolumes: removeVolumes,
+			RemoveLinks:   false,
+		})
 	})
 	if err != nil {
 		s.eventService.LogErrorEvent(
@@ -1248,7 +1345,9 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 
 	// Remove named volumes if requested
 	for _, volumeName := range volumesToRemove {
-		if _, removeErr := dockerClient.VolumeRemove(ctx, volumeName, client.VolumeRemoveOptions{Force: false}); removeErr != nil {
+		if _, removeErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeRemoveResult, error) {
+			return dockerClient.VolumeRemove(ctx, volumeName, client.VolumeRemoveOptions{Force: false})
+		}); removeErr != nil {
 			// Log but don't fail if volume removal fails (might be in use by another container)
 			s.eventService.LogErrorEvent(ctx, event.EventTypeVolumeError, "volume", volumeName, "", user.ID, user.Username, "0", removeErr, database.JSON{"action": "delete", "container": containerID})
 		}
@@ -1277,25 +1376,23 @@ func (s *ContainerService) CreateContainer(
 	*container.InspectResponse,
 	error,
 ) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", err, database.JSON{"action": "create", "image": config.Image})
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	if _, inspectErr := dockerClient.ImageInspect(ctx, config.Image); inspectErr != nil {
+	if _, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		return dockerClient.ImageInspect(ctx, config.Image)
+	}); inspectErr != nil {
 		// Image not found locally, need to pull it
-		if pullErr := s.pullRedeployImage(ctx, dockerClient, config.Image, "", containerName, "create", credentials, user); pullErr != nil {
+		if pullErr := s.pullRedeployImage(ctx, config.Image, "", containerName, "create", credentials, user); pullErr != nil {
 			return nil, pullErr
 		}
 	}
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("container", "", containerName)()
-	resp, err := compat.ContainerCreateWithCompatibility(ctx, dockerClient, client.ContainerCreateOptions{
-		Config:           config,
-		HostConfig:       hostConfig,
-		NetworkingConfig: networkingConfig,
-		Name:             containerName,
+	resp, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
+		return compat.ContainerCreateWithCompatibility(ctx, dockerClient, client.ContainerCreateOptions{
+			Config:           config,
+			HostConfig:       hostConfig,
+			NetworkingConfig: networkingConfig,
+			Name:             containerName,
+		})
 	})
 	if err != nil {
 		s.eventService.LogErrorEvent(
@@ -1325,8 +1422,12 @@ func (s *ContainerService) CreateContainer(
 		slog.WarnContext(ctx, "could not log container stop action", "error", logErr)
 	}
 
-	if _, containerStartErr := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); containerStartErr != nil {
-		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, client.ContainerRemoveOptions{Force: true})
+	if _, containerStartErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
+		return dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
+	}); containerStartErr != nil {
+		_, _ = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+			return dockerClient.ContainerRemove(ctx, resp.ID, client.ContainerRemoveOptions{Force: true})
+		})
 		s.eventService.LogErrorEvent(
 			ctx,
 			event.EventTypeContainerError,
@@ -1346,7 +1447,9 @@ func (s *ContainerService) CreateContainer(
 		return nil, fmt.Errorf("failed to start container: %w", containerStartErr)
 	}
 
-	containerJSON, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, resp.ID, client.ContainerInspectOptions{})
+	containerJSON, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, resp.ID, client.ContainerInspectOptions{})
+	})
 	if err != nil {
 		s.eventService.LogErrorEvent(
 			ctx,
@@ -1985,14 +2088,16 @@ func (d *demuxedLogs) Close() error {
 }
 
 func (s *ContainerService) openLogs(ctx context.Context, containerID string, options client.ContainerLogsOptions) (io.ReadCloser, client.ContainerInspectResult, error) {
+	containerInspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	})
+	if err != nil {
+		return nil, client.ContainerInspectResult{}, fmt.Errorf("failed to inspect container for logs: %w", err)
+	}
+
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, client.ContainerInspectResult{}, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	containerInspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
-	if err != nil {
-		return nil, client.ContainerInspectResult{}, fmt.Errorf("failed to inspect container for logs: %w", err)
 	}
 
 	logs, err := dockerClient.ContainerLogs(ctx, containerID, options)

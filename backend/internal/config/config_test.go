@@ -557,7 +557,7 @@ func TestConfig_JWTRefreshExpiry(t *testing.T) {
 	})
 }
 
-func TestSetFieldValueInternal_DurationUsesFieldTagDefault(t *testing.T) {
+func TestSetFieldValue_DurationUsesFieldTagDefault(t *testing.T) {
 	type durationConfig struct {
 		SessionTimeout time.Duration `env:"SESSION_TIMEOUT" default:"2h"`
 	}
@@ -568,7 +568,7 @@ func TestSetFieldValueInternal_DurationUsesFieldTagDefault(t *testing.T) {
 	fieldType, ok := v.Type().FieldByName("SessionTimeout")
 	require.True(t, ok)
 
-	setFieldValueInternal(field, fieldType, "invalid-duration")
+	setFieldValue(field, fieldType, "invalid-duration")
 
 	assert.Equal(t, 2*time.Hour, cfg.SessionTimeout)
 }

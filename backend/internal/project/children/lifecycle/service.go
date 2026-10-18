@@ -31,17 +31,14 @@ import (
 
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 )
 
 // Service runs pre-deploy scripts in throwaway runner containers.
 type Service struct {
-	settingsService *settings.SettingsService
-	dockerService   *dockerInternal.DockerClientService
-	imageService    *image.ImageService
+	dockerService *dockerInternal.DockerClientService
+	imageService  *image.ImageService
 }
 
 const (
@@ -61,11 +58,10 @@ const (
 // lifecycleEnvKeyRegex enforces POSIX-style env keys in configured Env and script stdout.
 var lifecycleEnvKeyRegex = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
-func New(settingsService *settings.SettingsService, dockerService *dockerInternal.DockerClientService, imageService *image.ImageService) *Service {
+func New(dockerService *dockerInternal.DockerClientService, imageService *image.ImageService) *Service {
 	return &Service{
-		settingsService: settingsService,
-		dockerService:   dockerService,
-		imageService:    imageService,
+		dockerService: dockerService,
+		imageService:  imageService,
 	}
 }
 
@@ -152,28 +148,22 @@ func (s *Service) RunScript(
 	timeout time.Duration,
 	actor user.Actor,
 ) (stdoutContent, stderrContent string, exitCode int64, err error) {
-	dockerClient, dErr := s.dockerService.GetClient(ctx)
-	if dErr != nil {
-		return "", "", 0, fmt.Errorf("failed to connect to Docker: %w", dErr)
-	}
-
 	// Pull a missing runner image through the image service so credentials and the pull timeout apply.
-	if _, inspectErr := dockerClient.ImageInspect(ctx, runnerImage); inspectErr != nil {
-		pullCtx, pullCancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull))
-		pullErr := s.imageService.PullImage(pullCtx, runnerImage, io.Discard, actor, nil)
-		pullTimedOut := errors.Is(pullCtx.Err(), context.DeadlineExceeded)
-		pullCancel()
-		if pullErr != nil && pullTimedOut {
-			return "", "", 0, fmt.Errorf("failed to ensure runner image %s: runner image pull timed out for %s (increase dockerImagePullTimeout setting if needed)", runnerImage, runnerImage)
-		}
-		if pullErr != nil {
-			return "", "", 0, fmt.Errorf("failed to ensure runner image %s: pull runner image %s: %w", runnerImage, runnerImage, pullErr)
+	if _, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		return dockerClient.ImageInspect(ctx, runnerImage)
+	}); inspectErr != nil {
+		if pullErr := s.imageService.Pull(ctx, image.PullRequest{
+			Ref:      runnerImage,
+			Progress: io.Discard,
+			User:     actor,
+		}); pullErr != nil {
+			return "", "", 0, fmt.Errorf("failed to ensure runner image %s: %w", runnerImage, pullErr)
 		}
 	}
 
 	// MountForSubpath mounts a volume-backed /app/data via VolumeOptions.Subpath (host binds fail on e.g. WSL2).
 	// On the host, or when the mount cannot be derived, projectPath is bound as-is.
-	inspect, inspectErr := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
+	inspect, inspectErr := s.dockerService.Call(ctx, libarcane.InspectCurrentArcaneContainer)
 	if inspectErr != nil {
 		slog.WarnContext(ctx, "failed to derive workspace mount; falling back to bind on project path", "projectPath", projectPath, "error", inspectErr)
 	}
@@ -195,49 +185,52 @@ func (s *Service) RunScript(
 		env = append(env, k+"="+v)
 	}
 
-	createCtx, createCancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
-	defer createCancel()
-	resp, err := dockerClient.ContainerCreate(createCtx, client.ContainerCreateOptions{
-		// Cmd is the script alone so its shebang picks the interpreter; Entrypoint is cleared for images like getsops/sops.
-		Config: &container.Config{
-			Image:        runnerImage,
-			Entrypoint:   []string{},
-			Cmd:          []string{filepath.ToSlash(filepath.Join(lifecycleWorkspaceMount, scriptPath))},
-			WorkingDir:   lifecycleWorkspaceMount,
-			Env:          env,
-			AttachStdout: true,
-			AttachStderr: true,
-			Labels: map[string]string{
-				libarcane.InternalResourceLabel: "true",
+	resp, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
+		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
+			// Cmd is the script alone so its shebang picks the interpreter; Entrypoint is cleared for images like getsops/sops.
+			Config: &container.Config{
+				Image:        runnerImage,
+				Entrypoint:   []string{},
+				Cmd:          []string{filepath.ToSlash(filepath.Join(lifecycleWorkspaceMount, scriptPath))},
+				WorkingDir:   lifecycleWorkspaceMount,
+				Env:          env,
+				AttachStdout: true,
+				AttachStderr: true,
+				Labels: map[string]string{
+					libarcane.InternalResourceLabel: "true",
+				},
 			},
-		},
-		// no-new-privileges and CapDrop ALL strip setuid and root capabilities from the script and its children.
-		HostConfig: &container.HostConfig{
-			Mounts:      mounts,
-			NetworkMode: container.NetworkMode(cmp.Or(strings.TrimSpace(networkMode), "none")),
-			SecurityOpt: []string{"no-new-privileges:true"},
-			CapDrop:     []string{"ALL"},
-		},
+			// no-new-privileges and CapDrop ALL strip setuid and root capabilities from the script and its children.
+			HostConfig: &container.HostConfig{
+				Mounts:      mounts,
+				NetworkMode: container.NetworkMode(cmp.Or(strings.TrimSpace(networkMode), "none")),
+				SecurityOpt: []string{"no-new-privileges:true"},
+				CapDrop:     []string{"ALL"},
+			},
+		})
 	})
 	if err != nil {
 		return "", "", 0, fmt.Errorf("create lifecycle container: %w", err)
 	}
 	defer func() {
 		// Cleanup outlives cancellation so a cancelled run never leaks its container.
-		cleanupCtx, cleanupCancel := context.WithTimeout(
-			context.WithoutCancel(ctx),
-			timeouts.GetDuration(s.settingsService.GetSettingsConfig().DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI),
-		)
-		defer cleanupCancel()
-		if _, removeErr := dockerClient.ContainerRemove(cleanupCtx, resp.ID, client.ContainerRemoveOptions{Force: true}); removeErr != nil && !errdefs.IsNotFound(removeErr) {
+		cleanupCtx := context.WithoutCancel(ctx)
+		if _, removeErr := s.dockerService.Call(cleanupCtx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerRemoveResult, error) {
+			return dockerClient.ContainerRemove(ctx, resp.ID, client.ContainerRemoveOptions{Force: true})
+		}); removeErr != nil && !errdefs.IsNotFound(removeErr) {
 			slog.WarnContext(cleanupCtx, "failed to remove lifecycle container", "containerId", resp.ID, "error", removeErr)
 		}
 	}()
 
-	startCtx, startCancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
-	defer startCancel()
-	if _, containerStartErr := dockerClient.ContainerStart(startCtx, resp.ID, client.ContainerStartOptions{}); containerStartErr != nil {
+	if _, containerStartErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
+		return dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{})
+	}); containerStartErr != nil {
 		return "", "", 0, fmt.Errorf("start lifecycle container: %w", containerStartErr)
+	}
+
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return "", "", 0, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	logsCtx, logsCancel := context.WithCancel(ctx)

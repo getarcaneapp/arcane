@@ -16,6 +16,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/moby/moby/client"
 	"github.com/subosito/gotenv"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.uber.org/fx"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/di"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
@@ -144,7 +146,12 @@ func applicationOptions(appCtx context.Context, cfg *config.Config, db *database
 		fx.Supply(cfg, db, cancelApp),
 		fx.Provide(
 			func() context.Context { return appCtx },
-			newConfiguredHTTPClient,
+			func(cfg *config.Config) *http.Client {
+				return httpx.NewHTTPClient(httpxtypes.ClientOptions{
+					Timeout:             kit.Ternary(cfg.HTTPClientTimeout > 0, time.Duration(cfg.HTTPClientTimeout)*time.Second, 10*time.Second),
+					TLSHandshakeTimeout: kit.Ternary(cfg.HTTPClientTimeout > 0, 10*time.Second, 5*time.Second),
+				})
+			},
 		),
 		di.ActorOptions,
 		di.ServiceOptions,
@@ -162,7 +169,7 @@ func applicationOptions(appCtx context.Context, cfg *config.Config, db *database
 			return logger
 		}),
 		fx.StartTimeout(5*time.Minute),
-		fx.StopTimeout(30*time.Second),
+		fx.StopTimeout(8*time.Second),
 	)
 }
 
@@ -179,18 +186,6 @@ func isWeakProductionEncryptionKey(encryptionKey, localEnvironment string, agent
 	return len(strings.TrimPrefix(key, "raw:")) < 32
 }
 
-func newConfiguredHTTPClient(cfg *config.Config) *http.Client {
-	options := httpxtypes.ClientOptions{
-		Timeout:             10 * time.Second,
-		TLSHandshakeTimeout: 5 * time.Second,
-	}
-	if cfg.HTTPClientTimeout > 0 {
-		options.Timeout = time.Duration(cfg.HTTPClientTimeout) * time.Second
-		options.TLSHandshakeTimeout = 10 * time.Second
-	}
-	return httpx.NewHTTPClient(options)
-}
-
 type initializeStartupStateParams struct {
 	fx.In
 
@@ -203,6 +198,7 @@ type initializeStartupStateParams struct {
 	Environment   *environment.EnvironmentService
 	GitOpsSync    *gitops.GitOpsSyncService
 	Project       *project.ProjectService
+	Container     *container.ContainerService
 	Variable      *variable.VariableService
 	Docker        *docker.DockerClientService
 	Swarm         *swarm.SwarmService
@@ -247,34 +243,30 @@ func initializeStartupState(p initializeStartupStateParams) {
 	})
 	startup.InitializeDefaultSettings(appCtx, runtimeCfg, p.Settings)
 
-	if err := p.Settings.NormalizeProjectsDirectory(appCtx, cfg.ProjectsDirectory); err != nil {
-		slog.WarnContext(appCtx, "Failed to normalize projects directory", "error", err)
-	}
-
-	if err := p.Settings.NormalizeBuildsDirectory(appCtx); err != nil {
-		slog.WarnContext(appCtx, "Failed to normalize builds directory", "error", err)
-	}
-
-	if err := p.Environment.EnsureLocalEnvironment(appCtx, cfg.AppUrl); err != nil {
-		slog.WarnContext(appCtx, "Failed to ensure local environment", "error", err)
-	}
-	if err := p.GitOpsSync.CleanupOrphanedSyncsOnStartup(appCtx); err != nil {
-		slog.WarnContext(appCtx, "Failed to clean up orphaned GitOps syncs on startup", "error", err)
-	}
-	if err := p.GitOpsSync.CleanupLeakedScratchDirsOnStartup(appCtx); err != nil {
-		slog.WarnContext(appCtx, "Failed to clean up leaked GitOps scratch directories on startup", "error", err)
-	}
-	if err := p.GitOpsSync.CleanupLeakedCloneDirsOnStartup(appCtx); err != nil {
-		slog.WarnContext(appCtx, "Failed to clean up leaked git clone directories on startup", "error", err)
-	}
-	if err := p.GitOpsSync.ReconcileDirectorySyncProjectsOnStartup(appCtx); err != nil {
-		slog.WarnContext(appCtx, "Failed to reconcile directory GitOps projects on startup", "error", err)
+	// Startup repairs are best-effort: log each failure and continue.
+	for _, task := range []struct {
+		name string
+		run  func(context.Context) error
+	}{
+		{name: "normalize projects directory", run: func(ctx context.Context) error {
+			return p.Settings.NormalizeProjectsDirectory(ctx, cfg.ProjectsDirectory)
+		}},
+		{name: "normalize builds directory", run: p.Settings.NormalizeBuildsDirectory},
+		{name: "ensure local environment", run: func(ctx context.Context) error { return p.Environment.EnsureLocalEnvironment(ctx, cfg.AppUrl) }},
+		{name: "clean up orphaned GitOps syncs", run: p.GitOpsSync.CleanupOrphanedSyncsOnStartup},
+		{name: "clean up leaked GitOps scratch directories", run: p.GitOpsSync.CleanupLeakedScratchDirsOnStartup},
+		{name: "clean up leaked git clone directories", run: p.GitOpsSync.CleanupLeakedCloneDirsOnStartup},
+		{name: "reconcile directory GitOps projects", run: p.GitOpsSync.ReconcileDirectorySyncProjectsOnStartup},
+		{name: "recover interrupted project renames", run: p.Project.RecoverProjectRenameJournals},
+		{name: "recover interrupted container redeploys", run: p.Container.RecoverInterruptedRedeploys},
+		{name: "recover stuck project statuses", run: p.Project.RecoverStuckProjectStatuses},
+	} {
+		if err := task.run(appCtx); err != nil {
+			slog.WarnContext(appCtx, "Startup task failed", "task", task.name, "error", err)
+		}
 	}
 	p.Vulnerability.ImportLegacyReportFiles(appCtx)
 	p.Vulnerability.BackfillScanItems(appCtx)
-	if err := p.Project.RecoverProjectRenameJournals(appCtx); err != nil {
-		slog.WarnContext(appCtx, "Failed to recover interrupted project rename operations on startup", "error", err)
-	}
 
 	if !cfg.AgentMode {
 		if err := p.Environment.ReconcileEdgeStatusesOnStartup(appCtx); err != nil {
@@ -291,19 +283,17 @@ func initializeStartupState(p initializeStartupStateParams) {
 	}
 
 	startup.TestDockerConnection(appCtx, func(ctx context.Context) error {
-		dockerClient, err := p.Docker.GetClient(ctx)
-		if err != nil {
-			return err
-		}
+		_, err := p.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
+			version, err := dockerClient.ServerVersion(ctx, client.ServerVersionOptions{})
+			if err != nil {
+				return struct{}{}, err
+			}
 
-		version, err := dockerClient.ServerVersion(ctx, client.ServerVersionOptions{})
-		if err != nil {
-			return err
-		}
-
-		effectiveAPIVersion := cmp.Or(strings.TrimSpace(dockerClient.ClientVersion()), strings.TrimSpace(version.APIVersion))
-		slog.InfoContext(ctx, "Docker API versions detected", "clientApiVersion", dockerClient.ClientVersion(), "serverApiVersion", version.APIVersion, "effectiveApiVersion", effectiveAPIVersion)
-		return nil
+			effectiveAPIVersion := cmp.Or(strings.TrimSpace(dockerClient.ClientVersion()), strings.TrimSpace(version.APIVersion))
+			slog.InfoContext(ctx, "Docker API versions detected", "clientApiVersion", dockerClient.ClientVersion(), "serverApiVersion", version.APIVersion, "effectiveApiVersion", effectiveAPIVersion)
+			return struct{}{}, nil
+		})
+		return err
 	})
 	if err := p.Swarm.SyncSwarmEnabledState(appCtx); err != nil {
 		slog.WarnContext(appCtx, "Failed to persist swarm enabled state", "error", err)
@@ -313,7 +303,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 		p.Role.EnsureBuiltInRoles,
 		func(ctx context.Context) error {
 			// Backfill legacy users.roles first so CreateDefaultAdmin's zero-global-admin gate sees them;
-			// runRoleStartupTasks repeats it for agent mode and retries.
+			// the role startup tasks below repeat it for agent mode and retries.
 			if err := p.Role.BackfillLegacyRoleAssignments(ctx); err != nil {
 				slog.WarnContext(ctx, "Failed to backfill legacy role assignments before admin bootstrap", "error", err)
 			}
@@ -329,7 +319,24 @@ func initializeStartupState(p initializeStartupStateParams) {
 	)
 	startup.CleanupUnknownSettings(appCtx, p.Settings)
 
-	runRoleStartupTasks(appCtx, p.DB, p.Role, p.ApiKey, cfg)
+	if err := p.Role.EnsureBuiltInRoles(appCtx); err != nil {
+		slog.ErrorContext(appCtx, "Failed to reconcile built-in roles", "error", err)
+	}
+	// Runs after EnsureBuiltInRoles seeds role IDs and before the API key backfill and admin guard read assignments.
+	if err := p.Role.BackfillLegacyRoleAssignments(appCtx); err != nil {
+		slog.ErrorContext(appCtx, "Failed to backfill legacy users.roles into user_role_assignments", "error", err)
+	}
+	if err := p.ApiKey.BackfillApiKeyPermissions(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to backfill API key permissions", "error", err)
+	}
+	if err := p.Role.ReconcileEnvOidcMappings(appCtx, cfg.OidcRoleMappings); err != nil {
+		slog.ErrorContext(appCtx, "Failed to reconcile OIDC_ROLE_MAPPINGS", "error", err)
+	}
+	if !cfg.AgentMode {
+		if err := p.Role.AssertGlobalAdminExists(appCtx, p.DB.WithContext(appCtx)); err != nil {
+			slog.ErrorContext(appCtx, "RBAC global admin guard failed", "error", err)
+		}
+	}
 
 	// Only edge agents auto-pair; direct agents are passive and the manager dials them.
 	if cfg.AgentMode && cfg.EdgeAgent && cfg.AgentToken != "" && cfg.ManagerApiUrl != "" {
@@ -338,33 +345,6 @@ func initializeStartupState(p initializeStartupStateParams) {
 		}
 	} else if cfg.AgentMode && !cfg.EdgeAgent {
 		slog.InfoContext(appCtx, "Direct mode active: agent operates as a passive HTTP server; no outbound connection to manager required")
-	}
-}
-
-func runRoleStartupTasks(ctx context.Context, db *database.DB, roleService *role.RoleService, apiKeyService *apikey.ApiKeyService, cfg *config.Config) {
-	if roleService == nil {
-		return
-	}
-	if err := roleService.EnsureBuiltInRoles(ctx); err != nil {
-		slog.ErrorContext(ctx, "Failed to reconcile built-in roles", "error", err)
-	}
-	// Runs after EnsureBuiltInRoles seeds role IDs and before the API key backfill and admin guard read assignments.
-	if err := roleService.BackfillLegacyRoleAssignments(ctx); err != nil {
-		slog.ErrorContext(ctx, "Failed to backfill legacy users.roles into user_role_assignments", "error", err)
-	}
-	if apiKeyService != nil {
-		if err := apiKeyService.BackfillApiKeyPermissions(ctx); err != nil {
-			slog.WarnContext(ctx, "Failed to backfill API key permissions", "error", err)
-		}
-	}
-	if err := roleService.ReconcileEnvOidcMappings(ctx, cfg.OidcRoleMappings); err != nil {
-		slog.ErrorContext(ctx, "Failed to reconcile OIDC_ROLE_MAPPINGS", "error", err)
-	}
-	if cfg.AgentMode {
-		return
-	}
-	if err := roleService.AssertGlobalAdminExists(ctx, db.WithContext(ctx)); err != nil {
-		slog.ErrorContext(ctx, "RBAC global admin guard failed", "error", err)
 	}
 }
 

@@ -31,7 +31,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
 
-func setupActivityServiceTestDBInternal(t *testing.T) *database.DB {
+func setupActivityServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -40,9 +40,9 @@ func setupActivityServiceTestDBInternal(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
-func TestActivityServiceLifecycleInternal(t *testing.T) {
+func TestActivityServiceLifecycle(t *testing.T) {
 	ctx := t.Context()
-	db := setupActivityServiceTestDBInternal(t)
+	db := setupActivityServiceTestDB(t)
 	service := NewActivityService(db, nil)
 
 	progress := 5
@@ -106,14 +106,14 @@ func TestActivityServiceLifecycleInternal(t *testing.T) {
 	require.Equal(t, "Pull complete", detail.Messages[1].Message)
 }
 
-func TestActivityServiceStreamFanoutInternal(t *testing.T) {
+func TestActivityServiceStreamFanout(t *testing.T) {
 	ctx := t.Context()
-	db := setupActivityServiceTestDBInternal(t)
+	db := setupActivityServiceTestDB(t)
 	service := NewActivityService(db, nil)
 
-	events, _, unsubscribe := service.Subscribe("0")
+	events, _, unsubscribe := service.pubsub.Subscribe("0")
 	defer unsubscribe()
-	otherEvents, _, unsubscribeOther := service.Subscribe("0")
+	otherEvents, _, unsubscribeOther := service.pubsub.Subscribe("0")
 	defer unsubscribeOther()
 
 	created, err := service.StartActivity(ctx, StartActivityRequest{
@@ -123,11 +123,11 @@ func TestActivityServiceStreamFanoutInternal(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	first := receiveActivityEventInternal(t, events)
+	first := receiveActivityEvent(t, events)
 	require.Equal(t, "activity", first.Type)
 	require.Equal(t, created.ID, first.ActivityID)
 	require.NotNil(t, first.Activity)
-	other := receiveActivityEventInternal(t, otherEvents)
+	other := receiveActivityEvent(t, otherEvents)
 	require.Equal(t, first, other)
 	require.NotSame(t, first.Activity, other.Activity)
 
@@ -138,7 +138,7 @@ func TestActivityServiceStreamFanoutInternal(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	messageEvent := receiveActivityEventInternal(t, events)
+	messageEvent := receiveActivityEvent(t, events)
 	require.Equal(t, "message", messageEvent.Type)
 	require.Equal(t, created.ID, messageEvent.ActivityID)
 	require.Equal(t, activity.TypeProjectDeploy, messageEvent.ActivityType)
@@ -146,12 +146,12 @@ func TestActivityServiceStreamFanoutInternal(t *testing.T) {
 	require.Equal(t, "Deploying services", messageEvent.Message.Message)
 	require.Nil(t, messageEvent.Activity)
 	require.Nil(t, messageEvent.Activities)
-	require.Equal(t, messageEvent, receiveActivityEventInternal(t, otherEvents))
+	require.Equal(t, messageEvent, receiveActivityEvent(t, otherEvents))
 }
 
-func TestActivityServiceRetentionCleanupInternal(t *testing.T) {
+func TestActivityServiceRetentionCleanup(t *testing.T) {
 	ctx := t.Context()
-	db := setupActivityServiceTestDBInternal(t)
+	db := setupActivityServiceTestDB(t)
 	service := NewActivityService(db, nil)
 
 	created, err := service.StartActivity(ctx, StartActivityRequest{
@@ -183,9 +183,9 @@ func TestActivityServiceRetentionCleanupInternal(t *testing.T) {
 	require.Zero(t, messageCount)
 }
 
-func TestActivityServicePruneHistoryZeroRetentionDisablesAgeCleanupInternal(t *testing.T) {
+func TestActivityServicePruneHistoryZeroRetentionDisablesAgeCleanup(t *testing.T) {
 	ctx := t.Context()
-	db := setupActivityServiceTestDBInternal(t)
+	db := setupActivityServiceTestDB(t)
 	service := NewActivityService(db, nil)
 
 	created, err := service.StartActivity(ctx, StartActivityRequest{
@@ -209,26 +209,9 @@ func TestActivityServicePruneHistoryZeroRetentionDisablesAgeCleanupInternal(t *t
 	require.EqualValues(t, 1, activityCount)
 }
 
-func TestActivityServiceSubscribeMarksMissedEventsWhenBufferFullInternal(t *testing.T) {
-	service := NewActivityService(nil, nil)
-
-	events, missedEvents, unsubscribe := service.Subscribe("0")
-	defer unsubscribe()
-
-	// Message-type events are not coalesced; overflowing the delivery channel
-	// plus the bounded pending FIFO must flag missed events so the stream
-	// handler resends a snapshot.
-	total := cap(events) + subscriberMessageQueueLimit + 50
-	for range total {
-		service.publishInternal("0", activity.StreamEvent{Type: "message"})
-	}
-	require.True(t, missedEvents())
-	require.False(t, missedEvents())
-}
-
-func TestActivityServiceDeleteHistoryPreservesActiveActivitiesInternal(t *testing.T) {
+func TestActivityServiceDeleteHistoryPreservesActiveActivities(t *testing.T) {
 	ctx := t.Context()
-	db := setupActivityServiceTestDBInternal(t)
+	db := setupActivityServiceTestDB(t)
 	service := NewActivityService(db, nil)
 
 	completed, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activity.TypeResourceAction})
@@ -256,9 +239,9 @@ func TestActivityServiceDeleteHistoryPreservesActiveActivitiesInternal(t *testin
 	require.ElementsMatch(t, []string{running.ID, remoteCompleted.ID}, []string{remaining[0].ID, remaining[1].ID})
 }
 
-func TestActivityServicePruneHistoryByAgeAndCountInternal(t *testing.T) {
+func TestActivityServicePruneHistoryByAgeAndCount(t *testing.T) {
 	ctx := t.Context()
-	db := setupActivityServiceTestDBInternal(t)
+	db := setupActivityServiceTestDB(t)
 	service := NewActivityService(db, nil)
 
 	oldActivity, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activity.TypeResourceAction})
@@ -292,7 +275,7 @@ func TestActivityServicePruneHistoryByAgeAndCountInternal(t *testing.T) {
 
 	var terminalRemoteCount int64
 	require.NoError(t, db.Model(&Activity{}).
-		Where("environment_id = ? AND status IN ?", "remote-1", terminalActivityStatusesInternal()).
+		Where("environment_id = ? AND status IN ?", "remote-1", terminalActivityStatuses).
 		Count(&terminalRemoteCount).Error)
 	require.EqualValues(t, 2, terminalRemoteCount)
 
@@ -305,47 +288,9 @@ func TestActivityServicePruneHistoryByAgeAndCountInternal(t *testing.T) {
 	require.Zero(t, oldCount)
 }
 
-func TestActivitySubscriberCoalescesProgressEventsInternal(t *testing.T) {
-	db := setupActivityServiceTestDBInternal(t)
-	service := NewActivityService(db, nil)
-
-	events, missedEvents, unsubscribe := service.Subscribe("0")
-	defer unsubscribe()
-
-	const updates = 500
-	for i := 1; i <= updates; i++ {
-		progress := i * 100 / updates
-		service.publishActivityInternal(activity.Activity{
-			ID:            "act-1",
-			EnvironmentID: "0",
-			Status:        activity.StatusRunning,
-			Progress:      &progress,
-		})
-	}
-
-	received := 0
-	deadline := time.After(5 * time.Second)
-	for {
-		select {
-		case event := <-events:
-			received++
-			require.Equal(t, "activity", event.Type)
-			if event.Activity != nil && event.Activity.Progress != nil && *event.Activity.Progress == 100 {
-				// The consumer was idle during publishing, so the backlog must
-				// have been coalesced instead of delivered event-for-event.
-				require.Less(t, received, updates)
-				require.False(t, missedEvents())
-				return
-			}
-		case <-deadline:
-			require.FailNow(t, "did not receive final coalesced progress event")
-		}
-	}
-}
-
-func TestActivityServiceListOrderStableUnderProgressUpdatesInternal(t *testing.T) {
+func TestActivityServiceListOrderStableUnderProgressUpdates(t *testing.T) {
 	ctx := t.Context()
-	db := setupActivityServiceTestDBInternal(t)
+	db := setupActivityServiceTestDB(t)
 	service := NewActivityService(db, nil)
 
 	older, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activity.TypeImagePull})
@@ -381,7 +326,7 @@ func TestActivityServiceListOrderStableUnderProgressUpdatesInternal(t *testing.T
 	require.Equal(t, expected, listIDs())
 }
 
-func setupQueuedActivityServiceInternal(t *testing.T) (*ActivityService, context.Context) {
+func setupQueuedActivityService(t *testing.T) (*ActivityService, *settings.SettingsService, context.Context) {
 	t.Helper()
 	ctx := t.Context()
 
@@ -396,13 +341,13 @@ func setupQueuedActivityServiceInternal(t *testing.T) (*ActivityService, context
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 
-	localSettings, err := newSettingsServiceForTestInternal(t, ctx, wrapped)
+	localSettings, err := newSettingsServiceForTest(t, ctx, wrapped)
 	require.NoError(t, err)
-	require.NoError(t, localSettings.SetIntSetting(ctx, maxConcurrentActivitiesSettingKey, 1))
-	return NewActivityService(wrapped, localSettings), ctx
+	require.NoError(t, localSettings.SetIntSetting(ctx, "maxConcurrentActivities", 1))
+	return NewActivityService(wrapped, localSettings), localSettings, ctx
 }
 
-func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
+func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
 	svc, err := settings.NewSettingsService(ctx, db)
 	if err == nil {
@@ -411,8 +356,8 @@ func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *da
 	return svc, err
 }
 
-func TestActivityServiceQueuedActivityFlipsToRunningWhenSlotFreesInternal(t *testing.T) {
-	service, ctx := setupQueuedActivityServiceInternal(t)
+func TestActivityServiceQueuedActivityFlipsToRunningWhenSlotFrees(t *testing.T) {
+	service, _, ctx := setupQueuedActivityService(t)
 
 	first, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activity.TypeImagePull, Queue: true})
 	require.NoError(t, err)
@@ -459,8 +404,8 @@ func TestActivityServiceQueuedActivityFlipsToRunningWhenSlotFreesInternal(t *tes
 	require.NoError(t, service.AwaitActivitySlot(ctx, secondDeferred.ID, "0"))
 }
 
-func TestActivityServiceLimitIncreaseKeepsCountingActiveSlotsInternal(t *testing.T) {
-	service, ctx := setupQueuedActivityServiceInternal(t)
+func TestActivityServiceLimitIncreaseKeepsCountingActiveSlots(t *testing.T) {
+	service, localSettings, ctx := setupQueuedActivityService(t)
 
 	running, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activity.TypeImagePull, Queue: true})
 	require.NoError(t, err)
@@ -474,12 +419,12 @@ func TestActivityServiceLimitIncreaseKeepsCountingActiveSlotsInternal(t *testing
 
 	// Raising the limit to 2 must admit the waiter while still counting the
 	// original holder, leaving no capacity for a third activity.
-	require.NoError(t, service.limiter.settings.SetIntSetting(ctx, maxConcurrentActivitiesSettingKey, 2))
+	require.NoError(t, localSettings.SetIntSetting(ctx, "maxConcurrentActivities", 2))
 
 	select {
 	case awaitErr := <-awaitDone:
 		require.NoError(t, awaitErr)
-	case <-time.After(2 * slotWaitRecheckInterval):
+	case <-time.After(4 * time.Second):
 		require.FailNow(t, "waiter was not admitted after the limit increase")
 	}
 
@@ -488,8 +433,8 @@ func TestActivityServiceLimitIncreaseKeepsCountingActiveSlotsInternal(t *testing
 	require.Equal(t, "queued", string(third.Status))
 }
 
-func TestActivityServiceCancelWhileQueuedUnblocksAwaitInternal(t *testing.T) {
-	service, ctx := setupQueuedActivityServiceInternal(t)
+func TestActivityServiceCancelWhileQueuedUnblocksAwait(t *testing.T) {
+	service, _, ctx := setupQueuedActivityService(t)
 
 	_, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: activity.TypeImagePull, Queue: true})
 	require.NoError(t, err)
@@ -511,14 +456,14 @@ func TestActivityServiceCancelWhileQueuedUnblocksAwaitInternal(t *testing.T) {
 	}
 }
 
-func TestActivityServiceCompleteActivityRejectsUninitializedServiceInternal(t *testing.T) {
+func TestActivityServiceCompleteActivityRejectsUninitializedService(t *testing.T) {
 	service := NewActivityService(nil, nil)
 	_, err := service.CompleteActivity(t.Context(), "any-id", activity.StatusSuccess, "done", nil)
 	require.Error(t, err)
 }
 
-func TestActivityServiceTrackAndRequestCancelInternal(t *testing.T) {
-	db := setupActivityServiceTestDBInternal(t)
+func TestActivityServiceTrackAndRequestCancel(t *testing.T) {
+	db := setupActivityServiceTestDB(t)
 	service := NewActivityService(db, nil)
 
 	// Mirror the handler flow: work runs under an app-lifecycle runtime context.
@@ -552,9 +497,9 @@ func TestActivityServiceTrackAndRequestCancelInternal(t *testing.T) {
 	require.False(t, service.RequestCancel(created.ID))
 }
 
-func TestActivityServiceCancelActivityInternal(t *testing.T) {
+func TestActivityServiceCancelActivity(t *testing.T) {
 	ctx := t.Context()
-	db := setupActivityServiceTestDBInternal(t)
+	db := setupActivityServiceTestDB(t)
 	service := NewActivityService(db, nil)
 
 	// An untracked running activity (e.g. after a restart) is finalized directly.
@@ -579,9 +524,9 @@ func TestActivityServiceCancelActivityInternal(t *testing.T) {
 	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
 }
 
-func TestActivityServiceFailStaleImageUpdateChecksInternal(t *testing.T) {
+func TestActivityServiceFailStaleImageUpdateChecks(t *testing.T) {
 	ctx := t.Context()
-	db := setupActivityServiceTestDBInternal(t)
+	db := setupActivityServiceTestDB(t)
 	service := NewActivityService(db, nil)
 
 	staleCheck, err := service.StartActivity(ctx, StartActivityRequest{
@@ -647,9 +592,9 @@ func TestActivityServiceFailStaleImageUpdateChecksInternal(t *testing.T) {
 	require.Equal(t, activity.StatusSuccess, completed.Status)
 }
 
-func TestActivityServiceFailAbandonedActivitiesInternal(t *testing.T) {
+func TestActivityServiceFailAbandonedActivities(t *testing.T) {
 	ctx := t.Context()
-	db := setupActivityServiceTestDBInternal(t)
+	db := setupActivityServiceTestDB(t)
 	service := NewActivityService(db, nil)
 
 	abandoned, err := service.StartActivity(ctx, StartActivityRequest{
@@ -696,9 +641,9 @@ func TestActivityServiceFailAbandonedActivitiesInternal(t *testing.T) {
 	require.Equal(t, activity.StatusRunning, freshRow.Status)
 }
 
-func TestActivityServiceResolveStaleAutoUpdateActivitiesInternal(t *testing.T) {
+func TestActivityServiceResolveStaleAutoUpdateActivities(t *testing.T) {
 	ctx := t.Context()
-	db := setupActivityServiceTestDBInternal(t)
+	db := setupActivityServiceTestDB(t)
 	service := NewActivityService(db, nil)
 
 	selfUpdateRun, err := service.StartActivity(ctx, StartActivityRequest{
@@ -744,7 +689,7 @@ func TestActivityServiceResolveStaleAutoUpdateActivitiesInternal(t *testing.T) {
 	require.Equal(t, activity.StatusRunning, other.Status)
 }
 
-func receiveActivityEventInternal(t *testing.T, events <-chan activity.StreamEvent) activity.StreamEvent {
+func receiveActivityEvent(t *testing.T, events <-chan activity.StreamEvent) activity.StreamEvent {
 	t.Helper()
 
 	select {
@@ -756,12 +701,12 @@ func receiveActivityEventInternal(t *testing.T, events <-chan activity.StreamEve
 	}
 }
 
-// TestActivityServiceAppendMessagesBatchInternal verifies a batch lands all
+// TestActivityServiceAppendMessagesBatch verifies a batch lands all
 // messages in order and coalesces the activity update to the batch's last
 // message, last progress, and last step.
-func TestActivityServiceAppendMessagesBatchInternal(t *testing.T) {
+func TestActivityServiceAppendMessagesBatch(t *testing.T) {
 	ctx := t.Context()
-	db := setupActivityServiceTestDBInternal(t)
+	db := setupActivityServiceTestDB(t)
 	service := NewActivityService(db, nil)
 
 	created, err := service.StartActivity(ctx, StartActivityRequest{
@@ -803,48 +748,8 @@ func TestActivityServiceAppendMessagesBatchInternal(t *testing.T) {
 	require.ErrorContains(t, err, "activity not found")
 }
 
-// TestActivityServiceDropsStaleSnapshotAfterTerminalPublishInternal verifies
-// that a non-terminal activity snapshot published after the activity's
-// terminal event — a goroutine that committed before CompleteActivity but
-// publishes after it — is dropped instead of reverting subscribers to a
-// running state no later event would correct.
-func TestActivityServiceDropsStaleSnapshotAfterTerminalPublishInternal(t *testing.T) {
-	ctx := t.Context()
-	db := setupActivityServiceTestDBInternal(t)
-	service := NewActivityService(db, nil)
-
-	created, err := service.StartActivity(ctx, StartActivityRequest{
-		EnvironmentID: "0",
-		Type:          activity.TypeImagePull,
-		LatestMessage: "Pull queued",
-	})
-	require.NoError(t, err)
-	stale := *created // snapshot taken while the activity is still active
-
-	events, _, unsubscribe := service.Subscribe("0")
-	defer unsubscribe()
-
-	completed, err := service.CompleteActivity(ctx, created.ID, activity.StatusSuccess, "", nil)
-	require.NoError(t, err)
-	require.Equal(t, activity.StatusSuccess, completed.Status)
-
-	event := receiveActivityEventInternal(t, events)
-	require.Equal(t, "activity", event.Type)
-	require.Equal(t, activity.StatusSuccess, event.Activity.Status)
-
-	require.False(t, service.admitActivityPublishInternal(stale))
-	require.True(t, service.admitActivityPublishInternal(*completed))
-
-	service.publishActivityInternal(stale)
-	select {
-	case localEvent := <-events:
-		t.Fatalf("stale non-terminal snapshot reached subscriber: %+v", localEvent)
-	case <-time.After(100 * time.Millisecond):
-	}
-}
-
 func TestJobSummaryReopensAndRejectsStaleSnapshots(t *testing.T) {
-	db := setupActivityServiceTestDBInternal(t)
+	db := setupActivityServiceTestDB(t)
 	service := NewActivityService(db, nil)
 	now := time.Now().UTC()
 	run := scheduler.Run{ID: "run", ActivityID: "summary", JobID: "auto-update", EnvironmentID: "0", Status: scheduler.NeedsAttention, CreatedAt: now.Add(-time.Hour), UpdatedAt: now}
@@ -859,9 +764,7 @@ func TestJobSummaryReopensAndRejectsStaleSnapshots(t *testing.T) {
 	require.Equal(t, activity.StatusQueued, detail.Activity.Status)
 	require.Nil(t, detail.Activity.EndedAt)
 	require.Nil(t, detail.Activity.Error)
-	require.Empty(t, service.slotReleases)
 	require.Empty(t, service.running)
-	require.NotContains(t, service.terminalPublished, run.ActivityID)
 	count, err := service.ResolveOrphanedQueuedActivities(t.Context())
 	require.NoError(t, err)
 	require.Zero(t, count)
@@ -878,7 +781,7 @@ func TestJobSummaryReopensAndRejectsStaleSnapshots(t *testing.T) {
 	require.Equal(t, "remote", legacy.EnvironmentID)
 	// Startup reconciliation also repairs legacy rows without replaying the job.
 	require.NoError(t, db.Model(&legacy).Update("environment_id", "0").Error)
-	events, _, unsubscribe := service.Subscribe("remote")
+	events, _, unsubscribe := service.pubsub.Subscribe("remote")
 	defer unsubscribe()
 	require.NoError(t, service.SyncJobRun(t.Context(), run, "Auto update"))
 	select {
@@ -919,7 +822,7 @@ func TestJobSummaryReopensAndRejectsStaleSnapshots(t *testing.T) {
 }
 
 func TestJobActivityVisibilityFiltersBeforePagination(t *testing.T) {
-	db := setupActivityServiceTestDBInternal(t)
+	db := setupActivityServiceTestDB(t)
 	service := NewActivityService(db, nil)
 	for _, environmentID := range []string{"0", "private"} {
 		require.NoError(
@@ -954,7 +857,7 @@ func TestJobActivityVisibilityFiltersBeforePagination(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualValues(t, 2, response.TotalItems)
 		require.Len(t, activities, 1)
-		require.True(t, canReadJobActivityInternal(ctx, activities[0]))
+		require.True(t, canReadJobActivity(ctx, activities[0]))
 		seen[activities[0].ID] = true
 	}
 	require.Len(t, seen, 2)
@@ -965,7 +868,7 @@ func TestJobActivityVisibilityFiltersBeforePagination(t *testing.T) {
 	require.Equal(t, "private-pull", activities[0].ID)
 	require.False(
 		t,
-		canReadJobActivityInternal(
+		canReadJobActivity(
 			ctx,
 			activity.Activity{
 				Type:          activity.TypeJobRun,
@@ -974,13 +877,13 @@ func TestJobActivityVisibilityFiltersBeforePagination(t *testing.T) {
 			},
 		),
 	)
-	require.True(t, canReadJobActivityInternal(ctx, activity.Activity{Type: activity.TypeJobRun, Metadata: map[string]any{"environmentId": "allowed"}}))
+	require.True(t, canReadJobActivity(ctx, activity.Activity{Type: activity.TypeJobRun, Metadata: map[string]any{"environmentId": "allowed"}}))
 	privileged := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
 	activities, response, err = service.ListActivitiesPaginated(privileged, "private", pagination.QueryParams{Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, activities, 2)
 	require.EqualValues(t, 2, response.TotalItems)
-	require.False(t, canReadJobActivityInternal(privileged, activity.Activity{Type: activity.TypeJobRun}))
+	require.False(t, canReadJobActivity(privileged, activity.Activity{Type: activity.TypeJobRun}))
 	permissions.PerEnv["0"][authz.PermActivitiesDelete] = struct{}{}
 	deleted, err := service.DeleteHistory(ctx, "private")
 	require.NoError(t, err)
@@ -1009,7 +912,7 @@ func TestSyncResourcesToEnvironmentOutcomes(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			db := setupActivityServiceTestDBInternal(t)
+			db := setupActivityServiceTestDB(t)
 			require.NoError(t, db.AutoMigrate(&environment.Environment{}, &registry.ContainerRegistry{}, &gitrepo.GitRepository{}, &s3.S3Destination{}))
 			sqlDB, err := db.DB.DB()
 			require.NoError(t, err)
@@ -1066,7 +969,7 @@ func TestSyncResourcesToEnvironmentOutcomes(t *testing.T) {
 }
 
 func TestActivityService_StartActivityWithIDIsIdempotent(t *testing.T) {
-	db := setupActivityServiceTestDBInternal(t)
+	db := setupActivityServiceTestDB(t)
 	service := NewActivityService(db, nil)
 
 	first, err := service.StartActivity(t.Context(), StartActivityRequest{ID: "workflow-activity", Type: activity.TypeAutoUpdate, LatestMessage: "first"})

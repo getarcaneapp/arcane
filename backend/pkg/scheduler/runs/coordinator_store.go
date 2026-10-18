@@ -19,21 +19,21 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 )
 
-const queuePrefixInternal = "jobs."
+const queuePrefix = "jobs."
 
-func (q *Coordinator) mutateInternal(ctx context.Context, environmentID, jobID string, change func(*st.QueueRecord) error) error {
+func (q *Coordinator) mutate(ctx context.Context, environmentID, jobID string, change func(*st.QueueRecord) error) error {
 	id := kit.SHA256Hex(environmentID + "\x00" + jobID)
 	q.runtime.NameActor(id, jobID+"@"+environmentID)
 	for range 20 {
 		var state st.CoordinatorState
-		err := q.service.GetState(ctx, coordinatorTypeInternal, id, &state)
+		err := q.service.GetState(ctx, coordinatorType, id, &state)
 		if err != nil && !errors.Is(err, actor.ErrStateNotFound) {
 			return err
 		}
-		if prepareMutationErr := q.prepareMutationInternal(&state, environmentID, jobID, change); prepareMutationErr != nil {
+		if prepareMutationErr := q.prepareMutation(&state, environmentID, jobID, change); prepareMutationErr != nil {
 			return prepareMutationErr
 		}
-		result, err := q.service.Invoke(ctx, coordinatorTypeInternal, id, "replace", state)
+		result, err := q.service.Invoke(ctx, coordinatorType, id, "replace", state)
 		if err != nil {
 			return err
 		}
@@ -48,10 +48,10 @@ func (q *Coordinator) mutateInternal(ctx context.Context, environmentID, jobID s
 	return errors.New("job coordinator state is busy; retry mutation")
 }
 
-func (q *Coordinator) prepareMutationInternal(state *st.CoordinatorState, environmentID, jobID string, change func(*st.QueueRecord) error) error {
-	normalizeRecordTimesInternal(&state.Record)
+func (q *Coordinator) prepareMutation(state *st.CoordinatorState, environmentID, jobID string, change func(*st.QueueRecord) error) error {
+	normalizeRecordTimes(&state.Record)
 	previousRuns := slices.Clone(state.Record.Runs)
-	previous, versions, err := snapshotRunsInternal(state.Record)
+	previous, versions, err := snapshotRuns(state.Record)
 	if err != nil {
 		return err
 	}
@@ -61,28 +61,28 @@ func (q *Coordinator) prepareMutationInternal(state *st.CoordinatorState, enviro
 	if changeErr := change(&state.Record); changeErr != nil {
 		return changeErr
 	}
-	preserveUnsyncedRunsInternal(state, previousRuns)
+	preserveUnsyncedRuns(state, previousRuns)
 	for i := range state.Record.Runs {
-		q.associateActivityInternal(&state.Record.Runs[i])
-		if markChangedActivityErr := markChangedActivityInternal(state, &state.Record.Runs[i], previous, versions); markChangedActivityErr != nil {
+		q.associateActivity(&state.Record.Runs[i])
+		if markChangedActivityErr := markChangedActivity(state, &state.Record.Runs[i], previous, versions); markChangedActivityErr != nil {
 			return markChangedActivityErr
 		}
 	}
 	for id, run := range state.Record.Receipts {
-		q.associateActivityInternal(&run)
-		if markChangedActivityErr2 := markChangedActivityInternal(state, &run, previous, versions); markChangedActivityErr2 != nil {
+		q.associateActivity(&run)
+		if markChangedActivityErr2 := markChangedActivity(state, &run, previous, versions); markChangedActivityErr2 != nil {
 			return markChangedActivityErr2
 		}
 		state.Record.Receipts[id] = run
 	}
-	pruneDispatchesInternal(state)
+	pruneDispatches(state)
 	return nil
 }
 
-func snapshotRunsInternal(record st.QueueRecord) (map[string][]byte, map[string]time.Time, error) {
+func snapshotRuns(record st.QueueRecord) (map[string][]byte, map[string]time.Time, error) {
 	encoded := make(map[string][]byte, len(record.Runs)+len(record.Receipts))
 	versions := make(map[string]time.Time, len(record.Runs)+len(record.Receipts))
-	for _, run := range append(slices.Clone(record.Runs), receiptRunsInternal(record.Receipts)...) {
+	for _, run := range append(slices.Clone(record.Runs), receiptRuns(record.Receipts)...) {
 		data, err := json.Marshal(run)
 		if err != nil {
 			return nil, nil, err
@@ -93,7 +93,7 @@ func snapshotRunsInternal(record st.QueueRecord) (map[string][]byte, map[string]
 	return encoded, versions, nil
 }
 
-func preserveUnsyncedRunsInternal(state *st.CoordinatorState, previous []st.Run) {
+func preserveUnsyncedRuns(state *st.CoordinatorState, previous []st.Run) {
 	retained := make(map[string]st.Run, len(state.Record.Runs))
 	for _, run := range state.Record.Runs {
 		retained[run.ID] = run
@@ -133,7 +133,7 @@ func preserveUnsyncedRunsInternal(state *st.CoordinatorState, previous []st.Run)
 	state.Record.Runs = runs
 }
 
-func pruneDispatchesInternal(state *st.CoordinatorState) {
+func pruneDispatches(state *st.CoordinatorState) {
 	attempts := make(map[string]int, len(state.Record.Runs))
 	for _, run := range state.Record.Runs {
 		attempts[run.ID] = run.AttemptCount
@@ -150,7 +150,7 @@ func (q *Coordinator) Records(ctx context.Context) ([]st.QueueRecord, error) {
 	records := []st.QueueRecord{}
 	cursor := ""
 	for {
-		page, err := q.service.ListStates(ctx, coordinatorTypeInternal, &actor.ListStatesOpts{IncludeData: true, After: cursor, Limit: 100})
+		page, err := q.service.ListStates(ctx, coordinatorType, &actor.ListStatesOpts{IncludeData: true, After: cursor, Limit: 100})
 		if err != nil {
 			return nil, fmt.Errorf("list job coordinator states: %w", err)
 		}
@@ -159,7 +159,7 @@ func (q *Coordinator) Records(ctx context.Context) ([]st.QueueRecord, error) {
 			if decodeErr := entry.Data.Decode(&state); decodeErr != nil {
 				return nil, fmt.Errorf("decode job coordinator %q: %w", entry.ActorID, decodeErr)
 			}
-			normalizeRecordTimesInternal(&state.Record)
+			normalizeRecordTimes(&state.Record)
 			q.runtime.NameActor(entry.ActorID, state.Record.JobID+"@"+state.Record.EnvironmentID)
 			records = append(records, state.Record)
 		}
@@ -174,23 +174,23 @@ func (q *Coordinator) Records(ctx context.Context) ([]st.QueueRecord, error) {
 // idempotency receipts. It returns ErrRunNotFound when no matching record exists.
 func (q *Coordinator) Get(ctx context.Context, environmentID, jobID, runID string) (st.Run, error) {
 	var state st.CoordinatorState
-	err := q.service.GetState(ctx, coordinatorTypeInternal, kit.SHA256Hex(environmentID+"\x00"+jobID), &state)
+	err := q.service.GetState(ctx, coordinatorType, kit.SHA256Hex(environmentID+"\x00"+jobID), &state)
 	if errors.Is(err, actor.ErrStateNotFound) {
 		return st.Run{}, ErrRunNotFound
 	}
 	if err != nil {
 		return st.Run{}, err
 	}
-	normalizeRecordTimesInternal(&state.Record)
+	normalizeRecordTimes(&state.Record)
 	record := state.Record
 	for _, run := range record.Runs {
 		if run.ID == runID {
-			q.associateActivityInternal(&run)
+			q.associateActivity(&run)
 			return run, nil
 		}
 	}
 	if run, ok := record.Receipts[runID]; ok {
-		q.associateActivityInternal(&run)
+		q.associateActivity(&run)
 		return run, nil
 	}
 	return st.Run{}, ErrRunNotFound
@@ -224,7 +224,7 @@ func (q *Coordinator) List(ctx context.Context, environmentID, jobID string, pag
 // and swap. The callback may run more than once and must not perform external side effects.
 func (q *Coordinator) UpdateRun(ctx context.Context, run st.Run, change func(*st.Run) error) error {
 	wake := false
-	err := q.mutateInternal(ctx, run.EnvironmentID, run.JobID, func(record *st.QueueRecord) error {
+	err := q.mutate(ctx, run.EnvironmentID, run.JobID, func(record *st.QueueRecord) error {
 		for index := range record.Runs {
 			if record.Runs[index].ID == run.ID {
 				previous := record.Runs[index].Status
@@ -248,26 +248,26 @@ func (q *Coordinator) UpdateRun(ctx context.Context, run st.Run, change func(*st
 		return ErrRunNotFound
 	})
 	if err == nil && wake {
-		q.signalInternal()
+		q.signal()
 	}
 	if err == nil {
-		q.observeRunInternal(ctx, run)
+		q.observeRun(ctx, run)
 	}
 	return err
 }
 
-func (q *Coordinator) pruneInternal(ctx context.Context) error {
+func (q *Coordinator) prune(ctx context.Context) error {
 	records, err := q.Records(ctx)
 	if err != nil {
 		return err
 	}
 	now := time.Now().UTC()
 	for _, record := range records {
-		if !pruneRunsInternal(&record, now) {
+		if !pruneRuns(&record, now) {
 			continue
 		}
-		if mutateErr := q.mutateInternal(ctx, record.EnvironmentID, record.JobID, func(current *st.QueueRecord) error {
-			pruneRunsInternal(current, now)
+		if mutateErr := q.mutate(ctx, record.EnvironmentID, record.JobID, func(current *st.QueueRecord) error {
+			pruneRuns(current, now)
 			return nil
 		}); mutateErr != nil {
 			return fmt.Errorf("prune job %q in environment %q: %w", record.JobID, record.EnvironmentID, mutateErr)
@@ -276,7 +276,7 @@ func (q *Coordinator) pruneInternal(ctx context.Context) error {
 	return nil
 }
 
-func pruneRunsInternal(record *st.QueueRecord, now time.Time) bool {
+func pruneRuns(record *st.QueueRecord, now time.Time) bool {
 	changed := false
 	terminal := 0
 	for index, run := range slices.Backward(record.Runs) {
@@ -287,7 +287,7 @@ func pruneRunsInternal(record *st.QueueRecord, now time.Time) bool {
 		if terminal <= 100 && now.Sub(run.UpdatedAt) < 7*24*time.Hour {
 			continue
 		}
-		if separateTriggerInternal(run.Trigger) {
+		if separateTrigger(run.Trigger) {
 			if record.Receipts == nil {
 				record.Receipts = make(map[string]st.Run)
 			}
@@ -321,14 +321,14 @@ func (q *Coordinator) SetExecutor(execute, reconcile func(context.Context, st.Ru
 
 func (q *Coordinator) ScheduleState(ctx context.Context, jobID string) (st.QueueRecord, error) {
 	var state st.CoordinatorState
-	err := q.service.GetState(ctx, coordinatorTypeInternal, kit.SHA256Hex("0\x00"+jobID), &state)
-	normalizeRecordTimesInternal(&state.Record)
+	err := q.service.GetState(ctx, coordinatorType, kit.SHA256Hex("0\x00"+jobID), &state)
+	normalizeRecordTimes(&state.Record)
 	return state.Record, err
 }
 
-func (q *Coordinator) Activate() { q.enabled.Store(true); q.signalInternal() }
+func (q *Coordinator) Activate() { q.enabled.Store(true); q.signal() }
 
-func receiptRunsInternal(receipts map[string]st.Run) []st.Run {
+func receiptRuns(receipts map[string]st.Run) []st.Run {
 	runs := make([]st.Run, 0, len(receipts))
 	for _, run := range receipts {
 		runs = append(runs, run)
@@ -336,8 +336,8 @@ func receiptRunsInternal(receipts map[string]st.Run) []st.Run {
 	return runs
 }
 
-func markChangedActivityInternal(state *st.CoordinatorState, run *st.Run, previous map[string][]byte, previousUpdated map[string]time.Time) error {
-	normalizeRunTimesInternal(run)
+func markChangedActivity(state *st.CoordinatorState, run *st.Run, previous map[string][]byte, previousUpdated map[string]time.Time) error {
+	normalizeRunTimes(run)
 	if run.ActivityID == "" {
 		return nil
 	}
@@ -358,7 +358,7 @@ func markChangedActivityInternal(state *st.CoordinatorState, run *st.Run, previo
 	return nil
 }
 
-func markActivitySyncInternal(state *st.CoordinatorState, run st.Run) {
+func markActivitySync(state *st.CoordinatorState, run st.Run) {
 	if run.ActivityID == "" {
 		return
 	}
@@ -368,35 +368,35 @@ func markActivitySyncInternal(state *st.CoordinatorState, run st.Run) {
 	state.PendingActivitySync[run.ID] = run.UpdatedAt
 }
 
-func normalizeRecordTimesInternal(record *st.QueueRecord) {
+func normalizeRecordTimes(record *st.QueueRecord) {
 	record.LastEnqueuedAt = record.LastEnqueuedAt.UTC()
 	record.NextRun = record.NextRun.UTC()
 	for i := range record.Runs {
-		normalizeRunTimesInternal(&record.Runs[i])
+		normalizeRunTimes(&record.Runs[i])
 	}
 	for id, run := range record.Receipts {
-		normalizeRunTimesInternal(&run)
+		normalizeRunTimes(&run)
 		record.Receipts[id] = run
 	}
 }
 
-func normalizeRunTimesInternal(run *st.Run) {
+func normalizeRunTimes(run *st.Run) {
 	run.CreatedAt = run.CreatedAt.UTC()
 	run.UpdatedAt = run.UpdatedAt.UTC()
-	normalizeTimePointerInternal(run.StartedAt)
-	normalizeTimePointerInternal(run.FinishedAt)
-	normalizeTimePointerInternal(run.NextAttempt)
-	normalizeTimePointerInternal(run.LastConfirmedAt)
+	normalizeTimePointer(run.StartedAt)
+	normalizeTimePointer(run.FinishedAt)
+	normalizeTimePointer(run.NextAttempt)
+	normalizeTimePointer(run.LastConfirmedAt)
 	if run.Resolution != nil {
 		run.Resolution.ResolvedAt = run.Resolution.ResolvedAt.UTC()
 	}
 	for i := range run.Attempts {
 		run.Attempts[i].StartedAt = run.Attempts[i].StartedAt.UTC()
-		normalizeTimePointerInternal(run.Attempts[i].FinishedAt)
+		normalizeTimePointer(run.Attempts[i].FinishedAt)
 	}
 }
 
-func normalizeLegacyRunInternal(run *st.Run) bool {
+func normalizeLegacyRun(run *st.Run) bool {
 	automaticResolution := run.Status == st.Canceled && run.Resolution != nil && run.Resolution.ResolvedBy == user.SystemUser.Username
 	if run.Status != st.NeedsAttention && !automaticResolution {
 		return false
@@ -417,7 +417,7 @@ func normalizeLegacyRunInternal(run *st.Run) bool {
 	return true
 }
 
-func normalizeTimePointerInternal(value *time.Time) {
+func normalizeTimePointer(value *time.Time) {
 	if value != nil {
 		*value = value.UTC()
 	}

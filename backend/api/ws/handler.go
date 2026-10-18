@@ -41,6 +41,9 @@ var (
 // WebSocketHandler consolidates all WebSocket and streaming endpoints.
 // REST endpoints are handled by Huma handlers.
 type WebSocketHandler struct {
+	// ctx ends after open connections were closed with StatusGoingAway on app shutdown.
+	ctx                 context.Context
+	conns               sync.Map
 	projectService      *project.ProjectService
 	containerService    *container.ContainerService
 	swarmService        *swarm.SwarmService
@@ -80,6 +83,7 @@ type WebSocketHandler struct {
 }
 
 func NewWebSocketHandler(
+	appCtx context.Context,
 	group *echo.Group,
 	projectService *project.ProjectService,
 	containerService *container.ContainerService,
@@ -89,7 +93,9 @@ func NewWebSocketHandler(
 	authMiddleware *auth.AuthMiddleware,
 	cfg *config.Config,
 ) {
+	ctx, cancel := context.WithCancel(context.WithoutCancel(appCtx))
 	handler := &WebSocketHandler{
+		ctx:                ctx,
 		projectService:     projectService,
 		containerService:   containerService,
 		swarmService:       swarmService,
@@ -103,6 +109,18 @@ func NewWebSocketHandler(
 			Build(),
 		checkWSOrigin: httpx.ValidateWebSocketOrigin(cfg.GetAppURL()),
 	}
+	// Send the close frames before cancelling hubs, whose teardown closes connections without a handshake.
+	context.AfterFunc(appCtx, func() {
+		var wg sync.WaitGroup
+		handler.conns.Range(func(key, _ any) bool {
+			wg.Go(func() {
+				_ = key.(*websocket.Conn).Close(websocket.StatusGoingAway, "server shutting down")
+			})
+			return true
+		})
+		wg.Wait()
+		cancel()
+	})
 	observeWebSocketMetricsOnce.Do(func() {
 		if err := defaultWebSocketMetrics.ObserveConnections(otel.Meter(tracing.InstrumentationName)); err != nil {
 			otel.Handle(err)
@@ -134,6 +152,7 @@ func (h *WebSocketHandler) acceptWS(c *echo.Context, kind, resourceID string) (*
 		UserAgent:  req.Header.Get("User-Agent"),
 	}
 	connID := defaultWebSocketMetrics.RegisterConnection(info)
+	h.conns.Store(conn, struct{}{})
 	// The HTTP tracing middleware skips upgrades, so this is a root span unless the client sent a traceparent.
 	parent := otel.GetTextMapPropagator().Extract(req.Context(), propagation.HeaderCarrier(req.Header))
 	_, span := otel.Tracer(tracing.InstrumentationName).Start(parent, "websocket "+kind,
@@ -149,6 +168,7 @@ func (h *WebSocketHandler) acceptWS(c *echo.Context, kind, resourceID string) (*
 			attribute.String("user_agent.original", info.UserAgent),
 		))
 	return conn, func() {
+		h.conns.Delete(conn)
 		defaultWebSocketMetrics.UnregisterConnection(connID)
 		span.End()
 	}, true

@@ -39,7 +39,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
-func TestEnrichVolumesWithUsageDataInternal(t *testing.T) {
+func TestEnrichVolumesWithUsageData(t *testing.T) {
 	tests := []struct {
 		name         string
 		volumes      []volume.Volume
@@ -85,18 +85,18 @@ func TestEnrichVolumesWithUsageDataInternal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := enrichVolumesWithUsageDataInternal(tt.volumes, tt.usageVolumes)
+			got := enrichVolumesWithUsageData(tt.volumes, tt.usageVolumes)
 			require.Len(t, got, tt.wantLen)
 			tt.assertions(t, got)
 		})
 	}
 }
 
-func TestIsInternalVolumeInternal(t *testing.T) {
+func TestIsInternalVolume(t *testing.T) {
 	svc := &VolumeService{backupVolumeName: "arcane-backups"}
 
-	require.True(t, svc.isInternalVolumeInternal(volumetypes.Volume{Name: "arcane-backups"}))
-	require.False(t, svc.isInternalVolumeInternal(volumetypes.Volume{Name: "user-volume"}))
+	require.True(t, svc.isInternalVolume(volumetypes.Volume{Name: "arcane-backups"}))
+	require.False(t, svc.isInternalVolume(volumetypes.Volume{Name: "user-volume"}))
 }
 
 func TestRenameVolumeRejectsInvalidAndProtectedNames(t *testing.T) {
@@ -112,7 +112,7 @@ func TestRenameVolumeRejectsInvalidAndProtectedNames(t *testing.T) {
 	require.ErrorIs(t, err, common.ErrVolumeRenameProtected)
 }
 
-func applyVolumeBackupMigrationsInternal(t *testing.T, gormDB *gorm.DB) {
+func applyVolumeBackupMigrations(t *testing.T, gormDB *gorm.DB) {
 	t.Helper()
 	for _, name := range []string{"032_add_volume_backups.sql", "073_add_backup_support.sql", "087_add_volume_backup_remote_instance.sql"} {
 		migration, err := os.ReadFile("../../resources/migrations/sqlite/" + name)
@@ -121,15 +121,15 @@ func applyVolumeBackupMigrationsInternal(t *testing.T, gormDB *gorm.DB) {
 	}
 }
 
-func TestRenameVolumeMetadataInternalPreservesPoliciesAndHistory(t *testing.T) {
+func TestRenameVolumeMetadataPreservesPoliciesAndHistory(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-rename-metadata?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	applyVolumeBackupMigrationsInternal(t, gormDB)
+	applyVolumeBackupMigrations(t, gormDB)
 	require.NoError(t, gormDB.Exec("INSERT INTO volume_backup_policies (id, volume_name, schedule) VALUES (?, ?, ?)", "policy-1", "source-data", "0 0 2 * * *").Error)
 	require.NoError(t, gormDB.Create(&VolumeBackup{VolumeName: "source-data", PolicyID: "policy-1"}).Error)
 
 	service := NewVolumeService(&database.DB{DB: gormDB}, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	require.NoError(t, service.renameVolumeMetadataInternal(t.Context(), "source-data", "renamed-data"))
+	require.NoError(t, service.renameVolumeMetadata(t.Context(), "source-data", "renamed-data"))
 
 	var renamedPolicy string
 	require.NoError(t, gormDB.Raw("SELECT volume_name FROM volume_backup_policies WHERE id = ?", "policy-1").Scan(&renamedPolicy).Error)
@@ -140,33 +140,7 @@ func TestRenameVolumeMetadataInternalPreservesPoliciesAndHistory(t *testing.T) {
 	require.Equal(t, "renamed-data", backupEntry.VolumeName)
 }
 
-func TestBuildVolumePruneOptionsInternal_PreservesInternalVolumes(t *testing.T) {
-	options := buildVolumePruneOptionsInternal(true)
-
-	require.True(t, options.All)
-	require.NotNil(t, options.Filters)
-	require.True(t, options.Filters["label!"][internalVolumePruneFilterValue])
-}
-
-func TestBuildVolumePruneOptionsInternal_PreservesInternalVolumesForAnonymousVolumes(t *testing.T) {
-	options := buildVolumePruneOptionsInternal(false)
-
-	require.False(t, options.All)
-	require.NotNil(t, options.Filters)
-	require.True(t, options.Filters["label!"][internalVolumePruneFilterValue])
-}
-
-func TestBuildVolumePruneMetadataInternal(t *testing.T) {
-	metadata := buildVolumePruneMetadataInternal(true, 2, 4096)
-
-	require.Equal(t, "prune", metadata["action"])
-	require.Equal(t, true, metadata["all"])
-	require.Equal(t, 2, metadata["volumesDeleted"])
-	require.EqualValues(t, 4096, metadata["spaceReclaimed"])
-	require.Equal(t, internalVolumePruneFilterValue, metadata["internalVolumeFilterLabel"])
-}
-
-func TestListBackupsPaginatedByManagementTypeInternal(t *testing.T) {
+func TestListBackupsPaginatedByManagementType(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-management?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&VolumeBackup{}))
@@ -179,7 +153,7 @@ func TestListBackupsPaginatedByManagementTypeInternal(t *testing.T) {
 	}
 	service := &VolumeService{db: &database.DB{DB: gormDB}}
 
-	systemRows, total, err := service.listBackupsInternal(t.Context(), "app", pagination.QueryParams{
+	systemRows, total, err := service.listBackups(t.Context(), "app", pagination.QueryParams{
 		Filters: map[string]string{"type": "system"},
 	})
 	require.NoError(t, err)
@@ -187,7 +161,7 @@ func TestListBackupsPaginatedByManagementTypeInternal(t *testing.T) {
 	require.Len(t, systemRows, 1)
 	require.Equal(t, backup.ManagementTypeSystem, systemRows[0].Type)
 
-	volumeRows, total, err := service.listBackupsInternal(t.Context(), "app", pagination.QueryParams{
+	volumeRows, total, err := service.listBackups(t.Context(), "app", pagination.QueryParams{
 		Filters: map[string]string{"type": "volume"},
 	})
 	require.NoError(t, err)
@@ -198,7 +172,7 @@ func TestListBackupsPaginatedByManagementTypeInternal(t *testing.T) {
 	}
 }
 
-func newVolumeWorkspaceTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.Client {
+func newVolumeWorkspaceTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	t.Helper()
 	dialer := &net.Dialer{}
 	dockerClient, err := client.New(
@@ -214,7 +188,7 @@ func newVolumeWorkspaceTestDockerClientInternal(t *testing.T, server *httptest.S
 	return dockerClient
 }
 
-func writeDockerExecAttachResponseInternal(t *testing.T, w http.ResponseWriter, stdout string) {
+func writeDockerExecAttachResponse(t *testing.T, w http.ResponseWriter, stdout string) {
 	t.Helper()
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
@@ -274,7 +248,7 @@ func TestVolumeWorkspaceReadsWaitForMutationLock(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newVolumeWorkspaceTestDockerClientInternal(t, server))
+			dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newVolumeWorkspaceTestDockerClient(t, server))
 			service := NewVolumeService(nil, dockerService, nil, nil, nil, nil, nil, nil, nil, nil)
 			unlockMutation := service.workspaceLocks.Lock("workspace-volume")
 			readStarted := make(chan struct{})
@@ -344,7 +318,7 @@ func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
 				return
 			}
 			_, _ = output.Write(content)
-			writeDockerExecAttachResponseInternal(t, w, output.String())
+			writeDockerExecAttachResponse(t, w, output.String())
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/exec/read-exec/json"):
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{"Running": false, "ExitCode": 0})
@@ -354,7 +328,7 @@ func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newVolumeWorkspaceTestDockerClientInternal(t, server))
+	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newVolumeWorkspaceTestDockerClient(t, server))
 	service := NewVolumeService(nil, dockerService, nil, nil, nil, nil, nil, nil, nil, nil)
 	service.helperByVolume["workspace-volume"] = &volumeHelper{id: "helper", lastUsedAt: time.Now(), protocol: types.ProtocolVersion}
 	reader, size, err := service.workspace.DownloadVolumeWorkspaceFile(t.Context(), "workspace-volume", "file.txt")
@@ -407,7 +381,7 @@ func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
 				"{\"end\":true,\"version\":2}\n",
 				"{\"version\":\"0.2.0\",\"revision\":\"test\",\"buildTime\":\"test\",\"protocol\":2}\n",
 			)
-			writeDockerExecAttachResponseInternal(t, w, output)
+			writeDockerExecAttachResponse(t, w, output)
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/exec/workspace-exec-") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{"Running": false, "ExitCode": 0})
@@ -420,7 +394,7 @@ func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	dockerClient := newVolumeWorkspaceTestDockerClientInternal(t, server)
+	dockerClient := newVolumeWorkspaceTestDockerClient(t, server)
 	service := NewVolumeService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient), nil, nil, nil, nil, nil, nil, nil, nil)
 	uploadIndex := 0
 	workspace, err := service.workspace.UpdateVolumeWorkspace(t.Context(), "workspace-volume", volumetypes.WorkspaceUpdateManifest{
@@ -472,11 +446,11 @@ func TestVolumeBackup_ListResolvesDestinationName(t *testing.T) {
 func TestVolumeBackupPolicy_GetReturnsLastRunForEachPolicyFromStore(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-last-runs-store?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	applyVolumeBackupMigrationsInternal(t, gormDB)
+	applyVolumeBackupMigrations(t, gormDB)
 	require.NoError(t, gormDB.Create(&VolumeBackup{VolumeName: "app-data", PolicyID: "first-policy", Status: VolumeBackupStatusSucceeded}).Error)
 	require.NoError(t, gormDB.Create(&VolumeBackup{VolumeName: "app-data", PolicyID: "second-policy", Status: VolumeBackupStatusFailed}).Error)
 
-	store := NewVolumeService(&database.DB{DB: gormDB}, nil, nil, nil, nil, nil, nil, nil, nil, nil).backupStoreInternal()
+	store := NewVolumeService(&database.DB{DB: gormDB}, nil, nil, nil, nil, nil, nil, nil, nil, nil).backupStore()
 	first, err := store.Latest(t.Context(), "first-policy")
 	require.NoError(t, err)
 	require.Equal(t, "succeeded", first.Status)

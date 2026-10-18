@@ -17,7 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 )
 
-func newVolumeServiceTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.Client {
+func newVolumeServiceTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	t.Helper()
 	dockerClient, err := client.New(
 		client.WithHost(server.URL),
@@ -29,7 +29,7 @@ func newVolumeServiceTestDockerClientInternal(t *testing.T, server *httptest.Ser
 	return dockerClient
 }
 
-func TestCreateTempContainerInternalReusesWritableHelper(t *testing.T) {
+func TestCreateTempContainerReusesWritableHelper(t *testing.T) {
 	var createCalls, startCalls, removeCalls int
 	var createRequest struct {
 		NetworkDisabled bool                  `json:"NetworkDisabled"`
@@ -73,13 +73,13 @@ func TestCreateTempContainerInternalReusesWritableHelper(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	service := &VolumeService{
-		dockerService:  docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newVolumeServiceTestDockerClientInternal(t, server)),
+		dockerService:  docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newVolumeServiceTestDockerClient(t, server)),
 		helperByVolume: make(map[string]*volumeHelper),
 	}
 
-	firstID, releaseFirst, err := service.acquireVolumeHelperInternal(t.Context(), "workspace-volume")
+	firstID, releaseFirst, err := service.acquireVolumeHelper(t.Context(), "workspace-volume")
 	require.NoError(t, err)
-	secondID, releaseSecond, err := service.acquireVolumeHelperInternal(t.Context(), "workspace-volume")
+	secondID, releaseSecond, err := service.acquireVolumeHelper(t.Context(), "workspace-volume")
 	require.NoError(t, err)
 
 	require.Equal(t, "helper-1", firstID)
@@ -93,7 +93,7 @@ func TestCreateTempContainerInternalReusesWritableHelper(t *testing.T) {
 	require.Equal(t, 2, service.helperByVolume["workspace-volume"].inUse)
 
 	service.helperByVolume["workspace-volume"].lastUsedAt = time.Now().Add(-time.Hour)
-	require.Empty(t, service.collectStaleHelperIDsInternal(time.Now(), time.Minute))
+	require.Empty(t, service.collectStaleHelperIDs(time.Now(), time.Minute))
 	require.Contains(t, service.helperByVolume, "workspace-volume")
 
 	releaseFirst()
@@ -101,7 +101,7 @@ func TestCreateTempContainerInternalReusesWritableHelper(t *testing.T) {
 	require.Zero(t, service.helperByVolume["workspace-volume"].inUse)
 }
 
-func TestIsUnlabeledVolumeHelperContainerInternal(t *testing.T) {
+func TestIsUnlabeledVolumeHelperContainer(t *testing.T) {
 	tests := []struct {
 		name    string
 		summary container.Summary
@@ -137,12 +137,12 @@ func TestIsUnlabeledVolumeHelperContainerInternal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, isUnlabeledVolumeHelperContainerInternal(tt.summary))
+			require.Equal(t, tt.want, isUnlabeledVolumeHelperContainer(tt.summary))
 		})
 	}
 }
 
-func TestIsVolumeHelperContainerInternal_UsesExplicitHelperLabel(t *testing.T) {
+func TestIsVolumeHelperContainer_UsesExplicitHelperLabel(t *testing.T) {
 	tests := []struct {
 		name    string
 		summary container.Summary
@@ -187,12 +187,12 @@ func TestIsVolumeHelperContainerInternal_UsesExplicitHelperLabel(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, isVolumeHelperContainerInternal(tt.summary))
+			require.Equal(t, tt.want, isVolumeHelperContainer(tt.summary))
 		})
 	}
 }
 
-func TestCollectStaleHelperIDsInternal(t *testing.T) {
+func TestCollectStaleHelperIDs(t *testing.T) {
 	now := time.Now()
 	s := &VolumeService{
 		helperByVolume: map[string]*volumeHelper{
@@ -203,7 +203,7 @@ func TestCollectStaleHelperIDsInternal(t *testing.T) {
 		},
 	}
 
-	stale := s.collectStaleHelperIDsInternal(now, 10*time.Minute)
+	stale := s.collectStaleHelperIDs(now, 10*time.Minute)
 
 	require.ElementsMatch(t, []string{"c-stale", "c-atedge"}, stale,
 		"helpers idle >= timeout (and exactly at the edge) should be collected")
@@ -216,7 +216,7 @@ func TestCollectStaleHelperIDsInternal(t *testing.T) {
 // A helper serving a request longer than the idle timeout (e.g. a slow download)
 // must not be reaped mid-stream; it becomes collectible once released, with the
 // idle clock measured from the release.
-func TestCollectStaleHelperIDsInternalSkipsInUseHelpers(t *testing.T) {
+func TestCollectStaleHelperIDsSkipsInUseHelpers(t *testing.T) {
 	now := time.Now()
 	s := &VolumeService{
 		helperByVolume: map[string]*volumeHelper{
@@ -224,26 +224,26 @@ func TestCollectStaleHelperIDsInternalSkipsInUseHelpers(t *testing.T) {
 		},
 	}
 
-	release, ok := s.acquireHelperInternal("vol-a", "c-a")
+	release, ok := s.acquireHelper("vol-a", "c-a")
 	require.True(t, ok)
 
-	require.Empty(t, s.collectStaleHelperIDsInternal(now, 10*time.Minute),
+	require.Empty(t, s.collectStaleHelperIDs(now, 10*time.Minute),
 		"an in-use helper must survive the reaper regardless of lastUsedAt")
 	require.Contains(t, s.helperByVolume, "vol-a")
 
 	release()
-	require.Empty(t, s.collectStaleHelperIDsInternal(now, 10*time.Minute),
+	require.Empty(t, s.collectStaleHelperIDs(now, 10*time.Minute),
 		"release refreshes the idle clock, so the helper is fresh again")
-	stale := s.collectStaleHelperIDsInternal(now.Add(11*time.Minute), 10*time.Minute)
+	stale := s.collectStaleHelperIDs(now.Add(11*time.Minute), 10*time.Minute)
 	require.Equal(t, []string{"c-a"}, stale)
 
 	// Acquiring a helper that was reaped (or replaced) since resolve must fail
 	// so the caller re-resolves instead of using a dead container.
-	_, ok = s.acquireHelperInternal("vol-a", "c-a")
+	_, ok = s.acquireHelper("vol-a", "c-a")
 	require.False(t, ok)
 }
 
-func TestTakeHelperIDInternal(t *testing.T) {
+func TestTakeHelperID(t *testing.T) {
 	s := &VolumeService{
 		helperByVolume: map[string]*volumeHelper{
 			"vol-a": {id: "c-a", lastUsedAt: time.Now()},
@@ -251,15 +251,15 @@ func TestTakeHelperIDInternal(t *testing.T) {
 	}
 
 	// Present: returns id and removes the entry.
-	require.Equal(t, "c-a", s.takeHelperIDInternal("vol-a"))
+	require.Equal(t, "c-a", s.takeHelperID("vol-a"))
 	require.NotContains(t, s.helperByVolume, "vol-a")
 
 	// Absent (idempotent): returns "" without panicking.
-	require.Empty(t, s.takeHelperIDInternal("vol-a"))
-	require.Empty(t, s.takeHelperIDInternal("never-existed"))
+	require.Empty(t, s.takeHelperID("vol-a"))
+	require.Empty(t, s.takeHelperID("never-existed"))
 }
 
-func TestTouchHelperInternal(t *testing.T) {
+func TestTouchHelper(t *testing.T) {
 	old := time.Now().Add(-30 * time.Minute)
 	s := &VolumeService{
 		helperByVolume: map[string]*volumeHelper{
@@ -267,11 +267,11 @@ func TestTouchHelperInternal(t *testing.T) {
 		},
 	}
 
-	s.touchHelperInternal("vol-a")
+	s.touchHelper("vol-a")
 	require.True(t, s.helperByVolume["vol-a"].lastUsedAt.After(old),
 		"touch should reset the idle clock forward")
 
 	// Missing volume is a no-op (must not panic or create an entry).
-	s.touchHelperInternal("missing")
+	s.touchHelper("missing")
 	require.NotContains(t, s.helperByVolume, "missing")
 }

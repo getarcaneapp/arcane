@@ -15,7 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
 )
 
-const admissionTypeInternal = "resource-admission"
+const admissionType = "resource-admission"
 
 type Admission struct {
 	service *actor.Service
@@ -29,7 +29,7 @@ type Lease struct {
 	token     string
 	once      sync.Once
 }
-type admissionActorInternal struct {
+type admissionActor struct {
 	id      string
 	service *actor.Service
 }
@@ -39,8 +39,8 @@ func NewAdmission(service *actor.Service, epoch string) *Admission {
 }
 
 func (a *Admission) Register(runtime *francis.Runtime) error {
-	return runtime.RegisterActor(admissionTypeInternal, func(id string, service *actor.Service) actor.Actor {
-		return &admissionActorInternal{id: id, service: service}
+	return runtime.RegisterActor(admissionType, func(id string, service *actor.Service) actor.Actor {
+		return &admissionActor{id: id, service: service}
 	})
 }
 
@@ -50,20 +50,20 @@ func (a *Admission) TryAcquire(ctx context.Context, key st.AdmissionKey) (*Lease
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}
-	if err := a.retryReleasesInternal(ctx, id); err != nil {
+	if err := a.retryReleases(ctx, id); err != nil {
 		return nil, false, err
 	}
 	// Finish admission after submission so cancellation cannot orphan a lease.
 	invokeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
-	envelope, err := a.service.Invoke(invokeCtx, admissionTypeInternal, id, "acquire", st.AdmissionCommand{Epoch: a.epoch, Token: token})
+	envelope, err := a.service.Invoke(invokeCtx, admissionType, id, "acquire", st.AdmissionCommand{Epoch: a.epoch, Token: token})
 	if err != nil {
-		a.releaseInternal(ctx, id, st.AdmissionCommand{Epoch: a.epoch, Token: token})
+		a.release(ctx, id, st.AdmissionCommand{Epoch: a.epoch, Token: token})
 		return nil, false, err
 	}
 	var acquired bool
 	if decodeErr := envelope.Decode(&acquired); decodeErr != nil {
-		a.releaseInternal(ctx, id, st.AdmissionCommand{Epoch: a.epoch, Token: token})
+		a.release(ctx, id, st.AdmissionCommand{Epoch: a.epoch, Token: token})
 		return nil, false, decodeErr
 	}
 	if !acquired {
@@ -77,11 +77,11 @@ func (l *Lease) Release(ctx context.Context) {
 		return
 	}
 	l.once.Do(func() {
-		l.admission.releaseInternal(ctx, l.id, st.AdmissionCommand{Epoch: l.admission.epoch, Token: l.token})
+		l.admission.release(ctx, l.id, st.AdmissionCommand{Epoch: l.admission.epoch, Token: l.token})
 	})
 }
 
-func (a *Admission) releaseInternal(ctx context.Context, id string, command st.AdmissionCommand) {
+func (a *Admission) release(ctx context.Context, id string, command st.AdmissionCommand) {
 	a.mu.Lock()
 	if a.pending[id] == nil {
 		a.pending[id] = make(map[string]st.AdmissionCommand)
@@ -90,12 +90,12 @@ func (a *Admission) releaseInternal(ctx context.Context, id string, command st.A
 	a.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	if err := a.retryReleasesInternal(ctx, id); err != nil {
+	if err := a.retryReleases(ctx, id); err != nil {
 		slog.ErrorContext(ctx, "Resource admission release failed; will retry before further admission", "resource", id, "error", err)
 	}
 }
 
-func (a *Admission) retryReleasesInternal(ctx context.Context, id string) error {
+func (a *Admission) retryReleases(ctx context.Context, id string) error {
 	a.mu.Lock()
 	pending := make([]st.AdmissionCommand, 0, len(a.pending[id]))
 	for _, command := range a.pending[id] {
@@ -103,7 +103,7 @@ func (a *Admission) retryReleasesInternal(ctx context.Context, id string) error 
 	}
 	a.mu.Unlock()
 	for _, command := range pending {
-		if _, err := a.service.Invoke(ctx, admissionTypeInternal, id, "release", command); err != nil {
+		if _, err := a.service.Invoke(ctx, admissionType, id, "release", command); err != nil {
 			return err
 		}
 		a.mu.Lock()
@@ -116,9 +116,9 @@ func (a *Admission) retryReleasesInternal(ctx context.Context, id string) error 
 	return nil
 }
 
-func (a *admissionActorInternal) Invoke(ctx context.Context, method string, data actor.Envelope) (any, error) {
+func (a *admissionActor) Invoke(ctx context.Context, method string, data actor.Envelope) (any, error) {
 	var state st.AdmissionState
-	err := a.service.GetState(ctx, admissionTypeInternal, a.id, &state)
+	err := a.service.GetState(ctx, admissionType, a.id, &state)
 	if err != nil && !errors.Is(err, actor.ErrStateNotFound) {
 		return nil, err
 	}
@@ -140,7 +140,7 @@ func (a *admissionActorInternal) Invoke(ctx context.Context, method string, data
 	default:
 		return nil, errors.New("unknown resource admission command")
 	}
-	if setStateErr := a.service.SetState(ctx, admissionTypeInternal, a.id, state, nil); setStateErr != nil {
+	if setStateErr := a.service.SetState(ctx, admissionType, a.id, state, nil); setStateErr != nil {
 		return nil, setStateErr
 	}
 	return true, nil

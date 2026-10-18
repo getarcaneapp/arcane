@@ -38,7 +38,7 @@ services:
       - no-new-privileges:true
 
   arcane:
-    image: ghcr.io/getarcaneapp/arcane:latest
+    image: getarcaneapp/arcane:latest
     container_name: arcane
     ports:
       - '3552:3552'
@@ -65,6 +65,7 @@ services:
     # This allows Arcane to detect its own container ID more reliably
     cgroup: host
     restart: unless-stopped
+    stop_grace_period: 15s
 
 networks:
   arcane-internal:

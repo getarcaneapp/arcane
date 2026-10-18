@@ -10,7 +10,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system/children/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system/children/prune"
@@ -22,7 +21,6 @@ import (
 // Module wires the system domain and mounts its routes.
 type Module struct {
 	service         *SystemService
-	dockerService   *docker.DockerClientService
 	activityService *activity.ActivityService
 	cfg             *config.Config
 }
@@ -30,11 +28,10 @@ type Module struct {
 // New wires system routes around an existing service.
 func New(
 	service *SystemService,
-	dockerService *docker.DockerClientService,
 	activityService *activity.ActivityService,
 	cfg *config.Config,
 ) *Module {
-	return &Module{service: service, dockerService: dockerService, activityService: activityService, cfg: cfg}
+	return &Module{service: service, activityService: activityService, cfg: cfg}
 }
 
 // Service exposes the system service to collaborators.
@@ -53,7 +50,7 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 	}
 	service := cmp.Or(m.service, &SystemService{})
 
-	RegisterSystem(api, NewHandler(m.dockerService, m.service, appCtx.Context()))
+	RegisterSystem(api, NewHandler(m.service, appCtx.Context()))
 	prune.RegisterRoutes(api, prune.NewHandler(service.prune, appCtx.Context()))
 	upgrade.RegisterRoutes(api, upgrade.NewHandler(service.upgrade, m.cfg, appCtx.Context()))
 	backup.RegisterRoutes(api, backup.NewHandler(service.backup, m.activityService, appCtx.Context()))

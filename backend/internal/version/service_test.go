@@ -35,7 +35,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 )
 
-func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBuildInternal(t *testing.T) {
+func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBuild(t *testing.T) {
 	ctx := t.Context()
 	db := setupImageUpdateTestDB(t)
 
@@ -117,7 +117,7 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 			Request:    req,
 		}, nil
 	})}
-	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClientInternal(t, server))
+	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	svc := NewVersionService(httpClient, false, "1.2.3", "revision", nil, dockerService, imageUpdateService, nil)
 
@@ -140,7 +140,7 @@ func TestVersionService_GetAppVersionInfoDisplaysSemverNextVersion(t *testing.T)
 	assert.True(t, info.IsSemverVersion)
 }
 
-func TestVersionService_GetAppVersionInfoPreservesDevVersionInternal(t *testing.T) {
+func TestVersionService_GetAppVersionInfoPreservesDevVersion(t *testing.T) {
 	svc := NewVersionService(nil, true, "dev", "unknown", nil, nil, nil, nil)
 
 	info := svc.GetAppVersionInfo(t.Context())
@@ -169,8 +169,8 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
-// newTestDockerClientInternal builds a Docker client pointed at a fake Docker HTTP server.
-func newTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.Client {
+// newTestDockerClient builds a Docker client pointed at a fake Docker HTTP server.
+func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	t.Helper()
 
 	httpClient := server.Client()
@@ -188,7 +188,7 @@ func newTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.
 	return cli
 }
 
-func TestVersionService_IsNextBuildInternal(t *testing.T) {
+func TestVersionService_IsNextBuild(t *testing.T) {
 	tests := []struct {
 		name       string
 		version    string
@@ -203,14 +203,14 @@ func TestVersionService_IsNextBuildInternal(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := NewVersionService(nil, true, tt.version, "rev", nil, nil, nil, nil)
-			assert.Equal(t, tt.want, svc.isNextBuildInternal(tt.currentTag))
+			assert.Equal(t, tt.want, svc.isNextBuild(tt.currentTag))
 		})
 	}
 }
 
-// newLabelRegistryTestServerInternal starts an in-memory OCI registry and
+// newLabelRegistryTestServer starts an in-memory OCI registry and
 // returns its host as "localhost:PORT" so go-containerregistry uses plain HTTP.
-func newLabelRegistryTestServerInternal(t *testing.T) string {
+func newLabelRegistryTestServer(t *testing.T) string {
 	t.Helper()
 	server := httptest.NewServer(ggcrregistry.New(ggcrregistry.Logger(log.New(io.Discard, "", 0))))
 	t.Cleanup(server.Close)
@@ -219,9 +219,9 @@ func newLabelRegistryTestServerInternal(t *testing.T) string {
 	return "localhost:" + serverURL.Port()
 }
 
-// newNextChannelDockerServerInternal fakes a Docker daemon whose Arcane
+// newNextChannelDockerServer fakes a Docker daemon whose Arcane
 // container runs repo:tag with the given current repo digest.
-func newNextChannelDockerServerInternal(t *testing.T, containerID, imageID, repo, tag, currentDigest string) *httptest.Server {
+func newNextChannelDockerServer(t *testing.T, containerID, imageID, repo, tag, currentDigest string) *httptest.Server {
 	t.Helper()
 	imageRef := repo + ":" + tag
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -256,7 +256,7 @@ func newNextChannelDockerServerInternal(t *testing.T, containerID, imageID, repo
 	return server
 }
 
-func TestVersionService_GetAppVersionInfoNextChannelUsesImageLabelInternal(t *testing.T) {
+func TestVersionService_GetAppVersionInfoNextChannelUsesImageLabel(t *testing.T) {
 	ctx := t.Context()
 	db := setupImageUpdateTestDB(t)
 
@@ -264,7 +264,7 @@ func TestVersionService_GetAppVersionInfoNextChannelUsesImageLabelInternal(t *te
 		containerID = "arcane-container-1234567890"
 		imageID     = "sha256:arcane-image"
 	)
-	registryHost := newLabelRegistryTestServerInternal(t)
+	registryHost := newLabelRegistryTestServer(t)
 	repo := registryHost + "/getarcaneapp/arcane"
 
 	img, err := random.Image(64, 1)
@@ -282,7 +282,7 @@ func TestVersionService_GetAppVersionInfoNextChannelUsesImageLabelInternal(t *te
 	require.NoError(t, err)
 
 	currentDigest := digest.FromString("current-arcane").String()
-	server := newNextChannelDockerServerInternal(t, containerID, imageID, repo, "next", currentDigest)
+	server := newNextChannelDockerServer(t, containerID, imageID, repo, "next", currentDigest)
 
 	require.NoError(t, db.WithContext(ctx).Create(&imageupdate.ImageUpdateRecord{
 		ID:             imageID,
@@ -306,7 +306,7 @@ func TestVersionService_GetAppVersionInfoNextChannelUsesImageLabelInternal(t *te
 			Request:    req,
 		}, nil
 	})}
-	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClientInternal(t, server))
+	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	registrySvc := registry.NewContainerRegistryService(nil, nil, nil, nil)
 	svc := NewVersionService(httpClient, false, "2.8.0-next.65", "revision", registrySvc, dockerService, imageUpdateService, nil)
@@ -322,7 +322,7 @@ func TestVersionService_GetAppVersionInfoNextChannelUsesImageLabelInternal(t *te
 	assert.False(t, githubHit, "next channel must not consult the GitHub stable release feed")
 }
 
-func TestVersionService_GetAppVersionInfoNextChannelLabelFailureFallsBackToDigestInternal(t *testing.T) {
+func TestVersionService_GetAppVersionInfoNextChannelLabelFailureFallsBackToDigest(t *testing.T) {
 	ctx := t.Context()
 	db := setupImageUpdateTestDB(t)
 
@@ -331,12 +331,12 @@ func TestVersionService_GetAppVersionInfoNextChannelLabelFailureFallsBackToDiges
 		imageID     = "sha256:arcane-image"
 	)
 	// Registry with no image pushed: the label fetch fails.
-	registryHost := newLabelRegistryTestServerInternal(t)
+	registryHost := newLabelRegistryTestServer(t)
 	repo := registryHost + "/getarcaneapp/arcane"
 
 	currentDigest := digest.FromString("current-arcane").String()
 	latestDigest := digest.FromString("latest-arcane").String()
-	server := newNextChannelDockerServerInternal(t, containerID, imageID, repo, "next", currentDigest)
+	server := newNextChannelDockerServer(t, containerID, imageID, repo, "next", currentDigest)
 
 	require.NoError(t, db.WithContext(ctx).Create(&imageupdate.ImageUpdateRecord{
 		ID:             imageID,
@@ -350,7 +350,7 @@ func TestVersionService_GetAppVersionInfoNextChannelLabelFailureFallsBackToDiges
 		CheckTime:      time.Now().UTC(),
 	}).Error)
 
-	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClientInternal(t, server))
+	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	registrySvc := registry.NewContainerRegistryService(nil, nil, nil, nil)
 	svc := NewVersionService(nil, false, "2.8.0-next.65", "revision", registrySvc, dockerService, imageUpdateService, nil)
@@ -363,7 +363,7 @@ func TestVersionService_GetAppVersionInfoNextChannelLabelFailureFallsBackToDiges
 	assert.Equal(t, latestDigest, info.NewestDigest)
 }
 
-func TestVersionService_GetAppVersionInfoSuppressesOlderStableForPrereleaseInternal(t *testing.T) {
+func TestVersionService_GetAppVersionInfoSuppressesOlderStableForPrerelease(t *testing.T) {
 	httpClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,

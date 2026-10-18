@@ -47,6 +47,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -225,11 +226,6 @@ func (s *ImageService) PatchWorkflow() *flow.Workflow { return s.patchWorkflow }
 // and ImageList concurrently so the size field reflects the same metric shown in the
 // image table (docker image ls / docker system df).
 func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetypes.DetailSummary, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
 	var (
 		inspect    image.InspectResponse
 		listSize   int64
@@ -241,8 +237,9 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 	g.Go(func() (workerErr error) {
 		defer utils.RecoverToError(&workerErr, "image worker")
 
-		var inspectImageErr error
-		inspectResult, inspectImageErr := dockerClient.ImageInspect(gctx, id)
+		inspectResult, inspectImageErr := s.dockerService.Call(gctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+			return dockerClient.ImageInspect(ctx, id)
+		})
 		if inspectImageErr != nil {
 			return fmt.Errorf("inspect not found: %w", inspectImageErr)
 		}
@@ -294,13 +291,9 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 }
 
 func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, user usertypes.Actor) error {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", id, "", user.ID, user.Username, "0", err, database.JSON{"action": "delete", "force": force})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	imageDetails, inspectErr := dockerClient.ImageInspect(ctx, id)
+	imageDetails, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		return dockerClient.ImageInspect(ctx, id)
+	})
 	imageName := func() string {
 		if inspectErr == nil && len(imageDetails.RepoTags) > 0 {
 			return imageDetails.RepoTags[0]
@@ -321,21 +314,18 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 			tagReleases = append(tagReleases, s.eventService.BeginDockerResourceSuppressionWindow("image", "", tag))
 		}
 	}
-	removed, err := dockerClient.ImageRemove(ctx, id, client.ImageRemoveOptions{
-		Force:         force,
-		PruneChildren: true,
+	removed, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageRemoveResult, error) {
+		return dockerClient.ImageRemove(ctx, id, client.ImageRemoveOptions{
+			Force:         force,
+			PruneChildren: true,
+		})
 	})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", id, imageName, user.ID, user.Username, "0", err, database.JSON{"action": "delete", "force": force})
 		return fmt.Errorf("failed to remove image: %w", err)
 	}
 
-	s.cleanupImageUpdateRecords(ctx, append(getDeletedImageIDs(removed.Items), id))
-
-	// Clean up vulnerability scan records for the deleted image
-	if deleteScanResultErr := s.vulnerabilityService.DeleteScanResult(ctx, id); deleteScanResultErr != nil {
-		slog.WarnContext(ctx, "failed to delete vulnerability scan record", "id", id, "error", deleteScanResultErr)
-	}
+	s.cleanupRemovedImages(ctx, removed.Items, id)
 
 	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageDelete, id, imageName, user.ID, user.Username, "0", database.JSON{
 		"action":  "delete",
@@ -346,6 +336,26 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 	}
 
 	return nil
+}
+
+// cleanupRemovedImages drops update and vulnerability records for images Docker deleted or untagged.
+func (s *ImageService) cleanupRemovedImages(ctx context.Context, deleted []image.DeleteResponse, extraIDs ...string) {
+	idsToDelete := make([]string, 0, len(deleted)+len(extraIDs))
+	for _, img := range deleted {
+		if deletedID := cmp.Or(img.Deleted, img.Untagged); deletedID != "" {
+			idsToDelete = append(idsToDelete, deletedID)
+		}
+	}
+	idsToDelete = append(idsToDelete, extraIDs...)
+	if recordsErr := s.imageUpdateService.DeleteRecordsForImages(ctx, idsToDelete); recordsErr != nil {
+		slog.WarnContext(ctx, "failed to clean up image update records", "error", recordsErr)
+	}
+	if orphanErr := s.imageUpdateService.CleanupOrphanedRecords(ctx); orphanErr != nil {
+		slog.WarnContext(ctx, "failed to clean up orphaned image update records", "error", orphanErr)
+	}
+	if deleteErr := s.vulnerabilityService.DeleteScanResultsByImageIDs(ctx, idsToDelete); deleteErr != nil {
+		slog.WarnContext(ctx, "failed to delete vulnerability scan records", "count", len(idsToDelete), "error", deleteErr)
+	}
 }
 
 func (s *ImageService) PullImage(ctx context.Context, imageName string, progressWriter io.Writer, user usertypes.Actor, externalCreds []containerregistry.Credential) error {
@@ -428,24 +438,69 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 // engine doesn't report it. Pull-policy refresh windows compare against this
 // timestamp, the same clock compose v5.5.0 uses.
 func (s *ImageService) ImageLastTagTime(ctx context.Context, imageName string) (time.Time, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	inspect, err := dockerClient.ImageInspect(ctx, imageName)
+	inspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		return dockerClient.ImageInspect(ctx, imageName)
+	})
 	if err != nil {
 		return time.Time{}, fmt.Errorf("failed to inspect image %s: %w", imageName, err)
 	}
 	return inspect.Metadata.LastTagTime, nil
 }
 
-func (s *ImageService) ReconcilePulledImageUpdate(ctx context.Context, imageName string) error {
-	if s.imageUpdateService == nil {
-		return nil
+// PullRequest describes one pull through Pull.
+type PullRequest struct {
+	// Ref is the reference pulled from the registry.
+	Ref string
+	// Tag, when set, is the reference Ref is tagged as after the pull; it is the one reconciled.
+	Tag         string
+	Progress    io.Writer
+	User        usertypes.Actor
+	Credentials []containerregistry.Credential
+}
+
+// Pull pulls req.Ref within the dockerImagePullTimeout setting and reconciles the pulled reference's update state.
+func (s *ImageService) Pull(ctx context.Context, req PullRequest) error {
+	pullCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull))
+	defer cancel()
+
+	pull := func(ctx context.Context) error {
+		return s.PullImage(ctx, req.Ref, req.Progress, req.User, req.Credentials)
+	}
+	pullErr := func() error {
+		if req.Tag == "" || req.Tag == req.Ref {
+			return pull(pullCtx)
+		}
+		// A digest pull is tagged back to the reference the caller selected.
+		dockerClient, clientErr := s.dockerService.GetClient(pullCtx)
+		if clientErr != nil {
+			return clientErr
+		}
+		return imageref.PullAsTag(pullCtx, dockerClient, req.Ref, req.Tag, pull)
+	}()
+	if pullErr != nil {
+		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting): %w", req.Ref, context.DeadlineExceeded)
+		}
+		return fmt.Errorf("failed to pull image %s: %w", req.Ref, pullErr)
 	}
 
-	return s.imageUpdateService.MarkImageRefUpToDateAfterPull(ctx, imageName)
+	// Reconcile on the caller's context so a late pull still clears its update records (#4306).
+	if reconcileErr := s.imageUpdateService.MarkImageRefUpToDateAfterPull(ctx, cmp.Or(req.Tag, req.Ref)); reconcileErr != nil {
+		slog.WarnContext(ctx, "failed to reconcile pulled image update state", "image", cmp.Or(req.Tag, req.Ref), "error", reconcileErr)
+	}
+	return nil
+}
+
+// RemoteDigest resolves imageRef's registry digest within the registry timeout setting.
+func (s *ImageService) RemoteDigest(ctx context.Context, imageRef string, credentials []containerregistry.Credential) (string, error) {
+	digestCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(s.settingsService.GetSettingsConfig().RegistryTimeout.AsInt(), timeouts.DefaultRegistry))
+	defer cancel()
+
+	result, err := s.registryService.InspectImageDigest(digestCtx, imageRef, credentials)
+	if err != nil {
+		return "", err
+	}
+	return kit.FromPtr(result).Digest, nil
 }
 
 // TagImage adds a repository tag to an existing image.
@@ -462,14 +517,10 @@ func (s *ImageService) TagImage(ctx context.Context, source string, req imagetyp
 
 	target := kit.Ternary(tag != "", repository+":"+tag, repository)
 
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", source, user.ID, user.Username, "0", err, database.JSON{"action": "tag", "target": target})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
 	defer s.eventService.BeginDockerResourceSuppressionWindow("image", "", target)()
-	_, err = dockerClient.ImageTag(ctx, client.ImageTagOptions{Source: source, Target: target})
+	_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageTagResult, error) {
+		return dockerClient.ImageTag(ctx, client.ImageTagOptions{Source: source, Target: target})
+	})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", source, user.ID, user.Username, "0", err, database.JSON{"action": "tag", "target": target})
 		return fmt.Errorf("failed to tag image: %w", err)
@@ -495,12 +546,9 @@ func (s *ImageService) GetImageHistory(ctx context.Context, imageName string) ([
 		return nil, errors.New("image name is required")
 	}
 
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	result, err := dockerClient.ImageHistory(ctx, imageName)
+	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageHistoryResult, error) {
+		return dockerClient.ImageHistory(ctx, imageName)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get image history: %w", err)
 	}
@@ -526,12 +574,9 @@ func (s *ImageService) SearchImages(ctx context.Context, term string) ([]imagety
 		return nil, errors.New("search term is required")
 	}
 
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	result, err := dockerClient.ImageSearch(ctx, term, client.ImageSearchOptions{})
+	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageSearchResult, error) {
+		return dockerClient.ImageSearch(ctx, term, client.ImageSearchOptions{})
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to search images: %w", err)
 	}
@@ -622,12 +667,9 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 }
 
 func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string) (bool, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return false, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	_, err = dockerClient.ImageInspect(ctx, imageName)
+	_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
+		return dockerClient.ImageInspect(ctx, imageName)
+	})
 	if err == nil {
 		return true, nil
 	}
@@ -684,11 +726,6 @@ func ShouldRetryAnonymousPull(pullOptions client.ImagePullOptions, pullErr error
 }
 
 func (s *ImageService) PruneImages(ctx context.Context, options system.PruneImagesOptions) (*image.PruneReport, error) {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
 	filterArgs, err := func() (client.Filters, error) {
 		switch options.Mode {
 		case system.PruneImageModeNone:
@@ -710,18 +747,16 @@ func (s *ImageService) PruneImages(ctx context.Context, options system.PruneImag
 		return nil, err
 	}
 
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prune images: %w", err)
+	}
 	report, err := dockerClient.ImagePrune(ctx, client.ImagePruneOptions{Filters: filterArgs})
 	if err != nil {
 		return nil, fmt.Errorf("failed to prune images: %w", err)
 	}
 
-	idsToDelete := getDeletedImageIDs(report.Report.ImagesDeleted)
-	s.cleanupImageUpdateRecords(ctx, idsToDelete)
-	if len(idsToDelete) > 0 {
-		if deleteErr := s.vulnerabilityService.DeleteScanResultsByImageIDs(ctx, idsToDelete); deleteErr != nil {
-			slog.WarnContext(ctx, "failed to delete vulnerability scan records after prune", "count", len(idsToDelete), "error", deleteErr)
-		}
-	}
+	s.cleanupRemovedImages(ctx, report.Report.ImagesDeleted)
 
 	if logErr := s.eventService.LogImageEvent(ctx, event.EventTypeImageDelete, "", "bulk_prune", usertypes.SystemUser.ID, usertypes.SystemUser.Username, "0", database.JSON{
 		"action":         "prune",
@@ -734,33 +769,6 @@ func (s *ImageService) PruneImages(ctx context.Context, options system.PruneImag
 	}
 
 	return &report.Report, nil
-}
-
-func getDeletedImageIDs(deletedImages []image.DeleteResponse) []string {
-	if len(deletedImages) == 0 {
-		return nil
-	}
-
-	idsToDelete := make([]string, 0, len(deletedImages))
-	for _, img := range deletedImages {
-		if img.Deleted != "" {
-			idsToDelete = append(idsToDelete, img.Deleted)
-			continue
-		}
-		if img.Untagged != "" {
-			idsToDelete = append(idsToDelete, img.Untagged)
-		}
-	}
-	return idsToDelete
-}
-
-func (s *ImageService) cleanupImageUpdateRecords(ctx context.Context, idsToDelete []string) {
-	if err := s.imageUpdateService.DeleteRecordsForImages(ctx, idsToDelete); err != nil {
-		slog.WarnContext(ctx, "failed to clean up image update records", "error", err)
-	}
-	if err := s.imageUpdateService.CleanupOrphanedRecords(ctx); err != nil {
-		slog.WarnContext(ctx, "failed to clean up orphaned image update records", "error", err)
-	}
 }
 
 // GetUpdateInfoByImageIDs returns a map of image ID to UpdateInfo for the given image IDs.
@@ -813,16 +821,7 @@ func (s *ImageService) GetUpdateInfoByContainers(ctx context.Context, containers
 	}
 
 	if len(digestImageIDs) > 0 {
-		imageIDs := make([]string, 0, len(digestImageIDs))
-		seen := make(map[string]struct{}, len(digestImageIDs))
-		for _, imageID := range digestImageIDs {
-			if _, exists := seen[imageID]; exists {
-				continue
-			}
-			seen[imageID] = struct{}{}
-			imageIDs = append(imageIDs, imageID)
-		}
-		byImageID, err := s.GetUpdateInfoByImageIDs(ctx, imageIDs)
+		byImageID, err := s.GetUpdateInfoByImageIDs(ctx, kit.Unique(slices.Collect(maps.Values(digestImageIDs))))
 		if err != nil {
 			return nil, err
 		}
@@ -879,23 +878,12 @@ func (s *ImageService) GetUpdateInfoByImageRefs(ctx context.Context, imageRefs [
 	}
 
 	repositoryCandidates := make([]string, 0)
-	repositorySeen := make(map[string]struct{})
 	tags := make([]string, 0, len(lookups))
-	tagSeen := make(map[string]struct{})
-
 	for _, lookup := range lookups {
-		if _, exists := tagSeen[lookup.tag]; !exists {
-			tagSeen[lookup.tag] = struct{}{}
-			tags = append(tags, lookup.tag)
-		}
-		for repo := range lookup.repositoryCandidates {
-			if _, exists := repositorySeen[repo]; exists {
-				continue
-			}
-			repositorySeen[repo] = struct{}{}
-			repositoryCandidates = append(repositoryCandidates, repo)
-		}
+		tags = append(tags, lookup.tag)
+		repositoryCandidates = slices.AppendSeq(repositoryCandidates, maps.Keys(lookup.repositoryCandidates))
 	}
+	repositoryCandidates, tags = kit.Unique(repositoryCandidates), kit.Unique(tags)
 
 	if len(repositoryCandidates) == 0 || len(tags) == 0 {
 		return result, nil
@@ -913,7 +901,10 @@ func (s *ImageService) GetUpdateInfoByImageRefs(ctx context.Context, imageRefs [
 	// earliest position, matching the order the records were fetched in.
 	index := make(map[imageUpdateRecordKey]int, len(updateRecords))
 	for i := range updateRecords {
-		key := newImageUpdateRecordKey(updateRecords[i].Repository, updateRecords[i].Tag)
+		key := imageUpdateRecordKey{
+			repository: strings.TrimSpace(updateRecords[i].Repository),
+			tag:        strings.ToLower(strings.TrimSpace(updateRecords[i].Tag)),
+		}
 		if existing, ok := index[key]; !ok || updateRecords[i].CheckTime.After(updateRecords[existing].CheckTime) {
 			index[key] = i
 		}
@@ -922,7 +913,7 @@ func (s *ImageService) GetUpdateInfoByImageRefs(ctx context.Context, imageRefs [
 		// Pick the latest record across the lookup's repository aliases; equal check times fall back to fetch order.
 		latest := -1
 		for repository := range lookup.repositoryCandidates {
-			i, ok := index[newImageUpdateRecordKey(repository, lookup.tag)]
+			i, ok := index[imageUpdateRecordKey{repository: strings.TrimSpace(repository), tag: strings.ToLower(strings.TrimSpace(lookup.tag))}]
 			if !ok {
 				continue
 			}
@@ -1064,10 +1055,6 @@ func (s *ImageService) AggregateImageCounts(ctx context.Context) (base.ApiRespon
 		},
 		FailedEnvironments: collection.Failures,
 	}, nil
-}
-
-func newImageUpdateRecordKey(repository, tag string) imageUpdateRecordKey {
-	return imageUpdateRecordKey{repository: strings.TrimSpace(repository), tag: strings.ToLower(strings.TrimSpace(tag))}
 }
 
 // BuildProjectIDMap returns a map of compose project name → project ID for any
@@ -1248,10 +1235,8 @@ func MapDockerImagesToDTOs(
 				}
 				return di.RepoTags[0], "latest"
 			}
-			for _, rd := range di.RepoDigests {
-				if candidateRepo, _, found := strings.CutLast(rd, "@"); rd != "<none>@<none>" && found && candidateRepo != "" {
-					return candidateRepo, "<none>"
-				}
+			if candidateRepo, found := imageref.RepoDigestRepository(di.RepoDigests); found {
+				return candidateRepo, "<none>"
 			}
 			return "<none>", "<none>"
 		}()

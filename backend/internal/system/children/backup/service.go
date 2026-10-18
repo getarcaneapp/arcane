@@ -1041,7 +1041,9 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string, use
 	if err != nil {
 		return errors.New("arcane system restore requires Arcane to run in Docker")
 	}
-	inspectResult, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	inspectResult, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, cli, containerID, client.ContainerInspectOptions{})
+	})
 	if err != nil {
 		return fmt.Errorf("inspect Arcane container: %w", err)
 	}
@@ -1153,28 +1155,34 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string, use
 			ClusterOptions: executableMount.ClusterOptions,
 		})
 	}
-	created, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config: &container.Config{
-			Image:  current.Config.Image,
-			Cmd:    []string{kit.Ternary(executableMount != nil, systemRecoveryHelperPath, executablePath), "recovery-restore", "--request", requestFile},
-			User:   "0:0",
-			Env:    containerEnv,
-			Labels: map[string]string{"com.getarcaneapp.arcane.recovery": "true", "com.getarcaneapp.arcane": "true"},
-		},
-		HostConfig: &container.HostConfig{
-			AutoRemove:  true,
-			Mounts:      mounts,
-			NetworkMode: networkMode,
-			SecurityOpt: slices.Clone(kit.FromPtr(current.HostConfig).SecurityOpt),
-			Privileged:  kit.FromPtr(current.HostConfig).Privileged,
-		},
-		Name: fmt.Sprintf("%s-recovery-%d", strings.TrimPrefix(current.Name, "/"), time.Now().Unix()),
+	created, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerCreateResult, error) {
+		return cli.ContainerCreate(ctx, client.ContainerCreateOptions{
+			Config: &container.Config{
+				Image:  current.Config.Image,
+				Cmd:    []string{kit.Ternary(executableMount != nil, systemRecoveryHelperPath, executablePath), "recovery-restore", "--request", requestFile},
+				User:   "0:0",
+				Env:    containerEnv,
+				Labels: map[string]string{"com.getarcaneapp.arcane.recovery": "true", "com.getarcaneapp.arcane": "true"},
+			},
+			HostConfig: &container.HostConfig{
+				AutoRemove:  true,
+				Mounts:      mounts,
+				NetworkMode: networkMode,
+				SecurityOpt: slices.Clone(kit.FromPtr(current.HostConfig).SecurityOpt),
+				Privileged:  kit.FromPtr(current.HostConfig).Privileged,
+			},
+			Name: fmt.Sprintf("%s-recovery-%d", strings.TrimPrefix(current.Name, "/"), time.Now().Unix()),
+		})
 	})
 	if err != nil {
 		return fmt.Errorf("create recovery helper container: %w", err)
 	}
-	if _, containerStartErr := dockerClient.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); containerStartErr != nil {
-		_, _ = dockerClient.ContainerRemove(ctx, created.ID, client.ContainerRemoveOptions{Force: true})
+	if _, containerStartErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerStartResult, error) {
+		return cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{})
+	}); containerStartErr != nil {
+		_, _ = s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerRemoveResult, error) {
+			return cli.ContainerRemove(ctx, created.ID, client.ContainerRemoveOptions{Force: true})
+		})
 		return fmt.Errorf("start recovery helper container: %w", containerStartErr)
 	}
 	cleanupRequest = false

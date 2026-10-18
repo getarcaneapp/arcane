@@ -33,20 +33,6 @@ type wsLogStream struct {
 	seq             atomic.Uint64
 }
 
-func buildLogStreamKey(envID, kind, resourceID, format string, batched, follow bool, tail, since string, timestamps bool) string {
-	return strings.Join([]string{
-		envID,
-		kind,
-		resourceID,
-		format,
-		strconv.FormatBool(batched),
-		strconv.FormatBool(follow),
-		tail,
-		since,
-		strconv.FormatBool(timestamps),
-	}, "|")
-}
-
 func (h *WebSocketHandler) getOrCreateLogStream(key string, create func(onEmpty func(*wsLogStream)) *wsLogStream) *wsLogStream {
 	h.logStreamsMu.Lock()
 	defer h.logStreamsMu.Unlock()
@@ -59,7 +45,7 @@ func (h *WebSocketHandler) getOrCreateLogStream(key string, create func(onEmpty 
 	}
 
 	stream := create(func(stream *wsLogStream) {
-		h.markLogStreamDone(key, stream)
+		h.releaseLogStream(key, stream, true)
 	})
 	stream.key = key
 	stream.refs = 1
@@ -67,42 +53,22 @@ func (h *WebSocketHandler) getOrCreateLogStream(key string, create func(onEmpty 
 	return stream
 }
 
-func takeLogStreamCancel(stream *wsLogStream) context.CancelFunc {
-	cancel := stream.cancel
-	stream.cancel = nil
-	return cancel
-}
-
-func (h *WebSocketHandler) releaseLogStream(key string, stream *wsLogStream) {
+// releaseLogStream drops a client reference, or marks the source finished when done is set,
+// and tears the stream down once no clients remain.
+func (h *WebSocketHandler) releaseLogStream(key string, stream *wsLogStream, done bool) {
 	var cancel context.CancelFunc
 
 	h.logStreamsMu.Lock()
-	if stream.refs > 0 {
-		stream.refs--
+	if done {
+		stream.done = true
+	} else {
+		stream.refs = max(stream.refs-1, 0)
 	}
 	if stream.refs == 0 {
 		if current, ok := h.logStreams[key]; ok && current == stream {
 			delete(h.logStreams, key)
 		}
-		cancel = takeLogStreamCancel(stream)
-	}
-	h.logStreamsMu.Unlock()
-
-	if cancel != nil {
-		cancel()
-	}
-}
-
-func (h *WebSocketHandler) markLogStreamDone(key string, stream *wsLogStream) {
-	var cancel context.CancelFunc
-
-	h.logStreamsMu.Lock()
-	stream.done = true
-	if stream.refs == 0 {
-		if current, ok := h.logStreams[key]; ok && current == stream {
-			delete(h.logStreams, key)
-		}
-		cancel = takeLogStreamCancel(stream)
+		cancel, stream.cancel = stream.cancel, nil
 	}
 	h.logStreamsMu.Unlock()
 
@@ -147,16 +113,26 @@ func (h *WebSocketHandler) serveLogStream(
 		return
 	}
 
-	streamKey := buildLogStreamKey(c.Param("id"), kind, resourceID, params.format, params.batched, params.follow, params.tail, params.since, params.timestamps)
+	streamKey := strings.Join([]string{
+		c.Param("id"),
+		kind,
+		resourceID,
+		params.format,
+		strconv.FormatBool(params.batched),
+		strconv.FormatBool(params.follow),
+		params.tail,
+		params.since,
+		strconv.FormatBool(params.timestamps),
+	}, "|")
 	stream := h.getOrCreateLogStream(streamKey, func(onEmpty func(*wsLogStream)) *wsLogStream {
 		return hubBuilder(streamKey, onEmpty)
 	})
 	release := func() {
 		unregister()
-		h.releaseLogStream(streamKey, stream)
+		h.releaseLogStream(streamKey, stream, false)
 	}
-	// The hub owns connection cleanup; preserve request values without request cancellation.
-	if !wshub.ServeClientWithOnRemove(context.WithoutCancel(c.Request().Context()), stream.hub, conn, release) {
+	// The hub owns connection cleanup, so it outlives the request and ends with the app.
+	if !wshub.ServeClientWithOnRemove(h.ctx, stream.hub, conn, release) {
 		// The stream refcount normally keeps this hub alive, so a stopped hub
 		// here means it was torn down out from under us; drop our reference
 		// rather than leaking the connection and the metrics entry.
@@ -226,41 +202,23 @@ func (h *WebSocketHandler) ProjectLogs(c *echo.Context) error {
 			"project",
 			params,
 			streamLogs,
-			normalizeProjectLogMessage,
-			normalizeProjectLogText,
+			func(line string) wshub.LogMessage {
+				level, service, message, timestamp := wshub.NormalizeProjectLine(line)
+				return wshub.LogMessage{
+					Level:     level,
+					Message:   message,
+					Service:   service,
+					Timestamp: timestamp,
+				}
+			},
+			func(line string) string {
+				_, _, message, _ := wshub.NormalizeProjectLine(line)
+				return message
+			},
 			onEmpty,
 		)
 	})
 	return nil
-}
-
-func newWSLogStream(key, format string) (*wsLogStream, context.Context) {
-	ls := &wsLogStream{
-		hub:             wshub.NewHub(1024),
-		firstSubscriber: make(chan struct{}),
-		format:          format,
-		key:             key,
-	}
-	ls.hub.SetOnFirstClient(func() {
-		close(ls.firstSubscriber)
-	})
-
-	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec,forbidigo // Shared log hubs own their lifecycle and idle cancellation across requests.
-	ls.cancel = cancel
-
-	go ls.hub.Run(ctx)
-
-	return ls, ctx
-}
-
-func normalizeProjectLogMessage(line string) wshub.LogMessage {
-	level, service, message, timestamp := wshub.NormalizeProjectLine(line)
-	return wshub.LogMessage{
-		Level:     level,
-		Message:   message,
-		Service:   service,
-		Timestamp: timestamp,
-	}
 }
 
 func normalizeContainerLogMessage(line string) wshub.LogMessage {
@@ -272,11 +230,6 @@ func normalizeContainerLogMessage(line string) wshub.LogMessage {
 	}
 }
 
-func normalizeProjectLogText(line string) string {
-	_, _, message, _ := wshub.NormalizeProjectLine(line)
-	return message
-}
-
 func (h *WebSocketHandler) startLogHub(
 	key, resourceID, label string,
 	params logStreamParams,
@@ -285,7 +238,18 @@ func (h *WebSocketHandler) startLogHub(
 	normalizeText func(string) string,
 	onEmptyHook func(*wsLogStream),
 ) *wsLogStream {
-	ls, ctx := newWSLogStream(key, params.format)
+	ctx, cancel := context.WithCancel(h.ctx) //nolint:gosec // Cancel is stored on the stream and runs on idle teardown.
+	ls := &wsLogStream{
+		hub:             wshub.NewHub(1024),
+		firstSubscriber: make(chan struct{}),
+		format:          params.format,
+		key:             key,
+		cancel:          cancel,
+	}
+	ls.hub.SetOnFirstClient(func() {
+		close(ls.firstSubscriber)
+	})
+	go ls.hub.Run(ctx)
 
 	ls.hub.SetOnEmpty(func() {
 		if onEmptyHook != nil {
@@ -322,13 +286,13 @@ func (h *WebSocketHandler) startLogSource(
 				return
 			}
 
-			h.markLogStreamDone(key, ls)
+			h.releaseLogStream(key, ls, true)
 			broadcastLogStreamError(ctx, label, resourceID, params.format, err, ls)
 			return
 		}
 
 		if ctx.Err() == nil {
-			h.markLogStreamDone(key, ls)
+			h.releaseLogStream(key, ls, true)
 		}
 	}()
 
@@ -346,11 +310,14 @@ func startLogForwarders(
 	if params.format == "json" {
 		messages := mapLogLines(ctx, lines, func(line string) wshub.LogMessage {
 			message := normalizeJSON(line)
-			message.Seq = ls.seq.Add(1)
-			if message.Timestamp == "" {
-				message.Timestamp = wshub.NowRFC3339()
+			return wshub.LogMessage{
+				Seq:         ls.seq.Add(1),
+				Level:       message.Level,
+				Message:     message.Message,
+				Timestamp:   cmp.Or(message.Timestamp, wshub.NowRFC3339()),
+				Service:     message.Service,
+				ContainerID: message.ContainerID,
 			}
-			return message
 		})
 
 		if params.batched {

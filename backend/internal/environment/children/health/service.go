@@ -34,11 +34,9 @@ func (s *Service) Probe(ctx context.Context, id, apiURL string, isEdge, customUR
 		reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 
-		dockerClient, err := s.dockerService.GetClient(ctx)
-		if err != nil {
-			return "offline", fmt.Errorf("failed to connect to Docker: %w", err)
-		}
-		if _, pingErr := dockerClient.Ping(reqCtx, client.PingOptions{}); pingErr != nil {
+		if _, pingErr := s.dockerService.Call(reqCtx, func(ctx context.Context, cli *client.Client) (client.PingResult, error) {
+			return cli.Ping(ctx, client.PingOptions{})
+		}); pingErr != nil {
 			return "offline", fmt.Errorf("docker ping failed: %w", pingErr)
 		}
 		return "online", nil

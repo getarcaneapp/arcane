@@ -20,7 +20,7 @@ import (
 const (
 	defaultDataDirectory    = "/app/data"
 	defaultBuildsDirectory  = "/builds"
-	defaultDatabaseURL      = "file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(2500)&_txlock=immediate"
+	defaultDatabaseURL      = "file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_txlock=immediate"
 	defaultDockerConfigDir  = "/app/data/.docker"
 	defaultDockerSocketPath = "/var/run/docker.sock"
 	defaultRuntimeUID       = 65532
@@ -66,8 +66,8 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConf
 		projectsDir = filepath.Clean(strings.TrimSpace(cfg.ProjectsDirectory))
 	}
 
-	inContainer := runningInContainerInternal(os.Getenv, os.Stat)
-	req, warning, err := loadRuntimeIdentityRequestInternal(cfg, inContainer)
+	inContainer := runningInContainer(os.Getenv, os.Stat)
+	req, warning, err := loadRuntimeIdentityRequest(cfg, inContainer)
 	if warning != "" {
 		slog.WarnContext(ctx, "Runtime identity warning", "warning", warning)
 	}
@@ -75,50 +75,37 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConf
 		return err
 	}
 	if !req.Enabled {
-		return ensureSQLiteFilesExistInternal(cfg.DatabaseURL)
+		return ensureSQLiteFilesExist(cfg.DatabaseURL)
 	}
 
-	runtimeUID := req.UID
-	runtimeGID := req.GID
-
-	// Avoid re-execing forever when the requested runtime identity is already active.
-	if os.Geteuid() == runtimeUID && os.Getegid() == runtimeGID {
-		if ensureRuntimeDockerConfigErr := ensureRuntimeDockerConfigInternal(cfg, os.Setenv, runtimeUID, runtimeGID, inContainer); ensureRuntimeDockerConfigErr != nil {
-			return ensureRuntimeDockerConfigErr
-		}
-		return ensureSQLiteFilesExistInternal(cfg.DatabaseURL)
+	if configErr := ensureRuntimeDockerConfig(cfg, os.Setenv, req.UID, req.GID, inContainer); configErr != nil {
+		return configErr
 	}
 
-	if os.Geteuid() != 0 {
+	switch {
+	case os.Geteuid() == req.UID && os.Getegid() == req.GID:
+		// Avoid re-execing forever when the requested runtime identity is already active.
+		return ensureSQLiteFilesExist(cfg.DatabaseURL)
+	case os.Geteuid() != 0:
 		slog.WarnContext(ctx, "Runtime identity warning: process is not root, continuing as current user",
-			"euid", os.Geteuid(), "puid", runtimeUID, "pgid", runtimeGID)
-		if ensureRuntimeDockerConfigErr2 := ensureRuntimeDockerConfigInternal(cfg, os.Setenv, runtimeUID, runtimeGID, inContainer); ensureRuntimeDockerConfigErr2 != nil {
-			return ensureRuntimeDockerConfigErr2
-		}
-		return ensureSQLiteFilesExistInternal(cfg.DatabaseURL)
-	}
-
-	if ensureRuntimeDockerConfigErr3 := ensureRuntimeDockerConfigInternal(cfg, os.Setenv, runtimeUID, runtimeGID, inContainer); ensureRuntimeDockerConfigErr3 != nil {
-		return ensureRuntimeDockerConfigErr3
+			"euid", os.Geteuid(), "puid", req.UID, "pgid", req.GID)
+		return ensureSQLiteFilesExist(cfg.DatabaseURL)
 	}
 
 	if inContainer {
-		mountpoints, loadMountpointsErr := loadMountpointsInternal(mountInfoPath)
-		if loadMountpointsErr != nil {
-			return fmt.Errorf("load mountpoints: %w", loadMountpointsErr)
+		mountInfo, readErr := os.ReadFile(mountInfoPath)
+		if readErr != nil && !os.IsNotExist(readErr) {
+			return fmt.Errorf("load mountpoints: %w", readErr)
 		}
-
-		if prepareWritablePathsWithRootsErr := prepareWritablePathsWithRootsInternal(
-			runtimeUID, runtimeGID, mountpoints, projectsDir, defaultDataDirectory, defaultBuildsDirectory,
-		); prepareWritablePathsWithRootsErr != nil {
-			return prepareWritablePathsWithRootsErr
+		if prepareErr := prepareWritablePathsWithRoots(req.UID, req.GID, parseMountpoints(string(mountInfo)), projectsDir, defaultDataDirectory, defaultBuildsDirectory); prepareErr != nil {
+			return prepareErr
 		}
 	}
 
-	return reexecWithRuntimeIdentityInternal(ctx, req)
+	return reexecWithRuntimeIdentity(ctx, req)
 }
 
-func loadRuntimeIdentityRequestInternal(cfg *RuntimeIdentityConfig, inContainer bool) (runtimeIdentityRequest, string, error) {
+func loadRuntimeIdentityRequest(cfg *RuntimeIdentityConfig, inContainer bool) (runtimeIdentityRequest, string, error) {
 	if cfg == nil {
 		cfg = &RuntimeIdentityConfig{}
 	}
@@ -126,12 +113,22 @@ func loadRuntimeIdentityRequestInternal(cfg *RuntimeIdentityConfig, inContainer 
 	puid := strings.TrimSpace(cfg.PUID)
 	pgid := strings.TrimSpace(cfg.PGID)
 
-	if puid == "" && pgid == "" {
-		return defaultRuntimeIdentityRequestInternal(cfg.DockerHost, inContainer), "", nil
-	}
-
 	if puid == "" || pgid == "" {
-		req := defaultRuntimeIdentityRequestInternal(cfg.DockerHost, inContainer)
+		// Without both overrides, containers run as the default non-root user.
+		req := runtimeIdentityRequest{DockerHost: cfg.DockerHost}
+		if inContainer {
+			req = runtimeIdentityRequest{
+				Enabled:       true,
+				UID:           defaultRuntimeUID,
+				GID:           defaultRuntimeGID,
+				CredentialUID: uint32(defaultRuntimeUID),
+				CredentialGID: uint32(defaultRuntimeGID),
+				DockerHost:    cfg.DockerHost,
+			}
+		}
+		if puid == "" && pgid == "" {
+			return req, "", nil
+		}
 		warning := kit.Ternary(
 			inContainer,
 			"PUID and PGID must both be set to override the default non-root runtime user; continuing with the default non-root runtime user",
@@ -140,12 +137,12 @@ func loadRuntimeIdentityRequestInternal(cfg *RuntimeIdentityConfig, inContainer 
 		return req, warning, nil
 	}
 
-	uid, credentialUID, err := parseRuntimeIdentityValueInternal(puid, "PUID")
+	uid, credentialUID, err := parseRuntimeIdentityValue(puid, "PUID")
 	if err != nil {
 		return runtimeIdentityRequest{}, "", fmt.Errorf("invalid PUID %q: %w", puid, err)
 	}
 
-	gid, credentialGID, err := parseRuntimeIdentityValueInternal(pgid, "PGID")
+	gid, credentialGID, err := parseRuntimeIdentityValue(pgid, "PGID")
 	if err != nil {
 		return runtimeIdentityRequest{}, "", fmt.Errorf("invalid PGID %q: %w", pgid, err)
 	}
@@ -160,25 +157,7 @@ func loadRuntimeIdentityRequestInternal(cfg *RuntimeIdentityConfig, inContainer 
 	}, "", nil
 }
 
-func defaultRuntimeIdentityRequestInternal(dockerHost string, inContainer bool) runtimeIdentityRequest {
-	if !inContainer {
-		return runtimeIdentityRequest{
-			Enabled:    false,
-			DockerHost: dockerHost,
-		}
-	}
-
-	return runtimeIdentityRequest{
-		Enabled:       true,
-		UID:           defaultRuntimeUID,
-		GID:           defaultRuntimeGID,
-		CredentialUID: uint32(defaultRuntimeUID),
-		CredentialGID: uint32(defaultRuntimeGID),
-		DockerHost:    dockerHost,
-	}
-}
-
-func runningInContainerInternal(getenv func(string) string, stat func(string) (os.FileInfo, error)) bool {
+func runningInContainer(getenv func(string) string, stat func(string) (os.FileInfo, error)) bool {
 	if kit.ParseOrDefault(strings.TrimSpace(getenv("ARCANE_IN_CONTAINER")), false, strconv.ParseBool) {
 		return true
 	}
@@ -196,8 +175,8 @@ func runningInContainerInternal(getenv func(string) string, stat func(string) (o
 	return false
 }
 
-func ensureRuntimeDockerConfigInternal(cfg *RuntimeIdentityConfig, setenv func(string, string) error, uid, gid int, inContainer bool) error {
-	configDir, err := configureRuntimeDockerConfigEnvInternal(cfg, setenv, uid, gid, inContainer)
+func ensureRuntimeDockerConfig(cfg *RuntimeIdentityConfig, setenv func(string, string) error, uid, gid int, inContainer bool) error {
+	configDir, err := configureRuntimeDockerConfigEnv(cfg, setenv, uid, gid, inContainer)
 	if err != nil {
 		return err
 	}
@@ -218,7 +197,7 @@ func ensureRuntimeDockerConfigInternal(cfg *RuntimeIdentityConfig, setenv func(s
 	return nil
 }
 
-func configureRuntimeDockerConfigEnvInternal(cfg *RuntimeIdentityConfig, setenv func(string, string) error, uid, gid int, inContainer bool) (string, error) {
+func configureRuntimeDockerConfigEnv(cfg *RuntimeIdentityConfig, setenv func(string, string) error, uid, gid int, inContainer bool) (string, error) {
 	if cfg == nil {
 		cfg = &RuntimeIdentityConfig{}
 	}
@@ -246,51 +225,28 @@ func configureRuntimeDockerConfigEnvInternal(cfg *RuntimeIdentityConfig, setenv 
 	return configDir, nil
 }
 
-func runtimeIdentitySupplementaryGroupsInternal(dockerHost string, resolveSocketGroup func(string) mo.Option[uint32]) []uint32 {
-	socketPath, ok := dockerSocketPathInternal(dockerHost).Get()
-	if !ok {
-		return nil
+func runtimeIdentitySupplementaryGroups(dockerHost string, socketGroup func(string) mo.Option[uint32]) []uint32 {
+	socketPath := defaultDockerSocketPath
+	if value := strings.TrimSpace(dockerHost); value != "" {
+		parsed, err := url.Parse(value)
+		if err != nil || parsed.Scheme != "unix" {
+			return nil
+		}
+		socketPath = cmp.Or(parsed.Host+parsed.Path, parsed.Opaque)
+		if socketPath == "" {
+			return nil
+		}
+		socketPath = filepath.Clean("/" + strings.TrimPrefix(socketPath, "/"))
 	}
 
-	socketGID, ok := resolveSocketGroup(socketPath).Get()
+	socketGID, ok := socketGroup(socketPath).Get()
 	if !ok {
 		return nil
 	}
 	return []uint32{socketGID}
 }
 
-func dockerSocketPathInternal(raw string) mo.Option[string] {
-	value := strings.TrimSpace(raw)
-	if value == "" {
-		return mo.Some(defaultDockerSocketPath)
-	}
-
-	parsed, err := url.Parse(value)
-	if err != nil || parsed.Scheme != "unix" {
-		return mo.None[string]()
-	}
-
-	if parsed.Host != "" || parsed.Path != "" {
-		socketPath := parsed.Host + parsed.Path
-		if !strings.HasPrefix(socketPath, "/") {
-			socketPath = "/" + socketPath
-		}
-		return mo.Some(filepath.Clean(socketPath))
-	}
-
-	if parsed.Opaque == "" {
-		return mo.None[string]()
-	}
-
-	socketPath := strings.TrimPrefix(parsed.Opaque, "//")
-	if !strings.HasPrefix(socketPath, "/") {
-		socketPath = "/" + socketPath
-	}
-
-	return mo.Some(filepath.Clean(socketPath))
-}
-
-func prepareWritablePathsWithRootsInternal(uid, gid int, mountpoints map[string]struct{}, projectsDir, dataDirectory, buildsDirectory string) error {
+func prepareWritablePathsWithRoots(uid, gid int, mountpoints map[string]struct{}, projectsDir, dataDirectory, buildsDirectory string) error {
 	if err := os.MkdirAll(dataDirectory, utils.DirPerm); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
 	}
@@ -318,7 +274,7 @@ func prepareWritablePathsWithRootsInternal(uid, gid int, mountpoints map[string]
 			}
 			continue
 		}
-		if chownRecursiveErr := chownRecursiveInternal(entryPath, uid, gid, mountpoints, projectsDir); chownRecursiveErr != nil {
+		if chownRecursiveErr := chownRecursive(entryPath, uid, gid, mountpoints, projectsDir); chownRecursiveErr != nil {
 			return fmt.Errorf("chown %s: %w", entryPath, chownRecursiveErr)
 		}
 	}
@@ -337,15 +293,15 @@ func prepareWritablePathsWithRootsInternal(uid, gid int, mountpoints map[string]
 		return fmt.Errorf("stat builds directory: %w", statErr)
 	}
 
-	if chownRecursiveErr2 := chownRecursiveInternal(buildsDirectory, uid, gid, mountpoints, projectsDir); chownRecursiveErr2 != nil {
+	if chownRecursiveErr2 := chownRecursive(buildsDirectory, uid, gid, mountpoints, projectsDir); chownRecursiveErr2 != nil {
 		return fmt.Errorf("chown builds directory: %w", chownRecursiveErr2)
 	}
 
 	return nil
 }
 
-func ensureSQLiteFilesExistInternal(databaseURL string) error {
-	sqlitePath, ok, err := sqliteDatabasePathInternal(databaseURL)
+func ensureSQLiteFilesExist(databaseURL string) error {
+	sqlitePath, ok, err := sqliteDatabasePath(databaseURL)
 	if err != nil {
 		return err
 	}
@@ -355,7 +311,7 @@ func ensureSQLiteFilesExistInternal(databaseURL string) error {
 
 	// Ensure the parent directory exists before creating the file.
 	// This covers the "already the right user" early-return path where
-	// prepareWritablePathsWithRootsInternal is not called.
+	// prepareWritablePathsWithRoots is not called.
 	dir := filepath.Dir(sqlitePath)
 	if dir != "" && dir != "." {
 		if mkdirAllErr := os.MkdirAll(dir, utils.DirPerm); mkdirAllErr != nil {
@@ -374,28 +330,16 @@ func ensureSQLiteFilesExistInternal(databaseURL string) error {
 	return nil
 }
 
-func sqliteDatabasePathInternal(databaseURL string) (string, bool, error) {
+func sqliteDatabasePath(databaseURL string) (string, bool, error) {
 	value := cmp.Or(strings.TrimSpace(databaseURL), defaultDatabaseURL)
 	if !strings.HasPrefix(value, "file:") {
 		return "", false, nil
 	}
 
-	parsed, err := url.Parse(value)
+	pathPart, err := kit.SQLitePathFromDSN(value)
 	if err != nil {
 		return "", false, fmt.Errorf("parse sqlite database url: %w", err)
 	}
-
-	// For relative URLs like "file:data/arcane.db", url.Parse puts the path in
-	// Opaque (without a leading slash). For absolute URLs like "file:/app/data/arcane.db",
-	// Opaque is empty and Path contains the absolute path. Only strip the leading
-	// slash from the opaque portion to preserve absolute paths.
-	var pathPart string
-	if parsed.Opaque != "" {
-		pathPart = strings.TrimPrefix(parsed.Opaque, "/")
-	} else {
-		pathPart = parsed.Path
-	}
-
 	if pathPart == "" || strings.HasPrefix(pathPart, ":memory:") {
 		return "", false, nil
 	}
@@ -403,7 +347,7 @@ func sqliteDatabasePathInternal(databaseURL string) (string, bool, error) {
 	return filepath.Clean(pathPart), true, nil
 }
 
-func chownRecursiveInternal(path string, uid, gid int, mountpoints map[string]struct{}, projectsDir string) error {
+func chownRecursive(path string, uid, gid int, mountpoints map[string]struct{}, projectsDir string) error {
 	return filepath.Walk(path, func(currentPath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -425,18 +369,7 @@ func chownRecursiveInternal(path string, uid, gid int, mountpoints map[string]st
 	})
 }
 
-func loadMountpointsInternal(path string) (map[string]struct{}, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return map[string]struct{}{}, nil
-		}
-		return nil, err
-	}
-	return parseMountpointsInternal(string(data)), nil
-}
-
-func parseMountpointsInternal(data string) map[string]struct{} {
+func parseMountpoints(data string) map[string]struct{} {
 	mountpoints := make(map[string]struct{})
 
 	for line := range strings.SplitSeq(data, "\n") {
@@ -450,17 +383,17 @@ func parseMountpointsInternal(data string) map[string]struct{} {
 			continue
 		}
 
-		mountpoint := filepath.Clean(unescapeMountInfoPathInternal(fields[4]))
+		mountpoint := filepath.Clean(unescapeMountInfoPath(fields[4]))
 		mountpoints[mountpoint] = struct{}{}
 	}
 
 	return mountpoints
 }
 
-// unescapeMountInfoPathInternal decodes the kernel's octal escape sequences
+// unescapeMountInfoPath decodes the kernel's octal escape sequences
 // used in /proc/self/mountinfo. The kernel only uses \040 (space), \011 (tab),
 // \012 (newline), and \134 (backslash) — no other escape forms appear.
-func unescapeMountInfoPathInternal(path string) string {
+func unescapeMountInfoPath(path string) string {
 	replacer := strings.NewReplacer(
 		`\040`, " ",
 		`\011`, "\t",

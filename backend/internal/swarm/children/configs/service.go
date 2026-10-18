@@ -2,7 +2,6 @@ package configs
 
 import (
 	"context"
-	stdjson "encoding/json"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -11,16 +10,18 @@ import (
 	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 )
 
 // Service manages swarm configs.
 type Service struct {
-	dockerClient  func(ctx context.Context) (*client.Client, error)
+	docker        *docker.DockerClientService
 	ensureManager func(ctx context.Context) error
 }
 
-func NewService(dockerClient func(ctx context.Context) (*client.Client, error), ensureManager func(ctx context.Context) error) *Service {
-	return &Service{dockerClient: dockerClient, ensureManager: ensureManager}
+func NewService(dockerService *docker.DockerClientService, ensureManager func(ctx context.Context) error) *Service {
+	return &Service{docker: dockerService, ensureManager: ensureManager}
 }
 
 func (s *Service) ListConfigs(ctx context.Context) ([]swarmtypes.ConfigSummary, error) {
@@ -28,12 +29,9 @@ func (s *Service) ListConfigs(ctx context.Context) ([]swarmtypes.ConfigSummary, 
 		return nil, err
 	}
 
-	dockerClient, err := s.dockerClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	configsResult, err := dockerClient.ConfigList(ctx, client.ConfigListOptions{})
+	configsResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ConfigListResult, error) {
+		return dockerClient.ConfigList(ctx, client.ConfigListOptions{})
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list swarm configs: %w", err)
 	}
@@ -50,12 +48,9 @@ func (s *Service) GetConfig(ctx context.Context, configID string) (*swarmtypes.C
 		return nil, err
 	}
 
-	dockerClient, err := s.dockerClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	cfgResult, err := dockerClient.ConfigInspect(ctx, configID, client.ConfigInspectOptions{})
+	cfgResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ConfigInspectResult, error) {
+		return dockerClient.ConfigInspect(ctx, configID, client.ConfigInspectOptions{})
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect swarm config: %w", err)
 	}
@@ -68,17 +63,20 @@ func (s *Service) CreateConfig(ctx context.Context, req swarmtypes.ConfigCreateR
 		return nil, err
 	}
 
-	spec, err := decodeConfigSpecInternal(req.Spec)
-	if err != nil {
-		return nil, err
+	if trimmed := strings.TrimSpace(string(req.Spec)); trimmed == "" || trimmed == "null" {
+		return nil, errors.New("config spec is required")
+	}
+	var spec swarm.ConfigSpec
+	if err := json.Unmarshal(req.Spec, &spec); err != nil {
+		return nil, fmt.Errorf("failed to parse config spec: %w", err)
+	}
+	if strings.TrimSpace(spec.Name) == "" {
+		return nil, errors.New("config spec name is required")
 	}
 
-	dockerClient, err := s.dockerClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	createResult, err := dockerClient.ConfigCreate(ctx, client.ConfigCreateOptions{Spec: spec})
+	createResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ConfigCreateResult, error) {
+		return dockerClient.ConfigCreate(ctx, client.ConfigCreateOptions{Spec: spec})
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create swarm config: %w", err)
 	}
@@ -91,31 +89,11 @@ func (s *Service) RemoveConfig(ctx context.Context, configID string) error {
 		return err
 	}
 
-	dockerClient, err := s.dockerClient(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	if _, configRemoveErr := dockerClient.ConfigRemove(ctx, configID, client.ConfigRemoveOptions{}); configRemoveErr != nil {
+	if _, configRemoveErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ConfigRemoveResult, error) {
+		return dockerClient.ConfigRemove(ctx, configID, client.ConfigRemoveOptions{})
+	}); configRemoveErr != nil {
 		return fmt.Errorf("failed to remove swarm config: %w", configRemoveErr)
 	}
 
 	return nil
-}
-
-func decodeConfigSpecInternal(raw stdjson.RawMessage) (swarm.ConfigSpec, error) {
-	if len(raw) == 0 || strings.TrimSpace(string(raw)) == "" || strings.TrimSpace(string(raw)) == "null" {
-		return swarm.ConfigSpec{}, errors.New("config spec is required")
-	}
-
-	var spec swarm.ConfigSpec
-	if err := json.Unmarshal(raw, &spec); err != nil {
-		return swarm.ConfigSpec{}, fmt.Errorf("failed to parse config spec: %w", err)
-	}
-
-	if strings.TrimSpace(spec.Name) == "" {
-		return swarm.ConfigSpec{}, errors.New("config spec name is required")
-	}
-
-	return spec, nil
 }

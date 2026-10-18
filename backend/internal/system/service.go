@@ -14,6 +14,7 @@ import (
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
+	"github.com/getarcaneapp/arcane/types/v2/dockerinfo"
 	"github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/getarcaneapp/arcane/types/v2/system"
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
@@ -100,7 +101,7 @@ func NewSystemService(
 		dockerHostMemoryCache: hot.NewHotCache[struct{}, dockerHostMemoryInfo](hot.LRU, 1).
 			WithTTL(dockerHostMemoryCacheTTL).
 			Build(),
-		prune:   prune.NewService(cfg.GetLocation(), dockerService.GetClient, activityService, imageUpdateService, volumeService, networkService),
+		prune:   prune.NewService(cfg.GetLocation(), dockerService, activityService, imageUpdateService, volumeService, networkService),
 		upgrade: upgrade.NewService(db, dockerService, versionService, eventService, settingsService, projectService, resolveUpgraderRuntimeOptions),
 	}
 	s.backup = systembackup.NewService(systembackup.Dependencies{
@@ -302,6 +303,70 @@ func (s *SystemService) performBatchContainerAction(ctx context.Context, environ
 	return result, listErr
 }
 
+// PingDocker checks that the Docker daemon is responsive.
+func (s *SystemService) PingDocker(ctx context.Context) error {
+	_, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.PingResult, error) {
+		return cli.Ping(ctx, client.PingOptions{})
+	})
+	return err
+}
+
+// GetDockerInfo returns Docker daemon version and system information.
+func (s *SystemService) GetDockerInfo(ctx context.Context) (dockerinfo.Info, error) {
+	serverVersion, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ServerVersionResult, error) {
+		return cli.ServerVersion(ctx, client.ServerVersionOptions{})
+	})
+	if err != nil {
+		return dockerinfo.Info{}, fmt.Errorf("failed to get Docker version: %w", err)
+	}
+
+	infoResult, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.SystemInfoResult, error) {
+		return cli.Info(ctx, client.InfoOptions{})
+	})
+	if err != nil {
+		return dockerinfo.Info{}, err
+	}
+	info := infoResult.Info
+
+	// Outside Docker (e.g. LXC) the daemon may report the whole machine, so cap totals at the guest's cgroup budget.
+	// Inside Docker, --cpus/--memory are operator limits and the daemon's totals already reflect the host.
+	if !cgroup.IsDockerContainer() {
+		if cgroupLimits, detectLimitsErr := cgroup.DetectLimits(); detectLimitsErr == nil {
+			if limit := cgroupLimits.MemoryLimit; limit > 0 && (info.MemTotal == 0 || limit < info.MemTotal) {
+				info.MemTotal = limit // keep: copying Docker's ~70-field system.Info as a literal is unreadable
+			}
+			if cgroupLimits.CPUCount > 0 && (info.NCPU == 0 || cgroupLimits.CPUCount < info.NCPU) {
+				info.NCPU = cgroupLimits.CPUCount // keep: copying Docker's ~70-field system.Info as a literal is unreadable
+			}
+		}
+	}
+
+	var gitCommit, goVersion, buildTime string
+	for _, component := range serverVersion.Components {
+		for key, value := range component.Details {
+			switch strings.ToLower(key) {
+			case "gitcommit":
+				gitCommit = cmp.Or(gitCommit, value)
+			case "goversion":
+				goVersion = cmp.Or(goVersion, value)
+			case "buildtime":
+				buildTime = cmp.Or(buildTime, value)
+			}
+		}
+	}
+
+	return dockerinfo.Info{
+		Success:    true,
+		APIVersion: serverVersion.APIVersion,
+		GitCommit:  gitCommit,
+		GoVersion:  goVersion,
+		Os:         serverVersion.Os,
+		Arch:       serverVersion.Arch,
+		BuildTime:  buildTime,
+		Info:       info,
+	}, nil
+}
+
 func (s *SystemService) GetDiskUsagePath(ctx context.Context) string {
 	return cmp.Or(s.settingsService.GetSettingsConfig().DiskUsagePath.Value, "/")
 }
@@ -347,11 +412,9 @@ func (s *SystemService) loadDockerHostMemory(ctx context.Context) (dockerHostMem
 	if err != nil {
 		return dockerHostMemoryInfo{}, err
 	}
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return dockerHostMemoryInfo{}, err
-	}
-	inspect, err := compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
+	inspect, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerInspectResult, error) {
+		return compat.ContainerInspectWithCompatibility(ctx, cli, containerID, client.ContainerInspectOptions{})
+	})
 	if err != nil {
 		return dockerHostMemoryInfo{}, err
 	}
@@ -364,7 +427,9 @@ func (s *SystemService) loadDockerHostMemory(ctx context.Context) (dockerHostMem
 		return dockerHostMemoryInfo{}, err
 	}
 
-	info, err := dockerClient.Info(ctx, client.InfoOptions{})
+	info, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.SystemInfoResult, error) {
+		return cli.Info(ctx, client.InfoOptions{})
+	})
 	if err != nil {
 		return dockerHostMemoryInfo{}, err
 	}
@@ -423,26 +488,29 @@ const systemBackupHistoryUnion = "SELECT id, size, created_at, status, trigger, 
 
 // backupStore persists system backup runs and policies for the backup child.
 func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) systembackup.Store {
+	toModel := func(dto *backuptypes.SystemBackupRun) SystemBackupRun {
+		return SystemBackupRun{ //exhaustruct:enforce
+			BaseModel: database.BaseModel{
+				ID:        dto.ID,
+				CreatedAt: time.Time{},
+				UpdatedAt: nil,
+			},
+			Size:              dto.Size,
+			CreatedAt:         dto.CreatedAt,
+			Status:            SystemBackupStatus(dto.Status),
+			Trigger:           SystemBackupTrigger(dto.Trigger),
+			Destination:       dto.Destination,
+			LocalSnapshotID:   dto.LocalSnapshotID,
+			RemoteSnapshotID:  dto.RemoteSnapshotID,
+			S3DestinationID:   dto.S3DestinationID,
+			S3DestinationName: dto.S3DestinationName,
+			PolicyID:          dto.PolicyID,
+			Error:             dto.Error,
+		}
+	}
 	return systembackup.Store{
 		CreateRun: func(ctx context.Context, dto *backuptypes.SystemBackupRun) error {
-			run := SystemBackupRun{ //exhaustruct:enforce
-				BaseModel: database.BaseModel{
-					ID:        dto.ID,
-					CreatedAt: time.Time{},
-					UpdatedAt: nil,
-				},
-				Size:              dto.Size,
-				CreatedAt:         dto.CreatedAt,
-				Status:            SystemBackupStatus(dto.Status),
-				Trigger:           SystemBackupTrigger(dto.Trigger),
-				Destination:       dto.Destination,
-				LocalSnapshotID:   dto.LocalSnapshotID,
-				RemoteSnapshotID:  dto.RemoteSnapshotID,
-				S3DestinationID:   dto.S3DestinationID,
-				S3DestinationName: dto.S3DestinationName,
-				PolicyID:          dto.PolicyID,
-				Error:             dto.Error,
-			}
+			run := toModel(dto)
 			if err := s.db.WithContext(ctx).Create(&run).Error; err != nil {
 				return err
 			}
@@ -465,24 +533,7 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 			return nil
 		},
 		SaveRun: func(ctx context.Context, dto *backuptypes.SystemBackupRun) error {
-			return s.db.WithContext(ctx).Save(&SystemBackupRun{ //exhaustruct:enforce
-				BaseModel: database.BaseModel{
-					ID:        dto.ID,
-					CreatedAt: time.Time{},
-					UpdatedAt: nil,
-				},
-				Size:              dto.Size,
-				CreatedAt:         dto.CreatedAt,
-				Status:            SystemBackupStatus(dto.Status),
-				Trigger:           SystemBackupTrigger(dto.Trigger),
-				Destination:       dto.Destination,
-				LocalSnapshotID:   dto.LocalSnapshotID,
-				RemoteSnapshotID:  dto.RemoteSnapshotID,
-				S3DestinationID:   dto.S3DestinationID,
-				S3DestinationName: dto.S3DestinationName,
-				PolicyID:          dto.PolicyID,
-				Error:             dto.Error,
-			}).Error
+			return s.db.WithContext(ctx).Save(new(toModel(dto))).Error
 		},
 		FailRun: func(ctx context.Context, id, message string) error {
 			return s.db.WithContext(ctx).Model(&SystemBackupRun{}).Where("id = ?", id).Updates(map[string]any{"status": SystemBackupStatusFailed, "error": message}).Error
