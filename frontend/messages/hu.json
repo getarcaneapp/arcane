@@ -292,6 +292,8 @@
   "prune_images_dialog_description": "Válaszd ki, milyen szigorúan törölje az Arcane a fel nem használt Docker-képfájlokat.",
   "auto_update_exclude_description": "Válaszd ki azokat a tárolókat, amelyeket nem szabad automatikusan frissíteni. Az Arcane folyamatosan ellenőrzi őket frissítések után, és értesítéseket küld róluk.",
   "auto_update_check_label_hint": "Ha le szeretné állítani egy konténer frissítés-ellenőrzéseit és értesítéseit, adja hozzá a „ {label} ” címkét.",
+  "auto_update_delay_label": "Frissítési késleltetés (óra)",
+  "auto_update_delay_description": "Az az időtartam (órában kifejezve), amely alatt egy új képnek elérhetőnek kell lennie – az Arcane által történő első észlelés időpontjától számítva –, mielőtt az automatikus frissítés telepítené azt. A 0 érték esetén a telepítés azonnal megtörténik, a kézi frissítések pedig soha nem késnek. Ezt konténerenként felülírhatod a „ {label} ” címkével.",
   "auto_update_disabled_checks_continue": "A frissítés-ellenőrzés és az értesítések továbbra is engedélyezve maradnak; csupán az automatikus telepítés van kikapcsolva.",
   "auto_update_title": "Automatikus frissítés",
   "auto_update_enabled_toast": "Automatikus frissités engedélyezve",
