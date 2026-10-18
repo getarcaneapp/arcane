@@ -152,6 +152,12 @@ type TemplateContent struct {
 	//
 	// Required: true
 	EnvVariables []env.Variable `json:"envVariables"`
+
+	// IsFolderTemplate indicates the template belongs to a folder in the templates directory,
+	// so its name and description cannot be changed.
+	//
+	// Required: true
+	IsFolderTemplate bool `json:"isFolderTemplate"`
 }
 
 // Template represents a Docker Compose template.

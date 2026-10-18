@@ -49,6 +49,14 @@ type registryFetchMeta struct {
 	Templates    []ComposeTemplate
 }
 
+// templateFileSnapshot is a folder template file's state before a save overwrote it.
+type templateFileSnapshot struct {
+	path    string
+	content string
+	perm    os.FileMode
+	existed bool
+}
+
 type TemplateService struct {
 	db              *database.DB
 	httpClient      *http.Client
@@ -63,7 +71,8 @@ type TemplateService struct {
 	registryFetchMeta map[string]*registryFetchMeta
 	registryErrors    map[string]string // last fetch error per registry ID, cleared on success
 
-	fsSyncMu   sync.Mutex
+	// fsMu serializes folder template writes and deletes with the filesystem sync, and guards lastFsSync.
+	fsMu       sync.Mutex
 	lastFsSync time.Time
 }
 
@@ -314,7 +323,11 @@ func (s *TemplateService) UpdateTemplate(ctx context.Context, id string, updates
 	if err := normalization.Normalize(updates); err != nil {
 		return err
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	s.fsMu.Lock()
+	defer s.fsMu.Unlock()
+
+	var restoreFiles func() error
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing ComposeTemplate
 		if err := tx.Where("id = ?", id).First(&existing).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -333,16 +346,19 @@ func (s *TemplateService) UpdateTemplate(ctx context.Context, id string, updates
 			return folderErr
 		}
 		if composePath != "" {
-			if updates.Name != existing.Name || updates.Description != existing.Description {
+			if updates.Name != normalization.Text(existing.Name, true, true) || updates.Description != normalization.Text(existing.Description, true, true) {
 				return common.Classify(common.ErrValidation, errors.New("the name and description of a template from the templates directory cannot be changed"))
 			}
-			if writeErr := writeImportedTemplateFiles(filepath.Join(baseDir, folder), composePath, updates.Content, mo.PointerToOption(updates.EnvContent).OrEmpty()); writeErr != nil {
+			var writeErr error
+			restoreFiles, writeErr = writeImportedTemplateFiles(filepath.Join(baseDir, folder), composePath, updates.Content, mo.PointerToOption(updates.EnvContent).OrEmpty())
+			if writeErr != nil {
 				return writeErr
 			}
+		} else {
+			existing.Name = updates.Name
+			existing.Description = updates.Description
 		}
 
-		existing.Name = updates.Name
-		existing.Description = updates.Description
 		existing.Content = updates.Content
 		existing.EnvContent = updates.EnvContent
 		setTemplateIconURL(&existing, projects.ResolveTemplateIconURL(ctx, existing.Content, mo.PointerToOption(existing.EnvContent).OrEmpty()))
@@ -351,9 +367,18 @@ func (s *TemplateService) UpdateTemplate(ctx context.Context, id string, updates
 		}
 		return nil
 	})
+	if err != nil && restoreFiles != nil {
+		if restoreErr := restoreFiles(); restoreErr != nil {
+			return errors.Join(err, fmt.Errorf("failed to restore template files: %w", restoreErr))
+		}
+	}
+	return err
 }
 
 func (s *TemplateService) DeleteTemplate(ctx context.Context, id string) error {
+	s.fsMu.Lock()
+	defer s.fsMu.Unlock()
+
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing ComposeTemplate
 		if err := tx.Where("id = ?", id).First(&existing).Error; err != nil {
@@ -402,22 +427,62 @@ func (s *TemplateService) importedTemplateFolder(ctx context.Context, tpl *Compo
 	return baseDir, entry.Path, detected, nil
 }
 
-// writeImportedTemplateFiles writes content and env to the files projects.ReadFolderComposeTemplate reads.
-func writeImportedTemplateFiles(folderPath, composePath, content, envContent string) error {
-	if err := projects.WriteTemplateFile(composePath, content); err != nil {
-		return err
-	}
-
+// writeImportedTemplateFiles writes content and env through any symlinks to the files projects.ReadFolderComposeTemplate reads.
+// restore puts back every file it changed and is set even when err is.
+func writeImportedTemplateFiles(folderPath, composePath, content, envContent string) (restore func() error, err error) {
 	envPath := filepath.Join(folderPath, ".env.example")
-	if _, err := os.Stat(envPath); err != nil {
+	if _, statErr := os.Stat(envPath); statErr != nil {
 		dotEnvPath := filepath.Join(folderPath, ".env")
 		if _, dotEnvErr := os.Stat(dotEnvPath); dotEnvErr == nil {
 			envPath = dotEnvPath
 		} else if strings.TrimSpace(envContent) == "" {
-			return nil
+			envPath = ""
 		}
 	}
-	return projects.WriteTemplateFile(envPath, envContent)
+
+	var written []templateFileSnapshot
+	restore = func() error {
+		var errs []error
+		for _, prev := range slices.Backward(written) {
+			if prev.existed {
+				errs = append(errs, projects.WriteFileWithPerm(prev.path, prev.content, prev.perm))
+			} else {
+				errs = append(errs, os.Remove(prev.path))
+			}
+		}
+		return errors.Join(errs...)
+	}
+
+	files := []struct{ path, content string }{
+		{path: composePath, content: content},
+		{path: envPath, content: envContent},
+	}
+	for _, file := range files {
+		if file.path == "" {
+			continue
+		}
+		prev := templateFileSnapshot{path: file.path, perm: utils.FilePerm}
+		info, statErr := os.Stat(file.path)
+		switch {
+		case statErr == nil:
+			target, resolveErr := filepath.EvalSymlinks(file.path)
+			if resolveErr != nil {
+				return restore, fmt.Errorf("failed to resolve template file: %w", resolveErr)
+			}
+			data, readErr := os.ReadFile(target)
+			if readErr != nil {
+				return restore, fmt.Errorf("failed to read template file: %w", readErr)
+			}
+			prev = templateFileSnapshot{path: target, content: string(data), perm: info.Mode().Perm(), existed: true}
+		case !errors.Is(statErr, os.ErrNotExist):
+			return restore, fmt.Errorf("failed to stat template file: %w", statErr)
+		}
+		if writeErr := projects.WriteFileWithPerm(prev.path, file.content, prev.perm); writeErr != nil {
+			return restore, writeErr
+		}
+		written = append(written, prev)
+	}
+	return restore, nil
 }
 
 // readDefaultTemplate reads one of the default template files from the configured templates directory.
@@ -899,6 +964,14 @@ func (s *TemplateService) DownloadTemplate(ctx context.Context, remoteTemplate *
 	}
 	srcDesc := fmt.Sprintf("Imported from %s/compose.yaml", dir)
 
+	composeContent, envContent, err := s.FetchTemplateContent(ctx, remoteTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch template content for download: %w", err)
+	}
+
+	s.fsMu.Lock()
+	defer s.fsMu.Unlock()
+
 	var resultTemplate *ComposeTemplate
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing ComposeTemplate
@@ -907,10 +980,6 @@ func (s *TemplateService) DownloadTemplate(ctx context.Context, remoteTemplate *
 			return fmt.Errorf("failed to check existing template: %w", findErr)
 		}
 
-		composeContent, envContent, fetchErr := s.FetchTemplateContent(ctx, remoteTemplate)
-		if fetchErr != nil {
-			return fmt.Errorf("failed to fetch template content for download: %w", fetchErr)
-		}
 		envPtr, writeErr := projects.WriteTemplateFiles(composePath, envPath, composeContent, envContent)
 		if writeErr != nil {
 			return writeErr
@@ -1000,8 +1069,8 @@ func (s *TemplateService) invalidateRemoteCache() {
 
 // SyncLocalTemplatesFromFilesystem imports template folders from the templates directory, at most once per fsSyncInterval.
 func (s *TemplateService) SyncLocalTemplatesFromFilesystem(ctx context.Context) (err error) {
-	s.fsSyncMu.Lock()
-	defer s.fsSyncMu.Unlock()
+	s.fsMu.Lock()
+	defer s.fsMu.Unlock()
 
 	if !s.lastFsSync.IsZero() && time.Since(s.lastFsSync) < fsSyncInterval {
 		return nil
@@ -1127,6 +1196,10 @@ func (s *TemplateService) GetTemplateContentWithParsedData(ctx context.Context, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch template content: %w", err)
 	}
+	_, _, folderComposePath, err := s.importedTemplateFolder(ctx, composeTemplate)
+	if err != nil {
+		return nil, err
+	}
 	if !composeTemplate.IsRemote {
 		setTemplateIconURL(composeTemplate, projects.ResolveTemplateIconURL(ctx, composeContent, envContent))
 	}
@@ -1147,10 +1220,11 @@ func (s *TemplateService) GetTemplateContentWithParsedData(ctx context.Context, 
 	}
 
 	return &tmpl.TemplateContent{
-		Template:     outTemplate,
-		Content:      composeContent,
-		EnvContent:   envContent,
-		Services:     services,
-		EnvVariables: envVars,
+		Template:         outTemplate,
+		Content:          composeContent,
+		EnvContent:       envContent,
+		Services:         services,
+		EnvVariables:     envVars,
+		IsFolderTemplate: folderComposePath != "",
 	}, nil
 }

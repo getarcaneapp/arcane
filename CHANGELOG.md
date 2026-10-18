@@ -32,6 +32,7 @@
 - use composite literals, drop DI nil checks and mappers ([cdfe49e](https://github.com/getarcaneapp/arcane/commit/cdfe49e8cbe0110e60e582aba3a4ce93c8fdb962) by @kmendell)
 
 **Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.16.0...v2.16.1
+
 ## v2.16.0
 
 ### New features

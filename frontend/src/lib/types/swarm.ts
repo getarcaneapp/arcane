@@ -703,6 +703,7 @@ export interface TemplateContentData {
 	envContent: string;
 	services: string[];
 	envVariables: EnvVariable[];
+	isFolderTemplate: boolean;
 }
 
 export interface RemoteTemplate {
