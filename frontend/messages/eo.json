@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "ekz. Mia Nginx-stako",
   "templates_template_name_required": "La nomo de ŝablono estas postulata.",
   "templates_template_description_placeholder": "Mallonge priskribu ĉi tiun ŝablonon.",
+  "templates_name_description_locked": "La nomo kaj priskribo de ŝablono el la dosierujo de ŝablonoj ne povas esti ŝanĝitaj.",
   "compose_content_is_required": "Enhavo de komponaĵo estas postulata.",
   "templates_save_template_failed": "Malsukcesis konservi ŝablonon",
   "templates_create_template_failed": "Malsukcesis krei ŝablonon",
