@@ -1196,9 +1196,10 @@ func (s *TemplateService) GetTemplateContentWithParsedData(ctx context.Context, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch template content: %w", err)
 	}
-	_, _, folderComposePath, err := s.importedTemplateFolder(ctx, composeTemplate)
-	if err != nil {
-		return nil, err
+	// Folder ownership only locks fields in the editor, so a missing templates directory must not block the preview.
+	_, _, folderComposePath, folderErr := s.importedTemplateFolder(ctx, composeTemplate)
+	if folderErr != nil {
+		slog.WarnContext(ctx, "failed to check template folder", "templateId", id, "error", folderErr)
 	}
 	if !composeTemplate.IsRemote {
 		setTemplateIconURL(composeTemplate, projects.ResolveTemplateIconURL(ctx, composeContent, envContent))
