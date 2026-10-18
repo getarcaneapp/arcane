@@ -1355,12 +1355,14 @@ func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id 
 	now := time.Now()
 
 	// Throttle unchanged online status to one write every 30 seconds; this doubles as the notify throttle.
+	// Pending edge environments pair only through the agent's tunnel, as in updateEnvironmentStatus.
 	result := s.db.WithContext(ctx).Exec(`
 		UPDATE environments
 		SET last_seen = ?, status = ?, updated_at = ?
 		WHERE id = ?
+		AND NOT (status = ? AND is_edge = ?)
 		AND (status != ? OR last_seen IS NULL OR last_seen < ?)
-	`, new(now), string(EnvironmentStatusOnline), new(now), id, string(EnvironmentStatusOnline), now.Add(-30*time.Second))
+	`, new(now), string(EnvironmentStatusOnline), new(now), id, string(EnvironmentStatusPending), true, string(EnvironmentStatusOnline), now.Add(-30*time.Second))
 
 	if result.Error != nil {
 		return fmt.Errorf("failed to update environment heartbeat: %w", result.Error)
