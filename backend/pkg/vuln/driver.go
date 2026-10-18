@@ -13,6 +13,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	"kit.getarcane.app/docker"
 
 	"getarcane.dev/arcane/v3/pkg/timeouts"
+	"getarcane.dev/arcane/v3/pkg/volumes"
 	"getarcane.dev/types/v3"
 )
 
@@ -54,11 +56,18 @@ type (
 )
 
 const (
-	DefaultNetworkMode = "bridge"
-	CacheMountTarget   = "/root/.cache"
-	RegistryConfigDir  = "/tmp/arcane-registry-auth"
-	NanoCPUsPerCore    = int64(1_000_000_000)
-	BytesPerMB         = int64(1024 * 1024)
+	// CacheMountTarget is where the shared Trivy cache volume is mounted inside
+	// the scan container.
+	CacheMountTarget = "/root/.cache"
+	// RegistryConfigDir is where the generated registry auth config lands inside
+	// the scan container.
+	RegistryConfigDir = "/tmp/arcane-registry-auth"
+
+	// NanoCPUsPerCore and BytesPerMB convert configured limits to Docker units.
+	NanoCPUsPerCore = int64(1_000_000_000)
+	BytesPerMB      = int64(1024 * 1024)
+
+	// ContainerFilesDir is where generated files are copied inside the scan container.
 	ContainerFilesDir  = "/tmp"
 	RegistryConfigFile = "arcane-registry-auth/config.json"
 	TrivyConfigFile    = "trivy-config.yaml"
@@ -66,6 +75,10 @@ const (
 	outputPathPrefix   = "/tmp/arcane-trivy-result-"
 	errorExcerptSize   = int64(32 * 1024)
 )
+
+// DefaultNetworkMode is the network the scan container joins when nothing
+// more specific is configured or detected; Windows Docker hosts have no bridge.
+var DefaultNetworkMode = kit.Ternary(runtime.GOOS == "windows", "nat", "bridge")
 
 func ResolveUnixSocketSource(
 	ctx context.Context,
@@ -95,7 +108,13 @@ func ResolveUnixSocketSource(
 	return socketPath, nil
 }
 
+// NewOutputPath returns where Trivy writes its report inside the scan container.
+// On Windows it is empty: the report goes to stdout, as docker cp cannot be relied
+// on to read files from a running Windows container.
 func NewOutputPath() string {
+	if runtime.GOOS == "windows" {
+		return ""
+	}
 	return outputPathPrefix + strconv.FormatInt(time.Now().UnixNano(), 10) + ".json"
 }
 
@@ -119,11 +138,33 @@ func BuildHostConfig(opts HostConfigOptions) *containertypes.HostConfig {
 		NetworkMode: containertypes.NetworkMode(cmp.Or(strings.TrimSpace(opts.Runtime.NetworkMode), DefaultNetworkMode)),
 		// Kept until explicit cleanup so completion and logs are reliable across Docker variants.
 		AutoRemove:  false,
-		Mounts:      mounts,
+		Mounts:      windowsMountTargets(mounts),
 		SecurityOpt: slices.Clone(opts.SecurityOpts),
 		Privileged:  opts.Privileged,
 		Resources:   kit.Ternary(opts.Limits.Apply, resources, containertypes.Resources{}),
 	}
+}
+
+// windowsMountTargets moves the Linux mount targets to the C: drive on Windows.
+func windowsMountTargets(mounts []mounttypes.Mount) []mounttypes.Mount {
+	if runtime.GOOS != "windows" {
+		return mounts
+	}
+	for i := range mounts {
+		mounts[i].Target = volumes.WindowsContainerPath(mounts[i].Target)
+	}
+	return mounts
+}
+
+// NamedPipeMount returns the mount that gives a helper container the Docker engine named
+// pipe of an npipe:// host (Windows), and false for any other host.
+func NamedPipeMount(dockerHost string) (mounttypes.Mount, bool) {
+	pipePath, ok := strings.CutPrefix(strings.TrimSpace(dockerHost), "npipe://")
+	if !ok {
+		return mounttypes.Mount{}, false
+	}
+	pipePath = strings.ReplaceAll(pipePath, "/", `\`)
+	return mounttypes.Mount{Type: mounttypes.TypeNamedPipe, Source: pipePath, Target: pipePath}, true
 }
 
 func CreateLogTempFile(ctx context.Context, prefix string) (*os.File, error) {
