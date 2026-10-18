@@ -292,6 +292,8 @@
   "prune_images_dialog_description": "Arcane kullanılmayan Docker görüntülerini ne kadar agresif bir şekilde budamayı yapacağını seçin.",
   "auto_update_exclude_description": "Otomatik olarak güncellenmemesi gereken kapsayıcıları seçin. Arcane, bu kapsayıcıları sürekli olarak güncelleme açısından kontrol eder ve bildirimler gönderir.",
   "auto_update_check_label_hint": "Bir konteyner için güncelleme denetimlerini ve bildirimlerini durdurmak için, konteynere {label} etiketini ekleyin.",
+  "auto_update_delay_label": "Güncelleme Gecikmesi (saat)",
+  "auto_update_delay_description": "Otomatik güncelleme işleminin yeni bir görüntüyü yüklemesinden önce, Arcane’in bu görüntüyü ilk kez algıladığı andan itibaren sayılan süre. 0 değeri, görüntünün hemen yüklenmesini sağlar ve manuel güncellemeler hiçbir zaman ertelenmez. Bu ayarı, {label} etiketini kullanarak her bir konteyner için ayrı ayrı geçersiz kılabilirsiniz.",
   "auto_update_disabled_checks_continue": "Güncelleme kontrolleri ve bildirimler etkin kalır; yalnızca otomatik yükleme devre dışı bırakılır.",
   "auto_update_title": "Otomatik Güncelleme",
   "auto_update_enabled_toast": "Otomatik güncelleme etkinleştirildi",
