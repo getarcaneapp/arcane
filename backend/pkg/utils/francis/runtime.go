@@ -80,7 +80,7 @@ func New(databaseURL, encryptionKey, instanceID, port string, options ...local.H
 		options: []local.HostOption{
 			local.WithAddress(address), providerOption(storeURL),
 			local.WithMaxHosts(1), local.WithHostHealthCheckDeadline(150 * time.Second),
-			local.WithShutdownGracePeriod(10 * time.Second), local.WithAlarmsPollInterval(time.Second),
+			local.WithShutdownGracePeriod(10 * time.Second), local.WithAlarmsPollInterval(10 * time.Second),
 			local.WithAlarmsFetchAheadInterval(30 * time.Second), local.WithAlarmsLeaseDuration(180 * time.Second),
 		},
 	}

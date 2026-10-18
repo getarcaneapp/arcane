@@ -303,9 +303,11 @@ func (q *Coordinator) dispatch(ctx context.Context) {
 			}
 			nextRetention = time.Now().Add(time.Hour)
 		}
-		nextWake := time.Now().Add(15 * time.Second)
 		enabled := q.enabled.Load()
-		if err := q.repair(ctx, fullRepair); err != nil {
+		busy, err := q.repair(ctx, fullRepair)
+		pendingActivity := q.hasPendingActivitySync(ctx)
+		nextWake := time.Now().Add(kit.Ternary(busy || pendingActivity, 15*time.Second, coordinatorIdleWake))
+		if err != nil {
 			if ctx.Err() == nil {
 				slog.ErrorContext(ctx, "Job queue dispatch failed", "error", err)
 			}
@@ -316,7 +318,7 @@ func (q *Coordinator) dispatch(ctx context.Context) {
 		if nextRetention.Before(nextWake) {
 			nextWake = nextRetention
 		}
-		if q.hasPendingActivitySync(ctx) {
+		if pendingActivity {
 			activityRetry := time.Now().Add(5 * time.Second)
 			if activityRetry.Before(nextWake) {
 				nextWake = activityRetry

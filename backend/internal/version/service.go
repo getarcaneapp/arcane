@@ -44,6 +44,13 @@ type latestRelease struct {
 	PublishedAt string
 }
 
+type currentImageInfo struct {
+	Tag      string
+	Digest   string
+	ImageRef string
+	ImageID  string
+}
+
 type VersionService struct {
 	httpClient               *http.Client
 	cache                    *hot.HotCache[struct{}, latestRelease]
@@ -55,6 +62,7 @@ type VersionService struct {
 	imageUpdateService       *imageupdate.ImageUpdateService
 	settingsService          *settings.SettingsService
 	streamHub                *agg.Hub[version.StreamEvent]
+	currentImage             *hot.HotCache[struct{}, currentImageInfo]
 }
 
 func NewVersionService(
@@ -79,6 +87,7 @@ func NewVersionService(
 		imageUpdateService:       imageUpdateService,
 		settingsService:          settingsService,
 		streamHub:                agg.NewHub[version.StreamEvent](),
+		currentImage:             hot.NewHotCache[struct{}, currentImageInfo](hot.LRU, 1).Build(),
 	}
 	loader := func(_ []struct{}) (map[struct{}]latestRelease, error) {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultRequestTimeout) //nolint:forbidigo // Cache revalidation runs independently of request cancellation.
@@ -288,7 +297,6 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 	// Semver versions (including prereleases like 2.4.0-next.1) display as v<version>.
 	displayVersion := strings.TrimPrefix(strings.TrimSpace(s.version), "v")
 
-	// Always detect current image info
 	currentTag, currentDigest, currentImageRef, currentImageID := s.detectCurrentImageInfo(ctx)
 
 	// Update fields stay empty when update checks are disabled.
@@ -390,6 +398,26 @@ func (s *VersionService) storedOrDigestBasedUpdate(ctx context.Context, currentI
 
 // detectCurrentImageInfo attempts to detect the current container's image tag and digest
 func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag, digest, imageRef, imageID string) {
+	if cached, found, _ := s.currentImage.Get(struct{}{}); found {
+		return cached.Tag, cached.Digest, cached.ImageRef, cached.ImageID
+	}
+	defer func() {
+		if ctx.Err() != nil {
+			return
+		}
+		detected := currentImageInfo{
+			Tag:      tag,
+			Digest:   digest,
+			ImageRef: imageRef,
+			ImageID:  imageID,
+		}
+		if digest != "" {
+			s.currentImage.Set(struct{}{}, detected)
+		} else {
+			s.currentImage.SetWithTTL(struct{}{}, detected, time.Minute)
+		}
+	}()
+
 	if s.dockerService == nil {
 		slog.DebugContext(ctx, "detectCurrentImageInfo: dockerService is nil")
 		return "", "", "", ""

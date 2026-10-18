@@ -12,6 +12,7 @@ import (
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/labstack/echo/v5"
 	"github.com/samber/hot"
+	"go.getarcane.app/streams/agg"
 	"go.getarcane.app/sys/cgroup"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -72,6 +73,7 @@ type WebSocketHandler struct {
 		running           bool
 	}
 	containerStatsHubs sync.Map
+	containersStatsHub *agg.Hub[containersStatsResult]
 	cgroupCache        *cgroup.Cache
 	gpuMonitor         *systemlib.GPUMonitor
 
@@ -102,6 +104,7 @@ func NewWebSocketHandler(
 		systemService:      systemService,
 		diagnosticsService: diagnosticsService,
 		logStreams:         make(map[string]*wsLogStream),
+		containersStatsHub: agg.NewHub[containersStatsResult](),
 		cgroupCache:        cgroup.NewCache(cgroupCacheTTL),
 		gpuMonitor:         systemlib.NewGPUMonitor(cfg.GPUMonitoringEnabled, cfg.GPUType),
 		diskUsagePathCache: hot.NewHotCache[struct{}, string](hot.LRU, 1).

@@ -268,10 +268,10 @@ func TestReconciliationRepairsMissingAlarm(t *testing.T) {
 	record, err := q.ScheduleState(t.Context(), "repair")
 	require.NoError(t, err)
 	id := kit.SHA256Hex("0\x00repair")
-	err = q.repair(t.Context(), true)
+	_, err = q.repair(t.Context(), true)
 	require.NoError(t, err)
 	require.NoError(t, q.service.DeleteAlarm(t.Context(), coordinatorType, id, fmt.Sprintf("schedule-%d-%d", record.Generation, record.Sequence)))
-	err = q.repair(t.Context(), true)
+	_, err = q.repair(t.Context(), true)
 	require.NoError(t, err)
 	require.NoError(t, q.service.DeleteAlarm(t.Context(), coordinatorType, id, fmt.Sprintf("schedule-%d-%d", record.Generation, record.Sequence)))
 	after, err := q.ScheduleState(t.Context(), "repair")
@@ -358,7 +358,7 @@ func TestLostDispatchAcknowledgementRetainsOneExecution(t *testing.T) {
 	state.Dispatches[key] = intent
 	state.Revision++
 	require.NoError(t, q.service.SetState(t.Context(), coordinatorType, id, state, nil))
-	err = q.repair(t.Context(), false)
+	_, err = q.repair(t.Context(), false)
 	require.NoError(t, err)
 	require.NoError(t, q.service.GetState(t.Context(), coordinatorType, id, &state))
 	require.Equal(t, original, state.Dispatches[key].JobID)

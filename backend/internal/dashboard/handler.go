@@ -15,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/getarcaneapp/arcane/types/v2/version"
 	"github.com/getarcaneapp/arcane/types/v2/volume"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/streams/agg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -31,6 +32,7 @@ type DashboardHandler struct {
 	// remoteStreamHub shares one poller per remote environment across every
 	// connected stream client instead of polling per client × environment.
 	remoteStreamHub *agg.Hub[dashboard.StreamEvent]
+	localStreamHub  *agg.Hub[dashboard.StreamEvent]
 }
 
 type GetDashboardInput struct {
@@ -55,6 +57,7 @@ func NewHandler(dashboardService *DashboardService, environmentService *environm
 		dashboardService:   dashboardService,
 		environmentService: environmentService,
 		remoteStreamHub:    agg.NewHub[dashboard.StreamEvent](),
+		localStreamHub:     agg.NewHub[dashboard.StreamEvent](),
 	}
 }
 
@@ -96,56 +99,62 @@ func trimDashboardStreamSnapshotInternal(snapshot *dashboard.Snapshot) *dashboar
 }
 
 func (h *DashboardHandler) RunLocalStreamProducer(ctx context.Context, debugAllGood bool, events chan<- dashboard.StreamEvent) {
-	lastError := ""
+	h.localStreamHub.Subscribe(ctx, kit.Ternary(debugAllGood, "local:debugAllGood", "local"),
+		func(runCtx context.Context, publish func(dashboard.StreamEvent)) {
+			lastError := ""
 
-	poll := func() {
-		snapshot, err := h.dashboardService.GetSnapshot(ctx, DashboardActionItemsOptions{
-			DebugAllGood: debugAllGood,
-		}, false)
-		if err == nil && snapshot == nil {
-			err = common.Classify(common.ErrUnavailable, errors.New("dashboard snapshot not available"))
-		}
-		if err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			// A failing snapshot must not end the stream; surface the error
-			// once per distinct message and keep polling.
-			if msg := err.Error(); msg != lastError {
-				lastError = msg
-				agg.Send(ctx, events, dashboard.StreamEvent{
-					Type:          "error",
+			poll := func() {
+				snapshot, err := h.dashboardService.GetSnapshot(runCtx, DashboardActionItemsOptions{
+					DebugAllGood: debugAllGood,
+				}, false)
+				if err == nil && snapshot == nil {
+					err = common.Classify(common.ErrUnavailable, errors.New("dashboard snapshot not available"))
+				}
+				if err != nil {
+					if runCtx.Err() != nil {
+						return
+					}
+					// A failing snapshot must not end the stream; surface the error
+					// once per distinct message and keep polling.
+					if msg := err.Error(); msg != lastError {
+						lastError = msg
+						publish(dashboard.StreamEvent{
+							Type:          "error",
+							EnvironmentID: "0",
+							Error:         msg,
+							Timestamp:     time.Now(),
+						})
+					}
+					return
+				}
+				lastError = ""
+				// Already built without tables; shared with other subscribers, so it
+				// must not be trimmed (mutated) here.
+				publish(dashboard.StreamEvent{
+					Type:          "snapshot",
 					EnvironmentID: "0",
-					Error:         msg,
+					Snapshot:      snapshot,
 					Timestamp:     time.Now(),
 				})
 			}
-			return
-		}
-		lastError = ""
-		// Already built without tables; shared with other subscribers, so it
-		// must not be trimmed (mutated) here.
-		agg.Send(ctx, events, dashboard.StreamEvent{
-			Type:          "snapshot",
-			EnvironmentID: "0",
-			Snapshot:      snapshot,
-			Timestamp:     time.Now(),
-		})
-	}
 
-	poll()
-
-	ticker := time.NewTicker(dashboardStreamLocalPollInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
 			poll()
-		}
-	}
+
+			ticker := time.NewTicker(dashboardStreamLocalPollInterval)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-runCtx.Done():
+					return
+				case <-ticker.C:
+					poll()
+				}
+			}
+		},
+		func(event dashboard.StreamEvent) bool {
+			return agg.Send(ctx, events, event)
+		})
 }
 
 // RunRemoteStreamPollers keeps one poller goroutine per

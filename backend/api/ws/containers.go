@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"log/slog"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -13,15 +14,21 @@ import (
 	"github.com/labstack/echo/v5"
 	kit "go.getarcane.app/kit/pkg"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 )
 
 const (
-	// containersStatsInterval is the pause between batches and the oldest cached sample a batch reuses.
+	// containersStatsInterval is the wall-clock period every subscription samples on.
 	containersStatsInterval = 2 * time.Second
 	// containersStatsReadLimit fits a subscription of 500 full container IDs, the most one batch samples.
 	containersStatsReadLimit = 64 << 10
 )
+
+type containersStatsResult struct {
+	samples map[string]*containertypes.ResourceSample
+	err     error
+}
 
 // ContainersStats streams resource samples for a client-chosen set of containers over one WebSocket.
 // The client sends a ResourceSampleSubscription whenever its set changes; the server answers with a
@@ -45,8 +52,8 @@ func (h *WebSocketHandler) ContainersStats(c *echo.Context) error {
 	defer cancel()
 
 	var ids atomic.Pointer[[]string]
-	wake := make(chan struct{}, 1)
-	go readContainersStatsPump(ctx, cancel, conn, &ids, wake)
+	subscribed := make(chan struct{}, 1)
+	go readContainersStatsPump(ctx, cancel, conn, &ids, subscribed)
 	// The pong is serviced by readContainersStatsPump.
 	go wshub.KeepAlive(ctx, cancel, conn)
 
@@ -64,37 +71,54 @@ func (h *WebSocketHandler) ContainersStats(c *echo.Context) error {
 	select {
 	case <-ctx.Done():
 		return nil
-	case <-wake:
+	case <-subscribed:
 	}
 
-	for {
-		samples, err := h.containerService.SampleResources(ctx, kit.FromPtr(ids.Load()), containersStatsInterval)
-		switch {
-		case ctx.Err() != nil:
-			return nil
-		case err != nil:
-			slog.DebugContext(ctx, "Failed to sample container stats", "envId", c.Param("id"), "error", err)
-			if send(containertypes.ResourceSampleBatch{Error: "Failed to sample container stats: " + err.Error(), Timestamp: time.Now()}) != nil {
-				return nil
+	for ctx.Err() == nil {
+		want := kit.FromPtr(ids.Load())
+		want = want[:min(len(want), container.ResourceSampleLimit)]
+		subCtx, cancelSub := context.WithCancel(ctx)
+		go func() {
+			defer cancelSub()
+			select {
+			case <-subscribed:
+			case <-subCtx.Done():
 			}
-		default:
-			if send(containertypes.ResourceSampleBatch{Samples: samples, Timestamp: time.Now()}) != nil {
-				return nil
-			}
-		}
-
-		select {
-		case <-ctx.Done():
+		}()
+		h.containersStatsHub.Subscribe(subCtx, strings.Join(want, ","),
+			func(runCtx context.Context, publish func(containersStatsResult)) {
+				for {
+					samples, err := h.containerService.SampleResources(runCtx, want, containersStatsInterval/4)
+					if runCtx.Err() != nil {
+						return
+					}
+					if err != nil {
+						slog.DebugContext(runCtx, "Failed to sample container stats", "envId", c.Param("id"), "error", err)
+					}
+					publish(containersStatsResult{samples: samples, err: err})
+					select {
+					case <-runCtx.Done():
+						return
+					case <-time.After(time.Until(time.Now().Truncate(containersStatsInterval).Add(containersStatsInterval))):
+					}
+				}
+			},
+			func(result containersStatsResult) bool {
+				if result.err != nil {
+					return send(containertypes.ResourceSampleBatch{Error: "Failed to sample container stats: " + result.err.Error(), Timestamp: time.Now()}) == nil
+				}
+				return send(containertypes.ResourceSampleBatch{Samples: result.samples, Timestamp: time.Now()}) == nil
+			})
+		if subCtx.Err() == nil {
 			return nil
-		case <-wake:
-		case <-time.After(containersStatsInterval):
 		}
 	}
+	return nil
 }
 
 // readContainersStatsPump is the single reader for the ContainersStats websocket. It stores each
 // subscription and wakes the sampler; malformed frames are ignored. Do not add other readers.
-func readContainersStatsPump(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, ids *atomic.Pointer[[]string], wake chan<- struct{}) {
+func readContainersStatsPump(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, ids *atomic.Pointer[[]string], subscribed chan<- struct{}) {
 	defer cancel()
 	for {
 		_, data, err := conn.Read(ctx)
@@ -107,7 +131,7 @@ func readContainersStatsPump(ctx context.Context, cancel context.CancelFunc, con
 		}
 		ids.Store(new(subscription.ContainerIDs))
 		select {
-		case wake <- struct{}{}:
+		case subscribed <- struct{}{}:
 		default:
 		}
 	}

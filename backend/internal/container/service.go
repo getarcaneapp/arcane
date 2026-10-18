@@ -1477,13 +1477,13 @@ func (s *ContainerService) StreamStats(ctx context.Context, containerID string, 
 	return s.stats.Stream(ctx, containerID, statsChan)
 }
 
-// containerResourceSampleLimit caps how many requested containers one SampleResources call reads.
-const containerResourceSampleLimit = 500
+// ResourceSampleLimit caps how many requested containers one SampleResources call reads.
+const ResourceSampleLimit = 500
 
-// SampleResources samples the running containers among the first containerResourceSampleLimit ids,
+// SampleResources samples the running containers among the first ResourceSampleLimit ids,
 // refetching samples older than maxAge. Blank, stopped and unknown IDs are omitted.
 func (s *ContainerService) SampleResources(ctx context.Context, ids []string, maxAge time.Duration) (map[string]*containertypes.ResourceSample, error) {
-	requested := slices.DeleteFunc(slices.Clone(ids[:min(len(ids), containerResourceSampleLimit)]), func(id string) bool {
+	requested := slices.DeleteFunc(slices.Clone(ids[:min(len(ids), ResourceSampleLimit)]), func(id string) bool {
 		return strings.TrimSpace(id) == ""
 	})
 	if len(requested) == 0 {

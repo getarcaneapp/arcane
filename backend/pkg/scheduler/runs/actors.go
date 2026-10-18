@@ -28,6 +28,7 @@ const (
 	healthExecutorType  = "job-health-executor"
 	orphanedDispatchAge = 15 * time.Minute
 	outcomePersistGrace = 30 * time.Second
+	coordinatorIdleWake = 2 * time.Minute
 )
 
 type coordinatorActor struct {
@@ -342,25 +343,32 @@ func (a *coordinatorActor) Alarm(ctx context.Context, name string, data actor.En
 	if setStateErr := a.q.service.SetState(ctx, coordinatorType, a.id, state, nil); setStateErr != nil {
 		return setStateErr
 	}
-	return a.flush(ctx, &state)
+	if flushErr := a.flush(ctx, &state); flushErr != nil {
+		return flushErr
+	}
+	a.q.signal()
+	return nil
 }
 
 // repair flushes coordinators so schedule alarms and dispatches are restored.
 // Unless all is set, it skips records without unfinished runs so idle coordinators can deactivate.
-func (q *Coordinator) repair(ctx context.Context, all bool) error {
+func (q *Coordinator) repair(ctx context.Context, all bool) (busy bool, err error) {
 	records, err := q.Records(ctx)
 	if err != nil {
-		return err
+		return false, err
+	}
+	unfinished := func(record st.QueueRecord) bool {
+		return slices.ContainsFunc(record.Runs, func(run st.Run) bool { return !run.Status.Terminal() && run.Status != st.NeedsAttention })
 	}
 	for _, record := range records {
-		if !all && !slices.ContainsFunc(record.Runs, func(run st.Run) bool { return !run.Status.Terminal() && run.Status != st.NeedsAttention }) {
+		if !all && !unfinished(record) {
 			continue
 		}
 		if _, invokeErr := q.service.Invoke(ctx, coordinatorType, kit.SHA256Hex(record.EnvironmentID+"\x00"+record.JobID), "repair", nil); invokeErr != nil {
-			return invokeErr
+			return false, invokeErr
 		}
 	}
-	return nil
+	return slices.ContainsFunc(records, unfinished), nil
 }
 
 func (q *Coordinator) importLegacy(ctx context.Context) error {

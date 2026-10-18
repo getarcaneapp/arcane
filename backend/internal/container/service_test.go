@@ -1391,7 +1391,7 @@ func TestResourceSortCancelledContextFailsRequest(t *testing.T) {
 }
 
 func TestSampleResourcesFiltersRequestedIDs(t *testing.T) {
-	capped := make([]string, containerResourceSampleLimit+1)
+	capped := make([]string, ResourceSampleLimit+1)
 	for i := range capped {
 		capped[i] = fmt.Sprintf("c%03d", i)
 	}
@@ -1419,7 +1419,7 @@ func TestSampleResourcesFiltersRequestedIDs(t *testing.T) {
 			name:    "ids past the limit are ignored",
 			running: capped,
 			request: capped,
-			want:    capped[:containerResourceSampleLimit],
+			want:    capped[:ResourceSampleLimit],
 		},
 		{
 			name:    "no ids samples nothing",

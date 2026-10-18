@@ -23,6 +23,7 @@ export interface ReconnectWSOptions<T> {
 	maxBackoff?: number;
 	autoConnect?: boolean;
 	shouldReconnect?: () => boolean;
+	pauseWhenHidden?: boolean;
 }
 
 export class ReconnectingWebSocket<T = unknown> {
@@ -34,6 +35,8 @@ export class ReconnectingWebSocket<T = unknown> {
 	private connecting = false;
 	private generation = 0;
 	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	private paused = false;
+	private listeningVisibility = false;
 
 	constructor(opts: ReconnectWSOptions<T>) {
 		this.opts = opts;
@@ -44,11 +47,19 @@ export class ReconnectingWebSocket<T = unknown> {
 	async connect() {
 		this.close();
 		this.closed = false;
+		if (this.opts.pauseWhenHidden && typeof document !== 'undefined' && !this.listeningVisibility) {
+			document.addEventListener('visibilitychange', this.onVisibility);
+			this.listeningVisibility = true;
+		}
 		await this.connectOnce();
 	}
 
 	async connectOnce() {
 		if (this.closed || this.connecting) return;
+		if (this.shouldPause()) {
+			this.paused = true;
+			return;
+		}
 
 		if (this.ws) {
 			try {
@@ -124,6 +135,10 @@ export class ReconnectingWebSocket<T = unknown> {
 		if (currentSessionSignal().aborted || (this.opts.shouldReconnect && !this.opts.shouldReconnect())) {
 			return;
 		}
+		if (this.shouldPause()) {
+			this.paused = true;
+			return;
+		}
 
 		if (this.reconnectTimer) {
 			clearTimeout(this.reconnectTimer);
@@ -140,6 +155,40 @@ export class ReconnectingWebSocket<T = unknown> {
 		}, backoff);
 	}
 
+	private shouldPause() {
+		return this.opts.pauseWhenHidden === true && (this.paused || (typeof document !== 'undefined' && document.hidden));
+	}
+
+	private readonly onVisibility = () => {
+		if (this.closed) return;
+		if (document.hidden) {
+			this.paused = true;
+			this.generation++;
+			if (this.reconnectTimer) {
+				clearTimeout(this.reconnectTimer);
+				this.reconnectTimer = null;
+			}
+			const socket = this.ws;
+			this.ws = null;
+			this.connecting = false;
+			try {
+				socket?.close();
+			} catch {}
+			return;
+		}
+		if (!this.paused) return;
+		this.paused = false;
+		this.attempt = 0;
+		void this.connectOnce();
+	};
+
+	private removeVisibilityListener() {
+		this.paused = false;
+		if (!this.listeningVisibility) return;
+		document.removeEventListener('visibilitychange', this.onVisibility);
+		this.listeningVisibility = false;
+	}
+
 	send(data: string): boolean {
 		if (this.ws?.readyState !== WebSocket.OPEN) return false;
 		this.ws.send(data);
@@ -150,6 +199,7 @@ export class ReconnectingWebSocket<T = unknown> {
 		this.closed = true;
 		this.attempt = 0;
 		this.generation++;
+		this.removeVisibilityListener();
 
 		if (this.reconnectTimer) {
 			clearTimeout(this.reconnectTimer);
@@ -166,6 +216,7 @@ export class ReconnectingWebSocket<T = unknown> {
 		this.closed = true;
 		this.attempt = 0;
 		this.generation++;
+		this.removeVisibilityListener();
 
 		if (this.reconnectTimer) {
 			clearTimeout(this.reconnectTimer);
@@ -227,7 +278,8 @@ export function createStatsWebSocket(opts: {
 		onOpen: opts.onOpen,
 		onClose: opts.onClose,
 		onError: opts.onError,
-		maxBackoff: opts.maxBackoff
+		maxBackoff: opts.maxBackoff,
+		pauseWhenHidden: true
 	});
 }
 
@@ -256,7 +308,8 @@ export function createContainerStatsWebSocket(opts: {
 		onError: opts.onError,
 		maxBackoff: opts.maxBackoff,
 		autoConnect: false,
-		shouldReconnect: opts.shouldReconnect
+		shouldReconnect: opts.shouldReconnect,
+		pauseWhenHidden: true
 	});
 }
 
@@ -279,7 +332,8 @@ export function createContainersStatsWebSocket(opts: {
 		onMessage: opts.onMessage,
 		onOpen: opts.onOpen,
 		onError: opts.onError,
-		shouldReconnect: opts.shouldReconnect
+		shouldReconnect: opts.shouldReconnect,
+		pauseWhenHidden: true
 	});
 }
 
