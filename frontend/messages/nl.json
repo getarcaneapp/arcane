@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "bijv. Mijn Nginx-stack",
   "templates_template_name_required": "Sjabloonnaam is vereist",
   "templates_template_description_placeholder": "Beschrijf deze sjabloon kort",
+  "templates_name_description_locked": "De naam en beschrijving van een sjabloon uit de map ‘templates’ kunnen niet worden gewijzigd.",
   "compose_content_is_required": "Inhoud samenstellen is vereist",
   "templates_save_template_failed": "Sjabloon niet opgeslagen",
   "templates_create_template_failed": "Sjabloon niet gemaakt",
