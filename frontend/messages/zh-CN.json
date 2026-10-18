@@ -292,6 +292,8 @@
   "prune_images_dialog_description": "选择 Arcane 清理未使用 Docker 镜像的力度。",
   "auto_update_exclude_description": "选择不应自动更新的容器。Arcane 会不断检查这些容器是否有更新，并发送通知。",
   "auto_update_check_label_hint": "要停止某个容器的更新检查和通知，请为其添加标签 {label}。",
+  "auto_update_delay_label": "更新延迟（小时）",
+  "auto_update_delay_description": "从 Arcane 首次检测到新镜像起，自动更新在安装该镜像前需等待的小时数。设置为 0 时将立即安装，且手动更新绝不会延迟。可通过标签 {label} 对每个容器进行覆盖设置。",
   "auto_update_disabled_checks_continue": "更新检查和通知仍保持启用状态；仅关闭了自动安装功能。",
   "auto_update_title": "自动更新",
   "auto_update_enabled_toast": "已启用自动更新",
