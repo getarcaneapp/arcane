@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "es. Il mio stack Nginx",
   "templates_template_name_required": "Il nome del modello è obbligatorio",
   "templates_template_description_placeholder": "Descrivete brevemente questo modello",
+  "templates_name_description_locked": "Non è possibile modificare il nome e la descrizione di un modello presente nella directory dei modelli.",
   "compose_content_is_required": "È necessario comporre i contenuti",
   "templates_save_template_failed": "Impossibile salvare il modello",
   "templates_create_template_failed": "Impossibile creare il modello",
