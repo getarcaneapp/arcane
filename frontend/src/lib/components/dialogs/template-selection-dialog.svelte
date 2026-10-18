@@ -28,6 +28,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { templateService } from '#lib/services/template-service.js';
 	import type { Template } from '#lib/types/swarm.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	interface Props {
@@ -41,6 +42,7 @@
 	void open;
 
 	const loadingStates = new SvelteSet<string>();
+	const canCreateTemplate = $derived(hasPermission('templates:create'));
 	let sortBy = $state<'name-asc' | 'name-desc'>('name-asc');
 	let groupByRegistry = $state(true);
 	let searchQuery = $state('');
@@ -259,7 +261,7 @@
 					{template.isRemote ? m.templates_remote_template_label() : m.templates_local_template_label()}
 				</div>
 				<div class="flex gap-2">
-					{#if template.isRemote}
+					{#if template.isRemote && canCreateTemplate}
 						<ArcaneButton
 							action="base"
 							tone="outline"

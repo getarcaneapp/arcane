@@ -36,6 +36,7 @@
 		fileIdPrefix,
 		globalVariableMap,
 		saving = false,
+		lockNameAndDescription = false,
 		onSubmit,
 		toolbarActions
 	}: {
@@ -47,12 +48,14 @@
 		fileIdPrefix: string;
 		globalVariableMap: Record<string, string>;
 		saving?: boolean;
+		lockNameAndDescription?: boolean;
 		onSubmit: () => void;
 		toolbarActions: Snippet;
 	} = $props();
 
 	let nameInputRef = $state<HTMLInputElement | null>(null);
 	const enableDiff = $derived(originalCompose !== undefined);
+	const lockedMessage = $derived(lockNameAndDescription ? m.templates_name_description_locked() : undefined);
 </script>
 
 <div class="flex h-full min-h-0 flex-col bg-background">
@@ -77,7 +80,8 @@
 						error={inputs.name.error ?? undefined}
 						originalValue={originalName}
 						placeholder={m.templates_template_name_placeholder()}
-						canEdit={!saving}
+						canEdit={!saving && !lockNameAndDescription}
+						disabledMessage={lockedMessage}
 						class="hidden sm:block"
 					/>
 				</div>
@@ -100,7 +104,8 @@
 						error={inputs.name.error ?? undefined}
 						originalValue={originalName}
 						placeholder={m.templates_template_name_placeholder()}
-						canEdit={!saving}
+						canEdit={!saving && !lockNameAndDescription}
+						disabledMessage={lockedMessage}
 					/>
 				</div>
 
@@ -110,7 +115,8 @@
 							input={inputs.description}
 							label={m.common_description()}
 							placeholder={m.templates_template_description_placeholder()}
-							disabled={saving}
+							description={lockedMessage}
+							disabled={saving || lockNameAndDescription}
 						/>
 					</div>
 				</div>

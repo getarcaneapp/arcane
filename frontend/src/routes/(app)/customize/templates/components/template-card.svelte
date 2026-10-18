@@ -28,7 +28,7 @@
 
 	const MAX_TAGS = 4;
 
-	const canReadTemplate = $derived(hasPermission('templates:read'));
+	const canCreateTemplate = $derived(hasPermission('templates:create'));
 	const canDeleteTemplate = $derived(hasPermission('templates:delete'));
 	const registryName = $derived(
 		template.registry?.name ?? (template.isRemote ? m.templates_unknown_registry() : m.templates_local_templates())
@@ -72,11 +72,11 @@
 					</DropdownMenu.Item>
 				</IfPermitted>
 
-				{#if (template.isRemote && canReadTemplate) || (!template.isRemote && canDeleteTemplate)}
+				{#if (template.isRemote && canCreateTemplate) || (!template.isRemote && canDeleteTemplate)}
 					<DropdownMenu.Separator />
 				{/if}
 
-				{#if template.isRemote && canReadTemplate}
+				{#if template.isRemote && canCreateTemplate}
 					<DropdownMenu.Item onclick={() => onDownload(template)} disabled={downloading}>
 						{#if downloading}
 							<Spinner class="size-4" />

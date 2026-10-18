@@ -26,6 +26,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { templateService } from '#lib/services/template-service.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
 	import {
@@ -68,6 +69,8 @@
 	let originalDescription = $derived(template.description ?? '');
 	let originalCompose = $derived(data.templateData.content);
 	let originalEnv = $derived(data.templateData.envContent);
+	// Folder templates take their name and description from the templates directory.
+	const isFolderTemplate = $derived(template.description?.startsWith('Imported from ') ?? false);
 
 	let formData = $derived({
 		name: originalName,
@@ -145,7 +148,7 @@
 		return data.allTemplates.find((t) => !t.isRemote && t.metadata?.remoteUrl === template.metadata?.remoteUrl);
 	});
 
-	const canDownload = $derived(template.isRemote && !localVersionOfRemote);
+	const canDownload = $derived(template.isRemote && !localVersionOfRemote && hasPermission('templates:create'));
 
 	async function handleDownload() {
 		if (status.isDownloading || !canDownload) return;
@@ -265,6 +268,7 @@
 		fileIdPrefix="templates:custom:{template.id}"
 		{globalVariableMap}
 		saving={status.saving}
+		lockNameAndDescription={isFolderTemplate}
 		onSubmit={handleSave}
 	>
 		{#snippet toolbarActions()}

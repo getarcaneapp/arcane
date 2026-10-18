@@ -223,6 +223,9 @@ func (h *TemplateHandler) UpdateTemplate(ctx context.Context, input *UpdateTempl
 		if errors.Is(err, common.ErrTemplateNotFound) {
 			return nil, huma.Error404NotFound("Template not found")
 		}
+		if errors.Is(err, common.ErrValidation) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
 		return nil, huma.Error500InternalServerError("Failed to update template: " + err.Error())
 	}
 

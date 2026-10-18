@@ -130,7 +130,7 @@ func RegisterTemplates(api huma.API, templateService *TemplateService) {
 		Description: "Download a remote template to local storage",
 		Tags:        []string{"Templates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermTemplatesRead),
+		Middlewares: middleware.RequirePermission(api, authz.PermTemplatesCreate),
 	}, h.DownloadTemplate)
 
 	huma.Register(api, huma.Operation{

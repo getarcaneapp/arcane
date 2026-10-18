@@ -327,6 +327,20 @@ func (s *TemplateService) UpdateTemplate(ctx context.Context, id string, updates
 			return errors.New("cannot update remote template")
 		}
 
+		// The filesystem sync re-imports folder templates, so edits must go to the folder.
+		baseDir, folder, composePath, folderErr := s.importedTemplateFolder(ctx, &existing)
+		if folderErr != nil {
+			return folderErr
+		}
+		if composePath != "" {
+			if updates.Name != existing.Name || updates.Description != existing.Description {
+				return common.Classify(common.ErrValidation, errors.New("the name and description of a template from the templates directory cannot be changed"))
+			}
+			if writeErr := writeImportedTemplateFiles(filepath.Join(baseDir, folder), composePath, updates.Content, mo.PointerToOption(updates.EnvContent).OrEmpty()); writeErr != nil {
+				return writeErr
+			}
+		}
+
 		existing.Name = updates.Name
 		existing.Description = updates.Description
 		existing.Content = updates.Content
@@ -353,17 +367,13 @@ func (s *TemplateService) DeleteTemplate(ctx context.Context, id string) error {
 			return errors.New("cannot delete remote template directly")
 		}
 
-		baseDir, err := s.getTemplatesDirectory(ctx)
+		baseDir, folder, composePath, err := s.importedTemplateFolder(ctx, &existing)
 		if err != nil {
-			return fmt.Errorf("failed to get templates directory: %w", err)
+			return err
 		}
-
-		templatePath := filepath.Join(baseDir, existing.Name)
-		if entry, statErr := acfs.Stat(ctx, baseDir, "/"+existing.Name, false); statErr == nil && entry.IsDirectory {
-			if _, detectComposeFileErr := projects.DetectComposeFile(ctx, "", templatePath); detectComposeFileErr == nil {
-				if removeAllErr := acfs.RemoveAll(ctx, baseDir, entry.Path); removeAllErr != nil {
-					return fmt.Errorf("failed to delete template directory: %w", removeAllErr)
-				}
+		if composePath != "" {
+			if removeAllErr := acfs.RemoveAll(ctx, baseDir, folder); removeAllErr != nil {
+				return fmt.Errorf("failed to delete template directory: %w", removeAllErr)
 			}
 		}
 		if deleteTemplateErr := tx.Delete(&existing).Error; deleteTemplateErr != nil {
@@ -371,6 +381,43 @@ func (s *TemplateService) DeleteTemplate(ctx context.Context, id string) error {
 		}
 		return nil
 	})
+}
+
+// importedTemplateFolder returns the folder tpl was imported from, as a path logical to baseDir, and its compose file.
+// composePath is empty when no folder belongs to tpl, including a folder that only shares its name.
+func (s *TemplateService) importedTemplateFolder(ctx context.Context, tpl *ComposeTemplate) (baseDir, folder, composePath string, err error) {
+	baseDir, err = s.getTemplatesDirectory(ctx)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to get templates directory: %w", err)
+	}
+
+	entry, statErr := acfs.Stat(ctx, baseDir, "/"+tpl.Name, false)
+	if statErr != nil || !entry.IsDirectory {
+		return baseDir, "", "", nil
+	}
+	detected, detectErr := projects.DetectComposeFile(ctx, "", filepath.Join(baseDir, tpl.Name))
+	if detectErr != nil || tpl.Description != "Imported from "+detected {
+		return baseDir, "", "", nil
+	}
+	return baseDir, entry.Path, detected, nil
+}
+
+// writeImportedTemplateFiles writes content and env to the files projects.ReadFolderComposeTemplate reads.
+func writeImportedTemplateFiles(folderPath, composePath, content, envContent string) error {
+	if err := projects.WriteTemplateFile(composePath, content); err != nil {
+		return err
+	}
+
+	envPath := filepath.Join(folderPath, ".env.example")
+	if _, err := os.Stat(envPath); err != nil {
+		dotEnvPath := filepath.Join(folderPath, ".env")
+		if _, dotEnvErr := os.Stat(dotEnvPath); dotEnvErr == nil {
+			envPath = dotEnvPath
+		} else if strings.TrimSpace(envContent) == "" {
+			return nil
+		}
+	}
+	return projects.WriteTemplateFile(envPath, envContent)
 }
 
 // readDefaultTemplate reads one of the default template files from the configured templates directory.
