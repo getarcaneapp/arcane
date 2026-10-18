@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"os"
 	"path"
 	"path/filepath"
 	"slices"
@@ -471,7 +472,7 @@ func (s *Service) RemoveStack(ctx context.Context, environmentID, stackName stri
 			return persistedErr
 		}
 	} else {
-		if removeStackServicesErr := s.removeStackServices(ctx, services); removeStackServicesErr != nil {
+		if removeStackServicesErr := s.removeStackServices(ctx, stackName, services); removeStackServicesErr != nil {
 			return removeStackServicesErr
 		}
 	}
@@ -492,7 +493,7 @@ func (s *Service) RemoveStack(ctx context.Context, environmentID, stackName stri
 	return nil
 }
 
-func (s *Service) removeStackServices(ctx context.Context, services []swarm.Service) error {
+func (s *Service) removeStackServices(ctx context.Context, stackName string, services []swarm.Service) error {
 	serviceIDs := make(map[string]struct{}, len(services))
 	for _, service := range services {
 		serviceIDs[service.ID] = struct{}{}
@@ -503,7 +504,7 @@ func (s *Service) removeStackServices(ctx context.Context, services []swarm.Serv
 		}
 	}
 
-	if err := s.waitForRemovedServiceTasks(ctx, serviceIDs, 30*time.Second); err != nil {
+	if err := s.waitForRemovedServiceTasks(ctx, stackName, serviceIDs, 30*time.Second); err != nil {
 		return err
 	}
 
@@ -610,7 +611,7 @@ func (s *Service) listStackServicesRaw(ctx context.Context, stackName string) ([
 	return servicesResult.Items, nil
 }
 
-func (s *Service) waitForRemovedServiceTasks(ctx context.Context, serviceIDs map[string]struct{}, timeout time.Duration) error {
+func (s *Service) waitForRemovedServiceTasks(ctx context.Context, stackName string, serviceIDs map[string]struct{}, timeout time.Duration) error {
 	if len(serviceIDs) == 0 {
 		return nil
 	}
@@ -621,10 +622,8 @@ func (s *Service) waitForRemovedServiceTasks(ctx context.Context, serviceIDs map
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
-	taskFilters := make(client.Filters)
-	for serviceID := range serviceIDs {
-		taskFilters.Add("service", serviceID)
-	}
+	// Docker rejects a service filter naming a removed service, so filter by stack label.
+	taskFilters := make(client.Filters).Add("label", fmt.Sprintf("%s=%s", swarmtypes.StackNamespaceLabel, stackName))
 
 	for {
 		tasksResult, err := s.docker.Call(waitCtx, func(ctx context.Context, dockerClient *client.Client) (client.TaskListResult, error) {
@@ -635,6 +634,9 @@ func (s *Service) waitForRemovedServiceTasks(ctx context.Context, serviceIDs map
 		}
 
 		hasActiveTasks := slices.ContainsFunc(tasksResult.Items, func(task swarm.Task) bool {
+			if _, removed := serviceIDs[task.ServiceID]; !removed {
+				return false
+			}
 			return !slices.Contains([]swarm.TaskState{
 				swarm.TaskStateComplete,
 				swarm.TaskStateShutdown,
@@ -670,6 +672,10 @@ func (s *Service) upsertStackSource(ctx context.Context, environmentID, stackNam
 	stackLogical, err := acfs.LogicalPath(rootDir, stackSourceDir)
 	if err != nil {
 		return fmt.Errorf("swarm stack source directory is outside its root: %w", err)
+	}
+	// os rather than acfs: acfs can only open a root that already exists.
+	if mkdirAllErr := os.MkdirAll(rootDir, utils.DirPerm); mkdirAllErr != nil {
+		return fmt.Errorf("failed to create swarm stack source root: %w", mkdirAllErr)
 	}
 	if mkdirAllErr := acfs.MkdirAll(ctx, rootDir, stackLogical, utils.DirPerm); mkdirAllErr != nil {
 		return fmt.Errorf("failed to create swarm stack source directory: %w", mkdirAllErr)

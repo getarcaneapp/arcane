@@ -3,6 +3,7 @@ package services
 import (
 	"cmp"
 	"context"
+	stdjson "encoding/json"
 	"encoding/json/v2"
 	"fmt"
 	"maps"
@@ -263,7 +264,8 @@ func (s *Service) CreateService(ctx context.Context, req swarmtypes.ServiceCreat
 
 	// Unmarshal spec from JSON
 	var spec swarm.ServiceSpec
-	if unmarshalErr := json.Unmarshal(req.Spec, &spec); unmarshalErr != nil {
+	// Docker encodes durations as integer nanoseconds.
+	if unmarshalErr := json.Unmarshal(req.Spec, &spec, stdjson.FormatDurationAsNano(true)); unmarshalErr != nil {
 		return nil, fmt.Errorf("failed to parse service spec: %w", unmarshalErr)
 	}
 

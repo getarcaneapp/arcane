@@ -191,8 +191,13 @@ func (s *SwarmService) LeaveSwarm(ctx context.Context, req swarmtypes.SwarmLeave
 }
 
 func (s *SwarmService) UnlockSwarm(ctx context.Context, req swarmtypes.SwarmUnlockRequest) error {
-	if _, err := s.ensureSwarmActive(ctx); err != nil {
+	info, err := s.getDockerInfo(ctx)
+	if err != nil {
 		return err
+	}
+
+	if info.Swarm.LocalNodeState != swarm.LocalNodeStateLocked && info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
+		return common.Classify(common.ErrSwarmNotEnabled, errors.New("Swarm mode is not enabled")) //nolint:staticcheck // Preserve the existing error message.
 	}
 
 	if _, swarmUnlockErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SwarmUnlockResult, error) {
@@ -374,7 +379,8 @@ func decodeSwarmSpec(raw stdjson.RawMessage) (swarm.Spec, error) {
 	}
 
 	var spec swarm.Spec
-	if err := json.Unmarshal(trimmed, &spec); err != nil {
+	// Docker encodes durations as integer nanoseconds.
+	if err := json.Unmarshal(trimmed, &spec, stdjson.FormatDurationAsNano(true)); err != nil {
 		return swarm.Spec{}, fmt.Errorf("failed to parse swarm spec: %w", err)
 	}
 
