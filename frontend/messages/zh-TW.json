@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "例如：我的 Nginx 堆疊",
   "templates_template_name_required": "模板名稱為必填項目",
   "templates_template_description_placeholder": "簡述此模板",
+  "templates_name_description_locked": "無法變更「templates」目錄中模板的名稱與說明。",
   "compose_content_is_required": "需要編寫內容",
   "templates_save_template_failed": "儲存範本失敗",
   "templates_create_template_failed": "建立範本失敗",
