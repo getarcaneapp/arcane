@@ -1471,7 +1471,7 @@ func TestImageUpdateService_NotificationSentLogic(t *testing.T) {
 			ResponseTimeMs: 100,
 		}
 
-		updateRecord := buildImageUpdateRecord(imageID, repo, tag, result, false)
+		updateRecord := buildImageUpdateRecord(imageID, repo, tag, result, false, nil, nil)
 
 		// New record should have NotificationSent = false
 		assert.False(t, updateRecord.NotificationSent)
@@ -1687,6 +1687,53 @@ func TestImageUpdateService_RateLimitErrorPreservesPreviousResult(t *testing.T) 
 			}
 		})
 	}
+}
+
+func TestSavePreparedUpdateResult_TracksLatestSeenAt(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	imageID := "sha256:seen"
+	repo := "docker.io/library/nginx"
+	tag := "latest"
+	firstSeen := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	save := func(checkTime time.Time, hasUpdate bool, latestDigest, checkErr string) ImageUpdateRecord {
+		t.Helper()
+		require.NoError(t, savePreparedUpdateResultWithTx(db.DB, imageID, repo, tag, &imageupdate.Response{
+			HasUpdate:     hasUpdate,
+			UpdateType:    UpdateTypeDigest,
+			CurrentDigest: "sha256:current",
+			LatestDigest:  latestDigest,
+			Error:         checkErr,
+			CheckTime:     checkTime,
+		}))
+		var saved ImageUpdateRecord
+		require.NoError(t, db.First(&saved, "id = ?", imageID).Error)
+		return saved
+	}
+
+	saved := save(firstSeen, true, "sha256:new", "")
+	require.NotNil(t, saved.LatestSeenAt, "a new update records when it was first seen")
+	assert.Equal(t, firstSeen, saved.LatestSeenAt.UTC())
+
+	saved = save(firstSeen.Add(time.Hour), true, "sha256:new", "")
+	require.NotNil(t, saved.LatestSeenAt)
+	assert.Equal(t, firstSeen, saved.LatestSeenAt.UTC(), "an unchanged recheck keeps the first-seen time")
+
+	saved = save(firstSeen.Add(90*time.Minute), false, "", "registry unavailable")
+	require.NotNil(t, saved.LatestSeenAt)
+	assert.Equal(t, firstSeen, saved.LatestSeenAt.UTC(), "a failed check keeps the first-seen time")
+	assert.Equal(t, new("sha256:new"), saved.LatestDigest, "a failed check keeps the last target")
+
+	saved = save(firstSeen.Add(100*time.Minute), true, "sha256:new", "")
+	require.NotNil(t, saved.LatestSeenAt)
+	assert.Equal(t, firstSeen, saved.LatestSeenAt.UTC(), "the same target after a failed check keeps the first-seen time")
+
+	changed := firstSeen.Add(2 * time.Hour)
+	saved = save(changed, true, "sha256:newer", "")
+	require.NotNil(t, saved.LatestSeenAt)
+	assert.Equal(t, changed, saved.LatestSeenAt.UTC(), "a new digest restarts the clock")
+
+	saved = save(changed.Add(time.Hour), false, "sha256:current", "")
+	assert.Nil(t, saved.LatestSeenAt, "no pending update clears the first-seen time")
 }
 
 // TestGetUnnotifiedUpdates tests retrieving updates that haven't been notified

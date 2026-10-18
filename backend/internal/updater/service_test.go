@@ -59,6 +59,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
 )
 
@@ -1812,4 +1813,61 @@ func TestUpdaterService_WorkflowDefinitionsAreVersioned(t *testing.T) {
 
 	// auto-update embeds image-check, so bumping image-check also requires bumping auto-update.
 	flowtest.AssertDefinitions(t, harness)
+}
+
+func TestUpdaterService_AutoUpdateDeferral(t *testing.T) {
+	ctx := t.Context()
+	db := setupProjectTestDB(t)
+	now := time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC)
+	require.NoError(t, db.Create(&[]imageupdate.ImageUpdateRecord{
+		{
+			ID:           "young",
+			Repository:   "registry.example.com/young",
+			Tag:          "latest",
+			HasUpdate:    true,
+			LatestSeenAt: new(now.Add(-time.Hour)),
+		},
+		{
+			ID:           "old",
+			Repository:   "registry.example.com/old",
+			Tag:          "latest",
+			HasUpdate:    true,
+			LatestSeenAt: new(now.Add(-48 * time.Hour)),
+		},
+		{
+			ID:         "unseen",
+			Repository: "registry.example.com/unseen",
+			Tag:        "latest",
+			HasUpdate:  true,
+		},
+	}).Error)
+	settingsService, err := settings.NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
+	require.NoError(t, settingsService.SetIntSetting(ctx, "autoUpdateDelay", 24))
+	svc, err := NewUpdaterService(db, settingsService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	require.NoError(t, err)
+
+	deferred, err := svc.autoUpdateDeferral(ctx, now)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name   string
+		id     string
+		labels map[string]string
+		want   bool
+	}{
+		{name: "younger than the environment delay", id: "young", want: true},
+		{name: "older than the environment delay", id: "old"},
+		{name: "missing first-seen time defers", id: "unseen", want: true},
+		{name: "label override of 0 applies immediately", id: "young", labels: map[string]string{imageref.UpdateDelayLabel: "0"}},
+		{name: "label override longer than the age defers", id: "old", labels: map[string]string{imageref.UpdateDelayLabel: "72"}, want: true},
+		{name: "invalid label falls back to the environment delay", id: "young", labels: map[string]string{imageref.UpdateDelayLabel: "-1"}, want: true},
+		{name: "oversized label is capped instead of ignored", id: "old", labels: map[string]string{imageref.UpdateDelayLabel: "3000000"}, want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, deferred(updater.ImageUpdateRecord{ID: tt.id}, container.Summary{Labels: tt.labels}))
+		})
+	}
 }

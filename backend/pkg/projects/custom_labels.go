@@ -593,6 +593,14 @@ func updaterMetadataLabels(block any) (map[string]string, error) {
 			result[updaterlabels.LabelUpdater] = strconv.FormatBool(enabled)
 			continue
 		}
+		if key == "delay" {
+			hours, err := metadataHours(value)
+			if err != nil {
+				return nil, err
+			}
+			result[imageref.UpdateDelayLabel] = strconv.Itoa(hours)
+			continue
+		}
 		var label string
 		switch key {
 		case "strategy":
@@ -615,6 +623,16 @@ func updaterMetadataLabels(block any) (map[string]string, error) {
 		result[label] = text
 	}
 	return result, nil
+}
+
+// metadataHours accepts a whole, non-negative number of hours. YAML decoders
+// may surface it as any numeric type or as a numeric string.
+func metadataHours(value any) (int, error) {
+	hours, err := strconv.Atoi(strings.TrimSpace(fmt.Sprint(value)))
+	if err != nil || hours < 0 || hours > imageref.MaxUpdateDelayHours {
+		return 0, fmt.Errorf("updater delay must be a whole number of hours between 0 and %d", imageref.MaxUpdateDelayHours)
+	}
+	return hours, nil
 }
 
 func metadataBool(value any) (bool, error) {

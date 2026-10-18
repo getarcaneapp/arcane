@@ -771,9 +771,9 @@ func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record upda
 	if record.ContainerID == "" || strings.HasPrefix(record.ID, "container::") {
 		query = query.Where("container_id = ?", record.ContainerID)
 		if record.ID != "" {
-			return query.Where("id = ?", record.ID).Update("has_update", false).Error
+			return query.Where("id = ?", record.ID).Updates(map[string]any{"has_update": false, "latest_seen_at": nil}).Error
 		}
-		return query.Where("repository = ? AND tag = ?", record.Repository, record.Tag).Update("has_update", false).Error
+		return query.Where("repository = ? AND tag = ?", record.Repository, record.Tag).Updates(map[string]any{"has_update": false, "latest_seen_at": nil}).Error
 	}
 
 	// A shared record stays pending while another non-tag-policy container still runs an older image.
@@ -798,7 +798,7 @@ func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record upda
 			return nil
 		}
 	}
-	return query.Where("id = ? AND container_id = ?", record.ID, "").Update("has_update", false).Error
+	return query.Where("id = ? AND container_id = ?", record.ID, "").Updates(map[string]any{"has_update": false, "latest_seen_at": nil}).Error
 }
 
 // ExcludedContainers returns auto-update exclusions from Arcane settings.
@@ -1648,10 +1648,44 @@ func (s *UpdaterService) planAutoUpdate(ctx context.Context, t flow.Task) (any, 
 			excluded[target.ID] = true
 		}
 	}
-	if _, err := s.recovery.FreezePending(contextWithActivityID(ctx, t.ActivityID()), run, excluded); err != nil {
+	deferred, err := s.autoUpdateDeferral(ctx, time.Now())
+	if err != nil {
 		return nil, common.Classify(common.ErrUnavailable, err)
 	}
+	if _, freezeErr := s.recovery.FreezePending(contextWithActivityID(ctx, t.ActivityID()), run, excluded, deferred); freezeErr != nil {
+		return nil, common.Classify(common.ErrUnavailable, freezeErr)
+	}
 	return nil, nil
+}
+
+// autoUpdateDeferral reports which pending updates are younger than their
+// auto-update delay. The delay label wins over the environment setting, including 0,
+// and age counts from when Arcane first saw the update.
+func (s *UpdaterService) autoUpdateDeferral(ctx context.Context, now time.Time) (func(updater.ImageUpdateRecord, container.Summary) bool, error) {
+	var seen []imageupdate.ImageUpdateRecord
+	if err := s.deps.DB.WithContext(ctx).Select("id", "latest_seen_at").Where("has_update = ?", true).Find(&seen).Error; err != nil {
+		return nil, err
+	}
+	seenAt := make(map[string]*time.Time, len(seen))
+	for _, record := range seen {
+		seenAt[record.ID] = record.LatestSeenAt
+	}
+	envDelay := s.deps.Settings.GetIntSetting(ctx, "autoUpdateDelay", 0)
+	return func(record updater.ImageUpdateRecord, candidate container.Summary) bool {
+		override, ok := imageref.UpdateDelay(candidate.Labels)
+		delay := time.Duration(min(kit.Ternary(ok, override, envDelay), imageref.MaxUpdateDelayHours)) * time.Hour
+		if delay <= 0 {
+			return false
+		}
+		// A missing first-seen time counts as seen now, so the delay is never skipped.
+		remaining := kit.FromPtr(cmp.Or(seenAt[record.ID], new(now))).Add(delay).Sub(now)
+		if remaining <= 0 {
+			return false
+		}
+		slog.InfoContext(ctx, "Deferring auto-update until the new image has been available for the configured delay",
+			"containerId", candidate.ID, "imageRef", record.ImageRef(), "remaining", remaining.Round(time.Minute).String())
+		return true
+	}, nil
 }
 
 // applyAutoUpdate confirms every frozen target on each delivery before

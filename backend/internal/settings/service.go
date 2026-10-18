@@ -41,6 +41,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 )
 
@@ -265,6 +266,7 @@ func DefaultSettingsConfig() *Settings {
 		DiskUsagePath:                         SettingVariable{Value: "/app/data/projects"},
 		AutoUpdate:                            SettingVariable{Value: "false"},
 		AutoUpdateInterval:                    SettingVariable{Value: "0 0 0 * * *"},
+		AutoUpdateDelay:                       SettingVariable{Value: "0"},
 		AutoUpdateExcludedContainers:          SettingVariable{Value: ""},
 		PollingEnabled:                        SettingVariable{Value: "true"},
 		PollingInterval:                       SettingVariable{Value: "0 0 * * * *"},
@@ -422,6 +424,12 @@ func validateSettingValue(key, value string) error {
 		days, err := strconv.Atoi(value)
 		if err != nil || days < 0 || days > 3650 {
 			return common.Classify(common.ErrValidation, errors.New("upgradeLogRetentionDays must be a whole number between 0 and 3650"))
+		}
+	}
+	if key == "autoUpdateDelay" && value != "" {
+		hours, err := strconv.Atoi(value)
+		if err != nil || hours < 0 || hours > imageref.MaxUpdateDelayHours {
+			return common.Classify(common.ErrValidation, fmt.Errorf("autoUpdateDelay must be a whole number between 0 and %d", imageref.MaxUpdateDelayHours))
 		}
 	}
 	if key == "allEnvironmentsLimit" {

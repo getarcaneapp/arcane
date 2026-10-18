@@ -4,6 +4,7 @@ package imageref
 import (
 	"cmp"
 	"fmt"
+	"strconv"
 	"strings"
 
 	ref "github.com/distribution/reference"
@@ -20,6 +21,14 @@ const (
 	// notifications. Automatic installation is governed separately by the
 	// updater label and the UI exclusion list.
 	UpdateCheckLabel = "com.getarcaneapp.arcane.update-check"
+
+	// UpdateDelayLabel overrides the environment's auto-update delay, in hours,
+	// for a container or service. A value of 0 applies updates immediately.
+	UpdateDelayLabel = "com.getarcaneapp.arcane.updater.delay"
+
+	// MaxUpdateDelayHours caps the auto-update delay at one year, keeping it
+	// within time.Duration.
+	MaxUpdateDelayHours = 8760
 
 	// LocalBuildRegistry is Arcane's reserved registry host for locally built image tags.
 	LocalBuildRegistry = "arcane.local"
@@ -44,6 +53,17 @@ func IsUpdateCheckDisabled(labels map[string]string) bool {
 	}
 	enabled, parsed := kit.ParseBool(value)
 	return parsed && !enabled
+}
+
+// UpdateDelay returns the auto-update delay override in hours, capped at
+// MaxUpdateDelayHours. ok is false when the label is absent or is not a
+// non-negative integer.
+func UpdateDelay(labels map[string]string) (hours int, ok bool) {
+	hours, err := strconv.Atoi(strings.TrimSpace(labels[UpdateDelayLabel]))
+	if err != nil || hours < 0 {
+		return 0, false
+	}
+	return min(hours, MaxUpdateDelayHours), true
 }
 
 // ParseUpdateLookup normalizes an image reference into the repository and tag

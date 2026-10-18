@@ -10,6 +10,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v2/scheduler"
 	arcaneupdater "github.com/getarcaneapp/arcane/types/v2/updater"
+	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"go.getarcane.app/docker/compat"
 	kit "go.getarcane.app/kit/pkg"
@@ -102,7 +103,8 @@ func (s *Service) VerifyResult(ctx context.Context, resourceID string) error {
 // FreezePending persists identities and desired images before any pull. A run
 // that already holds a plan keeps it. Image refs and container IDs in excluded are left
 // out, and a target that cannot be frozen fails alone instead of aborting the batch.
-func (s *Service) FreezePending(ctx context.Context, run scheduler.Run, excluded map[string]bool) (context.Context, error) {
+// Candidates that deferred reports are skipped without failing, so a later run picks them up.
+func (s *Service) FreezePending(ctx context.Context, run scheduler.Run, excluded map[string]bool, deferred func(updater.ImageUpdateRecord, container.Summary) bool) (context.Context, error) {
 	if _, ok := ctx.Value(frozenPendingKey{}).(*frozenUpdatePlan); ok {
 		return ctx, nil
 	}
@@ -137,6 +139,9 @@ func (s *Service) FreezePending(ctx context.Context, run scheduler.Run, excluded
 					continue
 				}
 				if record.ContainerID == "" && refs.NormalizeImageUpdateRef(candidate.Image) != refs.NormalizeImageUpdateRef(record.ImageRef()) {
+					continue
+				}
+				if deferred(record, candidate) {
 					continue
 				}
 				target, frozenRecord, freezeRecordTargetErr := s.freezeRecordTarget(ctx, record, candidate.ID)

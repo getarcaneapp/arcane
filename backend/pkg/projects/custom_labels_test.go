@@ -336,6 +336,55 @@ func TestUpdateCheckMetadataValidation(t *testing.T) {
 	}
 }
 
+func TestUpdaterDelayMetadataLabels(t *testing.T) {
+	const content = `x-arcane:
+  updater:
+    delay: 72
+services:
+  inherited:
+    image: alpine:3.20.0
+  immediate:
+    image: alpine:3.20.0
+    x-arcane:
+      updater:
+        delay: 0
+  quoted:
+    image: alpine:3.20.0
+    x-arcane:
+      updater:
+        delay: "12"
+`
+	project, err := LoadComposeProjectFromContent(
+		t.Context(),
+		projecttypes.ComposeContentOptions{
+			ComposeContent: content,
+			WorkingDir:     t.TempDir(),
+			ProjectName:    "metadata",
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, "72", project.Services["inherited"].Labels[imageref.UpdateDelayLabel])
+	require.Equal(t, "0", project.Services["immediate"].Labels[imageref.UpdateDelayLabel])
+	require.Equal(t, "12", project.Services["quoted"].Labels[imageref.UpdateDelayLabel])
+}
+
+func TestUpdaterDelayMetadataValidation(t *testing.T) {
+	for _, delay := range []string{"-1", "1.5", "soon", "[]", "8761"} {
+		t.Run(delay, func(t *testing.T) {
+			_, err := LoadComposeProjectFromContent(
+				t.Context(),
+				projecttypes.ComposeContentOptions{
+					ComposeContent: "services:\n  app:\n    image: alpine:3.20.0\n    x-arcane:\n      updater:\n        delay: " + delay + "\n",
+					WorkingDir:     t.TempDir(),
+					ProjectName:    "metadata",
+				},
+			)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "updater delay must be a whole number of hours between 0 and 8760")
+		})
+	}
+}
+
 func TestUpdaterMetadataInterpolationAndIncludesInternal(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte("UPDATE_RANGE=3.20.x\nUPDATE_ENABLED=false\n"), 0o600))

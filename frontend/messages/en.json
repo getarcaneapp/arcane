@@ -292,6 +292,8 @@
   "prune_images_dialog_description": "Choose how aggressively Arcane should prune unused Docker images.",
   "auto_update_exclude_description": "Select containers that should not be updated automatically. Arcane keeps checking them for updates and sending notifications.",
   "auto_update_check_label_hint": "To stop update checks and notifications for a container, add the label {label} to it.",
+  "auto_update_delay_label": "Update Delay (hours)",
+  "auto_update_delay_description": "Hours a new image must be available, counted from when Arcane first detects it, before auto-update installs it. 0 installs immediately and manual updates are never delayed. Override it per container with the label {label}.",
   "auto_update_disabled_checks_continue": "Update checks and notifications stay enabled; only automatic installation is turned off.",
   "auto_update_title": "Auto-Update",
   "auto_update_enabled_toast": "Auto-update enabled",

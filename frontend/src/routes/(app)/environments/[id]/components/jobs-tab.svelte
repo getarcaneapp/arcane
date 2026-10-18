@@ -27,6 +27,7 @@
 	import { hasPermission } from '#lib/utils/auth.js';
 	import {
 		UPDATE_CHECK_LABEL,
+		UPDATE_DELAY_LABEL,
 		isAutoUpdateLabelDisabled,
 		normalizeContainerName,
 		parseExcludedContainerSet
@@ -252,6 +253,21 @@
 {#snippet autoUpdateSettings(job: JobStatus)}
 	{#if job.id === 'auto-update'}
 		<div class="space-y-3">
+			<div class="space-y-1">
+				<Label for="auto-update-delay">{m.auto_update_delay_label()}</Label>
+				<p class="text-xs text-muted-foreground">
+					{m.auto_update_delay_description({ label: `${UPDATE_DELAY_LABEL}=<hours>` })}
+				</p>
+				<Input
+					id="auto-update-delay"
+					type="number"
+					min="0"
+					max="8760"
+					class="h-8 w-full sm:w-48"
+					bind:value={formInputs.autoUpdateDelay.value}
+				/>
+			</div>
+
 			<div class="space-y-1">
 				<Label>
 					{m.excluded_containers()}

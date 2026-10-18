@@ -147,7 +147,7 @@ func (s *Service) Check(
 	for i, cnt := range candidates {
 		g.Go(func() (workerErr error) {
 			defer utils.RecoverToError(&workerErr, "container tag check worker", "containerId", cnt.ID)
-			checks[i] = s.checkContainerTag(groupCtx, engine, cnt)
+			checks[i] = s.checkContainerTag(groupCtx, engine, adapter, cnt)
 			saveMu.Lock()
 			defer saveMu.Unlock()
 			return save(groupCtx, cnt, checks[i])
@@ -236,7 +236,7 @@ func (r tagRegistry) ImageDigest(ctx context.Context, imageRef string) (string, 
 	return r.digests.do(parsed.NormalizedRef, fetch)
 }
 
-func (s *Service) checkContainerTag(ctx context.Context, engine *updater.Service, cnt container.Summary) *imageupdate.Response {
+func (s *Service) checkContainerTag(ctx context.Context, engine *updater.Service, digests tagRegistry, cnt container.Summary) *imageupdate.Response {
 	start := time.Now()
 	failed := func(err error) *imageupdate.Response {
 		return &imageupdate.Response{
@@ -266,6 +266,19 @@ func (s *Service) checkContainerTag(ctx context.Context, engine *updater.Service
 	if err != nil {
 		return failed(err)
 	}
+	// A newer tag has no digest yet; resolve it so a tag rewritten during the
+	// auto-update delay counts as a new target. An unresolved digest only
+	// restarts that delay, so the update itself is still reported.
+	targetDigest := func() string {
+		if !check.UpdateAvailable || check.TargetDigest != "" {
+			return check.TargetDigest
+		}
+		resolved, resolveErr := digests.ImageDigest(checkCtx, check.TargetRef)
+		if resolveErr != nil {
+			slog.DebugContext(ctx, "Could not resolve tag update digest", "containerId", cnt.ID, "targetRef", check.TargetRef, "error", resolveErr)
+		}
+		return resolved
+	}()
 	latestVersion, targetErrMessage := func() (string, string) {
 		if check.TargetRef == "" {
 			return "", ""
@@ -283,7 +296,7 @@ func (s *Service) checkContainerTag(ctx context.Context, engine *updater.Service
 		CurrentVersion: check.CurrentVersion,
 		LatestVersion:  latestVersion,
 		CurrentDigest:  check.CurrentDigest,
-		LatestDigest:   check.TargetDigest,
+		LatestDigest:   targetDigest,
 		Error:          targetErrMessage,
 		ResponseTimeMs: int(time.Since(start).Milliseconds()),
 		HasUpdate:      check.UpdateAvailable && targetErrMessage == "",

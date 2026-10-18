@@ -25,6 +25,7 @@ export type Settings = {
 	diskUsagePath: string;
 	autoUpdate: boolean;
 	autoUpdateInterval: number;
+	autoUpdateDelay?: number;
 	autoUpdateExcludedContainers?: string;
 	pollingEnabled: boolean;
 	imageEventWatcherEnabled: boolean;

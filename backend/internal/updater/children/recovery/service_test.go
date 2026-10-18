@@ -20,6 +20,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
 )
 
+var neverDeferred = func(updater.ImageUpdateRecord, container.Summary) bool { return false }
+
 func newTestService(t *testing.T, server *httptest.Server, pending func(context.Context) ([]updater.ImageUpdateRecord, error)) *Service {
 	t.Helper()
 	dockerClient, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.41"), client.WithHTTPClient(server.Client()))
@@ -100,7 +102,7 @@ func TestFrozenTargetsPreserveAllSelectedContainers(t *testing.T) {
 		}
 		return nil
 	})
-	frozenCtx, err := svc.FreezePending(ctx, scheduler.Run{ID: "run"}, nil)
+	frozenCtx, err := svc.FreezePending(ctx, scheduler.Run{ID: "run"}, nil, neverDeferred)
 	require.NoError(t, err)
 	plan := frozenCtx.Value(frozenPendingKey{}).(*frozenUpdatePlan)
 	require.Len(t, plan.Records, 2)
@@ -254,7 +256,7 @@ func TestFreezePendingExcludesFailedChecksAndIsolatesFreezeFailures(t *testing.T
 		return nil
 	})
 
-	frozenCtx, err := svc.FreezePending(ctx, scheduler.Run{ID: "run"}, map[string]bool{"registry.example.com/unchecked:latest": true})
+	frozenCtx, err := svc.FreezePending(ctx, scheduler.Run{ID: "run"}, map[string]bool{"registry.example.com/unchecked:latest": true}, neverDeferred)
 	require.NoError(t, err)
 	plan := frozenCtx.Value(frozenPendingKey{}).(*frozenUpdatePlan)
 	require.Len(t, plan.Targets, 1)
@@ -263,6 +265,76 @@ func TestFreezePendingExcludesFailedChecksAndIsolatesFreezeFailures(t *testing.T
 	require.Equal(t, scheduler.Failed, targets["unresolvable"].Status, "a target that cannot be frozen fails alone")
 	require.Contains(t, targets["unresolvable"].Message, "Update could not be planned")
 	require.NotContains(t, targets, "unchecked", "images whose check failed stay out of the plan")
+}
+
+func TestFreezePendingSkipsDeferredCandidatesWithoutFailing(t *testing.T) {
+	desired := "sha256:desired"
+	pending := []updater.ImageUpdateRecord{
+		{
+			ID:           "app",
+			Repository:   "registry.example.com/app",
+			Tag:          "latest",
+			HasUpdate:    true,
+			LatestDigest: &desired,
+		},
+		{
+			ID:           "young",
+			Repository:   "registry.example.com/young",
+			Tag:          "latest",
+			HasUpdate:    true,
+			LatestDigest: &desired,
+		},
+	}
+	running := []container.Summary{
+		{
+			ID:    "app",
+			Names: []string{"/app"},
+			Image: "registry.example.com/app:latest",
+		},
+		{
+			ID:     "young",
+			Names:  []string{"/young"},
+			Image:  "registry.example.com/young:latest",
+			Labels: map[string]string{"delay": "true"},
+		},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/containers/json") {
+			assert.NoError(t, json.MarshalWrite(w, running))
+			return
+		}
+		for _, summary := range running {
+			if strings.HasSuffix(r.URL.Path, "/containers/"+summary.ID+"/json") {
+				assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
+					ID:     summary.ID,
+					Name:   summary.Names[0],
+					Image:  "sha256:old",
+					Config: &container.Config{Image: summary.Image},
+					State:  &container.State{StartedAt: "baseline"},
+				}))
+				return
+			}
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	svc := newTestService(t, server, func(context.Context) ([]updater.ImageUpdateRecord, error) { return pending, nil })
+	targets := map[string]scheduler.TargetOutcome{}
+	ctx := jobcontext.WithExecution(t.Context(), scheduler.Run{ID: "run"}, func(target scheduler.TargetOutcome) error {
+		targets[target.ID] = target
+		return nil
+	})
+
+	frozenCtx, err := svc.FreezePending(ctx, scheduler.Run{ID: "run"}, nil, func(record updater.ImageUpdateRecord, candidate container.Summary) bool {
+		return record.ID == "young" && candidate.Labels["delay"] == "true"
+	})
+	require.NoError(t, err)
+	plan := frozenCtx.Value(frozenPendingKey{}).(*frozenUpdatePlan)
+	require.Len(t, plan.Targets, 1)
+	require.Equal(t, "app", plan.Targets[0].ContainerID)
+	require.Equal(t, scheduler.Queued, targets["app"].Status)
+	require.NotContains(t, targets, "young", "a deferred candidate is neither planned nor failed")
 }
 
 func TestResumePlanConfirmsRedeliveredChangeWithoutReapplying(t *testing.T) {

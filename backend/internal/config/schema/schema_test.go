@@ -289,6 +289,7 @@ var expectedSettingOverrideKeys = []string{
 	"autoHealRestartWindow",
 	"autoInjectEnv",
 	"autoUpdate",
+	"autoUpdateDelay",
 	"autoUpdateExcludedContainers",
 	"autoUpdateInterval",
 	"avatarMaxUploadSizeMb",

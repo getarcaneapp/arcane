@@ -816,7 +816,7 @@ func extractRepoAndTagFromImage(dockerImage image.InspectResponse) (repo, tag st
 	return "<none>", "<none>"
 }
 
-func buildImageUpdateRecord(imageID, repo, tag string, result *imageupdate.Response, notificationSent bool) *ImageUpdateRecord {
+func buildImageUpdateRecord(imageID, repo, tag string, result *imageupdate.Response, notificationSent bool, latestSeenAt *time.Time, carried *ImageUpdateRecord) *ImageUpdateRecord {
 	return &ImageUpdateRecord{ //exhaustruct:enforce
 		BaseModel: database.BaseModel{
 			ID:        "",
@@ -829,9 +829,10 @@ func buildImageUpdateRecord(imageID, repo, tag string, result *imageupdate.Respo
 		ContainerID:      "",
 		ImageID:          "",
 		CheckTime:        result.CheckTime,
-		LatestVersion:    mo.EmptyableToOption(result.LatestVersion).ToPointer(),
+		LatestSeenAt:     latestSeenAt,
+		LatestVersion:    cmp.Or(mo.EmptyableToOption(result.LatestVersion).ToPointer(), kit.FromPtr(carried).LatestVersion),
 		CurrentDigest:    mo.EmptyableToOption(result.CurrentDigest).ToPointer(),
-		LatestDigest:     mo.EmptyableToOption(result.LatestDigest).ToPointer(),
+		LatestDigest:     cmp.Or(mo.EmptyableToOption(result.LatestDigest).ToPointer(), kit.FromPtr(carried).LatestDigest),
 		LastError:        mo.EmptyableToOption(result.Error).ToPointer(),
 		AuthMethod:       mo.EmptyableToOption(result.AuthMethod).ToPointer(),
 		AuthUsername:     mo.EmptyableToOption(result.AuthUsername).ToPointer(),
@@ -864,13 +865,31 @@ func savePreparedUpdateResultWithTx(tx *gorm.DB, imageID, repo, tag string, resu
 		return nil
 	}
 
+	sameLatest := kit.FromPtr(existingRecord.LatestDigest) == result.LatestDigest && kit.FromPtr(existingRecord.LatestVersion) == result.LatestVersion
+	// A failed check keeps a pending target and when it was first seen, so a
+	// transient registry error does not restart the auto-update delay.
+	failed := !result.HasUpdate && strings.TrimSpace(result.Error) != "" && existingRecord.LatestSeenAt != nil
+
 	// Reset notification_sent if the update state changed in any way; keep the existing
 	// value if nothing changed. New records start with notification_sent = false.
+	// latest_seen_at keeps the time the pending update was first seen until it changes.
 	return tx.Save(buildImageUpdateRecord(imageID, repo, tag, result,
 		hasExisting &&
 			existingRecord.HasUpdate == result.HasUpdate &&
-			(!result.HasUpdate || (kit.FromPtr(existingRecord.LatestDigest) == result.LatestDigest && kit.FromPtr(existingRecord.LatestVersion) == result.LatestVersion)) &&
+			(!result.HasUpdate || sameLatest) &&
 			existingRecord.NotificationSent,
+		func() *time.Time {
+			switch {
+			case failed:
+				return existingRecord.LatestSeenAt
+			case !result.HasUpdate:
+				return nil
+			case sameLatest:
+				return cmp.Or(existingRecord.LatestSeenAt, new(result.CheckTime))
+			}
+			return new(result.CheckTime)
+		}(),
+		kit.Ternary(failed, &existingRecord, nil),
 	)).Error
 }
 
@@ -974,7 +993,7 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 			// running the old image as up-to-date (see: #2453).
 			if clearStaleUpdatesErr := tx.Model(&ImageUpdateRecord{}).
 				Where("id LIKE 'ref::%' AND tag = ? AND repository IN ?", tag, slices.Collect(maps.Keys(repositoryCandidates))).
-				Update("has_update", false).Error; clearStaleUpdatesErr != nil {
+				Updates(map[string]any{"has_update": false, "latest_seen_at": nil}).Error; clearStaleUpdatesErr != nil {
 				return fmt.Errorf("clear stale image updates: %w", clearStaleUpdatesErr)
 			}
 		}
@@ -999,6 +1018,7 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 				}).
 				Updates(map[string]any{
 					"has_update":      false,
+					"latest_seen_at":  nil,
 					"update_type":     UpdateTypeDigest,
 					"current_version": tag,
 					"latest_version":  tag,

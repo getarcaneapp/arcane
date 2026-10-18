@@ -69,6 +69,11 @@ type Update struct {
 	// Required: false
 	AutoUpdateInterval *string `json:"autoUpdateInterval,omitzero"`
 
+	// AutoUpdateDelay is the number of hours a new image must be available before auto-update applies it.
+	//
+	// Required: false
+	AutoUpdateDelay *string `json:"autoUpdateDelay,omitzero"`
+
 	// PollingEnabled indicates if polling is enabled.
 	//
 	// Required: false
