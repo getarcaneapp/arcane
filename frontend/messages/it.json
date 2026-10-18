@@ -292,6 +292,8 @@
   "prune_images_dialog_description": "Scegliere con quale aggressività Arcane deve eliminare le immagini Docker inutilizzate.",
   "auto_update_exclude_description": "Seleziona i contenitori che non devono essere aggiornati automaticamente. Arcane continua a verificare la presenza di aggiornamenti e a inviare notifiche.",
   "auto_update_check_label_hint": "Per disattivare i controlli di aggiornamento e le notifiche relative a un container, aggiungi ad esso l'etichetta {label}.",
+  "auto_update_delay_label": "Ritardo nell'aggiornamento (ore)",
+  "auto_update_delay_description": "Numero di ore entro cui una nuova immagine deve essere disponibile, calcolate dal momento in cui Arcane la rileva per la prima volta, prima che l'aggiornamento automatico la installi. Il valore 0 indica l'installazione immediata e gli aggiornamenti manuali non subiscono mai ritardi. È possibile sovrascrivere questa impostazione per singolo container utilizzando l'etichetta {label}.",
   "auto_update_disabled_checks_continue": "I controlli di aggiornamento e le notifiche rimangono attivi; viene disattivata solo l'installazione automatica.",
   "auto_update_title": "Aggiornamento automatico",
   "auto_update_enabled_toast": "Aggiornamento automatico abilitato",
