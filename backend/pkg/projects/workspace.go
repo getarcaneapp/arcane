@@ -72,9 +72,9 @@ func ReadProjectWorkspace(
 	projectAbs = filepath.Clean(projectAbs)
 
 	// The workspace tree walk and apply engine stay on os.Root rather than
-	// acfs: the revision hash depends on fs.WalkDir's lexical visit order, and
-	// acfs walks in a different order — switching would change every revision
-	// and mass-invalidate open editor drafts with false 409s.
+	// acfs: the revision hash depends on the level-by-level, name-sorted visit
+	// order, and acfs walks in a different order — switching would change every
+	// revision and mass-invalidate open editor drafts with false 409s.
 	root, err := os.OpenRoot(projectAbs)
 	if err != nil {
 		return nil, "", false, fmt.Errorf("open project directory: %w", err)
@@ -93,8 +93,8 @@ func ReadProjectWorkspace(
 		revisionHash:     sha256.New(),
 	}
 
-	if walkDirErr := fs.WalkDir(root.FS(), ".", walker.visit); walkDirErr != nil {
-		return nil, "", false, walkDirErr
+	if walkErr := walker.walk(root.FS()); walkErr != nil {
+		return nil, "", false, walkErr
 	}
 
 	slices.SortFunc(walker.files, func(a, b workspacetypes.FileEntry) int {
@@ -121,57 +121,73 @@ type projectWorkspaceTreeWalkerInternal struct {
 	truncated        bool
 }
 
-func (w *projectWorkspaceTreeWalkerInternal) visit(rel string, entry fs.DirEntry, walkErr error) error {
-	if walkErr != nil {
-		// fs.WalkDir reports a directory it could not read by invoking the
-		// callback a second time with the ReadDir error. Skipping keeps the
-		// rest of the tree intact instead of discarding every sibling; the
-		// directory itself was already recorded by the first call. A failure
-		// on the project workspace root, or one that is not a permission/disappearance
-		// error, stays fatal so real I/O problems remain observable.
-		if rel != "." && entry != nil && entry.IsDir() && (os.IsPermission(walkErr) || os.IsNotExist(walkErr)) {
-			slog.DebugContext(w.ctx, "Skipping unreadable project workspace subdirectory", "relativePath", rel, "error", walkErr)
-			return fs.SkipDir
+// walk visits the tree level by level (every top-level entry, then the next
+// level down) so a large early subtree cannot use the whole entry budget
+// before later top-level siblings are seen (#4452).
+func (w *projectWorkspaceTreeWalkerInternal) walk(fsys fs.FS) error {
+	for queue := []string{"."}; len(queue) > 0; queue = queue[1:] {
+		entries, err := fs.ReadDir(fsys, queue[0])
+		if err != nil {
+			// An unreadable subdirectory is skipped so the rest of the tree stays
+			// intact; it was already recorded when visited from its parent. A
+			// failure on the root, or one that is not a permission/disappearance
+			// error, stays fatal so real I/O problems remain observable.
+			if queue[0] != "." && (os.IsPermission(err) || os.IsNotExist(err)) {
+				slog.DebugContext(w.ctx, "Skipping unreadable project workspace subdirectory", "relativePath", queue[0], "error", err)
+				continue
+			}
+			return err
 		}
-		return walkErr
+		for _, entry := range entries {
+			rel := path.Join(queue[0], entry.Name())
+			descend, visitErr := w.visit(rel, entry)
+			if visitErr != nil {
+				return visitErr
+			}
+			if w.truncated {
+				return nil
+			}
+			if descend {
+				queue = append(queue, rel)
+			}
+		}
 	}
-	if rel == "." {
-		return nil
-	}
+	return nil
+}
 
-	// The walk visits entries in deterministic lexical order, so cutting
-	// off after maxEntries still yields a stable revision as long as the
-	// concurrency compare walk uses the same cap.
+// visit records one entry and reports whether the walk should descend into it.
+func (w *projectWorkspaceTreeWalkerInternal) visit(rel string, entry fs.DirEntry) (bool, error) {
+	// Entries are visited in a fixed level-by-level, name-sorted order, so
+	// cutting off after maxEntries still yields a stable revision as long as
+	// the concurrency compare walk uses the same cap.
 	if w.entryCount >= w.maxEntries {
 		w.truncated = true
-		return fs.SkipAll
+		return false, nil
 	}
 
 	depth := strings.Count(rel, "/") + 1
 	if depth > w.maxDepth {
-		return kit.Ternary(entry.IsDir(), fs.SkipDir, nil)
+		return false, nil
 	}
 
 	if entry.IsDir() && w.skipDirs[entry.Name()] {
-		return fs.SkipDir
+		return false, nil
 	}
 
 	info, err := entry.Info()
 	if err != nil {
 		// An entry that vanished mid-walk or that we are not allowed to stat is
 		// skipped rather than failing the whole tree; anything else surfaces.
-		// fs.SkipDir on a non-directory would break out of the parent's sibling
-		// loop, so split on IsDir.
 		if !os.IsPermission(err) && !os.IsNotExist(err) {
-			return err
+			return false, err
 		}
 		slog.DebugContext(w.ctx, "Skipping unreadable project workspace entry", "relativePath", rel, "error", err)
-		return kit.Ternary(entry.IsDir(), fs.SkipDir, nil)
+		return false, nil
 	}
 
 	isProtected := w.protected[rel]
 	if isProtected {
-		return nil
+		return entry.IsDir(), nil
 	}
 
 	// Protected Compose configuration is intentionally absent from both the
@@ -223,7 +239,7 @@ func (w *projectWorkspaceTreeWalkerInternal) visit(rel string, entry fs.DirEntry
 	}
 	w.files = append(w.files, workspaceEntry)
 
-	return nil
+	return entry.IsDir(), nil
 }
 
 func classifyProjectWorkspaceFileInternal(filePath string, size, maxFileSizeBytes int64) (bool, string) {

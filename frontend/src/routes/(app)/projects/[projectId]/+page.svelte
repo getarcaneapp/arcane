@@ -1552,6 +1552,13 @@
 					{/if}
 				</div>
 
+				{#if layoutMode === 'tree' && projectWorkspaceQuery.data?.fileTreeTruncated}
+					<Alert.Root class="mb-3 shrink-0">
+						<AlertIcon class="size-4" />
+						<Alert.Description>{m.volumes_workspace_truncated()}</Alert.Description>
+					</Alert.Root>
+				{/if}
+
 				<div class="min-h-0 flex-1">
 					{#if layoutMode === 'tree'}
 						<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">

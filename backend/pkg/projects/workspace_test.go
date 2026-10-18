@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/getarcaneapp/arcane/types/v2/workspace"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	kit "go.getarcane.app/kit/pkg"
@@ -350,14 +352,19 @@ func TestReadProjectWorkspace_CapsEntriesWithStableRevision(t *testing.T) {
 
 	projectDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	require.NoError(t, os.Mkdir(filepath.Join(projectDir, "a-large"), 0o755))
 	for i := range 5 {
-		require.NoError(t, os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("file-%d.txt", i)), []byte("x\n"), 0o644))
+		require.NoError(t, os.WriteFile(filepath.Join(projectDir, "a-large", fmt.Sprintf("file-%d.txt", i)), []byte("x\n"), 0o644))
 	}
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "z-later.txt"), []byte("x\n"), 0o644))
 
 	files, revision, truncated, err := ReadProjectWorkspace(t.Context(), projectDir, 3, "", "compose.yaml", 3, 0)
 	require.NoError(t, err)
 	assert.True(t, truncated)
 	assert.Len(t, files, 3)
+	assert.True(t, slices.ContainsFunc(files, func(entry workspace.FileEntry) bool {
+		return entry.RelativePath == "z-later.txt"
+	}), "a large early subtree must not hide later root-level siblings")
 
 	_, again, truncatedAgain, err := ReadProjectWorkspace(t.Context(), projectDir, 3, "", "compose.yaml", 3, 0)
 	require.NoError(t, err)
