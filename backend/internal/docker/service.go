@@ -480,8 +480,9 @@ func (s *DockerClientService) GetAllNetworks(ctx context.Context) ([]network.Sum
 	if err != nil {
 		return nil, 0, 0, 0, err
 	}
-	inuse, unused, total := CountNetworkUsage(networks, containers)
-	return networks, inuse, unused, total, nil
+	_, unused, total := CountNetworkUsage(networks, containers)
+	// Default networks are never unused, matching the network list counts.
+	return networks, total - unused, unused, total, nil
 }
 
 // CountNetworkUsage returns in-use and unused counts for non-default networks, and the total of all networks.
