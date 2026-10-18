@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "π.χ. Η στοίβα μου Nginx",
   "templates_template_name_required": "Το όνομα του προτύπου είναι υποχρεωτικό",
   "templates_template_description_placeholder": "Περιγράψτε εν συντομία αυτό το πρότυπο",
+  "templates_name_description_locked": "Το όνομα και η περιγραφή ενός προτύπου από τον κατάλογο «templates» δεν μπορούν να τροποποιηθούν.",
   "compose_content_is_required": "Απαιτείται σύνθεση περιεχομένου",
   "templates_save_template_failed": "Αποτυχία αποθήκευσης προτύπου",
   "templates_create_template_failed": "Αποτυχία δημιουργίας προτύπου",
