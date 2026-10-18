@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "Ví dụ: Bộ công cụ Nginx của tôi",
   "templates_template_name_required": "Tên mẫu là trường bắt buộc",
   "templates_template_description_placeholder": "Hãy mô tả ngắn gọn về mẫu này",
+  "templates_name_description_locked": "Không thể thay đổi tên và mô tả của một mẫu trong thư mục mẫu.",
   "compose_content_is_required": "Phải điền nội dung",
   "templates_save_template_failed": "Không thể lưu mẫu",
   "templates_create_template_failed": "Không thể tạo mẫu",
