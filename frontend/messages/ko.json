@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "예: My Nginx Stack",
   "templates_template_name_required": "템플릿 이름은 필수 입력 항목입니다.",
   "templates_template_description_placeholder": "이 템플릿에 대해 간략히 설명해 주세요.",
+  "templates_name_description_locked": "템플릿 디렉터리에 있는 템플릿의 이름과 설명은 변경할 수 없습니다.",
   "compose_content_is_required": "Compose 내용은 필수 입력 항목입니다.",
   "templates_save_template_failed": "템플릿 저장에 실패했습니다.",
   "templates_create_template_failed": "템플릿 생성에 실패했습니다.",
