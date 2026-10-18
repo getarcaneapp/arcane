@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "por exemplo, O meu projeto Nginx",
   "templates_template_name_required": "O nome do modelo é obrigatório",
   "templates_template_description_placeholder": "Descreva brevemente este modelo",
+  "templates_name_description_locked": "O nome e a descrição de um modelo do diretório «templates» não podem ser alterados.",
   "compose_content_is_required": "O conteúdo do Compose é obrigatório",
   "templates_save_template_failed": "Falha ao guardar o modelo",
   "templates_create_template_failed": "Falha ao criar o modelo",
