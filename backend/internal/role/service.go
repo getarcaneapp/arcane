@@ -32,6 +32,8 @@ import (
 const (
 	permissionCacheTTL             = 60 * time.Second
 	legacyRoleBackfillCompletedKey = "migration.legacy_user_roles.v1.completed"
+	// Fixed PostgreSQL advisory lock key ("arcane" in ASCII) for lockGlobalAdminGuardInternal.
+	globalAdminGuardLockKey int64 = 0x617263616e65
 )
 
 type RoleService struct {
@@ -171,6 +173,19 @@ func (s *RoleService) assertGlobalAdminExistsInternal(ctx context.Context, tx *g
 	return nil
 }
 
+// lockGlobalAdminGuardInternal serializes transactions that can remove a global
+// admin, so two of them cannot each pass the global-admin guard while the other
+// is uncommitted. SQLite already serializes write transactions.
+func lockGlobalAdminGuardInternal(tx *gorm.DB) error {
+	if tx.Name() != "postgres" {
+		return nil
+	}
+	if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", globalAdminGuardLockKey).Error; err != nil {
+		return fmt.Errorf("failed to lock global admin guard: %w", err)
+	}
+	return nil
+}
+
 func (s *RoleService) ListRoles(ctx context.Context, params pagination.QueryParams) ([]Role, pagination.Response, error) {
 	var roles []Role
 	query := s.db.WithContext(ctx).Model(&Role{})
@@ -268,6 +283,9 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 	var out Role
 	var affected []string
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		if err := lockGlobalAdminGuardInternal(tx); err != nil {
+			return err
+		}
 		var existing Role
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&existing).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -319,6 +337,9 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 func (s *RoleService) DeleteRole(ctx context.Context, id string) error {
 	var affected []string
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		if err := lockGlobalAdminGuardInternal(tx); err != nil {
+			return err
+		}
 		var existing Role
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&existing).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -404,6 +425,9 @@ func (s *RoleService) replaceUserAssignmentsForSourceInternal(ctx context.Contex
 		desired[i].Source = source
 	}
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		if err := lockGlobalAdminGuardInternal(tx); err != nil {
+			return err
+		}
 		// Lock the target's user row so assignment swaps serialize with
 		// user-domain update/delete transactions, whose in-transaction privilege
 		// checks lock the same row.
