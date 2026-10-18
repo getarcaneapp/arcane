@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "e.g. My Nginx Project",
   "templates_template_name_required": "模板名称不能为空",
   "templates_template_description_placeholder": "简要描述此模板",
+  "templates_name_description_locked": "模板目录中的模板名称和描述无法更改。",
   "compose_content_is_required": "Compose 内容不能为空",
   "templates_save_template_failed": "保存模板失败",
   "templates_create_template_failed": "创建模板失败",
