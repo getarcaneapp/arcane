@@ -292,6 +292,8 @@
   "prune_images_dialog_description": "選擇 Arcane 應該如何積極修剪未使用的 Docker 映像。",
   "auto_update_exclude_description": "請選取不應自動更新的容器。Arcane 會持續檢查這些容器的更新狀況並發送通知。",
   "auto_update_check_label_hint": "若要停止某個容器的更新檢查與通知，請為該容器新增標籤「 {label}」。",
+  "auto_update_delay_label": "更新延遲（小時）",
+  "auto_update_delay_description": "自 Arcane 首次偵測到新映像檔起，自動更新在安裝該映像檔前需等待的小時數。設定為 0 時將立即安裝，且手動更新絕不會延遲。可透過標籤 {label} 針對每個容器覆寫此設定。",
   "auto_update_disabled_checks_continue": "更新檢查與通知仍保持啟用狀態；僅關閉自動安裝功能。",
   "auto_update_title": "自動更新",
   "auto_update_enabled_toast": "啟用自動更新",
