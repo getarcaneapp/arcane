@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/moby/moby/api/types/mount"
+
+	"getarcane.dev/arcane/v3/pkg/volumes"
 )
 
 // windowsContainerPathsInternal moves the Linux paths Arcane uses inside the Rustic
@@ -12,18 +14,31 @@ import (
 // command arguments and environment values that lie under one of them. Snapshot
 // paths such as "<id>:/dir" or "--as-path /" are not container paths and are kept.
 func windowsContainerPathsInternal(command, env []string, mounts []mount.Mount) ([]string, []string, []mount.Mount) {
-	mounts = slices.Clone(mounts)
+	translated := make([]mount.Mount, len(mounts))
 	targets := make([]string, 0, len(mounts))
-	for i := range mounts {
-		if strings.HasPrefix(mounts[i].Target, "/") {
-			targets = append(targets, mounts[i].Target)
-			mounts[i].Target = windowsContainerPathInternal(mounts[i].Target)
+	for i, m := range mounts {
+		if !strings.HasPrefix(m.Target, "/") {
+			translated[i] = m
+			continue
+		}
+		targets = append(targets, m.Target)
+		translated[i] = mount.Mount{
+			Type:           m.Type,
+			Source:         m.Source,
+			Target:         volumes.WindowsContainerPath(m.Target),
+			ReadOnly:       m.ReadOnly,
+			Consistency:    m.Consistency,
+			BindOptions:    m.BindOptions,
+			VolumeOptions:  m.VolumeOptions,
+			ImageOptions:   m.ImageOptions,
+			TmpfsOptions:   m.TmpfsOptions,
+			ClusterOptions: m.ClusterOptions,
 		}
 	}
 	localize := func(value string) string {
 		for _, target := range targets {
 			if value == target || strings.HasPrefix(value, target+"/") {
-				return windowsContainerPathInternal(value)
+				return volumes.WindowsContainerPath(value)
 			}
 		}
 		return value
@@ -48,9 +63,5 @@ func windowsContainerPathsInternal(command, env []string, mounts []mount.Mount) 
 		}
 		env[i] = key + "=" + localize(value)
 	}
-	return command, env, mounts
-}
-
-func windowsContainerPathInternal(linuxPath string) string {
-	return `C:` + strings.ReplaceAll(linuxPath, "/", `\`)
+	return command, env, translated
 }
