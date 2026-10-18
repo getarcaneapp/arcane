@@ -567,7 +567,7 @@ func (s *AuthService) syncOidcRoleAssignments(ctx context.Context, localUser *us
 		})
 	}
 
-	return s.roleService.ReplaceOidcAssignments(ctx, localUser.ID, desired)
+	return s.roleService.ReplaceUserAssignments(ctx, localUser.ID, role.RoleAssignmentSourceOidc, desired)
 }
 
 // extractOidcGroups reads the user's group memberships from the OIDC userinfo

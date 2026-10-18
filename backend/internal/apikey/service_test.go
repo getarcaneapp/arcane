@@ -271,7 +271,7 @@ func TestUpdateApiKeyRollsBackMetadataWhenPermissionUpdateFails(t *testing.T) {
 	userSvc := user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB)
 	service := NewApiKeyService(db, userSvc, roleSvc)
 	admin := createTestAPIKeyUser(t, ctx, userSvc, "admin-update-rollback", "admin-update-rollback")
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, admin.ID, []role.UserRoleAssignment{
+	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, admin.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
 		{RoleID: authz.BuiltInRoleAdmin, EnvironmentID: nil},
 	}))
 
@@ -840,7 +840,7 @@ func TestCreateEnvironmentApiKeySeedsAllPermissionsScopedToEnv(t *testing.T) {
 	userSvc := user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB)
 	service := NewApiKeyService(db, userSvc, roleSvc)
 	admin := createTestAPIKeyUser(t, ctx, userSvc, "admin-env-bootstrap", "admin-env-bootstrap")
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, admin.ID, []role.UserRoleAssignment{
+	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, admin.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
 		{RoleID: authz.BuiltInRoleAdmin, EnvironmentID: nil},
 	}))
 
@@ -925,7 +925,7 @@ func TestBackfillPermsForKeyDeduplicatesGlobalAndEnvironmentPermissions(t *testi
 	service := NewApiKeyService(db, userSvc, roleSvc)
 
 	admin := createTestAPIKeyUser(t, ctx, userSvc, "admin", "admin")
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, admin.ID, []role.UserRoleAssignment{
+	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, admin.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
 		{RoleID: authz.BuiltInRoleAdmin},
 	}))
 	owner := createTestAPIKeyUser(t, ctx, userSvc, "api-key-owner")
@@ -939,7 +939,7 @@ func TestBackfillPermsForKeyDeduplicatesGlobalAndEnvironmentPermissions(t *testi
 		Enabled: true,
 	}).Error)
 
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, owner.ID, []role.UserRoleAssignment{
+	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, owner.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
 		{RoleID: authz.BuiltInRoleViewer, EnvironmentID: nil},
 		{RoleID: authz.BuiltInRoleEditor, EnvironmentID: &envID},
 	}))

@@ -447,7 +447,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 			return fmt.Errorf("failed to count users: %w", err)
 		}
 		if count > 0 {
-			admins, err := s.roleService.CountGlobalAdminsExcludingUser(ctx, "")
+			admins, err := s.roleService.CountGlobalAdmins(ctx, s.db.DB, "")
 			if err != nil {
 				return fmt.Errorf("failed to count global admins: %w", err)
 			}
@@ -518,7 +518,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 
 // grantDefaultAdminRoleInternal grants the global Admin role to the bootstrap
 // user. Reached only on fresh bootstrap or zero-admin recovery.
-// SetUserAssignments replaces manual-source rows, so carry forward only the
+// ReplaceUserAssignments replaces manual-source rows, so carry forward only the
 // existing manual assignments — copying OIDC-sourced rows here would duplicate
 // them as manual and pin them forever.
 func (s *UserService) grantDefaultAdminRoleInternal(ctx context.Context, adminUserID string) error {
@@ -541,7 +541,7 @@ func (s *UserService) grantDefaultAdminRoleInternal(ctx context.Context, adminUs
 		RoleID:        authz.BuiltInRoleAdmin,
 		EnvironmentID: nil,
 	})
-	if setUserAssignmentsErr := s.roleService.SetUserAssignments(ctx, adminUserID, manual); setUserAssignmentsErr != nil {
+	if setUserAssignmentsErr := s.roleService.ReplaceUserAssignments(ctx, adminUserID, role.RoleAssignmentSourceManual, manual); setUserAssignmentsErr != nil {
 		return fmt.Errorf("failed to grant default admin global role: %w", setUserAssignmentsErr)
 	}
 	slog.InfoContext(ctx, "Default admin granted global Admin role assignment", "userId", adminUserID)
@@ -562,7 +562,7 @@ func (s *UserService) DeleteUser(ctx context.Context, id string, actorPerms *aut
 			return err
 		}
 		if ps != nil && ps.IsGlobalAdmin() {
-			remaining, countGlobalAdminsExcludingUserErr := s.roleService.CountGlobalAdminsExcludingUser(ctx, id)
+			remaining, countGlobalAdminsExcludingUserErr := s.roleService.CountGlobalAdmins(ctx, s.db.DB, id)
 			if countGlobalAdminsExcludingUserErr != nil {
 				return countGlobalAdminsExcludingUserErr
 			}
@@ -609,7 +609,7 @@ func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.
 func (s *UserService) ToUserResponseDto(ctx context.Context, u User) (user.User, error) {
 	dto := s.toUserResponseDtoInternal(ctx, u)
 	if dto.IsGlobalAdmin && s.roleService != nil {
-		remaining, err := s.roleService.CountGlobalAdminsExcludingUser(ctx, u.ID)
+		remaining, err := s.roleService.CountGlobalAdmins(ctx, s.db.DB, u.ID)
 		if err != nil {
 			return user.User{}, fmt.Errorf("failed to check whether user can be deleted: %w", err)
 		}
@@ -628,7 +628,7 @@ func (s *UserService) toUserResponseDtosInternal(ctx context.Context, users []Us
 	if s.roleService == nil {
 		return result
 	}
-	if total, err := s.roleService.CountGlobalAdminsExcludingUser(ctx, ""); err == nil && total == 1 {
+	if total, err := s.roleService.CountGlobalAdmins(ctx, s.db.DB, ""); err == nil && total == 1 {
 		for i := range result {
 			if result[i].IsGlobalAdmin {
 				result[i].CanDelete = false

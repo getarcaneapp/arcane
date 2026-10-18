@@ -32,7 +32,7 @@ import (
 const (
 	permissionCacheTTL             = 60 * time.Second
 	legacyRoleBackfillCompletedKey = "migration.legacy_user_roles.v1.completed"
-	// Fixed PostgreSQL advisory lock key ("arcane" in ASCII) for lockGlobalAdminGuardInternal.
+	// Postgres advisory lock key ("arcane" in ASCII) for lockGlobalAdminGuard.
 	globalAdminGuardLockKey int64 = 0x617263616e65
 )
 
@@ -90,7 +90,7 @@ func (s *RoleService) EnsureBuiltInRoles(ctx context.Context) error {
 	})
 }
 
-// BackfillLegacyRoleAssignments converts pre-RBAC users.roles into global assignments once, gated by a kv marker committed with the rows.
+// BackfillLegacyRoleAssignments converts pre-RBAC users.roles into global assignments once.
 func (s *RoleService) BackfillLegacyRoleAssignments(ctx context.Context) error {
 	migrator := s.db.WithContext(ctx).Migrator()
 	if !migrator.HasColumn("users", "roles") {
@@ -141,7 +141,7 @@ func (s *RoleService) BackfillLegacyRoleAssignments(ctx context.Context) error {
 	return nil
 }
 
-// legacyRolesContainsAdminInternal reports whether a legacy users.roles JSON value names "admin"; anything else was a regular user.
+// legacyRolesContainsAdminInternal reports whether a legacy users.roles JSON value names "admin".
 func legacyRolesContainsAdminInternal(raw string) bool {
 	var roles []string
 	if err := json.Unmarshal([]byte(raw), &roles); err != nil {
@@ -155,15 +155,9 @@ func legacyRolesContainsAdminInternal(raw string) bool {
 	return false
 }
 
-// AssertGlobalAdminExists returns common.ErrNoGlobalAdminRemains if zero
-// non-service users resolve to global administrator permissions. Called at boot
-// after the backfill migration; also called from inside mutation paths.
-func (s *RoleService) AssertGlobalAdminExists(ctx context.Context) error {
-	return s.assertGlobalAdminExistsInternal(ctx, s.db.WithContext(ctx))
-}
-
-func (s *RoleService) assertGlobalAdminExistsInternal(ctx context.Context, tx *gorm.DB) error {
-	count, err := s.countEffectiveGlobalAdminsInternal(ctx, tx, "")
+// AssertGlobalAdminExists returns common.ErrNoGlobalAdminRemains when no non-service user is a global admin in tx.
+func (s *RoleService) AssertGlobalAdminExists(ctx context.Context, tx *gorm.DB) error {
+	count, err := s.CountGlobalAdmins(ctx, tx, "")
 	if err != nil {
 		return err
 	}
@@ -173,10 +167,8 @@ func (s *RoleService) assertGlobalAdminExistsInternal(ctx context.Context, tx *g
 	return nil
 }
 
-// lockGlobalAdminGuardInternal serializes transactions that can remove a global
-// admin, so two of them cannot each pass the global-admin guard while the other
-// is uncommitted. SQLite already serializes write transactions.
-func lockGlobalAdminGuardInternal(tx *gorm.DB) error {
+// lockGlobalAdminGuard serializes transactions that can remove a global admin. SQLite already serializes writes.
+func lockGlobalAdminGuard(tx *gorm.DB) error {
 	if tx.Name() != "postgres" {
 		return nil
 	}
@@ -244,13 +236,8 @@ func (s *RoleService) CreateRole(ctx context.Context, name string, description *
 	return role, nil
 }
 
-// lockAssignedUserRowsInternal locks the user rows of everyone currently
-// assigned to roleID, in deterministic id order. Role-definition writes call
-// this so they serialize with user-domain mutation transactions, whose in-transaction
-// privilege checks lock the same rows: without it a role edit could change a
-// holder's effective admin status between that check and the mutation commit.
-// Returns the affected user ids for post-commit cache invalidation.
-func lockAssignedUserRowsInternal(tx *gorm.DB, roleID string) ([]string, error) {
+// lockAssignedUserRows locks the users holding roleID so role writes serialize with user-domain privilege checks.
+func lockAssignedUserRows(tx *gorm.DB, roleID string) ([]string, error) {
 	var ids []string
 	if err := tx.Model(&UserRoleAssignment{}).
 		Where("role_id = ?", roleID).
@@ -283,7 +270,7 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 	var out Role
 	var affected []string
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		if err := lockGlobalAdminGuardInternal(tx); err != nil {
+		if err := lockGlobalAdminGuard(tx); err != nil {
 			return err
 		}
 		var existing Role
@@ -305,7 +292,7 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 				return common.Classify(common.ErrRoleNameTaken, errors.New("Role name already in use"))
 			}
 		}
-		ids, err := lockAssignedUserRowsInternal(tx, id)
+		ids, err := lockAssignedUserRows(tx, id)
 		if err != nil {
 			return err
 		}
@@ -316,14 +303,12 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 		if updateRoleErr := tx.Save(&existing).Error; updateRoleErr != nil {
 			return fmt.Errorf("failed to update role: %w", updateRoleErr)
 		}
-		// Narrowing a role can demote every holder, so re-check the global-admin guard.
-		if len(ids) > 0 {
-			if assertAdminErr := s.assertGlobalAdminExistsInternal(ctx, tx); assertAdminErr != nil {
-				return assertAdminErr
-			}
-		}
 		out = existing
-		return nil
+		// Narrowing a role can demote every holder, so re-check the global-admin guard.
+		if len(ids) == 0 {
+			return nil
+		}
+		return s.AssertGlobalAdminExists(ctx, tx)
 	})
 	if err != nil {
 		return nil, err
@@ -337,7 +322,7 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 func (s *RoleService) DeleteRole(ctx context.Context, id string) error {
 	var affected []string
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		if err := lockGlobalAdminGuardInternal(tx); err != nil {
+		if err := lockGlobalAdminGuard(tx); err != nil {
 			return err
 		}
 		var existing Role
@@ -351,8 +336,7 @@ func (s *RoleService) DeleteRole(ctx context.Context, id string) error {
 			return common.Classify(common.ErrRoleBuiltIn, errors.New("Built-in role cannot be modified")) //nolint:staticcheck // Preserve the existing error message.
 		}
 
-		// Collect affected users before deleting the role.
-		ids, err := lockAssignedUserRowsInternal(tx, id)
+		ids, err := lockAssignedUserRows(tx, id)
 		if err != nil {
 			return err
 		}
@@ -360,25 +344,22 @@ func (s *RoleService) DeleteRole(ctx context.Context, id string) error {
 		if deleteRoleErr := tx.Delete(&Role{}, "id = ?", id).Error; deleteRoleErr != nil {
 			return fmt.Errorf("failed to delete role: %w", deleteRoleErr)
 		}
-		if len(ids) > 0 {
-			return s.assertGlobalAdminExistsInternal(ctx, tx)
+		if len(ids) == 0 {
+			return nil
 		}
-		return nil
+		return s.AssertGlobalAdminExists(ctx, tx)
 	})
 	if err != nil {
 		return err
 	}
-	// Invalidate caches AFTER the transaction commits so a concurrent
-	// cache-miss cannot re-populate with stale data from the not-yet-visible
-	// delete. Consistent with UpdateRole / SetUserAssignments.
+	// Invalidate after commit so a concurrent cache miss cannot refill stale permissions.
 	for _, uid := range affected {
 		s.InvalidateUser(uid)
 	}
 	return nil
 }
 
-// CountUsersAssignedToRole returns how many distinct users hold an assignment
-// to the given role (any source, any environment scope).
+// CountUsersAssignedToRole counts distinct users assigned to roleID in any source or scope.
 func (s *RoleService) CountUsersAssignedToRole(ctx context.Context, roleID string) (int, error) {
 	var count int64
 	if err := s.db.WithContext(ctx).
@@ -391,8 +372,6 @@ func (s *RoleService) CountUsersAssignedToRole(ctx context.Context, roleID strin
 	return int(count), nil
 }
 
-// ---------- User role assignments ----------
-
 func (s *RoleService) ListUserAssignments(ctx context.Context, userID string) ([]UserRoleAssignment, error) {
 	var out []UserRoleAssignment
 	if err := s.db.WithContext(ctx).
@@ -404,13 +383,8 @@ func (s *RoleService) ListUserAssignments(ctx context.Context, userID string) ([
 	return out, nil
 }
 
-// replaceUserAssignmentsForSourceInternal replaces the user's assignments for a
-// single source (manual or oidc), leaving other sources untouched. References
-// are validated inside the tx so a concurrent role/env delete yields a typed
-// error (→ 400) rather than an opaque FK violation, and the global-admin guard
-// is enforced before commit. Shared by SetUserAssignments and
-// ReplaceOidcAssignments.
-func (s *RoleService) replaceUserAssignmentsForSourceInternal(ctx context.Context, userID, source string, desired []UserRoleAssignment) error {
+// ReplaceUserAssignments replaces the user's assignments for one source and enforces the global-admin guard.
+func (s *RoleService) ReplaceUserAssignments(ctx context.Context, userID, source string, desired []UserRoleAssignment) error {
 	seen := make(map[string]struct{}, len(desired))
 	desired = slices.DeleteFunc(desired, func(a UserRoleAssignment) bool {
 		key := assignmentKeyInternal(a)
@@ -425,12 +399,10 @@ func (s *RoleService) replaceUserAssignmentsForSourceInternal(ctx context.Contex
 		desired[i].Source = source
 	}
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		if err := lockGlobalAdminGuardInternal(tx); err != nil {
+		if err := lockGlobalAdminGuard(tx); err != nil {
 			return err
 		}
-		// Lock the target's user row so assignment swaps serialize with
-		// user-domain update/delete transactions, whose in-transaction privilege
-		// checks lock the same row.
+		// Lock the user row so assignment swaps serialize with user-domain privilege checks.
 		var locked struct{ ID string }
 		if err := tx.Table("users").
 			Select("id").
@@ -454,7 +426,7 @@ func (s *RoleService) replaceUserAssignmentsForSourceInternal(ctx context.Contex
 				return fmt.Errorf("failed to insert %s assignments: %w", source, err)
 			}
 		}
-		return s.assertGlobalAdminExistsInternal(ctx, tx)
+		return s.AssertGlobalAdminExists(ctx, tx)
 	})
 	if err != nil {
 		return err
@@ -471,17 +443,7 @@ func assignmentKeyInternal(a UserRoleAssignment) string {
 	return a.RoleID + "\x00" + envID
 }
 
-// SetUserAssignments replaces the user's source='manual' assignments with the
-// given desired set. Source='oidc' rows are preserved (use
-// ReplaceOidcAssignments for those). Enforces the global-admin guard.
-func (s *RoleService) SetUserAssignments(ctx context.Context, userID string, desired []UserRoleAssignment) error {
-	return s.replaceUserAssignmentsForSourceInternal(ctx, userID, RoleAssignmentSourceManual, desired)
-}
-
-// validateAssignmentsExistInternal verifies every distinct RoleID and
-// EnvironmentID referenced by `desired` exists in the database. Returns the
-// first missing reference wrapped in an InvalidRoleAssignmentError so the
-// handler can map it to a 400 with a descriptive message.
+// validateAssignmentsExistInternal returns ErrInvalidRoleAssignment for the first missing role or environment.
 func validateAssignmentsExistInternal(tx *gorm.DB, desired []UserRoleAssignment) error {
 	roleIDSet := make(map[string]struct{}, len(desired))
 	envIDSet := make(map[string]struct{}, len(desired))
@@ -528,24 +490,7 @@ func validateAssignmentsExistInternal(tx *gorm.DB, desired []UserRoleAssignment)
 	return nil
 }
 
-// ReplaceOidcAssignments replaces the user's source='oidc' assignments. Manual
-// assignments are untouched. An OIDC mapping referencing a since-deleted role or
-// environment fails with a typed error; the caller logs and continues login so
-// the user simply receives no OIDC-derived assignments. Enforces the
-// global-admin guard after the swap.
-func (s *RoleService) ReplaceOidcAssignments(ctx context.Context, userID string, desired []UserRoleAssignment) error {
-	return s.replaceUserAssignmentsForSourceInternal(ctx, userID, RoleAssignmentSourceOidc, desired)
-}
-
-// CountGlobalAdminsExcludingUser returns the number of non-service users (other
-// than excludedUserID) whose resolved global permissions satisfy IsGlobalAdmin.
-// Used as the authoritative check for "removing this user / demoting this
-// assignment would leave the system with no admin."
-func (s *RoleService) CountGlobalAdminsExcludingUser(ctx context.Context, excludedUserID string) (int, error) {
-	return s.countEffectiveGlobalAdminsInternal(ctx, s.db.WithContext(ctx), excludedUserID)
-}
-
-func (s *RoleService) countEffectiveGlobalAdminsInternal(ctx context.Context, tx *gorm.DB, excludedUserID string) (int, error) {
+func (s *RoleService) CountGlobalAdmins(ctx context.Context, tx *gorm.DB, excludedUserID string) (int, error) {
 	type globalPermissionRow struct {
 		UserID      string `gorm:"column:user_id"`
 		Permissions string `gorm:"column:permissions"`
@@ -588,10 +533,7 @@ func (s *RoleService) countEffectiveGlobalAdminsInternal(ctx context.Context, tx
 	return count, nil
 }
 
-// ---------- Permission resolution ----------
-
-// ResolvePermissions returns the effective PermissionSet for a user, caching
-// the result per-user for permissionCacheTTL.
+// ResolvePermissions returns the user's effective permissions, cached for permissionCacheTTL.
 func (s *RoleService) ResolvePermissions(ctx context.Context, userID string) (*authz.PermissionSet, error) {
 	if userID == "" {
 		return authz.NewPermissionSet(), nil
@@ -612,11 +554,9 @@ func (s *RoleService) ResolvePermissions(ctx context.Context, userID string) (*a
 	return ps, nil
 }
 
-// ResolveUserPermissionsInDB resolves permissions using the supplied transaction or database handle.
+// ResolveUserPermissionsInDB resolves the user's permissions in tx.
 func (s *RoleService) ResolveUserPermissionsInDB(_ context.Context, tx *gorm.DB, userID string) (*authz.PermissionSet, error) {
-	// Scan into raw string for the permissions JSON column to avoid GORM's
-	// schema-introspection on anonymous local structs (which can't see the
-	// type tags needed to wire database.StringSlice's Scanner).
+	// Scan permissions as a raw string; GORM cannot wire StringSlice on anonymous structs.
 	type row struct {
 		Permissions   string  `gorm:"column:permissions"`
 		EnvironmentID *string `gorm:"column:environment_id"`
@@ -644,8 +584,7 @@ func (s *RoleService) ResolveUserPermissionsInDB(_ context.Context, tx *gorm.DB,
 	return ps, nil
 }
 
-// decodePermissionsJSONInternal parses the JSON-encoded `roles.permissions` column
-// into a string slice. The column is `[]` for an empty role.
+// decodePermissionsJSONInternal parses the JSON roles.permissions column.
 func decodePermissionsJSONInternal(raw string) ([]string, error) {
 	if raw == "" || raw == "[]" {
 		return nil, nil
@@ -657,8 +596,7 @@ func decodePermissionsJSONInternal(raw string) ([]string, error) {
 	return out, nil
 }
 
-// ResolveExecutionPermissions revalidates durable work against current users,
-// key ownership, expiry and permissions without using authentication caches.
+// ResolveExecutionPermissions revalidates durable work against current users and keys, bypassing caches.
 func (s *RoleService) ResolveExecutionPermissions(ctx context.Context, userID, keyID string) (*authz.PermissionSet, error) {
 	if userID == "" {
 		return nil, errors.New("requesting user unavailable")
@@ -713,8 +651,7 @@ func (s *RoleService) ResolveExecutionPermissions(ctx context.Context, userID, k
 	return restricted, nil
 }
 
-// ResolveApiKeyPermissions returns the PermissionSet for an API key. Caches
-// per-key. Falls back to an empty set (deny-all) if the key has no perms.
+// ResolveApiKeyPermissions returns the API key's permissions, cached per key.
 func (s *RoleService) ResolveApiKeyPermissions(ctx context.Context, apiKeyID string) (*authz.PermissionSet, error) {
 	if ps, ok, _ := s.apiKeyCache.Get(apiKeyID); ok {
 		return ps, nil
@@ -748,9 +685,7 @@ func (s *RoleService) resolveApiKeyPermissionsInDBInternal(db *gorm.DB, apiKeyID
 	return permissions, nil
 }
 
-// SetApiKeyPermissions replaces every permission row on the given API key
-// atomically. Validation that the granted permissions don't exceed the
-// creator's capabilities happens in the handler layer.
+// SetApiKeyPermissions atomically replaces the API key's permission rows.
 func (s *RoleService) SetApiKeyPermissions(ctx context.Context, apiKeyID string, grants []ApiKeyPermission) error {
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		return s.SetApiKeyPermissionsInDB(ctx, tx, apiKeyID, grants)
@@ -762,7 +697,7 @@ func (s *RoleService) SetApiKeyPermissions(ctx context.Context, apiKeyID string,
 	return nil
 }
 
-// SetApiKeyPermissionsInDB replaces permission rows using the supplied transaction or database handle.
+// SetApiKeyPermissionsInDB replaces the API key's permission rows in tx.
 func (s *RoleService) SetApiKeyPermissionsInDB(ctx context.Context, tx *gorm.DB, apiKeyID string, grants []ApiKeyPermission) error {
 	for i := range grants {
 		grants[i].ApiKeyID = apiKeyID
@@ -777,8 +712,6 @@ func (s *RoleService) SetApiKeyPermissionsInDB(ctx context.Context, tx *gorm.DB,
 	}
 	return nil
 }
-
-// ---------- OIDC role mappings ----------
 
 func (s *RoleService) ListOidcMappings(ctx context.Context) ([]OidcRoleMapping, error) {
 	var out []OidcRoleMapping
@@ -910,17 +843,8 @@ func (s *RoleService) DeleteOidcMapping(ctx context.Context, id string) error {
 	})
 }
 
-// ReconcileEnvOidcMappings replaces every source='env' row in oidc_role_mappings
-// with the set declared by `rawSpec` (a JSON array of role.OidcRoleMappingSpec).
-// Called once at boot. Behavior is declarative:
-//
-//   - rawSpec empty / unset → leaves DB rows alone (purely UI-managed mode).
-//   - rawSpec is `[]` → wipes any previously-env-managed rows.
-//   - rawSpec is a valid JSON array → upserts each spec, deletes stale env rows.
-//
-// Manual rows (source='manual') are never touched. Bad JSON or an unknown role
-// ID returns an error so a misconfigured deployment fails loudly rather than
-// silently dropping mappings.
+// ReconcileEnvOidcMappings replaces source='env' OIDC mappings with rawSpec at boot.
+// Empty rawSpec leaves rows alone; manual rows are never touched.
 func (s *RoleService) ReconcileEnvOidcMappings(ctx context.Context, rawSpec string) error {
 	rawSpec = strings.TrimSpace(rawSpec)
 	if rawSpec == "" {
@@ -940,8 +864,7 @@ func (s *RoleService) ReconcileEnvOidcMappings(ctx context.Context, rawSpec stri
 	}
 
 	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		// Verify every referenced role exists. Done inside the tx so a concurrent
-		// role delete can't race past this check.
+		// Verify roles inside the tx so a concurrent role delete cannot race past it.
 		roleIDs := make([]string, 0, len(specs))
 		for _, sp := range specs {
 			roleIDs = append(roleIDs, sp.RoleID)
@@ -956,8 +879,6 @@ func (s *RoleService) ReconcileEnvOidcMappings(ctx context.Context, rawSpec stri
 			}
 		}
 
-		// Declarative replace: drop every env-managed row, then insert the new
-		// set. Manual rows are untouched.
 		if err := tx.Where("source = ?", OidcMappingSourceEnv).Delete(&OidcRoleMapping{}).Error; err != nil {
 			return fmt.Errorf("failed to clear env-managed mappings: %w", err)
 		}
@@ -982,11 +903,7 @@ func (s *RoleService) ReconcileEnvOidcMappings(ctx context.Context, rawSpec stri
 	})
 }
 
-// ---------- Cache helpers ----------
-
-// InvalidateUser drops the cached PermissionSet for one user. Called from
-// auth_service after a login that mutates assignments, and from any mutation
-// path that doesn't already invalidate explicitly.
+// InvalidateUser drops the cached permissions for one user.
 func (s *RoleService) InvalidateUser(userID string) {
 	s.cacheFillMu.Lock()
 	defer s.cacheFillMu.Unlock()
@@ -994,15 +911,13 @@ func (s *RoleService) InvalidateUser(userID string) {
 	s.userCache.Delete(userID)
 }
 
-// InvalidateApiKey drops the cached PermissionSet for one API key.
+// InvalidateApiKey drops the cached permissions for one API key.
 func (s *RoleService) InvalidateApiKey(apiKeyID string) {
 	s.cacheFillMu.Lock()
 	defer s.cacheFillMu.Unlock()
 	s.apiKeyCacheGen.Add(1)
 	s.apiKeyCache.Delete(apiKeyID)
 }
-
-// ---------- helpers ----------
 
 func validatePermissionsInternal(perms []string) error {
 	for _, p := range perms {
@@ -1015,22 +930,8 @@ func validatePermissionsInternal(perms []string) error {
 	return nil
 }
 
-// ValidatePermissionsAgainstCaller rejects any permission in `desired` that the
-// caller does not hold at global scope. Sudo callers (agent / env access
-// tokens, bootstrap paths) bypass entirely. Holding a permission only inside a
-// specific environment is intentionally insufficient: roles are reusable
-// templates that can later be assigned globally, so an env-scoped grant must
-// not let the caller mint a global-capable role.
-//
-// Unknown permission strings are rejected first with an UnknownPermissionError
-// so a caller typo-ing a permission gets a descriptive 400 instead of a
-// misleading 403 from the escalation guard below (which would always fire on
-// an unknown perm because no PermissionSet contains it). This also gives the
-// escalation loop a clean invariant: every perm reaching it is real.
-//
-// Callers should run this before persisting role permissions to defend against
-// privilege escalation if the role mutation endpoints are ever exposed beyond
-// global admins.
+// ValidatePermissionsAgainstCaller rejects unknown permissions, then any the caller lacks globally.
+// Env-scoped grants are insufficient because roles can later be assigned globally.
 func (s *RoleService) ValidatePermissionsAgainstCaller(caller *authz.PermissionSet, desired []string) error {
 	if err := validatePermissionsInternal(desired); err != nil {
 		return err
@@ -1038,9 +939,7 @@ func (s *RoleService) ValidatePermissionsAgainstCaller(caller *authz.PermissionS
 	return validatePermissionSetAgainstCallerInternal(caller, desired, "")
 }
 
-// ValidateRoleAssignmentAgainstCaller rejects assigning a role at the requested
-// scope when the caller does not hold every permission in that role at that
-// same scope.
+// ValidateRoleAssignmentAgainstCaller rejects a role whose permissions the caller lacks at that scope.
 func (s *RoleService) ValidateRoleAssignmentAgainstCaller(ctx context.Context, caller *authz.PermissionSet, roleID string, environmentID *string) error {
 	role, err := s.GetRole(ctx, roleID)
 	if err != nil {

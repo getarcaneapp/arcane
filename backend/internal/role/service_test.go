@@ -93,8 +93,8 @@ func TestBackfillLegacyRoleAssignments(t *testing.T) {
 		}
 		require.NoError(t, db.Create(&role.UserRoleAssignment{UserID: "seed-admin", RoleID: authz.BuiltInRoleAdmin, Source: role.RoleAssignmentSourceManual}).Error)
 		envID := "env-1"
-		require.NoError(t, roleSvc.SetUserAssignments(ctx, "scoped-manual", []role.UserRoleAssignment{{RoleID: authz.BuiltInRoleViewer, EnvironmentID: &envID}}))
-		require.NoError(t, roleSvc.ReplaceOidcAssignments(ctx, "global-oidc", []role.UserRoleAssignment{{RoleID: authz.BuiltInRoleViewer}}))
+		require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, "scoped-manual", role.RoleAssignmentSourceManual, []role.UserRoleAssignment{{RoleID: authz.BuiltInRoleViewer, EnvironmentID: &envID}}))
+		require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, "global-oidc", role.RoleAssignmentSourceOidc, []role.UserRoleAssignment{{RoleID: authz.BuiltInRoleViewer}}))
 
 		require.NoError(t, roleSvc.BackfillLegacyRoleAssignments(ctx))
 		require.Equal(t, []string{authz.BuiltInRoleAdmin}, assignedRoleIDs(t, roleSvc, "legacy-admin"))
@@ -114,7 +114,7 @@ func TestBackfillLegacyRoleAssignments(t *testing.T) {
 		require.True(t, ps.Allows(authz.PermContainersList, "env-1"))
 		require.False(t, ps.Allows(authz.PermContainersList, ""))
 
-		require.NoError(t, roleSvc.SetUserAssignments(ctx, "legacy-user", nil))
+		require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, "legacy-user", role.RoleAssignmentSourceManual, nil))
 		require.NoError(t, db.Exec("INSERT INTO users (id, username, password_hash, roles) VALUES (?, ?, ?, ?)", "later-admin", "later-admin", "unused", `["admin"]`).Error)
 		require.NoError(t, role.NewRoleService(db).BackfillLegacyRoleAssignments(ctx))
 		require.Empty(t, assignedRoleIDs(t, roleSvc, "legacy-user"))
@@ -211,34 +211,34 @@ func TestSetUserAssignmentsRejectsUnknownRole(t *testing.T) {
 	userSvc, roleSvc := setupUserAndRoleServices(t)
 	victim := createTestUser(t, userSvc, "victim", "victim")
 
-	err := roleSvc.SetUserAssignments(ctx, victim.ID, []role.UserRoleAssignment{
+	err := roleSvc.ReplaceUserAssignments(ctx, victim.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
 		{RoleID: "role_does_not_exist"},
 	})
 	require.Error(t, err)
 	require.ErrorIs(t, err, common.ErrInvalidRoleAssignment)
 }
 
-func TestReplaceOidcAssignmentsRejectsUnknownRole(t *testing.T) {
+func TestReplaceUserAssignmentsOidcRejectsUnknownRole(t *testing.T) {
 	ctx := t.Context()
 	userSvc, roleSvc := setupUserAndRoleServices(t)
 	oidcUser := createTestUser(t, userSvc, "oidc-user", "oidc-user")
 
-	err := roleSvc.ReplaceOidcAssignments(ctx, oidcUser.ID, []role.UserRoleAssignment{
+	err := roleSvc.ReplaceUserAssignments(ctx, oidcUser.ID, role.RoleAssignmentSourceOidc, []role.UserRoleAssignment{
 		{RoleID: "role_does_not_exist"},
 	})
 	require.Error(t, err)
 	require.ErrorIs(t, err, common.ErrInvalidRoleAssignment)
 }
 
-func TestReplaceOidcAssignmentsRejectsUnknownEnvironment(t *testing.T) {
+func TestReplaceUserAssignmentsOidcRejectsUnknownEnvironment(t *testing.T) {
 	ctx := t.Context()
 	userSvc, roleSvc := setupUserAndRoleServices(t)
 	oidcUser := createTestUser(t, userSvc, "oidc-user-env", "oidc-user-env")
 	missingEnv := "env_does_not_exist"
 
 	// A valid role scoped to a non-existent environment must fail existence
-	// validation (mirrors SetUserAssignments) rather than attempting an insert.
-	err := roleSvc.ReplaceOidcAssignments(ctx, oidcUser.ID, []role.UserRoleAssignment{
+	// validation (same as manual assignments) rather than attempting an insert.
+	err := roleSvc.ReplaceUserAssignments(ctx, oidcUser.ID, role.RoleAssignmentSourceOidc, []role.UserRoleAssignment{
 		{RoleID: authz.BuiltInRoleViewer, EnvironmentID: &missingEnv},
 	})
 	require.Error(t, err)
@@ -252,16 +252,16 @@ func TestEffectiveGlobalAdminCountIncludesCustomAllPermissionsRole(t *testing.T)
 	customRole, err := roleSvc.CreateRole(ctx, "Custom Admin", nil, authz.AllPermissions())
 	require.NoError(t, err)
 
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, customAdmin.ID, []role.UserRoleAssignment{
+	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, customAdmin.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
 		{RoleID: customRole.ID, EnvironmentID: nil},
 	}))
 
-	count, err := roleSvc.CountGlobalAdminsExcludingUser(ctx, "")
+	count, err := roleSvc.CountGlobalAdmins(ctx, userSvc.DB, "")
 	require.NoError(t, err)
 	require.Equal(t, 1, count)
-	require.NoError(t, roleSvc.AssertGlobalAdminExists(ctx))
+	require.NoError(t, roleSvc.AssertGlobalAdminExists(ctx, userSvc.DB))
 
-	err = roleSvc.SetUserAssignments(ctx, customAdmin.ID, nil)
+	err = roleSvc.ReplaceUserAssignments(ctx, customAdmin.ID, role.RoleAssignmentSourceManual, nil)
 	require.Error(t, err)
 	require.ErrorIs(t, err, common.ErrNoGlobalAdminRemains)
 }
@@ -283,17 +283,17 @@ func TestEffectiveGlobalAdminCountIgnoresEnvScopedAndServiceAccounts(t *testing.
 	}
 	require.NoError(t, userSvc.WithContext(ctx).Create(serviceAdmin).Error)
 
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, globalAdmin.ID, []role.UserRoleAssignment{
+	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, globalAdmin.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
 		{RoleID: customRole.ID, EnvironmentID: nil},
 	}))
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, envScopedAdmin.ID, []role.UserRoleAssignment{
+	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, envScopedAdmin.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
 		{RoleID: customRole.ID, EnvironmentID: &envID},
 	}))
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, serviceAdmin.ID, []role.UserRoleAssignment{
+	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, serviceAdmin.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
 		{RoleID: customRole.ID, EnvironmentID: nil},
 	}))
 
-	count, err := roleSvc.CountGlobalAdminsExcludingUser(ctx, "")
+	count, err := roleSvc.CountGlobalAdmins(ctx, userSvc.DB, "")
 	require.NoError(t, err)
 	require.Equal(t, 1, count)
 }
@@ -333,7 +333,7 @@ func createTestUser(t *testing.T, db *database.DB, id, username string) *user.Us
 
 func grantGlobalAdmin(t *testing.T, roleService *role.RoleService, userID string) {
 	t.Helper()
-	require.NoError(t, roleService.SetUserAssignments(t.Context(), userID, []role.UserRoleAssignment{
+	require.NoError(t, roleService.ReplaceUserAssignments(t.Context(), userID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
 		{RoleID: authz.BuiltInRoleAdmin},
 	}))
 }

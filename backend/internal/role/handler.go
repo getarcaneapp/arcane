@@ -182,7 +182,7 @@ func (h *RoleHandler) SetUserRoleAssignments(ctx context.Context, input *SetUser
 	for i, a := range input.Body.Assignments {
 		desired[i] = UserRoleAssignment{RoleID: a.RoleID, EnvironmentID: a.EnvironmentID}
 	}
-	if err := h.roleService.SetUserAssignments(ctx, input.UserID, desired); err != nil {
+	if err := h.roleService.ReplaceUserAssignments(ctx, input.UserID, RoleAssignmentSourceManual, desired); err != nil {
 		switch {
 		case errors.Is(err, common.ErrUserNotFound):
 			return nil, huma.Error404NotFound(err.Error())

@@ -78,7 +78,7 @@ func createTestUser(t *testing.T, svc *userdomain.UserService, id, username stri
 // grantGlobalAdmin assigns the built-in Admin role globally to the user.
 func grantGlobalAdmin(t *testing.T, roleSvc *role.RoleService, userID string) {
 	t.Helper()
-	require.NoError(t, roleSvc.SetUserAssignments(t.Context(), userID, []role.UserRoleAssignment{
+	require.NoError(t, roleSvc.ReplaceUserAssignments(t.Context(), userID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
 		{RoleID: authz.BuiltInRoleAdmin, EnvironmentID: nil},
 	}))
 }
@@ -198,7 +198,7 @@ func TestDeleteUserRejectsDeletingOnlyCustomAllPermissionsAdmin(t *testing.T) {
 	customAdmin := createTestUser(t, userSvc, "custom-admin", "custom-admin")
 	customRole, err := roleSvc.CreateRole(ctx, "Custom Admin", nil, authz.AllPermissions())
 	require.NoError(t, err)
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, customAdmin.ID, []role.UserRoleAssignment{
+	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, customAdmin.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
 		{RoleID: customRole.ID, EnvironmentID: nil},
 	}))
 
@@ -313,7 +313,7 @@ func TestUpdateUserRejectsNonAdminActorEditingAdmin(t *testing.T) {
 	manager := createTestUser(t, userSvc, "mgr-1", "manager")
 	managerRole, err := roleSvc.CreateRole(ctx, "User Manager", nil, []string{authz.PermUsersUpdate})
 	require.NoError(t, err)
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, manager.ID, []role.UserRoleAssignment{
+	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, manager.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
 		{RoleID: managerRole.ID, EnvironmentID: nil},
 	}))
 	managerPerms, err := roleSvc.ResolvePermissions(ctx, manager.ID)
@@ -354,7 +354,7 @@ func TestUpdateUserAllowsNonAdminActorEditingNonAdmin(t *testing.T) {
 	manager := createTestUser(t, userSvc, "mgr-1", "manager")
 	managerRole, err := roleSvc.CreateRole(ctx, "User Manager", nil, []string{authz.PermUsersUpdate})
 	require.NoError(t, err)
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, manager.ID, []role.UserRoleAssignment{
+	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, manager.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
 		{RoleID: managerRole.ID, EnvironmentID: nil},
 	}))
 	managerPerms, err := roleSvc.ResolvePermissions(ctx, manager.ID)
@@ -392,7 +392,7 @@ func TestDeleteUserRejectsNonAdminActorDeletingAdmin(t *testing.T) {
 	manager := createTestUser(t, userSvc, "mgr-1", "manager")
 	managerRole, err := roleSvc.CreateRole(ctx, "User Manager", nil, []string{authz.PermUsersDelete})
 	require.NoError(t, err)
-	require.NoError(t, roleSvc.SetUserAssignments(ctx, manager.ID, []role.UserRoleAssignment{
+	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, manager.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
 		{RoleID: managerRole.ID, EnvironmentID: nil},
 	}))
 	managerPerms, err := roleSvc.ResolvePermissions(ctx, manager.ID)

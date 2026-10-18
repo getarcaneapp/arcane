@@ -196,6 +196,7 @@ type initializeStartupStateParams struct {
 
 	AppCtx context.Context
 	Config *config.Config
+	DB     *database.DB
 
 	Volume        *volume.VolumeService
 	Settings      *settings.SettingsService
@@ -328,7 +329,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 	)
 	startup.CleanupUnknownSettings(appCtx, p.Settings)
 
-	runRoleStartupTasks(appCtx, p.Role, p.ApiKey, cfg)
+	runRoleStartupTasks(appCtx, p.DB, p.Role, p.ApiKey, cfg)
 
 	// Only edge agents auto-pair; direct agents are passive and the manager dials them.
 	if cfg.AgentMode && cfg.EdgeAgent && cfg.AgentToken != "" && cfg.ManagerApiUrl != "" {
@@ -340,7 +341,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 	}
 }
 
-func runRoleStartupTasks(ctx context.Context, roleService *role.RoleService, apiKeyService *apikey.ApiKeyService, cfg *config.Config) {
+func runRoleStartupTasks(ctx context.Context, db *database.DB, roleService *role.RoleService, apiKeyService *apikey.ApiKeyService, cfg *config.Config) {
 	if roleService == nil {
 		return
 	}
@@ -362,7 +363,7 @@ func runRoleStartupTasks(ctx context.Context, roleService *role.RoleService, api
 	if cfg.AgentMode {
 		return
 	}
-	if err := roleService.AssertGlobalAdminExists(ctx); err != nil {
+	if err := roleService.AssertGlobalAdminExists(ctx, db.WithContext(ctx)); err != nil {
 		slog.ErrorContext(ctx, "RBAC global admin guard failed", "error", err)
 	}
 }

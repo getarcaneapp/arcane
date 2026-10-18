@@ -52,7 +52,7 @@ func createGlobalAdminInternal(t *testing.T, db *database.DB) (*user.User, *user
 		RequiresPasswordChange: true,
 	})
 	require.NoError(t, err)
-	require.NoError(t, roleService.SetUserAssignments(ctx, adminUser.ID, []role.UserRoleAssignment{
+	require.NoError(t, roleService.ReplaceUserAssignments(ctx, adminUser.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
 		{RoleID: authz.BuiltInRoleAdmin},
 	}))
 
