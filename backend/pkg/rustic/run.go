@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"runtime"
 	"strings"
 	"time"
 
@@ -20,6 +21,12 @@ import (
 	"getarcane.dev/arcane/v3/pkg/volumes"
 )
 
+// Run executes one Rustic command in an ephemeral container built from
+// Image() and returns its trimmed stdout. It is the single Rustic
+// invocation contract, shared by the backup engine and the detached recovery
+// helper; the image must already be present. The standard RUSTIC_* variables
+// are appended to environment, and networkMode is applied verbatim ("" keeps
+// the default network). Every run mounts the shared CacheVolume.
 func Run(ctx context.Context, dockerClient *client.Client, password string, command, environment []string, mounts []mount.Mount, networkMode container.NetworkMode) (string, error) {
 	if _, err := dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: CacheVolume, Labels: volumes.Labels()}); err != nil {
 		return "", fmt.Errorf("failed to provision Rustic cache volume: %w", err)
@@ -33,20 +40,28 @@ func Run(ctx context.Context, dockerClient *client.Client, password string, comm
 	)
 	allMounts := append([]mount.Mount{}, mounts...)
 	allMounts = append(allMounts, mount.Mount{Type: mount.TypeVolume, Source: CacheVolume, Target: "/cache"})
-	if bundle := trustBundle(ctx); len(bundle) > 0 {
-		trustVolume, stageErr := stageTrustBundle(ctx, dockerClient, bundle)
-		if stageErr != nil {
-			return "", fmt.Errorf("failed to stage CA certificates for Rustic container: %w", stageErr)
+	// Trust-bundle staging uses a Linux helper image and Linux paths (/etc/ssl/...), which a
+	// Windows Docker engine cannot run; it only applies to Linux Rustic containers.
+	if runtime.GOOS != "windows" {
+		if bundle := trustBundle(ctx); len(bundle) > 0 {
+			trustVolume, stageErr := stageTrustBundle(ctx, dockerClient, bundle)
+			if stageErr != nil {
+				return "", fmt.Errorf("failed to stage CA certificates for Rustic container: %w", stageErr)
+			}
+			defer removeTrustBundle(ctx, dockerClient, trustVolume)
+			allMounts = append(allMounts, mount.Mount{Type: mount.TypeVolume, Source: trustVolume, Target: trustBundleDir, ReadOnly: true})
 		}
-		defer removeTrustBundle(ctx, dockerClient, trustVolume)
-		allMounts = append(allMounts, mount.Mount{Type: mount.TypeVolume, Source: trustVolume, Target: trustBundleDir, ReadOnly: true})
 	}
-	hostConfig := volumes.HostConfig(DefaultImage, nil, allMounts)
+	if runtime.GOOS == "windows" {
+		command, env, allMounts = windowsContainerPathsInternal(command, env, allMounts)
+	}
+	image := Image()
+	hostConfig := volumes.HostConfig(image, nil, allMounts)
 	hostConfig.AutoRemove = false
 	hostConfig.NetworkMode = networkMode
 	created, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config: &container.Config{
-			Image:  DefaultImage,
+			Image:  image,
 			Cmd:    command,
 			Env:    env,
 			Labels: volumes.Labels(),
