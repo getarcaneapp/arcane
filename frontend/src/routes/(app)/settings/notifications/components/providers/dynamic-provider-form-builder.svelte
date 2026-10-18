@@ -92,7 +92,7 @@
 				{disabled}
 				placeholder={field.placeholder ?? ''}
 				type={field.inputType ?? 'text'}
-				autocomplete={field.autocomplete ?? 'off'}
+				autocomplete={field.autocomplete ?? (field.inputType === 'password' ? 'new-password' : 'off')}
 				required={field.required ?? false}
 				aria-invalid={!!getFieldError(field)}
 			/>

@@ -448,8 +448,7 @@
 						label: m.notifications_email_password_label(),
 						placeholder: m.notifications_email_password_placeholder(),
 						helpText: m.notifications_email_password_help(),
-						inputType: 'password',
-						autocomplete: 'new-password'
+						inputType: 'password'
 					}
 				]
 			},
