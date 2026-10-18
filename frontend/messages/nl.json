@@ -292,6 +292,8 @@
   "prune_images_dialog_description": "Kies hoe agressief Arcane ongebruikte Docker-images moet verwijderen.",
   "auto_update_exclude_description": "Selecteer de containers die niet automatisch mogen worden bijgewerkt. Arcane blijft deze namelijk controleren op updates en stuurt hiervoor meldingen.",
   "auto_update_check_label_hint": "Om de controle op updates en de meldingen voor een container uit te schakelen, voeg je het label {label} eraan toe.",
+  "auto_update_delay_label": "Vertraging bij het bijwerken (uren)",
+  "auto_update_delay_description": "Het aantal uren waarbinnen een nieuwe image beschikbaar moet zijn, gerekend vanaf het moment dat Arcane deze voor het eerst detecteert, voordat deze via de automatische update wordt geïnstalleerd. Bij een waarde van 0 wordt de image onmiddellijk geïnstalleerd en worden handmatige updates nooit uitgesteld. Je kunt deze instelling per container overschrijven met het label ` {label}`.",
   "auto_update_disabled_checks_continue": "Controles op updates en meldingen blijven ingeschakeld; alleen de automatische installatie wordt uitgeschakeld.",
   "auto_update_title": "Automatisch bijwerken",
   "auto_update_enabled_toast": "Automatisch bijwerken ingeschakeld",
