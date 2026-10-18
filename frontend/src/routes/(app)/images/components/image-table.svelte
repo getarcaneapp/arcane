@@ -724,7 +724,9 @@
 			</DropdownMenu.Item>
 		{/if}
 
-		{@const usableTag = item.repoTags?.find((tag) => tag !== '<none>:<none>')}
+		{@const usableTags = item.repoTags?.filter((tag) => tag !== '<none>:<none>') ?? []}
+		<!-- Prefer a real tag: a digest name kept beside it would pull the old pinned image. -->
+		{@const usableTag = usableTags.find((tag) => !tag.includes('@')) ?? usableTags[0]}
 		{#if canPullImage && hasPermission('images:pull', envId)}
 			<DropdownMenu.Item onclick={() => handleInlineImagePull(usableTag || '', envId)} disabled={!usableTag}>
 				<DownloadIcon class="size-4" />

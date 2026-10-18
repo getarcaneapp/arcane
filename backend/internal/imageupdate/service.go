@@ -548,9 +548,12 @@ func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string
 		if inspectErr != nil {
 			return "", false
 		}
-		for _, tag := range inspectResponse.RepoTags {
-			if tag != "<none>:<none>" {
-				return tag, true
+		// Prefer a real tag over a digest name kept by the containerd image store.
+		for _, pinned := range []bool{false, true} {
+			for _, tag := range inspectResponse.RepoTags {
+				if tag != "<none>:<none>" && refs.IsDigestPinnedReference(tag) == pinned {
+					return tag, true
+				}
 			}
 		}
 		for _, digestValue := range inspectResponse.RepoDigests {
@@ -665,7 +668,15 @@ func filterImageSummariesByContainerOptOut(images []image.Summary, containers []
 	}
 
 	for _, summary := range images {
+		// A digest name kept beside a real tag (containerd image store) would save a
+		// skipped result under the same image ID and replace the tag's result.
+		hasTag := slices.ContainsFunc(summary.RepoTags, func(imageRef string) bool {
+			return imageRef != "<none>:<none>" && !refs.IsDigestPinnedReference(imageRef)
+		})
 		for _, imageRef := range summary.RepoTags {
+			if hasTag && refs.IsDigestPinnedReference(imageRef) {
+				continue
+			}
 			if addCandidate(imageRef, summary.ID) {
 				return filtered
 			}

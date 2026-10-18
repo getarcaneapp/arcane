@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -225,9 +224,10 @@ func findAccessSurfaceInternal(id string) (authz.AccessSurface, bool) {
 func repoRootInternal(t *testing.T) string {
 	t.Helper()
 
-	_, filename, _, ok := runtime.Caller(0)
-	require.True(t, ok)
-	return filepath.Clean(filepath.Join(filepath.Dir(filename), "..", "..", ".."))
+	// go test runs in the package directory; runtime.Caller breaks under -trimpath.
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	return filepath.Clean(filepath.Join(wd, "..", "..", ".."))
 }
 
 func frontendRoutePathInternal(routesRoot, url string) string {
