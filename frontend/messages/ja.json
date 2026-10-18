@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "例：私のNginxスタック",
   "templates_template_name_required": "テンプレート名は必須",
   "templates_template_description_placeholder": "このテンプレートについて簡単に説明してください。",
+  "templates_name_description_locked": "templates ディレクトリ内のテンプレートの名前や説明は変更できません。",
   "compose_content_is_required": "コンテンツの作成が必要",
   "templates_save_template_failed": "テンプレートの保存に失敗しました",
   "templates_create_template_failed": "テンプレートの作成に失敗しました",
