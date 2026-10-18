@@ -292,6 +292,8 @@
   "prune_images_dialog_description": "Vælg, hvor aggressivt Arcane skal rydde op i ubrugte Docker images.",
   "auto_update_exclude_description": "Vælg de containere, der ikke skal opdateres automatisk. Arcane tjekker løbende, om der er opdateringer til dem, og sender besked herom.",
   "auto_update_check_label_hint": "For at stoppe opdateringskontroller og underretninger for en container skal du tilføje mærket {label} til den.",
+  "auto_update_delay_label": "Opdateringsforsinkelse (timer)",
+  "auto_update_delay_description": "Antal timer, et nyt billede skal være tilgængeligt – regnet fra det tidspunkt, hvor Arcane først registrerer det – før den automatiske opdatering installerer det. Værdien 0 betyder, at installationen sker med det samme, og manuelle opdateringer forsinkes aldrig. Indstillingen kan tilsidesættes for den enkelte container ved hjælp af mærket {label}.",
   "auto_update_disabled_checks_continue": "Opdateringskontroller og meddelelser forbliver aktiveret; det er kun den automatiske installation, der er slået fra.",
   "auto_update_title": "Auto-opdatering",
   "auto_update_enabled_toast": "Auto-opdatering aktiveret",
