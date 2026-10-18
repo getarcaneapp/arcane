@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "t.ex. Min Nginx-stack",
   "templates_template_name_required": "Mallens namn är obligatoriskt",
   "templates_template_description_placeholder": "Beskriv kortfattat denna mall",
+  "templates_name_description_locked": "Namnet och beskrivningen på en mall i mallkatalogen kan inte ändras.",
   "compose_content_is_required": "Skriva innehåll krävs",
   "templates_save_template_failed": "Misslyckades med att spara mallen",
   "templates_create_template_failed": "Misslyckades med att skapa mall",
