@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "e.g. Ma pile Nginx",
   "templates_template_name_required": "Le nom du modèle est obligatoire",
   "templates_template_description_placeholder": "Décrivez brièvement ce modèle",
+  "templates_name_description_locked": "Le nom et la description d'un modèle figurant dans le répertoire des modèles ne peuvent pas être modifiés.",
   "compose_content_is_required": "Composer du contenu est nécessaire",
   "templates_save_template_failed": "Échec de l'enregistrement du modèle",
   "templates_create_template_failed": "Échec de la création du modèle",
