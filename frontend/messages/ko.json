@@ -292,6 +292,8 @@
   "prune_images_dialog_description": "Arcane이 사용하지 않는 Docker 이미지를 얼마나 적극적으로 정리할지 선택하세요.",
   "auto_update_exclude_description": "자동으로 업데이트되지 않도록 할 컨테이너를 선택하세요. Arcane은 해당 컨테이너에 대한 업데이트 여부를 계속 확인하고 알림을 보내고 있습니다.",
   "auto_update_check_label_hint": "컨테이너에 대한 업데이트 확인 및 알림을 중지하려면 해당 컨테이너에 {label} 레이블을 추가하세요.",
+  "auto_update_delay_label": "업데이트 지연 시간 (시간)",
+  "auto_update_delay_description": "자동 업데이트가 새 이미지를 설치하기까지, 아케인(Arcane)이 해당 이미지를 처음 감지한 시점부터 계산된 시간(시간 단위)입니다. 0으로 설정하면 즉시 설치되며, 수동 업데이트는 절대 지연되지 않습니다. 레이블 {label} 을 사용하여 컨테이너별로 이 설정을 재정의할 수 있습니다.",
   "auto_update_disabled_checks_continue": "업데이트 확인 및 알림 기능은 계속 활성화되어 있으며, 자동 설치 기능만 비활성화됩니다.",
   "auto_update_title": "자동 업데이트",
   "auto_update_enabled_toast": "자동 업데이트 활성화됨",
