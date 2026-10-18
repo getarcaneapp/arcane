@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "örneğin: Benim Nginx Projem",
   "templates_template_name_required": "Şablon adı gereklidir",
   "templates_template_description_placeholder": "Bu şablonu kısaca açıklayın",
+  "templates_name_description_locked": "Şablonlar dizinindeki bir şablonun adı ve açıklaması değiştirilemez.",
   "compose_content_is_required": "Compose İçeriği girilmesi gereklidir",
   "templates_save_template_failed": "Şablon kaydedilemedi",
   "templates_create_template_failed": "Şablon oluşturulamadı",
