@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "Por exemplo, My Nginx Stack (Minha pilha Nginx)",
   "templates_template_name_required": "O nome do modelo é obrigatório",
   "templates_template_description_placeholder": "Descreva brevemente esse modelo",
+  "templates_name_description_locked": "O nome e a descrição de um modelo do diretório de modelos não podem ser alterados.",
   "compose_content_is_required": "É necessário compor conteúdo",
   "templates_save_template_failed": "Falha ao salvar o modelo",
   "templates_create_template_failed": "Falha ao criar o modelo",
