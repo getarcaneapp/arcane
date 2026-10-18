@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "e.g. My Nginx Stack",
   "templates_template_name_required": "Template name is required",
   "templates_template_description_placeholder": "Briefly describe this template",
+  "templates_name_description_locked": "Navnet og beskrivelsen af en skabelon fra skabelonmappen kan ikke ændres.",
   "compose_content_is_required": "Compose content is required",
   "templates_save_template_failed": "Failed to save template",
   "templates_create_template_failed": "Failed to create template",
