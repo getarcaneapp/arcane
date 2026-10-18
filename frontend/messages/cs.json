@@ -1992,6 +1992,7 @@
   "templates_template_name_placeholder": "např. Můj Nginx projekt",
   "templates_template_name_required": "Je vyžadován název šablony",
   "templates_template_description_placeholder": "Stručně popište tuto šablonu",
+  "templates_name_description_locked": "Název a popis šablony z adresáře šablon nelze změnit.",
   "compose_content_is_required": "Obsah souboru Compose je povinný",
   "templates_save_template_failed": "Uložení šablony se nezdařilo",
   "templates_create_template_failed": "Vytvoření šablony se nezdařilo",
