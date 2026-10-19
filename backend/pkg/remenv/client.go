@@ -10,8 +10,8 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"time"
 
+	"go.getarcane.app/kit/pkg"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
@@ -92,16 +92,14 @@ type Client struct {
 }
 
 func NewClient(httpClient *http.Client, tunnel TunnelTransport) *Client {
-	client := &http.Client{Timeout: 30 * time.Second}
-	if httpClient != nil {
-		copied := *httpClient
-		client = &copied
-	}
-	client.Transport = otelhttp.NewTransport(client.Transport)
-
+	base := kit.FromPtr(httpClient)
 	return &Client{
-		httpClient: client,
-		tunnel:     tunnel,
+		httpClient: &http.Client{
+			Transport:     otelhttp.NewTransport(base.Transport),
+			CheckRedirect: base.CheckRedirect,
+			Jar:           base.Jar,
+		},
+		tunnel: tunnel,
 	}
 }
 

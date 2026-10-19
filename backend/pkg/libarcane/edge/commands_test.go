@@ -41,6 +41,11 @@ func TestResolveEdgeCommandName(t *testing.T) {
 			shouldHit: true,
 		},
 		{name: "volume workspace list", method: "GET", path: "/api/environments/0/volumes/data/workspace", command: "volume.workspace.list", shouldHit: true},
+		{name: "volume named backups inspect", method: "GET", path: "/api/environments/0/volumes/backups", command: "volume.inspect", shouldHit: true},
+		{name: "volume named backups workspace", method: "GET", path: "/api/environments/0/volumes/backups/workspace", command: "volume.workspace.list", shouldHit: true},
+		{name: "volume named counts usage", method: "GET", path: "/api/environments/0/volumes/counts/usage", command: "volume.usage", shouldHit: true},
+		{name: "volume named sizes backups", method: "GET", path: "/api/environments/0/volumes/sizes/backups", command: "volume.backup.list", shouldHit: true},
+		{name: "volume backup download keeps static branch", method: "GET", path: "/api/environments/0/volumes/backups/b1/download", command: "volume.backup.download", shouldHit: true},
 		{
 			name:      "volume workspace read file",
 			method:    "GET",

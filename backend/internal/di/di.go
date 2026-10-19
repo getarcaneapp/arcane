@@ -204,10 +204,14 @@ var ServiceOptions = fx.Options(
 			return settings.New(service, search, localEnvironment.ProxyJSONRequest, cfg)
 		},
 		func(service *s3domain.S3DestinationService, localEnvironment *environment.EnvironmentService) *s3domain.Module {
-			return s3domain.New(service, localEnvironment.SyncS3DestinationsToRemoteEnvironments)
+			return s3domain.New(service, func(ctx context.Context) {
+				localEnvironment.QueueRemoteSync(ctx, "S3 destinations", localEnvironment.SyncS3DestinationsToRemoteEnvironments)
+			})
 		},
 		func(service *registry.ContainerRegistryService, localEnvironment *environment.EnvironmentService) *registry.Module {
-			return registry.New(service, localEnvironment.SyncRegistriesToRemoteEnvironments)
+			return registry.New(service, func(ctx context.Context) {
+				localEnvironment.QueueRemoteSync(ctx, "registries", localEnvironment.SyncRegistriesToRemoteEnvironments)
+			})
 		},
 		func(service *auth.AuthService, userService *user.UserService, settingsService *settings.SettingsService, passkeyService *passkey.PasskeyService) *auth.Module {
 			return auth.New(service, userService, settingsService, passkeyService.BeginMFAAuthentication)

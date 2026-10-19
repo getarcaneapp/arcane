@@ -18,7 +18,7 @@ import (
 // ContainerRegistryHandler handles container registry management endpoints.
 type ContainerRegistryHandler struct {
 	registryService      *ContainerRegistryService
-	syncRemoteRegistries func(context.Context) error
+	syncRemoteRegistries func(context.Context)
 }
 
 type ListContainerRegistriesInput struct {
@@ -55,7 +55,7 @@ type SyncContainerRegistriesInput struct {
 }
 
 // NewHandler builds the container registry HTTP handler.
-func NewHandler(registryService *ContainerRegistryService, syncRemoteRegistries func(context.Context) error) *ContainerRegistryHandler {
+func NewHandler(registryService *ContainerRegistryService, syncRemoteRegistries func(context.Context)) *ContainerRegistryHandler {
 	return &ContainerRegistryHandler{registryService: registryService, syncRemoteRegistries: syncRemoteRegistries}
 }
 
@@ -207,9 +207,6 @@ func (h *ContainerRegistryHandler) triggerRemoteRegistrySync(ctx context.Context
 		return
 	}
 
-	go func(syncCtx context.Context, syncReason string) {
-		if err := h.syncRemoteRegistries(syncCtx); err != nil {
-			slog.WarnContext(syncCtx, "Failed to fan out registry sync to remote environments", "reason", syncReason, "error", err.Error())
-		}
-	}(context.WithoutCancel(ctx), reason)
+	slog.DebugContext(ctx, "Queueing registry sync to remote environments", "reason", reason)
+	h.syncRemoteRegistries(ctx)
 }

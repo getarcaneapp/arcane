@@ -72,6 +72,30 @@ type testGitOpsSyncRow struct {
 	SyncInterval  int
 }
 
+type testFederatedCredentialRow struct {
+	database.BaseModel
+	Name           string
+	IdentityUserID string  `gorm:"column:identity_user_id"`
+	EnvironmentID  *string `gorm:"column:environment_id"`
+}
+
+type testGlobalVariableRow struct {
+	database.BaseModel
+	Key             string
+	AllEnvironments bool `gorm:"column:all_environments"`
+}
+
+type testGlobalVariableEnvironmentRow struct {
+	GlobalVariableID string `gorm:"column:global_variable_id;primaryKey"`
+	EnvironmentID    string `gorm:"column:environment_id;primaryKey"`
+}
+
+func (testFederatedCredentialRow) TableName() string { return "federated_credentials" }
+
+func (testGlobalVariableRow) TableName() string { return "global_variables" }
+
+func (testGlobalVariableEnvironmentRow) TableName() string { return "global_variable_environments" }
+
 func TestEnvironmentService_OverlappingHealthCheckIsSkipped(t *testing.T) {
 	gate := newAdmissionGateForEnvironmentTest(t)
 
@@ -130,6 +154,9 @@ func setupEnvironmentServiceTestDB(t *testing.T) *database.DB {
 		&event.Event{},
 		&testProjectRow{},
 		&testGitOpsSyncRow{},
+		&testFederatedCredentialRow{},
+		&testGlobalVariableRow{},
+		&testGlobalVariableEnvironmentRow{},
 	))
 
 	sqlDB, err := db.DB()
@@ -243,6 +270,82 @@ func TestEnvironmentService_DeleteEnvironment_CascadesGitOpsSyncs(t *testing.T) 
 	require.NoError(t, db.First(&project, "id = ?", "project-managed-by-deleted-env").Error)
 	require.Nil(t, project.GitOpsManagedBy)
 	require.Contains(t, jobScheduler.removed, entityjobs.GitOpsSyncJobPrefix+syncID)
+}
+
+func TestEnvironmentService_DeleteEnvironment_RemovesScopedCredentialsAndVariables(t *testing.T) {
+	ctx := t.Context()
+	db := setupEnvironmentServiceTestDB(t)
+
+	createTestEnvironment(t, db, "env-delete-scoped", "http://scoped.example", nil)
+	createTestEnvironment(t, db, "env-keep", "http://keep.example", nil)
+	require.NoError(t, db.Create(&user.User{ID: "federated-user", Username: "federated-user"}).Error)
+	require.NoError(t, db.Create(&testFederatedCredentialRow{
+		ID:             "credential-scoped",
+		Name:           "scoped",
+		IdentityUserID: "federated-user",
+		EnvironmentID:  new("env-delete-scoped"),
+	}).Error)
+	require.NoError(t, db.Create(&[]testGlobalVariableRow{
+		{ID: "var-only-deleted", Key: "ONLY_DELETED"},
+		{ID: "var-shared", Key: "SHARED"},
+		{ID: "var-all", Key: "ALL", AllEnvironments: true},
+	}).Error)
+	require.NoError(t, db.Create(&[]testGlobalVariableEnvironmentRow{
+		{GlobalVariableID: "var-only-deleted", EnvironmentID: "env-delete-scoped"},
+		{GlobalVariableID: "var-shared", EnvironmentID: "env-delete-scoped"},
+		{GlobalVariableID: "var-shared", EnvironmentID: "env-keep"},
+	}).Error)
+
+	svc := NewEnvironmentService(db, http.DefaultClient, nil, event.NewEventService(db, nil, nil), nil, nil)
+	var invalidatedUserIDs []string
+	svc.SetUserInvalidator(func(userID string) { invalidatedUserIDs = append(invalidatedUserIDs, userID) })
+	require.NoError(t, svc.DeleteEnvironment(ctx, "env-delete-scoped", nil, nil))
+	require.Equal(t, []string{"federated-user"}, invalidatedUserIDs)
+
+	var credentialCount, userCount int64
+	require.NoError(t, db.Model(&testFederatedCredentialRow{}).Count(&credentialCount).Error)
+	require.NoError(t, db.Model(&user.User{}).Where("id = ?", "federated-user").Count(&userCount).Error)
+	require.Zero(t, credentialCount)
+	require.Zero(t, userCount)
+
+	var variableIDs []string
+	require.NoError(t, db.Model(&testGlobalVariableRow{}).Order("id").Pluck("id", &variableIDs).Error)
+	require.Equal(t, []string{"var-all", "var-shared"}, variableIDs)
+
+	var scopes []testGlobalVariableEnvironmentRow
+	require.NoError(t, db.Find(&scopes).Error)
+	require.Equal(t, []testGlobalVariableEnvironmentRow{{GlobalVariableID: "var-shared", EnvironmentID: "env-keep"}}, scopes)
+}
+
+func TestEnvironmentService_ResolveEdgeEnvironmentByToken_RejectsDisabledEnvironment(t *testing.T) {
+	ctx := t.Context()
+	db := setupEnvironmentServiceTestDB(t)
+	createTestEnvironmentWithState(t, db, "env-edge", "http://edge.example", string(EnvironmentStatusOnline), true, new("edge-token"))
+	svc := NewEnvironmentService(db, http.DefaultClient, nil, event.NewEventService(db, nil, nil), nil, nil)
+
+	envID, err := svc.ResolveEdgeEnvironmentByToken(ctx, "edge-token")
+	require.NoError(t, err)
+	require.Equal(t, "env-edge", envID)
+
+	_, err = svc.UpdateEnvironment(ctx, "env-edge", map[string]any{"enabled": false}, nil, nil)
+	require.NoError(t, err)
+	_, err = svc.ResolveEdgeEnvironmentByToken(ctx, "edge-token")
+	require.Error(t, err)
+
+	require.NoError(t, svc.linkEnvironmentApiKey(ctx, "env-edge", "key-rotated", "rotated-token", "", "", "env-edge"))
+	_, err = svc.ResolveEdgeEnvironmentByToken(ctx, "rotated-token")
+	require.Error(t, err)
+
+	_, err = svc.UpdateEnvironment(ctx, "env-edge", map[string]any{"enabled": true}, nil, nil)
+	require.NoError(t, err)
+	envID, err = svc.ResolveEdgeEnvironmentByToken(ctx, "rotated-token")
+	require.NoError(t, err)
+	require.Equal(t, "env-edge", envID)
+
+	require.NoError(t, db.WithContext(ctx).Model(&Environment{}).Where("id = ?", "env-edge").Update("enabled", false).Error)
+	svc.invalidateEnvironmentCache("env-edge")
+	_, err = svc.ResolveEdgeEnvironmentByToken(ctx, "rotated-token")
+	require.Error(t, err)
 }
 
 func createTestRegistry(t *testing.T, db *database.DB, id string) {

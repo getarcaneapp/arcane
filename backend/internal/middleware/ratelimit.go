@@ -164,6 +164,7 @@ func PerTokenRateLimitForPaths(
 	paths []string,
 	perMinute int,
 	burst int,
+	tokenOf func(c *echo.Context) string,
 	isKnown func(token string) bool,
 ) echo.MiddlewareFunc {
 	if perMinute <= 0 {
@@ -186,7 +187,7 @@ func PerTokenRateLimitForPaths(
 				return next(c)
 			}
 
-			token := c.Param("token")
+			token := tokenOf(c)
 			if token != "" && isKnown != nil && isKnown(token) {
 				if !tokenLimiter.allow(kit.SHA256Hex(token)) {
 					c.Response().Header().Set("Retry-After", "60")

@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 	"uuid"
+
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -69,7 +71,10 @@ func PublishEventToManager(ctx context.Context, event *TunnelEvent) error {
 		if sink.conn.IsClosed() {
 			return ErrNoActiveAgentTunnel
 		}
-		return sink.conn.Send(&TunnelMessage{ID: uuid.New().String(), Type: MessageTypeEvent, Event: event})
+		if err := sink.conn.Send(&TunnelMessage{ID: uuid.New().String(), Type: MessageTypeEvent, Event: event}); err != nil {
+			return kit.Ternary(errors.Is(err, ErrTunnelConnectionClosed), fmt.Errorf("%w: %w", ErrNoActiveAgentTunnel, err), err)
+		}
+		return nil
 	}
 
 	body, err := json.Marshal(event)
@@ -83,7 +88,7 @@ func PublishEventToManager(ctx context.Context, event *TunnelEvent) error {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := sink.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("send edge event: %w", err)
+		return kit.Ternary(errors.Is(err, ErrTunnelConnectionClosed), fmt.Errorf("send edge event: %w: %w", ErrNoActiveAgentTunnel, err), fmt.Errorf("send edge event: %w", err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusNoContent {

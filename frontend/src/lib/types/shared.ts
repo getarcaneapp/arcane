@@ -238,7 +238,7 @@ export interface DashboardSnapshot {
 
 export type DashboardStreamEventType = 'snapshot' | 'error' | 'pending' | 'heartbeat';
 
-export type DashboardStreamErrorCode = 'agent_incompatible' | 'unreachable' | '';
+export type DashboardStreamErrorCode = 'agent_incompatible' | 'unreachable' | 'auth_failed' | '';
 
 export interface DashboardStreamEvent {
 	type: DashboardStreamEventType;

@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json/v2"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -190,6 +191,51 @@ func TestEnsureAgentMTLSAssets_LimitsEnrollmentErrorBody(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "edge mTLS enrollment failed with status 500")
 	require.LessOrEqual(t, len(err.Error()), maxEnrollResponseBytes+128)
+}
+
+func TestEnsureAgentMTLSAssets_EnrollsWithoutUnusableGeneratedCert(t *testing.T) {
+	generated, err := GenerateManagerClientMTLSAssetsWithContext(t.Context(), &Config{
+		EdgeMTLSMode:      EdgeMTLSModeRequired,
+		EdgeMTLSAssetsDir: t.TempDir(),
+		AppURL:            "https://manager.example.com",
+	}, "env-renew", "Renew")
+	require.NoError(t, err)
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.TLS == nil || len(r.TLS.PeerCertificates) > 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_ = json.MarshalWrite(w, enrollMTLSResponse{Files: generated.Files})
+	}))
+	t.Cleanup(server.Close)
+
+	caPath := filepath.Join(t.TempDir(), "manager.crt")
+	require.NoError(t, os.WriteFile(caPath, pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: server.Certificate().Raw,
+	}), 0o600))
+
+	assetsDir := filepath.Join(t.TempDir(), "assets")
+	require.NoError(t, os.MkdirAll(assetsDir, 0o700))
+	certPath := filepath.Join(assetsDir, generatedMTLSClientCertName)
+	keyPath := filepath.Join(assetsDir, generatedMTLSClientKeyName)
+	require.NoError(t, os.WriteFile(certPath, []byte("not a certificate"), 0o600))
+	require.NoError(t, os.WriteFile(keyPath, []byte("not a key"), 0o600))
+
+	cfg := &Config{
+		ManagerApiUrl:     server.URL + "/api",
+		AgentToken:        "valid-token",
+		EdgeMTLSMode:      EdgeMTLSModeRequired,
+		EdgeMTLSCAFile:    caPath,
+		EdgeMTLSCertFile:  certPath,
+		EdgeMTLSKeyFile:   keyPath,
+		EdgeMTLSAssetsDir: assetsDir,
+	}
+
+	require.NoError(t, EnsureAgentMTLSAssets(t.Context(), cfg))
+	_, reason := loadClientCertificate(certPath, keyPath, time.Now(), 0)
+	require.Empty(t, reason)
 }
 
 func TestEnsureAgentMTLSAssets_UsesDownloadedCAPathWhenPresent(t *testing.T) {
@@ -380,11 +426,39 @@ func TestLoadClientCertificate_RenewsExpiredCertificate(t *testing.T) {
 
 	certPath := filepath.Join(assetsDir, generatedMTLSClientCertName)
 	keyPath := filepath.Join(assetsDir, generatedMTLSClientKeyName)
-	cert, reason := loadClientCertificate(certPath, keyPath, time.Now())
+	cert, reason := loadClientCertificate(certPath, keyPath, time.Now(), agentMTLSRenewBefore)
 	require.Empty(t, reason)
 
-	_, reason = loadClientCertificate(certPath, keyPath, cert.Leaf.NotAfter.Add(24*time.Hour))
+	_, reason = loadClientCertificate(certPath, keyPath, cert.Leaf.NotAfter.Add(24*time.Hour), agentMTLSRenewBefore)
 	require.Contains(t, reason, "expired")
+}
+
+func TestLoadClientCertificate_RenewBeforeOnlyAppliesWhenRequested(t *testing.T) {
+	assetsDir := t.TempDir()
+	assets, err := GenerateManagerClientMTLSAssetsWithContext(t.Context(), &Config{
+		EdgeMTLSMode:      EdgeMTLSModeRequired,
+		EdgeMTLSAssetsDir: t.TempDir(),
+		AppURL:            "https://manager.example.com",
+	}, "env-window", "Window")
+	require.NoError(t, err)
+
+	for _, file := range assets.Files {
+		targetPath := filepath.Join(assetsDir, filepath.Base(file.Name))
+		perm := kit.Ternary(file.Permissions == "0600", 0o600, utils.FilePerm)
+		require.NoError(t, os.WriteFile(targetPath, []byte(file.Content), perm))
+	}
+
+	certPath := filepath.Join(assetsDir, generatedMTLSClientCertName)
+	keyPath := filepath.Join(assetsDir, generatedMTLSClientKeyName)
+	cert, reason := loadClientCertificate(certPath, keyPath, time.Now(), 0)
+	require.Empty(t, reason)
+
+	nearExpiry := cert.Leaf.NotAfter.Add(-24 * time.Hour)
+	_, reason = loadClientCertificate(certPath, keyPath, nearExpiry, 0)
+	require.Empty(t, reason, "a certificate inside the renewal window stays usable when no window is requested")
+
+	_, reason = loadClientCertificate(certPath, keyPath, nearExpiry, agentMTLSRenewBefore)
+	require.Contains(t, reason, "expires soon")
 }
 
 func TestGenerateManagerClientMTLSAssets_ReissuesMismatchedKeyPair(t *testing.T) {

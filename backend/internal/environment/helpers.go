@@ -38,6 +38,12 @@ const environmentCacheStripes = 64
 
 var environmentCacheSeed = maphash.MakeSeed()
 
+type remoteSyncQueue struct {
+	mu      sync.Mutex
+	running map[string]bool
+	pending map[string]bool
+}
+
 // runtimeWatchers fans a coalesced wake-up out to environment liveness watchers.
 type runtimeWatchers struct {
 	mu    sync.Mutex

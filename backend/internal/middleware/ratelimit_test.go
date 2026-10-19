@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -175,7 +176,7 @@ func newTokenRateLimitTestRouterInternal(
 
 	router := echo.New()
 	router.IPExtractor = echo.ExtractIPDirect()
-	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, perMinute, burst, isAuthentic))
+	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, perMinute, burst, func(c *echo.Context) string { return c.Param("token") }, isAuthentic))
 	router.POST("/webhooks/trigger/:token", handler)
 
 	return func(token string) int {
@@ -273,7 +274,7 @@ func TestPerTokenRateLimitForPaths_AppliesOnlyToConfiguredPaths(t *testing.T) {
 	router := echo.New()
 	router.IPExtractor = echo.ExtractIPDirect()
 
-	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, 60, 1, nil))
+	router.Use(PerTokenRateLimitForPaths([]string{"/webhooks/trigger/:token"}, 60, 1, func(c *echo.Context) string { return c.Param("token") }, nil))
 	router.POST("/webhooks/trigger/:token", func(c *echo.Context) error {
 		return c.NoContent(http.StatusOK)
 	})
@@ -327,4 +328,30 @@ func TestIPRateLimiter_ProtectsCurrentKeyDuringSweep(t *testing.T) {
 	require.False(t, limiter.allow("current"))
 	require.Contains(t, limiter.limiters, "current")
 	require.NotContains(t, limiter.limiters, "other")
+}
+
+func TestPerTokenRateLimitForPaths_KeysByAgentTokenHeader(t *testing.T) {
+	router := echo.New()
+	router.IPExtractor = echo.ExtractIPDirect()
+	router.Use(PerTokenRateLimitForPaths(
+		[]string{"/events"}, 60, 1,
+		func(c *echo.Context) string { return c.Request().Header.Get(HeaderAgentToken) },
+		func(token string) bool { return strings.HasPrefix(token, "known-") },
+	))
+	router.POST("/events", okHandlerInternal)
+	doReq := func(token string) int {
+		req := httptest.NewRequest(http.MethodPost, "/events", http.NoBody)
+		req.RemoteAddr = "192.0.2.10:4000"
+		req.Header.Set(HeaderAgentToken, token)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	require.Equal(t, http.StatusOK, doReq("known-a"))
+	require.Equal(t, http.StatusOK, doReq("known-b"))
+	require.Equal(t, http.StatusTooManyRequests, doReq("known-a"))
+	require.Equal(t, http.StatusOK, doReq("unknown-a"))
+	require.Equal(t, http.StatusTooManyRequests, doReq("unknown-b"))
+	require.Equal(t, http.StatusTooManyRequests, doReq(""))
 }

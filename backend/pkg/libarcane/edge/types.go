@@ -44,6 +44,11 @@ type commandRequestTransfer struct {
 	timer        *time.Timer
 }
 
+type commandStatusError struct {
+	status  int
+	message string
+}
+
 // TunnelClient represents the agent-side tunnel client
 type TunnelClient struct {
 	cfg                    *Config
@@ -62,6 +67,7 @@ type TunnelClient struct {
 	activeStreams         sync.Map // map[string]*activeWSStream
 	requestTransfers      sync.Map // map[string]*commandRequestTransfer
 	commandRecorders      sync.Map // map[string]*commandResponseRecorder awaiting credit
+	commandCancels        sync.Map
 	transportPreferenceMu sync.RWMutex
 	preferWebSocketUntil  time.Time
 	grpcFailureStreak     int

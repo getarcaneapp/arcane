@@ -178,7 +178,7 @@ func TestKnownTokenRateLimit_ExhaustedIPDoesNotBlockFirstUse(t *testing.T) {
 	require.NoError(t, sqlDB.Close())
 	router := echo.New()
 	router.IPExtractor = echo.ExtractIPDirect()
-	router.Use(middleware.PerTokenRateLimitForPaths([]string{"/trigger/:token"}, 1, 1, svc.IsKnownToken))
+	router.Use(middleware.PerTokenRateLimitForPaths([]string{"/trigger/:token"}, 1, 1, func(c *echo.Context) string { return c.Param("token") }, svc.IsKnownToken))
 	router.POST("/trigger/:token", func(c *echo.Context) error { return c.NoContent(http.StatusAccepted) })
 	request := func(token string) int {
 		req := httptest.NewRequest(http.MethodPost, "/trigger/"+token, http.NoBody)

@@ -23,6 +23,7 @@ import (
 	"go.uber.org/fx/fxevent"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -203,6 +204,7 @@ type initializeStartupStateParams struct {
 	Docker        *docker.DockerClientService
 	Swarm         *swarm.SwarmService
 	Role          *role.RoleService
+	Auth          *auth.AuthService
 	User          *user.UserService
 	ApiKey        *apikey.ApiKeyService
 	Vulnerability *vulnerability.VulnerabilityService
@@ -276,6 +278,10 @@ func initializeStartupState(p initializeStartupStateParams) {
 
 		// Global variables are manager-owned: import a legacy local .env.global once, then sync everywhere.
 		p.Environment.SetVariableSyncer(p.Variable)
+		p.Environment.SetUserInvalidator(func(userID string) {
+			p.Role.InvalidateUser(userID)
+			p.Auth.InvalidateUserTokenCache(userID)
+		})
 		if err := p.Variable.ImportLegacyLocalEnvFile(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Failed to import legacy global variables", "error", err)
 		}
@@ -408,7 +414,7 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config) error 
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 
 	switch {
 	case resp.StatusCode == http.StatusOK:
@@ -422,5 +428,5 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config) error 
 		slog.DebugContext(ctx, "Pairing skipped - API key not recognized (agent may already be paired)", "managerUrl", cfg.ManagerApiUrl)
 		return nil
 	}
-	return fmt.Errorf("pairing failed with status %d: %s", resp.StatusCode, string(body))
+	return fmt.Errorf("pairing failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 }

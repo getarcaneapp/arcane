@@ -15,8 +15,11 @@ import (
 	"github.com/samber/mo"
 )
 
-// maxMuxEventBytes bounds one agent event posted over a multiplexed session.
-const maxMuxEventBytes = 1 << 20
+const (
+	// maxMuxEventBytes bounds one agent event posted over a multiplexed session.
+	maxMuxEventBytes           = 1 << 20
+	muxRegistrationPingTimeout = 3 * time.Second
+)
 
 // dial opens a stream for the session client. Callers that found the tunnel during the register handshake
 // wait for the session to start.
@@ -47,8 +50,29 @@ func (m *muxSession) close() {
 		if session != nil {
 			_ = session.Close()
 		}
-		m.client.CloseIdleConnections()
 	})
+}
+
+func (m *muxSession) alive(ctx context.Context, timeout time.Duration) bool {
+	m.mu.Lock()
+	session := m.session
+	m.mu.Unlock()
+	if session == nil {
+		return true
+	}
+	pinged := make(chan error, 1)
+	go func() {
+		_, err := session.Ping()
+		pinged <- err
+	}()
+	select {
+	case err := <-pinged:
+		return err == nil
+	case <-time.After(timeout):
+		return false
+	case <-ctx.Done():
+		return true
+	}
 }
 
 // HTTPClient returns the client for a tunnel that negotiated the multiplexed data plane. Requests use

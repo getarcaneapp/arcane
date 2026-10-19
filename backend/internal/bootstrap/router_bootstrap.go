@@ -26,6 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/federated"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/telemetry"
@@ -228,11 +229,17 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	))
 	// Keyed per token for stored tokens, per source IP for everything else.
 	apiGroup.Use(middleware.PerTokenRateLimitForPaths(
-		[]string{"/api/webhooks/trigger/:token"}, 60, 10, deps.Webhook.Service().IsKnownToken,
+		[]string{"/api/webhooks/trigger/:token"}, 60, 10,
+		func(c *echo.Context) string { return c.Param("token") },
+		deps.Webhook.Service().IsKnownToken,
 	))
 	// Agent event ingestion sits outside the auth middleware, so it needs its own ceiling; agents batch events.
-	apiGroup.Use(middleware.PerIPRateLimitForPaths(
-		[]string{"/api/events"}, 60, 30,
+	apiGroup.Use(middleware.PerTokenRateLimitForPaths(
+		[]string{"/api/events"}, 600, 2*event.DaemonEventBatchSize,
+		func(c *echo.Context) string {
+			return strings.TrimSpace(c.Request().Header.Get(middleware.HeaderAgentToken))
+		},
+		deps.Environment.Service().IsKnownAccessToken,
 	))
 	handlerAppCtx := handlerutil.NewActivityAppContext(ctx)
 

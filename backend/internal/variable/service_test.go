@@ -301,7 +301,6 @@ func TestSyncEnvironment_DirectMaterializesSecretsThroughAgentRoute(t *testing.T
 	}).Error)
 	environmentService := environment.NewEnvironmentService(db, nil, nil, nil, service.settingsService, nil)
 	service.proxyEnvironmentJSON = environmentService.ProxyJSONRequest
-	service.listEnabledEnvironmentIDs = environmentService.ListEnabledEnvironmentIDs
 	createMaterializedSecretVariableInternal(t, service)
 
 	require.NoError(t, service.SyncEnvironment(t.Context(), "env-direct"))

@@ -204,6 +204,10 @@ func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunne
 	if envID == "" {
 		return false, false, "environment ID is required", nil
 	}
+	if existing, ok := r.Get(envID).Get(); ok && existing != tunnel && existing.mux != nil && existing.connected() && !existing.mux.alive(ctx, muxRegistrationPingTimeout) {
+		slog.InfoContext(ctx, "Existing edge tunnel session failed a liveness ping; replacing it", "environmentId", envID)
+		_ = existing.CloseWithReason("edge tunnel liveness ping failed")
+	}
 
 	result, err := r.tunnels.ApplyTyped(ctx, "register edge tunnel session", func(tunnels map[string]*AgentTunnel) (registerSessionResult, bool, error) {
 		var result registerSessionResult

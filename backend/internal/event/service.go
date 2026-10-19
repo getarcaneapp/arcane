@@ -39,11 +39,15 @@ import (
 )
 
 // maxConcurrentEdgeSyncs bounds in-flight event forwards to the manager.
-const maxConcurrentEdgeSyncs = 16
+const (
+	maxConcurrentEdgeSyncs = 16
+	edgeSyncQueueTimeout   = time.Minute
+	edgeSyncPublishTimeout = 10 * time.Second
+)
 
 const (
 	daemonEventQueueSize     = 1024
-	daemonEventBatchSize     = 64
+	DaemonEventBatchSize     = 64
 	daemonEventFlushInterval = 250 * time.Millisecond
 )
 
@@ -193,14 +197,18 @@ func (s *EventService) forwardEventToManager(ctx context.Context, eventModel *Ev
 	}
 
 	go func(parentCtx context.Context, outgoing *edge.TunnelEvent) {
-		syncCtx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), 10*time.Second)
-		defer cancel()
-
-		if err := s.edgeSyncs.Acquire(syncCtx, 1); err != nil {
-			slog.WarnContext(syncCtx, "Dropped event sync to manager; too many in flight", "type", outgoing.Type, "error", err)
+		baseCtx := context.WithoutCancel(parentCtx)
+		acquireCtx, cancelAcquire := context.WithTimeout(baseCtx, edgeSyncQueueTimeout)
+		acquireErr := s.edgeSyncs.Acquire(acquireCtx, 1)
+		cancelAcquire()
+		if acquireErr != nil {
+			slog.WarnContext(baseCtx, "Dropped event sync to manager; too many in flight", "type", outgoing.Type, "error", acquireErr)
 			return
 		}
 		defer s.edgeSyncs.Release(1)
+
+		syncCtx, cancel := context.WithTimeout(baseCtx, edgeSyncPublishTimeout)
+		defer cancel()
 
 		if err := edge.PublishEventToManager(syncCtx, outgoing); err != nil {
 			if !errors.Is(err, edge.ErrNoActiveAgentTunnel) {
@@ -718,7 +726,7 @@ func (s *EventService) RecordDockerEvent(ctx context.Context, msg events.Message
 
 func (s *EventService) writeDaemonEvents(ctx context.Context) {
 	defer close(s.daemonDone)
-	batch := make([]CreateEventRequest, 0, daemonEventBatchSize)
+	batch := make([]CreateEventRequest, 0, DaemonEventBatchSize)
 	var flush <-chan time.Time
 	for open := true; open; {
 		select {
@@ -729,7 +737,7 @@ func (s *EventService) writeDaemonEvents(ctx context.Context) {
 				if flush == nil {
 					flush = time.After(daemonEventFlushInterval)
 				}
-				if len(batch) < daemonEventBatchSize {
+				if len(batch) < DaemonEventBatchSize {
 					continue
 				}
 			}

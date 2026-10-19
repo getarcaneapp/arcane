@@ -284,23 +284,28 @@ var commandRoutesIndex = buildCommandRouteIndex(commandRoutes)
 // ResolveEdgeCommandName returns the edge command for a request, or None when the allowlist does not cover it.
 func ResolveEdgeCommandName(method, requestPath string, stream bool) mo.Option[string] {
 	requestPath, _, _ = strings.Cut(strings.TrimSpace(requestPath), "?")
-	current := commandRoutesIndex[commandRouteKey{Method: kit.Ternary(stream, "", strings.ToUpper(strings.TrimSpace(method))), Stream: stream}]
-	for part := range strings.SplitSeq(strings.Trim(requestPath, "/"), "/") {
-		if current == nil {
-			break
-		}
-		if next := current.static[part]; next != nil {
-			current = next
-		} else if part != "" {
-			current = current.param
-		} else {
-			current = nil
-		}
-	}
-	if current == nil || current.route == nil {
+	root := commandRoutesIndex[commandRouteKey{Method: kit.Ternary(stream, "", strings.ToUpper(strings.TrimSpace(method))), Stream: stream}]
+	route := root.match(strings.Split(strings.Trim(requestPath, "/"), "/"))
+	if route == nil {
 		return mo.None[string]()
 	}
-	return mo.Some(current.route.CommandName)
+	return mo.Some(route.CommandName)
+}
+
+func (n *commandRouteNode) match(parts []string) *commandRoute {
+	if n == nil {
+		return nil
+	}
+	if len(parts) == 0 {
+		return n.route
+	}
+	if route := n.static[parts[0]].match(parts[1:]); route != nil {
+		return route
+	}
+	if parts[0] == "" {
+		return nil
+	}
+	return n.param.match(parts[1:])
 }
 
 // ValidateEdgeCommand reports whether commandName is the allowlisted command for the request.

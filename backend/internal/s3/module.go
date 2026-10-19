@@ -13,10 +13,10 @@ import (
 
 type Module struct {
 	service                *S3DestinationService
-	syncRemoteDestinations func(context.Context) error
+	syncRemoteDestinations func(context.Context)
 }
 
-func New(service *S3DestinationService, syncRemoteDestinations func(context.Context) error) *Module {
+func New(service *S3DestinationService, syncRemoteDestinations func(context.Context)) *Module {
 	return &Module{service: service, syncRemoteDestinations: syncRemoteDestinations}
 }
 
@@ -35,7 +35,7 @@ func (m *Module) RegisterRoutes(api huma.API) {
 	RegisterS3Destinations(api, m.service, m.syncRemoteDestinations)
 }
 
-func RegisterS3Destinations(api huma.API, service *S3DestinationService, syncRemoteDestinations func(context.Context) error) {
+func RegisterS3Destinations(api huma.API, service *S3DestinationService, syncRemoteDestinations func(context.Context)) {
 	handler := &s3DestinationHandler{service: service, syncRemoteDestinations: syncRemoteDestinations}
 
 	handlerutil.RegisterSecured(api,

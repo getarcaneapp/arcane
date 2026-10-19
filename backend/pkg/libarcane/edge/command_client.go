@@ -161,6 +161,11 @@ func (c *CommandClient) Execute(ctx context.Context, tunnel *AgentTunnel, req *C
 			// Release an agent still waiting to send output that nobody will read.
 			credit(math.MaxInt32)
 		}
+		if ctx.Err() != nil && slices.Contains(tunnel.Capabilities, tunnelCapabilityProtoParity) {
+			if cancelErr := tunnel.Conn.Send(&TunnelMessage{ID: requestID, Type: MessageTypeCancelRequest}); cancelErr != nil {
+				slog.DebugContext(context.WithoutCancel(ctx), "Failed to send edge command cancel", "id", requestID, "error", cancelErr)
+			}
+		}
 		return nil, err
 	}
 

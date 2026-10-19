@@ -37,6 +37,8 @@ const (
 	muxWriteTimeout     = 30 * time.Second
 	// muxDialTimeout bounds a stream open on its own, because http.Transport detaches dials from request cancellation.
 	muxDialTimeout = 30 * time.Second
+	// ProxyResponseHeaderTimeout is generous because proxied operations such as deploys can run for minutes before responding.
+	ProxyResponseHeaderTimeout = 30 * time.Minute
 )
 
 // errTunnelMuxActive rejects legacy messages once a connection carries a multiplexed session.
@@ -76,6 +78,7 @@ func newMuxHTTPClient(dial func(ctx context.Context) (net.Conn, error)) *http.Cl
 		IdleConnTimeout:       30 * time.Second,
 		MaxIdleConnsPerHost:   32,
 		ExpectContinueTimeout: time.Second,
+		ResponseHeaderTimeout: ProxyResponseHeaderTimeout,
 		ReadBufferSize:        64 << 10,
 		WriteBufferSize:       64 << 10,
 	})}

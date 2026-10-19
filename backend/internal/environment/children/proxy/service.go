@@ -38,6 +38,7 @@ type Service struct {
 	client          *remenv.Client
 	settingsService *settings.SettingsService
 	syncGate        *utils.SyncGate
+	syncLocks       utils.KeyedMutex
 }
 
 // Target is a validated remote environment endpoint; build it with NewTarget.
@@ -308,6 +309,12 @@ func (s *Service) fanOutSyncToEnvironment[Model, Item, Request any](
 	toSyncItem func(Model) (Item, bool, error),
 	wrap func([]Item) Request,
 ) error {
+	unlock, err := s.syncLocks.LockContext(ctx, target.id+"\x00"+path)
+	if err != nil {
+		return fmt.Errorf("sync cancelled while waiting for an in-flight sync: %w", err)
+	}
+	defer unlock()
+
 	var records []Model
 	if loadRecordsErr := s.db.WithContext(ctx).Find(&records).Error; loadRecordsErr != nil {
 		return fmt.Errorf("failed to get %s: %w", kind, loadRecordsErr)

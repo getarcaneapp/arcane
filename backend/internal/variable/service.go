@@ -30,6 +30,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
@@ -50,11 +51,12 @@ const (
 // .env.global file: locally via template.TemplateService, remotely via the existing
 // agent variables endpoint.
 type VariableService struct {
-	db                        *database.DB
-	proxyEnvironmentJSON      func(context.Context, string, string, string, []byte, any) error
-	listEnabledEnvironmentIDs func(context.Context) ([]string, error)
-	settingsService           *settings.SettingsService
-	kvService                 *kv.KVService
+	db                            *database.DB
+	proxyEnvironmentJSON          func(context.Context, string, string, string, []byte, any) error
+	listEnabledRemoteEnvironments func(context.Context) ([]environment.Environment, error)
+	settingsService               *settings.SettingsService
+	kvService                     *kv.KVService
+	importLocks                   utils.KeyedMutex
 
 	statusMu   sync.RWMutex
 	syncStatus map[string]env.EnvironmentSyncStatus
@@ -73,7 +75,7 @@ func NewVariableService(db *database.DB, environmentService *environment.Environ
 	}
 	if environmentService != nil {
 		service.proxyEnvironmentJSON = environmentService.ProxyJSONRequest
-		service.listEnabledEnvironmentIDs = environmentService.ListEnabledEnvironmentIDs
+		service.listEnabledRemoteEnvironments = environmentService.ListEnabledRemoteEnvironments
 	}
 	return service
 }
@@ -319,6 +321,9 @@ func (s *VariableService) SyncEnvironment(ctx context.Context, envID string) err
 // ForgetSyncState makes the next SyncEnvironment resend regardless of change.
 func (s *VariableService) ForgetSyncState(envID string) {
 	s.syncGate.Forget(envID)
+	s.statusMu.Lock()
+	delete(s.syncStatus, envID)
+	s.statusMu.Unlock()
 }
 
 func (s *VariableService) syncEnvironmentInternal(ctx context.Context, envID string) error {
@@ -359,16 +364,15 @@ func (s *VariableService) syncEnvironmentInternal(ctx context.Context, envID str
 
 // syncTargetsInternal returns the local environment plus every enabled
 // environment, deduplicated.
-func (s *VariableService) syncTargetsInternal(ctx context.Context) []string {
-	envIDs, err := s.listEnabledEnvironmentIDs(ctx)
+func (s *VariableService) syncTargetsInternal(ctx context.Context) []environment.Environment {
+	remotes, err := s.listEnabledRemoteEnvironments(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to list environments for global variable sync", "error", err)
-		envIDs = nil
+		remotes = nil
 	}
-	if !slices.Contains(envIDs, environment.LocalEnvironmentID) {
-		envIDs = append([]string{environment.LocalEnvironmentID}, envIDs...)
-	}
-	return envIDs
+	return append([]environment.Environment{{ID: environment.LocalEnvironmentID}}, slices.DeleteFunc(remotes, func(remote environment.Environment) bool {
+		return strings.TrimSpace(kit.FromPtr(remote.AccessToken)) == ""
+	})...)
 }
 
 // SyncAll pushes the effective variable set to the local environment and every
@@ -378,8 +382,8 @@ func (s *VariableService) SyncAll(ctx context.Context) []env.EnvironmentSyncStat
 	targets := s.syncTargetsInternal(ctx)
 	// An explicit sync exists to repair agents, so every target is resent even
 	// when the manager's payload has not changed.
-	for _, envID := range targets {
-		s.ForgetSyncState(envID)
+	for _, target := range targets {
+		s.ForgetSyncState(target.ID)
 	}
 	s.syncEnvironmentsInternal(ctx, targets)
 	return s.SyncStatuses()
@@ -394,25 +398,33 @@ func (s *VariableService) SyncAllBackground(ctx context.Context) []env.Environme
 		slog.WarnContext(ctx, "Failed to sync global variables locally", "error", err)
 	}
 
-	remoteIDs := slices.DeleteFunc(s.syncTargetsInternal(ctx), func(id string) bool { return id == environment.LocalEnvironmentID })
-	for _, envID := range remoteIDs {
-		s.recordSyncPendingInternal(envID)
+	remotes := slices.DeleteFunc(s.syncTargetsInternal(ctx), func(target environment.Environment) bool {
+		return target.ID == environment.LocalEnvironmentID
+	})
+	for _, target := range remotes {
+		s.recordSyncPendingInternal(target.ID)
 	}
 
 	bgCtx := context.WithoutCancel(ctx)
-	go s.syncEnvironmentsInternal(bgCtx, remoteIDs)
+	go s.syncEnvironmentsInternal(bgCtx, remotes)
 
 	return s.SyncStatuses()
 }
 
-func (s *VariableService) syncEnvironmentsInternal(ctx context.Context, envIDs []string) {
+func (s *VariableService) syncEnvironmentsInternal(ctx context.Context, targets []environment.Environment) {
 	var wg sync.WaitGroup
-	for _, envID := range envIDs {
+	for _, target := range targets {
 		wg.Go(func() {
 			syncCtx, cancel := context.WithTimeout(ctx, variableSyncTimeout)
 			defer cancel()
-			if err := s.SyncEnvironment(syncCtx, envID); err != nil {
-				slog.WarnContext(syncCtx, "Failed to sync global variables to environment", "environmentId", envID, "error", err)
+			if target.IsEdge && !edge.HasActiveTunnel(target.ID) {
+				if _, ok := edge.RequestTunnelAndWait(syncCtx, target.ID, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()).Get(); !ok {
+					s.recordSyncPendingInternal(target.ID)
+					return
+				}
+			}
+			if err := s.SyncEnvironment(syncCtx, target.ID); err != nil {
+				slog.WarnContext(syncCtx, "Failed to sync global variables to environment", "environmentId", target.ID, "error", err)
 			}
 		})
 	}
@@ -611,6 +623,12 @@ func (s *VariableService) ImportLegacyLocalEnvFile(ctx context.Context) error {
 // would not already produce for that environment as an env-scoped variable.
 // An import failure aborts the push so existing agent data is never wiped.
 func (s *VariableService) importRemoteLegacyVarsOnceInternal(ctx context.Context, envID string) error {
+	unlock, err := s.importLocks.LockContext(ctx, envID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	flag := globalVariablesImportedKVPrefix + envID
 	imported, err := s.kvService.GetBool(ctx, flag, false)
 	if err != nil {

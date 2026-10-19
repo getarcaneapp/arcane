@@ -1,9 +1,6 @@
 package edge
 
 import (
-	"encoding/json/v2"
-	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -179,15 +176,6 @@ func (r *PollRuntimeRegistry) Get(envID string, now time.Time) mo.Option[PollRun
 func (s *TunnelServer) HandlePoll(c *echo.Context) error {
 	req := c.Request()
 	ctx := req.Context()
-
-	if req.Body != nil {
-		var pollReq TunnelPollRequest
-		err := json.UnmarshalRead(req.Body, &pollReq)
-		_ = req.Body.Close()
-		if err != nil && !errors.Is(err, http.ErrBodyReadAfterClose) && !errors.Is(err, io.EOF) {
-			return c.JSON(http.StatusBadRequest, map[string]any{"error": "invalid poll payload"})
-		}
-	}
 
 	// Proxy-terminated mTLS consumes the client certificate, so the token remains the environment claim.
 	token, source := agentToken(req.Header.Values)

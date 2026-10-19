@@ -111,7 +111,7 @@ func registerEdgeTunnelRoutes(
 			return stopCleanup(stopCtx)
 		},
 	})
-	apiGroup.POST("/tunnel/poll", server.HandlePoll)
+	apiGroup.POST("/tunnel/poll", server.HandlePoll, middleware.PerIPRateLimit(6000, 1200), middleware.PerAgentTokenRateLimit(60, 30))
 	// Rate-limit agent mTLS enrollment per-IP. Enrollment is authenticated
 	// only by the agent token, so we cap bursts to mitigate brute-force or
 	// token-abuse attempts without impacting normal agent lifecycles.

@@ -153,6 +153,7 @@ func NewHTTPClient(options httpxtypes.ClientOptions) *http.Client {
 		MaxIdleConnsPerHost:   32,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   options.TLSHandshakeTimeout,
+		ResponseHeaderTimeout: options.ResponseHeaderTimeout,
 		ExpectContinueTimeout: 1 * time.Second,
 		ForceAttemptHTTP2:     true,
 	}

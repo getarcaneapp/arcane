@@ -626,8 +626,8 @@ test.describe('arcane-cli e2e', () => {
 //   - a DENIED request returns 403 — the permission check runs before the tunnel
 //     lookup, so it short-circuits regardless of connectivity;
 //   - an AUTHORIZED request gets past the permission check and reaches the tunnel
-//     stage, which returns 502 ("edge agent is not connected").
-// The 403-vs-502 split is exactly what proves the permission is enforced per
+//     stage, which returns 503 ("Edge agent is not connected").
+// The 403-vs-503 split is exactly what proves the permission is enforced per
 // environment and is not a blanket block. The local environment ("0") is served
 // directly (never proxied) and must remain unaffected.
 test.describe('arcane-cli remote environment RBAC', () => {
@@ -692,7 +692,7 @@ test.describe('arcane-cli remote environment RBAC', () => {
 
 		// Create a remote edge environment. No agent will ever connect to it; it
 		// exists only so the proxy treats requests to it as remote (edge://) and
-		// reaches either the permission check (403) or the tunnel lookup (502).
+		// reaches either the permission check (403) or the tunnel lookup (503).
 		const envResponse = await adminFetch('/api/environments', {
 			method: 'POST',
 			body: JSON.stringify({
@@ -777,7 +777,7 @@ test.describe('arcane-cli remote environment RBAC', () => {
 		});
 	});
 
-	test('authorizes a remote write for an admin key, reaching the disconnected agent (502, not 403)', async () => {
+	test('authorizes a remote write for an admin key, reaching the disconnected agent (503, not 403)', async () => {
 		await withAdminConfig(remoteEnvId, async (config) => {
 			const error = await runExpectingFailure(config.configPath, [
 				'volumes',
@@ -787,7 +787,7 @@ test.describe('arcane-cli remote environment RBAC', () => {
 			]);
 			// The admin key passes the permission check, so the request reaches the
 			// edge tunnel stage and fails only because no agent is connected.
-			expect(error).toContain('status 502');
+			expect(error).toContain('status 503');
 			expect(error).not.toContain('status 403');
 		});
 	});

@@ -453,7 +453,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 			}
 		}(context.WithoutCancel(ctx), input.ID, updated.Name)
 	}
-	if kit.FromPtr(updated.AccessToken) != "" && (kit.FromPtr(input.Body.AccessToken) != "" || input.Body.Name != nil) {
+	if kit.FromPtr(updated.AccessToken) != "" && kit.FromPtr(input.Body.AccessToken) != "" {
 		h.triggerEnvironmentResourceSync(ctx, input.ID, updated.Name, "environment update")
 	}
 

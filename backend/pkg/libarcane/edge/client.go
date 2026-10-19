@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -124,6 +125,13 @@ func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error)
 	if errCh != nil {
 		defer close(errCh)
 	}
+	if configured := strings.ToLower(strings.TrimSpace(c.cfg.EdgeTransport)); configured != "" && NormalizeEdgeTransport(configured) != configured {
+		slog.WarnContext(ctx, "Unknown EDGE_TRANSPORT value; using the default transport", "configured", c.cfg.EdgeTransport, "transport", NormalizeEdgeTransport(configured))
+	}
+	if parsed, err := url.Parse(httpx.ManagerBaseURL(c.cfg.ManagerApiUrl)); err == nil && strings.Trim(parsed.Path, "/") != "" && c.managerGRPCAddr != "" {
+		slog.WarnContext(ctx, "MANAGER_API_URL has a path prefix that gRPC cannot route; gRPC edge tunnel transport is unavailable", "pathPrefix", parsed.Path)
+		c.managerGRPCAddr = ""
+	}
 	// Log only the endpoints this agent will dial.
 	poll := UsePollEdgeTransport(c.cfg)
 	attrs := []any{
@@ -147,7 +155,15 @@ func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error)
 	reconnectBackoff := backoff.NewExponentialBackOff()
 	reconnectBackoff.InitialInterval = c.reconnectInterval
 	reconnectBackoff.MaxInterval = maxReconnectInterval
-	serve := kit.Ternary(UsePollEdgeTransport(c.cfg), c.connectAndServePoll, c.connectAndServeManagedTunnel)
+	serve := func(ctx context.Context) error {
+		if err := EnsureAgentMTLSAssets(ctx, c.cfg); err != nil {
+			return err
+		}
+		if err := ValidateAgentMTLSConfig(c.cfg); err != nil {
+			return err
+		}
+		return kit.Ternary(poll, c.connectAndServePoll, c.connectAndServeManagedTunnel)(ctx)
+	}
 
 	for {
 		if ctx.Err() != nil {
@@ -448,7 +464,7 @@ func (c *TunnelClient) messageLoop(ctx context.Context, conn TunnelConnection, w
 			if transferID := strings.TrimSpace(msg.Metadata[bodyTransferMetadataKey]); transferID != "" {
 				c.beginCommandRequestTransfer(ctx, conn, transferID, msg)
 			} else {
-				workers.Go(func() { c.handleCommandRequest(ctx, conn, msg) })
+				c.startCommandRequest(ctx, conn, msg, workers)
 			}
 		case MessageTypeFileChunk:
 			c.handleCommandRequestChunk(ctx, msg, workers)
@@ -464,7 +480,12 @@ func (c *TunnelClient) messageLoop(ctx context.Context, conn TunnelConnection, w
 				}
 			}
 		case MessageTypeCancelRequest:
-			slog.DebugContext(ctx, "Ignoring edge cancel request on agent", "id", msg.ID)
+			if value, ok := c.commandCancels.LoadAndDelete(msg.ID); ok {
+				if cancel, isCancel := value.(context.CancelFunc); isCancel {
+					cancel()
+					slog.DebugContext(ctx, "Cancelled edge command on manager request", "id", msg.ID)
+				}
+			}
 		case MessageTypeCommandCredit:
 			if value, ok := c.commandRecorders.Load(msg.ID); ok {
 				if recorder, isRecorder := value.(*commandResponseRecorder); isRecorder {
@@ -544,6 +565,13 @@ func (c *TunnelClient) handleCommandRequestChunk(ctx context.Context, msg *Tunne
 		return
 	}
 
+	if transfer.body.Len()+len(msg.Body) > maxLegacyCommandBodyBytes {
+		if c.requestTransfers.CompareAndDelete(msg.ID, transfer) {
+			transfer.stop()
+			c.sendCommandComplete(transfer.conn, transfer.request.ID, http.StatusRequestEntityTooLarge, "command body is too large for a legacy edge tunnel; upgrade the manager and agent")
+		}
+		return
+	}
 	_, _ = transfer.body.Write(msg.Body)
 	transfer.nextSequence++
 	if !msg.EOF {
@@ -552,9 +580,19 @@ func (c *TunnelClient) handleCommandRequestChunk(ctx context.Context, msg *Tunne
 
 	if c.requestTransfers.CompareAndDelete(msg.ID, transfer) {
 		transfer.stop()
-		transfer.request.Body = append([]byte(nil), transfer.body.Bytes()...)
-		workers.Go(func() { c.handleCommandRequest(ctx, transfer.conn, transfer.request) })
+		transfer.request.Body = transfer.body.Bytes()
+		c.startCommandRequest(ctx, transfer.conn, transfer.request, workers)
 	}
+}
+
+func (c *TunnelClient) startCommandRequest(ctx context.Context, conn TunnelConnection, msg *TunnelMessage, workers *sync.WaitGroup) {
+	commandCtx, cancel := context.WithCancel(ctx)
+	c.commandCancels.Store(msg.ID, cancel)
+	workers.Go(func() {
+		defer c.commandCancels.Delete(msg.ID)
+		defer cancel()
+		c.handleCommandRequest(commandCtx, conn, msg)
+	})
 }
 
 // Deprecated: legacy edge message protocol; remove in v3.
@@ -571,7 +609,7 @@ func (c *TunnelClient) handleCommandRequest(ctx context.Context, conn TunnelConn
 		return
 	}
 
-	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeout)
+	reqCtx, cancel := context.WithTimeout(ctx, kit.Ternary(msg.TimeoutMillis > 0, min(time.Duration(msg.TimeoutMillis)*time.Millisecond, c.requestTimeout), c.requestTimeout))
 	defer cancel()
 
 	req, err := c.buildLocalHTTPRequest(reqCtx, msg)
@@ -1094,12 +1132,11 @@ func StartTunnelClient(ctx context.Context, cfg *Config, handler http.Handler) (
 	if cfg.AgentToken == "" {
 		return nil, errors.New("AGENT_TOKEN is required")
 	}
-
-	if err := EnsureAgentMTLSAssets(ctx, cfg); err != nil {
-		return nil, err
+	if parsed, err := url.Parse(httpx.ManagerBaseURL(cfg.ManagerApiUrl)); NormalizeEdgeTransport(cfg.EdgeTransport) == EdgeTransportGRPC && err == nil && strings.Trim(parsed.Path, "/") != "" {
+		return nil, errors.New("gRPC transport cannot use a MANAGER_API_URL with a path prefix; use EDGE_TRANSPORT=websocket or auto")
 	}
-	if err := ValidateAgentMTLSConfig(cfg); err != nil {
-		return nil, err
+	if NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) != EdgeMTLSModeDisabled && !managerUsesTLS(cfg) {
+		return nil, errors.New("EDGE_MTLS_MODE requires MANAGER_API_URL to use https")
 	}
 
 	client := NewTunnelClient(cfg, handler)
@@ -1136,8 +1173,8 @@ func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
 	if err != nil {
 		if resp != nil && resp.Body != nil {
 			defer func() { _ = resp.Body.Close() }()
-			body, _ := io.ReadAll(resp.Body)
-			return fmt.Errorf("failed to connect to manager websocket endpoint (status: %d, body: %s): %w", resp.StatusCode, string(body), err)
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+			return fmt.Errorf("failed to connect to manager websocket endpoint (status: %d, body: %s): %w", resp.StatusCode, strings.TrimSpace(string(body)), err)
 		}
 		return fmt.Errorf("failed to connect to manager websocket endpoint: %w", err)
 	}

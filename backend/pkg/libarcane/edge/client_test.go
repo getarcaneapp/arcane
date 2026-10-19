@@ -942,18 +942,36 @@ func TestStartTunnelClient_GRPCValidation(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "MANAGER_API_URL to use https")
 	})
+}
 
-	t.Run("required mtls auto-enrollment failure surfaces", func(t *testing.T) {
-		_, err := StartTunnelClient(ctx, &Config{
-			EdgeAgent:     true,
-			EdgeTransport: EdgeTransportGRPC,
-			ManagerApiUrl: "https://127.0.0.1:1/api",
-			AgentToken:    "token",
-			EdgeMTLSMode:  EdgeMTLSModeRequired,
-		}, http.NotFoundHandler())
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "edge mTLS enrollment request failed")
-	})
+func TestTunnelClient_StartWithErrorChan_RetriesMTLSEnrollmentEachAttempt(t *testing.T) {
+	client := NewTunnelClient(&Config{
+		EdgeAgent:         true,
+		EdgeTransport:     EdgeTransportGRPC,
+		ManagerApiUrl:     "https://127.0.0.1:1/api",
+		AgentToken:        "token",
+		EdgeMTLSMode:      EdgeMTLSModeRequired,
+		EdgeMTLSAssetsDir: t.TempDir(),
+	}, http.NotFoundHandler())
+	client.reconnectInterval = 10 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(t.Context())
+	errCh := make(chan error, 1)
+	go client.StartWithErrorChan(ctx, errCh)
+
+	for range 2 {
+		select {
+		case err := <-errCh:
+			require.ErrorContains(t, err, "edge mTLS enrollment request failed")
+		case <-time.After(5 * time.Second):
+			t.Fatal("timed out waiting for an mTLS enrollment attempt")
+		}
+	}
+	cancel()
+	require.Eventually(t, func() bool {
+		_, open := <-errCh
+		return !open
+	}, 5*time.Second, 10*time.Millisecond)
 }
 
 func TestTunnelClient_connectAndServeGRPC_EmptyManagerAddress(t *testing.T) {

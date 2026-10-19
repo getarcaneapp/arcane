@@ -13,15 +13,14 @@ import (
 )
 
 const (
-	s3DestinationPath          = "/backups/s3"
-	s3DestinationTag           = "S3 Destinations"
-	s3ConnectionTestSuccess    = "S3 connection test succeeded"
-	s3RemoteSyncFailureMessage = "Failed to fan out S3 destination sync to remote environments"
+	s3DestinationPath       = "/backups/s3"
+	s3DestinationTag        = "S3 Destinations"
+	s3ConnectionTestSuccess = "S3 connection test succeeded"
 )
 
 type s3DestinationHandler struct {
 	service                *S3DestinationService
-	syncRemoteDestinations func(context.Context) error
+	syncRemoteDestinations func(context.Context)
 }
 
 type listS3DestinationsInput struct {
@@ -168,11 +167,8 @@ func (h *s3DestinationHandler) test(ctx context.Context, input *testS3Destinatio
 }
 
 func (h *s3DestinationHandler) triggerRemoteSync(ctx context.Context, reason string) {
-	go func(syncCtx context.Context, syncReason string) {
-		if err := h.syncRemoteDestinations(syncCtx); err != nil {
-			slog.WarnContext(syncCtx, s3RemoteSyncFailureMessage, "reason", syncReason, "error", err.Error())
-		}
-	}(context.WithoutCancel(ctx), reason)
+	slog.DebugContext(ctx, "Queueing S3 destination sync to remote environments", "reason", reason)
+	h.syncRemoteDestinations(ctx)
 }
 
 func (h *s3DestinationHandler) testConfiguration(ctx context.Context, input *testS3DestinationConfigurationInput) (*handlerutil.Out[base.MessageResponse], error) {

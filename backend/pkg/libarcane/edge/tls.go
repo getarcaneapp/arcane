@@ -62,6 +62,7 @@ const (
 var (
 	generatedAssetNameSanitizer = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
 	managerCALocks              utils.KeyedMutex
+	errEnrollUnreachable        = errors.New("edge mTLS enrollment request failed")
 	// caKeyEncrypt is a variable so tests can force encryption failures.
 	caKeyEncrypt = libcrypto.Encrypt
 )
@@ -185,7 +186,7 @@ func GenerateManagerClientMTLSAssetsWithContext(ctx context.Context, cfg *Config
 	uriSAN := certgen.BuildEdgeMTLSURISAN(appURL, safeEnvID)
 
 	// The URI SAN is the stable identity, so renaming an environment keeps its certificate.
-	existing, reason := loadClientCertificate(certPath, keyPath, time.Now())
+	existing, reason := loadClientCertificate(certPath, keyPath, time.Now(), agentMTLSRenewBefore)
 	certIssued := reason != "" || !supportedGeneratedKey(existing.Leaf.PublicKey) ||
 		existing.Leaf.CheckSignatureFrom(ca.Leaf) != nil || (uriSAN != nil && !certificateHasURISAN(existing.Leaf, uriSAN))
 	if certIssued {
@@ -282,8 +283,7 @@ func GeneratedManagerClientMTLSCertPath(cfg *Config, envID string) (string, erro
 // EnsureAgentMTLSAssets downloads manager-generated client certificates when edge mTLS is
 // enabled without configured client cert/key files, and renews them before they expire.
 func EnsureAgentMTLSAssets(ctx context.Context, cfg *Config) error {
-	if cfg == nil || NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) == EdgeMTLSModeDisabled ||
-		(strings.TrimSpace(cfg.EdgeMTLSCertFile) != "" && strings.TrimSpace(cfg.EdgeMTLSKeyFile) != "") {
+	if cfg == nil || NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) == EdgeMTLSModeDisabled {
 		return nil
 	}
 
@@ -293,18 +293,27 @@ func EnsureAgentMTLSAssets(ctx context.Context, cfg *Config) error {
 	}
 	certPath := filepath.Join(assetsDir, generatedMTLSClientCertName)
 	keyPath := filepath.Join(assetsDir, generatedMTLSClientKeyName)
+	configuredCert, configuredKey := strings.TrimSpace(cfg.EdgeMTLSCertFile), strings.TrimSpace(cfg.EdgeMTLSKeyFile)
+	if configuredCert != "" && configuredKey != "" && (filepath.Clean(configuredCert) != certPath || filepath.Clean(configuredKey) != keyPath) {
+		return nil
+	}
 
-	_, reason := loadClientCertificate(certPath, keyPath, time.Now())
+	_, reason := loadClientCertificate(certPath, keyPath, time.Now(), agentMTLSRenewBefore)
 	if reason != "" {
 		if fileExists(certPath) {
 			slog.WarnContext(ctx, "Existing edge mTLS assets need renewal; enrolling new assets", "reason", reason, "certPath", certPath)
 		}
 		if enrollErr := enrollAgentMTLSAssets(ctx, cfg, assetsDir, certPath, keyPath); enrollErr != nil {
-			if NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) != EdgeMTLSModeRequired {
+			_, currentReason := loadClientCertificate(certPath, keyPath, time.Now(), 0)
+			switch {
+			case currentReason == "" && errors.Is(enrollErr, errEnrollUnreachable):
+				slog.WarnContext(ctx, "Edge mTLS renewal failed; keeping the current client certificate until it expires", "error", enrollErr, "certPath", certPath)
+			case NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) != EdgeMTLSModeRequired:
 				slog.WarnContext(ctx, "Edge mTLS enrollment failed; proceeding without client certificate", "error", enrollErr)
 				return nil
+			default:
+				return enrollErr
 			}
-			return enrollErr
 		}
 	}
 
@@ -314,8 +323,10 @@ func EnsureAgentMTLSAssets(ctx context.Context, cfg *Config) error {
 			return fmt.Errorf("failed to write edge mTLS enrollment marker: %w", writeErr)
 		}
 	}
-	cfg.EdgeMTLSCertFile = certPath
-	cfg.EdgeMTLSKeyFile = keyPath
+	if configuredCert != certPath || configuredKey != keyPath {
+		cfg.EdgeMTLSCertFile = certPath
+		cfg.EdgeMTLSKeyFile = keyPath
+	}
 	if caPath := filepath.Join(assetsDir, generatedMTLSCACertFileName); fileExists(caPath) && strings.TrimSpace(cfg.EdgeMTLSCAFile) == "" {
 		cfg.EdgeMTLSCAFile = caPath
 	}
@@ -333,7 +344,12 @@ func enrollAgentMTLSAssets(ctx context.Context, cfg *Config, assetsDir, certPath
 		return errors.New("EDGE_MTLS_MODE requires MANAGER_API_URL to use https for certificate enrollment")
 	}
 
-	httpClient, clientErr := NewManagerHTTPClient(cfg, 30*time.Second)
+	httpClient, clientErr := NewManagerHTTPClient(&Config{
+		EdgeMTLSMode:       cfg.EdgeMTLSMode,
+		EdgeMTLSCAFile:     cfg.EdgeMTLSCAFile,
+		EdgeMTLSServerName: cfg.EdgeMTLSServerName,
+		ManagerApiUrl:      cfg.ManagerApiUrl,
+	}, 30*time.Second)
 	if clientErr != nil {
 		return fmt.Errorf("failed to configure edge mTLS enrollment client: %w", clientErr)
 	}
@@ -347,7 +363,12 @@ func enrollAgentMTLSAssets(ctx context.Context, cfg *Config, assetsDir, certPath
 
 	resp, doErr := httpClient.Do(req)
 	if doErr != nil {
-		return fmt.Errorf("edge mTLS enrollment request failed: %w", doErr)
+		_, certRejected := errors.AsType[*tls.CertificateVerificationError](doErr)
+		_, alert := errors.AsType[tls.AlertError](doErr)
+		if certRejected || alert {
+			return fmt.Errorf("edge mTLS enrollment handshake failed: %w", doErr)
+		}
+		return fmt.Errorf("%w: %w", errEnrollUnreachable, doErr)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -373,7 +394,7 @@ func enrollAgentMTLSAssets(ctx context.Context, cfg *Config, assetsDir, certPath
 			return fmt.Errorf("failed to write edge mTLS asset %s: %w", file.Name, writeErr)
 		}
 	}
-	if _, writtenReason := loadClientCertificate(certPath, keyPath, time.Now()); writtenReason != "" {
+	if _, writtenReason := loadClientCertificate(certPath, keyPath, time.Now(), 0); writtenReason != "" {
 		return fmt.Errorf("edge mTLS enrollment wrote unusable assets: %s", writtenReason)
 	}
 	return nil
@@ -404,7 +425,7 @@ func buildManagerClientTLSConfig(cfg *Config) (*tls.Config, error) {
 	if certPath == "" || keyPath == "" {
 		return tlsConfig, nil
 	}
-	cert, reason := loadClientCertificate(certPath, keyPath, time.Now())
+	cert, reason := loadClientCertificate(certPath, keyPath, time.Now(), 0)
 	if reason != "" {
 		if NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) == EdgeMTLSModeOptional {
 			slog.WarnContext(ctx, "Ignoring unusable optional edge mTLS client certificate; falling back to token auth", "certPath", certPath, "reason", reason)
@@ -534,12 +555,31 @@ func ensureManagerCA(ctx context.Context, assetsDir string) (tls.Certificate, bo
 	// os rather than acfs: the assets dir may be configured anywhere on the host.
 	certPEM, certErr := os.ReadFile(certPath)
 	rawKey, keyErr := os.ReadFile(keyPath)
-	keyPEM := ""
-	if ciphertext, encrypted := strings.CutPrefix(strings.TrimSpace(string(rawKey)), caKeyEncryptedPrefix); certErr == nil && keyErr == nil && encrypted {
-		keyPEM, _ = libcrypto.Decrypt(ciphertext)
+	for _, readErr := range []error{certErr, keyErr} {
+		if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+			return tls.Certificate{}, false, fmt.Errorf("failed to read edge mTLS CA: %w", readErr)
+		}
 	}
-	if ca, pairErr := tls.X509KeyPair(certPEM, []byte(keyPEM)); pairErr == nil && ca.Leaf.IsCA && supportedGeneratedKey(ca.Leaf.PublicKey) {
-		return ca, false, nil
+	ciphertext, encrypted := strings.CutPrefix(strings.TrimSpace(string(rawKey)), caKeyEncryptedPrefix)
+	switch {
+	case certErr != nil && keyErr != nil:
+	case certErr != nil || keyErr != nil:
+		slog.WarnContext(ctx, "Edge mTLS CA is incomplete; regenerating it", "certPath", certPath, "keyPath", keyPath)
+	case !encrypted:
+		slog.WarnContext(ctx, "Edge mTLS CA key is not in the supported encrypted format; regenerating the CA", "keyPath", keyPath)
+	default:
+		keyPEM, decryptErr := libcrypto.Decrypt(ciphertext)
+		if decryptErr != nil {
+			return tls.Certificate{}, false, fmt.Errorf("failed to decrypt edge mTLS CA private key %s: %w", keyPath, decryptErr)
+		}
+		ca, pairErr := tls.X509KeyPair(certPEM, []byte(keyPEM))
+		if pairErr != nil {
+			return tls.Certificate{}, false, fmt.Errorf("failed to load edge mTLS CA key pair from %s: %w", assetsDir, pairErr)
+		}
+		if ca.Leaf.IsCA && supportedGeneratedKey(ca.Leaf.PublicKey) {
+			return ca, false, nil
+		}
+		slog.WarnContext(ctx, "Edge mTLS CA uses an unsupported algorithm; regenerating it", "certPath", certPath)
 	}
 
 	privateKey, err := certgen.GenerateMLDSA87PrivateKey()
@@ -566,14 +606,14 @@ func ensureManagerCA(ctx context.Context, assetsDir string) (tls.Certificate, bo
 	if err != nil {
 		return tls.Certificate{}, false, fmt.Errorf("failed to marshal CA private key: %w", err)
 	}
-	ciphertext, err := caKeyEncrypt(string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})))
+	encryptedKey, err := caKeyEncrypt(string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})))
 	if err != nil {
 		return tls.Certificate{}, false, fmt.Errorf("failed to encrypt edge mTLS CA private key: %w", err)
 	}
-	if ciphertext == "" {
+	if encryptedKey == "" {
 		return tls.Certificate{}, false, errors.New("failed to encrypt edge mTLS CA private key: encrypted payload is empty")
 	}
-	if writeErr := atomic.WriteFile(keyPath, []byte(caKeyEncryptedPrefix+ciphertext), 0o600); writeErr != nil {
+	if writeErr := atomic.WriteFile(keyPath, []byte(caKeyEncryptedPrefix+encryptedKey), 0o600); writeErr != nil {
 		return tls.Certificate{}, false, writeErr
 	}
 
@@ -582,8 +622,8 @@ func ensureManagerCA(ctx context.Context, assetsDir string) (tls.Certificate, bo
 }
 
 // loadClientCertificate loads a client key pair, or returns why it must be (re)issued: unreadable,
-// mismatched, outside its validity window, or within agentMTLSRenewBefore of expiry.
-func loadClientCertificate(certPath, keyPath string, now time.Time) (tls.Certificate, string) {
+// mismatched, outside its validity window, or within renewBefore of expiry.
+func loadClientCertificate(certPath, keyPath string, now time.Time, renewBefore time.Duration) (tls.Certificate, string) {
 	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 	switch {
 	case err != nil:
@@ -592,7 +632,7 @@ func loadClientCertificate(certPath, keyPath string, now time.Time) (tls.Certifi
 		return tls.Certificate{}, "certificate is not valid before " + cert.Leaf.NotBefore.UTC().Format(time.RFC3339)
 	case !now.Before(cert.Leaf.NotAfter):
 		return tls.Certificate{}, "certificate expired at " + cert.Leaf.NotAfter.UTC().Format(time.RFC3339)
-	case now.Add(agentMTLSRenewBefore).After(cert.Leaf.NotAfter):
+	case renewBefore > 0 && now.Add(renewBefore).After(cert.Leaf.NotAfter):
 		return tls.Certificate{}, "certificate expires soon at " + cert.Leaf.NotAfter.UTC().Format(time.RFC3339)
 	}
 	return cert, ""

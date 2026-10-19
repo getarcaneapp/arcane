@@ -392,5 +392,8 @@ func classifyDashboardStreamErrorInternal(err error) (string, string) {
 	if transportErr, ok := errors.AsType[*remenv.TransportError](err); ok {
 		return transportErr.Error(), dashboard.StreamErrorCodeUnreachable
 	}
+	if statusErr, ok := errors.AsType[*remenv.StatusError](err); ok && (statusErr.StatusCode == http.StatusUnauthorized || statusErr.StatusCode == http.StatusForbidden) {
+		return "Agent rejected the environment access token — regenerate the API key and update the agent", dashboard.StreamErrorCodeAuthFailed
+	}
 	return err.Error(), ""
 }

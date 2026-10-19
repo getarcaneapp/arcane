@@ -28,6 +28,7 @@ const (
 
 	StreamErrorCodeAgentIncompatible = "agent_incompatible"
 	StreamErrorCodeUnreachable       = "unreachable"
+	StreamErrorCodeAuthFailed        = "auth_failed"
 )
 
 type ActionItemSeverity string

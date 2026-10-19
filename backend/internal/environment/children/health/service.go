@@ -29,7 +29,7 @@ func New(httpClient *http.Client, dockerService *docker.DockerClientService) *Se
 
 // Probe reports "online", "offline" or "error" for one environment. A custom
 // API URL always probes directly over HTTP.
-func (s *Service) Probe(ctx context.Context, id, apiURL string, isEdge, customURL bool) (string, error) {
+func (s *Service) Probe(ctx context.Context, id, apiURL string, isEdge, customURL bool, authenticated func(context.Context) (int, error)) (string, error) {
 	if id == "0" && !customURL {
 		reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
@@ -50,18 +50,22 @@ func (s *Service) Probe(ctx context.Context, id, apiURL string, isEdge, customUR
 				return "offline", errors.New("edge agent is not connected")
 			}
 		}
-
+	}
+	if !customURL {
 		reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 
-		statusCode, _, err := edge.DoRequest(reqCtx, id, http.MethodGet, "/api/health", nil)
-		if err != nil {
-			return "offline", fmt.Errorf("health check via tunnel failed: %w", err)
-		}
-		if statusCode == http.StatusOK {
+		statusCode, err := authenticated(reqCtx)
+		switch {
+		case err != nil:
+			return "offline", fmt.Errorf("health check failed: %w", err)
+		case statusCode == http.StatusOK:
 			return "online", nil
+		case statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden:
+			return "error", fmt.Errorf("environment rejected the access token: status code %d", statusCode)
+		default:
+			return "error", fmt.Errorf("unexpected status code: %d", statusCode)
 		}
-		return "error", fmt.Errorf("unexpected status code: %d", statusCode)
 	}
 
 	baseURL, err := httpx.NormalizeBaseURL(apiURL)

@@ -20,7 +20,8 @@ const (
 	DefaultProxyTimeout           = 5 * time.Minute
 	DefaultTunnelAcquirePollEvery = 100 * time.Millisecond
 	// Deprecated: legacy edge message protocol; remove in v3.
-	tunnelStreamHeader = "X-Arcane-Tunnel-Stream"
+	tunnelStreamHeader        = "X-Arcane-Tunnel-Stream"
+	maxLegacyCommandBodyBytes = 256 << 20
 )
 
 // browserSecurityHeaders must not cross a legacy tunnel: the agent's CORS check would reject the browser Origin,
@@ -153,7 +154,7 @@ func (s *grpcResponseState) handleTunnelMessage(method string, incoming *TunnelM
 		s.writeBody(incoming.Body)
 		if incoming.Error != "" && incoming.Status >= http.StatusBadRequest {
 			done, status, headers, body = true, incoming.Status, s.cleanHeaders(), s.respBody.Bytes()
-			err = errors.New(incoming.Error)
+			err = &commandStatusError{status: incoming.Status, message: incoming.Error}
 		} else {
 			done = true
 			_, headers, body = s.finish()
@@ -268,7 +269,10 @@ func ProxyHTTPRequest(c *echo.Context, tunnel *AgentTunnel, targetPath string) e
 	var body []byte
 	if req.Body != nil {
 		var err error
-		body, err = io.ReadAll(req.Body)
+		body, err = io.ReadAll(http.MaxBytesReader(c.Response(), req.Body, maxLegacyCommandBodyBytes))
+		if _, tooLarge := errors.AsType[*http.MaxBytesError](err); tooLarge {
+			return c.JSON(http.StatusRequestEntityTooLarge, map[string]any{"error": "request body is too large for a legacy edge tunnel; upgrade the agent"})
+		}
 		if err != nil {
 			slog.ErrorContext(ctx, "Failed to read request body for tunnel proxy", "error", err)
 			return c.JSON(http.StatusInternalServerError, map[string]any{"error": "failed to read request body"})
@@ -301,6 +305,9 @@ func ProxyHTTPRequest(c *echo.Context, tunnel *AgentTunnel, targetPath string) e
 		if resp, unwrapErr := echo.UnwrapResponse(c.Response()); unwrapErr == nil && resp.Committed {
 			panic(http.ErrAbortHandler)
 		}
+		if statusErr, ok := errors.AsType[*commandStatusError](err); ok {
+			return c.JSON(statusErr.status, map[string]any{"error": statusErr.message})
+		}
 		if proxyCtx.Err() != nil {
 			return c.JSON(http.StatusGatewayTimeout, map[string]any{"error": "request timed out"})
 		}
@@ -309,6 +316,10 @@ func ProxyHTTPRequest(c *echo.Context, tunnel *AgentTunnel, targetPath string) e
 	}
 
 	return nil
+}
+
+func (e *commandStatusError) Error() string {
+	return e.message
 }
 
 // cleanHeaders returns the response headers without the internal stream marker.

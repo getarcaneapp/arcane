@@ -17,7 +17,7 @@ type Module struct {
 	browseHandler *browse.Handler
 }
 
-func New(service *ContainerRegistryService, syncRemoteRegistries func(context.Context) error) *Module {
+func New(service *ContainerRegistryService, syncRemoteRegistries func(context.Context)) *Module {
 	return &Module{
 		service:       service,
 		handler:       NewHandler(service, syncRemoteRegistries),

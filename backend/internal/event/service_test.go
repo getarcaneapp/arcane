@@ -843,7 +843,7 @@ func TestDaemonEventWriterBatchesAndFlushesOnStop(t *testing.T) {
 			svc.RecordDockerEvent(t.Context(), events.Message{Type: events.ContainerEventType, Action: events.ActionStart, TimeNano: timeNano, Actor: events.Actor{ID: "web"}})
 		}
 
-		const occurrences = daemonEventBatchSize*3 + 5
+		const occurrences = DaemonEventBatchSize*3 + 5
 		var wg sync.WaitGroup
 		for occurrence := range int64(occurrences) {
 			for range 2 {

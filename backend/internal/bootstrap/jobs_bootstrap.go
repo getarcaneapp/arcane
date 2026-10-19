@@ -326,6 +326,7 @@ func registerJobs(params registerJobsParams) error {
 		Scheduler:          params.Scheduler,
 		Settings:           params.Settings,
 		Environment:        params.Environment,
+		JobSchedule:        params.JobSchedule,
 		AutoUpdate:         params.AutoUpdate,
 		ImageUpdateWatcher: params.ImageUpdateWatcher,
 		FilesystemWatcher:  params.FilesystemWatcher,
@@ -405,6 +406,7 @@ type settingsSubscriptionsParams struct {
 	Scheduler    settingsEffectsScheduler
 	Settings     settingsChangeSubscriber
 	Environment  timeoutSettingsEnvironment
+	JobSchedule  *job.JobService
 
 	AutoUpdate         *flow.Job
 	ImageUpdateWatcher *scheduler.ImageUpdateWatcher
@@ -460,6 +462,16 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 	})
 
 	rescheduleOn([]string{"autoUpdate", "autoUpdateInterval"}, params.AutoUpdate)
+
+	subscribe([]string{"dockerClientRefreshInterval", "environmentHealthInterval"}, func(updates []libarcane.SettingUpdate) {
+		changedKeys := make([]string, 0, len(updates))
+		for _, update := range updates {
+			changedKeys = append(changedKeys, update.Key)
+		}
+		if err := params.JobSchedule.RescheduleJobsForSettingKeys(params.LifecycleCtx, changedKeys); err != nil {
+			slog.WarnContext(params.LifecycleCtx, "Failed to reschedule jobs after settings change", "keys", changedKeys, "error", err)
+		}
+	})
 
 	subscribe([]string{"projectsDirectory", "followProjectSymlinks"}, func(_ []libarcane.SettingUpdate) {
 		if err := params.FilesystemWatcher.RestartProjectsWatcher(params.LifecycleCtx); err != nil {
