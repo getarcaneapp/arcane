@@ -83,6 +83,7 @@ type Store struct {
 	RemoteSnapshotIDs         func(ctx context.Context, destinationID string) ([]string, error)
 	CountRuns                 func(ctx context.Context) (int64, error)
 	CountVolumeRepositoryRuns func(ctx context.Context) (int64, error)
+	CountRunningVolumeBackups func(ctx context.Context) (int64, error)
 	Policies                  func(ctx context.Context) ([]backuptypes.SystemBackupPolicy, error)
 	Policy                    func(ctx context.Context, id string) (*backuptypes.SystemBackupPolicy, error)
 	ReconcilePolicies         func(
@@ -919,6 +920,11 @@ func (s *Service) PruneLocalRepository(ctx context.Context) error {
 }
 
 func (s *Service) DiscoverRemoteBackups(ctx context.Context, request backuptypes.DiscoverSystemBackupsRequest) (int, error) {
+	lease, err := s.acquireRun(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer lease.Release(ctx)
 	recoveryKey, err := s.recoveryKey(ctx, request.RecoveryKey)
 	if err != nil {
 		return 0, err
@@ -1019,9 +1025,14 @@ func (s *Service) UploadBackup(ctx context.Context, id string, request backuptyp
 	return run, nil
 }
 
-func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string, user usertypes.Actor) (opErr error) {
+func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (opErr error) {
 	ctx, finish := s.startOperation(ctx, "restore", attribute.String("arcane.backup.id", id))
 	defer func() { finish(opErr) }()
+	lease, err := s.acquireRun(ctx)
+	if err != nil {
+		return err
+	}
+	defer lease.Release(ctx)
 	run, err := s.store.Run(ctx, id)
 	if err != nil {
 		return err
@@ -1064,10 +1075,14 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string, use
 		return err
 	}
 	// A local safety snapshot is created before the detached helper is allowed to stop Arcane and replace its data.
-	safetyBackup, err := s.CreateBackup(ctx, user, backuptypes.SystemBackupTriggerSafety, backuptypes.CreateSystemBackupRequest{
+	prepared, prepareErr := s.prepareBackup(ctx, backuptypes.SystemBackupTriggerSafety, backuptypes.CreateSystemBackupRequest{
 		Destination: backuptypes.SystemBackupDestinationLocal,
 		RecoveryKey: key,
 	})
+	if prepareErr != nil {
+		return fmt.Errorf("failed to create pre-restore system backup: %w", prepareErr)
+	}
+	safetyBackup, err := s.executeBackup(ctx, prepared)
 	if err != nil {
 		return fmt.Errorf("failed to create pre-restore system backup: %w", err)
 	}
@@ -1201,36 +1216,101 @@ func (s *Service) SetRecoveryKey(ctx context.Context, recoveryKey string) (*back
 	if err := backup.ValidateRecoveryKey(recoveryKey); err != nil {
 		return nil, err
 	}
-	// Repositories only open with the key that initialized them, so refuse a rotation while backups exist.
-	configured, err := s.recoveryKeys.Configured(ctx)
+	lease, err := s.acquireRun(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if configured {
-		if current, keyErr := s.recoveryKeys.Get(ctx); keyErr == nil && current != recoveryKey {
-			localRuns, countLocalBackupsErr := s.store.CountRuns(ctx)
-			if countLocalBackupsErr != nil {
-				return nil, countLocalBackupsErr
-			}
-			if localRuns > 0 {
-				return nil, errors.New("delete the existing system backups before replacing the recovery key; they can only be opened with the current key")
-			}
-			volumeBackups, countVolumeBackupsErr := s.store.CountVolumeRepositoryRuns(ctx)
-			if countVolumeBackupsErr != nil {
-				return nil, countVolumeBackupsErr
-			}
-			if volumeBackups > 0 {
-				return nil, errors.New("delete the existing volume backups before replacing the recovery key; they can only be opened with the current key")
-			}
+	defer lease.Release(ctx)
+	previous, err := s.recoveryKeys.Get(ctx)
+	if err != nil {
+		if !errors.Is(err, backup.ErrRecoveryKeyNotConfigured) {
+			slog.WarnContext(ctx, "could not read the current recovery key; existing backups must already open with the new key", "error", err.Error())
 		}
+		previous = ""
+	}
+	if previous == recoveryKey {
+		if setErr := s.recoveryKeys.Set(ctx, recoveryKey); setErr != nil {
+			return nil, setErr
+		}
+		return &backuptypes.SystemBackupRecoveryKeyStatus{Configured: true}, nil
+	}
+	runningVolumeBackupsErr := common.Classify(common.ErrConflict, errors.New("wait for the running volume backups to finish before replacing the recovery key"))
+	runningVolumeBackups, countErr := s.store.CountRunningVolumeBackups(ctx)
+	if countErr != nil {
+		return nil, countErr
+	}
+	if runningVolumeBackups > 0 {
+		return nil, runningVolumeBackupsErr
+	}
+	if rekeyErr := s.rekeyRepositories(ctx, previous, recoveryKey); rekeyErr != nil {
+		return nil, rekeyErr
+	}
+	rollback := func(cause error) error {
+		if previous == "" {
+			return cause
+		}
+		return errors.Join(cause, s.rekeyRepositories(context.WithoutCancel(ctx), recoveryKey, previous))
+	}
+	runningVolumeBackups, countErr = s.store.CountRunningVolumeBackups(ctx)
+	if countErr != nil {
+		return nil, rollback(errors.Join(runningVolumeBackupsErr, countErr))
+	}
+	if runningVolumeBackups > 0 {
+		return nil, rollback(runningVolumeBackupsErr)
 	}
 	if setErr := s.recoveryKeys.Set(ctx, recoveryKey); setErr != nil {
-		return nil, setErr
-	}
-	if migrateRepositoryPasswordsErr := s.volumeService.MigrateRepositoryPasswords(ctx); migrateRepositoryPasswordsErr != nil {
-		slog.WarnContext(ctx, "failed to re-key volume backup repositories to the recovery key", "error", migrateRepositoryPasswordsErr.Error())
+		return nil, rollback(setErr)
 	}
 	return &backuptypes.SystemBackupRecoveryKeyStatus{Configured: true}, nil
+}
+
+func (s *Service) rekeyRepositories(ctx context.Context, previous, next string) error {
+	systemRuns, err := s.store.CountRuns(ctx)
+	if err != nil {
+		return err
+	}
+	volumeRuns, err := s.store.CountVolumeRepositoryRuns(ctx)
+	if err != nil {
+		return err
+	}
+	if systemRuns == 0 && volumeRuns == 0 {
+		return nil
+	}
+	var dockerClient *client.Client
+	var systemRepositories []backup.Repository
+	if systemRuns > 0 {
+		dockerClient, err = s.dockerService.GetClient(ctx)
+		if err != nil {
+			return err
+		}
+		local, localErr := s.localRepository(ctx, dockerClient, false)
+		if localErr != nil {
+			return localErr
+		}
+		systemRepositories = append(systemRepositories, local)
+		destinations, listErr := s.s3Destinations.ListAllS3Destinations(ctx)
+		if listErr != nil {
+			return fmt.Errorf("failed to list S3 destinations for re-key: %w", listErr)
+		}
+		for _, destination := range destinations {
+			remote, remoteErr := s.remoteRepository(ctx, destination.ID)
+			if remoteErr != nil {
+				return remoteErr
+			}
+			systemRepositories = append(systemRepositories, remote)
+		}
+		if rekeyErr := s.engine.RekeyRepositories(ctx, dockerClient, systemRepositories, next, previous); rekeyErr != nil {
+			return rekeyErr
+		}
+	}
+	if volumeRuns == 0 {
+		return nil
+	}
+	migrateErr := s.volumeService.MigrateRepositoryPasswords(ctx, previous, next)
+	if migrateErr == nil || len(systemRepositories) == 0 || previous == "" {
+		return migrateErr
+	}
+	return errors.Join(migrateErr, s.engine.RekeyRepositories(context.WithoutCancel(ctx), dockerClient, systemRepositories, previous, next))
 }
 
 func (s *Service) GetPolicies(ctx context.Context) (*backuptypes.SystemBackupPolicyCollection, error) {
@@ -1361,6 +1441,12 @@ func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (sche
 	}
 	if runErr != nil {
 		slog.ErrorContext(ctx, "Scheduled Arcane system backup failed", "policyId", policy.ID, "error", runErr)
+		if policy.RetentionCount > 0 {
+			if retentionErr := s.applyRetention(ctx, policy.ID, policy.RetentionCount, policy.S3Enabled); retentionErr != nil {
+				slog.ErrorContext(ctx, "System backup retention failed", "policyId", policy.ID, "error", retentionErr)
+				return scheduler.Outcome{}, errors.Join(runErr, retentionErr)
+			}
+		}
 		return scheduler.Outcome{}, runErr
 	}
 	if policy.RetentionCount > 0 {
@@ -1379,11 +1465,19 @@ func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (sche
 // resumeScheduledBackup finishes the backup an interrupted scheduled run recorded, then applies retention.
 func (s *Service) resumeScheduledBackup(ctx context.Context, previous scheduler.Run, policyID string) (scheduler.Outcome, error) {
 	outcome, err := s.reconcileBackup(ctx, previous, policyID, "")
-	if err != nil || outcome.Status != scheduler.Succeeded {
-		return outcome, err
+	if err == nil && outcome.Status != scheduler.Succeeded {
+		return outcome, nil
 	}
-	current, err := s.store.Policy(ctx, policyID)
+	current, policyErr := s.store.Policy(ctx, policyID)
+	if policyErr != nil {
+		return outcome, errors.Join(err, policyErr)
+	}
 	if err != nil {
+		if current != nil && current.RetentionCount > 0 {
+			if applyRetentionErr := s.applyRetention(ctx, current.ID, current.RetentionCount, current.S3Enabled); applyRetentionErr != nil {
+				return outcome, errors.Join(err, applyRetentionErr)
+			}
+		}
 		return outcome, err
 	}
 	if current != nil && current.RetentionCount > 0 {

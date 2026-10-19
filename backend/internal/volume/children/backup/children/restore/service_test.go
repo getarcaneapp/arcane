@@ -19,27 +19,35 @@ func TestArchiveMembersForSelectionExpandsFolders(t *testing.T) {
 }
 
 func TestRestoreBackupFilesScriptUsesSupportedTooling(t *testing.T) {
-	for _, unsupported := range []string{
-		"if [",
-		"elif [",
-		"while [",
-		"test ",
-		"local ",
-		"find -P",
-		"-printf",
-		"sort -z",
-		"xargs",
-		"cat --",
-		"dirname",
-		"install ",
-		"--files-from",
-		"tar -r",
-		"$((",
-	} {
-		require.NotContains(t, restoreBackupFilesScript, unsupported)
+	for _, script := range []string{restoreBackupFilesScript, replaceVolumeScript, restoreArchiveScript} {
+		for _, unsupported := range []string{
+			"if [",
+			"elif [",
+			"while [",
+			"test ",
+			"local ",
+			"find -P",
+			"-printf",
+			"sort -z",
+			"xargs",
+			"cat --",
+			"dirname",
+			"install ",
+			"--files-from",
+			"tar -r",
+			"$((",
+			"-not",
+			"-exec",
+			"-quit",
+		} {
+			require.NotContains(t, script, unsupported)
+		}
+		if shellPath, err := exec.LookPath("sh"); err == nil {
+			output, syntaxErr := exec.Command(shellPath, "-n", "-c", script).CombinedOutput()
+			require.NoErrorf(t, syntaxErr, "restore script has invalid syntax: %s", output)
+		}
+		require.NotContains(t, script, "rm -rf /volume/*")
+		require.NotContains(t, script, "2>/dev/null || true")
 	}
-	if shellPath, err := exec.LookPath("sh"); err == nil {
-		output, syntaxErr := exec.Command(shellPath, "-n", "-c", restoreBackupFilesScript).CombinedOutput()
-		require.NoErrorf(t, syntaxErr, "restore script has invalid syntax: %s", output)
-	}
+	require.Contains(t, replaceVolumeScript, `case "$f" in "$1")`)
 }

@@ -497,7 +497,7 @@ func (e *Engine) ForgetSnapshots(ctx context.Context, dockerClient *client.Clien
 	}
 	defer unlock()
 	output, err := e.runContainer(ctx, dockerClient, repository, password, []string{"snapshots", "--json"})
-	if len(snapshotIDs) == 0 && err != nil && strings.Contains(err.Error(), rusticRepositoryMissingMessage) {
+	if err != nil && strings.Contains(err.Error(), rusticRepositoryMissingMessage) {
 		return nil
 	}
 	if err != nil {
@@ -538,6 +538,62 @@ func (e *Engine) ChangeRepositoryPassword(ctx context.Context, dockerClient *cli
 	}
 	_, err := e.run(ctx, dockerClient, repository, currentPassword, []string{"key", "password", "--new-password", newPassword})
 	return err
+}
+
+func (e *Engine) RekeyRepository(ctx context.Context, dockerClient *client.Client, repository Repository, newPassword string, currentPasswords ...string) (string, error) {
+	_, err := e.ListSnapshots(ctx, dockerClient, repository, newPassword)
+	if err == nil || strings.Contains(err.Error(), rusticRepositoryMissingMessage) {
+		return "", nil
+	}
+	for _, candidate := range currentPasswords {
+		if candidate == "" || candidate == newPassword {
+			continue
+		}
+		if changeErr := e.ChangeRepositoryPassword(ctx, dockerClient, repository, candidate, newPassword); changeErr == nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("backup repository %s does not open with the recovery key: %w", repository.ID, err)
+}
+
+func (e *Engine) RekeyRepositories(ctx context.Context, dockerClient *client.Client, repositories []Repository, newPassword string, currentPasswords ...string) error {
+	type rekeyed struct {
+		repository Repository
+		previous   string
+	}
+	changed := make([]rekeyed, 0, len(repositories))
+	for _, repository := range repositories {
+		previous, err := e.RekeyRepository(ctx, dockerClient, repository, newPassword, currentPasswords...)
+		if err != nil {
+			errs := []error{err}
+			var failedRollbackErrs []error
+			for _, candidate := range currentPasswords {
+				if candidate == "" || candidate == newPassword {
+					continue
+				}
+				_, rollbackErr := e.RekeyRepository(context.WithoutCancel(ctx), dockerClient, repository, candidate, newPassword)
+				if rollbackErr == nil {
+					failedRollbackErrs = nil
+					break
+				}
+				failedRollbackErrs = append(failedRollbackErrs, fmt.Errorf("failed to restore the previous key on backup repository %s: %w", repository.ID, rollbackErr))
+			}
+			errs = append(errs, failedRollbackErrs...)
+			for _, done := range changed {
+				if _, rollbackErr := e.RekeyRepository(context.WithoutCancel(ctx), dockerClient, done.repository, done.previous, newPassword); rollbackErr != nil {
+					errs = append(errs, fmt.Errorf("failed to restore the previous key on backup repository %s: %w", done.repository.ID, rollbackErr))
+				}
+			}
+			return errors.Join(errs...)
+		}
+		if previous != "" {
+			changed = append(changed, rekeyed{
+				repository: repository,
+				previous:   previous,
+			})
+		}
+	}
+	return nil
 }
 
 // Replicate copies one snapshot into another repository through a temporary volume, never the live data.
@@ -970,20 +1026,27 @@ func CheckScheduledRemote(ctx context.Context, db *database.DB, destinations *s3
 	return fmt.Errorf("%w: %s", ErrRemoteRepositoryMissing, result.Reason)
 }
 
-// ExpiredRunIDs returns the IDs of succeeded runs with snapshots that fall
-// outside the newest keep entries for one policy, oldest last. Callers delete
-// each run through their own delete path so snapshots are forgotten too.
+// ExpiredRunIDs returns the IDs of succeeded and failed runs with snapshots that
+// fall outside the newest keep entries of their status for one policy, oldest
+// last within each status. Callers delete each run through their own delete
+// path so snapshots are forgotten too.
 func ExpiredRunIDs(ctx context.Context, db *database.DB, table, policyID string, keep int) ([]string, error) {
-	var ids []string
-	err := db.WithContext(ctx).
-		Table(table).
-		Where(
-			"policy_id = ? AND status = ? AND (COALESCE(local_snapshot_id, '') <> '' OR COALESCE(remote_snapshot_id, '') <> '')",
-			policyID,
-			"succeeded",
-		).
-		Order("created_at DESC").
-		Offset(keep).
-		Pluck("id", &ids).Error
-	return ids, err
+	var expired []string
+	for _, status := range []string{"succeeded", "failed"} {
+		var ids []string
+		if err := db.WithContext(ctx).
+			Table(table).
+			Where(
+				"policy_id = ? AND status = ? AND (COALESCE(local_snapshot_id, '') <> '' OR COALESCE(remote_snapshot_id, '') <> '')",
+				policyID,
+				status,
+			).
+			Order("created_at DESC").
+			Offset(keep).
+			Pluck("id", &ids).Error; err != nil {
+			return nil, err
+		}
+		expired = append(expired, ids...)
+	}
+	return expired, nil
 }

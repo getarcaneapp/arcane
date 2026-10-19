@@ -445,17 +445,24 @@ func (s *Service) pruneBuildCache(ctx context.Context, options system.PruneBuild
 }
 
 func (s *Service) pruneVolumes(ctx context.Context, options system.PruneVolumesOptions) (system.PruneAllResult, error) {
-	report, err := s.volumeService.PruneVolumesWithOptions(ctx, options.Mode == system.PruneVolumeModeAll)
+	plan, err := s.preparePrunePlan(ctx, system.PruneAllRequest{Volumes: &options})
 	if err != nil {
 		return system.PruneAllResult{}, err
 	}
+	result, err := s.executePrunePlan(ctx, plan, scheduler.Run{}, "", false)
+	if err != nil {
+		return system.PruneAllResult{}, err
+	}
+	if !result.Success {
+		return system.PruneAllResult{}, fmt.Errorf("failed to prune volumes: %s", strings.Join(result.Errors, "; "))
+	}
 
-	slog.InfoContext(ctx, "Volume prune completed", "volumesDeleted", len(report.VolumesDeleted), "spaceReclaimed", report.SpaceReclaimed)
+	slog.InfoContext(ctx, "Volume prune completed", "volumesDeleted", len(result.VolumesDeleted), "spaceReclaimed", result.VolumeSpaceReclaimed)
 
 	return system.PruneAllResult{
-		VolumesDeleted:       report.VolumesDeleted,
-		SpaceReclaimed:       report.SpaceReclaimed,
-		VolumeSpaceReclaimed: report.SpaceReclaimed,
+		VolumesDeleted:       result.VolumesDeleted,
+		SpaceReclaimed:       result.VolumeSpaceReclaimed,
+		VolumeSpaceReclaimed: result.VolumeSpaceReclaimed,
 	}, nil
 }
 
@@ -545,7 +552,9 @@ func (s *Service) PruneScheduled(ctx context.Context, environmentID string, req 
 
 func (s *Service) preparePrunePlan(ctx context.Context, req system.PruneAllRequest) (prunePlan, error) {
 	if req.Volumes != nil {
-		s.volumeService.CleanupHelperContainers(ctx)
+		if _, reapErr := s.volumeService.ReapIdleHelpers(ctx, 0); reapErr != nil {
+			slog.WarnContext(ctx, "could not remove idle volume helpers before prune", "error", reapErr.Error())
+		}
 	}
 	usage, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.DiskUsageResult, error) {
 		return cli.DiskUsage(ctx, client.DiskUsageOptions{
