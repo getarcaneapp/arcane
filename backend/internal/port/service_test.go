@@ -220,7 +220,7 @@ func TestPortService_ListPortsPaginated_SortsByHostIPDescWithUnpublishedLast(t *
 	assert.Equal(t, []string{"127.0.0.1", "0.0.0.0", ""}, []string{
 		items[0].HostIP,
 		items[1].HostIP,
-		normalizeOptionalStringSortValueInternal(items[2].HostIP),
+		items[2].HostIP,
 	})
 }
 

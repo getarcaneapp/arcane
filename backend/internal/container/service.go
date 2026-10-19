@@ -11,6 +11,7 @@ import (
 	"maps"
 	"net/netip"
 	"net/url"
+	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -92,7 +93,6 @@ type containerLifecycleAction struct {
 	action             string
 	eventType          event.EventType
 	metadata           database.JSON
-	warnOnLogError     bool
 	runContainerAction func(context.Context) error
 }
 
@@ -359,13 +359,12 @@ func (s *ContainerService) renameToRedeployBackup(ctx context.Context, container
 	return nil
 }
 
-// stopContainer waits out a 30s grace period, so it runs without the Docker API deadline.
 func (s *ContainerService) stopContainer(ctx context.Context, containerID string) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	_, err = dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: new(30)})
+	_, err = dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{})
 	return err
 }
 
@@ -393,12 +392,8 @@ func (s *ContainerService) runContainerLifecycleAction(ctx context.Context, cont
 	}
 	maps.Copy(metadata, cfg.metadata)
 
-	err = s.eventService.LogContainerEvent(ctx, cfg.eventType, containerID, "name", user.ID, user.Username, "0", metadata)
-	if err != nil {
-		if !cfg.warnOnLogError {
-			return fmt.Errorf("failed to log action: %w", err)
-		}
-		slog.WarnContext(ctx, "could not log container action", "action", cfg.action, "error", err)
+	if logErr := s.eventService.LogContainerEvent(ctx, cfg.eventType, containerID, "name", user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.WarnContext(ctx, "could not log container action", "action", cfg.action, "error", logErr)
 	}
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("container", containerID, "")()
@@ -411,9 +406,8 @@ func (s *ContainerService) runContainerLifecycleAction(ctx context.Context, cont
 
 func (s *ContainerService) StartContainer(ctx context.Context, containerID string, user usertypes.Actor) error {
 	return s.runContainerLifecycleAction(ctx, containerID, user, containerLifecycleAction{
-		action:         "start",
-		eventType:      event.EventTypeContainerStart,
-		warnOnLogError: true,
+		action:    "start",
+		eventType: event.EventTypeContainerStart,
 		runContainerAction: func(ctx context.Context) error {
 			_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
 				return dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
@@ -452,10 +446,9 @@ func (s *ContainerService) RestartContainer(ctx context.Context, containerID str
 // when signal is empty) without removing the container.
 func (s *ContainerService) KillContainer(ctx context.Context, containerID, signal string, user usertypes.Actor) error {
 	return s.runContainerLifecycleAction(ctx, containerID, user, containerLifecycleAction{
-		action:         "kill",
-		eventType:      event.EventTypeContainerKill,
-		metadata:       database.JSON{"signal": signal},
-		warnOnLogError: true,
+		action:    "kill",
+		eventType: event.EventTypeContainerKill,
+		metadata:  database.JSON{"signal": signal},
 		runContainerAction: func(ctx context.Context) error {
 			_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerKillResult, error) {
 				return dockerClient.ContainerKill(ctx, containerID, client.ContainerKillOptions{Signal: signal})
@@ -468,9 +461,8 @@ func (s *ContainerService) KillContainer(ctx context.Context, containerID, signa
 // PauseContainer suspends all processes in the container.
 func (s *ContainerService) PauseContainer(ctx context.Context, containerID string, user usertypes.Actor) error {
 	return s.runContainerLifecycleAction(ctx, containerID, user, containerLifecycleAction{
-		action:         "pause",
-		eventType:      event.EventTypeContainerPause,
-		warnOnLogError: true,
+		action:    "pause",
+		eventType: event.EventTypeContainerPause,
 		runContainerAction: func(ctx context.Context) error {
 			_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerPauseResult, error) {
 				return dockerClient.ContainerPause(ctx, containerID, client.ContainerPauseOptions{})
@@ -483,9 +475,8 @@ func (s *ContainerService) PauseContainer(ctx context.Context, containerID strin
 // UnpauseContainer resumes a previously paused container.
 func (s *ContainerService) UnpauseContainer(ctx context.Context, containerID string, user usertypes.Actor) error {
 	return s.runContainerLifecycleAction(ctx, containerID, user, containerLifecycleAction{
-		action:         "unpause",
-		eventType:      event.EventTypeContainerUnpause,
-		warnOnLogError: true,
+		action:    "unpause",
+		eventType: event.EventTypeContainerUnpause,
 		runContainerAction: func(ctx context.Context) error {
 			_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerUnpauseResult, error) {
 				return dockerClient.ContainerUnpause(ctx, containerID, client.ContainerUnpauseOptions{})
@@ -679,6 +670,23 @@ func (s *ContainerService) recreateContainer(
 	// deferred until the replacement exists; only a start failure can still lose the original.
 	stopAfterCreate := wasRunning && kit.FromPtr(containerInfo.HostConfig).AutoRemove
 
+	var err error
+	restoreHostConfig := kit.FromPtr(containerInfo.HostConfig)
+	restoreHostConfig.Binds, restoreHostConfig.Mounts, err = docker.PreserveVolumeMounts(ctx, restoreHostConfig.Binds, restoreHostConfig.Mounts, containerInfo.Mounts)
+	if err != nil {
+		return "", fmt.Errorf("preserve volumes of container %s: %w", containerName, err)
+	}
+	createHostConfig := kit.FromPtr(newHostConfig)
+	createHostConfig.Binds, createHostConfig.Mounts, err = docker.PreserveVolumeMounts(
+		ctx,
+		createHostConfig.Binds,
+		createHostConfig.Mounts,
+		retainedVolumeMountPoints(kit.FromPtr(containerInfo.HostConfig), createHostConfig, containerInfo.Mounts),
+	)
+	if err != nil {
+		return "", fmt.Errorf("preserve volumes of container %s: %w", containerName, err)
+	}
+
 	defer s.eventService.BeginDockerResourceSuppressionWindow("container", containerInfo.ID, containerName)()
 	backupName := fmt.Sprintf("%s%s%d", cmp.Or(containerName, "arcane-redeploy-"+containerInfo.ID[:min(12, len(containerInfo.ID))]), redeployBackupInfix, time.Now().Unix())
 
@@ -694,7 +702,7 @@ func (s *ContainerService) recreateContainer(
 		restoreResp, restoreCreateErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
 			return compat.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
 				Config:           &originalConfig,
-				HostConfig:       containerInfo.HostConfig,
+				HostConfig:       &restoreHostConfig,
 				NetworkingConfig: buildCleanNetworkingConfig(containerInfo, apiVersion),
 				Name:             containerName,
 			}, apiVersion)
@@ -729,18 +737,18 @@ func (s *ContainerService) recreateContainer(
 
 	s.eventService.MarkDockerExpectation("container", containerInfo.ID, containerName)
 	if containerName != "" {
-		if err := s.renameToRedeployBackup(ctx, containerInfo.ID, containerName, backupName, newName, user); err != nil {
-			return "", err
+		if renameErr := s.renameToRedeployBackup(ctx, containerInfo.ID, containerName, backupName, newName, user); renameErr != nil {
+			return "", renameErr
 		}
 	}
 	if wasRunning && !stopAfterCreate {
-		if err := s.stopContainer(ctx, containerInfo.ID); err != nil {
+		if stopErr := s.stopContainer(ctx, containerInfo.ID); stopErr != nil {
 			s.restoreContainerAfterRedeployFailure(ctx, containerInfo.ID, containerName, backupName, "stop", false, user)
-			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerInfo.ID, containerName, user.ID, user.Username, "0", err, database.JSON{
+			s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerInfo.ID, containerName, user.ID, user.Username, "0", stopErr, database.JSON{
 				"action": "redeploy",
 				"step":   "stop",
 			})
-			return "", fmt.Errorf("failed to stop container: %w", err)
+			return "", fmt.Errorf("failed to stop container: %w", stopErr)
 		}
 	}
 
@@ -752,7 +760,7 @@ func (s *ContainerService) recreateContainer(
 	createResp, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
 		return compat.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
 			Config:           newConfig,
-			HostConfig:       newHostConfig,
+			HostConfig:       &createHostConfig,
 			NetworkingConfig: networkingConfig,
 			Name:             newName,
 		}, apiVersion)
@@ -788,8 +796,7 @@ func (s *ContainerService) recreateContainer(
 		}
 	}
 
-	restartPolicies := []container.RestartPolicyMode{container.RestartPolicyAlways, container.RestartPolicyUnlessStopped, container.RestartPolicyOnFailure}
-	if wasRunning || slices.Contains(restartPolicies, kit.FromPtr(containerInfo.HostConfig).RestartPolicy.Name) {
+	if wasRunning {
 		if _, err = s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
 			return dockerClient.ContainerStart(ctx, createResp.ID, client.ContainerStartOptions{})
 		}); err != nil {
@@ -879,6 +886,27 @@ func healthConfigFromCreate(hc *containertypes.HealthcheckCreate) *container.Hea
 		StartInterval: time.Duration(hc.StartInterval) * time.Second,
 		Retries:       hc.Retries,
 	}
+}
+
+func retainedVolumeMountPoints(original, updated container.HostConfig, mountPoints []container.MountPoint) []container.MountPoint {
+	specAt := func(hc container.HostConfig, destination string) (bool, bool) {
+		if i := slices.IndexFunc(hc.Mounts, func(m mount.Mount) bool { return path.Clean(m.Target) == destination }); i >= 0 {
+			return true, hc.Mounts[i].Type == mount.TypeVolume && hc.Mounts[i].Source == ""
+		}
+		for _, bind := range hc.Binds {
+			parts := strings.SplitN(bind, ":", 3)
+			if path.Clean(parts[min(1, len(parts)-1)]) == destination {
+				return true, len(parts) == 1
+			}
+		}
+		return false, false
+	}
+
+	return slices.DeleteFunc(slices.Clone(mountPoints), func(mp container.MountPoint) bool {
+		inOriginal, _ := specAt(original, path.Clean(mp.Destination))
+		inUpdated, anonymous := specAt(updated, path.Clean(mp.Destination))
+		return kit.Ternary(inUpdated, !anonymous, inOriginal)
+	})
 }
 
 // mergeEditMounts builds the desired mount set for an edit. A requested mount matching an existing one by type
@@ -1250,18 +1278,7 @@ func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerI
 		return result, err
 	})
 	if err != nil {
-		return containertypes.Processes{}, common.Classify(func() error {
-			switch {
-			case errdefs.IsNotFound(err):
-				return common.ErrNotFound
-			case errdefs.IsConflict(err):
-				return common.ErrConflict
-			case errors.Is(err, context.DeadlineExceeded):
-				return common.ErrTimeout
-			default:
-				return nil
-			}
-		}(), fmt.Errorf("failed to list container processes: %w", err))
+		return containertypes.Processes{}, common.ClassifyDockerError(fmt.Errorf("failed to list container processes: %w", err))
 	}
 	return containertypes.Processes{
 		Titles:    kit.Ternary(result.Titles == nil, []string{}, result.Titles),
@@ -1353,12 +1370,11 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 		}
 	}
 
-	err = s.eventService.LogContainerEvent(ctx, event.EventTypeContainerDelete, containerID, "name", user.ID, user.Username, "0", database.JSON{
+	if logErr := s.eventService.LogContainerEvent(ctx, event.EventTypeContainerDelete, containerID, "name", user.ID, user.Username, "0", database.JSON{
 		"action":      "delete",
 		"containerId": containerID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to log action: %w", err)
+	}); logErr != nil {
+		slog.WarnContext(ctx, "could not log container action", "action", "delete", "error", logErr)
 	}
 
 	return nil
@@ -2019,7 +2035,7 @@ func (s *ContainerService) CalculateStatusCounts(items []containertypes.Summary)
 }
 
 // CreateExec creates an exec instance in the container
-func (s *ContainerService) CreateExec(ctx context.Context, containerID string, cmd []string) (string, error) {
+func (s *ContainerService) CreateExec(ctx context.Context, containerID string, cmd []string, cols, rows uint) (string, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to Docker: %w", err)
@@ -2030,6 +2046,7 @@ func (s *ContainerService) CreateExec(ctx context.Context, containerID string, c
 		AttachStdout: true,
 		AttachStderr: true,
 		TTY:          true,
+		ConsoleSize:  client.ConsoleSize{Height: rows, Width: cols},
 		Cmd:          cmd,
 	})
 	if err != nil {
@@ -2037,6 +2054,16 @@ func (s *ContainerService) CreateExec(ctx context.Context, containerID string, c
 	}
 
 	return execResp.ID, nil
+}
+
+func (s *ContainerService) ResizeExec(ctx context.Context, execID string, cols, rows uint) error {
+	_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ExecResizeResult, error) {
+		return dockerClient.ExecResize(ctx, execID, client.ExecResizeOptions{Height: rows, Width: cols})
+	})
+	if err != nil {
+		return fmt.Errorf("failed to resize exec %s: %w", execID, err)
+	}
+	return nil
 }
 
 func (e *ExecSession) Stdin() io.WriteCloser { return e.hijackedResp.Conn }
@@ -2049,13 +2076,32 @@ func (e *ExecSession) Close(ctx context.Context) error {
 	e.closeOnce.Do(func() {
 		slog.DebugContext(ctx, "Closing exec session", "execId", e.execID, "containerId", e.containerID)
 
-		// Send EOF (Ctrl-D) then exit to terminate the shell gracefully.
-		_, _ = e.hijackedResp.Conn.Write([]byte{0x04})
-		time.Sleep(50 * time.Millisecond)
+		deadline, _ := ctx.Deadline()
+		_ = e.hijackedResp.Conn.SetWriteDeadline(deadline)
+		_, _ = e.hijackedResp.Conn.Write([]byte{0x03, 0x04})
 		_, _ = e.hijackedResp.Conn.Write([]byte("exit\n"))
-		time.Sleep(100 * time.Millisecond)
-
 		e.hijackedResp.Close()
+
+		pollCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		defer cancel()
+		ticker := time.NewTicker(50 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			inspect, err := e.dockerClient.ExecInspect(pollCtx, e.execID, client.ExecInspectOptions{})
+			if err != nil {
+				closeErr = fmt.Errorf("inspect exec %s: %w", e.execID, err)
+				return
+			}
+			if !inspect.Running {
+				return
+			}
+			select {
+			case <-pollCtx.Done():
+				closeErr = fmt.Errorf("exec %s still running with pid %d after session close", e.execID, inspect.PID)
+				return
+			case <-ticker.C:
+			}
+		}
 	})
 
 	return closeErr

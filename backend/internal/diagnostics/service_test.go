@@ -60,15 +60,25 @@ func TestDiagnosticsServiceScanGoroutineLeaks(t *testing.T) {
 	assert.True(t, rt.LeakScannedAt.Equal(report.ScannedAt))
 }
 
-func TestDiagnosticsServiceScanGoroutineLeaksDetectsLeak(t *testing.T) {
+func TestDiagnosticsServiceScanGoroutineLeaksReturnsCachedReport(t *testing.T) {
 	s := NewDiagnosticsService(nil, nil, nil)
+
+	first, err := s.ScanGoroutineLeaks()
+	require.NoError(t, err)
+	second, err := s.ScanGoroutineLeaks()
+	require.NoError(t, err)
+	assert.True(t, second.ScannedAt.Equal(first.ScannedAt))
+	assert.Equal(t, first.Profile, second.Profile)
+}
+
+func TestDiagnosticsServiceScanGoroutineLeaksDetectsLeak(t *testing.T) {
 	leakUnbufferedChannelInternal()
 
 	deadline := time.Now().Add(5 * time.Second)
 	var reportCount int
 	var reportProfile string
 	for {
-		report, err := s.ScanGoroutineLeaks()
+		report, err := NewDiagnosticsService(nil, nil, nil).ScanGoroutineLeaks()
 		require.NoError(t, err)
 		reportCount = report.Count
 		reportProfile = report.Profile

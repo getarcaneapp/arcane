@@ -575,12 +575,27 @@ func (s *Service) finishPatchRecord(ctx context.Context, record *ImagePatchRecor
 	if packagesUpdated != nil {
 		updates["packages_updated"] = *packagesUpdated
 	}
-	if err := s.db.WithContext(utils.ActivityRuntimeContext(ctx, nil)).
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	if err := s.db.WithContext(writeCtx).
 		Model(&ImagePatchRecord{}).
 		Where("id = ?", record.ID).
 		Updates(updates).Error; err != nil {
 		slog.WarnContext(ctx, "failed to update image patch record", "error", err, "patchId", record.ID)
 	}
+}
+
+func (s *Service) RecoverInterruptedPatches(ctx context.Context) error {
+	if err := s.db.WithContext(ctx).
+		Model(&ImagePatchRecord{}).
+		Where("status = ?", string(imagepatch.PatchStatusPatching)).
+		Updates(map[string]any{
+			"status": string(imagepatch.PatchStatusFailed),
+			"error":  errPatchInterrupted.Error(),
+		}).Error; err != nil {
+		return fmt.Errorf("failed to fail interrupted image patches: %w", err)
+	}
+	return nil
 }
 
 // ListPatches returns the paginated patch history for an environment.
@@ -923,7 +938,9 @@ func (s *Service) completePatchActivity(ctx context.Context, activityID string, 
 		}
 	}()
 
-	if _, err := s.activityService.CompleteActivity(utils.ActivityRuntimeContext(ctx, nil), activityID, status, message, errorPtr); err != nil {
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	if _, err := s.activityService.CompleteActivity(writeCtx, activityID, status, message, errorPtr); err != nil {
 		slog.DebugContext(ctx, "failed to complete image patch activity", "activityId", activityID, "error", err)
 	}
 }

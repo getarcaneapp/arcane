@@ -155,12 +155,31 @@ func (h *WebSocketHandler) streamSnapshots(c *echo.Context, interval time.Durati
 	}
 	var onMessage func([]byte)
 	if handle != nil {
+		commands := make(chan systemtypes.DiagnosticsCommand, 1)
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case cmd := <-commands:
+					write(handle(ctx, cmd))
+				}
+			}
+		}()
 		onMessage = func(b []byte) {
 			var cmd systemtypes.DiagnosticsCommand
 			if json.Unmarshal(b, &cmd) != nil {
 				return
 			}
-			go write(handle(ctx, cmd))
+			select {
+			case commands <- cmd:
+			default:
+				write(systemtypes.DiagnosticsMessage{
+					Type:  "result",
+					ID:    cmd.ID,
+					Error: "busy",
+				})
+			}
 		}
 	}
 	done := diagnosticsReadLoop(ctx, conn, onMessage)

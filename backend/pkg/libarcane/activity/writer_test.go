@@ -68,19 +68,20 @@ func TestWriterRecordsLogAndErrorFramesVerbatimInternal(t *testing.T) {
 	appender := &recordingAppender{}
 	writer := NewWriter(t.Context(), appender, "activity-1", io.Discard, "Deploying project")
 
-	_, err := writer.Write([]byte("{\"log\":\"Container web-1  Created\"}\n{\"error\":\"Error response from daemon: conflict\"}\n"))
+	_, err := writer.Write([]byte("{\"log\":\"Container web-1  Created\"}\n{\"error\":\"Error response from daemon: conflict\"}\nno trailing newline"))
 	require.NoError(t, err)
 
 	FlushWriter(writer)
 	require.Eventually(t, func() bool {
 		messages, _ := appender.recorded()
-		return len(messages) == 2
+		return len(messages) == 3
 	}, time.Second, 10*time.Millisecond)
 	messages, _ := appender.recorded()
 	require.Equal(t, "Container web-1  Created", messages[0].Message)
 	require.Equal(t, activitytypes.MessageLevelInfo, messages[0].Level)
 	require.Equal(t, "Error response from daemon: conflict", messages[1].Message)
 	require.Equal(t, activitytypes.MessageLevelError, messages[1].Level)
+	require.Equal(t, "no trailing newline", messages[2].Message)
 }
 
 // gatedAppender blocks its first AppendMessages call until release is

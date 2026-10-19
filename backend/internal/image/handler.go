@@ -351,10 +351,7 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 			if pullImageErr := h.imageService.PullImage(runtimeCtx, fullImageName, writer, *user, credentials); pullImageErr != nil {
 				activitylib.FlushWriter(writer)
 				activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Image pull failed", pullImageErr)
-				_, _ = fmt.Fprintf(writer, "{\"error\":%q}\n", pullImageErr.Error())
-				if f, ok := writer.(http.Flusher); ok {
-					f.Flush()
-				}
+				activitylib.WriteErrorLine(rawWriter, pullImageErr)
 				return
 			}
 			activitylib.FlushWriter(writer)
@@ -405,10 +402,7 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 			if _, buildImageErr := h.buildService.BuildImage(runtimeCtx, input.EnvironmentID, input.Body, writer, "", user); buildImageErr != nil {
 				activitylib.FlushWriter(writer)
 				activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Image build failed", buildImageErr)
-				_, _ = fmt.Fprintf(writer, "{\"error\":%q}\n", buildImageErr.Error())
-				if f, ok := writer.(http.Flusher); ok {
-					f.Flush()
-				}
+				activitylib.WriteErrorLine(rawWriter, buildImageErr)
 				return
 			}
 			activitylib.FlushWriter(writer)

@@ -385,8 +385,8 @@ func (s *Service) syncComposeFile(ctx context.Context, sync *projectpkg.GitOpsSy
 
 	// The non-suffixing create: a name collision means the binding is broken, never a "-N" duplicate.
 	project, err := s.projectService.CreateProject(ctx, sync.ProjectName, source.composeContent, source.envContent, projecttypes.CreateProjectWorkspaceManifest{}, nil, nil, nil, actor, false)
-	if errors.Is(err, projects.ErrProjectDirExists) {
-		err = common.Classify(common.ErrGitOpsSyncProjectBindingBroken, fmt.Errorf("GitOps sync project binding broken: sync %s cannot create project %q: a directory with that name "+
+	if errors.Is(err, projects.ErrProjectDirExists) || errors.Is(err, common.ErrProjectWorkspaceConflict) {
+		err = common.Classify(common.ErrGitOpsSyncProjectBindingBroken, fmt.Errorf("GitOps sync project binding broken: sync %s cannot create project %q: a project or directory with that name "+
 			"already exists; refusing to create a duplicate", sync.ID, projects.SanitizeProjectName(sync.ProjectName)))
 		return nil, false, s.failSync(ctx, result, sync, actor, "GitOps project binding broken", err)
 	}

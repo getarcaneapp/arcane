@@ -258,7 +258,7 @@ func (h *WebSocketHandler) startLogHub(
 		slog.DebugContext(ctx, "client disconnected, cleaning up log hub", "kind", label, "resourceId", resourceID)
 	})
 
-	lines := h.startLogSource(ctx, key, resourceID, label, params, stream, ls)
+	lines := h.startLogSource(ctx, cancel, key, resourceID, label, params, stream, ls)
 	startLogForwarders(ctx, ls, lines, params, normalizeJSON, normalizeText)
 
 	return ls
@@ -266,6 +266,7 @@ func (h *WebSocketHandler) startLogHub(
 
 func (h *WebSocketHandler) startLogSource(
 	ctx context.Context,
+	cancel context.CancelFunc,
 	key, resourceID, label string,
 	params logStreamParams,
 	stream func(context.Context, string, chan<- string, bool, string, string, bool) error,
@@ -288,11 +289,13 @@ func (h *WebSocketHandler) startLogSource(
 
 			h.releaseLogStream(key, ls, true)
 			broadcastLogStreamError(ctx, label, resourceID, params.format, err, ls)
+			time.AfterFunc(streamEndDrainGrace, cancel)
 			return
 		}
 
 		if ctx.Err() == nil {
 			h.releaseLogStream(key, ls, true)
+			time.AfterFunc(streamEndDrainGrace, cancel)
 		}
 	}()
 

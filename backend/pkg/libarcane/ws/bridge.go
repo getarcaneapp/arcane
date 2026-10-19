@@ -27,7 +27,7 @@ func ForwardLines(ctx context.Context, hub *Hub, lines <-chan string) {
 			if !ok {
 				return
 			}
-			hub.Broadcast([]byte(line))
+			hub.Publish(ctx, []byte(line))
 		}
 	}
 }
@@ -48,7 +48,7 @@ func ForwardLogJSON(ctx context.Context, hub *Hub, logs <-chan LogMessage) {
 				m.Timestamp = NowRFC3339()
 			}
 			if b, err := json.Marshal(m); err == nil {
-				hub.Broadcast(b)
+				hub.Publish(ctx, b)
 			}
 		}
 	}
@@ -75,7 +75,7 @@ func ForwardLogJSONBatched(ctx context.Context, hub *Hub, logs <-chan LogMessage
 		}
 		b, err := json.Marshal(buf)
 		if err == nil {
-			hub.Broadcast(b)
+			hub.Publish(ctx, b)
 		}
 		buf = buf[:0]
 	}

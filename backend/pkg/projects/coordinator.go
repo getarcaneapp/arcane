@@ -40,7 +40,7 @@ func NewCoordinator(commands projecttypes.ComposeCommands) projecttypes.ComposeC
 func (c *composeCoordinatorInternal) Deploy(ctx context.Context, request projecttypes.ComposeDeployment) (_ *composetypes.Project, err error) {
 	defer func() {
 		if err != nil && request.Recover != nil {
-			request.Recover(ctx)
+			request.Recover(context.WithoutCancel(ctx))
 		}
 	}()
 	if request.PreDeploy != nil {
@@ -73,7 +73,7 @@ func (c *composeCoordinatorInternal) Deploy(ctx context.Context, request project
 	slog.InfoContext(ctx, "starting compose up with health check support", "projectId", request.ProjectID, "projectName", model.Name, "services", len(model.Services), "removeOrphans", removeOrphans)
 	if upErr := c.commands.Up(ctx, model, nil, removeOrphans, forceRecreate, recreateVolumes, request.AuthConfigs, request.WaitTimeout); upErr != nil {
 		slog.ErrorContext(ctx, "compose up failed", "projectName", model.Name, "projectId", request.ProjectID, "error", upErr)
-		if strings.Contains(upErr.Error(), "timeout") || strings.Contains(upErr.Error(), "context deadline exceeded") {
+		if errors.Is(upErr, context.DeadlineExceeded) || strings.Contains(upErr.Error(), "application not healthy after") {
 			return nil,
 				fmt.Errorf("deployment timed out waiting for services - long-running 'service_healthy'/'service_completed_successfully' dependencies "+
 					"may need a higher Deploy Wait Timeout setting, and 'service_healthy' requires a healthcheck: %w",
@@ -96,13 +96,13 @@ func (c *composeCoordinatorInternal) UpdateServices(ctx context.Context, request
 	selected, err := SelectServices(request.Project, slices.Concat(scope, request.StoppedDependents))
 	if err != nil {
 		if request.RestoreBeforeMutation != nil {
-			request.RestoreBeforeMutation(ctx)
+			request.RestoreBeforeMutation(context.WithoutCancel(ctx))
 		}
 		return err
 	}
 	if pullServicesErr := c.PullServices(ctx, selected, request.Services, request.Images, request.Progress); pullServicesErr != nil {
 		if request.RestoreBeforeMutation != nil {
-			request.RestoreBeforeMutation(ctx)
+			request.RestoreBeforeMutation(context.WithoutCancel(ctx))
 		}
 		return fmt.Errorf("pull updated service images: %w", pullServicesErr)
 	}
@@ -111,7 +111,7 @@ func (c *composeCoordinatorInternal) UpdateServices(ctx context.Context, request
 	}
 	if upErr := c.commands.Up(ctx, selected, scope, false, true, false, request.AuthConfigs, request.WaitTimeout); upErr != nil {
 		if request.Recover != nil {
-			request.Recover(ctx)
+			request.Recover(context.WithoutCancel(ctx))
 		}
 		return fmt.Errorf("failed to up services: %w", upErr)
 	}
@@ -120,7 +120,7 @@ func (c *composeCoordinatorInternal) UpdateServices(ctx context.Context, request
 	if len(request.StoppedDependents) > 0 {
 		if createErr := c.commands.Create(ctx, selected, request.StoppedDependents, request.AuthConfigs); createErr != nil {
 			if request.Recover != nil {
-				request.Recover(ctx)
+				request.Recover(context.WithoutCancel(ctx))
 			}
 			return fmt.Errorf("failed to recreate stopped dependents: %w", createErr)
 		}
@@ -272,10 +272,15 @@ func (c *composeCoordinatorInternal) PrepareImagesForDeploy(
 		}
 
 		decision := DecideDeployImageAction(localSvc, pullPolicyOverride)
-		if updated {
-			decision = DeployImageDecision{Build: true}
+		serviceDecision := decision
+		if updated && !decision.Build {
+			exists, existsErr := operations.Exists(ctx, imageName)
+			if existsErr != nil {
+				slog.WarnContext(ctx, "failed to check local image existence", "image", imageName, "error", existsErr)
+			}
+			serviceDecision = DeployImageDecision{Build: !exists}
 		}
-		if err := c.ensureDeployServiceImageReadyInternal(ctx, projectID, project, name, localSvc, imageName, decision, progressWriter, operations); err != nil {
+		if err := c.ensureDeployServiceImageReadyInternal(ctx, projectID, project, name, localSvc, imageName, serviceDecision, progressWriter, operations); err != nil {
 			return err
 		}
 

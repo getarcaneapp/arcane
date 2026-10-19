@@ -30,6 +30,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
@@ -199,6 +200,7 @@ type initializeStartupStateParams struct {
 	GitOpsSync    *gitops.GitOpsSyncService
 	Project       *project.ProjectService
 	Container     *container.ContainerService
+	Image         *image.ImageService
 	Variable      *variable.VariableService
 	Docker        *docker.DockerClientService
 	Swarm         *swarm.SwarmService
@@ -260,6 +262,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 		{name: "recover interrupted project renames", run: p.Project.RecoverProjectRenameJournals},
 		{name: "recover interrupted container redeploys", run: p.Container.RecoverInterruptedRedeploys},
 		{name: "recover stuck project statuses", run: p.Project.RecoverStuckProjectStatuses},
+		{name: "fail interrupted image patches", run: p.Image.RecoverInterruptedPatches},
 	} {
 		if err := task.run(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Startup task failed", "task", task.name, "error", err)

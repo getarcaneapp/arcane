@@ -11,6 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
 )
 
@@ -21,14 +22,22 @@ type EventCleanupJob struct {
 	activityService *activity.ActivityService
 	buildService    *build.BuildService
 	settingsService *settings.SettingsService
+	updaterService  *updater.UpdaterService
 }
 
-func NewEventCleanupJob(eventService *event.EventService, activityService *activity.ActivityService, buildService *build.BuildService, settingsService *settings.SettingsService) *EventCleanupJob {
+func NewEventCleanupJob(
+	eventService *event.EventService,
+	activityService *activity.ActivityService,
+	buildService *build.BuildService,
+	settingsService *settings.SettingsService,
+	updaterService *updater.UpdaterService,
+) *EventCleanupJob {
 	return &EventCleanupJob{
 		eventService:    eventService,
 		activityService: activityService,
 		buildService:    buildService,
 		settingsService: settingsService,
+		updaterService:  updaterService,
 	}
 }
 
@@ -81,6 +90,18 @@ func (j *EventCleanupJob) Run(ctx context.Context) (schedulertypes.Outcome, erro
 		"jobName", EventCleanupJobName,
 		"retentionDays", buildRetentionDays,
 		"deleted", deletedBuilds)
+
+	updateRetentionDays := j.settingsService.GetIntSetting(ctx, "activityHistoryRetentionDays", 30)
+	deletedUpdates, err := j.updaterService.PruneHistory(ctx, updateRetentionDays)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to prune auto-update history", "jobName", EventCleanupJobName, "error", err)
+		return schedulertypes.Outcome{}, err
+	}
+
+	slog.InfoContext(ctx, "Auto-update history cleanup completed successfully",
+		"jobName", EventCleanupJobName,
+		"retentionDays", updateRetentionDays,
+		"deleted", deletedUpdates)
 
 	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
 }
