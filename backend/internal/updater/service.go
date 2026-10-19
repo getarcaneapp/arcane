@@ -360,57 +360,76 @@ func (s *UpdaterService) applyBatch(ctx context.Context, options arcaneupdater.O
 	return nil
 }
 
+// scopedContainerIDs resolves the requested containers, projects, or images to container IDs.
+func (s *UpdaterService) scopedContainerIDs(ctx context.Context, options arcaneupdater.Options) ([]string, map[string]string, error) {
+	requested := kit.TrimNonEmpty(options.ResourceIds)
+	scope := strings.ToLower(strings.TrimSpace(options.Type))
+	switch {
+	case len(requested) == 0, scope == "", scope == "container":
+		return requested, nil, nil
+	case scope != "project" && scope != "image":
+		return nil, nil, fmt.Errorf("unsupported scoped update type %q", options.Type)
+	}
+	// Projects match by lowercase Compose project name; images by ID or normalized reference.
+	wanted := make(map[string]bool, len(requested)*2)
+	localServices := map[string]string{}
+	for _, ref := range requested {
+		if scope == "image" {
+			wanted[ref], wanted[refs.NormalizeImageUpdateRef(ref)] = true, true
+			continue
+		}
+		name, discovered := strings.CutPrefix(ref, "compose:")
+		if !discovered {
+			if project, lookupErr := s.deps.Projects.GetProjectFromDatabaseByID(ctx, ref); lookupErr == nil && project != nil {
+				name = cmp.Or(strings.TrimSpace(kit.FromPtr(project.ComposeProjectName)), strings.TrimSpace(project.Name), name)
+			}
+		}
+		projectKey := strings.ToLower(strings.TrimSpace(name))
+		wanted[projectKey] = true
+		if discovered {
+			continue
+		}
+		details, detailsErr := s.deps.Projects.GetProjectDetails(ctx, ref, projecttypes.DetailsOptions{IncludeServiceConfigs: true})
+		if detailsErr != nil {
+			continue
+		}
+		for _, svc := range details.Services {
+			localServices[projectKey+"/"+svc.Name] = cmp.Or(
+				kit.Ternary(svc.Build != nil, "locally built image", ""),
+				kit.Ternary(projects.ResolveServiceImagePullMode(svc).Mode == projects.ImagePullModeNever, "pull_policy: never", ""),
+			)
+		}
+	}
+	delete(wanted, "")
+	containers, _, _, _, listErr := s.deps.Docker.GetAllContainers(ctx)
+	if listErr != nil {
+		return nil, nil, fmt.Errorf("list containers: %w", listErr)
+	}
+	matches := func(summary container.Summary) bool {
+		return docker.ComposeServiceLabel(summary.Labels) != "" && wanted[strings.ToLower(strings.TrimSpace(docker.ComposeProjectLabel(summary.Labels)))]
+	}
+	if scope == "image" {
+		matches = func(summary container.Summary) bool {
+			configured, _ := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
+				return imageref.ConfiguredImage(ctx, dockerClient, summary), nil
+			})
+			return wanted[summary.ImageID] || wanted[refs.NormalizeImageUpdateRef(configured)]
+		}
+	}
+	var matched []string
+	skips := map[string]string{}
+	for _, summary := range containers {
+		if matches(summary) {
+			matched = append(matched, summary.ID)
+			skips[summary.ID] = localServices[strings.ToLower(strings.TrimSpace(docker.ComposeProjectLabel(summary.Labels)))+"/"+docker.ComposeServiceLabel(summary.Labels)]
+		}
+	}
+	return matched, skips, nil
+}
+
 // applyScopedUpdates updates each requested container through the engine's single-container path.
 func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options arcaneupdater.Options, out *arcaneupdater.Result) error {
-	// scopedContainerIDs resolves the requested containers, projects, or images to container IDs.
-	containerIDs, err := func() ([]string, error) {
-		requested := kit.TrimNonEmpty(options.ResourceIds)
-		scope := strings.ToLower(strings.TrimSpace(options.Type))
-		switch {
-		case len(requested) == 0, scope == "", scope == "container":
-			return requested, nil
-		case scope != "project" && scope != "image":
-			return nil, fmt.Errorf("unsupported scoped update type %q", options.Type)
-		}
-		// Projects match by lowercase Compose project name; images by ID or normalized reference.
-		wanted := make(map[string]bool, len(requested)*2)
-		for _, ref := range requested {
-			if scope == "image" {
-				wanted[ref], wanted[refs.NormalizeImageUpdateRef(ref)] = true, true
-				continue
-			}
-			name, discovered := strings.CutPrefix(ref, "compose:")
-			if !discovered {
-				if project, lookupErr := s.deps.Projects.GetProjectFromDatabaseByID(ctx, ref); lookupErr == nil && project != nil {
-					name = cmp.Or(strings.TrimSpace(kit.FromPtr(project.ComposeProjectName)), strings.TrimSpace(project.Name), name)
-				}
-			}
-			wanted[strings.ToLower(strings.TrimSpace(name))] = true
-		}
-		delete(wanted, "")
-		containers, _, _, _, listErr := s.deps.Docker.GetAllContainers(ctx)
-		if listErr != nil {
-			return nil, fmt.Errorf("list containers: %w", listErr)
-		}
-		matches := func(summary container.Summary) bool {
-			return docker.ComposeServiceLabel(summary.Labels) != "" && wanted[strings.ToLower(strings.TrimSpace(docker.ComposeProjectLabel(summary.Labels)))]
-		}
-		if scope == "image" {
-			matches = func(summary container.Summary) bool {
-				configured, _ := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
-					return imageref.ConfiguredImage(ctx, dockerClient, summary), nil
-				})
-				return wanted[summary.ImageID] || wanted[refs.NormalizeImageUpdateRef(configured)]
-			}
-		}
-		var matched []string
-		for _, summary := range containers {
-			if matches(summary) {
-				matched = append(matched, summary.ID)
-			}
-		}
-		return matched, nil
-	}()
+	containerIDs, skipReasons, err := s.scopedContainerIDs(ctx, options)
 	if err != nil {
 		return err
 	}
@@ -440,6 +459,24 @@ func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options arcaneu
 		}
 	}()
 	for _, containerID := range containerIDs {
+		if reason := skipReasons[containerID]; reason != "" {
+			skipped++
+			items = append(items, arcaneupdater.ResourceResult{
+				ResourceID:   containerID,
+				ResourceType: "container",
+				Status:       arcaneupdater.StatusSkipped,
+				Error:        reason,
+			})
+			if progressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{
+				ID:           containerID,
+				ResourceType: "container",
+				Status:       scheduler.Skipped,
+				Message:      reason,
+			}); progressErr != nil {
+				return errors.Join(progressErr, errors.Join(engineErrs...))
+			}
+			continue
+		}
 		if progressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{
 			ID:           containerID,
 			ResourceType: "container",
