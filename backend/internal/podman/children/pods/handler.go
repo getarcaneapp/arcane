@@ -1,0 +1,154 @@
+package pods
+
+import (
+	"context"
+
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/types/v2/base"
+	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	kit "go.getarcane.app/kit/pkg"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/podman"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+)
+
+type Handler struct {
+	service *Service
+	audit   func(ctx context.Context, environmentID, action, resourceType, resourceName string, metadata map[string]any)
+}
+
+func NewHandler(service *Service, audit func(ctx context.Context, environmentID, action, resourceType, resourceName string, metadata map[string]any)) *Handler {
+	return &Handler{service: service, audit: audit}
+}
+
+type ListPodsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
+type GetPodInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	PodID         string `path:"podId" doc:"Pod name or ID"`
+}
+
+type CreatePodInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Body          podmantypes.PodCreateRequest
+}
+
+type PodActionInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	PodID         string `path:"podId" doc:"Pod name or ID"`
+	Action        string `path:"action" enum:"start,stop,restart,pause,unpause,kill" doc:"Lifecycle action"`
+	Body          *podmantypes.PodActionRequest
+}
+
+type DeletePodInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	PodID         string `path:"podId" doc:"Pod name or ID"`
+	Force         bool   `query:"force" doc:"Stop and remove running containers"`
+}
+
+type PrunePodsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
+type PodTopInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	PodID         string `path:"podId" doc:"Pod name or ID"`
+	PsArgs        string `query:"psArgs" doc:"Arguments passed to ps"`
+}
+
+type PodStatsInput struct {
+	EnvironmentID string   `path:"id" doc:"Environment ID"`
+	Names         []string `query:"names" doc:"Pod names or IDs; empty reports every pod"`
+}
+
+func (h *Handler) List(ctx context.Context, _ *ListPodsInput) (*handlerutil.Out[[]podmantypes.Pod], error) {
+	items, err := h.service.List(ctx)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to list pods: "+apiErr.Message)
+	}
+	return &handlerutil.Out[[]podmantypes.Pod]{
+		Body: base.ApiResponse[[]podmantypes.Pod]{
+			Success: true,
+			Data:    kit.Ternary(items != nil, items, []podmantypes.Pod{}),
+		},
+	}, nil
+}
+
+func (h *Handler) Get(ctx context.Context, input *GetPodInput) (*handlerutil.Out[podmantypes.PodInspect], error) {
+	pod, err := h.service.Inspect(ctx, input.PodID)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to inspect pod: "+apiErr.Message)
+	}
+	return &handlerutil.Out[podmantypes.PodInspect]{Body: base.ApiResponse[podmantypes.PodInspect]{Success: true, Data: pod}}, nil
+}
+
+func (h *Handler) Create(ctx context.Context, input *CreatePodInput) (*handlerutil.Out[podmantypes.PodCreateResponse], error) {
+	id, err := h.service.Create(ctx, input.Body)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to create pod: "+apiErr.Message)
+	}
+	h.audit(ctx, input.EnvironmentID, "pod.create", "pod", input.Body.Name, map[string]any{"podId": id})
+	return &handlerutil.Out[podmantypes.PodCreateResponse]{Body: base.ApiResponse[podmantypes.PodCreateResponse]{Success: true, Data: podmantypes.PodCreateResponse{ID: id}}}, nil
+}
+
+func (h *Handler) Action(ctx context.Context, input *PodActionInput) (*handlerutil.Out[base.MessageResponse], error) {
+	if err := h.service.Action(ctx, input.PodID, podman.PodAction(input.Action), kit.FromPtr(input.Body)); err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to "+input.Action+" pod: "+apiErr.Message)
+	}
+	h.audit(ctx, input.EnvironmentID, "pod."+input.Action, "pod", input.PodID, nil)
+	return handlerutil.MessageOutput("Pod "+input.Action+" completed", ""), nil
+}
+
+func (h *Handler) Delete(ctx context.Context, input *DeletePodInput) (*handlerutil.Out[base.MessageResponse], error) {
+	if err := h.service.Remove(ctx, input.PodID, input.Force); err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to remove pod: "+apiErr.Message)
+	}
+	h.audit(ctx, input.EnvironmentID, "pod.delete", "pod", input.PodID, map[string]any{"force": input.Force})
+	return handlerutil.MessageOutput("Pod removed", ""), nil
+}
+
+func (h *Handler) Prune(ctx context.Context, input *PrunePodsInput) (*handlerutil.Out[[]podmantypes.PodPruneReport], error) {
+	reports, err := h.service.Prune(ctx)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to prune pods: "+apiErr.Message)
+	}
+	h.audit(ctx, input.EnvironmentID, "pod.prune", "pod", "", map[string]any{"removed": len(reports)})
+	return &handlerutil.Out[[]podmantypes.PodPruneReport]{
+		Body: base.ApiResponse[[]podmantypes.PodPruneReport]{
+			Success: true,
+			Data:    kit.Ternary(reports != nil, reports, []podmantypes.PodPruneReport{}),
+		},
+	}, nil
+}
+
+func (h *Handler) Top(ctx context.Context, input *PodTopInput) (*handlerutil.Out[podmantypes.PodTop], error) {
+	top, err := h.service.Top(ctx, input.PodID, input.PsArgs)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to list pod processes: "+apiErr.Message)
+	}
+	return &handlerutil.Out[podmantypes.PodTop]{Body: base.ApiResponse[podmantypes.PodTop]{Success: true, Data: top}}, nil
+}
+
+func (h *Handler) Stats(ctx context.Context, input *PodStatsInput) (*handlerutil.Out[[]podmantypes.PodStats], error) {
+	stats, err := h.service.Stats(ctx, input.Names)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to read pod stats: "+apiErr.Message)
+	}
+	return &handlerutil.Out[[]podmantypes.PodStats]{
+		Body: base.ApiResponse[[]podmantypes.PodStats]{
+			Success: true,
+			Data:    kit.Ternary(stats != nil, stats, []podmantypes.PodStats{}),
+		},
+	}, nil
+}

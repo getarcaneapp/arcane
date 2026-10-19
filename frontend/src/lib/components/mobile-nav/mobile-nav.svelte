@@ -2,10 +2,15 @@
 	import { page } from '$app/state';
 	import { onDestroy } from 'svelte';
 
-	import { getAvailableMobileNavItems, getSwarmNavigationItems } from '#lib/config/navigation-config.js';
+	import {
+		getAvailableMobileNavItems,
+		getPodmanNavigationItems,
+		getSwarmNavigationItems
+	} from '#lib/config/navigation-config.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { PermissionsManifest, User } from '#lib/types/auth.js';
+	import type { PodmanStatus } from '#lib/types/podman.js';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
 	import { getMobileNavigation } from '#lib/utils/navigation.js';
@@ -19,12 +24,14 @@
 		user = null,
 		versionInformation,
 		swarmEnabled,
+		podmanStatus = null,
 		permissionsManifest = null,
 		class: className = ''
 	}: {
 		user?: User | null;
 		versionInformation?: AppVersionInformation;
 		swarmEnabled?: boolean;
+		podmanStatus?: PodmanStatus | null;
 		permissionsManifest?: PermissionsManifest | null;
 		class?: string;
 	} = $props();
@@ -33,10 +40,17 @@
 	const navigationSettings = $derived(navigation.settings);
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const swarmItems = $derived(getSwarmNavigationItems(swarmEnabled, currentEnvId));
+	const podmanItems = $derived(getPodmanNavigationItems(podmanStatus));
 
 	const pinnedItems = $derived.by(() => {
 		if (!navigationSettings?.pinnedItems) return [];
-		const availableItems = getAvailableMobileNavItems({ swarmEnabled, user, currentEnvId, accessManifest: permissionsManifest });
+		const availableItems = getAvailableMobileNavItems({
+			swarmEnabled,
+			podmanStatus,
+			user,
+			currentEnvId,
+			accessManifest: permissionsManifest
+		});
 		return navigationSettings.pinnedItems
 			.map((url) => availableItems.find((item) => item.url === url))
 			.filter((item) => item !== undefined);
@@ -181,4 +195,11 @@
 	{/if}
 </nav>
 
-<MobileNavSheet bind:open={() => menuOpen, setMenuOpen} {user} {versionInformation} {swarmItems} {permissionsManifest} />
+<MobileNavSheet
+	bind:open={() => menuOpen, setMenuOpen}
+	{user}
+	{versionInformation}
+	{swarmItems}
+	{podmanItems}
+	{permissionsManifest}
+/>

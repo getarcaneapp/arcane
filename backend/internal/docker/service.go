@@ -47,6 +47,8 @@ type DockerClientService struct {
 	settingsService *settings.SettingsService
 	clientVersion   string
 	clientLastProbe time.Time
+	engine          compat.EngineCompatibilityInfo
+	engineClient    *client.Client
 	mu              sync.Mutex
 	eventBus        *bus.DockerEventBus
 
@@ -152,11 +154,40 @@ func (s *DockerClientService) RefreshClient(ctx context.Context) error {
 	s.Client = cli
 	s.clientVersion = apiVersion
 	s.clientLastProbe = time.Now()
+	s.engineClient = nil
 	s.mu.Unlock()
 
 	closeDockerClient(ctx, oldClient, "replaced")
 
 	return nil
+}
+
+func (s *DockerClientService) Engine(ctx context.Context) (compat.EngineCompatibilityInfo, error) {
+	s.mu.Lock()
+	if s.engineClient != nil && s.engineClient == s.Client {
+		engine := s.engine
+		s.mu.Unlock()
+		return engine, nil
+	}
+	s.mu.Unlock()
+
+	return s.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (compat.EngineCompatibilityInfo, error) {
+		version, err := dockerClient.ServerVersion(ctx, client.ServerVersionOptions{})
+		if err != nil {
+			return compat.EngineCompatibilityInfo{}, fmt.Errorf("failed to get Docker server version: %w", err)
+		}
+		info, err := dockerClient.Info(ctx, client.InfoOptions{})
+		if err != nil {
+			return compat.EngineCompatibilityInfo{}, fmt.Errorf("failed to get Docker info: %w", err)
+		}
+
+		engine := compat.DetectEngineCompatibility(version, info.Info)
+		s.mu.Lock()
+		s.engine = engine
+		s.engineClient = dockerClient
+		s.mu.Unlock()
+		return engine, nil
+	})
 }
 
 // DockerHost returns the configured DOCKER_HOST value.
@@ -172,6 +203,7 @@ func (s *DockerClientService) Close() {
 	s.mu.Lock()
 	oldClient := s.Client
 	s.Client = nil
+	s.engineClient = nil
 	s.mu.Unlock()
 
 	closeDockerClient(context.Background(), oldClient, "cached") //nolint:forbidigo // Shutdown close runs without a request context.

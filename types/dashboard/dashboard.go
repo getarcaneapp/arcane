@@ -132,6 +132,8 @@ type Snapshot struct {
 	//
 	// Required: false
 	VersionInfo *versiontypes.Info `json:"versionInfo,omitempty"`
+
+	PodCount *int `json:"podCount,omitempty"`
 }
 
 type StreamEvent struct {

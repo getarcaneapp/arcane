@@ -194,6 +194,15 @@ var permissionCatalog = []PermissionCatalogResource{
 		{"secrets", PermSwarmSecrets, "Manage secrets", ""},
 		{"unlock", PermSwarmUnlock, "Unlock / join tokens", ""},
 	}},
+	{"podman", "Podman", PermissionScopeEnv, []PermissionCatalogAction{
+		{"read", PermPodmanRead, "Read", ""},
+		{"pods", PermPodmanPods, "Manage pods", ""},
+		{"quadlets", PermPodmanQuadlets, "Manage quadlets", ""},
+		{"quadlets:lifecycle", PermPodmanQuadletsLifecycle, "Start / stop quadlets", ""},
+		{"kube", PermPodmanKube, "Play / generate kube", ""},
+		{"secrets", PermPodmanSecrets, "Manage secrets", ""},
+		{"autoupdate", PermPodmanAutoUpdate, "Run auto-update", ""},
+	}},
 	{"gitops", "GitOps Syncs", PermissionScopeEnv, []PermissionCatalogAction{
 		{"list", PermGitOpsList, "List", ""},
 		{"read", PermGitOpsRead, "Read", ""},

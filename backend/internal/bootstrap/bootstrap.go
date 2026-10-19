@@ -52,6 +52,7 @@ func Bootstrap(ctx context.Context) error {
 		return fmt.Errorf("load .env: %w", err)
 	}
 	cfg := config.Load()
+	cfg.DockerHost = startup.ResolveDockerHost(cfg.DockerHost, os.Stat)
 	runtimeIdentityCfg := &startup.RuntimeIdentityConfig{
 		PUID:              cfg.PUID,
 		PGID:              cfg.PGID,

@@ -36,6 +36,7 @@
 	const permissionsManifest = $derived(data.permissionsManifest);
 	const permissionsManifestLoadFailed = $derived(data.permissionsManifestLoadFailed);
 	const swarmEnabled = $derived(data.swarmEnabled);
+	const podmanStatus = $derived(data.podmanStatus);
 	const canReadActivities = $derived(userHasPermissionInAnyEnvironment(user, 'activities:read'));
 
 	const isMobile = new IsMobile();
@@ -154,7 +155,7 @@
 
 <Sidebar.Provider class={isMobile.current ? 'h-auto min-h-dvh' : undefined}>
 	{#if !isMobile.current}
-		<AppSidebar {versionInformation} {user} {swarmEnabled} {permissionsManifest} />
+		<AppSidebar {versionInformation} {user} {swarmEnabled} {podmanStatus} {permissionsManifest} />
 	{/if}
 
 	<main class={cn('relative z-(--arcane-z-content)', isMobile.current ? 'flex-1' : 'h-dvh flex-1')}>
@@ -179,7 +180,7 @@
 	</main>
 
 	{#if isMobile.current}
-		<MobileNav {user} {versionInformation} {swarmEnabled} {permissionsManifest} />
+		<MobileNav {user} {versionInformation} {swarmEnabled} {podmanStatus} {permissionsManifest} />
 	{/if}
 </Sidebar.Provider>
 

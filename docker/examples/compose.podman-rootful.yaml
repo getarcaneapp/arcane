@@ -1,0 +1,29 @@
+services:
+  arcane:
+    image: getarcaneapp/manager:latest
+    container_name: arcane
+    ports:
+      - '3552:3552'
+    volumes:
+      - /run/podman/podman.sock:/var/run/docker.sock
+      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket
+      - arcane-data:/app/data
+    environment:
+      - ENCRYPTION_KEY=replace_me_with_a_random_32_char_value
+      - TZ=UTC
+    security_opt:
+      - label=disable
+    # Use host cgroup namespace for better container self-detection
+    # This allows Arcane to detect its own container ID more reliably
+    cgroup: host
+    healthcheck:
+      test: ['CMD', './arcane', 'health', '--timeout', '2s']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    stop_grace_period: 15s
+
+volumes:
+  arcane-data:

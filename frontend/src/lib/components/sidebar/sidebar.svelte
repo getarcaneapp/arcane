@@ -3,6 +3,7 @@
 		navigationItems,
 		getManagementItems,
 		getSwarmNavigationItems,
+		getPodmanNavigationItems,
 		filterByPermissions
 	} from '#lib/config/navigation-config.js';
 </script>
@@ -20,6 +21,7 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { PermissionsManifest, User } from '#lib/types/auth.js';
+	import type { PodmanStatus } from '#lib/types/podman.js';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
 
 	import SidebarEnvSwitcher from './sidebar-env-switcher.svelte';
@@ -36,12 +38,14 @@
 		user,
 		versionInformation,
 		swarmEnabled,
+		podmanStatus = null,
 		permissionsManifest = null,
 		...restProps
 	}: ComponentProps<typeof Sidebar.Root> & {
 		versionInformation: AppVersionInformation;
 		user?: User | null;
 		swarmEnabled?: boolean;
+		podmanStatus?: PodmanStatus | null;
 		permissionsManifest?: PermissionsManifest | null;
 	} = $props();
 
@@ -68,6 +72,9 @@
 		filterByPermissions(navigationItems.resourceItems, effectiveUser ?? null, currentEnvId, permissionsManifest)
 	);
 	const swarmItems = $derived(filterByPermissions(swarmItemsRaw, effectiveUser ?? null, currentEnvId, permissionsManifest));
+	const podmanItems = $derived(
+		filterByPermissions(getPodmanNavigationItems(podmanStatus), effectiveUser ?? null, currentEnvId, permissionsManifest)
+	);
 	const settingsItems = $derived(
 		filterByPermissions(navigationItems.settingsItems, effectiveUser ?? null, currentEnvId, permissionsManifest)
 	);
@@ -99,10 +106,10 @@
 		</div>
 		{#if isCollapsed}
 			<div class="flex justify-center px-1">
-				<SidebarEnvSwitcher onOpenDialog={() => (envSwitcherOpen = true)} />
+				<SidebarEnvSwitcher onOpenDialog={() => (envSwitcherOpen = true)} {podmanStatus} />
 			</div>
 		{:else}
-			<SidebarEnvSwitcher onOpenDialog={() => (envSwitcherOpen = true)} />
+			<SidebarEnvSwitcher onOpenDialog={() => (envSwitcherOpen = true)} {podmanStatus} />
 		{/if}
 		{#if isCollapsed}
 			<div class="flex justify-center px-1 pt-1">
@@ -127,6 +134,9 @@
 		{/if}
 		{#if swarmItems.length > 0}
 			<SidebarItemGroup label={m.swarm()} items={swarmItems} />
+		{/if}
+		{#if podmanItems.length > 0}
+			<SidebarItemGroup label={m.podman()} items={podmanItems} />
 		{/if}
 		{#if settingsItems.length > 0}
 			<SidebarItemGroup label={m.sidebar_administration()} items={settingsItems} />

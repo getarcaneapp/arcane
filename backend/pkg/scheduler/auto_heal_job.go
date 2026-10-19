@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/getarcaneapp/arcane/types/v2/podman"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -243,6 +244,15 @@ func (j *AutoHealJob) processCandidateInternal(
 		}
 	}
 	containerName := docker.ContainerNameFromNames(candidate.Names)
+	if unit := candidate.Labels[podman.SystemdUnitLabel]; unit != "" {
+		slog.DebugContext(ctx, "auto-heal skipping quadlet-managed container", "container", containerName, "unit", unit)
+		return schedulertypes.TargetOutcome{
+			ResourceType: "container",
+			ID:           containerID,
+			Status:       schedulertypes.Skipped,
+			Message:      "managed by systemd unit " + unit + "; its Restart= policy owns recovery",
+		}, nil
+	}
 
 	// The daemon-side health filter already selected unhealthy containers; the
 	// inspect re-confirms right before restarting so a container that recovered

@@ -20,6 +20,7 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/types"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+	"github.com/getarcaneapp/arcane/types/v2/podman"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/getarcaneapp/arcane/types/v2/scheduler"
 	arcaneupdater "github.com/getarcaneapp/arcane/types/v2/updater"
@@ -1350,6 +1351,25 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgrade(
 	require.NotNil(t, result)
 	assert.True(t, mockUpgrade.triggerCalled, "scheduled auto-update should use CLI self-upgrade for legacy Arcane server labels")
 	assert.Empty(t, projectUpdater.calls, "legacy Arcane server should not be updated through project services")
+}
+
+func TestUpdateLabelPolicyDisablesQuadletContainers(t *testing.T) {
+	tests := []struct {
+		name   string
+		labels map[string]string
+		want   bool
+	}{
+		{name: "unlabelled", labels: map[string]string{}},
+		{name: "quadlet unit", labels: map[string]string{podman.SystemdUnitLabel: "web.service"}, want: true},
+		{name: "empty quadlet unit", labels: map[string]string{podman.SystemdUnitLabel: ""}},
+		{name: "updater opt out", labels: map[string]string{labels.LabelUpdater: "false"}, want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, updateLabelPolicy.IsUpdateDisabled(tt.labels))
+		})
+	}
 }
 
 // The engine picks the reference Arcane's updates are applied to, so its choice

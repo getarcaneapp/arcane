@@ -23,6 +23,20 @@ export const queryKeys = {
 			['swarm', environmentId, 'join-candidates', user?.id ?? null, stableSerialize(user?.permissionsByEnv)] as const,
 		serviceTasks: (environmentId: string, serviceId: string) => ['swarm', environmentId, 'service-tasks', serviceId] as const
 	},
+	podman: {
+		all: ['podman'] as const,
+		environment: (environmentId: string) => ['podman', environmentId] as const,
+		status: (environmentId: string) => ['podman', environmentId, 'status'] as const,
+		info: (environmentId: string) => ['podman', environmentId, 'info'] as const,
+		pods: (environmentId: string) => ['podman', environmentId, 'pods'] as const,
+		pod: (environmentId: string, podId: string) => ['podman', environmentId, 'pods', podId] as const,
+		podStats: (environmentId: string, podName: string) => ['podman', environmentId, 'pods', podName, 'stats'] as const,
+		podTop: (environmentId: string, podId: string) => ['podman', environmentId, 'pods', podId, 'top'] as const,
+		quadlets: (environmentId: string) => ['podman', environmentId, 'quadlets'] as const,
+		quadlet: (environmentId: string, name: string) => ['podman', environmentId, 'quadlets', name] as const,
+		quadletFile: (environmentId: string, name: string) => ['podman', environmentId, 'quadlets', name, 'file'] as const,
+		secrets: (environmentId: string) => ['podman', environmentId, 'secrets'] as const
+	},
 	jobs: {
 		list: (environmentId: string) => ['environment-jobs', environmentId] as const,
 		runs: (environmentId: string, jobId: string, page: number) => ['job-runs', environmentId, jobId, page] as const,

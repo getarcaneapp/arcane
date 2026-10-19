@@ -7,6 +7,7 @@ import { queryKeys } from '#lib/query/query-keys.js';
 import { isSessionCancelledError } from '#lib/services/api-service.js';
 import { authService } from '#lib/services/auth-service.js';
 import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
+import { podmanService } from '#lib/services/podman-service.js';
 import { roleService } from '#lib/services/role-service.js';
 import { settingsService } from '#lib/services/settings-service.js';
 import { swarmService } from '#lib/services/swarm-service.js';
@@ -19,6 +20,7 @@ import userStore from '#lib/stores/user-store.svelte.js';
 import { versionStore } from '#lib/stores/version.store.svelte.js';
 import type { PermissionsManifest, User } from '#lib/types/auth.js';
 import type { Environment } from '#lib/types/environment.js';
+import type { PodmanStatus } from '#lib/types/podman.js';
 import type { AppVersionInformation, Settings } from '#lib/types/settings.js';
 import { isAuthRejectionError } from '#lib/utils/api.js';
 import { getAuthRedirectPath, shownEnvironmentForRoute, userHasPermission } from '#lib/utils/auth.js';
@@ -86,7 +88,8 @@ async function loadRoot({ url }: Parameters<LayoutLoad>[0], releaseSelection: ((
 			permissionsManifestLoadFailed: false,
 			versionInformation: versionStore.current ?? toAppVersionInformation({}),
 			queryClient,
-			swarmEnabled: undefined
+			swarmEnabled: undefined,
+			podmanStatus: null
 		};
 	}
 
@@ -139,6 +142,7 @@ async function loadRoot({ url }: Parameters<LayoutLoad>[0], releaseSelection: ((
 
 	let settings = null;
 	let swarmEnabled: boolean | undefined;
+	let podmanStatus: PodmanStatus | null = null;
 	let permissionsManifest: PermissionsManifest | null = null;
 	let permissionsManifestLoadFailed = false;
 	if (user) {
@@ -227,9 +231,19 @@ async function loadRoot({ url }: Parameters<LayoutLoad>[0], releaseSelection: ((
 					})
 				)
 			: Promise.resolve(null);
-		const [loadedSettings, loadedSwarmStatus, loadedPermissionsManifest] = await Promise.all([
+		const podmanStatusRequest = userHasPermission(user, 'podman:read', currentEnvironmentId)
+			? dataOrNull(
+					queryClient.query({
+						...rootQuery,
+						queryKey: queryKeys.podman.status(currentEnvironmentId),
+						queryFn: () => podmanService.getStatus(currentEnvironmentId, { suppressAccessDeniedToast: true })
+					})
+				)
+			: Promise.resolve(null);
+		const [loadedSettings, loadedSwarmStatus, loadedPodmanStatus, loadedPermissionsManifest] = await Promise.all([
 			settingsRequest,
 			swarmStatusRequest,
+			podmanStatusRequest,
 			permissionsManifestRequest
 		]);
 		// Keep recovery/settings pages reachable while a selected agent is offline.
@@ -244,6 +258,7 @@ async function loadRoot({ url }: Parameters<LayoutLoad>[0], releaseSelection: ((
 			));
 		await featuresRequest;
 		swarmEnabled = loadedSwarmStatus?.enabled;
+		podmanStatus = loadedPodmanStatus?.detected ? loadedPodmanStatus : null;
 		permissionsManifest = loadedPermissionsManifest;
 		permissionsManifestLoadFailed = loadedPermissionsManifest === null;
 	} else {
@@ -306,6 +321,7 @@ async function loadRoot({ url }: Parameters<LayoutLoad>[0], releaseSelection: ((
 		permissionsManifestLoadFailed,
 		versionInformation,
 		queryClient,
-		swarmEnabled
+		swarmEnabled,
+		podmanStatus
 	};
 }

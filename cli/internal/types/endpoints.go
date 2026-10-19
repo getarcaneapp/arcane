@@ -595,6 +595,41 @@ func Webhook(envID, webhookID string) string {
 }
 func WebhookTrigger(token string) string { return pathf("/api/webhooks/trigger/%s", token) }
 
+func PodmanStatus(envID string) string { return pathf("/api/environments/%s/podman/status", envID) }
+func PodmanAutoUpdate(envID string) string {
+	return pathf("/api/environments/%s/podman/autoupdate", envID)
+}
+func PodmanPods(envID string) string { return pathf("/api/environments/%s/podman/pods", envID) }
+func PodmanPod(envID, podID string) string {
+	return pathf("/api/environments/%s/podman/pods/%s", envID, podID)
+}
+
+func PodmanPodAction(envID, podID, action string) string {
+	return pathf("/api/environments/%s/podman/pods/%s/%s", envID, podID, action)
+}
+
+func PodmanQuadlets(envID string) string {
+	return pathf("/api/environments/%s/podman/quadlets", envID)
+}
+
+func PodmanQuadlet(envID, name string) string {
+	return pathf("/api/environments/%s/podman/quadlets/%s", envID, name)
+}
+
+func PodmanQuadletAction(envID, name, action string) string {
+	return pathf("/api/environments/%s/podman/quadlets/%s/%s", envID, name, action)
+}
+
+func PodmanKube(envID, action string) string {
+	return pathf("/api/environments/%s/podman/kube/%s", envID, action)
+}
+
+func PodmanSecrets(envID string) string { return pathf("/api/environments/%s/podman/secrets", envID) }
+
+func PodmanSecret(envID, secretID string) string {
+	return pathf("/api/environments/%s/podman/secrets/%s", envID, secretID)
+}
+
 // GitOps sync endpoints
 
 func GitOpsSyncs(envID string) string { return pathf("/api/environments/%s/gitops-syncs", envID) }

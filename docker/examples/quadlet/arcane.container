@@ -1,0 +1,28 @@
+[Unit]
+Description=Arcane
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+Image=docker.io/getarcaneapp/manager:latest
+ContainerName=arcane
+AutoUpdate=registry
+PublishPort=3552:3552
+Volume=/run/podman/podman.sock:/var/run/docker.sock
+Volume=/run/dbus/system_bus_socket:/run/dbus/system_bus_socket
+Volume=arcane-data:/app/data
+Environment=ENCRYPTION_KEY=replace_me_with_a_random_32_char_value
+Environment=TZ=UTC
+SecurityLabelDisable=true
+HealthCmd=./arcane health --timeout 2s
+HealthInterval=10s
+HealthTimeout=3s
+HealthRetries=5
+HealthStartPeriod=15s
+StopTimeout=15
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target default.target

@@ -330,6 +330,48 @@ func TestDockerClientService_WatchEventsResumesFromLastEventAfterRefresh(t *test
 	}
 }
 
+func TestDockerClientService_EngineCachesUntilClientChanges(t *testing.T) {
+	var versionCalls atomic.Int32
+	server := newDockerPingTestServerWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		switch path.Base(r.URL.Path) {
+		case "_ping":
+			w.Header().Set("Api-Version", "1.41")
+			w.WriteHeader(http.StatusOK)
+		case "version":
+			versionCalls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"Platform":{"Name":"Podman Engine"}}`))
+		case "info":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"CgroupVersion":"2"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	svc := newDockerClientServiceForTest(t, server.URL)
+	t.Cleanup(svc.Close)
+
+	first, err := svc.Engine(t.Context())
+	require.NoError(t, err)
+	second, err := svc.Engine(t.Context())
+	require.NoError(t, err)
+
+	assert.Equal(t, "podman", first.Name)
+	assert.Equal(t, "2", first.CgroupVersion)
+	assert.Equal(t, first, second)
+	assert.Equal(t, int32(1), versionCalls.Load())
+
+	copied := svc.WithClient(svc.Client)
+	_, err = copied.Engine(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), versionCalls.Load())
+
+	svc.Close()
+	_, err = svc.Engine(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, int32(3), versionCalls.Load())
+}
+
 func TestCountImageUsage_UsesContainerImageIDs(t *testing.T) {
 	images := []image.Summary{
 		{ID: "sha256:image-a", Containers: -1, Size: 100},

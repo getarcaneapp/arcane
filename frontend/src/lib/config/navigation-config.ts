@@ -26,13 +26,16 @@ import {
 	UpdateIcon,
 	VariableIcon,
 	ActivityIcon,
-	BackupIcon
+	BackupIcon,
+	BoxIcon,
+	FileTextIcon
 } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import type { PermissionsManifest, User } from '#lib/types/auth.js';
 import type { FeatureID } from '#lib/types/features.js';
+import type { PodmanStatus } from '#lib/types/podman.js';
 import { canReachShownAccessSurface } from '#lib/utils/auth.js';
 import type { ShortcutKey } from '#lib/utils/navigation.js';
 
@@ -55,6 +58,7 @@ export type NavigationSections = {
 	managementItems: NavigationItem[];
 	resourceItems: NavigationItem[];
 	swarmItems: NavigationItem[];
+	podmanItems: NavigationItem[];
 	settingsItems: NavigationItem[];
 };
 
@@ -144,6 +148,18 @@ export const navigationItems: NavigationSections = {
 		{ title: 'Cluster', url: '/swarm/cluster', icon: SettingsIcon, accessSurfaceId: 'route.swarm.cluster' },
 		{ title: 'Configs', url: '/swarm/configs', icon: TemplateIcon, accessSurfaceId: 'route.swarm.configs' },
 		{ title: 'Secrets', url: '/swarm/secrets', icon: LockIcon, accessSurfaceId: 'route.swarm.secrets' }
+	],
+	podmanItems: [
+		{ title: m.podman_pods_title(), url: '/podman/pods', icon: BoxIcon, accessSurfaceId: 'route.podman' },
+		{ title: m.podman_quadlets_title(), url: '/podman/quadlets', icon: FileTextIcon, accessSurfaceId: 'route.podman.quadlets' },
+		{ title: m.podman_kube_title(), url: '/podman/kube', icon: LayersIcon, accessSurfaceId: 'route.podman.kube' },
+		{ title: m.podman_secrets_title(), url: '/podman/secrets', icon: LockIcon, accessSurfaceId: 'route.podman.secrets' },
+		{
+			title: m.podman_autoupdate_title(),
+			url: '/podman/autoupdate',
+			icon: UpdateIcon,
+			accessSurfaceId: 'route.podman.autoupdate'
+		}
 	],
 	settingsItems: [
 		{
@@ -382,6 +398,11 @@ export function getSwarmNavigationItems(swarmEnabled: boolean | undefined, curre
 	return navigationItems.swarmItems.filter((item) => item.url === '/swarm/cluster');
 }
 
+export function getPodmanNavigationItems(status: PodmanStatus | null | undefined): NavigationItem[] {
+	if (!status?.detected) return [];
+	return navigationItems.podmanItems.filter((item) => item.url !== '/podman/quadlets' || status.quadletsSupported);
+}
+
 export const DEFAULT_LANDING_PAGE = '/dashboard';
 
 /**
@@ -403,6 +424,7 @@ export type MobileNavigationSettings = {
 
 export function getAvailableMobileNavItems(options?: {
 	swarmEnabled?: boolean;
+	podmanStatus?: PodmanStatus | null;
 	user?: User | null;
 	currentEnvId?: string;
 	accessManifest?: PermissionsManifest | null;
@@ -420,6 +442,8 @@ export function getAvailableMobileNavItems(options?: {
 	if (swarmItems.length > 0) {
 		flatItems.push(...swarmItems);
 	}
+
+	flatItems.push(...getPodmanNavigationItems(options?.podmanStatus));
 
 	if (navigationItems.settingsItems) {
 		const settingsTopLevel = navigationItems.settingsItems.filter((item) => !item.items);

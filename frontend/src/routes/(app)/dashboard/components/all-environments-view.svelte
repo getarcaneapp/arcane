@@ -325,6 +325,7 @@
 					},
 					settings: snapshot.settings,
 					versionInfo: snapshot.versionInfo,
+					podCount: snapshot.podCount,
 					snapshotState: 'ready',
 					snapshotError: state.streamError ? resolveSnapshotErrorMessage(state) : undefined
 				};

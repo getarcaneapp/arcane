@@ -36,6 +36,7 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/images"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/jobs"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/networks"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/podman"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/registries"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/repos"
@@ -130,7 +131,7 @@ func NewRootCommand() *cobra.Command {
 		containers.Command(), imagesCmd, volumes.Command(), networks.Command(), projects.Command(), environments.Command(),
 		registries.Command(), repos.Command(), templates.Command(), settings.Command(), jobs.Command(), system.Command(),
 		updater.Command(), selfupdate.Command(), admin.Command(), gitops.Command(), variables.Command(), activities.Command(),
-		webhooks.Command(),
+		webhooks.Command(), podman.Command(),
 	)
 	instrumentCommandTree(root)
 	return root

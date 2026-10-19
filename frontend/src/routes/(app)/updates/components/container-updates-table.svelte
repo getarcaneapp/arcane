@@ -42,6 +42,7 @@
 		type EnvironmentRow
 	} from '#lib/utils/environments.js';
 	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates.js';
+	import { quadletUnitHref } from '#lib/utils/podman.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import { getContainerDisplayName } from '../../containers/container-table.helpers';
@@ -61,6 +62,7 @@
 		/** Automatic installation is off; checks and notifications still run. */
 		autoUpdateDisabled: boolean;
 		labelControlled: boolean;
+		quadletHref?: string;
 		/** False when the agent omitted `autoUpdateEnabled`; toggling is then unavailable. */
 		statusAvailable: boolean;
 		autoUpdateTitle: string;
@@ -112,11 +114,14 @@
 	function mapContainerRow(container: ContainerRow): ContainerUpdateRow {
 		const name = getContainerDisplayName(container);
 		const labelControlled = isAutoUpdateLabelDisabled(container.labels);
+		const quadletHref = quadletUnitHref(container.labels);
 		const statusAvailable = typeof container.autoUpdateEnabled === 'boolean';
 		const autoUpdateDisabled = container.autoUpdateEnabled === false;
 		let autoUpdateTitle = m.updates_disable_auto_update_description();
 		if (!statusAvailable) {
 			autoUpdateTitle = m.auto_update_status_unavailable();
+		} else if (quadletHref) {
+			autoUpdateTitle = m.podman_quadlet_update_disabled();
 		} else if (labelControlled) {
 			autoUpdateTitle = m.auto_update_controlled_by_label_checks_continue({ label: `${UPDATE_CHECK_LABEL}=false` });
 		} else if (autoUpdateDisabled) {
@@ -135,6 +140,7 @@
 			checkedAt: container.updateInfo?.checkTime ?? '',
 			autoUpdateDisabled,
 			labelControlled,
+			quadletHref,
 			statusAvailable,
 			autoUpdateTitle,
 			updateInfo: container.updateInfo,
@@ -273,6 +279,15 @@
 					: m.auto_update_disabled_checks_continue()}
 			>
 				{m.updates_auto_update_disabled()}
+			</Badge>
+		{/if}
+		{#if item.quadletHref}
+			<Badge
+				variant="purple"
+				href={environmentHref(item.quadletHref, item.environmentId)}
+				title={m.podman_quadlet_update_disabled()}
+			>
+				{m.podman_managed_by_quadlet()}
 			</Badge>
 		{/if}
 	</div>

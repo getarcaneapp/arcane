@@ -1,15 +1,18 @@
 <script lang="ts">
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
 	import { EnvironmentsIcon, RemoteEnvironmentIcon, EdgeConnectionIcon, ArrowsUpDownIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { allEnvironmentsPreview, environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import type { PodmanStatus } from '#lib/types/podman.js';
 
 	type Props = {
 		onOpenDialog?: () => void;
+		podmanStatus?: PodmanStatus | null;
 	};
 
-	let { onOpenDialog }: Props = $props();
+	let { onOpenDialog, podmanStatus = null }: Props = $props();
 
 	function getConnectionString(): string {
 		if (!environmentStore.selected) return '';
@@ -43,8 +46,13 @@
 						{/if}
 					</div>
 					<div class="grid flex-1 text-left text-sm leading-tight">
-						<span class="truncate font-medium">
-							{environmentStore.selected.name}
+						<span class="flex min-w-0 items-center gap-1.5">
+							<span class="truncate font-medium">
+								{environmentStore.selected.name}
+							</span>
+							{#if podmanStatus?.detected}
+								<Badge variant="purple" size="xs">{m.podman()}</Badge>
+							{/if}
 						</span>
 						<span class="truncate text-xs">
 							{getConnectionString()}

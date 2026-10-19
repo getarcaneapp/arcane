@@ -234,6 +234,7 @@ export interface DashboardSnapshot {
 	actionItems: DashboardActionItems;
 	settings: DashboardSnapshotSettings;
 	versionInfo?: AppVersionInformation;
+	podCount?: number;
 }
 
 export type DashboardStreamEventType = 'snapshot' | 'error' | 'pending' | 'heartbeat';
@@ -259,6 +260,7 @@ export interface DashboardEnvironmentOverview {
 	actionItems: DashboardActionItems;
 	settings: DashboardSnapshotSettings;
 	versionInfo?: AppVersionInformation;
+	podCount?: number;
 	snapshotState: EnvironmentDashboardSnapshotState;
 	snapshotError?: string;
 }

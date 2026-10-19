@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/getarcaneapp/arcane/types/v2/podman"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -50,6 +52,33 @@ func TestAutoHeal_FilterCandidates_SkipsSelfContainer(t *testing.T) {
 	// Outside Docker no self ID is detected and the guard is a no-op.
 	candidates = job.filterCandidatesInternal(containers, nil, "")
 	require.Len(t, candidates, 2)
+}
+
+func TestAutoHeal_ProcessCandidate_SkipsQuadletContainers(t *testing.T) {
+	job := &AutoHealJob{
+		restarts: make(map[string]*restartRecord),
+		inspectContainer: func(context.Context, *client.Client, string) (container.InspectResponse, error) {
+			t.Fatal("quadlet-managed containers must not be inspected")
+			return container.InspectResponse{}, nil
+		},
+		restartContainer: func(context.Context, *client.Client, string) error {
+			t.Fatal("quadlet-managed containers must not be restarted")
+			return nil
+		},
+	}
+
+	target, err := job.processCandidateInternal(t.Context(), nil, container.Summary{
+		ID:     "quadlet-id",
+		Names:  []string{"/web"},
+		Labels: map[string]string{podman.SystemdUnitLabel: "web.service"},
+	}, 5, 30*time.Minute, 30)
+	require.NoError(t, err)
+	require.Equal(t, schedulertypes.TargetOutcome{
+		ResourceType: "container",
+		ID:           "quadlet-id",
+		Status:       schedulertypes.Skipped,
+		Message:      "managed by systemd unit web.service; its Restart= policy owns recovery",
+	}, target)
 }
 
 func TestAutoHeal_CanRestart_UnderLimit(t *testing.T) {

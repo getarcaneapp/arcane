@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"os"
 
 	"go.uber.org/fx"
 
@@ -35,6 +36,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/oidc"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/podman"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/port"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
@@ -55,6 +57,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
+	libpodman "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/podman"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
 	"github.com/getarcaneapp/arcane/backend/v2/resources"
 )
@@ -164,6 +167,14 @@ var ServiceOptions = fx.Options(
 		func(db *database.DB, localDocker *docker.DockerClientService, kvService *kv.KVService, settingsService *settings.SettingsService) *registry.ContainerRegistryService {
 			return registry.NewContainerRegistryService(db, func(ctx context.Context) (registry.RegistryDaemonClient, error) { return localDocker.GetClient(ctx) }, kvService, settingsService)
 		},
+		func(localDocker *docker.DockerClientService, notificationService *notification.NotificationService) *podman.Service {
+			return podman.NewService(podman.Config{
+				Engine:        localDocker.Engine,
+				Host:          localDocker.DockerHost(),
+				NewSystemd:    func(rootless bool) libpodman.Systemd { return libpodman.NewSystemd(rootless, os.Getenv) },
+				NotifyUpdates: notificationService.SendBatchContainerUpdateNotification,
+			})
+		},
 		provideUpdaterService,
 		provideAuthMiddleware,
 	),
@@ -179,6 +190,7 @@ var ServiceOptions = fx.Options(
 		container.New,
 		dashboard.New,
 		swarm.New,
+		podman.New,
 		system.New,
 		volume.New,
 		updater.New,
