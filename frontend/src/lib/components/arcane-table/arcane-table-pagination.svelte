@@ -42,13 +42,13 @@
 	}
 </script>
 
-<div class="flex w-full flex-col gap-4 px-2 sm:flex-row sm:items-center sm:justify-between">
-	<div class="order-2 text-sm text-muted-foreground sm:order-1">
+<div class="flex w-full items-center justify-between gap-2 px-2 sm:gap-4">
+	<div class="order-2 hidden text-sm text-muted-foreground sm:order-1 sm:block">
 		{m.common_showing_of_total({ shown: items.data.length, total: totalItems })}
 	</div>
-	<div class="order-1 flex flex-col gap-4 sm:order-2 sm:flex-row sm:items-center sm:space-x-6 lg:space-x-8">
+	<div class="order-1 flex w-full items-center justify-between gap-2 sm:order-2 sm:w-auto sm:gap-4 sm:space-x-6 lg:space-x-8">
 		<div class="flex items-center justify-between space-x-2 sm:justify-start">
-			<p id="{uid}-rows-per-page" class="text-sm font-medium">{m.common_rows_per_page()}</p>
+			<p id="{uid}-rows-per-page" class="sr-only text-sm font-medium sm:not-sr-only">{m.common_rows_per_page()}</p>
 			<Select.Root allowDeselect={false} type="single" bind:value={() => selectValue, handlePageSizeChange}>
 				<Select.Trigger id="{uid}-page-size" aria-labelledby="{uid}-rows-per-page {uid}-page-size" class="h-11 w-17.5 sm:h-8">
 					{displayValue}
@@ -65,7 +65,7 @@
 				</Select.Content>
 			</Select.Root>
 		</div>
-		<div class="flex items-center justify-between sm:justify-center">
+		<div class="flex items-center justify-between gap-2 sm:justify-center sm:gap-0">
 			<div class="flex items-center justify-center text-sm font-medium sm:w-25">
 				{m.common_page_of({ page: currentPage, total: totalPages })}
 			</div>
