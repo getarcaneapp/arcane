@@ -101,7 +101,10 @@ func (s *Service) StorageMount(ctx context.Context, dockerClient *client.Client,
 		return dockerClient.VolumeInspect(ctx, s.deps.BackupVolumeName, client.VolumeInspectOptions{})
 	}); inspectErr != nil {
 		if _, createErr := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeCreateResult, error) {
-			return dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{Name: s.deps.BackupVolumeName})
+			return dockerClient.VolumeCreate(ctx, client.VolumeCreateOptions{
+				Name:   s.deps.BackupVolumeName,
+				Labels: map[string]string{libarcane.InternalResourceLabel: "true"},
+			})
 		}); createErr != nil {
 			return mount.Mount{}, fmt.Errorf("failed to create backup volume: %w", createErr)
 		}
@@ -264,10 +267,6 @@ func (s *Service) volumeBackupPassword(ctx context.Context, dockerClient *client
 		if done, _ := s.rekeyed.Load(repository.ID); done == key {
 			continue
 		}
-		if _, listErr := s.deps.Engine.ListSnapshots(ctx, dockerClient, repository, key); listErr == nil {
-			s.rekeyed.Store(repository.ID, key)
-			continue
-		}
 		if repository.ID == localVolumeRepositoryID {
 			writable, localErr := s.localRusticRepository(ctx, dockerClient, false)
 			if localErr != nil {
@@ -276,11 +275,14 @@ func (s *Service) volumeBackupPassword(ctx context.Context, dockerClient *client
 			}
 			repository = writable
 		}
-		if changeErr := s.deps.Engine.ChangeRepositoryPassword(ctx, dockerClient, repository, legacyPassword, key); changeErr != nil {
-			slog.DebugContext(ctx, "volume backup repository was not re-keyed", "repository", repository.ID, "error", changeErr.Error())
+		previous, rekeyErr := s.deps.Engine.RekeyRepository(ctx, dockerClient, repository, key, legacyPassword)
+		if rekeyErr != nil {
+			slog.DebugContext(ctx, "volume backup repository was not re-keyed", "repository", repository.ID, "error", rekeyErr.Error())
 			continue
 		}
-		slog.InfoContext(ctx, "Re-keyed volume backup repository to the recovery key", "repository", repository.ID)
+		if previous != "" {
+			slog.InfoContext(ctx, "Re-keyed volume backup repository to the recovery key", "repository", repository.ID)
+		}
 		s.rekeyed.Store(repository.ID, key)
 	}
 	return key, nil

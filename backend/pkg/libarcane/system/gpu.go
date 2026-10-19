@@ -17,6 +17,8 @@ import (
 
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/samber/hot"
+	kit "go.getarcane.app/kit/pkg"
+	"golang.org/x/sync/singleflight"
 )
 
 // AMDGPUSysfsPath is the sysfs base used to discover AMD GPUs.
@@ -46,6 +48,9 @@ type GPUMonitor struct {
 	// gpuStatsTTL so concurrent consumers and fast sampler ticks share one
 	// process fork instead of each launching their own.
 	statsCache atomic.Pointer[gpuStatsSnapshotInternal]
+	statsGroup singleflight.Group
+
+	announcedType string
 
 	enabled bool
 }
@@ -91,8 +96,19 @@ func (m *GPUMonitor) Stats(ctx context.Context) ([]systemtypes.GPUStats, error) 
 		return snapshot.stats, snapshot.err
 	}
 
-	stats, err := m.statsUncachedInternal(ctx)
-	m.statsCache.Store(&gpuStatsSnapshotInternal{stats: stats, err: err, sampledAt: time.Now()})
+	result, err, _ := m.statsGroup.Do("stats", func() (any, error) {
+		previous := m.statsCache.Load()
+		if previous != nil && time.Since(previous.sampledAt) < gpuStatsTTL {
+			return previous.stats, previous.err
+		}
+		stats, statsErr := m.statsUncachedInternal(ctx)
+		if previousErr := kit.FromPtr(previous).err; statsErr != nil && (previousErr == nil || previousErr.Error() != statsErr.Error()) {
+			slog.WarnContext(ctx, "GPU stats unavailable", "error", statsErr)
+		}
+		m.statsCache.Store(&gpuStatsSnapshotInternal{stats: stats, err: statsErr, sampledAt: time.Now()})
+		return stats, statsErr
+	})
+	stats, _ := result.([]systemtypes.GPUStats)
 	return stats, err
 }
 
@@ -135,9 +151,12 @@ func (m *GPUMonitor) statsForTypeInternal(ctx context.Context, gpuType string) (
 }
 
 // markDetected records a successful detection.
-func (m *GPUMonitor) markDetectedInternal(gpuType, toolPath string) {
+func (m *GPUMonitor) markDetectedInternal(gpuType, toolPath string) bool {
 	m.detectionCache.Set(struct{}{}, gpuDetection{detected: true, gpuType: gpuType, toolPath: toolPath})
 	m.detectionDone = true
+	announce := m.announcedType != gpuType
+	m.announcedType = gpuType
+	return announce
 }
 
 // detect runs vendor probing under detectionMu. The configuredType pin is honored when set
@@ -150,22 +169,25 @@ func (m *GPUMonitor) detectInternal(ctx context.Context) error {
 		switch t {
 		case "nvidia":
 			if path, err := exec.LookPath("nvidia-smi"); err == nil {
-				m.markDetectedInternal("nvidia", path)
-				slog.InfoContext(ctx, "Using configured GPU type", "type", "nvidia")
+				if m.markDetectedInternal("nvidia", path) {
+					slog.InfoContext(ctx, "Using configured GPU type", "type", "nvidia")
+				}
 				return nil
 			}
 			return errors.New("nvidia-smi not found but GPU_TYPE set to nvidia")
 		case "amd":
 			if HasAMDGPU() {
-				m.markDetectedInternal("amd", AMDGPUSysfsPath)
-				slog.InfoContext(ctx, "Using configured GPU type", "type", "amd")
+				if m.markDetectedInternal("amd", AMDGPUSysfsPath) {
+					slog.InfoContext(ctx, "Using configured GPU type", "type", "amd")
+				}
 				return nil
 			}
 			return errors.New("AMD GPU not found in sysfs but GPU_TYPE set to amd")
 		case "intel":
 			if path, err := exec.LookPath("intel_gpu_top"); err == nil {
-				m.markDetectedInternal("intel", path)
-				slog.InfoContext(ctx, "Using configured GPU type", "type", "intel")
+				if m.markDetectedInternal("intel", path) {
+					slog.InfoContext(ctx, "Using configured GPU type", "type", "intel")
+				}
 				return nil
 			}
 			return errors.New("intel_gpu_top not found but GPU_TYPE set to intel")
@@ -175,18 +197,21 @@ func (m *GPUMonitor) detectInternal(ctx context.Context) error {
 	}
 
 	if path, err := exec.LookPath("nvidia-smi"); err == nil {
-		m.markDetectedInternal("nvidia", path)
-		slog.InfoContext(ctx, "NVIDIA GPU detected", "tool", "nvidia-smi", "path", path)
+		if m.markDetectedInternal("nvidia", path) {
+			slog.InfoContext(ctx, "NVIDIA GPU detected", "tool", "nvidia-smi", "path", path)
+		}
 		return nil
 	}
 	if HasAMDGPU() {
-		m.markDetectedInternal("amd", AMDGPUSysfsPath)
-		slog.InfoContext(ctx, "AMD GPU detected", "method", "sysfs", "path", AMDGPUSysfsPath)
+		if m.markDetectedInternal("amd", AMDGPUSysfsPath) {
+			slog.InfoContext(ctx, "AMD GPU detected", "method", "sysfs", "path", AMDGPUSysfsPath)
+		}
 		return nil
 	}
 	if path, err := exec.LookPath("intel_gpu_top"); err == nil {
-		m.markDetectedInternal("intel", path)
-		slog.InfoContext(ctx, "Intel GPU detected", "tool", "intel_gpu_top", "path", path)
+		if m.markDetectedInternal("intel", path) {
+			slog.InfoContext(ctx, "Intel GPU detected", "tool", "intel_gpu_top", "path", path)
+		}
 		return nil
 	}
 
@@ -233,7 +258,6 @@ func getNvidiaStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error)
 
 	output, err := cmd.Output()
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to execute nvidia-smi", "error", err)
 		return nil, fmt.Errorf("nvidia-smi execution failed: %w", err)
 	}
 
@@ -241,7 +265,6 @@ func getNvidiaStatsInternal(ctx context.Context) ([]systemtypes.GPUStats, error)
 	reader.TrimLeadingSpace = true
 	records, err := reader.ReadAll()
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to parse nvidia-smi CSV output", "error", err)
 		return nil, fmt.Errorf("failed to parse nvidia-smi output: %w", err)
 	}
 

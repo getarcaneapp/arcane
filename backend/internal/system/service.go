@@ -616,6 +616,11 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 			err := s.db.WithContext(ctx).Model(&volume.VolumeBackup{}).Where("format = ?", volume.VolumeBackupFormatRustic).Count(&count).Error
 			return count, err
 		},
+		CountRunningVolumeBackups: func(ctx context.Context) (int64, error) {
+			var count int64
+			err := s.db.WithContext(ctx).Model(&volume.VolumeBackup{}).Where("status = ?", volume.VolumeBackupStatusRunning).Count(&count).Error
+			return count, err
+		},
 		Policies: func(ctx context.Context) ([]backuptypes.SystemBackupPolicy, error) {
 			var policies []SystemBackupPolicy
 			if err := s.db.WithContext(ctx).Order("created_at ASC").Find(&policies).Error; err != nil {

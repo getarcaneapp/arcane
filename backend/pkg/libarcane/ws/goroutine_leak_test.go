@@ -146,7 +146,7 @@ func TestLeak_ServeClientFullLifecycle(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 1
+		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 
 	// The client is connected; now we should have extra goroutines:
@@ -158,7 +158,7 @@ func TestLeak_ServeClientFullLifecycle(t *testing.T) {
 	_ = clientConn.CloseNow()
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 0
+		return h.Len() == 0
 	}, 3*time.Second, 50*time.Millisecond, "client should be removed from hub after close")
 
 	// Cancel context to stop Hub.Run (simulates OnEmpty calling cancel())
@@ -197,7 +197,7 @@ func TestLeak_OnEmptyCallbackCancelsContext(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 1
+		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 
 	// Close client -> triggers safeRemove -> hub.remove -> OnEmpty -> cancel()
@@ -593,7 +593,7 @@ func TestLeak_MultipleClientsOnSameHub(t *testing.T) {
 	}
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == numClients
+		return h.Len() == numClients
 	}, 2*time.Second, 10*time.Millisecond)
 
 	// Close all clients

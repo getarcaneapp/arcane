@@ -127,6 +127,7 @@ func (s *Service) FreezePending(ctx context.Context, run scheduler.Run, excluded
 		return !record.HasUpdate || excluded[refs.NormalizeImageUpdateRef(record.ImageRef())] || excluded[record.ContainerID]
 	})
 	failures := map[string]error{}
+	digests := map[string]string{}
 	selected := make([]updater.ImageUpdateRecord, 0, len(records))
 	var targets []arcaneupdater.FrozenUpdateTarget
 	if len(records) > 0 {
@@ -155,7 +156,7 @@ func (s *Service) FreezePending(ctx context.Context, run scheduler.Run, excluded
 				if deferred(record, candidate) {
 					continue
 				}
-				target, frozenRecord, freezeRecordTargetErr := s.freezeRecordTarget(ctx, record, candidate.ID)
+				target, frozenRecord, freezeRecordTargetErr := s.freezeRecordTarget(ctx, record, candidate.ID, digests)
 				if freezeRecordTargetErr != nil {
 					failures[candidate.ID] = freezeRecordTargetErr
 					continue
@@ -204,7 +205,12 @@ func (s *Service) FreezePending(ctx context.Context, run scheduler.Run, excluded
 	return context.WithValue(ctx, frozenPendingKey{}, &plan), nil
 }
 
-func (s *Service) freezeRecordTarget(ctx context.Context, record updater.ImageUpdateRecord, containerID string) (*arcaneupdater.FrozenUpdateTarget, updater.ImageUpdateRecord, error) {
+func (s *Service) freezeRecordTarget(
+	ctx context.Context,
+	record updater.ImageUpdateRecord,
+	containerID string,
+	digests map[string]string,
+) (*arcaneupdater.FrozenUpdateTarget, updater.ImageUpdateRecord, error) {
 	frozen, err := s.FreezeContainer(ctx, containerID)
 	if err != nil {
 		return nil, record, err
@@ -212,6 +218,9 @@ func (s *Service) freezeRecordTarget(ctx context.Context, record updater.ImageUp
 	digest, err := func() (string, error) {
 		if pinned := kit.Ternary(record.IsTagUpdate(), "", kit.FromPtr(record.LatestDigest)); pinned != "" {
 			return pinned, nil
+		}
+		if resolved, ok := digests[record.NewImageRef()]; ok {
+			return resolved, nil
 		}
 		return s.images.RemoteDigest(ctx, record.NewImageRef(), nil)
 	}()
@@ -221,6 +230,7 @@ func (s *Service) freezeRecordTarget(ctx context.Context, record updater.ImageUp
 	if digest == "" {
 		return nil, record, errors.New("registry returned no desired digest")
 	}
+	digests[record.NewImageRef()] = digest
 	return &arcaneupdater.FrozenUpdateTarget{ //exhaustruct:enforce
 			ContainerID:          frozen.ContainerID,
 			ContainerName:        frozen.ContainerName,
@@ -230,6 +240,7 @@ func (s *Service) freezeRecordTarget(ctx context.Context, record updater.ImageUp
 			BaselineImageID:      frozen.BaselineImageID,
 			BaselineStartedAt:    frozen.BaselineStartedAt,
 			BaselineRestartCount: frozen.BaselineRestartCount,
+			BaselineRunning:      frozen.BaselineRunning,
 			DesiredImageRef:      record.NewImageRef(),
 			DesiredDigest:        digest,
 		},
@@ -266,7 +277,40 @@ func (s *Service) FreezeContainer(ctx context.Context, id string) (*arcaneupdate
 		BaselineImageID:      result.Container.Image,
 		BaselineStartedAt:    kit.FromPtr(result.Container.State).StartedAt,
 		BaselineRestartCount: result.Container.RestartCount,
+		BaselineRunning:      kit.FromPtr(result.Container.State).Running,
 	}, nil
+}
+
+func (s *Service) ResumeTarget(ctx context.Context, target arcaneupdater.FrozenUpdateTarget) (arcaneupdater.FrozenUpdateTarget, bool, error) {
+	current, err := s.FreezeContainer(ctx, target.ContainerID)
+	if err != nil {
+		return target, false, err
+	}
+	if !target.BaselineRunning || current.BaselineRunning {
+		return target, false, nil
+	}
+	if _, startErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
+		return dockerClient.ContainerStart(ctx, target.ContainerID, client.ContainerStartOptions{})
+	}); startErr != nil {
+		return target, false, startErr
+	}
+	started, err := s.FreezeContainer(ctx, target.ContainerID)
+	if err != nil {
+		return target, false, err
+	}
+	return arcaneupdater.FrozenUpdateTarget{ //exhaustruct:enforce
+		ContainerID:          target.ContainerID,
+		ContainerName:        target.ContainerName,
+		ComposeProject:       target.ComposeProject,
+		ComposeService:       target.ComposeService,
+		ComposeNumber:        target.ComposeNumber,
+		BaselineImageID:      target.BaselineImageID,
+		BaselineStartedAt:    started.BaselineStartedAt,
+		BaselineRestartCount: started.BaselineRestartCount,
+		BaselineRunning:      target.BaselineRunning,
+		DesiredImageRef:      target.DesiredImageRef,
+		DesiredDigest:        target.DesiredDigest,
+	}, true, nil
 }
 
 // PreparePull commits the exact image before the engine changes Docker.
@@ -286,6 +330,7 @@ func (s *Service) PreparePull(ctx context.Context, imageRef string) (string, err
 				BaselineImageID:      single.Target.BaselineImageID,
 				BaselineStartedAt:    single.Target.BaselineStartedAt,
 				BaselineRestartCount: single.Target.BaselineRestartCount,
+				BaselineRunning:      single.Target.BaselineRunning,
 				DesiredImageRef:      imageRef,
 				DesiredDigest:        digest,
 			}
@@ -370,7 +415,17 @@ func (s *Service) ConfirmTarget(ctx context.Context, target arcaneupdater.Frozen
 			return false, false, nil
 		}
 		if desiredID != "" && result.Container.Image == desiredID {
-			return true, false, nil
+			switch {
+			case !target.BaselineRunning || kit.FromPtr(result.Container.State).Running:
+				return true, false, nil
+			case result.Container.ID != target.ContainerID && kit.FromPtr(result.Container.State).Status == container.StateCreated:
+				if _, startErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerStartResult, error) {
+					return dockerClient.ContainerStart(ctx, result.Container.ID, client.ContainerStartOptions{})
+				}); startErr != nil {
+					return false, false, startErr
+				}
+				return true, false, nil
+			}
 		}
 		unchanged := result.Container.ID == target.ContainerID &&
 			result.Container.Image == target.BaselineImageID &&
@@ -445,7 +500,7 @@ func (s *Service) ResumePlan(ctx context.Context, run scheduler.Run) (context.Co
 		records    []updater.ImageUpdateRecord
 		unresolved bool
 	)
-	for _, target := range plan.Targets {
+	for position, target := range plan.Targets {
 		if slices.ContainsFunc(run.Outcome.Targets, func(outcome scheduler.TargetOutcome) bool {
 			return outcome.ID == target.ContainerID && (outcome.Status == scheduler.Succeeded || outcome.Status == scheduler.Skipped)
 		}) {
@@ -456,7 +511,27 @@ func (s *Service) ResumePlan(ctx context.Context, run scheduler.Run) (context.Co
 			return ctx, 0, false, confirmErr
 		}
 		if !confirmed && unchanged {
-			targets = append(targets, target)
+			resumed, started, resumeErr := s.ResumeTarget(ctx, target)
+			if resumeErr != nil {
+				return ctx, 0, false, resumeErr
+			}
+			plan.Targets[position] = resumed
+			if started {
+				raw, marshalErr := json.Marshal(plan)
+				if marshalErr != nil {
+					return ctx, 0, false, marshalErr
+				}
+				if progressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{
+					ID:           "auto-update",
+					ResourceType: "update-batch",
+					Status:       scheduler.Running,
+					RecoveryData: raw,
+					ActivityID:   s.activityID(ctx),
+				}); progressErr != nil {
+					return ctx, 0, false, progressErr
+				}
+			}
+			targets = append(targets, resumed)
 			if index := slices.IndexFunc(plan.Records, func(record updater.ImageUpdateRecord) bool { return record.ContainerID == target.ContainerID }); index >= 0 {
 				records = append(records, plan.Records[index])
 			}
@@ -467,7 +542,11 @@ func (s *Service) ResumePlan(ctx context.Context, run scheduler.Run) (context.Co
 			ID:           target.ContainerID,
 			ResourceType: "container",
 			Status:       kit.Ternary(confirmed, scheduler.Succeeded, scheduler.NeedsAttention),
-			Message:      kit.Ternary(confirmed, "Frozen desired image confirmed", "Update effect could not be confirmed"),
+			Message: kit.Ternary(
+				confirmed,
+				"Frozen desired image confirmed",
+				"Update effect could not be confirmed: recreate "+target.ContainerName+" from "+target.DesiredImageRef+" (previous image "+target.BaselineImageID+")",
+			),
 		}); progressErr != nil {
 			return ctx, 0, false, progressErr
 		}

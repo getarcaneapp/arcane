@@ -3,7 +3,6 @@ package project
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -349,10 +348,7 @@ func (h *ProjectHandler) streamProjectOperation(environmentID, projectID string,
 			if err := cfg.Action(opCtx, writer); err != nil {
 				activitylib.FlushWriter(writer)
 				activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.FailureMessage, err)
-				_, _ = fmt.Fprintf(writer, "{\"error\":%q}\n", err.Error())
-				if f, ok := writer.(http.Flusher); ok {
-					f.Flush()
-				}
+				activitylib.WriteErrorLine(rawWriter, err)
 				return
 			}
 

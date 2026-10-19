@@ -54,7 +54,7 @@ func TestServeClient_ReceivesBroadcast(t *testing.T) {
 
 	// Wait for registration
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 1
+		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 
 	// Broadcast a message
@@ -87,7 +87,7 @@ func TestServeClient_ClientDisconnect(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 1
+		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 
 	// Close the client connection
@@ -95,7 +95,7 @@ func TestServeClient_ClientDisconnect(t *testing.T) {
 
 	// The hub should eventually remove the client
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 0
+		return h.Len() == 0
 	}, 5*time.Second, 50*time.Millisecond)
 }
 
@@ -123,7 +123,7 @@ func TestServeClient_ContextCancellation(t *testing.T) {
 	}()
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 1
+		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 
 	// Cancel the client context
@@ -131,7 +131,7 @@ func TestServeClient_ContextCancellation(t *testing.T) {
 
 	// Client should be removed from hub
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 0
+		return h.Len() == 0
 	}, 5*time.Second, 50*time.Millisecond)
 }
 
@@ -222,7 +222,7 @@ func TestServeClient_MultipleMessages(t *testing.T) {
 	<-serverReady
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 1
+		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 
 	// Send multiple messages and verify order
@@ -277,5 +277,5 @@ func TestServeClient_StoppedHubDoesNotBlock(t *testing.T) {
 	// The caller owns the connection and its bookkeeping on failure, so it can
 	// retry the same conn against a fresh hub.
 	assert.False(t, onRemoveCalled.Load(), "onRemove must not run when registration fails")
-	assert.Equal(t, 0, h.ClientCount())
+	assert.Equal(t, 0, h.Len())
 }

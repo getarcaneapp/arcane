@@ -7,7 +7,6 @@ import (
 	"maps"
 	"strings"
 
-	"github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -340,7 +339,8 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainerInput) (*handlerutil.Out[container.Details], error) {
 	details, err := h.containerService.GetContainerDetails(ctx, input.ContainerID)
 	if err != nil {
-		return nil, huma.Error404NotFound("Failed to retrieve container: " + err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve container: "+apiErr.Message)
 	}
 
 	return &handlerutil.Out[container.Details]{
@@ -369,10 +369,8 @@ func (h *ContainerHandler) GetContainerProcesses(ctx context.Context, input *Get
 func (h *ContainerHandler) DownloadContainerLogs(ctx context.Context, input *GetContainerInput) (*huma.StreamResponse, error) {
 	reader, filename, err := h.containerService.DownloadLogs(ctx, input.ContainerID)
 	if err != nil {
-		if errdefs.IsNotFound(err) {
-			return nil, huma.Error404NotFound("Failed to retrieve container: " + err.Error())
-		}
-		return nil, huma.Error500InternalServerError("Failed to download container logs: " + err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to download container logs: "+apiErr.Message)
 	}
 	return handlerutil.DownloadResponse(reader, -1, filename), nil
 }
@@ -402,7 +400,8 @@ func (h *ContainerHandler) StartContainer(ctx context.Context, input *ContainerA
 			return h.containerService.StartContainer(runtimeCtx, containerID, user)
 		},
 		Error: func(err error) error {
-			return huma.Error500InternalServerError("Failed to start container: " + err.Error())
+			apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+			return huma.NewError(apiErr.HTTPStatus(), "Failed to start container: "+apiErr.Message)
 		},
 	})
 }
@@ -418,7 +417,8 @@ func (h *ContainerHandler) StopContainer(ctx context.Context, input *ContainerAc
 			return h.containerService.StopContainer(runtimeCtx, containerID, user)
 		},
 		Error: func(err error) error {
-			return huma.Error500InternalServerError("Failed to stop container: " + err.Error())
+			apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+			return huma.NewError(apiErr.HTTPStatus(), "Failed to stop container: "+apiErr.Message)
 		},
 	})
 }
@@ -434,7 +434,8 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *Containe
 			return h.containerService.RestartContainer(runtimeCtx, containerID, user)
 		},
 		Error: func(err error) error {
-			return huma.Error500InternalServerError("Failed to restart container: " + err.Error())
+			apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+			return huma.NewError(apiErr.HTTPStatus(), "Failed to restart container: "+apiErr.Message)
 		},
 	})
 }
@@ -450,7 +451,8 @@ func (h *ContainerHandler) KillContainer(ctx context.Context, input *KillContain
 			return h.containerService.KillContainer(runtimeCtx, containerID, strings.TrimSpace(input.Signal), user)
 		},
 		Error: func(err error) error {
-			return huma.Error500InternalServerError("Failed to kill container: " + err.Error())
+			apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+			return huma.NewError(apiErr.HTTPStatus(), "Failed to kill container: "+apiErr.Message)
 		},
 	})
 }
@@ -466,7 +468,8 @@ func (h *ContainerHandler) PauseContainer(ctx context.Context, input *ContainerA
 			return h.containerService.PauseContainer(runtimeCtx, containerID, user)
 		},
 		Error: func(err error) error {
-			return huma.Error500InternalServerError("Failed to pause container: " + err.Error())
+			apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+			return huma.NewError(apiErr.HTTPStatus(), "Failed to pause container: "+apiErr.Message)
 		},
 	})
 }
@@ -482,7 +485,8 @@ func (h *ContainerHandler) UnpauseContainer(ctx context.Context, input *Containe
 			return h.containerService.UnpauseContainer(runtimeCtx, containerID, user)
 		},
 		Error: func(err error) error {
-			return huma.Error500InternalServerError("Failed to unpause container: " + err.Error())
+			apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+			return huma.NewError(apiErr.HTTPStatus(), "Failed to unpause container: "+apiErr.Message)
 		},
 	})
 }
@@ -587,7 +591,8 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 	if err != nil {
 		activitylib.FlushWriter(activityWriter)
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container redeploy failed", err)
-		return nil, huma.Error500InternalServerError("Failed to redeploy container: " + err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to redeploy container: "+apiErr.Message)
 	}
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container redeployed", nil)
@@ -639,7 +644,8 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 func (h *ContainerHandler) GetContainerEditConfig(ctx context.Context, input *GetContainerEditConfigInput) (*handlerutil.Out[container.EditConfig], error) {
 	editConfig, err := h.containerService.GetContainerEditConfig(ctx, input.ContainerID)
 	if err != nil {
-		return nil, huma.Error404NotFound("Failed to retrieve container: " + err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve container: "+apiErr.Message)
 	}
 
 	return &handlerutil.Out[container.EditConfig]{
@@ -683,7 +689,7 @@ func (h *ContainerHandler) EditContainer(ctx context.Context, input *EditContain
 	if err != nil {
 		activitylib.FlushWriter(activityWriter)
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container edit failed", err)
-		apiErr := common.ToAPIError(err)
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 	activitylib.FlushWriter(activityWriter)
@@ -763,7 +769,8 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 	)
 	if deleteContainerErr := h.containerService.DeleteContainer(runtimeCtx, input.ContainerID, input.Force, input.RemoveVolumes, *user); deleteContainerErr != nil {
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container deleted", deleteContainerErr)
-		return nil, huma.Error500InternalServerError("Failed to delete container: " + deleteContainerErr.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(deleteContainerErr))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete container: "+apiErr.Message)
 	}
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container deleted", nil)
 

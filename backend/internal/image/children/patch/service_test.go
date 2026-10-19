@@ -21,6 +21,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -307,4 +308,31 @@ func TestAggregatePatchTargetsMergesEnvironments(t *testing.T) {
 	assert.Equal(t, []string{"b/alpine:3", "a/nginx:1", "a/redis:7"}, rowLabels(merge("imageName", pagination.SortAsc, 0, -1).Data))
 	assert.Equal(t, []string{"b/alpine:3", "a/nginx:1"}, rowLabels(merge("fixableCount", pagination.SortDesc, 0, 2).Data))
 	assert.Equal(t, []string{"a/redis:7", "a/nginx:1", "b/alpine:3"}, rowLabels(merge("environment", pagination.SortAsc, 0, -1).Data))
+}
+
+func TestRecoverInterruptedPatchesFailsLeftoverPatchingRecords(t *testing.T) {
+	_, db := patchFeatureSettings(t)
+	svc := &Service{db: db}
+	for _, record := range []ImagePatchRecord{
+		{
+			BaseModel: database.BaseModel{ID: "stuck"},
+			Status:    string(imagepatch.PatchStatusPatching),
+		},
+		{
+			BaseModel: database.BaseModel{ID: "done"},
+			Status:    string(imagepatch.PatchStatusCompleted),
+		},
+	} {
+		require.NoError(t, db.Create(&record).Error)
+	}
+
+	require.NoError(t, svc.RecoverInterruptedPatches(t.Context()))
+
+	var stuck, done ImagePatchRecord
+	require.NoError(t, db.First(&stuck, "id = ?", "stuck").Error)
+	require.NoError(t, db.First(&done, "id = ?", "done").Error)
+	assert.Equal(t, string(imagepatch.PatchStatusFailed), stuck.Status)
+	assert.Equal(t, errPatchInterrupted.Error(), kit.FromPtr(stuck.Error))
+	assert.Equal(t, string(imagepatch.PatchStatusCompleted), done.Status)
+	assert.Nil(t, done.Error)
 }

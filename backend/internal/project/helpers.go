@@ -18,6 +18,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 )
 
 type builder interface {
@@ -37,6 +38,7 @@ type projectMetadataEnv struct {
 	// which resolves the same way as a missing row; sync IDs absent from the
 	// map are queried per project.
 	gitOpsComposePaths map[string]string
+	pathMapper         func() *projects.PathMapper
 
 	// composeFiles memoizes successfully resolved compose files by project ID.
 	// Failures are not stored so a later phase in the same request retries

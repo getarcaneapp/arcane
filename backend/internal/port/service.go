@@ -204,9 +204,6 @@ func compareOptionalIntDescInternal(a, b int, fallbackA, fallbackB string) int {
 }
 
 func compareOptionalStringInternal(a, b, fallbackA, fallbackB string) int {
-	a = normalizeOptionalStringSortValueInternal(a)
-	b = normalizeOptionalStringSortValueInternal(b)
-
 	switch {
 	case a == "" && b == "":
 		return strings.Compare(fallbackA, fallbackB)
@@ -223,9 +220,6 @@ func compareOptionalStringInternal(a, b, fallbackA, fallbackB string) int {
 }
 
 func compareOptionalStringDescInternal(a, b, fallbackA, fallbackB string) int {
-	a = normalizeOptionalStringSortValueInternal(a)
-	b = normalizeOptionalStringSortValueInternal(b)
-
 	switch {
 	case a == "" && b == "":
 		return strings.Compare(fallbackA, fallbackB)
@@ -239,8 +233,4 @@ func compareOptionalStringDescInternal(a, b, fallbackA, fallbackB string) int {
 		}
 		return strings.Compare(fallbackA, fallbackB)
 	}
-}
-
-func normalizeOptionalStringSortValueInternal(value string) string {
-	return kit.Ternary(strings.EqualFold(strings.TrimSpace(value), "invalid IP"), "", value)
 }

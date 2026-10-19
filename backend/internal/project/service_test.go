@@ -2974,6 +2974,17 @@ func TestProjectService_CreateProject_CommitsWorkspaceAndConfigurationTogether(t
 	content, err := os.ReadFile(filepath.Join(created.Path, "config", "app.txt"))
 	require.NoError(t, err)
 	require.Equal(t, "workspace content\n", string(content))
+
+	compose := "services:\n  app:\n    image: nginx:alpine\n"
+	user := usertypes.Actor{ID: "u1", Username: "tester"}
+	_, err = svc.CreateProject(ctx, "Atomic-Workspace", compose, nil, projecttypes.CreateProjectWorkspaceManifest{}, nil, nil, nil, user)
+	require.ErrorIs(t, err, common.ErrConflict)
+	_, err = svc.CreateProject(ctx, "atomic-workspace", compose, nil, projecttypes.CreateProjectWorkspaceManifest{}, nil, nil, nil, user, false)
+	require.ErrorIs(t, err, common.ErrConflict)
+	var count int64
+	require.NoError(t, db.WithContext(ctx).Model(&Project{}).Count(&count).Error)
+	require.Equal(t, int64(1), count)
+	require.NoDirExists(t, filepath.Join(projectsDir, "Atomic-Workspace"))
 }
 
 func TestProjectService_CreateProject_RollsBackInvalidWorkspaceManifest(t *testing.T) {
@@ -5297,7 +5308,7 @@ func TestProjectService_DeployProject_BuildsGeneratedImageWithoutPull(t *testing
 		db,
 		settingsService,
 		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, testDockerService, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		buildSvc,
 		nil,
@@ -9264,7 +9275,7 @@ func TestProjectServiceManualUpdateRejectsUnsafeTagPolicies(t *testing.T) {
 			serviceConfig := types.ServiceConfig{Image: "app:1.2.0", Labels: types.Labels{labels.LabelUpdateStrategy: "tag"}}
 			tt.change(&serviceConfig)
 			service := NewProjectService(nil, nil, nil, nil, testDockerService, testBuildBuilder{}, nil, nil, nil, nil, testRegistryCredentials)
-			changes, err := service.updates.ImageChanges(t.Context(), &types.Project{Services: types.Services{"app": serviceConfig}}, false)
+			changes, err := service.updates.ImageChanges(t.Context(), &types.Project{Services: types.Services{"app": serviceConfig}}, nil, false)
 			require.Error(t, err)
 			require.NotContains(t, err.Error(), "registry service unavailable")
 			require.Nil(t, changes)
@@ -9272,7 +9283,7 @@ func TestProjectServiceManualUpdateRejectsUnsafeTagPolicies(t *testing.T) {
 	}
 	local := types.ServiceConfig{Name: "app", Image: "app:1.2.0", Build: &types.BuildConfig{Context: "."}}
 	emptyService := NewProjectService(nil, nil, nil, nil, testDockerService, testBuildBuilder{}, nil, nil, nil, nil, testRegistryCredentials)
-	changes, err := emptyService.updates.ImageChanges(t.Context(), &types.Project{Services: types.Services{"app": local}}, false)
+	changes, err := emptyService.updates.ImageChanges(t.Context(), &types.Project{Services: types.Services{"app": local}}, nil, false)
 	require.NoError(t, err)
 	require.Empty(t, changes, "automatic inference must preserve local-build handling")
 }

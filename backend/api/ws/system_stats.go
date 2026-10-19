@@ -1,6 +1,7 @@
 package ws
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"log/slog"
@@ -335,25 +336,26 @@ func (h *WebSocketHandler) readCPUUsage(interval time.Duration) (float64, bool) 
 //	@Param			id	path	string	true	"Environment ID"
 //	@Router			/api/environments/{id}/ws/system/stats [get]
 func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
-	clientIP := c.RealIP()
+	userID, _ := c.Get("userID").(string)
+	clientKey := cmp.Or(userID, c.RealIP())
 
 	h.activeConnectionsMu.Lock()
-	if h.activeConnections[clientIP] >= 5 {
+	if h.activeConnections[clientKey] >= 5 {
 		h.activeConnectionsMu.Unlock()
-		return c.JSON(http.StatusTooManyRequests, map[string]any{"success": false, "error": "Too many concurrent stats connections from this IP"})
+		return c.JSON(http.StatusTooManyRequests, map[string]any{"success": false, "error": "Too many concurrent stats connections for this client"})
 	}
 	if h.activeConnections == nil {
 		h.activeConnections = make(map[string]int)
 	}
-	h.activeConnections[clientIP]++
+	h.activeConnections[clientKey]++
 	h.activeConnectionsMu.Unlock()
 	defer func() {
 		h.activeConnectionsMu.Lock()
 		defer h.activeConnectionsMu.Unlock()
-		if count := h.activeConnections[clientIP]; count > 1 {
-			h.activeConnections[clientIP] = count - 1
+		if count := h.activeConnections[clientKey]; count > 1 {
+			h.activeConnections[clientKey] = count - 1
 		} else {
-			delete(h.activeConnections, clientIP)
+			delete(h.activeConnections, clientKey)
 		}
 	}()
 
@@ -364,15 +366,12 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 	defer unregister()
 	defer func() {
 		if err := conn.CloseNow(); err != nil {
-			slog.DebugContext(c.Request().Context(), "Failed to close system stats websocket connection", "clientIp", clientIP, "error", err)
+			slog.DebugContext(c.Request().Context(), "Failed to close system stats websocket connection", "clientKey", clientKey, "error", err)
 		}
 	}()
 
 	interval, _ := httputil.GetIntQueryParam(c.Request(), "interval", false)
-	if interval <= 0 {
-		interval = 2
-	}
-	sampleInterval := time.Duration(interval) * time.Second
+	sampleInterval := time.Duration(min(cmp.Or(max(interval, 0), 2), 60)) * time.Second
 
 	conn.SetReadLimit(512)
 

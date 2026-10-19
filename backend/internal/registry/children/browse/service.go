@@ -195,7 +195,7 @@ func (s *Service) DeleteRepositoryTag(ctx context.Context, id, repository, tag s
 	if deleteErr := remote.Delete(repo.Digest(descriptor.Digest.String()), target.options...); deleteErr != nil {
 		return "", classifyBrowseError(deleteErr, "failed to delete manifest")
 	}
-	s.names.Delete(id + "\x00" + repository)
+	s.names.Delete(target.cacheKey + "\x00" + repository)
 	return descriptor.Digest.String(), nil
 }
 

@@ -330,7 +330,7 @@ func (s *VolumeService) CleanupHelperContainers(ctx context.Context) {
 
 // ReapIdleHelpers removes tracked helpers idle for idleTimeout; untracked orphans are left to the startup sweep.
 func (s *VolumeService) ReapIdleHelpers(ctx context.Context, idleTimeout time.Duration) (int, error) {
-	if idleTimeout <= 0 {
+	if idleTimeout < 0 {
 		return 0, nil
 	}
 

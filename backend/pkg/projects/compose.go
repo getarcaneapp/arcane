@@ -138,8 +138,9 @@ var plainComposeClient atomic.Pointer[plainComposeClientEntryInternal]
 // dockerHost; empty resolves the host from the process environment.
 func plainComposeClientInternal(dockerHost string) (*Client, error) {
 	host := cmp.Or(dockerHost, os.Getenv("DOCKER_HOST"))
-	if entry := plainComposeClient.Load(); entry != nil && entry.host == host {
-		return entry.client, nil
+	current := plainComposeClient.Load()
+	if current != nil && current.host == host {
+		return current.client, nil
 	}
 
 	// Built on context.Background so request-scoped values (progress
@@ -148,9 +149,13 @@ func plainComposeClientInternal(dockerHost string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Concurrent first calls may race and briefly duplicate a client; the
-	// last store wins and later calls converge on it.
-	plainComposeClient.Store(&plainComposeClientEntryInternal{host: host, client: c})
+	if !plainComposeClient.CompareAndSwap(current, &plainComposeClientEntryInternal{host: host, client: c}) {
+		_ = c.Close()
+		return plainComposeClientInternal(dockerHost)
+	}
+	if current != nil {
+		_ = current.client.Close()
+	}
 	return c, nil
 }
 

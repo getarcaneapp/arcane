@@ -47,9 +47,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
 )
 
 const (
@@ -246,7 +244,9 @@ func (s *ImageUpdateService) completeImageUpdateActivity(ctx context.Context, ac
 			return activitytypes.StatusFailed, mo.EmptyableToOption(strings.TrimSpace(message)).ToPointer(), cmp.Or(message, "Image update check completed")
 		}
 	}()
-	if _, err := s.activityService.CompleteActivity(utils.ActivityRuntimeContext(ctx, nil), activityID, status, finalMessage, errMessage, "Image update check complete"); err != nil {
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	if _, err := s.activityService.CompleteActivity(writeCtx, activityID, status, finalMessage, errMessage, "Image update check complete"); err != nil {
 		// A lost terminal write strands the activity in running forever, so it
 		// must be loud enough to correlate with a stuck activity panel entry.
 		slog.ErrorContext(ctx, "failed to complete image update activity", "activityId", activityID, "error", err)
@@ -318,6 +318,11 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 	}()
 	containerUpdates, tagErr := s.checkContainerTagUpdates(ctx, kit.Ternary(digestResult.UpdateType == UpdateTypeLocal, nil, []string{imageRef}), nil)
 	if tagErr != nil {
+		if err == nil {
+			if saveErr := s.saveUpdateResultWithSnapshot(ctx, imageRef, digestResult, snapshot); saveErr != nil {
+				slog.WarnContext(ctx, "Failed to save update result", "imageRef", imageRef, "error", saveErr.Error())
+			}
+		}
 		s.completeImageUpdateActivity(ctx, activityID, false, tagErr.Error())
 		return digestResult, tagErr
 	}
@@ -367,40 +372,8 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 		slog.WarnContext(ctx, "Failed to save update result", "imageRef", imageRef, "error", saveErr.Error())
 	}
 
-	// Mark the record notified once at least one provider delivered: re-sending a partial
-	// failure on every poll would duplicate it forever; only delivered == 0 is retried.
-	if digestResult.HasUpdate {
-		delivered, notifErr := s.notificationService.SendImageUpdateNotification(ctx, imageRef, digestResult, notifications.NotificationEventImageUpdate)
-		if notifErr != nil {
-			slog.WarnContext(ctx, "Failed to send update notification", "imageRef", imageRef, "error", notifErr.Error())
-		}
-		if delivered > 0 {
-			// Prefer the snapshot's image ID: it is the same key saveUpdateResultWithSnapshot stored the record under.
-			imageID, imageIDErr := func() (string, error) {
-				if kit.FromPtr(snapshot).ImageID != "" {
-					return snapshot.ImageID, nil
-				}
-				inspectResponse, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
-					return dockerClient.ImageInspect(ctx, imageRef)
-				})
-				if inspectErr != nil {
-					return "", fmt.Errorf("image not found: %w", inspectErr)
-				}
-				return inspectResponse.ID, nil
-			}()
-			switch {
-			case imageIDErr != nil:
-				slog.WarnContext(ctx, "Failed to resolve image ID to mark notified", "imageRef", imageRef, "error", imageIDErr.Error())
-			case imageID != "":
-				if markErr := s.MarkUpdatesAsNotified(ctx, []string{imageID}); markErr != nil {
-					slog.WarnContext(ctx, "Failed to mark update as notified", "imageRef", imageRef, "error", markErr.Error())
-				}
-			}
-		}
-	}
-
 	result := tags.AttachContainerUpdates(map[string]*imageupdate.Response{imageRef: digestResult}, containerUpdates)[imageRef]
-	if len(containerUpdates) > 0 {
+	if digestResult.HasUpdate || len(containerUpdates) > 0 {
 		// A failed flush is already logged; the records stay pending for the next one.
 		_ = s.SendBatchUpdateNotifications(ctx)
 	}
@@ -823,7 +796,7 @@ func buildImageUpdateRecord(imageID, repo, tag string, result *imageupdate.Respo
 		UpdateType:       result.UpdateType,
 		CurrentVersion:   cmp.Or(result.CurrentVersion, tag),
 		ResponseTimeMs:   result.ResponseTimeMs,
-		HasUpdate:        result.HasUpdate,
+		HasUpdate:        result.HasUpdate || kit.FromPtr(carried).HasUpdate,
 		UsedCredential:   result.UsedCredential,
 		NotificationSent: notificationSent,
 	}
@@ -854,10 +827,10 @@ func savePreparedUpdateResultWithTx(tx *gorm.DB, imageID, repo, tag string, resu
 	// value if nothing changed. New records start with notification_sent = false.
 	// latest_seen_at keeps the time the pending update was first seen until it changes.
 	return tx.Save(buildImageUpdateRecord(imageID, repo, tag, result,
-		hasExisting &&
-			existingRecord.HasUpdate == result.HasUpdate &&
-			(!result.HasUpdate || sameLatest) &&
-			existingRecord.NotificationSent,
+		existingRecord.NotificationSent &&
+			(failed || hasExisting &&
+				existingRecord.HasUpdate == result.HasUpdate &&
+				(!result.HasUpdate || sameLatest)),
 		func() *time.Time {
 			switch {
 			case failed:
@@ -1016,16 +989,26 @@ func (s *ImageUpdateService) GetUnnotifiedUpdates(ctx context.Context) (map[stri
 	return result, nil
 }
 
-// MarkUpdatesAsNotified marks the given image IDs as having been notified
-func (s *ImageUpdateService) MarkUpdatesAsNotified(ctx context.Context, imageIDs []string) error {
-	if len(imageIDs) == 0 {
+func (s *ImageUpdateService) MarkUpdatesAsNotified(ctx context.Context, records []*ImageUpdateRecord) error {
+	if len(records) == 0 {
 		return nil
 	}
 
-	return s.db.WithContext(ctx).
-		Model(&ImageUpdateRecord{}).
-		Where("id IN ?", imageIDs).
-		Update("notification_sent", true).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, record := range records {
+			if err := tx.Model(&ImageUpdateRecord{}).
+				Where(map[string]any{
+					"id":             record.ID,
+					"check_time":     record.CheckTime,
+					"latest_digest":  record.LatestDigest,
+					"latest_version": record.LatestVersion,
+				}).
+				Update("notification_sent", true).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 // groupImageRefs dedupes refs naming the same registry/repo:tag into one
@@ -1632,9 +1615,8 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) e
 		return fmt.Errorf("flush pending update notifications: %w", err)
 	case len(unnotifiedUpdates) > 0:
 		updatesToNotify := make(map[string]*imageupdate.Response)
-		imageIDsToMark := make([]string, 0, len(unnotifiedUpdates))
 
-		for imageID, record := range unnotifiedUpdates {
+		for _, record := range unnotifiedUpdates {
 			updatesToNotify[record.Repository+":"+record.Tag+kit.Ternary(record.ContainerID != "", " (container "+record.ContainerID+")", "")] = &imageupdate.Response{
 				HasUpdate:      record.HasUpdate,
 				UpdateType:     record.UpdateType,
@@ -1650,7 +1632,6 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) e
 				AuthRegistry:   kit.FromPtr(record.AuthRegistry),
 				UsedCredential: record.UsedCredential,
 			}
-			imageIDsToMark = append(imageIDsToMark, imageID)
 		}
 
 		slog.InfoContext(ctx, "Sending notifications for unnotified updates", "count", len(updatesToNotify))
@@ -1663,10 +1644,10 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) e
 		// failure must not make every healthy provider re-send the same updates on
 		// the next poll. Failures remain visible in the delivery history.
 		if delivered == 0 {
-			slog.DebugContext(ctx, "No providers delivered image update notifications; leaving records unnotified", "count", len(imageIDsToMark))
+			slog.DebugContext(ctx, "No providers delivered image update notifications; leaving records unnotified", "count", len(unnotifiedUpdates))
 			return nil
 		}
-		if markErr := s.MarkUpdatesAsNotified(notifCtx, imageIDsToMark); markErr != nil {
+		if markErr := s.MarkUpdatesAsNotified(notifCtx, slices.Collect(maps.Values(unnotifiedUpdates))); markErr != nil {
 			slog.WarnContext(ctx, "Failed to mark updates as notified", "error", markErr.Error())
 		}
 	default:
@@ -1697,7 +1678,7 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 		dockerImageIDs = append(dockerImageIDs, img.ID)
 	}
 
-	imageScoped := s.db.WithContext(ctx).Where("container_id = ? AND project_id = ?", "", "")
+	imageScoped := s.db.WithContext(ctx).Where("container_id = ? AND project_id = ? AND id NOT LIKE 'ref::%'", "", "")
 	if len(dockerImageIDs) > 0 {
 		imageScoped = imageScoped.Where("id NOT IN ?", dockerImageIDs)
 	}

@@ -45,16 +45,10 @@ func newTestWSPairInternal(t *testing.T) (serverConn *websocket.Conn, cleanup fu
 	}
 }
 
-func (h *Hub) ClientCount() int {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return len(h.clients)
-}
-
 func TestNewHub(t *testing.T) {
 	h := NewHub(10)
 	require.NotNil(t, h)
-	assert.Equal(t, 0, h.ClientCount())
+	assert.Equal(t, 0, h.Len())
 }
 
 func TestHub_RegisterAndClientCount(t *testing.T) {
@@ -70,7 +64,7 @@ func TestHub_RegisterAndClientCount(t *testing.T) {
 
 	// Wait for registration to process
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 1
+		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 }
 
@@ -86,13 +80,13 @@ func TestHub_UnregisterClient(t *testing.T) {
 	h.register <- c
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 1
+		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 
 	h.unregister <- c
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 0
+		return h.Len() == 0
 	}, time.Second, 5*time.Millisecond)
 }
 
@@ -108,7 +102,7 @@ func TestHub_Broadcast(t *testing.T) {
 	h.register <- c
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 1
+		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 
 	msg := []byte("hello world")
@@ -145,7 +139,7 @@ func TestHub_BroadcastToMultipleClients(t *testing.T) {
 	}()
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == numClients
+		return h.Len() == numClients
 	}, time.Second, 5*time.Millisecond)
 
 	msg := []byte("broadcast to all")
@@ -174,7 +168,7 @@ func TestHub_BackpressureDropsSlowClient(t *testing.T) {
 	h.register <- c
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 1
+		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 
 	// Fill the client's send buffer
@@ -184,7 +178,7 @@ func TestHub_BackpressureDropsSlowClient(t *testing.T) {
 	h.Broadcast([]byte("overflow"))
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 0
+		return h.Len() == 0
 	}, time.Second, 5*time.Millisecond)
 }
 
@@ -205,7 +199,7 @@ func TestHub_OnEmptyCallback(t *testing.T) {
 	h.register <- c
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 1
+		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 
 	h.unregister <- c
@@ -232,7 +226,7 @@ func TestHub_OnFirstClientCallback(t *testing.T) {
 	h.register <- NewClient(sc2, 16)
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 2
+		return h.Len() == 2
 	}, time.Second, 5*time.Millisecond)
 	require.Eventually(t, func() bool {
 		return callCount.Load() == 1
@@ -261,13 +255,13 @@ func TestHub_OnEmptyCalledOnlyOnce(t *testing.T) {
 	h.register <- c2
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 2
+		return h.Len() == 2
 	}, time.Second, 5*time.Millisecond)
 
 	// Unregister first — should NOT trigger onEmpty
 	h.unregister <- c1
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 1
+		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 
 	time.Sleep(50 * time.Millisecond)
@@ -297,7 +291,7 @@ func TestHub_ContextCancellation(t *testing.T) {
 	h.register <- c
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 1
+		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 
 	cancel()
@@ -310,7 +304,7 @@ func TestHub_ContextCancellation(t *testing.T) {
 	}
 
 	// After closeAll, clients map should be empty
-	assert.Equal(t, 0, h.ClientCount())
+	assert.Equal(t, 0, h.Len())
 }
 
 func TestHub_BroadcastBufferFull(t *testing.T) {
@@ -401,7 +395,7 @@ func TestHub_ConcurrentOperations(t *testing.T) {
 
 	// All clients should be gone
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 0
+		return h.Len() == 0
 	}, 2*time.Second, 10*time.Millisecond)
 }
 
@@ -417,18 +411,18 @@ func TestHub_DoubleUnregister(t *testing.T) {
 	h.register <- c
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 1
+		return h.Len() == 1
 	}, time.Second, 5*time.Millisecond)
 
 	// Unregister twice — should not panic
 	h.unregister <- c
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() == 0
+		return h.Len() == 0
 	}, time.Second, 5*time.Millisecond)
 
 	// Second unregister should be harmless
 	h.unregister <- c
 	time.Sleep(50 * time.Millisecond)
-	assert.Equal(t, 0, h.ClientCount())
+	assert.Equal(t, 0, h.Len())
 }

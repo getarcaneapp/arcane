@@ -198,7 +198,7 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 			slog.WarnContext(ctx, "failed to connect to Docker event stream", "error", err)
 		} else {
 			result := dockerClient.Events(ctx, client.EventsListOptions{
-				Since: kit.Ternary(lastEventNano == 0, "", fmt.Sprintf("%d.%09d", lastEventNano/int64(time.Second), lastEventNano%int64(time.Second))),
+				Since: kit.Ternary(lastEventNano == 0, "", fmt.Sprintf("%d.%09d", (lastEventNano+1)/int64(time.Second), (lastEventNano+1)%int64(time.Second))),
 			})
 			streamStart := time.Now()
 			var streamErr error

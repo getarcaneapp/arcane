@@ -299,6 +299,7 @@ func (s *ProjectService) newProjectMetadataEnv(ctx context.Context, projectsList
 		autoInjectEnv:      s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false),
 		settings:           s.settingsService.GetSettingsOrDefaults(ctx),
 		gitOpsComposePaths: make(map[string]string),
+		pathMapper:         sync.OnceValue(func() *projects.PathMapper { return s.projectPathMapper(ctx) }),
 		composeFiles:       make(map[string]string, len(projectsList)),
 	}
 	s.preloadGitOpsComposePaths(ctx, env, projectsList)
@@ -582,7 +583,7 @@ func (s *ProjectService) ComposeServiceImage(ctx context.Context, composeName, s
 	if err != nil {
 		return "", "", err
 	}
-	effective, _, err := s.loadComposeProjectForProject(ctx, proj, nil, serviceName)
+	effective, err := s.loadComposeProjectForProject(ctx, proj, nil, serviceName)
 	if err != nil {
 		return "", "", fmt.Errorf("load project %s: %w", proj.Name, err)
 	}
@@ -627,7 +628,10 @@ func (s *ProjectService) EnsureProjectPathUnderRoot(ctx context.Context, proj *P
 	}
 
 	if persist {
-		if saveErr := s.db.WithContext(ctx).Save(proj).Error; saveErr != nil {
+		if saveErr := s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", proj.ID).Updates(map[string]any{
+			"path":       proj.Path,
+			"updated_at": time.Now(),
+		}).Error; saveErr != nil {
 			slog.WarnContext(ctx, "failed to persist normalized project path", "error", saveErr)
 		}
 	}
@@ -722,10 +726,10 @@ func (s *ProjectService) resolveProjectComposeFile(ctx context.Context, proj *Pr
 
 // loadComposeProjectForProject loads the executable compose model for proj. prepare is optional and runs before
 // host path translation; deployment paths use it to create missing bind directories, read paths pass nil.
-func (s *ProjectService) loadComposeProjectForProject(ctx context.Context, proj *Project, prepare projects.PrepareProjectFunc, services ...string) (*types.Project, string, error) {
+func (s *ProjectService) loadComposeProjectForProject(ctx context.Context, proj *Project, prepare projects.PrepareProjectFunc, services ...string) (*types.Project, error) {
 	composeFileFullPath, err := s.ResolveProjectComposeFile(ctx, proj)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
@@ -743,9 +747,9 @@ func (s *ProjectService) loadComposeProjectForProject(ctx context.Context, proj 
 		nil, nil, false, nil, services, prepare,
 	)
 	if loadErr != nil {
-		return nil, "", loadErr
+		return nil, loadErr
 	}
-	return composeProject, composeFileFullPath, nil
+	return composeProject, nil
 }
 
 func (s *ProjectService) getCachedComposeProject(ctx context.Context, proj *Project, env *projectMetadataEnv) (*types.Project, error) {
@@ -775,7 +779,12 @@ func (s *ProjectService) getCachedComposeProject(ctx context.Context, proj *Proj
 		projects.NormalizeProjectName(proj.Name),
 		kit.Ternary(dirErr == nil, projectsDirectory, "/app/data/projects"),
 		kit.ParseOrDefault(cfg.AutoInjectEnv.Value, false, strconv.ParseBool),
-		s.projectPathMapper(ctx),
+		func() *projects.PathMapper {
+			if env == nil {
+				return s.projectPathMapper(ctx)
+			}
+			return env.pathMapper()
+		}(),
 	)
 }
 
@@ -1048,22 +1057,25 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 		return err
 	}
 	defer unlock()
+	return s.updateProjectServices(ctx, projectID, servicesToUpdate, user, discoverTags)
+}
 
+func (s *ProjectService) updateProjectServices(ctx context.Context, projectID string, servicesToUpdate []string, user usertypes.Actor, discoverTags bool) error {
 	proj, err := s.getMutableProject(ctx, projectID)
 	if err != nil {
 		return err
 	}
 	if discoverTags {
-		effective, _, loadErr := s.loadComposeProjectForProject(ctx, proj, nil, servicesToUpdate...)
+		effective, loadErr := s.loadComposeProjectForProject(ctx, proj, nil, servicesToUpdate...)
 		if loadErr != nil {
 			return fmt.Errorf("load project for service image checks: %w", loadErr)
 		}
-		changes, changesErr := s.updates.ImageChanges(ctx, effective, gitOpsSyncID(proj) != "")
+		changes, changesErr := s.updates.ImageChanges(ctx, effective, servicesToUpdate, gitOpsSyncID(proj) != "")
 		if changesErr != nil {
 			return changesErr
 		}
 		if len(changes) > 0 {
-			if _, saveErr := s.SaveProjectServiceImages(ctx, projectID, changes); saveErr != nil {
+			if _, saveErr := s.saveProjectServiceImages(ctx, projectID, changes); saveErr != nil {
 				return saveErr
 			}
 		}
@@ -1072,14 +1084,14 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 
 	// 1. Load project
 	prepare := deployment.PrepareProjectBindDirectories(proj.Path)
-	compProj, _, err := s.loadComposeProjectForProject(ctx, proj, prepare, servicesToUpdate...)
+	compProj, err := s.loadComposeProjectForProject(ctx, proj, prepare, servicesToUpdate...)
 	if err != nil {
 		return fmt.Errorf("failed to load compose project: %w", err)
 	}
 	dependents, stoppedDependents := s.deployment.NamespaceDependents(ctx, compProj, servicesToUpdate)
 	if len(dependents)+len(stoppedDependents) > 0 {
 		slog.InfoContext(ctx, "recreating namespace dependents with updated services", "projectId", projectID, "services", servicesToUpdate, "dependents", dependents, "stoppedDependents", stoppedDependents)
-		if compProj, _, err = s.loadComposeProjectForProject(ctx, proj, prepare, slices.Concat(servicesToUpdate, dependents, stoppedDependents)...); err != nil {
+		if compProj, err = s.loadComposeProjectForProject(ctx, proj, prepare, slices.Concat(servicesToUpdate, dependents, stoppedDependents)...); err != nil {
 			return fmt.Errorf("failed to load compose project with dependents: %w", err)
 		}
 	}
@@ -1093,7 +1105,7 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 
 	credentials, err := s.ResolveRegistryCredentials(ctx)
 	if err != nil {
-		if statusErr := s.updateProjectStatus(ctx, projectID, previousStatus); statusErr != nil {
+		if statusErr := s.updateProjectStatus(context.WithoutCancel(ctx), projectID, previousStatus); statusErr != nil {
 			slog.ErrorContext(ctx, "UpdateProjectServices: failed to restore project status after credential lookup failure", "projectId", projectID, "error", statusErr)
 		}
 		return fmt.Errorf("resolve registry credentials: %w", err)
@@ -1121,7 +1133,7 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 	}
 
 	// 6. Finalize status
-	if updateProjectStatusandCountsErr := s.updateProjectStatusAndCounts(ctx, projectID, ProjectStatusRunning); updateProjectStatusandCountsErr != nil {
+	if updateProjectStatusandCountsErr := s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, ProjectStatusRunning); updateProjectStatusandCountsErr != nil {
 		return updateProjectStatusandCountsErr
 	}
 
@@ -1143,6 +1155,12 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 }
 
 func (s *ProjectService) ArchiveProject(ctx context.Context, projectID string, user usertypes.Actor) error {
+	unlock, err := s.lockProject(ctx, "archive project", projectID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -1182,6 +1200,12 @@ func (s *ProjectService) ArchiveProject(ctx context.Context, projectID string, u
 }
 
 func (s *ProjectService) UnarchiveProject(ctx context.Context, projectID string, user usertypes.Actor) error {
+	unlock, err := s.lockProject(ctx, "unarchive project", projectID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -1253,7 +1277,7 @@ func (s *ProjectService) deployProject(ctx context.Context, projectID string, us
 			return s.lifecycleService.runPreDeploy(ctx, projectFromDb, user)
 		},
 		Load: func(ctx context.Context) (*types.Project, error) {
-			model, _, loadComposeProjectForProjectErr := s.loadComposeProjectForProject(ctx, projectFromDb, deployment.PrepareProjectBindDirectories(projectFromDb.Path))
+			model, loadComposeProjectForProjectErr := s.loadComposeProjectForProject(ctx, projectFromDb, deployment.PrepareProjectBindDirectories(projectFromDb.Path))
 			if loadComposeProjectForProjectErr == nil {
 				closeSuppression = s.eventService.BeginComposeSuppressionWindow(model.Name)
 			}
@@ -1285,7 +1309,7 @@ func (s *ProjectService) deployProject(ctx context.Context, projectID string, us
 		"could not log project deployment action",
 	)
 
-	err = s.updateProjectStatusAndCounts(ctx, projectID, ProjectStatusRunning)
+	err = s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, ProjectStatusRunning)
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to update project status and counts after deploy", "projectId", projectID, "error", err)
 	}
@@ -1309,7 +1333,7 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 // downProject brings the project down and restores its previous status on failure.
 func (s *ProjectService) downProject(ctx context.Context, projectFromDb *Project, user usertypes.Actor) error {
 	projectID := projectFromDb.ID
-	proj, _, lerr := s.loadComposeProjectForProject(ctx, projectFromDb, nil)
+	proj, lerr := s.loadComposeProjectForProject(ctx, projectFromDb, nil)
 	if lerr != nil {
 		return fmt.Errorf("failed to load compose project: %w", lerr)
 	}
@@ -1321,7 +1345,7 @@ func (s *ProjectService) downProject(ctx context.Context, projectFromDb *Project
 	defer s.eventService.BeginComposeSuppressionWindow(proj.Name)()
 
 	if composeDownErr := projects.ComposeDown(ctx, proj, false); composeDownErr != nil {
-		_ = s.updateProjectStatus(ctx, projectID, projectFromDb.Status)
+		_ = s.updateProjectStatus(context.WithoutCancel(ctx), projectID, projectFromDb.Status)
 		return fmt.Errorf("failed to bring down project: %w", composeDownErr)
 	}
 
@@ -1331,7 +1355,7 @@ func (s *ProjectService) downProject(ctx context.Context, projectFromDb *Project
 		"projectName": projectFromDb.Name,
 	}, "could not log project down action")
 
-	return s.updateProjectStatusAndCounts(ctx, projectID, ProjectStatusStopped)
+	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, ProjectStatusStopped)
 }
 
 // CreateProject creates a project's directory, files, and DB row. A directory
@@ -1368,6 +1392,9 @@ func (s *ProjectService) CreateProject(
 	// cannot claim the directory while it is half written.
 	s.syncMu.Lock()
 	defer s.syncMu.Unlock()
+	if nameErr := s.ensureProjectNameAvailable(ctx, name, ""); nameErr != nil {
+		return nil, nameErr
+	}
 
 	basePath := filepath.Join(projectsDirectory, projects.SanitizeProjectName(name))
 	projectPath, folderName, reused, err := kit.Ternary(allowNameSuffix, func() (string, string, bool, error) {
@@ -1552,7 +1579,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 	}
 
 	if removeVolumes {
-		compProj, _, lerr := s.loadComposeProjectForProject(ctx, proj, nil)
+		compProj, lerr := s.loadComposeProjectForProject(ctx, proj, nil)
 		switch {
 		case lerr == nil:
 			defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
@@ -1644,6 +1671,9 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 	}
 	if pullProjectImagesErr := s.PullProjectImages(ctx, projectID, kit.Ternary(progressWriter == nil, io.Discard, progressWriter), user, credentials); pullProjectImagesErr != nil {
 		slog.WarnContext(ctx, "failed to pull project images", "error", pullProjectImagesErr)
+		logWriter := docker.NewLogLineWriter(progressWriter)
+		_, _ = io.WriteString(logWriter, "WARNING: failed to pull project images; deploying with local images:\n"+pullProjectImagesErr.Error()+"\n")
+		_ = logWriter.Close()
 	}
 
 	return s.deployProject(ctx, projectID, user, options)
@@ -1655,13 +1685,14 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 		return err
 	}
 
-	compProj, _, lerr := s.loadComposeProjectForProject(ctx, proj, nil)
+	compProj, lerr := s.loadComposeProjectForProject(ctx, proj, nil)
 	if lerr != nil {
 		return fmt.Errorf("failed to load compose project: %w", lerr)
 	}
 
 	defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
 
+	var pullErrs []error
 	for _, imageRef := range projects.PullableImageRefs(compProj) {
 		if pullErr := s.imageService.Pull(ctx, image.PullRequest{
 			Ref:         imageRef,
@@ -1669,10 +1700,10 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 			User:        user,
 			Credentials: credentials,
 		}); pullErr != nil {
-			return pullErr
+			pullErrs = append(pullErrs, fmt.Errorf("pull %s: %w", imageRef, pullErr))
 		}
 	}
-	return nil
+	return errors.Join(pullErrs...)
 }
 
 func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID string, options projecttypes.BuildOptions, progressWriter io.Writer, user *usertypes.Actor) error {
@@ -1681,7 +1712,7 @@ func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID str
 		return err
 	}
 
-	projectModel, _, derr := s.loadComposeProjectForProject(ctx, projectFromDb, nil)
+	projectModel, derr := s.loadComposeProjectForProject(ctx, projectFromDb, nil)
 	if derr != nil {
 		return fmt.Errorf("failed to load compose project in %s: %w", projectFromDb.Path, derr)
 	}
@@ -1706,7 +1737,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 		return resolveProjectComposeFileErr
 	}
 
-	compProj, _, lerr := s.loadComposeProjectForProject(ctx, proj, nil)
+	compProj, lerr := s.loadComposeProjectForProject(ctx, proj, nil)
 	if lerr != nil {
 		return fmt.Errorf("failed to load compose project: %w", lerr)
 	}
@@ -1718,7 +1749,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 	defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
 
 	if composeRestartErr := projects.ComposeRestart(ctx, compProj, services); composeRestartErr != nil {
-		_ = s.updateProjectStatus(ctx, projectID, proj.Status)
+		_ = s.updateProjectStatus(context.WithoutCancel(ctx), projectID, proj.Status)
 		return fmt.Errorf("failed to restart project: %w", composeRestartErr)
 	}
 
@@ -1732,7 +1763,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 	}
 	s.logProjectEvent(ctx, event.EventTypeProjectStart, projectID, proj.Name, user, metadata, "could not log project restart action")
 
-	return s.updateProjectStatusAndCounts(ctx, projectID, ProjectStatusRunning)
+	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, ProjectStatusRunning)
 }
 
 func (s *ProjectService) updateProjectStatusAndCounts(ctx context.Context, projectID string, status ProjectStatus) error {
@@ -1756,14 +1787,15 @@ func (s *ProjectService) updateProjectStatusAndCounts(ctx context.Context, proje
 
 // restoreRuntimeProjectStatus re-derives status from the running services after a failed deploy, falling back to Stopped.
 func (s *ProjectService) restoreRuntimeProjectStatus(ctx context.Context, projectID string) {
-	services, err := s.projectServices(ctx, projectID)
+	restoreCtx := context.WithoutCancel(ctx)
+	services, err := s.projectServices(restoreCtx, projectID)
 	if err == nil {
-		if err = s.updateProjectStatusAndCounts(ctx, projectID, ProjectStatus(listing.ProjectStatus(services))); err == nil {
+		if err = s.updateProjectStatusAndCounts(restoreCtx, projectID, ProjectStatus(listing.ProjectStatus(services))); err == nil {
 			return
 		}
 	}
 	slog.WarnContext(ctx, "failed to restore project status after deploy failure", "projectId", projectID, "error", err)
-	if updateErr := s.updateProjectStatus(ctx, projectID, ProjectStatusStopped); updateErr != nil {
+	if updateErr := s.updateProjectStatus(restoreCtx, projectID, ProjectStatusStopped); updateErr != nil {
 		slog.WarnContext(ctx, "failed to set stopped status after deploy failure", "projectId", projectID, "error", updateErr)
 	}
 }
@@ -2235,7 +2267,7 @@ func buildUpdateInfoSummary(
 }
 
 func (s *ProjectService) CountServicesFromCompose(ctx context.Context, p Project) (int, error) {
-	proj, _, err := s.loadComposeProjectForProject(ctx, &p, nil)
+	proj, err := s.loadComposeProjectForProject(ctx, &p, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -2464,6 +2496,7 @@ func (s *ProjectService) ProjectMetadata(ctx context.Context, p Project, env *pr
 		return cached
 	}
 
+	loadedAt := time.Now()
 	meta, err := projects.ParseArcaneComposeMetadata(ctx, composeFile, env.projectsDirectory, env.autoInjectEnv)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "path", composeFile, "error", err)
@@ -2473,7 +2506,7 @@ func (s *ProjectService) ProjectMetadata(ctx context.Context, p Project, env *pr
 	if p.ID == "" {
 		return meta
 	}
-	if setErr := s.metaCache.Set(p.ID, fingerprint, p.Path, env.projectsDirectory, composeFile, meta.ComposeFiles, meta.EnvFiles, meta); setErr != nil {
+	if setErr := s.metaCache.Set(p.ID, fingerprint, p.Path, env.projectsDirectory, composeFile, meta.ComposeFiles, meta.EnvFiles, loadedAt, meta); setErr != nil {
 		slog.DebugContext(ctx, "failed to cache Compose metadata", "projectId", p.ID, "error", setErr)
 	}
 
@@ -2983,7 +3016,8 @@ func (s *ProjectService) applyProjectUpdate(
 	}()
 
 	// A rename moves a stopped project's directory to its sanitized new name under the projects directory.
-	if newName != "" && proj.Name != newName {
+	renamed := newName != "" && proj.Name != newName
+	if renamed {
 		newDirName := projects.SanitizeProjectName(newName)
 		targetPath := filepath.Clean(filepath.Join(projectsDirectory, newDirName))
 		if filepath.Clean(proj.Path) != targetPath {
@@ -3029,7 +3063,23 @@ func (s *ProjectService) applyProjectUpdate(
 	if migrationErr := projects.ApplyRenameVolumeMigration(ctx, s.updates.Operations(), volumeMigration, renameJournal, &volumeMigrationApplied); migrationErr != nil {
 		return migrationErr
 	}
-	if saveErr := s.db.WithContext(ctx).Save(proj).Error; saveErr != nil {
+	if saveErr := s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", proj.ID).Updates(func() map[string]any {
+		columns := map[string]any{
+			"name":       proj.Name,
+			"dir_name":   proj.DirName,
+			"path":       proj.Path,
+			"updated_at": time.Now(),
+		}
+		if renamed {
+			maps.Copy(columns, map[string]any{
+				"status":        proj.Status,
+				"status_reason": proj.StatusReason,
+				"service_count": proj.ServiceCount,
+				"running_count": proj.RunningCount,
+			})
+		}
+		return columns
+	}()).Error; saveErr != nil {
 		return fmt.Errorf("failed to update project: %w", saveErr)
 	}
 	projects.FinalizeRenameAfterCommit(ctx, s.updates.Operations(), proj.ID, volumeMigration, renameJournal, new(renameJournal != nil))
@@ -3099,7 +3149,10 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(
 		if overrideErr := projects.WriteComposeOverrideFile(ctx, projectsDirectory, proj.Path, gitOverrideContent, gitOverrideFileName); overrideErr != nil {
 			return fmt.Errorf("failed to sync git override file: %w", overrideErr)
 		}
-		if saveErr := s.db.WithContext(ctx).Save(proj).Error; saveErr != nil {
+		if saveErr := s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", proj.ID).Updates(map[string]any{
+			"path":       proj.Path,
+			"updated_at": time.Now(),
+		}).Error; saveErr != nil {
 			return fmt.Errorf("failed to update project: %w", saveErr)
 		}
 		return nil
@@ -3143,6 +3196,17 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(
 	return proj, contentChanged, nil
 }
 
+func (s *ProjectService) ensureProjectNameAvailable(ctx context.Context, name, excludeProjectID string) error {
+	var others []Project
+	if err := s.db.WithContext(ctx).Select("id", "name", "compose_project_name").Where("id <> ?", excludeProjectID).Find(&others).Error; err != nil {
+		return fmt.Errorf("failed to check existing project names: %w", err)
+	}
+	if _, taken := listing.KnownComposeProjectNames(projectRecords(others))[projects.NormalizeProjectName(name)]; taken {
+		return common.Classify(common.ErrProjectWorkspaceConflict, fmt.Errorf("a project named %q already exists", name))
+	}
+	return nil
+}
+
 // prepareProjectRenameVolumeMigration rejects an unusable rename target, then plans the volume rename for a stopped
 // project. Content changes are applied to a scratch preview first so the plan reflects the updated compose files.
 func (s *ProjectService) prepareProjectRenameVolumeMigration(
@@ -3154,6 +3218,9 @@ func (s *ProjectService) prepareProjectRenameVolumeMigration(
 	newDirName := projects.SanitizeProjectName(newName)
 	if newDirName == "" || strings.Trim(newDirName, "_") == "" {
 		return nil, errors.New("invalid project name: results in empty directory name")
+	}
+	if nameErr := s.ensureProjectNameAvailable(ctx, newName, proj.ID); nameErr != nil {
+		return nil, nameErr
 	}
 	if targetPath := filepath.Clean(filepath.Join(projectsDirectory, newDirName)); filepath.Clean(proj.Path) != targetPath {
 		targetLogical, logicalErr := acfs.LogicalPath(projectsDirectory, targetPath)
@@ -3214,7 +3281,7 @@ func (s *ProjectService) prepareProjectRenameVolumeMigration(
 		return nil, nil
 	}
 
-	composeProject, _, err := s.loadComposeProjectForProject(ctx, target, nil)
+	composeProject, err := s.loadComposeProjectForProject(ctx, target, nil)
 	if err != nil {
 		if errors.Is(err, common.ErrProjectComposeFileNotFound) {
 			return nil, nil
@@ -3232,18 +3299,33 @@ func (s *ProjectService) prepareProjectRenameVolumeMigration(
 
 // UpdateProjectServiceImages persists selected service image tags before recreating them.
 func (s *ProjectService) UpdateProjectServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange, user usertypes.Actor) error {
-	services, err := s.SaveProjectServiceImages(ctx, projectID, changes)
+	unlock, err := s.lockProject(ctx, "update project service images", projectID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	services, err := s.saveProjectServiceImages(ctx, projectID, changes)
 	if err != nil {
 		return err
 	}
 	// Keep the desired source on deployment failure: Compose may have partially
 	// recreated services, and the pending update must remain retryable.
-	return s.UpdateProjectServices(ctx, projectID, services, user, false)
+	return s.updateProjectServices(ctx, projectID, services, user, false)
 }
 
 // SaveProjectServiceImages persists selected service image tags without
 // deploying them and returns the changed services.
 func (s *ProjectService) SaveProjectServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange) ([]string, error) {
+	unlock, err := s.lockProject(ctx, "save project service images", projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	return s.saveProjectServiceImages(ctx, projectID, changes)
+}
+
+func (s *ProjectService) saveProjectServiceImages(ctx context.Context, projectID string, changes map[string]updatertypes.ServiceImageChange) ([]string, error) {
 	if len(changes) == 0 {
 		return nil, errors.New("service image changes are required")
 	}
@@ -3255,7 +3337,7 @@ func (s *ProjectService) SaveProjectServiceImages(ctx context.Context, projectID
 		return nil, errors.New("tag updates cannot edit a GitOps-managed project; update image tags in the source repository")
 	}
 	// Selecting the changed services keeps profile-gated ones active.
-	effective, _, err := s.loadComposeProjectForProject(ctx, proj, nil, slices.Collect(maps.Keys(changes))...)
+	effective, err := s.loadComposeProjectForProject(ctx, proj, nil, slices.Collect(maps.Keys(changes))...)
 	if err != nil {
 		return nil, fmt.Errorf("load project for tag update: %w", err)
 	}
@@ -3383,15 +3465,15 @@ func (s *ProjectService) projectServices(ctx context.Context, projectID string) 
 		return nil, err
 	}
 
-	composeProject, composeFileFullPath, derr := s.loadComposeProjectForProject(ctx, projectFromDb, nil)
+	containers, listErr := s.details.ComposeContainers(ctx)
+	matched := listing.ProjectContainers(projectRecord(*projectFromDb), listing.GroupComposeContainersByProject(containers))
+	composeProject, derr := s.getCachedComposeProject(ctx, projectFromDb, nil)
 	if errors.Is(derr, common.ErrProjectEnvUnreadable) {
 		// The Compose file cannot be loaded, so derive services from labeled containers.
-		containers, listErr := s.details.ComposeContainers(ctx)
 		if listErr != nil {
 			return nil, listErr
 		}
 		meta := s.ProjectMetadata(ctx, *projectFromDb, nil)
-		matched := listing.ProjectContainers(projectRecord(*projectFromDb), listing.GroupComposeContainersByProject(containers))
 		currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 		services := make([]projecttypes.RuntimeService, 0, len(matched))
 		for _, c := range matched {
@@ -3402,13 +3484,11 @@ func (s *ProjectService) projectServices(ctx context.Context, projectID string) 
 	if derr != nil {
 		return []projecttypes.RuntimeService{}, fmt.Errorf("failed to load compose project in %s: %w", projectFromDb.Path, derr)
 	}
-
-	projectsDirectory, projectsDirErr := s.GetProjectsDirectory(ctx)
-	if projectsDirErr != nil {
-		slog.WarnContext(ctx, "failed to resolve projects directory for Arcane compose metadata", "path", composeFileFullPath, "error", projectsDirErr)
+	if listErr != nil {
+		slog.WarnContext(ctx, "failed to list containers for project image identity", "projectName", composeProject.Name, "error", listErr)
 	}
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	return s.details.ComposeServices(ctx, composeProject, composeFileFullPath, projectsDirectory, autoInjectEnv, IconCatalogForContext(ctx))
+
+	return s.details.ComposeServices(ctx, composeProject, matched, s.ProjectMetadata(ctx, *projectFromDb, nil), IconCatalogForContext(ctx))
 }
 
 func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
@@ -3416,7 +3496,12 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 	if err != nil {
 		return err
 	}
-	return projectdetails.Logs(ctx, proj.Name, logsChan, follow, tail, since, timestamps)
+	containers, listErr := s.details.ComposeContainers(ctx)
+	if listErr != nil {
+		slog.WarnContext(ctx, "failed to list containers for project log stream", "projectId", projectID, "error", listErr)
+	}
+	matched := listing.ProjectContainers(projectRecord(*proj), listing.GroupComposeContainersByProject(containers))
+	return projectdetails.Logs(ctx, projectdetails.RuntimeProjectName(proj.Name, matched), logsChan, follow, tail, since, timestamps)
 }
 
 func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (projecttypes.StatusCounts, error) {

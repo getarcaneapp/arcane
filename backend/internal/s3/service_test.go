@@ -117,6 +117,41 @@ func TestS3DestinationService_DeleteRejectsConfiguredDestination(t *testing.T) {
 	require.ErrorIs(t, err, ErrS3DestinationInUse)
 }
 
+func TestS3DestinationService_UpdateRejectsLocationChangeWhileInUse(t *testing.T) {
+	service, gormDB := setupS3DestinationServiceTest(t)
+	ctx := t.Context()
+	destination, err := service.CreateS3Destination(ctx, backup.CreateS3Destination{
+		Name:            "In use",
+		Bucket:          "arcane-backups",
+		Region:          "us-east-1",
+		AccessKeyID:     "access-key",
+		SecretAccessKey: "secret-key",
+		UseSSL:          true,
+	})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.Exec("INSERT INTO volume_backups (s3_destination_id, remote_snapshot_id) VALUES (?, ?)", destination.ID, "snapshot-1").Error)
+
+	_, err = service.UpdateS3Destination(ctx, destination.ID, backup.UpdateS3Destination{
+		Name:            destination.Name,
+		Bucket:          "other-bucket",
+		Region:          destination.Region,
+		AccessKeyID:     destination.AccessKeyID,
+		SecretAccessKey: "secret-key",
+		UseSSL:          destination.UseSSL,
+	})
+	require.ErrorIs(t, err, ErrS3DestinationInUse)
+
+	updated, err := service.UpdateS3Destination(ctx, destination.ID, backup.UpdateS3Destination{
+		Name:        "Renamed",
+		Bucket:      destination.Bucket,
+		Region:      destination.Region,
+		AccessKeyID: destination.AccessKeyID,
+		UseSSL:      destination.UseSSL,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "Renamed", updated.Name)
+}
+
 func TestS3DestinationService_SyncS3Destinations(t *testing.T) {
 	service, gormDB := setupS3DestinationServiceTest(t)
 	ctx := t.Context()

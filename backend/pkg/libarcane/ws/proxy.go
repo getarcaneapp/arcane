@@ -87,6 +87,7 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 	go pump(clientConn, remoteConn)
 	go pump(remoteConn, clientConn)
 	go KeepAlive(pumpCtx, pumpCancel, clientConn)
+	go KeepAlive(pumpCtx, pumpCancel, remoteConn)
 
 	<-errc
 	return nil

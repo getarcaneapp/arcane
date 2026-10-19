@@ -240,7 +240,33 @@ func TestDecideDeployImageAction(t *testing.T) {
 		decision := DecideDeployImageAction(svc, "")
 		assert.True(t, decision.PullIfStale)
 		assert.Equal(t, 6*time.Hour, decision.StaleAfter)
+		assert.True(t, decision.FallbackBuildOnPullFail)
 		assert.False(t, decision.Build)
+	})
+
+	t.Run("build service with deploy missing override falls back to build", func(t *testing.T) {
+		svc := composetypes.ServiceConfig{Build: &composetypes.BuildConfig{Context: "."}}
+		decision := DecideDeployImageAction(svc, "missing")
+		assert.True(t, decision.PullIfMissing)
+		assert.True(t, decision.FallbackBuildOnPullFail)
+		assert.False(t, decision.Build)
+	})
+
+	t.Run("build service with always policy falls back to build", func(t *testing.T) {
+		svc := composetypes.ServiceConfig{
+			PullPolicy: "always",
+			Build:      &composetypes.BuildConfig{Context: "."},
+		}
+		decision := DecideDeployImageAction(svc, "")
+		assert.True(t, decision.PullAlways)
+		assert.True(t, decision.FallbackBuildOnPullFail)
+		assert.False(t, decision.Build)
+	})
+
+	t.Run("non-build service never falls back to build", func(t *testing.T) {
+		decision := DecideDeployImageAction(composetypes.ServiceConfig{}, "always")
+		assert.True(t, decision.PullAlways)
+		assert.False(t, decision.FallbackBuildOnPullFail)
 	})
 }
 

@@ -178,16 +178,16 @@ func DecideDeployImageAction(svc composetypes.ServiceConfig, pullPolicyOverride 
 		case policy == "never":
 			return DeployImageDecision{RequireLocalOnly: true}
 		case IsAlwaysPullPolicy(policy):
-			return DeployImageDecision{PullAlways: true}
-		case policy == "missing":
-			return DeployImageDecision{PullIfMissing: true}
-		case policy == "":
-			return DeployImageDecision{PullIfMissing: true, FallbackBuildOnPullFail: true}
+			return DeployImageDecision{PullAlways: true, FallbackBuildOnPullFail: true}
 		default:
 			if window, ok := refreshWindowForPolicyInternal(svc, policy); ok {
-				return DeployImageDecision{PullIfStale: true, StaleAfter: window}
+				return DeployImageDecision{
+					PullIfStale:             true,
+					StaleAfter:              window,
+					FallbackBuildOnPullFail: true,
+				}
 			}
-			return DeployImageDecision{PullIfMissing: true}
+			return DeployImageDecision{PullIfMissing: true, FallbackBuildOnPullFail: true}
 		}
 	}
 

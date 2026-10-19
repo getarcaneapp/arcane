@@ -164,7 +164,7 @@ func (s *S3DestinationService) UpdateS3Destination(ctx context.Context, id strin
 	}
 	// The persisted configuration without the
 	// decrypted secret, for comparing connection fields against an update.
-	if configuration.SecretAccessKey == "" && !s3.ConnectionFieldsEqual(s3.Configuration{
+	stored := s3.Configuration{
 		ID:             destination.ID,
 		Name:           destination.Name,
 		Endpoint:       destination.Endpoint,
@@ -174,8 +174,14 @@ func (s *S3DestinationService) UpdateS3Destination(ctx context.Context, id strin
 		Prefix:         destination.Prefix,
 		UseSSL:         destination.UseSSL,
 		ForcePathStyle: destination.ForcePathStyle,
-	}.Normalized(), configuration) {
+	}.Normalized()
+	if configuration.SecretAccessKey == "" && !s3.ConnectionFieldsEqual(stored, configuration) {
 		return nil, errS3SecretRequired
+	}
+	if stored.Endpoint != configuration.Endpoint || stored.Bucket != configuration.Bucket || stored.Region != configuration.Region || stored.Prefix != configuration.Prefix {
+		if ensureUnusedErr := s.ensureUnused(ctx, id); ensureUnusedErr != nil {
+			return nil, fmt.Errorf("the bucket, prefix, endpoint or region cannot change while backups use the destination: %w", ensureUnusedErr)
+		}
 	}
 	encryptedSecret, err := func() (string, error) {
 		if configuration.SecretAccessKey == "" {
@@ -210,6 +216,16 @@ func (s *S3DestinationService) DeleteS3Destination(ctx context.Context, id strin
 	if err != nil {
 		return err
 	}
+	if ensureUnusedErr := s.ensureUnused(ctx, id); ensureUnusedErr != nil {
+		return ensureUnusedErr
+	}
+	if deleteDestinationErr := s.db.WithContext(ctx).Delete(destination).Error; deleteDestinationErr != nil {
+		return fmt.Errorf("failed to delete S3 destination: %w", deleteDestinationErr)
+	}
+	return nil
+}
+
+func (s *S3DestinationService) ensureUnused(ctx context.Context, id string) error {
 	inUse, err := s.DestinationInUse(ctx, id)
 	if err != nil {
 		return err
@@ -219,9 +235,6 @@ func (s *S3DestinationService) DeleteS3Destination(ctx context.Context, id strin
 	}
 	if checkRemoteReferencesErr := s.checkRemoteReferences(ctx, id); checkRemoteReferencesErr != nil {
 		return fmt.Errorf("%w: %s", ErrS3DestinationInUse, checkRemoteReferencesErr.Error())
-	}
-	if deleteDestinationErr := s.db.WithContext(ctx).Delete(destination).Error; deleteDestinationErr != nil {
-		return fmt.Errorf("failed to delete S3 destination: %w", deleteDestinationErr)
 	}
 	return nil
 }
