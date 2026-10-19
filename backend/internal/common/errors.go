@@ -81,6 +81,7 @@ var (
 	ErrRoleNotFound                            = Classify(ErrNotFound, errors.New("Role not found"))
 	ErrRoleBuiltIn                             = Classify(ErrForbidden, errors.New("Built-in role cannot be modified"))
 	ErrRoleNameTaken                           = Classify(ErrConflict, errors.New("Role name already in use"))
+	ErrRoleUsedByFederatedCredential           = Classify(ErrConflict, errors.New("Role is used by a federated credential"))
 	ErrUnknownPermission                       = Classify(ErrValidation, errors.New("Unknown permission"))
 	ErrRolePermissionEscalation                = Classify(ErrForbidden, errors.New("cannot grant a permission you do not hold"))
 	ErrInvalidRoleAssignment                   = Classify(ErrBadRequest, errors.New("invalid role assignment"))

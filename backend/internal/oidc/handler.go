@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
-	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	authtypes "github.com/getarcaneapp/arcane/types/v2/auth"
@@ -132,6 +131,9 @@ func (h *OidcHandler) GetOidcStatus(ctx context.Context, _ *GetOidcStatusInput) 
 // GetOidcConfig returns the OIDC client configuration.
 func (h *OidcHandler) GetOidcConfig(ctx context.Context, input *GetOidcConfigInput) (*GetOidcConfigOutput, error) {
 	oidcConfig, err := h.authService.GetOidcConfig(ctx)
+	if errors.Is(err, auth.ErrOidcAuthDisabled) {
+		return nil, huma.Error400BadRequest(auth.ErrOidcAuthDisabled.Error())
+	}
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get OIDC configuration")
 	}
@@ -232,6 +234,12 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 	userModel, isNewUser, err := h.authService.PrepareOidcLogin(ctx, *userInfo, tokenResp)
 	if err != nil {
 		slog.ErrorContext(ctx, "OIDC login preparation failed", "error", err, "subject", userInfo.Subject)
+		switch {
+		case errors.Is(err, common.ErrForbidden):
+			return nil, huma.Error403Forbidden(err.Error())
+		case errors.Is(err, common.ErrConflict):
+			return nil, huma.Error409Conflict(err.Error())
+		}
 		return nil, huma.Error500InternalServerError("Authentication failed")
 	}
 
@@ -262,9 +270,7 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 		return nil, huma.Error500InternalServerError("Authentication failed")
 	}
 	if mobileRedirectURI == "" {
-		maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
-		maxAge += 60 // Add 60 seconds buffer for clock skew
-		setCookies = append(setCookies, cookie.BuildTokenCookieStringFor(maxAge, tokenPair.BrowserToken, cookie.SecureCookieFromContext(ctx))...)
+		setCookies = append(setCookies, tokenPair.CookieHeaders(cookie.SecureCookieFromContext(ctx))...)
 	}
 	expiresAt := tokenPair.ExpiresAt
 
@@ -335,6 +341,12 @@ func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDe
 	userModel, isNewUser, err := h.authService.PrepareOidcLogin(ctx, *userInfo, tokenResp)
 	if err != nil {
 		slog.ErrorContext(ctx, "OIDC login preparation failed", "error", err, "subject", userInfo.Subject)
+		switch {
+		case errors.Is(err, common.ErrForbidden):
+			return nil, huma.Error403Forbidden(err.Error())
+		case errors.Is(err, common.ErrConflict):
+			return nil, huma.Error409Conflict(err.Error())
+		}
 		return nil, huma.Error500InternalServerError("Authentication failed")
 	}
 	// The device flow has no way to satisfy a WebAuthn assertion: the CLI has no

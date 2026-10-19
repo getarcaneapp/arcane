@@ -76,8 +76,8 @@ var ServiceOptions = fx.Options(
 		fx.Annotate(activity.NewActivityService, fx.As(fx.Self()), fx.As(new(activitylib.Service))),
 		fx.Annotate(event.NewEventService, fx.OnStop(func(ctx context.Context, service *event.EventService) error { return service.Stop(ctx) })),
 		job.NewJobService,
-		role.NewRoleService,
-		apikey.NewApiKeyService,
+		fx.Annotate(role.NewRoleService, fx.OnStop((*role.RoleService).Stop)),
+		fx.Annotate(apikey.NewApiKeyService, fx.OnStop((*apikey.ApiKeyService).Stop)),
 		func(db *database.DB, roles *role.RoleService) *user.UserService {
 			return user.NewUserService(db, roles, session.RevokeAllUserSessionsExceptInDB)
 		},
@@ -108,7 +108,7 @@ var ServiceOptions = fx.Options(
 		backup.NewRecoveryKeyStore,
 		upload.NewUploadService,
 		health.NewService,
-		auth.NewAuthService,
+		fx.Annotate(auth.NewAuthService, fx.OnStop((*auth.AuthService).Stop)),
 		settings.NewSettingsSearchService,
 		fx.Annotate(settings.NewSettingsService, fx.OnStop(func(ctx context.Context, service *settings.SettingsService) error { return service.Stop(ctx) })),
 		provideVolumeService,

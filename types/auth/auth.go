@@ -14,7 +14,11 @@ type Login struct {
 
 // Refresh represents the token refresh request body.
 type Refresh struct {
-	RefreshToken string `json:"refreshToken" minLength:"1" doc:"Refresh token used to obtain a new access token"`
+	RefreshToken string `json:"refreshToken,omitempty" doc:"Refresh token used to obtain a new access token; browsers send it as a cookie instead"`
+}
+
+type Logout struct {
+	RefreshToken string `json:"refreshToken,omitempty" doc:"Refresh token whose session is revoked even when the access token has expired"`
 }
 
 // PasswordChange represents the password change request body.

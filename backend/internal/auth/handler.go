@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/subtle"
 	"errors"
@@ -15,7 +16,6 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
-	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v2/activity"
@@ -59,14 +59,22 @@ type LoginOutput struct {
 	Body      base.ApiResponse[auth.AuthenticationResponse]
 }
 
+type LogoutInput struct {
+	SecureRefreshCookie   string       `cookie:"__Secure-refresh" doc:"Refresh cookie (HTTPS)"`
+	InsecureRefreshCookie string       `cookie:"refresh" doc:"Refresh cookie (HTTP)"`
+	Body                  *auth.Logout `required:"false"`
+}
+
 type LogoutOutput struct {
 	SetCookie []string `header:"Set-Cookie" doc:"Cleared session cookie"`
 	Body      base.ApiResponse[base.MessageResponse]
 }
 
 type RefreshTokenInput struct {
-	UserAgent string `header:"User-Agent"`
-	Body      auth.Refresh
+	UserAgent             string        `header:"User-Agent"`
+	SecureRefreshCookie   string        `cookie:"__Secure-refresh" doc:"Refresh cookie (HTTPS)"`
+	InsecureRefreshCookie string        `cookie:"refresh" doc:"Refresh cookie (HTTP)"`
+	Body                  *auth.Refresh `required:"false"`
 }
 
 type RefreshTokenOutput struct {
@@ -145,12 +153,10 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
-	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
-	maxAge += 60
 	expiresAt := tokenPair.ExpiresAt
 
 	return &LoginOutput{
-		SetCookie: cookie.BuildTokenCookieStringFor(maxAge, tokenPair.BrowserToken, cookie.SecureCookieFromContext(ctx)),
+		SetCookie: tokenPair.CookieHeaders(cookie.SecureCookieFromContext(ctx)),
 		Body: base.ApiResponse[auth.AuthenticationResponse]{
 			Success: true,
 			Data: auth.AuthenticationResponse{
@@ -166,11 +172,16 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 }
 
 // Logout clears the authentication session.
-func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutput, error) {
+func (h *AuthHandler) Logout(ctx context.Context, input *LogoutInput) (*LogoutOutput, error) {
 	if h.authService != nil {
 		if sessionID, exists := middleware.GetCurrentSessionIDFromContext(ctx); exists {
 			if err := h.authService.RevokeSession(ctx, sessionID); err != nil {
 				slog.ErrorContext(ctx, "Failed to revoke session on logout; clearing cookie anyway", "sessionId", sessionID, "error", err)
+			}
+		}
+		if refreshToken := cmp.Or(kit.FromPtr(input.Body).RefreshToken, input.SecureRefreshCookie, input.InsecureRefreshCookie); refreshToken != "" {
+			if err := h.authService.RevokeSessionByRefreshToken(ctx, refreshToken); err != nil {
+				slog.WarnContext(ctx, "Failed to revoke refresh token session on logout", "error", err)
 			}
 		}
 		if userModel, exists := userdomain.CurrentUserFromContext(ctx); exists {
@@ -179,7 +190,10 @@ func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutpu
 	}
 
 	return &LogoutOutput{
-		SetCookie: cookie.BuildClearTokenCookieStringsFor(cookie.SecureCookieFromContext(ctx)),
+		SetCookie: append(
+			cookie.BuildClearTokenCookieStringsFor(cookie.SecureCookieFromContext(ctx)),
+			cookie.BuildClearRefreshCookieStringsFor(cookie.SecureCookieFromContext(ctx))...,
+		),
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -217,25 +231,27 @@ func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*han
 
 // RefreshToken obtains a new access token using a refresh token.
 func (h *AuthHandler) RefreshToken(ctx context.Context, input *RefreshTokenInput) (*RefreshTokenOutput, error) {
-	tokenPair, err := h.authService.RefreshToken(ctx, input.Body.RefreshToken, handlerutil.SessionMetaFromContext(ctx, input.UserAgent))
+	refreshToken := cmp.Or(kit.FromPtr(input.Body).RefreshToken, input.SecureRefreshCookie, input.InsecureRefreshCookie)
+	if refreshToken == "" {
+		return nil, huma.Error401Unauthorized("Invalid or expired refresh token")
+	}
+	tokenPair, err := h.authService.RefreshToken(ctx, refreshToken, handlerutil.SessionMetaFromContext(ctx, input.UserAgent))
 	if err != nil {
 		switch {
 		case errors.Is(err, common.ErrInvalidToken),
 			errors.Is(err, common.ErrExpiredToken),
 			errors.Is(err, common.ErrTokenValidation),
 			errors.Is(err, common.ErrSessionRevoked),
-			errors.Is(err, common.ErrTokenVersionMismatch):
+			errors.Is(err, common.ErrTokenVersionMismatch),
+			errors.Is(err, common.ErrUserNotFound):
 			return nil, huma.Error401Unauthorized("Invalid or expired refresh token")
 		default:
 			return nil, huma.Error500InternalServerError("Failed to refresh token")
 		}
 	}
 
-	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
-	maxAge += 60
-
 	return &RefreshTokenOutput{
-		SetCookie: cookie.BuildTokenCookieStringFor(maxAge, tokenPair.BrowserToken, cookie.SecureCookieFromContext(ctx)),
+		SetCookie: tokenPair.CookieHeaders(cookie.SecureCookieFromContext(ctx)),
 		Body: base.ApiResponse[auth.TokenRefreshResponse]{
 			Success: true,
 			Data: auth.TokenRefreshResponse{
@@ -264,6 +280,8 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 		switch {
 		case errors.Is(err, ErrInvalidCredentials):
 			return nil, huma.Error401Unauthorized("Current password is incorrect")
+		case errors.Is(err, common.ErrForbidden):
+			return nil, huma.Error403Forbidden(err.Error())
 		case errors.Is(err, common.ErrValidation):
 			passwordPolicy := h.authService.passwordPolicy(ctx)
 			return nil, handlerutil.Error400BadRequestWithType(err.Error(), validation.PasswordPolicyProblemType(passwordPolicy))
@@ -285,7 +303,8 @@ func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{
 
 	currentSessionID, _ := middleware.GetCurrentSessionIDFromContext(ctx)
 	if logoutAllOtherSessionsErr := h.authService.LogoutAllOtherSessions(ctx, userModel.ID, currentSessionID); logoutAllOtherSessionsErr != nil {
-		return nil, huma.Error500InternalServerError("failed to revoke sessions: " + logoutAllOtherSessionsErr.Error())
+		slog.ErrorContext(ctx, "Failed to revoke other sessions", "userId", userModel.ID, "error", logoutAllOtherSessionsErr)
+		return nil, huma.Error500InternalServerError("failed to revoke sessions")
 	}
 
 	return handlerutil.MessageOutput("All other sessions signed out", ""), nil
@@ -317,6 +336,9 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 		normalized, normalizeOptionalEmailErr := userdomain.NormalizeOptionalEmail(input.Body.Email)
 		if normalizeOptionalEmailErr != nil {
 			return nil, huma.Error400BadRequest(normalizeOptionalEmailErr.Error())
+		}
+		if !strings.EqualFold(kit.FromPtr(normalized), kit.FromPtr(userModel.Email)) && h.settingsService.GetBoolSetting(ctx, "oidcMergeAccounts", false) {
+			return nil, huma.Error403Forbidden("email cannot be changed while OIDC account merging is enabled")
 		}
 		userModel.Email = normalized
 	}
@@ -363,6 +385,9 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 
 	updated, err := h.userService.UpdateUser(ctx, userModel, nil)
 	if err != nil {
+		if errors.Is(err, userdomain.ErrEmailTaken) {
+			return nil, huma.Error409Conflict(userdomain.ErrEmailTaken.Error())
+		}
 		return nil, huma.Error500InternalServerError("Failed to update user")
 	}
 	h.authService.InvalidateUserTokenCache(updated.ID)
@@ -516,6 +541,9 @@ func normalizeAvatarImage(data []byte, mimeType string) ([]byte, string) {
 }
 
 func imageHasTransparency(img image.Image) bool {
+	if opaque, ok := img.(interface{ Opaque() bool }); ok {
+		return !opaque.Opaque()
+	}
 	bounds := img.Bounds()
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {

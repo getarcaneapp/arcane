@@ -402,6 +402,7 @@ func TestResolveExecutionPermissions(t *testing.T) {
 	t.Run("scoped keys bypass cached grants", func(t *testing.T) {
 		db, service := setupUserAndRoleServices(t)
 		owner := createTestUser(t, db, "owner", "owner")
+		grantGlobalAdmin(t, service, owner.ID)
 		environmentID := "env-1"
 		key := testApiKeyRow{ID: "scoped", Kind: "scoped", UserID: &owner.ID, EnvironmentID: &environmentID}
 		require.NoError(t, db.Create(&key).Error)

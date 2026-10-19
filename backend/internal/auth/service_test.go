@@ -600,6 +600,44 @@ func TestRefreshToken_RotatesJTI(t *testing.T) {
 	require.ErrorIs(t, err, common.ErrInvalidToken)
 }
 
+func TestRefreshToken_AcceptsBrowserRefreshToken(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
+	settingsSvc, err := newSettingsServiceForAuthTest(t, t.Context(), db)
+	require.NoError(t, err)
+	s := newTestAuthService()
+	s.userService = userSvc
+	s.settingsService = settingsSvc
+	s.sessionService = session.NewSessionService(db)
+
+	localUser := &user.User{
+		ID:       "u-browser-refresh",
+		Username: "browser-refresh-user",
+	}
+	_, err = userSvc.CreateUser(t.Context(), localUser)
+	require.NoError(t, err)
+
+	exp := time.Now().Add(5 * time.Minute)
+	localSession, refreshJTI := createTestSession(t, db, localUser.ID, exp)
+	first, err := s.RefreshToken(t.Context(), makeRefreshToken(t, s.signingKey, refreshJTI, exp, localUser.ID, localSession.ID), auth.SessionMeta{})
+	require.NoError(t, err)
+	require.NotEmpty(t, first.BrowserRefresh)
+	require.Less(t, len(first.BrowserRefresh), 4096)
+	require.WithinDuration(t, exp, first.RefreshExpiresAt, time.Second)
+
+	second, err := s.RefreshToken(t.Context(), first.BrowserRefresh, auth.SessionMeta{})
+	require.NoError(t, err)
+
+	_, err = s.RefreshToken(t.Context(), first.RefreshToken, auth.SessionMeta{})
+	require.ErrorIs(t, err, common.ErrInvalidToken)
+	_, err = s.RefreshToken(t.Context(), first.BrowserRefresh, auth.SessionMeta{})
+	require.ErrorIs(t, err, common.ErrInvalidToken)
+
+	require.NoError(t, s.RevokeSessionByRefreshToken(t.Context(), second.BrowserRefresh))
+	_, err = s.RefreshToken(t.Context(), second.BrowserRefresh, auth.SessionMeta{})
+	require.ErrorIs(t, err, common.ErrSessionRevoked)
+}
+
 func TestRefreshToken_RejectsRevokedSession(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
@@ -912,7 +950,6 @@ func TestAuthenticateLocalPrimary_EmailFallback(t *testing.T) {
 		{ID: "u-unicode", Username: "José", Email: new("josé@example.com"), PasswordHash: hash},
 		{ID: "u-decomposed", Username: "Jose\u0301", Email: new("jose\u0301@example.com"), PasswordHash: hash},
 		{ID: "u-dup-1", Username: "dup1", Email: new("dup@example.com"), PasswordHash: hash},
-		{ID: "u-dup-2", Username: "dup2", Email: new("dup@example.com"), PasswordHash: dupHash},
 		{ID: "u-carol", Username: "carol@example.com", Email: new("carol@example.com"), PasswordHash: hash},
 		{ID: "u-col-a", Username: "owner@example.com", PasswordHash: hash},
 		{ID: "u-col-b", Username: "colb", Email: new("owner@example.com"), PasswordHash: dupHash},
@@ -921,6 +958,7 @@ func TestAuthenticateLocalPrimary_EmailFallback(t *testing.T) {
 		require.NoError(t, err)
 	}
 
+	require.NoError(t, db.Create(&user.User{ID: "u-dup-2", Username: "dup2", Email: new("dup@example.com"), PasswordHash: dupHash}).Error)
 	require.NoError(t, db.Create(&user.User{
 		ID: "u-legacy-spaces", Username: " Jose\u0301 ", Email: new(" spaced@example.com "), PasswordHash: hash,
 	}).Error)

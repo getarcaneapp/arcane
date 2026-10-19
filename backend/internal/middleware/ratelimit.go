@@ -2,9 +2,10 @@ package middleware
 
 import (
 	"cmp"
+	"log/slog"
 	"net"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,11 @@ type ipRateLimiter struct {
 	ttl        time.Duration
 	lastSweep  time.Time
 	maxEntries int
+}
+
+type limiterAge struct {
+	key  string
+	seen time.Time
 }
 
 type limiterEntry struct {
@@ -69,7 +75,7 @@ func (l *ipRateLimiter) trimForNewEntryInternal(key string) {
 	if l.maxEntries <= 0 || len(l.limiters) < l.maxEntries {
 		return
 	}
-	l.evictOldestEntriesInternal(len(l.limiters)-l.maxEntries+1, key)
+	l.evictOldestEntriesInternal(max(len(l.limiters)-l.maxEntries+1, l.maxEntries/10), key)
 }
 
 func (l *ipRateLimiter) trimToMaxEntriesInternal(protectedKey string) {
@@ -84,22 +90,16 @@ func (l *ipRateLimiter) evictOldestEntriesInternal(count int, protectedKey strin
 		return
 	}
 
-	entries := make([]struct {
-		key  string
-		seen time.Time
-	}, 0, len(l.limiters))
+	entries := make([]limiterAge, 0, len(l.limiters))
 	for key, entry := range l.limiters {
 		if key == protectedKey {
 			continue
 		}
-		entries = append(entries, struct {
-			key  string
-			seen time.Time
-		}{key: key, seen: entry.seen})
+		entries = append(entries, limiterAge{key: key, seen: entry.seen})
 	}
 
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].seen.Before(entries[j].seen)
+	slices.SortFunc(entries, func(a, b limiterAge) int {
+		return a.seen.Compare(b.seen)
 	})
 
 	for i := 0; i < count && i < len(entries); i++ {
@@ -229,13 +229,38 @@ func PerIPRateLimitForPaths(paths []string, perMinute, burst int) echo.Middlewar
 	}
 }
 
-func clientIPForRateLimitInternal(c *echo.Context) string {
-	if ip := strings.TrimSpace(c.RealIP()); ip != "" {
-		return ip
+func WarnUntrustedForwardedFor(trustedProxyNets []*net.IPNet) echo.MiddlewareFunc {
+	var once sync.Once
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			req := c.Request()
+			if req.Header.Get("X-Forwarded-For") == "" {
+				return next(c)
+			}
+			host, _, err := net.SplitHostPort(req.RemoteAddr)
+			ip := net.ParseIP(kit.Ternary(err != nil, req.RemoteAddr, host))
+			if ip == nil || !slices.ContainsFunc(trustedProxyNets, func(n *net.IPNet) bool { return n.Contains(ip) }) {
+				once.Do(func() {
+					slog.WarnContext(req.Context(),
+						"X-Forwarded-For received from an untrusted peer; clients behind this proxy share one rate-limit bucket. Set TRUSTED_PROXIES to the proxy's address range.",
+						"peer", req.RemoteAddr)
+				})
+			}
+			return next(c)
+		}
 	}
-	host, _, err := net.SplitHostPort(c.Request().RemoteAddr)
-	if err != nil {
-		return c.Request().RemoteAddr
+}
+
+func clientIPForRateLimitInternal(c *echo.Context) string {
+	host := strings.TrimSpace(c.RealIP())
+	if host == "" {
+		var err error
+		if host, _, err = net.SplitHostPort(c.Request().RemoteAddr); err != nil {
+			host = c.Request().RemoteAddr
+		}
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
+		return ip.Mask(net.CIDRMask(64, 128)).String() + "/64"
 	}
 	return host
 }

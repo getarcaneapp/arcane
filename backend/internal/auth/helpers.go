@@ -19,9 +19,10 @@ import (
 const (
 	browserSessionSigningKeySize = 64
 
-	accessTokenSubject  = "access"
-	browserTokenSubject = "browser_session"
-	refreshTokenSubject = "refresh"
+	accessTokenSubject    = "access"
+	browserTokenSubject   = "browser_session"
+	refreshTokenSubject   = "refresh"
+	browserRefreshSubject = "browser_refresh"
 
 	claimSessionID             = "sid"
 	claimUserID                = "user_id"
@@ -133,8 +134,8 @@ func signedTokenAlgorithm(rawToken string) (string, bool) {
 	return algorithm.String(), true
 }
 
-func parseRefreshToken(ctx context.Context, rawToken string, key *mldsa.PublicKey) (*refreshTokenClaims, error) {
-	token, err := jwt.ParseString(rawToken, append(tokenParseOptions, jwt.WithKey(jwa.MLDSA87(), key), jwt.WithContext(ctx))...)
+func parseRefreshToken(ctx context.Context, rawToken, wantSubject string, key jwt.ParseOption) (*refreshTokenClaims, error) {
+	token, err := jwt.ParseString(rawToken, append(tokenParseOptions, key, jwt.WithContext(ctx))...)
 	if err != nil {
 		claimErr := errors.Is(err, jwt.MissingRequiredClaimError{}) || errors.Is(err, jwt.ClaimValidationError{})
 		return nil, kit.Ternary[error](claimErr, common.ErrTokenValidation, common.ErrInvalidToken)
@@ -144,7 +145,7 @@ func parseRefreshToken(ctx context.Context, rawToken string, key *mldsa.PublicKe
 	id, _ := token.JwtID()
 	userID, _ := jwt.Get[string](token, claimUserID)
 	sessionID, _ := jwt.Get[string](token, claimSessionID)
-	if subject != refreshTokenSubject || id == "" || userID == "" || sessionID == "" {
+	if subject != wantSubject || id == "" || userID == "" || sessionID == "" {
 		return nil, common.ErrTokenValidation
 	}
 

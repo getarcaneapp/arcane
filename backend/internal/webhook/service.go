@@ -26,6 +26,7 @@ import (
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
@@ -33,6 +34,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
 
@@ -51,6 +53,7 @@ var (
 	ErrWebhookInvalidType   = errors.New("invalid webhook target type")
 	ErrWebhookInvalidAction = errors.New("invalid webhook action type")
 	ErrWebhookMissingTarget = errors.New("target ID is required for container, project, and gitops webhook types")
+	ErrWebhookForbidden     = common.Classify(common.ErrForbidden, errors.New("you do not have permission to run this webhook action"))
 
 	// remoteWebhookTargetListPaths lists agent endpoints for target types whose records live in the agent's database.
 	remoteWebhookTargetListPaths = map[string]string{
@@ -223,6 +226,37 @@ func resolveWebhookActionTypeInternal(targetType, actionType string) (string, er
 	return "", ErrWebhookInvalidAction
 }
 
+var webhookActionPermissions = map[string]map[string]string{
+	WebhookTargetTypeContainer: {
+		WebhookActionTypeUpdate:   authz.PermImageUpdatesCheck,
+		WebhookActionTypeStart:    authz.PermContainersStart,
+		WebhookActionTypeStop:     authz.PermContainersStop,
+		WebhookActionTypeRestart:  authz.PermContainersRestart,
+		WebhookActionTypeRedeploy: authz.PermContainersRedeploy,
+	},
+	WebhookTargetTypeProject: {
+		WebhookActionTypeUpdate:   authz.PermProjectsUpdate,
+		WebhookActionTypeUp:       authz.PermProjectsDeploy,
+		WebhookActionTypeDown:     authz.PermProjectsDown,
+		WebhookActionTypeRestart:  authz.PermProjectsRestart,
+		WebhookActionTypeRedeploy: authz.PermProjectsDeploy,
+	},
+	WebhookTargetTypeUpdater: {
+		WebhookActionTypeRun: authz.PermImageUpdatesCheck,
+	},
+	WebhookTargetTypeGitOps: {
+		WebhookActionTypeSync: authz.PermGitOpsSync,
+	},
+}
+
+func authorizeWebhookAction(callerPerms *authz.PermissionSet, targetType, actionType, environmentID string) error {
+	permission, ok := webhookActionPermissions[targetType][actionType]
+	if !ok || !callerPerms.Allows(permission, environmentID) {
+		return ErrWebhookForbidden
+	}
+	return nil
+}
+
 func resolvedWebhookActionTypeInternal(targetType, actionType string) string {
 	resolvedActionType, err := resolveWebhookActionTypeInternal(targetType, actionType)
 	if err != nil {
@@ -233,7 +267,12 @@ func resolvedWebhookActionTypeInternal(targetType, actionType string) string {
 
 // CreateWebhook creates a new webhook targeting a stack, the environment-wide updater, or a gitops sync.
 // It returns the webhook record with the raw token populated (only available at creation time).
-func (s *WebhookService) CreateWebhook(ctx context.Context, name, targetType, actionType, targetID, environmentID string, actor user.Actor) (*Webhook, string, error) {
+func (s *WebhookService) CreateWebhook(
+	ctx context.Context,
+	name, targetType, actionType, targetID, environmentID string,
+	actor user.Actor,
+	callerPerms *authz.PermissionSet,
+) (*Webhook, string, error) {
 	input := webhook.CreateInput{Name: name, TargetType: targetType, ActionType: actionType, TargetID: targetID}
 	if err := normalization.Normalize(&input); err != nil {
 		return nil, "", err
@@ -241,6 +280,9 @@ func (s *WebhookService) CreateWebhook(ctx context.Context, name, targetType, ac
 	resolvedActionType, err := resolveWebhookActionTypeInternal(targetType, actionType)
 	if err != nil {
 		return nil, "", err
+	}
+	if authorizeErr := authorizeWebhookAction(callerPerms, targetType, resolvedActionType, environmentID); authorizeErr != nil {
+		return nil, "", authorizeErr
 	}
 
 	targetRef := ""
@@ -484,7 +526,7 @@ func (s *WebhookService) DeleteWebhook(ctx context.Context, id, environmentID st
 }
 
 // UpdateWebhook updates the enabled state of a webhook, scoped to an environment.
-func (s *WebhookService) UpdateWebhook(ctx context.Context, id, environmentID string, enabled bool, actor user.Actor) (*Webhook, error) {
+func (s *WebhookService) UpdateWebhook(ctx context.Context, id, environmentID string, enabled bool, actor user.Actor, callerPerms *authz.PermissionSet) (*Webhook, error) {
 	var wh Webhook
 	err := s.db.WithContext(ctx).
 		Where("id = ? AND environment_id = ?", id, environmentID).
@@ -494,6 +536,9 @@ func (s *WebhookService) UpdateWebhook(ctx context.Context, id, environmentID st
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get webhook: %w", err)
+	}
+	if authorizeErr := authorizeWebhookAction(callerPerms, wh.TargetType, resolvedWebhookActionTypeInternal(wh.TargetType, wh.ActionType), wh.EnvironmentID); authorizeErr != nil {
+		return nil, authorizeErr
 	}
 
 	if updateWebhookErr := s.db.WithContext(ctx).Model(&wh).Update("enabled", enabled).Error; updateWebhookErr != nil {

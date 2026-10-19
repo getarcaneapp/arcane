@@ -13,6 +13,10 @@ var (
 	TokenCookieName         = "__Host-token" // #nosec G101: cookie name label, not a credential
 	InsecureTokenCookieName = "token"        // #nosec G101: cookie name label, not a credential
 	OidcStateCookieName     = "oidc_state"
+
+	RefreshCookieName         = "__Secure-refresh"
+	InsecureRefreshCookieName = "refresh"
+	RefreshCookiePath         = "/api/auth"
 )
 
 // Legacy ML-DSA browser tokens exceed the 4096-byte cookie limit, so readers
@@ -58,6 +62,27 @@ func ClearTokenCookie(w http.ResponseWriter, r *http.Request) {
 
 func GetTokenCookieFromHeader(cookieHeader string) (string, error) {
 	return GetTokenCookie(&http.Request{Header: http.Header{"Cookie": []string{cookieHeader}}})
+}
+
+func GetRefreshCookie(r *http.Request) string {
+	for _, name := range []string{RefreshCookieName, InsecureRefreshCookieName} {
+		if c, err := r.Cookie(name); err == nil && c.Value != "" {
+			return c.Value
+		}
+	}
+	return ""
+}
+
+func BuildRefreshCookieStringFor(maxAgeInSeconds int, value string, secure bool) string {
+	return buildCookieString(kit.Ternary(secure, RefreshCookieName, InsecureRefreshCookieName), RefreshCookiePath, value, max(maxAgeInSeconds, 0), secure, http.SameSiteStrictMode)
+}
+
+func BuildClearRefreshCookieStringsFor(secure bool) []string {
+	headers := []string{buildCookieString(InsecureRefreshCookieName, RefreshCookiePath, "", -1, false, http.SameSiteStrictMode)}
+	if secure {
+		headers = append(headers, buildCookieString(RefreshCookieName, RefreshCookiePath, "", -1, true, http.SameSiteStrictMode))
+	}
+	return headers
 }
 
 func GetTokenCookie(r *http.Request) (string, error) {
@@ -122,7 +147,7 @@ func BuildTokenCookieStringFor(maxAgeInSeconds int, token string, secure bool) [
 		headers = append(headers, cookie.String())
 	}
 	for i := len(chunks); i < tokenCookieMaxChunks; i++ {
-		headers = append(headers, buildClearTokenCookieStringInternal(tokenCookieChunkNameInternal(base, i), secure))
+		headers = append(headers, buildCookieString(tokenCookieChunkNameInternal(base, i), "/", "", -1, secure, http.SameSiteLaxMode))
 	}
 	return headers
 }
@@ -134,23 +159,23 @@ func BuildTokenCookieStringFor(maxAgeInSeconds int, token string, secure bool) [
 func BuildClearTokenCookieStringsFor(secure bool) []string {
 	var headers []string
 	for i := range tokenCookieMaxChunks {
-		headers = append(headers, buildClearTokenCookieStringInternal(tokenCookieChunkNameInternal(InsecureTokenCookieName, i), false))
+		headers = append(headers, buildCookieString(tokenCookieChunkNameInternal(InsecureTokenCookieName, i), "/", "", -1, false, http.SameSiteLaxMode))
 		if secure {
-			headers = append(headers, buildClearTokenCookieStringInternal(tokenCookieChunkNameInternal(TokenCookieName, i), true))
+			headers = append(headers, buildCookieString(tokenCookieChunkNameInternal(TokenCookieName, i), "/", "", -1, true, http.SameSiteLaxMode))
 		}
 	}
 	return headers
 }
 
-func buildClearTokenCookieStringInternal(name string, secure bool) string {
+func buildCookieString(name, path, value string, maxAge int, secure bool, sameSite http.SameSite) string {
 	cookie := &http.Cookie{ // #nosec G124: Secure mirrors the caller-provided TLS state so the clear directive matches whichever cookie variant (__Host-token vs. token) was originally set.
 		Name:     name,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
+		Value:    value,
+		Path:     path,
+		MaxAge:   maxAge,
 		HttpOnly: true,
 		Secure:   secure,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: sameSite,
 	}
 	return cookie.String()
 }

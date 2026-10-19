@@ -12,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/apikey"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -850,11 +851,13 @@ func TestCreateEnvironmentApiKeySeedsAllPermissionsScopedToEnv(t *testing.T) {
 
 	// Resolve the per-key permission set and confirm every permission is
 	// present, scoped to the bootstrap env (not global).
-	ps, err := roleSvc.ResolveApiKeyPermissions(ctx, created.ID)
-	require.NoError(t, err)
-	require.Empty(t, ps.Global, "bootstrap key permissions must land in PerEnv, not Global")
-	envPerms, ok := ps.PerEnv[envID]
-	require.True(t, ok)
+	var grants []role.ApiKeyPermission
+	require.NoError(t, db.WithContext(ctx).Where("api_key_id = ?", created.ID).Find(&grants).Error)
+	envPerms := make(map[string]struct{}, len(grants))
+	for _, grant := range grants {
+		require.Equal(t, envID, kit.FromPtr(grant.EnvironmentID), "bootstrap key permissions must be scoped to the environment, not global")
+		envPerms[grant.Permission] = struct{}{}
+	}
 	for _, p := range authz.AllPermissions() {
 		_, has := envPerms[p]
 		require.True(t, has, "missing permission %s on bootstrap key", p)
@@ -903,11 +906,9 @@ func TestBackfillApiKeyPermissionsRepairsExistingBootstrapKey(t *testing.T) {
 	var keys []ApiKey
 	require.NoError(t, db.WithContext(ctx).Where("environment_id = ?", envID).Find(&keys).Error)
 	require.Len(t, keys, 1)
-	ps, err := roleSvc.ResolveApiKeyPermissions(ctx, keys[0].ID)
-	require.NoError(t, err)
-	envPerms, ok := ps.PerEnv[envID]
-	require.True(t, ok)
-	require.Len(t, envPerms, len(authz.AllPermissions()))
+	var grants []role.ApiKeyPermission
+	require.NoError(t, db.WithContext(ctx).Where("api_key_id = ? AND environment_id = ?", keys[0].ID, envID).Find(&grants).Error)
+	require.Len(t, grants, len(authz.AllPermissions()))
 
 	var scopedPerms []role.ApiKeyPermission
 	require.NoError(t, db.WithContext(ctx).Where("api_key_id = ?", scopedKey.ID).Find(&scopedPerms).Error)

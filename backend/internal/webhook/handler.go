@@ -9,6 +9,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/getarcaneapp/arcane/types/v2/webhook"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/userctx"
 )
@@ -63,6 +64,7 @@ func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhook
 		actor = *currentUser
 	}
 
+	callerPerms, _ := middleware.PermissionsFromContext(ctx)
 	wh, rawToken, err := h.webhookService.CreateWebhook(
 		ctx,
 		input.Body.Name,
@@ -71,8 +73,12 @@ func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhook
 		input.Body.TargetID,
 		input.EnvironmentID,
 		actor,
+		callerPerms,
 	)
 	if err != nil {
+		if errors.Is(err, ErrWebhookForbidden) {
+			return nil, huma.Error403Forbidden(ErrWebhookForbidden.Error())
+		}
 		if errors.Is(err, ErrWebhookInvalidType) {
 			return nil, huma.Error400BadRequest("invalid target type, must be 'container', 'project', 'updater', or 'gitops'")
 		}
@@ -112,8 +118,12 @@ func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhook
 		actor = *currentUser
 	}
 
-	wh, err := h.webhookService.UpdateWebhook(ctx, input.WebhookID, input.EnvironmentID, input.Body.Enabled, actor)
+	callerPerms, _ := middleware.PermissionsFromContext(ctx)
+	wh, err := h.webhookService.UpdateWebhook(ctx, input.WebhookID, input.EnvironmentID, input.Body.Enabled, actor, callerPerms)
 	if err != nil {
+		if errors.Is(err, ErrWebhookForbidden) {
+			return nil, huma.Error403Forbidden(ErrWebhookForbidden.Error())
+		}
 		if errors.Is(err, ErrWebhookNotFound) {
 			return nil, huma.Error404NotFound("webhook not found")
 		}

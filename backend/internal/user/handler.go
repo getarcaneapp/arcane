@@ -9,6 +9,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/user"
+	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
@@ -122,6 +123,9 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 		if errors.Is(err, ErrUsernameTaken) {
 			return nil, huma.Error409Conflict(ErrUsernameTaken.Error())
 		}
+		if errors.Is(err, ErrEmailTaken) {
+			return nil, huma.Error409Conflict(ErrEmailTaken.Error())
+		}
 		return nil, huma.Error500InternalServerError("Failed to create user")
 	}
 
@@ -203,12 +207,6 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		if validatePasswordPolicyErr := validation.ValidatePasswordPolicy(*input.Body.Password, passwordPolicy); validatePasswordPolicyErr != nil {
 			return nil, handlerutil.Error400BadRequestWithType(validatePasswordPolicyErr.Error(), validation.PasswordPolicyProblemType(passwordPolicy))
 		}
-		hashedPassword, hashPasswordErr := h.userService.HashPassword(*input.Body.Password)
-		if hashPasswordErr != nil {
-			return nil, huma.Error500InternalServerError("Failed to hash password")
-		}
-		userModel.PasswordHash = hashedPassword
-		userModel.RequiresPasswordChange = false
 	}
 
 	updatedUser, err := h.userService.UpdateUser(ctx, userModel, callerPerms)
@@ -222,10 +220,22 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		if errors.Is(err, ErrUsernameTaken) {
 			return nil, huma.Error409Conflict(ErrUsernameTaken.Error())
 		}
+		if errors.Is(err, ErrEmailTaken) {
+			return nil, huma.Error409Conflict(ErrEmailTaken.Error())
+		}
 		if errors.Is(err, common.ErrUserNotFound) {
 			return nil, huma.Error404NotFound("User not found")
 		}
 		return nil, huma.Error500InternalServerError("Failed to update user")
+	}
+
+	if input.Body.Password != nil && *input.Body.Password != "" {
+		caller, _ := userctx.CurrentUserFromContext(ctx)
+		currentSessionID, _ := middleware.GetCurrentSessionIDFromContext(ctx)
+		exceptSessionID := kit.Ternary(caller != nil && caller.ID == updatedUser.ID, currentSessionID, "")
+		if _, setPasswordErr := h.userService.SetPasswordAndRevokeSessionsExcept(ctx, updatedUser, *input.Body.Password, exceptSessionID); setPasswordErr != nil {
+			return nil, huma.Error500InternalServerError("Failed to update password")
+		}
 	}
 
 	if h.invalidateUserTokenCache != nil {

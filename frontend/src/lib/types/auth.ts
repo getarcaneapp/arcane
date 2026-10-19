@@ -234,7 +234,6 @@ export type AuthenticationResponse = {
 	success: boolean;
 	status: AuthenticationStatus;
 	token?: string;
-	refreshToken?: string;
 	expiresAt?: string;
 	user?: User;
 	mfa?: MFAChallenge;

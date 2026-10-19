@@ -149,7 +149,7 @@ func (h *RoleHandler) DeleteRole(ctx context.Context, input *DeleteRoleInput) (*
 			return nil, huma.Error404NotFound("role not found")
 		case errors.Is(err, common.ErrRoleBuiltIn):
 			return nil, huma.Error403Forbidden("built-in roles cannot be deleted")
-		case errors.Is(err, common.ErrNoGlobalAdminRemains):
+		case errors.Is(err, common.ErrNoGlobalAdminRemains), errors.Is(err, common.ErrRoleUsedByFederatedCredential):
 			return nil, huma.Error409Conflict(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to delete role: " + err.Error())

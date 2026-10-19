@@ -5,7 +5,6 @@ package api
 import (
 	"errors"
 	"net/http"
-	"time"
 
 	authtypes "github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -85,11 +84,9 @@ func registerAutoLoginRoutes(apiGroup *echo.Group, authService *auth.AuthService
 			return c.JSON(http.StatusInternalServerError, base.ErrorResponse{Error: "Failed to map user"})
 		}
 
-		maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
-		maxAge += 60
 		expiresAt := tokenPair.ExpiresAt
 
-		for _, tokenCookie := range cookie.BuildTokenCookieStringFor(maxAge, tokenPair.BrowserToken, cookie.SecureCookieFromRequest(c.Request())) {
+		for _, tokenCookie := range tokenPair.CookieHeaders(cookie.SecureCookieFromRequest(c.Request())) {
 			c.Response().Header().Add("Set-Cookie", tokenCookie)
 		}
 		return c.JSON(http.StatusOK, base.ApiResponse[authtypes.AuthenticationResponse]{

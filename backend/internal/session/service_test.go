@@ -1,6 +1,7 @@
 package session
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -37,6 +38,49 @@ func TestSessionService_RotateRefreshTokenRequiresCurrentHash(t *testing.T) {
 
 	_, _, err = sessionSvc.RotateRefreshToken(ctx, session.ID, refreshJTI, auth.SessionMeta{})
 	require.ErrorIs(t, err, common.ErrInvalidToken)
+}
+
+func TestSessionService_RotateRefreshTokenConcurrentRefreshHasOneWinner(t *testing.T) {
+	ctx := t.Context()
+	db := setupAuthServiceTestDB(t)
+	sqlDB, err := db.DB.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	require.NoError(t, db.Create(&user.User{
+		ID:       "u-race",
+		Username: "race-user",
+	}).Error)
+
+	sessionSvc := NewSessionService(db)
+	session, refreshJTI, err := sessionSvc.CreateSession(ctx, "u-race", time.Now().Add(time.Hour), auth.SessionMeta{})
+	require.NoError(t, err)
+
+	const attempts = 8
+	errs := make([]error, attempts)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := range attempts {
+		wg.Go(func() {
+			<-start
+			_, _, errs[i] = sessionSvc.RotateRefreshToken(ctx, session.ID, refreshJTI, auth.SessionMeta{})
+		})
+	}
+	close(start)
+	wg.Wait()
+
+	winners := 0
+	for _, rotateErr := range errs {
+		if rotateErr == nil {
+			winners++
+			continue
+		}
+		require.ErrorIs(t, rotateErr, common.ErrInvalidToken)
+	}
+	require.Equal(t, 1, winners)
+
+	stored, err := sessionSvc.GetSessionByID(ctx, session.ID)
+	require.NoError(t, err)
+	require.Nil(t, stored.RevokedAt)
 }
 
 func TestSessionService_DeleteExpiredSessions(t *testing.T) {

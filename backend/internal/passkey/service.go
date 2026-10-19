@@ -1005,7 +1005,7 @@ func (s *PasskeyService) RegenerateRecoveryCodes(ctx context.Context, userID, se
 	}
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var user userdomain.User
-		if loadRecoveryUserErr := tx.Where("id = ?", userID).First(&user).Error; loadRecoveryUserErr != nil {
+		if loadRecoveryUserErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", userID).First(&user).Error; loadRecoveryUserErr != nil {
 			return fmt.Errorf("failed to load user for recovery code regeneration: %w", loadRecoveryUserErr)
 		}
 		if !user.PasskeyMFAEnabled {
@@ -1093,6 +1093,11 @@ func (s *PasskeyService) sweepCeremoniesInternal(ctx context.Context) error {
 		Where("expires_at <= ? OR consumed_at IS NOT NULL", now).
 		Delete(&PasskeyCeremony{}).Error; err != nil {
 		return fmt.Errorf("failed to sweep passkey ceremonies: %w", err)
+	}
+	if err := s.db.WithContext(ctx).
+		Where("expires_at <= ?", now.Add(-24*time.Hour)).
+		Delete(&AuthTransaction{}).Error; err != nil {
+		return fmt.Errorf("failed to sweep authentication transactions: %w", err)
 	}
 	return nil
 }
@@ -1322,6 +1327,18 @@ func (s *PasskeyService) updateCredentialAfterAssertionInternal(ctx context.Cont
 		return ErrPasskeyResponse
 	}
 	now := time.Now()
+	if credential.Authenticator.CloneWarning {
+		slog.WarnContext(ctx, "passkey assertion rejected: signature counter regressed", "passkeyId", credentialModelID, "userId", adapter.model.ID)
+		if err := s.db.WithContext(ctx).Model(&Passkey{}).
+			Where("id = ? AND user_id = ? AND rp_id = ?", credentialModelID, adapter.model.ID, s.rpID).
+			Updates(map[string]any{
+				"clone_warning": true,
+				"updated_at":    now,
+			}).Error; err != nil {
+			slog.WarnContext(ctx, "failed to flag cloned passkey", "passkeyId", credentialModelID, "error", err)
+		}
+		return ErrPasskeyResponse
+	}
 	result := s.db.WithContext(ctx).Model(&Passkey{}).
 		Where("id = ? AND user_id = ? AND rp_id = ?", credentialModelID, adapter.model.ID, s.rpID).
 		Updates(map[string]any{

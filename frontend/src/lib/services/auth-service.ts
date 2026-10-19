@@ -17,9 +17,11 @@ import { tryCatch } from '#lib/utils/try-catch.js';
 
 import BaseAPIService, { APIError, SessionCancelledError, currentSessionSignal } from './api-service';
 
-const REFRESH_TOKEN_KEY = 'arcane_refresh_token';
+const LEGACY_REFRESH_TOKEN_KEY = 'arcane_refresh_token';
 const TOKEN_EXPIRY_KEY = 'arcane_token_expiry';
+const REFRESH_LOCK_NAME = 'arcane-token-refresh';
 const REFRESH_BUFFER_MS = 5 * 60 * 1000; // Refresh 5 minutes before expiry
+const REFRESH_JITTER_MS = 5000;
 
 export class MFARequiredError extends Error {
 	constructor(public readonly challenge: MFAChallenge) {
@@ -31,43 +33,63 @@ export class MFARequiredError extends Error {
 class AuthService extends BaseAPIService {
 	private refreshTimer: ReturnType<typeof setTimeout> | null = null;
 	private isRefreshing = false;
+	private refreshGeneration = 0;
 	private refreshSubscribers: Array<(token: string | null, error?: Error) => void> = [];
 	private logoutRequest: Promise<boolean> | null = null;
 
 	constructor() {
 		super();
 		BaseAPIService.setTokenRefreshHandler(() => this.refreshAccessToken());
-	}
-
-	private storeTokenData(refreshToken: string, expiresAt: string): void {
 		if (typeof window === 'undefined') return;
 		try {
-			sessionStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
-			sessionStorage.setItem(TOKEN_EXPIRY_KEY, expiresAt);
+			sessionStorage.removeItem(LEGACY_REFRESH_TOKEN_KEY);
+			sessionStorage.removeItem(TOKEN_EXPIRY_KEY);
+		} catch (e) {
+			console.error('Failed to remove legacy token data:', e);
+		}
+		const storedExpiry = this.getStoredExpiry();
+		if (storedExpiry) this.scheduleTokenRefresh(storedExpiry);
+		window.addEventListener('storage', (event) => {
+			if (event.key !== TOKEN_EXPIRY_KEY) return;
+			if (event.newValue) {
+				this.scheduleTokenRefresh(event.newValue);
+			} else {
+				this.clearRefreshTimer();
+			}
+		});
+	}
+
+	private storeTokenData(expiresAt: string): void {
+		if (typeof window === 'undefined') return;
+		try {
+			localStorage.setItem(TOKEN_EXPIRY_KEY, expiresAt);
 			this.scheduleTokenRefresh(expiresAt);
 		} catch (e) {
 			console.error('Failed to store token data:', e);
 		}
 	}
 
-	private getStoredRefreshToken(): string | null {
+	private getStoredExpiry(): string | null {
 		if (typeof window === 'undefined') return null;
 		try {
-			return sessionStorage.getItem(REFRESH_TOKEN_KEY);
+			return localStorage.getItem(TOKEN_EXPIRY_KEY);
 		} catch {
 			return null;
+		}
+	}
+
+	private clearRefreshTimer(): void {
+		if (this.refreshTimer) {
+			clearTimeout(this.refreshTimer);
+			this.refreshTimer = null;
 		}
 	}
 
 	private clearTokenData(): void {
 		if (typeof window === 'undefined') return;
 		try {
-			sessionStorage.removeItem(REFRESH_TOKEN_KEY);
-			sessionStorage.removeItem(TOKEN_EXPIRY_KEY);
-			if (this.refreshTimer) {
-				clearTimeout(this.refreshTimer);
-				this.refreshTimer = null;
-			}
+			localStorage.removeItem(TOKEN_EXPIRY_KEY);
+			this.clearRefreshTimer();
 		} catch (e) {
 			console.error('Failed to clear token data:', e);
 		}
@@ -76,14 +98,12 @@ class AuthService extends BaseAPIService {
 	private scheduleTokenRefresh(expiresAt: string): void {
 		if (typeof window === 'undefined') return;
 
-		if (this.refreshTimer) {
-			clearTimeout(this.refreshTimer);
-		}
+		this.clearRefreshTimer();
 
 		const expiryTime = parseInstant(expiresAt);
 		if (!expiryTime) return;
 		const timeUntilExpiry = Temporal.Now.instant().until(expiryTime).total('milliseconds');
-		const refreshTime = Math.max(0, timeUntilExpiry - REFRESH_BUFFER_MS);
+		const refreshTime = Math.max(0, timeUntilExpiry - REFRESH_BUFFER_MS - Math.random() * REFRESH_JITTER_MS);
 
 		if (refreshTime > 0) {
 			this.refreshTimer = setTimeout(() => {
@@ -100,12 +120,31 @@ class AuthService extends BaseAPIService {
 		}
 	}
 
-	async refreshAccessToken(): Promise<string | null> {
-		const refreshToken = this.getStoredRefreshToken();
-		if (!refreshToken) {
-			throw new Error('No refresh token available');
-		}
+	private refreshedElsewhere(expiryBefore: string | null): boolean {
+		const current = this.getStoredExpiry();
+		const currentInstant = current ? parseInstant(current) : null;
+		if (!current || current === expiryBefore || !currentInstant) return false;
+		const beforeInstant = expiryBefore ? parseInstant(expiryBefore) : null;
+		if (beforeInstant && Temporal.Instant.compare(currentInstant, beforeInstant) <= 0) return false;
+		return Temporal.Now.instant().until(currentInstant).total('milliseconds') > REFRESH_BUFFER_MS;
+	}
 
+	private async requestTokenRefresh(expiryBefore: string | null, session: AbortSignal): Promise<string | null> {
+		if (this.refreshedElsewhere(expiryBefore)) return null;
+
+		const response = await this.handleResponse<{
+			token?: string;
+			expiresAt?: string;
+		}>(this.api.post('/auth/refresh'));
+
+		if (session.aborted) throw new SessionCancelledError();
+		if (response.expiresAt) {
+			this.storeTokenData(response.expiresAt);
+		}
+		return response.token || null;
+	}
+
+	async refreshAccessToken(): Promise<string | null> {
 		if (this.isRefreshing) {
 			return new Promise<string | null>((resolve, reject) => {
 				this.refreshSubscribers.push((token: string | null, error?: Error) => {
@@ -116,48 +155,45 @@ class AuthService extends BaseAPIService {
 		}
 
 		this.isRefreshing = true;
+		const generation = ++this.refreshGeneration;
 		const session = currentSessionSignal();
+		const expiryBefore = this.getStoredExpiry();
 
 		const operationResult = await tryCatch(
-			(async () => {
-				const response = await this.handleResponse<{
-					token?: string;
-					refreshToken?: string;
-					expiresAt?: string;
-				}>(this.api.post('/auth/refresh', { refreshToken }));
-
-				// Logout already reset the refresh state; a later login may own it now.
-				if (session.aborted) throw new SessionCancelledError();
-				if (response.refreshToken && response.expiresAt) {
-					this.storeTokenData(response.refreshToken, response.expiresAt);
-				}
-
-				const token = response.token || null;
-				this.refreshSubscribers.forEach((callback) => callback(token));
-				this.refreshSubscribers = [];
-				this.isRefreshing = false;
-
-				return token;
-			})()
+			typeof navigator !== 'undefined' && 'locks' in navigator
+				? navigator.locks.request(REFRESH_LOCK_NAME, () => this.requestTokenRefresh(expiryBefore, session))
+				: this.requestTokenRefresh(expiryBefore, session)
 		);
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
-			if (session.aborted) throw new SessionCancelledError();
-			const err = error instanceof Error ? error : new Error('Token refresh failed');
-			console.error('Token refresh failed:', err);
-			// Only drop the stored refresh token when the server definitively rejects it
-			// (HTTP 401). Transient failures — a network error or the backend briefly
-			// down during a self-update — must keep the token so a later retry recovers.
-			if (error instanceof APIError && error.status === 401) {
-				this.clearTokenData();
-			}
-			this.refreshSubscribers.forEach((callback) => callback(null, err));
+
+		const subscribers = generation === this.refreshGeneration ? this.refreshSubscribers : [];
+		if (generation === this.refreshGeneration) {
 			this.refreshSubscribers = [];
 			this.isRefreshing = false;
-			throw err;
-		} else {
+		}
+
+		if (session.aborted) {
+			const cancelled = new SessionCancelledError();
+			subscribers.forEach((callback) => callback(null, cancelled));
+			throw cancelled;
+		}
+		if (operationResult.error === null) {
+			subscribers.forEach((callback) => callback(operationResult.data));
 			return operationResult.data;
 		}
+
+		const error = operationResult.error;
+		const rejected = error instanceof APIError && error.status === 401;
+		if (rejected && this.refreshedElsewhere(expiryBefore)) {
+			subscribers.forEach((callback) => callback(null));
+			return null;
+		}
+		const err = error instanceof Error ? error : new Error('Token refresh failed');
+		console.error('Token refresh failed:', err);
+		if (rejected) {
+			this.clearTokenData();
+		}
+		subscribers.forEach((callback) => callback(null, err));
+		throw err;
 	}
 
 	async login(credentials: LoginCredentials): Promise<User> {
@@ -182,8 +218,8 @@ class AuthService extends BaseAPIService {
 		}
 
 		BaseAPIService.beginSession();
-		if (data.refreshToken && data.expiresAt) {
-			this.storeTokenData(data.refreshToken, data.expiresAt);
+		if (data.expiresAt) {
+			this.storeTokenData(data.expiresAt);
 		}
 
 		await userStore.setUser(data.user);
@@ -260,6 +296,7 @@ class AuthService extends BaseAPIService {
 		this.refreshSubscribers.forEach((callback) => callback(null, new SessionCancelledError()));
 		this.refreshSubscribers = [];
 		this.isRefreshing = false;
+		this.refreshGeneration++;
 		this.resetAuthenticatedState(queryClient);
 
 		const request: Promise<boolean> = tryCatch(this.api.post('/auth/logout', undefined, { timeout: 10_000 })).then((result) => {

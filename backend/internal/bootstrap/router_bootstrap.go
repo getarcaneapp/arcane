@@ -80,18 +80,26 @@ func createAuthValidator(deps api.HandlerDeps) middleware.AuthValidator {
 		req := c.Request()
 		// Check for API key authentication
 		if apiKey := req.Header.Get(middleware.HeaderApiKey); apiKey != "" {
+			key, err := deps.ApiKey.Service().ValidateRawApiKey(ctx, apiKey)
+			if err != nil {
+				return nil, nil, false
+			}
 			// User-owned API key: personal keys inherit the owner's role
 			// permissions; scoped keys are limited to their own grants.
-			if user, key, err := deps.ApiKey.Service().ValidateApiKeyWithID(ctx, apiKey); err == nil && user != nil {
-				if key != nil && key.Kind != apikey.ApiKeyKindPersonal {
+			if key.UserID != nil {
+				user, userErr := deps.User.Service().GetUserByID(ctx, *key.UserID)
+				if userErr != nil {
+					return nil, nil, false
+				}
+				if key.Kind != apikey.ApiKeyKindPersonal {
 					return resolveKey(ctx, key.ID), user.Actor(), true
 				}
 				return resolveUser(ctx, user.Actor()), user.Actor(), true
 			}
 			// Environment bootstrap key (user_id = NULL): used by the proxy when forwarding
 			// requests to a remote env whose apiUrl resolves back to this manager.
-			if envID, err := deps.ApiKey.Service().GetEnvironmentByApiKey(ctx, apiKey); err == nil && envID != nil {
-				return authz.EnvironmentPermissionSet(*envID), nil, true
+			if key.EnvironmentID != nil {
+				return authz.EnvironmentPermissionSet(*key.EnvironmentID), nil, true
 			}
 			return nil, nil, false
 		}
@@ -202,6 +210,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		}
 	})
 	e.Use(secureCookieContextMiddleware(trustedProxyNets))
+	e.Use(middleware.WarnUntrustedForwardedFor(trustedProxyNets))
 
 	authMiddleware := p.AuthMiddleware
 	e.Use(middleware.NewCORSMiddleware(cfg).Add())
@@ -212,7 +221,6 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{
 			"/api/auth/login",
-			"/api/auth/refresh",
 			"/api/auth/passkey/login/begin",
 			"/api/auth/passkey/login/finish",
 			"/api/auth/passkey/mobile/finish",
@@ -222,6 +230,9 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 			"/api/auth/mfa/recovery",
 			"/api/oidc/callback",
 		}, 5, 5,
+	))
+	apiGroup.Use(middleware.PerIPRateLimitForPaths(
+		[]string{"/api/auth/refresh"}, 30, 30,
 	))
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{"/api/auth/federated/token"}, 10, 10,

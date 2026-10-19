@@ -202,7 +202,7 @@ func (h *PasskeyHandler) FinishPasskeyLogin(ctx context.Context, input *PasskeyL
 		return nil, err
 	}
 	return &PasskeyLoginFinishOutput{
-		SetCookie: tokenCookieInternal(ctx, tokenPair),
+		SetCookie: tokenPair.CookieHeaders(cookie.SecureCookieFromContext(ctx)),
 		Body:      base.ApiResponse[authtypes.AuthenticationResponse]{Success: true, Data: *response},
 	}, nil
 }
@@ -264,7 +264,7 @@ func (h *PasskeyHandler) FinishMFA(ctx context.Context, input *PasskeyMFAFinishI
 		return nil, err
 	}
 	return &PasskeyMFAFinishOutput{
-		SetCookie: tokenCookieInternal(ctx, tokenPair),
+		SetCookie: tokenPair.CookieHeaders(cookie.SecureCookieFromContext(ctx)),
 		Body:      base.ApiResponse[authtypes.AuthenticationResponse]{Success: true, Data: *response},
 	}, nil
 }
@@ -283,7 +283,7 @@ func (h *PasskeyHandler) UseRecoveryCode(ctx context.Context, input *PasskeyReco
 		return nil, err
 	}
 	return &PasskeyRecoveryOutput{
-		SetCookie: tokenCookieInternal(ctx, tokenPair),
+		SetCookie: tokenPair.CookieHeaders(cookie.SecureCookieFromContext(ctx)),
 		Body:      base.ApiResponse[authtypes.AuthenticationResponse]{Success: true, Data: *response},
 	}, nil
 }
@@ -515,11 +515,6 @@ func marshalCredentialInternal(credential map[string]any) ([]byte, error) {
 		return nil, errors.New("credential is required")
 	}
 	return json.Marshal(credential)
-}
-
-func tokenCookieInternal(ctx context.Context, tokenPair *auth.TokenPair) []string {
-	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0) + 60
-	return cookie.BuildTokenCookieStringFor(maxAge, tokenPair.BrowserToken, cookie.SecureCookieFromContext(ctx))
 }
 
 func passkeyHTTPErrorInternal(err error) error {

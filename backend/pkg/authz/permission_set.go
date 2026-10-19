@@ -60,20 +60,12 @@ func (ps *PermissionSet) AllowsAny(perm string) bool {
 // be considered an administrator. True for sudo callers and for callers whose
 // Global set contains every defined permission. Used by the backward-compat
 // IsAdminFromContext helper and by last-admin guards.
-//
-// Implementation: first checks cardinality against TotalPermissionsCount() for a
-// fast early exit, then walks AllPermissions() to confirm every known
-// permission is present. This guards against a ps.Global that contains the right
-// count but includes injected unknown permissions instead of all real ones.
 func (ps *PermissionSet) IsGlobalAdmin() bool {
 	if ps == nil {
 		return false
 	}
 	if ps.Sudo {
 		return true
-	}
-	if len(ps.Global) != TotalPermissionsCount() {
-		return false
 	}
 	for _, permission := range AllPermissions() {
 		if _, ok := ps.Global[permission]; !ok {

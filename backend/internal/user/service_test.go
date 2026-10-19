@@ -264,9 +264,7 @@ func TestUserDtoExposesLastLogin(t *testing.T) {
 	require.Nil(t, dto.LastLogin, "a user who has never signed in has no last login")
 
 	loginAt := time.Date(2026, 8, 2, 15, 4, 5, 0, time.UTC)
-	u.LastLogin = &loginAt
-	_, err = userSvc.UpdateUser(ctx, u, nil)
-	require.NoError(t, err)
+	require.NoError(t, userSvc.TouchLastLogin(ctx, u.ID, loginAt))
 
 	reloaded, err := userSvc.GetUserByID(ctx, u.ID)
 	require.NoError(t, err)
