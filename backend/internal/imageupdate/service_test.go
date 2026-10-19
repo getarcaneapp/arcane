@@ -1811,8 +1811,11 @@ func TestImageUpdateService_MarkUpdatesAsNotified(t *testing.T) {
 		require.NoError(t, err)
 	}
 
+	var pending []*ImageUpdateRecord
+	require.NoError(t, db.Where("id IN ?", []string{"sha256:img1", "sha256:img2"}).Find(&pending).Error)
+
 	// Mark img1 and img2 as notified
-	err := svc.MarkUpdatesAsNotified(ctx, []string{"sha256:img1", "sha256:img2"})
+	err := svc.MarkUpdatesAsNotified(ctx, pending)
 	require.NoError(t, err)
 
 	// Verify img1 and img2 are marked
@@ -1840,11 +1843,34 @@ func TestImageUpdateService_MarkUpdatesAsNotified_EmptyList(t *testing.T) {
 	svc := &ImageUpdateService{db: db}
 
 	// Should not error on empty list
-	err := svc.MarkUpdatesAsNotified(ctx, []string{})
+	err := svc.MarkUpdatesAsNotified(ctx, []*ImageUpdateRecord{})
 	require.NoError(t, err)
 
 	err = svc.MarkUpdatesAsNotified(ctx, nil)
 	require.NoError(t, err)
+}
+
+func TestImageUpdateService_CleanupOrphanedRecordsKeepsRefRecords(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	server := newImageUpdateDiscoveryServer(t, []image.Summary{{ID: "sha256:present"}}, nil)
+	t.Cleanup(server.Close)
+	svc := &ImageUpdateService{
+		db:            db,
+		dockerService: &docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)},
+	}
+	for _, id := range []string{"sha256:present", "sha256:gone", "ref::docker.io/library/nginx@latest"} {
+		require.NoError(t, db.Create(&ImageUpdateRecord{
+			ID:         id,
+			Repository: "test/repo",
+			Tag:        "latest",
+		}).Error)
+	}
+
+	require.NoError(t, svc.CleanupOrphanedRecords(t.Context()))
+
+	var ids []string
+	require.NoError(t, db.Model(&ImageUpdateRecord{}).Pluck("id", &ids).Error)
+	assert.ElementsMatch(t, []string{"sha256:present", "ref::docker.io/library/nginx@latest"}, ids)
 }
 
 // TestImageUpdateService_SendBatchNotifications_DetachesCanceledContext guards the

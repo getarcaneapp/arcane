@@ -20,8 +20,13 @@ type composeCacheInternal[T any] struct {
 
 type composeCacheEntryInternal[T any] struct {
 	fingerprint string
-	mtimes      map[string]time.Time
+	stamps      map[string]composeCacheStampInternal
 	value       T
+}
+
+type composeCacheStampInternal struct {
+	modTime time.Time
+	size    int64
 }
 
 // NewComposeCache caches Compose-derived values and their file dependencies.
@@ -45,7 +50,7 @@ func cloneComposeProjectInternal(project *composetypes.Project) *composetypes.Pr
 
 func (c *composeCacheInternal[T]) Get(projectID, fingerprint string) (T, bool) {
 	entry, found := c.entries.Peek(projectID)
-	if found && entry.fingerprint == fingerprint && validComposeCacheEntryInternal(entry.mtimes) {
+	if found && entry.fingerprint == fingerprint && validComposeCacheEntryInternal(entry.stamps) {
 		if c.clone != nil {
 			return c.clone(entry.value), true
 		}
@@ -55,11 +60,11 @@ func (c *composeCacheInternal[T]) Get(projectID, fingerprint string) (T, bool) {
 	return zero, false
 }
 
-func (c *composeCacheInternal[T]) Set(projectID, fingerprint, projectPath, projectsDirectory, composePath string, composeFiles, envFiles []string, value T) error {
+func (c *composeCacheInternal[T]) Set(projectID, fingerprint, projectPath, projectsDirectory, composePath string, composeFiles, envFiles []string, loadedAt time.Time, value T) error {
 	if strings.TrimSpace(projectID) == "" {
 		return nil
 	}
-	mtimes := make(map[string]time.Time)
+	stamps := make(map[string]composeCacheStampInternal)
 	for _, path := range append([]string{composePath}, composeFiles...) {
 		if path == "" {
 			continue
@@ -68,7 +73,10 @@ func (c *composeCacheInternal[T]) Set(projectID, fingerprint, projectPath, proje
 		if err != nil {
 			return fmt.Errorf("stat compose file %s: %w", path, err)
 		}
-		mtimes[path] = info.ModTime()
+		if !info.ModTime().Before(loadedAt) {
+			return nil
+		}
+		stamps[path] = composeCacheStampInternal{modTime: info.ModTime(), size: info.Size()}
 	}
 	dependencies := append([]string{filepath.Join(projectPath, EffectiveEnvFileName)}, envFiles...)
 	if projectsDirectory != "" {
@@ -81,18 +89,21 @@ func (c *composeCacheInternal[T]) Set(projectID, fingerprint, projectPath, proje
 	for _, path := range dependencies {
 		info, err := os.Stat(path)
 		if err == nil {
-			mtimes[path] = info.ModTime()
+			if !info.ModTime().Before(loadedAt) {
+				return nil
+			}
+			stamps[path] = composeCacheStampInternal{modTime: info.ModTime(), size: info.Size()}
 			continue
 		}
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("stat compose dependency %s: %w", path, err)
 		}
-		mtimes[path] = time.Time{}
+		stamps[path] = composeCacheStampInternal{}
 	}
 	if c.clone != nil {
 		value = c.clone(value)
 	}
-	c.entries.Set(projectID, composeCacheEntryInternal[T]{fingerprint: fingerprint, mtimes: mtimes, value: value})
+	c.entries.Set(projectID, composeCacheEntryInternal[T]{fingerprint: fingerprint, stamps: stamps, value: value})
 	return nil
 }
 
@@ -100,16 +111,16 @@ func (c *composeCacheInternal[T]) Invalidate(projectID string) {
 	c.entries.Delete(projectID)
 }
 
-func validComposeCacheEntryInternal(mtimes map[string]time.Time) bool {
-	for path, mtime := range mtimes {
+func validComposeCacheEntryInternal(stamps map[string]composeCacheStampInternal) bool {
+	for path, stamp := range stamps {
 		info, err := os.Stat(path)
 		if err != nil {
-			if !os.IsNotExist(err) || !mtime.IsZero() {
+			if !os.IsNotExist(err) || !stamp.modTime.IsZero() {
 				return false
 			}
 			continue
 		}
-		if mtime.IsZero() || !info.ModTime().Equal(mtime) {
+		if stamp.modTime.IsZero() || !info.ModTime().Equal(stamp.modTime) || info.Size() != stamp.size {
 			return false
 		}
 		// A chmod does not bump mtime, so confirm the file is still readable.
@@ -143,6 +154,7 @@ func LoadCachedComposeProject(ctx context.Context,
 		}
 	}
 	dependencies := projecttypes.ComposeDependencies{}
+	loadedAt := time.Now()
 	model, err := LoadComposeProject(ctx, composePath, projectName, projectsDirectory, autoInject, pathMapper, nil, nil, false, &dependencies, nil, nil)
 	if err != nil {
 		return nil, err
@@ -155,7 +167,7 @@ func LoadCachedComposeProject(ctx context.Context,
 		// Metadata discovery failure disables caching; the executable model is valid.
 		return model, nil
 	}
-	if setErr := cache.Set(projectID, fingerprint, projectPath, projectsDirectory, composePath, composeFiles, envFiles, model); setErr != nil {
+	if setErr := cache.Set(projectID, fingerprint, projectPath, projectsDirectory, composePath, composeFiles, envFiles, loadedAt, model); setErr != nil {
 		return nil, setErr
 	}
 	return model, nil

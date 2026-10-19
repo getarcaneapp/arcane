@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -134,6 +135,10 @@ func (s *stderrMarkedDemuxedStreamInternal) ingestFrameInternal() {
 	payload := make([]byte, binary.BigEndian.Uint32(header[4:]))
 	if _, err := io.ReadFull(s.src, payload); err != nil {
 		s.finishInternal(err)
+		return
+	}
+	if header[0] == byte(stdcopy.Systemerr) {
+		s.finishInternal(fmt.Errorf("error from daemon in stream: %s", payload))
 		return
 	}
 

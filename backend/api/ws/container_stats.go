@@ -63,9 +63,7 @@ func (h *WebSocketHandler) ContainerStats(c *echo.Context) error {
 	return nil
 }
 
-// containerStatsErrorDrainGrace is how long a failed stats hub stays alive after
-// broadcasting its error frame, so clients receive it before the hub shuts down.
-const containerStatsErrorDrainGrace = 2 * time.Second
+const streamEndDrainGrace = 2 * time.Second
 
 func (h *WebSocketHandler) runContainerStatsHub(containerID string, hub *wshub.Hub) {
 	ctx, cancel := context.WithCancel(h.ctx)
@@ -81,7 +79,7 @@ func (h *WebSocketHandler) runContainerStatsHub(containerID string, hub *wshub.H
 		timer = time.AfterFunc(5*time.Second, func() {
 			cleanupTimerMu.Lock()
 			defer cleanupTimerMu.Unlock()
-			if cleanupTimer != timer {
+			if cleanupTimer != timer || hub.Len() > 0 {
 				return
 			}
 			h.containerStatsHubs.CompareAndDelete(containerID, hub)
@@ -129,7 +127,7 @@ func (h *WebSocketHandler) runContainerStatsHub(containerID string, hub *wshub.H
 		// Cancelling immediately would race hub.Run between ctx.Done and the
 		// queued error frame, dropping the very message clients need. Give the
 		// broadcast a moment to drain, then tear the hub down.
-		time.AfterFunc(containerStatsErrorDrainGrace, cancel)
+		time.AfterFunc(streamEndDrainGrace, cancel)
 	}(ctx)
 
 	go func() {

@@ -259,10 +259,10 @@ func (h *ActivityHandler) RunLocalStreamProducer(ctx context.Context, limit int,
 		})
 	}
 
-	snapshotOK := sendSnapshot()
-
 	eventCh, missedEvents, unsubscribe := h.activityService.pubsub.Subscribe("0")
 	defer unsubscribe()
+
+	snapshotOK := sendSnapshot()
 
 	ticker := time.NewTicker(activityStreamHeartbeatInterval)
 	defer ticker.Stop()
@@ -344,7 +344,6 @@ func activityStreamEnvironmentVersion(localEnvironment environment.Environment) 
 
 func (h *ActivityHandler) runRemoteActivityStreamPoller(ctx context.Context, localEnvironment environment.Environment, limit int, publish func(activity.StreamEvent)) {
 	environmentID := localEnvironment.ID
-	lastError := ""
 	lastFingerprint := ""
 
 	poll := func() {
@@ -373,42 +372,30 @@ func (h *ActivityHandler) runRemoteActivityStreamPoller(ctx context.Context, loc
 		if err != nil && ctx.Err() != nil {
 			return
 		}
-		if err == nil && lastError != "" {
-			// Resend the snapshot once the environment recovers.
-			lastFingerprint = ""
+		activities := kit.FromPtr(output).Body.Data
+		sourceID := cmp.Or(currentEnvironment.ID, environment.LocalEnvironmentID)
+		sourceName := environment.DisplayName(sourceID, currentEnvironment.Name)
+		for i := range activities {
+			applyActivitySource(&activities[i], sourceID, sourceName)
 		}
-		if output != nil {
-			sourceID := cmp.Or(currentEnvironment.ID, environment.LocalEnvironmentID)
-			sourceName := environment.DisplayName(sourceID, currentEnvironment.Name)
-			for i := range output.Body.Data {
-				applyActivitySource(&output.Body.Data[i], sourceID, sourceName)
+		errMessage := func() string {
+			if err != nil {
+				return err.Error()
 			}
-			if fingerprint := strconv.FormatUint(kit.Fingerprint(output.Body.Data), 16); fingerprint != lastFingerprint {
-				publish(activity.StreamEvent{
-					Type:          "snapshot",
-					EnvironmentID: environmentID,
-					Activities:    output.Body.Data,
-					Timestamp:     time.Now(),
-				})
-				lastFingerprint = fingerprint
-				lastError = ""
-			}
-		}
-		if err == nil {
-			lastError = ""
+			return ""
+		}()
+		fingerprint := strconv.FormatUint(kit.Fingerprint(activities), 16) + "|" + errMessage
+		if fingerprint == lastFingerprint {
 			return
 		}
-		// A failing environment must not end the stream; surface the error
-		// once per distinct message and keep polling.
-		if msg := err.Error(); msg != lastError {
-			lastError = msg
-			publish(activity.StreamEvent{
-				Type:          "error",
-				EnvironmentID: environmentID,
-				Error:         msg,
-				Timestamp:     time.Now(),
-			})
-		}
+		lastFingerprint = fingerprint
+		publish(activity.StreamEvent{
+			Type:          kit.Ternary(err == nil, "snapshot", "error"),
+			EnvironmentID: environmentID,
+			Activities:    activities,
+			Error:         errMessage,
+			Timestamp:     time.Now(),
+		})
 	}
 
 	poll()

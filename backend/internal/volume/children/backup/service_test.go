@@ -59,7 +59,7 @@ func (s *volumeBackupPolicyScheduler) Submit(_ context.Context, request schedule
 	return scheduler.Run{ID: request.RunID, JobID: request.JobID, EnvironmentID: request.EnvironmentID, Status: scheduler.Queued}, nil
 }
 
-func TestVolumeBackupPolicy_RetentionIgnoresFailedRuns(t *testing.T) {
+func TestVolumeBackupPolicy_RetentionCountsFailedRunsSeparately(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-retention-failed?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	applyVolumeBackupMigrations(t, gormDB)
@@ -73,10 +73,18 @@ func TestVolumeBackupPolicy_RetentionIgnoresFailedRuns(t *testing.T) {
 		"INSERT INTO volume_backups (id, volume_name, size, created_at, policy_id, status) VALUES (?, ?, ?, ?, ?, ?)",
 		"failed-run", "app-data", 0, time.Now(), policyID, backuptypes.VolumeBackupStatusFailed,
 	).Error)
+	require.NoError(t, gormDB.Exec(
+		"INSERT INTO volume_backups (id, volume_name, size, created_at, policy_id, status, local_snapshot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"failed-snap-new", "app-data", 0, time.Now().Add(-2*time.Hour), policyID, backuptypes.VolumeBackupStatusFailed, "snapshot-2",
+	).Error)
+	require.NoError(t, gormDB.Exec(
+		"INSERT INTO volume_backups (id, volume_name, size, created_at, policy_id, status, local_snapshot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"failed-snap-old", "app-data", 0, time.Now().Add(-3*time.Hour), policyID, backuptypes.VolumeBackupStatusFailed, "snapshot-3",
+	).Error)
 
 	expired, err := backup.ExpiredRunIDs(t.Context(), &database.DB{DB: gormDB}, "volume_backups", policyID, 1)
 	require.NoError(t, err)
-	require.Empty(t, expired)
+	require.Equal(t, []string{"failed-snap-old"}, expired)
 }
 
 func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {

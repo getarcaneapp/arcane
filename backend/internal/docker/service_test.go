@@ -322,7 +322,7 @@ func TestDockerClientService_WatchEventsResumesFromLastEventAfterRefresh(t *test
 
 	select {
 	case got := <-reconnected:
-		assert.Equal(t, "1700000000.123456789", got.since)
+		assert.Equal(t, "1700000000.123456790", got.since)
 		// One probe from the initial GetClient, one from the RefreshClient before reconnecting.
 		assert.GreaterOrEqual(t, got.pings, int32(2))
 	case <-time.After(5 * time.Second):

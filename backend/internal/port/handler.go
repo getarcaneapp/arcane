@@ -30,14 +30,14 @@ func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*ha
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
 		body, err := h.portService.AggregatePorts(ctx, params)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("failed to list ports")
+			return nil, huma.Error500InternalServerError("failed to list ports: " + err.Error())
 		}
 		return &handlerutil.Page[port.PortMapping]{Body: body}, nil
 	}
 
 	items, paginationResp, err := h.portService.ListPortsPaginated(ctx, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to list ports")
+		return nil, huma.Error500InternalServerError("failed to list ports: " + err.Error())
 	}
 
 	return &handlerutil.Page[port.PortMapping]{

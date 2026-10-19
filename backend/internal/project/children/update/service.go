@@ -36,6 +36,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 )
 
 // Service edits Compose sources for image updates and persists rename journals in the KV store.
@@ -532,11 +533,15 @@ func EnsureProjectEnvReadable(ctx context.Context, projectsDirectory, projectPat
 
 // ImageChanges discovers newer image tags allowed by each service's update
 // policy. GitOps-managed projects cannot have their source edited.
-func (s *Service) ImageChanges(ctx context.Context, effective *types.Project, gitOpsManaged bool) (map[string]updatertypes.ServiceImageChange, error) {
+func (s *Service) ImageChanges(ctx context.Context, effective *types.Project, servicesToUpdate []string, gitOpsManaged bool) (map[string]updatertypes.ServiceImageChange, error) {
 	policy := updater.DefaultLabelPolicy()
+	selected := projects.NormalizeBuildSelections(servicesToUpdate)
 	changes := make(map[string]updatertypes.ServiceImageChange)
 	for _, key := range effective.ServiceNames() {
 		service := effective.Services[key]
+		if !projects.ServiceSelected(selected, key) || imageref.IsUpdateCheckDisabled(service.Labels) {
+			continue
+		}
 		configuredPolicy := policy.TagPolicy(service.Labels)
 		if service.Build != nil && (configuredPolicy.Strategy == "" || configuredPolicy.Strategy == "auto") && configuredPolicy.Constraint == "" && configuredPolicy.TagPattern == "" {
 			continue

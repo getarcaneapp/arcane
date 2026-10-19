@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/getarcaneapp/arcane/types/v2/project"
 	"go.getarcane.app/kit/pkg"
@@ -320,6 +321,7 @@ func LoadComposeMetadata(
 	// Load unnamed first so COMPOSE_PROJECT_NAME from .env wins; fall back to
 	// the normalized directory name when that fails.
 	dependencies := project.ComposeDependencies{}
+	loadedAt := time.Now()
 	proj, loadErr := projects.LoadComposeProject(ctx, composeFile, "", projectsDirectory, autoInjectEnv, pathMapper, nil, nil, false, &dependencies, nil, nil)
 	if loadErr != nil {
 		dependencies = project.ComposeDependencies{}
@@ -337,7 +339,7 @@ func LoadComposeMetadata(
 	}
 
 	if composeFiles, envFiles, ok := projects.ComposeCacheDependencies(ctx, proj, dependencies, composeFile, projectsDirectory, autoInjectEnv); ok {
-		if setErr := cache.Set(dirPath, fingerprint, dirPath, projectsDirectory, composeFile, composeFiles, envFiles, meta); setErr != nil {
+		if setErr := cache.Set(dirPath, fingerprint, dirPath, projectsDirectory, composeFile, composeFiles, envFiles, loadedAt, meta); setErr != nil {
 			slog.DebugContext(ctx, "failed to cache compose metadata", "path", dirPath, "error", setErr)
 		}
 	}

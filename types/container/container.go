@@ -1155,8 +1155,12 @@ func NewSummary(c container.Summary) Summary {
 
 	ports := make([]Port, 0, len(c.Ports))
 	for _, p := range c.Ports {
+		hostIP := ""
+		if p.IP.IsValid() {
+			hostIP = p.IP.String()
+		}
 		ports = append(ports, Port{
-			IP:          p.IP.String(),
+			IP:          hostIP,
 			PrivatePort: int(p.PrivatePort),
 			PublicPort:  int(p.PublicPort),
 			Type:        p.Type,
@@ -1249,8 +1253,12 @@ func mapInspectPorts(networkSettings *container.NetworkSettings) []Port {
 
 		for _, b := range bindings {
 			pub, _ := strconv.Atoi(b.HostPort)
+			hostIP := ""
+			if b.HostIP.IsValid() {
+				hostIP = b.HostIP.String()
+			}
 			ports = append(ports, Port{
-				IP:          b.HostIP.String(),
+				IP:          hostIP,
 				PrivatePort: privatePort,
 				PublicPort:  pub,
 				Type:        typ,

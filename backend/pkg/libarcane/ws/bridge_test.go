@@ -21,7 +21,7 @@ func registerCollectorInternal(t *testing.T, h *Hub) *Client {
 	h.register <- c
 
 	require.Eventually(t, func() bool {
-		return h.ClientCount() >= 1
+		return h.Len() >= 1
 	}, time.Second, 5*time.Millisecond)
 
 	return c

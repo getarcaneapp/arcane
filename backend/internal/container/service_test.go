@@ -601,6 +601,60 @@ func TestBuildEditNetworkingConfig(t *testing.T) {
 	require.Nil(t, out)
 }
 
+func TestRetainedVolumeMountPoints(t *testing.T) {
+	original := container.HostConfig{
+		Binds: []string{"/cache", "removed:/removed", "kept:/kept"},
+		Mounts: []mount.Mount{
+			{Type: mount.TypeVolume, Target: "/anon-mount"},
+		},
+	}
+	updated := container.HostConfig{
+		Binds: []string{"/cache", "kept:/kept", "renamed:/image-volume"},
+		Mounts: []mount.Mount{
+			{Type: mount.TypeVolume, Target: "/anon-mount"},
+		},
+	}
+	mountPoints := []container.MountPoint{
+		{Type: mount.TypeVolume, Name: "anon-cache", Destination: "/cache"},
+		{Type: mount.TypeVolume, Name: "removed", Destination: "/removed"},
+		{Type: mount.TypeVolume, Name: "kept", Destination: "/kept"},
+		{Type: mount.TypeVolume, Name: "anon-mount", Destination: "/anon-mount"},
+		{Type: mount.TypeVolume, Name: "image-data", Destination: "/data"},
+		{Type: mount.TypeVolume, Name: "image-other", Destination: "/image-volume"},
+	}
+
+	retained := retainedVolumeMountPoints(original, updated, mountPoints)
+
+	require.Len(t, retained, 3)
+	require.Equal(t, []string{"anon-cache", "anon-mount", "image-data"}, []string{retained[0].Name, retained[1].Name, retained[2].Name})
+}
+
+func TestContainerServiceResizeExec(t *testing.T) {
+	db := setupProjectTestDB(t)
+	var gotPath, gotHeight, gotWidth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.Method + " " + dockerTestPath(r.URL.Path)
+		gotHeight = r.URL.Query().Get("h")
+		gotWidth = r.URL.Query().Get("w")
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	svc := NewContainerService(
+		event.NewEventService(db, nil, nil),
+		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)),
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	require.NoError(t, svc.ResizeExec(t.Context(), "exec-1", 120, 40))
+	require.Equal(t, "POST /exec/exec-1/resize", gotPath)
+	require.Equal(t, "40", gotHeight)
+	require.Equal(t, "120", gotWidth)
+}
+
 func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 	db := setupProjectTestDB(t)
 	events := event.NewEventService(db, nil, nil)

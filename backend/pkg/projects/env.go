@@ -78,6 +78,7 @@ type EnvLoader struct {
 type envFileCacheEntry struct {
 	path   string
 	mtime  time.Time
+	size   int64
 	exists bool
 	values EnvMap
 }
@@ -230,13 +231,12 @@ func loadCachedEnvFileInternal(_ context.Context, envCache *hot.HotCache[string,
 	}
 
 	entry, found, err := envCache.GetWithLoaders(key, func(_ []string) (map[string]envFileCacheEntry, error) {
-		entry := envFileCacheEntry{path: path}
 		// Stays on os.*: env files may be symlinks resolving outside any
 		// confinement root (a supported setup), which acfs cannot follow.
 		info, err := os.Stat(path)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				return map[string]envFileCacheEntry{key: entry}, nil
+				return map[string]envFileCacheEntry{key: {path: path}}, nil
 			}
 			return nil, err
 		}
@@ -248,10 +248,13 @@ func loadCachedEnvFileInternal(_ context.Context, envCache *hot.HotCache[string,
 		if err != nil {
 			return nil, fmt.Errorf("parse env file: %w", err)
 		}
-		entry.exists = true
-		entry.mtime = info.ModTime()
-		entry.values = parsed
-		return map[string]envFileCacheEntry{key: entry}, nil
+		return map[string]envFileCacheEntry{key: {
+			path:   path,
+			mtime:  info.ModTime(),
+			size:   info.Size(),
+			exists: true,
+			values: parsed,
+		}}, nil
 	})
 	if err != nil {
 		return envFileCacheEntry{}, err
@@ -272,7 +275,7 @@ func validEnvFileCacheEntryInternal(entry envFileCacheEntry) bool {
 	if info.IsDir() {
 		return false
 	}
-	if !entry.exists || !info.ModTime().Equal(entry.mtime) {
+	if !entry.exists || !info.ModTime().Equal(entry.mtime) || info.Size() != entry.size {
 		return false
 	}
 	// A chmod does not bump mtime, so confirm the file is still readable.
@@ -846,11 +849,12 @@ func ParseComposeEnvOptions(workdir string, env EnvMap) (ComposeEnvOptions, erro
 func ComposeFileEnvSelection(ctx context.Context, projectsDir, dir string) ([]string, error) {
 	envMap := make(EnvMap)
 	if strings.TrimSpace(projectsDir) != "" {
-		globalEnv, err := ParseProjectEnvFile(filepath.Join(projectsDir, GlobalEnvFileName), envMap)
+		globalEnvPath := filepath.Join(projectsDir, GlobalEnvFileName)
+		globalEnv, err := loadCachedEnvFileInternal(ctx, globalEnvFileCache, globalEnvPath+"\x00compose-file-selection", globalEnvPath, envMap)
 		if err != nil {
 			return nil, err
 		}
-		maps.Copy(envMap, globalEnv)
+		maps.Copy(envMap, globalEnv.values)
 	}
 
 	// COMPOSE_DISABLE_ENV_FILE skips the project .env; it is read only from the

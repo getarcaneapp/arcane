@@ -42,6 +42,23 @@ for member do
 done
 tar -xzf "$archive" -C /volume -- "$@"`
 
+const replaceVolumeScript = `set -e
+: "${1:?}"
+for f in /volume/* /volume/.[!.]* /volume/..?*; do
+  case "$f" in "$1") ;; *) rm -rf -- "$f" ;; esac
+done
+for f in "$1"/* "$1"/.[!.]* "$1"/..?*; do
+  if stat -c '%A' -- "$f" >/dev/null 2>&1; then mv -- "$f" /volume/; fi
+done
+rmdir -- "$1"`
+
+const restoreArchiveScript = `set -e
+tmp=$(mktemp -d /volume/.restore_tmp.XXXXXX)
+tar -tzf "$1" >/dev/null
+tar -xzf "$1" -C "$tmp"
+set -- "$tmp"
+` + replaceVolumeScript
+
 // Dependencies are the backup runtime, storage, and helper-container operations restores run through.
 type Dependencies struct {
 	Docker          *docker.DockerClientService
@@ -364,13 +381,9 @@ func (s *Service) restoreArchiveBackup(ctx context.Context, dockerClient *client
 	fullRestoreCmd := []string{
 		"sh",
 		"-c",
-		fmt.Sprintf(
-			"set -e; tmp=$(mktemp -d /volume/.restore_tmp.XXXXXX); tar -tzf /backups/%s >/dev/null; tar -xzf "+
-				"/backups/%s -C \"$tmp\"; find /volume -mindepth 1 -maxdepth 1 -not -path \"$tmp\" -exec rm -rf -- {} +; "+
-				"find \"$tmp\" -mindepth 1 -maxdepth 1 -exec mv -- {} /volume/ \\;; rmdir \"$tmp\"",
-			filename,
-			filename,
-		),
+		restoreArchiveScript,
+		"sh",
+		path.Join("/backups", filename),
 	}
 	resp, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerCreateResult, error) {
 		return dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
@@ -436,7 +449,7 @@ func (s *Service) RestoreArchiveMembers(ctx context.Context, containerID, filena
 	return stderr, nil
 }
 
-func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, user usertypes.Actor) error {
+func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, user usertypes.Actor) (err error) {
 	slog.DebugContext(ctx, "volume service: upload and restore", "volume", volumeName, "filename", filename, "user", user.ID)
 
 	gzr, err := gzip.NewReader(archive)
@@ -451,6 +464,17 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 
 	unlock := s.deps.Locks.Lock(volumeName)
 	defer unlock()
+	stopped, err := s.deps.StopContainers(ctx, volumeName, user, true)
+	containersStopped := len(stopped) > 0
+	defer func() {
+		if containersStopped {
+			_, restartErr := s.deps.StartContainers(context.WithoutCancel(ctx), stopped, user)
+			err = errors.Join(err, restartErr)
+		}
+	}()
+	if err != nil {
+		return err
+	}
 	preBackupID, err := s.deps.SafetyBackup(ctx, volumeName, user)
 	if err != nil {
 		return fmt.Errorf("failed to create pre-restore backup: %w", err)
@@ -472,6 +496,13 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 	if err != nil {
 		return fmt.Errorf("failed to create temp restore dir: %w", err)
 	}
+	replaceStarted := false
+	defer func() {
+		if !replaceStarted {
+			_, _, cleanupErr := s.deps.Exec(context.WithoutCancel(ctx), containerID, "", []string{"rm", "-rf", "--", tmpDir})
+			err = errors.Join(err, cleanupErr)
+		}
+	}()
 	if strings.TrimSpace(stderr) != "" {
 		slog.DebugContext(ctx, "volume service: restore temp dir stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
 	}
@@ -487,7 +518,7 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 		return fmt.Errorf("failed to restore from uploaded archive: %w", err)
 	}
 
-	_, stderr, err = s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", fmt.Sprintf("test -n \"$(find %s -mindepth 1 -maxdepth 1 -print -quit)\"", tmpDir)})
+	_, stderr, err = s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", `test -n "$(find "$1" -mindepth 1 -maxdepth 1)"`, "sh", tmpDir})
 	if err != nil {
 		return fmt.Errorf("uploaded archive appears empty or invalid: %w", err)
 	}
@@ -495,21 +526,21 @@ func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archi
 		slog.DebugContext(ctx, "volume service: restore validate stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
 	}
 
-	_, stderr, err = s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", "rm -rf /volume/* /volume/.[!.]* /volume/..?* 2>/dev/null || true"})
+	replaceStarted = true
+	_, stderr, err = s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", replaceVolumeScript, "sh", tmpDir})
 	if err != nil {
-		return fmt.Errorf("failed to clear volume before restore: %w", err)
+		return fmt.Errorf("failed to replace volume contents: %w", err)
 	}
 	if strings.TrimSpace(stderr) != "" {
-		slog.DebugContext(ctx, "volume service: restore clear stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
+		slog.DebugContext(ctx, "volume service: restore replace stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
 	}
 
-	moveCmd := fmt.Sprintf("find %s -mindepth 1 -maxdepth 1 -exec mv -- {} /volume/ \\; && rmdir %s", tmpDir, tmpDir)
-	_, stderr, err = s.deps.Exec(ctx, containerID, "", []string{"sh", "-c", moveCmd})
-	if err != nil {
-		return fmt.Errorf("failed to move restored files into place: %w", err)
-	}
-	if strings.TrimSpace(stderr) != "" {
-		slog.DebugContext(ctx, "volume service: restore move stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
+	if containersStopped {
+		stopped, err = s.deps.StartContainers(context.WithoutCancel(ctx), stopped, user)
+		containersStopped = len(stopped) > 0
+		if err != nil {
+			return err
+		}
 	}
 
 	metadata := database.JSON{

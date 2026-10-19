@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	networktypes "github.com/getarcaneapp/arcane/types/v2/network"
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
@@ -148,6 +149,9 @@ func (s *NetworkService) buildTopology(ctx context.Context) (*networktypes.Topol
 			inspected, inspectErr := s.dockerService.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkInspectResult, error) {
 				return compat.NetworkInspectWithCompatibility(ctx, dockerClient, rawNetwork.ID, client.NetworkInspectOptions{})
 			})
+			if errdefs.IsNotFound(inspectErr) {
+				return nil
+			}
 			if inspectErr != nil {
 				return fmt.Errorf("failed to inspect network %s: %w", rawNetwork.Name, inspectErr)
 			}
@@ -165,6 +169,9 @@ func (s *NetworkService) buildTopology(ctx context.Context) (*networktypes.Topol
 	edges := make([]networktypes.TopologyEdge, 0)
 	containerNodeIDs := make(map[string]struct{})
 	for i, rawNetwork := range networkList.Items {
+		if inspectedNetworks[i].ID == "" {
+			continue
+		}
 		nodes = append(nodes, networktypes.TopologyNode{
 			ID:   rawNetwork.ID,
 			Name: rawNetwork.Name,

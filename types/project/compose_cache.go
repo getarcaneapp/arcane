@@ -1,10 +1,12 @@
 package project
 
+import "time"
+
 // ComposeCache stores values until their Compose configuration inputs change.
 // Fingerprints identify the settings and project identity used when loading.
 type ComposeCache[T any] interface {
 	Get(projectID, fingerprint string) (T, bool)
-	Set(projectID, fingerprint, projectPath, projectsDirectory, composePath string, composeFiles, envFiles []string, value T) error
+	Set(projectID, fingerprint, projectPath, projectsDirectory, composePath string, composeFiles, envFiles []string, loadedAt time.Time, value T) error
 	Invalidate(projectID string)
 }
 

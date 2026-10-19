@@ -30,6 +30,7 @@ import (
 const (
 	recentGCPauseSamples     = 16
 	goroutineLeakProfileName = "goroutineleak"
+	leakScanCacheTTL         = 30 * time.Second
 
 	// maxActorDetailRowsInternal caps the instances and failures listed per actor type.
 	maxActorDetailRowsInternal = 10
@@ -45,8 +46,8 @@ type DiagnosticsService struct {
 	coordinator  *runs.Coordinator
 	environments *environment.EnvironmentService
 
-	leakMu        sync.Mutex
-	leakScannedAt time.Time
+	leakMu     sync.Mutex
+	leakReport system.GoroutineLeakReport
 }
 
 func NewDiagnosticsService(actors *francis.Runtime, coordinator *runs.Coordinator, environments *environment.EnvironmentService) *DiagnosticsService {
@@ -61,7 +62,7 @@ func (s *DiagnosticsService) Collect() (system.RuntimeInfo, system.MemoryInfo, s
 	debug.ReadGCStats(&gc)
 
 	s.leakMu.Lock()
-	leakScannedAt := s.leakScannedAt
+	leakScannedAt := s.leakReport.ScannedAt
 	s.leakMu.Unlock()
 
 	rt := system.RuntimeInfo{
@@ -120,6 +121,12 @@ func (s *DiagnosticsService) Collect() (system.RuntimeInfo, system.MemoryInfo, s
 // ScanGoroutineLeaks runs a leak-detection GC and returns the leaked-goroutine
 // pprof text (debug=1). debug=2 would dump every goroutine, not only leaks.
 func (s *DiagnosticsService) ScanGoroutineLeaks() (system.GoroutineLeakReport, error) {
+	s.leakMu.Lock()
+	defer s.leakMu.Unlock()
+	if time.Since(s.leakReport.ScannedAt) < leakScanCacheTTL {
+		return s.leakReport, nil
+	}
+
 	p := pprof.Lookup(goroutineLeakProfileName)
 	if p == nil {
 		return system.GoroutineLeakReport{}, errors.New("goroutineleak profile is not available")
@@ -130,16 +137,12 @@ func (s *DiagnosticsService) ScanGoroutineLeaks() (system.GoroutineLeakReport, e
 		return system.GoroutineLeakReport{}, fmt.Errorf("write goroutineleak profile: %w", err)
 	}
 
-	now := time.Now().UTC()
-	s.leakMu.Lock()
-	s.leakScannedAt = now
-	s.leakMu.Unlock()
-
-	return system.GoroutineLeakReport{
+	s.leakReport = system.GoroutineLeakReport{
 		Count:     p.Count(),
 		Profile:   buf.String(),
-		ScannedAt: now,
-	}, nil
+		ScannedAt: time.Now().UTC(),
+	}
+	return s.leakReport, nil
 }
 
 // Goroutines groups the live goroutines by identical stack, largest group first.

@@ -110,6 +110,20 @@ func (h *Hub) Run(ctx context.Context) {
 	}
 }
 
+func (h *Hub) Len() int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.clients)
+}
+
+func (h *Hub) Publish(ctx context.Context, msg []byte) {
+	select {
+	case h.broadcast <- msg:
+	case <-h.stopped:
+	case <-ctx.Done():
+	}
+}
+
 func (h *Hub) Broadcast(msg []byte) {
 	select {
 	case h.broadcast <- msg:

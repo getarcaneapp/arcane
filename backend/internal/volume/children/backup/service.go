@@ -904,22 +904,15 @@ func discoveredVolumeBackup(destinationID, root string, snapshot backup.Discover
 }
 
 // MigrateRepositoryPasswords re-keys this instance's own volume backup repositories to the recovery key; other instances re-key their own roots.
-func (s *Service) MigrateRepositoryPasswords(ctx context.Context) error {
-	if s.deps.RecoveryKeys == nil || s.deps.Engine == nil {
+func (s *Service) MigrateRepositoryPasswords(ctx context.Context, previousKey, newKey string) error {
+	if s.deps.Engine == nil {
 		return nil
-	}
-	_, err := s.deps.RecoveryKeys.Get(ctx)
-	if errors.Is(err, backup.ErrRecoveryKeyNotConfigured) {
-		return nil
-	}
-	if err != nil {
-		return err
 	}
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return err
 	}
-	local, err := s.localRusticRepository(ctx, dockerClient, true)
+	local, err := s.localRusticRepository(ctx, dockerClient, false)
 	if err != nil {
 		return err
 	}
@@ -937,8 +930,14 @@ func (s *Service) MigrateRepositoryPasswords(ctx context.Context) error {
 			repositories = append(repositories, remote)
 		}
 	}
-	_, err = s.volumeBackupPassword(ctx, dockerClient, repositories...)
-	return err
+	legacyPassword := kit.SHA256Hex(legacyVolumePasswordSalt + s.deps.EncryptionKey)
+	if rekeyErr := s.deps.Engine.RekeyRepositories(ctx, dockerClient, repositories, newKey, previousKey, legacyPassword); rekeyErr != nil {
+		return rekeyErr
+	}
+	for _, repository := range repositories {
+		s.rekeyed.Store(repository.ID, newKey)
+	}
+	return nil
 }
 
 // StartBackup persists a running backup and submits its workflow.

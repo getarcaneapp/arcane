@@ -76,7 +76,7 @@ func benchHub(b *testing.B, numClients, hubBuf int) (*Hub, func()) {
 	}
 
 	// Wait for all clients to register
-	for h.ClientCount() < numClients {
+	for h.Len() < numClients {
 		time.Sleep(time.Millisecond)
 	}
 

@@ -86,7 +86,7 @@ func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks
 	ancestors := make(map[string]struct{})
 
 	if err == nil {
-		err = walkProjectDirectoriesInternal(ctx, root, root, true, 0, maxDepth, followSymlinks, ancestors, &discovered)
+		err = walkProjectDirectoriesInternal(ctx, root, root, true, 0, maxDepth, followSymlinks, projectScanSkipDirectorySetInternal(""), ancestors, &discovered)
 	}
 	if err != nil {
 		// The process runs as the PUID/PGID runtime user (default 65532) even
@@ -112,12 +112,13 @@ func walkProjectDirectoriesInternal(ctx context.Context,
 	currentDepth,
 	maxDepth int,
 	followSymlinks bool,
+	skipDirs map[string]bool,
 	ancestors map[string]struct{},
 	discovered *[]DiscoveredProjectDir,
 ) error {
 	if !isRoot {
 		name := filepath.Base(path)
-		if IsIgnoredProjectDirName(name) {
+		if IsIgnoredProjectDirName(name) || (currentDepth > 1 && skipDirs[name]) {
 			return nil
 		}
 	}
@@ -186,7 +187,18 @@ func walkProjectDirectoriesInternal(ctx context.Context,
 			continue
 		}
 
-		if walkProjectDirectoriesErr := walkProjectDirectoriesInternal(ctx, root, childPath, false, currentDepth+1, maxDepth, followSymlinks, ancestors, discovered); walkProjectDirectoriesErr != nil {
+		if walkProjectDirectoriesErr := walkProjectDirectoriesInternal(
+			ctx,
+			root,
+			childPath,
+			false,
+			currentDepth+1,
+			maxDepth,
+			followSymlinks,
+			skipDirs,
+			ancestors,
+			discovered,
+		); walkProjectDirectoriesErr != nil {
 			return walkProjectDirectoriesErr
 		}
 	}

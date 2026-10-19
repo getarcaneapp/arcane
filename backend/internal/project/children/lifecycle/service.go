@@ -266,6 +266,13 @@ func (s *Service) RunScript(
 			return markTruncated(stdoutBuf), markTruncated(stderrBuf), exitCode, fmt.Errorf("lifecycle container reported error: %s", result.Error.Message)
 		}
 	case waitErr := <-waitResp.Error:
+		if waitErr != nil {
+			if _, killErr := s.dockerService.Call(context.WithoutCancel(ctx), func(ctx context.Context, dockerClient *client.Client) (client.ContainerKillResult, error) {
+				return dockerClient.ContainerKill(ctx, resp.ID, client.ContainerKillOptions{})
+			}); killErr != nil && !errdefs.IsNotFound(killErr) {
+				slog.WarnContext(ctx, "failed to kill lifecycle container", "containerId", resp.ID, "error", killErr)
+			}
+		}
 		drainLifecycleLogs(ctx, logsCancel, logs, logDone)
 		if errors.Is(waitErr, context.DeadlineExceeded) || errors.Is(waitCtx.Err(), context.DeadlineExceeded) {
 			return markTruncated(stdoutBuf), markTruncated(stderrBuf), 0, fmt.Errorf("pre-deploy script timed out after %s: %w", timeout, context.DeadlineExceeded)
