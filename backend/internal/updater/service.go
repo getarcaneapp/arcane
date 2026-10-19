@@ -306,7 +306,9 @@ func (s *UpdaterService) applyBatch(ctx context.Context, options arcaneupdater.O
 		if len(entries) == 0 {
 			return
 		}
-		if err := s.deps.Notifications.SendBatchContainerUpdateNotification(ctx, entries); err != nil {
+		notifyCtx, cancelNotify := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultHTTPClient)
+		defer cancelNotify()
+		if err := s.deps.Notifications.SendBatchContainerUpdateNotification(notifyCtx, entries); err != nil {
 			slog.ErrorContext(ctx, "failed to send batched container update notification", "error", err, "count", len(entries))
 		}
 	}()

@@ -352,6 +352,12 @@ func BuildPruneReportNotificationMessage(format MessageFormat, environmentName s
 		fmt.Fprintf(&message, "🧱 Containers: %s\n", FormatBytes(result.ContainerSpaceReclaimed))
 		fmt.Fprintf(&message, "💿 Volumes: %s\n", FormatBytes(result.VolumeSpaceReclaimed))
 		fmt.Fprintf(&message, "🛠️ Build cache: %s\n", FormatBytes(result.BuildCacheSpaceReclaimed))
+		if len(result.Errors) > 0 {
+			fmt.Fprintf(&message, "\n⚠️ **%d error(s)**\n", len(result.Errors))
+			for _, pruneErr := range result.Errors {
+				fmt.Fprintf(&message, "- %s\n", pruneErr)
+			}
+		}
 
 		return message.String()
 	}
@@ -364,6 +370,12 @@ func BuildPruneReportNotificationMessage(format MessageFormat, environmentName s
 	fmt.Fprintf(&message, "- Images: %s\n", FormatBytes(result.ImageSpaceReclaimed))
 	fmt.Fprintf(&message, "- Volumes: %s\n", FormatBytes(result.VolumeSpaceReclaimed))
 	fmt.Fprintf(&message, "- Build Cache: %s\n", FormatBytes(result.BuildCacheSpaceReclaimed))
+	if len(result.Errors) > 0 {
+		fmt.Fprintf(&message, "\n%s\n", formatNotificationLabel(format, "Errors"))
+		for _, pruneErr := range result.Errors {
+			fmt.Fprintf(&message, "- %s\n", pruneErr)
+		}
+	}
 	return message.String()
 }
 

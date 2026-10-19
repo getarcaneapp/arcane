@@ -8,6 +8,7 @@ import (
 	"maps"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
@@ -159,14 +160,18 @@ func (s *Service) PruneReport(environmentName string, result *system.PruneAllRes
 			return notifications.BuildPruneReportNotificationMessage(format, environmentName, result)
 		}),
 		Title:        defaultTitle,
-		NtfyTitle:    "🧹 System Prune Complete",
+		NtfyTitle:    kit.Ternary(len(result.Errors) > 0, "⚠️ System Prune Finished with Errors", "🧹 System Prune Complete"),
 		DefaultTitle: defaultTitle,
 		RenderEmail: func() (string, string, error) {
 			htmlBody, _, err := s.renderPruneReportEmailTemplateInternal(environmentName, result)
 			if err != nil {
 				return "", "", fmt.Errorf("failed to render email template: %w", err)
 			}
-			subject := notifications.BuildEmailSubject(environmentName, fmt.Sprintf("System Prune Report: %s Reclaimed", notifications.FormatBytes(result.SpaceReclaimed)))
+			subject := notifications.BuildEmailSubject(environmentName, fmt.Sprintf(
+				"System Prune Report: %s Reclaimed%s",
+				notifications.FormatBytes(result.SpaceReclaimed),
+				kit.Ternary(len(result.Errors) > 0, fmt.Sprintf(", %d Error(s)", len(result.Errors)), ""),
+			))
 			return subject, htmlBody, nil
 		},
 	}
@@ -332,6 +337,7 @@ func (s *Service) renderPruneReportEmailTemplateInternal(environmentName string,
 		"ImageSpaceReclaimed":      notifications.FormatBytes(result.ImageSpaceReclaimed),
 		"VolumeSpaceReclaimed":     notifications.FormatBytes(result.VolumeSpaceReclaimed),
 		"BuildCacheSpaceReclaimed": notifications.FormatBytes(result.BuildCacheSpaceReclaimed),
+		"Status":                   kit.Ternary(len(result.Errors) > 0, "Finished with errors: "+strings.Join(result.Errors, "; "), "Completed"),
 		"Time":                     time.Now().Format(time.RFC1123),
 	}
 

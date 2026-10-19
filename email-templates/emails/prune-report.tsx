@@ -13,6 +13,7 @@ interface PruneReportEmailProps {
 	imageSpaceReclaimed: string;
 	volumeSpaceReclaimed: string;
 	buildCacheSpaceReclaimed: string;
+	status: string;
 	time: string;
 }
 
@@ -25,6 +26,7 @@ export const PruneReportEmail = ({
 	imageSpaceReclaimed,
 	volumeSpaceReclaimed,
 	buildCacheSpaceReclaimed,
+	status,
 	time
 }: PruneReportEmailProps) => {
 	return (
@@ -43,6 +45,17 @@ export const PruneReportEmail = ({
 					</Column>
 					<Column>
 						<Text style={valueStyle}>{environment}</Text>
+					</Column>
+				</Row>
+
+				<Hr style={dividerStyle} />
+
+				<Row style={infoRowStyle}>
+					<Column style={labelColumnStyle}>
+						<Text style={labelStyle}>Status:</Text>
+					</Column>
+					<Column>
+						<Text style={valueStyle}>{status}</Text>
 					</Column>
 				</Row>
 
@@ -178,6 +191,7 @@ PruneReportEmail.TemplateProps = {
 	imageSpaceReclaimed: '{{.ImageSpaceReclaimed}}',
 	volumeSpaceReclaimed: '{{.VolumeSpaceReclaimed}}',
 	buildCacheSpaceReclaimed: '{{.BuildCacheSpaceReclaimed}}',
+	status: '{{.Status}}',
 	time: '{{.Time}}'
 };
 
@@ -188,5 +202,6 @@ PruneReportEmail.PreviewProps = {
 	imageSpaceReclaimed: '2.1 GB',
 	volumeSpaceReclaimed: '612 MB',
 	buildCacheSpaceReclaimed: '228 MB',
+	status: 'Completed',
 	time: 'Tue, 10 Feb 2026 19:30:00 UTC'
 };

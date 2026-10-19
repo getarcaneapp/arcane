@@ -10,6 +10,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
 )
 
@@ -64,6 +65,15 @@ func (j *ScheduledPruneJob) Run(ctx context.Context) (schedulertypes.Outcome, er
 	)
 
 	result, started, err := j.systemService.PruneScheduled(ctx, "0", req)
+	if started {
+		defer func() {
+			notifyCtx, cancelNotify := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultHTTPClient)
+			defer cancelNotify()
+			if sendPruneReportNotificationErr := j.notificationService.SendPruneReportNotification(notifyCtx, result); sendPruneReportNotificationErr != nil {
+				slog.WarnContext(ctx, "failed to send prune report notification", "error", sendPruneReportNotificationErr)
+			}
+		}()
+	}
 	if err != nil {
 		slog.ErrorContext(ctx, "scheduled prune run failed", "error", err)
 		return schedulertypes.Outcome{}, err
@@ -86,10 +96,6 @@ func (j *ScheduledPruneJob) Run(ctx context.Context) (schedulertypes.Outcome, er
 		slog.DebugContext(ctx, "scheduled prune run errors", "errors", result.Errors)
 	}
 
-	// Send notification
-	if sendPruneReportNotificationErr := j.notificationService.SendPruneReportNotification(ctx, result); sendPruneReportNotificationErr != nil {
-		slog.WarnContext(ctx, "failed to send prune report notification", "error", sendPruneReportNotificationErr)
-	}
 	outcome := schedulertypes.Outcome{Status: schedulertypes.Succeeded}
 	if result.ActivityID != nil {
 		outcome.ActivityID = *result.ActivityID
