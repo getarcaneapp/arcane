@@ -460,6 +460,7 @@ func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options arcaneu
 	}()
 	for _, containerID := range containerIDs {
 		if reason := skipReasons[containerID]; reason != "" {
+			checked++
 			skipped++
 			items = append(items, arcaneupdater.ResourceResult{
 				ResourceID:   containerID,
