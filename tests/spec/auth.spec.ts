@@ -1,23 +1,18 @@
 import { test, expect, type Page } from '../fixtures/test.fixture';
 import authUtil from '../utils/auth.util';
 
-const REFRESH_TOKEN_KEY = 'arcane_refresh_token';
 const TOKEN_EXPIRY_KEY = 'arcane_token_expiry';
 const REFRESH_COOKIE = 'arcane_refresh_test=complete';
 
 /**
- * Register an addInitScript that plants a fake refresh token in sessionStorage
+ * Register an addInitScript that plants a token expiry in localStorage
  * BEFORE any page JavaScript runs on every navigation. Unlike page.evaluate(),
  * addInitScript survives page.goto() calls made later in the test.
  */
 async function registerTokenSeeding(page: Page) {
-	await page.addInitScript(
-		({ tokenKey, expiryKey }: { tokenKey: string; expiryKey: string }) => {
-			sessionStorage.setItem(tokenKey, 'playwright-test-refresh-token');
-			sessionStorage.setItem(expiryKey, new Date(Date.now() + 3_600_000).toISOString());
-		},
-		{ tokenKey: REFRESH_TOKEN_KEY, expiryKey: TOKEN_EXPIRY_KEY }
-	);
+	await page.addInitScript((expiryKey: string) => {
+		localStorage.setItem(expiryKey, new Date(Date.now() + 3_600_000).toISOString());
+	}, TOKEN_EXPIRY_KEY);
 }
 
 /**

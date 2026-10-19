@@ -362,7 +362,6 @@ test.describe('Container updates', () => {
 });
 
 test.describe('Arcane upgrades', () => {
-	const REFRESH_TOKEN_KEY = 'arcane_refresh_token';
 	const TOKEN_EXPIRY_KEY = 'arcane_token_expiry';
 	const REFRESH_COOKIE = 'arcane_refresh_test=complete';
 	const reloadCounts = new WeakMap<Page, number>();
@@ -428,15 +427,11 @@ test.describe('Arcane upgrades', () => {
 	}
 
 	async function registerTokenSeeding(page: Page) {
-		await page.addInitScript(
-			({ tokenKey, expiryKey }: { tokenKey: string; expiryKey: string }) => {
-				if (!sessionStorage.getItem(tokenKey)) {
-					sessionStorage.setItem(tokenKey, 'playwright-test-refresh-token');
-					sessionStorage.setItem(expiryKey, new Date(Date.now() + 3_600_000).toISOString());
-				}
-			},
-			{ tokenKey: REFRESH_TOKEN_KEY, expiryKey: TOKEN_EXPIRY_KEY }
-		);
+		await page.addInitScript((expiryKey: string) => {
+			if (!localStorage.getItem(expiryKey)) {
+				localStorage.setItem(expiryKey, new Date(Date.now() + 3_600_000).toISOString());
+			}
+		}, TOKEN_EXPIRY_KEY);
 	}
 
 	async function fulfillJob(route: Route, status: JobStatus, managerStatus: ManagerStatus) {
@@ -897,7 +892,7 @@ test.describe('Arcane upgrades', () => {
 			}
 		});
 
-		test('a transient refresh failure keeps the token and recovers on the next poll', async ({
+		test('a transient refresh failure keeps the session and recovers on the next poll', async ({
 			page
 		}) => {
 			registerReloadCounter(page);
@@ -943,8 +938,8 @@ test.describe('Arcane upgrades', () => {
 
 			await expect.poll(() => refreshCalls, { timeout: 10_000 }).toBe(1);
 			await expect
-				.poll(() => page.evaluate((key: string) => sessionStorage.getItem(key), REFRESH_TOKEN_KEY))
-				.toBe('playwright-test-refresh-token');
+				.poll(() => page.evaluate((key: string) => localStorage.getItem(key), TOKEN_EXPIRY_KEY))
+				.not.toBeNull();
 			await expect.poll(() => currentReloadCount(page), { timeout: 15_000 }).toBe(2);
 			expect(refreshCalls).toBe(2);
 		});
@@ -1007,11 +1002,12 @@ test.describe('Arcane upgrades', () => {
 			).toBeVisible();
 		});
 
-		test('a missing refresh token during an upgrade redirects to login instead of polling', async ({
+		test('a missing refresh cookie during an upgrade redirects to login instead of polling', async ({
 			page
 		}) => {
 			let refreshCalls = 0;
 			let updateStarted = false;
+			await page.context().clearCookies({ name: /^(__Secure-)?refresh$/ });
 			await page.route('**/api/auth/refresh', async (route) => {
 				if (!updateStarted) {
 					await route.continue();
@@ -1053,7 +1049,7 @@ test.describe('Arcane upgrades', () => {
 			await expect.poll(() => updateStarted).toBe(true);
 
 			await page.waitForURL(/\/login(?:\?|$)/, { timeout: 10_000 });
-			expect(refreshCalls).toBe(0);
+			expect(refreshCalls).toBe(1);
 			await expect(
 				page.getByRole('button', { name: 'Sign in to Arcane', exact: true })
 			).toBeVisible();
