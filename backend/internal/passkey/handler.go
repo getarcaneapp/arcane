@@ -412,7 +412,7 @@ func (h *PasskeyHandler) PasswordStepUp(ctx context.Context, input *PasswordStep
 	if strings.TrimSpace(userModel.PasswordHash) == "" {
 		return nil, huma.Error400BadRequest("this account has no local password")
 	}
-	if validatePasswordErr := h.userService.ValidatePassword(userModel.PasswordHash, input.Body.Password); validatePasswordErr != nil {
+	if validatePasswordErr := h.userService.ValidatePassword(ctx, userModel.PasswordHash, input.Body.Password); validatePasswordErr != nil {
 		return nil, huma.Error401Unauthorized("password is incorrect")
 	}
 	grant, err := h.passkeyService.CreatePasswordStepUpGrant(ctx, actor.ID, sessionID)

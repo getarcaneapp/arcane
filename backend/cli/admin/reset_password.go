@@ -176,7 +176,7 @@ func resetPasswordInternal(ctx context.Context, db *database.DB, username, passw
 		return fmt.Errorf("user %q does not have effective global administrator permissions", username)
 	}
 
-	if _, setPasswordAndRevokeSessionsExceptErr := userService.SetPasswordAndRevokeSessionsExcept(ctx, target, password, ""); setPasswordAndRevokeSessionsExceptErr != nil {
+	if _, setPasswordAndRevokeSessionsExceptErr := userService.SetPasswordAndRevokeSessionsExcept(ctx, target, password, "", nil); setPasswordAndRevokeSessionsExceptErr != nil {
 		return fmt.Errorf("failed to reset password: %w", setPasswordAndRevokeSessionsExceptErr)
 	}
 

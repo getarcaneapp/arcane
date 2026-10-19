@@ -102,7 +102,7 @@ func TestSetPasswordUpdatesHashAndClearsPasswordChangeRequirement(t *testing.T) 
 	userSvc, _ := setupUserAndRoleServices(t)
 	ctx := t.Context()
 
-	oldHash, err := userSvc.HashPassword("old-password")
+	oldHash, err := userSvc.HashPassword(t.Context(), "old-password")
 	require.NoError(t, err)
 	localUser, err := userSvc.CreateUser(ctx, &userdomain.User{
 		ID:                     "password-user",
@@ -117,8 +117,8 @@ func TestSetPasswordUpdatesHashAndClearsPasswordChangeRequirement(t *testing.T) 
 
 	updated, err := userSvc.GetUserByID(ctx, localUser.ID)
 	require.NoError(t, err)
-	require.NoError(t, userSvc.ValidatePassword(updated.PasswordHash, "new-password"))
-	require.Error(t, userSvc.ValidatePassword(updated.PasswordHash, "old-password"))
+	require.NoError(t, userSvc.ValidatePassword(t.Context(), updated.PasswordHash, "new-password"))
+	require.Error(t, userSvc.ValidatePassword(t.Context(), updated.PasswordHash, "old-password"))
 	require.False(t, updated.RequiresPasswordChange)
 }
 

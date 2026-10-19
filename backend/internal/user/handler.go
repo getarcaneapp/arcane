@@ -100,7 +100,7 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 		return nil, handlerutil.Error400BadRequestWithType(validatePasswordPolicyErr.Error(), validation.PasswordPolicyProblemType(passwordPolicy))
 	}
 
-	hashedPassword, err := h.userService.HashPassword(input.Body.Password)
+	hashedPassword, err := h.userService.HashPassword(ctx, input.Body.Password)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to hash password")
 	}
@@ -233,7 +233,7 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		caller, _ := userctx.CurrentUserFromContext(ctx)
 		currentSessionID, _ := middleware.GetCurrentSessionIDFromContext(ctx)
 		exceptSessionID := kit.Ternary(caller != nil && caller.ID == updatedUser.ID, currentSessionID, "")
-		if _, setPasswordErr := h.userService.SetPasswordAndRevokeSessionsExcept(ctx, updatedUser, *input.Body.Password, exceptSessionID); setPasswordErr != nil {
+		if _, setPasswordErr := h.userService.SetPasswordAndRevokeSessionsExcept(ctx, updatedUser, *input.Body.Password, exceptSessionID, callerPerms); setPasswordErr != nil {
 			return nil, huma.Error500InternalServerError("Failed to update password")
 		}
 	}

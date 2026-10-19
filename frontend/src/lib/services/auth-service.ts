@@ -22,6 +22,8 @@ const TOKEN_EXPIRY_KEY = 'arcane_token_expiry';
 const REFRESH_LOCK_NAME = 'arcane-token-refresh';
 const REFRESH_BUFFER_MS = 5 * 60 * 1000; // Refresh 5 minutes before expiry
 const REFRESH_JITTER_MS = 5000;
+const REFRESH_RACE_GRACE_MS = 3000;
+const REFRESH_RACE_POLL_MS = 150;
 
 export class MFARequiredError extends Error {
 	constructor(public readonly challenge: MFAChallenge) {
@@ -129,6 +131,15 @@ class AuthService extends BaseAPIService {
 		return Temporal.Now.instant().until(currentInstant).total('milliseconds') > REFRESH_BUFFER_MS;
 	}
 
+	private async refreshedElsewhereSoon(expiryBefore: string | null): Promise<boolean> {
+		const deadline = Date.now() + REFRESH_RACE_GRACE_MS;
+		while (!this.refreshedElsewhere(expiryBefore)) {
+			if (Date.now() >= deadline) return false;
+			await new Promise((resolve) => setTimeout(resolve, REFRESH_RACE_POLL_MS));
+		}
+		return true;
+	}
+
 	private async requestTokenRefresh(expiryBefore: string | null, session: AbortSignal): Promise<string | null> {
 		if (this.refreshedElsewhere(expiryBefore)) return null;
 
@@ -159,8 +170,9 @@ class AuthService extends BaseAPIService {
 		const session = currentSessionSignal();
 		const expiryBefore = this.getStoredExpiry();
 
+		const coordinated = typeof navigator !== 'undefined' && 'locks' in navigator;
 		const operationResult = await tryCatch(
-			typeof navigator !== 'undefined' && 'locks' in navigator
+			coordinated
 				? navigator.locks.request(REFRESH_LOCK_NAME, () => this.requestTokenRefresh(expiryBefore, session))
 				: this.requestTokenRefresh(expiryBefore, session)
 		);
@@ -183,7 +195,7 @@ class AuthService extends BaseAPIService {
 
 		const error = operationResult.error;
 		const rejected = error instanceof APIError && error.status === 401;
-		if (rejected && this.refreshedElsewhere(expiryBefore)) {
+		if (rejected && (coordinated ? this.refreshedElsewhere(expiryBefore) : await this.refreshedElsewhereSoon(expiryBefore))) {
 			subscribers.forEach((callback) => callback(null));
 			return null;
 		}

@@ -445,7 +445,7 @@ func (s *ApiKeyService) createAPIKeyWithRawKey(
 		return nil, err
 	}
 
-	keyHash, err := s.userService.HashPassword(rawKey)
+	keyHash, err := s.userService.HashPassword(ctx, rawKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash API key: %w", err)
 	}
@@ -592,9 +592,9 @@ func (s *ApiKeyService) deleteManagedAPIKeysByIDs(tx *gorm.DB, ids []string) err
 	return nil
 }
 
-func (s *ApiKeyService) findMatchingManagedAPIKey(rawKey string, managedKeys []ApiKey) int {
+func (s *ApiKeyService) findMatchingManagedAPIKey(ctx context.Context, rawKey string, managedKeys []ApiKey) int {
 	for i, managedKey := range managedKeys {
-		if err := s.userService.ValidatePassword(managedKey.KeyHash, rawKey); err == nil {
+		if err := s.userService.ValidatePassword(ctx, managedKey.KeyHash, rawKey); err == nil {
 			return i
 		}
 	}
@@ -625,13 +625,13 @@ func (s *ApiKeyService) updateMatchingManagedAPIKey(tx *gorm.DB, apiKeyID string
 	return nil
 }
 
-func (s *ApiKeyService) createManagedDefaultAdminAPIKey(tx *gorm.DB, userID, rawKey string) error {
+func (s *ApiKeyService) createManagedDefaultAdminAPIKey(ctx context.Context, tx *gorm.DB, userID, rawKey string) error {
 	keyPrefix, err := parseAPIKeyPrefixInternal(rawKey)
 	if err != nil {
 		return err
 	}
 
-	keyHash, err := s.userService.HashPassword(rawKey)
+	keyHash, err := s.userService.HashPassword(ctx, rawKey)
 	if err != nil {
 		return fmt.Errorf("failed to hash API key: %w", err)
 	}
@@ -655,7 +655,7 @@ func (s *ApiKeyService) createManagedDefaultAdminAPIKey(tx *gorm.DB, userID, raw
 // the transaction commits. Invalidating pre-commit is ineffective: a concurrent
 // validation can still read the old committed row, snapshot the already-bumped
 // generation, and republish the entry so it survives the commit.
-func (s *ApiKeyService) reconcileManagedAPIKeys(tx *gorm.DB, userID, rawKey string) ([]string, error) {
+func (s *ApiKeyService) reconcileManagedAPIKeys(ctx context.Context, tx *gorm.DB, userID, rawKey string) ([]string, error) {
 	managedKeys, err := s.listManagedAPIKeys(tx, userID)
 	if err != nil {
 		return nil, err
@@ -666,7 +666,7 @@ func (s *ApiKeyService) reconcileManagedAPIKeys(tx *gorm.DB, userID, rawKey stri
 		return deleteIDs, s.deleteManagedAPIKeysByIDs(tx, deleteIDs)
 	}
 
-	matchingIndex := s.findMatchingManagedAPIKey(rawKey, managedKeys)
+	matchingIndex := s.findMatchingManagedAPIKey(ctx, rawKey, managedKeys)
 	if matchingIndex >= 0 {
 		if updateMatchingManagedAPIKeyErr := s.updateMatchingManagedAPIKey(tx, managedKeys[matchingIndex].ID); updateMatchingManagedAPIKeyErr != nil {
 			return nil, updateMatchingManagedAPIKeyErr
@@ -684,7 +684,7 @@ func (s *ApiKeyService) reconcileManagedAPIKeys(tx *gorm.DB, userID, rawKey stri
 		return nil, deleteRemovedManagedKeysErr
 	}
 
-	return deleteIDs, s.createManagedDefaultAdminAPIKey(tx, userID, rawKey)
+	return deleteIDs, s.createManagedDefaultAdminAPIKey(ctx, tx, userID, rawKey)
 }
 
 func (s *ApiKeyService) ReconcileDefaultAdminAPIKey(ctx context.Context, rawKey string) error {
@@ -697,7 +697,7 @@ func (s *ApiKeyService) ReconcileDefaultAdminAPIKey(ctx context.Context, rawKey 
 
 	var affectedIDs []string
 	if transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		affectedIDs, err = s.reconcileManagedAPIKeys(tx, adminUser.ID, rawKey)
+		affectedIDs, err = s.reconcileManagedAPIKeys(ctx, tx, adminUser.ID, rawKey)
 		return err
 	}); transactionErr != nil {
 		// Rolled back: the DB is unchanged, so cached entries are still valid.
@@ -1049,7 +1049,7 @@ func (s *ApiKeyService) ValidateRawApiKey(ctx context.Context, rawKey string) (*
 	}
 
 	for _, apiKey := range apiKeys {
-		if validateErr := s.userService.ValidatePassword(apiKey.KeyHash, rawKey); validateErr == nil {
+		if validateErr := s.userService.ValidatePassword(ctx, apiKey.KeyHash, rawKey); validateErr == nil {
 			if apiKey.ExpiresAt != nil && apiKey.ExpiresAt.Before(time.Now()) {
 				return nil, ErrApiKeyExpired
 			}

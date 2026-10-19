@@ -671,7 +671,7 @@ func TestChangePassword_RevokesAllSessions(t *testing.T) {
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
 
-	passwordHash, err := userSvc.HashPassword("old-password")
+	passwordHash, err := userSvc.HashPassword(t.Context(), "old-password")
 	require.NoError(t, err)
 	localUser := &user.User{
 		ID:           "u-password",
@@ -701,7 +701,7 @@ func TestChangePassword_KeepsCurrentSessionAlive(t *testing.T) {
 	s.userService = userSvc
 	s.sessionService = session.NewSessionService(db)
 
-	passwordHash, err := userSvc.HashPassword("old-password")
+	passwordHash, err := userSvc.HashPassword(t.Context(), "old-password")
 	require.NoError(t, err)
 	localUser := &user.User{
 		ID:           "u-keep",
@@ -941,9 +941,9 @@ func TestAuthenticateLocalPrimary_EmailFallback(t *testing.T) {
 	s.userService = userSvc
 	s.settingsService = settingsSvc
 
-	hash, err := userSvc.HashPassword("hunter22!")
+	hash, err := userSvc.HashPassword(t.Context(), "hunter22!")
 	require.NoError(t, err)
-	dupHash, err := userSvc.HashPassword("dup-two-pass!")
+	dupHash, err := userSvc.HashPassword(t.Context(), "dup-two-pass!")
 	require.NoError(t, err)
 	for _, u := range []*user.User{
 		{ID: "u-email-login", Username: "bob", Email: new("bob@example.com"), PasswordHash: hash},

@@ -80,15 +80,22 @@ type AuthService struct {
 	tokenCache        *hot.HotCache[string, verifiedTokenEntry]
 	cacheGen          atomic.Uint64
 	cacheFillMu       sync.Mutex
-	dummyOnce         sync.Once
+	dummyMu           sync.Mutex
 	dummyHash         string
 }
 
-func (s *AuthService) dummyPasswordHash() string {
-	s.dummyOnce.Do(func() {
-		s.dummyHash, _ = s.userService.HashPassword(uuid.New().String())
-	})
-	return s.dummyHash
+func (s *AuthService) dummyPasswordHash(ctx context.Context) (string, error) {
+	s.dummyMu.Lock()
+	defer s.dummyMu.Unlock()
+	if s.dummyHash != "" {
+		return s.dummyHash, nil
+	}
+	hash, err := s.userService.HashPassword(ctx, uuid.New().String())
+	if err != nil {
+		return "", fmt.Errorf("failed to prepare dummy password hash: %w", err)
+	}
+	s.dummyHash = hash
+	return hash, nil
 }
 
 func NewAuthService(
@@ -248,10 +255,22 @@ func (s *AuthService) AuthenticateLocalPrimary(ctx context.Context, username, pa
 		}
 	}
 	if localUser == nil {
-		_ = s.userService.ValidatePassword(s.dummyPasswordHash(), password)
+		dummyHash, dummyErr := s.dummyPasswordHash(ctx)
+		if dummyErr != nil {
+			return nil, dummyErr
+		}
+		_ = s.userService.ValidatePassword(ctx, dummyHash, password)
 		return nil, ErrInvalidCredentials
 	}
-	if validatePasswordErr := s.userService.ValidatePassword(cmp.Or(localUser.PasswordHash, s.dummyPasswordHash()), password); validatePasswordErr != nil {
+	passwordHash := localUser.PasswordHash
+	if passwordHash == "" {
+		dummyHash, dummyErr := s.dummyPasswordHash(ctx)
+		if dummyErr != nil {
+			return nil, dummyErr
+		}
+		passwordHash = dummyHash
+	}
+	if validatePasswordErr := s.userService.ValidatePassword(ctx, passwordHash, password); validatePasswordErr != nil {
 		return nil, ErrInvalidCredentials
 	}
 
@@ -835,7 +854,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 		return common.Classify(common.ErrForbidden, errors.New("local passwords cannot be set for accounts managed by an identity provider"))
 	}
 	if localUser.PasswordHash != "" {
-		if validatePasswordErr := s.userService.ValidatePassword(localUser.PasswordHash, currentPassword); validatePasswordErr != nil {
+		if validatePasswordErr := s.userService.ValidatePassword(ctx, localUser.PasswordHash, currentPassword); validatePasswordErr != nil {
 			return ErrInvalidCredentials
 		}
 	}
@@ -845,7 +864,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 		return common.Classify(common.ErrValidation, validatePasswordPolicyErr)
 	}
 
-	if _, err = s.userService.SetPasswordAndRevokeSessionsExcept(ctx, localUser, newPassword, currentSessionID); err != nil {
+	if _, err = s.userService.SetPasswordAndRevokeSessionsExcept(ctx, localUser, newPassword, currentSessionID, nil); err != nil {
 		return err
 	}
 	// The current session's cached user still carries the old password flags.

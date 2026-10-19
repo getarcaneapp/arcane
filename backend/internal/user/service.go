@@ -77,14 +77,18 @@ func NewUserService(db *database.DB, roleService *role.RoleService, revokeSessio
 	}
 }
 
-func (s *UserService) HashPassword(password string) (string, error) {
+func (s *UserService) HashPassword(ctx context.Context, password string) (string, error) {
 	salt := make([]byte, s.argon2Params.saltLength)
 	_, err := rand.Read(salt)
 	if err != nil {
 		return "", err
 	}
 
-	s.argon2Slots <- struct{}{}
+	select {
+	case s.argon2Slots <- struct{}{}:
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 	hash := argon2.IDKey([]byte(password), salt, s.argon2Params.iterations, s.argon2Params.memory, s.argon2Params.parallelism, s.argon2Params.keyLength)
 	<-s.argon2Slots
 
@@ -96,7 +100,7 @@ func (s *UserService) HashPassword(password string) (string, error) {
 	return encodedHash, nil
 }
 
-func (s *UserService) ValidatePassword(encodedHash, password string) error {
+func (s *UserService) ValidatePassword(ctx context.Context, encodedHash, password string) error {
 	parts := strings.Split(encodedHash, "$")
 	if len(parts) != 6 {
 		return errors.New("invalid hash format")
@@ -133,7 +137,11 @@ func (s *UserService) ValidatePassword(encodedHash, password string) error {
 		return errors.New("invalid hash length")
 	}
 
-	s.argon2Slots <- struct{}{}
+	select {
+	case s.argon2Slots <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 	comparisonHash := argon2.IDKey([]byte(password), salt, iterations, memory, parallelism, uint32(hashLen))
 	<-s.argon2Slots
 
@@ -385,7 +393,7 @@ func (s *UserService) SetPassword(ctx context.Context, localUser *User, password
 		return nil, errors.New("user is nil")
 	}
 
-	hashedPassword, err := s.HashPassword(password)
+	hashedPassword, err := s.HashPassword(ctx, password)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
@@ -423,7 +431,7 @@ func (s *UserService) SetPassword(ctx context.Context, localUser *User, password
 // the first-login password-change requirement, and revokes every session for
 // the user except exceptSessionID. Pass an empty exceptSessionID to revoke all
 // sessions. This is for trusted internal callers.
-func (s *UserService) SetPasswordAndRevokeSessionsExcept(ctx context.Context, localUser *User, password, exceptSessionID string) (*User, error) {
+func (s *UserService) SetPasswordAndRevokeSessionsExcept(ctx context.Context, localUser *User, password, exceptSessionID string, actorPerms *authz.PermissionSet) (*User, error) {
 	if localUser == nil {
 		return nil, errors.New("user is nil")
 	}
@@ -431,13 +439,16 @@ func (s *UserService) SetPasswordAndRevokeSessionsExcept(ctx context.Context, lo
 		return nil, common.ErrUserNotFound
 	}
 
-	hashedPassword, err := s.HashPassword(password)
+	hashedPassword, err := s.HashPassword(ctx, password)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
 	var updatedUser User
 	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		if privilegeErr := s.checkTargetPrivilegeInternal(ctx, tx, actorPerms, localUser.ID); privilegeErr != nil {
+			return privilegeErr
+		}
 		if loadPasswordResetUserErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ?", localUser.ID).
 			First(&updatedUser).Error; loadPasswordResetUserErr != nil {
@@ -547,7 +558,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 		}
 
 		if count == 0 {
-			hashedPassword, err := s.HashPassword("arcane-admin")
+			hashedPassword, err := s.HashPassword(ctx, "arcane-admin")
 			if err != nil {
 				return fmt.Errorf("failed to hash default admin password: %w", err)
 			}

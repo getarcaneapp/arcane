@@ -43,7 +43,7 @@ func createGlobalAdminInternal(t *testing.T, db *database.DB) (*user.User, *user
 	roleService := role.NewRoleService(db)
 	require.NoError(t, roleService.EnsureBuiltInRoles(ctx))
 	userService := user.NewUserService(db, roleService, session.RevokeAllUserSessionsExceptInDB)
-	passwordHash, err := userService.HashPassword("old-password")
+	passwordHash, err := userService.HashPassword(t.Context(), "old-password")
 	require.NoError(t, err)
 	adminUser, err := userService.CreateUser(ctx, &user.User{
 		ID:                     "admin-1",
@@ -73,8 +73,8 @@ func TestResetPasswordInternalResetsPasswordAndRevokesSessions(t *testing.T) {
 
 	updatedUser, err := userService.GetUserByID(ctx, adminUser.ID)
 	require.NoError(t, err)
-	require.NoError(t, userService.ValidatePassword(updatedUser.PasswordHash, "new-password"))
-	require.Error(t, userService.ValidatePassword(updatedUser.PasswordHash, "old-password"))
+	require.NoError(t, userService.ValidatePassword(t.Context(), updatedUser.PasswordHash, "new-password"))
+	require.Error(t, userService.ValidatePassword(t.Context(), updatedUser.PasswordHash, "old-password"))
 	require.False(t, updatedUser.RequiresPasswordChange)
 
 	revokedFirst, err := sessionService.GetSessionByID(ctx, firstSession.ID)
@@ -107,7 +107,7 @@ func TestResetPasswordInternalRollsBackWhenSessionRevocationFails(t *testing.T) 
 
 	unchangedUser, err := userService.GetUserByID(ctx, adminUser.ID)
 	require.NoError(t, err)
-	require.NoError(t, userService.ValidatePassword(unchangedUser.PasswordHash, "old-password"))
+	require.NoError(t, userService.ValidatePassword(t.Context(), unchangedUser.PasswordHash, "old-password"))
 	require.True(t, unchangedUser.RequiresPasswordChange)
 	unchangedSession, err := sessionService.GetSessionByID(ctx, localSession.ID)
 	require.NoError(t, err)
@@ -118,7 +118,7 @@ func TestResetPasswordInternalRejectsNonAdmin(t *testing.T) {
 	db := newResetPasswordTestDBInternal(t)
 	ctx := t.Context()
 	_, userService := createGlobalAdminInternal(t, db)
-	passwordHash, err := userService.HashPassword("old-password")
+	passwordHash, err := userService.HashPassword(t.Context(), "old-password")
 	require.NoError(t, err)
 	nonAdmin, err := userService.CreateUser(ctx, &user.User{
 		ID:                     "user-1",
@@ -134,7 +134,7 @@ func TestResetPasswordInternalRejectsNonAdmin(t *testing.T) {
 
 	unchangedUser, err := userService.GetUserByID(ctx, nonAdmin.ID)
 	require.NoError(t, err)
-	require.NoError(t, userService.ValidatePassword(unchangedUser.PasswordHash, "old-password"))
+	require.NoError(t, userService.ValidatePassword(t.Context(), unchangedUser.PasswordHash, "old-password"))
 	require.True(t, unchangedUser.RequiresPasswordChange)
 }
 

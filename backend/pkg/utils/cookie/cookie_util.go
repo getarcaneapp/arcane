@@ -64,15 +64,6 @@ func GetTokenCookieFromHeader(cookieHeader string) (string, error) {
 	return GetTokenCookie(&http.Request{Header: http.Header{"Cookie": []string{cookieHeader}}})
 }
 
-func GetRefreshCookie(r *http.Request) string {
-	for _, name := range []string{RefreshCookieName, InsecureRefreshCookieName} {
-		if c, err := r.Cookie(name); err == nil && c.Value != "" {
-			return c.Value
-		}
-	}
-	return ""
-}
-
 func BuildRefreshCookieStringFor(maxAgeInSeconds int, value string, secure bool) string {
 	return buildCookieString(kit.Ternary(secure, RefreshCookieName, InsecureRefreshCookieName), RefreshCookiePath, value, max(maxAgeInSeconds, 0), secure, http.SameSiteStrictMode)
 }
