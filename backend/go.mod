@@ -67,7 +67,7 @@ require (
 	go.getarcane.app/acfs v0.6.3
 	go.getarcane.app/builds v0.4.6
 	go.getarcane.app/docker v0.1.2
-	go.getarcane.app/docker/compat v0.1.4
+	go.getarcane.app/docker/compat v0.1.5
 	go.getarcane.app/docker/convert v0.3.6
 	go.getarcane.app/kit v0.4.2
 	go.getarcane.app/streams v0.4.6
