@@ -124,16 +124,36 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
-			// Shutdown does not cancel active request contexts, so unblock streaming
-			// handlers before waiting for the server to drain.
-			cancelBase()
-			shutdownErr := srv.Shutdown(ctx)
+			shutdownDone := make(chan error, 1)
+			go func() { shutdownDone <- srv.Shutdown(ctx) }()
+			drainTimer := time.NewTimer(3 * time.Second)
+			var shutdownErr error
+			select {
+			case shutdownErr = <-shutdownDone:
+				drainTimer.Stop()
+				cancelBase()
+			case <-drainTimer.C:
+				cancelBase()
+				shutdownErr = <-shutdownDone
+			}
 			if shutdownErr != nil {
 				slog.ErrorContext(ctx, "Server forced to shutdown", "error", shutdownErr)
 			}
 
 			if grpcServer != nil {
-				grpcServer.GracefulStop()
+				grpcStopped := make(chan struct{})
+				go func() {
+					grpcServer.GracefulStop()
+					close(grpcStopped)
+				}()
+				grpcTimer := time.NewTimer(2 * time.Second)
+				select {
+				case <-grpcStopped:
+					grpcTimer.Stop()
+				case <-grpcTimer.C:
+					grpcServer.Stop()
+					<-grpcStopped
+				}
 			}
 			if shutdownErr == nil {
 				slog.InfoContext(ctx, "Server stopped gracefully")

@@ -8,9 +8,11 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -34,6 +36,9 @@ type Watcher struct {
 	cancel         context.CancelFunc
 	watchAliases   map[string]string
 	pendingPaths   map[string]struct{}
+	readyPaths     map[string]struct{}
+	changed        bool
+	wake           chan struct{}
 	mu             sync.Mutex
 	started        bool
 	stopped        bool
@@ -73,6 +78,8 @@ func NewWatcher(watchPath string, opts WatcherOptions) (*Watcher, error) {
 		stoppedCh:      make(chan struct{}),
 		watchAliases:   make(map[string]string),
 		pendingPaths:   make(map[string]struct{}),
+		readyPaths:     make(map[string]struct{}),
+		wake:           make(chan struct{}, 1),
 	}, nil
 }
 
@@ -110,6 +117,7 @@ func (fw *Watcher) Start(ctx context.Context) error {
 	watchCtx, cancel := context.WithCancel(ctx)
 	fw.cancel = cancel
 	go fw.watchLoopInternal(watchCtx)
+	fw.callbacks.Go(func() { fw.notifyLoop(watchCtx) })
 	fw.started = true
 
 	slog.InfoContext(ctx, "Filesystem watcher started", "path", fw.watchedPath)
@@ -118,13 +126,6 @@ func (fw *Watcher) Start(ctx context.Context) error {
 
 // Stop closes the watcher and waits for accepted callbacks.
 func (fw *Watcher) Stop() error {
-	err := fw.StopWatching()
-	fw.callbacks.Wait()
-	return err
-}
-
-// StopWatching closes the watch loop before its owner joins callbacks.
-func (fw *Watcher) StopWatching() error {
 	fw.stopOnce.Do(func() {
 		fw.mu.Lock()
 		fw.stopped = true
@@ -144,6 +145,8 @@ func (fw *Watcher) StopWatching() error {
 		fw.stopErr = err
 		fw.mu.Unlock()
 	})
+
+	fw.callbacks.Wait()
 
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
@@ -170,21 +173,21 @@ func (fw *Watcher) watchLoopInternal(ctx context.Context) {
 			return
 		case event, ok := <-fw.watcher.Events:
 			if fw.processEventInternal(ctx, event, ok, debounceTimer, &debouncePending) {
-				if !fw.reconnectInternal(ctx) {
+				if !fw.reconnect(ctx) {
 					return
 				}
 			}
 		case <-debounceTimer.C:
-			if fw.fireDebounceInternal(ctx, &debouncePending, &lastGoroutineLog) {
+			if fw.fireDebounce(ctx, &debouncePending, &lastGoroutineLog) {
 				continue
 			}
 		case <-healthTicker.C:
-			if len(fw.watcher.WatchList()) == 0 && !fw.reconnectInternal(ctx) {
+			if len(fw.watcher.WatchList()) == 0 && !fw.reconnect(ctx) {
 				return
 			}
 		case err, ok := <-fw.watcher.Errors:
 			if !ok {
-				if !fw.reconnectInternal(ctx) {
+				if !fw.reconnect(ctx) {
 					return
 				}
 				continue
@@ -200,13 +203,13 @@ func (fw *Watcher) processEventInternal(ctx context.Context, event fsnotify.Even
 		return true
 	}
 
-	// handleEventInternal runs for every event — its job is to keep the
+	// handleEvent runs for every event — its job is to keep the
 	// underlying fsnotify subscriptions in sync (attaching newly-created
 	// directories so we can discover compose files that land inside them
-	// afterwards). Sync-firing is gated separately by shouldHandleEventInternal.
-	fw.handleEventInternal(ctx, event)
+	// afterwards). Sync-firing is gated separately by shouldHandleEvent.
+	fw.handleEvent(ctx, event)
 
-	if !fw.shouldHandleEventInternal(event) {
+	if !fw.shouldHandleEvent(event) {
 		return false
 	}
 	fw.recordPendingPathInternal(event.Name)
@@ -215,8 +218,8 @@ func (fw *Watcher) processEventInternal(ctx context.Context, event fsnotify.Even
 	return false
 }
 
-// fireDebounceInternal runs the debounced onChange callback; returns true if nothing was pending (caller should continue).
-func (fw *Watcher) fireDebounceInternal(ctx context.Context, debouncePending *bool, lastGoroutineLog *time.Time) bool {
+// fireDebounce runs the debounced onChange callback; returns true if nothing was pending (caller should continue).
+func (fw *Watcher) fireDebounce(ctx context.Context, debouncePending *bool, lastGoroutineLog *time.Time) bool {
 	if !*debouncePending {
 		return true
 	}
@@ -227,28 +230,48 @@ func (fw *Watcher) fireDebounceInternal(ctx context.Context, debouncePending *bo
 			"goroutines", runtime.NumGoroutine())
 		*lastGoroutineLog = time.Now()
 	}
-	var paths []string
-	if fw.onChangePaths != nil {
-		paths = fw.drainPendingPathsInternal()
-	}
-	fw.notifyChangesInternal(ctx, paths)
+	fw.queueChanges(fw.drainPendingPaths())
 	return false
 }
 
-func (fw *Watcher) notifyChangesInternal(ctx context.Context, paths []string) {
-	if fw.onChange != nil {
-		fw.callbacks.Go(func() {
-			if ctx.Err() == nil {
-				fw.onChange(ctx)
-			}
-		})
+func (fw *Watcher) queueChanges(paths []string) {
+	fw.mu.Lock()
+	fw.changed = true
+	for _, path := range paths {
+		fw.readyPaths[path] = struct{}{}
 	}
-	if fw.onChangePaths != nil && len(paths) > 0 {
-		fw.callbacks.Go(func() {
-			if ctx.Err() == nil {
-				fw.onChangePaths(ctx, paths)
-			}
-		})
+	fw.mu.Unlock()
+	select {
+	case fw.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (fw *Watcher) notifyLoop(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-fw.wake:
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		fw.mu.Lock()
+		changed := fw.changed
+		paths := slices.Collect(maps.Keys(fw.readyPaths))
+		fw.changed = false
+		clear(fw.readyPaths)
+		fw.mu.Unlock()
+		if !changed {
+			continue
+		}
+		if fw.onChange != nil {
+			fw.onChange(ctx)
+		}
+		if fw.onChangePaths != nil && len(paths) > 0 {
+			fw.onChangePaths(ctx, paths)
+		}
 	}
 }
 
@@ -261,24 +284,29 @@ func (fw *Watcher) recordPendingPathInternal(path string) {
 	fw.mu.Unlock()
 }
 
-func (fw *Watcher) drainPendingPathsInternal() []string {
+func (fw *Watcher) drainPendingPaths() []string {
 	fw.mu.Lock()
 	defer fw.mu.Unlock()
 
-	paths := make([]string, 0, len(fw.pendingPaths))
-	for path := range fw.pendingPaths {
-		paths = append(paths, path)
-		delete(fw.pendingPaths, path)
-	}
+	paths := slices.Collect(maps.Keys(fw.pendingPaths))
+	clear(fw.pendingPaths)
 	return paths
 }
 
-// handleEventInternal keeps the underlying fsnotify subscriptions in sync with
+// handleEvent keeps the underlying fsnotify subscriptions in sync with
 // the filesystem: when a new directory is created inside a watched path, it is
 // attached recursively so that compose files dropped inside it are discovered.
 // It does NOT decide whether the event should trigger a sync — that is
-// shouldHandleEventInternal's job.
-func (fw *Watcher) handleEventInternal(ctx context.Context, event fsnotify.Event) {
+// shouldHandleEvent's job.
+func (fw *Watcher) handleEvent(ctx context.Context, event fsnotify.Event) {
+	if event.Has(fsnotify.Remove) || event.Has(fsnotify.Rename) {
+		removed := filepath.Clean(event.Name)
+		if _, watched := fw.watchAliases[removed]; watched {
+			maps.DeleteFunc(fw.watchAliases, func(watchPath, _ string) bool {
+				return watchPath == removed || strings.HasPrefix(watchPath, removed+string(os.PathSeparator))
+			})
+		}
+	}
 	if event.Has(fsnotify.Create) && !projects.IsIgnoredProjectDirName(filepath.Base(event.Name)) {
 		logicalName := fw.logicalPathForWatchEventInternal(event.Name)
 		if fw.isWatchableDirectory(event.Name) {
@@ -297,25 +325,17 @@ func (fw *Watcher) handleEventInternal(ctx context.Context, event fsnotify.Event
 		"operation", event.Op.String())
 }
 
-// shouldHandleEventInternal reports whether an fsnotify event should trigger a
-// project sync. Only events on known compose / env files qualify; bare
-// directory events do not, because build tools (ESPHome, PlatformIO, npm,
-// etc.) churn through subdirectories and would otherwise spin the sync loop
-// forever. New project directories are still discovered: once the directory
-// create event has been processed by handleEventInternal (which attaches a
-// watch), the compose file's own Create event reaches this filter and passes
-// via IsProjectFile.
-func (fw *Watcher) shouldHandleEventInternal(event fsnotify.Event) bool {
+func (fw *Watcher) shouldHandleEvent(event fsnotify.Event) bool {
 	if !event.Has(fsnotify.Write) && !event.Has(fsnotify.Create) && !event.Has(fsnotify.Rename) && !event.Has(fsnotify.Remove) && !event.Has(fsnotify.Chmod) {
+		return false
+	}
+	if !projects.IsProjectFile(filepath.Base(event.Name)) {
 		return false
 	}
 	// Arcane's own scratch directories (update backups, GitOps staging) churn
 	// compose files that must not re-sync the live projects.
 	rel, err := filepath.Rel(fw.watchedPath, fw.logicalPathForWatchEventInternal(event.Name))
-	if err == nil && projects.PathContainsIgnoredDirectory(rel) {
-		return false
-	}
-	return projects.IsProjectFile(filepath.Base(event.Name))
+	return err != nil || !projects.PathContainsIgnoredDirectory(rel)
 }
 
 func (fw *Watcher) addExistingDirectories(ctx context.Context, root string) error {
@@ -478,8 +498,8 @@ func (fw *Watcher) isWatchableDirectory(path string) bool {
 	return resolvedInfo.IsDir()
 }
 
-// reconnectInternal replaces a lost filesystem subscription without abandoning its owner.
-func (fw *Watcher) reconnectInternal(ctx context.Context) bool {
+// reconnect replaces a lost filesystem subscription without abandoning its owner.
+func (fw *Watcher) reconnect(ctx context.Context) bool {
 	if err := fw.watcher.Close(); err != nil {
 		slog.DebugContext(ctx, "Closing lost filesystem subscription", "error", err)
 	}
@@ -505,7 +525,7 @@ func (fw *Watcher) reconnectInternal(ctx context.Context) bool {
 					slog.WarnContext(ctx, "Some filesystem subscriptions could not be restored", "error", addExistingDirectoriesErr)
 				}
 				// Changes while disconnected need a full reconciliation.
-				fw.notifyChangesInternal(ctx, []string{fw.watchedPath})
+				fw.queueChanges([]string{fw.watchedPath})
 				return true
 			}
 			if closeErr := watcher.Close(); closeErr != nil {

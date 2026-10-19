@@ -581,6 +581,8 @@ func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) er
 // DrainActions blocks until all accepted background webhook actions finish or
 // ctx expires, so shutdown does not silently drop acknowledged work.
 func (s *WebhookService) DrainActions(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
 	return utils.WaitGroup(ctx, &s.actions)
 }
 

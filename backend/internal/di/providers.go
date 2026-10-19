@@ -141,7 +141,9 @@ func provideTunnelRegistry(lc fx.Lifecycle) *edge.TunnelRegistry {
 	edge.SetDefaultRegistry(localRegistry)
 	lc.Append(fx.Hook{OnStop: func(ctx context.Context) error {
 		defer edge.ClearDefaultRegistry(localRegistry)
-		return localRegistry.Stop(ctx)
+		stopCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		return localRegistry.Stop(stopCtx)
 	}})
 	return localRegistry
 }
@@ -340,27 +342,7 @@ func provideFilesystemWatcherJob(
 	var stop func(context.Context) error
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			stop, err = concurrency.StartSupervised(ctx, "filesystem watcher", func(runCtx context.Context) error {
-				delay := 5 * time.Second
-				for runCtx.Err() == nil {
-					startErr := job.Start(runCtx)
-					if startErr == nil {
-						break
-					}
-					slog.WarnContext(runCtx, "Filesystem watcher startup failed; retrying", "error", startErr)
-
-					timer := time.NewTimer(delay)
-					select {
-					case <-runCtx.Done():
-						timer.Stop()
-						return nil
-					case <-timer.C:
-					}
-					delay = min(delay*2, 5*time.Minute)
-				}
-				<-runCtx.Done()
-				return nil
-			})
+			stop, err = concurrency.StartSupervised(ctx, "filesystem watcher", job.Supervise)
 			if err != nil {
 				return err
 			}
@@ -414,7 +396,12 @@ func provideVolumeService(
 	if err := service.RegisterWorkflows(engine); err != nil {
 		return nil, err
 	}
-	lc.Append(fx.Hook{OnStop: func(ctx context.Context) error { service.CleanupHelperContainers(ctx); return nil }})
+	lc.Append(fx.Hook{OnStop: func(ctx context.Context) error {
+		cleanupCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		service.CleanupHelperContainers(cleanupCtx)
+		return nil
+	}})
 	return service, nil
 }
 

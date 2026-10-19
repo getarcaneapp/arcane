@@ -341,11 +341,11 @@ func TestHTTPServerStopCancelsStreamingRequestContexts(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 	<-handlerEntered
 
-	shutdownCtx, cancelShutdown := context.WithTimeout(t.Context(), 2*time.Second)
+	shutdownCtx, cancelShutdown := context.WithTimeout(t.Context(), 6*time.Second)
 	defer cancelShutdown()
 	start := time.Now()
 	require.NoError(t, lifecycle.Stop(shutdownCtx))
-	require.Less(t, time.Since(start), time.Second)
+	require.Less(t, time.Since(start), 4*time.Second)
 }
 
 func TestNewHTTPServerRejectsInvalidTLSCertificate(t *testing.T) {

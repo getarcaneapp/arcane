@@ -1,6 +1,7 @@
 package database
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
@@ -455,6 +456,17 @@ func ParseSQLiteConnectionString(connString string) (string, error) {
 	qs := sqliteutil.NormalizeQuery(connStringUrl.Query())
 	// Foreign-key enforcement is required on every pooled connection.
 	qs.Add("_pragma", "foreign_keys(1)")
+	if !sqliteutil.HasPragma(qs, "busy_timeout") {
+		qs.Add("_pragma", "busy_timeout(10000)")
+	}
+	if !slices.Contains([]string{"ro", "memory"}, qs.Get("mode")) && !strings.HasPrefix(cmp.Or(connStringUrl.Opaque, connStringUrl.Path), ":memory:") {
+		if !sqliteutil.HasPragma(qs, "journal_mode") {
+			qs.Add("_pragma", "journal_mode(WAL)")
+		}
+		if qs.Get("_txlock") == "" {
+			qs.Set("_txlock", "immediate")
+		}
+	}
 	return (&url.URL{
 		Scheme:   connStringUrl.Scheme,
 		Opaque:   connStringUrl.Opaque,

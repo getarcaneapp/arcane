@@ -102,6 +102,15 @@ func (a *coordinatorActor) Invoke(ctx context.Context, method string, data actor
 		return nil, a.q.service.SetState(ctx, coordinatorType, a.id, state, nil)
 	case "repair":
 		return nil, a.flush(ctx, &state)
+	case "remove":
+		if state.Record.Schedule != "" || len(state.PendingActivitySync) > 0 ||
+			slices.ContainsFunc(state.Record.Runs, func(run st.Run) bool { return !run.Status.Terminal() }) {
+			return false, nil
+		}
+		if err := a.q.service.DeleteState(ctx, coordinatorType, a.id); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
+			return nil, err
+		}
+		return true, nil
 	case "import":
 		var command st.CoordinatorImport
 		if err := data.Decode(&command); err != nil {
@@ -352,23 +361,19 @@ func (a *coordinatorActor) Alarm(ctx context.Context, name string, data actor.En
 
 // repair flushes coordinators so schedule alarms and dispatches are restored.
 // Unless all is set, it skips records without unfinished runs so idle coordinators can deactivate.
-func (q *Coordinator) repair(ctx context.Context, all bool) (busy bool, err error) {
-	records, err := q.Records(ctx)
-	if err != nil {
-		return false, err
+func (q *Coordinator) repair(ctx context.Context, states []st.CoordinatorState, all bool) (busy bool, err error) {
+	unfinished := func(state st.CoordinatorState) bool {
+		return slices.ContainsFunc(state.Record.Runs, func(run st.Run) bool { return !run.Status.Terminal() && run.Status != st.NeedsAttention })
 	}
-	unfinished := func(record st.QueueRecord) bool {
-		return slices.ContainsFunc(record.Runs, func(run st.Run) bool { return !run.Status.Terminal() && run.Status != st.NeedsAttention })
-	}
-	for _, record := range records {
-		if !all && !unfinished(record) {
+	for _, state := range states {
+		if !all && !unfinished(state) {
 			continue
 		}
-		if _, invokeErr := q.service.Invoke(ctx, coordinatorType, kit.SHA256Hex(record.EnvironmentID+"\x00"+record.JobID), "repair", nil); invokeErr != nil {
+		if _, invokeErr := q.service.Invoke(ctx, coordinatorType, kit.SHA256Hex(state.Record.EnvironmentID+"\x00"+state.Record.JobID), "repair", nil); invokeErr != nil {
 			return false, invokeErr
 		}
 	}
-	return slices.ContainsFunc(records, unfinished), nil
+	return slices.ContainsFunc(states, unfinished), nil
 }
 
 func (q *Coordinator) importLegacy(ctx context.Context) error {

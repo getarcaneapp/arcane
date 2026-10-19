@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/fswatch"
 )
 
 func TestFilesystemWatcherJob_ProjectWatcherOptions_UsesConfiguredMaxDepth(t *testing.T) {
@@ -53,6 +55,36 @@ func TestFilesystemWatcherJob_ConcurrentProjectRestartsAreSerializedInternal(t *
 	job.mu.Unlock()
 	require.NotSame(t, earlyWatcher, startedWatcher)
 
+	stopCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	require.NoError(t, job.Stop(stopCtx))
+}
+
+func TestFilesystemWatcherJob_RequestRestartRearmsSupervisor(t *testing.T) {
+	_, settingsService, _ := setupAnalyticsStateServicesInternal(t)
+	require.NoError(t, settingsService.SetStringSetting(t.Context(), "projectsDirectory", t.TempDir()))
+	require.NoError(t, settingsService.SetStringSetting(t.Context(), "templatesDirectory", t.TempDir()))
+
+	job, err := NewFilesystemWatcherJob(t.Context(), nil, nil, settingsService, 2)
+	require.NoError(t, err)
+
+	superviseCtx, cancelSupervise := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- job.Supervise(superviseCtx) }()
+
+	currentWatcher := func() *fswatch.Watcher {
+		job.mu.Lock()
+		defer job.mu.Unlock()
+		return job.projectsWatcher
+	}
+	require.Eventually(t, func() bool { return currentWatcher() != nil }, 5*time.Second, 10*time.Millisecond)
+	firstWatcher := currentWatcher()
+
+	job.RequestRestart()
+	require.Eventually(t, func() bool { return currentWatcher() != firstWatcher }, 5*time.Second, 10*time.Millisecond)
+
+	cancelSupervise()
+	require.NoError(t, <-done)
 	stopCtx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
 	require.NoError(t, job.Stop(stopCtx))

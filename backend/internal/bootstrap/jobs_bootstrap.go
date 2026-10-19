@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"slices"
 	"sync"
@@ -113,14 +114,18 @@ func newJobScheduler(
 		},
 		OnStop: func(ctx context.Context) error {
 			cancelScheduler()
-			if resumeDone != nil {
+			resumeErr := func() error {
+				if resumeDone == nil {
+					return nil
+				}
 				select {
 				case <-resumeDone:
+					return nil
 				case <-ctx.Done():
 					return ctx.Err()
 				}
-			}
-			if stopErr := errors.Join(jobService.Coordinator().Stop(ctx), jobScheduler.Stop(ctx)); stopErr != nil {
+			}()
+			if stopErr := errors.Join(resumeErr, jobService.Coordinator().Stop(ctx), jobScheduler.Stop(ctx)); stopErr != nil {
 				slog.ErrorContext(ctx, "Job scheduler exited with error", "error", stopErr)
 				return stopErr
 			}
@@ -464,12 +469,14 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 	subscribe([]string{"projectsDirectory", "followProjectSymlinks"}, func(_ []libarcane.SettingUpdate) {
 		if err := params.FilesystemWatcher.RestartProjectsWatcher(params.LifecycleCtx); err != nil {
 			slog.WarnContext(params.LifecycleCtx, "Failed to restart projects filesystem watcher", "error", err)
+			params.FilesystemWatcher.RequestRestart()
 		}
 	})
 
 	subscribe([]string{"templatesDirectory"}, func(_ []libarcane.SettingUpdate) {
 		if err := params.FilesystemWatcher.RestartTemplatesWatcher(params.LifecycleCtx); err != nil {
 			slog.WarnContext(params.LifecycleCtx, "Failed to restart templates filesystem watcher", "error", err)
+			params.FilesystemWatcher.RequestRestart()
 		}
 	})
 
@@ -498,7 +505,7 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 
 type timeoutSyncWorker struct {
 	mu      sync.Mutex
-	updates [][]libarcane.SettingUpdate
+	updates map[string]string
 	wake    chan struct{}
 	done    chan struct{}
 	ctx     context.Context
@@ -536,15 +543,11 @@ func setupTimeoutSettingsSubscription(params settingsSubscriptionsParams, subscr
 				return
 			case <-worker.wake:
 			}
-			for {
-				worker.mu.Lock()
-				if len(worker.updates) == 0 {
-					worker.mu.Unlock()
-					break
-				}
-				updates := worker.updates[0]
-				worker.updates = worker.updates[1:]
-				worker.mu.Unlock()
+			worker.mu.Lock()
+			updates := worker.updates
+			worker.updates = nil
+			worker.mu.Unlock()
+			if len(updates) > 0 {
 				syncTimeoutSettingsToAgents(ctx, params.Environment, updates)
 			}
 		}
@@ -555,7 +558,12 @@ func setupTimeoutSettingsSubscription(params settingsSubscriptionsParams, subscr
 		if worker.closed {
 			return
 		}
-		worker.updates = append(worker.updates, slices.Clone(updates))
+		if worker.updates == nil {
+			worker.updates = make(map[string]string, len(updates))
+		}
+		for _, update := range updates {
+			worker.updates[update.Key] = update.Value
+		}
 		select {
 		case worker.wake <- struct{}{}:
 		default:
@@ -565,7 +573,7 @@ func setupTimeoutSettingsSubscription(params settingsSubscriptionsParams, subscr
 }
 
 // syncTimeoutSettingsToAgents syncs timeout settings to all connected remote environments
-func syncTimeoutSettingsToAgents(ctx context.Context, localEnvironment timeoutSettingsEnvironment, timeoutSettings []libarcane.SettingUpdate) {
+func syncTimeoutSettingsToAgents(ctx context.Context, localEnvironment timeoutSettingsEnvironment, settingsMap map[string]string) {
 	envs, err := localEnvironment.ListRemoteEnvironments(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to list remote environments for timeout sync", "error", err)
@@ -576,20 +584,13 @@ func syncTimeoutSettingsToAgents(ctx context.Context, localEnvironment timeoutSe
 		return
 	}
 
-	// Build the settings update payload
-	settingsMap := make(map[string]string, len(timeoutSettings))
-	keys := make([]string, 0, len(timeoutSettings))
-	for _, update := range timeoutSettings {
-		settingsMap[update.Key] = update.Value
-		keys = append(keys, update.Key)
-	}
 	body, err := json.Marshal(settingsMap)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to marshal timeout settings for sync", "error", err)
 		return
 	}
 
-	slog.InfoContext(ctx, "Syncing environment settings to remote environments", "count", len(envs), "keys", keys)
+	slog.InfoContext(ctx, "Syncing environment settings to remote environments", "count", len(envs), "keys", slices.Sorted(maps.Keys(settingsMap)))
 
 	for _, env := range envs {
 		responseBody, statusCode, proxyRequestErr := localEnvironment.ProxyRequest(ctx, env.ID, http.MethodPut, "/api/environments/0/settings", body)

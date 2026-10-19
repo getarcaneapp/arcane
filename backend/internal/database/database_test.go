@@ -1464,10 +1464,63 @@ func TestSQLiteDSN(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, "immediate", parsed.Query().Get("_txlock"))
 			require.Equal(t, "shared", parsed.Query().Get("cache"))
-			require.ElementsMatch(t, []string{"foreign_keys(1)", "synchronous(NORMAL)", "busy_timeout(2500)"}, parsed.Query()["_pragma"])
+			require.ElementsMatch(t, []string{"foreign_keys(1)", "synchronous(NORMAL)", "busy_timeout(2500)", "journal_mode(WAL)"}, parsed.Query()["_pragma"])
 			require.Empty(t, parsed.Query().Get("_fk"))
 			require.Empty(t, parsed.Query().Get("_foreign_keys"))
 			require.Empty(t, parsed.Query().Get("_busy_timeout"))
+		})
+	}
+}
+
+func TestSQLiteDSN_ConcurrencyDefaults(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		pragmas []string
+		txlock  string
+	}{
+		{
+			name:    "defaults added",
+			input:   "file:arcane.db",
+			pragmas: []string{"foreign_keys(1)", "busy_timeout(10000)", "journal_mode(WAL)"},
+			txlock:  "immediate",
+		},
+		{
+			name:    "explicit values kept",
+			input:   "file:arcane.db?_journal_mode=DELETE&_timeout=500&_txlock=deferred",
+			pragmas: []string{"foreign_keys(1)", "busy_timeout(500)", "journal_mode(DELETE)"},
+			txlock:  "deferred",
+		},
+		{
+			name:    "explicit pragmas kept",
+			input:   "file:arcane.db?_pragma=journal_mode(TRUNCATE)&_pragma=busy_timeout(2000)",
+			pragmas: []string{"foreign_keys(1)", "busy_timeout(2000)", "journal_mode(TRUNCATE)"},
+			txlock:  "immediate",
+		},
+		{
+			name:    "read-only skips WAL and txlock",
+			input:   "file:arcane.db?mode=ro",
+			pragmas: []string{"foreign_keys(1)", "busy_timeout(10000)"},
+		},
+		{
+			name:    "memory path skips WAL and txlock",
+			input:   "file::memory:?cache=shared",
+			pragmas: []string{"foreign_keys(1)", "busy_timeout(10000)"},
+		},
+		{
+			name:    "memory mode skips WAL and txlock",
+			input:   "file:arcane?mode=memory&cache=shared",
+			pragmas: []string{"foreign_keys(1)", "busy_timeout(10000)"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dsn, err := ParseSQLiteConnectionString(tt.input)
+			require.NoError(t, err)
+			parsed, err := url.Parse(dsn)
+			require.NoError(t, err)
+			require.ElementsMatch(t, tt.pragmas, parsed.Query()["_pragma"])
+			require.Equal(t, tt.txlock, parsed.Query().Get("_txlock"))
 		})
 	}
 }

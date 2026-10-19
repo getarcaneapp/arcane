@@ -72,6 +72,9 @@ func StoreURL(databaseURL string) (string, error) {
 		if !sqliteutil.HasPragma(query, "synchronous") {
 			query.Add("_pragma", "synchronous(NORMAL)")
 		}
+		if !sqliteutil.HasPragma(query, "journal_mode") {
+			query.Add("_pragma", "journal_mode(WAL)")
+		}
 		return "file:" + (&url.URL{Path: StorePath(databasePath)}).EscapedPath() + "?" + query.Encode(), nil
 	case strings.HasPrefix(databaseURL, "postgres"):
 		return databaseURL, nil

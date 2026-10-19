@@ -145,8 +145,8 @@ func (js *jobSchedulerInternal) StartScheduler(ctx context.Context) error {
 		_, watching := js.watchers[record.JobID]
 		js.mu.RUnlock()
 		if record.EnvironmentID == "0" && record.Schedule != "" && !js.HasJob(record.JobID) && !watching {
-			if checkpointErr := js.coordinator.Checkpoint(ctx, record.JobID, "", time.Time{}); checkpointErr != nil {
-				return checkpointErr
+			if removeErr := js.coordinator.Remove(ctx, record.JobID); removeErr != nil {
+				return removeErr
 			}
 		}
 	}
@@ -202,7 +202,7 @@ func (js *jobSchedulerInternal) RemoveJob(ctx context.Context, id string) {
 	started := js.started
 	js.mu.Unlock()
 	if started {
-		if err := js.coordinator.Checkpoint(ctx, id, "", time.Time{}); err != nil {
+		if err := js.coordinator.Remove(ctx, id); err != nil {
 			slog.ErrorContext(ctx, "Unschedule failed", "job", id, "error", err)
 		}
 	}

@@ -73,8 +73,6 @@ type ImageUpdateWatcher struct {
 	backfillRetry          time.Duration
 	metadataReady          chan struct{}
 	metadataReadyOnce      sync.Once
-	started                chan struct{}
-	startedOnce            sync.Once
 	stopped                chan struct{}
 	stoppedOnce            sync.Once
 }
@@ -102,7 +100,6 @@ func NewImageUpdateWatcher(cfg *config.Config,
 			debounce:           imageUpdateWatcherDebounce,
 			backfillRetry:      imageUpdateWatcherBackfillRetry,
 			metadataReady:      make(chan struct{}),
-			started:            make(chan struct{}),
 			stopped:            make(chan struct{}),
 			trigger: make(chan struct{},
 				1),
@@ -136,18 +133,12 @@ func (w *ImageUpdateWatcher) Start(ctx context.Context) error {
 	w.runMu.Unlock()
 	defer cancel()
 	defer close(done)
-	return w.runEventLoopInternal(runCtx)
+	return w.runEventLoop(runCtx)
 }
 
-func (w *ImageUpdateWatcher) runEventLoopInternal(runCtx context.Context) error {
-	eventBus := w.dockerService.EventBus()
-	if eventBus == nil {
-		return errors.New("docker event bus unavailable")
-	}
-	eventCh, unsubscribe := eventBus.Subscribe(events.ImageEventType, bus.WithSubscriberBuffer(16))
+func (w *ImageUpdateWatcher) runEventLoop(runCtx context.Context) error {
+	eventCh, unsubscribe := w.dockerService.EventBus().Subscribe(events.ImageEventType, bus.WithSubscriberBuffer(16))
 	defer unsubscribe()
-	reconnect := time.NewTicker(5 * time.Second)
-	defer reconnect.Stop()
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
 	defer timer.Stop()
@@ -157,7 +148,6 @@ func (w *ImageUpdateWatcher) runEventLoopInternal(runCtx context.Context) error 
 	submitted := make(chan error, 1)
 	submitting := false
 	workers.Go(func() { w.runMetadataBackfillInternal(runCtx, metadata) })
-	w.startedOnce.Do(func() { close(w.started) })
 	w.RefreshSchedule()
 	ready := false
 	for {
@@ -169,7 +159,7 @@ func (w *ImageUpdateWatcher) runEventLoopInternal(runCtx context.Context) error 
 			w.metadataReadyOnce.Do(func() { close(w.metadataReady) })
 			w.Trigger()
 		case <-w.trigger:
-			if ready && !submitting {
+			if ready && !submitting && w.settingsService.GetBoolSetting(runCtx, "pollingEnabled", true) {
 				timer.Reset(w.debounce)
 			}
 		case <-timer.C:
@@ -188,11 +178,9 @@ func (w *ImageUpdateWatcher) runEventLoopInternal(runCtx context.Context) error 
 				timer.Reset(w.debounce)
 			}
 		case <-w.scheduleRefresh:
-			if err := w.refreshScheduleInternal(runCtx); err != nil {
+			if err := w.refreshSchedule(runCtx); err != nil {
 				slog.ErrorContext(runCtx, "Failed to checkpoint image polling schedule", "error", err)
 			}
-		case <-reconnect.C:
-			eventCh, unsubscribe = w.reconnectEventsInternal(eventCh, unsubscribe)
 		case _, ok := <-eventCh:
 			if !ok {
 				eventCh = nil
@@ -204,20 +192,6 @@ func (w *ImageUpdateWatcher) runEventLoopInternal(runCtx context.Context) error 
 			}
 		}
 	}
-}
-
-func (w *ImageUpdateWatcher) reconnectEventsInternal(eventCh <-chan events.Message, unsubscribe func()) (<-chan events.Message, func()) {
-	if eventCh != nil {
-		return eventCh, unsubscribe
-	}
-	currentBus := w.dockerService.EventBus()
-	if currentBus == nil {
-		return eventCh, unsubscribe
-	}
-	unsubscribe()
-	eventCh, unsubscribe = currentBus.Subscribe(events.ImageEventType, bus.WithSubscriberBuffer(16))
-	w.eventDegraded.Store(false)
-	return eventCh, unsubscribe
 }
 
 func (w *ImageUpdateWatcher) runMetadataBackfillInternal(ctx context.Context, metadata chan<- struct{}) {
@@ -321,13 +295,6 @@ func (w *ImageUpdateWatcher) RunNow(ctx context.Context) (err error) {
 		return ctx.Err()
 	case <-w.stopped:
 		return errors.New("image update watcher is not running")
-	case <-w.started:
-	}
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-w.stopped:
-		return errors.New("image update watcher is not running")
 	case <-w.metadataReady:
 	}
 	if !w.running.Load() {
@@ -408,7 +375,16 @@ func (w *ImageUpdateWatcher) backfillProjectImageRefsInternal(ctx context.Contex
 	return err
 }
 
-func (w *ImageUpdateWatcher) refreshScheduleInternal(ctx context.Context) error {
+func (w *ImageUpdateWatcher) refreshSchedule(ctx context.Context) error {
+	w.dispatchMu.RLock()
+	coordinator := w.coordinator
+	w.dispatchMu.RUnlock()
+	if coordinator == nil {
+		return errors.New("durable job coordinator unavailable")
+	}
+	if !w.settingsService.GetBoolSetting(ctx, "pollingEnabled", true) {
+		return coordinator.Checkpoint(ctx, w.Name(), "", time.Time{})
+	}
 	spec := w.settingsService.GetStringSetting(ctx, "pollingInterval", imageUpdateWatcherDefaultSchedule)
 	schedule, err := cronScheduleParser.Parse(spec)
 	if err != nil {
@@ -418,12 +394,6 @@ func (w *ImageUpdateWatcher) refreshScheduleInternal(ctx context.Context) error 
 		if err != nil {
 			return err
 		}
-	}
-	w.dispatchMu.RLock()
-	coordinator := w.coordinator
-	w.dispatchMu.RUnlock()
-	if coordinator == nil {
-		return errors.New("durable job coordinator unavailable")
 	}
 	return coordinator.Checkpoint(ctx, w.Name(), spec, schedule.Next(time.Now().In(w.location)))
 }

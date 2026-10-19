@@ -6,6 +6,8 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"maps"
+	"math/rand/v2"
 	"slices"
 	"sort"
 	"time"
@@ -16,6 +18,7 @@ import (
 	"github.com/italypaleale/francis/actor"
 	"go.getarcane.app/kit/pkg"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
 )
 
@@ -24,7 +27,17 @@ const queuePrefix = "jobs."
 func (q *Coordinator) mutate(ctx context.Context, environmentID, jobID string, change func(*st.QueueRecord) error) error {
 	id := kit.SHA256Hex(environmentID + "\x00" + jobID)
 	q.runtime.NameActor(id, jobID+"@"+environmentID)
-	for range 20 {
+	for attempt := range 20 {
+		if attempt > 0 {
+			delay := 5 * time.Millisecond << min(attempt-1, 5)
+			timer := time.NewTimer(delay/2 + rand.N(delay/2))
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
 		var state st.CoordinatorState
 		err := q.service.GetState(ctx, coordinatorType, id, &state)
 		if err != nil && !errors.Is(err, actor.ErrStateNotFound) {
@@ -45,7 +58,7 @@ func (q *Coordinator) mutate(ctx context.Context, environmentID, jobID string, c
 			return nil
 		}
 	}
-	return errors.New("job coordinator state is busy; retry mutation")
+	return common.Classify(common.ErrUnavailable, errors.New("job coordinator state is busy; retry mutation"))
 }
 
 func (q *Coordinator) prepareMutation(state *st.CoordinatorState, environmentID, jobID string, change func(*st.QueueRecord) error) error {
@@ -147,7 +160,19 @@ func pruneDispatches(state *st.CoordinatorState) {
 }
 
 func (q *Coordinator) Records(ctx context.Context) ([]st.QueueRecord, error) {
-	records := []st.QueueRecord{}
+	states, err := q.states(ctx)
+	if err != nil {
+		return nil, err
+	}
+	records := make([]st.QueueRecord, 0, len(states))
+	for _, state := range states {
+		records = append(records, state.Record)
+	}
+	return records, nil
+}
+
+func (q *Coordinator) states(ctx context.Context) ([]st.CoordinatorState, error) {
+	states := []st.CoordinatorState{}
 	cursor := ""
 	for {
 		page, err := q.service.ListStates(ctx, coordinatorType, &actor.ListStatesOpts{IncludeData: true, After: cursor, Limit: 100})
@@ -161,11 +186,11 @@ func (q *Coordinator) Records(ctx context.Context) ([]st.QueueRecord, error) {
 			}
 			normalizeRecordTimes(&state.Record)
 			q.runtime.NameActor(entry.ActorID, state.Record.JobID+"@"+state.Record.EnvironmentID)
-			records = append(records, state.Record)
+			states = append(states, state)
 		}
 		cursor = page.AfterID()
 		if cursor == "" {
-			return records, nil
+			return states, nil
 		}
 	}
 }
@@ -256,21 +281,17 @@ func (q *Coordinator) UpdateRun(ctx context.Context, run st.Run, change func(*st
 	return err
 }
 
-func (q *Coordinator) prune(ctx context.Context) error {
-	records, err := q.Records(ctx)
-	if err != nil {
-		return err
-	}
+func (q *Coordinator) prune(ctx context.Context, states []st.CoordinatorState) error {
 	now := time.Now().UTC()
-	for _, record := range records {
-		if !pruneRuns(&record, now) {
+	for _, state := range states {
+		if !pruneRuns(&st.QueueRecord{Runs: slices.Clone(state.Record.Runs), Receipts: maps.Clone(state.Record.Receipts)}, now) {
 			continue
 		}
-		if mutateErr := q.mutate(ctx, record.EnvironmentID, record.JobID, func(current *st.QueueRecord) error {
+		if mutateErr := q.mutate(ctx, state.Record.EnvironmentID, state.Record.JobID, func(current *st.QueueRecord) error {
 			pruneRuns(current, now)
 			return nil
 		}); mutateErr != nil {
-			return fmt.Errorf("prune job %q in environment %q: %w", record.JobID, record.EnvironmentID, mutateErr)
+			return fmt.Errorf("prune job %q in environment %q: %w", state.Record.JobID, state.Record.EnvironmentID, mutateErr)
 		}
 	}
 	return nil

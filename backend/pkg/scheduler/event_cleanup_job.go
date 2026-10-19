@@ -2,6 +2,8 @@ package scheduler
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -43,26 +45,21 @@ func (j *EventCleanupJob) Schedule(ctx context.Context) string {
 func (j *EventCleanupJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
 	slog.InfoContext(ctx, "Running event cleanup job", "jobName", EventCleanupJobName)
 
-	// Delete events older than 36 hours
+	var cleanupErr error
 	olderThan := 36 * time.Hour
 	if err := j.eventService.DeleteOldEvents(ctx, olderThan); err != nil {
-		slog.ErrorContext(ctx, "Failed to delete old events", "jobName", EventCleanupJobName, "olderThan", olderThan.String(), "error", err)
-		return schedulertypes.Outcome{}, err
+		cleanupErr = fmt.Errorf("delete old events: %w", err)
+	} else {
+		slog.InfoContext(ctx, "Event cleanup completed successfully",
+			"jobName", EventCleanupJobName,
+			"olderThan", olderThan.String())
 	}
 
-	slog.InfoContext(ctx, "Event cleanup job completed successfully",
-		"jobName", EventCleanupJobName,
-		"olderThan", olderThan.String())
-
-	if j.activityService != nil {
-		retentionDays := j.settingsService.GetIntSetting(ctx, "activityHistoryRetentionDays", 30)
-		maxEntries := j.settingsService.GetIntSetting(ctx, "activityHistoryMaxEntries", 1000)
-		deleted, err := j.activityService.PruneHistory(ctx, retentionDays, maxEntries)
-		if err != nil {
-			slog.ErrorContext(ctx, "Failed to prune activity history", "jobName", EventCleanupJobName, "error", err)
-			return schedulertypes.Outcome{}, err
-		}
-
+	retentionDays := j.settingsService.GetIntSetting(ctx, "activityHistoryRetentionDays", 30)
+	maxEntries := j.settingsService.GetIntSetting(ctx, "activityHistoryMaxEntries", 1000)
+	if deleted, err := j.activityService.PruneHistory(ctx, retentionDays, maxEntries); err != nil {
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("prune activity history: %w", err))
+	} else {
 		slog.InfoContext(ctx, "Activity history cleanup completed successfully",
 			"jobName", EventCleanupJobName,
 			"retentionDays", retentionDays,
@@ -71,17 +68,19 @@ func (j *EventCleanupJob) Run(ctx context.Context) (schedulertypes.Outcome, erro
 	}
 
 	buildRetentionDays := j.settingsService.GetIntSetting(ctx, "buildHistoryRetentionDays", 30)
-	deletedBuilds, err := j.buildService.PruneHistory(ctx, buildRetentionDays)
-	if err != nil {
-		slog.ErrorContext(ctx, "Failed to prune image build history", "jobName", EventCleanupJobName, "error", err)
-		return schedulertypes.Outcome{}, err
+	if deletedBuilds, err := j.buildService.PruneHistory(ctx, buildRetentionDays); err != nil {
+		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("prune image build history: %w", err))
+	} else {
+		slog.InfoContext(ctx, "Image build history cleanup completed successfully",
+			"jobName", EventCleanupJobName,
+			"retentionDays", buildRetentionDays,
+			"deleted", deletedBuilds)
 	}
 
-	slog.InfoContext(ctx, "Image build history cleanup completed successfully",
-		"jobName", EventCleanupJobName,
-		"retentionDays", buildRetentionDays,
-		"deleted", deletedBuilds)
-
+	if cleanupErr != nil {
+		slog.ErrorContext(ctx, "Event cleanup job failed", "jobName", EventCleanupJobName, "error", cleanupErr)
+		return schedulertypes.Outcome{}, cleanupErr
+	}
 	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
 }
 

@@ -91,7 +91,7 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 		run.Outcome.Targets = []st.TargetOutcome{{ID: "artifact", Status: st.Succeeded, RecoveryData: jsontext.Value(`{"backupId":"artifact"}`)}}
 		return nil
 	}))
-	require.True(t, q.hasPendingActivitySync(t.Context()))
+	require.True(t, pendingActivitySync(t, q))
 	q.SetExecutor(func(context.Context, st.Run) (st.Outcome, error) {
 		t.Error("startup must not execute jobs before activation")
 		return st.Outcome{Status: st.Failed}, nil
@@ -128,8 +128,8 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 	require.Equal(t, 1, history.Total)
 	require.Equal(t, time.UTC, history.Runs[0].CreatedAt.Location())
 	observer.unavailable.Store(false)
-	restored.retryActivitySync(t.Context())
-	require.False(t, restored.hasPendingActivitySync(t.Context()))
+	require.False(t, restored.retryActivitySync(t.Context(), coordinatorStates(t, restored)))
+	require.False(t, pendingActivitySync(t, restored))
 	require.Positive(t, observer.observed.Load())
 	_, exists, err := store.Get(t.Context(), key)
 	require.NoError(t, err)
@@ -268,10 +268,10 @@ func TestReconciliationRepairsMissingAlarm(t *testing.T) {
 	record, err := q.ScheduleState(t.Context(), "repair")
 	require.NoError(t, err)
 	id := kit.SHA256Hex("0\x00repair")
-	_, err = q.repair(t.Context(), true)
+	_, err = q.repair(t.Context(), coordinatorStates(t, q), true)
 	require.NoError(t, err)
 	require.NoError(t, q.service.DeleteAlarm(t.Context(), coordinatorType, id, fmt.Sprintf("schedule-%d-%d", record.Generation, record.Sequence)))
-	_, err = q.repair(t.Context(), true)
+	_, err = q.repair(t.Context(), coordinatorStates(t, q), true)
 	require.NoError(t, err)
 	require.NoError(t, q.service.DeleteAlarm(t.Context(), coordinatorType, id, fmt.Sprintf("schedule-%d-%d", record.Generation, record.Sequence)))
 	after, err := q.ScheduleState(t.Context(), "repair")
@@ -358,7 +358,7 @@ func TestLostDispatchAcknowledgementRetainsOneExecution(t *testing.T) {
 	state.Dispatches[key] = intent
 	state.Revision++
 	require.NoError(t, q.service.SetState(t.Context(), coordinatorType, id, state, nil))
-	_, err = q.repair(t.Context(), false)
+	_, err = q.repair(t.Context(), coordinatorStates(t, q), false)
 	require.NoError(t, err)
 	require.NoError(t, q.service.GetState(t.Context(), coordinatorType, id, &state))
 	require.Equal(t, original, state.Dispatches[key].JobID)

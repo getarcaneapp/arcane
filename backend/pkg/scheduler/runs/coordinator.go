@@ -44,7 +44,7 @@ type Coordinator struct {
 	execute      func(context.Context, st.Run) (st.Outcome, error)
 	reconcile    func(context.Context, st.Run) (st.Outcome, error)
 	observer     st.RunObserver
-	observerMu   sync.Mutex
+	observers    utils.KeyedMutex
 	location     *time.Location
 }
 
@@ -54,8 +54,9 @@ type Coordinator struct {
 // Cancellation of ctx affects admission only, not an accepted run's lifetime.
 func (q *Coordinator) Submit(ctx context.Context, request st.Request) (st.Run, error) {
 	q.mu.Lock()
-	defer q.mu.Unlock()
-	if q.stopping {
+	stopping := q.stopping
+	q.mu.Unlock()
+	if stopping {
 		return st.Run{}, errors.New("job queue is stopping")
 	}
 	request.EnvironmentID = cmp.Or(request.EnvironmentID, "0")
@@ -110,7 +111,9 @@ func (q *Coordinator) Submit(ctx context.Context, request st.Request) (st.Run, e
 		RemoteOutcome:           remoteOutcome,
 	}
 	q.associateActivity(&result)
+	fresh := result
 	err := q.mutate(ctx, request.EnvironmentID, request.JobID, func(record *st.QueueRecord) error {
+		result = fresh
 		if request.Trigger == "scheduled" || request.Trigger == "recovery" {
 			record.LastEnqueuedAt = now
 		}
@@ -157,8 +160,8 @@ func separateTrigger(trigger string) bool {
 // Checkpoint records the next due occurrence atomically with overdue recovery.
 func (q *Coordinator) Checkpoint(ctx context.Context, jobID, schedule string, next time.Time) error {
 	q.mu.Lock()
-	defer q.mu.Unlock()
 	first := !q.checkpointed[jobID]
+	q.mu.Unlock()
 	recovered := false
 	var recoveredRun st.Run
 	err := q.mutate(ctx, "0", jobID, func(record *st.QueueRecord) error {
@@ -190,12 +193,25 @@ func (q *Coordinator) Checkpoint(ctx context.Context, jobID, schedule string, ne
 		return nil
 	})
 	if err == nil {
+		q.mu.Lock()
 		q.checkpointed[jobID] = true
+		q.mu.Unlock()
 		if recovered {
 			q.observeRun(ctx, recoveredRun)
 			q.signal()
 		}
 	}
+	return err
+}
+
+func (q *Coordinator) Remove(ctx context.Context, jobID string) error {
+	if err := q.Checkpoint(ctx, jobID, "", time.Time{}); err != nil {
+		return err
+	}
+	q.mu.Lock()
+	delete(q.checkpointed, jobID)
+	q.mu.Unlock()
+	_, err := q.service.Invoke(ctx, coordinatorType, kit.SHA256Hex("0\x00"+jobID), "remove", nil)
 	return err
 }
 
@@ -220,17 +236,15 @@ func (q *Coordinator) Start(ctx, appCtx context.Context) error {
 		return fmt.Errorf("import legacy job history: %w", err)
 	}
 	// Fail startup if persisted state cannot be read. Never replace it with empty state.
-	records, err := q.Records(ctx)
+	states, err := q.states(ctx)
 	if err != nil {
 		return fmt.Errorf("read startup job history: %w", err)
 	}
-	for _, record := range records {
+	for index := range states {
+		record := &states[index].Record
 		changed := false
-		for _, run := range record.Runs {
-			if normalizeLegacyRun(&run) {
-				changed = true
-				break
-			}
+		for i := range record.Runs {
+			changed = normalizeLegacyRun(&record.Runs[i]) || changed
 		}
 		if !changed {
 			continue
@@ -244,7 +258,7 @@ func (q *Coordinator) Start(ctx, appCtx context.Context) error {
 			return fmt.Errorf("normalize startup job %q in environment %q: %w", record.JobID, record.EnvironmentID, mutateErr)
 		}
 	}
-	if pruneErr := q.prune(ctx); pruneErr != nil {
+	if pruneErr := q.prune(ctx, states); pruneErr != nil {
 		return fmt.Errorf("prune startup job history: %w", pruneErr)
 	}
 	if errErr := ctx.Err(); errErr != nil {
@@ -287,25 +301,16 @@ func (q *Coordinator) Stop(ctx context.Context) error {
 func (q *Coordinator) dispatch(ctx context.Context) {
 	defer close(q.done)
 
-	initialRetention := true
 	// Flush every coordinator once while enabled to restore schedule alarms; later passes only cover unfinished work.
 	fullRepair := true
 	nextRetention := time.Now()
 	for ctx.Err() == nil {
-		q.retryActivitySync(ctx)
-		if initialRetention || !time.Now().Before(nextRetention) {
-			if err := q.prune(ctx); err != nil {
-				if ctx.Err() == nil {
-					slog.ErrorContext(ctx, "Job retention failed", "error", err)
-				}
-			} else {
-				initialRetention = q.hasPendingActivitySync(ctx)
-			}
-			nextRetention = time.Now().Add(time.Hour)
-		}
 		enabled := q.enabled.Load()
-		busy, err := q.repair(ctx, fullRepair)
-		pendingActivity := q.hasPendingActivitySync(ctx)
+		retain := !time.Now().Before(nextRetention)
+		busy, pendingActivity, pruned, err := q.pass(ctx, fullRepair, retain)
+		if retain {
+			nextRetention = time.Now().Add(kit.Ternary(pruned, time.Hour, 5*time.Second))
+		}
 		nextWake := time.Now().Add(kit.Ternary(busy || pendingActivity, 15*time.Second, coordinatorIdleWake))
 		if err != nil {
 			if ctx.Err() == nil {
@@ -336,6 +341,23 @@ func (q *Coordinator) dispatch(ctx context.Context) {
 	}
 }
 
+func (q *Coordinator) pass(ctx context.Context, all, retain bool) (busy, pendingActivity, pruned bool, err error) {
+	states, err := q.states(ctx)
+	if err != nil {
+		return false, true, false, err
+	}
+	pendingActivity = q.retryActivitySync(ctx, states)
+	if retain {
+		pruneErr := q.prune(ctx, states)
+		if pruneErr != nil && ctx.Err() == nil {
+			slog.ErrorContext(ctx, "Job retention failed", "error", pruneErr)
+		}
+		pruned = pruneErr == nil
+	}
+	busy, err = q.repair(ctx, states, all)
+	return busy, pendingActivity, pruned, err
+}
+
 func (q *Coordinator) persistOutcome(ctx context.Context, run st.Run, outcome st.Outcome) error {
 	// Keep the execution slot while retrying, but release it after a bounded backoff.
 	wait := time.Second
@@ -348,18 +370,21 @@ func (q *Coordinator) persistOutcome(ctx context.Context, run st.Run, outcome st
 				return ErrRunConflict
 			}
 			now := time.Now().UTC()
-			current.Status = outcome.Status
-			current.UpdatedAt = now
+			merged := st.Outcome{
+				Status:     outcome.Status,
+				Message:    outcome.Message,
+				ActivityID: cmp.Or(outcome.ActivityID, current.Outcome.ActivityID),
+				Targets:    slices.Clone(outcome.Targets),
+				Steps:      kit.Ternary(len(outcome.Steps) == 0, current.Outcome.Steps, outcome.Steps),
+			}
 			for _, target := range current.Outcome.Targets {
 				if !slices.ContainsFunc(outcome.Targets, func(updated st.TargetOutcome) bool { return updated.ID == target.ID }) {
-					outcome.Targets = append(outcome.Targets, target)
+					merged.Targets = append(merged.Targets, target)
 				}
 			}
-			outcome.ActivityID = cmp.Or(outcome.ActivityID, current.Outcome.ActivityID)
-			if len(outcome.Steps) == 0 {
-				outcome.Steps = current.Outcome.Steps
-			}
-			current.Outcome = outcome
+			current.Status = outcome.Status
+			current.UpdatedAt = now
+			current.Outcome = merged
 			if outcome.Status == st.Retrying || outcome.Status == st.Waiting {
 				delay := 5 * time.Second * time.Duration(1<<min(run.AttemptCount-1, 6))
 				delay = min(delay, 5*time.Minute)
@@ -381,7 +406,7 @@ func (q *Coordinator) persistOutcome(ctx context.Context, run st.Run, outcome st
 			if len(current.Attempts) > 0 {
 				last := &current.Attempts[len(current.Attempts)-1]
 				last.FinishedAt = &now
-				last.Outcome = outcome
+				last.Outcome = merged
 				last.Outcome.Steps = nil
 			}
 			return nil

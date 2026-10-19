@@ -8,6 +8,7 @@ import (
 	"time"
 
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/italypaleale/francis/actor"
 	"github.com/stretchr/testify/require"
 )
 
@@ -303,10 +304,8 @@ func TestJobScheduler_StartScheduler_SchedulesNonConditionalJobs(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "0 0 * * * *", polling.Schedule)
 	require.True(t, nextPolling.Equal(polling.NextRun))
-	removed, err := js.coordinator.ScheduleState(t.Context(), "removed-job")
-	require.NoError(t, err)
-	require.Empty(t, removed.Schedule)
-	require.True(t, removed.NextRun.IsZero())
+	_, err = js.coordinator.ScheduleState(t.Context(), "removed-job")
+	require.ErrorIs(t, err, actor.ErrStateNotFound)
 	select {
 	case <-executed:
 	case <-time.After(5 * time.Second):
@@ -447,9 +446,8 @@ func TestJobScheduler_RemoveJob_RemovesEntryAndIsNoopWhenAbsent(t *testing.T) {
 
 	js.RemoveJob(t.Context(), job.Name())
 	require.False(t, js.HasJob(job.Name()))
-	record, err := js.coordinator.ScheduleState(t.Context(), job.Name())
-	require.NoError(t, err)
-	require.True(t, record.NextRun.IsZero())
+	_, err := js.coordinator.ScheduleState(t.Context(), job.Name())
+	require.ErrorIs(t, err, actor.ErrStateNotFound)
 }
 
 func TestJobScheduler_AddJob_GenericJobWithoutShouldRunIsScheduled(t *testing.T) {

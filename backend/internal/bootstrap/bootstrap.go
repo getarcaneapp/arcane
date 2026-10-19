@@ -96,7 +96,7 @@ func Bootstrap(ctx context.Context) error {
 		return fmt.Errorf("setup telemetry: %w", err)
 	}
 	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 4*time.Second)
 		defer cancel()
 		if shutdownErr := providers.Shutdown(shutdownCtx); shutdownErr != nil {
 			slog.ErrorContext(shutdownCtx, "Error shutting down telemetry", "error", shutdownErr)
@@ -169,7 +169,7 @@ func applicationOptions(appCtx context.Context, cfg *config.Config, db *database
 			return logger
 		}),
 		fx.StartTimeout(5*time.Minute),
-		fx.StopTimeout(8*time.Second),
+		fx.StopTimeout(7*time.Second),
 	)
 }
 
@@ -189,9 +189,11 @@ func isWeakProductionEncryptionKey(encryptionKey, localEnvironment string, agent
 type initializeStartupStateParams struct {
 	fx.In
 
-	AppCtx context.Context
-	Config *config.Config
-	DB     *database.DB
+	AppCtx     context.Context
+	Lifecycle  fx.Lifecycle
+	HTTPServer *http.Server
+	Config     *config.Config
+	DB         *database.DB
 
 	Volume        *volume.VolumeService
 	Settings      *settings.SettingsService
@@ -208,11 +210,15 @@ type initializeStartupStateParams struct {
 	Vulnerability *vulnerability.VulnerabilityService
 }
 
+const startupTaskTimeout = 30 * time.Second
+
 func initializeStartupState(p initializeStartupStateParams) {
 	appCtx := p.AppCtx
 	cfg := p.Config
 
-	startup.CleanupOrphanedVolumeHelpers(appCtx, p.Volume.CleanupOrphanedVolumeHelpers)
+	helperCtx, cancelHelpers := context.WithTimeout(appCtx, startupTaskTimeout)
+	startup.CleanupOrphanedVolumeHelpers(helperCtx, p.Volume.CleanupOrphanedVolumeHelpers)
+	cancelHelpers()
 
 	runtimeCfg := &startup.RuntimeConfig{
 		AgentMode:         cfg.AgentMode,
@@ -261,9 +267,11 @@ func initializeStartupState(p initializeStartupStateParams) {
 		{name: "recover interrupted container redeploys", run: p.Container.RecoverInterruptedRedeploys},
 		{name: "recover stuck project statuses", run: p.Project.RecoverStuckProjectStatuses},
 	} {
-		if err := task.run(appCtx); err != nil {
+		taskCtx, cancelTask := context.WithTimeout(appCtx, startupTaskTimeout)
+		if err := task.run(taskCtx); err != nil {
 			slog.WarnContext(appCtx, "Startup task failed", "task", task.name, "error", err)
 		}
+		cancelTask()
 	}
 	p.Vulnerability.ImportLegacyReportFiles(appCtx)
 	p.Vulnerability.BackfillScanItems(appCtx)
@@ -279,10 +287,15 @@ func initializeStartupState(p initializeStartupStateParams) {
 		if err := p.Variable.ImportLegacyLocalEnvFile(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Failed to import legacy global variables", "error", err)
 		}
-		go p.Variable.SyncAll(appCtx)
+		p.Lifecycle.Append(fx.Hook{OnStart: func(context.Context) error {
+			go p.Variable.SyncAll(appCtx)
+			return nil
+		}})
 	}
 
-	startup.TestDockerConnection(appCtx, func(ctx context.Context) error {
+	dockerCtx, cancelDocker := context.WithTimeout(appCtx, startupTaskTimeout)
+	defer cancelDocker()
+	startup.TestDockerConnection(dockerCtx, func(ctx context.Context) error {
 		_, err := p.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
 			version, err := dockerClient.ServerVersion(ctx, client.ServerVersionOptions{})
 			if err != nil {
@@ -295,7 +308,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 		})
 		return err
 	})
-	if err := p.Swarm.SyncSwarmEnabledState(appCtx); err != nil {
+	if err := p.Swarm.SyncSwarmEnabledState(dockerCtx); err != nil {
 		slog.WarnContext(appCtx, "Failed to persist swarm enabled state", "error", err)
 	}
 
