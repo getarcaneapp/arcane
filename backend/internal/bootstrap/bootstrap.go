@@ -163,6 +163,7 @@ func applicationOptions(appCtx context.Context, cfg *config.Config, db *database
 			initializeStartupState,
 			registerJobs,
 			startEdgeTunnelClient,
+			startGlobalVariableSync,
 		),
 		fx.WithLogger(func() fxevent.Logger {
 			logger := &fxevent.SlogLogger{Logger: slog.Default()}
@@ -190,11 +191,9 @@ func isWeakProductionEncryptionKey(encryptionKey, localEnvironment string, agent
 type initializeStartupStateParams struct {
 	fx.In
 
-	AppCtx     context.Context
-	Lifecycle  fx.Lifecycle
-	HTTPServer *http.Server
-	Config     *config.Config
-	DB         *database.DB
+	AppCtx context.Context
+	Config *config.Config
+	DB     *database.DB
 
 	Volume        *volume.VolumeService
 	Settings      *settings.SettingsService
@@ -290,10 +289,6 @@ func initializeStartupState(p initializeStartupStateParams) {
 		if err := p.Variable.ImportLegacyLocalEnvFile(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Failed to import legacy global variables", "error", err)
 		}
-		p.Lifecycle.Append(fx.Hook{OnStart: func(context.Context) error {
-			go p.Variable.SyncAll(appCtx)
-			return nil
-		}})
 	}
 
 	dockerCtx, cancelDocker := context.WithTimeout(appCtx, startupTaskTimeout)
@@ -387,6 +382,16 @@ func startEdgeTunnelClient(appCtx context.Context, lc fx.Lifecycle, cfg *config.
 			return stop(ctx)
 		},
 	})
+}
+
+func startGlobalVariableSync(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config, variables *variable.VariableService, _ *http.Server) {
+	if cfg.AgentMode {
+		return
+	}
+	lc.Append(fx.Hook{OnStart: func(context.Context) error {
+		go variables.SyncAll(appCtx)
+		return nil
+	}})
 }
 
 func registerAppCancelHook(lc fx.Lifecycle, cancelApp context.CancelCauseFunc) {

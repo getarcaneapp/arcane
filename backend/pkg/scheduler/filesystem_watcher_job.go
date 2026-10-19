@@ -24,6 +24,7 @@ type FilesystemWatcherJob struct {
 	projectsWatcher  *fswatch.Watcher
 	templatesWatcher *fswatch.Watcher
 	restart          chan struct{}
+	restartMu        sync.Mutex
 	mu               sync.Mutex
 	stopped          bool
 }
@@ -143,6 +144,8 @@ func (j *FilesystemWatcherJob) RestartProjectsWatcher(ctx context.Context) error
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	j.restartMu.Lock()
+	defer j.restartMu.Unlock()
 	watcher, err := j.startProjectsWatcher(ctx)
 	if err != nil {
 		return err
@@ -231,6 +234,8 @@ func (j *FilesystemWatcherJob) RestartTemplatesWatcher(ctx context.Context) erro
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	j.restartMu.Lock()
+	defer j.restartMu.Unlock()
 	watcher, err := j.startTemplatesWatcher(ctx)
 	if err != nil {
 		return err

@@ -284,14 +284,20 @@ func (q *Coordinator) UpdateRun(ctx context.Context, run st.Run, change func(*st
 func (q *Coordinator) prune(ctx context.Context, states []st.CoordinatorState) error {
 	now := time.Now().UTC()
 	for _, state := range states {
-		if !pruneRuns(&st.QueueRecord{Runs: slices.Clone(state.Record.Runs), Receipts: maps.Clone(state.Record.Receipts)}, now) {
+		record := st.QueueRecord{Runs: slices.Clone(state.Record.Runs), Receipts: maps.Clone(state.Record.Receipts)}
+		if pruneRuns(&record, now) {
+			if mutateErr := q.mutate(ctx, state.Record.EnvironmentID, state.Record.JobID, func(current *st.QueueRecord) error {
+				pruneRuns(current, now)
+				return nil
+			}); mutateErr != nil {
+				return fmt.Errorf("prune job %q in environment %q: %w", state.Record.JobID, state.Record.EnvironmentID, mutateErr)
+			}
+		}
+		if state.Record.Schedule != "" || len(state.PendingActivitySync) > 0 || len(record.Runs) > 0 || len(record.Receipts) > 0 {
 			continue
 		}
-		if mutateErr := q.mutate(ctx, state.Record.EnvironmentID, state.Record.JobID, func(current *st.QueueRecord) error {
-			pruneRuns(current, now)
-			return nil
-		}); mutateErr != nil {
-			return fmt.Errorf("prune job %q in environment %q: %w", state.Record.JobID, state.Record.EnvironmentID, mutateErr)
+		if _, removeErr := q.service.Invoke(ctx, coordinatorType, kit.SHA256Hex(state.Record.EnvironmentID+"\x00"+state.Record.JobID), "remove", nil); removeErr != nil {
+			return fmt.Errorf("remove job %q in environment %q: %w", state.Record.JobID, state.Record.EnvironmentID, removeErr)
 		}
 	}
 	return nil

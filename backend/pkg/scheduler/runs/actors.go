@@ -103,8 +103,7 @@ func (a *coordinatorActor) Invoke(ctx context.Context, method string, data actor
 	case "repair":
 		return nil, a.flush(ctx, &state)
 	case "remove":
-		if state.Record.Schedule != "" || len(state.PendingActivitySync) > 0 ||
-			slices.ContainsFunc(state.Record.Runs, func(run st.Run) bool { return !run.Status.Terminal() }) {
+		if state.Record.Schedule != "" || len(state.PendingActivitySync) > 0 || len(state.Record.Runs) > 0 || len(state.Record.Receipts) > 0 {
 			return false, nil
 		}
 		if err := a.q.service.DeleteState(ctx, coordinatorType, a.id); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
