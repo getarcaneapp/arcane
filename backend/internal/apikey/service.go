@@ -592,13 +592,16 @@ func (s *ApiKeyService) deleteManagedAPIKeysByIDs(tx *gorm.DB, ids []string) err
 	return nil
 }
 
-func (s *ApiKeyService) findMatchingManagedAPIKey(ctx context.Context, rawKey string, managedKeys []ApiKey) int {
+func (s *ApiKeyService) findMatchingManagedAPIKey(ctx context.Context, rawKey string, managedKeys []ApiKey) (int, error) {
 	for i, managedKey := range managedKeys {
 		if err := s.userService.ValidatePassword(ctx, managedKey.KeyHash, rawKey); err == nil {
-			return i
+			return i, nil
+		}
+		if ctx.Err() != nil {
+			return -1, ctx.Err()
 		}
 	}
-	return -1
+	return -1, nil
 }
 
 func managedAPIKeyDeleteIDsInternal(managedKeys []ApiKey, keepIndex int) []string {
@@ -666,7 +669,10 @@ func (s *ApiKeyService) reconcileManagedAPIKeys(ctx context.Context, tx *gorm.DB
 		return deleteIDs, s.deleteManagedAPIKeysByIDs(tx, deleteIDs)
 	}
 
-	matchingIndex := s.findMatchingManagedAPIKey(ctx, rawKey, managedKeys)
+	matchingIndex, err := s.findMatchingManagedAPIKey(ctx, rawKey, managedKeys)
+	if err != nil {
+		return nil, err
+	}
 	if matchingIndex >= 0 {
 		if updateMatchingManagedAPIKeyErr := s.updateMatchingManagedAPIKey(tx, managedKeys[matchingIndex].ID); updateMatchingManagedAPIKeyErr != nil {
 			return nil, updateMatchingManagedAPIKeyErr
@@ -1058,6 +1064,9 @@ func (s *ApiKeyService) ValidateRawApiKey(ctx context.Context, rawKey string) (*
 			s.markApiKeyUsedDebouncedInternal(ctx, apiKey.ID)
 
 			return &apiKey, nil
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
 	}
 
