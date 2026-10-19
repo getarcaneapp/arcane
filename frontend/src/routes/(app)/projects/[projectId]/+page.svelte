@@ -8,6 +8,7 @@
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
 
+	import ActionButtonGroup from '#lib/components/action-button-group/action-button-group.svelte';
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import ActionButtons from '#lib/components/action-buttons.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -1474,6 +1475,7 @@
 				action: 'archive',
 				label: project?.isArchived ? m.projects_unarchive() : m.projects_archive(),
 				group: 'manage',
+				placement: project?.isArchived ? 'primary' : undefined,
 				loading: isLoading.archiving,
 				disabled: archiveRequiresStopped,
 				disabledReason: archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined,
@@ -2257,32 +2259,36 @@
 		{/snippet}
 
 		{#snippet headerActions()}
-			<ActionButtons
-				id={project.id}
-				environmentId={envId}
-				name={project.name}
-				type="project"
-				itemState={project.status}
-				{hasBuildDirective}
-				disableRedeploy={!!project.redeployDisabled}
-				disabled={composeActionsBlocked}
-				disabledReason={composeActionsBlocked ? m.env_file_unreadable_title() : undefined}
-				bind:startLoading={isLoading.deploying}
-				bind:stopLoading={isLoading.stopping}
-				bind:restartLoading={isLoading.restarting}
-				bind:removeLoading={isLoading.removing}
-				bind:redeployLoading={isLoading.redeploying}
-				onActionComplete={() => {
-					void refreshProjectDetails();
-				}}
-				onRefresh={async () => {
-					await refreshProjectDetails({ clearLoadedFileCache: true });
-					await queryClient.invalidateQueries({ queryKey: queryKeys.projects.workspace(envId, projectId) });
-				}}
-				extraActions={projectExtraActions}
-				hasUnsavedChanges={hasChanges}
-				onSaveChanges={handleSaveChanges}
-			/>
+			{#if project.isArchived}
+				<ActionButtonGroup buttons={projectExtraActions} class="flex-1" />
+			{:else}
+				<ActionButtons
+					id={project.id}
+					environmentId={envId}
+					name={project.name}
+					type="project"
+					itemState={project.status}
+					{hasBuildDirective}
+					disableRedeploy={!!project.redeployDisabled}
+					disabled={composeActionsBlocked}
+					disabledReason={composeActionsBlocked ? m.env_file_unreadable_title() : undefined}
+					bind:startLoading={isLoading.deploying}
+					bind:stopLoading={isLoading.stopping}
+					bind:restartLoading={isLoading.restarting}
+					bind:removeLoading={isLoading.removing}
+					bind:redeployLoading={isLoading.redeploying}
+					onActionComplete={() => {
+						void refreshProjectDetails();
+					}}
+					onRefresh={async () => {
+						await refreshProjectDetails({ clearLoadedFileCache: true });
+						await queryClient.invalidateQueries({ queryKey: queryKeys.projects.workspace(envId, projectId) });
+					}}
+					extraActions={projectExtraActions}
+					hasUnsavedChanges={hasChanges}
+					onSaveChanges={handleSaveChanges}
+				/>
+			{/if}
 		{/snippet}
 
 		{#snippet tabContent()}
