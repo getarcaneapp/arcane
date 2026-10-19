@@ -20,13 +20,14 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
+	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
 	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
@@ -39,7 +40,7 @@ import (
 // Service runs manual and scheduled prunes, serializing them per environment.
 type Service struct {
 	location           *time.Location
-	dockerService      *docker.DockerClientService
+	dockerService      *dockerInternal.DockerClientService
 	activityService    *activity.ActivityService
 	imageUpdateService *imageupdate.ImageUpdateService
 	volumeService      *volume.VolumeService
@@ -50,7 +51,7 @@ type Service struct {
 
 func NewService(
 	location *time.Location,
-	dockerService *docker.DockerClientService,
+	dockerService *dockerInternal.DockerClientService,
 	activityService *activity.ActivityService,
 	imageUpdateService *imageupdate.ImageUpdateService,
 	volumeService *volume.VolumeService,
@@ -258,6 +259,7 @@ func (s *Service) runSystemPrune(ctx context.Context, req system.PruneAllRequest
 
 	if err := g.Wait(); err != nil {
 		slog.ErrorContext(ctx, "Prune operations failed", "error", err)
+		addError("Prune worker failed: %v", err)
 	}
 
 	result := &system.PruneAllResult{
@@ -388,29 +390,38 @@ func (s *Service) pruneImages(ctx context.Context, options system.PruneImagesOpt
 	if err != nil {
 		return system.PruneAllResult{}, fmt.Errorf("failed to prune images: %w", err)
 	}
+	existing, listErr := cli.ImageList(ctx, client.ImageListOptions{})
+	if listErr != nil {
+		slog.WarnContext(ctx, "Failed to list images before prune; deleted counts may include layers", "error", listErr)
+	}
+	existingIDs := make(map[string]struct{}, len(existing.Items))
+	for _, item := range existing.Items {
+		existingIDs[item.ID] = struct{}{}
+	}
+
 	report, err := cli.ImagePrune(ctx, client.ImagePruneOptions{Filters: filterArgs})
 	if err != nil {
 		return system.PruneAllResult{}, fmt.Errorf("failed to prune images: %w", err)
 	}
 
-	slog.InfoContext(ctx, "Image pruning completed", "imagesDeleted", len(report.Report.ImagesDeleted), "bytesReclaimed", report.Report.SpaceReclaimed)
-
-	// Collect IDs to delete from DB
-	var idsToDelete []string
+	var deletedImageIDs, untaggedRefs []string
 	for _, imgReport := range report.Report.ImagesDeleted {
-		if imgReport.Deleted != "" {
-			idsToDelete = append(idsToDelete, imgReport.Deleted)
-		} else if imgReport.Untagged != "" {
-			idsToDelete = append(idsToDelete, imgReport.Untagged)
+		_, isImage := existingIDs[imgReport.Deleted]
+		switch {
+		case imgReport.Deleted != "" && (isImage || listErr != nil):
+			deletedImageIDs = append(deletedImageIDs, imgReport.Deleted)
+		case imgReport.Untagged != "":
+			untaggedRefs = append(untaggedRefs, imgReport.Untagged)
 		}
 	}
+	slog.InfoContext(ctx, "Image pruning completed", "imagesDeleted", len(deletedImageIDs), "bytesReclaimed", report.Report.SpaceReclaimed)
 
-	if deleteRecordsForImagesErr := s.imageUpdateService.DeleteRecordsForImages(ctx, idsToDelete); deleteRecordsForImagesErr != nil {
-		slog.WarnContext(ctx, "Failed to delete image update records", "count", len(idsToDelete), "error", deleteRecordsForImagesErr.Error())
+	if deleteRecordsForImagesErr := s.imageUpdateService.DeleteRecordsForImages(ctx, slices.Concat(deletedImageIDs, untaggedRefs)); deleteRecordsForImagesErr != nil {
+		slog.WarnContext(ctx, "Failed to delete image update records", "count", len(deletedImageIDs)+len(untaggedRefs), "error", deleteRecordsForImagesErr.Error())
 	}
 
 	return system.PruneAllResult{
-		ImagesDeleted:       idsToDelete,
+		ImagesDeleted:       deletedImageIDs,
 		SpaceReclaimed:      report.Report.SpaceReclaimed,
 		ImageSpaceReclaimed: report.Report.SpaceReclaimed,
 	}, nil
@@ -622,7 +633,7 @@ func (s *Service) selectPruneImages(req system.PruneAllRequest, usage client.Dis
 		resources = append(resources, pruneResource{
 			Kind:  "image",
 			ID:    item.ID,
-			Size:  item.Size,
+			Size:  kit.Ternary(item.SharedSize >= 0, item.Size-item.SharedSize, 0),
 			Names: slices.Clone(item.RepoTags),
 		})
 	}
@@ -963,49 +974,63 @@ func (s *Service) pruneResourceEligible(ctx context.Context, plan prunePlan, res
 		}
 		return resource.Size, len(inspected.Network.Containers) == 0 && !inspected.Network.Ingress, true, nil
 	}
-	usage, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.DiskUsageResult, error) {
-		return cli.DiskUsage(ctx, client.DiskUsageOptions{
-			Containers: resource.Kind == "container",
-			Images:     resource.Kind == "image",
-			Volumes:    resource.Kind == "volume",
-			Verbose:    true,
-		})
-	})
-	if err != nil {
-		return resource.Size, false, false, err
-	}
 	switch resource.Kind {
 	case "container":
-		for _, item := range usage.Containers.Items {
-			if item.ID == resource.ID {
-				return item.SizeRw, item.State != "running" && item.State != "paused" && item.State != "restarting", true, nil
-			}
+		inspected, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerInspectResult, error) {
+			return compat.ContainerInspectWithCompatibility(ctx, cli, resource.ID, client.ContainerInspectOptions{})
+		})
+		if errdefs.IsNotFound(inspectErr) {
+			return resource.Size, false, false, nil
 		}
+		if inspectErr != nil {
+			return resource.Size, false, false, inspectErr
+		}
+		state := kit.FromPtr(inspected.Container.State)
+		return resource.Size, !state.Running && !state.Paused && !state.Restarting, true, nil
 	case "image":
-		for _, item := range usage.Images.Items {
-			if item.ID != resource.ID {
-				continue
-			}
-			// Size - SharedSize is the unique layer size Docker counts as reclaimable for an unused image.
-			reclaimable := kit.Ternary(item.SharedSize >= 0, item.Size-item.SharedSize, 0)
-			if slices.ContainsFunc(item.RepoTags, func(tag string) bool { return !slices.Contains(resource.Names, tag) }) {
-				return reclaimable, false, true, nil
-			}
-			return reclaimable, item.Containers == 0 && (plan.Request.Images.Mode != system.PruneImageModeDangling || len(item.RepoTags) == 0), true, nil
+		inspected, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ImageInspectResult, error) {
+			return cli.ImageInspect(ctx, resource.ID)
+		})
+		if errdefs.IsNotFound(inspectErr) {
+			return resource.Size, false, false, nil
 		}
+		if inspectErr != nil {
+			return resource.Size, false, false, inspectErr
+		}
+		if slices.ContainsFunc(inspected.RepoTags, func(tag string) bool { return !slices.Contains(resource.Names, tag) }) {
+			return resource.Size, false, true, nil
+		}
+		users, listErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerListResult, error) {
+			return cli.ContainerList(ctx, client.ContainerListOptions{
+				All:     true,
+				Filters: make(client.Filters).Add("ancestor", resource.ID),
+			})
+		})
+		if listErr != nil {
+			return resource.Size, false, true, listErr
+		}
+		return resource.Size, len(users.Items) == 0 && (plan.Request.Images.Mode != system.PruneImageModeDangling || len(inspected.RepoTags) == 0), true, nil
 	case "volume":
-		for _, item := range usage.Volumes.Items {
-			if item.Name != resource.ID {
-				continue
-			}
-			if item.UsageData == nil {
-				return resource.Size, false, true, nil
-			}
-			return item.UsageData.Size, item.UsageData.RefCount == 0 && !strings.EqualFold(item.Labels[libarcane.InternalResourceLabel], "true") &&
-				!s.volumeService.IsBackupVolume(item.Name), true, nil
+		inspected, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.VolumeInspectResult, error) {
+			return cli.VolumeInspect(ctx, resource.ID, client.VolumeInspectOptions{})
+		})
+		if errdefs.IsNotFound(inspectErr) {
+			return resource.Size, false, false, nil
 		}
+		if inspectErr != nil {
+			return resource.Size, false, false, inspectErr
+		}
+		users, usersErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) ([]string, error) {
+			return docker.GetContainersUsingVolume(ctx, cli, resource.ID)
+		})
+		if usersErr != nil {
+			return resource.Size, false, true, usersErr
+		}
+		return resource.Size, len(users) == 0 && !strings.EqualFold(inspected.Volume.Labels[libarcane.InternalResourceLabel], "true") &&
+			!s.volumeService.IsBackupVolume(inspected.Volume.Name), true, nil
+	default:
+		return resource.Size, false, false, nil
 	}
-	return resource.Size, false, false, nil
 }
 
 func (s *Service) ReconcileScheduledPrune(ctx context.Context, previous scheduler.Run) (scheduler.Outcome, error) {

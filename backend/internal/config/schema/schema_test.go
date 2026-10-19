@@ -231,7 +231,6 @@ var expectedEnvConfigVars = []string{
 	"GPU_MONITORING_ENABLED",
 	"GPU_TYPE",
 	"HTTPS_PROXY",
-	"HTTP_CLIENT_TIMEOUT",
 	"HTTP_PROXY",
 	"JWT_REFRESH_EXPIRY",
 	"JWT_SECRET",

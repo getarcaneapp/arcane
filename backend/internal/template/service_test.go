@@ -20,6 +20,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -246,6 +247,87 @@ func TestDownloadTemplate_PreservesIconURL(t *testing.T) {
 	}
 }
 
+func TestDownloadTemplate_DoesNotOverwriteUnownedTemplate(t *testing.T) {
+	tempDir := t.TempDir()
+	setTestWorkingDir(t, tempDir)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/compose.yaml" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte("services:\n  app:\n    image: nginx:alpine\n"))
+	}))
+	defer server.Close()
+
+	client, lookupIP, baseURL := makePublicTestClient(t, server)
+
+	templatesDir := filepath.Join(tempDir, "templates")
+	settingsSvc := minimalSettingsServiceForTest(t)
+	require.NoError(t, settingsSvc.UpdateSetting(t.Context(), "templatesDirectory", templatesDir))
+
+	service := &TemplateService{
+		db:                setupTemplateServiceTestDB(t),
+		httpClient:        client,
+		lookupIP:          lookupIP,
+		settingsService:   settingsSvc,
+		registryFetchMeta: make(map[string]*registryFetchMeta),
+	}
+
+	customCompose := "services:\n  custom:\n    image: busybox\n"
+	customComposePath := filepath.Join(templatesDir, "nginx", "compose.yaml")
+	require.NoError(t, os.MkdirAll(filepath.Dir(customComposePath), 0o755))
+	require.NoError(t, os.WriteFile(customComposePath, []byte(customCompose), 0o600))
+	custom := &ComposeTemplate{
+		ID:          "custom-nginx",
+		Name:        "nginx",
+		Description: "Imported from " + customComposePath,
+		Content:     customCompose,
+		IsCustom:    true,
+	}
+	require.NoError(t, service.db.WithContext(t.Context()).Create(custom).Error)
+
+	remoteTemplate := &ComposeTemplate{
+		ID:       "remote:reg-1:nginx",
+		Name:     "nginx",
+		IsRemote: true,
+		Metadata: &ComposeTemplateMetadata{
+			RemoteURL: new(baseURL + "/compose.yaml"),
+		},
+	}
+
+	downloaded, err := service.DownloadTemplate(t.Context(), remoteTemplate)
+	require.NoError(t, err)
+	require.NotEqual(t, custom.ID, downloaded.ID)
+	require.Equal(t, "nginx-2", downloaded.Name)
+
+	onDisk, err := os.ReadFile(customComposePath)
+	require.NoError(t, err)
+	require.Equal(t, customCompose, string(onDisk))
+
+	var stored ComposeTemplate
+	require.NoError(t, service.db.WithContext(t.Context()).First(&stored, "id = ?", custom.ID).Error)
+	require.Equal(t, customCompose, stored.Content)
+
+	redownloaded, err := service.DownloadTemplate(t.Context(), remoteTemplate)
+	require.NoError(t, err)
+	require.Equal(t, downloaded.ID, redownloaded.ID)
+
+	movedDir := filepath.Join(templatesDir, "nginx-3")
+	require.NoError(t, os.Rename(filepath.Join(templatesDir, "nginx-2"), movedDir))
+	require.NoError(t, service.db.WithContext(t.Context()).Model(&ComposeTemplate{}).Where("id = ?", downloaded.ID).Updates(map[string]any{
+		"name":        "nginx-3",
+		"description": "Imported from " + filepath.Join(movedDir, "compose.yaml"),
+	}).Error)
+
+	movedDownload, err := service.DownloadTemplate(t.Context(), remoteTemplate)
+	require.NoError(t, err)
+	require.Equal(t, downloaded.ID, movedDownload.ID)
+	require.Equal(t, "nginx-3", movedDownload.Name)
+	require.NoDirExists(t, filepath.Join(templatesDir, "nginx-2"))
+	require.FileExists(t, filepath.Join(movedDir, "compose.yaml"))
+}
+
 func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 	tempDir := t.TempDir()
 	setTestWorkingDir(t, tempDir)
@@ -437,7 +519,7 @@ func minimalSettingsServiceForTest(t *testing.T) *settings.SettingsService {
 
 func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	svc, err := settings.NewSettingsService(ctx, db)
+	svc, err := settings.NewSettingsService(ctx, db, &config.Config{})
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}

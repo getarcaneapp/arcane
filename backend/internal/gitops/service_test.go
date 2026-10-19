@@ -65,7 +65,7 @@ func setupGitOpsProjectTestDB(t *testing.T) *database.DB {
 
 func newGitOpsSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	service, err := settings.NewSettingsService(ctx, db)
+	service, err := settings.NewSettingsService(ctx, db, &config.Config{})
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, service.Stop(context.WithoutCancel(t.Context()))) })
 	}

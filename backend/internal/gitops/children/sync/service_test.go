@@ -47,7 +47,7 @@ func setupSyncTestService(t *testing.T) (*Service, *database.DB, string) {
 	require.NoError(t, db.AutoMigrate(&projectpkg.Project{}, &projectpkg.GitOpsSync{}, &settings.SettingVariable{}, &imageupdate.ImageUpdateRecord{}, &event.Event{}))
 	arcaneDB := &database.DB{DB: db}
 
-	settingsService, err := settings.NewSettingsService(ctx, arcaneDB)
+	settingsService, err := settings.NewSettingsService(ctx, arcaneDB, &config.Config{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 

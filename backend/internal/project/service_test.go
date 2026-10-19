@@ -142,7 +142,7 @@ func TestValidateWorkspaceChangesAgainstGitOps(t *testing.T) {
 
 func newSettingsServiceForTest(t *testing.T, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	svc, err := settings.NewSettingsService(ctx, db)
+	svc, err := settings.NewSettingsService(ctx, db, &config.Config{})
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}
@@ -10131,7 +10131,7 @@ func setupLifecycleTestDB(t *testing.T) *database.DB {
 
 func newLifecycleTestService(t *testing.T, db *database.DB) (*LifecycleService, *settings.SettingsService) {
 	t.Helper()
-	settingsService, err := settings.NewSettingsService(t.Context(), db)
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	events := event.NewEventService(db, nil, nil)

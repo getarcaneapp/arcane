@@ -102,16 +102,15 @@ type Config struct {
 	EdgeMTLSServerName    string `env:"EDGE_MTLS_SERVER_NAME" default:""`
 	EdgeMTLSAssetsDir     string `env:"EDGE_MTLS_ASSETS_DIR" default:""`
 
-	TrustedProxies    string      `env:"TRUSTED_PROXIES" default:""`
-	FilePerm          os.FileMode `env:"FILE_PERM" default:"0644"`
-	DirPerm           os.FileMode `env:"DIR_PERM" default:"0755"`
-	GitWorkDir        string      `env:"GIT_WORK_DIR" default:"data/git"`
-	HTTPClientTimeout int         `env:"HTTP_CLIENT_TIMEOUT" default:"0"`
-	BackupVolumeName  string      `env:"ARCANE_BACKUP_VOLUME_NAME" default:"arcane-backups"`
-	HTTPProxy         string      `env:"HTTP_PROXY" default:""`
-	HTTPSProxy        string      `env:"HTTPS_PROXY" default:""`
-	NoProxy           string      `env:"NO_PROXY" default:""`
-	Timezone          string      `env:"TZ" default:"Local"`
+	TrustedProxies   string      `env:"TRUSTED_PROXIES" default:""`
+	FilePerm         os.FileMode `env:"FILE_PERM" default:"0644"`
+	DirPerm          os.FileMode `env:"DIR_PERM" default:"0755"`
+	GitWorkDir       string      `env:"GIT_WORK_DIR" default:"data/git"`
+	BackupVolumeName string      `env:"ARCANE_BACKUP_VOLUME_NAME" default:"arcane-backups"`
+	HTTPProxy        string      `env:"HTTP_PROXY" default:""`
+	HTTPSProxy       string      `env:"HTTPS_PROXY" default:""`
+	NoProxy          string      `env:"NO_PROXY" default:""`
+	Timezone         string      `env:"TZ" default:"Local"`
 }
 
 func Load() *Config {

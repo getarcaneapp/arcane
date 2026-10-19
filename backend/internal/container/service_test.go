@@ -35,6 +35,7 @@ import (
 	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container/children/stats"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
@@ -143,7 +144,7 @@ func TestPaginateContainerProjectGroupsSelectsRequestedPage(t *testing.T) {
 
 func TestContainerSummaryIconsAppliedAfterGrouping(t *testing.T) {
 	db := setupProjectTestDB(t)
-	settingsService, err := settings.NewSettingsService(t.Context(), db)
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{})
 	require.NoError(t, err)
 	service := NewContainerService(nil, nil, nil, settingsService, project.NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, nil, nil, nil), nil)
 	dockerContainers := []container.Summary{
@@ -227,7 +228,7 @@ func TestBuildContainerFilterAccessors_FiltersByLabel(t *testing.T) {
 		{ID: "other", Labels: map[string]string{"heal": "false"}},
 		{ID: "bare", Labels: map[string]string{}},
 	}
-	config := pagination.Config[containertypes.Summary]{FilterAccessors: service.buildContainerPaginationConfig().FilterAccessors}
+	paginationConfig := pagination.Config[containertypes.Summary]{FilterAccessors: service.buildContainerPaginationConfig().FilterAccessors}
 
 	tests := []struct {
 		name   string
@@ -242,7 +243,7 @@ func TestBuildContainerFilterAccessors_FiltersByLabel(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := config.SearchOrderAndPaginate(items, pagination.QueryParams{Filters: map[string]string{"label": tt.filter}})
+			result := paginationConfig.SearchOrderAndPaginate(items, pagination.QueryParams{Filters: map[string]string{"label": tt.filter}})
 			var got []string
 			for _, item := range result.Items {
 				got = append(got, item.ID)
@@ -837,7 +838,7 @@ func TestRecoverInterruptedRedeploys(t *testing.T) {
 }
 
 func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
-	settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t))
+	settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{})
 	require.NoError(t, err)
 	service := NewContainerService(nil, nil, nil, settingsService, nil, nil)
 	strategyLabel := "com.getarcaneapp.arcane.updater.strategy"
@@ -949,7 +950,7 @@ func TestContainerServiceGetContainerProcesses(t *testing.T) {
 				}
 			}))
 			t.Cleanup(server.Close)
-			settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t))
+			settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{})
 			require.NoError(t, err)
 			svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, settingsService, nil, nil)
 
@@ -977,7 +978,7 @@ func TestContainerServiceGetContainerProcessesPropagatesContext(t *testing.T) {
 		close(requestDone)
 	}))
 	t.Cleanup(server.Close)
-	settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t))
+	settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{})
 	require.NoError(t, err)
 	svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, settingsService, nil, nil)
 
@@ -1118,7 +1119,7 @@ func newResourceSortService(t *testing.T, fixture *resourceStatsServer) *Contain
 	t.Cleanup(server.Close)
 
 	db := setupProjectTestDB(t)
-	settingsService, err := settings.NewSettingsService(t.Context(), db)
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{})
 	require.NoError(t, err)
 	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server))
 	return NewContainerService(

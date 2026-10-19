@@ -35,6 +35,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
@@ -140,9 +141,9 @@ func createImageUpdateTestPullRegistry(t *testing.T, db *database.DB, localUrl, 
 
 func decodeImageUpdateRegistryAuth(t *testing.T, encoded string) dockerregistry.AuthConfig {
 	t.Helper()
-	config, err := authconfig.Decode(encoded)
+	authConfig, err := authconfig.Decode(encoded)
 	require.NoError(t, err)
-	return *config
+	return *authConfig
 }
 
 // TestParseImageReference tests the parseImageReference function with various image formats
@@ -2199,7 +2200,7 @@ func newImageUpdateTestSettingsService(t *testing.T, registryTimeout, dockerAPIT
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
 	dbWrap := &database.DB{DB: db}
-	service, err := settings.NewSettingsService(ctx, dbWrap)
+	service, err := settings.NewSettingsService(ctx, dbWrap, &config.Config{})
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, service.Stop(context.WithoutCancel(t.Context()))) })
 	}
@@ -3105,7 +3106,7 @@ func TestImageUpdateService_RunImageCheckExhaustedRateLimitKeepsPreviousResult(t
 	require.NoError(t, err)
 	require.Len(t, outcome.Targets, 1)
 	require.Contains(t, outcome.Targets[0].Message, "toomanyrequests")
-	require.Equal(t, int32(5*imageCheckAttempts), calls.Load(), "each workflow attempt spends the registry's own retry budget")
+	require.Equal(t, int32(imageCheckAttempts), calls.Load(), "a rate-limited registry lookup is not retried within a workflow attempt")
 
 	var saved ImageUpdateRecord
 	require.NoError(t, db.First(&saved, "id = ?", "sha256:app").Error)

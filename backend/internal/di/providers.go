@@ -431,6 +431,7 @@ func provideSystemService(
 	versionService *version.VersionService,
 	eventService *event.EventService,
 	projectService *project.ProjectService,
+	registryService *registry.ContainerRegistryService,
 	backupEngine *backup.Engine,
 	s3Destinations *s3domain.S3DestinationService,
 	recoveryKeys *backup.RecoveryKeyStore,
@@ -442,7 +443,7 @@ func provideSystemService(
 ) (*system.SystemService, error) {
 	service := system.NewSystemService(
 		db, dockerService, containerService, imageUpdateService, volumeService, networkService, settingsService, activityService,
-		versionService, eventService, projectService, backupEngine, s3Destinations, recoveryKeys, actors, cfg,
+		versionService, eventService, projectService, registryService, backupEngine, s3Destinations, recoveryKeys, actors, cfg,
 	)
 	if err := service.RegisterWorkflows(engine, environments, roles); err != nil {
 		return nil, err

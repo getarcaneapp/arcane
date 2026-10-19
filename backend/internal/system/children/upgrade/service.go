@@ -45,6 +45,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
@@ -100,6 +101,7 @@ type Service struct {
 	eventService      *event.EventService
 	settingsService   *settings.SettingsService
 	projectService    *project.ProjectService
+	registryService   *registry.ContainerRegistryService
 	// resolveRuntimeOptions determines how the upgrader container reaches the Docker daemon.
 	resolveRuntimeOptions func(
 		ctx context.Context,
@@ -150,6 +152,7 @@ func NewService(
 	eventService *event.EventService,
 	settingsService *settings.SettingsService,
 	projectService *project.ProjectService,
+	registryService *registry.ContainerRegistryService,
 	resolveRuntimeOptions func(
 		ctx context.Context,
 		dockerHost string,
@@ -166,6 +169,7 @@ func NewService(
 		eventService:          eventService,
 		settingsService:       settingsService,
 		projectService:        projectService,
+		registryService:       registryService,
 		resolveRuntimeOptions: resolveRuntimeOptions,
 	}
 }
@@ -231,8 +235,28 @@ func (s *Service) TriggerUpgradeAsync(ctx context.Context, user usertypes.Actor,
 	runCtx, cancel := context.WithTimeout(utils.ActivityRuntimeContext(ctx, nil), runTimeout)
 	go func() {
 		defer cancel()
-		if _, runPreparedUpgradeErr := s.runPreparedUpgrade(runCtx, prepared); runPreparedUpgradeErr != nil {
-			slog.ErrorContext(ctx, "Background self-upgrade failed", "error", runPreparedUpgradeErr, "targetImage", prepared.targetImage)
+		_, runPreparedUpgradeErr := s.runPreparedUpgrade(runCtx, prepared)
+		if runPreparedUpgradeErr == nil {
+			return
+		}
+		slog.ErrorContext(ctx, "Background self-upgrade failed", "error", runPreparedUpgradeErr, "targetImage", prepared.targetImage)
+		eventCtx, eventCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer eventCancel()
+		if _, createEventErr := s.eventService.CreateEvent(eventCtx, event.CreateEventRequest{
+			Type:        event.EventTypeSystemUpgrade,
+			Severity:    event.EventSeverityError,
+			Title:       "Self-upgrade failed",
+			Description: runPreparedUpgradeErr.Error(),
+			UserID:      new(user.ID),
+			Username:    new(user.Username),
+			Metadata: database.JSON{
+				"action":        "system_upgrade_cli",
+				"containerName": prepared.containerName,
+				"targetImage":   prepared.targetImage,
+				"pullImage":     prepared.pullImage,
+			},
+		}); createEventErr != nil {
+			slog.WarnContext(eventCtx, "Failed to log self-upgrade failure event", "error", createEventErr)
 		}
 	}()
 	return nil
@@ -252,6 +276,17 @@ func (s *Service) prepareUpgrade(ctx context.Context, user usertypes.Actor, targ
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+	runningUpgraders, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerListResult, error) {
+		return cli.ContainerList(ctx, client.ContainerListOptions{
+			Filters: make(client.Filters).Add("label", libarcane.LabelArcaneUpgrader+"=true").Add("status", "running"),
+		})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("check for running upgraders: %w", err)
+	}
+	if len(runningUpgraders.Items) > 0 {
+		return nil, common.Classify(common.ErrUpgradeInProgress, errors.New("an upgrader container is already running"))
 	}
 	current, err := func() (container.InspectResponse, error) {
 		containerID := strings.TrimSpace(target.ContainerID)
@@ -345,7 +380,11 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 	pullCtx, pullCancel := context.WithTimeout(ctx, timeouts.GetDuration(localSettings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull))
 	defer pullCancel()
 
-	pullReader, err := dockerClient.ImagePull(pullCtx, prepared.pullImage, client.ImagePullOptions{})
+	registryAuth, err := s.registryService.GetRegistryAuthForImage(pullCtx, prepared.pullImage)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to resolve registry credentials for upgrader image; pulling anonymously", "image", prepared.pullImage, "error", err)
+	}
+	pullReader, err := dockerClient.ImagePull(pullCtx, prepared.pullImage, client.ImagePullOptions{RegistryAuth: registryAuth})
 	if err != nil {
 		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
 			return "", fmt.Errorf("upgrader image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", prepared.pullImage)
@@ -435,8 +474,8 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 				User: "0:0",
 				Env:  containerEnv,
 				Labels: map[string]string{
-					"com.getarcaneapp.arcane.upgrader": "true",
-					"com.getarcaneapp.arcane":          "true",
+					libarcane.LabelArcaneUpgrader: "true",
+					"com.getarcaneapp.arcane":     "true",
 				},
 			},
 			HostConfig: &container.HostConfig{
@@ -594,7 +633,7 @@ func (s *Service) StartUpdateAll(ctx context.Context, user usertypes.Actor) (*En
 		Username:              user.Username,
 		ManagerVersionAtStart: info.CurrentVersion,
 		ManagerDigestAtStart:  info.CurrentDigest,
-		ManagerTargetVersion:  cmp.Or(info.NewestVersion, info.NewestDigest, info.CurrentVersion, info.CurrentDigest),
+		ManagerTargetVersion:  cmp.Or(info.NewestVersion, info.NewestDigest),
 		// The manager row stays pending until the final manager step.
 		Results: EnvironmentUpdateResults{{
 			EnvironmentID:   environment.LocalEnvironmentID,
@@ -868,7 +907,13 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 		}
 		stage(EnvironmentUpdateStageVerifying)
 		// An unconfirmed request proves nothing by the agent merely matching the target, so it needs a real change.
-		if upgradeLanded(info.CurrentVersion, info.CurrentDigest, kit.Ternary(unconfirmed, "", result.ToVersion), current.CurrentVersion, current.CurrentDigest) {
+		if upgradeLanded(
+			info.CurrentVersion,
+			info.CurrentDigest,
+			kit.Ternary(unconfirmed || strings.TrimPrefix(result.ToVersion, "v") == strings.TrimPrefix(info.CurrentVersion, "v") || result.ToVersion == info.CurrentDigest, "", result.ToVersion),
+			current.CurrentVersion,
+			current.CurrentDigest,
+		) {
 			settle(EnvironmentUpdateResultStatusUpdated, result.Error)
 			return nil, nil
 		}

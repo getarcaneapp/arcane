@@ -52,7 +52,7 @@ func setupDashboardServiceTestDB(t *testing.T) (*database.DB, *settings.Settings
 	require.NoError(t, db.AutoMigrate(&apikey.ApiKey{}, &environment.Environment{}, &imageupdate.ImageUpdateRecord{}, &project.Project{}, &settings.SettingVariable{}))
 
 	databaseDB := &database.DB{DB: db}
-	settingsSvc, err := settings.NewSettingsService(t.Context(), databaseDB)
+	settingsSvc, err := settings.NewSettingsService(t.Context(), databaseDB, &config.Config{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsSvc.Stop(context.WithoutCancel(t.Context()))) })
 

@@ -121,7 +121,7 @@ func patchFeatureSettings(t *testing.T) (*settings.SettingsService, *database.DB
 	require.NoError(t, err)
 	require.NoError(t, gdb.AutoMigrate(&settings.SettingVariable{}, &vulnerability.VulnerabilityScanRecord{}, &vulnerability.VulnerabilityReportRecord{}, &ImagePatchRecord{}))
 	db := &database.DB{DB: gdb}
-	svc, err := settings.NewSettingsService(t.Context(), db)
+	svc, err := settings.NewSettingsService(t.Context(), db, &config.Config{})
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}

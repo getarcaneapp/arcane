@@ -2,7 +2,10 @@ package attestations
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
+	"net/http"
 	"strings"
 
 	"github.com/containerd/platforms"
@@ -10,8 +13,11 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/image"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
+
+const statusClientClosedRequest = 499
 
 // Handler serves image attestation endpoints.
 type Handler struct {
@@ -49,7 +55,14 @@ func (h *Handler) GetImageAttestations(ctx context.Context, input *GetImageAttes
 		IncludeStatement: input.WithStatement,
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to get image attestations: %v", err))
+		if errors.Is(err, context.Canceled) {
+			return nil, huma.NewError(statusClientClosedRequest, "request canceled")
+		}
+		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() != http.StatusInternalServerError {
+			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+		}
+		slog.ErrorContext(ctx, "failed to get image attestations", "image", imageName, "error", err)
+		return nil, huma.Error500InternalServerError("failed to get image attestations")
 	}
 
 	return &handlerutil.Out[image.AttestationList]{

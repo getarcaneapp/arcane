@@ -2,11 +2,14 @@ package appimages
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.getarcane.app/kit/pkg"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 )
 
 // AppImagesHandler provides Huma-based application image endpoints.
@@ -80,6 +83,9 @@ func (h *AppImagesHandler) GetPWAIcon(ctx context.Context, input *GetPWAIconInpu
 func (h *AppImagesHandler) getImageWithColor(name, colorOverride string, loop bool) (*GetAppImageOutput, error) {
 	imageData, mimeType, err := h.appImagesService.GetImageWithColor(name, colorOverride, loop)
 	if err != nil {
+		if errors.Is(err, common.ErrNotFound) {
+			return nil, huma.Error404NotFound(err.Error())
+		}
 		return nil, huma.Error500InternalServerError("Failed to retrieve image: " + err.Error())
 	}
 

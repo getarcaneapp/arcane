@@ -31,7 +31,7 @@ func ExtractRegistryHost(imageRef string) string {
 		return "docker.io"
 	}
 
-	return kit.Ternary(!strings.Contains(hostCandidate, ".") && !strings.Contains(hostCandidate, ":"), "docker.io", hostCandidate)
+	return kit.Ternary(!strings.Contains(hostCandidate, ".") && !strings.Contains(hostCandidate, ":") && hostCandidate != "localhost", "docker.io", hostCandidate)
 }
 
 // SplitRegistryURL separates a registry URL into its comparison host and an

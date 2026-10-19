@@ -28,23 +28,39 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.getarcane.app/kit/pkg"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
 const (
 	dockerAttestationManifestArtifactType = "application/vnd.docker.attestation.manifest.v1+json"
 	inTotoLayerMediaType                  = "application/vnd.in-toto+json"
 	inTotoPredicateTypeAnnotation         = "in-toto.io/predicate-type"
+	maxAttestationLayerBytes              = 16 << 20
 )
 
 // zstdDecoder is shared because DecodeAll is safe for concurrent use and a decoder is costly to build.
-var zstdDecoder = sync.OnceValues(func() (*zstd.Decoder, error) { return zstd.NewReader(nil) })
+var zstdDecoder = sync.OnceValues(func() (*zstd.Decoder, error) {
+	return zstd.NewReader(nil, zstd.WithDecoderMaxMemory(maxAttestationLayerBytes))
+})
+
+var safeRegistryTransport = sync.OnceValues(func() (http.RoundTripper, error) {
+	safeClient, err := httpx.NewSafeOutboundHTTPClient(nil, httpx.DefaultLookupIP)
+	if err != nil {
+		return nil, err
+	}
+	return safeClient.Transport, nil
+})
+
+var errAttestationLayerTooLarge = common.Classify(common.ErrBadRequest, fmt.Errorf("attestation layer exceeds the %d MiB limit", maxAttestationLayerBytes>>20))
 
 // Service reads in-toto attestations attached to local images and registry references.
 type Service struct {
 	dockerService *docker.DockerClientService
-	registryAuth  func(ctx context.Context, registryHost string) (string, error)
+	registryAuth  func(ctx context.Context, imageRef string) (string, error)
 }
 
 type Query struct {
@@ -57,6 +73,7 @@ type reference struct {
 	ImageRef      string
 	SubjectDigest string
 	Empty         bool
+	External      bool
 }
 
 type subject struct {
@@ -73,13 +90,16 @@ type attestationStatementEnvelope struct {
 
 func NewService(
 	dockerService *docker.DockerClientService,
-	registryAuth func(ctx context.Context, registryHost string) (string, error),
+	registryAuth func(ctx context.Context, imageRef string) (string, error),
 ) *Service {
 	return &Service{dockerService: dockerService, registryAuth: registryAuth}
 }
 
 // GetImageAttestations returns in-toto attestations attached to a local image or registry reference.
 func (s *Service) GetImageAttestations(ctx context.Context, imageName string, query Query) (*image.AttestationList, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeouts.DefaultRegistry)
+	defer cancel()
+
 	resolution, err := s.resolveImageAttestationReference(ctx, imageName)
 	if err != nil {
 		return nil, err
@@ -100,7 +120,7 @@ func (s *Service) GetImageAttestations(ctx context.Context, imageName string, qu
 		}
 		parsed, parseErr := platforms.Parse(value)
 		if parseErr != nil {
-			return ocispec.Platform{}, false, fmt.Errorf("invalid platform %q: %w", value, parseErr)
+			return ocispec.Platform{}, false, common.Classify(common.ErrBadRequest, fmt.Errorf("invalid platform %q: %w", value, parseErr))
 		}
 		return parsed, true, nil
 	}()
@@ -110,13 +130,16 @@ func (s *Service) GetImageAttestations(ctx context.Context, imageName string, qu
 
 	ref, err := name.ParseReference(resolution.ImageRef, name.WeakValidation)
 	if err != nil {
-		return nil, fmt.Errorf("parse image reference %q: %w", resolution.ImageRef, err)
+		return nil, common.Classify(common.ErrBadRequest, fmt.Errorf("parse image reference %q: %w", resolution.ImageRef, err))
 	}
 
-	remoteOptions := s.remoteOptionsForImageRef(ctx, resolution.ImageRef)
+	remoteOptions, err := s.remoteOptionsForImageRef(ctx, resolution)
+	if err != nil {
+		return nil, err
+	}
 	remoteDescriptor, err := remote.Get(ref, remoteOptions...)
 	if err != nil {
-		return nil, fmt.Errorf("get image manifest %q: %w", resolution.ImageRef, err)
+		return nil, classifyRegistryError(ctx, fmt.Errorf("get image manifest %q: %w", resolution.ImageRef, err))
 	}
 
 	index, targets, err := subjects(remoteDescriptor, platform, hasPlatform)
@@ -196,18 +219,15 @@ func (s *Service) GetImageAttestations(ctx context.Context, imageName string, qu
 func (s *Service) resolveImageAttestationReference(ctx context.Context, imageName string) (reference, error) {
 	imageName = strings.TrimSpace(imageName)
 	if imageName == "" {
-		return reference{}, errors.New("image name is required")
+		return reference{}, common.Classify(common.ErrBadRequest, errors.New("image name is required"))
 	}
 
 	if inspect, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, imageName)
 	}); inspectErr == nil {
 		imageRef := func() string {
-			for _, candidate := range slices.Concat(
-				slices.DeleteFunc(slices.Clone(inspect.RepoDigests), func(repoDigest string) bool { return !strings.Contains(repoDigest, "@sha256:") }),
-				inspect.RepoTags,
-			) {
-				if trimmed := strings.TrimSpace(candidate); trimmed != "" && !strings.Contains(trimmed, "<none>") {
+			for _, candidate := range inspect.RepoDigests {
+				if trimmed := strings.TrimSpace(candidate); strings.Contains(trimmed, "@sha256:") && !strings.Contains(trimmed, "<none>") {
 					return trimmed
 				}
 			}
@@ -226,40 +246,43 @@ func (s *Service) resolveImageAttestationReference(ctx context.Context, imageNam
 	if strings.HasPrefix(imageName, "sha256:") || (len(imageName) == 64 && !strings.ContainsFunc(imageName, func(r rune) bool {
 		return (r < '0' || r > '9') && (r < 'a' || r > 'f') && (r < 'A' || r > 'F')
 	})) {
-		return reference{}, fmt.Errorf("image %q does not have a registry reference", imageName)
+		return reference{}, common.Classify(common.ErrNotFound, fmt.Errorf("image %q does not have a registry reference", imageName))
 	}
 	if _, err := name.ParseReference(imageName, name.WeakValidation); err != nil {
-		return reference{}, fmt.Errorf("image %q does not have a registry reference: %w", imageName, err)
+		return reference{}, common.Classify(common.ErrBadRequest, fmt.Errorf("image %q does not have a registry reference: %w", imageName, err))
 	}
 	_, subjectDigest, _ := strings.Cut(imageName, "@")
 	return reference{
 		ImageRef:      imageName,
 		SubjectDigest: subjectDigest,
+		External:      true,
 	}, nil
 }
 
-func (s *Service) remoteOptionsForImageRef(ctx context.Context, imageRef string) []remote.Option {
+func (s *Service) remoteOptionsForImageRef(ctx context.Context, resolution reference) ([]remote.Option, error) {
+	imageRef := resolution.ImageRef
 	options := []remote.Option{remote.WithContext(ctx)}
-
-	registryHost, err := registryauth.GetRegistryAddress(imageRef)
-	if err != nil {
-		slog.DebugContext(ctx, "skipping registry auth for unparsable image ref", "image", imageRef, "error", err)
-		return options
+	if resolution.External {
+		safeTransport, err := safeRegistryTransport()
+		if err != nil {
+			return nil, fmt.Errorf("configure safe registry transport: %w", err)
+		}
+		options = append(options, remote.WithTransport(safeTransport))
 	}
 
-	encodedAuth, err := s.registryAuth(ctx, registryHost)
+	encodedAuth, err := s.registryAuth(ctx, imageRef)
 	if err != nil {
-		slog.DebugContext(ctx, "registry auth lookup failed for attestation request", "image", imageRef, "registry", registryHost, "error", err)
-		return options
+		slog.DebugContext(ctx, "registry auth lookup failed for attestation request", "image", imageRef, "error", err)
+		return options, nil
 	}
 	if strings.TrimSpace(encodedAuth) == "" {
-		return options
+		return options, nil
 	}
 
 	dockerAuth, err := registryauth.DecodeAuthHeader(encodedAuth)
 	if err != nil {
-		slog.DebugContext(ctx, "registry auth decode failed for attestation request", "image", imageRef, "registry", registryHost, "error", err)
-		return options
+		slog.DebugContext(ctx, "registry auth decode failed for attestation request", "image", imageRef, "error", err)
+		return options, nil
 	}
 
 	return append(options, remote.WithAuth(authn.FromConfig(authn.AuthConfig{
@@ -268,7 +291,30 @@ func (s *Service) remoteOptionsForImageRef(ctx context.Context, imageRef string)
 		Auth:          dockerAuth.Auth,
 		IdentityToken: dockerAuth.IdentityToken,
 		RegistryToken: dockerAuth.RegistryToken,
-	})))
+	}))), nil
+}
+
+func classifyRegistryError(ctx context.Context, err error) error {
+	if errors.Is(err, errAttestationLayerTooLarge) {
+		return errAttestationLayerTooLarge
+	}
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	slog.WarnContext(ctx, "attestation registry request failed", "error", err)
+	transportErr, isTransport := errors.AsType[*transport.Error](err)
+	switch {
+	case errors.Is(err, common.ErrUnsafeRemoteURL):
+		return common.Classify(common.ErrBadRequest, errors.New("registry address is not allowed"))
+	case errors.Is(err, context.DeadlineExceeded):
+		return common.Classify(common.ErrTimeout, errors.New("registry request timed out"))
+	case isTransport && (transportErr.StatusCode == http.StatusUnauthorized || transportErr.StatusCode == http.StatusForbidden):
+		return common.Classify(common.ErrBadRequest, errors.New("registry denied access with the configured credentials"))
+	case isTransport && transportErr.StatusCode == http.StatusNotFound:
+		return common.Classify(common.ErrNotFound, errors.New("image not found in the registry"))
+	default:
+		return common.Classify(common.ErrUnavailable, errors.New("registry unavailable"))
+	}
 }
 
 func subjects(descriptor *remote.Descriptor, platform ocispec.Platform, hasPlatform bool) (v1.ImageIndex, []subject, error) {
@@ -340,7 +386,7 @@ func (s *Service) readReferrerAttestations(
 			(transportErr.StatusCode == http.StatusNotFound || transportErr.StatusCode == http.StatusMethodNotAllowed) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("query image referrers for %s: %w", target.Digest, err)
+		return nil, classifyRegistryError(ctx, fmt.Errorf("query image referrers for %s: %w", target.Digest, err))
 	}
 
 	manifest, err := referrers.IndexManifest()
@@ -352,7 +398,11 @@ func (s *Service) readReferrerAttestations(
 	for _, referrer := range manifest.Manifests {
 		referrerDescriptor, getErr := remote.Get(repository.Digest(referrer.Digest.String()), remoteOptions...)
 		if getErr != nil {
-			return nil, fmt.Errorf("get image referrer %s: %w", referrer.Digest.String(), getErr)
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, classifyRegistryError(ctx, ctxErr)
+			}
+			slog.WarnContext(ctx, "skipping unreadable image referrer", "subject", target.Digest, "referrer", referrer.Digest.String(), "error", getErr)
+			continue
 		}
 
 		referrerImage, getErr := referrerDescriptor.Image()
@@ -371,7 +421,14 @@ func (s *Service) readReferrerAttestations(
 			ArtifactType: cmp.Or(referrer.ArtifactType, referrerDescriptor.ArtifactType),
 		}, target.Platform, query)
 		if getErr != nil {
-			return nil, getErr
+			if errors.Is(getErr, errAttestationLayerTooLarge) {
+				return nil, errAttestationLayerTooLarge
+			}
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, classifyRegistryError(ctx, ctxErr)
+			}
+			slog.WarnContext(ctx, "skipping unreadable image referrer", "subject", target.Digest, "referrer", referrer.Digest.String(), "error", getErr)
+			continue
 		}
 		attestations = append(attestations, items...)
 	}
@@ -400,7 +457,7 @@ func readAttestationImage(ctx context.Context, attestationImage v1.Image, artifa
 			return nil, fmt.Errorf("read attestation layer %s: %w", layerDescriptor.Digest.String(), layerErr)
 		}
 
-		rawStatement, layerErr := readAttestationLayerBytes(layer, layerDescriptor.Digest.String())
+		rawStatement, layerErr := readAttestationLayerBytes(ctx, layer, layerDescriptor.Digest.String(), layerDescriptor.Size)
 		if layerErr != nil {
 			return nil, layerErr
 		}
@@ -439,18 +496,25 @@ func readAttestationImage(ctx context.Context, attestationImage v1.Image, artifa
 // container is detected from the magic header. gzip and zstd are the algorithms
 // supported by the OCI image spec; anything else (including already
 // uncompressed JSON) is returned unchanged.
-func readAttestationLayerBytes(layer v1.Layer, digest string) ([]byte, error) {
+func readAttestationLayerBytes(ctx context.Context, layer v1.Layer, digest string, size int64) ([]byte, error) {
+	if size > maxAttestationLayerBytes {
+		return nil, fmt.Errorf("read attestation layer %s: %w", digest, errAttestationLayerTooLarge)
+	}
 	reader, err := layer.Compressed()
 	if err != nil {
-		return nil, fmt.Errorf("open attestation layer %s: %w", digest, err)
+		return nil, classifyRegistryError(ctx, fmt.Errorf("open attestation layer %s: %w", digest, err))
 	}
-	rawStatement, readErr := io.ReadAll(reader)
+	rawStatement, readErr := io.ReadAll(io.LimitReader(reader, maxAttestationLayerBytes+1))
 	closeErr := reader.Close()
-	if readErr != nil {
-		return nil, fmt.Errorf("read attestation layer %s: %w", digest, readErr)
-	}
-	if closeErr != nil {
-		return nil, fmt.Errorf("close attestation layer %s: %w", digest, closeErr)
+	switch {
+	case readErr != nil:
+		return nil, classifyRegistryError(ctx, fmt.Errorf("read attestation layer %s: %w", digest, readErr))
+	case closeErr != nil:
+		return nil, classifyRegistryError(ctx, fmt.Errorf("close attestation layer %s: %w", digest, closeErr))
+	case len(rawStatement) > maxAttestationLayerBytes:
+		return nil, fmt.Errorf("read attestation layer %s: %w", digest, errAttestationLayerTooLarge)
+	case size > 0 && int64(len(rawStatement)) != size:
+		return nil, common.Classify(common.ErrBadRequest, fmt.Errorf("attestation layer %s is %d bytes, descriptor declares %d", digest, len(rawStatement), size))
 	}
 
 	statement, err := func() ([]byte, error) {
@@ -461,19 +525,27 @@ func readAttestationLayerBytes(layer v1.Layer, digest string) ([]byte, error) {
 				return nil, gzipErr
 			}
 			defer func() { _ = gzipReader.Close() }()
-			return io.ReadAll(gzipReader)
+			decompressed, gzipErr := io.ReadAll(io.LimitReader(gzipReader, maxAttestationLayerBytes+1))
+			if gzipErr == nil && len(decompressed) > maxAttestationLayerBytes {
+				return nil, errAttestationLayerTooLarge
+			}
+			return decompressed, gzipErr
 		case len(rawStatement) >= 4 && rawStatement[0] == 0x28 && rawStatement[1] == 0xb5 && rawStatement[2] == 0x2f && rawStatement[3] == 0xfd:
 			decoder, decoderErr := zstdDecoder()
 			if decoderErr != nil {
 				return nil, decoderErr
 			}
-			return decoder.DecodeAll(rawStatement, nil)
+			decompressed, decodeErr := decoder.DecodeAll(rawStatement, nil)
+			if errors.Is(decodeErr, zstd.ErrDecoderSizeExceeded) {
+				return nil, errAttestationLayerTooLarge
+			}
+			return decompressed, decodeErr
 		default:
 			return rawStatement, nil
 		}
 	}()
 	if err != nil {
-		return nil, fmt.Errorf("decompress attestation layer %s: %w", digest, err)
+		return nil, common.Classify(common.ErrBadRequest, fmt.Errorf("decompress attestation layer %s: %w", digest, err))
 	}
 	return statement, nil
 }

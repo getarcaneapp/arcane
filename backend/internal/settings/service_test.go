@@ -34,7 +34,8 @@ func setupSettingsTestDB(t *testing.T) *database.DB {
 
 func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*SettingsService, error) {
 	t.Helper()
-	svc, err := NewSettingsService(ctx, db)
+	crypto.InitEncryption(&crypto.Config{Environment: "development"})
+	svc, err := NewSettingsService(ctx, db, config.Load())
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}
@@ -1354,4 +1355,59 @@ func TestSettingsService_SwarmFeatureDefaultsOffAndPersists(t *testing.T) {
 	invalid := "yes"
 	_, err = svc.UpdateSettings(t.Context(), settings.Update{FeatureSwarmEnabled: &invalid})
 	require.ErrorIs(t, err, common.ErrValidation)
+}
+
+func TestSettingsServiceEncryptsSensitiveSettingsAtRest(t *testing.T) {
+	ctx := t.Context()
+	db := setupSettingsTestDB(t)
+	svc, err := newSettingsServiceForTest(t, ctx, db)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.UpdateSetting(ctx, "oidcClientSecret", "client-secret"))
+	var stored SettingVariable
+	require.NoError(t, db.WithContext(ctx).Where("key = ?", "oidcClientSecret").First(&stored).Error)
+	require.NotEqual(t, "client-secret", stored.Value)
+	require.Equal(t, "client-secret", svc.GetSettingsConfig().OidcClientSecret.Value)
+
+	hexToken := strings.Repeat("0123456789abcdef", 4)
+	require.NoError(t, db.WithContext(ctx).Save(&SettingVariable{Key: "trivyServerToken", Value: "legacy-token"}).Error)
+	require.NoError(t, db.WithContext(ctx).Save(&SettingVariable{Key: "depotToken", Value: hexToken}).Error)
+	require.NoError(t, svc.EncryptStoredSensitiveSettings(ctx))
+	var storedToken, storedHexToken SettingVariable
+	require.NoError(t, db.WithContext(ctx).Where("key = ?", "trivyServerToken").First(&storedToken).Error)
+	require.NoError(t, db.WithContext(ctx).Where("key = ?", "depotToken").First(&storedHexToken).Error)
+	require.NotEqual(t, "legacy-token", storedToken.Value)
+	require.NotEqual(t, hexToken, storedHexToken.Value)
+	require.Equal(t, "legacy-token", svc.GetSettingsConfig().TrivyServerToken.Value)
+	require.Equal(t, hexToken, svc.GetSettingsConfig().DepotToken.Value)
+
+	var rerunClientSecret SettingVariable
+	require.NoError(t, db.WithContext(ctx).Where("key = ?", "oidcClientSecret").First(&rerunClientSecret).Error)
+	require.Equal(t, stored.Value, rerunClientSecret.Value)
+}
+
+func TestSettingsServiceEncryptsStoredSensitiveSettingsOnlyOnce(t *testing.T) {
+	ctx := t.Context()
+	db := setupSettingsTestDB(t)
+	svc, err := newSettingsServiceForTest(t, ctx, db)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.EncryptStoredSensitiveSettings(ctx))
+	var marker SettingVariable
+	require.NoError(t, db.WithContext(ctx).Where("key = ?", "sensitiveSettingsEncrypted").First(&marker).Error)
+	require.Equal(t, "true", marker.Value)
+
+	otherKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+	otherEncryptor, err := crypto.New(otherKey)
+	require.NoError(t, err)
+	foreignCiphertext, err := otherEncryptor.Encrypt("secret-from-another-key")
+	require.NoError(t, err)
+
+	require.NoError(t, db.WithContext(ctx).Save(&SettingVariable{Key: "depotToken", Value: foreignCiphertext}).Error)
+	require.NoError(t, svc.EncryptStoredSensitiveSettings(ctx))
+
+	var stored SettingVariable
+	require.NoError(t, db.WithContext(ctx).Where("key = ?", "depotToken").First(&stored).Error)
+	require.Equal(t, foreignCiphertext, stored.Value)
 }

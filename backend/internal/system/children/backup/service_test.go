@@ -24,7 +24,7 @@ func TestHistoryDestinationDecoration(t *testing.T) {
 	destination := s3.S3Destination{Name: "Offsite", Bucket: "backups"}
 	require.NoError(t, db.Create(&destination).Error)
 	store := &database.DB{DB: db}
-	settingsService, err := settings.NewSettingsService(t.Context(), store)
+	settingsService, err := settings.NewSettingsService(t.Context(), store, &config.Config{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	service := NewService(Dependencies{
@@ -67,7 +67,7 @@ func TestRecoveryEnvironmentIncludesRuntimeSecrets(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
-	settingsService, err := settings.NewSettingsService(t.Context(), &database.DB{DB: db})
+	settingsService, err := settings.NewSettingsService(t.Context(), &database.DB{DB: db}, &config.Config{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	environment := NewService(Dependencies{

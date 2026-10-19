@@ -249,7 +249,7 @@ func TestUpdaterService_ApplyPendingNoRecords(t *testing.T) {
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&notification.NotificationSettings{}))
-	settingsService, err := settings.NewSettingsService(ctx, db)
+	settingsService, err := settings.NewSettingsService(ctx, db, &config.Config{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
 	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
@@ -474,7 +474,7 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 	t.Run("delegates to Arcane image puller", func(t *testing.T) {
 		db := setupProjectTestDB(t)
 		require.NoError(t, db.AutoMigrate(&registry.ContainerRegistry{}))
-		settingsService, err := settings.NewSettingsService(ctx, db)
+		settingsService, err := settings.NewSettingsService(ctx, db, &config.Config{})
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
 		server := newImagePullServerWithObserver(t, nil, nil)
@@ -517,7 +517,7 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 				gotAuth = authHeader
 			}
 		})
-		settingsService, err := settings.NewSettingsService(ctx, db)
+		settingsService, err := settings.NewSettingsService(ctx, db, &config.Config{})
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
 		dockerSvc := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server))
@@ -1783,7 +1783,7 @@ func TestSingleUpdatePersistsSuccessfulActivity(t *testing.T) {
 	defer server.Close()
 	activityService := activity.NewActivityService(db, nil)
 	dockerSvc := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
-	settingsService, err := settings.NewSettingsService(t.Context(), db)
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	harness := flowtest.New(t, activityService)
@@ -1859,7 +1859,7 @@ func TestUpdaterService_AutoUpdateDeferral(t *testing.T) {
 			HasUpdate:  true,
 		},
 	}).Error)
-	settingsService, err := settings.NewSettingsService(ctx, db)
+	settingsService, err := settings.NewSettingsService(ctx, db, &config.Config{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
 	require.NoError(t, settingsService.SetIntSetting(ctx, "autoUpdateDelay", 24))

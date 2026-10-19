@@ -35,6 +35,7 @@ type settingFieldMeta struct {
 	isPublic            bool
 	isVisibleToNonAdmin bool
 	isSensitive         bool
+	isEncrypted         bool
 }
 
 var settingsFieldCache struct {
@@ -182,10 +183,11 @@ type Settings struct {
 	ApnsChannelID  SettingVariable `key:"apnsChannelId,internal"`
 	ApnsSigningKey SettingVariable `key:"apnsSigningKey,internal,sensitive"`
 
-	AgentToken               SettingVariable `key:"agentToken,internal,sensitive"`
-	BrowserSessionSigningKey SettingVariable `key:"browserSessionSigningKey,internal,sensitive"`
-	JwtSigningKeySeed        SettingVariable `key:"jwtSigningKeySeed,internal,sensitive"`
-	InstanceID               SettingVariable `key:"instanceId,internal"`
+	AgentToken                 SettingVariable `key:"agentToken,internal,sensitive"`
+	BrowserSessionSigningKey   SettingVariable `key:"browserSessionSigningKey,internal,sensitive"`
+	JwtSigningKeySeed          SettingVariable `key:"jwtSigningKeySeed,internal,sensitive"`
+	InstanceID                 SettingVariable `key:"instanceId,internal"`
+	SensitiveSettingsEncrypted SettingVariable `key:"sensitiveSettingsEncrypted,internal"`
 
 	// Users category (admin management page - no actual settings)
 	UsersCategoryPlaceholder SettingVariable `key:"usersCategory,internal" meta:"label=Users;type=internal;keywords=users,accounts,management,admin,access,permissions,roles;category=users;description=Manage user accounts and permissions" catmeta:"id=users;title=Users;icon=user;url=/settings/users;description=Manage user accounts and access control"`
@@ -240,6 +242,7 @@ func buildSettingsFieldCacheInternal() {
 			isPublic:            slices.Contains(attrList, "public"),
 			isVisibleToNonAdmin: slices.Contains(attrList, "public") || slices.Contains(attrList, "authrequired"),
 			isSensitive:         slices.Contains(attrList, "sensitive"),
+			isEncrypted:         slices.Contains(attrList, "sensitive") && !slices.Contains(attrList, "internal"),
 		}
 		ordered = append(ordered, meta)
 		byKey[key] = meta

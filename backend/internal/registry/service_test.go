@@ -214,12 +214,12 @@ func TestContainerRegistryService_GetAllRegistryAuthConfigs_SkipsInvalidEntries(
 	assert.Equal(t, "registry.example.com", exampleCfg.ServerAddress)
 }
 
-func TestContainerRegistryService_GetRegistryAuthForHost_UsesDatabaseCredentials(t *testing.T) {
+func TestContainerRegistryService_GetRegistryAuthForImage_UsesDockerHubCredentials(t *testing.T) {
 	db := setupContainerRegistryTestDB(t)
 	createTestPullRegistry(t, db, "https://index.docker.io/v1/", "docker-user", "docker-token")
 
 	svc := NewContainerRegistryService(db, nil, nil, nil)
-	auth, err := svc.GetRegistryAuthForHost(t.Context(), "registry-1.docker.io")
+	auth, err := svc.GetRegistryAuthForImage(t.Context(), "nginx:latest")
 	require.NoError(t, err)
 	require.NotEmpty(t, auth)
 
@@ -251,10 +251,6 @@ func TestContainerRegistryService_NilService_RegistryAuthMethodsReturnEmpty(t *t
 	authConfigs, err := svc.GetAllRegistryAuthConfigs(ctx)
 	require.NoError(t, err)
 	require.Nil(t, authConfigs)
-
-	authForHost, err := svc.GetRegistryAuthForHost(ctx, "registry-1.docker.io")
-	require.NoError(t, err)
-	require.Empty(t, authForHost)
 
 	authForImage, err := svc.GetRegistryAuthForImage(ctx, "ghcr.io/getarcaneapp/arcane:latest")
 	require.NoError(t, err)

@@ -89,19 +89,26 @@ func NewVersionService(
 		streamHub:                agg.NewHub[version.StreamEvent](),
 		currentImage:             hot.NewHotCache[struct{}, currentImageInfo](hot.LRU, 1).Build(),
 	}
-	loader := func(_ []struct{}) (map[struct{}]latestRelease, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), defaultRequestTimeout) //nolint:forbidigo // Cache revalidation runs independently of request cancellation.
-		defer cancel()
-		release, err := service.fetchLatestRelease(ctx)
-		if err != nil {
-			return nil, err
+	loader := func(cacheFailure bool) func(_ []struct{}) (map[struct{}]latestRelease, error) {
+		return func(_ []struct{}) (map[struct{}]latestRelease, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), defaultRequestTimeout) //nolint:forbidigo // Cache revalidation runs independently of request cancellation.
+			defer cancel()
+			release, err := service.fetchLatestRelease(ctx)
+			switch {
+			case err != nil && cacheFailure:
+				slog.WarnContext(ctx, "Failed to fetch latest Arcane release; skipping update checks until the cache expires", "error", err)
+				return map[struct{}]latestRelease{{}: {}}, nil
+			case err != nil:
+				return nil, err
+			default:
+				return map[struct{}]latestRelease{{}: release}, nil
+			}
 		}
-		return map[struct{}]latestRelease{{}: release}, nil
 	}
 	service.cache = hot.NewHotCache[struct{}, latestRelease](hot.LRU, 1).
 		WithTTL(versionTTL).
-		WithLoaders(loader).
-		WithRevalidation(24*time.Hour, loader).
+		WithLoaders(loader(true)).
+		WithRevalidation(24*time.Hour, loader(false)).
 		WithRevalidationErrorPolicy(hot.KeepOnError).
 		Build()
 	return service

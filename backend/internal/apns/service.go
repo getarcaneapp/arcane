@@ -55,11 +55,14 @@ type ApnsService struct {
 	events     *event.EventService
 	httpClient *http.Client
 
+	lifecycleCtx context.Context
+	channelMu    sync.Mutex
 	drainMu      sync.Mutex
 	drainPending atomic.Bool
 }
 
 func NewApnsService(
+	lifecycleCtx context.Context,
 	db *database.DB,
 	cfg *config.Config,
 	settingsService *settings.SettingsService,
@@ -67,7 +70,15 @@ func NewApnsService(
 	eventService *event.EventService,
 	httpClient *http.Client,
 ) *ApnsService {
-	return &ApnsService{db: db, config: cfg, settings: settingsService, roles: roleService, events: eventService, httpClient: httpClient}
+	return &ApnsService{
+		db:           db,
+		config:       cfg,
+		settings:     settingsService,
+		roles:        roleService,
+		events:       eventService,
+		httpClient:   httpClient,
+		lifecycleCtx: lifecycleCtx,
+	}
 }
 
 func (s *ApnsService) Enabled(ctx context.Context) bool {
@@ -164,6 +175,8 @@ func (s *ApnsService) EnsureChannel(ctx context.Context) (string, error) {
 	if !s.Enabled(ctx) {
 		return "", common.ErrApnsDisabled
 	}
+	s.channelMu.Lock()
+	defer s.channelMu.Unlock()
 	if channelID := s.settings.GetStringSetting(ctx, "apnsChannelId", ""); channelID != "" {
 		return channelID, nil
 	}
@@ -216,6 +229,8 @@ func (s *ApnsService) ApplyEnabledUpdates(ctx context.Context, updates []libarca
 }
 
 func (s *ApnsService) RevokeChannel(ctx context.Context) error {
+	s.channelMu.Lock()
+	defer s.channelMu.Unlock()
 	channelID := s.settings.GetStringSetting(ctx, "apnsChannelId", "")
 	if channelID != "" {
 		signer, err := s.signerInternal(ctx)
@@ -508,9 +523,8 @@ func (s *ApnsService) Enqueue(ctx context.Context, environmentID, environmentNam
 		return false, fmt.Errorf("failed to enqueue push notification: %w", enqueueNotificationErr)
 	}
 	go func() {
-		drainCtx := context.WithoutCancel(ctx)
-		if drainOutboxErr := s.DrainOutbox(drainCtx); drainOutboxErr != nil {
-			slog.WarnContext(drainCtx, "Push outbox drain failed", "error", drainOutboxErr)
+		if drainOutboxErr := s.DrainOutbox(s.lifecycleCtx); drainOutboxErr != nil && s.lifecycleCtx.Err() == nil {
+			slog.WarnContext(s.lifecycleCtx, "Push outbox drain failed", "error", drainOutboxErr)
 		}
 	}()
 	return true, nil
@@ -550,14 +564,17 @@ func (s *ApnsService) recipientsInternal(ctx context.Context, environmentID stri
 
 func (s *ApnsService) DrainOutbox(ctx context.Context) error {
 	s.drainPending.Store(true)
-	if !s.drainMu.TryLock() {
-		return nil
-	}
-	defer s.drainMu.Unlock()
-	for s.drainPending.Swap(false) {
-		if err := s.drainOutboxInternal(ctx); err != nil {
-			return err
+	for s.drainPending.Load() {
+		if !s.drainMu.TryLock() {
+			return nil
 		}
+		for s.drainPending.Swap(false) {
+			if err := s.drainOutboxInternal(ctx); err != nil {
+				s.drainMu.Unlock()
+				return err
+			}
+		}
+		s.drainMu.Unlock()
 	}
 	return nil
 }

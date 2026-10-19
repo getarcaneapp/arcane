@@ -43,6 +43,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
@@ -51,6 +52,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system/children/upgrade"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/vuln"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
@@ -86,6 +88,7 @@ func NewSystemService(
 	versionService *version.VersionService,
 	eventService *event.EventService,
 	projectService *project.ProjectService,
+	registryService *registry.ContainerRegistryService,
 	backupEngine *backup.Engine,
 	s3Destinations *s3.S3DestinationService,
 	recoveryKeys *backup.RecoveryKeyStore,
@@ -102,7 +105,7 @@ func NewSystemService(
 			WithTTL(dockerHostMemoryCacheTTL).
 			Build(),
 		prune:   prune.NewService(cfg.GetLocation(), dockerService, activityService, imageUpdateService, volumeService, networkService),
-		upgrade: upgrade.NewService(db, dockerService, versionService, eventService, settingsService, projectService, resolveUpgraderRuntimeOptions),
+		upgrade: upgrade.NewService(db, dockerService, versionService, eventService, settingsService, projectService, registryService, resolveUpgraderRuntimeOptions),
 	}
 	s.backup = systembackup.NewService(systembackup.Dependencies{
 		Store:                 s.backupStore(s3Destinations),
@@ -188,7 +191,10 @@ func (s *SystemService) StartAllContainers(ctx context.Context, environmentID st
 		ResourceName:   "All containers",
 		StartMessage:   "Starting all containers",
 		SuccessMessage: "Started all containers",
-		ShouldStart:    func(c mobycontainer.Summary) bool { return c.State != "running" },
+		ShouldStart: func(c mobycontainer.Summary) bool {
+			return (c.State == mobycontainer.StateExited || c.State == mobycontainer.StateCreated) &&
+				!strings.EqualFold(c.Labels[libarcane.InternalResourceLabel], "true")
+		},
 		Action: func(ctx context.Context, id string) error {
 			return s.containerService.StartContainer(ctx, id, usertypes.SystemUser)
 		},
@@ -202,7 +208,9 @@ func (s *SystemService) StartAllStoppedContainers(ctx context.Context, environme
 		ResourceName:   "Stopped containers",
 		StartMessage:   "Starting stopped containers",
 		SuccessMessage: "Started stopped containers",
-		ShouldStart:    func(c mobycontainer.Summary) bool { return c.State == "exited" },
+		ShouldStart: func(c mobycontainer.Summary) bool {
+			return c.State == mobycontainer.StateExited && !strings.EqualFold(c.Labels[libarcane.InternalResourceLabel], "true")
+		},
 		Action: func(ctx context.Context, id string) error {
 			return s.containerService.StartContainer(ctx, id, usertypes.SystemUser)
 		},
@@ -216,8 +224,9 @@ func (s *SystemService) StopAllContainers(ctx context.Context, environmentID str
 		ResourceName:   "All containers",
 		StartMessage:   "Stopping all containers",
 		SuccessMessage: "Stopped all containers",
-		// Skip Arcane container
-		ShouldStart: func(c mobycontainer.Summary) bool { return !labels.IsArcaneContainer(c.Labels) },
+		ShouldStart: func(c mobycontainer.Summary) bool {
+			return !labels.IsArcaneContainer(c.Labels) && !strings.EqualFold(c.Labels[libarcane.InternalResourceLabel], "true")
+		},
 		Action: func(ctx context.Context, id string) error {
 			return s.containerService.StopContainer(ctx, id, usertypes.SystemUser)
 		},

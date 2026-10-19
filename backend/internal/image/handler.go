@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
+	"github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -22,6 +24,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
@@ -180,7 +183,10 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*handlerutil.Out[image.DetailSummary], error) {
 	out, err := h.imageService.GetImageDetail(ctx, input.ImageID)
 	if err != nil {
-		return nil, huma.Error404NotFound("Image not found: " + err.Error())
+		if errdefs.IsNotFound(err) {
+			return nil, huma.Error404NotFound("Image not found: " + err.Error())
+		}
+		return nil, huma.Error500InternalServerError("Failed to get image: " + err.Error())
 	}
 
 	return &handlerutil.Out[image.DetailSummary]{
@@ -279,7 +285,9 @@ func (h *ImageHandler) ExportImage(ctx context.Context, input *ExportImageInput)
 				cmp.Or(strings.Trim(strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(imageName), "._-"), "image")+".tar",
 			))
 
-			_, _ = io.Copy(humaCtx.BodyWriter(), reader)
+			if _, copyErr := io.Copy(humaCtx.BodyWriter(), reader); copyErr != nil {
+				slog.WarnContext(humaCtx.Context(), "image export stream interrupted", "image", imageName, "error", copyErr)
+			}
 		},
 	}, nil
 }
@@ -300,7 +308,14 @@ func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput)
 	}
 
 	if removeImageErr := h.imageService.RemoveImage(ctx, input.ImageID, input.Force, *user); removeImageErr != nil {
-		return nil, huma.Error500InternalServerError("Failed to remove image: " + removeImageErr.Error())
+		switch {
+		case errdefs.IsConflict(removeImageErr):
+			return nil, huma.Error409Conflict("Failed to remove image: " + removeImageErr.Error())
+		case errdefs.IsNotFound(removeImageErr):
+			return nil, huma.Error404NotFound("Failed to remove image: " + removeImageErr.Error())
+		default:
+			return nil, huma.Error500InternalServerError("Failed to remove image: " + removeImageErr.Error())
+		}
 	}
 
 	return handlerutil.MessageOutput("Image removed successfully", ""), nil
@@ -348,7 +363,12 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 			activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
 
 			writer := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, rawWriter, "Pulling image")
-			if pullImageErr := h.imageService.PullImage(runtimeCtx, fullImageName, writer, *user, credentials); pullImageErr != nil {
+			if pullImageErr := h.imageService.Pull(runtimeCtx, PullRequest{
+				Ref:         fullImageName,
+				Progress:    writer,
+				User:        *user,
+				Credentials: credentials,
+			}); pullImageErr != nil {
 				activitylib.FlushWriter(writer)
 				activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Image pull failed", pullImageErr)
 				_, _ = fmt.Fprintf(writer, "{\"error\":%q}\n", pullImageErr.Error())
@@ -564,6 +584,9 @@ func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput)
 
 	result, err := h.imageService.LoadImageFromReader(ctx, file, session.Filename, *user, int64(h.settingsService.GetIntSetting(ctx, "maxImageUploadSize", 500))*1024*1024)
 	if err != nil {
+		if errors.Is(err, common.ErrBadRequest) {
+			return nil, huma.Error413RequestEntityTooLarge("Failed to load image: " + err.Error())
+		}
 		return nil, huma.Error500InternalServerError("Failed to load image: " + err.Error())
 	}
 

@@ -61,7 +61,7 @@ func setupGitRepositoryServiceTestInternal(t *testing.T) *GitRepositoryService {
 
 func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	svc, err := settings.NewSettingsService(ctx, db)
+	svc, err := settings.NewSettingsService(ctx, db, &config.Config{})
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}

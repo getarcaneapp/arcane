@@ -16,7 +16,6 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/moby/moby/client"
 	"github.com/subosito/gotenv"
-	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.uber.org/fx"
@@ -40,6 +39,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/startup"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
@@ -146,10 +146,10 @@ func applicationOptions(appCtx context.Context, cfg *config.Config, db *database
 		fx.Supply(cfg, db, cancelApp),
 		fx.Provide(
 			func() context.Context { return appCtx },
-			func(cfg *config.Config) *http.Client {
+			func(settingsService *settings.SettingsService) *http.Client {
 				return httpx.NewHTTPClient(httpxtypes.ClientOptions{
-					Timeout:             kit.Ternary(cfg.HTTPClientTimeout > 0, time.Duration(cfg.HTTPClientTimeout)*time.Second, 10*time.Second),
-					TLSHandshakeTimeout: kit.Ternary(cfg.HTTPClientTimeout > 0, 10*time.Second, 5*time.Second),
+					Timeout:             timeouts.GetDuration(settingsService.GetSettingsOrDefaults(appCtx).HTTPClientTimeout.AsInt(), timeouts.DefaultHTTPClient),
+					TLSHandshakeTimeout: 10 * time.Second,
 				})
 			},
 		),
@@ -241,6 +241,9 @@ func initializeStartupState(p initializeStartupStateParams) {
 		Environment:   string(cfg.Environment),
 		AgentMode:     cfg.AgentMode,
 	})
+	if reloadErr := p.Settings.LoadDatabaseSettings(appCtx); reloadErr != nil {
+		slog.WarnContext(appCtx, "Failed to reload settings after initializing encryption", "error", reloadErr)
+	}
 	startup.InitializeDefaultSettings(appCtx, runtimeCfg, p.Settings)
 
 	// Startup repairs are best-effort: log each failure and continue.
@@ -252,6 +255,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 			return p.Settings.NormalizeProjectsDirectory(ctx, cfg.ProjectsDirectory)
 		}},
 		{name: "normalize builds directory", run: p.Settings.NormalizeBuildsDirectory},
+		{name: "encrypt stored sensitive settings", run: p.Settings.EncryptStoredSensitiveSettings},
 		{name: "ensure local environment", run: func(ctx context.Context) error { return p.Environment.EnsureLocalEnvironment(ctx, cfg.AppUrl) }},
 		{name: "clean up orphaned GitOps syncs", run: p.GitOpsSync.CleanupOrphanedSyncsOnStartup},
 		{name: "clean up leaked GitOps scratch directories", run: p.GitOpsSync.CleanupLeakedScratchDirsOnStartup},

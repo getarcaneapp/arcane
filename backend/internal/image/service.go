@@ -11,8 +11,10 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
+	"github.com/containerd/errdefs"
 	"github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/types/v2"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
@@ -356,6 +358,9 @@ func (s *ImageService) cleanupRemovedImages(ctx context.Context, deleted []image
 	if deleteErr := s.vulnerabilityService.DeleteScanResultsByImageIDs(ctx, idsToDelete); deleteErr != nil {
 		slog.WarnContext(ctx, "failed to delete vulnerability scan records", "count", len(idsToDelete), "error", deleteErr)
 	}
+	if _, orphanErr := s.vulnerabilityService.CleanupOrphanedScanRecords(ctx); orphanErr != nil {
+		slog.WarnContext(ctx, "failed to clean up orphaned vulnerability scan records", "error", orphanErr)
+	}
 }
 
 func (s *ImageService) PullImage(ctx context.Context, imageName string, progressWriter io.Writer, user usertypes.Actor, externalCreds []containerregistry.Credential) error {
@@ -613,8 +618,7 @@ func (s *ImageService) ExportImage(ctx context.Context, imageName string) (io.Re
 }
 
 func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader, fileName string, user usertypes.Actor, maxSizeBytes int64) (*imagetypes.LoadResult, error) {
-	// Wrap reader with size limit enforcement
-	limitedReader := io.LimitReader(reader, maxSizeBytes+1)
+	limitedReader := &uploadLimitReader{reader: reader, remaining: maxSizeBytes + 1}
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -625,9 +629,8 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 	// ImageLoad accepts a tar archive reader and optional load options
 	loadResp, err := dockerClient.ImageLoad(ctx, limitedReader)
 	if err != nil {
-		// Check if error is due to size limit being exceeded
-		if err.Error() == "unexpected EOF" || strings.Contains(err.Error(), "unexpected EOF") {
-			return nil, fmt.Errorf("file size exceeds maximum allowed size of %d MB", maxSizeBytes/(1024*1024))
+		if limitedReader.exceeded.Load() {
+			return nil, common.Classify(common.ErrBadRequest, fmt.Errorf("file size exceeds maximum allowed size of %d MB", maxSizeBytes/(1024*1024)))
 		}
 		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", err, database.JSON{"action": "load", "file": fileName})
 		return nil, fmt.Errorf("failed to load image from tar: %w", err)
@@ -636,6 +639,9 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 
 	var responseBuilder strings.Builder
 	streamErr := docker.RenderJSONMessageStream(loadResp, &responseBuilder)
+	if streamErr != nil && limitedReader.exceeded.Load() {
+		return nil, common.Classify(common.ErrBadRequest, fmt.Errorf("file size exceeds maximum allowed size of %d MB", maxSizeBytes/(1024*1024)))
+	}
 	if streamErr != nil {
 		s.eventService.LogErrorEvent(
 			ctx,
@@ -666,6 +672,28 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 	return &imagetypes.LoadResult{Stream: responseBuilder.String()}, nil
 }
 
+var errImageUploadTooLarge = errors.New("image upload exceeds the size limit")
+
+type uploadLimitReader struct {
+	reader    io.Reader
+	remaining int64
+	exceeded  atomic.Bool
+}
+
+func (r *uploadLimitReader) Read(p []byte) (int, error) {
+	if r.remaining <= 0 {
+		r.exceeded.Store(true)
+		return 0, errImageUploadTooLarge
+	}
+	n, err := r.reader.Read(p[:min(int64(len(p)), r.remaining)])
+	r.remaining -= int64(n)
+	if r.remaining <= 0 {
+		r.exceeded.Store(true)
+		return n, errImageUploadTooLarge
+	}
+	return n, err
+}
+
 func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string) (bool, error) {
 	_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, imageName)
@@ -674,8 +702,7 @@ func (s *ImageService) ImageExistsLocally(ctx context.Context, imageName string)
 		return true, nil
 	}
 
-	errLower := strings.ToLower(err.Error())
-	if strings.Contains(errLower, "no such image") || strings.Contains(errLower, "not found") {
+	if errdefs.IsNotFound(err) {
 		return false, nil
 	}
 	return false, fmt.Errorf("failed to inspect image %s: %w", imageName, err)
@@ -701,7 +728,7 @@ func (s *ImageService) PullOptionsWithAuth(ctx context.Context, imageRef string,
 		}
 	}
 
-	authStr, err := s.registryService.GetRegistryAuthForHost(ctx, registryHost)
+	authStr, err := s.registryService.GetRegistryAuthForImage(ctx, imageRef)
 	if err != nil {
 		return client.ImagePullOptions{}, fmt.Errorf("failed to get registry credentials: %w", err)
 	}

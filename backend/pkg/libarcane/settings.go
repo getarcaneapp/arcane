@@ -52,7 +52,6 @@ var timeoutSettingKeys = []string{
 	"buildsDirectory",
 	"buildTimeout",
 	"depotProjectId",
-	DepotTokenSettingKey,
 }
 
 var cronSettingKeys = []string{

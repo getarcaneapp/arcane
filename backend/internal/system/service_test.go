@@ -140,11 +140,11 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 		Format: volume.VolumeBackupFormatRustic,
 	}).Error)
 	db := &database.DB{DB: gormDB}
-	settingsService, err := settings.NewSettingsService(t.Context(), db)
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	service := NewSystemService(
-		db, nil, nil, nil, nil, nil, settingsService, nil, nil, nil, nil, nil,
+		db, nil, nil, nil, nil, nil, settingsService, nil, nil, nil, nil, nil, nil,
 		s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }), nil, nil, &config.Config{},
 	)
 
@@ -220,7 +220,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	db := &database.DB{DB: gormDB}
 	recoveryKeys := backup.NewRecoveryKeyStore(db)
 	s3Destinations := s3.NewS3DestinationService(db, func(context.Context, string) error { return nil })
-	settingsService, err := settings.NewSettingsService(t.Context(), db)
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	gate := newSystemBackupAdmissionGateForTest(t)
@@ -236,6 +236,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		volume.NewVolumeService(db, dockerService, nil, nil, nil, nil, nil, nil, nil, nil),
 		nil,
 		settingsService,
+		nil,
 		nil,
 		nil,
 		nil,
@@ -320,7 +321,7 @@ func TestSystemBackupPolicyRequiresConfiguredRecoveryKeyWhenEnabled(t *testing.T
 	require.NoError(t, gormDB.AutoMigrate(&SystemBackupPolicy{}, &backup.SystemBackupRecoveryConfig{}, &s3.S3Destination{}))
 	db := &database.DB{DB: gormDB}
 	service := NewSystemService(
-		db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+		db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }),
 		backup.NewRecoveryKeyStore(db), nil, &config.Config{DatabaseURL: "file:system-backup-key-required-test.db"},
 	)

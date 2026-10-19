@@ -46,12 +46,15 @@ import (
 )
 
 const (
-	browserSessionSigningKeySize = 64
+	browserSessionSigningKeySize  = 64
+	minCiphertextBytes            = 28
+	sensitiveSettingsEncryptedKey = "sensitiveSettingsEncrypted"
 )
 
 type SettingsService struct {
-	db     *database.DB
-	config atomic.Pointer[Settings]
+	db        *database.DB
+	appConfig *config.Config
+	config    atomic.Pointer[Settings]
 	// effectiveConfig is the shared, read-only env-override-applied snapshot,
 	// rebuilt whenever config is stored so reads are a pointer load.
 	effectiveConfig atomic.Pointer[Settings]
@@ -72,12 +75,13 @@ type settingsEnvOverride struct {
 	value      string
 }
 
-func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService, error) {
+func NewSettingsService(ctx context.Context, db *database.DB, appConfig *config.Config) (*SettingsService, error) {
 	if ctx == nil {
 		return nil, errors.New("settings lifecycle context unavailable")
 	}
 	svc := &SettingsService{
 		db:           db,
+		appConfig:    appConfig,
 		effectsWake:  make(chan struct{}, 1),
 		effectsDone:  make(chan struct{}),
 		lifecycleCtx: ctx,
@@ -196,12 +200,23 @@ func (s *SettingsService) LoadDatabaseSettings(ctx context.Context) error {
 	}
 
 	dst := DefaultSettingsConfig()
-	appCfg := config.Load()
-	fields, _ := getSettingsFieldCacheInternal()
+	fields, byKey := getSettingsFieldCacheInternal()
+	for i := range stored {
+		if !byKey[stored[i].Key].isEncrypted || stored[i].Value == "" {
+			continue
+		}
+		plain, decryptErr := crypto.Decrypt(stored[i].Value)
+		switch {
+		case decryptErr == nil:
+			stored[i].Value = plain
+		case looksLikeCiphertext(stored[i].Value, decryptErr):
+			slog.WarnContext(ctx, "Failed to decrypt stored sensitive setting with the current encryption key", "key", stored[i].Key)
+		}
+	}
 	rv := reflect.ValueOf(dst).Elem()
-	if appCfg.UIConfigurationDisabled || appCfg.AgentMode {
+	if s.appConfig.UIConfigurationDisabled || s.appConfig.AgentMode {
 		slog.DebugContext(ctx, "LoadDatabaseSettings: using env path",
-			"uiConfigurationDisabled", appCfg.UIConfigurationDisabled, "agentMode", appCfg.AgentMode, "environment", appCfg.Environment)
+			"uiConfigurationDisabled", s.appConfig.UIConfigurationDisabled, "agentMode", s.appConfig.AgentMode, "environment", s.appConfig.Environment)
 
 		storedValues := make(map[string]string, len(stored))
 		for _, setting := range stored {
@@ -494,8 +509,9 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 	}
 
 	cfg := s.GetSettingsConfig().Clone()
-	oidcClientSecretUpdated := updates.OidcClientSecret != nil && !s.IsEnvOverrideActive("oidcClientSecret")
-	trivyServerTokenUpdated := updates.TrivyServerToken != nil && *updates.TrivyServerToken != "" && !s.IsEnvOverrideActive("trivyServerToken")
+	oidcClientSecretUpdated := updates.OidcClientSecret != nil && *updates.OidcClientSecret != cfg.OidcClientSecret.Value && !s.IsEnvOverrideActive("oidcClientSecret")
+	trivyServerTokenProvided := updates.TrivyServerToken != nil && *updates.TrivyServerToken != ""
+	trivyServerTokenUpdated := trivyServerTokenProvided && *updates.TrivyServerToken != cfg.TrivyServerToken.Value && !s.IsEnvOverrideActive("trivyServerToken")
 	normalizeTargetURL := func(value string) string {
 		normalized, err := httpx.NormalizeBaseURL(value)
 		if err != nil {
@@ -541,7 +557,7 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 		updates.TrivyServerUrl,
 		normalizeTargetURL,
 		map[string]bool{"trivyServerToken": cfg.TrivyServerToken.Value != ""},
-		map[string]bool{"trivyServerToken": trivyServerTokenUpdated},
+		map[string]bool{"trivyServerToken": trivyServerTokenProvided},
 	); err != nil {
 		return nil, err
 	}
@@ -610,11 +626,15 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		if err := validateSettingValue(key, value); err != nil {
 			return nil, err
 		}
+		if s.IsEnvOverrideActive(key) {
+			continue
+		}
+		current, _, _, _ := cfg.FieldByKey(key)
 
 		if key == libarcane.DepotTokenSettingKey {
 			// Sensitive token: only update when explicitly provided.
 			// Empty input preserves existing token.
-			if strings.TrimSpace(value) == "" {
+			if strings.TrimSpace(value) == "" || value == current {
 				continue
 			}
 
@@ -635,6 +655,9 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		if valueToSave == "" {
 			valueToSave, _, _, _ = defaultCfg.FieldByKey(key)
 		}
+		if valueToSave == current {
+			continue
+		}
 		err := cfg.UpdateField(key, valueToSave, true)
 		if errors.Is(err, SettingSensitiveForbiddenError{}) {
 			continue
@@ -650,10 +673,18 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 }
 
 func (s *SettingsService) persistSettings(ctx context.Context, values []SettingVariable) error {
+	_, byKey := getSettingsFieldCacheInternal()
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, setting := range values {
 			if setting.Key == "oidcProviderName" {
 				setting.Value = normalization.Text(setting.Value, true, true)
+			}
+			if byKey[setting.Key].isEncrypted && setting.Value != "" {
+				encrypted, encryptErr := crypto.Encrypt(setting.Value)
+				if encryptErr != nil {
+					return fmt.Errorf("failed to encrypt setting %s: %w", setting.Key, encryptErr)
+				}
+				setting.Value = encrypted
 			}
 			if err := tx.Save(&setting).Error; err != nil {
 				return fmt.Errorf("failed to update setting %s: %w", setting.Key, err)
@@ -745,15 +776,14 @@ func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error
 		return err
 	}
 
-	appCfg := config.Load()
-	isEnvOnlyMode := appCfg.AgentMode || appCfg.UIConfigurationDisabled
+	isEnvOnlyMode := s.appConfig.AgentMode || s.appConfig.UIConfigurationDisabled
 	fields, _ := getSettingsFieldCacheInternal()
 
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, field := range fields {
 			attrs := splitSettingAttrsInternal(field.attrs)
 			// Outside env-only mode, only persist fields explicitly marked as envOverride.
-			if slices.Contains(attrs, "internal") || (!isEnvOnlyMode && !slices.Contains(attrs, "envOverride")) {
+			if slices.Contains(attrs, "internal") || field.isSensitive || (!isEnvOnlyMode && !slices.Contains(attrs, "envOverride")) {
 				continue
 			}
 			envVal, ok, _ := utils.LookupEnvOrFile(settingEnvName(field.key))
@@ -784,6 +814,69 @@ func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error
 		return err
 	}
 	return s.LoadDatabaseSettings(context.WithoutCancel(ctx))
+}
+
+func (s *SettingsService) EncryptStoredSensitiveSettings(ctx context.Context) error {
+	s.writes.Lock()
+	defer s.writes.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	fields, _ := getSettingsFieldCacheInternal()
+	keys := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if field.isEncrypted {
+			keys = append(keys, field.key)
+		}
+	}
+
+	encryptedCount := 0
+	completed := false
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var marker SettingVariable
+		if findErr := tx.Where("key = ?", sensitiveSettingsEncryptedKey).Limit(1).Find(&marker).Error; findErr != nil {
+			return fmt.Errorf("load sensitive settings marker: %w", findErr)
+		}
+		if marker.Value == "true" {
+			completed = true
+			return nil
+		}
+		var stored []SettingVariable
+		if findErr := tx.Where("key IN ? AND value <> ''", keys).Find(&stored).Error; findErr != nil {
+			return fmt.Errorf("load sensitive settings: %w", findErr)
+		}
+		for _, setting := range stored {
+			if _, decryptErr := crypto.Decrypt(setting.Value); decryptErr == nil {
+				continue
+			}
+			encrypted, encryptErr := crypto.Encrypt(setting.Value)
+			if encryptErr != nil {
+				return fmt.Errorf("encrypt setting %s: %w", setting.Key, encryptErr)
+			}
+			if updateErr := tx.Model(&SettingVariable{}).Where("key = ?", setting.Key).Update("value", encrypted).Error; updateErr != nil {
+				return fmt.Errorf("update setting %s: %w", setting.Key, updateErr)
+			}
+			encryptedCount++
+		}
+		if saveErr := tx.Save(&SettingVariable{Key: sensitiveSettingsEncryptedKey, Value: "true"}).Error; saveErr != nil {
+			return fmt.Errorf("save sensitive settings marker: %w", saveErr)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if completed {
+		return nil
+	}
+	slog.InfoContext(ctx, "Encrypted stored sensitive settings", "count", encryptedCount)
+	return s.LoadDatabaseSettings(context.WithoutCancel(ctx))
+}
+
+func looksLikeCiphertext(value string, decryptErr error) bool {
+	_, isDecryptErr := errors.AsType[*crypto.DecryptError](decryptErr)
+	decoded, decodeErr := base64.StdEncoding.DecodeString(value)
+	return isDecryptErr && decodeErr == nil && len(decoded) >= minCiphertextBytes
 }
 
 func (s *SettingsService) ListSettings(visibility SettingVisibility) []SettingVariable {

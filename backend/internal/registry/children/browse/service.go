@@ -18,6 +18,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
+	"github.com/samber/hot"
 	"go.getarcane.app/kit/pkg"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -30,13 +31,18 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 )
 
-const tagDetailsConcurrency = 4
+const (
+	tagDetailsConcurrency = 4
+	maxBrowsePageSize     = 100
+	browseListCacheTTL    = 30 * time.Second
+)
 
 // Service browses repositories and tags through the distribution API.
 type Service struct {
 	resolve       func(ctx context.Context, id string) (containerregistry.ContainerRegistry, *containerregistry.Credential, error)
 	lookupContext func(ctx context.Context) (context.Context, context.CancelFunc)
 	transport     http.RoundTripper
+	names         *hot.HotCache[string, []string]
 }
 
 // target is a configured registry resolved for the distribution API.
@@ -46,6 +52,7 @@ type target struct {
 	prefix      string
 	nameOptions []name.Option
 	options     []remote.Option
+	cacheKey    string
 }
 
 func NewService(
@@ -53,7 +60,24 @@ func NewService(
 	lookupContext func(ctx context.Context) (context.Context, context.CancelFunc),
 	roundTripper http.RoundTripper,
 ) *Service {
-	return &Service{resolve: resolve, lookupContext: lookupContext, transport: roundTripper}
+	return &Service{
+		resolve:       resolve,
+		lookupContext: lookupContext,
+		transport:     roundTripper,
+		names:         hot.NewHotCache[string, []string](hot.LRU, 256).WithTTL(browseListCacheTTL).Build(),
+	}
+}
+
+func (s *Service) cachedNames(key string, list func() ([]string, error)) ([]string, error) {
+	if cached, found, _ := s.names.Get(key); found {
+		return slices.Clone(cached), nil
+	}
+	names, err := list()
+	if err != nil {
+		return nil, err
+	}
+	s.names.Set(key, slices.Clone(names))
+	return names, nil
 }
 
 // ListRepositories lists the repositories of a configured registry through the
@@ -73,7 +97,9 @@ func (s *Service) ListRepositories(ctx context.Context, id string, params pagina
 		return nil, pagination.Response{}, err
 	}
 
-	names, err := remote.Catalog(lookupCtx, target.registry, target.options...)
+	names, err := s.cachedNames(target.cacheKey, func() ([]string, error) {
+		return remote.Catalog(lookupCtx, target.registry, target.options...)
+	})
 	if err != nil {
 		return nil, pagination.Response{}, classifyBrowseError(err, "failed to list repositories (the registry may not support the catalog API)")
 	}
@@ -111,7 +137,9 @@ func (s *Service) ListRepositoryTags(ctx context.Context, id, repository string,
 		return nil, pagination.Response{}, err
 	}
 
-	names, err := remote.List(repo, target.options...)
+	names, err := s.cachedNames(target.cacheKey+"\x00"+repository, func() ([]string, error) {
+		return remote.List(repo, target.options...)
+	})
 	if err != nil {
 		return nil, pagination.Response{}, classifyBrowseError(err, "failed to list tags")
 	}
@@ -167,6 +195,7 @@ func (s *Service) DeleteRepositoryTag(ctx context.Context, id, repository, tag s
 	if deleteErr := remote.Delete(repo.Digest(descriptor.Digest.String()), target.options...); deleteErr != nil {
 		return "", classifyBrowseError(deleteErr, "failed to delete manifest")
 	}
+	s.names.Delete(id + "\x00" + repository)
 	return descriptor.Digest.String(), nil
 }
 
@@ -187,6 +216,7 @@ func (s *Service) target(ctx context.Context, id string) (*target, error) {
 	return &target{
 		registry:    registryName,
 		prefix:      prefix,
+		cacheKey:    fmt.Sprintf("%s\x00%s\x00%s\x00%t", id, reg.URL, reg.Username, reg.Insecure),
 		nameOptions: kit.Ternary(reg.Insecure, []name.Option{name.StrictValidation, name.Insecure}, []name.Option{name.StrictValidation}),
 		options: append([]remote.Option{
 			remote.WithContext(ctx),
@@ -379,7 +409,17 @@ func tagDetails(repo name.Repository, options []remote.Option, tagName string) c
 	return tag(platforms, nil, nil)
 }
 
-func paginateNames(names []string, params pagination.QueryParams) ([]string, pagination.Response) {
+func paginateNames(names []string, requested pagination.QueryParams) ([]string, pagination.Response) {
+	params := pagination.QueryParams{
+		SearchQuery: requested.SearchQuery,
+		SortParams:  requested.SortParams,
+		Params: pagination.Params{
+			Start:     requested.Start,
+			Limit:     kit.Ternary(requested.Limit <= 0 || requested.Limit > maxBrowsePageSize, maxBrowsePageSize, requested.Limit),
+			SkipCount: requested.SkipCount,
+		},
+		Filters: requested.Filters,
+	}
 	result := pagination.Config[string]{
 		SearchAccessors: []pagination.SearchAccessor[string]{
 			func(item string) (string, error) { return item, nil },

@@ -183,7 +183,7 @@ func (s *NotificationService) dispatchNotificationToManager(ctx context.Context,
 		if publishViaTunnelErr := publishViaTunnel(); publishViaTunnelErr != nil {
 			return notification.DispatchResponse{}, fmt.Errorf("notification dispatch needs either MANAGER_API_URL + AGENT_TOKEN or a connected edge tunnel: %w", publishViaTunnelErr)
 		}
-		return notification.DispatchResponse{Message: "notification dispatched via edge tunnel"}, nil
+		return notification.DispatchResponse{Message: "notification dispatched via edge tunnel", Delivered: 1}, nil
 	}
 
 	dispatchURL := strings.TrimRight(httpx.ManagerBaseURL(s.config.ManagerApiUrl), "/") + "/api/notifications/dispatch"
@@ -198,7 +198,7 @@ func (s *NotificationService) dispatchNotificationToManager(ctx context.Context,
 	if err != nil {
 		// An agent configured for HTTP may still hold a healthy edge tunnel, so try it before giving up.
 		if tunnelErr := publishViaTunnel(); tunnelErr == nil {
-			return notification.DispatchResponse{Message: "notification dispatched via edge tunnel"}, nil
+			return notification.DispatchResponse{Message: "notification dispatched via edge tunnel", Delivered: 1}, nil
 		}
 		return notification.DispatchResponse{}, fmt.Errorf("failed to dispatch notification to manager: %w", err)
 	}
@@ -214,11 +214,7 @@ func (s *NotificationService) dispatchNotificationToManager(ctx context.Context,
 		return apiResponse.Data, nil
 	}
 
-	// A non-2xx (stale token, wrong URL, proxy) can fail independently of the tunnel, so fall back here too.
-	responseBody, _ := io.ReadAll(resp.Body)
-	if tunnelErr := publishViaTunnel(); tunnelErr == nil {
-		return notification.DispatchResponse{Message: "notification dispatched via edge tunnel"}, nil
-	}
+	responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8*1024))
 	return notification.DispatchResponse{}, fmt.Errorf("manager notification dispatch failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(responseBody)))
 }
 
@@ -260,34 +256,48 @@ func (s *NotificationService) DispatchNotificationForEnvironment(ctx context.Con
 }
 
 func (s *NotificationService) dispatchForTarget(ctx context.Context, target NotificationTarget, payload notification.DispatchRequest) (notification.DispatchResponse, error) {
-	var err error
-	dispatchResponse := notification.DispatchResponse{Message: "Notification dispatched successfully"}
+	delivered, err := s.deliverForTarget(ctx, target, payload)
+	if err != nil && delivered == 0 {
+		return notification.DispatchResponse{}, err
+	}
+	if err != nil {
+		slog.WarnContext(ctx, "Notification dispatch partially failed", "kind", payload.Kind, "delivered", delivered, "error", err)
+		return notification.DispatchResponse{
+			Message:   "Notification dispatched with errors: " + err.Error(),
+			Delivered: delivered,
+		}, nil
+	}
+	return notification.DispatchResponse{
+		Message:   "Notification dispatched successfully",
+		Delivered: delivered,
+	}, nil
+}
+
+func (s *NotificationService) deliverForTarget(ctx context.Context, target NotificationTarget, payload notification.DispatchRequest) (int, error) {
 	switch payload.Kind {
 	case notification.DispatchKindImageUpdate:
 		if payload.ImageUpdate == nil {
-			return notification.DispatchResponse{}, errors.New("image update payload is required")
+			return 0, errors.New("image update payload is required")
 		}
 		logManagerDispatchNotification(ctx, target, payload.Kind)
 		imageUpdate := payload.ImageUpdate
-		dispatchResponse.Delivered, err = s.sendImageUpdateNotificationForTarget(ctx, target, imageUpdate.ImageRef, &imageUpdate.UpdateInfo, notifications.NotificationEventImageUpdate)
-		return dispatchResponse, err
+		return s.sendImageUpdateNotificationForTarget(ctx, target, imageUpdate.ImageRef, &imageUpdate.UpdateInfo, notifications.NotificationEventImageUpdate)
 	case notification.DispatchKindBatchImageUpdate:
 		if payload.BatchImageUpdate == nil {
-			return notification.DispatchResponse{}, errors.New("batch image update payload is required")
+			return 0, errors.New("batch image update payload is required")
 		}
 		logManagerDispatchNotification(ctx, target, payload.Kind)
-		dispatchResponse.Delivered, err = s.sendBatchImageUpdateNotificationForTarget(ctx, target, payload.BatchImageUpdate.Updates)
-		return dispatchResponse, err
+		return s.sendBatchImageUpdateNotificationForTarget(ctx, target, payload.BatchImageUpdate.Updates)
 	case notification.DispatchKindContainerUpdate:
 		if payload.ContainerUpdate == nil {
-			return notification.DispatchResponse{}, errors.New("container update payload is required")
+			return 0, errors.New("container update payload is required")
 		}
 		logManagerDispatchNotification(ctx, target, payload.Kind)
 		update := payload.ContainerUpdate
-		return dispatchResponse, s.sendContainerUpdateNotificationForTarget(ctx, target, update.ContainerName, update.ImageRef, update.OldDigest, update.NewDigest)
+		return s.sendContainerUpdateNotificationForTarget(ctx, target, update.ContainerName, update.ImageRef, update.OldDigest, update.NewDigest)
 	case notification.DispatchKindBatchContainerUpdate:
 		if payload.BatchContainerUpdate == nil {
-			return notification.DispatchResponse{}, errors.New("batch container update payload is required")
+			return 0, errors.New("batch container update payload is required")
 		}
 		logManagerDispatchNotification(ctx, target, payload.Kind)
 		entries := make([]notifications.ContainerUpdateBatchEntry, 0, len(payload.BatchContainerUpdate.Updates))
@@ -299,27 +309,27 @@ func (s *NotificationService) dispatchForTarget(ctx context.Context, target Noti
 				NewDigest:     update.NewDigest,
 			})
 		}
-		return dispatchResponse, s.sendBatchContainerUpdateNotificationForTarget(ctx, target, entries)
+		return s.sendBatchContainerUpdateNotificationForTarget(ctx, target, entries)
 	case notification.DispatchKindVulnerabilityFound:
 		if payload.VulnerabilityFound == nil {
-			return notification.DispatchResponse{}, errors.New("vulnerability payload is required")
+			return 0, errors.New("vulnerability payload is required")
 		}
 		logManagerDispatchNotification(ctx, target, payload.Kind)
-		return dispatchResponse, s.sendVulnerabilityNotificationForTarget(ctx, target, VulnerabilityNotificationPayload(*payload.VulnerabilityFound))
+		return s.sendVulnerabilityNotificationForTarget(ctx, target, VulnerabilityNotificationPayload(*payload.VulnerabilityFound))
 	case notification.DispatchKindPruneReport:
 		if payload.PruneReport == nil {
-			return notification.DispatchResponse{}, errors.New("prune report payload is required")
+			return 0, errors.New("prune report payload is required")
 		}
 		logManagerDispatchNotification(ctx, target, payload.Kind)
-		return dispatchResponse, s.sendPruneReportNotificationForTarget(ctx, target, &payload.PruneReport.Result)
+		return s.sendPruneReportNotificationForTarget(ctx, target, &payload.PruneReport.Result)
 	case notification.DispatchKindAutoHeal:
 		if payload.AutoHeal == nil {
-			return notification.DispatchResponse{}, errors.New("auto-heal payload is required")
+			return 0, errors.New("auto-heal payload is required")
 		}
 		logManagerDispatchNotification(ctx, target, payload.Kind)
-		return dispatchResponse, s.sendAutoHealNotificationForTarget(ctx, target, payload.AutoHeal.ContainerName, payload.AutoHeal.ContainerID)
+		return s.sendAutoHealNotificationForTarget(ctx, target, payload.AutoHeal.ContainerName, payload.AutoHeal.ContainerID)
 	default:
-		return notification.DispatchResponse{}, fmt.Errorf("%s: %w", payload.Kind, ErrUnsupportedDispatchKind)
+		return 0, fmt.Errorf("%s: %w", payload.Kind, ErrUnsupportedDispatchKind)
 	}
 }
 
@@ -692,10 +702,11 @@ func (s *NotificationService) SendBatchContainerUpdateNotification(ctx context.C
 		return err
 	}
 
-	return s.sendBatchContainerUpdateNotificationForTarget(ctx, target, entries)
+	_, err = s.sendBatchContainerUpdateNotificationForTarget(ctx, target, entries)
+	return err
 }
 
-func (s *NotificationService) sendBatchContainerUpdateNotificationForTarget(ctx context.Context, target NotificationTarget, entries []notifications.ContainerUpdateBatchEntry) error {
+func (s *NotificationService) sendBatchContainerUpdateNotificationForTarget(ctx context.Context, target NotificationTarget, entries []notifications.ContainerUpdateBatchEntry) (int, error) {
 	containerNames := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		containerNames = append(containerNames, entry.ContainerName)
@@ -710,8 +721,7 @@ func (s *NotificationService) sendBatchContainerUpdateNotificationForTarget(ctx 
 	content := s.templates.BatchContainerUpdate(target.EnvironmentName, entries)
 	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, notifications.NotificationEventContainerUpdate)
 	logRef := strings.Join(containerNames, ", ")
-	_, err := s.notifyEnabledProviders(ctx, target, notifications.NotificationEventContainerUpdate, logRef, metadata, content)
-	return err
+	return s.notifyEnabledProviders(ctx, target, notifications.NotificationEventContainerUpdate, logRef, metadata, content)
 }
 
 // SendImageUpdateNotification returns how many providers the notification was delivered to.
@@ -781,10 +791,11 @@ func (s *NotificationService) SendContainerUpdateNotification(ctx context.Contex
 		return err
 	}
 
-	return s.sendContainerUpdateNotificationForTarget(ctx, target, containerName, imageRef, oldDigest, newDigest)
+	_, err = s.sendContainerUpdateNotificationForTarget(ctx, target, containerName, imageRef, oldDigest, newDigest)
+	return err
 }
 
-func (s *NotificationService) sendContainerUpdateNotificationForTarget(ctx context.Context, target NotificationTarget, containerName, imageRef, oldDigest, newDigest string) error {
+func (s *NotificationService) sendContainerUpdateNotificationForTarget(ctx context.Context, target NotificationTarget, containerName, imageRef, oldDigest, newDigest string) (int, error) {
 	metadata := database.JSON{
 		"containerName": containerName,
 		"oldDigest":     oldDigest,
@@ -793,8 +804,7 @@ func (s *NotificationService) sendContainerUpdateNotificationForTarget(ctx conte
 	}
 	content := s.templates.ContainerUpdate(target.EnvironmentName, containerName, imageRef, oldDigest, newDigest)
 	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, notifications.NotificationEventContainerUpdate)
-	_, err := s.notifyEnabledProviders(ctx, target, notifications.NotificationEventContainerUpdate, imageRef, metadata, content)
-	return err
+	return s.notifyEnabledProviders(ctx, target, notifications.NotificationEventContainerUpdate, imageRef, metadata, content)
 }
 
 // SendVulnerabilityNotification notifies providers subscribed to vulnerability_found events.
@@ -826,10 +836,11 @@ func (s *NotificationService) SendVulnerabilityNotification(ctx context.Context,
 		return err
 	}
 
-	return s.sendVulnerabilityNotificationForTarget(ctx, target, payload)
+	_, err = s.sendVulnerabilityNotificationForTarget(ctx, target, payload)
+	return err
 }
 
-func (s *NotificationService) sendVulnerabilityNotificationForTarget(ctx context.Context, target NotificationTarget, payload VulnerabilityNotificationPayload) error {
+func (s *NotificationService) sendVulnerabilityNotificationForTarget(ctx context.Context, target NotificationTarget, payload VulnerabilityNotificationPayload) (int, error) {
 	metadata := database.JSON{
 		"cveId":        payload.CVEID,
 		"severity":     payload.Severity,
@@ -838,8 +849,7 @@ func (s *NotificationService) sendVulnerabilityNotificationForTarget(ctx context
 	}
 	content := s.templates.Vulnerability(target.EnvironmentName, notification.DispatchVulnerabilityFound(payload))
 	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, notifications.NotificationEventVulnerabilityFound)
-	_, err := s.notifyEnabledProviders(ctx, target, notifications.NotificationEventVulnerabilityFound, payload.ImageName, metadata, content)
-	return err
+	return s.notifyEnabledProviders(ctx, target, notifications.NotificationEventVulnerabilityFound, payload.ImageName, metadata, content)
 }
 
 // SendBatchImageUpdateNotification returns how many providers the notification was delivered to.
@@ -930,18 +940,18 @@ func (s *NotificationService) SendPruneReportNotification(ctx context.Context, r
 		return err
 	}
 
-	return s.sendPruneReportNotificationForTarget(ctx, target, result)
+	_, err = s.sendPruneReportNotificationForTarget(ctx, target, result)
+	return err
 }
 
-func (s *NotificationService) sendPruneReportNotificationForTarget(ctx context.Context, target NotificationTarget, result *system.PruneAllResult) error {
+func (s *NotificationService) sendPruneReportNotificationForTarget(ctx context.Context, target NotificationTarget, result *system.PruneAllResult) (int, error) {
 	metadata := database.JSON{
 		"spaceReclaimed": result.SpaceReclaimed,
 		"eventType":      string(notifications.NotificationEventPruneReport),
 	}
 	content := s.templates.PruneReport(target.EnvironmentName, result)
 	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, notifications.NotificationEventPruneReport)
-	_, err := s.notifyEnabledProviders(ctx, target, notifications.NotificationEventPruneReport, "System Prune Report", metadata, content)
-	return err
+	return s.notifyEnabledProviders(ctx, target, notifications.NotificationEventPruneReport, "System Prune Report", metadata, content)
 }
 
 // SendAutoHealNotification sends a notification when a container is auto-healed.
@@ -962,18 +972,18 @@ func (s *NotificationService) SendAutoHealNotification(ctx context.Context, cont
 		return err
 	}
 
-	return s.sendAutoHealNotificationForTarget(ctx, target, containerName, containerID)
+	_, err = s.sendAutoHealNotificationForTarget(ctx, target, containerName, containerID)
+	return err
 }
 
-func (s *NotificationService) sendAutoHealNotificationForTarget(ctx context.Context, target NotificationTarget, containerName, containerID string) error {
+func (s *NotificationService) sendAutoHealNotificationForTarget(ctx context.Context, target NotificationTarget, containerName, containerID string) (int, error) {
 	metadata := database.JSON{
 		"containerID": containerID,
 		"eventType":   string(notifications.NotificationEventAutoHeal),
 	}
 	content := s.templates.AutoHeal(target.EnvironmentName, containerName)
 	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, notifications.NotificationEventAutoHeal)
-	_, err := s.notifyEnabledProviders(ctx, target, notifications.NotificationEventAutoHeal, containerName, metadata, content)
-	return err
+	return s.notifyEnabledProviders(ctx, target, notifications.NotificationEventAutoHeal, containerName, metadata, content)
 }
 
 // --- Test notifications ---

@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -79,6 +80,10 @@ type TemplateService struct {
 const (
 	remoteCacheDuration = 5 * time.Minute
 	fsSyncInterval      = 1 * time.Minute
+
+	maxDownloadSlugAttempts  = 100
+	maxTemplateFileBytes     = 4 << 20
+	maxTemplateRegistryBytes = 32 << 20
 
 	remoteIDPrefix = "remote"
 )
@@ -765,9 +770,12 @@ func (s *TemplateService) FetchRaw(ctx context.Context, rawURL string) ([]byte, 
 		return nil, fmt.Errorf("HTTP status %d for URL %s", resp.StatusCode, rawURL)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxTemplateFileBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body from %s: %w", rawURL, err)
+	}
+	if len(body) > maxTemplateFileBytes {
+		return nil, common.Classify(common.ErrBadRequest, fmt.Errorf("response from %s exceeds the %d MiB limit", rawURL, maxTemplateFileBytes>>20))
 	}
 	return body, nil
 }
@@ -820,9 +828,12 @@ func (s *TemplateService) fetchRegistryTemplates(ctx context.Context, reg *Templ
 		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxTemplateRegistryBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read body: %w", err)
+	}
+	if len(body) > maxTemplateRegistryBytes {
+		return nil, fmt.Errorf("registry response exceeds the %d MiB limit", maxTemplateRegistryBytes>>20)
 	}
 
 	var regDTO tmpl.RemoteRegistry
@@ -958,11 +969,10 @@ func (s *TemplateService) DownloadTemplate(ctx context.Context, remoteTemplate *
 		base = cmp.Or(projects.Slugify(remoteTemplate.ID[strings.LastIndex(remoteTemplate.ID, ":")+1:]), "template-"+uuid.New().String())
 	}
 
-	dir, composePath, envPath, err := projects.EnsureTemplateDir(ctx, s.configuredTemplatesDirSetting(ctx), base)
+	templatesDir, err := s.getTemplatesDirectory(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ensure templates dir: %w", err)
 	}
-	srcDesc := fmt.Sprintf("Imported from %s/compose.yaml", dir)
 
 	composeContent, envContent, err := s.FetchTemplateContent(ctx, remoteTemplate)
 	if err != nil {
@@ -974,10 +984,14 @@ func (s *TemplateService) DownloadTemplate(ctx context.Context, remoteTemplate *
 
 	var resultTemplate *ComposeTemplate
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var existing ComposeTemplate
-		findErr := tx.Where("is_remote = ? AND registry_id IS NULL AND (description = ? OR name = ?)", false, srcDesc, base).First(&existing).Error
-		if findErr != nil && !errors.Is(findErr, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("failed to check existing template: %w", findErr)
+		slug, existing, targetErr := resolveDownloadTarget(tx, templatesDir, base, strings.TrimSpace(kit.FromPtr(kit.FromPtr(remoteTemplate.Metadata).RemoteURL)))
+		if targetErr != nil {
+			return targetErr
+		}
+
+		dir, composePath, envPath, ensureErr := projects.EnsureTemplateDir(ctx, s.configuredTemplatesDirSetting(ctx), slug)
+		if ensureErr != nil {
+			return ensureErr
 		}
 
 		envPtr, writeErr := projects.WriteTemplateFiles(composePath, envPath, composeContent, envContent)
@@ -985,21 +999,21 @@ func (s *TemplateService) DownloadTemplate(ctx context.Context, remoteTemplate *
 			return writeErr
 		}
 
-		if findErr == nil {
+		if existing != nil {
 			existing.Content = composeContent
 			existing.EnvContent = envPtr
 			existing.Metadata = cloneTemplateMetadata(remoteTemplate.Metadata)
-			if saveErr := tx.Save(&existing).Error; saveErr != nil {
+			if saveErr := tx.Save(existing).Error; saveErr != nil {
 				return fmt.Errorf("failed to update existing local template: %w", saveErr)
 			}
-			resultTemplate = &existing
+			resultTemplate = existing
 			return nil
 		}
 
 		localTemplate := &ComposeTemplate{
 			ID:          uuid.New().String(),
-			Name:        base,
-			Description: srcDesc,
+			Name:        slug,
+			Description: fmt.Sprintf("Imported from %s/compose.yaml", dir),
 			Content:     composeContent,
 			EnvContent:  envPtr,
 			IsCustom:    true,
@@ -1015,6 +1029,53 @@ func (s *TemplateService) DownloadTemplate(ctx context.Context, remoteTemplate *
 		return nil, err
 	}
 	return resultTemplate, nil
+}
+
+func resolveDownloadTarget(tx *gorm.DB, templatesDir, base, remoteURL string) (string, *ComposeTemplate, error) {
+	if remoteURL != "" {
+		prefix := "Imported from " + filepath.Join(templatesDir, base)
+		var owned []ComposeTemplate
+		if findErr := tx.Where("is_remote = ? AND registry_id IS NULL AND description LIKE ? AND meta_remote_url = ?", false, prefix+"%", remoteURL).
+			Order("created_at").
+			Find(&owned).Error; findErr != nil {
+			return "", nil, fmt.Errorf("failed to check previously downloaded template: %w", findErr)
+		}
+		for i := range owned {
+			rest, hasPrefix := strings.CutPrefix(owned[i].Description, prefix)
+			suffix, hasSuffix := strings.CutSuffix(rest, "/compose.yaml")
+			_, numberErr := strconv.Atoi(strings.TrimPrefix(suffix, "-"))
+			if hasPrefix && hasSuffix && (suffix == "" || (strings.HasPrefix(suffix, "-") && numberErr == nil)) {
+				return base + suffix, &owned[i], nil
+			}
+		}
+	}
+	for attempt := 1; attempt <= maxDownloadSlugAttempts; attempt++ {
+		slug := kit.Ternary(attempt == 1, base, fmt.Sprintf("%s-%d", base, attempt))
+		dir := filepath.Join(templatesDir, slug)
+		srcDesc := fmt.Sprintf("Imported from %s/compose.yaml", dir)
+
+		var rows []ComposeTemplate
+		if findErr := tx.Where("is_remote = ? AND registry_id IS NULL AND (description = ? OR name = ?)", false, srcDesc, slug).Find(&rows).Error; findErr != nil {
+			return "", nil, fmt.Errorf("failed to check existing template: %w", findErr)
+		}
+		if owned := slices.IndexFunc(rows, func(row ComposeTemplate) bool {
+			return remoteURL != "" && row.Description == srcDesc && strings.TrimSpace(kit.FromPtr(kit.FromPtr(row.Metadata).RemoteURL)) == remoteURL
+		}); owned >= 0 {
+			return slug, &rows[owned], nil
+		}
+		if len(rows) > 0 {
+			continue
+		}
+
+		_, statErr := os.Lstat(dir)
+		switch {
+		case errors.Is(statErr, os.ErrNotExist):
+			return slug, nil, nil
+		case statErr != nil:
+			return "", nil, fmt.Errorf("failed to check template directory %s: %w", dir, statErr)
+		}
+	}
+	return "template-" + uuid.New().String(), nil, nil
 }
 
 func cloneTemplateMetadata(meta *ComposeTemplateMetadata) *ComposeTemplateMetadata {
