@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"github.com/samber/mo"
@@ -33,6 +35,9 @@ type Writer struct {
 
 	mu     sync.Mutex
 	buffer []byte
+
+	dropped      atomic.Uint64
+	lastDropWarn atomic.Int64
 }
 
 const (
@@ -40,6 +45,8 @@ const (
 	// writerAppendBatchSize caps how many queued lines are drained into one
 	// AppendMessages transaction.
 	writerAppendBatchSize = 32
+
+	writerDropWarningInterval = 5 * time.Second
 )
 
 type writerAppendMessage struct {
@@ -111,12 +118,22 @@ func (w *Writer) Flush() {
 	if flusher, ok := w.writer.(http.Flusher); ok {
 		flusher.Flush()
 	}
+	w.mu.Lock()
+	residual := w.processLineInternal(strings.TrimSpace(string(w.buffer)))
+	w.buffer = nil
+	w.mu.Unlock()
+	if message, ok := residual.Get(); ok {
+		select {
+		case w.queueCh <- writerQueueItem{message: &message}:
+		case <-doneInternal(w.ctx):
+			return
+		}
+	}
+
 	flushDone := make(chan struct{})
 	select {
 	case w.queueCh <- writerQueueItem{flush: flushDone}:
 	case <-doneInternal(w.ctx):
-		return
-	default:
 		return
 	}
 	select {
@@ -176,9 +193,13 @@ func (w *Writer) enqueueMessageInternal(message writerAppendMessage) {
 	select {
 	case w.queueCh <- writerQueueItem{message: &message}:
 	case <-doneInternal(w.ctx):
-		return
 	default:
-		return
+		w.dropped.Add(1)
+		now := time.Now().UnixNano()
+		lastWarned := w.lastDropWarn.Load()
+		if now-lastWarned >= writerDropWarningInterval.Nanoseconds() && w.lastDropWarn.CompareAndSwap(lastWarned, now) {
+			slog.WarnContext(w.persistCtx, "activity output queue full; dropping lines", "activityId", w.activityID, "droppedCount", w.dropped.Swap(0))
+		}
 	}
 }
 

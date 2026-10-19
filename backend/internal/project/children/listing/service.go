@@ -190,7 +190,7 @@ func (s *Service) StatusCounts(ctx context.Context, records []project.Record) pr
 			continue
 		}
 		switch func() string {
-			if err != nil {
+			if err != nil || p.Status == project.StatusDeploying || p.Status == project.StatusRestarting {
 				return p.Status
 			}
 			var services []project.RuntimeService
@@ -238,6 +238,8 @@ func row(projectsDir, catalog string, p project.Record, snapshot Snapshot, tags 
 		// Status uses the live services, not the possibly stale stored ServiceCount.
 		Status: func() string {
 			switch {
+			case p.Status == project.StatusDeploying || p.Status == project.StatusRestarting:
+				return p.Status
 			case snapshot.Err != nil:
 				return project.StatusUnknown
 			case len(services) == 0:

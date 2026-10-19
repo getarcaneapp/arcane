@@ -493,7 +493,11 @@ func (s *ActivityService) retryWrite(ctx context.Context, activityID, what strin
 			return err
 		}
 		slog.WarnContext(ctx, "retrying activity write", "write", what, "activityId", activityID, "attempt", attempt, "error", err)
-		time.Sleep(250 * time.Millisecond * time.Duration(attempt))
+		select {
+		case <-ctx.Done():
+			return errors.Join(err, context.Cause(ctx))
+		case <-time.After(250 * time.Millisecond * time.Duration(attempt)):
+		}
 	}
 }
 

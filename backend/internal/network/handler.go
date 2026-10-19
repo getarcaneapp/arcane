@@ -191,7 +191,8 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput) (*handlerutil.Out[networktypes.Inspect], error) {
 	networkInspect, err := h.networkService.GetNetworkByID(ctx, input.NetworkID)
 	if err != nil {
-		return nil, huma.Error404NotFound("Network not found: " + err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve network: "+apiErr.Message)
 	}
 
 	out, err := mapping.MapOne[network.Inspect, networktypes.Inspect](*networkInspect)
@@ -237,7 +238,8 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *GetNetworkTopologyInput) (*handlerutil.Out[networktypes.Topology], error) {
 	topology, err := h.networkService.GetNetworkTopology(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to build network topology")
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to build network topology: "+apiErr.Message)
 	}
 
 	return &handlerutil.Out[networktypes.Topology]{
@@ -272,7 +274,8 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 		return h.networkService.RemoveNetwork(runtimeCtx, input.NetworkID, *user)
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to remove network: " + err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to remove network: "+apiErr.Message)
 	}
 
 	return handlerutil.MessageOutput("Network removed successfully", activityID), nil
@@ -303,7 +306,7 @@ func (h *NetworkHandler) ConnectContainer(ctx context.Context, input *ConnectCon
 		return h.networkService.ConnectContainer(runtimeCtx, input.NetworkID, input.Body, *user)
 	})
 	if err != nil {
-		apiErr := common.ToAPIError(err)
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
@@ -336,7 +339,8 @@ func (h *NetworkHandler) DisconnectContainer(ctx context.Context, input *Disconn
 		return h.networkService.DisconnectContainer(runtimeCtx, input.NetworkID, input.Body, *user)
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to disconnect container from network: " + err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to disconnect container from network: "+apiErr.Message)
 	}
 
 	return handlerutil.MessageOutput("Container disconnected successfully", activityID), nil

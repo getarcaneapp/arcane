@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -37,6 +38,7 @@ type (
 		RecordUpdate     func(ctx context.Context, activityID string, result *updater.Result, runErr error) scheduler.Outcome
 		FreezeContainer  func(ctx context.Context, containerID string) (*updater.FrozenUpdateTarget, error)
 		ConfirmTarget    func(ctx context.Context, target updater.FrozenUpdateTarget) (bool, bool, error)
+		ResumeTarget     func(ctx context.Context, target updater.FrozenUpdateTarget) (updater.FrozenUpdateTarget, bool, error)
 		WithFrozenTarget func(ctx context.Context, target *updater.FrozenUpdateTarget, persist func() error) context.Context
 	}
 
@@ -147,8 +149,18 @@ func (s *Service) update(ctx context.Context, t flow.Task) (any, error) {
 				}},
 			}, nil), nil
 		case !unchanged:
-			return failed("Interrupted container update effect cannot be confirmed"), nil
+			return failed(fmt.Sprintf(
+				"Interrupted container update effect cannot be confirmed: recreate %s from %s (previous image %s)",
+				target.ContainerName,
+				target.DesiredImageRef,
+				target.BaselineImageID,
+			)), nil
 		}
+		resumed, _, resumeErr := s.deps.ResumeTarget(ctx, target)
+		if resumeErr != nil {
+			return nil, resumeErr
+		}
+		target = resumed
 	} else {
 		frozen, freezeErr := s.deps.FreezeContainer(ctx, input.ContainerID)
 		if freezeErr != nil {

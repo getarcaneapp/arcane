@@ -221,6 +221,17 @@ func WriteDoneLine(writer io.Writer) {
 	}
 }
 
+func WriteErrorLine(writer io.Writer, err error) {
+	if writer == nil || err == nil {
+		return
+	}
+	_ = json.MarshalWrite(writer, map[string]string{"error": err.Error()})
+	_, _ = io.WriteString(writer, "\n")
+	if flusher, ok := writer.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 func WriteStartedLine(writer io.Writer, activityID string) {
 	if writer == nil || strings.TrimSpace(activityID) == "" {
 		return

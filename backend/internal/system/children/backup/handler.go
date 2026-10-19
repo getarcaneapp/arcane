@@ -238,7 +238,7 @@ func (h *Handler) Restore(ctx context.Context, input *RestoreSystemBackupInput) 
 		Step: "Preparing system restore", Message: "Preparing Arcane system restore", SuccessMessage: "Arcane system restore started",
 		Metadata: database.JSON{"action": "restore_system_backup", "backupId": input.ID},
 	}, func(activityCtx context.Context) error {
-		return h.service.RestoreBackup(activityCtx, input.ID, input.Body.RecoveryKey, *user)
+		return h.service.RestoreBackup(activityCtx, input.ID, input.Body.RecoveryKey)
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())

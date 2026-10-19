@@ -317,35 +317,33 @@ func TestEnvironmentService_DeleteEnvironment_RemovesScopedCredentialsAndVariabl
 	require.Equal(t, []testGlobalVariableEnvironmentRow{{GlobalVariableID: "var-shared", EnvironmentID: "env-keep"}}, scopes)
 }
 
-func TestEnvironmentService_ResolveEdgeEnvironmentByToken_RejectsDisabledEnvironment(t *testing.T) {
+func TestEnvironmentService_IsKnownAccessToken_TracksTokenWrites(t *testing.T) {
 	ctx := t.Context()
 	db := setupEnvironmentServiceTestDB(t)
-	createTestEnvironmentWithState(t, db, "env-edge", "http://edge.example", string(EnvironmentStatusOnline), true, new("edge-token"))
+	createTestEnvironmentWithState(t, db, "env-known", "http://known.example", string(EnvironmentStatusOnline), false, new("seeded-token"))
+	createTestEnvironmentWithState(t, db, "env-shared", "http://shared.example", string(EnvironmentStatusOnline), false, new("seeded-token"))
 	svc := NewEnvironmentService(db, http.DefaultClient, nil, event.NewEventService(db, nil, nil), nil, nil)
 
-	envID, err := svc.ResolveEdgeEnvironmentByToken(ctx, "edge-token")
-	require.NoError(t, err)
-	require.Equal(t, "env-edge", envID)
+	require.False(t, svc.IsKnownAccessToken("seeded-token"))
+	require.NoError(t, svc.LoadAccessTokens(ctx))
+	require.True(t, svc.IsKnownAccessToken("seeded-token"))
+	require.False(t, svc.IsKnownAccessToken(strings.Repeat("x", maxAccessTokenLength+1)))
 
-	_, err = svc.UpdateEnvironment(ctx, "env-edge", map[string]any{"enabled": false}, nil, nil)
-	require.NoError(t, err)
-	_, err = svc.ResolveEdgeEnvironmentByToken(ctx, "edge-token")
-	require.Error(t, err)
+	require.NoError(t, svc.linkEnvironmentApiKey(ctx, "env-known", "key-rotated", "rotated-token", "", "", "env-known"))
+	require.True(t, svc.IsKnownAccessToken("seeded-token"))
+	require.True(t, svc.IsKnownAccessToken("rotated-token"))
 
-	require.NoError(t, svc.linkEnvironmentApiKey(ctx, "env-edge", "key-rotated", "rotated-token", "", "", "env-edge"))
-	_, err = svc.ResolveEdgeEnvironmentByToken(ctx, "rotated-token")
-	require.Error(t, err)
-
-	_, err = svc.UpdateEnvironment(ctx, "env-edge", map[string]any{"enabled": true}, nil, nil)
+	_, err := svc.UpdateEnvironment(ctx, "env-known", map[string]any{"access_token": "updated-token"}, nil, nil)
 	require.NoError(t, err)
-	envID, err = svc.ResolveEdgeEnvironmentByToken(ctx, "rotated-token")
-	require.NoError(t, err)
-	require.Equal(t, "env-edge", envID)
+	require.False(t, svc.IsKnownAccessToken("rotated-token"))
+	require.True(t, svc.IsKnownAccessToken("updated-token"))
 
-	require.NoError(t, db.WithContext(ctx).Model(&Environment{}).Where("id = ?", "env-edge").Update("enabled", false).Error)
-	svc.invalidateEnvironmentCache("env-edge")
-	_, err = svc.ResolveEdgeEnvironmentByToken(ctx, "rotated-token")
-	require.Error(t, err)
+	require.NoError(t, svc.DeleteEnvironment(ctx, "env-known", nil, nil))
+	require.False(t, svc.IsKnownAccessToken("updated-token"))
+	require.True(t, svc.IsKnownAccessToken("seeded-token"))
+
+	require.NoError(t, svc.DeleteEnvironment(ctx, "env-shared", nil, nil))
+	require.False(t, svc.IsKnownAccessToken("seeded-token"))
 }
 
 func createTestRegistry(t *testing.T, db *database.DB, id string) {
@@ -840,8 +838,28 @@ func TestEnvironmentService_ResolveEdgeEnvironmentByToken_CachesAndInvalidatesOn
 	require.NoError(t, err)
 	require.Equal(t, "edge-auth", envID)
 
-	require.NoError(t, svc.DeleteEnvironment(ctx, "edge-auth", nil, nil))
+	_, err = svc.UpdateEnvironment(ctx, "edge-auth", map[string]any{"enabled": false}, nil, nil)
+	require.NoError(t, err)
 	_, err = svc.ResolveEdgeEnvironmentByToken(ctx, newToken)
+	require.Error(t, err)
+
+	require.NoError(t, svc.linkEnvironmentApiKey(ctx, "edge-auth", "key-rotated", "edge-token-rotated", "", "", "edge-auth"))
+	_, err = svc.ResolveEdgeEnvironmentByToken(ctx, "edge-token-rotated")
+	require.Error(t, err)
+
+	_, err = svc.UpdateEnvironment(ctx, "edge-auth", map[string]any{"enabled": true}, nil, nil)
+	require.NoError(t, err)
+	envID, err = svc.ResolveEdgeEnvironmentByToken(ctx, "edge-token-rotated")
+	require.NoError(t, err)
+	require.Equal(t, "edge-auth", envID)
+
+	require.NoError(t, db.WithContext(ctx).Model(&Environment{}).Where("id = ?", "edge-auth").Update("enabled", false).Error)
+	svc.invalidateEnvironmentCache("edge-auth")
+	_, err = svc.ResolveEdgeEnvironmentByToken(ctx, "edge-token-rotated")
+	require.Error(t, err)
+
+	require.NoError(t, svc.DeleteEnvironment(ctx, "edge-auth", nil, nil))
+	_, err = svc.ResolveEdgeEnvironmentByToken(ctx, "edge-token-rotated")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid agent token")
 }

@@ -64,7 +64,7 @@ import (
 )
 
 var (
-	errUpdateBusy = errors.New("another container update is running")
+	errUpdateBusy = common.Classify(common.ErrConflict, errors.New("another container update is running"))
 
 	containerEventTypes = map[string]event.EventType{
 		"container_stop":   event.EventTypeContainerStop,
@@ -199,6 +199,7 @@ func NewUpdaterService(
 		RecordUpdate:     service.recordSingleContainerUpdate,
 		FreezeContainer:  service.recovery.FreezeContainer,
 		ConfirmTarget:    service.recovery.ConfirmTarget,
+		ResumeTarget:     service.recovery.ResumeTarget,
 		WithFrozenTarget: service.recovery.WithSingleTarget,
 	})
 	// The self container ID routes Arcane through the CLI self-updater even without its labels.
@@ -1289,6 +1290,19 @@ func (s *UpdaterService) acquireUpdate(ctx context.Context) (context.Context, fu
 		return ctx, nil, errUpdateBusy
 	}
 	return context.WithValue(ctx, updateAdmissionKey{}, s), func() { lease.Release(ctx) }, nil
+}
+
+func (s *UpdaterService) PruneHistory(ctx context.Context, retentionDays int) (int64, error) {
+	if retentionDays <= 0 {
+		return 0, nil
+	}
+	result := s.deps.DB.WithContext(ctx).
+		Where("start_time < ?", time.Now().Add(-time.Duration(retentionDays)*24*time.Hour)).
+		Delete(&AutoUpdateRecord{})
+	if result.Error != nil {
+		return 0, fmt.Errorf("failed to prune auto-update history: %w", result.Error)
+	}
+	return result.RowsAffected, nil
 }
 
 // RecordUpdateRun persists one updater resource result into Arcane history.

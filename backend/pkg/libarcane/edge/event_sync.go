@@ -13,7 +13,7 @@ import (
 	"time"
 	"uuid"
 
-	kit "go.getarcane.app/kit/pkg"
+	"go.getarcane.app/kit/pkg"
 )
 
 const (

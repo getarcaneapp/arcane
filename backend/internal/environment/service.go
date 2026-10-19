@@ -69,6 +69,7 @@ type EnvironmentService struct {
 	environmentCache *hot.HotCache[environmentCacheKey, Environment]
 	environmentGens  [environmentCacheStripes]atomic.Uint64
 	accessTokens     *hot.HotCache[string, string]
+	accessTokenIndex *accessTokenIndex
 	jobs             *entityjobs.Registry
 
 	variableSyncer  VariableSyncer
@@ -165,7 +166,11 @@ func NewEnvironmentService(
 			WithMissingSharedCache().
 			WithJanitor().
 			Build(),
-		accessTokens:    hot.NewHotCache[string, string](hot.LRU, 1024).WithTTL(environmentCacheTTL).WithJanitor().Build(),
+		accessTokens: hot.NewHotCache[string, string](hot.LRU, 1024).WithTTL(environmentCacheTTL).WithJanitor().Build(),
+		accessTokenIndex: &accessTokenIndex{
+			byEnvID:  make(map[string]string),
+			byHashed: make(map[string]int),
+		},
 		jobs:            entityjobs.New(environmentHealthJobPrefix, environmentHealthAdmissionScope),
 		runtimeWatchers: runtimeWatchers{chans: make(map[int]chan struct{})},
 		remoteSyncs: remoteSyncQueue{
@@ -385,6 +390,7 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, env *Environ
 	if env.Enabled {
 		s.registerHealthJob(ctx, env.ID)
 	}
+	s.accessTokenIndex.sync(env.ID, kit.FromPtr(env.AccessToken))
 	s.remoteEnvs.put(*env)
 	s.invalidateEnvironmentCache(env.ID)
 	s.NotifyRuntimeStateChanged()
@@ -453,6 +459,7 @@ func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, u
 
 	if _, ok := updates["access_token"]; ok {
 		s.edgeTokens.sync(id, "")
+		s.accessTokenIndex.sync(id, kit.FromPtr(updated.AccessToken))
 	}
 
 	// Reconcile the per-environment health job when the enabled flag is toggled.
@@ -552,6 +559,7 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 	}
 
 	s.edgeTokens.sync(id, "")
+	s.accessTokenIndex.sync(id, "")
 	edge.GetRegistry().Unregister(id)
 	s.ForgetSyncState(id)
 	s.remoteEnvs.mu.Lock()
@@ -622,6 +630,7 @@ func (s *EnvironmentService) linkEnvironmentApiKey(ctx context.Context, envID, n
 	s.NotifyRuntimeStateChanged()
 
 	s.edgeTokens.sync(envID, "")
+	s.accessTokenIndex.sync(envID, apiKey)
 	s.remoteEnvs.mu.Lock()
 	s.remoteEnvs.revision++
 	if envRecord, ok := s.remoteEnvs.envs[envID]; ok {
@@ -686,8 +695,29 @@ func (s *EnvironmentService) ResolveEnvironmentByAccessToken(ctx context.Context
 	return &env, nil
 }
 
+func (s *EnvironmentService) LoadAccessTokens(ctx context.Context) error {
+	var envs []Environment
+	if err := s.db.WithContext(ctx).
+		Select("id", "access_token").
+		Where("access_token IS NOT NULL AND access_token != ?", "").
+		Find(&envs).Error; err != nil {
+		return fmt.Errorf("failed to load environment access tokens: %w", err)
+	}
+	for _, env := range envs {
+		s.accessTokenIndex.sync(env.ID, kit.FromPtr(env.AccessToken))
+	}
+	return nil
+}
+
 func (s *EnvironmentService) IsKnownAccessToken(token string) bool {
-	_, ok, _ := s.accessTokens.Get(strings.TrimSpace(token))
+	token = strings.TrimSpace(token)
+	if token == "" || len(token) > maxAccessTokenLength {
+		return false
+	}
+	hashed := kit.SHA256Hex(token)
+	s.accessTokenIndex.mu.RLock()
+	defer s.accessTokenIndex.mu.RUnlock()
+	_, ok := s.accessTokenIndex.byHashed[hashed]
 	return ok
 }
 
@@ -771,9 +801,10 @@ func DisplayName(environmentID, storedName string) string {
 }
 
 const (
-	edgeTokenCacheTTL   = time.Minute
-	environmentCacheTTL = 30 * time.Second
-	remoteSyncTimeout   = time.Minute
+	edgeTokenCacheTTL    = time.Minute
+	environmentCacheTTL  = 30 * time.Second
+	remoteSyncTimeout    = time.Minute
+	maxAccessTokenLength = 128
 )
 
 // GetActiveRemoteEnvironmentSnapshot returns the latest in-process snapshot for

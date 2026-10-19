@@ -99,7 +99,7 @@ func (h *UpdaterHandler) updateContainer(ctx context.Context, input *UpdateConta
 	if input.Async {
 		acceptedActivity, err := h.updaterService.AcceptSingleContainerUpdate(runtimeCtx, input.ContainerID)
 		if err != nil {
-			return nil, huma.Error500InternalServerError("Failed to accept container update: " + err.Error())
+			return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), "Failed to accept container update: "+err.Error())
 		}
 		return &updateContainerOutput{
 			Status: http.StatusAccepted,
@@ -111,7 +111,7 @@ func (h *UpdaterHandler) updateContainer(ctx context.Context, input *UpdateConta
 	}
 	out, err := h.updaterService.UpdateSingleContainer(runtimeCtx, input.ContainerID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to run updater: " + err.Error())
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), "Failed to run updater: "+err.Error())
 	}
 
 	return &updateContainerOutput{

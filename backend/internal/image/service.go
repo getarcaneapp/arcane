@@ -219,6 +219,10 @@ func (s *ImageService) RegisterWorkflows(engine *flow.Engine) error {
 	return nil
 }
 
+func (s *ImageService) RecoverInterruptedPatches(ctx context.Context) error {
+	return s.patch.RecoverInterruptedPatches(ctx)
+}
+
 // PatchWorkflow is the scheduled auto-patch workflow.
 func (s *ImageService) PatchWorkflow() *flow.Workflow { return s.patchWorkflow }
 

@@ -21,11 +21,13 @@ import (
 	"github.com/spf13/cobra"
 	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
+	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
 	"github.com/getarcaneapp/arcane/backend/v2/cli/upgrade"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
@@ -131,6 +133,11 @@ func runRestoreInternal(cmd *cobra.Command, _ []string) error {
 	// Projects were restored into the current directory, so the recovered
 	// configuration must keep pointing there rather than at the backup-time path.
 	manifest.Environment["PROJECTS_DIRECTORY"] = cmp.Or(request.ProjectsSetting, manifest.Environment["PROJECTS_DIRECTORY"])
+	crypto.InitEncryption(&crypto.Config{
+		EncryptionKey: manifest.Environment["ENCRYPTION_KEY"],
+		Environment:   manifest.Environment["ENVIRONMENT"],
+		AgentMode:     manifest.Environment["AGENT_MODE"] == "true",
+	})
 	if finalizeRestoredBackupErr := finalizeRestoredBackupInternal(ctx, manifest.Environment["DATABASE_URL"], manifest.BackupID, manifest.ActivityID, request); finalizeRestoredBackupErr != nil {
 		return fmt.Errorf("finalize restored system backup: %w", finalizeRestoredBackupErr)
 	}
@@ -160,6 +167,11 @@ func finalizeRestoredBackupInternal(ctx context.Context, databaseURL, manifestBa
 	db = db.WithContext(ctx)
 	if finalizeRestoredRunErr := finalizeRestoredRunInternal(db, manifestBackupID, request); finalizeRestoredRunErr != nil {
 		return finalizeRestoredRunErr
+	}
+	if strings.TrimSpace(request.RecoveryKey) != "" {
+		if setRecoveryKeyErr := backup.NewRecoveryKeyStore(&database.DB{DB: db}).Set(ctx, request.RecoveryKey); setRecoveryKeyErr != nil {
+			return setRecoveryKeyErr
+		}
 	}
 	if preserveSafetyBackupErr := preserveSafetyBackupInternal(db, request.SafetyBackup); preserveSafetyBackupErr != nil {
 		return preserveSafetyBackupErr
@@ -223,23 +235,23 @@ func finalizeRestoredRunInternal(db *gorm.DB, manifestBackupID string, request r
 	return db.Model(&system.SystemBackupRun{}).Where("id = ?", run.ID).Updates(values).Error
 }
 
-func preserveSafetyBackupInternal(db *gorm.DB, backup *recoverytypes.SafetyBackup) error {
-	if backup == nil || strings.TrimSpace(backup.ID) == "" || strings.TrimSpace(backup.LocalSnapshotID) == "" {
+func preserveSafetyBackupInternal(db *gorm.DB, safetyBackup *recoverytypes.SafetyBackup) error {
+	if safetyBackup == nil || strings.TrimSpace(safetyBackup.ID) == "" || strings.TrimSpace(safetyBackup.LocalSnapshotID) == "" {
 		return nil
 	}
 	onConflict := map[string]any{
-		"size": backup.Size, "updated_at": time.Now().UTC(), "status": system.SystemBackupStatusSucceeded,
+		"size": safetyBackup.Size, "updated_at": time.Now().UTC(), "status": system.SystemBackupStatusSucceeded,
 		"trigger": system.SystemBackupTriggerSafety, "destination": backuptypes.SystemBackupDestinationLocal,
-		"local_snapshot_id": backup.LocalSnapshotID, "error": "",
+		"local_snapshot_id": safetyBackup.LocalSnapshotID, "error": "",
 	}
 	return db.Model(&system.SystemBackupRun{}).
 		Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, DoUpdates: clause.Assignments(onConflict)}).
 		Create(map[string]any{
-			"id": backup.ID, "size": backup.Size, "created_at": backup.CreatedAt, "updated_at": time.Now().UTC(),
+			"id": safetyBackup.ID, "size": safetyBackup.Size, "created_at": safetyBackup.CreatedAt, "updated_at": time.Now().UTC(),
 			"status":            system.SystemBackupStatusSucceeded,
 			"trigger":           system.SystemBackupTriggerSafety,
 			"destination":       backuptypes.SystemBackupDestinationLocal,
-			"local_snapshot_id": backup.LocalSnapshotID, "remote_snapshot_id": "", "s3_destination_id": "",
+			"local_snapshot_id": safetyBackup.LocalSnapshotID, "remote_snapshot_id": "", "s3_destination_id": "",
 			"policy_id": "", "error": "",
 		}).Error
 }

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"maps"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/pkg/utils/tagpolicy"
 	"go.getarcane.app/updater/refs"
@@ -58,12 +60,12 @@ type tagRegistry struct {
 
 // scanRegistryMemo memoizes successful registry lookups for one scan
 // and coalesces concurrent misses for the same key into a single request.
-// Failures are not stored: each waiting caller receives the shared error and
-// the next caller retries, so a transient fault never sticks for the scan.
 type scanRegistryMemo[V any] struct {
-	flight singleflight.Group
-	mu     sync.Mutex
-	values map[string]V
+	flight      singleflight.Group
+	mu          sync.Mutex
+	values      map[string]V
+	failures    map[string]error
+	keepFailure func(error) bool
 }
 
 func NewService(
@@ -99,8 +101,16 @@ func (s *Service) Check(
 		credentials: credentials,
 		docker:      s.docker,
 		settings:    s.settings,
-		tags:        &scanRegistryMemo[[]string]{values: map[string][]string{}},
-		digests:     &scanRegistryMemo[string]{values: map[string]string{}},
+		tags: &scanRegistryMemo[[]string]{
+			values:      map[string][]string{},
+			failures:    map[string]error{},
+			keepFailure: func(err error) bool { return registry.IsRateLimitErrorString(err.Error()) },
+		},
+		digests: &scanRegistryMemo[string]{
+			values:      map[string]string{},
+			failures:    map[string]error{},
+			keepFailure: func(error) bool { return false },
+		},
 	}
 	engine, err := updater.New(updater.Config{
 		RegistryTagLister:      adapter,
@@ -150,7 +160,15 @@ func (s *Service) Check(
 			checks[i] = s.checkContainerTag(groupCtx, engine, adapter, cnt)
 			saveMu.Lock()
 			defer saveMu.Unlock()
-			return save(groupCtx, cnt, checks[i])
+			saveErr := save(groupCtx, cnt, checks[i])
+			if saveErr == nil || groupCtx.Err() != nil {
+				return saveErr
+			}
+			checks[i].Error = errors.Join(
+				kit.Ternary(checks[i].Error != "", errors.New(checks[i].Error), nil),
+				fmt.Errorf("save tag check result: %w", saveErr),
+			).Error()
+			return nil
 		})
 	}
 	waitErr := g.Wait()
@@ -166,13 +184,23 @@ func (s *Service) Check(
 func (m *scanRegistryMemo[V]) do(key string, fetch func() (V, error)) (V, error) {
 	m.mu.Lock()
 	value, ok := m.values[key]
+	failure := m.failures[key]
 	m.mu.Unlock()
 	if ok {
 		return value, nil
 	}
+	if failure != nil {
+		var zero V
+		return zero, failure
+	}
 	shared, err, _ := m.flight.Do(key, func() (any, error) {
 		fetched, fetchErr := fetch()
 		if fetchErr != nil {
+			if m.keepFailure(fetchErr) {
+				m.mu.Lock()
+				m.failures[key] = fetchErr
+				m.mu.Unlock()
+			}
 			return nil, fetchErr
 		}
 		m.mu.Lock()

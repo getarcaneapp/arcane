@@ -62,34 +62,32 @@ func (s *Service) ComposeContainers(ctx context.Context) ([]container.Summary, e
 	return projects.ListGlobalComposeContainers(ctx, cli, s.dockerService.DockerHost())
 }
 
+func RuntimeProjectName(fallback string, runtimeContainers []container.Summary) string {
+	if len(runtimeContainers) == 0 {
+		return fallback
+	}
+	return cmp.Or(docker.ComposeProjectLabel(runtimeContainers[0].Labels), fallback)
+}
+
 // ComposeServices reports every Compose service with its container state,
 // including services that have no container yet.
 func (s *Service) ComposeServices(
 	ctx context.Context,
 	composeProject *types.Project,
-	composeFileFullPath, projectsDirectory string,
-	autoInjectEnv bool,
+	runtimeContainers []container.Summary,
+	meta projects.ArcaneComposeMetadata,
 	catalog string,
 ) ([]project.RuntimeService, error) {
-	meta, metaErr := projects.ParseArcaneComposeMetadata(ctx, composeFileFullPath, projectsDirectory, autoInjectEnv)
-	if metaErr != nil {
-		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "path", composeFileFullPath, "error", metaErr)
-	}
-
-	containers, err := projects.ComposePs(ctx, s.dockerService.DockerHost(), composeProject, nil, true)
+	runtimeName := RuntimeProjectName(composeProject.Name, runtimeContainers)
+	containers, err := projects.ComposePs(ctx, s.dockerService.DockerHost(), &types.Project{Name: runtimeName}, nil, true)
 	if err != nil {
-		slog.ErrorContext(ctx, "compose ps error", "projectName", composeProject.Name, "error", err)
+		slog.ErrorContext(ctx, "compose ps error", "projectName", runtimeName, "error", err)
 		return nil, fmt.Errorf("failed to get compose services status: %w", err)
 	}
-	// Compose ps omits image IDs; a listing failure only leaves image-level checks unmatched.
-	imageIDs := make(map[string]string)
-	if summaries, listErr := s.ComposeContainers(ctx); listErr != nil {
-		slog.WarnContext(ctx, "failed to list containers for project image identity", "projectName", composeProject.Name, "error", listErr)
-	} else {
-		for _, c := range summaries {
-			if docker.ComposeProjectLabel(c.Labels) == composeProject.Name && c.ImageID != "" {
-				imageIDs[c.ID] = c.ImageID
-			}
+	imageIDs := make(map[string]string, len(runtimeContainers))
+	for _, c := range runtimeContainers {
+		if c.ImageID != "" {
+			imageIDs[c.ID] = c.ImageID
 		}
 	}
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
@@ -209,6 +207,8 @@ func (s *Service) ServiceUpdateRecords(ctx context.Context, projectIDs []string)
 
 // Logs streams Compose logs for the project line by line.
 func Logs(ctx context.Context, projectName string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	pr, pw := io.Pipe()
 	defer func() { _ = pw.Close() }()
 
@@ -218,19 +218,29 @@ func Logs(ctx context.Context, projectName string, logsChan chan<- string, follo
 	go func() {
 		// Closing the read half unblocks a pending pw.Write in ComposeLogs after an abandoned tail
 		// (ctx cancel or bufio.ErrTooLong); otherwise the writer goroutine wedges forever.
+		defer cancel()
 		defer func() { _ = pr.CloseWithError(io.ErrClosedPipe) }()
 
-		sc := bufio.NewScanner(pr)
-		sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-		for sc.Scan() {
+		reader := bufio.NewReaderSize(pr, 64*1024)
+		var line []byte
+		for {
+			chunk, isPrefix, readErr := reader.ReadLine()
+			if readErr != nil {
+				done <- readErr
+				return
+			}
+			line = append(line, chunk...)
+			if isPrefix && len(line) < 1024*1024 {
+				continue
+			}
 			select {
 			case <-ctx.Done():
 				done <- ctx.Err()
 				return
-			case logsChan <- sc.Text():
+			case logsChan <- string(line):
 			}
+			line = line[:0]
 		}
-		done <- sc.Err()
 	}()
 
 	// Writer goroutine: compose logs -> pipe

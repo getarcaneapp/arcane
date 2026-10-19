@@ -86,7 +86,11 @@ var ServiceOptions = fx.Options(
 		appimages.NewApplicationImagesService,
 		session.NewSessionService,
 		passkey.NewPasskeyService,
-		environment.NewEnvironmentService,
+		fx.Annotate(environment.NewEnvironmentService,
+			fx.OnStart(func(ctx context.Context, service *environment.EnvironmentService) error {
+				return service.LoadAccessTokens(ctx)
+			}),
+		),
 		apns.NewApnsService,
 		notification.NewNotificationService,
 		provideVulnerabilityService,

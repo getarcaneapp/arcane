@@ -9,9 +9,11 @@ import (
 	recoverytypes "github.com/getarcaneapp/arcane/types/v2/recovery"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
@@ -24,7 +26,7 @@ func newRestoredDatabaseForTestInternal(t *testing.T, runIDs ...string) (string,
 	require.NoError(t, err)
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&system.SystemBackupRun{}, &activity.Activity{}, &settings.SettingVariable{}))
+	require.NoError(t, db.AutoMigrate(&system.SystemBackupRun{}, &activity.Activity{}, &settings.SettingVariable{}, &backup.SystemBackupRecoveryConfig{}))
 	require.NoError(t, db.Create(&settings.SettingVariable{Key: "projectsDirectory", Value: "/app/data/projects"}).Error)
 	for i, id := range runIDs {
 		require.NoError(t, db.Create(&system.SystemBackupRun{
@@ -46,9 +48,13 @@ func newRestoredDatabaseForTestInternal(t *testing.T, runIDs ...string) (string,
 
 func TestFinalizeRestoredBackupInternal(t *testing.T) {
 	databaseURL, dsn := newRestoredDatabaseForTestInternal(t, "older", "selected")
+	crypto.InitEncryption(&crypto.Config{EncryptionKey: "recovery-finalize-test-key-32bytes", Environment: "test"})
+	recoveryKey, err := backup.GenerateRecoveryKey()
+	require.NoError(t, err)
 
 	require.NoError(t, finalizeRestoredBackupInternal(t.Context(), databaseURL, "selected", "activity-1", recoverytypes.RestoreRequest{
 		BackupID: "request-id", RemoteSnapshotID: "snapshot-1", S3DestinationID: "destination-1", Size: 1234,
+		RecoveryKey:     recoveryKey,
 		ProjectsSetting: "/srv/projects",
 		SafetyBackup: &recoverytypes.SafetyBackup{
 			ID: "safety", LocalSnapshotID: "safety-snapshot", Size: 4321,
@@ -77,6 +83,9 @@ func TestFinalizeRestoredBackupInternal(t *testing.T) {
 	var projectsSetting settings.SettingVariable
 	require.NoError(t, db.First(&projectsSetting, "key = ?", "projectsDirectory").Error)
 	require.Equal(t, "/srv/projects", projectsSetting.Value)
+	storedKey, err := backup.NewRecoveryKeyStore(&database.DB{DB: db}).Get(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, recoveryKey, storedKey)
 }
 
 func TestFinalizeRestoredBackupInternalFallsBackForLegacyManifest(t *testing.T) {

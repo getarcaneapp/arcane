@@ -10,6 +10,7 @@ type FrozenUpdateTarget struct {
 	BaselineImageID      string
 	BaselineStartedAt    string
 	BaselineRestartCount int
+	BaselineRunning      bool
 	DesiredImageRef      string
 	DesiredDigest        string
 }

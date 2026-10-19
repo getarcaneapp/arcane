@@ -3,11 +3,13 @@ package ws
 import (
 	"cmp"
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -39,6 +41,8 @@ func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 	}
 
 	shell := cmp.Or(c.QueryParam("shell"), "/bin/sh")
+	cols, _ := strconv.ParseUint(c.QueryParam("cols"), 10, 16)
+	rows, _ := strconv.ParseUint(c.QueryParam("rows"), 10, 16)
 
 	conn, unregister, ok := h.acceptWS(c, systemtypes.WSKindContainerExec, containerID)
 	if !ok {
@@ -56,14 +60,14 @@ func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 	// The pong is serviced by the concurrent stdin reader.
 	go wshub.KeepAlive(ctx, func() { cancel(errors.New("websocket ping failed")) }, conn)
 
-	h.runContainerExec(ctx, cancel, conn, containerID, shell)
+	h.runContainerExec(ctx, cancel, conn, containerID, shell, uint(cols), uint(rows))
 	return nil
 }
 
-func (h *WebSocketHandler) runContainerExec(ctx context.Context, cancel context.CancelCauseFunc, conn *websocket.Conn, containerID, shell string) {
+func (h *WebSocketHandler) runContainerExec(ctx context.Context, cancel context.CancelCauseFunc, conn *websocket.Conn, containerID, shell string, cols, rows uint) {
 	started := time.Now()
 
-	execID, err := h.containerService.CreateExec(ctx, containerID, []string{shell})
+	execID, err := h.containerService.CreateExec(ctx, containerID, []string{shell}, cols, rows)
 	if err != nil {
 		h.writeExecError(ctx, conn, fmt.Errorf("Error creating exec: %w", err)) //nolint:staticcheck // Preserve the existing error message.
 		closeExec(ctx, conn, containerID, "", started, fmt.Errorf("create exec: %w", err))
@@ -95,7 +99,7 @@ func (h *WebSocketHandler) runContainerExec(ctx context.Context, cancel context.
 
 	done := make(chan error, 1)
 	go h.pipeExecOutput(ctx, conn, execSession.Stdout(), done)
-	go h.pipeExecInput(ctx, cancel, conn, execSession.Stdin())
+	go h.pipeExecInput(ctx, cancel, conn, execID, execSession.Stdin())
 
 	cause := <-done
 	if ctxCause := context.Cause(ctx); ctxCause != nil {
@@ -167,12 +171,23 @@ func (h *WebSocketHandler) pipeExecOutput(ctx context.Context, conn *websocket.C
 	}
 }
 
-func (h *WebSocketHandler) pipeExecInput(ctx context.Context, cancel context.CancelCauseFunc, conn *websocket.Conn, stdin io.Writer) {
+func (h *WebSocketHandler) pipeExecInput(ctx context.Context, cancel context.CancelCauseFunc, conn *websocket.Conn, execID string, stdin io.Writer) {
 	for {
-		_, data, err := conn.Read(ctx)
+		msgType, data, err := conn.Read(ctx)
 		if err != nil {
 			cancel(fmt.Errorf("websocket read: %w", err))
 			return
+		}
+		var control struct {
+			Type string `json:"type"`
+			Cols uint   `json:"cols"`
+			Rows uint   `json:"rows"`
+		}
+		if msgType == websocket.MessageText && json.Unmarshal(data, &control) == nil && control.Type == "resize" {
+			if resizeErr := h.containerService.ResizeExec(ctx, execID, control.Cols, control.Rows); resizeErr != nil {
+				slog.DebugContext(ctx, "Failed to resize exec", "execId", execID, "error", resizeErr)
+			}
+			continue
 		}
 		if _, writeErr := stdin.Write(data); writeErr != nil {
 			cancel(fmt.Errorf("exec input write: %w", writeErr))

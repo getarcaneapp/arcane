@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
@@ -17,6 +18,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/updater"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
@@ -436,4 +438,180 @@ func TestResumePlanConfirmsRedeliveredChangeWithoutReapplying(t *testing.T) {
 			require.Len(t, records, test.remaining)
 		})
 	}
+}
+
+func TestConfirmTargetRequiresRunningReplacementWhenBaselineRan(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		running   bool
+		status    container.ContainerState
+		confirmed bool
+	}{
+		{
+			name:      "running replacement",
+			running:   true,
+			status:    container.StateRunning,
+			confirmed: true,
+		},
+		{
+			name:   "exited replacement",
+			status: container.StateExited,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/containers/json"):
+					assert.NoError(t, json.MarshalWrite(w, []container.Summary{{ID: "new", Names: []string{"/app"}}}))
+				case strings.Contains(r.URL.Path, "/images/"):
+					assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{ID: "sha256:desired"}))
+				case strings.Contains(r.URL.Path, "/containers/"):
+					assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
+						ID:     "new",
+						Name:   "/app",
+						Image:  "sha256:desired",
+						Config: &container.Config{},
+						State: &container.State{
+							Status:  test.status,
+							Running: test.running,
+						},
+					}))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			svc := newTestService(t, server, nil)
+			confirmed, unchanged, err := svc.ConfirmTarget(t.Context(), arcaneupdater.FrozenUpdateTarget{
+				ContainerID:       "old",
+				ContainerName:     "app",
+				BaselineImageID:   "sha256:baseline",
+				BaselineStartedAt: "baseline",
+				BaselineRunning:   true,
+				DesiredImageRef:   "registry.example.com/app:latest",
+				DesiredDigest:     "sha256:desired",
+			})
+			require.NoError(t, err)
+			require.Equal(t, test.confirmed, confirmed)
+			require.False(t, unchanged)
+		})
+	}
+}
+
+func TestConfirmTargetStartsCreatedReplacementWhenBaselineRan(t *testing.T) {
+	var started atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			assert.NoError(t, json.MarshalWrite(w, []container.Summary{{ID: "new", Names: []string{"/app"}}}))
+		case strings.HasSuffix(r.URL.Path, "/containers/new/start"):
+			started.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		case strings.Contains(r.URL.Path, "/images/"):
+			assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{ID: "sha256:desired"}))
+		case strings.Contains(r.URL.Path, "/containers/"):
+			assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
+				ID:     "new",
+				Name:   "/app",
+				Image:  "sha256:desired",
+				Config: &container.Config{},
+				State:  &container.State{Status: container.StateCreated},
+			}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	svc := newTestService(t, server, nil)
+
+	confirmed, unchanged, err := svc.ConfirmTarget(t.Context(), arcaneupdater.FrozenUpdateTarget{
+		ContainerID:       "old",
+		ContainerName:     "app",
+		BaselineImageID:   "sha256:baseline",
+		BaselineStartedAt: "baseline",
+		BaselineRunning:   true,
+		DesiredImageRef:   "registry.example.com/app:latest",
+		DesiredDigest:     "sha256:desired",
+	})
+	require.NoError(t, err)
+	require.True(t, started.Load())
+	require.True(t, confirmed)
+	require.False(t, unchanged)
+}
+
+func TestResumePlanStartsStoppedOriginalAndPersistsNewBaseline(t *testing.T) {
+	target := arcaneupdater.FrozenUpdateTarget{
+		ContainerID:       "old",
+		ContainerName:     "app",
+		BaselineImageID:   "sha256:baseline",
+		BaselineStartedAt: "baseline",
+		BaselineRunning:   true,
+		DesiredImageRef:   "registry.example.com/app:latest",
+		DesiredDigest:     "sha256:desired",
+	}
+	raw, err := json.Marshal(frozenUpdatePlan{
+		Records: []updater.ImageUpdateRecord{{
+			ContainerID: "old",
+			ID:          "image",
+			Repository:  "registry.example.com/app",
+			Tag:         "latest",
+			HasUpdate:   true,
+		}},
+		Targets: []arcaneupdater.FrozenUpdateTarget{target},
+	})
+	require.NoError(t, err)
+	run := scheduler.Run{ID: "run", Outcome: scheduler.Outcome{Targets: []scheduler.TargetOutcome{{
+		ID:           "auto-update",
+		ResourceType: "update-batch",
+		Status:       scheduler.Running,
+		RecoveryData: raw,
+	}}}}
+	var started atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			assert.NoError(t, json.MarshalWrite(w, []container.Summary{{ID: "old", Names: []string{"/app"}}}))
+		case strings.HasSuffix(r.URL.Path, "/containers/old/start"):
+			started.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		case strings.Contains(r.URL.Path, "/images/"):
+			assert.NoError(t, json.MarshalWrite(w, image.InspectResponse{ID: "sha256:desired"}))
+		case strings.Contains(r.URL.Path, "/containers/"):
+			assert.NoError(t, json.MarshalWrite(w, container.InspectResponse{
+				ID:     "old",
+				Name:   "/app",
+				Image:  "sha256:baseline",
+				Config: &container.Config{},
+				State: &container.State{
+					Running:   started.Load(),
+					StartedAt: kit.Ternary(started.Load(), "restarted", "baseline"),
+				},
+			}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	svc := newTestService(t, server, nil)
+	var persisted []byte
+	ctx := jobcontext.WithExecution(t.Context(), run, func(progress scheduler.TargetOutcome) error {
+		if progress.ID == "auto-update" {
+			persisted = progress.RecoveryData
+		}
+		return nil
+	})
+
+	resumed, remaining, unresolved, err := svc.ResumePlan(ctx, run)
+	require.NoError(t, err)
+	require.True(t, started.Load(), "the stopped original is started before the update resumes")
+	require.False(t, unresolved)
+	require.Equal(t, 1, remaining)
+	plan := resumed.Value(frozenPendingKey{}).(*frozenUpdatePlan)
+	require.Equal(t, "restarted", plan.Targets[0].BaselineStartedAt)
+	var saved frozenUpdatePlan
+	require.NoError(t, json.Unmarshal(persisted, &saved))
+	require.Equal(t, "restarted", saved.Targets[0].BaselineStartedAt)
 }

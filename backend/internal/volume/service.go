@@ -215,8 +215,8 @@ func (s *VolumeService) PruneLocalBackupRepository(ctx context.Context) error {
 }
 
 // MigrateRepositoryPasswords re-keys this instance's own volume backup repositories to the recovery key; other instances re-key their own roots.
-func (s *VolumeService) MigrateRepositoryPasswords(ctx context.Context) error {
-	return s.backup.MigrateRepositoryPasswords(ctx)
+func (s *VolumeService) MigrateRepositoryPasswords(ctx context.Context, previousKey, newKey string) error {
+	return s.backup.MigrateRepositoryPasswords(ctx, previousKey, newKey)
 }
 
 func (s *VolumeService) backupStore() volumebackup.Store {
@@ -491,27 +491,23 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 
 func (s *VolumeService) PruneVolumes(ctx context.Context) (*volumetypes.PruneReport, error) {
 	slog.DebugContext(ctx, "volume service: prune volumes")
-	return s.PruneVolumesWithOptions(ctx, false)
-}
-
-func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (*volumetypes.PruneReport, error) {
-	slog.DebugContext(ctx, "volume service: prune volumes with options", "all", all)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	// Stop all read-only browse helpers first; a helper mounting a volume marks it
+	// Stop idle read-only browse helpers first; a helper mounting a volume marks it
 	// "in use" and would prevent VolumePrune from reclaiming an otherwise-unused
-	// volumetypes. Helpers are re-created on demand on the next browse request.
-	s.CleanupHelperContainers(ctx)
+	// volume. Helpers are re-created on demand on the next browse request.
+	if _, reapErr := s.ReapIdleHelpers(ctx, 0); reapErr != nil {
+		slog.WarnContext(ctx, "could not remove idle volume helpers before prune", "error", reapErr.Error())
+	}
 
 	// Docker's VolumesPrune behavior (API v1.42+):
 	// - Without 'all' flag: Only removes anonymous (unnamed) volumes that are not in use
 	// - With 'all=true' flag: Removes ALL unused volumes (both named and anonymous)
 	// Note: Volumes are considered "in use" if referenced by any container (running or stopped)
 	volumePruneResult, err := dockerClient.VolumePrune(ctx, client.VolumePruneOptions{
-		All:     all,
 		Filters: make(client.Filters).Add("label!", internalVolumePruneFilterValue),
 	})
 	if err != nil {
@@ -520,7 +516,7 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 
 	metadata := database.JSON{
 		"action":                    "prune",
-		"all":                       all,
+		"all":                       false,
 		"volumesDeleted":            len(volumePruneResult.Report.VolumesDeleted),
 		"spaceReclaimed":            volumePruneResult.Report.SpaceReclaimed,
 		"internalVolumeFilterLabel": internalVolumePruneFilterValue,

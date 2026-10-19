@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/samber/hot"
+	"go.getarcane.app/kit/pkg"
 )
 
 // edgeTokenCache maps agent tokens to environment IDs; the reverse index drops
@@ -14,6 +15,12 @@ type edgeTokenCache struct {
 	mu      sync.RWMutex
 	byToken *hot.HotCache[string, string]
 	byEnvID map[string]string
+}
+
+type accessTokenIndex struct {
+	mu       sync.RWMutex
+	byEnvID  map[string]string
+	byHashed map[string]int
 }
 
 // remoteEnvSnapshotCache holds every enabled, visible, non-local environment
@@ -67,6 +74,28 @@ func (c *edgeTokenCache) sync(envID, token string) {
 	if resolvedToken := strings.TrimSpace(token); resolvedToken != "" {
 		c.byEnvID[envID] = resolvedToken
 		c.byToken.Set(resolvedToken, envID)
+	}
+}
+
+func (i *accessTokenIndex) sync(envID, token string) {
+	if envID == "" {
+		return
+	}
+
+	i.mu.Lock()
+	defer i.mu.Unlock()
+
+	if previousHash, ok := i.byEnvID[envID]; ok {
+		delete(i.byEnvID, envID)
+		i.byHashed[previousHash]--
+		if i.byHashed[previousHash] <= 0 {
+			delete(i.byHashed, previousHash)
+		}
+	}
+	if resolvedToken := strings.TrimSpace(token); resolvedToken != "" {
+		hashed := kit.SHA256Hex(resolvedToken)
+		i.byEnvID[envID] = hashed
+		i.byHashed[hashed]++
 	}
 }
 
