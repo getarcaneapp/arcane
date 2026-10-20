@@ -87,37 +87,78 @@ func TestDescribeDerivesUnitsAndTemplates(t *testing.T) {
 		{
 			name:  "container",
 			entry: podmantypes.Quadlet{Name: "web.container", Status: "active"},
-			want:  podmantypes.QuadletDetail{Name: "web.container", UnitName: "web.service", Status: "active", Type: podmantypes.QuadletTypeContainer},
+			want: podmantypes.QuadletDetail{
+				Name:     "web.container",
+				UnitName: "web.service",
+				Status:   "active",
+				Type:     podmantypes.QuadletTypeContainer,
+			},
 		},
 		{
 			name:  "kube",
 			entry: podmantypes.Quadlet{Name: "shop.kube", Status: "inactive"},
-			want:  podmantypes.QuadletDetail{Name: "shop.kube", UnitName: "shop.service", Status: "inactive", Type: podmantypes.QuadletTypeKube},
+			want: podmantypes.QuadletDetail{
+				Name:     "shop.kube",
+				UnitName: "shop.service",
+				Status:   "inactive",
+				Type:     podmantypes.QuadletTypeKube,
+			},
 		},
 		{
 			name:  "pod",
 			entry: podmantypes.Quadlet{Name: "stack.pod", Status: "active"},
-			want:  podmantypes.QuadletDetail{Name: "stack.pod", UnitName: "stack-pod.service", Status: "active", Type: podmantypes.QuadletTypePod},
+			want: podmantypes.QuadletDetail{
+				Name:     "stack.pod",
+				UnitName: "stack-pod.service",
+				Status:   "active",
+				Type:     podmantypes.QuadletTypePod,
+			},
 		},
 		{
 			name:  "network",
 			entry: podmantypes.Quadlet{Name: "backend.network", Status: "Not loaded"},
-			want:  podmantypes.QuadletDetail{Name: "backend.network", UnitName: "backend-network.service", Status: "Not loaded", Type: podmantypes.QuadletTypeNetwork},
+			want: podmantypes.QuadletDetail{
+				Name:     "backend.network",
+				UnitName: "backend-network.service",
+				Status:   "Not loaded",
+				Type:     podmantypes.QuadletTypeNetwork,
+			},
 		},
 		{
-			name:  "reported unit wins",
-			entry: podmantypes.Quadlet{Name: "data.volume", UnitName: "custom.service", Status: "active"},
-			want:  podmantypes.QuadletDetail{Name: "data.volume", UnitName: "custom.service", Status: "active", Type: podmantypes.QuadletTypeVolume},
+			name: "reported unit wins",
+			entry: podmantypes.Quadlet{
+				Name:     "data.volume",
+				UnitName: "custom.service",
+				Status:   "active",
+			},
+			want: podmantypes.QuadletDetail{
+				Name:     "data.volume",
+				UnitName: "custom.service",
+				Status:   "active",
+				Type:     podmantypes.QuadletTypeVolume,
+			},
 		},
 		{
 			name:  "template file name",
 			entry: podmantypes.Quadlet{Name: "worker@.container", Status: "inactive"},
-			want:  podmantypes.QuadletDetail{Name: "worker@.container", UnitName: "worker@.service", Status: "inactive", Type: podmantypes.QuadletTypeContainer, Template: true},
+			want: podmantypes.QuadletDetail{
+				Name:     "worker@.container",
+				UnitName: "worker@.service",
+				Status:   "inactive",
+				Type:     podmantypes.QuadletTypeContainer,
+				Template: true,
+			},
 		},
 		{
 			name:  "template status",
 			entry: podmantypes.Quadlet{Name: "job.container", Status: "loaded template"},
-			want:  podmantypes.QuadletDetail{Name: "job.container", UnitName: "job.service", Status: "loaded template", Type: podmantypes.QuadletTypeContainer, Template: true},
+			want: podmantypes.QuadletDetail{
+				Name:     "job.container",
+				UnitName: "job.service",
+				Status:   "loaded template",
+				Type:     podmantypes.QuadletTypeContainer,
+				Template: true,
+			},
 		},
 	}
 

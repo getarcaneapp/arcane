@@ -88,18 +88,19 @@ func NewClient(host string) (*Client, error) {
 
 func DetectFeatures(version string, systemdAvailable bool) Features {
 	v := kit.EnsurePrefix(strings.TrimSpace(version), "v")
-	autoUpdateMode := podmantypes.AutoUpdateModeUnavailable
-	switch {
-	case semver.Compare(v, "v6.2.0") >= 0:
-		autoUpdateMode = podmantypes.AutoUpdateModeREST
-	case systemdAvailable:
-		autoUpdateMode = podmantypes.AutoUpdateModeSystemd
-	}
-
 	return Features{
 		QuadletsSupported:    semver.Compare(v, "v5.8.0") >= 0,
 		QuadletAppsSupported: semver.Compare(v, "v6.1.0") >= 0,
-		AutoUpdateMode:       autoUpdateMode,
+		AutoUpdateMode: func() podmantypes.AutoUpdateMode {
+			switch {
+			case semver.Compare(v, "v6.2.0") >= 0:
+				return podmantypes.AutoUpdateModeREST
+			case systemdAvailable:
+				return podmantypes.AutoUpdateModeSystemd
+			default:
+				return podmantypes.AutoUpdateModeUnavailable
+			}
+		}(),
 	}
 }
 

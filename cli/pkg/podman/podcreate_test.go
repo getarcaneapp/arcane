@@ -56,7 +56,11 @@ func TestPodCreateOptionsRequest(t *testing.T) {
 					StaticMAC:     "92:d0:c6:0a:29:33",
 					InterfaceName: "eth1",
 				}},
-				PortMappings:       []podman.PodPortMapping{{ContainerPort: 80, HostPort: 8080, Protocol: "tcp"}},
+				PortMappings: []podman.PodPortMapping{{
+					ContainerPort: 80,
+					HostPort:      8080,
+					Protocol:      "tcp",
+				}},
 				DNSServers:         []string{"1.1.1.1"},
 				NoManageResolvConf: true,
 				HostsFile:          "none",
@@ -67,7 +71,11 @@ func TestPodCreateOptionsRequest(t *testing.T) {
 				DeviceReadBps:      []podman.PodDeviceLimit{{Device: "8:0", Value: "1mb"}},
 				DeviceWriteBps:     []podman.PodDeviceLimit{},
 				Volumes: []podman.PodVolume{
-					{Source: "/srv/data", Destination: "/data", Options: []string{"ro", "Z"}},
+					{
+						Source:      "/srv/data",
+						Destination: "/data",
+						Options:     []string{"ro", "Z"},
+					},
 					{Source: "cache", Destination: "/cache"},
 				},
 				VolumesFrom:    []string{"seed"},
@@ -76,13 +84,21 @@ func TestPodCreateOptionsRequest(t *testing.T) {
 			},
 		},
 		{
-			name:    "static IP without a named network",
-			opts:    podCreateOptions{name: "web", infra: true, ip: "10.0.0.2"},
+			name: "static IP without a named network",
+			opts: podCreateOptions{
+				name:  "web",
+				infra: true,
+				ip:    "10.0.0.2",
+			},
 			wantErr: "need exactly one --network NAME",
 		},
 		{
-			name:    "volume without destination",
-			opts:    podCreateOptions{name: "web", infra: true, volumes: []string{"data"}},
+			name: "volume without destination",
+			opts: podCreateOptions{
+				name:    "web",
+				infra:   true,
+				volumes: []string{"data"},
+			},
 			wantErr: "invalid --volume",
 		},
 	}

@@ -30,7 +30,11 @@ func TestCreateMapsRequestToPodSpec(t *testing.T) {
 				Networks:         []podmantypes.PodNetwork{{Name: "frontend"}},
 				SharedNamespaces: []string{"net", "ipc"},
 				PortMappings: []podmantypes.PodPortMapping{
-					{ContainerPort: 80, HostPort: 8080, Protocol: "tcp"},
+					{
+						ContainerPort: 80,
+						HostPort:      8080,
+						Protocol:      "tcp",
+					},
 				},
 			},
 			want: map[string]any{
@@ -38,10 +42,16 @@ func TestCreateMapsRequestToPodSpec(t *testing.T) {
 				"hostname":          "web-host",
 				"labels":            map[string]any{"tier": "front"},
 				"shared_namespaces": []any{"net", "ipc"},
-				"portmappings":      []any{map[string]any{"container_port": float64(80), "host_port": float64(8080), "protocol": "tcp"}},
-				"netns":             map[string]any{"nsmode": "bridge"},
-				"Networks":          map[string]any{"frontend": map[string]any{}},
-				"resource_limits":   map[string]any{},
+				"portmappings": []any{
+					map[string]any{
+						"container_port": float64(80),
+						"host_port":      float64(8080),
+						"protocol":       "tcp",
+					},
+				},
+				"netns":           map[string]any{"nsmode": "bridge"},
+				"Networks":        map[string]any{"frontend": map[string]any{}},
+				"resource_limits": map[string]any{},
 			},
 		},
 		{
@@ -106,7 +116,11 @@ func TestCreateMapsRequestToPodSpec(t *testing.T) {
 				Devices:            []string{"/dev/fuse"},
 				GPUs:               []string{"all"},
 				Volumes: []podmantypes.PodVolume{
-					{Source: "/srv/data", Destination: "/data", Options: []string{"ro", "Z"}},
+					{
+						Source:      "/srv/data",
+						Destination: "/data",
+						Options:     []string{"ro", "Z"},
+					},
 					{Source: "cache", Destination: "/cache"},
 				},
 				VolumesFrom:    []string{"seed:ro"},
@@ -132,8 +146,20 @@ func TestCreateMapsRequestToPodSpec(t *testing.T) {
 				"idmappings": map[string]any{
 					"HostUIDMapping": false,
 					"HostGIDMapping": false,
-					"UIDMap":         []any{map[string]any{"container_id": float64(0), "host_id": float64(100000), "size": float64(65536)}},
-					"GIDMap":         []any{map[string]any{"container_id": float64(0), "host_id": float64(100000), "size": float64(65536)}},
+					"UIDMap": []any{
+						map[string]any{
+							"container_id": float64(0),
+							"host_id":      float64(100000),
+							"size":         float64(65536),
+						},
+					},
+					"GIDMap": []any{
+						map[string]any{
+							"container_id": float64(0),
+							"host_id":      float64(100000),
+							"size":         float64(65536),
+						},
+					},
 				},
 				"netns":           map[string]any{"nsmode": "pasta"},
 				"network_options": map[string]any{"pasta": []any{"--ipv4-only"}},
@@ -162,14 +188,39 @@ func TestCreateMapsRequestToPodSpec(t *testing.T) {
 						"mems":   "0",
 					},
 					"blockIO": map[string]any{
-						"weight":                 float64(300),
-						"weightDevice":           []any{map[string]any{"major": float64(8), "minor": float64(0), "weight": float64(200)}},
-						"throttleReadBpsDevice":  []any{map[string]any{"major": float64(8), "minor": float64(0), "rate": float64(1 << 20)}},
-						"throttleWriteBpsDevice": []any{map[string]any{"major": float64(8), "minor": float64(16), "rate": float64(2 << 20)}},
+						"weight": float64(300),
+						"weightDevice": []any{
+							map[string]any{
+								"major":  float64(8),
+								"minor":  float64(0),
+								"weight": float64(200),
+							},
+						},
+						"throttleReadBpsDevice": []any{
+							map[string]any{
+								"major": float64(8),
+								"minor": float64(0),
+								"rate":  float64(1 << 20),
+							},
+						},
+						"throttleWriteBpsDevice": []any{
+							map[string]any{
+								"major": float64(8),
+								"minor": float64(16),
+								"rate":  float64(2 << 20),
+							},
+						},
 					},
 				},
-				"pod_devices":      []any{"/dev/fuse", "nvidia.com/gpu=all"},
-				"mounts":           []any{map[string]any{"destination": "/data", "type": "bind", "source": "/srv/data", "options": []any{"ro", "Z"}}},
+				"pod_devices": []any{"/dev/fuse", "nvidia.com/gpu=all"},
+				"mounts": []any{
+					map[string]any{
+						"destination": "/data",
+						"type":        "bind",
+						"source":      "/srv/data",
+						"options":     []any{"ro", "Z"},
+					},
+				},
 				"volumes":          []any{map[string]any{"Name": "cache", "Dest": "/cache"}},
 				"volumes_from":     []any{"seed:ro"},
 				"shm_size":         float64(64 << 20),

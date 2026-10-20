@@ -127,14 +127,22 @@ func (s *Service) Create(ctx context.Context, req podmantypes.PodCreateRequest) 
 	}
 	weightDevices, err := deviceLimits("blkio weight", req.BlkioWeightDevices, func(major, minor int64, value string) (podman.PodWeightDevice, error) {
 		weight, parseErr := strconv.ParseUint(value, 10, 16)
-		return podman.PodWeightDevice{Major: major, Minor: minor, Weight: new(uint16(weight))}, parseErr
+		return podman.PodWeightDevice{
+			Major:  major,
+			Minor:  minor,
+			Weight: new(uint16(weight)),
+		}, parseErr
 	})
 	if err != nil {
 		return "", err
 	}
 	throttle := func(major, minor int64, value string) (podman.PodThrottleDevice, error) {
 		rate, parseErr := units.RAMInBytes(value)
-		return podman.PodThrottleDevice{Major: major, Minor: minor, Rate: uint64(max(rate, 0))}, parseErr
+		return podman.PodThrottleDevice{
+			Major: major,
+			Minor: minor,
+			Rate:  uint64(max(rate, 0)),
+		}, parseErr
 	}
 	readBps, err := deviceLimits("read bps", req.DeviceReadBps, throttle)
 	if err != nil {

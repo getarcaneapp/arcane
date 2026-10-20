@@ -197,7 +197,11 @@ func TestServiceAutoUpdateSystemdMode(t *testing.T) {
 	systemd := &fakeSystemd{
 		availability: podmantypes.SystemdAvailability{Available: true, Scope: podmantypes.SystemdScopeSystem},
 		statuses: []podmantypes.UnitStatus{
-			{LoadState: "loaded", ActiveState: "inactive", SubState: "dead"},
+			{
+				LoadState:   "loaded",
+				ActiveState: "inactive",
+				SubState:    "dead",
+			},
 		},
 	}
 	host := &testHost{
