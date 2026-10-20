@@ -9,8 +9,8 @@ list:
 
 all: js go proto
 
-# Frontend, Playwright tests, and email templates
-js: frontend tests email
+# Frontend and Playwright tests
+js: frontend tests
 
 # Type check and lint the frontend
 frontend:
@@ -20,10 +20,6 @@ frontend:
 # Type check Playwright tests
 tests:
     vp -C tests run check
-
-# Type check email templates
-email:
-    vp -C email-templates run check
 
 # Backend, CLI, and types modules
 go: backend cli types

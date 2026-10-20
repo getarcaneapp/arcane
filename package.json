@@ -3,8 +3,7 @@
 	"private": true,
 	"workspaces": [
 		"frontend",
-		"tests",
-		"email-templates"
+		"tests"
 	],
 	"scripts": {
 		"preinstall": "npx only-allow pnpm"

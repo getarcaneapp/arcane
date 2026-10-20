@@ -39,7 +39,6 @@ export default defineConfig({
 	staged: {
 		'frontend/**/*': "sh -c 'just format frontend --check'",
 		'tests/**/*.{ts,tsx,js,jsx,mts,cts}': "sh -c 'just format tests --check'",
-		'email-templates/**/*.{ts,tsx,js,jsx,mts,cts}': "sh -c 'just format email --check'",
 		'{backend,cli,types}/**/*': "sh -c 'just format go --check'"
 	},
 	test: {

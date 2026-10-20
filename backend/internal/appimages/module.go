@@ -23,16 +23,6 @@ func RegisterAppImages(api huma.API, appImagesService *ApplicationImagesService)
 	}, h.GetLogo)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "get-logo-email",
-		Method:      http.MethodGet,
-		Path:        "/app-images/logo-email",
-		Summary:     "Get application logo for email",
-		Description: "Get the application logo image in PNG format for emails",
-		Tags:        []string{"Application Images"},
-		Security:    []map[string][]string{},
-	}, h.GetLogoEmail)
-
-	huma.Register(api, huma.Operation{
 		OperationID: "get-favicon",
 		Method:      http.MethodGet,
 		Path:        "/app-images/favicon",

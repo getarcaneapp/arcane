@@ -64,6 +64,7 @@ func TestSendEmailStartTLSRequiresTLSBeforeAuth(t *testing.T) {
 		config,
 		"Arcane STARTTLS Test",
 		"<p>Test</p>",
+		"",
 		smtpBuildOptions{tlsConfig: server.ClientTLSConfig()},
 	)
 	require.NoError(t, err)
@@ -89,7 +90,7 @@ func TestSendEmailStartTLSFailsWhenServerDoesNotSupportIt(t *testing.T) {
 		TLSMode:      EmailTLSModeStartTLS,
 	}
 
-	err := SendEmail(t.Context(), config, "Arcane STARTTLS Test", "<p>Test</p>")
+	err := SendEmail(t.Context(), config, "Arcane STARTTLS Test", "<p>Test</p>", "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "STARTTLS")
 	assert.NotContains(t, err.Error(), "unencrypted connection")
@@ -120,6 +121,7 @@ func TestSendEmailAuthLoginAgainstExchangeStyleServer(t *testing.T) {
 		config,
 		"Arcane AUTH LOGIN Test",
 		"<p>Test</p>",
+		"",
 		smtpBuildOptions{tlsConfig: server.ClientTLSConfig()},
 	)
 	require.NoError(t, err)
@@ -144,7 +146,7 @@ func TestSendEmailStalePasswordWithoutUsernameSkipsAuth(t *testing.T) {
 		AuthMode:     EmailAuthModeAuto,
 	}
 
-	err := sendEmailInternal(t.Context(), config, "Arcane No-Auth Test", "<p>Test</p>", smtpBuildOptions{})
+	err := sendEmailInternal(t.Context(), config, "Arcane No-Auth Test", "<p>Test</p>", "", smtpBuildOptions{})
 	require.NoError(t, err)
 	require.NoError(t, server.Wait())
 

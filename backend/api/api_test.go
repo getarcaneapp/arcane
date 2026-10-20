@@ -243,7 +243,6 @@ func TestSetupAPIForSpec_PublicRoutesOverrideSecurity(t *testing.T) {
 		method string
 	}{
 		{path: "/app-images/logo", method: "GET"},
-		{path: "/app-images/logo-email", method: "GET"},
 		{path: "/app-images/favicon", method: "GET"},
 		{path: "/app-images/profile", method: "GET"},
 		{path: "/app-images/pwa/{filename}", method: "GET"},

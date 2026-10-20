@@ -23,10 +23,6 @@ frontend check='':
 tests check='':
     vp fmt {{ check }} tests
 
-[arg('check', long, value='--check')]
-email check='':
-    vp fmt {{ check }} email-templates
-
 # Go modules with the formatters configured in .golangci.yml
 [arg('check', long, value='--check')]
 go check='':

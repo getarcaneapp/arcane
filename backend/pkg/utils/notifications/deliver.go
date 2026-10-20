@@ -135,7 +135,7 @@ func deliverEmail(ctx context.Context, config database.JSON, c Content) error {
 	if err != nil {
 		return err
 	}
-	if sendEmailErr := SendEmail(ctx, emailConfig, subject, htmlBody); sendEmailErr != nil {
+	if sendEmailErr := SendEmail(ctx, emailConfig, subject, htmlBody, c.Text[MessageFormatPlain]); sendEmailErr != nil {
 		return fmt.Errorf("failed to send email: %w", sendEmailErr)
 	}
 	return nil

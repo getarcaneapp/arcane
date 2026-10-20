@@ -106,11 +106,11 @@ func buildMailClientInternal(config EmailConfig, options smtpBuildOptions) (*mai
 }
 
 // SendEmail sends pre-rendered HTML via go-mail.
-func SendEmail(ctx context.Context, config EmailConfig, subject, htmlBody string) error {
-	return sendEmailInternal(ctx, config, subject, htmlBody, smtpBuildOptionsFromContextInternal(ctx))
+func SendEmail(ctx context.Context, config EmailConfig, subject, htmlBody, textBody string) error {
+	return sendEmailInternal(ctx, config, subject, htmlBody, textBody, smtpBuildOptionsFromContextInternal(ctx))
 }
 
-func sendEmailInternal(ctx context.Context, config EmailConfig, subject, htmlBody string, options smtpBuildOptions) error {
+func sendEmailInternal(ctx context.Context, config EmailConfig, subject, htmlBody, textBody string, options smtpBuildOptions) error {
 	if ctx == nil {
 		return errors.New("email send context is required")
 	}
@@ -138,7 +138,12 @@ func sendEmailInternal(ctx context.Context, config EmailConfig, subject, htmlBod
 		return fmt.Errorf("invalid recipient address(es): %w", toErr)
 	}
 	msg.Subject(subject)
-	msg.SetBodyString(mail.TypeTextHTML, htmlBody)
+	if textBody != "" {
+		msg.SetBodyString(mail.TypeTextPlain, textBody)
+		msg.AddAlternativeString(mail.TypeTextHTML, htmlBody)
+	} else {
+		msg.SetBodyString(mail.TypeTextHTML, htmlBody)
+	}
 
 	if dialAndSendWithContextErr := client.DialAndSendWithContext(ctx, msg); dialAndSendWithContextErr != nil {
 		return fmt.Errorf("failed to send email: %w", dialAndSendWithContextErr)

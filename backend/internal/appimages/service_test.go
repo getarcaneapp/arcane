@@ -53,10 +53,6 @@ func TestNewApplicationImagesService_StableBuildUsesStandardBranding(t *testing.
 	data, _, err := svc.GetImageWithColor("favicon", "", false)
 	require.NoError(t, err)
 	assert.Equal(t, readEmbedded(t, "images/favicon.ico"), data)
-
-	data, _, err = svc.GetImageWithColor("logo-email", "", false)
-	require.NoError(t, err)
-	assert.Equal(t, readEmbedded(t, "images/logo-email.png"), data)
 }
 
 func TestNewApplicationImagesService_NonStableBuildUsesDevelopmentBranding(t *testing.T) {
@@ -92,11 +88,6 @@ func TestNewApplicationImagesService_NonStableBuildUsesDevelopmentBranding(t *te
 	assert.Equal(t, []byte{0, 0, 1, 0}, data[:4])
 	assert.NotEmpty(t, mimeType)
 
-	data, mimeType, err = svc.GetImageWithColor("logo-email", "", false)
-	require.NoError(t, err)
-	assert.Equal(t, "image/png", mimeType)
-	assert.Equal(t, readEmbedded(t, "images/development/logo-email.png"), data)
-
 	data, _, err = svc.GetImageWithColor("profile", "", false)
 	require.NoError(t, err)
 	assert.Equal(t, readEmbedded(t, "images/profile.webp"), data)
@@ -125,7 +116,6 @@ func TestGetImageWithColor_DevelopmentBrandingDisabledUsesStandardBranding(t *te
 
 	for name, file := range map[string]string{
 		"favicon":      "images/favicon.ico",
-		"logo-email":   "images/logo-email.png",
 		"icon-192x192": "images/icon-192x192.png",
 	} {
 		data, _, getErr := svc.GetImageWithColor(name, "", false)

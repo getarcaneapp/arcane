@@ -50,8 +50,6 @@ frontend/src/paraglide
 # Workspace manifests are required by the frontend dependency install
 /tests/**
 !/tests/package.json
-/email-templates/**
-!/email-templates/package.json
 
 # Local runtime data and binaries; keep platform binaries used by static images
 /data

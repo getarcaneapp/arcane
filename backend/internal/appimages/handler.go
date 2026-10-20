@@ -56,11 +56,6 @@ func (h *AppImagesHandler) GetLogo(ctx context.Context, input *GetLogoInput) (*G
 	return h.getImageWithColor(name, input.Color, input.Loop)
 }
 
-// GetLogoEmail returns the application logo image for emails (PNG).
-func (h *AppImagesHandler) GetLogoEmail(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
-	return h.getImageWithColor("logo-email", "", false)
-}
-
 // GetFavicon returns the application favicon image.
 func (h *AppImagesHandler) GetFavicon(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
 	return h.getImageWithColor("favicon", "", false)
@@ -91,7 +86,7 @@ func (h *AppImagesHandler) getImageWithColor(name, colorOverride string, loop bo
 
 	// Disable branding caching so theme and build-channel artwork is reflected immediately.
 	_, isPWAIcon := allowedPWAIconFilenames[name+".png"]
-	isBranding := IsLogoVariant(name) || isPWAIcon || name == "logo-email" || name == "favicon"
+	isBranding := IsLogoVariant(name) || isPWAIcon || name == "favicon"
 	cacheControl := kit.Ternary(
 		isBranding || colorOverride != "",
 		"no-cache, no-store, must-revalidate",

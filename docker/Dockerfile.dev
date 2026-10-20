@@ -9,7 +9,7 @@ WORKDIR /app
 
 # Copy dependency manifests first to preserve the install layer cache
 COPY --chown=vp:vp --parents pnpm-lock.yaml pnpm-workspace.yaml package.json \
-    frontend/package.json tests/package.json email-templates/package.json ./
+    frontend/package.json tests/package.json ./
 
 # Install dependencies with a persistent package store cache
 RUN mkdir -p /home/vp/.local/share/pnpm/store
