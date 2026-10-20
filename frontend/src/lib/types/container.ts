@@ -283,6 +283,8 @@ export interface ContainerDetails {
 	updateInfo?: ImageUpdateInfo;
 	/** Docker Hardened Image metadata from the image labels; absent on older agents. */
 	hardened?: HardenedImageInfo;
+	/** Environment variables that came from secret sources; their values in config.env are masked. */
+	secretEnvKeys?: string[];
 }
 
 export interface ContainerCreated {

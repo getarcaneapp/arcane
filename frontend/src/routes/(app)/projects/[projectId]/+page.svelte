@@ -24,6 +24,7 @@
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
 	import ProjectUpdateItem from '#lib/components/project-update-item.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
+	import ProjectSecretsPanel from '#lib/components/secret-sources/project-secrets-panel.svelte';
 	import { type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -51,7 +52,8 @@
 		SearchIcon,
 		ResetIcon,
 		GitBranchIcon,
-		FolderMoveIcon
+		FolderMoveIcon,
+		LockIcon
 	} from '#lib/icons/index.js';
 	import { RefreshIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
@@ -424,7 +426,7 @@
 
 	let autoScrollStackLogs = $state(true);
 
-	type ProjectTab = 'services' | 'compose' | 'backup' | 'logs';
+	type ProjectTab = 'services' | 'compose' | 'backup' | 'secrets' | 'logs';
 	let selectedTab = $state<ProjectTab>('compose');
 	let userSelectedTabProjectId: string | null = null;
 	let composeOpen = $state(true);
@@ -569,13 +571,15 @@
 						label: gitSyncsBothWays ? m.git_sync() : m.git_backup(),
 						icon: GitBranchIcon
 					}
-				])
+				]),
+		// Secret bindings resolve on the node that runs compose; only the local environment supports them today.
+		...(envId === '0' ? [{ value: 'secrets', label: m.project_secrets_tab(), icon: LockIcon }] : [])
 	]);
 
 	let nameInputRef = $state<HTMLInputElement | null>(null);
 
 	type ComposeUIPrefs = {
-		tab: 'services' | 'compose' | 'backup' | 'logs';
+		tab: 'services' | 'compose' | 'backup' | 'secrets' | 'logs';
 		composeOpen: boolean;
 		overrideOpen: boolean;
 		envOpen: boolean;
@@ -2059,6 +2063,12 @@
 	</Tabs.Content>
 {/snippet}
 
+{#snippet projectSecretsTab(project: Project)}
+	<Tabs.Content value="secrets" class="h-full min-h-0">
+		<ProjectSecretsPanel environmentId={envId} projectId={project.id} projectName={project.name} />
+	</Tabs.Content>
+{/snippet}
+
 {#snippet projectServicesTab(project: Project)}
 	<Tabs.Content value="services" class="h-full min-h-0">
 		<div class="flex h-full min-h-0 flex-col">
@@ -2579,6 +2589,8 @@
 			{@render projectComposeTab(project)}
 
 			{@render projectBackupTab(project)}
+
+			{@render projectSecretsTab(project)}
 		{/snippet}
 	</TabbedPageLayout>
 {:else}

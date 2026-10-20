@@ -118,6 +118,12 @@ export const navigationItems: NavigationSections = {
 					url: resolve('/(app)/projects/variables'),
 					icon: VariableIcon,
 					accessSurfaceId: 'route.projects.variables'
+				},
+				{
+					title: m.secret_sources_title(),
+					url: resolve('/(app)/projects/secret-sources'),
+					icon: LockIcon,
+					accessSurfaceId: 'route.projects.secret-sources'
 				}
 			]
 		},

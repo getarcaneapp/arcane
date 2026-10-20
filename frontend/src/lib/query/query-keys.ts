@@ -162,6 +162,13 @@ export const queryKeys = {
 		all: ['variables'] as const,
 		list: () => ['variables', 'list'] as const
 	},
+	secretSources: {
+		all: ['secret-sources'] as const,
+		list: () => ['secret-sources', 'list'] as const,
+		browse: (sourceId: string, kind: string, projectId = '', environment = '', path = '') =>
+			['secret-sources', 'browse', sourceId, kind, projectId, environment, path] as const,
+		bindings: (environmentId: string, projectId: string) => ['secret-sources', 'bindings', environmentId, projectId] as const
+	},
 	notifications: {
 		settings: () => ['notification-settings'] as const
 	},
