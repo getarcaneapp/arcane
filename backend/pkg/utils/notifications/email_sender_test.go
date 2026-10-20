@@ -13,7 +13,10 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"mime"
+	"mime/multipart"
 	"net"
+	"net/mail"
 	"net/textproto"
 	"strings"
 	"sync"
@@ -38,6 +41,7 @@ type smtpTestServer struct {
 	authMechanismUsed  string
 	authMechanisms     []string
 	commands           []string
+	message            string
 	mu                 sync.Mutex
 	supportStartTLS    bool
 	authBeforeTLS      bool
@@ -151,6 +155,52 @@ func TestSendEmailStalePasswordWithoutUsernameSkipsAuth(t *testing.T) {
 	require.NoError(t, server.Wait())
 
 	assert.NotContains(t, server.Commands(), "AUTH", "expected no AUTH attempt without complete credentials")
+}
+
+func TestSendEmailWithTextBodySendsMultipartAlternative(t *testing.T) {
+	server := newSMTPTestServerInternal(t, false, nil)
+	defer server.Close()
+
+	config := EmailConfig{
+		SMTPHost:    smtpTestHost,
+		SMTPPort:    server.Port(),
+		FromAddress: "from@example.com",
+		ToAddresses: []string{"to@example.com"},
+		TLSMode:     EmailTLSModeNone,
+	}
+
+	err := sendEmailInternal(t.Context(), config, "Arcane Multipart Test", "<p>HTML body</p>", "Plain body", smtpBuildOptions{})
+	require.NoError(t, err)
+	require.NoError(t, server.Wait())
+
+	msg, err := mail.ReadMessage(strings.NewReader(server.Message()))
+	require.NoError(t, err)
+
+	mediaType, params, err := mime.ParseMediaType(msg.Header.Get("Content-Type"))
+	require.NoError(t, err)
+	require.Equal(t, "multipart/alternative", mediaType)
+
+	parts := map[string]string{}
+	reader := multipart.NewReader(msg.Body, params["boundary"])
+	for {
+		part, partErr := reader.NextPart()
+		if errors.Is(partErr, io.EOF) {
+			break
+		}
+		require.NoError(t, partErr)
+
+		partType, _, typeErr := mime.ParseMediaType(part.Header.Get("Content-Type"))
+		require.NoError(t, typeErr)
+
+		body, readErr := io.ReadAll(part)
+		require.NoError(t, readErr)
+		parts[partType] = strings.TrimSpace(string(body))
+	}
+
+	assert.Equal(t, map[string]string{
+		"text/plain": "Plain body",
+		"text/html":  "<p>HTML body</p>",
+	}, parts)
 }
 
 func newSMTPTestServerInternal(t *testing.T, supportStartTLS bool, authMechanisms []string) *smtpTestServer {
@@ -349,15 +399,11 @@ func (s *smtpTestServer) handleCommandInternal(reader *textproto.Reader, writer 
 		if writeSMTPResponseErr6 := writeSMTPResponseInternal(writer, 354, false, "End data with <CR><LF>.<CR><LF>"); writeSMTPResponseErr6 != nil {
 			return false, writeSMTPResponseErr6
 		}
-		for {
-			dataLine, dataErr := reader.ReadLine()
-			if dataErr != nil {
-				return false, dataErr
-			}
-			if dataLine == "." {
-				break
-			}
+		dataLines, dataErr := reader.ReadDotLines()
+		if dataErr != nil {
+			return false, dataErr
 		}
+		s.recordMessage(strings.Join(dataLines, "\r\n"))
 		if writeSMTPResponseErr7 := writeSMTPResponseInternal(writer, 250, false, "2.0.0 queued"); writeSMTPResponseErr7 != nil {
 			return false, writeSMTPResponseErr7
 		}
@@ -410,6 +456,18 @@ func (s *smtpTestServer) recordAuthMechanismInternal(mechanism string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.authMechanismUsed = mechanism
+}
+
+func (s *smtpTestServer) recordMessage(message string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.message = message
+}
+
+func (s *smtpTestServer) Message() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.message
 }
 
 func (s *smtpTestServer) markStartTLSNegotiated() {
