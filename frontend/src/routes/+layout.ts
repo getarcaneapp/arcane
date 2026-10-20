@@ -60,7 +60,7 @@ let telemetryAwaited = false;
 const ROOT_STALE_TIME = 30_000;
 const SECONDARY_DISCOVERY_TIMEOUT = 1_500;
 const PODMAN_STATUS_DEPENDENCY = 'app:podman-status';
-const latePodmanStatuses = new Map<string, PodmanStatus>();
+const slowPodmanStatuses = new Map<string, PodmanStatus>();
 // Query results last pushed into the stores, so a cached repeat never overwrites newer local or streamed state.
 let appliedUser: User | undefined;
 let appliedEnvironments: Environment[] | undefined;
@@ -243,11 +243,6 @@ async function loadRoot({ url, depends }: Parameters<LayoutLoad>[0], releaseSele
 		);
 		const podmanStatusRequest = Promise.all(
 			podmanEnvironmentIds.map(async (id) => {
-				const late = latePodmanStatuses.get(id);
-				if (late) {
-					latePodmanStatuses.delete(id);
-					return [id, late] as const;
-				}
 				const request = dataOrNull(
 					queryClient.query({
 						...rootQuery,
@@ -256,6 +251,14 @@ async function loadRoot({ url, depends }: Parameters<LayoutLoad>[0], releaseSele
 					})
 				);
 				if (id === currentEnvironmentId) return [id, await request] as const;
+				const known = slowPodmanStatuses.get(id);
+				if (known) {
+					void request.then((refreshed) => {
+						if (refreshed?.detected) slowPodmanStatuses.set(id, refreshed);
+						else slowPodmanStatuses.delete(id);
+					});
+					return [id, known] as const;
+				}
 				const status = await Promise.race([
 					request,
 					new Promise<'pending'>((resolve) => setTimeout(() => resolve('pending'), SECONDARY_DISCOVERY_TIMEOUT))
@@ -263,7 +266,7 @@ async function loadRoot({ url, depends }: Parameters<LayoutLoad>[0], releaseSele
 				if (status !== 'pending') return [id, status] as const;
 				void request.then((discovered) => {
 					if (!discovered?.detected) return;
-					latePodmanStatuses.set(id, discovered);
+					slowPodmanStatuses.set(id, discovered);
 					void invalidate(PODMAN_STATUS_DEPENDENCY);
 				});
 				return [id, null] as const;
