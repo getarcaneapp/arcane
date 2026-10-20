@@ -1,3 +1,4 @@
+# Arcane runs as root (PUID/PGID=0) so the host system bus lets it manage Quadlet units and podman-auto-update.
 [Unit]
 Description=Arcane
 Wants=network-online.target
@@ -12,6 +13,8 @@ Volume=/run/podman/podman.sock:/var/run/docker.sock
 Volume=/run/dbus/system_bus_socket:/run/dbus/system_bus_socket
 Volume=arcane-data:/app/data
 Environment=ENCRYPTION_KEY=replace_me_with_a_random_32_char_value
+Environment=PUID=0
+Environment=PGID=0
 Environment=TZ=UTC
 SecurityLabelDisable=true
 HealthCmd=./arcane health --timeout 2s

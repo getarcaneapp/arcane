@@ -1,4 +1,5 @@
 import { browser } from '$app/env';
+import { invalidate } from '$app/navigation';
 import { navigating, page } from '$app/state';
 import { error, redirect } from '@sveltejs/kit';
 import { QueryClient } from '@tanstack/svelte-query';
@@ -58,6 +59,8 @@ let telemetryAwaited = false;
 // Navigations reuse root data for this long; a refresh of the page on screen always refetches.
 const ROOT_STALE_TIME = 30_000;
 const SECONDARY_DISCOVERY_TIMEOUT = 1_500;
+const PODMAN_STATUS_DEPENDENCY = 'app:podman-status';
+const latePodmanStatuses = new Map<string, PodmanStatus>();
 // Query results last pushed into the stores, so a cached repeat never overwrites newer local or streamed state.
 let appliedUser: User | undefined;
 let appliedEnvironments: Environment[] | undefined;
@@ -79,7 +82,8 @@ export const load: LayoutLoad = async (event) => {
 	}
 };
 
-async function loadRoot({ url }: Parameters<LayoutLoad>[0], releaseSelection: (() => void) | undefined) {
+async function loadRoot({ url, depends }: Parameters<LayoutLoad>[0], releaseSelection: (() => void) | undefined) {
+	depends(PODMAN_STATUS_DEPENDENCY);
 	// Logout must not wait on, or be triggered by, authenticated requests; preloading runs this too.
 	if (url.pathname === '/logout') {
 		return {
@@ -239,6 +243,11 @@ async function loadRoot({ url }: Parameters<LayoutLoad>[0], releaseSelection: ((
 		);
 		const podmanStatusRequest = Promise.all(
 			podmanEnvironmentIds.map(async (id) => {
+				const late = latePodmanStatuses.get(id);
+				if (late) {
+					latePodmanStatuses.delete(id);
+					return [id, late] as const;
+				}
 				const request = dataOrNull(
 					queryClient.query({
 						...rootQuery,
@@ -249,9 +258,15 @@ async function loadRoot({ url }: Parameters<LayoutLoad>[0], releaseSelection: ((
 				if (id === currentEnvironmentId) return [id, await request] as const;
 				const status = await Promise.race([
 					request,
-					new Promise<null>((resolve) => setTimeout(() => resolve(null), SECONDARY_DISCOVERY_TIMEOUT))
+					new Promise<'pending'>((resolve) => setTimeout(() => resolve('pending'), SECONDARY_DISCOVERY_TIMEOUT))
 				]);
-				return [id, status] as const;
+				if (status !== 'pending') return [id, status] as const;
+				void request.then((discovered) => {
+					if (!discovered?.detected) return;
+					latePodmanStatuses.set(id, discovered);
+					void invalidate(PODMAN_STATUS_DEPENDENCY);
+				});
+				return [id, null] as const;
 			})
 		);
 		const [loadedSettings, loadedSwarmStatus, loadedPodmanStatuses, loadedPermissionsManifest] = await Promise.all([

@@ -139,8 +139,7 @@ func (s *Service) ContainerUnitAction(ctx context.Context, containerRef string, 
 	unit := containers[index].Labels[podmantypes.SystemdUnitLabel]
 	installed, err := s.quadlets.List(ctx, nil)
 	if err != nil {
-		slog.WarnContext(ctx, "Could not verify the container's quadlet unit", "container", containerRef, "unit", unit, "error", err)
-		return false, nil
+		return true, fmt.Errorf("verify quadlet unit %s for container %s: %w", unit, containerRef, err)
 	}
 	if !slices.ContainsFunc(installed, func(quadlet podmantypes.QuadletDetail) bool {
 		return quadlet.UnitName == unit

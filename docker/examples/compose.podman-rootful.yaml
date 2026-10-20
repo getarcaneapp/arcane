@@ -1,3 +1,4 @@
+# Arcane runs as root (PUID/PGID=0) so the host system bus lets it manage Quadlet units and podman-auto-update.
 services:
   arcane:
     image: getarcaneapp/manager:latest
@@ -10,6 +11,8 @@ services:
       - arcane-data:/app/data
     environment:
       - ENCRYPTION_KEY=replace_me_with_a_random_32_char_value
+      - PUID=0
+      - PGID=0
       - TZ=UTC
     security_opt:
       - label=disable
