@@ -203,6 +203,7 @@ func NewService(deps Dependencies) *Service {
 				return projects.ResolveConfiguredContainerDirectory(service.projectsSetting(ctx), "/app/data/projects")
 			},
 			func(ctx context.Context) map[string]string { return service.recoveryEnvironment(ctx) },
+			kit.FromPtr(deps.Config).GitWorkDir,
 		),
 		volumes: volumes.NewService(volumes.Dependencies{
 			DB:             deps.DB,

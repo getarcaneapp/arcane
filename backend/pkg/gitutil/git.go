@@ -45,8 +45,8 @@ const (
 	// binarySniffBytes is how much of a file is inspected to classify it as binary.
 	binarySniffBytes = 512
 
-	// cloneScratchPrefix names the per-run clone scratch dirs created by Clone.
-	cloneScratchPrefix = "gitops-"
+	// CloneScratchPrefix names the per-run clone scratch dirs created by Clone.
+	CloneScratchPrefix = "gitops-"
 
 	errUnsupportedURL = "repository URL must use http(s)://, ssh://, git://, or git@host:path"
 
@@ -365,7 +365,7 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig,
 	if err = os.MkdirAll(workDir, 0o755); err != nil {
 		return "", fmt.Errorf("failed to create work dir: %w", err)
 	}
-	tmpDir, err := os.MkdirTemp(workDir, cloneScratchPrefix+"*")
+	tmpDir, err := os.MkdirTemp(workDir, CloneScratchPrefix+"*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp dir: %w", err)
 	}
@@ -577,7 +577,7 @@ func (c *Client) PurgeScratchDirs(ctx context.Context, maxAge time.Duration) (in
 			return removed, errErr
 		}
 		entryPath := filepath.Join(root, entry.Name())
-		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), cloneScratchPrefix) {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), CloneScratchPrefix) {
 			continue
 		}
 		if maxAge > 0 {

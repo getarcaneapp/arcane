@@ -248,7 +248,7 @@ func (c *Client) initEmptyCheckoutInternal(url, branch string) (*WriteCheckout, 
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create work dir: %w", err)
 	}
-	repoPath, err := os.MkdirTemp(workDir, cloneScratchPrefix+"*")
+	repoPath, err := os.MkdirTemp(workDir, CloneScratchPrefix+"*")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temp dir: %w", err)
 	}

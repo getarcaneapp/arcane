@@ -32,6 +32,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -63,6 +64,7 @@ type Service struct {
 	databaseFile        func() (string, error)
 	projectsDirectory   func(ctx context.Context) string
 	recoveryEnvironment func(ctx context.Context) map[string]string
+	gitWorkDirectory    string
 }
 
 func NewService(
@@ -74,6 +76,7 @@ func NewService(
 	databaseFile func() (string, error),
 	projectsDirectory func(ctx context.Context) string,
 	recoveryEnvironment func(ctx context.Context) map[string]string,
+	gitWorkDirectory string,
 ) *Service {
 	return &Service{
 		engine:              engine,
@@ -84,6 +87,7 @@ func NewService(
 		databaseFile:        databaseFile,
 		projectsDirectory:   projectsDirectory,
 		recoveryEnvironment: recoveryEnvironment,
+		gitWorkDirectory:    gitWorkDirectory,
 	}
 }
 
@@ -706,6 +710,16 @@ func (s *Service) backupSourceLayout(ctx context.Context, dockerClient *client.C
 			excludes = append(excludes, name+sidecar)
 		}
 	}
+	gitWorkDirectory, err := filepath.Abs(s.gitWorkDirectory)
+	if err != nil {
+		return backupSourceLayout{}, fmt.Errorf("failed to resolve the git work directory: %w", err)
+	}
+	if relative, relErr := filepath.Rel(dataDirectory, gitWorkDirectory); relErr == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		excludes = append(excludes, path.Join(
+			strings.NewReplacer(`\`, `\\`, `*`, `\*`, `?`, `\?`, `[`, `\[`, `]`, `\]`, `{`, `\{`, `}`, `\}`).Replace(filepath.ToSlash(relative)),
+			git.CloneScratchPrefix+"*",
+		))
+	}
 	projectsPath, external, err := projectsSnapshotPath(dataDirectory, projectsDirectory)
 	if err != nil {
 		return backupSourceLayout{}, err
@@ -1178,7 +1192,7 @@ func (s *Service) Create(
 			break
 		}
 		current, exists := after[filePath]
-		if !exists || !os.SameFile(original, current) || original.Size() != current.Size() || original.Mode() != current.Mode() || !original.ModTime().Equal(current.ModTime()) {
+		if !exists || !os.SameFile(original, current) || original.Mode() != current.Mode() || (!original.IsDir() && (original.Size() != current.Size() || !original.ModTime().Equal(current.ModTime()))) {
 			err = fmt.Errorf("system backup source %q changed during capture; retry when file updates finish", filePath)
 		}
 	}
