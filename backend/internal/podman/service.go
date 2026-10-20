@@ -181,6 +181,9 @@ func (s *Service) AutoUpdate(ctx context.Context, opts podmantypes.AutoUpdateOpt
 		if opts.DryRun {
 			return podmantypes.AutoUpdateResult{}, common.Classify(common.ErrBadRequest, errors.New("auto-update dry run requires Podman 6.2 or later"))
 		}
+		if len(opts.Filters) > 0 || opts.Rollback != nil || opts.TLSVerify != nil || opts.Authfile != "" {
+			return podmantypes.AutoUpdateResult{}, common.Classify(common.ErrBadRequest, errors.New("auto-update filters, rollback, TLS verification and authfile options require Podman 6.2 or later"))
+		}
 		if startErr := rt.Systemd.Start(ctx, autoUpdateUnit); startErr != nil {
 			return podmantypes.AutoUpdateResult{}, startErr
 		}

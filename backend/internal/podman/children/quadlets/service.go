@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/url"
 	"path"
 	"slices"
@@ -236,7 +237,18 @@ func (s *Service) Delete(ctx context.Context, name string) (podmantypes.QuadletR
 	if err != nil {
 		return podmantypes.QuadletRemoveReport{}, err
 	}
-	return rt.Client.QuadletRemove(ctx, name, podman.QuadletRemoveOptions{Force: true})
+	report, err := rt.Client.QuadletRemove(ctx, name, podman.QuadletRemoveOptions{Force: true})
+	if err != nil {
+		return podmantypes.QuadletRemoveReport{}, err
+	}
+	if len(report.Errors) > 0 {
+		failures := make([]string, 0, len(report.Errors))
+		for _, quadlet := range slices.Sorted(maps.Keys(report.Errors)) {
+			failures = append(failures, quadlet+": "+report.Errors[quadlet])
+		}
+		return report, common.Classify(common.ErrConflict, fmt.Errorf("remove quadlet %s: %s", name, strings.Join(failures, "; ")))
+	}
+	return report, nil
 }
 
 func (s *Service) Lifecycle(ctx context.Context, name string, action func(podman.Systemd, context.Context, string) error) (podmantypes.UnitStatus, error) {

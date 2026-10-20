@@ -61,7 +61,10 @@
 	}
 
 	async function refresh() {
-		await loadPods();
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(loadPods()),
+			message: m.common_refresh_failed({ resource: m.podman_pods_title() })
+		});
 	}
 
 	useEnvironmentRefresh(() => {

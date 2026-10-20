@@ -12,7 +12,6 @@
 	import { InfoIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { SwarmKvSummary } from '#lib/types/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -25,17 +24,19 @@
 	let {
 		open = $bindable(false),
 		resource,
+		environmentId,
 		existing,
 		onSaved
 	}: {
 		open: boolean;
 		resource: SwarmKvResource;
+		environmentId: string;
 		existing: SwarmKvSummary | null;
 		onSaved: () => Promise<void>;
 	} = $props();
 
 	const isSecret = $derived(resource.kind === 'secrets');
-	const canManage = $derived(hasPermission(resource.permission, environmentStore.selected?.id));
+	const canManage = $derived(hasPermission(resource.permission, environmentId));
 
 	const initial = untrack(() => existing?.spec);
 	let name = $state(initial?.Name ?? '');
@@ -62,10 +63,15 @@
 			submitting = true;
 			await handleApiResultWithCallbacks({
 				result: await tryCatch(
-					swarmService.updateKvItem(resource.kind, existing.id, {
-						version: existing.version.Index ?? 0,
-						labels: keyValueRowsToRecord(labels)
-					})
+					swarmService.updateKvItem(
+						resource.kind,
+						existing.id,
+						{
+							version: existing.version.Index ?? 0,
+							labels: keyValueRowsToRecord(labels)
+						},
+						environmentId
+					)
 				),
 				message: m.common_update_failed({ resource: resourceName }),
 				setLoadingState: (value) => (submitting = value),
@@ -85,13 +91,17 @@
 		submitting = true;
 		await handleApiResultWithCallbacks({
 			result: await tryCatch(
-				swarmService.createKvItem(resource.kind, {
-					spec: {
-						Name: trimmedName,
-						Labels: keyValueRowsToRecord(labels),
-						Data: encodeTextToBase64(data)
-					}
-				})
+				swarmService.createKvItem(
+					resource.kind,
+					{
+						spec: {
+							Name: trimmedName,
+							Labels: keyValueRowsToRecord(labels),
+							Data: encodeTextToBase64(data)
+						}
+					},
+					environmentId
+				)
 			),
 			message: resource.createFailed(),
 			setLoadingState: (value) => (submitting = value),

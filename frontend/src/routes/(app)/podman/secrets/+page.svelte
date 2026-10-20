@@ -60,6 +60,13 @@
 		});
 	}
 
+	async function refresh() {
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(loadSecrets()),
+			message: m.common_refresh_failed({ resource: m.podman_secrets_title() })
+		});
+	}
+
 	function openSheet(secret: EnvironmentRow<PodmanSecret> | null) {
 		secretToEdit = secret;
 		sheetSession += 1;
@@ -80,7 +87,7 @@
 
 	async function handleSaved() {
 		isSheetOpen = false;
-		await loadSecrets();
+		await refresh();
 	}
 
 	const isRefreshing = $derived(secretsQuery.isFetching && !secretsQuery.isPending);
@@ -102,7 +109,7 @@
 			placement: 'secondary',
 			iconOnly: true,
 			label: m.common_refresh(),
-			onclick: () => loadSecrets(),
+			onclick: refresh,
 			loading: isRefreshing,
 			disabled: secretsQuery.isFetching
 		});

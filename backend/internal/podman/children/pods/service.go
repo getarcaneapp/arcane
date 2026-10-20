@@ -158,6 +158,9 @@ func (s *Service) Create(ctx context.Context, req podmantypes.PodCreateRequest) 
 	var mounts []podman.PodMount
 	var volumes []podman.PodNamedVolume
 	for _, volume := range req.Volumes {
+		if !strings.HasPrefix(volume.Source, "/") && strings.ContainsAny(volume.Source, `/\`) {
+			return "", common.Classify(common.ErrBadRequest, fmt.Errorf("volume source %q must be an absolute host path or a named volume", volume.Source))
+		}
 		if strings.HasPrefix(volume.Source, "/") {
 			mounts = append(mounts, podman.PodMount{
 				Destination: volume.Destination,

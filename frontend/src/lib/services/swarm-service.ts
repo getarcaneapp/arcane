@@ -278,18 +278,23 @@ class SwarmService extends BaseAPIService {
 		return res.data;
 	}
 
-	async getKvItem(kind: SwarmKvKind, id: string): Promise<SwarmKvSummary> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async getKvItem(kind: SwarmKvKind, id: string, environmentId?: string): Promise<SwarmKvSummary> {
+		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/${kind}/${encodeURIComponent(id)}`));
 	}
 
-	async createKvItem(kind: SwarmKvKind, request: SwarmKvCreateRequest): Promise<SwarmKvSummary> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async createKvItem(kind: SwarmKvKind, request: SwarmKvCreateRequest, environmentId?: string): Promise<SwarmKvSummary> {
+		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/${kind}`, request));
 	}
 
-	async updateKvItem(kind: SwarmKvKind, id: string, request: SwarmKvUpdateRequest): Promise<SwarmKvSummary> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async updateKvItem(
+		kind: SwarmKvKind,
+		id: string,
+		request: SwarmKvUpdateRequest,
+		environmentId?: string
+	): Promise<SwarmKvSummary> {
+		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 		return this.handleResponse(this.api.put(`/environments/${envId}/swarm/${kind}/${encodeURIComponent(id)}`, request));
 	}
 

@@ -31,6 +31,7 @@
 	let isSheetOpen = $state(false);
 	let sheetSession = $state(0);
 	let itemToEdit = $state<SwarmKvSummary | null>(null);
+	let sheetEnvironmentId = $state('');
 
 	async function refresh() {
 		await simpleRefresh(
@@ -46,17 +47,21 @@
 		await refresh();
 	});
 
-	function openSheet(item: SwarmKvSummary | null) {
+	function openSheet(item: SwarmKvSummary | null, environmentId: string) {
 		itemToEdit = item;
+		sheetEnvironmentId = environmentId;
 		sheetSession += 1;
 		isSheetOpen = true;
 	}
 
 	async function openEditSheet(item: SwarmKvSummary) {
+		const environmentId = await environmentStore.getCurrentEnvironmentId();
+		const result = await tryCatch(swarmService.getKvItem(resource.kind, item.id, environmentId));
+		if ((await environmentStore.getCurrentEnvironmentId()) !== environmentId) return;
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(swarmService.getKvItem(resource.kind, item.id)),
+			result,
 			message: m.common_load_failed({ resource: `${resource.resource()} "${item.spec.Name}"` }),
-			onSuccess: (latest) => openSheet(latest)
+			onSuccess: (latest) => openSheet(latest, environmentId)
 		});
 	}
 
@@ -70,7 +75,7 @@
 			create: {
 				allowed: hasPermission(resource.permission, environmentStore.selected?.id),
 				label: resource.createLabel(),
-				onclick: () => openSheet(null)
+				onclick: async () => openSheet(null, await environmentStore.getCurrentEnvironmentId())
 			},
 			refreshLabel: m.common_refresh(),
 			onRefresh: refresh,
@@ -96,7 +101,13 @@
 	{#snippet additionalContent()}
 		{#if sheetSession > 0}
 			{#key sheetSession}
-				<SwarmKvFormSheet bind:open={isSheetOpen} {resource} existing={itemToEdit} onSaved={handleSaved} />
+				<SwarmKvFormSheet
+					bind:open={isSheetOpen}
+					{resource}
+					environmentId={sheetEnvironmentId}
+					existing={itemToEdit}
+					onSaved={handleSaved}
+				/>
 			{/key}
 		{/if}
 	{/snippet}

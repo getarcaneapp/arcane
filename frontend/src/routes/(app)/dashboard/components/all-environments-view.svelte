@@ -255,9 +255,10 @@
 
 	function openEngineInfo(item: DashboardEnvironmentOverview) {
 		const environmentId = item.environment.id;
+		const podCount = hasPermission('podman:read', environmentId) ? item.podCount : undefined;
 		engineInfoError = null;
 		engineInfoOpen = true;
-		engineInfoEngine = item.podCount === undefined ? 'docker' : 'podman';
+		engineInfoEngine = podCount === undefined ? 'docker' : 'podman';
 		engineInfoData = engineInfoByEnvironmentId[environmentId] ?? null;
 		if (engineInfoData) {
 			engineInfoPromise = null;
@@ -269,7 +270,7 @@
 			return;
 		}
 
-		engineInfoPromise = tryCatch(loadEngineInfo(environmentId, item.podCount)).then((result) => {
+		engineInfoPromise = tryCatch(loadEngineInfo(environmentId, podCount)).then((result) => {
 			if (result.error) {
 				const error: Error = result.error;
 

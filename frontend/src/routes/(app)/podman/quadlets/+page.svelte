@@ -9,10 +9,12 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService } from '#lib/services/podman-service.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
 	import { shownPodmanEnvironments } from '#lib/utils/podman.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
+	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import QuadletsTable from './components/quadlets-table.svelte';
 
@@ -53,6 +55,13 @@
 		});
 	}
 
+	async function refresh() {
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(loadQuadlets()),
+			message: m.common_refresh_failed({ resource: m.podman_quadlets_title() })
+		});
+	}
+
 	const isRefreshing = $derived(quadletsQuery.isFetching && !quadletsQuery.isPending);
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
@@ -72,7 +81,7 @@
 			placement: 'secondary',
 			iconOnly: true,
 			label: m.common_refresh(),
-			onclick: () => loadQuadlets(),
+			onclick: refresh,
 			loading: isRefreshing,
 			disabled: quadletsQuery.isFetching
 		});

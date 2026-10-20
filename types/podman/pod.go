@@ -78,7 +78,7 @@ type PodNetwork struct {
 }
 
 type PodVolume struct {
-	Source      string   `json:"source" minLength:"1" doc:"Host path (absolute or relative) or named volume"`
+	Source      string   `json:"source" minLength:"1" doc:"Absolute host path or named volume"`
 	Destination string   `json:"destination" minLength:"1" doc:"Path inside the pod"`
 	Options     []string `json:"options,omitempty" doc:"Mount options such as ro, z, Z, or U"`
 }

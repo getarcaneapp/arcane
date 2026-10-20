@@ -8,6 +8,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
+	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { AlertIcon, InfoIcon, UpdateIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -26,16 +27,24 @@
 	let rollback = $state(true);
 	let running = $state(false);
 	let result = $state<PodmanAutoUpdateResult | null>(null);
+	let session = 0;
+
+	useEnvironmentRefresh(() => {
+		session += 1;
+		result = null;
+	});
 
 	async function handleRun() {
+		const started = session;
 		running = true;
 		await handleApiResultWithCallbacks({
 			result: await tryCatch(podmanService.runAutoUpdate(mode === 'rest' ? { dryRun, rollback } : {})),
 			message: m.podman_autoupdate_failed(),
 			setLoadingState: (value) => (running = value),
 			onSuccess: (response) => {
-				result = response;
 				toast.success(m.podman_autoupdate_success());
+				if (started !== session) return;
+				result = response;
 			}
 		});
 	}

@@ -8,6 +8,7 @@
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import * as Card from '#lib/components/ui/card/index.js';
+	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { LayersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -33,12 +34,20 @@
 	let generated = $state('');
 	let resultLines = $state<string[]>([]);
 	let loading = $state({ play: false, down: false, generate: false });
+	let session = 0;
+
+	useEnvironmentRefresh(() => {
+		session += 1;
+		resultLines = [];
+		generated = '';
+	});
 
 	async function invalidatePods() {
 		await queryClient.invalidateQueries({ queryKey: queryKeys.podman.environment(environmentStore.selected?.id ?? '0') });
 	}
 
 	async function handlePlay() {
+		const started = session;
 		if (!yaml.trim()) {
 			toast.error(m.common_field_required({ field: m.podman_kube_yaml() }));
 			return;
@@ -52,6 +61,7 @@
 			message: m.podman_kube_play_failed(),
 			setLoadingState: (value) => (loading.play = value),
 			onSuccess: async (report) => {
+				if (started !== session) return;
 				resultLines = [
 					...(report.pods ?? []).flatMap((pod) => [
 						m.podman_kube_pod_created({ id: pod.id.slice(0, 12), count: pod.containers?.length ?? 0 }),
@@ -66,6 +76,7 @@
 	}
 
 	async function handleDown() {
+		const started = session;
 		if (!yaml.trim()) {
 			toast.error(m.common_field_required({ field: m.podman_kube_yaml() }));
 			return;
@@ -76,6 +87,7 @@
 			message: m.podman_kube_down_failed(),
 			setLoadingState: (value) => (loading.down = value),
 			onSuccess: async (report) => {
+				if (started !== session) return;
 				resultLines = (report.rmReport ?? []).map((pod) => m.podman_kube_pod_removed({ id: pod.id.slice(0, 12) }));
 				toast.success(m.podman_kube_down_success({ count: report.rmReport?.length ?? 0 }));
 				await invalidatePods();
@@ -84,6 +96,7 @@
 	}
 
 	async function handleGenerate() {
+		const started = session;
 		const names = parseList(generateNames);
 		if (names.length === 0) {
 			toast.error(m.common_field_required({ field: m.podman_kube_generate_names() }));
@@ -95,6 +108,7 @@
 			message: m.podman_kube_generate_failed(),
 			setLoadingState: (value) => (loading.generate = value),
 			onSuccess: (response) => {
+				if (started !== session) return;
 				generated = response.yaml;
 			}
 		});
