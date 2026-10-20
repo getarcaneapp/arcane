@@ -89,9 +89,15 @@ var accessSurfacesInternal = []AccessSurface{
 	routeSurfaceInternal("route.swarm.cluster", "/swarm/cluster", "Cluster", AccessScopeModeSelectedEnvPlusGlobal, []string{PermSwarmRead}, 100),
 	routeSurfaceInternal("route.swarm.configs", "/swarm/configs", "Configs", AccessScopeModeSelectedEnvPlusGlobal, []string{PermSwarmRead}, 0),
 	routeSurfaceInternal("route.swarm.secrets", "/swarm/secrets", "Secrets", AccessScopeModeSelectedEnvPlusGlobal, []string{PermSwarmRead}, 0),
+	routeSurfaceInternal("route.podman", "/podman/pods", "Podman", AccessScopeModeSelectedEnvPlusGlobal, []string{PermPodmanRead}, 0),
+	routeSurfaceInternal("route.podman.quadlets", "/podman/quadlets", "Quadlets", AccessScopeModeSelectedEnvPlusGlobal, []string{PermPodmanRead}, 0),
+	allOfRouteSurfaceInternal("route.podman.quadlets.new", "/podman/quadlets/new", "Install quadlet", AccessScopeModeSelectedEnvPlusGlobal, []string{PermPodmanRead, PermPodmanQuadlets}),
+	allOfRouteSurfaceInternal("route.podman.kube", "/podman/kube", "Kube", AccessScopeModeSelectedEnvPlusGlobal, []string{PermPodmanRead, PermPodmanKube}),
+	routeSurfaceInternal("route.podman.secrets", "/podman/secrets", "Podman secrets", AccessScopeModeSelectedEnvPlusGlobal, []string{PermPodmanRead}, 0),
+	allOfRouteSurfaceInternal("route.podman.autoupdate", "/podman/autoupdate", "Podman auto-update", AccessScopeModeSelectedEnvPlusGlobal, []string{PermPodmanRead, PermPodmanAutoUpdate}),
 	routeSurfaceInternal("route.events", "/events", "Events", AccessScopeModeGlobalOnly, []string{PermEventsRead}, 110),
 	routeSurfaceInternal("route.activities", "", "Activities", AccessScopeModeAnyEffectiveScope, []string{PermActivitiesRead}, 0),
-	allOfRouteSurfaceInternal("route.oidc-role-mappings", "", "OIDC Role Mappings", AllPermissions()),
+	allOfRouteSurfaceInternal("route.oidc-role-mappings", "", "OIDC Role Mappings", AccessScopeModeGlobalOnly, AllPermissions()),
 	routeSurfaceInternal("route.customize.templates.create",
 		"/customize/templates/create",
 		"Create template",
@@ -115,7 +121,7 @@ var accessSurfacesInternal = []AccessSurface{
 		0),
 
 	routeSurfaceInternal("route.customize.templates.detail", "/customize/templates/{id}", "Template", AccessScopeModeGlobalOnly, []string{PermCustomizeManage, PermTemplatesList, PermTemplatesRead}, 0),
-	allOfRouteSurfaceInternal("route.customize.registries.browse", "/customize/registries/{id}", "Registry browser", []string{PermRegistriesRead, PermRegistriesBrowse}),
+	allOfRouteSurfaceInternal("route.customize.registries.browse", "/customize/registries/{id}", "Registry browser", AccessScopeModeGlobalOnly, []string{PermRegistriesRead, PermRegistriesBrowse}),
 
 	settingsCategorySurfaceInternal("activity", "/settings/activity", "Activity", AccessScopeModeGlobalOnly, []string{PermSettingsRead}),
 	settingsCategorySurfaceInternal("apikeys", "/settings/api-keys", "API Keys", AccessScopeModeGlobalOnly, []string{PermApiKeysList, PermApiKeysRead}),
@@ -264,8 +270,8 @@ func routeSurfaceInternal(id, url, label, scopeMode string, permissions []string
 	}
 }
 
-func allOfRouteSurfaceInternal(id, url, label string, permissions []string) AccessSurface {
-	surface := routeSurfaceInternal(id, url, label, AccessScopeModeGlobalOnly, permissions, 0)
+func allOfRouteSurfaceInternal(id, url, label, scopeMode string, permissions []string) AccessSurface {
+	surface := routeSurfaceInternal(id, url, label, scopeMode, permissions, 0)
 	surface.MatchMode = AccessMatchModeAllOf
 	return surface
 }

@@ -1,0 +1,38 @@
+# Replace 1000 with the uid and gid of the user running rootless Podman.
+# Run `loginctl enable-linger <user>` so the user's Podman socket and session bus survive logout.
+# keep-id maps that uid into the container unchanged. Arcane starts as root, then switches to PUID/PGID,
+# so it reaches the Podman socket and the session bus as their owner.
+services:
+  arcane:
+    image: getarcaneapp/manager:latest
+    container_name: arcane
+    user: '0:0'
+    userns_mode: keep-id
+    ports:
+      - '3552:3552'
+    volumes:
+      - /run/user/1000/podman/podman.sock:/var/run/docker.sock
+      - /run/user/1000/bus:/run/user/1000/bus
+      - arcane-data:/app/data
+    environment:
+      - ENCRYPTION_KEY=replace_me_with_a_random_32_char_value
+      - DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    security_opt:
+      - label=disable
+    # Use host cgroup namespace for better container self-detection
+    # This allows Arcane to detect its own container ID more reliably
+    cgroup: host
+    healthcheck:
+      test: ['CMD', './arcane', 'health', '--timeout', '2s']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    stop_grace_period: 15s
+
+volumes:
+  arcane-data:

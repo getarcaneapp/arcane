@@ -25,7 +25,7 @@ function getResourceListPage(): string | null {
 
 	// Check if route has a dynamic segment (contains [...] pattern)
 	// and is a resource detail page (not settings, environments management, etc.)
-	const resourcePrefixes = ['/containers', '/images', '/projects', '/networks', '/volumes'];
+	const resourcePrefixes = ['/containers', '/images', '/projects', '/networks', '/volumes', '/podman/pods', '/podman/quadlets'];
 
 	for (const prefix of resourcePrefixes) {
 		// Match routes like /containers/[containerId] or /(app)/containers/[containerId]

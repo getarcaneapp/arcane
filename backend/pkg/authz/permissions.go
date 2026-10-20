@@ -188,6 +188,14 @@ const (
 	PermSwarmSecrets      = "swarm:secrets"
 	PermSwarmUnlock       = "swarm:unlock"
 
+	PermPodmanRead              = "podman:read"
+	PermPodmanPods              = "podman:pods"
+	PermPodmanQuadlets          = "podman:quadlets"
+	PermPodmanQuadletsLifecycle = "podman:quadlets:lifecycle"
+	PermPodmanKube              = "podman:kube"
+	PermPodmanSecrets           = "podman:secrets"
+	PermPodmanAutoUpdate        = "podman:autoupdate"
+
 	PermGitOpsList   = "gitops:list"
 	PermGitOpsRead   = "gitops:read"
 	PermGitOpsCreate = "gitops:create"
@@ -352,6 +360,7 @@ func BuiltInEditorPermissions() []string {
 		PermVolumesList, PermVolumesRead, PermVolumesCreate, PermVolumesRename, PermVolumesDelete, PermVolumesPrune, PermVolumesUpload, PermVolumesBackup,
 		PermNetworksList, PermNetworksRead, PermNetworksCreate, PermNetworksDelete, PermNetworksPrune, PermNetworksConnect, PermNetworksDisconnect,
 		PermSwarmRead, PermSwarmSpec, PermSwarmNodes, PermSwarmServices, PermSwarmServicesLogs, PermSwarmStacks, PermSwarmConfigs, PermSwarmSecrets,
+		PermPodmanRead, PermPodmanPods, PermPodmanQuadlets, PermPodmanQuadletsLifecycle, PermPodmanKube, PermPodmanSecrets, PermPodmanAutoUpdate,
 		PermGitOpsList, PermGitOpsRead, PermGitOpsCreate, PermGitOpsUpdate, PermGitOpsDelete, PermGitOpsSync, PermGitOpsBackup,
 		PermWebhooksList, PermWebhooksCreate, PermWebhooksUpdate, PermWebhooksDelete,
 		PermJobsManage, PermNotificationsManage, PermDashboardRead,
@@ -389,6 +398,7 @@ func BuiltInDeployerPermissions() []string {
 		PermVolumesList, PermVolumesRead,
 		PermNetworksList, PermNetworksRead,
 		PermSwarmRead, PermSwarmServicesLogs,
+		PermPodmanRead, PermPodmanQuadletsLifecycle, PermPodmanAutoUpdate,
 		PermGitOpsList, PermGitOpsRead, PermGitOpsSync,
 		PermDashboardRead,
 		PermSystemRead,
@@ -420,6 +430,7 @@ func BuiltInViewerPermissions() []string {
 		PermVolumesList, PermVolumesRead,
 		PermNetworksList, PermNetworksRead,
 		PermSwarmRead, PermSwarmServicesLogs,
+		PermPodmanRead,
 		PermGitOpsList, PermGitOpsRead,
 		PermWebhooksList,
 		PermDashboardRead,
@@ -443,6 +454,7 @@ func BuiltInMonitorPermissions() []string {
 		PermVolumesList, PermVolumesRead,
 		PermNetworksList, PermNetworksRead,
 		PermSwarmRead, PermSwarmServicesLogs,
+		PermPodmanRead,
 		PermDashboardRead,
 		PermSystemRead,
 		PermImageUpdatesRead,

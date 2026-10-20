@@ -66,3 +66,13 @@ func NewSecretSummary(secret swarm.Secret) SecretSummary {
 		Spec:      secret.Spec,
 	}
 }
+
+type ConfigUpdateRequest struct {
+	Version uint64            `json:"version" doc:"Current config version, used to reject stale updates"`
+	Labels  map[string]string `json:"labels" doc:"Replacement labels; config data is immutable"`
+}
+
+type SecretUpdateRequest struct {
+	Version uint64            `json:"version" doc:"Current secret version, used to reject stale updates"`
+	Labels  map[string]string `json:"labels" doc:"Replacement labels; secret data is immutable"`
+}

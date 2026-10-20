@@ -22,6 +22,7 @@ require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/containerd/platforms v1.0.0-rc.5
 	github.com/coreos/go-oidc/v3 v3.21.0
+	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/danielgtaylor/huma/v2 v2.39.1
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.9.1+incompatible
@@ -33,6 +34,7 @@ require (
 	github.com/go-git/go-billy/v5 v5.9.2
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/go-webauthn/webauthn v0.18.2
+	github.com/godbus/dbus/v5 v5.2.2
 	github.com/gofrs/flock v0.13.1
 	github.com/google/go-containerregistry v0.22.1
 	github.com/hashicorp/yamux v0.1.2

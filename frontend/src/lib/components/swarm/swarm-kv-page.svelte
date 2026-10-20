@@ -1,297 +1,103 @@
 <script lang="ts">
-	import { onMount, type Component } from 'svelte';
-	import { toast } from 'svelte-sonner';
-
-	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
-	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import * as Card from '#lib/components/ui/card/index.js';
-	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
-	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import SwarmKvFormSheet from '#lib/components/sheets/swarm-kv-form-sheet.svelte';
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
-	import { TrashIcon } from '#lib/icons/index.js';
-	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
+	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { decodeBase64ToText, encodeTextToBase64, formatSwarmTimestamp, getSwarmSpecName } from '#lib/utils/swarm-kv.js';
+	import { swarmService } from '#lib/services/swarm-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { SwarmKvSummary } from '#lib/types/swarm.js';
+	import { handleApiResultWithCallbacks, simpleRefresh } from '#lib/utils/api.js';
+	import { hasPermission } from '#lib/utils/auth.js';
+	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
+	import type { SwarmKvResource } from '#lib/utils/swarm-kv.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
-	export type SwarmKvItem = {
-		id: string;
-		spec?: Record<string, unknown> | null;
-		updatedAt: string;
-	};
-	type LoadingState = {
-		refresh: boolean;
-		create: boolean;
-		delete: boolean;
-	};
-	type SwarmKvMessages = {
-		pageTitle: string;
-		pageSubtitle: string;
-		statTitle: string;
-		createTitle: string;
-		createSubtitle: string;
-		namePlaceholder: string;
-		dataPlaceholder: string;
-		createButton: string;
-		listTitle: string;
-		listSubtitle: string;
-		empty: string;
-		immutableNotice: string;
-		deleteButton: string;
-		nameRequired: string;
-		createFailed: string;
-		createSuccess: (name: string) => string;
-		deleteConfirm: (name: string) => string;
-		deleteFailed: (name: string) => string;
-		deleteSuccess: (name: string) => string;
-	};
+	import SwarmKvTable from './swarm-kv-table.svelte';
 
 	let {
-		icon,
-		permission,
-		resourceLabel,
-		canManage,
-		messages,
-		loadItems,
-		createItem,
-		removeItem
+		resource,
+		initialItems,
+		initialRequestOptions
 	}: {
-		icon: Component;
-		permission: string;
-		resourceLabel: string;
-		canManage: boolean;
-		messages: SwarmKvMessages;
-		loadItems: () => Promise<SwarmKvItem[]>;
-		createItem: (spec: Record<string, unknown>) => Promise<SwarmKvItem>;
-		removeItem: (id: string) => Promise<unknown>;
+		resource: SwarmKvResource;
+		initialItems: Paginated<SwarmKvSummary>;
+		initialRequestOptions: SearchPaginationSortRequest;
 	} = $props();
 
-	let items = $state<SwarmKvItem[]>([]);
-	let selectedId = $state('');
-	let createName = $state('');
-	let createData = $state('');
-	let editName = $state('');
-	let editData = $state('');
-	let isLoading = $state<LoadingState>({
-		refresh: false,
-		create: false,
-		delete: false
-	});
-
-	function selectItem(item: SwarmKvItem) {
-		selectedId = item.id;
-		const spec = (item.spec ?? {}) as Record<string, unknown>;
-		editName = typeof spec['Name'] === 'string' ? spec['Name'] : '';
-		editData = typeof spec['Data'] === 'string' ? decodeBase64ToText(spec['Data']) : '';
-	}
-
-	function clearSelectedItem() {
-		selectedId = '';
-		editName = '';
-		editData = '';
-	}
-
-	function toggleItem(item: SwarmKvItem) {
-		if (selectedId === item.id) {
-			clearSelectedItem();
-			return;
-		}
-
-		selectItem(item);
-	}
+	let items = $derived(initialItems);
+	let requestOptions = $derived(initialRequestOptions);
+	let refreshing = $state(false);
+	let isSheetOpen = $state(false);
+	let sheetSession = $state(0);
+	let itemToEdit = $state<SwarmKvSummary | null>(null);
 
 	async function refresh() {
-		isLoading.refresh = true;
-		try {
-			items = await loadItems();
-			if (selectedId && !items.some((item) => item.id === selectedId)) {
-				clearSelectedItem();
-			}
-		} finally {
-			isLoading.refresh = false;
-		}
+		await simpleRefresh(
+			() => swarmService.getKvItems(resource.kind, requestOptions),
+			(data) => (items = data),
+			m.common_refresh_failed({ resource: resource.title() }),
+			(loading) => (refreshing = loading)
+		);
 	}
 
-	useEnvironmentRefresh(refresh);
-
-	onMount(() => {
-		void refresh();
+	useEnvironmentRefresh(async () => {
+		isSheetOpen = false;
+		await refresh();
 	});
 
-	async function handleCreate() {
-		const name = createName.trim();
-		if (!name) {
-			toast.error(messages.nameRequired);
-			return;
-		}
-		const spec: Record<string, unknown> = {
-			Name: name,
-			Data: encodeTextToBase64(createData)
-		};
+	function openSheet(item: SwarmKvSummary | null) {
+		itemToEdit = item;
+		sheetSession += 1;
+		isSheetOpen = true;
+	}
 
-		isLoading.create = true;
+	async function openEditSheet(item: SwarmKvSummary) {
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(createItem(spec)),
-			message: messages.createFailed,
-			setLoadingState: (value) => (isLoading.create = value),
-			onSuccess: async (created) => {
-				toast.success(messages.createSuccess(getSwarmSpecName(created.spec, created.id)));
-				createName = '';
-				createData = '';
-				await refresh();
-				selectItem(created);
-			}
+			result: await tryCatch(swarmService.getKvItem(resource.kind, item.id)),
+			message: m.common_load_failed({ resource: `${resource.resource()} "${item.spec.Name}"` }),
+			onSuccess: (latest) => openSheet(latest)
 		});
 	}
 
-	function handleRemove(item: SwarmKvItem) {
-		const name = getSwarmSpecName(item.spec, item.id);
-		openConfirmDialog({
-			title: m.common_delete_title({ resource: resourceLabel }),
-			message: messages.deleteConfirm(name),
-			confirm: {
-				label: m.common_delete(),
-				destructive: true,
-				action: async () => {
-					isLoading.delete = true;
-					await handleApiResultWithCallbacks({
-						result: await tryCatch(removeItem(item.id)),
-						message: messages.deleteFailed(name),
-						setLoadingState: (value) => (isLoading.delete = value),
-						onSuccess: async () => {
-							toast.success(messages.deleteSuccess(name));
-							await refresh();
-						}
-					});
-				}
-			}
-		});
+	async function handleSaved() {
+		isSheetOpen = false;
+		await refresh();
 	}
 
-	const actionButtons: ActionButton[] = $derived([
-		{
-			id: 'refresh',
-			action: 'refresh',
-			placement: 'secondary',
-			iconOnly: true,
-			label: m.common_refresh(),
-			onclick: refresh,
-			loading: isLoading.refresh,
-			disabled: isLoading.refresh
-		}
-	]);
+	const actionButtons = $derived(
+		createRefreshActionButtons({
+			create: {
+				allowed: hasPermission(resource.permission, environmentStore.selected?.id),
+				label: resource.createLabel(),
+				onclick: () => openSheet(null)
+			},
+			refreshLabel: m.common_refresh(),
+			onRefresh: refresh,
+			refreshing
+		})
+	);
 
 	const statCards: StatCardConfig[] = $derived([
 		{
-			title: messages.statTitle,
-			value: items.length,
-			icon,
+			title: resource.title(),
+			value: items.pagination?.totalItems ?? items.data.length,
+			icon: resource.icon,
 			iconColor: 'text-info'
 		}
 	]);
 </script>
 
-<ResourcePageLayout
-	title={messages.pageTitle}
-	subtitle={messages.pageSubtitle}
-	{icon}
-	{actionButtons}
-	{statCards}
-	environmentPicker
->
+<ResourcePageLayout title={resource.title()} subtitle={resource.subtitle()} {actionButtons} {statCards} environmentPicker>
 	{#snippet mainContent()}
-		<div class={canManage ? 'grid gap-4 lg:grid-cols-2' : 'grid gap-4'}>
-			{#if canManage}
-				<Card.Root>
-					<Card.Header>
-						<Card.Title>{messages.createTitle}</Card.Title>
-						<Card.Description>{messages.createSubtitle}</Card.Description>
-					</Card.Header>
-					<Card.Content>
-						<div class="flex flex-col gap-3">
-							<Input placeholder={messages.namePlaceholder} bind:value={createName} />
-							<Textarea rows={10} bind:value={createData} placeholder={messages.dataPlaceholder} mono size="sm" />
-							<IfPermitted perm={permission}>
-								<ArcaneButton
-									action="create"
-									customLabel={messages.createButton}
-									onclick={handleCreate}
-									disabled={isLoading.create}
-									loading={isLoading.create}
-								/>
-							</IfPermitted>
-						</div>
-					</Card.Content>
-				</Card.Root>
-			{/if}
+		<SwarmKvTable {resource} bind:items bind:requestOptions onEdit={openEditSheet} />
+	{/snippet}
 
-			<div class="space-y-4">
-				<Card.Root>
-					<Card.Header>
-						<Card.Title>{messages.listTitle}</Card.Title>
-						<Card.Description>{messages.listSubtitle}</Card.Description>
-					</Card.Header>
-					<Card.Content>
-						<div class="flex flex-col gap-3">
-							{#if items.length === 0}
-								<div class="py-8 text-center text-sm text-muted-foreground">{messages.empty}</div>
-							{:else}
-								{#each items as item (item.id)}
-									<Card.Root class="overflow-hidden">
-										<button
-											type="button"
-											class={`w-full px-4 py-3 text-left transition-colors ${selectedId === item.id ? 'bg-muted/50' : 'hover:bg-muted/40'}`}
-											onclick={() => toggleItem(item)}
-										>
-											<div class="flex items-center justify-between gap-2">
-												<div class="min-w-0">
-													<div class="truncate font-medium">{getSwarmSpecName(item.spec, item.id)}</div>
-													<div class="font-mono text-xs text-muted-foreground">{item.id}</div>
-												</div>
-												<div class="shrink-0 text-xs text-muted-foreground">{formatSwarmTimestamp(item.updatedAt)}</div>
-											</div>
-										</button>
-
-										{#if selectedId === item.id}
-											<div class="space-y-3 border-t px-4 pt-4 pb-5">
-												<div class="flex items-center gap-2">
-													<div class="font-mono text-xs text-muted-foreground">{item.id}</div>
-													<CopyButton text={item.id} />
-												</div>
-												<p class="text-sm text-muted-foreground">{messages.immutableNotice}</p>
-												<Input placeholder={messages.namePlaceholder} bind:value={editName} readonly />
-												<Textarea
-													rows={12}
-													bind:value={editData}
-													placeholder={messages.dataPlaceholder}
-													mono
-													size="sm"
-													readonly
-												/>
-												{#if canManage}
-													<div class="flex flex-wrap items-center gap-2 pt-1">
-														<ArcaneButton
-															action="remove"
-															customLabel={messages.deleteButton}
-															icon={TrashIcon}
-															onclick={() => handleRemove(item)}
-															disabled={isLoading.delete}
-															loading={isLoading.delete}
-														/>
-													</div>
-												{/if}
-											</div>
-										{/if}
-									</Card.Root>
-								{/each}
-							{/if}
-						</div>
-					</Card.Content>
-				</Card.Root>
-			</div>
-		</div>
+	{#snippet additionalContent()}
+		{#if sheetSession > 0}
+			{#key sheetSession}
+				<SwarmKvFormSheet bind:open={isSheetOpen} {resource} existing={itemToEdit} onSaved={handleSaved} />
+			{/key}
+		{/if}
 	{/snippet}
 </ResourcePageLayout>

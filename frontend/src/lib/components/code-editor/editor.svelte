@@ -48,6 +48,7 @@
 			javascript: { validation: 'none', extensions: () => [javascript({ jsx: true })] },
 			typescript: { validation: 'none', extensions: () => [javascript({ typescript: true, jsx: true })] },
 			markdown: { validation: 'none', extensions: () => [markdown()] },
+			systemd: { validation: 'none', extensions: () => [StreamLanguage.define(properties)] },
 			plaintext: { validation: 'none', extensions: () => [] }
 		} satisfies Record<CodeLanguage, { validation: CodeValidationMode; extensions: () => Extension[] }>)
 	);
@@ -668,6 +669,7 @@
 		javascript: createEnterIndentKeymap('javascript'),
 		typescript: createEnterIndentKeymap('typescript'),
 		markdown: createEnterIndentKeymap('markdown'),
+		systemd: createEnterIndentKeymap('systemd'),
 		plaintext: createEnterIndentKeymap('plaintext')
 	};
 

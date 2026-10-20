@@ -7,10 +7,11 @@
 	import { type ActionButton } from '#lib/components/action-button-group/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
-	import DockerInfoDialog from '#lib/components/dialogs/docker-info-dialog.svelte';
+	import DockerInfoDialog, { type EngineInfo } from '#lib/components/dialogs/docker-info-dialog.svelte';
 	import PruneConfirmationDialog from '#lib/components/dialogs/prune-confirmation-dialog.svelte';
 	import * as StatStrip from '#lib/components/stat-strip/index.js';
 	import {
+		BoxIcon,
 		ContainersIcon,
 		EnvironmentsIcon,
 		ImagesIcon,
@@ -23,6 +24,7 @@
 		LayoutListIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { podmanService } from '#lib/services/podman-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { systemService } from '#lib/services/system-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
@@ -32,7 +34,6 @@
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { Activity } from '#lib/types/activity.type.js';
 	import type { PruneType, SystemPruneRequest } from '#lib/types/automation.js';
-	import type { DockerInfo } from '#lib/types/docker.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import type { AppVersionInformation, Settings } from '#lib/types/settings.js';
 	import type {
@@ -109,12 +110,13 @@
 	let upgradeDialogOpenById = $state<Record<string, boolean>>({});
 	let upgradeDialogUpgradingById = $state<Record<string, boolean>>({});
 
-	let dockerInfoOpen = $state(false);
-	let dockerInfoData = $state<DockerInfo | null>(null);
-	let dockerInfoPromise = $state<Promise<DockerInfo> | null>(null);
-	let dockerInfoError = $state<string | null>(null);
-	let dockerInfoByEnvironmentId = $state<Record<string, DockerInfo | undefined>>({});
-	let dockerInfoPromiseByEnvironmentId = $state<Record<string, Promise<DockerInfo> | undefined>>({});
+	let engineInfoOpen = $state(false);
+	let engineInfoEngine = $state<EngineInfo['engine']>('docker');
+	let engineInfoData = $state<EngineInfo | null>(null);
+	let engineInfoPromise = $state<Promise<EngineInfo> | null>(null);
+	let engineInfoError = $state<string | null>(null);
+	let engineInfoByEnvironmentId = $state<Record<string, EngineInfo | undefined>>({});
+	let engineInfoPromiseByEnvironmentId = $state<Record<string, Promise<EngineInfo> | undefined>>({});
 
 	const availableEnvironments = $derived.by(() => {
 		if (!userStore.current) {
@@ -230,42 +232,53 @@
 		}
 	}
 
-	async function loadDockerInfo(environment: Environment): Promise<DockerInfo> {
+	async function fetchEngineInfo(environmentId: string, podCount: number | undefined): Promise<EngineInfo> {
+		if (podCount === undefined) {
+			return { engine: 'docker', docker: await systemService.getDockerInfoForEnvironment(environmentId) };
+		}
+
+		const [podman, status] = await Promise.all([podmanService.getInfo(environmentId), podmanService.getStatus(environmentId)]);
+		return { engine: 'podman', podman, status, podCount };
+	}
+
+	async function loadEngineInfo(environmentId: string, podCount: number | undefined): Promise<EngineInfo> {
 		try {
-			const info = await systemService.getDockerInfoForEnvironment(environment.id);
-			dockerInfoByEnvironmentId[environment.id] = info;
-			dockerInfoData = info;
+			const info = await fetchEngineInfo(environmentId, podCount);
+			engineInfoByEnvironmentId[environmentId] = info;
+			engineInfoData = info;
 			return info;
 		} finally {
-			delete dockerInfoPromiseByEnvironmentId[environment.id];
-			dockerInfoPromise = null;
+			delete engineInfoPromiseByEnvironmentId[environmentId];
+			engineInfoPromise = null;
 		}
 	}
 
-	function openDockerInfo(environment: Environment) {
-		dockerInfoError = null;
-		dockerInfoOpen = true;
-		dockerInfoData = dockerInfoByEnvironmentId[environment.id] ?? null;
-		if (dockerInfoData) {
-			dockerInfoPromise = null;
+	function openEngineInfo(item: DashboardEnvironmentOverview) {
+		const environmentId = item.environment.id;
+		engineInfoError = null;
+		engineInfoOpen = true;
+		engineInfoEngine = item.podCount === undefined ? 'docker' : 'podman';
+		engineInfoData = engineInfoByEnvironmentId[environmentId] ?? null;
+		if (engineInfoData) {
+			engineInfoPromise = null;
 			return;
 		}
 
-		dockerInfoPromise = dockerInfoPromiseByEnvironmentId[environment.id] ?? null;
-		if (dockerInfoPromise) {
+		engineInfoPromise = engineInfoPromiseByEnvironmentId[environmentId] ?? null;
+		if (engineInfoPromise) {
 			return;
 		}
 
-		dockerInfoPromise = tryCatch(loadDockerInfo(environment)).then((result) => {
+		engineInfoPromise = tryCatch(loadEngineInfo(environmentId, item.podCount)).then((result) => {
 			if (result.error) {
 				const error: Error = result.error;
 
-				dockerInfoError = extractApiErrorMessage(error);
+				engineInfoError = extractApiErrorMessage(error);
 				throw error;
 			}
 			return result.data;
 		});
-		dockerInfoPromiseByEnvironmentId[environment.id] = dockerInfoPromise;
+		engineInfoPromiseByEnvironmentId[environmentId] = engineInfoPromise;
 	}
 
 	const environmentCards = $derived.by((): DashboardEnvironmentCardState[] => {
@@ -325,6 +338,7 @@
 					},
 					settings: snapshot.settings,
 					versionInfo: snapshot.versionInfo,
+					podCount: snapshot.podCount,
 					snapshotState: 'ready',
 					snapshotError: state.streamError ? resolveSnapshotErrorMessage(state) : undefined
 				};
@@ -502,7 +516,7 @@
 			action: 'base',
 			label: m.common_inspect(),
 			disabled: !shouldLoadEnvironment(item.environment),
-			onclick: () => openDockerInfo(item.environment),
+			onclick: () => openEngineInfo(item),
 			icon: InfoIcon
 		});
 
@@ -547,6 +561,7 @@
 				running: loadedItem.containers.runningContainers,
 				total: loadedItem.containers.totalContainers,
 				images: loadedItem.imageUsageCounts.totalImages,
+				podCount: loadedItem.podCount ?? null,
 				updates: actionItemCount('image_updates'),
 				vulnerabilities: actionItemCount('actionable_vulnerabilities'),
 				cpu: getCpuMetric(stats),
@@ -630,7 +645,19 @@
 				label: m.resource_volumes_cap(),
 				value: summary.totalVolumes,
 				context: formatVolumeOverviewLabel(summary)
-			}
+			},
+			...(summary.podmanEnvironments > 0
+				? [
+						{
+							key: 'pods',
+							href: '/podman/pods',
+							icon: BoxIcon,
+							label: m.podman_pods_title(),
+							value: summary.totalPods,
+							context: m.dashboard_all_podman_environments({ count: summary.podmanEnvironments })
+						}
+					]
+				: [])
 		];
 	});
 
@@ -770,7 +797,7 @@
 	</header>
 
 	<section class="shrink-0">
-		<StatStrip.Root class="lg:grid-cols-4">
+		<StatStrip.Root class={summaryTiles.length > 4 ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}>
 			{#each summaryTiles as tile (tile.key)}
 				<StatStrip.Item label={tile.label} value={tile.value} icon={tile.icon} href={tile.href} loading={boardSummaryLoading}>
 					{tile.context}
@@ -829,4 +856,10 @@
 	onCancel={closePruneDialog}
 />
 
-<DockerInfoDialog bind:open={dockerInfoOpen} dockerInfo={dockerInfoData} {dockerInfoPromise} errorMessage={dockerInfoError} />
+<DockerInfoDialog
+	bind:open={engineInfoOpen}
+	engine={engineInfoEngine}
+	info={engineInfoData}
+	infoPromise={engineInfoPromise}
+	errorMessage={engineInfoError}
+/>

@@ -1,44 +1,8 @@
 <script lang="ts">
 	import SwarmKvPage from '#lib/components/swarm/swarm-kv-page.svelte';
-	import { LockIcon } from '#lib/icons/index.js';
-	import { m } from '#lib/paraglide/messages.js';
-	import { swarmService } from '#lib/services/swarm-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import { swarmKvResources } from '#lib/utils/swarm-kv.js';
 
-	const currentEnvId = $derived(environmentStore.selected?.id);
-	const canManageSecrets = $derived(hasPermission('swarm:secrets', currentEnvId));
-
-	const messages = {
-		pageTitle: m.swarm_secrets_title(),
-		pageSubtitle: m.swarm_secrets_subtitle(),
-		statTitle: m.swarm_secrets_title(),
-		createTitle: m.create_secret(),
-		createSubtitle: m.swarm_secrets_create_subtitle(),
-		namePlaceholder: m.swarm_secrets_name_placeholder(),
-		dataPlaceholder: m.swarm_secrets_data_placeholder(),
-		createButton: m.create_secret(),
-		listTitle: m.swarm_secrets_list_title(),
-		listSubtitle: m.select_one_to_edit_or_remove(),
-		empty: m.swarm_secrets_empty(),
-		immutableNotice: m.swarm_secrets_immutable_notice(),
-		deleteButton: m.swarm_secrets_delete_button(),
-		nameRequired: m.swarm_secrets_name_required(),
-		createFailed: m.swarm_secrets_create_failed(),
-		createSuccess: (name: string) => m.swarm_secrets_create_success({ name }),
-		deleteConfirm: (name: string) => m.swarm_secrets_delete_confirm({ name }),
-		deleteFailed: (name: string) => m.swarm_secrets_delete_failed({ name }),
-		deleteSuccess: (name: string) => m.swarm_secrets_delete_success({ name })
-	};
+	let { data } = $props();
 </script>
 
-<SwarmKvPage
-	icon={LockIcon}
-	permission="swarm:secrets"
-	resourceLabel={m.swarm_secret()}
-	canManage={canManageSecrets}
-	{messages}
-	loadItems={() => swarmService.getSecrets()}
-	createItem={(spec) => swarmService.createSecret({ spec })}
-	removeItem={(id) => swarmService.removeSecret(id)}
-/>
+<SwarmKvPage resource={swarmKvResources.secrets} initialItems={data.items} initialRequestOptions={data.requestOptions} />

@@ -80,6 +80,9 @@
 					<div class="flex min-w-0 flex-wrap items-center gap-2">
 						<div class="max-w-full min-w-0 text-base font-semibold tracking-tight break-words">{environment.name}</div>
 						<Badge variant={roleBadge.variant} size="sm">{roleBadge.text}</Badge>
+						{#if overview.podCount !== undefined}
+							<Badge variant="purple" size="sm">{m.podman()}</Badge>
+						{/if}
 						{#if versionInfo}
 							<div class="flex items-center">
 								{#if versionInfo.updateAvailable || debugUpgrade}
@@ -186,6 +189,13 @@
 							<span class="font-semibold text-foreground tabular-nums">{overview.imageUsageCounts.totalImages}</span>
 							{String(m.images()).toLowerCase()}
 						</span>
+						{#if overview.podCount !== undefined}
+							<span class="text-border">·</span>
+							<span>
+								<span class="font-semibold text-foreground tabular-nums">{overview.podCount}</span>
+								{String(m.podman_pods_title()).toLowerCase()}
+							</span>
+						{/if}
 						<span class="text-border">·</span>
 						<span>
 							<span class="font-semibold text-foreground tabular-nums">{overview.actionItems.items.length}</span>

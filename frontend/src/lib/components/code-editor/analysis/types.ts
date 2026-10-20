@@ -10,6 +10,7 @@ export type CodeLanguage =
 	| 'javascript'
 	| 'typescript'
 	| 'markdown'
+	| 'systemd'
 	| 'plaintext';
 export type CodeValidationMode = 'compose' | 'env' | 'none';
 

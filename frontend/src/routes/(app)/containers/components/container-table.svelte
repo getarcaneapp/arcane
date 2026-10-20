@@ -69,6 +69,7 @@
 		type EnvironmentRow
 	} from '#lib/utils/environments.js';
 	import { formatDateTimeShort, truncateImageDigest } from '#lib/utils/formatting.js';
+	import { quadletUnitHref } from '#lib/utils/podman.js';
 
 	import { createContainerActions } from '../container-table.actions';
 	import {
@@ -678,6 +679,7 @@
 	{@const displayName = getContainerDisplayName(item)}
 	{@const iconUrl = getThemedIconUrl(item, mode.current)}
 	{@const projectLabel = item.labels?.[COMPOSE_PROJECT_LABEL]}
+	{@const quadletHref = quadletUnitHref(item.labels, item.environmentId)}
 	<div class="flex items-center gap-2">
 		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-8 shrink-0" />
 		<a class="min-w-0 truncate font-medium hover:underline" href={environmentHref(`/containers/${item.id}`, item.environmentId)}
@@ -685,6 +687,11 @@
 		>
 		{#if item.hidden}
 			<Badge variant="gray" size="sm">{m.hidden()}</Badge>
+		{/if}
+		{#if quadletHref}
+			<Badge variant="purple" size="sm" href={environmentHref(quadletHref, item.environmentId)}>
+				{m.podman_managed_by_quadlet()}
+			</Badge>
 		{/if}
 		{#if projectLabel && !groupByProject}
 			<Badge variant="gray" size="sm" class="max-w-40" title={projectLabel}>

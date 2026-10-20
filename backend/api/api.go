@@ -43,6 +43,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/oidc"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/podman"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/port"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
@@ -100,6 +101,7 @@ var dockerSchemaPrefixes = map[string]string{
 	"network":   "DockerNetwork",
 	"volume":    "DockerVolume",
 	"swarm":     "DockerSwarm",
+	"podman":    "Podman",
 	"mount":     "DockerMount",
 	"filters":   "DockerFilters",
 	"blkiodev":  "DockerBlkiodev",
@@ -201,6 +203,7 @@ type HandlerDeps struct {
 	Network           *network.NetworkService
 	Port              *port.PortService
 	Swarm             *swarm.Module
+	Podman            *podman.Module
 	ImageUpdate       *imageupdate.Module
 	Auth              *auth.Module
 	Passkey           *passkey.PasskeyService
@@ -302,6 +305,7 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityApp
 	port.RegisterPorts(api, deps.Port)
 	network.RegisterNetworks(api, deps.Network, deps.Docker, deps.Activity.Service(), appCtx)
 	deps.Swarm.RegisterRoutes(api)
+	deps.Podman.RegisterRoutes(api)
 	deps.Notification.RegisterRoutes(api)
 	deps.Apns.RegisterRoutes(api)
 	deps.Updater.RegisterRoutes(api, appCtx)

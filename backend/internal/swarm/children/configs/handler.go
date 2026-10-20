@@ -7,6 +7,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/swarm"
+	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
@@ -28,6 +29,11 @@ func NewHandler(
 
 type ListSwarmConfigsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Search        string `query:"search" doc:"Search query"`
+	Sort          string `query:"sort" doc:"Column to sort by"`
+	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 }
 
 type GetSwarmConfigInput struct {
@@ -38,6 +44,12 @@ type GetSwarmConfigInput struct {
 type CreateSwarmConfigInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          swarm.ConfigCreateRequest
+}
+
+type UpdateSwarmConfigInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ConfigID      string `path:"configId" doc:"Config ID"`
+	Body          swarm.ConfigUpdateRequest
 }
 
 type DeleteSwarmConfigInput struct {
@@ -55,16 +67,20 @@ type DeleteSwarmConfigInput struct {
 //
 // Returns the current swarm configs.
 // Returns a mapped HTTP error when config enumeration fails.
-func (h *Handler) ListConfigs(ctx context.Context, input *ListSwarmConfigsInput) (*handlerutil.Out[[]swarm.ConfigSummary], error) {
-	items, err := h.service.ListConfigs(ctx)
+func (h *Handler) ListConfigs(ctx context.Context, input *ListSwarmConfigsInput) (*handlerutil.Page[swarm.ConfigSummary], error) {
+	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	items, page, err := h.service.ListConfigs(ctx, params)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to list swarm configs")
 	}
-	if items == nil {
-		items = []swarm.ConfigSummary{}
-	}
 
-	return &handlerutil.Out[[]swarm.ConfigSummary]{Body: base.ApiResponse[[]swarm.ConfigSummary]{Success: true, Data: items}}, nil
+	return &handlerutil.Page[swarm.ConfigSummary]{
+		Body: base.Paginated[swarm.ConfigSummary]{
+			Success:    true,
+			Data:       kit.Ternary(items != nil, items, []swarm.ConfigSummary{}),
+			Pagination: handlerutil.PaginationResponse(page),
+		},
+	}, nil
 }
 
 // GetConfig returns details for a single swarm config.
@@ -110,6 +126,20 @@ func (h *Handler) CreateConfig(ctx context.Context, input *CreateSwarmConfigInpu
 	h.audit(ctx, input.EnvironmentID, "config.create", "swarm_config", cfg.ID, cfg.Spec.Name, map[string]any{"configId": cfg.ID, "name": cfg.Spec.Name})
 
 	return &handlerutil.Out[swarm.ConfigSummary]{Body: base.ApiResponse[swarm.ConfigSummary]{Success: true, Data: *cfg}}, nil
+}
+
+func (h *Handler) UpdateConfig(ctx context.Context, input *UpdateSwarmConfigInput) (*handlerutil.Out[swarm.ConfigSummary], error) {
+	updated, err := h.service.UpdateConfig(ctx, input.ConfigID, input.Body)
+	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return nil, huma.Error404NotFound("Swarm config not found")
+		}
+		return nil, h.mapError(err, "Failed to update swarm config")
+	}
+
+	h.audit(ctx, input.EnvironmentID, "config.update", "swarm_config", updated.ID, updated.Spec.Name, map[string]any{"configId": updated.ID, "name": updated.Spec.Name})
+
+	return &handlerutil.Out[swarm.ConfigSummary]{Body: base.ApiResponse[swarm.ConfigSummary]{Success: true, Data: *updated}}, nil
 }
 
 // DeleteConfig removes a swarm config.

@@ -23,6 +23,20 @@ export const queryKeys = {
 			['swarm', environmentId, 'join-candidates', user?.id ?? null, stableSerialize(user?.permissionsByEnv)] as const,
 		serviceTasks: (environmentId: string, serviceId: string) => ['swarm', environmentId, 'service-tasks', serviceId] as const
 	},
+	podman: {
+		environment: (environmentId: string) => ['podman', environmentId] as const,
+		status: (environmentId: string) => ['podman', environmentId, 'status'] as const,
+		pods: (scope: string, options: SearchPaginationSortRequest) => ['podman-pods', scope, stableSerialize(options)] as const,
+		quadlets: (scope: string, options: SearchPaginationSortRequest) =>
+			['podman-quadlets', scope, stableSerialize(options)] as const,
+		secrets: (scope: string, options: SearchPaginationSortRequest) =>
+			['podman-secrets', scope, stableSerialize(options)] as const,
+		pod: (environmentId: string, podId: string) => ['podman', environmentId, 'pods', podId] as const,
+		podStats: (environmentId: string, podName: string) => ['podman', environmentId, 'pods', podName, 'stats'] as const,
+		podTop: (environmentId: string, podId: string) => ['podman', environmentId, 'pods', podId, 'top'] as const,
+		quadlet: (environmentId: string, name: string) => ['podman', environmentId, 'quadlets', name] as const,
+		quadletFile: (environmentId: string, name: string) => ['podman', environmentId, 'quadlets', name, 'file'] as const
+	},
 	jobs: {
 		list: (environmentId: string) => ['environment-jobs', environmentId] as const,
 		runs: (environmentId: string, jobId: string, page: number) => ['job-runs', environmentId, jobId, page] as const,

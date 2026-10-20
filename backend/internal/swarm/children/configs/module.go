@@ -60,6 +60,21 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(
 		api,
 		huma.Operation{
+			OperationID: "update-swarm-config",
+			Method:      http.MethodPut,
+			Path:        "/environments/{id}/swarm/configs/{configId}",
+			Summary:     "Update swarm config labels",
+			Tags: []string{
+				"Swarm",
+			},
+			Security: handlerutil.DefaultOperationSecurity(),
+		},
+		authz.PermSwarmConfigs,
+		h.UpdateConfig,
+	)
+	middleware.RegisterWithPermission(
+		api,
+		huma.Operation{
 			OperationID: "delete-swarm-config",
 			Method:      http.MethodDelete,
 			Path:        "/environments/{id}/swarm/configs/{configId}",

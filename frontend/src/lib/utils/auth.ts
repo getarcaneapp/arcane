@@ -74,6 +74,7 @@ const PROTECTED_PREFIXES = [
 	'/projects',
 	'/volumes',
 	'/networks',
+	'/podman',
 	'/ports',
 	'/settings',
 	'/swarm',

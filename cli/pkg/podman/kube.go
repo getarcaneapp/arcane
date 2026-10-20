@@ -1,0 +1,180 @@
+package podman
+
+import (
+	"fmt"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+
+	"github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/spf13/cobra"
+	"go.getarcane.app/kit/pkg"
+
+	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+)
+
+func newKubeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "kube",
+		Short: "Play, tear down, and generate Kubernetes YAML",
+	}
+	cmd.AddCommand(
+		newKubePlayCmd(),
+		newKubeDownCmd(),
+		newKubeGenerateCmd(),
+	)
+	return cmd
+}
+
+func newKubePlayCmd() *cobra.Command {
+	var opts struct {
+		replace  bool
+		noStart  bool
+		networks []string
+	}
+	cmd := &cobra.Command{
+		Use:          "play <file>",
+		Short:        "Create pods from Kubernetes YAML",
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			content, err := os.ReadFile(args[0])
+			if err != nil {
+				return fmt.Errorf("failed to read kube YAML: %w", err)
+			}
+
+			c, err := cmdutil.ClientFromCommand(cmd)
+			if err != nil {
+				return err
+			}
+
+			return cmdutil.Run(cmd, c, cmdutil.Spec[podman.KubePlayReport]{
+				Method: http.MethodPost,
+				Path:   types.PodmanKube(c.EnvID(), "play"),
+				Body: podman.KubePlayRequest{
+					YAML:     string(content),
+					Start:    kit.Ternary(opts.noStart, new(false), nil),
+					Replace:  opts.replace,
+					Networks: opts.networks,
+				},
+				FailureMessage: "failed to play kube YAML",
+				Render: func(data podman.KubePlayReport) error {
+					output.Success("Kube YAML played successfully")
+					for _, volume := range data.Volumes {
+						output.KeyValue("Volume", volume.Name)
+					}
+					if len(data.Pods) == 0 {
+						return nil
+					}
+					rows := make([][]string, len(data.Pods))
+					for i, pod := range data.Pods {
+						rows[i] = []string{
+							pod.ID[:min(len(pod.ID), 12)],
+							strconv.Itoa(len(pod.Containers)),
+							strings.Join(pod.ContainerErrors, "; "),
+						}
+					}
+					return cmdutil.PrintTable(cmd, []string{"POD", "CONTAINERS", "ERRORS"}, rows)
+				},
+			})
+		},
+	}
+	cmd.Flags().BoolVar(&opts.replace, "replace", false, "Replace existing pods and containers")
+	cmd.Flags().BoolVar(&opts.noStart, "no-start", false, "Create the pods without starting them")
+	cmd.Flags().StringArrayVar(&opts.networks, "network", nil, "Network to attach the pods to (repeatable)")
+	cmdutil.SetScope(cmdutil.ScopeDestination, cmd)
+	return cmd
+}
+
+func newKubeDownCmd() *cobra.Command {
+	var opts struct {
+		force bool
+	}
+	cmd := &cobra.Command{
+		Use:          "down <file>",
+		Short:        "Remove pods created from Kubernetes YAML",
+		Args:         cobra.ExactArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			content, err := os.ReadFile(args[0])
+			if err != nil {
+				return fmt.Errorf("failed to read kube YAML: %w", err)
+			}
+
+			confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, opts.force, fmt.Sprintf("Are you sure you want to tear down the pods in %s?", args[0]))
+			if confirmationErr != nil || !confirmed {
+				return confirmationErr
+			}
+
+			c, err := cmdutil.ClientFromCommand(cmd)
+			if err != nil {
+				return err
+			}
+
+			return cmdutil.Run(cmd, c, cmdutil.Spec[podman.KubeDownReport]{
+				Method: http.MethodPost,
+				Path:   types.PodmanKube(c.EnvID(), "down"),
+				Body: podman.KubeDownRequest{
+					YAML:  string(content),
+					Force: opts.force,
+				},
+				FailureMessage: "failed to tear down kube YAML",
+				Render: func(data podman.KubeDownReport) error {
+					output.Success("Kube YAML torn down successfully")
+					output.KeyValue("Stopped pods", len(data.StopReport))
+					output.KeyValue("Removed pods", len(data.RmReport))
+					return nil
+				},
+			})
+		},
+	}
+	cmd.Flags().BoolVarP(&opts.force, "force", "f", false, "Also remove volumes created by the YAML and skip the confirmation prompt")
+	return cmd
+}
+
+func newKubeGenerateCmd() *cobra.Command {
+	var opts struct {
+		kind    podman.KubeGenerateType
+		service bool
+	}
+	cmd := &cobra.Command{
+		Use:          "generate <name>...",
+		Short:        "Generate Kubernetes YAML from pods, containers, or volumes",
+		Args:         cobra.MinimumNArgs(1),
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := cmdutil.ClientFromCommand(cmd)
+			if err != nil {
+				return err
+			}
+
+			return cmdutil.Run(cmd, c, cmdutil.Spec[podman.KubeGenerateResponse]{
+				Method: http.MethodPost,
+				Path:   types.PodmanKube(c.EnvID(), "generate"),
+				Body: podman.KubeGenerateRequest{
+					Names:   args,
+					Type:    opts.kind,
+					Service: opts.service,
+				},
+				FailureMessage: "failed to generate kube YAML",
+				Render: func(data podman.KubeGenerateResponse) error {
+					_, writeErr := fmt.Fprint(output.Stdout(), data.YAML)
+					return writeErr
+				},
+			})
+		},
+	}
+	cmdutil.EnumVarP(cmd, cmd.Flags(), &opts.kind, "type", "", podman.KubeGenerateTypePod, "Kubernetes kind to generate",
+		podman.KubeGenerateTypePod,
+		podman.KubeGenerateTypeService,
+		podman.KubeGenerateTypeDeployment,
+		podman.KubeGenerateTypeDaemonSet,
+		podman.KubeGenerateTypeJob,
+	)
+	cmd.Flags().BoolVar(&opts.service, "service", false, "Also generate a Kubernetes service")
+	cmdutil.SetScope(cmdutil.ScopeRead, cmd)
+	return cmd
+}

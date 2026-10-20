@@ -25,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/getarcaneapp/arcane/types/v2/image"
+	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
 	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
@@ -32,9 +33,11 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container/children/stats"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -43,8 +46,10 @@ import (
 	imagedomain "github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/podman"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	libpodman "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/podman"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
@@ -146,7 +151,7 @@ func TestContainerSummaryIconsAppliedAfterGrouping(t *testing.T) {
 	db := setupProjectTestDB(t)
 	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{})
 	require.NoError(t, err)
-	service := NewContainerService(nil, nil, nil, settingsService, project.NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, nil, nil, nil), nil)
+	service := NewContainerService(nil, nil, nil, settingsService, project.NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, nil, nil, nil), nil, nil)
 	dockerContainers := []container.Summary{
 		{ID: "app", Names: []string{"/app"}, Labels: map[string]string{
 			"com.docker.compose.project": "media",
@@ -326,6 +331,7 @@ func TestContainerServiceCommitContainerCallsDockerAPI(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 
 	out, err := svc.CommitContainer(t.Context(), "container-1", containertypes.CommitRequest{
@@ -370,6 +376,7 @@ func TestContainerServiceCommitContainerOmitsReferenceWhenRepositoryEmpty(t *tes
 	svc := NewContainerService(
 		event.NewEventService(db, nil, nil),
 		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)),
+		nil,
 		nil,
 		nil,
 		nil,
@@ -648,6 +655,7 @@ func TestContainerServiceResizeExec(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 
 	require.NoError(t, svc.ResizeExec(t.Context(), "exec-1", 120, 40))
@@ -662,6 +670,11 @@ func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 	observed := make(chan string, 8)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := dockerTestPath(r.URL.Path)
+		if path == "/version" || path == "/info" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{}"))
+			return
+		}
 		id, name := "old-id", "web"
 		if path == "/containers/create" {
 			id = ""
@@ -688,7 +701,7 @@ func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	kvService := kv.NewKVService(db)
-	svc := NewContainerService(events, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService)
+	svc := NewContainerService(events, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
 	info := container.InspectResponse{
 		ID:         "old-id",
 		Name:       "/web",
@@ -743,6 +756,11 @@ func TestRecreateContainerRollsBackAfterRequestCancellation(t *testing.T) {
 	var observed []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := dockerTestPath(r.URL.Path)
+		if path == "/version" || path == "/info" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte("{}"))
+			return
+		}
 		mu.Lock()
 		observed = append(observed, r.Method+" "+path)
 		mu.Unlock()
@@ -762,7 +780,7 @@ func TestRecreateContainerRollsBackAfterRequestCancellation(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	kvService := kv.NewKVService(db)
-	svc := NewContainerService(event.NewEventService(db, nil, nil), docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService)
+	svc := NewContainerService(event.NewEventService(db, nil, nil), docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
 	info := container.InspectResponse{
 		ID:         "old-id",
 		Name:       "/web",
@@ -877,7 +895,7 @@ func TestRecoverInterruptedRedeploys(t *testing.T) {
 				w.WriteHeader(http.StatusNoContent)
 			}))
 			t.Cleanup(server.Close)
-			svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService)
+			svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
 
 			require.NoError(t, svc.RecoverInterruptedRedeploys(t.Context()))
 
@@ -894,7 +912,7 @@ func TestRecoverInterruptedRedeploys(t *testing.T) {
 func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
 	settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{})
 	require.NoError(t, err)
-	service := NewContainerService(nil, nil, nil, settingsService, nil, nil)
+	service := NewContainerService(nil, nil, nil, settingsService, nil, nil, nil)
 	strategyLabel := "com.getarcaneapp.arcane.updater.strategy"
 	containers := []container.Summary{
 		{ID: "first", Image: "app:3.1.0", ImageID: "shared-image"},
@@ -1006,7 +1024,7 @@ func TestContainerServiceGetContainerProcesses(t *testing.T) {
 			t.Cleanup(server.Close)
 			settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{})
 			require.NoError(t, err)
-			svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, settingsService, nil, nil)
+			svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, settingsService, nil, nil, nil)
 
 			processes, err := svc.GetContainerProcesses(t.Context(), "container-1")
 			wantArgs := []string{strings.Join(containerProcessesPsArgs[0], " ")}
@@ -1034,7 +1052,7 @@ func TestContainerServiceGetContainerProcessesPropagatesContext(t *testing.T) {
 	t.Cleanup(server.Close)
 	settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{})
 	require.NoError(t, err)
-	svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, settingsService, nil, nil)
+	svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, settingsService, nil, nil, nil)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
@@ -1181,6 +1199,7 @@ func newResourceSortService(t *testing.T, fixture *resourceStatsServer) *Contain
 		dockerService,
 		imagedomain.NewImageService(db, dockerService, nil, nil, nil, nil, settingsService, nil),
 		settingsService,
+		nil,
 		nil,
 		nil,
 	)
@@ -1527,6 +1546,7 @@ func newLogsTestService(t *testing.T, tty bool, logsBody []byte, gotQuery *url.V
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 }
 
@@ -1698,4 +1718,138 @@ func TestAggregateContainersMergesEnvironments(t *testing.T) {
 		require.Empty(t, body.Data)
 		require.Len(t, body.FailedEnvironments, 3)
 	})
+}
+
+type quadletTestSystemd struct {
+	mu    sync.Mutex
+	calls []string
+}
+
+func (f *quadletTestSystemd) Availability(context.Context) podmantypes.SystemdAvailability {
+	return podmantypes.SystemdAvailability{Available: true}
+}
+
+func (f *quadletTestSystemd) Start(_ context.Context, unit string) error {
+	return f.record("start " + unit)
+}
+
+func (f *quadletTestSystemd) Stop(_ context.Context, unit string) error {
+	return f.record("stop " + unit)
+}
+
+func (f *quadletTestSystemd) Restart(_ context.Context, unit string) error {
+	return f.record("restart " + unit)
+}
+
+func (f *quadletTestSystemd) UnitStatus(_ context.Context, unit string) (podmantypes.UnitStatus, error) {
+	return podmantypes.UnitStatus{Name: unit, ActiveState: "active"}, nil
+}
+
+func (f *quadletTestSystemd) record(call string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, call)
+	return nil
+}
+
+func newQuadletTestContainerService(t *testing.T) (*ContainerService, *quadletTestSystemd, func() []string) {
+	t.Helper()
+
+	var mu sync.Mutex
+	var dockerCalls []string
+	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := dockerTestPath(r.URL.Path)
+		mu.Lock()
+		dockerCalls = append(dockerCalls, r.Method+" "+path)
+		mu.Unlock()
+		if r.Method == http.MethodGet && path == "/containers/quadlet-id/json" {
+			w.Header().Set("Content-Type", "application/json")
+			if err := json.NewEncoder(w).Encode(container.InspectResponse{
+				ID:         "quadlet-id",
+				Name:       "/web",
+				State:      &container.State{Running: true},
+				Config:     &container.Config{Image: "nginx:latest", Labels: map[string]string{podmantypes.SystemdUnitLabel: "web.service"}},
+				HostConfig: &container.HostConfig{},
+			}); err != nil {
+				t.Errorf("encode inspect response: %v", err)
+			}
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(dockerServer.Close)
+
+	libpodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v4.0.0/libpod/version":
+			_, _ = w.Write([]byte(`{"Version":"6.1.0","ApiVersion":"6.1.0"}`))
+		case "/v4.0.0/libpod/info":
+			_, _ = w.Write([]byte(`{"host":{"security":{"rootless":false}}}`))
+		case "/v4.0.0/libpod/containers/json":
+			_, _ = w.Write([]byte(`[{"Id":"quadlet-id","Names":["web"],"Labels":{"PODMAN_SYSTEMD_UNIT":"web.service"}}]`))
+		case "/v4.0.0/libpod/quadlets/json":
+			_, _ = w.Write([]byte(`[{"Name":"web.container","UnitName":"web.service"}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(libpodServer.Close)
+
+	systemd := &quadletTestSystemd{}
+	svc := NewContainerService(
+		event.NewEventService(setupProjectTestDB(t), nil, nil),
+		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, dockerServer)),
+		nil,
+		nil,
+		nil,
+		nil,
+		podman.NewService(podman.Config{
+			Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
+				return compat.EngineCompatibilityInfo{Name: "podman"}, nil
+			},
+			Host: libpodServer.URL,
+			NewSystemd: func(bool) libpodman.Systemd {
+				return systemd
+			},
+		}),
+	)
+	return svc, systemd, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(dockerCalls)
+	}
+}
+
+func TestContainerLifecycleRoutesQuadletContainersThroughSystemd(t *testing.T) {
+	svc, systemd, dockerCalls := newQuadletTestContainerService(t)
+	actor := user.Actor{ID: "user-1", Username: "tester"}
+
+	require.NoError(t, svc.StartContainer(t.Context(), "quadlet-id", actor))
+	require.NoError(t, svc.StopContainer(t.Context(), "quadlet-id", actor))
+	require.NoError(t, svc.RestartContainer(t.Context(), "quadlet-id", actor))
+	require.Equal(t, []string{"start web.service", "stop web.service", "restart web.service"}, systemd.calls)
+	require.Empty(t, dockerCalls())
+
+	require.NoError(t, svc.StartContainer(t.Context(), "plain-id", actor))
+	require.Equal(t, []string{"POST /containers/plain-id/start"}, dockerCalls())
+	require.Len(t, systemd.calls, 3)
+}
+
+func TestContainerMutationsRefuseQuadletContainers(t *testing.T) {
+	svc, systemd, dockerCalls := newQuadletTestContainerService(t)
+	actor := user.Actor{ID: "user-1", Username: "tester"}
+
+	_, err := svc.EditContainer(t.Context(), "quadlet-id", containertypes.Edit{}, actor)
+	require.ErrorIs(t, err, common.ErrContainerQuadletManaged)
+	_, err = svc.RedeployContainer(t.Context(), "quadlet-id", actor)
+	require.ErrorIs(t, err, common.ErrContainerQuadletManaged)
+	require.ErrorIs(t, svc.DeleteContainer(t.Context(), "quadlet-id", true, true, actor), common.ErrContainerQuadletManaged)
+
+	require.Equal(t, []string{
+		"GET /containers/quadlet-id/json",
+		"GET /containers/quadlet-id/json",
+		"GET /containers/quadlet-id/json",
+	}, dockerCalls())
+	require.Empty(t, systemd.calls)
 }

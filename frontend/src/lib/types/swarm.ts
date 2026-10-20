@@ -488,28 +488,30 @@ export interface SwarmUpdateRequest {
 	rotateManagerUnlockKey?: boolean;
 }
 
-export interface SwarmConfigSummary {
+export type SwarmKvKind = 'secrets' | 'configs';
+
+export interface SwarmKvSpec {
+	Name: string;
+	Labels?: Record<string, string> | null;
+	Data?: string | null;
+	Driver?: { Name: string; Options?: Record<string, string> | null } | null;
+}
+
+export interface SwarmKvSummary {
 	id: string;
-	version: { index?: number; Index?: number };
+	version: { Index?: number };
 	createdAt: string;
 	updatedAt: string;
-	spec: Record<string, unknown>;
+	spec: SwarmKvSpec;
 }
 
-export interface SwarmSecretSummary {
-	id: string;
-	version: { index?: number; Index?: number };
-	createdAt: string;
-	updatedAt: string;
-	spec: Record<string, unknown>;
+export interface SwarmKvCreateRequest {
+	spec: SwarmKvSpec;
 }
 
-export interface SwarmConfigCreateRequest {
-	spec: Record<string, unknown>;
-}
-
-export interface SwarmSecretCreateRequest {
-	spec: Record<string, unknown>;
+export interface SwarmKvUpdateRequest {
+	version: number;
+	labels: Record<string, string>;
 }
 
 // --- Compose projects ---

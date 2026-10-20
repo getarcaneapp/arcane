@@ -93,12 +93,16 @@ export async function resolveDetailEnvironmentId(url: URL): Promise<string> {
 }
 
 /**
- * Destination for a create: the picked shown environment that grants `permission`, else the selected
- * one, else the first shown environment that grants it. With one shown environment this is the selected one.
+ * Destination for a create: the picked environment among `environments` that grants `permission`, else the
+ * selected one, else the first that grants it. With one shown environment this is the selected one.
  */
-export function destinationEnvironmentId(picked: string, permission: string): string {
+export function destinationEnvironmentId(
+	picked: string,
+	permission: string,
+	environments: EnvironmentRef[] = environmentStore.shown
+): string {
 	const selected = environmentStore.selected?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID;
-	const permitted = environmentStore.shown.filter((env) => hasPermission(permission, env.id)).map((env) => env.id);
+	const permitted = environments.filter((env) => hasPermission(permission, env.id)).map((env) => env.id);
 	const candidate = permitted.includes(picked) ? picked : selected;
 	return permitted.includes(candidate) ? candidate : (permitted[0] ?? candidate);
 }

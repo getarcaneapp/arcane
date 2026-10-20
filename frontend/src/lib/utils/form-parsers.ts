@@ -1,3 +1,5 @@
+import type { KeyValueRow } from '#lib/components/form/key-value-editor.svelte';
+
 /** Splits textarea content into trimmed, non-empty lines. */
 export function parseLines(text: string): string[] {
 	return splitAndTrim(text, '\n');
@@ -35,4 +37,12 @@ export function parseKeyValuePairs(text: string): Record<string, string> {
 	}
 
 	return result;
+}
+
+export function keyValueRowsToRecord(rows: KeyValueRow[]): Record<string, string> {
+	return Object.fromEntries(rows.filter((row) => row.key.trim()).map((row) => [row.key.trim(), row.value]));
+}
+
+export function recordToKeyValueRows(record: Record<string, string> | null | undefined): KeyValueRow[] {
+	return Object.entries(record ?? {}).map(([key, value]) => ({ key, value }));
 }

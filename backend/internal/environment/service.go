@@ -11,6 +11,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -24,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 	"github.com/getarcaneapp/arcane/types/v2/scheduler"
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/moby/moby/client"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"go.getarcane.app/kit/normalization"
@@ -62,6 +64,7 @@ import (
 
 type EnvironmentService struct {
 	db               *database.DB
+	dockerService    *docker.DockerClientService
 	eventService     *event.EventService
 	settingsService  *settings.SettingsService
 	edgeTokens       *edgeTokenCache
@@ -87,6 +90,7 @@ const (
 	// LocalEnvironmentID is the reserved ID of the environment Arcane manages directly.
 	LocalEnvironmentID           = "0"
 	localEnvironmentFallbackName = "Local"
+	legacyLocalEnvironmentName   = "Local Docker"
 
 	// SyncDeliveryExpiry bounds how long an accepted config push is trusted, so a
 	// rebuilt agent that stayed online is resynced without operator action.
@@ -153,6 +157,7 @@ func NewEnvironmentService(
 	return &EnvironmentService{
 		syncGate:        syncGate,
 		db:              db,
+		dockerService:   dockerService,
 		eventService:    eventService,
 		settingsService: settingsService,
 		edgeTokens: &edgeTokenCache{
@@ -318,17 +323,33 @@ func (s *EnvironmentService) ResolveEnvironmentName(ctx context.Context, environ
 }
 
 func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl string) error {
+	hostName := func() string {
+		info, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {
+			return dockerClient.Info(ctx, client.InfoOptions{})
+		})
+		osHostName, _ := os.Hostname()
+		return cmp.Or(strings.TrimSpace(info.Info.Name), strings.TrimSpace(osHostName), localEnvironmentFallbackName)
+	}
+
 	var existingEnv Environment
 	err := s.db.WithContext(ctx).Where("id = ?", LocalEnvironmentID).First(&existingEnv).Error
 
 	if err == nil {
+		updates := map[string]any{}
 		if existingEnv.ApiUrl != appUrl {
-			if updateLocalURLErr := s.db.WithContext(ctx).Model(&existingEnv).Update("api_url", appUrl).Error; updateLocalURLErr != nil {
-				return fmt.Errorf("failed to update local environment api url: %w", updateLocalURLErr)
-			}
-			s.invalidateEnvironmentCache(LocalEnvironmentID)
-			slog.InfoContext(ctx, "updated local environment api url", "id", LocalEnvironmentID, "url", appUrl)
+			updates["api_url"] = appUrl
 		}
+		if existingEnv.Name == legacyLocalEnvironmentName {
+			updates["name"] = hostName()
+		}
+		if len(updates) == 0 {
+			return nil
+		}
+		if updateLocalErr := s.db.WithContext(ctx).Model(&existingEnv).Updates(updates).Error; updateLocalErr != nil {
+			return fmt.Errorf("failed to update local environment: %w", updateLocalErr)
+		}
+		s.invalidateEnvironmentCache(LocalEnvironmentID)
+		slog.InfoContext(ctx, "updated local environment", "id", LocalEnvironmentID, "updates", updates)
 		return nil
 	}
 
@@ -341,7 +362,7 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 		ID:        LocalEnvironmentID,
 		CreatedAt: now,
 		UpdatedAt: new(now),
-		Name:      "Local Docker",
+		Name:      hostName(),
 		ApiUrl:    appUrl,
 		Status:    string(EnvironmentStatusOnline),
 		Enabled:   true,

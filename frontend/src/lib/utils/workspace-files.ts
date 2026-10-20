@@ -275,7 +275,15 @@ const WORKSPACE_LANGUAGE_EXTENSIONS: Partial<Record<string, CodeLanguage>> = {
 	cjs: 'javascript',
 	md: 'markdown',
 	markdown: 'markdown',
-	mdx: 'markdown'
+	mdx: 'markdown',
+	container: 'systemd',
+	pod: 'systemd',
+	kube: 'systemd',
+	network: 'systemd',
+	volume: 'systemd',
+	image: 'systemd',
+	build: 'systemd',
+	artifact: 'systemd'
 };
 
 export function workspaceFileLanguage(relativePath: string): CodeLanguage {

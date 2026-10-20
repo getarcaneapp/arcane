@@ -47,6 +47,7 @@
 	import { calculateMemoryUsage, getCustomHostname, getThemedIconUrl } from '#lib/utils/docker.js';
 	import { environmentHref, listScopes } from '#lib/utils/environments.js';
 	import { bytes } from '#lib/utils/formatting.js';
+	import { quadletUnitHref } from '#lib/utils/podman.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import ContainerCommitDialog from '../components/container-commit-dialog.svelte';
@@ -276,6 +277,7 @@
 
 	const project = $derived(data?.project ?? null);
 	const composeInfo = $derived(container?.composeInfo ?? null);
+	const quadletHref = $derived(quadletUnitHref(container?.labels, currentEnvId));
 	const composeServiceName = $derived(composeInfo?.serviceName ?? '');
 	const rootComposeFilename = $derived.by(() => {
 		const cf = composeInfo?.configFiles;
@@ -471,6 +473,16 @@
 		<EnvironmentCell value={currentEnvId} />
 		{#if updateInfo?.hasUpdate}
 			<Badge variant="amber" minWidth="20">{m.sidebar_update_available()}</Badge>
+		{/if}
+		{#if quadletHref}
+			<Badge
+				variant="purple"
+				size="sm"
+				href={environmentHref(quadletHref, currentEnvId)}
+				title={m.podman_quadlet_update_disabled()}
+			>
+				{m.podman_managed_by_quadlet()}
+			</Badge>
 		{/if}
 		{#if project && composeInfo}
 			<Badge

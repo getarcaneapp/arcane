@@ -22,6 +22,7 @@
 		user = null,
 		versionInformation,
 		swarmItems = [],
+		podmanItems = [],
 		permissionsManifest = null,
 		debug = false
 	}: {
@@ -29,6 +30,7 @@
 		user?: User | null;
 		versionInformation?: AppVersionInformation;
 		swarmItems?: NavigationItem[];
+		podmanItems?: NavigationItem[];
 		permissionsManifest?: PermissionsManifest | null;
 		debug?: boolean;
 	} = $props();
@@ -42,6 +44,9 @@
 	);
 	const resourceItems = $derived(
 		filterByPermissions(navigationItems.resourceItems, memoizedUser ?? null, currentEnvId, permissionsManifest)
+	);
+	const permittedPodmanItems = $derived(
+		filterByPermissions(podmanItems, memoizedUser ?? null, currentEnvId, permissionsManifest)
 	);
 	const settingsItems = $derived(
 		filterByPermissions(navigationItems.settingsItems, memoizedUser ?? null, currentEnvId, permissionsManifest)
@@ -151,6 +156,19 @@
 						</h4>
 						<div class="space-y-2">
 							{#each swarmItems as item (item.url)}
+								{@render navLink(item, true)}
+							{/each}
+						</div>
+					</section>
+				{/if}
+
+				{#if permittedPodmanItems.length > 0}
+					<section>
+						<h4 class="mb-4 px-3 text-2xs font-semibold tracking-widest text-muted-foreground/70 uppercase">
+							{m.podman()}
+						</h4>
+						<div class="space-y-2">
+							{#each permittedPodmanItems as item (item.url)}
 								{@render navLink(item, true)}
 							{/each}
 						</div>

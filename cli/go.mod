@@ -14,6 +14,7 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.9
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/creack/pty v1.1.24
+	github.com/docker/go-connections v0.8.2
 	github.com/docker/go-units v0.5.0
 	github.com/getarcaneapp/arcane/types/v2 v2.14.0
 	github.com/gofrs/flock v0.13.1
@@ -66,7 +67,6 @@ require (
 	github.com/digitorus/pkcs7 v0.0.0-20230818184609-3a137a874352 // indirect
 	github.com/digitorus/timestamp v0.0.0-20231217203849-220c5c2851b7 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
-	github.com/docker/go-connections v0.8.2 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/go-chi/chi/v5 v5.3.1 // indirect
 	github.com/go-logfmt/logfmt v0.6.1 // indirect

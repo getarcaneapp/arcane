@@ -22,7 +22,10 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/updater/labels"
+	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
@@ -33,9 +36,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/podman"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
+	libpodman "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/podman"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
 )
 
@@ -204,7 +209,19 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 	}).Error)
 	imageSvc := image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil)
 	projectSvc := project.NewProjectService(db, settingsSvc, nil, imageSvc, testDockerService, nil, nil, nil, config.Load(), nil, nil)
-	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, imageSvc, settingsSvc, nil, nil, nil, volume.NewVolumeService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil))
+	svc := NewDashboardService(
+		db,
+		dockerSvc,
+		nil,
+		projectSvc,
+		imageSvc,
+		settingsSvc,
+		nil,
+		nil,
+		nil,
+		volume.NewVolumeService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil),
+		podman.NewService(podman.Config{Engine: dockerSvc.Engine}),
+	)
 
 	snapshot, err := svc.GetSnapshot(t.Context(), DashboardActionItemsOptions{}, true)
 	require.NoError(t, err)
@@ -259,7 +276,7 @@ func TestDashboardService_GetSnapshot_DebugAllGoodOnlyClearsActionItems(t *testi
 	createDashboardTestImageUpdateRecord(t, db, imageupdate.ImageUpdateRecord{ID: "sha256:image-b", HasUpdate: true})
 
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images, nil)
-	svc := NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil, nil)
+	svc := NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil, nil, podman.NewService(podman.Config{Engine: dockerSvc.Engine}))
 
 	snapshot, err := svc.GetSnapshot(t.Context(), DashboardActionItemsOptions{DebugAllGood: true}, true)
 	require.NoError(t, err)
@@ -300,7 +317,7 @@ func TestDashboardService_GetSnapshot_EnrichesPinnedReferences(t *testing.T) {
 	}
 
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images, nil)
-	svc := NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil, nil)
+	svc := NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil, nil, podman.NewService(podman.Config{Engine: dockerSvc.Engine}))
 
 	snapshot, err := svc.GetSnapshot(t.Context(), DashboardActionItemsOptions{}, true)
 	require.NoError(t, err)
@@ -344,7 +361,7 @@ func TestDashboardService_GetSnapshot_TrimmedOmitsTablesAndSharesBuilds(t *testi
 	}
 
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images, nil)
-	svc := NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil, nil)
+	svc := NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil, nil, podman.NewService(podman.Config{Engine: dockerSvc.Engine}))
 
 	trimmed, err := svc.GetSnapshot(t.Context(), DashboardActionItemsOptions{}, false)
 	require.NoError(t, err)
@@ -394,8 +411,8 @@ func TestDashboardService_GetSnapshot_CachesFullSnapshotsPerIconCatalog(t *testi
 
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images, nil)
 	require.NoError(t, settingsSvc.SetStringSetting(t.Context(), "autoUpdateExcludedContainers", "running-app"))
-	containerSvc := container.NewContainerService(nil, dockerSvc, nil, settingsSvc, nil, nil)
-	svc := NewDashboardService(db, dockerSvc, containerSvc, nil, nil, settingsSvc, nil, nil, nil, nil)
+	containerSvc := container.NewContainerService(nil, dockerSvc, nil, settingsSvc, nil, nil, nil)
+	svc := NewDashboardService(db, dockerSvc, containerSvc, nil, nil, settingsSvc, nil, nil, nil, nil, podman.NewService(podman.Config{Engine: dockerSvc.Engine}))
 
 	defaultSnapshot, err := svc.GetSnapshot(t.Context(), DashboardActionItemsOptions{}, true)
 	require.NoError(t, err)
@@ -470,4 +487,73 @@ func TestPendingContainerCountUsesScopedTagRecords(t *testing.T) {
 	count, err = service.getPendingContainerUpdatesCount(t.Context(), containers)
 	require.NoError(t, err)
 	require.Equal(t, 1, count, "a missing runtime image ID inherits no digest check")
+}
+
+func TestDashboardService_ReportsPodmanPods(t *testing.T) {
+	db, settingsSvc := setupDashboardServiceTestDB(t)
+	dockerSvc := newDashboardTestDockerService(t, settingsSvc, nil, nil, nil)
+
+	libpodServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v4.0.0/libpod/version":
+			_, _ = w.Write([]byte(`{"Version":"6.1.0","ApiVersion":"6.1.0"}`))
+		case "/v4.0.0/libpod/info":
+			_, _ = w.Write([]byte(`{"host":{"security":{"rootless":false}}}`))
+		case "/v4.0.0/libpod/pods/json":
+			_, _ = w.Write([]byte(`[{"Id":"pod-a","Name":"web"},{"Id":"pod-b","Name":"db"}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(libpodServer.Close)
+
+	svc := NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil, nil, podman.NewService(podman.Config{
+		Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
+			return compat.EngineCompatibilityInfo{Name: "podman"}, nil
+		},
+		Host: libpodServer.URL,
+		NewSystemd: func(rootless bool) libpodman.Systemd {
+			return libpodman.NewSystemd("", rootless, func(string) string {
+				return ""
+			})
+		},
+	}))
+
+	snapshot, err := svc.GetSnapshot(t.Context(), DashboardActionItemsOptions{}, false)
+	require.NoError(t, err)
+	require.NotNil(t, snapshot.PodCount)
+	require.Equal(t, 2, *snapshot.PodCount)
+
+	reader := metric.NewManualReader()
+	provider := metric.NewMeterProvider(metric.WithReader(reader))
+	t.Cleanup(func() { require.NoError(t, provider.Shutdown(context.WithoutCancel(t.Context()))) })
+	require.NoError(t, svc.ObserveInventory(provider.Meter("dashboard-test")))
+
+	var collected metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(t.Context(), &collected))
+	var pods []metricdata.DataPoint[int64]
+	for _, scope := range collected.ScopeMetrics {
+		for _, m := range scope.Metrics {
+			if gauge, ok := m.Data.(metricdata.Gauge[int64]); ok && m.Name == "arcane.podman.pods" {
+				pods = gauge.DataPoints
+			}
+		}
+	}
+	require.Len(t, pods, 1)
+	require.Equal(t, int64(2), pods[0].Value)
+}
+
+func TestDashboardService_OmitsPodCountOnDocker(t *testing.T) {
+	db, settingsSvc := setupDashboardServiceTestDB(t)
+	dockerSvc := newDashboardTestDockerService(t, settingsSvc, nil, nil, nil)
+	svc := NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil, nil, podman.NewService(podman.Config{
+		Engine: func(context.Context) (compat.EngineCompatibilityInfo, error) {
+			return compat.EngineCompatibilityInfo{Name: "docker"}, nil
+		},
+	}))
+
+	snapshot, err := svc.GetSnapshot(t.Context(), DashboardActionItemsOptions{}, false)
+	require.NoError(t, err)
+	require.Nil(t, snapshot.PodCount)
 }

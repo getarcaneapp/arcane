@@ -41,6 +41,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/oidc"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/podman"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/port"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
@@ -106,6 +107,7 @@ type graphParams struct {
 	Webhook           *webhook.Module
 	Vulnerability     *vulnerability.VulnerabilityService
 	Dashboard         *dashboard.Module
+	Podman            *podman.Module
 	Role              *role.RoleService
 	Variable          *variable.VariableService
 	AuthMiddleware    *auth.AuthMiddleware

@@ -1,10 +1,70 @@
+import { LockIcon, TemplateIcon, type IconType } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
-import { formatRelativeTime } from '#lib/utils/formatting.js';
+import type { SwarmKvKind } from '#lib/types/swarm.js';
 
-export function getSwarmSpecName(spec: Record<string, unknown> | null | undefined, fallback: string): string {
-	const name = spec && typeof spec === 'object' ? spec['Name'] : undefined;
-	return typeof name === 'string' && name.trim() ? name : fallback.slice(0, 12);
-}
+export type SwarmKvResource = {
+	kind: SwarmKvKind;
+	persistKey: string;
+	permission: string;
+	icon: IconType;
+	resource: () => string;
+	title: () => string;
+	subtitle: () => string;
+	createLabel: () => string;
+	editTitle: () => string;
+	namePlaceholder: () => string;
+	nameLocked: () => string;
+	nameRequired: () => string;
+	immutableNotice: () => string;
+	createSuccess: (name: string) => string;
+	createFailed: () => string;
+	deleteConfirm: (name: string) => string;
+	deleteSuccess: (name: string) => string;
+	deleteFailed: (name: string) => string;
+};
+
+export const swarmKvResources: Record<SwarmKvKind, SwarmKvResource> = {
+	secrets: {
+		kind: 'secrets',
+		persistKey: 'arcane-swarm-secrets-table',
+		permission: 'swarm:secrets',
+		icon: LockIcon,
+		resource: m.swarm_secret,
+		title: m.swarm_secrets_title,
+		subtitle: m.swarm_secrets_subtitle,
+		createLabel: m.create_secret,
+		editTitle: m.swarm_secrets_edit_title,
+		namePlaceholder: m.swarm_secrets_name_placeholder,
+		nameLocked: m.swarm_secrets_name_locked,
+		nameRequired: m.swarm_secrets_name_required,
+		immutableNotice: m.swarm_secrets_immutable_notice,
+		createSuccess: (name) => m.swarm_secrets_create_success({ name }),
+		createFailed: m.swarm_secrets_create_failed,
+		deleteConfirm: (name) => m.swarm_secrets_delete_confirm({ name }),
+		deleteSuccess: (name) => m.swarm_secrets_delete_success({ name }),
+		deleteFailed: (name) => m.swarm_secrets_delete_failed({ name })
+	},
+	configs: {
+		kind: 'configs',
+		persistKey: 'arcane-swarm-configs-table',
+		permission: 'swarm:configs',
+		icon: TemplateIcon,
+		resource: m.swarm_config,
+		title: m.swarm_configs_title,
+		subtitle: m.swarm_configs_subtitle,
+		createLabel: m.create_config,
+		editTitle: m.swarm_configs_edit_title,
+		namePlaceholder: m.swarm_configs_name_placeholder,
+		nameLocked: m.swarm_configs_name_locked,
+		nameRequired: m.swarm_configs_name_required,
+		immutableNotice: m.swarm_configs_immutable_notice,
+		createSuccess: (name) => m.swarm_configs_create_success({ name }),
+		createFailed: m.swarm_configs_create_failed,
+		deleteConfirm: (name) => m.swarm_configs_delete_confirm({ name }),
+		deleteSuccess: (name) => m.swarm_configs_delete_success({ name }),
+		deleteFailed: (name) => m.swarm_configs_delete_failed({ name })
+	}
+};
 
 export function decodeBase64ToText(base64Value: string): string {
 	try {
@@ -23,9 +83,4 @@ export function encodeTextToBase64(value: string): string {
 		binary += String.fromCharCode(byte);
 	}
 	return btoa(binary);
-}
-
-export function formatSwarmTimestamp(timestamp: string): string {
-	if (!timestamp) return m.common_unknown();
-	return formatRelativeTime(timestamp) || m.common_unknown();
 }

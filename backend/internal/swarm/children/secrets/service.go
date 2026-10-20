@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 )
 
 // Service manages swarm secrets.
@@ -24,23 +26,46 @@ func NewService(dockerService *docker.DockerClientService, ensureManager func(ct
 	return &Service{docker: dockerService, ensureManager: ensureManager}
 }
 
-func (s *Service) ListSecrets(ctx context.Context) ([]swarmtypes.SecretSummary, error) {
+var secretPagination = pagination.Config[swarmtypes.SecretSummary]{
+	SearchAccessors: []pagination.SearchAccessor[swarmtypes.SecretSummary]{
+		func(item swarmtypes.SecretSummary) (string, error) {
+			return item.Spec.Name, nil
+		},
+		func(item swarmtypes.SecretSummary) (string, error) {
+			return item.ID, nil
+		},
+	},
+	SortBindings: []pagination.SortBinding[swarmtypes.SecretSummary]{
+		{Key: "name", Fn: func(a, b swarmtypes.SecretSummary) int {
+			return strings.Compare(a.Spec.Name, b.Spec.Name)
+		}},
+		{Key: "createdAt", Fn: func(a, b swarmtypes.SecretSummary) int {
+			return a.CreatedAt.Compare(b.CreatedAt)
+		}},
+		{Key: "updatedAt", Fn: func(a, b swarmtypes.SecretSummary) int {
+			return a.UpdatedAt.Compare(b.UpdatedAt)
+		}},
+	},
+}
+
+func (s *Service) ListSecrets(ctx context.Context, params pagination.QueryParams) ([]swarmtypes.SecretSummary, pagination.Response, error) {
 	if err := s.ensureManager(ctx); err != nil {
-		return nil, err
+		return nil, pagination.Response{}, err
 	}
 
-	secretsResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SecretListResult, error) {
+	listResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SecretListResult, error) {
 		return dockerClient.SecretList(ctx, client.SecretListOptions{})
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list swarm secrets: %w", err)
+		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm secrets: %w", err)
 	}
 
-	items := make([]swarmtypes.SecretSummary, 0, len(secretsResult.Items))
-	for _, secret := range secretsResult.Items {
-		items = append(items, swarmtypes.NewSecretSummary(secret))
+	items := make([]swarmtypes.SecretSummary, 0, len(listResult.Items))
+	for _, item := range listResult.Items {
+		items = append(items, swarmtypes.NewSecretSummary(item))
 	}
-	return items, nil
+	result := secretPagination.SearchOrderAndPaginate(items, params)
+	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params), nil
 }
 
 func (s *Service) GetSecret(ctx context.Context, secretID string) (*swarmtypes.SecretSummary, error) {
@@ -82,6 +107,31 @@ func (s *Service) CreateSecret(ctx context.Context, req swarmtypes.SecretCreateR
 	}
 
 	return s.GetSecret(ctx, createResult.ID)
+}
+
+func (s *Service) UpdateSecret(ctx context.Context, secretID string, req swarmtypes.SecretUpdateRequest) (*swarmtypes.SecretSummary, error) {
+	current, err := s.GetSecret(ctx, secretID)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, updateErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SecretUpdateResult, error) {
+		return dockerClient.SecretUpdate(ctx, current.ID, client.SecretUpdateOptions{
+			Version: swarm.Version{Index: cmp.Or(req.Version, current.Version.Index)},
+			Spec: swarm.SecretSpec{
+				Annotations: swarm.Annotations{
+					Name:   current.Spec.Name,
+					Labels: req.Labels,
+				},
+				Driver:     current.Spec.Driver,
+				Templating: current.Spec.Templating,
+			},
+		})
+	}); updateErr != nil {
+		return nil, fmt.Errorf("failed to update swarm secret: %w", updateErr)
+	}
+
+	return s.GetSecret(ctx, current.ID)
 }
 
 func (s *Service) RemoveSecret(ctx context.Context, secretID string) error {

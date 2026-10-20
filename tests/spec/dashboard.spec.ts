@@ -75,7 +75,10 @@ test.describe('Dashboard system stats websocket', () => {
 		await expect(page.getByText('7 CPUs', { exact: true })).toBeVisible();
 		await expect(page.getByText('512 MB / 1 GB', { exact: true })).toBeVisible();
 		await expect(page.getByText('256 MB / 1 GB', { exact: true })).toBeVisible();
-		await expect(page.locator('main').getByText('Local Docker', { exact: true })).toBeVisible();
+		const environmentResponse = await page.request.get('/api/environments/0');
+		expect(environmentResponse.ok()).toBeTruthy();
+		const { data: environment }: { data: { name: string } } = await environmentResponse.json();
+		await expect(page.locator('main').getByText(environment.name, { exact: true })).toBeVisible();
 	});
 
 	test('keeps skeletons until the deadline when the stream opens without a sample', async ({

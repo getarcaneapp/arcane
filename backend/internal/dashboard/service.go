@@ -34,6 +34,7 @@ import (
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/podman"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
@@ -64,6 +65,7 @@ type DashboardService struct {
 	environmentService   *environment.EnvironmentService
 	versionService       *version.VersionService
 	volumeService        *volume.VolumeService
+	podmanService        *podman.Service
 
 	// Shared, immutable snapshot builds indexed by [includeTables][debugAllGood][iconCatalog];
 	// full snapshots resolve icons per catalog, so each catalog gets its own entry.
@@ -91,6 +93,7 @@ func NewDashboardService(
 	environmentService *environment.EnvironmentService,
 	versionService *version.VersionService,
 	volumeService *volume.VolumeService,
+	podmanService *podman.Service,
 ) *DashboardService {
 	return &DashboardService{
 		db:                   db,
@@ -103,6 +106,7 @@ func NewDashboardService(
 		environmentService:   environmentService,
 		versionService:       versionService,
 		volumeService:        volumeService,
+		podmanService:        podmanService,
 	}
 }
 
@@ -258,6 +262,7 @@ func (s *DashboardService) buildSnapshot(ctx context.Context, options DashboardA
 		ActionItems:       *actionItems,
 		Settings:          dashboard.SnapshotSettings{},
 		VersionInfo:       versionInfo,
+		PodCount:          s.podmanService.PodCount(ctx).ToPointer(),
 	}, nil
 }
 
@@ -373,12 +378,13 @@ func (s *DashboardService) getPendingContainerUpdatesCount(ctx context.Context, 
 type inventoryGauges struct {
 	containers, health, images, imageSize, volumes, networks, projects metric.Int64ObservableGauge
 	swarmNodes, swarmServices, swarmTasks                              metric.Int64ObservableGauge
+	podmanPods                                                         metric.Int64ObservableGauge
 }
 
 // ObserveInventory reports the local Docker engine's inventory through arcane.docker.* and arcane.projects gauges.
 func (s *DashboardService) ObserveInventory(meter metric.Meter) error {
 	var g inventoryGauges
-	var errs [10]error
+	var errs [11]error
 	g.containers, errs[0] = meter.Int64ObservableGauge("arcane.docker.containers",
 		metric.WithDescription("Containers on the local Docker engine by state"), metric.WithUnit("{container}"))
 	g.health, errs[1] = meter.Int64ObservableGauge("arcane.docker.containers.health",
@@ -399,6 +405,8 @@ func (s *DashboardService) ObserveInventory(meter metric.Meter) error {
 		metric.WithDescription("Swarm services, reported by swarm managers"), metric.WithUnit("{service}"))
 	g.swarmTasks, errs[9] = meter.Int64ObservableGauge("arcane.docker.swarm.service.tasks",
 		metric.WithDescription("Running and desired tasks per swarm service, reported by swarm managers"), metric.WithUnit("{task}"))
+	g.podmanPods, errs[10] = meter.Int64ObservableGauge("arcane.podman.pods",
+		metric.WithDescription("Podman pods on the local engine, reported when Podman is detected"), metric.WithUnit("{pod}"))
 	if err := errors.Join(errs[:]...); err != nil {
 		return err
 	}
@@ -460,8 +468,11 @@ func (s *DashboardService) ObserveInventory(meter metric.Meter) error {
 		}
 
 		s.observeSwarm(ctx, o, &g)
+		if pods, detected := s.podmanService.PodCount(ctx).Get(); detected {
+			o.ObserveInt64(g.podmanPods, int64(pods))
+		}
 		return nil
-	}, g.containers, g.health, g.images, g.imageSize, g.volumes, g.networks, g.projects, g.swarmNodes, g.swarmServices, g.swarmTasks)
+	}, g.containers, g.health, g.images, g.imageSize, g.volumes, g.networks, g.projects, g.swarmNodes, g.swarmServices, g.swarmTasks, g.podmanPods)
 	return err
 }
 

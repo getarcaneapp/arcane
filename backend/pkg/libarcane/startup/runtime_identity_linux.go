@@ -24,7 +24,7 @@ func reexecWithRuntimeIdentity(ctx context.Context, req runtimeIdentityRequest) 
 	cmd := exec.CommandContext(ctx, executable, os.Args[1:]...) //nolint:gosec // re-executing our own binary with the same args under a different UID/GID
 	// Forward shutdown instead of the default SIGKILL so the child can unregister its actor host.
 	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
-	cmd.Env = os.Environ()
+	cmd.Env = append(os.Environ(), "DOCKER_HOST="+req.DockerHost)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

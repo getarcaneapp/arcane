@@ -22,6 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/podman"
 )
 
 func TestResolveBackupStorageMountFromMounts(t *testing.T) {
@@ -180,7 +181,7 @@ func setupVolumeBackupLifecycleTest(t *testing.T, handler http.Handler) *Service
 	db := &database.DB{DB: gormDB}
 	dockerService := docker.NewDockerClientService(t.Context(), db, &config.Config{}, nil).WithClient(dockerClient)
 	eventService := event.NewEventService(db, &config.Config{}, nil)
-	containerService := containerdomain.NewContainerService(eventService, dockerService, nil, nil, nil, nil)
+	containerService := containerdomain.NewContainerService(eventService, dockerService, nil, nil, nil, nil, podman.NewService(podman.Config{Engine: dockerService.Engine}))
 	return NewService(Dependencies{
 		Docker:         dockerService,
 		StopContainer:  containerService.StopContainer,

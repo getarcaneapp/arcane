@@ -17,6 +17,7 @@ import (
 	"github.com/containerd/errdefs"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	imageupdatetypes "github.com/getarcaneapp/arcane/types/v2/imageupdate"
+	"github.com/getarcaneapp/arcane/types/v2/podman"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/getarcaneapp/arcane/types/v2/scheduler"
 	arcaneupdater "github.com/getarcaneapp/arcane/types/v2/updater"
@@ -72,6 +73,12 @@ var (
 		"container_create": event.EventTypeContainerCreate,
 		"container_start":  event.EventTypeContainerStart,
 		"container_update": event.EventTypeContainerUpdate,
+	}
+
+	updateLabelPolicy = updater.LabelPolicy{
+		IsUpdateDisabledFunc: func(l map[string]string) bool {
+			return labels.IsUpdateDisabled(l) || l[podman.SystemdUnitLabel] != ""
+		},
 	}
 )
 
@@ -217,7 +224,7 @@ func NewUpdaterService(
 		Notifier:               service,
 		EventRecorder:          service,
 		UsedImageCollector:     updater.UsedImageCollectorFunc(service.CollectUsedImages),
-		LabelPolicy:            updater.DefaultLabelPolicy(),
+		LabelPolicy:            updateLabelPolicy,
 		SelfContainerID:        kit.Ternary(selfErr != nil, "", selfContainerID),
 		OperationTimeout:       timeouts.DefaultAutoUpdateOperation,
 		Logger:                 slog.Default(),

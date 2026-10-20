@@ -1,6 +1,7 @@
 package configs
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 )
 
 // Service manages swarm configs.
@@ -24,23 +26,46 @@ func NewService(dockerService *docker.DockerClientService, ensureManager func(ct
 	return &Service{docker: dockerService, ensureManager: ensureManager}
 }
 
-func (s *Service) ListConfigs(ctx context.Context) ([]swarmtypes.ConfigSummary, error) {
+var configPagination = pagination.Config[swarmtypes.ConfigSummary]{
+	SearchAccessors: []pagination.SearchAccessor[swarmtypes.ConfigSummary]{
+		func(item swarmtypes.ConfigSummary) (string, error) {
+			return item.Spec.Name, nil
+		},
+		func(item swarmtypes.ConfigSummary) (string, error) {
+			return item.ID, nil
+		},
+	},
+	SortBindings: []pagination.SortBinding[swarmtypes.ConfigSummary]{
+		{Key: "name", Fn: func(a, b swarmtypes.ConfigSummary) int {
+			return strings.Compare(a.Spec.Name, b.Spec.Name)
+		}},
+		{Key: "createdAt", Fn: func(a, b swarmtypes.ConfigSummary) int {
+			return a.CreatedAt.Compare(b.CreatedAt)
+		}},
+		{Key: "updatedAt", Fn: func(a, b swarmtypes.ConfigSummary) int {
+			return a.UpdatedAt.Compare(b.UpdatedAt)
+		}},
+	},
+}
+
+func (s *Service) ListConfigs(ctx context.Context, params pagination.QueryParams) ([]swarmtypes.ConfigSummary, pagination.Response, error) {
 	if err := s.ensureManager(ctx); err != nil {
-		return nil, err
+		return nil, pagination.Response{}, err
 	}
 
-	configsResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ConfigListResult, error) {
+	listResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ConfigListResult, error) {
 		return dockerClient.ConfigList(ctx, client.ConfigListOptions{})
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list swarm configs: %w", err)
+		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm configs: %w", err)
 	}
 
-	items := make([]swarmtypes.ConfigSummary, 0, len(configsResult.Items))
-	for _, cfg := range configsResult.Items {
-		items = append(items, swarmtypes.NewConfigSummary(cfg))
+	items := make([]swarmtypes.ConfigSummary, 0, len(listResult.Items))
+	for _, item := range listResult.Items {
+		items = append(items, swarmtypes.NewConfigSummary(item))
 	}
-	return items, nil
+	result := configPagination.SearchOrderAndPaginate(items, params)
+	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params), nil
 }
 
 func (s *Service) GetConfig(ctx context.Context, configID string) (*swarmtypes.ConfigSummary, error) {
@@ -82,6 +107,31 @@ func (s *Service) CreateConfig(ctx context.Context, req swarmtypes.ConfigCreateR
 	}
 
 	return s.GetConfig(ctx, createResult.ID)
+}
+
+func (s *Service) UpdateConfig(ctx context.Context, configID string, req swarmtypes.ConfigUpdateRequest) (*swarmtypes.ConfigSummary, error) {
+	current, err := s.GetConfig(ctx, configID)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, updateErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ConfigUpdateResult, error) {
+		return dockerClient.ConfigUpdate(ctx, current.ID, client.ConfigUpdateOptions{
+			Version: swarm.Version{Index: cmp.Or(req.Version, current.Version.Index)},
+			Spec: swarm.ConfigSpec{
+				Annotations: swarm.Annotations{
+					Name:   current.Spec.Name,
+					Labels: req.Labels,
+				},
+				Data:       current.Spec.Data,
+				Templating: current.Spec.Templating,
+			},
+		})
+	}); updateErr != nil {
+		return nil, fmt.Errorf("failed to update swarm config: %w", updateErr)
+	}
+
+	return s.GetConfig(ctx, current.ID)
 }
 
 func (s *Service) RemoveConfig(ctx context.Context, configID string) error {

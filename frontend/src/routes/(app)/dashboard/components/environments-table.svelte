@@ -11,6 +11,7 @@
 		running: number;
 		total: number;
 		images: number;
+		podCount: number | null;
 		updates: number;
 		vulnerabilities: number;
 		cpu: number | null;
@@ -39,6 +40,7 @@
 
 	let { rows }: { rows: EnvironmentTableRow[] } = $props();
 	const showVulnerabilities = $derived(rows.some((row) => featureStore.isEnabled('vulnerabilityManagement', row.environment.id)));
+	const showPods = $derived(rows.some((row) => row.podCount !== null));
 </script>
 
 {#snippet actionCount(count: number, href: string, icon: IconType, tone: 'amber' | 'red')}
@@ -83,6 +85,7 @@
 				<Table.Head>{m.common_status()}</Table.Head>
 				<Table.Head>{m.containers()}</Table.Head>
 				<Table.Head>{m.images()}</Table.Head>
+				{#if showPods}<Table.Head>{m.podman_pods_title()}</Table.Head>{/if}
 				<Table.Head>{m.updates()}</Table.Head>
 				{#if showVulnerabilities}<Table.Head>{m.vuln_title()}</Table.Head>{/if}
 				<Table.Head class="text-right">{m.cpu_usage()}</Table.Head>
@@ -99,6 +102,9 @@
 							<a class="truncate font-medium hover:underline" href="/environments/{row.environment.id}">
 								{row.environment.name}
 							</a>
+							{#if row.podCount !== null}
+								<Badge variant="purple" size="sm">{m.podman()}</Badge>
+							{/if}
 							{#if row.versionText}
 								<Badge variant="gray" size="sm" mono>
 									{row.versionText}
@@ -116,10 +122,21 @@
 						</span>
 					</Table.Cell>
 					{#if row.loading}
-						<Table.Cell colspan={showVulnerabilities ? 7 : 6}><Skeleton class="h-4 w-full max-w-md" /></Table.Cell>
+						<Table.Cell colspan={6 + Number(showVulnerabilities) + Number(showPods)}
+							><Skeleton class="h-4 w-full max-w-md" /></Table.Cell
+						>
 					{:else}
 						<Table.Cell><span class="tabular-nums">{row.running}/{row.total}</span></Table.Cell>
 						<Table.Cell><span class="tabular-nums">{row.images}</span></Table.Cell>
+						{#if showPods}
+							<Table.Cell>
+								{#if row.podCount === null}
+									<span class="text-xs text-muted-foreground">—</span>
+								{:else}
+									<span class="tabular-nums">{row.podCount}</span>
+								{/if}
+							</Table.Cell>
+						{/if}
 						<Table.Cell>{@render actionCount(row.updates, '/updates', UpdateIcon, 'amber')}</Table.Cell>
 						{#if showVulnerabilities}
 							<Table.Cell>

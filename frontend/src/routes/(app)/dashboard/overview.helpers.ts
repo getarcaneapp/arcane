@@ -34,7 +34,9 @@ export function buildOverviewSummary(items: DashboardEnvironmentOverview[]): Das
 		imagesUnused: items.reduce((total, item) => total + item.imageUsageCounts.imagesUnused, 0),
 		totalVolumes: items.reduce((total, item) => total + (item.volumeUsageCounts?.total ?? 0), 0),
 		volumesInUse: items.reduce((total, item) => total + (item.volumeUsageCounts?.inuse ?? 0), 0),
-		volumesUnused: items.reduce((total, item) => total + (item.volumeUsageCounts?.unused ?? 0), 0)
+		volumesUnused: items.reduce((total, item) => total + (item.volumeUsageCounts?.unused ?? 0), 0),
+		podmanEnvironments: items.filter((item) => item.podCount !== undefined).length,
+		totalPods: items.reduce((total, item) => total + (item.podCount ?? 0), 0)
 	};
 }
 
