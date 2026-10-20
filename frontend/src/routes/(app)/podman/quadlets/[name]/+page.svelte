@@ -7,15 +7,16 @@
 	import CodePanel from '#lib/components/code-panel.svelte';
 	import { DetailSection, KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail/index.js';
 	import EmptyState from '#lib/components/states/empty-state.svelte';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
-	import { BoxIcon, ContainersIcon, InfoIcon } from '#lib/icons/index.js';
+	import { AlertTriangleIcon, BoxIcon, ContainersIcon, InfoIcon } from '#lib/icons/index.js';
 	import { ResourceDetailLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService, type PodmanQuadletAction } from '#lib/services/podman-service.js';
 	import type { PodmanQuadletFile } from '#lib/types/podman.js';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { environmentHref } from '#lib/utils/environments.js';
 	import { podmanStateVariant } from '#lib/utils/podman.js';
@@ -155,6 +156,14 @@
 			>
 		{/each}
 	{/snippet}
+
+	{#if quadletQuery.isError}
+		<Alert.Root variant="destructive">
+			<AlertTriangleIcon class="size-4" />
+			<Alert.Title>{m.podman_updates_paused()}</Alert.Title>
+			<Alert.Description>{extractApiErrorMessage(quadletQuery.error)}</Alert.Description>
+		</Alert.Root>
+	{/if}
 
 	{#if canLifecycle && !systemdAvailable && status?.systemdReason}
 		<p class="text-sm text-muted-foreground">{status.systemdReason}</p>

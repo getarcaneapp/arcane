@@ -4009,6 +4009,7 @@
   "podman_pods_prune_failed": "Failed to prune pods",
   "podman_pods_prune_success": "Removed {count} pod(s)",
   "podman_pod_create_description": "Create a pod that containers can join.",
+  "podman_updates_paused": "Live updates stopped. Showing the last loaded state.",
   "podman_pod_device_limit_device_placeholder": "8:0",
   "podman_pod_name_placeholder": "web-pod",
   "podman_pod_hostname_placeholder": "web",

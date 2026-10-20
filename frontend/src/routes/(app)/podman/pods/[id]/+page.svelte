@@ -5,10 +5,11 @@
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { DetailSection, KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail/index.js';
 	import EmptyState from '#lib/components/states/empty-state.svelte';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import MonoCell from '#lib/components/vulnerability/mono-cell.svelte';
-	import { ContainersIcon, InfoIcon, LayoutListIcon, StatsIcon } from '#lib/icons/index.js';
+	import { AlertTriangleIcon, ContainersIcon, InfoIcon, LayoutListIcon, StatsIcon } from '#lib/icons/index.js';
 	import { ResourceDetailLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -110,6 +111,14 @@
 	{#snippet badges()}
 		<Badge variant={podmanStateVariant(pod.state)} minWidth="20">{pod.state}</Badge>
 	{/snippet}
+
+	{#if podQuery.isError}
+		<Alert.Root variant="destructive">
+			<AlertTriangleIcon class="size-4" />
+			<Alert.Title>{m.podman_updates_paused()}</Alert.Title>
+			<Alert.Description>{extractApiErrorMessage(podQuery.error)}</Alert.Description>
+		</Alert.Root>
+	{/if}
 
 	<DetailSection title={m.common_overview()} icon={InfoIcon}>
 		<KeyValueGrid>
