@@ -21,7 +21,6 @@ import (
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
@@ -572,8 +571,8 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		})
 		return "", fmt.Errorf("failed to redeploy container: %w", err)
 	}
-	if unit := containerInfo.Config.Labels[podmantypes.SystemdUnitLabel]; unit != "" {
-		return "", fmt.Errorf("systemd unit %s: %w", unit, common.ErrContainerQuadletManaged)
+	if guardErr := s.podmanService.GuardQuadletManaged(ctx, containerInfo.Config.Labels); guardErr != nil {
+		return "", guardErr
 	}
 
 	containerName := strings.TrimPrefix(containerInfo.Name, "/")
@@ -1179,8 +1178,8 @@ func (s *ContainerService) EditContainer(ctx context.Context, containerID string
 	if localProject := docker.ComposeProjectLabel(containerInfo.Config.Labels); localProject != "" {
 		return "", fmt.Errorf("compose project %s: %w", localProject, common.ErrContainerComposeManaged)
 	}
-	if unit := containerInfo.Config.Labels[podmantypes.SystemdUnitLabel]; unit != "" {
-		return "", fmt.Errorf("systemd unit %s: %w", unit, common.ErrContainerQuadletManaged)
+	if guardErr := s.podmanService.GuardQuadletManaged(ctx, containerInfo.Config.Labels); guardErr != nil {
+		return "", guardErr
 	}
 
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
@@ -1348,8 +1347,8 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	if inspectErr != nil {
 		return fmt.Errorf("failed to inspect container before removal: %w", inspectErr)
 	}
-	if unit := kit.FromPtr(containerJSON.Container.Config).Labels[podmantypes.SystemdUnitLabel]; unit != "" {
-		return fmt.Errorf("systemd unit %s: %w", unit, common.ErrContainerQuadletManaged)
+	if guardErr := s.podmanService.GuardQuadletManaged(ctx, kit.FromPtr(containerJSON.Container.Config).Labels); guardErr != nil {
+		return guardErr
 	}
 
 	// Get container mounts before deletion if we need to remove volumes

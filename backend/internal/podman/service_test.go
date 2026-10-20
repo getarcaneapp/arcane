@@ -285,7 +285,7 @@ func TestServiceAutoUpdateUnavailable(t *testing.T) {
 }
 
 func TestServiceContainerUnitAction(t *testing.T) {
-	systemd := &fakeSystemd{}
+	systemd := &fakeSystemd{availability: podmantypes.SystemdAvailability{Available: true}}
 	svc := newTestService(t, &testHost{
 		engine:  "podman",
 		version: "6.1.0",
@@ -321,6 +321,76 @@ func TestServiceContainerUnitAction(t *testing.T) {
 	assert.False(t, handled)
 
 	assert.Equal(t, []string{"restart web.service", "stop web.service"}, systemd.calls)
+}
+
+func TestServiceContainerUnitActionFallsBackWithoutQuadletSupport(t *testing.T) {
+	tests := []struct {
+		name      string
+		version   string
+		available bool
+	}{
+		{name: "podman before 5.8", version: "5.4.0", available: true},
+		{name: "systemd unreachable", version: "6.1.0"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			systemd := &fakeSystemd{availability: podmantypes.SystemdAvailability{Available: tt.available}}
+			svc := newTestService(t, &testHost{
+				engine:  "podman",
+				version: tt.version,
+				systemd: systemd,
+				routes: map[string]http.HandlerFunc{
+					"/containers/json": func(w http.ResponseWriter, _ *http.Request) {
+						_, _ = w.Write([]byte(`[{"Id":"abc123def456","Names":["web"],"Labels":{"PODMAN_SYSTEMD_UNIT":"web.service"}}]`))
+					},
+				},
+			})
+
+			handled, err := svc.ContainerUnitAction(t.Context(), "web", libpodman.Systemd.Stop)
+			require.NoError(t, err)
+			assert.False(t, handled)
+			assert.Empty(t, systemd.calls)
+		})
+	}
+}
+
+func TestServiceGuardQuadletManaged(t *testing.T) {
+	tests := []struct {
+		name    string
+		engine  string
+		version string
+		unit    string
+		wantErr bool
+	}{
+		{name: "unlabelled", engine: "podman", version: "6.1.0"},
+		{name: "installed quadlet", engine: "podman", version: "6.1.0", unit: "web.service", wantErr: true},
+		{name: "stale label", engine: "podman", version: "6.1.0", unit: "gone.service"},
+		{name: "unverifiable before 5.8", engine: "podman", version: "5.4.0", unit: "gone.service", wantErr: true},
+		{name: "docker host", engine: "docker", unit: "web.service"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := newTestService(t, &testHost{
+				engine:  tt.engine,
+				version: tt.version,
+				systemd: &fakeSystemd{},
+				routes: map[string]http.HandlerFunc{
+					"/quadlets/json": func(w http.ResponseWriter, _ *http.Request) {
+						_, _ = w.Write([]byte(`[{"Name":"web.container","UnitName":"web.service"}]`))
+					},
+				},
+			})
+
+			err := svc.GuardQuadletManaged(t.Context(), map[string]string{podmantypes.SystemdUnitLabel: tt.unit})
+			if tt.wantErr {
+				require.ErrorIs(t, err, common.ErrContainerQuadletManaged)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
 }
 
 func TestServiceContainerUnitActionOnDocker(t *testing.T) {

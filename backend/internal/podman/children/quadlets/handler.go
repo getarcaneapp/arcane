@@ -24,9 +24,9 @@ func NewHandler(service *Service, audit func(ctx context.Context, environmentID,
 
 type ListQuadletsInput struct {
 	EnvironmentID string   `path:"id" doc:"Environment ID"`
-	Name          []string `query:"name" doc:"Filter by quadlet name"`
-	Pod           []string `query:"pod" doc:"Filter by pod (Podman 6.0+)"`
-	Status        []string `query:"status" doc:"Filter by status (Podman 6.0+)"`
+	Name          []string `query:"name,explode" doc:"Filter by quadlet name"`
+	Pod           []string `query:"pod,explode" doc:"Filter by pod (Podman 6.0+)"`
+	Status        []string `query:"status,explode" doc:"Filter by status (Podman 6.0+)"`
 	Search        string   `query:"search" doc:"Search query"`
 	Sort          string   `query:"sort" doc:"Column to sort by"`
 	Order         string   `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`

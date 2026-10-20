@@ -1,9 +1,11 @@
 package podman
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -62,7 +64,12 @@ func newKubePlayCmd() *cobra.Command {
 				},
 				FailureMessage: "failed to play kube YAML",
 				Render: func(data podman.KubePlayReport) error {
-					output.Success("Kube YAML played successfully")
+					failed := slices.ContainsFunc(data.Pods, func(pod podman.KubePlayPod) bool {
+						return len(pod.ContainerErrors) > 0
+					})
+					if !failed {
+						output.Success("Kube YAML played successfully")
+					}
 					for _, volume := range data.Volumes {
 						output.KeyValue("Volume", volume.Name)
 					}
@@ -77,7 +84,13 @@ func newKubePlayCmd() *cobra.Command {
 							strings.Join(pod.ContainerErrors, "; "),
 						}
 					}
-					return cmdutil.PrintTable(cmd, []string{"POD", "CONTAINERS", "ERRORS"}, rows)
+					if printErr := cmdutil.PrintTable(cmd, []string{"POD", "CONTAINERS", "ERRORS"}, rows); printErr != nil {
+						return printErr
+					}
+					if failed {
+						return errors.New("some containers failed to start")
+					}
+					return nil
 				},
 			})
 		},

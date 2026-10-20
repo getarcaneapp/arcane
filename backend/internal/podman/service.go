@@ -122,6 +122,9 @@ func (s *Service) ContainerUnitAction(ctx context.Context, containerRef string, 
 	if err != nil || containerRef == "" {
 		return false, nil
 	}
+	if !libpodman.DetectFeatures(rt.Version.Version, false).QuadletsSupported || !rt.Systemd.Availability(ctx).Available {
+		return false, nil
+	}
 
 	containers, err := rt.Client.ContainerList(ctx, []string{podmantypes.SystemdUnitLabel}, nil)
 	if err != nil {
@@ -137,16 +140,52 @@ func (s *Service) ContainerUnitAction(ctx context.Context, containerRef string, 
 	}
 
 	unit := containers[index].Labels[podmantypes.SystemdUnitLabel]
-	installed, err := s.quadlets.List(ctx, nil)
+	managed, err := s.quadletManaged(ctx, rt, unit)
 	if err != nil {
 		return true, fmt.Errorf("verify quadlet unit %s for container %s: %w", unit, containerRef, err)
 	}
-	if !slices.ContainsFunc(installed, func(quadlet podmantypes.QuadletDetail) bool {
-		return quadlet.UnitName == unit
-	}) {
+	if !managed {
 		return false, nil
 	}
 	return true, action(rt.Systemd, ctx, unit)
+}
+
+func (s *Service) GuardQuadletManaged(ctx context.Context, labels map[string]string) error {
+	unit := labels[podmantypes.SystemdUnitLabel]
+	if unit == "" {
+		return nil
+	}
+
+	rt, err := s.detect(ctx)
+	if errors.Is(err, common.ErrPodmanNotDetected) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("verify quadlet unit %s: %w", unit, err)
+	}
+
+	managed, err := s.quadletManaged(ctx, rt, unit)
+	if err != nil {
+		return fmt.Errorf("verify quadlet unit %s: %w", unit, err)
+	}
+	if managed {
+		return fmt.Errorf("systemd unit %s: %w", unit, common.ErrContainerQuadletManaged)
+	}
+	return nil
+}
+
+func (s *Service) quadletManaged(ctx context.Context, rt libpodman.Runtime, unit string) (bool, error) {
+	if !libpodman.DetectFeatures(rt.Version.Version, false).QuadletsSupported {
+		return true, nil
+	}
+
+	installed, err := s.quadlets.List(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	return slices.ContainsFunc(installed, func(quadlet podmantypes.QuadletDetail) bool {
+		return quadlet.UnitName == unit
+	}), nil
 }
 
 func (s *Service) AutoUpdate(ctx context.Context, opts podmantypes.AutoUpdateOptions) (podmantypes.AutoUpdateResult, error) {

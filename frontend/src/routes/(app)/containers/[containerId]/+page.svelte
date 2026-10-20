@@ -475,12 +475,7 @@
 			<Badge variant="amber" minWidth="20">{m.sidebar_update_available()}</Badge>
 		{/if}
 		{#if quadletHref}
-			<Badge
-				variant="purple"
-				size="sm"
-				href={environmentHref(quadletHref, currentEnvId)}
-				title={m.podman_quadlet_update_disabled()}
-			>
+			<Badge variant="purple" size="sm" href={quadletHref} title={m.podman_quadlet_update_disabled()}>
 				{m.podman_managed_by_quadlet()}
 			</Badge>
 		{/if}

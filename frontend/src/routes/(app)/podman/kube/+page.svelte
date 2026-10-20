@@ -4,6 +4,7 @@
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import CodePanel from '#lib/components/code-panel.svelte';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
@@ -27,7 +28,6 @@
 	let start = $state(true);
 	let replace = $state(false);
 	let networks = $state('');
-	let force = $state(false);
 	let generateNames = $state('');
 	let generateType = $state<PodmanKubeGenerateType>('pod');
 	let generateService = $state(false);
@@ -69,28 +69,43 @@
 					]),
 					...(report.volumes ?? []).map((volume) => volume.name)
 				];
-				toast.success(m.podman_kube_play_success({ count: report.pods?.length ?? 0 }));
+				if ((report.pods ?? []).some((pod) => (pod.containerErrors ?? []).length > 0)) {
+					toast.error(m.podman_kube_play_partial({ count: report.pods?.length ?? 0 }));
+				} else {
+					toast.success(m.podman_kube_play_success({ count: report.pods?.length ?? 0 }));
+				}
 				await invalidatePods();
 			}
 		});
 	}
 
-	async function handleDown() {
-		const started = session;
+	function handleDown() {
 		if (!yaml.trim()) {
 			toast.error(m.common_field_required({ field: m.podman_kube_yaml() }));
 			return;
 		}
-		loading.down = true;
-		await handleApiResultWithCallbacks({
-			result: await tryCatch(podmanService.kubeDown({ yaml, force })),
-			message: m.podman_kube_down_failed(),
-			setLoadingState: (value) => (loading.down = value),
-			onSuccess: async (report) => {
-				if (started !== session) return;
-				resultLines = (report.rmReport ?? []).map((pod) => m.podman_kube_pod_removed({ id: pod.id.slice(0, 12) }));
-				toast.success(m.podman_kube_down_success({ count: report.rmReport?.length ?? 0 }));
-				await invalidatePods();
+		openConfirmDialog({
+			title: m.common_down(),
+			message: m.podman_kube_down_confirm(),
+			checkboxes: [{ id: 'force', label: m.podman_kube_force_description() }],
+			confirm: {
+				label: m.common_down(),
+				destructive: true,
+				action: async (checkboxStates) => {
+					const started = session;
+					loading.down = true;
+					await handleApiResultWithCallbacks({
+						result: await tryCatch(podmanService.kubeDown({ yaml, force: checkboxStates['force'] === true })),
+						message: m.podman_kube_down_failed(),
+						setLoadingState: (value) => (loading.down = value),
+						onSuccess: async (report) => {
+							if (started !== session) return;
+							resultLines = (report.rmReport ?? []).map((pod) => m.podman_kube_pod_removed({ id: pod.id.slice(0, 12) }));
+							toast.success(m.podman_kube_down_success({ count: report.rmReport?.length ?? 0 }));
+							await invalidatePods();
+						}
+					});
+				}
 			}
 		});
 	}
@@ -134,12 +149,6 @@
 								label={m.resource_networks_cap()}
 								description={m.podman_comma_separated()}
 								bind:value={networks}
-							/>
-							<LabeledSwitch
-								id="kube-force"
-								label={m.podman_kube_force()}
-								description={m.podman_kube_force_description()}
-								bind:checked={force}
 							/>
 							<div class="flex flex-wrap gap-2">
 								<ArcaneButton

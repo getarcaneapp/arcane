@@ -42,7 +42,11 @@
 			message: m.podman_autoupdate_failed(),
 			setLoadingState: (value) => (running = value),
 			onSuccess: (response) => {
-				toast.success(m.podman_autoupdate_success());
+				if ((response.errors ?? []).length > 0) {
+					toast.error(m.podman_autoupdate_partial(), { description: response.errors?.join('\n') });
+				} else {
+					toast.success(m.podman_autoupdate_success());
+				}
 				if (started !== session) return;
 				result = response;
 			}

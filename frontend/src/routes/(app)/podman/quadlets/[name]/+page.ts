@@ -1,3 +1,4 @@
+import { m } from '#lib/paraglide/messages.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { podmanService } from '#lib/services/podman-service.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
@@ -22,7 +23,7 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 		])
 	);
 	if (result.error !== null) {
-		throwPageLoadError(result.error, 'Failed to load quadlet');
+		throwPageLoadError(result.error, m.common_load_failed({ resource: m.podman_quadlet() }));
 	}
 	const [quadlet, file] = result.data;
 	return { envId, quadlet, file };

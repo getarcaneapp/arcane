@@ -282,11 +282,7 @@
 			</Badge>
 		{/if}
 		{#if item.quadletHref}
-			<Badge
-				variant="purple"
-				href={environmentHref(item.quadletHref, item.environmentId)}
-				title={m.podman_quadlet_update_disabled()}
-			>
+			<Badge variant="purple" href={item.quadletHref} title={m.podman_quadlet_update_disabled()}>
 				{m.podman_managed_by_quadlet()}
 			</Badge>
 		{/if}

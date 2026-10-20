@@ -689,7 +689,7 @@
 			<Badge variant="gray" size="sm">{m.hidden()}</Badge>
 		{/if}
 		{#if quadletHref}
-			<Badge variant="purple" size="sm" href={environmentHref(quadletHref, item.environmentId)}>
+			<Badge variant="purple" size="sm" href={quadletHref}>
 				{m.podman_managed_by_quadlet()}
 			</Badge>
 		{/if}
