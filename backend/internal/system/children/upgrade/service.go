@@ -19,6 +19,7 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/distribution/reference"
+	"github.com/getarcaneapp/arcane/types/v2/podman"
 	"github.com/getarcaneapp/arcane/types/v2/scheduler"
 	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
@@ -201,8 +202,12 @@ func (s *Service) CanUpgrade(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, errors.New("docker socket is not accessible")
 	}
-	if _, inspectErr := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient); inspectErr != nil {
+	self, inspectErr := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
+	if inspectErr != nil {
 		return false, errors.New("arcane is not running in a Docker container")
+	}
+	if unit := kit.FromPtr(self.Config).Labels[podman.SystemdUnitLabel]; unit != "" {
+		return false, fmt.Errorf("arcane runs from the Quadlet unit %s; update it with podman auto-update instead", unit)
 	}
 	return true, nil
 }
@@ -323,6 +328,9 @@ func (s *Service) prepareUpgrade(ctx context.Context, user usertypes.Actor, targ
 	}()
 	if err != nil {
 		return nil, err
+	}
+	if unit := kit.FromPtr(current.Config).Labels[podman.SystemdUnitLabel]; unit != "" {
+		return nil, fmt.Errorf("systemd unit %s: %w", unit, common.ErrContainerQuadletManaged)
 	}
 
 	containerName := strings.TrimPrefix(current.Name, "/")
