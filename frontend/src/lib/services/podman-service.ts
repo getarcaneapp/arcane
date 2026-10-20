@@ -162,8 +162,8 @@ class PodmanService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/podman/kube/play`, request));
 	}
 
-	async kubeDown(request: PodmanKubeDownRequest): Promise<PodmanKubeDownReport> {
-		const envId = await this.environmentId();
+	async kubeDown(request: PodmanKubeDownRequest, environmentId?: string): Promise<PodmanKubeDownReport> {
+		const envId = await this.environmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/podman/kube/down`, request));
 	}
 

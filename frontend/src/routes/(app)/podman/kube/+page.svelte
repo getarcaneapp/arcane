@@ -79,11 +79,14 @@
 		});
 	}
 
-	function handleDown() {
+	async function handleDown() {
 		if (!yaml.trim()) {
 			toast.error(m.common_field_required({ field: m.podman_kube_yaml() }));
 			return;
 		}
+		const started = session;
+		const environmentId = await environmentStore.getCurrentEnvironmentId();
+		const downYaml = yaml;
 		openConfirmDialog({
 			title: m.common_down(),
 			message: m.podman_kube_down_confirm(),
@@ -92,10 +95,12 @@
 				label: m.common_down(),
 				destructive: true,
 				action: async (checkboxStates) => {
-					const started = session;
+					if (started !== session) return;
 					loading.down = true;
 					await handleApiResultWithCallbacks({
-						result: await tryCatch(podmanService.kubeDown({ yaml, force: checkboxStates['force'] === true })),
+						result: await tryCatch(
+							podmanService.kubeDown({ yaml: downYaml, force: checkboxStates['force'] === true }, environmentId)
+						),
 						message: m.podman_kube_down_failed(),
 						setLoadingState: (value) => (loading.down = value),
 						onSuccess: async (report) => {
