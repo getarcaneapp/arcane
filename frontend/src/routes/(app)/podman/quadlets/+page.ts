@@ -1,9 +1,11 @@
 import { redirect } from '@sveltejs/kit';
 
+import { m } from '#lib/paraglide/messages.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { podmanService } from '#lib/services/podman-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import { throwPageLoadError } from '#lib/utils/api.js';
 import { environmentHref, fetchAcrossEnvironments, resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { shownPodmanEnvironments } from '#lib/utils/podman.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
@@ -35,16 +37,21 @@ export const load: PageLoad = async ({ url, parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	const quadlets = await queryClient.query({
-		queryKey: queryKeys.podman.quadlets(scope, requestOptions),
-		queryFn: () =>
-			fetchAcrossEnvironments(environments, requestOptions, (id, request, config) =>
-				podmanService.getQuadlets(id, request, config)
-			)
-	});
+	const quadlets = await tryCatch(
+		queryClient.query({
+			queryKey: queryKeys.podman.quadlets(scope, requestOptions),
+			queryFn: () =>
+				fetchAcrossEnvironments(environments, requestOptions, (id, request, config) =>
+					podmanService.getQuadlets(id, request, config)
+				)
+		})
+	);
+	if (quadlets.error !== null) {
+		throwPageLoadError(quadlets.error, m.common_load_failed({ resource: m.podman_quadlets_title() }));
+	}
 
 	return {
-		quadlets,
+		quadlets: quadlets.data,
 		requestOptions
 	};
 };

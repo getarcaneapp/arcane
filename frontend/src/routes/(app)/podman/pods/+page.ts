@@ -1,10 +1,13 @@
+import { m } from '#lib/paraglide/messages.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { podmanService } from '#lib/services/podman-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import { throwPageLoadError } from '#lib/utils/api.js';
 import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
 import { shownPodmanEnvironments } from '#lib/utils/podman.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
+import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
 
@@ -24,14 +27,19 @@ export const load: PageLoad = async ({ parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	const pods = await queryClient.query({
-		queryKey: queryKeys.podman.pods(scope, requestOptions),
-		queryFn: () =>
-			fetchAcrossEnvironments(environments, requestOptions, (id, request, config) => podmanService.getPods(id, request, config))
-	});
+	const pods = await tryCatch(
+		queryClient.query({
+			queryKey: queryKeys.podman.pods(scope, requestOptions),
+			queryFn: () =>
+				fetchAcrossEnvironments(environments, requestOptions, (id, request, config) => podmanService.getPods(id, request, config))
+		})
+	);
+	if (pods.error !== null) {
+		throwPageLoadError(pods.error, m.common_load_failed({ resource: m.podman_pods_title() }));
+	}
 
 	return {
-		pods,
+		pods: pods.data,
 		requestOptions
 	};
 };

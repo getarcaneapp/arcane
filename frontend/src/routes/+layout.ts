@@ -254,8 +254,10 @@ async function loadRoot({ url, depends }: Parameters<LayoutLoad>[0], releaseSele
 				const known = slowPodmanStatuses.get(id);
 				if (known) {
 					void request.then((refreshed) => {
+						if (JSON.stringify(refreshed) === JSON.stringify(known)) return;
 						if (refreshed?.detected) slowPodmanStatuses.set(id, refreshed);
 						else slowPodmanStatuses.delete(id);
+						void invalidate(PODMAN_STATUS_DEPENDENCY);
 					});
 					return [id, known] as const;
 				}
