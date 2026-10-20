@@ -46,6 +46,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/role"
 	s3domain "getarcane.dev/arcane/v3/internal/s3"
 	"getarcane.dev/arcane/v3/internal/scheduler"
+	"getarcane.dev/arcane/v3/internal/secretsource"
 	"getarcane.dev/arcane/v3/internal/session"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/swarm"
@@ -129,6 +130,7 @@ var (
 			diagnostics.NewDiagnosticsService,
 			provideGitOpsSyncService,
 			fx.Annotate(variable.NewVariableService, fx.As(fx.Self()), fx.As(new(environment.VariableSyncer))),
+			secretsource.NewSecretSourceService,
 			backup.NewRecoveryKeyStore,
 			upload.NewUploadService,
 			health.NewService,
@@ -162,9 +164,10 @@ var (
 				localRegistry *registry.ContainerRegistryService,
 				localEnvironment *environment.EnvironmentService,
 				localUploads *upload.UploadService,
+				secretSources *secretsource.SecretSourceService,
 				cfg *config.Config,
 			) *project.ProjectService {
-				return project.NewProjectService(project.ProjectServiceParams{
+				service := project.NewProjectService(project.ProjectServiceParams{
 					DB:                          db,
 					SettingsService:             localSettings,
 					EventService:                localEvent,
@@ -178,6 +181,8 @@ var (
 					KVService:                   localKv,
 					RegistryCredentialsProvider: localEnvironment.GetEnabledRegistryCredentials,
 				})
+				service.SetSecretEnvResolver(secretSources)
+				return service
 			},
 			provideBackupEngine,
 			func(
@@ -265,6 +270,9 @@ var (
 			provideProjectModule,
 			gitops.New,
 			variable.New,
+			func(service *secretsource.SecretSourceService, projectService *project.ProjectService) *secretsource.Module {
+				return secretsource.New(service, projectService.SecretProjectRef)
+			},
 			upload.New,
 			health.New,
 			func(service *activity.ActivityService, localEnvironment *environment.EnvironmentService, eventService *event.EventService) *activity.Module {
@@ -331,6 +339,7 @@ var (
 			fx.Annotate(scheduler.NewUpgradeLogCleanupJob, fx.ResultTags(`name:"upgrade-log-cleanup"`)),
 			scheduler.NewApnsOutboxJob,
 			scheduler.NewLdapSyncJob,
+			scheduler.NewSecretDriftCheckJob,
 		),
 	)
 )

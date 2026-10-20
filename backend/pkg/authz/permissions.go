@@ -57,6 +57,13 @@ const (
 	PermVariablesUpdate          = "variables:update"
 	PermVariablesDelete          = "variables:delete"
 	PermVariablesSync            = "variables:sync"
+	PermSecretSourcesList        = "secret-sources:list"
+	PermSecretSourcesRead        = "secret-sources:read"
+	PermSecretSourcesCreate      = "secret-sources:create"
+	PermSecretSourcesUpdate      = "secret-sources:update"
+	PermSecretSourcesDelete      = "secret-sources:delete"
+	PermSecretSourcesTest        = "secret-sources:test"
+	PermSecretSourcesUse         = "secret-sources:use"
 	PermGitReposList             = "git-repositories:list"
 	PermGitReposRead             = "git-repositories:read"
 	PermGitReposCreate           = "git-repositories:create"
@@ -356,6 +363,7 @@ func BuiltInEditorPermissions() []string {
 		PermRegistriesList, PermRegistriesRead, PermRegistriesBrowse,
 		PermTemplatesList, PermTemplatesRead, PermTemplatesCreate, PermTemplatesUpdate, PermTemplatesDelete,
 		PermVariablesList, PermVariablesRead, PermVariablesCreate, PermVariablesUpdate, PermVariablesDelete, PermVariablesSync,
+		PermSecretSourcesList, PermSecretSourcesRead, PermSecretSourcesUse,
 		PermGitReposList, PermGitReposRead,
 		// Editor can run volume backups, so it needs to pick a destination.
 		PermS3DestinationsList, PermS3DestinationsRead,
@@ -411,6 +419,7 @@ func BuiltInDeployerPermissions() []string {
 		PermRegistriesList, PermRegistriesRead,
 		PermTemplatesList, PermTemplatesRead,
 		PermVariablesList, PermVariablesRead,
+		PermSecretSourcesList, PermSecretSourcesRead,
 		PermEventsList,
 		PermContainersList,
 		PermContainersRead,
@@ -456,6 +465,7 @@ func BuiltInViewerPermissions() []string {
 		PermRegistriesList, PermRegistriesRead,
 		PermTemplatesList, PermTemplatesRead,
 		PermVariablesList, PermVariablesRead,
+		PermSecretSourcesList, PermSecretSourcesRead,
 		PermGitReposList, PermGitReposRead,
 		PermS3DestinationsList, PermS3DestinationsRead,
 		PermEventsList,

@@ -338,6 +338,11 @@ func IsManagerLocalPath(method, suffix string) bool {
 	if len(parts) == 4 && parts[0] == "volumes" && parts[1] != "" && parts[2] == "backups" && parts[3] == "policy" {
 		return method == http.MethodGet || method == http.MethodPut
 	}
+	// Secret source bindings live in the manager DB, which agents do not have;
+	// the handlers refuse projects outside the local environment.
+	if len(parts) >= 3 && parts[0] == "projects" && parts[1] != "" && parts[2] == "secrets" {
+		return true
+	}
 	if len(parts) >= 3 && parts[0] == "projects" && parts[1] != "" && parts[2] == "transfer" {
 		return method == http.MethodPost && (len(parts) == 3 || (len(parts) == 4 && (parts[3] == "preflight" || parts[3] == "resources")))
 	}

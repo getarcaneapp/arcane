@@ -128,6 +128,14 @@ var (
 	ErrUploadKindMismatch                      = Classify(ErrBadRequest, errors.New("Upload session kind does not match this endpoint"))
 	ErrUploadChunkInvalid                      = Classify(ErrValidation, errors.New("Invalid upload chunk"))
 	ErrUploadSessionInvalid                    = Classify(ErrValidation, errors.New("Invalid upload session request"))
+	ErrSecretSourceNotFound                    = Classify(ErrNotFound, errors.New("Secret source not found"))
+	ErrSecretSourceConflict                    = Classify(ErrConflict, errors.New("A secret source with this name already exists"))
+	ErrSecretSourceInUse                       = Classify(ErrConflict, errors.New("Secret source is used by one or more projects; detach them first"))
+	ErrSecretSourceInvalid                     = Classify(ErrValidation, errors.New("Invalid secret source"))
+	ErrSecretBindingInvalid                    = Classify(ErrValidation, errors.New("Invalid project secret binding"))
+	ErrSecretBindingNotFound                   = Classify(ErrNotFound, errors.New("Secret binding not found"))
+	ErrSecretBindingConflict                   = Classify(ErrConflict, errors.New("The project is already bound to this target"))
+	ErrSecretFetchFailed                       = Classify(ErrUnavailable, errors.New("Could not fetch project secrets"))
 )
 
 // Classify gives err a stable semantic identity without changing its message.

@@ -670,3 +670,13 @@ func TestEnvironmentMiddleware_ServesMultiEnvironmentScopeLocally(t *testing.T) 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.True(t, localHandlerHit)
 }
+
+func TestIsManagerLocalPath_ProjectSecrets(t *testing.T) {
+	assert.True(t, IsManagerLocalPath(http.MethodGet, "/projects/p1/secrets"))
+	assert.True(t, IsManagerLocalPath(http.MethodPost, "/projects/p1/secrets/check"))
+	assert.True(t, IsManagerLocalPath(http.MethodPut, "/projects/p1/secrets/b1"))
+	assert.True(t, IsManagerLocalPath(http.MethodPost, "/projects/p1/secrets/setup/plan"))
+	assert.False(t, IsManagerLocalPath(http.MethodGet, "/projects/p1"))
+	assert.False(t, IsManagerLocalPath(http.MethodGet, "/projects/p1/services"))
+	assert.False(t, IsManagerLocalPath(http.MethodGet, "/projects//secrets"))
+}

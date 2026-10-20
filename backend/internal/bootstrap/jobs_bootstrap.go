@@ -63,6 +63,7 @@ type (
 		BackupRepositoryPrune  *scheduler.BackupRepositoryPruneJob
 		ApnsOutbox             *scheduler.ApnsOutboxJob
 		LdapSync               *scheduler.LdapSyncJob
+		SecretDriftCheck       *scheduler.SecretDriftCheckJob
 	}
 
 	dynamicJobsParams struct {
@@ -259,7 +260,7 @@ func registerJobs(params registerJobsParams) error {
 		params.UpgradeLogCleanup,
 	}
 	if !params.Config.AgentEnabled {
-		jobs = append(jobs, params.ExpiredSessionsCleanup, params.ApnsOutbox, params.LdapSync)
+		jobs = append(jobs, params.ExpiredSessionsCleanup, params.ApnsOutbox, params.LdapSync, params.SecretDriftCheck)
 	}
 	for _, job := range jobs {
 		if err := params.Scheduler.RegisterJob(job); err != nil {

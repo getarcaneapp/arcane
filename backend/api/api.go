@@ -47,6 +47,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/registry"
 	"getarcane.dev/arcane/v3/internal/role"
 	"getarcane.dev/arcane/v3/internal/s3"
+	"getarcane.dev/arcane/v3/internal/secretsource"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/internal/swarm"
 	"getarcane.dev/arcane/v3/internal/system"
@@ -111,6 +112,7 @@ type (
 		Vulnerability     *vulnerability.Module
 		Role              *role.Module
 		Variable          *variable.Module
+		SecretSource      *secretsource.Module
 		Upload            *upload.Module
 		Health            *health.Module
 		Ldap              *ldap.Module
@@ -226,6 +228,7 @@ func SetupAPI(p SetupParams) *authz.OperationRecorder {
 	p.Deps.ContainerRegistry.RegisterRoutes(api)
 	p.Deps.Template.RegisterRoutes(api)
 	p.Deps.Variable.RegisterRoutes(api, p.Config)
+	p.Deps.SecretSource.RegisterRoutes(api, p.Config)
 	p.Deps.Image.RegisterRoutes(api, p.AppContext)
 	p.Deps.Upload.RegisterRoutes(api)
 	build.RegisterBuildWorkspaces(api, p.Deps.Build, p.Deps.Upload.Service())

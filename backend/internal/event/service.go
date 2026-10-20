@@ -156,6 +156,10 @@ var (
 		EventTypeProjectUpdate: {"Project updated: %s", "Project '%s' has been updated", EventSeverityInfo},
 		EventTypeProjectError:  {"Project error: %s", "An error occurred with project '%s'", EventSeverityError},
 
+		EventTypeProjectSecretsFetch:   {"Secrets fetched: %s", "Secrets were fetched from the secret source for project '%s'", EventSeverityInfo},
+		EventTypeProjectSecretsError:   {"Secrets fetch failed: %s", "Secrets could not be fetched for project '%s'", EventSeverityError},
+		EventTypeProjectSecretsChanged: {"Secrets changed: %s", "Secrets for project '%s' changed since its last deploy", EventSeverityWarning},
+
 		EventTypeVolumeCreate:             {"Volume created: %s", "Volume '%s' has been created", EventSeveritySuccess},
 		EventTypeVolumeRename:             {"Volume renamed: %s", "Volume '%s' has been renamed", EventSeveritySuccess},
 		EventTypeVolumeDelete:             {"Volume deleted: %s", "Volume '%s' has been deleted", EventSeverityWarning},

@@ -329,6 +329,7 @@ type (
 		IconDarkURL      string                `json:"iconDarkUrl,omitempty"`
 		Ports            []ContainerPort       `json:"ports"`
 		Mounts           []ContainerMount      `json:"mounts"`
+		SecretEnvKeys    []string              `json:"secretEnvKeys,omitempty" doc:"Environment variables that came from secret sources; their values in config.env are masked"`
 		HostConfig       ContainerHostConfig   `json:"hostConfig"`
 		RedeployDisabled bool                  `json:"redeployDisabled,omitempty"`
 

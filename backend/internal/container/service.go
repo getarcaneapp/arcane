@@ -48,6 +48,7 @@ import (
 	"getarcane.dev/arcane/v3/internal/kv"
 	"getarcane.dev/arcane/v3/internal/podman"
 	"getarcane.dev/arcane/v3/internal/project"
+	"getarcane.dev/arcane/v3/internal/secretsource"
 	"getarcane.dev/arcane/v3/internal/settings"
 	"getarcane.dev/arcane/v3/pkg/dhi"
 	"getarcane.dev/arcane/v3/pkg/handlerutil"
@@ -1397,16 +1398,24 @@ func (s *ContainerService) GetContainerEditConfig(ctx context.Context, container
 	}
 
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-	return types.NewContainerEditConfigFromInspect(
+	containerLabels := kit.FromPtr(containerJSON.Container.Config).Labels
+	isCompose := docker.ComposeProjectLabel(containerLabels) != ""
+	editConfig := types.NewContainerEditConfigFromInspect(
 		&containerJSON.Container,
-		docker.ComposeProjectLabel(kit.FromPtr(containerJSON.Container.Config).Labels) != "",
+		isCompose,
 		labels.ShouldDisableArcaneServerRedeploy(labels.RedeployCheck{
 			CurrentErr:         currentContainerErr,
-			Labels:             kit.FromPtr(containerJSON.Container.Config).Labels,
+			Labels:             containerLabels,
 			ContainerID:        containerJSON.Container.ID,
 			CurrentContainerID: currentContainerID,
 		}),
-	), nil
+	)
+	// Compose-managed containers cannot be edited in Arcane, so a masked value
+	// is never written back.
+	if isCompose {
+		s.maskSecretEnvInternal(ctx, containerLabels, editConfig.Environment)
+	}
+	return editConfig, nil
 }
 
 func (s *ContainerService) EditContainer(ctx context.Context, containerID string, req types.ContainerEdit, user types.Actor) (string, error) {
@@ -1549,6 +1558,7 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 		slog.WarnContext(ctx, "Failed to inspect container image", "imageId", details.ImageID, "error", err)
 	}
 	resolvedIcon := s.resolveContainerIcon(ctx, details.Labels, map[string]projects.ArcaneComposeMetadata{})
+	secretEnvKeys := s.maskSecretEnvInternal(ctx, details.Labels, details.Config.Env)
 
 	return types.ContainerDetails{ //exhaustruct:enforce
 		ID:              details.ID,
@@ -1574,10 +1584,43 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 		}),
 		AutoUpdateEnabled: !labels.IsUpdateDisabled(details.Labels) &&
 			!docker.ContainerNameExcluded([]string{details.Name}, docker.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers"))),
-		UpdateInfo: updates[details.ID],
-		Hardened:   dhi.Info(kit.FromPtr(imageInspect.Config).Labels, time.Now()),
-		ActivityID: details.ActivityID,
+		UpdateInfo:    updates[details.ID],
+		Hardened:      dhi.Info(kit.FromPtr(imageInspect.Config).Labels, time.Now()),
+		ActivityID:    details.ActivityID,
+		SecretEnvKeys: secretEnvKeys,
 	}, nil
+}
+
+// maskSecretEnvInternal replaces, in place, the values of environment
+// entries that the compose project's last deploy delivered from secret
+// sources, and returns the masked names.
+func (s *ContainerService) maskSecretEnvInternal(ctx context.Context, labels map[string]string, env []string) []string {
+	composeProject := docker.ComposeProjectLabel(labels)
+	if len(env) == 0 || composeProject == "" || s.projectService == nil {
+		return nil
+	}
+	return maskEnvValuesInternal(env, s.projectService.SecretKeysForComposeProject(ctx, composeProject))
+}
+
+// maskEnvValuesInternal replaces, in place, the values of the entries of env
+// named in keys, and returns the names it masked.
+func maskEnvValuesInternal(env, keys []string) []string {
+	if len(keys) == 0 {
+		return nil
+	}
+	secret := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		secret[key] = struct{}{}
+	}
+	var masked []string
+	for i, entry := range env {
+		name, _, hasValue := strings.Cut(entry, "=")
+		if _, ok := secret[name]; ok && hasValue {
+			env[i] = name + "=" + secretsource.RedactedMarker
+			masked = append(masked, name)
+		}
+	}
+	return masked
 }
 
 func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerID string) (types.ContainerProcesses, error) {
