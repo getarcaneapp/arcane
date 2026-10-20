@@ -771,8 +771,8 @@ go.getarcane.app/sys/cgroup v0.2.5 h1:iI1qURe+kOgTRN75sxkpPePjJwlxAx3c9e9kEwKAVn
 go.getarcane.app/sys/cgroup v0.2.5/go.mod h1:hJyCjpx04VcaaSvkRsMvZl5OLUlAQ60K5gEy1ctuU4U=
 go.getarcane.app/sys/crypto v0.3.2 h1:JybeVHSdld0kYWJY2ZWUHH7g+dZGi+F2Vmiiu84dZrA=
 go.getarcane.app/sys/crypto v0.3.2/go.mod h1:AqOmZ85L3H9zR494VLb5FdDEupHy0F/V0icrozBN+YQ=
-go.getarcane.app/updater v0.11.9 h1:bi7SxRpq/QnP9OE5ZgJOHmoCOoSDi2sssXgMoo5Cqtc=
-go.getarcane.app/updater v0.11.9/go.mod h1:kJy2PIstnWGZgvcWcwJeTTwYu6TvZl3APeLhvIoFR5I=
+go.getarcane.app/updater v0.11.10 h1:ZggKHYwVlYO33jO8AdnYNNNqU5PCwX2j79whc7JXxfA=
+go.getarcane.app/updater v0.11.10/go.mod h1:fBNUB+U+1gj/5wHabm9pDc7DMfjF9IK+VTxrBetTRlE=
 go.opencensus.io v0.21.0/go.mod h1:mSImk1erAIZhrmZN+AvHh14ztQfjbGwt4TtuofqLduU=
 go.opencensus.io v0.22.0/go.mod h1:+kGneAE2xo2IficOXnaByMWTGM9T73dGwxeWcUqIpI8=
 go.opencensus.io v0.22.2/go.mod h1:yxeiOL68Rb0Xd1ddK5vPZ/oVn4vY4Ynel7k9FzqtOIw=
