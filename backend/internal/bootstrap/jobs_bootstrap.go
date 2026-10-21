@@ -1,7 +1,6 @@
 package bootstrap
 
 import (
-	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -13,7 +12,6 @@ import (
 	"sync"
 
 	"github.com/getarcaneapp/arcane/types/v3"
-	"github.com/italypaleale/francis/actor"
 	"go.uber.org/fx"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
@@ -29,7 +27,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
 )
 
 func newJobScheduler(
@@ -45,7 +42,6 @@ func newJobScheduler(
 	workflows *flow.Engine,
 	volumes *volume.VolumeService,
 	gitopsSync *gitops.GitOpsSyncService,
-	actors *francis.Runtime,
 ) (
 	types.JobScheduler,
 	error,
@@ -73,7 +69,6 @@ func newJobScheduler(
 			if reconcileCoordinatorStartupErr := reconcileCoordinatorStartup(ctx, jobService, workflows, volumes, systemService, gitopsSync); reconcileCoordinatorStartupErr != nil {
 				return fmt.Errorf("reconcile scheduler startup: %w", reconcileCoordinatorStartupErr)
 			}
-			settleLegacyActorWork(ctx, actors.Service())
 			if gitopsSync != nil {
 				gitopsSync.RegisterAutoSyncJobsOnStartup(ctx)
 				gitopsSync.SubscribeProjectFileChanges(schedulerCtx)
@@ -133,45 +128,6 @@ func newJobScheduler(
 		},
 	})
 	return jobScheduler, nil
-}
-
-// legacyActorWork names the state and job actor types of the actors workflows replaced.
-// TODO(v3): remove once no supported upgrade path can carry their saved work.
-var legacyActorWork = []struct{ stateType, jobType, jobActorID string }{
-	{stateType: "backup-run", jobType: "backup-run"},
-	{stateType: "single-container-update-state", jobType: "single-container-update", jobActorID: "single-container"},
-}
-
-// settleLegacyActorWork removes the saved commands and pending jobs of the replaced backup and container-update
-// actors. Nothing delivers them any more; the startup reconcile above has already failed their records and activities.
-func settleLegacyActorWork(ctx context.Context, service *actor.Service) {
-	for _, legacy := range legacyActorWork {
-		settled := 0
-		for cursor := ""; ; {
-			page, err := service.ListStates(ctx, legacy.stateType, &actor.ListStatesOpts{After: cursor, Limit: 100})
-			if err != nil {
-				slog.WarnContext(ctx, "Failed to list work saved by a replaced actor", "actorType", legacy.stateType, "error", err)
-				break
-			}
-			for _, state := range page.States {
-				jobs, listErr := service.ListJobs(ctx, legacy.jobType, cmp.Or(legacy.jobActorID, state.ActorID))
-				for _, job := range jobs {
-					listErr = errors.Join(listErr, service.DeleteJob(ctx, legacy.jobType, cmp.Or(legacy.jobActorID, state.ActorID), job.JobID))
-				}
-				if settleErr := errors.Join(listErr, service.DeleteState(ctx, legacy.stateType, state.ActorID)); settleErr != nil && !errors.Is(settleErr, actor.ErrStateNotFound) {
-					slog.WarnContext(ctx, "Failed to settle work saved by a replaced actor", "actorType", legacy.stateType, "actorId", state.ActorID, "error", settleErr)
-					continue
-				}
-				settled++
-			}
-			if cursor = page.AfterID(); cursor == "" {
-				break
-			}
-		}
-		if settled > 0 {
-			slog.InfoContext(ctx, "Settled work saved by a replaced actor; interrupted backups and updates were marked failed", "actorType", legacy.stateType, "count", settled)
-		}
-	}
 }
 
 // reconcileCoordinatorStartup fails backups and activities the previous process left running,
