@@ -336,6 +336,9 @@ func (s *Service) prepareUpgrade(ctx context.Context, user usertypes.Actor, targ
 	containerName := strings.TrimPrefix(current.Name, "/")
 	config := kit.FromPtr(current.Config)
 	binaryPath := kit.Ternary(labels.IsArcaneAgentContainer(config.Labels), "/app/arcane-agent", "/app/arcane")
+	if isWindowsContainer(current) {
+		binaryPath = windowsAgentBinaryPath
+	}
 
 	targetImage := strings.TrimSpace(target.NewImageRef)
 	if targetImage == "" {
@@ -413,7 +416,7 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 	}
 
 	// Mount /app/data from the current container so upgrade logs persist.
-	appDataMount := docker.MountForDestination(prepared.current.Mounts, libarcane.UpgradeLogDirectory, libarcane.UpgradeLogDirectory)
+	appDataMount := upgradeLogMount(prepared.current)
 	if appDataMount == nil {
 		slog.WarnContext(ctx, "Could not detect /app/data mount; upgrader logs may not persist")
 	} else {
@@ -448,7 +451,14 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 	}
 
 	mounts := append([]mount.Mount{}, runtimeMounts...)
-	if appDataMount != nil {
+	var binds []string
+	switch {
+	case appDataMount == nil:
+	case isWindowsContainer(prepared.current):
+		// Docker on Windows matches -v binds against the image's declared VOLUME paths but not
+		// Mounts targets spelled with another case, and Windows refuses two mounts on one path.
+		binds = append(binds, windowsBind(*appDataMount))
+	default:
 		mounts = append(mounts, *appDataMount)
 	}
 
@@ -479,7 +489,8 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 				Image: prepared.pullImage,
 				Cmd:   upgradeCmd,
 				// Root for the Docker socket: the short-lived upgrader never goes through the runtime-identity drop.
-				User: "0:0",
+				// Windows images already run as ContainerAdministrator, which can open the engine pipe.
+				User: kit.Ternary(isWindowsContainer(prepared.current), "", "0:0"),
 				Env:  containerEnv,
 				Labels: map[string]string{
 					libarcane.LabelArcaneUpgrader: "true",
@@ -488,10 +499,14 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 			},
 			HostConfig: &container.HostConfig{
 				AutoRemove:  !keepUpgraderContainer,
+				Binds:       binds,
 				Mounts:      mounts,
 				NetworkMode: networkMode,
 				SecurityOpt: securityOpt,
 				Privileged:  kit.FromPtr(prepared.current.HostConfig).Privileged,
+				// Windows only mounts the engine named pipe under process isolation, which the
+				// daemon default (hyperv on Windows 10/11) would not give the upgrader.
+				Isolation: kit.FromPtr(prepared.current.HostConfig).Isolation,
 			},
 			NetworkingConfig: func() *network.NetworkingConfig {
 				if networkMode == "" || !networkMode.IsUserDefined() {
@@ -1380,4 +1395,32 @@ func (s *Service) PruneUpgradeLogs(ctx context.Context, dataDir string, now time
 		removed++
 	}
 	return removed, errors.Join(failures...)
+}
+
+// windowsAgentBinaryPath is where the Windows agent image ships the agent.
+const windowsAgentBinaryPath = `C:\app\arcane-agent.exe`
+
+// isWindowsContainer reports whether the container runs a Windows image (a Windows agent).
+func isWindowsContainer(current container.InspectResponse) bool {
+	return strings.EqualFold(current.Platform, "windows")
+}
+
+// upgradeLogMount returns the current container's /app/data mount for the upgrader.
+// On Windows the CLI's /app/data resolves to C:\app\data; Docker may report it with another case.
+func upgradeLogMount(current container.InspectResponse) *mount.Mount {
+	if !isWindowsContainer(current) {
+		return docker.MountForDestination(current.Mounts, libarcane.UpgradeLogDirectory, libarcane.UpgradeLogDirectory)
+	}
+	const windowsDataDir = `C:\app\data`
+	for _, m := range current.Mounts {
+		if strings.EqualFold(strings.TrimRight(m.Destination, `\`), windowsDataDir) {
+			return docker.MountForDestination(current.Mounts, m.Destination, windowsDataDir)
+		}
+	}
+	return nil
+}
+
+// windowsBind writes a volume or bind mount in the -v short syntax (source:target[:ro]).
+func windowsBind(m mount.Mount) string {
+	return m.Source + ":" + m.Target + kit.Ternary(m.ReadOnly, ":ro", "")
 }
