@@ -335,7 +335,7 @@ func TestUpdaterService_TriggerSelfUpdateViaCLI(t *testing.T) {
 
 	t.Run("server label triggers upgrade with system user", func(t *testing.T) {
 		mockUpgrade := &mockSystemUpgradeService{}
-		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil, nil, nil, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, newEmptyContainerListDockerService(t), nil, nil, nil, nil, nil, nil, mockUpgrade, nil, nil, nil, nil)
 		require.NoError(t, svcErr)
 
 		err := svc.TriggerSelfUpdateViaCLI(ctx, "test", "container-1", "arcane", map[string]string{
@@ -356,7 +356,7 @@ func TestUpdaterService_TriggerSelfUpdateViaCLI(t *testing.T) {
 
 	t.Run("engine target keeps the selected tag and pulls the frozen digest", func(t *testing.T) {
 		mockUpgrade := &mockSystemUpgradeService{}
-		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil, nil, nil, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, newEmptyContainerListDockerService(t), nil, nil, nil, nil, nil, nil, mockUpgrade, nil, nil, nil, nil)
 		require.NoError(t, svcErr)
 
 		frozen := svc.recovery.WithSingleTarget(ctx, &arcaneupdater.FrozenUpdateTarget{
@@ -379,7 +379,7 @@ func TestUpdaterService_TriggerSelfUpdateViaCLI(t *testing.T) {
 
 	t.Run("agent label triggers upgrade", func(t *testing.T) {
 		mockUpgrade := &mockSystemUpgradeService{}
-		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil, nil, nil, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, newEmptyContainerListDockerService(t), nil, nil, nil, nil, nil, nil, mockUpgrade, nil, nil, nil, nil)
 		require.NoError(t, svcErr)
 
 		err := svc.TriggerSelfUpdateViaCLI(ctx, "test", "container-1", "arcane-agent", map[string]string{
@@ -392,7 +392,7 @@ func TestUpdaterService_TriggerSelfUpdateViaCLI(t *testing.T) {
 
 	t.Run("non Arcane labels fail without triggering upgrade", func(t *testing.T) {
 		mockUpgrade := &mockSystemUpgradeService{}
-		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil, nil, nil, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, newEmptyContainerListDockerService(t), nil, nil, nil, nil, nil, nil, mockUpgrade, nil, nil, nil, nil)
 		require.NoError(t, svcErr)
 
 		err := svc.TriggerSelfUpdateViaCLI(ctx, "test", "container-1", "demo", map[string]string{
@@ -406,7 +406,7 @@ func TestUpdaterService_TriggerSelfUpdateViaCLI(t *testing.T) {
 
 	t.Run("upgrade errors are wrapped", func(t *testing.T) {
 		mockUpgrade := &mockSystemUpgradeService{triggerError: errors.New("upgrade failed")}
-		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil, nil, nil, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, newEmptyContainerListDockerService(t), nil, nil, nil, nil, nil, nil, mockUpgrade, nil, nil, nil, nil)
 		require.NoError(t, svcErr)
 
 		err := svc.TriggerSelfUpdateViaCLI(ctx, "test", "container-1", "arcane", map[string]string{
@@ -863,13 +863,13 @@ func TestUpdaterService_AcceptSingleContainerUpdateUsesQueuedActivity(t *testing
 			harness := flowtest.New(t, activityService)
 			admission := runs.NewAdmission(harness.Runtime.Service(), t.Name())
 			require.NoError(t, admission.Register(harness.Runtime))
-			svc, err := NewUpdaterService(db, nil, testDockerService, nil, nil, nil, nil, nil, nil, nil, activityService, nil, admission, nil)
+			svc, err := NewUpdaterService(db, nil, newEmptyContainerListDockerService(t), nil, nil, nil, nil, nil, nil, nil, activityService, nil, admission, nil)
 			require.NoError(t, err)
 			require.NoError(t, svc.execution.RegisterWorkflows(harness.Engine))
 			harness.Start(t)
 
 			// Holding the update admission makes the workflow hand its task back until the lease is released.
-			held, admitted, err := admission.TryAcquire(t.Context(), scheduler.AdmissionKey{Scope: "updater"})
+			held, admitted, err := admission.TryAcquire(t.Context(), scheduler.AdmissionKey{Scope: "updater", ID: "id:missing-container"})
 			require.NoError(t, err)
 			require.True(t, admitted)
 			var releaseOnce sync.Once
@@ -1293,7 +1293,7 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgrade(
 	svc, svcErr := NewUpdaterService(
 		db,
 		nil,
-		nil,
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		nil,
 		imageupdate.NewImageUpdateService(db, nil, nil, newEmptyContainerListDockerService(t), nil, nil, nil),
 		nil,

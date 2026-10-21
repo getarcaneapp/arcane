@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -33,7 +34,7 @@ type Service struct {
 	images         remoteDigester
 	pendingUpdates func(ctx context.Context) ([]updater.ImageUpdateRecord, error)
 	activityID     func(ctx context.Context) string
-	acquireUpdate  func(ctx context.Context) (context.Context, func(), error)
+	acquireUpdate  func(ctx context.Context, ids []string) (context.Context, func(), error)
 	applyPending   func(ctx context.Context, options arcaneupdater.Options) (*arcaneupdater.Result, error)
 }
 
@@ -61,7 +62,7 @@ func NewService(
 	images remoteDigester,
 	pendingUpdates func(ctx context.Context) ([]updater.ImageUpdateRecord, error),
 	activityID func(ctx context.Context) string,
-	acquireUpdate func(ctx context.Context) (context.Context, func(), error),
+	acquireUpdate func(ctx context.Context, ids []string) (context.Context, func(), error),
 	applyPending func(ctx context.Context, options arcaneupdater.Options) (*arcaneupdater.Result, error),
 ) *Service {
 	return &Service{
@@ -439,7 +440,11 @@ func (s *Service) ConfirmTarget(ctx context.Context, target arcaneupdater.Frozen
 
 // ReconcilePending resumes only frozen targets whose original container is unchanged.
 func (s *Service) ReconcilePending(ctx context.Context, run scheduler.Run) (scheduler.Outcome, error) {
-	ctx, release, err := s.acquireUpdate(ctx)
+	targetIDs, err := s.TargetIDs(run)
+	if err != nil {
+		return scheduler.Outcome{Status: scheduler.Waiting}, err
+	}
+	ctx, release, err := s.acquireUpdate(ctx, targetIDs)
 	if err != nil {
 		return scheduler.Outcome{Status: scheduler.Waiting}, err
 	}
@@ -571,6 +576,18 @@ func (s *Service) Started(run scheduler.Run) bool {
 			return target.ID == planned.ContainerID && target.Status != scheduler.Queued
 		})
 	})
+}
+
+func (s *Service) TargetIDs(run scheduler.Run) ([]string, error) {
+	plan, _, err := frozenPlan(run)
+	if err != nil {
+		return nil, fmt.Errorf("decode frozen update plan: %w", err)
+	}
+	ids := make([]string, 0, len(plan.Targets))
+	for _, target := range plan.Targets {
+		ids = append(ids, target.ContainerID)
+	}
+	return ids, nil
 }
 
 // Unsettled counts the frozen targets a retry would still resume.

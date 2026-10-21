@@ -319,6 +319,44 @@ func TestAdmissionAndCompletionRejectStaleTokens(t *testing.T) {
 	require.Equal(t, "new-token", persisted.Owner)
 }
 
+func TestAdmissionAcquireWaitsForRelease(t *testing.T) {
+	host := francistest.New(t)
+	admission := NewAdmission(host.Service(), "epoch")
+	require.NoError(t, admission.Register(host))
+	francistest.Start(t, host)
+	key := st.AdmissionKey{Scope: "updater", ID: "container:solo"}
+	held, admitted, err := admission.TryAcquire(t.Context(), key)
+	require.NoError(t, err)
+	require.True(t, admitted)
+
+	canceledCtx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+	defer cancel()
+	_, err = admission.Acquire(canceledCtx, key)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+
+	acquired := make(chan *Lease, 1)
+	go func() {
+		lease, acquireErr := admission.Acquire(t.Context(), key)
+		if acquireErr != nil {
+			lease = nil
+		}
+		acquired <- lease
+	}()
+	select {
+	case <-acquired:
+		require.FailNow(t, "acquire returned while the key was held")
+	case <-time.After(400 * time.Millisecond):
+	}
+	held.Release(t.Context())
+	select {
+	case lease := <-acquired:
+		require.NotNil(t, lease)
+		lease.Release(t.Context())
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "acquire was not admitted after release")
+	}
+}
+
 func TestLostDispatchAcknowledgementRetainsOneExecution(t *testing.T) {
 	q := newResolutionQueue(t)
 	entered := make(chan struct{})

@@ -31,7 +31,7 @@ type (
 	Dependencies struct {
 		Config        *config.Config
 		Roles         *role.RoleService
-		AcquireUpdate func(ctx context.Context) (context.Context, func(), error)
+		AcquireUpdate func(ctx context.Context, ids []string) (context.Context, func(), error)
 		UpdateBusy    error
 		RunUpdate     func(ctx context.Context, containerID, activityID string) (*updater.Result, error)
 		// RecordUpdate saves the result on the activity and summarizes it as the run outcome.
@@ -106,7 +106,7 @@ func (s *Service) update(ctx context.Context, t flow.Task) (any, error) {
 	if err := t.Payload(&input); err != nil {
 		return nil, err
 	}
-	ctx, release, err := s.deps.AcquireUpdate(ctx)
+	ctx, release, err := s.deps.AcquireUpdate(ctx, []string{input.ContainerID})
 	if errors.Is(err, s.deps.UpdateBusy) {
 		return nil, actor.ErrJobRejected
 	}

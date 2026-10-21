@@ -44,7 +44,9 @@ func newTestService(t *testing.T, server *httptest.Server, pending func(context.
 		unresolvedDigests{},
 		pending,
 		func(context.Context) string { return "" },
-		func(ctx context.Context) (context.Context, func(), error) { return ctx, func() {}, nil },
+		func(ctx context.Context, _ []string) (context.Context, func(), error) {
+			return ctx, func() {}, nil
+		},
 		nil,
 	)
 }

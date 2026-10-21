@@ -90,9 +90,6 @@ type UpdaterService struct {
 	execution  *execution.Service
 	recovery   *recovery.Service
 	autoUpdate *flow.Workflow
-	// updateMu serializes container updates: compose's recreate pipeline is not safe for
-	// sibling containers sharing a namespace. Upgrade to per-project if throughput matters.
-	updateMu sync.Mutex
 }
 
 type updaterDependencies struct {
@@ -194,14 +191,18 @@ func NewUpdaterService(
 		imageSvc,
 		service.PendingImageUpdates,
 		activityIDFromContext,
-		service.acquireUpdate,
+		func(ctx context.Context, ids []string) (context.Context, func(), error) {
+			return service.acquireUpdate(ctx, ids, false)
+		},
 		service.ApplyPending,
 	)
 	// keep: execution callbacks bind to the allocated service and its recovery
 	service.execution = execution.NewService(execution.Dependencies{
-		Config:           cfg,
-		Roles:            roles,
-		AcquireUpdate:    service.acquireUpdate,
+		Config: cfg,
+		Roles:  roles,
+		AcquireUpdate: func(ctx context.Context, ids []string) (context.Context, func(), error) {
+			return service.acquireUpdate(ctx, ids, false)
+		},
 		UpdateBusy:       errUpdateBusy,
 		RunUpdate:        service.runSingleContainerUpdate,
 		RecordUpdate:     service.recordSingleContainerUpdate,
@@ -242,8 +243,12 @@ func NewUpdaterService(
 // ApplyPending executes pending image updates. A project or image scope limits the engine's
 // pending records to its containers; a container scope or a forced run updates each container.
 func (s *UpdaterService) ApplyPending(ctx context.Context, options arcaneupdater.Options) (out *arcaneupdater.Result, err error) {
+	containerIDs, err := s.pendingContainerIDs(ctx, options)
+	if err != nil {
+		return nil, err
+	}
 	var release func()
-	ctx, release, err = s.acquireUpdate(ctx)
+	ctx, release, err = s.acquireUpdate(ctx, containerIDs, true)
 	if err != nil {
 		return nil, err
 	}
@@ -368,6 +373,46 @@ func (s *UpdaterService) applyBatch(ctx context.Context, options arcaneupdater.O
 		"time":      time.Now().UTC().Format(time.RFC3339),
 	})
 	return nil
+}
+
+func (s *UpdaterService) pendingContainerIDs(ctx context.Context, options arcaneupdater.Options) ([]string, error) {
+	if len(options.ResourceIds) > 0 {
+		containerIDs, _, _, _, err := s.scopedContainerIDs(ctx, options)
+		return containerIDs, err
+	}
+	if frozen, ok := s.recovery.FrozenRecords(ctx); ok {
+		return s.recordContainerIDs(ctx, frozen)
+	}
+	var records []imageupdate.ImageUpdateRecord
+	if err := s.deps.DB.WithContext(ctx).Select("container_id", "repository", "tag").Where("has_update = ? AND project_id = ?", true, "").Find(&records).Error; err != nil {
+		return nil, fmt.Errorf("query pending image updates: %w", err)
+	}
+	pending := make([]updater.ImageUpdateRecord, 0, len(records))
+	for _, record := range records {
+		pending = append(pending, updater.ImageUpdateRecord{
+			ContainerID: record.ContainerID,
+			Repository:  record.Repository,
+			Tag:         record.Tag,
+		})
+	}
+	return s.recordContainerIDs(ctx, pending)
+}
+
+func (s *UpdaterService) recordContainerIDs(ctx context.Context, records []updater.ImageUpdateRecord) ([]string, error) {
+	containerIDs := make([]string, 0, len(records))
+	imageRefs := make([]string, 0, len(records))
+	for _, record := range records {
+		if record.ContainerID != "" {
+			containerIDs = append(containerIDs, record.ContainerID)
+			continue
+		}
+		imageRefs = append(imageRefs, record.ImageRef())
+	}
+	imageContainerIDs, _, _, _, err := s.scopedContainerIDs(ctx, arcaneupdater.Options{Type: "image", ResourceIds: imageRefs})
+	if err != nil {
+		return nil, err
+	}
+	return kit.Unique(kit.TrimNonEmpty(slices.Concat(containerIDs, imageContainerIDs))), nil
 }
 
 // scopedContainerIDs resolves the requested containers, projects, or images to container IDs.
@@ -645,7 +690,7 @@ func (s *UpdaterService) AcceptSingleContainerUpdate(ctx context.Context, contai
 
 func (s *UpdaterService) runSingleContainerUpdate(ctx context.Context, containerID, activityID string) (out *arcaneupdater.Result, err error) {
 	var release func()
-	ctx, release, err = s.acquireUpdate(ctx)
+	ctx, release, err = s.acquireUpdate(ctx, []string{containerID}, true)
 	if err != nil {
 		return nil, err
 	}
@@ -665,8 +710,6 @@ func (s *UpdaterService) runSingleContainerUpdate(ctx context.Context, container
 		}
 	}
 
-	s.updateMu.Lock()
-	defer s.updateMu.Unlock()
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		return out, ctxErr
 	}
@@ -797,6 +840,33 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 
 // PendingImageUpdates returns pending image update records from Arcane's database.
 func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]updater.ImageUpdateRecord, error) {
+	records, err := s.loadPendingImageUpdates(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, batch := ctx.Value(updateAdmissionKey{}).(*updateLeases); !batch {
+		return records, nil
+	}
+	admitted := make([]updater.ImageUpdateRecord, 0, len(records))
+	for _, record := range records {
+		containerIDs, idsErr := s.recordContainerIDs(ctx, []updater.ImageUpdateRecord{record})
+		if idsErr != nil {
+			return nil, idsErr
+		}
+		_, _, acquireErr := s.acquireUpdate(ctx, containerIDs, false)
+		if errors.Is(acquireErr, errUpdateBusy) {
+			slog.InfoContext(ctx, "skipping pending update for a container another update holds", "imageRef", record.ImageRef(), "containerId", record.ContainerID)
+			continue
+		}
+		if acquireErr != nil {
+			return nil, acquireErr
+		}
+		admitted = append(admitted, record)
+	}
+	return admitted, nil
+}
+
+func (s *UpdaterService) loadPendingImageUpdates(ctx context.Context) ([]updater.ImageUpdateRecord, error) {
 	scoped, isScoped := ctx.Value(scopedPendingKey{}).(map[string]string)
 	outOfScope := func(record updater.ImageUpdateRecord) bool {
 		_, inScope := scoped[record.ContainerID]
@@ -1002,6 +1072,19 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.S
 	if pullErr != nil {
 		return pullErr
 	}
+	containers, _, _, _, listErr := s.deps.Docker.GetAllContainers(ctx)
+	if listErr != nil {
+		return fmt.Errorf("list containers: %w", listErr)
+	}
+	allIDs := make([]string, 0, len(containers))
+	for _, summary := range containers {
+		allIDs = append(allIDs, summary.ID)
+	}
+	ctx, release, acquireErr := s.acquireUpdate(ctx, allIDs, true)
+	if acquireErr != nil {
+		return acquireErr
+	}
+	defer release()
 
 	// A server self-update stops this process before the run completes, so the
 	// activity is flagged first and startup reconciliation finalizes it.
@@ -1027,6 +1110,11 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.S
 		PullImageRef:  pullImageRef,
 	}); err != nil {
 		return fmt.Errorf("CLI upgrade failed: %w", err)
+	}
+	if leases, ok := ctx.Value(updateAdmissionKey{}).(*updateLeases); ok {
+		leases.mu.Lock()
+		leases.handoff = true
+		leases.mu.Unlock()
 	}
 	if progress, ok := ctx.Value(updateProgressKey{}).(*updateProgress); ok {
 		progress.mu.Lock()
@@ -1447,20 +1535,6 @@ func addNormalizedImageUpdateRef(ctx context.Context, out map[string]struct{}, i
 	slog.DebugContext(ctx, "skipping invalid image reference", append(attrs, "source", source, "imageRef", imageRef)...)
 }
 
-func (s *UpdaterService) acquireUpdate(ctx context.Context) (context.Context, func(), error) {
-	if ctx.Value(updateAdmissionKey{}) == s {
-		return ctx, func() {}, nil
-	}
-	lease, admitted, err := s.admission.TryAcquire(ctx, scheduler.AdmissionKey{Scope: "updater"})
-	if err != nil {
-		return ctx, nil, err
-	}
-	if !admitted {
-		return ctx, nil, errUpdateBusy
-	}
-	return context.WithValue(ctx, updateAdmissionKey{}, s), func() { lease.Release(ctx) }, nil
-}
-
 func (s *UpdaterService) PruneHistory(ctx context.Context, retentionDays int) (int64, error) {
 	if retentionDays <= 0 {
 		return 0, nil
@@ -1873,7 +1947,11 @@ func (s *UpdaterService) applyAutoUpdate(ctx context.Context, t flow.Task) (any,
 	if !ok {
 		return nil, errors.New("auto-update requires a job run")
 	}
-	ctx, release, err := s.acquireUpdate(ctx)
+	targetIDs, err := s.recovery.TargetIDs(run)
+	if err != nil {
+		return nil, common.Classify(common.ErrUnavailable, err)
+	}
+	ctx, release, err := s.acquireUpdate(ctx, targetIDs, false)
 	if errors.Is(err, errUpdateBusy) {
 		// A plan whose every target already settled needs no updater, so it finishes normally.
 		if unsettled, unsettledErr := s.recovery.Unsettled(run); unsettledErr == nil && unsettled == 0 {

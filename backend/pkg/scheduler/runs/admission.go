@@ -72,6 +72,22 @@ func (a *Admission) TryAcquire(ctx context.Context, key st.AdmissionKey) (*Lease
 	return &Lease{admission: a, id: id, token: token}, true, nil
 }
 
+func (a *Admission) Acquire(ctx context.Context, key st.AdmissionKey) (*Lease, error) {
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		lease, admitted, err := a.TryAcquire(ctx, key)
+		if err != nil || admitted {
+			return lease, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
 func (l *Lease) Release(ctx context.Context) {
 	if l == nil {
 		return
