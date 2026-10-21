@@ -1,10 +1,8 @@
 package francis
 
 import (
-	"bytes"
 	"cmp"
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -20,23 +18,6 @@ import (
 
 	sqliteutil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/sqlite"
 )
-
-// legacyDrops remove the Francis schema that lived in the Arcane SQLite database
-// before v2.16. That schema never changes again, so the list is final.
-// Remove this in v3.0.0
-var legacyDrops = []string{
-	"DROP VIEW IF EXISTS " + TablePrefix + "_host_active_actor_count",
-	"DROP TABLE IF EXISTS " + TablePrefix + "_host_actor_types",
-	"DROP TABLE IF EXISTS " + TablePrefix + "_active_actors",
-	"DROP TABLE IF EXISTS " + TablePrefix + "_consumed_join_tokens",
-	"DROP TABLE IF EXISTS " + TablePrefix + "_hosts",
-	"DROP TABLE IF EXISTS " + TablePrefix + "_actor_state",
-	"DROP TABLE IF EXISTS " + TablePrefix + "_alarms",
-	"DROP TABLE IF EXISTS " + TablePrefix + "_cluster_config",
-	"DROP TABLE IF EXISTS " + TablePrefix + "_terminal_jobs",
-	"DROP TABLE IF EXISTS " + TablePrefix + "_dead_jobs",
-	"DROP TABLE IF EXISTS " + TablePrefix + "_metadata",
-}
 
 // StorePath names the dedicated Francis SQLite file beside the Arcane database.
 func StorePath(databasePath string) string {
@@ -138,66 +119,5 @@ func ClearRestoredHosts(ctx context.Context, databaseURL string) (err error) {
 		}
 	}
 	// Expired registrations are excluded by ListHosts and pruned by RegisterHost.
-	return nil
-}
-
-// MigrateLegacyStore moves Francis state kept inside the Arcane SQLite database
-// into its dedicated file, then drops the old tables. Reruns until the drop succeeds.
-func MigrateLegacyStore(ctx context.Context, mainDB *sql.DB, databaseURL string) (err error) {
-	if !strings.HasPrefix(databaseURL, "file:") {
-		return nil
-	}
-	var legacy int
-	var journalMode string
-	err = errors.Join(
-		mainDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?", TablePrefix+"_metadata").Scan(&legacy),
-		mainDB.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&journalMode),
-	)
-	if err != nil || legacy == 0 {
-		return err
-	}
-	storeURL, err := StoreURL(databaseURL)
-	if err != nil {
-		return err
-	}
-	// Francis needs its own connection with foreign keys on; keep the Arcane journal mode.
-	legacyURL, _, _ := strings.Cut(databaseURL, "?")
-	source, err := openProvider(ctx, legacyURL+"?_pragma="+url.QueryEscape("journal_mode("+journalMode+")"))
-	if err != nil {
-		return fmt.Errorf("open legacy actor storage: %w", err)
-	}
-	var snapshot bytes.Buffer
-	err = errors.Join(source.Backup(ctx, &snapshot), source.Close())
-	if err != nil {
-		return fmt.Errorf("export legacy actor storage: %w", err)
-	}
-	target, err := openProvider(ctx, storeURL)
-	if err != nil {
-		return fmt.Errorf("open actor storage: %w", err)
-	}
-	err = errors.Join(target.Restore(ctx, &snapshot), target.Close())
-	if err != nil {
-		return fmt.Errorf("import legacy actor storage: %w", err)
-	}
-	tx, err := mainDB.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin legacy actor storage cleanup: %w", err)
-	}
-	defer func() {
-		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
-			err = errors.Join(err, fmt.Errorf("roll back legacy actor storage cleanup: %w", rollbackErr))
-		}
-	}()
-	// Keep the metadata marker and every source table intact until cleanup commits.
-	for _, drop := range legacyDrops {
-		if _, err = tx.ExecContext(ctx, drop); err != nil {
-			return fmt.Errorf("drop legacy actor storage: %w", err)
-		}
-	}
-	if err = tx.Commit(); err != nil {
-		return fmt.Errorf("commit legacy actor storage cleanup: %w", err)
-	}
-	storePath, _, _ := strings.Cut(strings.TrimPrefix(storeURL, "file:"), "?")
-	slog.InfoContext(ctx, "Migrated actor state to its dedicated database", "path", storePath)
 	return nil
 }
