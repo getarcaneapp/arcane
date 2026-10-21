@@ -94,6 +94,7 @@ type PaginationResponse struct {
 	CurrentPage     int   `json:"currentPage" doc:"Current page number (1-indexed)"`
 	ItemsPerPage    int   `json:"itemsPerPage" doc:"Number of items per page"`
 	GrandTotalItems int64 `json:"grandTotalItems,omitempty" doc:"Total number of items without filters"`
+	HasNextPage     bool  `json:"hasNextPage" doc:"Whether another page exists after this one"`
 }
 
 // ApiResponse is a generic wrapper for API responses.

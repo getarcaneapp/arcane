@@ -82,6 +82,7 @@ func PaginationResponse(p pagination.Response) types.PaginationResponse {
 		CurrentPage:     p.CurrentPage,
 		ItemsPerPage:    p.ItemsPerPage,
 		GrandTotalItems: p.GrandTotalItems,
+		HasNextPage:     p.HasNextPage,
 	}
 }
 

@@ -166,13 +166,11 @@ func (s *Service) startContainersAfterBackup(ctx context.Context, stoppedContain
 	remaining := append([]container.Summary(nil), stoppedContainers...)
 	lastErrors := make(map[string]error, len(stoppedContainers))
 	for len(remaining) > 0 {
-		currentContainers, listErr := s.deps.Docker.Call(recoveryCtx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-			return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
-		})
+		currentContainers, listErr := s.deps.Docker.ListContainers(recoveryCtx)
 		if listErr == nil {
-			currentByID := make(map[string]container.Summary, len(currentContainers.Items))
-			currentByName := make(map[string]container.Summary, len(currentContainers.Items))
-			for _, current := range currentContainers.Items {
+			currentByID := make(map[string]container.Summary, len(currentContainers))
+			currentByName := make(map[string]container.Summary, len(currentContainers))
+			for _, current := range currentContainers {
 				currentByID[current.ID] = current
 				if name := docker.ContainerNameFromNames(current.Names); name != "" {
 					currentByName[name] = current
@@ -187,7 +185,7 @@ func (s *Service) startContainersAfterBackup(ctx context.Context, stoppedContain
 					current, found = currentByName[name]
 				}
 				if !found {
-					current, found = projects.FindComposeReplica(currentContainers.Items, stopped.Labels)
+					current, found = projects.FindComposeReplica(currentContainers, stopped.Labels)
 				}
 				if !found {
 					nextRemaining = append(nextRemaining, stopped)

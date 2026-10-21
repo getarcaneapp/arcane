@@ -6,7 +6,6 @@
 	} from '@simplewebauthn/browser';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { Temporal } from 'temporal-polyfill';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';

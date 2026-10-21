@@ -51,6 +51,7 @@ type ListActivitiesInput struct {
 	Status        string `query:"status" doc:"Filter by activity status"`
 	Type          string `query:"type" doc:"Filter by activity type"`
 	ResourceType  string `query:"resourceType" doc:"Filter by resource type"`
+	IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
 }
 
 type GetActivityInput struct {
@@ -447,6 +448,7 @@ func resolveActivityStreamLimit(limit int) int {
 // activityListParams maps list input onto pagination params and its filters.
 func activityListParams(input *ListActivitiesInput) pagination.QueryParams {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params.SkipCount = !input.IncludeTotal
 	maps.Copy(params.Filters, map[string]string{
 		"status":       input.Status,
 		"type":         input.Type,
@@ -463,7 +465,7 @@ func (h *ActivityHandler) listRemoteActivities(
 	params := normalizeRemoteActivityParams(activityListParams(input))
 	// The agent only ships the newest window the merged page can use, not its
 	// whole history; the stream poller repeats this every few seconds.
-	window := kit.Ternary(params.Limit == -1, -1, params.Start+params.Limit)
+	window := kit.Ternary(params.Limit == -1, -1, params.Start+params.Limit+kit.Ternary(params.SkipCount, 1, 0))
 	remoteActivities, remoteTotal, remoteErr := collectActivityWindow(window, func(start, limit int) ([]types.Activity, int64, error) {
 		query := url.Values{
 			"start": {strconv.Itoa(start)},
@@ -476,6 +478,7 @@ func (h *ActivityHandler) listRemoteActivities(
 			"status":       input.Status,
 			"type":         input.Type,
 			"resourceType": input.ResourceType,
+			"includeTotal": kit.Ternary(params.SkipCount, "", "true"),
 		} {
 			if value != "" {
 				query.Set(key, value)

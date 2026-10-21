@@ -216,6 +216,25 @@ func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*han
 	}, nil
 }
 
+func (h *AuthHandler) GetSessionBootstrap(ctx context.Context, _ *struct{}) (*handlerutil.Out[types.SessionBootstrap], error) {
+	currentUser, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ps, _ := middleware.PermissionsFromContext(ctx)
+	bootstrap, err := h.authService.GetSessionBootstrap(ctx, currentUser.ID, ps)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to load session")
+	}
+
+	return &handlerutil.Out[types.SessionBootstrap]{
+		Body: types.ApiResponse[types.SessionBootstrap]{
+			Success: true,
+			Data:    *bootstrap,
+		},
+	}, nil
+}
+
 // RefreshToken obtains a new access token using a refresh token.
 func (h *AuthHandler) RefreshToken(ctx context.Context, input *RefreshTokenInput) (*RefreshTokenOutput, error) {
 	refreshToken := cmp.Or(kit.FromPtr(input.Body).RefreshToken, input.SecureRefreshCookie, input.InsecureRefreshCookie)

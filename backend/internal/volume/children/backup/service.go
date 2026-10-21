@@ -55,7 +55,7 @@ type Store struct {
 	Run               func(ctx context.Context, backupID string) (*types.VolumeBackup, error)
 	Runs              func(ctx context.Context, backupIDs []string) ([]*types.VolumeBackup, error)
 	Latest            func(ctx context.Context, policyID string) (*types.VolumeBackup, error)
-	List              func(ctx context.Context, volumeName string, params pagination.QueryParams) ([]types.VolumeBackup, int64, error)
+	List              func(ctx context.Context, volumeName string, params pagination.QueryParams) ([]types.VolumeBackup, pagination.Response, error)
 	RemoteSnapshotIDs func(ctx context.Context, destinationID string) ([]string, error)
 	CountLocal        func(ctx context.Context) (int64, error)
 }
@@ -244,7 +244,7 @@ func (s *Service) RenamePolicies(tx *gorm.DB, oldName, newName string) error {
 func (s *Service) List(ctx context.Context, volumeName string, params pagination.QueryParams) ([]types.VolumeBackup, pagination.Response, error) {
 	slog.DebugContext(ctx, "volume service: list backups paginated", "volume", volumeName, "search", params.Search, "sort", params.Sort,
 		"order", params.Order, "start", params.Start, "limit", params.Limit)
-	backups, totalItems, err := s.deps.Store.List(ctx, volumeName, params)
+	backups, page, err := s.deps.Store.List(ctx, volumeName, params)
 	if err != nil {
 		return nil, pagination.Response{}, err
 	}
@@ -264,7 +264,7 @@ func (s *Service) List(ctx context.Context, volumeName string, params pagination
 		backups[i].RemoteAvailable = remoteAvailable(backups[i].S3DestinationID, root, backups[i].RemoteSnapshotID)
 	}
 
-	return backups, pagination.BuildResponse(totalItems, totalItems, params), nil
+	return backups, page, nil
 }
 
 func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger string, request types.CreateVolumeBackupRequest, policy *policies.VolumeBackupPolicy) (backupPlan, error) {

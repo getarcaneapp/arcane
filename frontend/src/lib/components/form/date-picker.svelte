@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { CalendarDate, type DateValue } from '@internationalized/date';
 	import type { HTMLAttributes } from 'svelte/elements';
-	import { Temporal } from 'temporal-polyfill';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Calendar } from '#lib/components/ui/calendar/index.js';

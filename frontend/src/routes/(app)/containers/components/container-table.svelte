@@ -4,7 +4,6 @@
 	import { mode } from 'mode-watcher';
 	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';
-	import { Temporal } from 'temporal-polyfill';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';

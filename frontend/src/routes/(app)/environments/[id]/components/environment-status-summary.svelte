@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { createSubscriber } from 'svelte/reactivity';
-	import { Temporal } from 'temporal-polyfill';
 
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';

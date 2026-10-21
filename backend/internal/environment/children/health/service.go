@@ -42,13 +42,11 @@ func (s *Service) Probe(ctx context.Context, id, apiURL string, isEdge, customUR
 		return "online", nil
 	}
 	if isEdge && !customURL {
-		// The probe is standing tunnel demand, keeping idle poll-mode tunnels
-		// open across check cycles instead of letting them flap.
-		edge.TouchTunnelDemand(id, edge.DefaultTunnelDemandTTL)
+		if edge.GetPollRuntimeRegistry().Get(id, time.Now()).IsPresent() {
+			return "online", nil
+		}
 		if !edge.HasActiveTunnel(id) {
-			if _, ok := edge.RequestTunnelAndWait(ctx, id, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()).Get(); !ok {
-				return "offline", errors.New("edge agent is not connected")
-			}
+			return "offline", errors.New("edge agent is not connected")
 		}
 	}
 	if !customURL {

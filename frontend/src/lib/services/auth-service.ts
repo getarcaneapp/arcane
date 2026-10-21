@@ -1,6 +1,5 @@
 import { goto, refreshAll } from '$app/navigation';
 import type { QueryClient } from '@tanstack/svelte-query';
-import { Temporal } from 'temporal-polyfill';
 
 import { activityStore } from '#lib/stores/activity.store.svelte.js';
 import { dashboardStore } from '#lib/stores/dashboard.store.svelte.js';
@@ -8,7 +7,7 @@ import { environmentStatusStore } from '#lib/stores/environment-status.store.sve
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 import { versionStore } from '#lib/stores/version.store.svelte.js';
-import type { User, MFAChallenge, AuthenticationResponse } from '#lib/types/auth.js';
+import type { User, MFAChallenge, AuthenticationResponse, SessionBootstrap } from '#lib/types/auth.js';
 import type { LoginCredentials, AutoLoginConfig } from '#lib/types/auth.js';
 import type { OidcStatusInfo } from '#lib/types/settings.js';
 import { parseInstant } from '#lib/utils/formatting.js';
@@ -270,6 +269,10 @@ class AuthService extends BaseAPIService {
 
 	async getStatus(): Promise<OidcStatusInfo> {
 		return this.handleResponse(this.api.get('/oidc/status'));
+	}
+
+	async getSessionBootstrap(): Promise<SessionBootstrap> {
+		return this.handleResponse<SessionBootstrap>(this.api.get('/auth/bootstrap'));
 	}
 
 	async changePassword(currentPassword: string, newPassword: string): Promise<void> {
