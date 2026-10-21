@@ -40,7 +40,7 @@ services:
       - no-new-privileges:true
 
   arcane:
-    image: getarcaneapp/arcane:latest
+    image: getarcaneapp/manager:latest
     container_name: arcane
     ports:
       - '3552:3552'
