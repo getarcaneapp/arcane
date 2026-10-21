@@ -81,7 +81,6 @@ func provideBackupEngine(lc fx.Lifecycle, admission *runs.Admission, imageServic
 func provideActorRuntime(
 	appCtx context.Context,
 	cfg *config.Config,
-	db *database.DB,
 	settingsService *settings.SettingsService,
 	lc fx.Lifecycle,
 	cancelApp context.CancelCauseFunc,
@@ -91,13 +90,6 @@ func provideActorRuntime(
 		return nil, err
 	}
 	lc.Append(fx.Hook{OnStart: func(ctx context.Context) error {
-		sqlDB, sqlDBErr := db.SQLDB()
-		if sqlDBErr != nil {
-			return sqlDBErr
-		}
-		if migrateErr := francis.MigrateLegacyStore(ctx, sqlDB, cfg.DatabaseURL); migrateErr != nil {
-			return migrateErr
-		}
 		if configureIdentityErr := runtime.ConfigureIdentity(cfg.EncryptionKey, settingsService.GetSettingsConfig().InstanceID.Value); configureIdentityErr != nil {
 			return configureIdentityErr
 		}
