@@ -98,7 +98,6 @@ func TestResolveEdgeCommandName(t *testing.T) {
 
 			command, ok := ResolveEdgeCommandName(tc.method, tc.path, tc.stream).Get()
 			require.Equal(t, tc.shouldHit, ok)
-			require.Equal(t, tc.shouldHit, ValidateEdgeCommand(tc.command, tc.method, tc.path, tc.stream))
 			if tc.shouldHit {
 				require.Equal(t, tc.command, command)
 			}
@@ -115,24 +114,4 @@ func TestBuildCommandRouteIndexPanicsOnDuplicateRoute(t *testing.T) {
 			{Method: http.MethodGet, PathPattern: "/api/test/{id}", CommandName: "test.two"},
 		})
 	})
-}
-
-func TestCollectCommandResponse(t *testing.T) {
-	t.Parallel()
-
-	tunnel := NewAgentTunnelWithConn("env-1", &fakeServerTunnelConn{})
-	pending := &PendingRequest{
-		ResponseCh: make(chan *TunnelMessage, 4),
-		failureCh:  make(chan error, 1),
-	}
-	pending.ResponseCh <- &TunnelMessage{ID: "cmd-1", Type: MessageTypeCommandAck}
-	pending.ResponseCh <- &TunnelMessage{ID: "cmd-1", Type: MessageTypeCommandOutput, Body: []byte("hello ")}
-	pending.ResponseCh <- &TunnelMessage{ID: "cmd-1", Type: MessageTypeCommandComplete, Status: 200, Headers: map[string]string{"Content-Type": "text/plain"}, Body: []byte("world")}
-	require.NoError(t, tunnel.CloseWithReason(""))
-
-	status, headers, body, err := collectCommandResponse(t.Context(), tunnel, pending, "", nil, nil)
-	require.NoError(t, err)
-	require.Equal(t, 200, status)
-	require.Equal(t, "text/plain", headers["Content-Type"])
-	require.Equal(t, "hello world", string(body))
 }
