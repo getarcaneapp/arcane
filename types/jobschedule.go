@@ -89,13 +89,3 @@ type (
 	JobRunOutput      struct{ Body SchedulerRun }
 	JobListRunsOutput struct{ Body SchedulerRunList }
 )
-
-// JobResolveRunInput accepts the original operator identity only from trusted agent transport.
-// TODO(v3): remove this deprecated mixed-version compatibility contract.
-type JobResolveRunInput struct {
-	JobRunInput
-
-	Body *struct {
-		ResolvedBy string `json:"resolvedBy,omitempty"`
-	}
-}

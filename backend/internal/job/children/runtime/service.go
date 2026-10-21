@@ -104,13 +104,11 @@ func runExecutionTime(run types.SchedulerRun) time.Time {
 func ProjectRunOutcome(run types.SchedulerRun) types.SchedulerRun {
 	// Delivery reconciliation must not hide a failure already reported by the agent.
 	agentFailure := kit.FromPtr(run.RemoteOutcome).Status == types.RunStatusNeedsAttention && !run.RemoteRetryRequested
-	failed := agentFailure || run.Status == types.RunStatusFailed || run.Status == types.RunStatusNeedsAttention ||
-		(run.Status == types.RunStatusCanceled && kit.FromPtr(run.Resolution).ResolvedBy == types.SystemUser.Username)
+	failed := agentFailure || run.Status == types.RunStatusFailed || run.Status == types.RunStatusNeedsAttention
 	outcome := kit.Ternary(agentFailure, kit.FromPtr(run.RemoteOutcome), run.Outcome)
 	return types.SchedulerRun{ //exhaustruct:enforce
 		ActivityEnvironmentID: run.ActivityEnvironmentID,
 		ActivityID:            run.ActivityID,
-		Resolution:            run.Resolution,
 		RequestedWithKey:      run.RequestedWithKey,
 		ID:                    run.ID,
 		JobID:                 run.JobID,

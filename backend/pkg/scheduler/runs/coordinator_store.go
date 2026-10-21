@@ -413,9 +413,6 @@ func normalizeRunTimes(run *types.SchedulerRun) {
 	normalizeTimePointer(run.FinishedAt)
 	normalizeTimePointer(run.NextAttempt)
 	normalizeTimePointer(run.LastConfirmedAt)
-	if run.Resolution != nil {
-		run.Resolution.ResolvedAt = run.Resolution.ResolvedAt.UTC()
-	}
 	for i := range run.Attempts {
 		run.Attempts[i].StartedAt = run.Attempts[i].StartedAt.UTC()
 		normalizeTimePointer(run.Attempts[i].FinishedAt)
@@ -423,8 +420,7 @@ func normalizeRunTimes(run *types.SchedulerRun) {
 }
 
 func normalizeLegacyRun(run *types.SchedulerRun) bool {
-	automaticResolution := run.Status == types.RunStatusCanceled && run.Resolution != nil && run.Resolution.ResolvedBy == types.SystemUser.Username
-	if run.Status != types.RunStatusNeedsAttention && !automaticResolution {
+	if run.Status != types.RunStatusNeedsAttention {
 		return false
 	}
 	run.Owner = ""

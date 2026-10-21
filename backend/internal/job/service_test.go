@@ -2,20 +2,15 @@ package job
 
 import (
 	"context"
-	"encoding/json/v2"
 	"errors"
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 	"uuid"
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
@@ -24,7 +19,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/job/children/runtime"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	userdomain "github.com/getarcaneapp/arcane/backend/v2/internal/user"
@@ -672,7 +666,6 @@ func TestJobActivityLifecycle(t *testing.T) {
 			*current = types.SchedulerRun{ //exhaustruct:enforce
 				ActivityEnvironmentID: current.ActivityEnvironmentID,
 				ActivityID:            current.ActivityID,
-				Resolution:            current.Resolution,
 				RequestedWithKey:      current.RequestedWithKey,
 				ID:                    current.ID,
 				JobID:                 current.JobID,
@@ -718,7 +711,6 @@ func TestJobActivityLifecycle(t *testing.T) {
 		*current = types.SchedulerRun{ //exhaustruct:enforce
 			ActivityEnvironmentID:   current.ActivityEnvironmentID,
 			ActivityID:              current.ActivityID,
-			Resolution:              current.Resolution,
 			RequestedWithKey:        current.RequestedWithKey,
 			ID:                      current.ID,
 			JobID:                   current.JobID,
@@ -756,41 +748,6 @@ func TestJobActivityLifecycle(t *testing.T) {
 	_, err = activities.CancelActivity(ctx, "0", run.ActivityID, "operator")
 	require.ErrorIs(t, err, activity.ErrActivityNotCancelable)
 	check(types.ActivityStatusQueued, types.RunStatusQueued)
-	require.NoError(t, svc.runs.UpdateRun(ctx, run, func(current *types.SchedulerRun) error {
-		*current = types.SchedulerRun{ //exhaustruct:enforce
-			ActivityEnvironmentID:   current.ActivityEnvironmentID,
-			ActivityID:              current.ActivityID,
-			Resolution:              current.Resolution,
-			RequestedWithKey:        current.RequestedWithKey,
-			ID:                      current.ID,
-			JobID:                   current.JobID,
-			EnvironmentID:           current.EnvironmentID,
-			Trigger:                 current.Trigger,
-			RequestedBy:             current.RequestedBy,
-			Status:                  types.RunStatusNeedsAttention,
-			CreatedAt:               current.CreatedAt,
-			UpdatedAt:               time.Now().UTC(),
-			StartedAt:               current.StartedAt,
-			FinishedAt:              current.FinishedAt,
-			NextAttempt:             current.NextAttempt,
-			AttemptCount:            current.AttemptCount,
-			Owner:                   current.Owner,
-			Outcome:                 current.Outcome,
-			Attempts:                current.Attempts,
-			RemoteDeliveryAttempted: current.RemoteDeliveryAttempted,
-			RemoteOutcome:           current.RemoteOutcome,
-			RemoteRetryRequested:    current.RemoteRetryRequested,
-			RemoteRetryAttempted:    current.RemoteRetryAttempted,
-			RemoteAttemptCount:      current.RemoteAttemptCount,
-			RemoteAccepted:          current.RemoteAccepted,
-			RemoteSettled:           current.RemoteSettled,
-			LastConfirmedAt:         current.LastConfirmedAt,
-		}
-		return nil
-	}))
-	_, err = svc.runs.Resolve(ctx, "0", run.JobID, run.ID, "operator")
-	require.NoError(t, err)
-	check(types.ActivityStatusCancelled, types.RunStatusCanceled)
 	var count int64
 	require.NoError(t, db.Model(&activity.Activity{}).Count(&count).Error)
 	require.Equal(t, int64(2), count)
@@ -895,7 +852,6 @@ func TestJobActivityRestartRepairsFailedProjection(t *testing.T) {
 		*current = types.SchedulerRun{ //exhaustruct:enforce
 			ActivityEnvironmentID: current.ActivityEnvironmentID,
 			ActivityID:            current.ActivityID,
-			Resolution:            current.Resolution,
 			RequestedWithKey:      current.RequestedWithKey,
 			ID:                    current.ID,
 			JobID:                 current.JobID,
@@ -961,446 +917,4 @@ func TestJobActivityRestartRepairsFailedProjection(t *testing.T) {
 	require.Equal(t, "interrupted before applying updates", persisted.Outcome.Message)
 	require.NotNil(t, persisted.FinishedAt)
 	require.Equal(t, run.ActivityID, persisted.ActivityID)
-}
-
-func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
-	for _, automatic := range []bool{false, true} {
-		t.Run(kit.Ternary(automatic, "automatic settlement", "legacy operator"), func(t *testing.T) {
-			db := setupSettingsTestDB(t)
-			require.NoError(t, db.AutoMigrate(&environment.Environment{}))
-			q := newJobCoordinatorForTest(t, db)
-			local, err := q.Submit(t.Context(), types.SchedulerRequest{
-				JobID:         "auto-update",
-				EnvironmentID: "remote",
-				Trigger:       "scheduled",
-			})
-			require.NoError(t, err)
-			require.NoError(t, q.UpdateRun(t.Context(), local, func(run *types.SchedulerRun) error {
-				*run = types.SchedulerRun{ //exhaustruct:enforce
-					ActivityEnvironmentID: run.ActivityEnvironmentID,
-					ActivityID:            run.ActivityID,
-					Resolution:            run.Resolution,
-					RequestedWithKey:      run.RequestedWithKey,
-					ID:                    run.ID,
-					JobID:                 run.JobID,
-					EnvironmentID:         run.EnvironmentID,
-					Trigger:               run.Trigger,
-					RequestedBy:           run.RequestedBy,
-					Status:                kit.Ternary(automatic, types.RunStatusRunning, types.RunStatusNeedsAttention),
-					CreatedAt:             run.CreatedAt,
-					UpdatedAt:             run.UpdatedAt,
-					StartedAt:             run.StartedAt,
-					FinishedAt:            run.FinishedAt,
-					NextAttempt:           run.NextAttempt,
-					AttemptCount:          run.AttemptCount,
-					Owner:                 run.Owner,
-					Outcome: types.SchedulerOutcome{ //exhaustruct:enforce
-						Status:     types.RunStatusNeedsAttention,
-						Message:    "original failure",
-						ActivityID: "",
-						Targets:    nil,
-						Steps:      nil,
-					},
-					Attempts:                run.Attempts,
-					RemoteDeliveryAttempted: true,
-					RemoteOutcome:           run.RemoteOutcome,
-					RemoteRetryRequested:    run.RemoteRetryRequested,
-					RemoteRetryAttempted:    run.RemoteRetryAttempted,
-					RemoteAttemptCount:      run.RemoteAttemptCount,
-					RemoteAccepted:          true,
-					RemoteSettled:           run.RemoteSettled,
-					LastConfirmedAt:         run.LastConfirmedAt,
-				}
-				return nil
-			}))
-			agentRun := types.SchedulerRun{
-				ID:            local.ID,
-				JobID:         local.JobID,
-				EnvironmentID: "0",
-				Status:        types.RunStatusRunning,
-				Outcome: types.SchedulerOutcome{
-					Status:  types.RunStatusNeedsAttention,
-					Message: "original failure",
-					Targets: []types.TargetOutcome{{
-						ID:     "completed",
-						Status: types.RunStatusSucceeded,
-					}},
-				},
-			}
-			mutations, acknowledgements := 0, 0
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				switch {
-				case r.Method == http.MethodGet && r.URL.Query().Has("page"):
-					raw, marshalErr := json.Marshal(types.SchedulerRunList{Runs: []types.SchedulerRun{agentRun}, Total: 1})
-					assert.NoError(t, marshalErr)
-					w.Header().Set("Content-Type", "application/json")
-					_, writeErr := w.Write(raw)
-					assert.NoError(t, writeErr)
-					return
-				case r.Method == http.MethodGet:
-				case strings.HasSuffix(r.URL.Path, "/resolve"):
-					mutations++
-					var body struct {
-						ResolvedBy string `json:"resolvedBy"`
-					}
-					assert.NoError(t, json.UnmarshalRead(r.Body, &body))
-					agentRun = types.SchedulerRun{ //exhaustruct:enforce
-						ActivityEnvironmentID: agentRun.ActivityEnvironmentID,
-						ActivityID:            agentRun.ActivityID,
-						Resolution: &types.SchedulerRunResolution{
-							ResolvedBy: body.ResolvedBy,
-							ResolvedAt: time.Now().UTC(),
-							Reason:     "resolved_after_review",
-						},
-						RequestedWithKey:        agentRun.RequestedWithKey,
-						ID:                      agentRun.ID,
-						JobID:                   agentRun.JobID,
-						EnvironmentID:           agentRun.EnvironmentID,
-						Trigger:                 agentRun.Trigger,
-						RequestedBy:             agentRun.RequestedBy,
-						Status:                  types.RunStatusCanceled,
-						CreatedAt:               agentRun.CreatedAt,
-						UpdatedAt:               agentRun.UpdatedAt,
-						StartedAt:               agentRun.StartedAt,
-						FinishedAt:              agentRun.FinishedAt,
-						NextAttempt:             agentRun.NextAttempt,
-						AttemptCount:            agentRun.AttemptCount,
-						Owner:                   agentRun.Owner,
-						Outcome:                 agentRun.Outcome,
-						Attempts:                agentRun.Attempts,
-						RemoteDeliveryAttempted: agentRun.RemoteDeliveryAttempted,
-						RemoteOutcome:           agentRun.RemoteOutcome,
-						RemoteRetryRequested:    agentRun.RemoteRetryRequested,
-						RemoteRetryAttempted:    agentRun.RemoteRetryAttempted,
-						RemoteAttemptCount:      agentRun.RemoteAttemptCount,
-						RemoteAccepted:          agentRun.RemoteAccepted,
-						RemoteSettled:           agentRun.RemoteSettled,
-						LastConfirmedAt:         agentRun.LastConfirmedAt,
-					}
-					http.Error(w, "lost response", http.StatusServiceUnavailable)
-					return
-				case strings.HasSuffix(r.URL.Path, "/ack"):
-					acknowledgements++
-					agentRun = types.SchedulerRun{ //exhaustruct:enforce
-						ActivityEnvironmentID:   agentRun.ActivityEnvironmentID,
-						ActivityID:              agentRun.ActivityID,
-						Resolution:              agentRun.Resolution,
-						RequestedWithKey:        agentRun.RequestedWithKey,
-						ID:                      agentRun.ID,
-						JobID:                   agentRun.JobID,
-						EnvironmentID:           agentRun.EnvironmentID,
-						Trigger:                 agentRun.Trigger,
-						RequestedBy:             agentRun.RequestedBy,
-						Status:                  agentRun.Status,
-						CreatedAt:               agentRun.CreatedAt,
-						UpdatedAt:               agentRun.UpdatedAt,
-						StartedAt:               agentRun.StartedAt,
-						FinishedAt:              agentRun.FinishedAt,
-						NextAttempt:             agentRun.NextAttempt,
-						AttemptCount:            agentRun.AttemptCount,
-						Owner:                   agentRun.Owner,
-						Outcome:                 agentRun.Outcome,
-						Attempts:                agentRun.Attempts,
-						RemoteDeliveryAttempted: agentRun.RemoteDeliveryAttempted,
-						RemoteOutcome:           agentRun.RemoteOutcome,
-						RemoteRetryRequested:    agentRun.RemoteRetryRequested,
-						RemoteRetryAttempted:    agentRun.RemoteRetryAttempted,
-						RemoteAttemptCount:      agentRun.RemoteAttemptCount,
-						RemoteAccepted:          agentRun.RemoteAccepted,
-						RemoteSettled:           true,
-						LastConfirmedAt:         agentRun.LastConfirmedAt,
-					}
-					if automatic && acknowledgements == 1 {
-						http.Error(w, "lost acknowledgement", http.StatusServiceUnavailable)
-						return
-					}
-				default:
-					http.Error(w, "unexpected request", http.StatusBadRequest)
-					return
-				}
-				raw, marshalErr := json.Marshal(agentRun)
-				assert.NoError(t, marshalErr)
-				w.Header().Set("Content-Type", "application/json")
-				_, writeErr := w.Write(raw)
-				assert.NoError(t, writeErr)
-			}))
-			defer server.Close()
-			require.NoError(t, db.Create(&environment.Environment{
-				ID:      "remote",
-				Name:    "agent",
-				ApiUrl:  server.URL,
-				Enabled: true,
-			}).Error)
-			settingsService, err := newSettingsServiceForTest(t, t.Context(), db)
-			require.NoError(t, err)
-			environments := environment.NewEnvironmentService(db, server.Client(), nil, nil, settingsService, nil)
-			svc := NewJobService(
-				db,
-				settingsService,
-				&config.Config{},
-				q,
-				role.NewRoleService(db),
-				environments,
-				activity.NewActivityService(db, nil),
-			)
-			ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.EnvironmentPermissionSet("remote"))
-			path := "/api/environments/0/jobs/auto-update/runs/" + local.ID
-			if !automatic {
-				_, err = svc.ResolveRun(ctx, "remote", local.JobID, local.ID, "operator")
-				require.ErrorContains(t, err, "agent run must need attention")
-			} else {
-				outcome, confirmErr := svc.remote.Confirm(ctx, local, agentRun, path)
-				require.NoError(t, confirmErr)
-				require.Equal(t, types.RunStatusWaiting, outcome.Status)
-			}
-			require.Zero(t, mutations)
-			agentRun = types.SchedulerRun{ //exhaustruct:enforce
-				ActivityEnvironmentID:   agentRun.ActivityEnvironmentID,
-				ActivityID:              agentRun.ActivityID,
-				Resolution:              agentRun.Resolution,
-				RequestedWithKey:        agentRun.RequestedWithKey,
-				ID:                      agentRun.ID,
-				JobID:                   agentRun.JobID,
-				EnvironmentID:           agentRun.EnvironmentID,
-				Trigger:                 agentRun.Trigger,
-				RequestedBy:             agentRun.RequestedBy,
-				Status:                  types.RunStatusNeedsAttention,
-				CreatedAt:               agentRun.CreatedAt,
-				UpdatedAt:               agentRun.UpdatedAt,
-				StartedAt:               agentRun.StartedAt,
-				FinishedAt:              agentRun.FinishedAt,
-				NextAttempt:             agentRun.NextAttempt,
-				AttemptCount:            agentRun.AttemptCount,
-				Owner:                   agentRun.Owner,
-				Outcome:                 agentRun.Outcome,
-				Attempts:                agentRun.Attempts,
-				RemoteDeliveryAttempted: agentRun.RemoteDeliveryAttempted,
-				RemoteOutcome:           agentRun.RemoteOutcome,
-				RemoteRetryRequested:    agentRun.RemoteRetryRequested,
-				RemoteRetryAttempted:    agentRun.RemoteRetryAttempted,
-				RemoteAttemptCount:      agentRun.RemoteAttemptCount,
-				RemoteAccepted:          agentRun.RemoteAccepted,
-				RemoteSettled:           agentRun.RemoteSettled,
-				LastConfirmedAt:         agentRun.LastConfirmedAt,
-			}
-			if !automatic {
-				_, err = svc.ResolveRun(ctx, "remote", local.JobID, local.ID, "operator")
-				require.Error(t, err)
-				unchanged, getErr := q.Get(t.Context(), "remote", local.JobID, local.ID)
-				require.NoError(t, getErr)
-				require.Equal(t, types.RunStatusNeedsAttention, unchanged.Status)
-				resolved, resolveErr := svc.ResolveRun(ctx, "remote", local.JobID, local.ID, "operator")
-				require.NoError(t, resolveErr)
-				require.Equal(t, types.RunStatusCanceled, resolved.Status)
-				require.True(t, resolved.RemoteSettled)
-				require.Equal(t, "original failure", resolved.Outcome.Message)
-			} else {
-				outcome, confirmErr := svc.remote.Confirm(ctx, local, agentRun, path)
-				require.Error(t, confirmErr)
-				require.Equal(t, types.RunStatusWaiting, outcome.Status)
-				outcome, confirmErr = svc.remote.Confirm(ctx, local, agentRun, path)
-				require.Error(t, confirmErr)
-				require.Equal(t, types.RunStatusWaiting, outcome.Status)
-				outcome, confirmErr = svc.remote.Confirm(ctx, local, agentRun, path)
-				require.NoError(t, confirmErr)
-				require.Equal(t, types.RunStatusFailed, outcome.Status)
-				require.Equal(t, "original failure", outcome.Message)
-				require.Equal(t, types.RunStatusSucceeded, outcome.Targets[0].Status)
-				stored, getErr := q.Get(t.Context(), "remote", local.JobID, local.ID)
-				require.NoError(t, getErr)
-				require.True(t, stored.RemoteSettled)
-				require.Equal(t, types.RunStatusFailed, stored.RemoteOutcome.Status)
-				require.Equal(t, types.SystemUser.Username, stored.Resolution.ResolvedBy)
-				require.NoError(t, q.UpdateRun(ctx, stored, func(current *types.SchedulerRun) error {
-					*current = types.SchedulerRun{ //exhaustruct:enforce
-						ActivityEnvironmentID:   current.ActivityEnvironmentID,
-						ActivityID:              current.ActivityID,
-						Resolution:              current.Resolution,
-						RequestedWithKey:        current.RequestedWithKey,
-						ID:                      current.ID,
-						JobID:                   current.JobID,
-						EnvironmentID:           current.EnvironmentID,
-						Trigger:                 current.Trigger,
-						RequestedBy:             current.RequestedBy,
-						Status:                  types.RunStatusFailed,
-						CreatedAt:               current.CreatedAt,
-						UpdatedAt:               current.UpdatedAt,
-						StartedAt:               current.StartedAt,
-						FinishedAt:              current.FinishedAt,
-						NextAttempt:             current.NextAttempt,
-						AttemptCount:            current.AttemptCount,
-						Owner:                   current.Owner,
-						Outcome:                 current.Outcome,
-						Attempts:                current.Attempts,
-						RemoteDeliveryAttempted: current.RemoteDeliveryAttempted,
-						RemoteOutcome:           current.RemoteOutcome,
-						RemoteRetryRequested:    current.RemoteRetryRequested,
-						RemoteRetryAttempted:    current.RemoteRetryAttempted,
-						RemoteAttemptCount:      current.RemoteAttemptCount,
-						RemoteAccepted:          current.RemoteAccepted,
-						RemoteSettled:           current.RemoteSettled,
-						LastConfirmedAt:         current.LastConfirmedAt,
-					}
-					return nil
-				}))
-				_, retryErr := svc.RetryRun(ctx, "remote", local.JobID, local.ID)
-				require.ErrorContains(t, retryErr, "upgrade the agent")
-				agentRun = types.SchedulerRun{ //exhaustruct:enforce
-					ActivityEnvironmentID:   agentRun.ActivityEnvironmentID,
-					ActivityID:              agentRun.ActivityID,
-					Resolution:              agentRun.Resolution,
-					RequestedWithKey:        agentRun.RequestedWithKey,
-					ID:                      agentRun.ID,
-					JobID:                   agentRun.JobID,
-					EnvironmentID:           agentRun.EnvironmentID,
-					Trigger:                 agentRun.Trigger,
-					RequestedBy:             agentRun.RequestedBy,
-					Status:                  types.RunStatusFailed,
-					CreatedAt:               agentRun.CreatedAt,
-					UpdatedAt:               agentRun.UpdatedAt,
-					StartedAt:               agentRun.StartedAt,
-					FinishedAt:              agentRun.FinishedAt,
-					NextAttempt:             agentRun.NextAttempt,
-					AttemptCount:            agentRun.AttemptCount,
-					Owner:                   agentRun.Owner,
-					Outcome:                 agentRun.Outcome,
-					Attempts:                agentRun.Attempts,
-					RemoteDeliveryAttempted: agentRun.RemoteDeliveryAttempted,
-					RemoteOutcome:           agentRun.RemoteOutcome,
-					RemoteRetryRequested:    agentRun.RemoteRetryRequested,
-					RemoteRetryAttempted:    agentRun.RemoteRetryAttempted,
-					RemoteAttemptCount:      agentRun.RemoteAttemptCount,
-					RemoteAccepted:          agentRun.RemoteAccepted,
-					RemoteSettled:           agentRun.RemoteSettled,
-					LastConfirmedAt:         agentRun.LastConfirmedAt,
-				}
-				retried, retryErr := svc.RetryRun(ctx, "remote", local.JobID, local.ID)
-				require.NoError(t, retryErr)
-				require.Equal(t, types.RunStatusQueued, retried.Status)
-				require.Equal(t, local.ID, retried.ID)
-
-				// Adopt agent-owned history without coalescing its explicit identity.
-				createdAt := time.Now().UTC().Add(-time.Hour)
-				agentOwned := types.SchedulerRun{ //exhaustruct:enforce
-					ActivityEnvironmentID:   agentRun.ActivityEnvironmentID,
-					ActivityID:              "agent-summary",
-					Resolution:              agentRun.Resolution,
-					RequestedWithKey:        agentRun.RequestedWithKey,
-					ID:                      "d7a9a3c7-d364-4c36-831a-381249e5727e",
-					JobID:                   agentRun.JobID,
-					EnvironmentID:           agentRun.EnvironmentID,
-					Trigger:                 agentRun.Trigger,
-					RequestedBy:             agentRun.RequestedBy,
-					Status:                  types.RunStatusNeedsAttention,
-					CreatedAt:               createdAt,
-					UpdatedAt:               agentRun.UpdatedAt,
-					StartedAt:               agentRun.StartedAt,
-					FinishedAt:              new(createdAt.Add(time.Minute)),
-					NextAttempt:             agentRun.NextAttempt,
-					AttemptCount:            agentRun.AttemptCount,
-					Owner:                   agentRun.Owner,
-					Outcome:                 agentRun.Outcome,
-					Attempts:                agentRun.Attempts,
-					RemoteDeliveryAttempted: agentRun.RemoteDeliveryAttempted,
-					RemoteOutcome:           agentRun.RemoteOutcome,
-					RemoteRetryRequested:    agentRun.RemoteRetryRequested,
-					RemoteRetryAttempted:    agentRun.RemoteRetryAttempted,
-					RemoteAttemptCount:      agentRun.RemoteAttemptCount,
-					RemoteAccepted:          agentRun.RemoteAccepted,
-					RemoteSettled:           false,
-					LastConfirmedAt:         agentRun.LastConfirmedAt,
-				}
-				catalog := []types.JobStatus{{ID: "updates", Children: []types.JobStatus{{ID: agentOwned.JobID, LastRun: &agentOwned}}}}
-				require.NoError(t, svc.remote.ReconcileLegacyCatalog(ctx, "remote", catalog))
-				require.NoError(t, svc.remote.ReconcileLegacyCatalog(ctx, "remote", catalog))
-				adopted, getErr := q.Get(ctx, "remote", agentOwned.JobID, agentOwned.ID)
-				require.NoError(t, getErr)
-				require.True(t, adopted.RemoteAccepted)
-				require.True(t, adopted.RemoteDeliveryAttempted)
-				require.Equal(t, agentOwned.CreatedAt, adopted.CreatedAt)
-				require.Equal(t, types.RunStatusQueued, adopted.Status)
-				require.Equal(t, agentOwned.FinishedAt, adopted.FinishedAt)
-				require.Equal(t, agentOwned.ActivityID, adopted.ActivityID)
-				require.Equal(t, "remote", adopted.ActivityEnvironmentID)
-				status := runtime.ApplyRunStatus(types.JobStatus{LastRun: &agentOwned}, []types.SchedulerRun{adopted})
-				require.Nil(t, status.CurrentRun)
-				require.Equal(t, types.RunStatusFailed, status.LastRun.Status)
-				require.Equal(t, "original failure", status.LastError)
-				agentRun = agentOwned
-				merged, listErr := svc.ListRuns(ctx, "remote", agentOwned.JobID, 1, 20)
-				require.NoError(t, listErr)
-				detail, detailErr := svc.GetRun(ctx, "remote", agentOwned.JobID, agentOwned.ID)
-				require.NoError(t, detailErr)
-				require.Equal(t, types.RunStatusFailed, detail.Status)
-				require.Equal(t, "original failure", detail.Outcome.Message)
-				require.Equal(t, agentOwned.ActivityID, detail.ActivityID)
-				require.Equal(t, "remote", detail.ActivityEnvironmentID)
-				require.Contains(t, merged.Runs, detail)
-				history, listErr := q.List(ctx, "remote", agentOwned.JobID, 1, 20)
-				require.NoError(t, listErr)
-				require.Equal(t, 2, history.Total)
-			}
-			require.Equal(t, 1, mutations)
-		})
-	}
-}
-
-func TestResolveRunChecksCurrentOperatorPermission(t *testing.T) {
-	db := setupSettingsTestDB(t)
-	settingsService, err := newSettingsServiceForTest(t, t.Context(), db)
-	require.NoError(t, err)
-	svc := newJobServiceForTest(t, db, settingsService, &config.Config{})
-	run, err := svc.runs.Submit(t.Context(), types.SchedulerRequest{JobID: "auto-update", Trigger: "scheduled"})
-	require.NoError(t, err)
-	require.NoError(t, svc.runs.UpdateRun(t.Context(), run, func(current *types.SchedulerRun) error {
-		*current = types.SchedulerRun{ //exhaustruct:enforce
-			ActivityEnvironmentID: current.ActivityEnvironmentID,
-			ActivityID:            current.ActivityID,
-			Resolution:            current.Resolution,
-			RequestedWithKey:      current.RequestedWithKey,
-			ID:                    current.ID,
-			JobID:                 current.JobID,
-			EnvironmentID:         current.EnvironmentID,
-			Trigger:               current.Trigger,
-			RequestedBy:           current.RequestedBy,
-			Status:                types.RunStatusNeedsAttention,
-			CreatedAt:             current.CreatedAt,
-			UpdatedAt:             current.UpdatedAt,
-			StartedAt:             current.StartedAt,
-			FinishedAt:            current.FinishedAt,
-			NextAttempt:           current.NextAttempt,
-			AttemptCount:          current.AttemptCount,
-			Owner:                 current.Owner,
-			Outcome: types.SchedulerOutcome{ //exhaustruct:enforce
-				Status:     types.RunStatusNeedsAttention,
-				Message:    "interrupted",
-				ActivityID: "",
-				Targets:    nil,
-				Steps:      nil,
-			},
-			Attempts:                current.Attempts,
-			RemoteDeliveryAttempted: current.RemoteDeliveryAttempted,
-			RemoteOutcome:           current.RemoteOutcome,
-			RemoteRetryRequested:    current.RemoteRetryRequested,
-			RemoteRetryAttempted:    current.RemoteRetryAttempted,
-			RemoteAttemptCount:      current.RemoteAttemptCount,
-			RemoteAccepted:          current.RemoteAccepted,
-			RemoteSettled:           current.RemoteSettled,
-			LastConfirmedAt:         current.LastConfirmedAt,
-		}
-		return nil
-	}))
-	_, err = svc.ResolveRun(t.Context(), "0", "auto-update", run.ID, "operator")
-	require.ErrorContains(t, err, "permission denied")
-	otherEnvironment := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.EnvironmentPermissionSet("different"))
-	_, err = svc.ResolveRun(otherEnvironment, "0", "auto-update", run.ID, "operator")
-	require.ErrorContains(t, err, "permission denied")
-	authorized := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.EnvironmentPermissionSet("0"))
-	_, err = svc.ResolveRun(authorized, "0", "auto-update", run.ID, "")
-	require.ErrorContains(t, err, "identity")
-	resolved, err := svc.ResolveRun(authorized, "0", "auto-update", run.ID, "operator")
-	require.NoError(t, err)
-	require.Equal(t, types.RunStatusCanceled, resolved.Status)
-	require.Equal(t, "interrupted", resolved.Outcome.Message)
-	require.Equal(t, "operator", resolved.Resolution.ResolvedBy)
 }

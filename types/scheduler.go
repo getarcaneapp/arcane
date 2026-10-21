@@ -272,42 +272,33 @@ type SchedulerAttempt struct {
 	Outcome    SchedulerOutcome `json:"outcome"`
 }
 
-// SchedulerRunResolution preserves legacy resolution history.
-// TODO(v3): remove this deprecated mixed-version compatibility contract.
-type SchedulerRunResolution struct {
-	ResolvedBy string    `json:"resolvedBy"`
-	ResolvedAt time.Time `json:"resolvedAt"`
-	Reason     string    `json:"reason"`
-}
-
 type SchedulerRun struct {
-	ActivityEnvironmentID   string                  `json:"activityEnvironmentId,omitempty"`
-	ActivityID              string                  `json:"activityId,omitempty"`
-	Resolution              *SchedulerRunResolution `json:"resolution,omitempty"`
-	RequestedWithKey        string                  `json:"requestedWithKey,omitempty"`
-	ID                      string                  `json:"id"`
-	JobID                   string                  `json:"jobId"`
-	EnvironmentID           string                  `json:"environmentId"`
-	Trigger                 string                  `json:"trigger"`
-	RequestedBy             string                  `json:"requestedBy,omitempty"`
-	Status                  RunStatus               `json:"status"`
-	CreatedAt               time.Time               `json:"createdAt"`
-	UpdatedAt               time.Time               `json:"updatedAt"`
-	StartedAt               *time.Time              `json:"startedAt,omitempty"`
-	FinishedAt              *time.Time              `json:"finishedAt,omitempty"`
-	NextAttempt             *time.Time              `json:"nextAttempt,omitempty"`
-	AttemptCount            int                     `json:"attemptCount"`
-	Owner                   string                  `json:"owner,omitempty"`
-	Outcome                 SchedulerOutcome        `json:"outcome"`
-	Attempts                []SchedulerAttempt      `json:"attempts,omitempty"`
-	RemoteDeliveryAttempted bool                    `json:"remoteDeliveryAttempted"`
-	RemoteOutcome           *SchedulerOutcome       `json:"remoteOutcome,omitempty"`
-	RemoteRetryRequested    bool                    `json:"remoteRetryRequested,omitempty"`
-	RemoteRetryAttempted    bool                    `json:"remoteRetryAttempted,omitempty"`
-	RemoteAttemptCount      int                     `json:"remoteAttemptCount,omitempty"`
-	RemoteAccepted          bool                    `json:"remoteAccepted"`
-	RemoteSettled           bool                    `json:"remoteSettled"`
-	LastConfirmedAt         *time.Time              `json:"lastConfirmedAt,omitempty"`
+	ActivityEnvironmentID   string             `json:"activityEnvironmentId,omitempty"`
+	ActivityID              string             `json:"activityId,omitempty"`
+	RequestedWithKey        string             `json:"requestedWithKey,omitempty"`
+	ID                      string             `json:"id"`
+	JobID                   string             `json:"jobId"`
+	EnvironmentID           string             `json:"environmentId"`
+	Trigger                 string             `json:"trigger"`
+	RequestedBy             string             `json:"requestedBy,omitempty"`
+	Status                  RunStatus          `json:"status"`
+	CreatedAt               time.Time          `json:"createdAt"`
+	UpdatedAt               time.Time          `json:"updatedAt"`
+	StartedAt               *time.Time         `json:"startedAt,omitempty"`
+	FinishedAt              *time.Time         `json:"finishedAt,omitempty"`
+	NextAttempt             *time.Time         `json:"nextAttempt,omitempty"`
+	AttemptCount            int                `json:"attemptCount"`
+	Owner                   string             `json:"owner,omitempty"`
+	Outcome                 SchedulerOutcome   `json:"outcome"`
+	Attempts                []SchedulerAttempt `json:"attempts,omitempty"`
+	RemoteDeliveryAttempted bool               `json:"remoteDeliveryAttempted"`
+	RemoteOutcome           *SchedulerOutcome  `json:"remoteOutcome,omitempty"`
+	RemoteRetryRequested    bool               `json:"remoteRetryRequested,omitempty"`
+	RemoteRetryAttempted    bool               `json:"remoteRetryAttempted,omitempty"`
+	RemoteAttemptCount      int                `json:"remoteAttemptCount,omitempty"`
+	RemoteAccepted          bool               `json:"remoteAccepted"`
+	RemoteSettled           bool               `json:"remoteSettled"`
+	LastConfirmedAt         *time.Time         `json:"lastConfirmedAt,omitempty"`
 }
 
 type SchedulerRunList struct {

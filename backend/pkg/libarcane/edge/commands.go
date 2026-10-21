@@ -191,7 +191,6 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/jobs/{jobId}/runs/{runId}", CommandName: "job.run.inspect"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/jobs/{jobId}/runs/{runId}/retry", CommandName: "job.run.retry"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/jobs/{jobId}/runs/{runId}/cancel", CommandName: "job.run.cancel"},
-	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/jobs/{jobId}/runs/{runId}/resolve", CommandName: "job.run.resolve"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/jobs/{jobId}/runs/{runId}/ack", CommandName: "job.run.ack"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/jobs/{jobId}/restart", CommandName: "job.worker.restart"},
 

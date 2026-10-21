@@ -14,7 +14,6 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/robfig/cron/v3"
 	"go.getarcane.app/kit/pkg"
@@ -31,7 +30,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/job/children/remote"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/job/children/runtime"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -735,22 +733,6 @@ func (s *JobService) reconcileRun(ctx context.Context, run types.SchedulerRun) (
 		Message: "Interrupted operation has no confirmed completion",
 		Targets: targets,
 	}, nil
-}
-
-// ResolveRun authorizes the current operator independently of the original requester.
-// TODO(v3): remove this deprecated mixed-version compatibility contract.
-func (s *JobService) ResolveRun(ctx context.Context, environmentID, jobID, runID, actor string) (types.SchedulerRun, error) {
-	permissions, _ := middleware.PermissionsFromContext(ctx)
-	if !permissions.Allows(authz.PermJobsManage, environmentID) {
-		return types.SchedulerRun{}, huma.Error403Forbidden("permission denied: " + authz.PermJobsManage)
-	}
-	if actor == "" {
-		return types.SchedulerRun{}, errors.New("resolving operator identity is required")
-	}
-	if environmentID != "0" {
-		return s.remote.ResolveRun(ctx, environmentID, jobID, runID, actor)
-	}
-	return s.runs.Resolve(ctx, environmentID, jobID, runID, actor)
 }
 
 // RetryRun revalidates local job eligibility before requeuing the existing run.

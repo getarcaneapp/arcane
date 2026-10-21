@@ -4,10 +4,33 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
+	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
 )
+
+func newTestCoordinator(t *testing.T) *Coordinator {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&kv.KVEntry{}))
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
+	runtime := francistest.New(t)
+	q := New(kv.NewKVService(&database.DB{DB: db}), runtime.Service(), time.UTC)
+	require.NoError(t, q.Register(runtime))
+	francistest.Start(t, runtime)
+	return q
+}
 
 type claimingObserverFake struct {
 	once    sync.Once
@@ -29,7 +52,7 @@ func (o *claimingObserverFake) ActivityID(run types.SchedulerRun) string {
 func (o *claimingObserverFake) SyncRunActivity(context.Context, types.SchedulerRun) error { return nil }
 
 func TestSubmitRetryAfterClaimAppendsFreshRun(t *testing.T) {
-	q := newResolutionQueue(t)
+	q := newTestCoordinator(t)
 	observer := &claimingObserverFake{}
 	q.SetObserver(observer)
 	queued, err := q.Submit(t.Context(), types.SchedulerRequest{JobID: "coalesce", Trigger: "scheduled"})

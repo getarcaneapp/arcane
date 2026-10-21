@@ -187,7 +187,6 @@ func (h *JobSchedulesHandler) AcknowledgeRun(ctx context.Context, input *types.J
 		*current = types.SchedulerRun{ //exhaustruct:enforce
 			ActivityEnvironmentID:   current.ActivityEnvironmentID,
 			ActivityID:              current.ActivityID,
-			Resolution:              current.Resolution,
 			RequestedWithKey:        current.RequestedWithKey,
 			ID:                      current.ID,
 			JobID:                   current.JobID,
@@ -258,22 +257,4 @@ func jobHTTPError(err error) error {
 		return huma.Error409Conflict("Job run state changed")
 	}
 	return huma.Error400BadRequest(err.Error())
-}
-
-// ResolveRun records legacy operator review.
-// TODO(v3): remove this deprecated mixed-version compatibility contract.
-func (h *JobSchedulesHandler) ResolveRun(ctx context.Context, input *types.JobResolveRunInput) (*types.JobRunOutput, error) {
-	actor, _ := middleware.GetUserIDFromContext(ctx)
-	permissions, _ := middleware.PermissionsFromContext(ctx)
-	if input.Body != nil && input.Body.ResolvedBy != "" {
-		if permissions == nil || !permissions.Sudo || !h.jobService.cfg.AgentMode {
-			return nil, huma.Error403Forbidden("only authenticated manager transport may forward an operator identity")
-		}
-		actor = input.Body.ResolvedBy
-	}
-	run, err := h.jobService.ResolveRun(ctx, input.ID, input.JobID, input.RunID, actor)
-	if err != nil {
-		return nil, jobHTTPError(err)
-	}
-	return &types.JobRunOutput{Body: run}, nil
 }
