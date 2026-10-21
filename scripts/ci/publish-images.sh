@@ -61,16 +61,11 @@ trap 'rm "$copy_log"' EXIT
 for role in manager agent; do
     if [[ "$role" == manager ]]; then
         digest=$MANAGER_DIGEST
-        alias=arcane
     else
         digest=$AGENT_DIGEST
-        alias=arcane-headless
     fi
     source_image="ghcr.io/getarcaneapp/$role@$digest"
     destination="$IMAGE_REGISTRY/getarcaneapp/$role"
-    if [[ "$IMAGE_REGISTRY" == ghcr.io ]]; then
-        destination="$IMAGE_REGISTRY/getarcaneapp/$alias"
-    fi
 
     copied=false
     # GHCR briefly reports existing child manifests as not found, so only auth failures are final.
