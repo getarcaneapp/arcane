@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,7 +31,7 @@ func TestClientKubePlayDownGenerate(t *testing.T) {
 		}
 	})
 
-	played, err := client.KubePlay(t.Context(), podmantypes.KubePlayRequest{
+	played, err := client.KubePlay(t.Context(), types.KubePlayRequest{
 		YAML:     manifest,
 		Start:    new(false),
 		Replace:  true,
@@ -42,13 +42,13 @@ func TestClientKubePlayDownGenerate(t *testing.T) {
 	assert.Equal(t, "pod123", played.Pods[0].ID)
 	assert.Equal(t, "data", played.Volumes[0].Name)
 
-	down, err := client.KubeDown(t.Context(), podmantypes.KubeDownRequest{YAML: manifest, Force: true})
+	down, err := client.KubeDown(t.Context(), types.KubeDownRequest{YAML: manifest, Force: true})
 	require.NoError(t, err)
 	assert.Equal(t, "pod123", down.RmReport[0].ID)
 
-	generated, err := client.KubeGenerate(t.Context(), podmantypes.KubeGenerateRequest{
+	generated, err := client.KubeGenerate(t.Context(), types.KubeGenerateRequest{
 		Names:   []string{"web", "db"},
-		Type:    podmantypes.KubeGenerateTypeDeployment,
+		Type:    types.KubeGenerateTypeDeployment,
 		Service: true,
 	})
 	require.NoError(t, err)

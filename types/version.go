@@ -1,0 +1,163 @@
+package types
+
+import (
+	"cmp"
+	"strings"
+	"time"
+)
+
+// VersionInfo contains detailed version information about the application.
+type VersionInfo struct {
+	// CurrentVersion is the current version string.
+	//
+	// Required: true
+	CurrentVersion string `json:"currentVersion"`
+
+	// CurrentTag is the current tag.
+	//
+	// Required: false
+	CurrentTag string `json:"currentTag,omitempty"`
+
+	// CurrentDigest is the current digest (hash) of the version.
+	//
+	// Required: false
+	CurrentDigest string `json:"currentDigest,omitempty"`
+
+	// Revision is the full revision identifier (e.g., commit hash).
+	//
+	// Required: true
+	Revision string `json:"revision"`
+
+	// ShortRevision is the short revision identifier (first 8 chars of commit hash).
+	//
+	// Required: true
+	ShortRevision string `json:"shortRevision"`
+
+	// GoVersion is the Go runtime version used to build the application.
+	//
+	// Required: true
+	GoVersion string `json:"goVersion"`
+
+	// NodeVersion is the Node.js version used to build the frontend.
+	//
+	// Required: true
+	NodeVersion string `json:"nodeVersion"`
+
+	// SvelteKitVersion is the SvelteKit version used to build the frontend.
+	//
+	// Required: true
+	SvelteKitVersion string `json:"svelteKitVersion"`
+
+	// BuildTime is the timestamp when the application was built.
+	//
+	// Required: false
+	BuildTime string `json:"buildTime,omitempty"`
+
+	// DisplayVersion is the version string formatted for display.
+	//
+	// Required: true
+	DisplayVersion string `json:"displayVersion"`
+
+	// NewestVersion is the newest available version string.
+	//
+	// Required: false
+	NewestVersion string `json:"newestVersion,omitempty"`
+
+	// NewestDigest is the digest (hash) of the newest available version.
+	//
+	// Required: false
+	NewestDigest string `json:"newestDigest,omitempty"`
+
+	// ReleaseURL is the URL to the release page.
+	//
+	// Required: false
+	ReleaseURL string `json:"releaseUrl,omitempty"`
+
+	// ReleaseNotes is the markdown body of the latest GitHub release.
+	//
+	// Required: false
+	ReleaseNotes string `json:"releaseNotes,omitempty"`
+
+	// ReleasedAt is the ISO-8601 timestamp the latest release was published.
+	//
+	// Required: false
+	ReleasedAt string `json:"releasedAt,omitempty"`
+
+	// EnabledFeatures is the list of build-time feature flags compiled into the binary.
+	//
+	// Required: false
+	EnabledFeatures []string `json:"enabledFeatures,omitempty"`
+
+	// IsSemverVersion indicates if the current version follows semantic versioning.
+	//
+	// Required: true
+	IsSemverVersion bool `json:"isSemverVersion"`
+
+	// UpdateAvailable indicates if an update is available.
+	//
+	// Required: true
+	UpdateAvailable bool `json:"updateAvailable"`
+}
+
+// VersionCheck contains simplified version check information.
+type VersionCheck struct {
+	// CurrentVersion is the current version string.
+	//
+	// Required: true
+	CurrentVersion string `json:"currentVersion"`
+
+	// NewestVersion is the newest available version string.
+	//
+	// Required: false
+	NewestVersion string `json:"newestVersion,omitempty"`
+
+	// UpdateAvailable indicates if an update is available.
+	//
+	// Required: true
+	UpdateAvailable bool `json:"updateAvailable"`
+
+	// ReleaseURL is the URL to the release page.
+	//
+	// Required: false
+	ReleaseURL string `json:"releaseUrl,omitempty"`
+}
+
+// VersionStreamEvent is one version-channel line on the multiplexed client stream.
+type VersionStreamEvent struct {
+	// Type is the event kind: "snapshot".
+	//
+	// Required: true
+	Type string `json:"type"`
+
+	// Info is the app version information for a "snapshot".
+	//
+	// Required: false
+	Info *VersionInfo `json:"info,omitempty"`
+
+	// Timestamp is when the event was produced.
+	//
+	// Required: true
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// AlreadyOnNewest reports whether the check is confident the environment already
+// runs the newest image. Anything unresolved or contradictory reports false.
+func (i *VersionInfo) AlreadyOnNewest() bool {
+	if i == nil || i.UpdateAvailable {
+		return false
+	}
+
+	currentDigest := strings.TrimSpace(i.CurrentDigest)
+	newestDigest := strings.TrimSpace(i.NewestDigest)
+
+	// Digests alone catch a mutable tag rebuilt at the same version. Once either side
+	// resolves, both must resolve and agree; a matching version tag is not enough.
+	switch {
+	case cmp.Or(currentDigest, newestDigest) != "":
+		return currentDigest == newestDigest
+	case i.NewestVersion != "":
+		return strings.TrimPrefix(i.NewestVersion, "v") == strings.TrimPrefix(i.CurrentVersion, "v")
+	default:
+		return false
+	}
+}

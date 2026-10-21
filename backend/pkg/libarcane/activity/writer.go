@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 	kit "go.getarcane.app/kit/pkg"
 
@@ -50,7 +50,7 @@ const (
 )
 
 type writerAppendMessage struct {
-	level   activitytypes.MessageLevel
+	level   types.ActivityMessageLevel
 	message string
 	payload database.JSON
 	step    string
@@ -81,7 +81,7 @@ func NewWriter(ctx context.Context, activityService MessageAppender, activityID 
 		defaultStep:     strings.TrimSpace(defaultStep),
 		queueCh:         make(chan writerQueueItem, writerAppendQueueSize),
 	}
-	go out.drainMessagesInternal(ctx)
+	go out.drainMessages(ctx)
 	return out
 }
 
@@ -101,14 +101,14 @@ func (w *Writer) Write(p []byte) (int, error) {
 		}
 		line := strings.TrimSpace(string(w.buffer[:idx]))
 		w.buffer = w.buffer[idx+1:]
-		if message, ok := w.processLineInternal(line).Get(); ok {
+		if message, ok := w.processLine(line).Get(); ok {
 			messages = append(messages, message)
 		}
 	}
 	w.mu.Unlock()
 
 	for _, message := range messages {
-		w.enqueueMessageInternal(message)
+		w.enqueueMessage(message)
 	}
 
 	return len(p), nil
@@ -119,13 +119,13 @@ func (w *Writer) Flush() {
 		flusher.Flush()
 	}
 	w.mu.Lock()
-	residual := w.processLineInternal(strings.TrimSpace(string(w.buffer)))
+	residual := w.processLine(strings.TrimSpace(string(w.buffer)))
 	w.buffer = nil
 	w.mu.Unlock()
 	if message, ok := residual.Get(); ok {
 		select {
 		case w.queueCh <- writerQueueItem{message: &message}:
-		case <-doneInternal(w.ctx):
+		case <-done(w.ctx):
 			return
 		}
 	}
@@ -133,20 +133,20 @@ func (w *Writer) Flush() {
 	flushDone := make(chan struct{})
 	select {
 	case w.queueCh <- writerQueueItem{flush: flushDone}:
-	case <-doneInternal(w.ctx):
+	case <-done(w.ctx):
 		return
 	}
 	select {
 	case <-flushDone:
-	case <-doneInternal(w.ctx):
+	case <-done(w.ctx):
 		return
 	}
 }
 
-// processLineInternal records stream lines as activity messages verbatim.
+// processLine records stream lines as activity messages verbatim.
 // Docker operation output arrives as {"log":"<raw CLI line>"} frames; terminal
 // failures as {"error":"..."} frames. Anything else passes through untouched.
-func (w *Writer) processLineInternal(line string) mo.Option[writerAppendMessage] {
+func (w *Writer) processLine(line string) mo.Option[writerAppendMessage] {
 	if line == "" || w.activityService == nil || w.activityID == "" {
 		return mo.None[writerAppendMessage]()
 	}
@@ -154,7 +154,7 @@ func (w *Writer) processLineInternal(line string) mo.Option[writerAppendMessage]
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(line), &payload); err != nil {
 		return mo.Some(writerAppendMessage{
-			level:   activitytypes.MessageLevelInfo,
+			level:   types.ActivityMessageLevelInfo,
 			message: line,
 			step:    w.defaultStep,
 		})
@@ -162,7 +162,7 @@ func (w *Writer) processLineInternal(line string) mo.Option[writerAppendMessage]
 
 	if errorValue, ok := payload["error"]; ok && errorValue != nil {
 		return mo.Some(writerAppendMessage{
-			level:   activitytypes.MessageLevelError,
+			level:   types.ActivityMessageLevelError,
 			message: kit.ToString(errorValue),
 			payload: payload,
 			step:    w.defaultStep,
@@ -175,24 +175,24 @@ func (w *Writer) processLineInternal(line string) mo.Option[writerAppendMessage]
 			return mo.None[writerAppendMessage]()
 		}
 		return mo.Some(writerAppendMessage{
-			level:   activitytypes.MessageLevelInfo,
+			level:   types.ActivityMessageLevelInfo,
 			message: message,
 			step:    w.defaultStep,
 		})
 	}
 
 	return mo.Some(writerAppendMessage{
-		level:   activitytypes.MessageLevelInfo,
+		level:   types.ActivityMessageLevelInfo,
 		message: line,
 		payload: payload,
 		step:    w.defaultStep,
 	})
 }
 
-func (w *Writer) enqueueMessageInternal(message writerAppendMessage) {
+func (w *Writer) enqueueMessage(message writerAppendMessage) {
 	select {
 	case w.queueCh <- writerQueueItem{message: &message}:
-	case <-doneInternal(w.ctx):
+	case <-done(w.ctx):
 	default:
 		w.dropped.Add(1)
 		now := time.Now().UnixNano()
@@ -203,38 +203,38 @@ func (w *Writer) enqueueMessageInternal(message writerAppendMessage) {
 	}
 }
 
-func (w *Writer) drainMessagesInternal(ctx context.Context) {
+func (w *Writer) drainMessages(ctx context.Context) {
 	for {
 		select {
 		case item := <-w.queueCh:
-			w.drainQueueBatchInternal(item)
-		case <-doneInternal(ctx):
+			w.drainQueueBatch(item)
+		case <-done(ctx):
 			// Cancellation stops intake, but the lines already accepted into
 			// the queue — typically the ones explaining the cancellation —
 			// still get persisted before the goroutine exits.
-			w.drainRemainingInternal()
+			w.drainRemaining()
 			return
 		}
 	}
 }
 
-func (w *Writer) drainRemainingInternal() {
+func (w *Writer) drainRemaining() {
 	for {
 		select {
 		case item := <-w.queueCh:
-			w.drainQueueBatchInternal(item)
+			w.drainQueueBatch(item)
 		default:
 			return
 		}
 	}
 }
 
-// drainQueueBatchInternal drains whatever is already queued behind item (up
+// drainQueueBatch drains whatever is already queued behind item (up
 // to writerAppendBatchSize lines) into a single AppendMessages call, so bulk
 // docker output costs one transaction per batch instead of one per line.
 // Flush signals encountered while draining close only after the write, since
 // the messages queued before them are only then persisted.
-func (w *Writer) drainQueueBatchInternal(item writerQueueItem) {
+func (w *Writer) drainQueueBatch(item writerQueueItem) {
 	var batch []AppendMessageRequest
 	var flushes []chan struct{}
 
@@ -278,7 +278,7 @@ drain:
 	}
 }
 
-func doneInternal(ctx context.Context) <-chan struct{} {
+func done(ctx context.Context) <-chan struct{} {
 	if ctx == nil {
 		return nil
 	}

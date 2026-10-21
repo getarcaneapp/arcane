@@ -4,7 +4,7 @@ import type {
 	ContainerStatusCounts,
 	ContainerSummaryDto,
 	ContainerSummaryGroupDto,
-	ContainerCreateRequest,
+	ContainerCreate,
 	ContainerDetailsDto,
 	ContainerCommitRequest,
 	ContainerCommitResult,
@@ -84,7 +84,7 @@ class ContainerService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/start`));
 	}
 
-	async createContainer(options: ContainerCreateRequest, environmentId?: string): Promise<any> {
+	async createContainer(options: ContainerCreate, environmentId?: string): Promise<any> {
 		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers`, options));
 	}

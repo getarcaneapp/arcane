@@ -5,7 +5,7 @@
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { gitRepositoryService } from '#lib/services/git-repository-service.js';
-	import type { GitRepository, GitRepositoryCreateDto, GitRepositoryUpdateDto } from '#lib/types/automation.js';
+	import type { GitRepository, GitRepositoryCreate, GitRepositoryUpdate } from '#lib/types/automation.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -62,7 +62,7 @@
 	}
 
 	async function handleRepositoryDialogSubmit(detail: {
-		repository: GitRepositoryCreateDto | GitRepositoryUpdateDto;
+		repository: GitRepositoryCreate | GitRepositoryUpdate;
 		isEditMode: boolean;
 	}) {
 		const { repository, isEditMode } = detail;
@@ -73,10 +73,10 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					if (isEditMode && repositoryToEdit?.id) {
-						await gitRepositoryService.updateRepository(repositoryToEdit.id, repository as GitRepositoryUpdateDto);
+						await gitRepositoryService.updateRepository(repositoryToEdit.id, repository as GitRepositoryUpdate);
 						toast.success(m.common_update_success({ resource: m.resource_repository() }));
 					} else {
-						await gitRepositoryService.createRepository(repository as GitRepositoryCreateDto);
+						await gitRepositoryService.createRepository(repository as GitRepositoryCreate);
 						toast.success(m.common_create_success({ resource: m.resource_repository() }));
 					}
 

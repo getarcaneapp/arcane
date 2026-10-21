@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	httpxtypes "github.com/getarcaneapp/arcane/types/v2/httpx"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/moby/moby/client"
 	"github.com/subosito/gotenv"
@@ -150,7 +150,7 @@ func applicationOptions(appCtx context.Context, cfg *config.Config, db *database
 		fx.Provide(
 			func() context.Context { return appCtx },
 			func(settingsService *settings.SettingsService) *http.Client {
-				return httpx.NewHTTPClient(httpxtypes.ClientOptions{
+				return httpx.NewHTTPClient(types.HTTPClientOptions{
 					Timeout:             timeouts.GetDuration(settingsService.GetSettingsOrDefaults(appCtx).HTTPClientTimeout.AsInt(), timeouts.DefaultHTTPClient),
 					TLSHandshakeTimeout: 10 * time.Second,
 				})

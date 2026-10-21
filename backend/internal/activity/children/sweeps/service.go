@@ -7,7 +7,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/activity"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -58,7 +58,7 @@ func (s *Service) activities(ctx context.Context) *gorm.DB {
 func (s *Service) StaleImageUpdateChecks(ctx context.Context) ([]Candidate, error) {
 	var rows []Candidate
 	err := s.activities(ctx).
-		Where("type = ? AND status = ? AND started_at < ?", activity.TypeImageUpdateCheck, activity.StatusRunning, time.Now().Add(-staleImageUpdateCheckAge)).
+		Where("type = ? AND status = ? AND started_at < ?", types.ActivityTypeImageUpdateCheck, types.ActivityStatusRunning, time.Now().Add(-staleImageUpdateCheckAge)).
 		Find(&rows).Error
 	return rows, err
 }
@@ -68,8 +68,8 @@ func (s *Service) StaleImageUpdateChecks(ctx context.Context) ([]Candidate, erro
 func (s *Service) Abandoned(ctx context.Context, trackedIDs []string) ([]Candidate, error) {
 	query := s.activities(ctx).
 		Select("id", "started_at").
-		Where("status IN ? AND started_at < ?", []activity.Status{activity.StatusQueued, activity.StatusRunning}, time.Now().Add(-abandonedActivityGrace)).
-		Where("type <> ?", activity.TypeJobRun)
+		Where("status IN ? AND started_at < ?", []types.ActivityStatus{types.ActivityStatusQueued, types.ActivityStatusRunning}, time.Now().Add(-abandonedActivityGrace)).
+		Where("type <> ?", types.ActivityTypeJobRun)
 	if len(trackedIDs) > 0 {
 		query = query.Where("id NOT IN ?", trackedIDs)
 	}
@@ -82,8 +82,8 @@ func (s *Service) Abandoned(ctx context.Context, trackedIDs []string) ([]Candida
 func (s *Service) OrphanedQueued(ctx context.Context, protectedIDs []string) ([]Candidate, error) {
 	var rows []Candidate
 	err := s.activities(ctx).
-		Where("status = ?", activity.StatusQueued).
-		Where("type <> ?", activity.TypeJobRun).
+		Where("status = ?", types.ActivityStatusQueued).
+		Where("type <> ?", types.ActivityTypeJobRun).
 		Where("id NOT IN ?", append(protectedIDs, "")).
 		Find(&rows).Error
 	return rows, err
@@ -93,7 +93,7 @@ func (s *Service) OrphanedQueued(ctx context.Context, protectedIDs []string) ([]
 func (s *Service) StaleAutoUpdates(ctx context.Context, protectedIDs []string) ([]Candidate, error) {
 	var rows []Candidate
 	err := s.activities(ctx).
-		Where("type = ? AND status = ?", activity.TypeAutoUpdate, activity.StatusRunning).
+		Where("type = ? AND status = ?", types.ActivityTypeAutoUpdate, types.ActivityStatusRunning).
 		Where("id NOT IN ?", append(protectedIDs, "")).
 		Find(&rows).Error
 	return rows, err
@@ -103,7 +103,7 @@ func (s *Service) StaleAutoUpdates(ctx context.Context, protectedIDs []string) (
 func (s *Service) InterruptedBackups(ctx context.Context, protectedIDs []string) ([]Candidate, error) {
 	var rows []Candidate
 	if err := s.activities(ctx).
-		Where("status IN ?", []activity.Status{activity.StatusQueued, activity.StatusRunning}).
+		Where("status IN ?", []types.ActivityStatus{types.ActivityStatusQueued, types.ActivityStatusRunning}).
 		Where("id NOT IN ?", append(protectedIDs, "")).
 		Find(&rows).Error; err != nil {
 		return nil, err

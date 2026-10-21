@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/gitops"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -505,7 +505,7 @@ func ValidatePath(repoPath, requestedPath string) error {
 
 // BrowseTree returns the file tree at targetPath, confined to the clone directory: escaping paths and
 // symlinks pointing outside it are rejected rather than followed.
-func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([]gitops.FileTreeNode, error) {
+func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([]types.FileTreeNode, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -524,7 +524,7 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 		return nil, fmt.Errorf("failed to read directory: %w", err)
 	}
 
-	var nodes []gitops.FileTreeNode
+	var nodes []types.FileTreeNode
 	for _, child := range entries {
 		if errErr := ctx.Err(); errErr != nil {
 			return nil, errErr
@@ -533,9 +533,9 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 			continue
 		}
 
-		nodeType := kit.Ternary(child.IsDirectory, gitops.FileTreeNodeTypeDirectory, gitops.FileTreeNodeTypeFile)
+		nodeType := kit.Ternary(child.IsDirectory, types.FileTreeNodeTypeDirectory, types.FileTreeNodeTypeFile)
 
-		nodes = append(nodes, gitops.FileTreeNode{
+		nodes = append(nodes, types.FileTreeNode{
 			Name: child.Name,
 			Path: filepath.Join(targetPath, child.Name),
 			Type: nodeType,

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/sync/errgroup"
 
@@ -29,7 +29,7 @@ const (
 
 var errEnvironmentResponseTooLarge = errors.New("response too large")
 
-type EnvironmentResolver func(ctx context.Context, id string) (base.EnvironmentRef, error)
+type EnvironmentResolver func(ctx context.Context, id string) (types.EnvironmentRef, error)
 
 type EnvironmentScope struct {
 	IDs     []string
@@ -39,13 +39,13 @@ type EnvironmentScope struct {
 }
 
 type EnvironmentResult[R any] struct {
-	Environment base.EnvironmentRef
+	Environment types.EnvironmentRef
 	Value       R
 }
 
 type EnvironmentCollection[R any] struct {
 	Results  []EnvironmentResult[R]
-	Failures []base.EnvironmentFailure
+	Failures []types.EnvironmentFailure
 }
 
 type environmentScopeKey struct{}
@@ -89,10 +89,10 @@ func CollectEnvironments[R any](ctx context.Context, overrides url.Values) (Envi
 	for i, id := range scope.IDs {
 		outcome := outcomes[i]
 		if outcome.err != nil {
-			collection.Failures = append(collection.Failures, base.EnvironmentFailure{Environment: base.EnvironmentRef{ID: id, Name: id}, Message: outcome.err.Error()})
+			collection.Failures = append(collection.Failures, types.EnvironmentFailure{Environment: types.EnvironmentRef{ID: id, Name: id}, Message: outcome.err.Error()})
 			continue
 		}
-		ref := base.EnvironmentRef{ID: id, Name: id}
+		ref := types.EnvironmentRef{ID: id, Name: id}
 		if scope.Resolve != nil {
 			if resolved, err := scope.Resolve(ctx, id); err == nil {
 				ref = resolved

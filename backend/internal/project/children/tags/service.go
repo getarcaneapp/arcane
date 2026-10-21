@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
@@ -21,23 +21,23 @@ var ErrComposeTagReadOnly = errors.New("tag is defined in Compose and can only b
 // Store reads and writes one project's tag assignments inside the caller's
 // transaction.
 type Store interface {
-	CountTag(projectID, name string, source project.TagSource) (int64, error)
-	CountSource(projectID string, source project.TagSource) (int64, error)
-	StoredColor(name string) (project.TagColor, bool, error)
-	Insert(rows []project.TagAssignment) error
-	InsertIgnoringConflict(row project.TagAssignment) error
-	DeleteTag(projectID, name string, source project.TagSource) error
-	DeleteSource(projectID string, source project.TagSource) error
+	CountTag(projectID, name string, source types.ProjectTagSource) (int64, error)
+	CountSource(projectID string, source types.ProjectTagSource) (int64, error)
+	StoredColor(name string) (types.ProjectTagColor, bool, error)
+	Insert(rows []types.ProjectTagAssignment) error
+	InsertIgnoringConflict(row types.ProjectTagAssignment) error
+	DeleteTag(projectID, name string, source types.ProjectTagSource) error
+	DeleteSource(projectID string, source types.ProjectTagSource) error
 }
 
 // NormalizeUpdate validates a UI tag change; detached tags keep the neutral color.
-func NormalizeUpdate(name string, color project.TagColor, attached bool) (string, project.TagColor, error) {
+func NormalizeUpdate(name string, color types.ProjectTagColor, attached bool) (string, types.ProjectTagColor, error) {
 	normalized, err := projects.NormalizeProjectTag(name)
 	if err != nil {
 		return "", "", err
 	}
 	if !attached {
-		return normalized, project.TagColorGray, nil
+		return normalized, types.ProjectTagColorGray, nil
 	}
 	normalizedColor, err := projects.NormalizeProjectTagColor(color)
 	if err != nil {
@@ -48,8 +48,8 @@ func NormalizeUpdate(name string, color project.TagColor, attached bool) (string
 
 // ApplyUpdate attaches or detaches a normalized UI tag. Compose-owned names are
 // read-only, attaching is idempotent and UI tags are capped per project.
-func ApplyUpdate(store Store, projectID, name string, color project.TagColor, attached bool) error {
-	composeCount, err := store.CountTag(projectID, name, project.TagSourceCompose)
+func ApplyUpdate(store Store, projectID, name string, color types.ProjectTagColor, attached bool) error {
+	composeCount, err := store.CountTag(projectID, name, types.ProjectTagSourceCompose)
 	if err != nil {
 		return fmt.Errorf("check Compose tag source: %w", err)
 	}
@@ -58,20 +58,20 @@ func ApplyUpdate(store Store, projectID, name string, color project.TagColor, at
 	}
 
 	if !attached {
-		if detachErr := store.DeleteTag(projectID, name, project.TagSourceUI); detachErr != nil {
+		if detachErr := store.DeleteTag(projectID, name, types.ProjectTagSourceUI); detachErr != nil {
 			return fmt.Errorf("detach UI project tag: %w", detachErr)
 		}
 		return nil
 	}
 
-	existing, err := store.CountTag(projectID, name, project.TagSourceUI)
+	existing, err := store.CountTag(projectID, name, types.ProjectTagSourceUI)
 	if err != nil {
 		return fmt.Errorf("check UI tag source: %w", err)
 	}
 	if existing > 0 {
 		return nil
 	}
-	count, err := store.CountSource(projectID, project.TagSourceUI)
+	count, err := store.CountSource(projectID, types.ProjectTagSourceUI)
 	if err != nil {
 		return fmt.Errorf("count UI project tags: %w", err)
 	}
@@ -83,10 +83,10 @@ func ApplyUpdate(store Store, projectID, name string, color project.TagColor, at
 	if err != nil {
 		return fmt.Errorf("resolve project tag color: %w", err)
 	}
-	if attachErr := store.InsertIgnoringConflict(project.TagAssignment{
+	if attachErr := store.InsertIgnoringConflict(types.ProjectTagAssignment{
 		ProjectID: projectID,
 		Name:      name,
-		Source:    project.TagSourceUI,
+		Source:    types.ProjectTagSourceUI,
 		Color:     kit.Ternary(found, storedColor, color),
 	}); attachErr != nil {
 		return fmt.Errorf("attach UI project tag: %w", attachErr)
@@ -95,19 +95,19 @@ func ApplyUpdate(store Store, projectID, name string, color project.TagColor, at
 }
 
 // ReplaceCompose replaces a project's Compose-owned tags with normalized ones.
-func ReplaceCompose(store Store, projectID string, normalized []project.TagOption) error {
-	if err := store.DeleteSource(projectID, project.TagSourceCompose); err != nil {
+func ReplaceCompose(store Store, projectID string, normalized []types.ProjectTagOption) error {
+	if err := store.DeleteSource(projectID, types.ProjectTagSourceCompose); err != nil {
 		return fmt.Errorf("clear Compose project tags: %w", err)
 	}
 	if len(normalized) == 0 {
 		return nil
 	}
-	rows := make([]project.TagAssignment, 0, len(normalized))
+	rows := make([]types.ProjectTagAssignment, 0, len(normalized))
 	for _, tag := range normalized {
-		rows = append(rows, project.TagAssignment{
+		rows = append(rows, types.ProjectTagAssignment{
 			ProjectID: projectID,
 			Name:      tag.Name,
-			Source:    project.TagSourceCompose,
+			Source:    types.ProjectTagSourceCompose,
 			Color:     tag.Color,
 		})
 	}
@@ -118,11 +118,11 @@ func ReplaceCompose(store Store, projectID string, normalized []project.TagOptio
 }
 
 // AttachInitial attaches the UI tags chosen when a project is created.
-func AttachInitial(store Store, projectID string, uiTags []string, colors map[string]project.TagColor) error {
+func AttachInitial(store Store, projectID string, uiTags []string, colors map[string]types.ProjectTagColor) error {
 	if len(uiTags) == 0 {
 		return nil
 	}
-	rows := make([]project.TagAssignment, 0, len(uiTags))
+	rows := make([]types.ProjectTagAssignment, 0, len(uiTags))
 	for _, tag := range uiTags {
 		color, found, err := store.StoredColor(tag)
 		if err != nil {
@@ -133,10 +133,10 @@ func AttachInitial(store Store, projectID string, uiTags []string, colors map[st
 				return err
 			}
 		}
-		rows = append(rows, project.TagAssignment{
+		rows = append(rows, types.ProjectTagAssignment{
 			ProjectID: projectID,
 			Name:      tag,
-			Source:    project.TagSourceUI,
+			Source:    types.ProjectTagSourceUI,
 			Color:     color,
 		})
 	}
@@ -148,39 +148,39 @@ func AttachInitial(store Store, projectID string, uiTags []string, colors map[st
 
 // Group merges stored assignments into effective tags per project, sorted by
 // name with the UI source first.
-func Group(rows []project.TagAssignment) map[string][]project.Tag {
-	result := make(map[string][]project.Tag)
+func Group(rows []types.ProjectTagAssignment) map[string][]types.ProjectTag {
+	result := make(map[string][]types.ProjectTag)
 	for _, row := range rows {
 		tags := result[row.ProjectID]
 		if len(tags) == 0 || tags[len(tags)-1].Name != row.Name {
-			result[row.ProjectID] = append(tags, project.Tag{
+			result[row.ProjectID] = append(tags, types.ProjectTag{
 				Name:    row.Name,
 				Color:   row.Color,
-				Sources: []project.TagSource{row.Source},
+				Sources: []types.ProjectTagSource{row.Source},
 			})
 			continue
 		}
-		tags[len(tags)-1] = project.Tag{ //exhaustruct:enforce
+		tags[len(tags)-1] = types.ProjectTag{ //exhaustruct:enforce
 			Name:    tags[len(tags)-1].Name,
 			Color:   tags[len(tags)-1].Color,
 			Sources: append(tags[len(tags)-1].Sources, row.Source),
 		}
 	}
 	for projectID := range result {
-		slices.SortStableFunc(result[projectID], func(a, b project.Tag) int {
+		slices.SortStableFunc(result[projectID], func(a, b types.ProjectTag) int {
 			return strings.Compare(a.Name, b.Name)
 		})
 		for index := range result[projectID] {
-			slices.SortStableFunc(result[projectID][index].Sources, func(a, b project.TagSource) int {
-				return cmp.Compare(kit.Ternary(a == project.TagSourceUI, 0, 1), kit.Ternary(b == project.TagSourceUI, 0, 1))
+			slices.SortStableFunc(result[projectID][index].Sources, func(a, b types.ProjectTagSource) int {
+				return cmp.Compare(kit.Ternary(a == types.ProjectTagSourceUI, 0, 1), kit.Ternary(b == types.ProjectTagSourceUI, 0, 1))
 			})
 		}
 	}
 	return result
 }
 
-func NormalizeProjectTagColors(colors map[string]project.TagColor) (map[string]project.TagColor, error) {
-	result := make(map[string]project.TagColor, len(colors))
+func NormalizeProjectTagColors(colors map[string]types.ProjectTagColor) (map[string]types.ProjectTagColor, error) {
+	result := make(map[string]types.ProjectTagColor, len(colors))
 	for name, color := range colors {
 		normalizedName, err := projects.NormalizeProjectTag(name)
 		if err != nil {
@@ -195,8 +195,8 @@ func NormalizeProjectTagColors(colors map[string]project.TagColor) (map[string]p
 	return result, nil
 }
 
-func NormalizeComposeProjectTags(tags []project.TagOption) ([]project.TagOption, error) {
-	result := make([]project.TagOption, 0, min(len(tags), projects.ProjectTagsPerSourceLimit))
+func NormalizeComposeProjectTags(tags []types.ProjectTagOption) ([]types.ProjectTagOption, error) {
+	result := make([]types.ProjectTagOption, 0, min(len(tags), projects.ProjectTagsPerSourceLimit))
 	seen := make(map[string]struct{}, len(tags))
 	for _, tag := range tags {
 		name, err := projects.NormalizeProjectTag(tag.Name)
@@ -217,7 +217,7 @@ func NormalizeComposeProjectTags(tags []project.TagOption) ([]project.TagOption,
 			return nil, fmt.Errorf("a project cannot have more than %d compose tags", projects.ProjectTagsPerSourceLimit)
 		}
 		seen[name] = struct{}{}
-		result = append(result, project.TagOption{Name: name, Color: color})
+		result = append(result, types.ProjectTagOption{Name: name, Color: color})
 	}
 	return result, nil
 }

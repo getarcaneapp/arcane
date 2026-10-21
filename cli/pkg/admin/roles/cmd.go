@@ -8,13 +8,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/role"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 // Command is the parent command for role operations.
@@ -55,12 +55,12 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[role.Role]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.Role]{
 				Resource: "roles",
-				Endpoint: types.Roles(),
+				Endpoint: clitypes.Roles(),
 				Params:   cmdutil.ListParams{Resource: "roles", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
 				Headers:  []string{"ID", "NAME", "TYPE", "USERS", "PERMISSIONS"},
-				Row: func(r role.Role) []string {
+				Row: func(r types.Role) []string {
 					return []string{
 						r.ID,
 						r.Name,
@@ -89,11 +89,11 @@ func newGetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[role.Role]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Role]{
 				Method:         http.MethodGet,
-				Path:           types.Role(args[0]),
+				Path:           clitypes.Role(args[0]),
 				FailureMessage: "failed to get role",
-				Render: func(data role.Role) error {
+				Render: func(data types.Role) error {
 					output.Header("Role Details")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Name", data.Name)
@@ -142,16 +142,16 @@ func newCreateCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[role.Role]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Role]{
 				Method:         http.MethodPost,
-				Path:           types.Roles(),
+				Path:           clitypes.Roles(),
 				FailureMessage: "failed to create role",
-				Body: role.CreateRole{
+				Body: types.Role{
 					Name:        opts.name,
 					Permissions: opts.permissions,
 					Description: kit.Ternary(cmd.Flags().Changed("description"), &opts.description, nil),
 				},
-				Render: func(data role.Role) error {
+				Render: func(data types.Role) error {
 					output.Success("Role %s created", data.Name)
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Permissions", strconv.Itoa(len(data.Permissions)))
@@ -183,23 +183,27 @@ func newUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			// Fetch required PUT fields, then overlay the changed flags.
-			currentResult, err := c.GetJSON[role.Role](cmd.Context(), types.Role(args[0]))
-			if err != nil {
-				return fmt.Errorf("failed to load current role: %w", err)
+			body := map[string]any{}
+			for _, field := range []struct {
+				flag  string
+				key   string
+				value any
+			}{
+				{flag: "name", key: "name", value: opts.name},
+				{flag: "description", key: "description", value: opts.description},
+				{flag: "permission", key: "permissions", value: opts.permissions},
+			} {
+				if cmd.Flags().Changed(field.flag) {
+					body[field.key] = field.value
+				}
 			}
-			current := currentResult.Data
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[role.Role]{
-				Method: http.MethodPut,
-				Path:   types.Role(args[0]),
-				Body: role.UpdateRole{
-					Name:        kit.Ternary(cmd.Flags().Changed("name"), opts.name, current.Name),
-					Description: kit.Ternary(cmd.Flags().Changed("description"), &opts.description, current.Description),
-					Permissions: kit.Ternary(cmd.Flags().Changed("permission"), opts.permissions, current.Permissions),
-				},
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Role]{
+				Method:         http.MethodPut,
+				Path:           clitypes.Role(args[0]),
+				Body:           body,
 				FailureMessage: "failed to update role",
-				Render: func(role.Role) error {
+				Render: func(types.Role) error {
 					output.Success("Role updated")
 					return nil
 				},
@@ -230,7 +234,7 @@ func newDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Delete role %s? This removes every assignment of it.", args[0]),
-				Path:           types.Role(args[0]),
+				Path:           clitypes.Role(args[0]),
 				FailureMessage: "failed to delete role",
 				SuccessMessage: "Role deleted",
 			})
@@ -254,11 +258,11 @@ func newPermissionsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[role.PermissionsManifest]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.PermissionsManifest]{
 				Method:         http.MethodGet,
-				Path:           types.RolesAvailablePermissions(),
+				Path:           clitypes.RolesAvailablePermissions(),
 				FailureMessage: "failed to load permission manifest",
-				Render: func(data role.PermissionsManifest) error {
+				Render: func(data types.PermissionsManifest) error {
 					for _, group := range data.Resources {
 						output.Header("%s (%s)", group.Label, group.Scope)
 						rows := make([][]string, len(group.Actions))
@@ -289,11 +293,11 @@ func newAssignmentsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[[]role.RoleAssignment]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[[]types.RoleAssignment]{
 				Method:         http.MethodGet,
-				Path:           types.UserRoleAssignments(args[0]),
+				Path:           clitypes.UserRoleAssignments(args[0]),
 				FailureMessage: "failed to list assignments",
-				Render: func(data []role.RoleAssignment) error {
+				Render: func(data []types.RoleAssignment) error {
 					if len(data) == 0 {
 						output.Info("No role assignments for user %s", args[0])
 						return nil
@@ -331,31 +335,31 @@ func newAssignCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			assignments := make([]role.UserAssignmentInput, 0, len(opts.roles))
+			assignments := make([]types.UserRoleAssignmentInput, 0, len(opts.roles))
 			for _, raw := range opts.roles {
 				token := strings.TrimSpace(raw)
 				if token == "" {
 					continue
 				}
 				roleID, envID, hasEnv := strings.Cut(token, ":")
-				assignments = append(assignments, role.UserAssignmentInput{
+				assignments = append(assignments, types.UserRoleAssignmentInput{
 					RoleID:        roleID,
 					EnvironmentID: kit.Ternary(hasEnv && envID != "", new(envID), nil),
 				})
 			}
-			req := role.SetUserAssignments{
+			req := types.SetUserRoleAssignments{
 				Assignments: assignments,
 			}
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
 				return err
 			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[[]role.RoleAssignment]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[[]types.RoleAssignment]{
 				Method:         http.MethodPut,
-				Path:           types.UserRoleAssignments(args[0]),
+				Path:           clitypes.UserRoleAssignments(args[0]),
 				FailureMessage: "failed to set assignments",
 				Body:           req,
-				Render: func(data []role.RoleAssignment) error {
+				Render: func(data []types.RoleAssignment) error {
 					output.Success("User %s now has %d role assignment(s)", args[0], len(data))
 					return nil
 				},

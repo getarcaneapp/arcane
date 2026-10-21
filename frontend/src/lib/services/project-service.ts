@@ -6,6 +6,7 @@ import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.j
 import type {
 	Project,
 	ProjectStatusCounts,
+	ProjectUpdate,
 	ProjectUpdateInfo,
 	ProjectTag,
 	ProjectTagColor,
@@ -205,34 +206,9 @@ class ProjectService extends BaseAPIService {
 		return this.handleResponse(this.api.patch(`/environments/${envId}/projects/${projectId}/tags`, { name, attached, color }));
 	}
 
-	async updateProject(
-		projectId: string,
-		name?: string,
-		composeContent?: string,
-		envContent?: string,
-		overrideContent?: string,
-		environmentId?: string
-	): Promise<Project> {
+	async updateProject(projectId: string, project: ProjectUpdate, environmentId?: string): Promise<Project> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		const payload: {
-			name?: string;
-			composeContent?: string;
-			envContent?: string;
-			overrideContent?: string;
-		} = {};
-		if (name !== undefined) {
-			payload.name = name;
-		}
-		if (composeContent !== undefined) {
-			payload.composeContent = composeContent;
-		}
-		if (envContent !== undefined) {
-			payload.envContent = envContent;
-		}
-		if (overrideContent !== undefined) {
-			payload.overrideContent = overrideContent;
-		}
-		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}`, payload));
+		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}`, project));
 	}
 
 	async restartProject(projectId: string, services?: string[], environmentId?: string): Promise<unknown> {

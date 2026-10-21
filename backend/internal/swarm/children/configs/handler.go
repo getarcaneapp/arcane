@@ -5,8 +5,7 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/swarm"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
@@ -43,13 +42,13 @@ type GetSwarmConfigInput struct {
 
 type CreateSwarmConfigInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          swarm.ConfigCreateRequest
+	types.Create[types.SwarmConfig]
 }
 
 type UpdateSwarmConfigInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ConfigID      string `path:"configId" doc:"Config ID"`
-	Body          swarm.ConfigUpdateRequest
+	Body          types.SwarmConfigUpdateRequest
 }
 
 type DeleteSwarmConfigInput struct {
@@ -67,17 +66,17 @@ type DeleteSwarmConfigInput struct {
 //
 // Returns the current swarm configs.
 // Returns a mapped HTTP error when config enumeration fails.
-func (h *Handler) ListConfigs(ctx context.Context, input *ListSwarmConfigsInput) (*handlerutil.Page[swarm.ConfigSummary], error) {
+func (h *Handler) ListConfigs(ctx context.Context, input *ListSwarmConfigsInput) (*handlerutil.Page[types.SwarmConfig], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, page, err := h.service.ListConfigs(ctx, params)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to list swarm configs")
 	}
 
-	return &handlerutil.Page[swarm.ConfigSummary]{
-		Body: base.Paginated[swarm.ConfigSummary]{
+	return &handlerutil.Page[types.SwarmConfig]{
+		Body: types.Paginated[types.SwarmConfig]{
 			Success:    true,
-			Data:       kit.Ternary(items != nil, items, []swarm.ConfigSummary{}),
+			Data:       kit.Ternary(items != nil, items, []types.SwarmConfig{}),
 			Pagination: handlerutil.PaginationResponse(page),
 		},
 	}, nil
@@ -94,7 +93,7 @@ func (h *Handler) ListConfigs(ctx context.Context, input *ListSwarmConfigsInput)
 // Returns the config summary when the config exists.
 // Returns `404 Not Found` when the config does not exist or another mapped HTTP
 // error when inspection fails.
-func (h *Handler) GetConfig(ctx context.Context, input *GetSwarmConfigInput) (*handlerutil.Out[swarm.ConfigSummary], error) {
+func (h *Handler) GetConfig(ctx context.Context, input *GetSwarmConfigInput) (*handlerutil.Out[types.SwarmConfig], error) {
 	cfg, err := h.service.GetConfig(ctx, input.ConfigID)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -103,7 +102,7 @@ func (h *Handler) GetConfig(ctx context.Context, input *GetSwarmConfigInput) (*h
 		return nil, h.mapError(err, "Failed to inspect swarm config")
 	}
 
-	return &handlerutil.Out[swarm.ConfigSummary]{Body: base.ApiResponse[swarm.ConfigSummary]{Success: true, Data: *cfg}}, nil
+	return &handlerutil.Out[types.SwarmConfig]{Body: types.ApiResponse[types.SwarmConfig]{Success: true, Data: *cfg}}, nil
 }
 
 // CreateConfig creates a new swarm config.
@@ -117,7 +116,7 @@ func (h *Handler) GetConfig(ctx context.Context, input *GetSwarmConfigInput) (*h
 // Returns the created config summary.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when validation or creation fails.
-func (h *Handler) CreateConfig(ctx context.Context, input *CreateSwarmConfigInput) (*handlerutil.Out[swarm.ConfigSummary], error) {
+func (h *Handler) CreateConfig(ctx context.Context, input *CreateSwarmConfigInput) (*handlerutil.Out[types.SwarmConfig], error) {
 	cfg, err := h.service.CreateConfig(ctx, input.Body)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to create swarm config")
@@ -125,10 +124,10 @@ func (h *Handler) CreateConfig(ctx context.Context, input *CreateSwarmConfigInpu
 
 	h.audit(ctx, input.EnvironmentID, "config.create", "swarm_config", cfg.ID, cfg.Spec.Name, map[string]any{"configId": cfg.ID, "name": cfg.Spec.Name})
 
-	return &handlerutil.Out[swarm.ConfigSummary]{Body: base.ApiResponse[swarm.ConfigSummary]{Success: true, Data: *cfg}}, nil
+	return &handlerutil.Out[types.SwarmConfig]{Body: types.ApiResponse[types.SwarmConfig]{Success: true, Data: *cfg}}, nil
 }
 
-func (h *Handler) UpdateConfig(ctx context.Context, input *UpdateSwarmConfigInput) (*handlerutil.Out[swarm.ConfigSummary], error) {
+func (h *Handler) UpdateConfig(ctx context.Context, input *UpdateSwarmConfigInput) (*handlerutil.Out[types.SwarmConfig], error) {
 	updated, err := h.service.UpdateConfig(ctx, input.ConfigID, input.Body)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -139,7 +138,7 @@ func (h *Handler) UpdateConfig(ctx context.Context, input *UpdateSwarmConfigInpu
 
 	h.audit(ctx, input.EnvironmentID, "config.update", "swarm_config", updated.ID, updated.Spec.Name, map[string]any{"configId": updated.ID, "name": updated.Spec.Name})
 
-	return &handlerutil.Out[swarm.ConfigSummary]{Body: base.ApiResponse[swarm.ConfigSummary]{Success: true, Data: *updated}}, nil
+	return &handlerutil.Out[types.SwarmConfig]{Body: types.ApiResponse[types.SwarmConfig]{Success: true, Data: *updated}}, nil
 }
 
 // DeleteConfig removes a swarm config.
@@ -153,7 +152,7 @@ func (h *Handler) UpdateConfig(ctx context.Context, input *UpdateSwarmConfigInpu
 // Returns a confirmation response when the config is removed.
 // Returns an authorization error for non-admin callers, `404 Not Found` when
 // the config does not exist, or another mapped HTTP error when removal fails.
-func (h *Handler) DeleteConfig(ctx context.Context, input *DeleteSwarmConfigInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *Handler) DeleteConfig(ctx context.Context, input *DeleteSwarmConfigInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.service.RemoveConfig(ctx, input.ConfigID); err != nil {
 		if errdefs.IsNotFound(err) {
 			return nil, huma.Error404NotFound("Swarm config not found")

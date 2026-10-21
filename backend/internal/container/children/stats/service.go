@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
@@ -146,7 +146,7 @@ func (s *Service) Stream(ctx context.Context, containerID string, statsChan chan
 // Collect fetches one sample per running container, reusing cached samples younger than maxAge.
 // Individual failures leave the container unsampled; a batch timeout or cancellation fails so partial
 // lists never sort as global.
-func (s *Service) Collect(ctx context.Context, items []containertypes.Summary, maxAge time.Duration) (map[string]*containertypes.ResourceSample, error) {
+func (s *Service) Collect(ctx context.Context, items []types.ContainerSummary, maxAge time.Duration) (map[string]*types.ContainerResourceSample, error) {
 	ids := make([]string, 0, len(items))
 	for i := range items {
 		if items[i].State == string(container.StateRunning) {
@@ -159,10 +159,10 @@ func (s *Service) Collect(ctx context.Context, items []containertypes.Summary, m
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect container resource samples: %w", err)
 	}
-	samples := make(map[string]*containertypes.ResourceSample, len(raw))
+	samples := make(map[string]*types.ContainerResourceSample, len(raw))
 	for id, statsData := range raw {
 		built := stats.BuildSample(statsData)
-		samples[id] = &containertypes.ResourceSample{
+		samples[id] = &types.ContainerResourceSample{
 			CPUPercent:       float64(built.CPUTenths) / 10,
 			MemoryUsageBytes: built.MemoryUsageBytes,
 			MemoryLimitBytes: statsData.MemoryStats.Limit,
@@ -388,21 +388,21 @@ func (r *resourceInstruments) observe(o metric.Observer, c container.Summary, sa
 
 // ContainerResourceSampleSort orders summaries by sample value with unsampled containers last in both
 // directions, breaking ties by name then ID. Valid zero values sort as zero, not as unavailable.
-func ContainerResourceSampleSort(sort string, descending bool) pagination.SortOption[containertypes.Summary] {
+func ContainerResourceSampleSort(sort string, descending bool) pagination.SortOption[types.ContainerSummary] {
 	value := kit.Ternary(
-		sort == containertypes.SortCPUUsage,
-		func(sample *containertypes.ResourceSample) float64 { return sample.CPUPercent },
-		func(sample *containertypes.ResourceSample) float64 { return float64(sample.MemoryUsageBytes) },
+		sort == types.ContainerSortCPUUsage,
+		func(sample *types.ContainerResourceSample) float64 { return sample.CPUPercent },
+		func(sample *types.ContainerResourceSample) float64 { return float64(sample.MemoryUsageBytes) },
 	)
 
-	tieBreak := func(a, b containertypes.Summary) int {
+	tieBreak := func(a, b types.ContainerSummary) int {
 		if c := CompareContainerNamesForSort(a, b); c != 0 {
 			return c
 		}
 		return strings.Compare(a.ID, b.ID)
 	}
 
-	return func(a, b containertypes.Summary) int {
+	return func(a, b types.ContainerSummary) int {
 		if a.ResourceSample == nil && b.ResourceSample == nil {
 			return tieBreak(a, b)
 		}
@@ -421,7 +421,7 @@ func ContainerResourceSampleSort(sort string, descending bool) pagination.SortOp
 	}
 }
 
-func CompareContainerNamesForSort(a, b containertypes.Summary) int {
+func CompareContainerNamesForSort(a, b types.ContainerSummary) int {
 	firstName := func(names []string) string {
 		if len(names) == 0 {
 			return ""
@@ -434,7 +434,7 @@ func CompareContainerNamesForSort(a, b containertypes.Summary) int {
 // ContainerResourceSortPermissionDenied enforces the extra containers:read
 // requirement on resource-sorted list requests.
 func ContainerResourceSortPermissionDenied(ps *authz.PermissionSet, envID, sort string) bool {
-	if !containertypes.IsResourceSort(sort) {
+	if !types.IsContainerResourceSort(sort) {
 		return false
 	}
 	return !ps.Allows(authz.PermContainersRead, envID)

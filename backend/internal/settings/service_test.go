@@ -11,8 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/features"
-	"github.com/getarcaneapp/arcane/types/v2/settings"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/sys/crypto"
@@ -170,7 +169,7 @@ func TestSettingsService_ImageEventWatcherSettingPersists(t *testing.T) {
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 	require.False(t, svc.GetBoolSetting(ctx, "imageEventWatcherEnabled", true))
 
-	_, err = svc.UpdateSettings(ctx, settings.Update{ImageEventWatcherEnabled: new("true")})
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{ImageEventWatcherEnabled: new("true")})
 	require.NoError(t, err)
 	require.True(t, svc.GetBoolSetting(ctx, "imageEventWatcherEnabled", false))
 
@@ -219,7 +218,7 @@ func TestSettingsService_AvatarMaxUploadSizeDefaultAndUpdate(t *testing.T) {
 	require.Equal(t, "2", current.AvatarMaxUploadSizeMb.Value)
 
 	updatedValue := "8"
-	_, err = svc.UpdateSettings(ctx, settings.Update{
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{
 		AvatarMaxUploadSizeMb: &updatedValue,
 	})
 	require.NoError(t, err)
@@ -237,7 +236,7 @@ func TestSettingsServiceUpdateSettingsRejectsOIDCIssuerChangeWithStoredSecret(t 
 	require.NoError(t, svc.UpdateSetting(ctx, "oidcIssuerUrl", "https://issuer.example.com"))
 	require.NoError(t, svc.UpdateSetting(ctx, "oidcClientSecret", "old-client-secret"))
 
-	_, err = svc.UpdateSettings(ctx, settings.Update{
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{
 		OidcIssuerUrl: new("https://attacker.example.com"),
 	})
 	require.ErrorIs(t, err, common.ErrValidation)
@@ -256,7 +255,7 @@ func TestSettingsServiceUpdateSettingsAllowsOIDCIssuerChangeWhenClearingSecret(t
 	require.NoError(t, svc.UpdateSetting(ctx, "oidcIssuerUrl", "https://issuer.example.com"))
 	require.NoError(t, svc.UpdateSetting(ctx, "oidcClientSecret", "old-client-secret"))
 
-	_, err = svc.UpdateSettings(ctx, settings.Update{
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{
 		OidcIssuerUrl:    new("https://replacement.example.com"),
 		OidcClientSecret: new(""),
 	})
@@ -274,7 +273,7 @@ func TestSettingsServiceUpdateSettingsRejectsEnablingOIDCWithoutSecret(t *testin
 	svc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	_, err = svc.UpdateSettings(ctx, settings.Update{
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{
 		OidcEnabled:   new("true"),
 		OidcClientId:  new("arcane"),
 		OidcIssuerUrl: new("https://issuer.example.com"),
@@ -299,7 +298,7 @@ func TestSettingsServiceUpdateSettingsAllowsOIDCIssuerChangeWithReplacementSecre
 	require.NoError(t, loadErr)
 	require.Equal(t, "Café SSO", before.OidcProviderName.Value)
 
-	_, err = svc.UpdateSettings(ctx, settings.Update{
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{
 		OidcProviderName: new("  Cafe\u0301 Login  "),
 		OidcIssuerUrl:    new("https://replacement.example.com"),
 		OidcClientSecret: new("new-client-secret"),
@@ -321,7 +320,7 @@ func TestSettingsServiceUpdateSettingsRejectsTrivyServerChangeWithStoredToken(t 
 	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerUrl", "https://trivy.example.com"))
 	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerToken", "old-trivy-token"))
 
-	_, err = svc.UpdateSettings(ctx, settings.Update{
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{
 		TrivyServerUrl: new("https://attacker.example.com"),
 	})
 	require.ErrorIs(t, err, common.ErrValidation)
@@ -340,7 +339,7 @@ func TestSettingsServiceUpdateSettingsAllowsTrivyServerChangeWithReplacementToke
 	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerUrl", "https://trivy.example.com"))
 	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerToken", "old-trivy-token"))
 
-	_, err = svc.UpdateSettings(ctx, settings.Update{
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{
 		TrivyServerUrl:   new("https://replacement.example.com"),
 		TrivyServerToken: new("new-trivy-token"),
 	})
@@ -360,7 +359,7 @@ func TestSettingsServiceUpdateSettingsAllowsClearingTrivyServerWithStoredToken(t
 	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerUrl", "https://trivy.example.com"))
 	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerToken", "old-trivy-token"))
 
-	_, err = svc.UpdateSettings(ctx, settings.Update{
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{
 		TrivyServerUrl: new(""),
 	})
 	require.NoError(t, err)
@@ -378,7 +377,7 @@ func TestSettingsServiceUpdateSettingsAllowsTrivyServerChangeWithoutStoredToken(
 	require.NoError(t, err)
 	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerUrl", "https://trivy.example.com"))
 
-	_, err = svc.UpdateSettings(ctx, settings.Update{
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{
 		TrivyServerUrl: new("https://replacement.example.com"),
 	})
 	require.NoError(t, err)
@@ -611,7 +610,7 @@ func TestSettingsService_UpdateSettings_PruneModesDoNotTriggerScheduledPruneCall
 		callbackCalls++
 	})
 
-	_, err = svc.UpdateSettings(ctx, settings.Update{
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{
 		PruneImageMode:      new("all"),
 		PruneContainerUntil: new("24h"),
 	})
@@ -631,7 +630,7 @@ func TestSettingsService_UpdateSettings_ScheduledPruneScheduleTriggersCallback(t
 		callbackCalls++
 	})
 
-	_, err = svc.UpdateSettings(ctx, settings.Update{
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{
 		ScheduledPruneEnabled: new("true"),
 	})
 	require.NoError(t, err)
@@ -650,12 +649,12 @@ func TestSettingsServiceActorSerializesConcurrentUpdates(t *testing.T) {
 	results := make(chan error, 2)
 	go func() {
 		<-start
-		_, updateErr := svc.UpdateSettings(ctx, settings.Update{ProjectsDirectory: new("/data/projects-a")})
+		_, updateErr := svc.UpdateSettings(ctx, types.SettingsUpdate{ProjectsDirectory: new("/data/projects-a")})
 		results <- updateErr
 	}()
 	go func() {
 		<-start
-		_, updateErr := svc.UpdateSettings(ctx, settings.Update{TemplatesDirectory: new("/data/templates-b")})
+		_, updateErr := svc.UpdateSettings(ctx, types.SettingsUpdate{TemplatesDirectory: new("/data/templates-b")})
 		results <- updateErr
 	}()
 	close(start)
@@ -683,7 +682,7 @@ func TestSettingsServiceActorPublishesSnapshotBeforeAsynchronousNotification(t *
 
 	updateResult := make(chan error, 1)
 	go func() {
-		_, updateErr := svc.UpdateSettings(ctx, settings.Update{BaseServerURL: new("https://actor.example")})
+		_, updateErr := svc.UpdateSettings(ctx, types.SettingsUpdate{BaseServerURL: new("https://actor.example")})
 		updateResult <- updateErr
 	}()
 
@@ -697,7 +696,7 @@ func TestSettingsServiceActorPublishesSnapshotBeforeAsynchronousNotification(t *
 
 	secondUpdate := make(chan error, 1)
 	go func() {
-		_, updateErr := svc.UpdateSettings(ctx, settings.Update{ProjectsDirectory: new("/data/unblocked")})
+		_, updateErr := svc.UpdateSettings(ctx, types.SettingsUpdate{ProjectsDirectory: new("/data/unblocked")})
 		secondUpdate <- updateErr
 	}()
 	select {
@@ -723,7 +722,7 @@ func TestSettingsServiceActorNotifiesSubscriberOnceForMultipleMatchingKeys(t *te
 		notified <- updates
 	})
 
-	_, err = svc.UpdateSettings(ctx, settings.Update{
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{
 		PollingEnabled:  new("false"),
 		PollingInterval: new("0 */5 * * * *"),
 	})
@@ -743,7 +742,7 @@ func TestSettingsServiceActorDoesNotPublishSensitiveValues(t *testing.T) {
 	svc.SubscribeSettingsChanges([]string{"oidcClientSecret"}, func([]libarcane.SettingUpdate) {
 		calls.Add(1)
 	})
-	_, err = svc.UpdateSettings(ctx, settings.Update{OidcClientSecret: new("should-not-leave-settings-service")})
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{OidcClientSecret: new("should-not-leave-settings-service")})
 	require.NoError(t, err)
 	waitForSettingsNotifications(t, svc)
 	require.Zero(t, calls.Load())
@@ -761,7 +760,7 @@ func TestSettingsServiceActorSerializesContainerExclusionUpdates(t *testing.T) {
 	for _, name := range []string{"api", "worker"} {
 		go func() {
 			<-start
-			results <- svc.SetContainerAutoUpdateExclusionInternal(ctx, name, true)
+			results <- svc.SetContainerAutoUpdateExclusion(ctx, name, true)
 		}()
 	}
 	close(start)
@@ -884,7 +883,7 @@ func TestSettingsService_UpdateSettings_RefreshesCache(t *testing.T) {
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
 	newDir := "custom/projects2"
-	req := settings.Update{
+	req := types.SettingsUpdate{
 		ProjectsDirectory: &newDir,
 	}
 
@@ -912,7 +911,7 @@ func TestSettingsService_UpdateSettings_ReturnsEnvOverriddenValues(t *testing.T)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	settingsList, err := svc.UpdateSettings(ctx, settings.Update{
+	settingsList, err := svc.UpdateSettings(ctx, types.SettingsUpdate{
 		ProjectsDirectory: new("custom/projects2"),
 	})
 	require.NoError(t, err)
@@ -939,7 +938,7 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyScanTimeout(
 		callbackPayload = timeoutSettings
 	})
 
-	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyScanTimeout: new("1200")})
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{TrivyScanTimeout: new("1200")})
 	require.NoError(t, err)
 	waitForSettingsNotifications(t, svc)
 
@@ -959,7 +958,7 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyResourceLimi
 		callbackPayload = timeoutSettings
 	})
 
-	_, err = svc.UpdateSettings(ctx, settings.Update{
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{
 		TrivyResourceLimitsEnabled: new("false"),
 		TrivyCpuLimit:              new("2.5"),
 		TrivyMemoryLimitMb:         new("3072"),
@@ -985,7 +984,7 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyConcurrentSc
 		callbackPayload = timeoutSettings
 	})
 
-	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyConcurrentScanContainers: new("4")})
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{TrivyConcurrentScanContainers: new("4")})
 	require.NoError(t, err)
 	waitForSettingsNotifications(t, svc)
 
@@ -1005,7 +1004,7 @@ func TestSettingsService_UpdateSettings_TrivyNetworkTriggersVulnerabilityCallbac
 		callbackCalled = true
 	})
 
-	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyNetwork: new("arcane-external")})
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{TrivyNetwork: new("arcane-external")})
 	require.NoError(t, err)
 	waitForSettingsNotifications(t, svc)
 	require.True(t, callbackCalled)
@@ -1023,7 +1022,7 @@ func TestSettingsService_UpdateSettings_TrivyNetworkDoesNotTriggerTimeoutCallbac
 		callbackPayload = timeoutSettings
 	})
 
-	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyNetwork: new("arcane-external")})
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{TrivyNetwork: new("arcane-external")})
 	require.NoError(t, err)
 	waitForSettingsNotifications(t, svc)
 	require.Nil(t, callbackPayload)
@@ -1041,7 +1040,7 @@ func TestSettingsService_UpdateSettings_TrivyRuntimeSecurityTriggersVulnerabilit
 		callbackCalled = true
 	})
 
-	_, err = svc.UpdateSettings(ctx, settings.Update{
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{
 		TrivySecurityOpts: new("label=disable"),
 		TrivyPrivileged:   new("true"),
 	})
@@ -1062,7 +1061,7 @@ func TestSettingsService_UpdateSettings_TrivyRuntimeSecurityDoesNotTriggerTimeou
 		callbackPayload = timeoutSettings
 	})
 
-	_, err = svc.UpdateSettings(ctx, settings.Update{
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{
 		TrivySecurityOpts: new("label=disable"),
 		TrivyPrivileged:   new("true"),
 	})
@@ -1252,18 +1251,18 @@ func TestSettingsServiceEffectiveSnapshotMaterialized(t *testing.T) {
 
 func TestSettingsService_FeatureDefaultsAndUnknownFeature(t *testing.T) {
 	var svc *SettingsService
-	require.True(t, svc.IsFeatureEnabled(t.Context(), features.VulnerabilityManagement))
-	require.NoError(t, svc.RequireFeature(t.Context(), features.VulnerabilityManagement))
-	require.False(t, svc.IsFeatureEnabled(t.Context(), features.ID("unknown")))
+	require.True(t, svc.IsFeatureEnabled(t.Context(), types.FeatureVulnerabilityManagement))
+	require.NoError(t, svc.RequireFeature(t.Context(), types.FeatureVulnerabilityManagement))
+	require.False(t, svc.IsFeatureEnabled(t.Context(), types.FeatureID("unknown")))
 
 	svc, err := newSettingsServiceForTest(t, t.Context(), setupSettingsTestDB(t))
 	require.NoError(t, err)
-	require.True(t, svc.IsFeatureEnabled(t.Context(), features.VulnerabilityManagement))
+	require.True(t, svc.IsFeatureEnabled(t.Context(), types.FeatureVulnerabilityManagement))
 	require.NoError(t, svc.EnsureDefaultSettings(t.Context()))
 	var stored SettingVariable
-	require.NoError(t, svc.db.Where("key = ?", features.VulnerabilityManagementSettingKey).First(&stored).Error)
+	require.NoError(t, svc.db.Where("key = ?", types.FeatureVulnerabilityManagementSettingKey).First(&stored).Error)
 	require.Equal(t, "true", stored.Value)
-	require.Contains(t, svc.ListSettings(SettingVisibilityPublic), SettingVariable{Key: features.VulnerabilityManagementSettingKey, Value: "true"})
+	require.Contains(t, svc.ListSettings(SettingVisibilityPublic), SettingVariable{Key: types.FeatureVulnerabilityManagementSettingKey, Value: "true"})
 }
 
 func TestSettingsService_FeaturePersistenceAndEnvironmentIsolation(t *testing.T) {
@@ -1275,35 +1274,35 @@ func TestSettingsService_FeaturePersistenceAndEnvironmentIsolation(t *testing.T)
 	require.NoError(t, err)
 
 	var notifications int
-	unsubscribe := svc.SubscribeSettingsChanges([]string{features.VulnerabilityManagementSettingKey}, func([]libarcane.SettingUpdate) { notifications++ })
+	unsubscribe := svc.SubscribeSettingsChanges([]string{types.FeatureVulnerabilityManagementSettingKey}, func([]libarcane.SettingUpdate) { notifications++ })
 	defer unsubscribe()
 	scheduled := "true"
 	ignore := "CVE-2026-12345"
 	require.NoError(t, svc.UpdateSetting(ctx, "trivyIgnore", ignore))
-	_, err = svc.UpdateSettings(ctx, settings.Update{VulnerabilityScanEnabled: &scheduled})
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{VulnerabilityScanEnabled: &scheduled})
 	require.NoError(t, err)
 	disabled := "false"
-	_, err = svc.UpdateSettings(ctx, settings.Update{FeatureVulnerabilityManagementEnabled: &disabled})
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{FeatureVulnerabilityManagementEnabled: &disabled})
 	require.NoError(t, err)
 	waitForSettingsNotifications(t, svc)
 	require.Equal(t, 1, notifications)
-	require.False(t, svc.IsFeatureEnabled(ctx, features.VulnerabilityManagement))
-	require.True(t, other.IsFeatureEnabled(ctx, features.VulnerabilityManagement))
-	err = svc.RequireFeature(ctx, features.VulnerabilityManagement)
+	require.False(t, svc.IsFeatureEnabled(ctx, types.FeatureVulnerabilityManagement))
+	require.True(t, other.IsFeatureEnabled(ctx, types.FeatureVulnerabilityManagement))
+	err = svc.RequireFeature(ctx, types.FeatureVulnerabilityManagement)
 	require.ErrorIs(t, err, common.ErrFeatureDisabled)
 	require.ErrorIs(t, err, common.ErrForbidden)
-	require.Contains(t, err.Error(), string(features.VulnerabilityManagement))
+	require.Contains(t, err.Error(), string(types.FeatureVulnerabilityManagement))
 	apiErr := common.ToAPIError(err)
 	require.Equal(t, http.StatusForbidden, apiErr.HTTPStatus())
 	require.Equal(t, common.APIErrorCodeFeatureDisabled, apiErr.Code)
 
 	reloaded, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.False(t, reloaded.IsFeatureEnabled(ctx, features.VulnerabilityManagement))
+	require.False(t, reloaded.IsFeatureEnabled(ctx, types.FeatureVulnerabilityManagement))
 	enabled := "true"
-	_, err = svc.UpdateSettings(ctx, settings.Update{FeatureVulnerabilityManagementEnabled: &enabled})
+	_, err = svc.UpdateSettings(ctx, types.SettingsUpdate{FeatureVulnerabilityManagementEnabled: &enabled})
 	require.NoError(t, err)
-	require.True(t, svc.IsFeatureEnabled(ctx, features.VulnerabilityManagement))
+	require.True(t, svc.IsFeatureEnabled(ctx, types.FeatureVulnerabilityManagement))
 	cfg, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
 	require.Equal(t, scheduled, cfg.VulnerabilityScanEnabled.Value)
@@ -1315,11 +1314,11 @@ func TestSettingsService_FeatureEnvironmentOverride(t *testing.T) {
 	svc, err := newSettingsServiceForTest(t, t.Context(), setupSettingsTestDB(t))
 	require.NoError(t, err)
 	enabled := "true"
-	_, err = svc.UpdateSettings(t.Context(), settings.Update{FeatureVulnerabilityManagementEnabled: &enabled})
+	_, err = svc.UpdateSettings(t.Context(), types.SettingsUpdate{FeatureVulnerabilityManagementEnabled: &enabled})
 	require.NoError(t, err)
-	require.True(t, svc.IsEnvOverrideActive(features.VulnerabilityManagementSettingKey))
-	require.False(t, svc.IsFeatureEnabled(t.Context(), features.VulnerabilityManagement))
-	require.Contains(t, svc.ListSettings(SettingVisibilityPublic), SettingVariable{Key: features.VulnerabilityManagementSettingKey, Value: "false"})
+	require.True(t, svc.IsEnvOverrideActive(types.FeatureVulnerabilityManagementSettingKey))
+	require.False(t, svc.IsFeatureEnabled(t.Context(), types.FeatureVulnerabilityManagement))
+	require.Contains(t, svc.ListSettings(SettingVisibilityPublic), SettingVariable{Key: types.FeatureVulnerabilityManagementSettingKey, Value: "false"})
 }
 
 func TestSettingsService_RejectInvalidFeatureBoolean(t *testing.T) {
@@ -1327,33 +1326,33 @@ func TestSettingsService_RejectInvalidFeatureBoolean(t *testing.T) {
 		t.Run(invalid, func(t *testing.T) {
 			svc, err := newSettingsServiceForTest(t, t.Context(), setupSettingsTestDB(t))
 			require.NoError(t, err)
-			_, err = svc.UpdateSettings(t.Context(), settings.Update{FeatureVulnerabilityManagementEnabled: &invalid})
+			_, err = svc.UpdateSettings(t.Context(), types.SettingsUpdate{FeatureVulnerabilityManagementEnabled: &invalid})
 			require.ErrorIs(t, err, common.ErrValidation)
-			err = svc.UpdateSetting(t.Context(), features.VulnerabilityManagementSettingKey, invalid)
+			err = svc.UpdateSetting(t.Context(), types.FeatureVulnerabilityManagementSettingKey, invalid)
 			require.ErrorIs(t, err, common.ErrValidation)
-			err = svc.UpdateSettingValues(t.Context(), []libarcane.SettingUpdate{{Key: features.VulnerabilityManagementSettingKey, Value: invalid}})
+			err = svc.UpdateSettingValues(t.Context(), []libarcane.SettingUpdate{{Key: types.FeatureVulnerabilityManagementSettingKey, Value: invalid}})
 			require.ErrorIs(t, err, common.ErrValidation)
-			require.True(t, svc.IsFeatureEnabled(t.Context(), features.VulnerabilityManagement))
+			require.True(t, svc.IsFeatureEnabled(t.Context(), types.FeatureVulnerabilityManagement))
 		})
 	}
 }
 
 func TestSettingsService_SwarmFeatureDefaultsOffAndPersists(t *testing.T) {
 	var nilService *SettingsService
-	require.False(t, nilService.IsFeatureEnabled(t.Context(), features.Swarm))
+	require.False(t, nilService.IsFeatureEnabled(t.Context(), types.FeatureSwarm))
 
 	svc, err := newSettingsServiceForTest(t, t.Context(), setupSettingsTestDB(t))
 	require.NoError(t, err)
-	require.False(t, svc.IsFeatureEnabled(t.Context(), features.Swarm))
-	require.Contains(t, svc.ListSettings(SettingVisibilityPublic), SettingVariable{Key: features.SwarmSettingKey, Value: "false"})
+	require.False(t, svc.IsFeatureEnabled(t.Context(), types.FeatureSwarm))
+	require.Contains(t, svc.ListSettings(SettingVisibilityPublic), SettingVariable{Key: types.FeatureSwarmSettingKey, Value: "false"})
 
 	enabled := "true"
-	_, err = svc.UpdateSettings(t.Context(), settings.Update{FeatureSwarmEnabled: &enabled})
+	_, err = svc.UpdateSettings(t.Context(), types.SettingsUpdate{FeatureSwarmEnabled: &enabled})
 	require.NoError(t, err)
-	require.True(t, svc.IsFeatureEnabled(t.Context(), features.Swarm))
+	require.True(t, svc.IsFeatureEnabled(t.Context(), types.FeatureSwarm))
 
 	invalid := "yes"
-	_, err = svc.UpdateSettings(t.Context(), settings.Update{FeatureSwarmEnabled: &invalid})
+	_, err = svc.UpdateSettings(t.Context(), types.SettingsUpdate{FeatureSwarmEnabled: &invalid})
 	require.ErrorIs(t, err, common.ErrValidation)
 }
 

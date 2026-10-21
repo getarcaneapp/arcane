@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -423,10 +423,10 @@ func TestJobSchedulerStopCancelsItsPrivateContext(t *testing.T) {
 		AppCtx: appCtx, Config: &config.Config{}, Scheduler: jobScheduler,
 		GitOpsSync: gitopsSync, Admission: admission,
 	}))
-	executed := make(chan schedulertypes.Run, 1)
-	coordinator.SetExecutor(func(_ context.Context, run schedulertypes.Run) (schedulertypes.Outcome, error) {
+	executed := make(chan types.SchedulerRun, 1)
+	coordinator.SetExecutor(func(_ context.Context, run types.SchedulerRun) (types.SchedulerOutcome, error) {
 		executed <- run
-		return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 	}, nil)
 	watcher := &blockingBusWatcher{
 		started: make(chan struct{}),

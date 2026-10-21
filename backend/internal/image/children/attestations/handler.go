@@ -10,8 +10,7 @@ import (
 
 	"github.com/containerd/platforms"
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/image"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
@@ -37,7 +36,7 @@ func NewHandler(service *Service) *Handler {
 }
 
 // GetImageAttestations returns in-toto attestation statements attached to an image.
-func (h *Handler) GetImageAttestations(ctx context.Context, input *GetImageAttestationsInput) (*handlerutil.Out[image.AttestationList], error) {
+func (h *Handler) GetImageAttestations(ctx context.Context, input *GetImageAttestationsInput) (*handlerutil.Out[types.ImageAttestationList], error) {
 	imageName := strings.TrimSpace(input.ImageName)
 	if imageName == "" {
 		return nil, huma.Error400BadRequest("image name is required")
@@ -65,8 +64,8 @@ func (h *Handler) GetImageAttestations(ctx context.Context, input *GetImageAttes
 		return nil, huma.Error500InternalServerError("failed to get image attestations")
 	}
 
-	return &handlerutil.Out[image.AttestationList]{
-		Body: base.ApiResponse[image.AttestationList]{
+	return &handlerutil.Out[types.ImageAttestationList]{
+		Body: types.ApiResponse[types.ImageAttestationList]{
 			Success: true,
 			Data:    *out,
 		},

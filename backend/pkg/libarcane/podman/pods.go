@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"strconv"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 )
 
 type PodAction string
@@ -155,13 +155,13 @@ type PodSpec struct {
 	IDMappings         *PodIDMappings               `json:"idmappings,omitempty"`
 }
 
-func (c *Client) PodList(ctx context.Context, filters map[string][]string) ([]podmantypes.Pod, error) {
+func (c *Client) PodList(ctx context.Context, filters map[string][]string) ([]types.Pod, error) {
 	query, err := filtersQuery(url.Values{}, filters)
 	if err != nil {
 		return nil, err
 	}
 
-	return c.doJSON[[]podmantypes.Pod](ctx, request{
+	return c.doJSON[[]types.Pod](ctx, request{
 		method: http.MethodGet,
 		path:   "/pods/json",
 		query:  query,
@@ -169,36 +169,36 @@ func (c *Client) PodList(ctx context.Context, filters map[string][]string) ([]po
 }
 
 type podInfraConfigResponse struct {
-	podmantypes.PodInfraConfig
+	types.PodInfraConfig
 	PidNS string `json:"pid_ns"`
 	UtsNS string `json:"uts_ns"`
 }
 
 type podInspectResponse struct {
-	podmantypes.PodInspect
-	InfraConfig        *podInfraConfigResponse         `json:"InfraConfig"`
-	CPUPeriod          uint64                          `json:"cpu_period"`
-	CPUQuota           int64                           `json:"cpu_quota"`
-	CPUShares          uint64                          `json:"cpu_shares"`
-	CPUSetCPUs         string                          `json:"cpuset_cpus"`
-	CPUSetMems         string                          `json:"cpuset_mems"`
-	MemoryLimit        uint64                          `json:"memory_limit"`
-	MemorySwap         uint64                          `json:"memory_swap"`
-	BlkioWeight        uint64                          `json:"blkio_weight"`
-	BlkioWeightDevices []podmantypes.PodWeightDevice   `json:"blkio_weight_device"`
-	DeviceReadBps      []podmantypes.PodThrottleDevice `json:"device_read_bps"`
-	DeviceWriteBps     []podmantypes.PodThrottleDevice `json:"device_write_bps"`
-	VolumesFrom        []string                        `json:"volumes_from"`
-	SecurityOpts       []string                        `json:"security_opt"`
+	types.PodInspect
+	InfraConfig        *podInfraConfigResponse   `json:"InfraConfig"`
+	CPUPeriod          uint64                    `json:"cpu_period"`
+	CPUQuota           int64                     `json:"cpu_quota"`
+	CPUShares          uint64                    `json:"cpu_shares"`
+	CPUSetCPUs         string                    `json:"cpuset_cpus"`
+	CPUSetMems         string                    `json:"cpuset_mems"`
+	MemoryLimit        uint64                    `json:"memory_limit"`
+	MemorySwap         uint64                    `json:"memory_swap"`
+	BlkioWeight        uint64                    `json:"blkio_weight"`
+	BlkioWeightDevices []types.PodWeightDevice   `json:"blkio_weight_device"`
+	DeviceReadBps      []types.PodThrottleDevice `json:"device_read_bps"`
+	DeviceWriteBps     []types.PodThrottleDevice `json:"device_write_bps"`
+	VolumesFrom        []string                  `json:"volumes_from"`
+	SecurityOpts       []string                  `json:"security_opt"`
 }
 
-func (c *Client) PodInspect(ctx context.Context, nameOrID string) (podmantypes.PodInspect, error) {
+func (c *Client) PodInspect(ctx context.Context, nameOrID string) (types.PodInspect, error) {
 	raw, err := c.doJSON[podInspectResponse](ctx, request{method: http.MethodGet, path: "/pods/" + url.PathEscape(nameOrID) + "/json"})
 	if err != nil {
-		return podmantypes.PodInspect{}, err
+		return types.PodInspect{}, err
 	}
 
-	return podmantypes.PodInspect{
+	return types.PodInspect{
 		ID:               raw.ID,
 		Name:             raw.Name,
 		Namespace:        raw.Namespace,
@@ -214,11 +214,11 @@ func (c *Client) PodInspect(ctx context.Context, nameOrID string) (podmantypes.P
 		CgroupPath:       raw.CgroupPath,
 		CreateInfra:      raw.CreateInfra,
 		InfraContainerID: raw.InfraContainerID,
-		InfraConfig: func() *podmantypes.PodInfraConfig {
+		InfraConfig: func() *types.PodInfraConfig {
 			if raw.InfraConfig == nil {
 				return nil
 			}
-			return &podmantypes.PodInfraConfig{
+			return &types.PodInfraConfig{
 				PortBindings:       raw.InfraConfig.PortBindings,
 				HostNetwork:        raw.InfraConfig.HostNetwork,
 				StaticIP:           raw.InfraConfig.StaticIP,
@@ -265,7 +265,7 @@ func (c *Client) PodCreate(ctx context.Context, spec PodSpec) (string, error) {
 		return "", fmt.Errorf("encode pod spec: %w", err)
 	}
 
-	out, err := c.doJSON[podmantypes.PodCreateResponse](ctx, request{
+	out, err := c.doJSON[types.PodCreateResponse](ctx, request{
 		method:      http.MethodPost,
 		path:        "/pods/create",
 		body:        bytes.NewReader(encoded),
@@ -300,24 +300,24 @@ func (c *Client) PodRemove(ctx context.Context, nameOrID string, force bool) err
 	return err
 }
 
-func (c *Client) PodPrune(ctx context.Context) ([]podmantypes.PodPruneReport, error) {
-	return c.doJSON[[]podmantypes.PodPruneReport](ctx, request{method: http.MethodPost, path: "/pods/prune"})
+func (c *Client) PodPrune(ctx context.Context) ([]types.PodPruneReport, error) {
+	return c.doJSON[[]types.PodPruneReport](ctx, request{method: http.MethodPost, path: "/pods/prune"})
 }
 
-func (c *Client) PodTop(ctx context.Context, nameOrID, psArgs string) (podmantypes.PodTop, error) {
+func (c *Client) PodTop(ctx context.Context, nameOrID, psArgs string) (types.PodTop, error) {
 	query := url.Values{"stream": {"false"}}
 	if psArgs != "" {
 		query.Set("ps_args", psArgs)
 	}
 
-	return c.doJSON[podmantypes.PodTop](ctx, request{
+	return c.doJSON[types.PodTop](ctx, request{
 		method: http.MethodGet,
 		path:   "/pods/" + url.PathEscape(nameOrID) + "/top",
 		query:  query,
 	})
 }
 
-func (c *Client) PodStats(ctx context.Context, namesOrIDs []string) ([]podmantypes.PodStats, error) {
+func (c *Client) PodStats(ctx context.Context, namesOrIDs []string) ([]types.PodStats, error) {
 	query := url.Values{
 		"stream":     {"false"},
 		"namesOrIDs": namesOrIDs,
@@ -326,7 +326,7 @@ func (c *Client) PodStats(ctx context.Context, namesOrIDs []string) ([]podmantyp
 		query.Set("all", "true")
 	}
 
-	return c.doJSON[[]podmantypes.PodStats](ctx, request{
+	return c.doJSON[[]types.PodStats](ctx, request{
 		method: http.MethodGet,
 		path:   "/pods/stats",
 		query:  query,

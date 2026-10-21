@@ -5,9 +5,7 @@ import (
 	"path"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
-	"github.com/getarcaneapp/arcane/types/v2/workspace"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
@@ -43,7 +41,7 @@ type DownloadBuildFileInput struct {
 type UploadBuildFileInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Path          string `query:"path" default:"/" doc:"Destination path"`
-	Body          uploadtypes.ConsumeRequest
+	Body          types.UploadConsumeRequest
 }
 
 type CreateBuildDirectoryInput struct {
@@ -56,12 +54,12 @@ type DeleteBuildFileInput struct {
 	Path          string `query:"path" doc:"File or directory path to delete"`
 }
 
-func (h *Handler) BrowseDirectory(ctx context.Context, input *BrowseBuildsInput) (*handlerutil.Out[[]workspace.FileEntry], error) {
+func (h *Handler) BrowseDirectory(ctx context.Context, input *BrowseBuildsInput) (*handlerutil.Out[[]types.WorkspaceFileEntry], error) {
 	entries, err := h.service.ListDirectory(ctx, input.Path)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &handlerutil.Out[[]workspace.FileEntry]{Body: base.ApiResponse[[]workspace.FileEntry]{Success: true, Data: entries}}, nil
+	return &handlerutil.Out[[]types.WorkspaceFileEntry]{Body: types.ApiResponse[[]types.WorkspaceFileEntry]{Success: true, Data: entries}}, nil
 }
 
 func (h *Handler) GetFileContent(ctx context.Context, input *GetBuildFileContentInput) (*handlerutil.Out[BuildFileContentResponse], error) {
@@ -69,7 +67,7 @@ func (h *Handler) GetFileContent(ctx context.Context, input *GetBuildFileContent
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &handlerutil.Out[BuildFileContentResponse]{Body: base.ApiResponse[BuildFileContentResponse]{
+	return &handlerutil.Out[BuildFileContentResponse]{Body: types.ApiResponse[BuildFileContentResponse]{
 		Success: true,
 		Data:    BuildFileContentResponse{Content: content, MimeType: mimeType},
 	}}, nil
@@ -83,8 +81,8 @@ func (h *Handler) DownloadFile(ctx context.Context, input *DownloadBuildFileInpu
 	return handlerutil.DownloadResponse(reader, size, path.Base(input.Path)), nil
 }
 
-func (h *Handler) UploadFile(ctx context.Context, input *UploadBuildFileInput) (*base.ApiResponse[base.MessageResponse], error) {
-	file, session, cleanup, err := h.uploadService.Consume(ctx, uploadtypes.KindBuildWorkspace, input.Body.UploadID)
+func (h *Handler) UploadFile(ctx context.Context, input *UploadBuildFileInput) (*types.ApiResponse[types.MessageResponse], error) {
+	file, session, cleanup, err := h.uploadService.Consume(ctx, types.UploadKindBuildWorkspace, input.Body.UploadID)
 	if err != nil {
 		if httpErr := upload.SessionHTTPError(err); httpErr != nil {
 			return nil, httpErr
@@ -96,28 +94,28 @@ func (h *Handler) UploadFile(ctx context.Context, input *UploadBuildFileInput) (
 	if uploadFileErr := h.service.UploadFile(ctx, input.Path, file, session.Filename, session.Size); uploadFileErr != nil {
 		return nil, huma.Error500InternalServerError(uploadFileErr.Error())
 	}
-	return &base.ApiResponse[base.MessageResponse]{
+	return &types.ApiResponse[types.MessageResponse]{
 		Success: true,
-		Data:    base.MessageResponse{Message: "File uploaded successfully"},
+		Data:    types.MessageResponse{Message: "File uploaded successfully"},
 	}, nil
 }
 
-func (h *Handler) CreateDirectory(ctx context.Context, input *CreateBuildDirectoryInput) (*base.ApiResponse[base.MessageResponse], error) {
+func (h *Handler) CreateDirectory(ctx context.Context, input *CreateBuildDirectoryInput) (*types.ApiResponse[types.MessageResponse], error) {
 	if err := h.service.CreateDirectory(ctx, input.Path); err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &base.ApiResponse[base.MessageResponse]{
+	return &types.ApiResponse[types.MessageResponse]{
 		Success: true,
-		Data:    base.MessageResponse{Message: "Directory created successfully"},
+		Data:    types.MessageResponse{Message: "Directory created successfully"},
 	}, nil
 }
 
-func (h *Handler) DeleteFile(ctx context.Context, input *DeleteBuildFileInput) (*base.ApiResponse[base.MessageResponse], error) {
+func (h *Handler) DeleteFile(ctx context.Context, input *DeleteBuildFileInput) (*types.ApiResponse[types.MessageResponse], error) {
 	if err := h.service.DeleteFile(ctx, input.Path); err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &base.ApiResponse[base.MessageResponse]{
+	return &types.ApiResponse[types.MessageResponse]{
 		Success: true,
-		Data:    base.MessageResponse{Message: "Deleted successfully"},
+		Data:    types.MessageResponse{Message: "Deleted successfully"},
 	}, nil
 }

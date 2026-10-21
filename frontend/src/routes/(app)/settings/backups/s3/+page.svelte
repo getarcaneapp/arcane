@@ -9,9 +9,10 @@
 	import * as m from '#lib/paraglide/messages.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import type { CreateS3Destination, S3Destination } from '#lib/types/s3-destination.js';
+	import type { S3DestinationCreate, S3Destination } from '#lib/types/s3-destination.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { discoverDestinationBackups } from '#lib/utils/backups.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import S3DestinationDialog from './components/s3-destination-dialog.svelte';
@@ -38,14 +39,18 @@
 		dialogOpen = true;
 	}
 
-	async function saveDestination(input: CreateS3Destination) {
+	async function saveDestination(input: Required<S3DestinationCreate>) {
 		saving = true;
 		try {
 			let created: S3Destination | null = null;
 			const operationResult = await tryCatch(
 				(async () => {
 					if (selected) {
-						await s3DestinationService.update(selected.id, input);
+						const { secretAccessKey, ...fields } = input;
+						await s3DestinationService.update(selected.id, {
+							...changedFields(selected, fields),
+							...(secretAccessKey ? { secretAccessKey } : {})
+						});
 						toast.success(m.s3_destination_updated({ name: input.name }));
 					} else {
 						created = await s3DestinationService.create(input);

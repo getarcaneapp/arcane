@@ -16,7 +16,7 @@ import (
 	"sync"
 
 	"github.com/containerd/platforms"
-	"github.com/getarcaneapp/arcane/types/v2/image"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1"
@@ -83,9 +83,9 @@ type subject struct {
 }
 
 type attestationStatementEnvelope struct {
-	Type          string                     `json:"_type"`
-	PredicateType string                     `json:"predicateType"`
-	Subject       []image.AttestationSubject `json:"subject"`
+	Type          string                          `json:"_type"`
+	PredicateType string                          `json:"predicateType"`
+	Subject       []types.ImageAttestationSubject `json:"subject"`
 }
 
 func NewService(
@@ -96,7 +96,7 @@ func NewService(
 }
 
 // GetImageAttestations returns in-toto attestations attached to a local image or registry reference.
-func (s *Service) GetImageAttestations(ctx context.Context, imageName string, query Query) (*image.AttestationList, error) {
+func (s *Service) GetImageAttestations(ctx context.Context, imageName string, query Query) (*types.ImageAttestationList, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeouts.DefaultRegistry)
 	defer cancel()
 
@@ -105,11 +105,11 @@ func (s *Service) GetImageAttestations(ctx context.Context, imageName string, qu
 		return nil, err
 	}
 	if resolution.Empty {
-		return &image.AttestationList{
+		return &types.ImageAttestationList{
 			ImageRef:      resolution.ImageRef,
 			SubjectDigest: resolution.SubjectDigest,
 			Platform:      strings.TrimSpace(query.Platform),
-			Attestations:  []image.Attestation{},
+			Attestations:  []types.ImageAttestation{},
 		}, nil
 	}
 
@@ -147,7 +147,7 @@ func (s *Service) GetImageAttestations(ctx context.Context, imageName string, qu
 		return nil, err
 	}
 
-	attestations := make([]image.Attestation, 0)
+	attestations := make([]types.ImageAttestation, 0)
 	for _, target := range targets {
 		referrerAttestations, readReferrerAttestationsErr := s.readReferrerAttestations(ctx, ref.Context(), target, remoteOptions, query)
 		if readReferrerAttestationsErr != nil {
@@ -189,7 +189,7 @@ func (s *Service) GetImageAttestations(ctx context.Context, imageName string, qu
 	}
 
 	seen := make(map[string]struct{}, len(attestations))
-	return &image.AttestationList{
+	return &types.ImageAttestationList{
 		ImageRef: resolution.ImageRef,
 		SubjectDigest: func() string {
 			if hasPlatform && len(targets) > 0 {
@@ -203,7 +203,7 @@ func (s *Service) GetImageAttestations(ctx context.Context, imageName string, qu
 			}
 			return strings.TrimSpace(query.Platform)
 		}(),
-		Attestations: slices.DeleteFunc(attestations, func(item image.Attestation) bool {
+		Attestations: slices.DeleteFunc(attestations, func(item types.ImageAttestation) bool {
 			key := strings.Join([]string{
 				item.Digest,
 				item.PredicateType,
@@ -379,7 +379,7 @@ func (s *Service) readReferrerAttestations(
 	target subject,
 	remoteOptions []remote.Option,
 	query Query,
-) ([]image.Attestation, error) {
+) ([]types.ImageAttestation, error) {
 	referrers, err := remote.Referrers(repository.Digest(target.Digest), remoteOptions...)
 	if err != nil {
 		if transportErr, ok := errors.AsType[*transport.Error](err); ok &&
@@ -394,7 +394,7 @@ func (s *Service) readReferrerAttestations(
 		return nil, fmt.Errorf("read image referrers for %s: %w", target.Digest, err)
 	}
 
-	attestations := make([]image.Attestation, 0, len(manifest.Manifests))
+	attestations := make([]types.ImageAttestation, 0, len(manifest.Manifests))
 	for _, referrer := range manifest.Manifests {
 		referrerDescriptor, getErr := remote.Get(repository.Digest(referrer.Digest.String()), remoteOptions...)
 		if getErr != nil {
@@ -435,13 +435,13 @@ func (s *Service) readReferrerAttestations(
 	return attestations, nil
 }
 
-func readAttestationImage(ctx context.Context, attestationImage v1.Image, artifactDescriptor v1.Descriptor, platform string, query Query) ([]image.Attestation, error) {
+func readAttestationImage(ctx context.Context, attestationImage v1.Image, artifactDescriptor v1.Descriptor, platform string, query Query) ([]types.ImageAttestation, error) {
 	manifest, err := attestationImage.Manifest()
 	if err != nil {
 		return nil, fmt.Errorf("read attestation manifest %s: %w", artifactDescriptor.Digest.String(), err)
 	}
 
-	attestations := make([]image.Attestation, 0, len(manifest.Layers))
+	attestations := make([]types.ImageAttestation, 0, len(manifest.Layers))
 	for _, layerDescriptor := range manifest.Layers {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
@@ -470,13 +470,13 @@ func readAttestationImage(ctx context.Context, attestationImage v1.Image, artifa
 			continue
 		}
 
-		attestations = append(attestations, image.Attestation{
+		attestations = append(attestations, types.ImageAttestation{
 			Digest:        layerDescriptor.Digest.String(),
 			MediaType:     string(layerDescriptor.MediaType),
 			ArtifactType:  cmp.Or(artifactDescriptor.ArtifactType, manifest.ArtifactType),
 			PredicateType: cmp.Or(statement.PredicateType, annotationPredicate),
 			StatementType: statement.Type,
-			Subject:       kit.Ternary(statement.Subject == nil, []image.AttestationSubject{}, statement.Subject),
+			Subject:       kit.Ternary(statement.Subject == nil, []types.ImageAttestationSubject{}, statement.Subject),
 			Platform:      platform,
 			Size:          cmp.Or(layerDescriptor.Size, int64(len(rawStatement))),
 			Statement: func() []byte {

@@ -13,8 +13,7 @@ import (
 	"testing"
 	"time"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/stretchr/testify/require"
 
@@ -27,7 +26,7 @@ import (
 
 type activitiesFake struct {
 	mu        sync.Mutex
-	statuses  map[string]activitytypes.Status
+	statuses  map[string]types.ActivityStatus
 	completed map[string]int
 	tracked   map[string]context.CancelCauseFunc
 }
@@ -39,7 +38,7 @@ type hostFixture struct {
 }
 
 func TestRestartBetweenStepsReattachesSQLite(t *testing.T) {
-	testRestartBetweenStepsInternal(t, "file:"+filepath.ToSlash(filepath.Join(t.TempDir(), "actors.db")))
+	testRestartBetweenSteps(t, "file:"+filepath.ToSlash(filepath.Join(t.TempDir(), "actors.db")))
 }
 
 func TestRestartBetweenStepsReattachesPostgres(t *testing.T) {
@@ -47,20 +46,20 @@ func TestRestartBetweenStepsReattachesPostgres(t *testing.T) {
 	if databaseURL == "" {
 		t.Skip("ARCANE_TEST_POSTGRES_DSN is not set")
 	}
-	testRestartBetweenStepsInternal(t, databaseURL)
+	testRestartBetweenSteps(t, databaseURL)
 }
 
-func testRestartBetweenStepsInternal(t *testing.T, databaseURL string) {
+func testRestartBetweenSteps(t *testing.T, databaseURL string) {
 	jobID := fmt.Sprintf("flow-restart-%d", time.Now().UnixNano())
 	activities := newActivitiesFake()
 	var firstRuns atomic.Int32
 	blocked := make(chan struct{})
-	first := startHostInternal(t, databaseURL, jobID, 1, activities, &firstRuns, func(ctx context.Context, _ flow.Task) (any, error) {
+	first := startHost(t, databaseURL, jobID, 1, activities, &firstRuns, func(ctx context.Context, _ flow.Task) (any, error) {
 		close(blocked)
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}, nil)
-	run, err := first.harness.Coordinator.Submit(t.Context(), scheduler.Request{JobID: jobID, EnvironmentID: "0", Trigger: "manual"})
+	run, err := first.harness.Coordinator.Submit(t.Context(), types.SchedulerRequest{JobID: jobID, EnvironmentID: "0", Trigger: "manual"})
 	require.NoError(t, err)
 	select {
 	case <-blocked:
@@ -69,24 +68,24 @@ func testRestartBetweenStepsInternal(t *testing.T, databaseURL string) {
 	}
 	started, err := first.harness.Coordinator.Get(t.Context(), "0", jobID, run.ID)
 	require.NoError(t, err)
-	instanceID := workflowTargetInternal(t, started).ID
+	instanceID := workflowTarget(t, started).ID
 	first.stop(t)
 
-	second := startHostInternal(t, databaseURL, jobID, 1, activities, &firstRuns, func(context.Context, flow.Task) (any, error) {
+	second := startHost(t, databaseURL, jobID, 1, activities, &firstRuns, func(context.Context, flow.Task) (any, error) {
 		return nil, nil
 	}, nil)
-	finished := waitTerminalInternal(t, second, jobID, run.ID)
+	finished := waitTerminal(t, second, jobID, run.ID)
 
-	require.Equal(t, scheduler.Succeeded, finished.Status)
+	require.Equal(t, types.RunStatusSucceeded, finished.Status)
 	require.Equal(t, int32(1), firstRuns.Load(), "completed steps must not run again")
-	target := workflowTargetInternal(t, finished)
+	target := workflowTarget(t, finished)
 	require.Equal(t, instanceID, target.ID, "reconcile must re-attach to the same instance")
-	require.Equal(t, scheduler.Succeeded, target.Status)
+	require.Equal(t, types.RunStatusSucceeded, target.Status)
 	require.Len(t, finished.Outcome.Steps, 3)
 	for _, step := range finished.Outcome.Steps {
-		require.Equal(t, scheduler.Succeeded, step.Status, step.Name)
+		require.Equal(t, types.RunStatusSucceeded, step.Status, step.Name)
 	}
-	require.Eventually(t, func() bool { return activities.status(instanceID) == activitytypes.StatusSuccess }, 10*time.Second, 50*time.Millisecond)
+	require.Eventually(t, func() bool { return activities.status(instanceID) == types.ActivityStatusSuccess }, 10*time.Second, 50*time.Millisecond)
 }
 
 func TestVersionBumpFallsBack(t *testing.T) {
@@ -95,12 +94,12 @@ func TestVersionBumpFallsBack(t *testing.T) {
 	activities := newActivitiesFake()
 	var firstRuns atomic.Int32
 	blocked := make(chan struct{})
-	first := startHostInternal(t, databaseURL, jobID, 1, activities, &firstRuns, func(ctx context.Context, _ flow.Task) (any, error) {
+	first := startHost(t, databaseURL, jobID, 1, activities, &firstRuns, func(ctx context.Context, _ flow.Task) (any, error) {
 		close(blocked)
 		<-ctx.Done()
 		return nil, ctx.Err()
 	}, nil)
-	run, err := first.harness.Coordinator.Submit(t.Context(), scheduler.Request{JobID: jobID, EnvironmentID: "0", Trigger: "manual"})
+	run, err := first.harness.Coordinator.Submit(t.Context(), types.SchedulerRequest{JobID: jobID, EnvironmentID: "0", Trigger: "manual"})
 	require.NoError(t, err)
 	select {
 	case <-blocked:
@@ -110,19 +109,19 @@ func TestVersionBumpFallsBack(t *testing.T) {
 	first.stop(t)
 
 	var fallbacks atomic.Int32
-	second := startHostInternal(t, databaseURL, jobID, 2, activities, &firstRuns, func(context.Context, flow.Task) (any, error) {
+	second := startHost(t, databaseURL, jobID, 2, activities, &firstRuns, func(context.Context, flow.Task) (any, error) {
 		return nil, nil
-	}, func(context.Context, scheduler.Run) (scheduler.Outcome, error) {
+	}, func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error) {
 		fallbacks.Add(1)
-		return scheduler.Outcome{Status: scheduler.Succeeded, Message: "recovered"}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "recovered"}, nil
 	})
-	finished := waitTerminalInternal(t, second, jobID, run.ID)
+	finished := waitTerminal(t, second, jobID, run.ID)
 
-	require.Equal(t, scheduler.Succeeded, finished.Status)
+	require.Equal(t, types.RunStatusSucceeded, finished.Status)
 	require.Equal(t, "recovered", finished.Outcome.Message)
 	require.Equal(t, int32(1), fallbacks.Load())
-	target := workflowTargetInternal(t, finished)
-	require.Equal(t, scheduler.Failed, target.Status, "the unserved instance must be retired")
+	target := workflowTarget(t, finished)
+	require.Equal(t, types.RunStatusFailed, target.Status, "the unserved instance must be retired")
 }
 
 func TestChildInheritsRunBinding(t *testing.T) {
@@ -140,7 +139,7 @@ func TestChildInheritsRunBinding(t *testing.T) {
 				}
 				run, _ := jobcontext.Run(ctx)
 				childRuns <- run.ID
-				return scheduler.Outcome{Status: scheduler.Partial, Message: "child " + label}, nil
+				return types.SchedulerOutcome{Status: types.RunStatusPartial, Message: "child " + label}, nil
 			})),
 		},
 	})
@@ -153,22 +152,22 @@ func TestChildInheritsRunBinding(t *testing.T) {
 			})),
 			workflow.Child("child", workflow.WithDefinition(child.Francis())),
 			workflow.Step("finalize", engine.Handler(func(_ context.Context, t flow.Task) (any, error) {
-				var childOutcome scheduler.Outcome
+				var childOutcome types.SchedulerOutcome
 				if decodeErr := t.DecodeOutput("child", &childOutcome); decodeErr != nil {
 					return nil, decodeErr
 				}
-				return scheduler.Outcome{Status: scheduler.Succeeded, Message: childOutcome.Message}, nil
+				return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: childOutcome.Message}, nil
 			})),
 		},
 	})
 	require.NoError(t, err)
-	fixture := startJobInternal(t, harness, &flow.Job{Engine: engine, Workflow: parent, JobName: jobID, ScheduleFn: func(context.Context) string { return "" }})
+	fixture := startJob(t, harness, &flow.Job{Engine: engine, Workflow: parent, JobName: jobID, ScheduleFn: func(context.Context) string { return "" }})
 
-	run, err := harness.Coordinator.Submit(t.Context(), scheduler.Request{JobID: jobID, EnvironmentID: "0", Trigger: "manual"})
+	run, err := harness.Coordinator.Submit(t.Context(), types.SchedulerRequest{JobID: jobID, EnvironmentID: "0", Trigger: "manual"})
 	require.NoError(t, err)
-	finished := waitTerminalInternal(t, fixture, jobID, run.ID)
+	finished := waitTerminal(t, fixture, jobID, run.ID)
 
-	require.Equal(t, scheduler.Succeeded, finished.Status)
+	require.Equal(t, types.RunStatusSucceeded, finished.Status)
 	require.Equal(t, "child payload", finished.Outcome.Message)
 	require.Equal(t, run.ID, <-childRuns, "child tasks must run inside the parent's run")
 }
@@ -181,7 +180,7 @@ func TestActivityCancelInterruptsRunningStep(t *testing.T) {
 	causes := make(chan error, 1)
 	wf, err := engine.Define(flow.Definition{
 		Name: "flow-cancel", Version: 1, Concurrency: 1, Timeout: time.Minute,
-		Activity: activitylib.StartRequest{Type: activitytypes.TypeAutoUpdate},
+		Activity: activitylib.StartRequest{Type: types.ActivityTypeAutoUpdate},
 		Steps: []workflow.StepSpec{
 			workflow.Step("block", engine.Handler(func(ctx context.Context, t flow.Task) (any, error) {
 				started <- t.ActivityID()
@@ -194,7 +193,7 @@ func TestActivityCancelInterruptsRunningStep(t *testing.T) {
 	require.NoError(t, err)
 	harness.Start(t)
 
-	outcomes := make(chan scheduler.Outcome, 1)
+	outcomes := make(chan types.SchedulerOutcome, 1)
 	go func() {
 		outcome, _ := engine.Run(t.Context(), wf, nil, activitylib.StartRequest{}, nil)
 		outcomes <- outcome
@@ -210,11 +209,11 @@ func TestActivityCancelInterruptsRunningStep(t *testing.T) {
 	}
 	select {
 	case outcome := <-outcomes:
-		require.Equal(t, scheduler.Canceled, outcome.Status)
+		require.Equal(t, types.RunStatusCanceled, outcome.Status)
 	case <-time.After(20 * time.Second):
 		t.Fatal("the workflow did not finish after cancel")
 	}
-	require.Equal(t, activitytypes.StatusCancelled, activities.status(activityID))
+	require.Equal(t, types.ActivityStatusCancelled, activities.status(activityID))
 }
 
 func TestStartFinishesSubmittedInstanceWithItsProgress(t *testing.T) {
@@ -224,7 +223,7 @@ func TestStartFinishesSubmittedInstanceWithItsProgress(t *testing.T) {
 	define := func(harness *flowtest.Harness, work func(context.Context, flow.Task) (any, error)) *flow.Workflow {
 		wf, err := harness.Engine.Define(flow.Definition{
 			Name: "flow-orphan", Version: 1, Concurrency: 1, Timeout: time.Minute,
-			Activity: activitylib.StartRequest{Type: activitytypes.TypeAutoUpdate},
+			Activity: activitylib.StartRequest{Type: types.ActivityTypeAutoUpdate},
 			Steps:    []workflow.StepSpec{workflow.Step("work", harness.Engine.Handler(work))},
 		})
 		require.NoError(t, err)
@@ -233,7 +232,7 @@ func TestStartFinishesSubmittedInstanceWithItsProgress(t *testing.T) {
 
 	first := flowtest.New(t, activities, databaseURL)
 	wf := define(first, func(ctx context.Context, _ flow.Task) (any, error) {
-		if err := jobcontext.Progress(ctx, scheduler.TargetOutcome{ID: "backup", Status: scheduler.Running, RecoveryData: []byte(`{"backupId":"frozen"}`)}); err != nil {
+		if err := jobcontext.Progress(ctx, types.TargetOutcome{ID: "backup", Status: types.RunStatusRunning, RecoveryData: []byte(`{"backupId":"frozen"}`)}); err != nil {
 			return nil, err
 		}
 		close(started)
@@ -259,10 +258,10 @@ func TestStartFinishesSubmittedInstanceWithItsProgress(t *testing.T) {
 		if len(previous.Outcome.Targets) != 1 || string(previous.Outcome.Targets[0].RecoveryData) != `{"backupId":"frozen"}` {
 			return nil, errors.New("interrupted progress was lost")
 		}
-		return scheduler.Outcome{Status: scheduler.Succeeded}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 	})
 	second.Start(t)
-	require.Eventually(t, func() bool { return activities.status(activityID) == activitytypes.StatusSuccess }, 20*time.Second, 50*time.Millisecond)
+	require.Eventually(t, func() bool { return activities.status(activityID) == types.ActivityStatusSuccess }, 20*time.Second, 50*time.Millisecond)
 	standalone, err = second.Engine.Standalone(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, standalone)
@@ -287,14 +286,14 @@ func TestRetryable(t *testing.T) {
 	}
 }
 
-func startHostInternal(
+func startHost(
 	t *testing.T,
 	databaseURL, jobID string,
 	version int,
 	activities *activitiesFake,
 	firstRuns *atomic.Int32,
 	second func(context.Context, flow.Task) (any, error),
-	fallback func(context.Context, scheduler.Run) (scheduler.Outcome, error),
+	fallback func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error),
 ) *hostFixture {
 	t.Helper()
 	harness := flowtest.New(t, activities, databaseURL)
@@ -306,7 +305,7 @@ func startHostInternal(
 		})),
 		workflow.Step("second", engine.Handler(second), workflow.WithMaxAttempts(1)),
 		workflow.Step("finalize", engine.Handler(func(context.Context, flow.Task) (any, error) {
-			return scheduler.Outcome{Status: scheduler.Succeeded, Message: "done"}, nil
+			return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "done"}, nil
 		})),
 	}
 	if version > 1 {
@@ -317,23 +316,23 @@ func startHostInternal(
 		Version:     version,
 		Concurrency: 2,
 		Timeout:     time.Minute,
-		Activity:    activitylib.StartRequest{Type: activitytypes.TypeAutoUpdate},
+		Activity:    activitylib.StartRequest{Type: types.ActivityTypeAutoUpdate},
 		Steps:       steps,
 	})
 	require.NoError(t, err)
 	job := &flow.Job{Engine: engine, Workflow: wf, JobName: jobID, ScheduleFn: func(context.Context) string { return "" }, FallbackFn: fallback}
-	return startJobInternal(t, harness, job)
+	return startJob(t, harness, job)
 }
 
-// startJobInternal starts the host and a coordinator that executes job.
-func startJobInternal(t *testing.T, harness *flowtest.Harness, job *flow.Job) *hostFixture {
+// startJob starts the host and a coordinator that executes job.
+func startJob(t *testing.T, harness *flowtest.Harness, job *flow.Job) *hostFixture {
 	t.Helper()
 	coordinator := harness.Coordinator
 	coordinator.SetExecutor(
-		func(ctx context.Context, run scheduler.Run) (scheduler.Outcome, error) {
+		func(ctx context.Context, run types.SchedulerRun) (types.SchedulerOutcome, error) {
 			return job.Run(coordinator.ExecutionContext(ctx, run, ""))
 		},
-		func(ctx context.Context, run scheduler.Run) (scheduler.Outcome, error) {
+		func(ctx context.Context, run types.SchedulerRun) (types.SchedulerOutcome, error) {
 			return job.Reconcile(coordinator.ExecutionContext(ctx, run, ""), run)
 		},
 	)
@@ -361,9 +360,9 @@ func (f *hostFixture) stop(t *testing.T) {
 	require.NoError(t, f.harness.Runtime.Stop(ctx))
 }
 
-func waitTerminalInternal(t *testing.T, fixture *hostFixture, jobID, runID string) scheduler.Run {
+func waitTerminal(t *testing.T, fixture *hostFixture, jobID, runID string) types.SchedulerRun {
 	t.Helper()
-	var run scheduler.Run
+	var run types.SchedulerRun
 	require.Eventually(t, func() bool {
 		var err error
 		run, err = fixture.harness.Coordinator.Get(t.Context(), "0", jobID, runID)
@@ -372,11 +371,11 @@ func waitTerminalInternal(t *testing.T, fixture *hostFixture, jobID, runID strin
 	return run
 }
 
-func workflowTargetInternal(t *testing.T, run scheduler.Run) scheduler.TargetOutcome {
+func workflowTarget(t *testing.T, run types.SchedulerRun) types.TargetOutcome {
 	t.Helper()
-	var found []scheduler.TargetOutcome
+	var found []types.TargetOutcome
 	for _, target := range run.Outcome.Targets {
-		if target.ResourceType == scheduler.WorkflowTarget {
+		if target.ResourceType == types.SchedulerWorkflowTarget {
 			found = append(found, target)
 		}
 	}
@@ -385,37 +384,37 @@ func workflowTargetInternal(t *testing.T, run scheduler.Run) scheduler.TargetOut
 }
 
 func newActivitiesFake() *activitiesFake {
-	return &activitiesFake{statuses: map[string]activitytypes.Status{}, completed: map[string]int{}, tracked: map[string]context.CancelCauseFunc{}}
+	return &activitiesFake{statuses: map[string]types.ActivityStatus{}, completed: map[string]int{}, tracked: map[string]context.CancelCauseFunc{}}
 }
 
-func (f *activitiesFake) status(id string) activitytypes.Status {
+func (f *activitiesFake) status(id string) types.ActivityStatus {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.statuses[id]
 }
 
-func (f *activitiesFake) StartActivity(_ context.Context, req activitylib.StartRequest) (*activitytypes.Activity, error) {
+func (f *activitiesFake) StartActivity(_ context.Context, req activitylib.StartRequest) (*types.Activity, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if _, ok := f.statuses[req.ID]; !ok {
-		f.statuses[req.ID] = activitytypes.StatusRunning
+		f.statuses[req.ID] = types.ActivityStatusRunning
 	}
-	return &activitytypes.Activity{ID: req.ID, Status: f.statuses[req.ID]}, nil
+	return &types.Activity{ID: req.ID, Status: f.statuses[req.ID]}, nil
 }
 
-func (f *activitiesFake) CompleteActivity(_ context.Context, activityID string, status activitytypes.Status, _ string, _ *string, _ ...string) (*activitytypes.Activity, error) {
+func (f *activitiesFake) CompleteActivity(_ context.Context, activityID string, status types.ActivityStatus, _ string, _ *string, _ ...string) (*types.Activity, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.statuses[activityID] = status
 	f.completed[activityID]++
-	return &activitytypes.Activity{ID: activityID, Status: status}, nil
+	return &types.Activity{ID: activityID, Status: status}, nil
 }
 
-func (f *activitiesFake) AppendMessage(context.Context, string, activitylib.AppendMessageRequest) (*activitytypes.Message, error) {
-	return &activitytypes.Message{}, nil
+func (f *activitiesFake) AppendMessage(context.Context, string, activitylib.AppendMessageRequest) (*types.ActivityMessage, error) {
+	return &types.ActivityMessage{}, nil
 }
 
-func (f *activitiesFake) AppendMessages(context.Context, string, []activitylib.AppendMessageRequest) ([]activitytypes.Message, error) {
+func (f *activitiesFake) AppendMessages(context.Context, string, []activitylib.AppendMessageRequest) ([]types.ActivityMessage, error) {
 	return nil, nil
 }
 
@@ -435,8 +434,8 @@ func (f *activitiesFake) requestCancel(activityID string) {
 	cancel(activitylib.ErrCanceled)
 }
 
-func (f *activitiesFake) UpdateActivity(_ context.Context, activityID string, _ activitylib.UpdateRequest) (*activitytypes.Activity, error) {
-	return &activitytypes.Activity{ID: activityID}, nil
+func (f *activitiesFake) UpdateActivity(_ context.Context, activityID string, _ activitylib.UpdateRequest) (*types.Activity, error) {
+	return &types.Activity{ID: activityID}, nil
 }
 
 func (f *activitiesFake) AwaitActivitySlotBounded(context.Context, string, string) error { return nil }

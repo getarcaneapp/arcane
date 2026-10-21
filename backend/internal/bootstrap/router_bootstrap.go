@@ -10,9 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo-otel/v5"
 	"github.com/labstack/echo/v5"
 	echomiddleware "github.com/labstack/echo/v5/middleware"
@@ -61,7 +59,7 @@ var loggerSkipPatterns = []string{
 }
 
 func createAuthValidator(deps api.HandlerDeps) middleware.AuthValidator {
-	resolveUser := func(ctx context.Context, user *usertypes.Actor) *authz.PermissionSet {
+	resolveUser := func(ctx context.Context, user *types.Actor) *authz.PermissionSet {
 		ps, err := deps.Role.Service().ResolvePermissions(ctx, user.ID)
 		if err != nil || ps == nil {
 			slog.WarnContext(ctx, "failed to resolve user permissions for env proxy", "error", err)
@@ -77,7 +75,7 @@ func createAuthValidator(deps api.HandlerDeps) middleware.AuthValidator {
 		}
 		return ps
 	}
-	return func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *usertypes.Actor, bool) {
+	return func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
 		req := c.Request()
 		// Check for API key authentication
 		if apiKey := req.Header.Get(middleware.HeaderApiKey); apiKey != "" {
@@ -290,12 +288,12 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		p.TunnelRegistry,
 		httpx.ValidateWebSocketOrigin(cfg.GetAppURL()),
 	)
-	apiGroup.Use(middleware.NewEnvironmentScopeMiddleware(func(ctx context.Context, id string) (base.EnvironmentRef, error) {
+	apiGroup.Use(middleware.NewEnvironmentScopeMiddleware(func(ctx context.Context, id string) (types.EnvironmentRef, error) {
 		env, err := deps.Environment.Service().GetEnvironmentByIDCached(ctx, id)
 		if err != nil {
-			return base.EnvironmentRef{}, err
+			return types.EnvironmentRef{}, err
 		}
-		return base.EnvironmentRef{ID: id, Name: environment.DisplayName(id, env.Name)}, nil
+		return types.EnvironmentRef{ID: id, Name: environment.DisplayName(id, env.Name)}, nil
 	}, permissionMatcher, func(ctx context.Context) int {
 		return deps.Settings.Service().GetIntSetting(ctx, "allEnvironmentsLimit", 64)
 	}))

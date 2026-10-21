@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	internaltypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 func Command() *cobra.Command {
@@ -43,11 +43,11 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[podman.Status]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.PodmanStatus]{
 				Method:         http.MethodGet,
-				Path:           types.PodmanStatus(c.EnvID()),
+				Path:           internaltypes.PodmanStatus(c.EnvID()),
 				FailureMessage: "failed to get Podman status",
-				Render: func(data podman.Status) error {
+				Render: func(data types.PodmanStatus) error {
 					if !data.Detected {
 						output.Info("Podman was not detected on this environment")
 						return nil
@@ -94,12 +94,12 @@ func newAutoUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[podman.AutoUpdateResult]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.PodmanAutoUpdateResult]{
 				Method:         http.MethodPost,
-				Path:           types.PodmanAutoUpdate(c.EnvID()),
-				Body:           podman.AutoUpdateOptions{DryRun: opts.dryRun},
+				Path:           internaltypes.PodmanAutoUpdate(c.EnvID()),
+				Body:           types.PodmanAutoUpdateOptions{DryRun: opts.dryRun},
 				FailureMessage: "failed to run Podman auto-update",
-				Render: func(data podman.AutoUpdateResult) error {
+				Render: func(data types.PodmanAutoUpdateResult) error {
 					output.Header("Podman Auto-Update")
 					output.KeyValue("Mode", data.Mode)
 					if data.Unit != nil {

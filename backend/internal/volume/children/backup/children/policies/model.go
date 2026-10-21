@@ -1,7 +1,7 @@
 package policies
 
 import (
-	"github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 )
@@ -23,8 +23,8 @@ func (VolumeBackupPolicy) TableName() string {
 	return "volume_backup_policies"
 }
 
-func (p VolumeBackupPolicy) ToDTO(lastRun *volume.BackupEntry) volume.BackupPolicy {
-	return volume.BackupPolicy{
+func (p VolumeBackupPolicy) ToDTO(lastRun *types.VolumeBackupEntry) types.VolumeBackupPolicy {
+	return types.VolumeBackupPolicy{
 		ID:              p.ID,
 		VolumeName:      p.VolumeName,
 		Enabled:         p.Enabled,

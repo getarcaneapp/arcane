@@ -11,9 +11,7 @@ import (
 	"strings"
 	"time"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
-	recoverytypes "github.com/getarcaneapp/arcane/types/v2/recovery"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -43,20 +41,20 @@ var RestoreCmd = &cobra.Command{
 	Use:    "recovery-restore",
 	Short:  "Apply a prepared Arcane recovery snapshot",
 	Hidden: true,
-	RunE:   runRestoreInternal,
+	RunE:   runRestore,
 }
 
 func init() {
 	RestoreCmd.Flags().StringVar(&requestPath, "request", "/app/data/.arcane-recovery-request.json", "Prepared recovery request")
 }
 
-func runRestoreInternal(cmd *cobra.Command, _ []string) error {
+func runRestore(cmd *cobra.Command, _ []string) error {
 	ctx := cmd.Context()
 	data, err := os.ReadFile(requestPath)
 	if err != nil {
 		return fmt.Errorf("read recovery request: %w", err)
 	}
-	var request recoverytypes.RestoreRequest
+	var request types.RecoveryRestoreRequest
 	if unmarshalErr := json.Unmarshal(data, &request); unmarshalErr != nil {
 		return fmt.Errorf("decode recovery request: %w", unmarshalErr)
 	}
@@ -88,18 +86,18 @@ func runRestoreInternal(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("stop Arcane container: %w", containerStopErr)
 	}
 	restart := func() { _, _ = dockerClient.ContainerStart(ctx, request.ContainerID, client.ContainerStartOptions{}) }
-	if runStagesErr := runStagesInternal(ctx, dockerClient, request, request.Stages); runStagesErr != nil {
+	if runStagesErr := runStages(ctx, dockerClient, request, request.Stages); runStagesErr != nil {
 		// Arcane restarts only when the rollback succeeds; otherwise it stays
 		// stopped rather than running with mismatched data and projects.
 		runStagesErr = fmt.Errorf("rustic system restore failed: %w", runStagesErr)
 		if len(request.RollbackStages) == 0 {
 			return errors.Join(runStagesErr, errors.New("no pre-restore system backup is available for rollback; Arcane was left stopped"))
 		}
-		if rollbackErr := runStagesInternal(context.WithoutCancel(ctx), dockerClient, request, request.RollbackStages); rollbackErr != nil {
+		if rollbackErr := runStages(context.WithoutCancel(ctx), dockerClient, request, request.RollbackStages); rollbackErr != nil {
 			return errors.Join(runStagesErr, fmt.Errorf("restoring the pre-restore system backup failed; Arcane was left stopped: %w", rollbackErr))
 		}
 		rollbackManifest, readErr := os.ReadFile("/app/data/.arcane-recovery.json")
-		var rollback recoverytypes.Manifest
+		var rollback types.RecoveryManifest
 		if readErr == nil {
 			readErr = json.Unmarshal(rollbackManifest, &rollback)
 		}
@@ -120,13 +118,13 @@ func runRestoreInternal(cmd *cobra.Command, _ []string) error {
 		restart()
 		return fmt.Errorf("read restored recovery manifest: %w", err)
 	}
-	var manifest recoverytypes.Manifest
+	var manifest types.RecoveryManifest
 	if unmarshalErr2 := json.Unmarshal(manifestData, &manifest); unmarshalErr2 != nil {
 		restart()
 		return fmt.Errorf("decode restored recovery manifest: %w", unmarshalErr2)
 	}
 	_ = os.Remove("/app/data/.arcane-recovery.json")
-	if (manifest.FormatVersion != 1 && manifest.FormatVersion != recoverytypes.ManifestFormatVersion) || len(manifest.Environment) == 0 {
+	if (manifest.FormatVersion != 1 && manifest.FormatVersion != types.RecoveryManifestFormatVersion) || len(manifest.Environment) == 0 {
 		restart()
 		return errors.New("unsupported or incomplete Arcane recovery manifest")
 	}
@@ -138,7 +136,7 @@ func runRestoreInternal(cmd *cobra.Command, _ []string) error {
 		Environment:   manifest.Environment["ENVIRONMENT"],
 		AgentMode:     manifest.Environment["AGENT_MODE"] == "true",
 	})
-	if finalizeRestoredBackupErr := finalizeRestoredBackupInternal(ctx, manifest.Environment["DATABASE_URL"], manifest.BackupID, manifest.ActivityID, request); finalizeRestoredBackupErr != nil {
+	if finalizeRestoredBackupErr := finalizeRestoredBackup(ctx, manifest.Environment["DATABASE_URL"], manifest.BackupID, manifest.ActivityID, request); finalizeRestoredBackupErr != nil {
 		return fmt.Errorf("finalize restored system backup: %w", finalizeRestoredBackupErr)
 	}
 	if upgradeContainerErr := upgrade.UpgradeContainer(ctx, dockerClient, inspect.Container, request.ContainerImage, "", manifest.Environment); upgradeContainerErr != nil {
@@ -147,7 +145,7 @@ func runRestoreInternal(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func finalizeRestoredBackupInternal(ctx context.Context, databaseURL, manifestBackupID, manifestActivityID string, request recoverytypes.RestoreRequest) error {
+func finalizeRestoredBackup(ctx context.Context, databaseURL, manifestBackupID, manifestActivityID string, request types.RecoveryRestoreRequest) error {
 	if !strings.HasPrefix(databaseURL, "file:") {
 		return errors.New("restored Arcane database is not SQLite")
 	}
@@ -165,7 +163,7 @@ func finalizeRestoredBackupInternal(ctx context.Context, databaseURL, manifestBa
 		}
 	}()
 	db = db.WithContext(ctx)
-	if finalizeRestoredRunErr := finalizeRestoredRunInternal(db, manifestBackupID, request); finalizeRestoredRunErr != nil {
+	if finalizeRestoredRunErr := finalizeRestoredRun(db, manifestBackupID, request); finalizeRestoredRunErr != nil {
 		return finalizeRestoredRunErr
 	}
 	if strings.TrimSpace(request.RecoveryKey) != "" {
@@ -173,7 +171,7 @@ func finalizeRestoredBackupInternal(ctx context.Context, databaseURL, manifestBa
 			return setRecoveryKeyErr
 		}
 	}
-	if preserveSafetyBackupErr := preserveSafetyBackupInternal(db, request.SafetyBackup); preserveSafetyBackupErr != nil {
+	if preserveSafetyBackupErr := preserveSafetyBackup(db, request.SafetyBackup); preserveSafetyBackupErr != nil {
 		return preserveSafetyBackupErr
 	}
 	// Keep the restored database pointing at the directory projects were restored into.
@@ -185,16 +183,16 @@ func finalizeRestoredBackupInternal(ctx context.Context, databaseURL, manifestBa
 			return operationErr
 		}
 	}
-	if finalizeRestoredActivityErr := finalizeRestoredActivityInternal(db, manifestActivityID); finalizeRestoredActivityErr != nil {
+	if finalizeRestoredActivityErr := finalizeRestoredActivity(db, manifestActivityID); finalizeRestoredActivityErr != nil {
 		return finalizeRestoredActivityErr
 	}
 	return francis.ClearRestoredHosts(ctx, databaseURL)
 }
 
-// finalizeRestoredRunInternal marks the restored run succeeded, filling only
+// finalizeRestoredRun marks the restored run succeeded, filling only
 // the fields the snapshot's database copy did not already carry. Updates use
 // explicit column maps because the restored schema may predate the binary's.
-func finalizeRestoredRunInternal(db *gorm.DB, manifestBackupID string, request recoverytypes.RestoreRequest) error {
+func finalizeRestoredRun(db *gorm.DB, manifestBackupID string, request types.RecoveryRestoreRequest) error {
 	var run system.SystemBackupRun
 	found := false
 	for _, backupID := range []string{manifestBackupID, request.BackupID} {
@@ -235,13 +233,13 @@ func finalizeRestoredRunInternal(db *gorm.DB, manifestBackupID string, request r
 	return db.Model(&system.SystemBackupRun{}).Where("id = ?", run.ID).Updates(values).Error
 }
 
-func preserveSafetyBackupInternal(db *gorm.DB, safetyBackup *recoverytypes.SafetyBackup) error {
+func preserveSafetyBackup(db *gorm.DB, safetyBackup *types.RecoverySafetyBackup) error {
 	if safetyBackup == nil || strings.TrimSpace(safetyBackup.ID) == "" || strings.TrimSpace(safetyBackup.LocalSnapshotID) == "" {
 		return nil
 	}
 	onConflict := map[string]any{
 		"size": safetyBackup.Size, "updated_at": time.Now().UTC(), "status": system.SystemBackupStatusSucceeded,
-		"trigger": system.SystemBackupTriggerSafety, "destination": backuptypes.SystemBackupDestinationLocal,
+		"trigger": system.SystemBackupTriggerSafety, "destination": types.SystemBackupDestinationLocal,
 		"local_snapshot_id": safetyBackup.LocalSnapshotID, "error": "",
 	}
 	return db.Model(&system.SystemBackupRun{}).
@@ -250,15 +248,15 @@ func preserveSafetyBackupInternal(db *gorm.DB, safetyBackup *recoverytypes.Safet
 			"id": safetyBackup.ID, "size": safetyBackup.Size, "created_at": safetyBackup.CreatedAt, "updated_at": time.Now().UTC(),
 			"status":            system.SystemBackupStatusSucceeded,
 			"trigger":           system.SystemBackupTriggerSafety,
-			"destination":       backuptypes.SystemBackupDestinationLocal,
+			"destination":       types.SystemBackupDestinationLocal,
 			"local_snapshot_id": safetyBackup.LocalSnapshotID, "remote_snapshot_id": "", "s3_destination_id": "",
 			"policy_id": "", "error": "",
 		}).Error
 }
 
-func finalizeRestoredActivityInternal(db *gorm.DB, activityID string) error {
+func finalizeRestoredActivity(db *gorm.DB, activityID string) error {
 	var entry activity.Activity
-	query := db.Where("status = ?", activitytypes.StatusRunning)
+	query := db.Where("status = ?", types.ActivityStatusRunning)
 	if strings.TrimSpace(activityID) != "" {
 		query = query.Where("id = ?", activityID)
 	} else {
@@ -273,15 +271,15 @@ func finalizeRestoredActivityInternal(db *gorm.DB, activityID string) error {
 	}
 	now := time.Now().UTC()
 	return db.Model(&activity.Activity{}).Where("id = ?", entry.ID).Updates(map[string]any{
-		"status": activitytypes.StatusSuccess, "progress": 100, "step": "System backup completed",
+		"status": types.ActivityStatusSuccess, "progress": 100, "step": "System backup completed",
 		"latest_message": "Arcane system backup created successfully", "error": nil,
 		"ended_at": now, "duration_ms": now.Sub(entry.StartedAt).Milliseconds(),
 	}).Error
 }
 
-// runStagesInternal restores each stage in order, replacing the target's
+// runStages restores each stage in order, replacing the target's
 // contents with the snapshot path.
-func runStagesInternal(ctx context.Context, dockerClient *client.Client, request recoverytypes.RestoreRequest, stages []recoverytypes.RestoreStage) error {
+func runStages(ctx context.Context, dockerClient *client.Client, request types.RecoveryRestoreRequest, stages []types.RecoveryRestoreStage) error {
 	for _, stage := range stages {
 		if len(stage.Target.Mounts) == 0 || strings.TrimSpace(stage.Target.Path) == "" {
 			return fmt.Errorf("restore stage for %s has no destination", stage.SourcePath)

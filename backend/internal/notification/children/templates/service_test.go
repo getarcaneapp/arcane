@@ -4,9 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
-	"github.com/getarcaneapp/arcane/types/v2/notification"
-	"github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
@@ -15,7 +13,7 @@ import (
 func TestService_RenderEmailTemplate_IncludesEnvironment(t *testing.T) {
 	svc := NewService(func() string { return "http://localhost:3000" })
 
-	_, htmlBody, err := svc.ImageUpdate("Homelab Prod", "nginx:latest", &imageupdate.Response{
+	_, htmlBody, err := svc.ImageUpdate("Homelab Prod", "nginx:latest", &types.ImageUpdateResponse{
 		HasUpdate:     true,
 		UpdateType:    "digest",
 		CurrentDigest: "sha256:current",
@@ -43,7 +41,7 @@ func TestService_RenderContainerUpdateEmailTemplate_IncludesEnvironment(t *testi
 func TestService_RenderBatchEmailTemplate_IncludesEnvironment(t *testing.T) {
 	svc := NewService(func() string { return "http://localhost:3000" })
 
-	updates := map[string]*imageupdate.Response{
+	updates := map[string]*types.ImageUpdateResponse{
 		"nginx:latest": {
 			HasUpdate:     true,
 			UpdateType:    "digest",
@@ -71,7 +69,7 @@ func TestService_RenderBatchEmailTemplate_IncludesEnvironment(t *testing.T) {
 func TestService_RenderVulnerabilitySummaryEmailTemplate_IncludesEnvironment(t *testing.T) {
 	svc := NewService(func() string { return "http://localhost:3000" })
 
-	_, htmlBody, err := svc.Vulnerability("Remote Alpha", notification.DispatchVulnerabilityFound{
+	_, htmlBody, err := svc.Vulnerability("Remote Alpha", types.NotificationDispatchVulnerabilityFound{
 		CVEID:        "Daily Summary - 2026-01-09",
 		ImageName:    "5 image(s) scanned, 2 with fixable vulnerabilities",
 		FixedVersion: "7 fixable vulnerability record(s)",
@@ -85,7 +83,7 @@ func TestService_RenderVulnerabilitySummaryEmailTemplate_IncludesEnvironment(t *
 func TestService_RenderPruneReportEmailTemplate_IncludesEnvironment(t *testing.T) {
 	svc := NewService(func() string { return "http://localhost:3000" })
 
-	_, htmlBody, err := svc.PruneReport("Cluster West", &system.PruneAllResult{
+	_, htmlBody, err := svc.PruneReport("Cluster West", &types.PruneAllResult{
 		SpaceReclaimed:           3825205248,
 		ContainerSpaceReclaimed:  503316480,
 		ImageSpaceReclaimed:      2449473536,

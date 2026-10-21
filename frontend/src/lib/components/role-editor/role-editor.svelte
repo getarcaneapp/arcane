@@ -8,7 +8,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { CopyIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { Role, PermissionsManifest } from '#lib/types/auth.js';
+	import type { Role, PermissionsManifest, RoleWritable } from '#lib/types/auth.js';
 	import { normalizePermissionSelection } from '#lib/utils/permissions.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
@@ -18,7 +18,7 @@
 		role: Role | null;
 		manifest: PermissionsManifest;
 		isLoading?: boolean;
-		onSubmit: (data: { name: string; description?: string; permissions: string[] }) => void | Promise<void>;
+		onSubmit: (data: Pick<Role, RoleWritable>) => void | Promise<void>;
 		onClone?: () => void;
 	};
 
@@ -50,7 +50,7 @@
 		if (!data) return;
 		onSubmit({
 			name: data.name,
-			description: data.description ? data.description : undefined,
+			description: data.description || null,
 			permissions: data.permissions
 		});
 	}

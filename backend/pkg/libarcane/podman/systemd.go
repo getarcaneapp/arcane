@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/coreos/go-systemd/v22/dbus"
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	godbus "github.com/godbus/dbus/v5"
 	kit "go.getarcane.app/kit/pkg"
 
@@ -20,21 +20,21 @@ import (
 const defaultSystemBusAddress = "unix:path=/run/dbus/system_bus_socket"
 
 type Systemd interface {
-	Availability(ctx context.Context) podmantypes.SystemdAvailability
+	Availability(ctx context.Context) types.PodmanSystemdAvailability
 	Start(ctx context.Context, unit string) error
 	Stop(ctx context.Context, unit string) error
 	Restart(ctx context.Context, unit string) error
-	UnitStatus(ctx context.Context, unit string) (podmantypes.UnitStatus, error)
+	UnitStatus(ctx context.Context, unit string) (types.PodmanUnitStatus, error)
 }
 
 type dbusSystemd struct {
 	address string
-	scope   podmantypes.SystemdScope
+	scope   types.PodmanSystemdScope
 	reason  string
 }
 
 func NewSystemd(host string, rootless bool, getenv func(string) string) Systemd {
-	scope := kit.Ternary(rootless, podmantypes.SystemdScopeUser, podmantypes.SystemdScopeSystem)
+	scope := kit.Ternary(rootless, types.PodmanSystemdScopeUser, types.PodmanSystemdScopeSystem)
 	busVariable := kit.Ternary(rootless, "DBUS_SESSION_BUS_ADDRESS", "DBUS_SYSTEM_BUS_ADDRESS")
 	address := getenv(busVariable)
 	scheme, _, _ := strings.Cut(host, "://")
@@ -58,17 +58,17 @@ func NewSystemd(host string, rootless bool, getenv func(string) string) Systemd 
 	}
 }
 
-func (s *dbusSystemd) Availability(ctx context.Context) podmantypes.SystemdAvailability {
+func (s *dbusSystemd) Availability(ctx context.Context) types.PodmanSystemdAvailability {
 	conn, err := s.connect(ctx)
 	if err != nil {
-		return podmantypes.SystemdAvailability{
+		return types.PodmanSystemdAvailability{
 			Scope:  s.scope,
 			Reason: err.Error(),
 		}
 	}
 	conn.Close()
 
-	return podmantypes.SystemdAvailability{
+	return types.PodmanSystemdAvailability{
 		Available: true,
 		Scope:     s.scope,
 	}
@@ -92,22 +92,22 @@ func (s *dbusSystemd) Restart(ctx context.Context, unit string) error {
 	})
 }
 
-func (s *dbusSystemd) UnitStatus(ctx context.Context, unit string) (podmantypes.UnitStatus, error) {
+func (s *dbusSystemd) UnitStatus(ctx context.Context, unit string) (types.PodmanUnitStatus, error) {
 	conn, err := s.connect(ctx)
 	if err != nil {
-		return podmantypes.UnitStatus{}, err
+		return types.PodmanUnitStatus{}, err
 	}
 	defer conn.Close()
 
 	units, err := conn.ListUnitsByNamesContext(ctx, []string{unit})
 	if err != nil {
-		return podmantypes.UnitStatus{}, fmt.Errorf("read systemd unit %s: %w", unit, err)
+		return types.PodmanUnitStatus{}, fmt.Errorf("read systemd unit %s: %w", unit, err)
 	}
 	if len(units) == 0 {
-		return podmantypes.UnitStatus{}, common.Classify(common.ErrNotFound, fmt.Errorf("systemd unit %s not found", unit))
+		return types.PodmanUnitStatus{}, common.Classify(common.ErrNotFound, fmt.Errorf("systemd unit %s not found", unit))
 	}
 
-	return podmantypes.UnitStatus{
+	return types.PodmanUnitStatus{
 		Name:        units[0].Name,
 		Description: units[0].Description,
 		LoadState:   units[0].LoadState,

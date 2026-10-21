@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 )
@@ -52,7 +52,7 @@ func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRend
 	}
 	ns := namespace{name: stackName}
 
-	project, err := projects.LoadComposeProjectFromContent(ctx, projecttypes.ComposeContentOptions{
+	project, err := projects.LoadComposeProjectFromContent(ctx, types.ComposeContentOptions{
 		ProjectName:     stackName,
 		ComposeContent:  opts.ComposeContent,
 		OverrideContent: opts.OverrideContent,
@@ -67,11 +67,11 @@ func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRend
 		project.Name = stackName
 	}
 
-	configMetaByKey, err := planConfigsInternal(project, ns)
+	configMetaByKey, err := planConfigs(project, ns)
 	if err != nil {
 		return nil, invalidStackErrorInternal(err)
 	}
-	secretMetaByKey, err := planSecretsInternal(project, ns)
+	secretMetaByKey, err := planSecrets(project, ns)
 	if err != nil {
 		return nil, invalidStackErrorInternal(err)
 	}
@@ -92,20 +92,20 @@ func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRend
 		Name:            stackName,
 		RenderedCompose: string(rendered),
 		Services:        serviceNames,
-		Networks:        sortedStringValuesInternal(planNetworksInternal(project, ns)),
-		Volumes:         sortedStringValuesInternal(planVolumesInternal(project, ns)),
-		Configs:         sortedPlannedResourceNamesInternal(configMetaByKey),
-		Secrets:         sortedPlannedResourceNamesInternal(secretMetaByKey),
+		Networks:        sortedStringValues(planNetworks(project, ns)),
+		Volumes:         sortedStringValues(planVolumes(project, ns)),
+		Configs:         sortedPlannedResourceNames(configMetaByKey),
+		Secrets:         sortedPlannedResourceNames(secretMetaByKey),
 	}, nil
 }
 
-func sortedStringValuesInternal(valuesByKey map[string]string) []string {
+func sortedStringValues(valuesByKey map[string]string) []string {
 	values := slices.Collect(maps.Values(valuesByKey))
 	slices.Sort(values)
 	return values
 }
 
-func sortedPlannedResourceNamesInternal(plansByKey map[string]plannedFileResourceInternal) []string {
+func sortedPlannedResourceNames(plansByKey map[string]plannedFileResourceInternal) []string {
 	names := make([]string, 0, len(plansByKey))
 	for _, plan := range plansByKey {
 		names = append(names, plan.Meta.Name)

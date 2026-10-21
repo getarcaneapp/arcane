@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/gitops"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -21,13 +20,13 @@ import (
 type ProjectStatus string
 
 const (
-	ProjectStatusRunning          ProjectStatus = projecttypes.StatusRunning
-	ProjectStatusStopped          ProjectStatus = projecttypes.StatusStopped
-	ProjectStatusPartiallyRunning ProjectStatus = projecttypes.StatusPartiallyRunning
-	ProjectStatusUnknown          ProjectStatus = projecttypes.StatusUnknown
-	ProjectStatusDeploying        ProjectStatus = projecttypes.StatusDeploying
-	ProjectStatusStopping         ProjectStatus = projecttypes.StatusStopping
-	ProjectStatusRestarting       ProjectStatus = projecttypes.StatusRestarting
+	ProjectStatusRunning          ProjectStatus = types.ProjectStatusRunning
+	ProjectStatusStopped          ProjectStatus = types.ProjectStatusStopped
+	ProjectStatusPartiallyRunning ProjectStatus = types.ProjectStatusPartiallyRunning
+	ProjectStatusUnknown          ProjectStatus = types.ProjectStatusUnknown
+	ProjectStatusDeploying        ProjectStatus = types.ProjectStatusDeploying
+	ProjectStatusStopping         ProjectStatus = types.ProjectStatusStopping
+	ProjectStatusRestarting       ProjectStatus = types.ProjectStatusRestarting
 )
 
 type Project struct {
@@ -128,25 +127,25 @@ type GitOpsSync struct {
 
 // BackupState derives the persisted backup lifecycle state.
 func (s GitOpsSync) BackupState() string {
-	if s.Mode != gitops.SyncModeBackup {
+	if s.Mode != types.GitOpsSyncModeBackup {
 		return ""
 	}
 	status := kit.FromPtr(s.LastSyncStatus)
 	switch {
 	case status == "running":
-		return gitops.BackupStateBackingUp
+		return types.GitOpsBackupStateBackingUp
 	case s.BackupConflict:
-		return gitops.BackupStateNeedsAttention
+		return types.GitOpsBackupStateNeedsAttention
 	case status == "failed":
-		return gitops.BackupStateFailed
+		return types.GitOpsBackupStateFailed
 	case !s.AutoSync:
-		return gitops.BackupStatePaused
+		return types.GitOpsBackupStatePaused
 	case s.BackupPending:
-		return gitops.BackupStatePending
+		return types.GitOpsBackupStatePending
 	case s.LastBackupAt != nil:
-		return gitops.BackupStateBackedUp
+		return types.GitOpsBackupStateBackedUp
 	default:
-		return gitops.BackupStateNever
+		return types.GitOpsBackupStateNever
 	}
 }
 

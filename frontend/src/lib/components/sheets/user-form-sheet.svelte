@@ -8,15 +8,15 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { User } from '#lib/types/auth.js';
+	import type { User, UserUpdate } from '#lib/types/auth.js';
 	import type { Role } from '#lib/types/auth.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import { isValidUserEmail } from '#lib/utils/formatting.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
 	type RoleAssignmentInput = { roleId: string; environmentId?: string };
-	type UserSubmission = Omit<Partial<User>, 'roleAssignments'> & {
-		password?: string;
+	type UserSubmission = UserUpdate & {
 		roleAssignments?: RoleAssignmentInput[];
 	};
 	type UserFormSubmission = { user: UserSubmission; isEditMode: boolean; userId?: string };
@@ -122,32 +122,43 @@
 			return;
 		}
 
-		const userData: UserSubmission = {
-			roleAssignments: data.roleAssignments
-		};
-
-		// When editing, only send profile fields that changed so a stale form
-		// can't overwrite newer values
-		if (!isEditMode || data.displayName.trim() !== (userToEdit?.displayName ?? '').trim()) {
-			userData.displayName = data.displayName;
+		if (!userToEdit) {
+			await submitUser({
+				user: {
+					username: data.username,
+					password,
+					displayName: data.displayName || undefined,
+					email: data.email || undefined,
+					roleAssignments: data.roleAssignments
+				},
+				isEditMode
+			});
+			return;
 		}
 
-		if (data.email && (!isEditMode || data.email.trim() !== (userToEdit?.email ?? '').trim())) {
-			userData.email = data.email;
-		}
+		const profile = changedFields(
+			{
+				...userToEdit,
+				username: userToEdit.username.trim(),
+				displayName: userToEdit.displayName || null,
+				email: userToEdit.email || null
+			},
+			{
+				displayName: data.displayName || null,
+				email: data.email || null,
+				username: canEditUsername ? data.username : userToEdit.username.trim()
+			}
+		);
 
-		// Only include username when creating, or when editing changed it — an
-		// unchanged legacy username with @ would fail the backend pattern check
-		if (!isEditMode || (canEditUsername && data.username !== userToEdit?.username.trim())) {
-			userData.username = data.username;
-		}
-
-		// Only include password if it's provided (for create) or if editing and password is not empty
-		if (!isEditMode || (isEditMode && password)) {
-			userData.password = password;
-		}
-
-		await submitUser({ user: userData, isEditMode, userId: userToEdit?.id });
+		await submitUser({
+			user: {
+				...profile,
+				...(password ? { password } : {}),
+				roleAssignments: data.roleAssignments
+			},
+			isEditMode,
+			userId: userToEdit.id
+		});
 	}
 
 	function handleOpenChange(newOpenState: boolean) {

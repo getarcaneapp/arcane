@@ -50,6 +50,7 @@
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { createSettingsForm } from '#lib/utils/settings-form.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -382,10 +383,13 @@
 			throw new Error(m.features_unavailable());
 		}
 		if (formData.name !== environment.name || formData.enabled !== environment.enabled || apiUrlChanged) {
-			const update = environmentUpdateSchema.parse({
-				...formData,
-				accessToken: directRemoteUrlChanged ? formData.accessToken : undefined
-			});
+			const update = changedFields(
+				environment,
+				environmentUpdateSchema.parse({
+					...formData,
+					accessToken: directRemoteUrlChanged ? formData.accessToken : undefined
+				})
+			);
 			const result = await tryCatch(environmentManagementService.update(environmentId, update));
 			if (result.error) {
 				throw new Error(result.error.message);
