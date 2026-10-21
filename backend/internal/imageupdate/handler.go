@@ -28,14 +28,10 @@ type CheckImageUpdateByIDInput struct {
 	ImageID       string `path:"imageId" doc:"Image ID"`
 }
 
-type CheckMultipleImagesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.BatchImageUpdateRequest
-}
-
-type CheckAllImagesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          types.CheckAllImagesRequest
+type CheckImagesActionInput struct {
+	EnvironmentID string                         `path:"id" doc:"Environment ID"`
+	Action        string                         `query:"action" required:"true" enum:"all,batch" doc:"Check every local image or only the listed image references"`
+	Body          *types.BatchImageUpdateRequest `required:"false"`
 }
 
 type GetUpdateInfoByRefsInput struct {
@@ -85,36 +81,18 @@ func (h *ImageUpdateHandler) CheckImageUpdateByID(ctx context.Context, input *Ch
 	}, nil
 }
 
-func (h *ImageUpdateHandler) CheckMultipleImages(ctx context.Context, input *CheckMultipleImagesInput) (*handlerutil.Out[types.ImageUpdateBatchResponse], error) {
-	// Empty batch is valid - return empty results
-	if len(input.Body.ImageRefs) == 0 {
-		return &handlerutil.Out[types.ImageUpdateBatchResponse]{
-			Body: types.ApiResponse[types.ImageUpdateBatchResponse]{
-				Success: true,
-				Data:    types.ImageUpdateBatchResponse{},
-			},
-		}, nil
+func (h *ImageUpdateHandler) CheckImages(ctx context.Context, input *CheckImagesActionInput) (*handlerutil.Out[types.ImageUpdateBatchResponse], error) {
+	if input.Action == "batch" && len(kit.FromPtr(input.Body).ImageRefs) == 0 {
+		return nil, huma.Error400BadRequest("imageRefs is required for action=batch")
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	results, err := h.imageUpdateService.CheckImages(runtimeCtx, types.ImageUpdateCheckRequest{ImageRefs: input.Body.ImageRefs}, input.Body.Credentials)
+	results, err := h.imageUpdateService.CheckImages(runtimeCtx, types.ImageUpdateCheckRequest{
+		All:       input.Action == "all",
+		ImageRefs: kit.FromPtr(input.Body).ImageRefs,
+	}, kit.FromPtr(input.Body).Credentials)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to check image updates: " + err.Error())
-	}
-
-	return &handlerutil.Out[types.ImageUpdateBatchResponse]{
-		Body: types.ApiResponse[types.ImageUpdateBatchResponse]{
-			Success: true,
-			Data:    results,
-		},
-	}, nil
-}
-
-func (h *ImageUpdateHandler) CheckAllImages(ctx context.Context, input *CheckAllImagesInput) (*handlerutil.Out[types.ImageUpdateBatchResponse], error) {
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	results, err := h.imageUpdateService.CheckImages(runtimeCtx, types.ImageUpdateCheckRequest{All: true}, input.Body.Credentials)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to check all images: " + err.Error())
 	}
 
 	return &handlerutil.Out[types.ImageUpdateBatchResponse]{

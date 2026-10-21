@@ -174,7 +174,7 @@ test.describe('Templates', () => {
 			await editDialog.locator('#variable-value').fill('first-edited');
 			const editResponsePromise = page.waitForResponse(
 				(response) =>
-					response.request().method() === 'PUT' &&
+					response.request().method() === 'PATCH' &&
 					/^\/api\/variables\/[^/]+$/.test(new URL(response.url()).pathname)
 			);
 			await editDialog.getByRole('button', { name: 'Save Changes', exact: true }).click();
@@ -248,7 +248,7 @@ test.describe('Templates', () => {
 			await page.getByLabel('Description', { exact: true }).fill('Updated customization template');
 			const templateUpdateResponsePromise = page.waitForResponse(
 				(response) =>
-					response.request().method() === 'PUT' &&
+					response.request().method() === 'PATCH' &&
 					new URL(response.url()).pathname === `/api/templates/${template.id}`
 			);
 			await page.getByRole('button', { name: 'Save', exact: true }).click();
@@ -299,7 +299,9 @@ test.describe('Templates', () => {
 			const deployResponsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname === `/api/environments/0/projects/${project.id}/up`,
+					new URL(response.url()).pathname ===
+						`/api/environments/0/projects/${project.id}/deploy` &&
+					new URL(response.url()).searchParams.get('action') === 'up',
 				{ timeout: 30_000 }
 			);
 			await page
@@ -334,7 +336,7 @@ test.describe('Templates', () => {
 			);
 			expect(container.config.env).toContain(`${publicKey}=${publicValue}`);
 
-			await removeApiResource(page, `/api/environments/0/projects/${project.id}/destroy`, {
+			await removeApiResource(page, `/api/environments/0/projects/${project.id}`, {
 				data: { removeVolumes: false }
 			});
 			projectId = null;
@@ -356,7 +358,7 @@ test.describe('Templates', () => {
 			templateId = null;
 		} finally {
 			if (projectId) {
-				await removeApiResource(page, `/api/environments/0/projects/${projectId}/destroy`, {
+				await removeApiResource(page, `/api/environments/0/projects/${projectId}`, {
 					data: { removeVolumes: false }
 				});
 			}
@@ -378,8 +380,8 @@ test.describe('Templates', () => {
 test.describe('Registries', () => {
 	const route = '/customize/registries';
 	const TOKEN = process.env.REGISTRY_TEST_TOKEN ?? 'e2e-token';
-	const pullUsageRoute = /\/api\/container-registries\/pull-usage(?:\?|$)/;
-	const registryListRoute = /\/api\/container-registries(?:\?|$)/;
+	const pullUsageRoute = /\/api\/registries\/usage(?:\?|$)/;
+	const registryListRoute = /\/api\/registries(?:\?|$)/;
 
 	async function mockRegistryList(page: Page, registryId = 'dockerhub-registry') {
 		await page.context().route(registryListRoute, async (route) => {
@@ -454,8 +456,7 @@ test.describe('Registries', () => {
 	test.describe('Container Registries', () => {
 		const registryIds = new Set<string>();
 		test.afterEach(async ({ page }) => {
-			for (const id of registryIds)
-				await removeApiResource(page, `/api/container-registries/${id}`);
+			for (const id of registryIds) await removeApiResource(page, `/api/registries/${id}`);
 			registryIds.clear();
 		});
 		test.beforeEach(async ({ page }) => {
@@ -548,7 +549,7 @@ test.describe('Registries', () => {
 			const createdPromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname === '/api/container-registries'
+					new URL(response.url()).pathname === '/api/registries'
 			);
 			await dialog.getByRole('button', { name: 'Add Registry', exact: true }).click();
 
@@ -572,7 +573,7 @@ test.describe('Registries', () => {
 
 		test('should open Remove Selected dialog and cancel (no mutation)', async ({ page }) => {
 			const registry = await readApiData<{ id: string }>(
-				await page.request.post('/api/container-registries', {
+				await page.request.post('/api/registries', {
 					data: {
 						url: `e2e-select-${Date.now()}.example.com`,
 						username: 'e2e',

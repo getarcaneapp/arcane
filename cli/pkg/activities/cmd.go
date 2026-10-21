@@ -198,7 +198,7 @@ func newCancelCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Activity]{
 				Method:         http.MethodPost,
-				Path:           clitypes.ActivityCancel(c.EnvID(), args[0]),
+				Path:           clitypes.ActivityAction(c.EnvID(), args[0], "cancel"),
 				FailureMessage: "failed to cancel activity",
 				Render: func(data types.Activity) error {
 					output.Success("Cancellation requested for activity %s (status: %s)", data.ID, data.Status)

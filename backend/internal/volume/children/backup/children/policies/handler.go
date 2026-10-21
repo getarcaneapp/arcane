@@ -47,7 +47,7 @@ func (h *Handler) GetBackupPolicy(ctx context.Context, input *GetVolumeBackupPol
 		if h.environmentService == nil {
 			return nil, huma.Error500InternalServerError("environment service not available")
 		}
-		remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/backup-policy", url.PathEscape(input.VolumeName))
+		remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/backups/policy", url.PathEscape(input.VolumeName))
 		response, err := handlerutil.RemoteJSONProxy(
 			h.environmentService.ProxyJSONRequest,
 		).JSON[types.ApiResponse[types.VolumeBackupPolicyCollection]](
@@ -114,7 +114,7 @@ func (h *Handler) UpdateBackupPolicy(ctx context.Context, input *UpdateVolumeBac
 				}
 				slog.WarnContext(activityCtx, "S3 destination sync failed before local-only volume backup policy write", "environmentId", input.EnvironmentID, "error", syncErr)
 			}
-			remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/backup-policy", url.PathEscape(input.VolumeName))
+			remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/backups/policy", url.PathEscape(input.VolumeName))
 			var proxyErr error
 			remoteResponse, proxyErr = handlerutil.RemoteJSONProxy(
 				h.environmentService.ProxyJSONRequest,

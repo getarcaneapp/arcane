@@ -62,7 +62,7 @@ class ProjectService extends BaseAPIService {
 			? (optionsOrEnvironmentId as DeployProjectOptions | undefined)
 			: (onLineOrOptions as DeployProjectOptions);
 		const envId = await this.resolveEnvironmentId(onLine ? maybeEnvironmentId : (optionsOrEnvironmentId as string | undefined));
-		const url = `/api/environments/${envId}/projects/${projectId}/${mode}`;
+		const url = `/api/environments/${envId}/projects/${projectId}/deploy?action=${mode}`;
 
 		await this.postProjectStream(url, options ?? {}, onLine, {
 			startFailed: (status) => m.progress_deploy_failed_to_start({ status }),
@@ -75,7 +75,9 @@ class ProjectService extends BaseAPIService {
 
 	async downProject(projectName: string, environmentId?: string): Promise<Project> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectName}/down`));
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/projects/${projectName}`, undefined, { params: { action: 'down' } })
+		);
 	}
 
 	async createProject(
@@ -208,34 +210,35 @@ class ProjectService extends BaseAPIService {
 
 	async updateProject(projectId: string, project: ProjectUpdate, environmentId?: string): Promise<Project> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}`, project));
+		return this.handleResponse(this.api.patch(`/environments/${envId}/projects/${projectId}`, project));
 	}
 
 	async restartProject(projectId: string, services?: string[], environmentId?: string): Promise<unknown> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		let params: URLSearchParams | undefined;
-		if (services && services.length > 0) {
-			params = new URLSearchParams();
-			for (const service of services) {
-				params.append('services', service);
-			}
+		const params = new URLSearchParams({ action: 'restart' });
+		for (const service of services ?? []) {
+			params.append('services', service);
 		}
-		return this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/restart`, undefined, { params }));
+		return this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}`, undefined, { params }));
 	}
 
 	async archiveProject(projectId: string, environmentId?: string): Promise<void> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		await this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/archive`));
+		await this.handleResponse(
+			this.api.post(`/environments/${envId}/projects/${projectId}`, undefined, { params: { action: 'archive' } })
+		);
 	}
 
 	async unarchiveProject(projectId: string, environmentId?: string): Promise<void> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		await this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/unarchive`));
+		await this.handleResponse(
+			this.api.post(`/environments/${envId}/projects/${projectId}`, undefined, { params: { action: 'unarchive' } })
+		);
 	}
 
 	private async streamProjectPull(projectId: string, onLine?: (data: any) => void, environmentId?: string): Promise<void> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		const url = `/api/environments/${envId}/projects/${projectId}/pull`;
+		const url = `/api/environments/${envId}/projects/${projectId}/deploy?action=pull`;
 
 		const res = await fetch(url, { method: 'POST', signal: withSessionSignal() });
 		if (!res.ok || !res.body) {
@@ -284,7 +287,7 @@ class ProjectService extends BaseAPIService {
 	async destroyProject(projectName: string, removeVolumes = false, environmentId?: string): Promise<void> {
 		const envId = await this.resolveEnvironmentId(environmentId);
 		await this.handleResponse(
-			this.api.delete(`/environments/${envId}/projects/${projectName}/destroy`, {
+			this.api.delete(`/environments/${envId}/projects/${projectName}`, {
 				data: {
 					removeVolumes
 				}

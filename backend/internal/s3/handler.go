@@ -52,9 +52,10 @@ type s3DestinationOutput struct {
 	Body types.S3Destination
 }
 
-type testS3DestinationInput struct {
-	ID   string               `path:"id" doc:"S3 destination ID"`
-	Body *types.S3Destination `json:"body,omitempty"`
+type s3DestinationActionInput struct {
+	ID     string               `path:"id" doc:"S3 destination ID"`
+	Action string               `query:"action" required:"true" enum:"test" doc:"S3 destination action"`
+	Body   *types.S3Destination `json:"body,omitempty"`
 }
 
 type testS3DestinationConfigurationInput struct {
@@ -162,7 +163,7 @@ func (h *s3DestinationHandler) delete(ctx context.Context, input *s3DestinationI
 	return handlerutil.MessageOutput("S3 destination deleted successfully", ""), nil
 }
 
-func (h *s3DestinationHandler) test(ctx context.Context, input *testS3DestinationInput) (*handlerutil.Out[types.MessageResponse], error) {
+func (h *s3DestinationHandler) test(ctx context.Context, input *s3DestinationActionInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.service.TestS3Destination(ctx, input.ID, input.Body); err != nil {
 		if errors.Is(err, ErrS3DestinationNotFound) {
 			return nil, huma.Error404NotFound(err.Error())

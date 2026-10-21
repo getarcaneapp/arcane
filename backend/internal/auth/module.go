@@ -128,8 +128,8 @@ func RegisterAuth(
 
 	huma.Register(api, huma.Operation{
 		OperationID: "logout-all-other-sessions",
-		Method:      http.MethodPost,
-		Path:        "/auth/sessions/logout-all",
+		Method:      http.MethodDelete,
+		Path:        "/auth/sessions",
 		Summary:     "Logout all other sessions",
 		Description: "Revoke every session for the current user except the one making this request",
 		Tags:        []string{"Auth"},
@@ -138,7 +138,7 @@ func RegisterAuth(
 
 	huma.Register(api, huma.Operation{
 		OperationID: "update-my-profile",
-		Method:      http.MethodPut,
+		Method:      http.MethodPatch,
 		Path:        "/auth/me/profile",
 		Summary:     "Update own profile",
 		Description: "Update the current user's display name and email. Forbidden for OIDC-managed accounts.",

@@ -100,7 +100,7 @@ class PodmanService extends BaseAPIService {
 	): Promise<void> {
 		const envId = await this.environmentId(environmentId);
 		await this.handleResponse(
-			this.api.post(`/environments/${envId}/podman/pods/${encodeURIComponent(podId)}/${action}`, request)
+			this.api.post(`/environments/${envId}/podman/pods/${encodeURIComponent(podId)}`, request, { params: { action } })
 		);
 	}
 
@@ -154,7 +154,9 @@ class PodmanService extends BaseAPIService {
 
 	async quadletAction(name: string, action: PodmanQuadletAction, environmentId?: string): Promise<PodmanUnitStatus> {
 		const envId = await this.environmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/podman/quadlets/${encodeURIComponent(name)}/${action}`, {}));
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/podman/quadlets/${encodeURIComponent(name)}`, {}, { params: { action } })
+		);
 	}
 
 	async kubePlay(request: PodmanKubePlayRequest, environmentId?: string): Promise<PodmanKubePlayReport> {

@@ -14,7 +14,6 @@ import { getCodeMirrorValue, setCodeMirrorValue } from '../utils/playwright.util
 const ROUTES = {
 	page: '/projects',
 	apiProjects: '/api/environments/0/projects',
-	apiImageUpdatesCheckAll: '/api/environments/0/image-updates/check-all',
 	apiUpdaterRun: '/api/environments/0/updater/run',
 	newProject: '/projects/new'
 };
@@ -219,15 +218,11 @@ async function destroyProjectByIdViaAPI(page: Page, projectId: string) {
 		return;
 	}
 
-	await removeApiResource(
-		page,
-		`/api/environments/0/projects/${encodeURIComponent(projectId)}/destroy`,
-		{
-			data: {
-				removeVolumes: true
-			}
+	await removeApiResource(page, `/api/environments/0/projects/${encodeURIComponent(projectId)}`, {
+		data: {
+			removeVolumes: true
 		}
-	);
+	});
 }
 
 async function expectProjectStopped(page: Page, projectId: string) {
@@ -401,14 +396,18 @@ test.describe('Projects Page', () => {
 		let checkAllRequests = 0;
 		let updaterRunRequests = 0;
 
-		await page.route('**/api/environments/*/image-updates/check-all', async (route) => {
-			checkAllRequests += 1;
-			await route.fulfill({
-				status: 200,
-				contentType: 'application/json',
-				body: JSON.stringify({ success: true, data: {} })
-			});
-		});
+		await page.route(
+			(url) =>
+				url.pathname.endsWith('/images/updates/check') && url.searchParams.get('action') === 'all',
+			async (route) => {
+				checkAllRequests += 1;
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({ success: true, data: {} })
+				});
+			}
+		);
 
 		await page.route('**/api/environments/*/updater/run', async (route) => {
 			updaterRunRequests += 1;
@@ -637,10 +636,13 @@ test.describe('New Compose Project Page', () => {
 				.filter({ visible: true });
 			await expect(serviceNameWhenStopped.or(emptyServicesState).first()).toBeVisible();
 
-			await page.route('**/api/environments/*/projects/*/pull', async (route) => {
-				projectPullRequestCount += 1;
-				await route.continue();
-			});
+			await page.route(
+				/\/api\/environments\/[^/]+\/projects\/[^/]+\/deploy\?action=pull/,
+				async (route) => {
+					projectPullRequestCount += 1;
+					await route.continue();
+				}
+			);
 
 			const deployButton = page
 				.getByRole('button', { name: 'Up', exact: true })
@@ -692,13 +694,16 @@ test.describe('New Compose Project Page', () => {
 			// Reset scroll so the floating header doesn't appear from stale scroll state
 			await page.mouse.wheel(0, -100000);
 
-			await page.route('**/api/environments/*/projects/*/up', async (route) => {
-				await route.fulfill({
-					status: 200,
-					contentType: 'application/x-json-stream',
-					body: DEPLOY_STREAM_SUCCESS
-				});
-			});
+			await page.route(
+				/\/api\/environments\/[^/]+\/projects\/[^/]+\/deploy\?action=up/,
+				async (route) => {
+					await route.fulfill({
+						status: 200,
+						contentType: 'application/x-json-stream',
+						body: DEPLOY_STREAM_SUCCESS
+					});
+				}
+			);
 
 			const deployButtonGroup = page
 				.getByRole('group')
@@ -777,13 +782,16 @@ test.describe('New Compose Project Page', () => {
 			// Reset scroll so the floating header doesn't appear from stale scroll state
 			await page.mouse.wheel(0, -100000);
 
-			await page.route('**/api/environments/*/projects/*/redeploy', async (route) => {
-				await route.fulfill({
-					status: 200,
-					contentType: 'application/x-json-stream',
-					body: DEPLOY_STREAM_SUCCESS
-				});
-			});
+			await page.route(
+				/\/api\/environments\/[^/]+\/projects\/[^/]+\/deploy\?action=redeploy/,
+				async (route) => {
+					await route.fulfill({
+						status: 200,
+						contentType: 'application/x-json-stream',
+						body: DEPLOY_STREAM_SUCCESS
+					});
+				}
+			);
 
 			const redeployButtonGroup = page
 				.getByRole('group')
@@ -1341,7 +1349,7 @@ test.describe('Project Detail Page', () => {
 			preferences?: { defaultProjectEditorLayout?: 'auto' | 'classic' | 'tree' };
 		}>(await page.request.get('/api/auth/me'), 'Get original editor preference');
 		const setDefaultLayout = async (layout: 'auto' | 'classic' | 'tree') => {
-			const response = await page.request.put('/api/auth/me/profile', {
+			const response = await page.request.patch('/api/auth/me/profile', {
 				data: { preferences: { defaultProjectEditorLayout: layout } }
 			});
 			expect(response.ok(), `set default project editor layout to ${layout}`).toBeTruthy();

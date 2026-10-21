@@ -37,7 +37,7 @@ class ProjectWorkspaceService extends BaseAPIService {
 	): Promise<ProjectWorkspace> {
 		const envId = await this.resolveEnvironmentId(environmentId);
 		const form = createWorkspaceFormData(manifest, files);
-		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}/workspace`, form));
+		return this.handleResponse(this.api.patch(`/environments/${envId}/projects/${projectId}/workspace`, form));
 	}
 
 	async downloadWorkspaceFile(projectId: string, relativePath: string, environmentId?: string): Promise<void> {

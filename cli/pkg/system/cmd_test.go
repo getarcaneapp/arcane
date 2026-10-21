@@ -15,7 +15,7 @@ import (
 
 func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/api/environments/0/system/containers/start-all" {
+		if r.Method == http.MethodPost && r.URL.Path == "/api/environments/0/system/containers" && r.URL.Query().Get("action") == "startall" {
 			w.WriteHeader(http.StatusForbidden)
 			_, _ = w.Write([]byte(`{"success":false,"data":{"error":"permission denied: containers:start"}}`))
 			return
@@ -56,7 +56,7 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 					return
 				}
 				mu.Lock()
-				mutations = append(mutations, r.URL.Path)
+				mutations = append(mutations, r.URL.RequestURI())
 				mu.Unlock()
 				if tc.partial && strings.Contains(r.URL.Path, "/0/") {
 					w.WriteHeader(http.StatusForbidden)
@@ -82,7 +82,7 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 				require.Contains(t, diagnostics, "Local, Remote")
 				return
 			}
-			require.Equal(t, []string{"/api/environments/0/system/containers/start-all", "/api/environments/remote/system/containers/start-all"}, paths)
+			require.Equal(t, []string{"/api/environments/0/system/containers?action=startall", "/api/environments/remote/system/containers?action=startall"}, paths)
 			if tc.partial {
 				require.ErrorContains(t, runErr, "start denied")
 			} else {

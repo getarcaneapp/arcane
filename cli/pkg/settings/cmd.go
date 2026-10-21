@@ -69,7 +69,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[[]types.SettingDto]{
-				Method:         http.MethodPut,
+				Method:         http.MethodPatch,
 				Path:           clitypes.Settings(c.EnvID()),
 				Body:           req,
 				FailureMessage: "failed to update settings",

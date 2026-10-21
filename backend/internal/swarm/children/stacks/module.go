@@ -76,7 +76,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		api,
 		huma.Operation{
 			OperationID: "update-swarm-stack-source",
-			Method:      http.MethodPut,
+			Method:      http.MethodPatch,
 			Path:        "/environments/{id}/swarm/stacks/{name}/source",
 			Summary:     "Update swarm stack source",
 			Tags: []string{

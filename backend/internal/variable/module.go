@@ -68,7 +68,7 @@ func RegisterVariables(api huma.API, variableService *VariableService, environme
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "updateVariable",
-		Method:      "PUT",
+		Method:      "PATCH",
 		Path:        "/variables/{id}",
 		Summary:     "Update a global variable",
 		Description: "Update a global variable's key, value, secret flag, or environment scope",
@@ -99,7 +99,7 @@ func RegisterVariables(api huma.API, variableService *VariableService, environme
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getVariableSyncStatus",
 		Method:      "GET",
-		Path:        "/variables/sync-status",
+		Path:        "/variables/sync",
 		Summary:     "Get variable sync status",
 		Description: "Get the last global-variable sync result per environment",
 		Tags:        []string{"Variables"},

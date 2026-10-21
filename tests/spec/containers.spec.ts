@@ -447,7 +447,7 @@ test.describe('Lifecycle', () => {
 	};
 
 	async function updateExperimentalFeatures(page: Page, enabled: string) {
-		const response = await page.request.put('/api/environments/0/settings', {
+		const response = await page.request.patch('/api/environments/0/settings', {
 			data: { experimentalFeaturesEnabled: enabled }
 		});
 		if (!response.ok()) {
@@ -544,8 +544,13 @@ test.describe('Lifecycle', () => {
 		return test.step(`${buttonName} container`, async () => {
 			const responseTimeout = pathAction === 'stop' ? 120_000 : 60_000;
 			const matchesActionRequest = (url: string, method: string) => {
-				const pathname = new URL(url).pathname.replace(/\/$/, '');
-				return method === 'POST' && pathname.endsWith(`/containers/${containerId}/${pathAction}`);
+				const parsed = new URL(url);
+				const pathname = parsed.pathname.replace(/\/$/, '');
+				return (
+					method === 'POST' &&
+					pathname.endsWith(`/containers/${containerId}`) &&
+					parsed.searchParams.get('action') === pathAction
+				);
 			};
 			const requestPromise = page.waitForRequest(
 				(request) => matchesActionRequest(request.url(), request.method()),
@@ -837,8 +842,9 @@ test.describe('Lifecycle', () => {
 
 			const responsePromise = page.waitForResponse(
 				(response) =>
-					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname === `/api/environments/0/containers/${containerId}/edit`,
+					response.request().method() === 'PUT' &&
+					new URL(response.url()).pathname ===
+						`/api/environments/0/containers/${containerId}/config`,
 				{ timeout: 60_000 }
 			);
 			await page.getByRole('button', { name: 'Save', exact: true }).click();
@@ -896,7 +902,7 @@ test.describe('Lifecycle', () => {
 			const generateResponsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname === '/api/environments/0/containers/generate-compose'
+					new URL(response.url()).pathname === '/api/environments/0/containers/compose'
 			);
 			await clickHeaderAction(page, 'Convert to Compose');
 			const generated = await readApiData<{ composeContent: string }>(
@@ -937,7 +943,8 @@ test.describe('Lifecycle', () => {
 			const responsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname === `/api/environments/0/containers/${containerId}/kill`
+					new URL(response.url()).pathname === `/api/environments/0/containers/${containerId}` &&
+					new URL(response.url()).searchParams.get('action') === 'kill'
 			);
 			await dialog.getByRole('button', { name: 'Kill container', exact: true }).click();
 			const result = await readApiData<ActionResult>(
@@ -993,7 +1000,7 @@ test.describe('Lifecycle', () => {
 
 		registerCleanup(async () => {
 			for (const id of projectIds)
-				await removeApiResource(page, `/api/environments/0/projects/${id}/destroy`, {
+				await removeApiResource(page, `/api/environments/0/projects/${id}`, {
 					data: { removeVolumes: false }
 				});
 			for (const id of containerIds)

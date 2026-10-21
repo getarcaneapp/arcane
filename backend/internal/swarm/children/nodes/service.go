@@ -470,7 +470,7 @@ func (s *Service) getSwarmJoinTokensForEnvironment(ctx context.Context, environm
 		Success bool                          `json:"success"`
 		Data    types.SwarmJoinTokensResponse `json:"data"`
 	}
-	if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, "/api/environments/0/swarm/join-tokens", nil, &response); err != nil {
+	if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, "/api/environments/0/swarm/join/tokens", nil, &response); err != nil {
 		return nil, fmt.Errorf("failed to get remote swarm join tokens: %w", err)
 	}
 	if !response.Success {
@@ -571,7 +571,7 @@ func (s *Service) fetchSwarmNodeIdentityViaEdge(ctx context.Context, environment
 		Success bool               `json:"success"`
 		Data    *SwarmNodeIdentity `json:"data"`
 	}
-	if err := s.environmentService.ProxyJSONRequest(reqCtx, environmentID, http.MethodGet, "/api/swarm/node-identity", nil, &parsed); err != nil {
+	if err := s.environmentService.ProxyJSONRequest(reqCtx, environmentID, http.MethodGet, "/api/swarm/identity", nil, &parsed); err != nil {
 		return nil, err
 	}
 	if !parsed.Success || parsed.Data == nil {

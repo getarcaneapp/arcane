@@ -133,11 +133,6 @@ type ProjectBuildRequest struct {
 	Load     *bool    `json:"load,omitempty" doc:"Load images into Docker"`
 }
 
-// ProjectUpdateServicesRequest selects project services to update.
-type ProjectUpdateServicesRequest struct {
-	Services []string `json:"services,omitempty" doc:"Service names to update; empty updates all services"`
-}
-
 // ProjectDeployOptions configures project deploy behavior.
 type ProjectDeployOptions struct {
 	// PullPolicy overrides the image pull policy used during deploy.

@@ -120,7 +120,7 @@ func newDestroyCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.forceFlag,
 				Prompt:         fmt.Sprintf("Are you sure you want to destroy project %s? This will remove all containers!", cmp.Or(resolved.Name, resolved.ID)),
-				Path:           clitypes.ProjectDestroy(c.EnvID(), resolved.ID),
+				Path:           clitypes.Project(c.EnvID(), resolved.ID),
 				Body:           types.ProjectDestroy{RemoveFiles: &opts.destroyRemoveFiles, RemoveVolumes: opts.destroyRemoveVolumes},
 				FailureMessage: "failed to destroy project",
 				SuccessMessage: fmt.Sprintf("Project %s destroyed successfully", resolved.Name),
@@ -174,7 +174,9 @@ func newUpCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runProjectStreamAction(cmd, args[0], projectStreamActionConfig{
-				endpoint:       clitypes.ProjectUp,
+				endpoint: func(envID, projectID string) string {
+					return clitypes.ProjectDeploy(envID, projectID, "up")
+				},
 				failureMessage: "failed to start project",
 				successMessage: "Project %s started successfully",
 			})
@@ -201,7 +203,7 @@ func newDownCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           clitypes.ProjectDown(c.EnvID(), resolved.ID),
+				Path:           clitypes.ProjectAction(c.EnvID(), resolved.ID, "down", nil),
 				FailureMessage: "failed to stop project",
 				Render: func(types.MessageResponse) error {
 					output.Success("%s", fmt.Sprintf("Project %s stopped successfully", resolved.Name))
@@ -231,7 +233,7 @@ func newRestartCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           clitypes.ProjectRestart(c.EnvID(), resolved.ID),
+				Path:           clitypes.ProjectAction(c.EnvID(), resolved.ID, "restart", nil),
 				FailureMessage: "failed to restart project",
 				Render: func(types.MessageResponse) error {
 					output.Success("%s", fmt.Sprintf("Project %s restarted successfully", resolved.Name))
@@ -250,7 +252,9 @@ func newRedeployCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runProjectStreamAction(cmd, args[0], projectStreamActionConfig{
-				endpoint:       clitypes.ProjectRedeploy,
+				endpoint: func(envID, projectID string) string {
+					return clitypes.ProjectDeploy(envID, projectID, "redeploy")
+				},
 				failureMessage: "failed to redeploy project",
 				successMessage: "Project %s redeployed successfully",
 			})
@@ -266,7 +270,9 @@ func newPullCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runProjectStreamAction(cmd, args[0], projectStreamActionConfig{
-				endpoint:       clitypes.ProjectPull,
+				endpoint: func(envID, projectID string) string {
+					return clitypes.ProjectDeploy(envID, projectID, "pull")
+				},
 				failureMessage: "failed to pull images",
 				successMessage: "Images pulled successfully for project %s",
 			})
@@ -489,7 +495,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Project]{
-				Method:         http.MethodPut,
+				Method:         http.MethodPatch,
 				Path:           clitypes.Project(c.EnvID(), resolved.ID),
 				Body:           req,
 				FailureMessage: "failed to update project",
@@ -569,7 +575,7 @@ func newUpdateIncludesCmd() *cobra.Command {
 				return fmt.Errorf("failed to finalize workspace upload: %w", closeErr)
 			}
 
-			resp, err := c.RequestRaw(cmd.Context(), http.MethodPut, clitypes.ProjectWorkspace(c.EnvID(), resolved.ID), &requestBody, map[string]string{"Content-Type": writer.FormDataContentType()})
+			resp, err := c.RequestRaw(cmd.Context(), http.MethodPatch, clitypes.ProjectWorkspace(c.EnvID(), resolved.ID), &requestBody, map[string]string{"Content-Type": writer.FormDataContentType()})
 			if err != nil {
 				return fmt.Errorf("failed to update include file: %w", err)
 			}

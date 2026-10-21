@@ -15,7 +15,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "backup-has-path",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/volumes/backups/{backupId}/has-path",
+		Path:        "/environments/{id}/volumes/backups/{backupId}/files/exists",
 		Summary:     "Check if backup contains path",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
