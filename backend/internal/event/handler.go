@@ -16,13 +16,14 @@ type EventHandler struct {
 }
 
 type ListEventsInput struct {
-	Search   string `query:"search" doc:"Search query"`
-	Sort     string `query:"sort" doc:"Column to sort by"`
-	Order    string `query:"order" default:"asc" doc:"Sort direction"`
-	Start    int    `query:"start" default:"0" doc:"Start index"`
-	Limit    int    `query:"limit" default:"20" doc:"Limit"`
-	Severity string `query:"severity" doc:"Filter by severity"`
-	Type     string `query:"type" doc:"Filter by event type (exact type or category prefix, comma-separated)"`
+	Search       string `query:"search" doc:"Search query"`
+	Sort         string `query:"sort" doc:"Column to sort by"`
+	Order        string `query:"order" default:"asc" doc:"Sort direction"`
+	Start        int    `query:"start" default:"0" doc:"Start index"`
+	Limit        int    `query:"limit" default:"20" doc:"Limit"`
+	Severity     string `query:"severity" doc:"Filter by severity"`
+	Type         string `query:"type" doc:"Filter by event type (exact type or category prefix, comma-separated)"`
+	IncludeTotal bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
 }
 
 type GetEventStatsInput struct{}
@@ -36,6 +37,7 @@ type GetEventsByEnvironmentInput struct {
 	Limit         int    `query:"limit" default:"20" doc:"Limit"`
 	Severity      string `query:"severity" doc:"Filter by severity"`
 	Type          string `query:"type" doc:"Filter by event type (exact type or category prefix, comma-separated)"`
+	IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
 }
 
 type DeleteEventInput struct {
@@ -45,6 +47,7 @@ type DeleteEventInput struct {
 // ListEvents returns a paginated list of events.
 func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (*handlerutil.Page[types.Event], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params.SkipCount = !input.IncludeTotal
 
 	if input.Severity != "" {
 		params.Filters["severity"] = input.Severity
@@ -89,6 +92,7 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 	}
 
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params.SkipCount = !input.IncludeTotal
 
 	if input.Severity != "" {
 		params.Filters["severity"] = input.Severity

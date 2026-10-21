@@ -512,13 +512,11 @@ func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string
 	// Fallback: if the image was pruned, look up the image reference from
 	// running containers that were started from this image ID.
 	if imageRef, ok := func() (string, bool) {
-		containers, listErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-			return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
-		})
+		containers, listErr := s.dockerService.ListContainers(ctx)
 		if listErr != nil {
 			return "", false
 		}
-		for _, c := range containers.Items {
+		for _, c := range containers {
 			if c.ImageID != "sha256:"+imageID && c.ImageID != imageID {
 				continue
 			}
@@ -1311,13 +1309,11 @@ func (s *ImageUpdateService) CheckImages(ctx context.Context, request types.Imag
 
 // MonitoredImageRefs keeps the refs whose containers still permit update checks.
 func (s *ImageUpdateService) MonitoredImageRefs(ctx context.Context, imageRefs []string) ([]string, error) {
-	listed, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
-	})
+	listed, err := s.dockerService.ListContainers(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list containers for update-check eligibility: %w", err)
 	}
-	eligibility := newMonitoringEligibility(listed.Items)
+	eligibility := newMonitoringEligibility(listed)
 	return slices.DeleteFunc(slices.Clone(imageRefs), func(imageRef string) bool {
 		return !eligibility.imageEligible("", refs.NormalizeImageUpdateRef(imageRef))
 	}), nil
@@ -1586,13 +1582,11 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) e
 		// Records for resources that opted out of monitoring since the check, or
 		// whose container is gone, stay unnotified: they resurface if monitoring
 		// is re-enabled and are otherwise removed by orphan cleanup.
-		listed, listErr := s.dockerService.Call(notifCtx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-			return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
-		})
+		listed, listErr := s.dockerService.ListContainers(notifCtx)
 		if listErr != nil {
 			return records, fmt.Errorf("list containers for update-check eligibility: %w", listErr)
 		}
-		eligibility := newMonitoringEligibility(listed.Items)
+		eligibility := newMonitoringEligibility(listed)
 		maps.DeleteFunc(records, func(id string, record *ImageUpdateRecord) bool {
 			// Results scoped to a container that no longer exists are stale and not eligible.
 			if kit.Ternary(record.ContainerID != "",
@@ -1766,13 +1760,11 @@ func (s *ImageUpdateService) checkContainerTagUpdates(ctx context.Context, image
 	if len(wanted) == 0 {
 		return map[string]*types.ImageUpdateResponse{}, nil
 	}
-	listed, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
-	})
+	listed, err := s.dockerService.ListContainers(ctx)
 	if err != nil {
 		return map[string]*types.ImageUpdateResponse{}, fmt.Errorf("list containers for tag update checks: %w", err)
 	}
-	return s.tags.Check(ctx, listed.Items, wanted, credentials, func(deleteCtx context.Context, containerIDs []string) error {
+	return s.tags.Check(ctx, listed, wanted, credentials, func(deleteCtx context.Context, containerIDs []string) error {
 		// Clear the stored results of containers whose policy no longer tracks tags, in bounded IN-list chunks.
 		for chunk := range slices.Chunk(containerIDs, staleDigestRecordDeleteChunk) {
 			if deleteErr := s.db.WithContext(deleteCtx).Where("container_id IN ?", chunk).Delete(&ImageUpdateRecord{}).Error; deleteErr != nil {

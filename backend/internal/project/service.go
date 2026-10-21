@@ -51,6 +51,7 @@ import (
 	projectdetails "github.com/getarcaneapp/arcane/backend/v2/internal/project/children/details"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/lifecycle"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/listing"
+	projectstatus "github.com/getarcaneapp/arcane/backend/v2/internal/project/children/status"
 	projectsync "github.com/getarcaneapp/arcane/backend/v2/internal/project/children/sync"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/tags"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/update"
@@ -98,6 +99,7 @@ type ProjectService struct {
 	workspace                   *workspace.Service
 	details                     *projectdetails.Service
 	listing                     *listing.Service
+	statuses                    *projectstatus.Service
 	deployment                  *deployment.Service
 	updates                     *update.Service
 	containerRegistryService    *registry.ContainerRegistryService
@@ -358,6 +360,9 @@ func NewProjectService(
 				return buildUpdateInfoSummary(imageRefs, projectdetails.MergeProjectContainerUpdateInfo(nil, services, scoped), nil)
 			},
 		),
+		statuses: projectstatus.New(dockerService, func(ctx context.Context) error {
+			return s.reconcileProjectStatuses(ctx)
+		}),
 		deployment: deployment.New(imageService, dockerService, buildService),
 		// Rename recovery compares the stored name and path against its journal and rolls the row back.
 		updates: update.New(
@@ -422,7 +427,7 @@ func (s *ProjectService) RecoverStuckProjectStatuses(ctx context.Context) error 
 				slog.WarnContext(ctx, "Leaving interrupted project status unchanged: runtime status unknown", "projectId", proj.ID, "status", proj.Status)
 				return nil
 			}
-			if updateErr := s.updateProjectStatusAndCounts(ctx, proj.ID, status); updateErr != nil {
+			if updateErr := s.updateProjectStatusAndCounts(ctx, proj.ID, mo.Some(status)); updateErr != nil {
 				return updateErr
 			}
 			recovered++
@@ -1131,7 +1136,7 @@ func (s *ProjectService) updateProjectServices(ctx context.Context, projectID st
 	}
 
 	// 6. Finalize status
-	if updateProjectStatusandCountsErr := s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, ProjectStatusRunning); updateProjectStatusandCountsErr != nil {
+	if updateProjectStatusandCountsErr := s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusRunning)); updateProjectStatusandCountsErr != nil {
 		return updateProjectStatusandCountsErr
 	}
 
@@ -1307,7 +1312,7 @@ func (s *ProjectService) deployProject(ctx context.Context, projectID string, us
 		"could not log project deployment action",
 	)
 
-	err = s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, ProjectStatusRunning)
+	err = s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusRunning))
 	if err != nil {
 		slog.ErrorContext(ctx, "failed to update project status and counts after deploy", "projectId", projectID, "error", err)
 	}
@@ -1353,7 +1358,7 @@ func (s *ProjectService) downProject(ctx context.Context, projectFromDb *Project
 		"projectName": projectFromDb.Name,
 	}, "could not log project down action")
 
-	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, ProjectStatusStopped)
+	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusStopped))
 }
 
 // CreateProject creates a project's directory, files, and DB row. A directory
@@ -1747,7 +1752,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 	defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
 
 	if composeRestartErr := projects.ComposeRestart(ctx, compProj, services); composeRestartErr != nil {
-		_ = s.updateProjectStatus(context.WithoutCancel(ctx), projectID, proj.Status)
+		s.restoreRuntimeProjectStatus(ctx, projectID)
 		return fmt.Errorf("failed to restart project: %w", composeRestartErr)
 	}
 
@@ -1761,23 +1766,29 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 	}
 	s.logProjectEvent(ctx, event.EventTypeProjectStart, projectID, proj.Name, user, metadata, "could not log project restart action")
 
-	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, ProjectStatusRunning)
+	return s.updateProjectStatusAndCounts(context.WithoutCancel(ctx), projectID, mo.Some(ProjectStatusRunning))
 }
 
-func (s *ProjectService) updateProjectStatusAndCounts(ctx context.Context, projectID string, status ProjectStatus) error {
+func (s *ProjectService) updateProjectStatusAndCounts(ctx context.Context, projectID string, status mo.Option[ProjectStatus]) error {
 	services, err := s.projectServices(ctx, projectID)
 	if err != nil {
 		slog.ErrorContext(ctx, "loading project services failed during status update", "projectId", projectID, "error", err)
-		return s.updateProjectStatus(ctx, projectID, status)
+		if value, ok := status.Get(); ok {
+			return s.updateProjectStatus(ctx, projectID, value)
+		}
+		return nil
 	}
 
 	serviceCount, runningCount := listing.ServiceCounts(services)
-	if updateStatusErr := s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", projectID).Updates(map[string]any{
-		"status":        status,
+	updates := map[string]any{
 		"service_count": serviceCount,
 		"running_count": runningCount,
 		"updated_at":    time.Now(),
-	}).Error; updateStatusErr != nil {
+	}
+	if value, ok := status.Get(); ok {
+		updates["status"] = value
+	}
+	if updateStatusErr := s.db.WithContext(ctx).Model(&Project{}).Where("id = ?", projectID).Updates(updates).Error; updateStatusErr != nil {
 		return fmt.Errorf("failed to update project status and counts: %w", updateStatusErr)
 	}
 	return nil
@@ -1788,7 +1799,7 @@ func (s *ProjectService) restoreRuntimeProjectStatus(ctx context.Context, projec
 	restoreCtx := context.WithoutCancel(ctx)
 	services, err := s.projectServices(restoreCtx, projectID)
 	if err == nil {
-		if err = s.updateProjectStatusAndCounts(restoreCtx, projectID, ProjectStatus(listing.ProjectStatus(services))); err == nil {
+		if err = s.updateProjectStatusAndCounts(restoreCtx, projectID, mo.Some(ProjectStatus(listing.ProjectStatus(services)))); err == nil {
 			return
 		}
 	}
@@ -1796,6 +1807,31 @@ func (s *ProjectService) restoreRuntimeProjectStatus(ctx context.Context, projec
 	if updateErr := s.updateProjectStatus(restoreCtx, projectID, ProjectStatusStopped); updateErr != nil {
 		slog.WarnContext(ctx, "failed to set stopped status after deploy failure", "projectId", projectID, "error", updateErr)
 	}
+}
+
+func (s *ProjectService) WatchStatuses(ctx context.Context) error {
+	return s.statuses.Run(ctx)
+}
+
+func (s *ProjectService) reconcileProjectStatuses(ctx context.Context) error {
+	var projectsList []Project
+	if err := s.db.WithContext(ctx).Select("id", "name", "path", "status", "compose_project_name").Find(&projectsList).Error; err != nil {
+		return fmt.Errorf("list projects for status reconcile: %w", err)
+	}
+	changed, err := s.listing.ReconcileStatuses(ctx, projectRecords(projectsList))
+	if err != nil {
+		return fmt.Errorf("derive live project statuses: %w", err)
+	}
+	for _, proj := range projectsList {
+		status, ok := changed[proj.ID]
+		if !ok {
+			continue
+		}
+		if updateErr := s.db.WithContext(ctx).Model(&Project{}).Where("id = ? AND status = ?", proj.ID, proj.Status).UpdateColumn("status", status).Error; updateErr != nil {
+			return fmt.Errorf("persist status for project %s: %w", proj.ID, updateErr)
+		}
+	}
+	return nil
 }
 
 func (s *ProjectService) updateProjectStatus(ctx context.Context, id string, status ProjectStatus) error {
@@ -2299,10 +2335,9 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 		)
 	}
 
-	// Derived filters and status sorting read the container snapshot, so they page in memory over every candidate;
+	// Update and label filters read the container snapshot, so they page in memory over every candidate;
 	// otherwise the database pages and only the page gets live status and compose-backed presentation fields.
-	paginateInDB := strings.TrimSpace(params.Filters["status"]) == "" && updatesFilter == "" && strings.TrimSpace(params.Filters["label"]) == "" &&
-		!strings.EqualFold(strings.TrimSpace(params.Sort), "status")
+	paginateInDB := updatesFilter == "" && strings.TrimSpace(params.Filters["label"]) == ""
 	if !paginateInDB && params.Limit != -1 {
 		params.Limit = kit.Ternary(params.Limit <= 0, 20, min(params.Limit, 100))
 	}
@@ -2314,7 +2349,7 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 			}
 			return pagination.Response{}, nil
 		}
-		resp, paginateErr := pagination.PaginateAndSortDB(params, pagination.ApplyFilter(query, "status", params.Filters["status"]), &projectsArray)
+		resp, paginateErr := pagination.PaginateAndSortDB(params, pagination.ApplyFilter(query, "status", strings.ToLower(strings.TrimSpace(params.Filters["status"]))), &projectsArray)
 		if paginateErr != nil {
 			return pagination.Response{}, fmt.Errorf("failed to paginate projects: %w", paginateErr)
 		}
@@ -2971,7 +3006,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		if reconcileErr := s.reconcileComposeTagsForProject(ctx, proj); reconcileErr != nil {
 			slog.WarnContext(ctx, "failed to reconcile Compose project tags after project content update", "projectId", proj.ID, "error", reconcileErr)
 		}
-		if countsErr := s.updateProjectStatusAndCounts(ctx, proj.ID, proj.Status); countsErr != nil {
+		if countsErr := s.updateProjectStatusAndCounts(ctx, proj.ID, mo.None[ProjectStatus]()); countsErr != nil {
 			slog.WarnContext(ctx, "failed to update service counts after project content update", "projectId", proj.ID, "error", countsErr)
 		}
 	}
@@ -3166,7 +3201,7 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(
 	if reconcileErr := s.reconcileComposeTagsForProject(ctx, proj); reconcileErr != nil {
 		slog.WarnContext(ctx, "failed to reconcile Compose project tags after project content update", "projectId", proj.ID, "error", reconcileErr)
 	}
-	if countsErr := s.updateProjectStatusAndCounts(ctx, proj.ID, proj.Status); countsErr != nil {
+	if countsErr := s.updateProjectStatusAndCounts(ctx, proj.ID, mo.None[ProjectStatus]()); countsErr != nil {
 		slog.WarnContext(ctx, "failed to update service counts after project content update", "projectId", proj.ID, "error", countsErr)
 	}
 
@@ -3422,7 +3457,7 @@ func (s *ProjectService) UpdateProjectWorkspace(
 	}
 
 	s.refreshProjectImageRefs(ctx, proj)
-	if updateProjectStatusandCountsErr := s.updateProjectStatusAndCounts(ctx, proj.ID, proj.Status); updateProjectStatusandCountsErr != nil {
+	if updateProjectStatusandCountsErr := s.updateProjectStatusAndCounts(ctx, proj.ID, mo.None[ProjectStatus]()); updateProjectStatusandCountsErr != nil {
 		return nil, fmt.Errorf("refresh project after workspace update: %w", updateProjectStatusandCountsErr)
 	}
 	s.logProjectEvent(ctx, event.EventTypeProjectUpdate, proj.ID, proj.Name, user, database.JSON{

@@ -6,6 +6,7 @@ import (
 	"crypto/mldsa"
 	"encoding/base64"
 	"encoding/json/v2"
+	"net/http"
 	"testing"
 	"time"
 
@@ -27,6 +28,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 )
 
 func setupAuthServiceTestDB(t *testing.T) *database.DB {
@@ -996,4 +999,73 @@ func TestAuthenticateLocalPrimary_EmailFallback(t *testing.T) {
 			require.Equal(t, tc.wantID, got.ID)
 		})
 	}
+}
+
+func TestGetSessionBootstrap(t *testing.T) {
+	tests := []struct {
+		name    string
+		ps      *authz.PermissionSet
+		wantEnv []string
+	}{
+		{
+			name:    "global list permission returns every environment",
+			ps:      &authz.PermissionSet{Global: map[string]struct{}{authz.PermEnvironmentsList: {}}},
+			wantEnv: []string{"env-a", "env-b"},
+		},
+		{
+			name:    "environment grants restrict the list",
+			ps:      &authz.PermissionSet{PerEnv: map[string]map[string]struct{}{"env-b": {authz.PermEnvironmentsList: {}}}},
+			wantEnv: []string{"env-b"},
+		},
+		{
+			name:    "missing permissions return no environments",
+			wantEnv: []string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupAuthServiceTestDB(t)
+			userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
+			_, err := userSvc.CreateUser(t.Context(), &user.User{
+				ID:       "u-bootstrap",
+				Username: "bootstrap",
+			})
+			require.NoError(t, err)
+			require.NoError(t, db.Create(&[]environment.Environment{
+				{ID: "env-a", Name: "A", Enabled: true},
+				{ID: "env-b", Name: "B", Enabled: true},
+			}).Error)
+			s := &AuthService{
+				userService:        userSvc,
+				environmentService: environment.NewEnvironmentService(db, http.DefaultClient, nil, nil, nil, nil),
+				versionService:     version.NewVersionService(nil, true, "1.2.3", "revision", nil, nil, nil, nil),
+			}
+
+			bootstrap, err := s.GetSessionBootstrap(t.Context(), "u-bootstrap", tt.ps)
+
+			require.NoError(t, err)
+			assert.Equal(t, "u-bootstrap", bootstrap.User.ID)
+			assert.Equal(t, "v1.2.3", bootstrap.Version.CurrentVersion)
+			assert.True(t, bootstrap.Environments.Success)
+			envIDs := make([]string, 0, len(bootstrap.Environments.Data))
+			for _, env := range bootstrap.Environments.Data {
+				envIDs = append(envIDs, env.ID)
+			}
+			assert.ElementsMatch(t, tt.wantEnv, envIDs)
+			assert.NotEmpty(t, bootstrap.PermissionsManifest.Resources)
+		})
+	}
+
+	t.Run("unknown user fails", func(t *testing.T) {
+		db := setupAuthServiceTestDB(t)
+		s := &AuthService{
+			userService:        user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB),
+			environmentService: environment.NewEnvironmentService(db, http.DefaultClient, nil, nil, nil, nil),
+			versionService:     version.NewVersionService(nil, true, "1.2.3", "revision", nil, nil, nil, nil),
+		}
+
+		_, err := s.GetSessionBootstrap(t.Context(), "missing", nil)
+
+		require.Error(t, err)
+	})
 }
