@@ -106,7 +106,8 @@ func TestUpdateAdmissionKeys(t *testing.T) {
 		{name: "depends-on label is unioned", targets: []string{"hhh888"}, want: keys("container:queue", "container:worker", "id:ggg777", "id:hhh888")},
 		{name: "legacy link target joins the linking container", targets: []string{"jjj000"}, want: keys("container:app", "container:cache", "id:jjj000", "id:kkk111")},
 		{name: "standalone container has its own key", targets: []string{"iii999"}, want: keys("container:solo", "id:iii999")},
-		{name: "missing container falls back to its id", targets: []string{"zzz000"}, want: keys("id:zzz000")},
+		{name: "missing container falls back to its id and name", targets: []string{"zzz000"}, want: keys("container:zzz000", "id:zzz000")},
+		{name: "compose ref locks a project with no containers", targets: []string{"compose:Gone"}, want: keys("project:gone")},
 		{name: "multiple targets are sorted and deduplicated", targets: []string{"bbb222", "iii999", "aaa111"}, want: keys("container:solo", "id:iii999", "project:shop")},
 	}
 	for _, tt := range tests {

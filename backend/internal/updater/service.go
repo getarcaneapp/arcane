@@ -1072,6 +1072,14 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.S
 	if pullErr != nil {
 		return pullErr
 	}
+	ctx, release, selfErr := s.admitUpdate(ctx, []scheduler.AdmissionKey{{Scope: "updater", ID: "self-update"}}, false)
+	if errors.Is(selfErr, errUpdateBusy) {
+		return common.Classify(common.ErrConflict, errors.New("another self-update is already in progress"))
+	}
+	if selfErr != nil {
+		return selfErr
+	}
+	defer release()
 	containers, _, _, _, listErr := s.deps.Docker.GetAllContainers(ctx)
 	if listErr != nil {
 		return fmt.Errorf("list containers: %w", listErr)
@@ -1080,11 +1088,9 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.S
 	for _, summary := range containers {
 		allIDs = append(allIDs, summary.ID)
 	}
-	ctx, release, acquireErr := s.acquireUpdate(ctx, allIDs, true)
-	if acquireErr != nil {
+	if _, _, acquireErr := s.acquireUpdate(ctx, allIDs, true); acquireErr != nil {
 		return acquireErr
 	}
-	defer release()
 
 	// A server self-update stops this process before the run completes, so the
 	// activity is flagged first and startup reconciliation finalizes it.
@@ -1947,7 +1953,7 @@ func (s *UpdaterService) applyAutoUpdate(ctx context.Context, t flow.Task) (any,
 	if !ok {
 		return nil, errors.New("auto-update requires a job run")
 	}
-	targetIDs, err := s.recovery.TargetIDs(run)
+	targetIDs, err := s.recovery.TargetRefs(run)
 	if err != nil {
 		return nil, common.Classify(common.ErrUnavailable, err)
 	}

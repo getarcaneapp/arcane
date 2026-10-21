@@ -440,7 +440,7 @@ func (s *Service) ConfirmTarget(ctx context.Context, target arcaneupdater.Frozen
 
 // ReconcilePending resumes only frozen targets whose original container is unchanged.
 func (s *Service) ReconcilePending(ctx context.Context, run scheduler.Run) (scheduler.Outcome, error) {
-	targetIDs, err := s.TargetIDs(run)
+	targetIDs, err := s.TargetRefs(run)
 	if err != nil {
 		return scheduler.Outcome{Status: scheduler.Waiting}, err
 	}
@@ -578,14 +578,17 @@ func (s *Service) Started(run scheduler.Run) bool {
 	})
 }
 
-func (s *Service) TargetIDs(run scheduler.Run) ([]string, error) {
+func (s *Service) TargetRefs(run scheduler.Run) ([]string, error) {
 	plan, _, err := frozenPlan(run)
 	if err != nil {
 		return nil, fmt.Errorf("decode frozen update plan: %w", err)
 	}
-	ids := make([]string, 0, len(plan.Targets))
+	ids := make([]string, 0, len(plan.Targets)*3)
 	for _, target := range plan.Targets {
-		ids = append(ids, target.ContainerID)
+		ids = append(ids, target.ContainerID, target.ContainerName)
+		if target.ComposeProject != "" {
+			ids = append(ids, "compose:"+target.ComposeProject)
+		}
 	}
 	return ids, nil
 }

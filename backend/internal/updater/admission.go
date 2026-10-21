@@ -95,11 +95,16 @@ func updateAdmissionKeys(containers []container.Summary, targetIDs []string) []s
 
 	targetRoots := map[string]bool{}
 	for _, id := range kit.TrimNonEmpty(targetIDs) {
+		if project, isProject := strings.CutPrefix(id, "compose:"); isProject {
+			targetRoots[root("project:"+strings.ToLower(strings.TrimSpace(project)))] = true
+			continue
+		}
 		if summary, found := lookup(id); found {
 			targetRoots[root(identity(summary))] = true
 			continue
 		}
 		targetRoots[root("id:"+id)] = true
+		targetRoots[root("container:"+strings.TrimPrefix(id, "/"))] = true
 	}
 	identities := slices.Sorted(maps.Keys(parent))
 	keys := make([]scheduler.AdmissionKey, 0, len(identities))
@@ -112,22 +117,20 @@ func updateAdmissionKeys(containers []container.Summary, targetIDs []string) []s
 }
 
 func (s *UpdaterService) acquireUpdate(ctx context.Context, containerIDs []string, wait bool) (context.Context, func(), error) {
+	if len(kit.TrimNonEmpty(containerIDs)) == 0 {
+		return s.admitUpdate(ctx, nil, wait)
+	}
+	containers, _, _, _, err := s.deps.Docker.GetAllContainers(ctx)
+	if err != nil {
+		return ctx, nil, fmt.Errorf("list containers: %w", err)
+	}
+	return s.admitUpdate(ctx, updateAdmissionKeys(containers, containerIDs), wait)
+}
+
+func (s *UpdaterService) admitUpdate(ctx context.Context, keys []scheduler.AdmissionKey, wait bool) (context.Context, func(), error) {
 	owner, nested := ctx.Value(updateAdmissionKey{}).(*updateLeases)
 	if !nested {
 		owner = &updateLeases{held: map[scheduler.AdmissionKey]bool{}}
-	}
-	keys, err := func() ([]scheduler.AdmissionKey, error) {
-		if len(kit.TrimNonEmpty(containerIDs)) == 0 {
-			return nil, nil
-		}
-		containers, _, _, _, listErr := s.deps.Docker.GetAllContainers(ctx)
-		if listErr != nil {
-			return nil, fmt.Errorf("list containers: %w", listErr)
-		}
-		return updateAdmissionKeys(containers, containerIDs), nil
-	}()
-	if err != nil {
-		return ctx, nil, err
 	}
 	owner.mu.Lock()
 	defer owner.mu.Unlock()
