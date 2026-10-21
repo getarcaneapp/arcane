@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/moby/moby/api/types/container"
@@ -23,13 +22,13 @@ import (
 )
 
 type updateLeases struct {
-	mu      sync.Mutex
-	held    map[scheduler.AdmissionKey]bool
-	leases  []*runs.Lease
-	handoff bool
+	mu     sync.Mutex
+	keys   []scheduler.AdmissionKey
+	leases map[scheduler.AdmissionKey]*runs.Lease
+	retain map[scheduler.AdmissionKey]<-chan struct{}
 }
 
-func updateAdmissionKeys(containers []container.Summary, targetIDs []string) []scheduler.AdmissionKey {
+func updateAdmissionKeys(containers []container.Summary) func(targetIDs []string) []scheduler.AdmissionKey {
 	identity := func(summary container.Summary) string {
 		if project := strings.ToLower(strings.TrimSpace(docker.ComposeProjectLabel(summary.Labels))); project != "" {
 			return "project:" + project
@@ -93,27 +92,29 @@ func updateAdmissionKeys(containers []container.Summary, targetIDs []string) []s
 		}
 	}
 
-	targetRoots := map[string]bool{}
-	for _, id := range kit.TrimNonEmpty(targetIDs) {
-		if project, isProject := strings.CutPrefix(id, "compose:"); isProject {
-			targetRoots[root("project:"+strings.ToLower(strings.TrimSpace(project)))] = true
-			continue
+	return func(targetIDs []string) []scheduler.AdmissionKey {
+		targetRoots := map[string]bool{}
+		for _, id := range kit.TrimNonEmpty(targetIDs) {
+			if project, isProject := strings.CutPrefix(id, "compose:"); isProject {
+				targetRoots[root("project:"+strings.ToLower(strings.TrimSpace(project)))] = true
+				continue
+			}
+			if summary, found := lookup(id); found {
+				targetRoots[root(identity(summary))] = true
+				continue
+			}
+			targetRoots[root("id:"+id)] = true
+			targetRoots[root("container:"+strings.TrimPrefix(id, "/"))] = true
 		}
-		if summary, found := lookup(id); found {
-			targetRoots[root(identity(summary))] = true
-			continue
+		identities := slices.Sorted(maps.Keys(parent))
+		keys := make([]scheduler.AdmissionKey, 0, len(identities))
+		for _, id := range identities {
+			if targetRoots[root(id)] {
+				keys = append(keys, scheduler.AdmissionKey{Scope: "updater", ID: id})
+			}
 		}
-		targetRoots[root("id:"+id)] = true
-		targetRoots[root("container:"+strings.TrimPrefix(id, "/"))] = true
+		return keys
 	}
-	identities := slices.Sorted(maps.Keys(parent))
-	keys := make([]scheduler.AdmissionKey, 0, len(identities))
-	for _, id := range identities {
-		if targetRoots[root(id)] {
-			keys = append(keys, scheduler.AdmissionKey{Scope: "updater", ID: id})
-		}
-	}
-	return keys
 }
 
 func (s *UpdaterService) acquireUpdate(ctx context.Context, containerIDs []string, wait bool) (context.Context, func(), error) {
@@ -124,18 +125,21 @@ func (s *UpdaterService) acquireUpdate(ctx context.Context, containerIDs []strin
 	if err != nil {
 		return ctx, nil, fmt.Errorf("list containers: %w", err)
 	}
-	return s.admitUpdate(ctx, updateAdmissionKeys(containers, containerIDs), wait)
+	return s.admitUpdate(ctx, updateAdmissionKeys(containers)(containerIDs), wait)
 }
 
 func (s *UpdaterService) admitUpdate(ctx context.Context, keys []scheduler.AdmissionKey, wait bool) (context.Context, func(), error) {
 	owner, nested := ctx.Value(updateAdmissionKey{}).(*updateLeases)
 	if !nested {
-		owner = &updateLeases{held: map[scheduler.AdmissionKey]bool{}}
+		owner = &updateLeases{
+			leases: map[scheduler.AdmissionKey]*runs.Lease{},
+			retain: map[scheduler.AdmissionKey]<-chan struct{}{},
+		}
 	}
 	owner.mu.Lock()
 	defer owner.mu.Unlock()
-	keys = slices.DeleteFunc(keys, func(key scheduler.AdmissionKey) bool {
-		return owner.held[key]
+	keys = slices.DeleteFunc(slices.Clone(keys), func(key scheduler.AdmissionKey) bool {
+		return owner.leases[key] != nil
 	})
 	waitCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultActivitySlotWait)
 	defer cancel()
@@ -162,27 +166,30 @@ func (s *UpdaterService) admitUpdate(ctx context.Context, keys []scheduler.Admis
 		}
 		acquired = append(acquired, lease)
 	}
-	for _, key := range keys {
-		owner.held[key] = true
+	for index, key := range keys {
+		owner.leases[key] = acquired[index]
 	}
-	owner.leases = append(owner.leases, acquired...)
+	owner.keys = append(owner.keys, keys...)
 	if nested {
 		return ctx, func() {}, nil
 	}
 	return context.WithValue(ctx, updateAdmissionKey{}, owner), func() {
 		owner.mu.Lock()
-		leases := slices.Clone(owner.leases)
-		handoff := owner.handoff
+		ordered := slices.Clone(owner.keys)
+		leases := maps.Clone(owner.leases)
+		retain := maps.Clone(owner.retain)
 		owner.mu.Unlock()
-		free := func() {
-			for _, lease := range slices.Backward(leases) {
+		for _, key := range slices.Backward(ordered) {
+			lease := leases[key]
+			done, retained := retain[key]
+			if !retained {
 				lease.Release(ctx)
+				continue
 			}
+			go func() {
+				<-done
+				lease.Release(ctx)
+			}()
 		}
-		if handoff {
-			time.AfterFunc(timeouts.DefaultDeployWait, free)
-			return
-		}
-		free()
 	}, nil
 }

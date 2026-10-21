@@ -844,16 +844,39 @@ func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]updater.Ima
 	if err != nil {
 		return nil, err
 	}
-	if _, batch := ctx.Value(updateAdmissionKey{}).(*updateLeases); !batch {
+	if _, batch := ctx.Value(updateAdmissionKey{}).(*updateLeases); !batch || len(records) == 0 {
 		return records, nil
+	}
+	containers, _, _, _, err := s.deps.Docker.GetAllContainers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+	keysFor := updateAdmissionKeys(containers)
+	configured := map[string]string{}
+	if slices.ContainsFunc(records, func(record updater.ImageUpdateRecord) bool { return record.ContainerID == "" }) {
+		for _, summary := range containers {
+			ref, _ := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
+				return imageref.ConfiguredImage(ctx, dockerClient, summary), nil
+			})
+			configured[summary.ID] = refs.NormalizeImageUpdateRef(ref)
+		}
 	}
 	admitted := make([]updater.ImageUpdateRecord, 0, len(records))
 	for _, record := range records {
-		containerIDs, idsErr := s.recordContainerIDs(ctx, []updater.ImageUpdateRecord{record})
-		if idsErr != nil {
-			return nil, idsErr
-		}
-		_, _, acquireErr := s.acquireUpdate(ctx, containerIDs, false)
+		containerIDs := func() []string {
+			if record.ContainerID != "" {
+				return []string{record.ContainerID}
+			}
+			normalized := refs.NormalizeImageUpdateRef(record.ImageRef())
+			var matched []string
+			for _, summary := range containers {
+				if summary.ImageID == record.ImageRef() || (normalized != "" && configured[summary.ID] == normalized) {
+					matched = append(matched, summary.ID)
+				}
+			}
+			return matched
+		}()
+		_, _, acquireErr := s.admitUpdate(ctx, keysFor(containerIDs), false)
 		if errors.Is(acquireErr, errUpdateBusy) {
 			slog.InfoContext(ctx, "skipping pending update for a container another update holds", "imageRef", record.ImageRef(), "containerId", record.ContainerID)
 			continue
@@ -1072,33 +1095,33 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.S
 	if pullErr != nil {
 		return pullErr
 	}
-	ctx, release, selfErr := s.admitUpdate(ctx, []scheduler.AdmissionKey{{Scope: "updater", ID: "self-update"}}, false)
-	if errors.Is(selfErr, errUpdateBusy) {
-		return common.Classify(common.ErrConflict, errors.New("another self-update is already in progress"))
-	}
-	if selfErr != nil {
-		return selfErr
-	}
-	defer release()
 	containers, _, _, _, listErr := s.deps.Docker.GetAllContainers(ctx)
 	if listErr != nil {
 		return fmt.Errorf("list containers: %w", listErr)
 	}
-	allIDs := make([]string, 0, len(containers))
-	for _, summary := range containers {
-		allIDs = append(allIDs, summary.ID)
-	}
-	_, _, acquireErr := s.acquireUpdate(ctx, allIDs, false)
+	stopsProcess := target.InstanceType != "agent"
+	keys := updateAdmissionKeys(containers)(func() []string {
+		if !stopsProcess {
+			return []string{target.ContainerID}
+		}
+		allIDs := make([]string, 0, len(containers))
+		for _, summary := range containers {
+			allIDs = append(allIDs, summary.ID)
+		}
+		return allIDs
+	}())
+	ctx, release, acquireErr := s.admitUpdate(ctx, keys, false)
 	if errors.Is(acquireErr, errUpdateBusy) {
 		return common.Classify(common.ErrConflict, errors.New("another container update is in progress; the self-update stays pending for the next run"))
 	}
 	if acquireErr != nil {
 		return acquireErr
 	}
+	defer release()
 
 	// A server self-update stops this process before the run completes, so the
 	// activity is flagged first and startup reconciliation finalizes it.
-	if activityID := activityIDFromContext(ctx); target.InstanceType != "agent" && activityID != "" {
+	if activityID := activityIDFromContext(ctx); stopsProcess && activityID != "" {
 		s.appendAutoUpdateActivityMessage(
 			ctx,
 			activityID,
@@ -1111,19 +1134,43 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.S
 		}
 	}
 
-	if _, err := s.deps.SelfUpgrade.TriggerUpgradeViaCLI(ctx, s.deps.SystemUser, updater.SelfUpdateTarget{ //exhaustruct:enforce
+	upgraderID, err := s.deps.SelfUpgrade.TriggerUpgradeViaCLI(ctx, s.deps.SystemUser, updater.SelfUpdateTarget{ //exhaustruct:enforce
 		ContainerID:   target.ContainerID,
 		ContainerName: target.ContainerName,
 		InstanceType:  target.InstanceType,
 		Labels:        target.Labels,
 		NewImageRef:   target.NewImageRef,
 		PullImageRef:  pullImageRef,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("CLI upgrade failed: %w", err)
 	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		waitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDeployWait)
+		defer cancel()
+		if stopsProcess || upgraderID == "" {
+			<-waitCtx.Done()
+			return
+		}
+		_, _ = s.deps.Docker.Call(waitCtx, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
+			wait := dockerClient.ContainerWait(ctx, upgraderID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
+			select {
+			case <-wait.Result:
+				return struct{}{}, nil
+			case waitErr := <-wait.Error:
+				return struct{}{}, waitErr
+			case <-ctx.Done():
+				return struct{}{}, ctx.Err()
+			}
+		})
+	}()
 	if leases, ok := ctx.Value(updateAdmissionKey{}).(*updateLeases); ok {
 		leases.mu.Lock()
-		leases.handoff = true
+		for _, key := range kit.Ternary(stopsProcess, leases.keys, keys) {
+			leases.retain[key] = done
+		}
 		leases.mu.Unlock()
 	}
 	if progress, ok := ctx.Value(updateProgressKey{}).(*updateProgress); ok {

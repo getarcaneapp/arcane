@@ -112,7 +112,7 @@ func TestUpdateAdmissionKeys(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, updateAdmissionKeys(containers, tt.targets))
+			assert.Equal(t, tt.want, updateAdmissionKeys(containers)(tt.targets))
 		})
 	}
 }
