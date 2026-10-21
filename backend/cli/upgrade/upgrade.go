@@ -47,7 +47,7 @@ This command should be run from outside the container (e.g., from the host or an
   arcane upgrade --container arcane
 
   # Upgrade to a specific image tag
-  arcane upgrade --container arcane --image ghcr.io/getarcaneapp/arcane:v1.2.3`,
+  arcane upgrade --container arcane --image ghcr.io/getarcaneapp/manager:v1.2.3`,
 	// Use background context to ignore signals during upgrade
 	// This prevents the upgrade from being interrupted when the target container stops
 	RunE: runUpgrade,
@@ -382,7 +382,7 @@ func determineImageName(ctx context.Context, dockerClient *client.Client, cont c
 
 	// Default to :latest if still no tag
 	if !hasExplicitTag(imageName) {
-		imageName = kit.Ternary(imageName == "", "ghcr.io/getarcaneapp/arcane:latest", imageName+":latest")
+		imageName = kit.Ternary(imageName == "", "ghcr.io/getarcaneapp/manager:latest", imageName+":latest")
 	}
 
 	return imageName

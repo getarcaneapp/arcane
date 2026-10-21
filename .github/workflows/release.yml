@@ -327,41 +327,9 @@ jobs:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
 
-  attest-aliases:
-    name: Attest GHCR aliases
-    needs: [prepare, build, publish-images]
-    runs-on: depot-ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      artifact-metadata: write
-      id-token: write
-    steps:
-      - name: Login to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Container image attestation (manager alias)
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: ghcr.io/getarcaneapp/arcane
-          subject-digest: ${{ needs.build.outputs.manager-digest }}
-          push-to-registry: true
-
-      - name: Container image attestation (agent alias)
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: ghcr.io/getarcaneapp/arcane-headless
-          subject-digest: ${{ needs.build.outputs.agent-digest }}
-          push-to-registry: true
-
   publish:
     name: Publish release
-    needs: [prepare, build, publish-images, attest-aliases]
+    needs: [prepare, build, publish-images]
     runs-on: depot-ubuntu-latest
 
     steps:
