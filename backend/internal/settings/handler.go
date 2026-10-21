@@ -225,7 +225,7 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 			update.OidcProviderName != nil || update.OidcProviderLogoUrl != nil || update.OidcGroupsClaim != nil {
 			return nil, huma.Error403Forbidden("Authentication settings can only be updated from the main environment")
 		}
-		apiResp, err := h.proxyRemoteJSON.JSON[types.ApiResponse[[]types.SettingDto]](ctx, input.EnvironmentID, http.MethodPut, "/api/environments/0/settings", update)
+		apiResp, err := h.proxyRemoteJSON.JSON[types.ApiResponse[[]types.SettingDto]](ctx, input.EnvironmentID, http.MethodPatch, "/api/environments/0/settings", update)
 		if err != nil {
 			return nil, err
 		}

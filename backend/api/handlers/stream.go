@@ -199,7 +199,7 @@ func (h *StreamHandler) StreamClient(ctx context.Context, input *StreamClientInp
 	}
 
 	if requested[types.StreamChannelVersion] {
-		// Ungated like GET /app-version.
+		// Ungated like GET /app/version.
 		producers = append(producers, forwardStreamChannel(
 			types.StreamChannelVersion,
 			func(channel string, event types.VersionStreamEvent) types.StreamEvent {

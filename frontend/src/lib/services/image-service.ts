@@ -206,23 +206,25 @@ class ImageService extends BaseAPIService {
 	): Promise<Paginated<ImagePatchTargetDto>> {
 		const envId = await this.resolveEnvironmentId(environmentId);
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${envId}/images/patch-targets`, { ...config, params });
+		const res = await this.api.get(`/environments/${envId}/images/patches/targets`, { ...config, params });
 		return res.data;
 	}
 
 	async checkImageUpdateByID(imageId: string, environmentId?: string): Promise<ImageUpdateInfoDto> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/image-updates/check/${imageId}`, {}));
+		return this.handleResponse(this.api.post(`/environments/${envId}/images/updates/check/${imageId}`, {}));
 	}
 
 	async checkAllImages(environmentId?: string): Promise<Record<string, ImageUpdateInfoDto>> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/image-updates/check-all`, {}));
+		return this.handleResponse(this.api.post(`/environments/${envId}/images/updates/check`, {}, { params: { action: 'all' } }));
 	}
 
 	async checkMultipleImages(imageRefs: string[], environmentId?: string): Promise<Record<string, ImageUpdateInfoDto>> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/image-updates/check-batch`, { imageRefs }));
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/images/updates/check`, { imageRefs }, { params: { action: 'batch' } })
+		);
 	}
 
 	async runAutoUpdate(options?: AutoUpdateCheck, environmentId?: string): Promise<AutoUpdateResult> {

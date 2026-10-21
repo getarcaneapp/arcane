@@ -35,7 +35,7 @@ export function toAppVersionInformation(data: Partial<AppVersionInformation>): A
 async function getVersionInformation(): Promise<AppVersionInformation> {
 	const operationResult = await tryCatch(
 		(async () => {
-			const res = await apiClient.get('/app-version', {
+			const res = await apiClient.get('/app/version', {
 				timeout: 2000
 			});
 			return toAppVersionInformation(res.data as Partial<AppVersionInformation>);

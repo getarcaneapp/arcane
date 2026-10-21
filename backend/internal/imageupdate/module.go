@@ -84,7 +84,7 @@ func RegisterImageUpdates(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-image-update",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/image-updates/check",
+		Path:        "/environments/{id}/images/updates/check",
 		Summary:     "Check image update by reference",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -93,7 +93,7 @@ func RegisterImageUpdates(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-image-update-by-id",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/image-updates/check/{imageId}",
+		Path:        "/environments/{id}/images/updates/check/{imageId}",
 		Summary:     "Check image update by ID",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -102,34 +102,28 @@ func RegisterImageUpdates(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-image-update-by-id-post",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/image-updates/check/{imageId}",
+		Path:        "/environments/{id}/images/updates/check/{imageId}",
 		Summary:     "Check image update by ID (POST)",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermImageUpdatesCheck, h.CheckImageUpdateByID)
 
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "check-multiple-images",
+	middleware.RegisterWithActionPermissions(api, huma.Operation{
+		OperationID: "check-images",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/image-updates/check-batch",
-		Summary:     "Check multiple images",
+		Path:        "/environments/{id}/images/updates/check",
+		Summary:     "Check all or multiple images",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermImageUpdatesCheck, h.CheckMultipleImages)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "check-all-images",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/image-updates/check-all",
-		Summary:     "Check all images",
-		Tags:        []string{"Image Updates"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermImageUpdatesCheck, h.CheckAllImages)
+	}, "action", map[string]string{
+		"all":   authz.PermImageUpdatesCheck,
+		"batch": authz.PermImageUpdatesCheck,
+	}, h.CheckImages)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-update-info-by-refs",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/image-updates/by-refs",
+		Path:        "/environments/{id}/images/updates/refs",
 		Summary:     "Get persisted update info for image references",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -138,7 +132,7 @@ func RegisterImageUpdates(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-update-summary",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/image-updates/summary",
+		Path:        "/environments/{id}/images/updates/summary",
 		Summary:     "Get update summary",
 		Tags:        []string{"Image Updates"},
 		Security:    handlerutil.DefaultOperationSecurity(),

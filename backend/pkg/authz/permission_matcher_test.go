@@ -3,6 +3,7 @@ package authz
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -16,13 +17,13 @@ func TestPermissionMatcherLookupExactAndWildcard(t *testing.T) {
 	m.Add("GET", "/containers/{containerId}", "containers:read")
 	{
 
-		perm, ok := m.Lookup("POST", "/containers/abc123/start").Get()
+		perm, ok := m.Lookup("POST", "/containers/abc123/start", nil).Get()
 		require.False(t, !ok || perm != "containers:start",
 			"expected containers:start, got %q ok=%v", perm, ok)
 	}
 	{
 
-		perm, ok := m.Lookup("GET", "/containers/abc123").Get()
+		perm, ok := m.Lookup("GET", "/containers/abc123", nil).Get()
 		require.False(t, !ok || perm != "containers:read",
 			"expected containers:read, got %q ok=%v", perm, ok)
 	}
@@ -36,13 +37,13 @@ func TestPermissionMatcherStaticBeatsWildcard(t *testing.T) {
 	m.Add("GET", "/containers/counts", "containers:list")
 	{
 
-		perm, ok := m.Lookup("GET", "/containers/counts").Get()
+		perm, ok := m.Lookup("GET", "/containers/counts", nil).Get()
 		require.False(t, !ok || perm != "containers:list",
 			"expected static route to win with containers:list, got %q ok=%v", perm, ok)
 	}
 	{
 
-		perm, ok := m.Lookup("GET", "/containers/xyz").Get()
+		perm, ok := m.Lookup("GET", "/containers/xyz", nil).Get()
 		require.False(t, !ok || perm != "containers:read",
 			"expected wildcard route containers:read, got %q ok=%v", perm, ok)
 	}
@@ -53,30 +54,30 @@ func TestPermissionMatcherMethodAndLengthMismatch(t *testing.T) {
 	m.Add("POST", "/containers/{containerId}/start", "containers:start")
 	{
 
-		_, ok := m.Lookup("DELETE", "/containers/abc/start").Get()
+		_, ok := m.Lookup("DELETE", "/containers/abc/start", nil).Get()
 		require.False(t, ok,
 			"expected no match for wrong method")
 	}
 	{
 
-		_, ok := m.Lookup("POST", "/containers/abc/start/extra").Get()
+		_, ok := m.Lookup("POST", "/containers/abc/start/extra", nil).Get()
 		require.False(t, ok,
 			"expected no match for longer path")
 	}
 	{
 
-		_, ok := m.Lookup("POST", "/containers/abc").Get()
+		_, ok := m.Lookup("POST", "/containers/abc", nil).Get()
 		require.False(t, ok,
 			"expected no match for shorter path")
 	}
 }
 
-func TestPermissionMatcherNormalizesEchoParamsAndStripsQuery(t *testing.T) {
+func TestPermissionMatcherNormalizesEchoParamsAndIgnoresQuery(t *testing.T) {
 	m := NewPermissionMatcher()
 	m.Add("GET", "/volumes/:volumeName/workspace", "volumes:read")
 	{
 
-		perm, ok := m.Lookup("GET", "/volumes/data/workspace?path=/etc").Get()
+		perm, ok := m.Lookup("GET", "/volumes/data/workspace", url.Values{"path": {"/etc"}}).Get()
 		require.False(t, !ok || perm != "volumes:read",
 			"expected volumes:read with echo param + query string, got %q ok=%v", perm, ok)
 	}
@@ -86,7 +87,7 @@ func TestPermissionMatcherPublicRoute(t *testing.T) {
 	m := NewPermissionMatcher()
 	m.AddPublic("GET", "/settings/public")
 
-	perm, ok := m.Lookup("GET", "/settings/public").Get()
+	perm, ok := m.Lookup("GET", "/settings/public", nil).Get()
 
 	require.True(t, ok,
 		"expected public route to be found")
@@ -100,7 +101,7 @@ func TestPermissionMatcherUnmappedReturnsNotFound(t *testing.T) {
 	m.Add("GET", "/containers", "containers:list")
 	{
 
-		_, ok := m.Lookup("GET", "/images").Get()
+		_, ok := m.Lookup("GET", "/images", nil).Get()
 		require.False(t, ok,
 			"expected unmapped path to return not found")
 	}
@@ -131,7 +132,63 @@ func TestPermissionMatcherCollectsEnvironmentAggregation(t *testing.T) {
 	require.False(t, m.SupportsEnvironmentAggregation(http.MethodPost, "/projects"), "only GET operations aggregate")
 	require.False(t, m.SupportsEnvironmentAggregation(http.MethodGet, "/images"), "operations must opt in")
 	require.False(t, m.SupportsEnvironmentAggregation(http.MethodGet, "/containers/abc"), "suffix must match exactly")
-	perm, ok := m.Lookup(http.MethodGet, "/containers").Get()
+	perm, ok := m.Lookup(http.MethodGet, "/containers", nil).Get()
 	require.True(t, ok)
 	require.Equal(t, "containers:list", perm)
+}
+
+func TestPermissionMatcherActionPermissions(t *testing.T) {
+	perms := map[string]string{
+		"start": "containers:start",
+		"kill":  "containers:kill",
+	}
+
+	t.Run("manual", func(t *testing.T) {
+		m := NewPermissionMatcher()
+		m.AddActions("POST", "/containers/{containerId}", "action", perms)
+		m.Add("POST", "/containers/counts", "containers:list")
+
+		perm, ok := m.Lookup("POST", "/containers/abc", url.Values{"action": {"kill"}}).Get()
+		require.True(t, ok)
+		require.Equal(t, "containers:kill", perm)
+
+		_, ok = m.Lookup("POST", "/containers/abc", url.Values{"action": {"explode"}}).Get()
+		require.False(t, ok, "unknown action must deny")
+
+		_, ok = m.Lookup("POST", "/containers/abc", nil).Get()
+		require.False(t, ok, "missing action must deny")
+
+		perm, ok = m.Lookup("POST", "/containers/counts", nil).Get()
+		require.True(t, ok)
+		require.Equal(t, "containers:list", perm)
+	})
+
+	t.Run("collected from huma", func(t *testing.T) {
+		_, api := humatest.New(t)
+		huma.Register(api, huma.Operation{
+			OperationID: "container-action",
+			Method:      http.MethodPost,
+			Path:        "/environments/{id}/containers/{containerId}",
+			Metadata: map[string]any{
+				MetaActionParam:       "action",
+				MetaActionPermissions: perms,
+			},
+		}, func(context.Context, *struct {
+			ID          string `path:"id"`
+			ContainerID string `path:"containerId"`
+		},
+		) (*struct{}, error) {
+			return &struct{}{}, nil
+		})
+
+		m := NewPermissionMatcher()
+		m.CollectFromHumaAPI(api)
+
+		perm, ok := m.Lookup(http.MethodPost, "/containers/abc", url.Values{"action": {"start"}}).Get()
+		require.True(t, ok)
+		require.Equal(t, "containers:start", perm)
+
+		_, ok = m.Lookup(http.MethodPost, "/containers/abc", url.Values{"action": {"remove"}}).Get()
+		require.False(t, ok)
+	})
 }

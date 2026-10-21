@@ -145,10 +145,6 @@ type CreateSystemBackupRequest struct {
 	PolicyID        string                  `json:"policyId,omitempty"`
 }
 
-type RestoreSystemBackupRequest struct {
-	RecoveryKey string `json:"recoveryKey"`
-}
-
 // RestoreSystemBackupFilesRequest selects project files to restore from a system backup.
 type RestoreSystemBackupFilesRequest struct {
 	BackupRestoreSelection

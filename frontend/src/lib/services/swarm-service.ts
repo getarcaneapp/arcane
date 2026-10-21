@@ -82,12 +82,14 @@ class SwarmService extends BaseAPIService {
 
 	async rollbackService(serviceId: string): Promise<SwarmServiceUpdateResponse> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/services/${serviceId}/rollback`, {}));
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/swarm/services/${serviceId}`, undefined, { params: { action: 'rollback' } })
+		);
 	}
 
 	async scaleService(serviceId: string, request: SwarmServiceScaleRequest): Promise<SwarmServiceUpdateResponse> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/services/${serviceId}/scale`, request));
+		return this.handleResponse(this.api.patch(`/environments/${envId}/swarm/services/${serviceId}`, request));
 	}
 
 	async removeService(serviceId: string): Promise<void> {
@@ -139,12 +141,16 @@ class SwarmService extends BaseAPIService {
 
 	async promoteNode(nodeId: string): Promise<void> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		await this.handleResponse(this.api.post(`/environments/${envId}/swarm/nodes/${nodeId}/promote`, {}));
+		await this.handleResponse(
+			this.api.post(`/environments/${envId}/swarm/nodes/${nodeId}`, undefined, { params: { action: 'promote' } })
+		);
 	}
 
 	async demoteNode(nodeId: string): Promise<void> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		await this.handleResponse(this.api.post(`/environments/${envId}/swarm/nodes/${nodeId}/demote`, {}));
+		await this.handleResponse(
+			this.api.post(`/environments/${envId}/swarm/nodes/${nodeId}`, undefined, { params: { action: 'demote' } })
+		);
 	}
 
 	async getNodeTasks(nodeId: string, options?: SearchPaginationSortRequest): Promise<SwarmTasksPaginatedResponse> {
@@ -185,7 +191,7 @@ class SwarmService extends BaseAPIService {
 
 	async updateStackSource(name: string, request: SwarmStackSourceUpdate): Promise<SwarmStackSource> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.put(`/environments/${envId}/swarm/stacks/${name}/source`, request));
+		return this.handleResponse(this.api.patch(`/environments/${envId}/swarm/stacks/${name}/source`, request));
 	}
 
 	async removeStack(name: string): Promise<void> {
@@ -234,12 +240,12 @@ class SwarmService extends BaseAPIService {
 
 	async getSwarmJoinCandidates(environmentId?: string, config?: APIRequestConfig): Promise<SwarmJoinCandidate[]> {
 		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
-		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/join-candidates`, config));
+		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/join/candidates`, config));
 	}
 
 	async joinEnvironments(request: SwarmJoinEnvironmentsRequest, environmentId?: string): Promise<SwarmJoinEnvironmentsResponse> {
 		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
-		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/join-environments`, request));
+		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/join/environments`, request));
 	}
 
 	async leaveSwarm(request: SwarmLeaveRequest): Promise<void> {
@@ -254,17 +260,19 @@ class SwarmService extends BaseAPIService {
 
 	async getSwarmUnlockKey(): Promise<SwarmUnlockKeyResponse> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/unlock-key`));
+		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/unlock/key`));
 	}
 
 	async getSwarmJoinTokens(): Promise<SwarmJoinTokensResponse> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/join-tokens`));
+		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/join/tokens`));
 	}
 
 	async rotateSwarmJoinTokens(request: SwarmRotateJoinTokensRequest = {}): Promise<void> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		await this.handleResponse(this.api.post(`/environments/${envId}/swarm/join-tokens/rotate`, request));
+		await this.handleResponse(
+			this.api.post(`/environments/${envId}/swarm/join/tokens`, request, { params: { action: 'rotate' } })
+		);
 	}
 
 	async updateSwarmSpec(request: SwarmUpdateRequest): Promise<void> {

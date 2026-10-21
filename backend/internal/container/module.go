@@ -120,60 +120,22 @@ func RegisterContainers(
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermContainersRead, h.GetContainerProcesses)
 
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "start-container",
+	middleware.RegisterWithActionPermissions(api, huma.Operation{
+		OperationID: "container-action",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/containers/{containerId}/start",
-		Summary:     "Start container",
+		Path:        "/environments/{id}/containers/{containerId}",
+		Summary:     "Run container lifecycle action",
+		Description: "Start, stop, restart, kill, pause, or unpause a container. Kill accepts an optional signal (default SIGKILL).",
 		Tags:        []string{"Containers"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermContainersStart, h.StartContainer)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "stop-container",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/containers/{containerId}/stop",
-		Summary:     "Stop container",
-		Tags:        []string{"Containers"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermContainersStop, h.StopContainer)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "restart-container",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/containers/{containerId}/restart",
-		Summary:     "Restart container",
-		Tags:        []string{"Containers"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermContainersRestart, h.RestartContainer)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "kill-container",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/containers/{containerId}/kill",
-		Summary:     "Kill container",
-		Description: "Send a signal to the container's main process (default SIGKILL)",
-		Tags:        []string{"Containers"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermContainersKill, h.KillContainer)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "pause-container",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/containers/{containerId}/pause",
-		Summary:     "Pause container",
-		Tags:        []string{"Containers"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermContainersPause, h.PauseContainer)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "unpause-container",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/containers/{containerId}/unpause",
-		Summary:     "Unpause container",
-		Tags:        []string{"Containers"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermContainersPause, h.UnpauseContainer)
+	}, "action", map[string]string{
+		"start":   authz.PermContainersStart,
+		"stop":    authz.PermContainersStop,
+		"restart": authz.PermContainersRestart,
+		"kill":    authz.PermContainersKill,
+		"pause":   authz.PermContainersPause,
+		"unpause": authz.PermContainersPause,
+	}, h.RunContainerAction)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "commit-container",
@@ -198,7 +160,7 @@ func RegisterContainers(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "generate-compose",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/containers/generate-compose",
+		Path:        "/environments/{id}/containers/compose",
 		Summary:     "Generate compose file",
 		Description: "Generate a compose file from existing containers",
 		Tags:        []string{"Containers"},
@@ -208,7 +170,7 @@ func RegisterContainers(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-container-edit-config",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/containers/{containerId}/edit-config",
+		Path:        "/environments/{id}/containers/{containerId}/config",
 		Summary:     "Get container edit config",
 		Description: "Editable configuration snapshot backing the container edit form",
 		Tags:        []string{"Containers"},
@@ -217,8 +179,8 @@ func RegisterContainers(
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "edit-container",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/containers/{containerId}/edit",
+		Method:      http.MethodPut,
+		Path:        "/environments/{id}/containers/{containerId}/config",
 		Summary:     "Edit container",
 		Description: "Apply configuration changes and recreate the container",
 		Tags:        []string{"Containers"},
@@ -247,7 +209,7 @@ func RegisterContainers(
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "set-container-auto-update",
 		Method:      http.MethodPut,
-		Path:        "/environments/{id}/containers/{containerId}/auto-update",
+		Path:        "/environments/{id}/containers/{containerId}/autoupdate",
 		Summary:     "Set container auto-update",
 		Description: "Enable or disable auto-update for a specific container",
 		Tags:        []string{"Containers", "Updater"},

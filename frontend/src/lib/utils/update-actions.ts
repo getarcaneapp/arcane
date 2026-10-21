@@ -98,7 +98,7 @@ const SELF_UPGRADE_MAX_WAIT_MS = 5 * 60 * 1000;
  * expired session for minutes. While the backend is down the probe throws, so
  * the flag stays armed for exactly as long as it is needed.
  *
- * The probe must be authenticated. A public endpoint (`/app-version`) answers
+ * The probe must be authenticated. A public endpoint (`/app/version`) answers
  * 200 the instant the new backend binds its port, which would disarm before
  * any authenticated request could trigger recovery. `/auth/me` instead returns
  * the version-mismatch 401 itself, and — because it is not in the API client's

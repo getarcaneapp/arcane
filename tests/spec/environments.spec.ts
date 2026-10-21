@@ -73,20 +73,20 @@ test.describe('Settings', () => {
 		await openEnvironment(page, LOCAL_ENV_ID);
 	}
 
-	async function saveAndWaitForPut(page: Page, expectedPath: string) {
+	async function saveAndWaitForPatch(page: Page, expectedPath: string) {
 		const saveButton = page.getByRole('button', { name: 'Save', exact: true }).first();
 		await expect(saveButton).toBeEnabled();
 
 		const responsePromise = page.waitForResponse((response) => {
 			const request = response.request();
-			if (request.method() !== 'PUT') return false;
+			if (request.method() !== 'PATCH') return false;
 			const url = new URL(response.url());
 			return url.pathname === expectedPath;
 		});
 
 		await saveButton.click();
 		const response = await responsePromise;
-		expect(response.ok(), `Expected successful PUT to ${expectedPath}`).toBeTruthy();
+		expect(response.ok(), `Expected successful PATCH to ${expectedPath}`).toBeTruthy();
 		await expect(saveButton).toBeDisabled({ timeout: 10000 });
 		return response.request();
 	}
@@ -137,7 +137,7 @@ test.describe('Settings', () => {
 					)
 				);
 				if (Object.keys(changed).length === 0) return;
-				const response = await page.request.put(`/api/environments/${LOCAL_ENV_ID}/settings`, {
+				const response = await page.request.patch(`/api/environments/${LOCAL_ENV_ID}/settings`, {
 					data: changed
 				});
 				expect(
@@ -243,7 +243,7 @@ test.describe('Settings', () => {
 			expect(updatedApiUrl).not.toBe(originalApiUrl);
 
 			await renameEnvironmentInHeader(page, updatedName);
-			const nameRequest = await saveAndWaitForPut(page, environmentPath);
+			const nameRequest = await saveAndWaitForPatch(page, environmentPath);
 			expect(nameRequest.postDataJSON()).not.toHaveProperty('accessToken');
 
 			await page.reload();
@@ -259,7 +259,7 @@ test.describe('Settings', () => {
 
 			const rejectedResponsePromise = page.waitForResponse(
 				(response) =>
-					response.request().method() === 'PUT' &&
+					response.request().method() === 'PATCH' &&
 					new URL(response.url()).pathname === environmentPath
 			);
 			await page.getByRole('button', { name: 'Save', exact: true }).first().click();
@@ -285,7 +285,7 @@ test.describe('Settings', () => {
 			await page.locator('#api-url').press('Tab');
 			await tokenInput.fill(apiKey);
 			await page.route(`**${environmentPath}`, async (route) => {
-				if (route.request().method() !== 'PUT') return route.continue();
+				if (route.request().method() !== 'PATCH') return route.continue();
 				await route.fulfill({
 					status: 503,
 					contentType: 'application/problem+json',
@@ -294,7 +294,7 @@ test.describe('Settings', () => {
 			});
 			const failedResponsePromise = page.waitForResponse(
 				(response) =>
-					response.request().method() === 'PUT' &&
+					response.request().method() === 'PATCH' &&
 					new URL(response.url()).pathname === environmentPath
 			);
 			await page.getByRole('button', { name: 'Save', exact: true }).first().click();
@@ -303,7 +303,7 @@ test.describe('Settings', () => {
 			expect((await tokenInput.inputValue()) === apiKey).toBe(true);
 			await page.unroute(`**${environmentPath}`);
 
-			const updateRequest = await saveAndWaitForPut(page, environmentPath);
+			const updateRequest = await saveAndWaitForPatch(page, environmentPath);
 			const updatePayload = updateRequest.postDataJSON() as Record<string, unknown>;
 			expect(updatePayload.apiUrl).toBe(updatedApiUrl);
 			expect(updatePayload.accessToken === apiKey).toBe(true);
@@ -321,7 +321,7 @@ test.describe('Settings', () => {
 			await expect(apiUrlButton).toHaveText(updatedApiUrl);
 			await expect(tokenInput).toBeHidden();
 			await renameEnvironmentInHeader(page, `${updatedName}-again`);
-			const secondNameRequest = await saveAndWaitForPut(page, environmentPath);
+			const secondNameRequest = await saveAndWaitForPatch(page, environmentPath);
 			expect(secondNameRequest.postDataJSON()).not.toHaveProperty('accessToken');
 		});
 
@@ -341,7 +341,7 @@ test.describe('Settings', () => {
 			try {
 				await baseServerUrlInput.fill(updatedBaseServerUrl);
 				await expect(baseServerUrlInput).toHaveValue(updatedBaseServerUrl);
-				const settingsRequest = await saveAndWaitForPut(
+				const settingsRequest = await saveAndWaitForPatch(
 					page,
 					`/api/environments/${LOCAL_ENV_ID}/settings`
 				);
@@ -358,7 +358,7 @@ test.describe('Settings', () => {
 					const currentValue = await page.locator('#base-server-url').inputValue();
 					if (currentValue !== originalBaseServerUrl) {
 						await page.locator('#base-server-url').fill(originalBaseServerUrl);
-						await saveAndWaitForPut(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
+						await saveAndWaitForPatch(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
 					}
 				}
 			}
@@ -389,7 +389,7 @@ test.describe('Settings', () => {
 
 				const responsePromise = page.waitForResponse((response) => {
 					const request = response.request();
-					if (request.method() !== 'PUT') return false;
+					if (request.method() !== 'PATCH') return false;
 					const url = new URL(response.url());
 					return url.pathname === `/api/environments/${LOCAL_ENV_ID}/settings`;
 				});
@@ -412,7 +412,7 @@ test.describe('Settings', () => {
 						'true';
 					if (currentChecked !== originalChecked) {
 						await page.locator('#follow-project-symlinks').click();
-						await saveAndWaitForPut(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
+						await saveAndWaitForPatch(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
 					}
 				}
 			}
@@ -481,7 +481,7 @@ test.describe('Settings', () => {
 			try {
 				await selectSettingOption(page, pullPolicyTrigger, updatedValue);
 				await expect(pullPolicyTrigger).toContainText(updatedValue);
-				await saveAndWaitForPut(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
+				await saveAndWaitForPatch(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
 
 				await page.reload();
 				await page.getByRole('tab', { name: 'Docker Settings', exact: true }).click();
@@ -500,7 +500,7 @@ test.describe('Settings', () => {
 							page.locator('#defaultDeployPullPolicy'),
 							originalValue
 						);
-						await saveAndWaitForPut(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
+						await saveAndWaitForPatch(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
 					}
 				}
 			}
@@ -539,9 +539,9 @@ test.describe('Settings', () => {
 					);
 					const requestPromise = page.waitForRequest(
 						(request) =>
-							request.method() === 'PUT' && new URL(request.url()).pathname === settingsPath
+							request.method() === 'PATCH' && new URL(request.url()).pathname === settingsPath
 					);
-					await saveAndWaitForPut(page, settingsPath);
+					await saveAndWaitForPatch(page, settingsPath);
 					const payload = (await requestPromise).postDataJSON() as Record<string, unknown>;
 					expect(payload.trivyCpuLimit).toBe(value);
 					expect(payload.trivyResourceLimitsEnabled).toBe('true');
@@ -552,7 +552,7 @@ test.describe('Settings', () => {
 
 				const writes: Request[] = [];
 				const recordWrite = (request: Request) => {
-					if (request.method() === 'PUT' && new URL(request.url()).pathname === settingsPath) {
+					if (request.method() === 'PATCH' && new URL(request.url()).pathname === settingsPath) {
 						writes.push(request);
 					}
 				};
@@ -571,7 +571,7 @@ test.describe('Settings', () => {
 					page.off('request', recordWrite);
 				}
 			} finally {
-				const restored = await page.request.put(settingsPath, { data: originalSettings });
+				const restored = await page.request.patch(settingsPath, { data: originalSettings });
 				expect(restored.ok()).toBeTruthy();
 			}
 		});
@@ -595,7 +595,7 @@ test.describe('Settings', () => {
 
 				const responsePromise = page.waitForResponse((response) => {
 					const request = response.request();
-					if (request.method() !== 'PUT') return false;
+					if (request.method() !== 'PATCH') return false;
 					const url = new URL(response.url());
 					return url.pathname === `/api/environments/${LOCAL_ENV_ID}/settings`;
 				});
@@ -613,7 +613,7 @@ test.describe('Settings', () => {
 					const currentValue = ((await page.locator('#trivyNetwork').textContent()) || '').trim();
 					if (!currentValue.includes(originalValue)) {
 						await selectSettingOption(page, page.locator('#trivyNetwork'), originalValue);
-						await saveAndWaitForPut(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
+						await saveAndWaitForPatch(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
 					}
 				}
 			}

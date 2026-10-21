@@ -27,7 +27,7 @@ class VariableService extends BaseAPIService {
 	}
 
 	async update(id: string, dto: GlobalVariableUpdate): Promise<VariableMutationResponse> {
-		const response = await this.api.put(`/variables/${encodeURIComponent(id)}`, dto);
+		const response = await this.api.patch(`/variables/${encodeURIComponent(id)}`, dto);
 		return response.data?.data ?? {};
 	}
 
