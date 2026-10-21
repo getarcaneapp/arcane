@@ -45,8 +45,9 @@ type DeleteContainerRegistryInput struct {
 	ID string `path:"id" doc:"Registry ID"`
 }
 
-type TestContainerRegistryInput struct {
-	ID string `path:"id" doc:"Registry ID"`
+type ContainerRegistryActionInput struct {
+	ID     string `path:"id" doc:"Registry ID"`
+	Action string `query:"action" required:"true" enum:"test" doc:"Registry action"`
 }
 
 type SyncContainerRegistriesInput struct {
@@ -170,7 +171,7 @@ func (h *ContainerRegistryHandler) DeleteRegistry(ctx context.Context, input *De
 }
 
 // TestRegistry tests connectivity to a container registry.
-func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *TestContainerRegistryInput) (*handlerutil.Out[types.MessageResponse], error) {
+func (h *ContainerRegistryHandler) TestRegistry(ctx context.Context, input *ContainerRegistryActionInput) (*handlerutil.Out[types.MessageResponse], error) {
 	reg, err := h.registryService.GetRegistryByID(ctx, input.ID)
 	if err != nil {
 		apiErr := common.ToAPIError(err)

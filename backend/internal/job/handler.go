@@ -37,11 +37,19 @@ type GetJobsOutput struct {
 	Body types.JobListResponse
 }
 
-type RunJobInput struct {
+type JobActionInput struct {
 	ID        string                   `path:"id" doc:"Environment ID"`
-	JobID     string                   `path:"jobId" minLength:"1" doc:"Job ID to run"`
+	JobID     string                   `path:"jobId" minLength:"1" doc:"Job ID"`
+	Action    string                   `query:"action" required:"true" enum:"run,restart" doc:"Job action"`
 	RequestID string                   `header:"Idempotency-Key"`
 	Body      *types.JobSubmitRunInput `required:"false"`
+}
+
+type JobRunActionInput struct {
+	ID     string `path:"id"`
+	JobID  string `path:"jobId" minLength:"1"`
+	RunID  string `path:"runId" format:"uuid"`
+	Action string `query:"action" required:"true" enum:"retry,cancel,ack" doc:"Job run action"`
 }
 
 type RunJobOutput struct {
@@ -66,7 +74,14 @@ func (h *JobSchedulesHandler) ListJobs(ctx context.Context, input *ListJobsInput
 	return &GetJobsOutput{Body: *jobs}, nil
 }
 
-func (h *JobSchedulesHandler) RunJob(ctx context.Context, input *RunJobInput) (*RunJobOutput, error) {
+func (h *JobSchedulesHandler) RunJobAction(ctx context.Context, input *JobActionInput) (*RunJobOutput, error) {
+	if input.Action == "restart" {
+		return h.restartWorker(ctx, input)
+	}
+	return h.runJob(ctx, input)
+}
+
+func (h *JobSchedulesHandler) runJob(ctx context.Context, input *JobActionInput) (*RunJobOutput, error) {
 	if kit.FromPtr(input.Body).RunID != "" && input.RequestID != "" && input.RequestID != kit.FromPtr(input.Body).RunID {
 		return nil, huma.Error400BadRequest("Conflicting run IDs")
 	}
@@ -95,7 +110,7 @@ func (h *JobSchedulesHandler) RunJob(ctx context.Context, input *RunJobInput) (*
 
 func (h *JobSchedulesHandler) Get(ctx context.Context, input *GetJobSchedulesInput) (*GetJobSchedulesOutput, error) {
 	if input.ID != "0" {
-		cfg, err := h.proxyRemoteJSON.JSON[types.JobScheduleConfig](ctx, input.ID, http.MethodGet, "/api/environments/0/job-schedules", nil)
+		cfg, err := h.proxyRemoteJSON.JSON[types.JobScheduleConfig](ctx, input.ID, http.MethodGet, "/api/environments/0/jobs/schedules", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -108,7 +123,7 @@ func (h *JobSchedulesHandler) Get(ctx context.Context, input *GetJobSchedulesInp
 
 func (h *JobSchedulesHandler) Update(ctx context.Context, input *UpdateJobSchedulesInput) (*handlerutil.Out[types.JobScheduleConfig], error) {
 	if input.ID != "0" {
-		apiResp, err := h.proxyRemoteJSON.JSON[types.ApiResponse[types.JobScheduleConfig]](ctx, input.ID, http.MethodPut, "/api/environments/0/job-schedules", input.RawBody)
+		apiResp, err := h.proxyRemoteJSON.JSON[types.ApiResponse[types.JobScheduleConfig]](ctx, input.ID, http.MethodPatch, "/api/environments/0/jobs/schedules", input.RawBody)
 		if err != nil {
 			return nil, err
 		}
@@ -153,32 +168,23 @@ func (h *JobSchedulesHandler) GetRun(ctx context.Context, input *types.JobRunInp
 	return &types.JobRunOutput{Body: result}, nil
 }
 
-// RetryRun requests an explicit retry while preserving the run ID and target
-// progress. Eligibility and remote-outcome checks are enforced by the service.
-func (h *JobSchedulesHandler) RetryRun(ctx context.Context, input *types.JobRunInput) (*types.JobRunOutput, error) {
-	result, err := h.jobService.RetryRun(ctx, input.ID, input.JobID, input.RunID)
+func (h *JobSchedulesHandler) RunJobRunAction(ctx context.Context, input *JobRunActionInput) (*types.JobRunOutput, error) {
+	run := map[string]func(context.Context, string, string, string) (types.SchedulerRun, error){
+		"retry":  h.jobService.RetryRun,
+		"cancel": h.jobService.CancelRun,
+		"ack":    h.acknowledgeRun,
+	}[input.Action]
+	result, err := run(ctx, input.ID, input.JobID, input.RunID)
 	if err != nil {
 		return nil, jobHTTPError(err)
 	}
 	return &types.JobRunOutput{Body: result}, nil
 }
 
-// CancelRun cancels queued work only when it has never been attempted or sent
-// remotely. Agent-owned cancellations are forwarded to the owning environment.
-func (h *JobSchedulesHandler) CancelRun(ctx context.Context, input *types.JobRunInput) (*types.JobRunOutput, error) {
-	result, err := h.jobService.CancelRun(ctx, input.ID, input.JobID, input.RunID)
+func (h *JobSchedulesHandler) acknowledgeRun(ctx context.Context, environmentID, jobID, runID string) (types.SchedulerRun, error) {
+	result, err := h.jobService.GetRun(ctx, environmentID, jobID, runID)
 	if err != nil {
-		return nil, jobHTTPError(err)
-	}
-	return &types.JobRunOutput{Body: result}, nil
-}
-
-// AcknowledgeRun marks a terminal run's remote delivery settled so retention can
-// compact its history. Nonterminal runs cannot be acknowledged.
-func (h *JobSchedulesHandler) AcknowledgeRun(ctx context.Context, input *types.JobRunInput) (*types.JobRunOutput, error) {
-	result, err := h.jobService.GetRun(ctx, input.ID, input.JobID, input.RunID)
-	if err != nil {
-		return nil, jobHTTPError(err)
+		return types.SchedulerRun{}, err
 	}
 	err = h.jobService.runs.UpdateRun(ctx, result, func(current *types.SchedulerRun) error {
 		if !current.Status.Terminal() {
@@ -215,17 +221,12 @@ func (h *JobSchedulesHandler) AcknowledgeRun(ctx context.Context, input *types.J
 		result = *current
 		return nil
 	})
-	if err != nil {
-		return nil, jobHTTPError(err)
-	}
-	return &types.JobRunOutput{Body: result}, nil
+	return result, err
 }
 
-// RestartWorker requests a continuous watcher's restart on the owning runtime,
-// forwarding remote requests to the agent. It does not enqueue a scheduled run.
-func (h *JobSchedulesHandler) RestartWorker(ctx context.Context, input *types.JobInput) (*RunJobOutput, error) {
+func (h *JobSchedulesHandler) restartWorker(ctx context.Context, input *JobActionInput) (*RunJobOutput, error) {
 	if input.ID != "0" {
-		result, err := h.proxyRemoteJSON.JSON[types.JobRunResponse](ctx, input.ID, http.MethodPost, "/api/environments/0/jobs/"+input.JobID+"/restart", nil)
+		result, err := h.proxyRemoteJSON.JSON[types.JobRunResponse](ctx, input.ID, http.MethodPost, "/api/environments/0/jobs/"+input.JobID+"?action=restart", nil)
 		if err != nil {
 			return nil, err
 		}

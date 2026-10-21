@@ -240,8 +240,8 @@ func newRestoreCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           clitypes.BackupRestore(args[0]),
-				Body:           types.RestoreSystemBackupRequest{RecoveryKey: key},
+				Path:           clitypes.BackupAction(args[0], "restore"),
+				Body:           types.RestoreSystemBackupFilesRequest{RecoveryKey: key},
 				FailureMessage: "failed to restore backup",
 				Render: func(data types.MessageResponse) error {
 					output.Success("%s", data.Message)

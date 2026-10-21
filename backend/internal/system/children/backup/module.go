@@ -75,19 +75,22 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		authz.PermSystemBackupsManage,
 		h.UpdatePolicies,
 	)
-	middleware.RegisterWithPermission(
+	middleware.RegisterWithActionPermissions(
 		api,
 		huma.Operation{
 			OperationID: "generate-system-backup-recovery-key",
 			Method:      http.MethodPost,
-			Path:        "/backups/recovery-key/generate",
+			Path:        "/backups/recovery/key",
 			Summary:     "Generate an Arcane system backup recovery key",
 			Tags: []string{
 				"System Backups",
 			},
 			Middlewares: adminOnly,
 		},
-		authz.PermSystemBackupsRecoveryKey,
+		"action",
+		map[string]string{
+			"generate": authz.PermSystemBackupsRecoveryKey,
+		},
 		h.GenerateRecoveryKey,
 	)
 	middleware.RegisterWithPermission(
@@ -95,7 +98,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "set-system-backup-recovery-key",
 			Method:      http.MethodPut,
-			Path:        "/backups/recovery-key",
+			Path:        "/backups/recovery/key",
 			Summary:     "Configure Arcane system backup recovery key",
 			Tags: []string{
 				"System Backups",
@@ -136,20 +139,25 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		authz.PermSystemBackupsManage,
 		h.Discover,
 	)
-	middleware.RegisterWithPermission(
+	middleware.RegisterWithActionPermissions(
 		api,
 		huma.Operation{
-			OperationID: "restore-system-backup",
+			OperationID: "system-backup-action",
 			Method:      http.MethodPost,
-			Path:        "/backups/{id}/restore",
+			Path:        "/backups/{id}",
 			Summary:     "Restore Arcane system backup",
+			Description: "Restore a full Arcane system backup, or selected project files with action restorefiles",
 			Tags: []string{
 				"System Backups",
 			},
 			Middlewares: adminOnly,
 		},
-		authz.PermSystemBackupsRestore,
-		h.Restore,
+		"action",
+		map[string]string{
+			"restore":      authz.PermSystemBackupsRestore,
+			"restorefiles": authz.PermSystemBackupsRestore,
+		},
+		h.RestoreAction,
 	)
 	middleware.RegisterWithPermission(
 		api,
@@ -165,21 +173,6 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		},
 		authz.PermSystemBackupsRead,
 		h.BrowseFiles,
-	)
-	middleware.RegisterWithPermission(
-		api,
-		huma.Operation{
-			OperationID: "restore-system-backup-files",
-			Method:      http.MethodPost,
-			Path:        "/backups/{id}/restore-files",
-			Summary:     "Restore project files from an Arcane system backup",
-			Tags: []string{
-				"System Backups",
-			},
-			Middlewares: adminOnly,
-		},
-		authz.PermSystemBackupsRestore,
-		h.RestoreFiles,
 	)
 	middleware.RegisterWithPermission(
 		api,

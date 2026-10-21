@@ -199,7 +199,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Role]{
-				Method:         http.MethodPut,
+				Method:         http.MethodPatch,
 				Path:           clitypes.Role(args[0]),
 				Body:           body,
 				FailureMessage: "failed to update role",

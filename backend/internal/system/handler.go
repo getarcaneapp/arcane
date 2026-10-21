@@ -32,16 +32,14 @@ type GetDockerInfoOutput struct {
 	Body types.DockerInfo
 }
 
-type StartAllContainersInput struct {
+type ContainersActionInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Action        string `query:"action" required:"true" enum:"startall,startstopped,stopall" doc:"Bulk container action"`
 }
 
-type StartAllStoppedContainersInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type StopAllContainersInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
+type containersAction struct {
+	Run   func(context.Context, string) (*types.ContainerActionResult, error)
+	Error string
 }
 
 type ConvertDockerRunInput struct {
@@ -76,44 +74,24 @@ func (h *SystemHandler) GetDockerInfo(ctx context.Context, input *GetDockerInfoI
 	return &GetDockerInfoOutput{Body: info}, nil
 }
 
-// StartAllContainers starts all Docker containers.
-func (h *SystemHandler) StartAllContainers(ctx context.Context, input *StartAllContainersInput) (*handlerutil.Out[types.ContainerActionResult], error) {
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	result, err := h.systemService.StartAllContainers(runtimeCtx, input.EnvironmentID)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to start containers: " + err.Error())
-	}
-
-	return &handlerutil.Out[types.ContainerActionResult]{
-		Body: types.ApiResponse[types.ContainerActionResult]{
-			Success: true,
-			Data:    *result,
+func (h *SystemHandler) RunContainersAction(ctx context.Context, input *ContainersActionInput) (*handlerutil.Out[types.ContainerActionResult], error) {
+	action := map[string]containersAction{
+		"startall": {
+			Run:   h.systemService.StartAllContainers,
+			Error: "Failed to start containers: ",
 		},
-	}, nil
-}
-
-// StartAllStoppedContainers starts all stopped Docker containers.
-func (h *SystemHandler) StartAllStoppedContainers(ctx context.Context, input *StartAllStoppedContainersInput) (*handlerutil.Out[types.ContainerActionResult], error) {
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	result, err := h.systemService.StartAllStoppedContainers(runtimeCtx, input.EnvironmentID)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to start stopped containers: " + err.Error())
-	}
-
-	return &handlerutil.Out[types.ContainerActionResult]{
-		Body: types.ApiResponse[types.ContainerActionResult]{
-			Success: true,
-			Data:    *result,
+		"startstopped": {
+			Run:   h.systemService.StartAllStoppedContainers,
+			Error: "Failed to start stopped containers: ",
 		},
-	}, nil
-}
-
-// StopAllContainers stops all running Docker containers.
-func (h *SystemHandler) StopAllContainers(ctx context.Context, input *StopAllContainersInput) (*handlerutil.Out[types.ContainerActionResult], error) {
-	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	result, err := h.systemService.StopAllContainers(runtimeCtx, input.EnvironmentID)
+		"stopall": {
+			Run:   h.systemService.StopAllContainers,
+			Error: "Failed to stop containers: ",
+		},
+	}[input.Action]
+	result, err := action.Run(utils.ActivityRuntimeContext(ctx, h.appCtx), input.EnvironmentID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to stop containers: " + err.Error())
+		return nil, huma.Error500InternalServerError(action.Error + err.Error())
 	}
 
 	return &handlerutil.Out[types.ContainerActionResult]{

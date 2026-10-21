@@ -554,9 +554,8 @@ test.describe('Management', () => {
 test.describe('Update checks', () => {
 	const ROUTES = {
 		page: '/images',
-		apiImageUpdatesCheckBatch: '/api/environments/0/image-updates/check-batch',
-		apiImageUpdatesCheckAll: '/api/environments/0/image-updates/check-all',
-		apiImageUpdatesSummary: '/api/environments/0/image-updates/summary'
+		apiImageUpdatesCheck: '/api/environments/0/images/updates/check',
+		apiImageUpdatesSummary: '/api/environments/0/images/updates/summary'
 	};
 
 	const TEST_IMAGE_REFS = {
@@ -634,13 +633,17 @@ test.describe('Update checks', () => {
 		test('should trigger bulk update check when clicking Check Updates button', async ({
 			page
 		}) => {
-			await page.route(`**${ROUTES.apiImageUpdatesCheckAll}`, async (route) => {
-				await route.fulfill({
-					status: 200,
-					contentType: 'application/json',
-					body: JSON.stringify({ success: true, data: {} })
-				});
-			});
+			await page.route(
+				(url) =>
+					url.pathname === ROUTES.apiImageUpdatesCheck && url.searchParams.get('action') === 'all',
+				async (route) => {
+					await route.fulfill({
+						status: 200,
+						contentType: 'application/json',
+						body: JSON.stringify({ success: true, data: {} })
+					});
+				}
+			);
 			await navigateToImages(page);
 
 			const checkUpdatesButton = await getCheckUpdatesAction(page);
@@ -649,7 +652,10 @@ test.describe('Update checks', () => {
 			const checkAllResponsePromise = page.waitForResponse((response) => {
 				const request = response.request();
 				if (request.method() !== 'POST') return false;
-				return new URL(response.url()).pathname === ROUTES.apiImageUpdatesCheckAll;
+				const url = new URL(response.url());
+				return (
+					url.pathname === ROUTES.apiImageUpdatesCheck && url.searchParams.get('action') === 'all'
+				);
 			});
 
 			await checkUpdatesButton.click();
@@ -725,7 +731,7 @@ test.describe('Update checks', () => {
 				(response) =>
 					response.request().method() === 'POST' &&
 					decodeURIComponent(new URL(response.url()).pathname) ===
-						`/api/environments/0/image-updates/check/${testImage.id}`
+						`/api/environments/0/images/updates/check/${testImage.id}`
 			);
 			if (await trigger.evaluate((element) => element.tagName === 'BUTTON')) {
 				await trigger.click();
@@ -757,24 +763,22 @@ test.describe('Update checks', () => {
 	});
 
 	test.describe('Batch Update Checks', () => {
-		test('should handle empty batch request', async ({ page }) => {
-			const res = await page.request.post(ROUTES.apiImageUpdatesCheckBatch, {
+		test('should reject empty batch request', async ({ page }) => {
+			const res = await page.request.post(ROUTES.apiImageUpdatesCheck, {
+				params: { action: 'batch' },
 				data: {
 					imageRefs: []
 				}
 			});
 
-			expect(res.status()).toBe(200);
-
-			const json = await readApiData<Record<string, ImageUpdateInfo>>(res, 'Check image updates');
-
-			expect(Object.keys(json).length).toBe(0);
+			expect(res.status()).toBe(400);
 		});
 
 		test('should return results for each image in batch', async ({ page }) => {
 			const imageRefs = [TEST_IMAGE_REFS.nginx, TEST_IMAGE_REFS.alpine, TEST_IMAGE_REFS.busybox];
 
-			const res = await page.request.post(ROUTES.apiImageUpdatesCheckBatch, {
+			const res = await page.request.post(ROUTES.apiImageUpdatesCheck, {
+				params: { action: 'batch' },
 				data: {
 					imageRefs
 				}
@@ -793,7 +797,8 @@ test.describe('Update checks', () => {
 		test('should handle mixed valid and invalid images in batch', async ({ page }) => {
 			const imageRefs = [TEST_IMAGE_REFS.nginx, 'invalid-registry.example.com/nonexistent:latest'];
 
-			const res = await page.request.post(ROUTES.apiImageUpdatesCheckBatch, {
+			const res = await page.request.post(ROUTES.apiImageUpdatesCheck, {
+				params: { action: 'batch' },
 				data: {
 					imageRefs
 				}

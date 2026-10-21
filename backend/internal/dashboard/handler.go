@@ -353,7 +353,7 @@ func (h *DashboardHandler) fetchLegacyDashboardSnapshot(ctx context.Context, loc
 
 	attempted++
 	var versionInfo types.VersionInfo
-	if err := h.environmentService.ProxyJSONRequestForEnvironment(ctx, localEnvironment, http.MethodGet, "/api/app-version", nil, &versionInfo); err != nil {
+	if err := h.environmentService.ProxyJSONRequestForEnvironment(ctx, localEnvironment, http.MethodGet, "/api/app/version", nil, &versionInfo); err != nil {
 		errs = append(errs, err)
 	} else {
 		snapshot.VersionInfo = &versionInfo

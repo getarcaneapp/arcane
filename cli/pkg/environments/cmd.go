@@ -268,7 +268,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Environment]{
-				Method:         http.MethodPut,
+				Method:         http.MethodPatch,
 				Path:           clitypes.Environment(args[0]),
 				FailureMessage: "failed to update environment",
 				Body:           req,

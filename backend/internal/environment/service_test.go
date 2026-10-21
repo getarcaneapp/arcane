@@ -419,7 +419,7 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SyncsEligibleRemo
 		if !assert.Equal(t, http.MethodPost, r.Method) {
 			return
 		}
-		if !assert.Equal(t, "/api/container-registries/sync", r.URL.Path) {
+		if !assert.Equal(t, "/api/registries/sync", r.URL.Path) {
 			return
 		}
 		if !assert.Equal(t, env1Token, r.Header.Get("X-API-Key")) {
@@ -449,7 +449,7 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SyncsEligibleRemo
 		if !assert.Equal(t, http.MethodPost, r.Method) {
 			return
 		}
-		if !assert.Equal(t, "/api/container-registries/sync", r.URL.Path) {
+		if !assert.Equal(t, "/api/registries/sync", r.URL.Path) {
 			return
 		}
 		if !assert.Equal(t, env2Token, r.Header.Get("X-API-Key")) {
@@ -494,7 +494,7 @@ func TestEnvironmentService_SyncRegistriesToEnvironment_IncludesECRFields(t *tes
 		if !assert.Equal(t, http.MethodPost, r.Method) {
 			return
 		}
-		if !assert.Equal(t, "/api/container-registries/sync", r.URL.Path) {
+		if !assert.Equal(t, "/api/registries/sync", r.URL.Path) {
 			return
 		}
 
@@ -623,7 +623,7 @@ func TestEnvironmentService_SyncRepositoriesToEnvironment_UsesAgentHeaders(t *te
 		if !assert.Equal(t, http.MethodPost, r.Method) {
 			return
 		}
-		if !assert.Equal(t, "/api/git-repositories/sync", r.URL.Path) {
+		if !assert.Equal(t, "/api/git/repositories/sync", r.URL.Path) {
 			return
 		}
 		if !assert.Equal(t, accessToken, r.Header.Get("X-API-Key")) {

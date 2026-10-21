@@ -111,7 +111,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 
 	huma.Register(api, huma.Operation{
 		OperationID: "updateEnvironment",
-		Method:      "PUT",
+		Method:      "PATCH",
 		Path:        "/environments/{id}",
 		Summary:     "Update an environment",
 		Description: "Update a Docker environment",
@@ -225,7 +225,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 	huma.Register(api, huma.Operation{
 		OperationID: "downloadEdgeMTLSCA",
 		Method:      "GET",
-		Path:        "/edge-mtls/ca",
+		Path:        "/edge/mtls/ca",
 		Summary:     "Download Arcane-generated edge mTLS CA",
 		Description: "Download the Arcane-managed certificate authority used for generated edge mTLS client certificates",
 		Tags:        []string{"Environments"},

@@ -20,8 +20,9 @@ class NotificationService extends BaseAPIService {
 
 	async testNotification(provider: string, type: string = 'simple'): Promise<TestNotificationResponse> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		const encodedType = encodeURIComponent(type);
-		return this.handleResponse(this.api.post(`/environments/${envId}/notifications/test/${provider}?type=${encodedType}`));
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/notifications/settings/${provider}`, undefined, { params: { action: 'test', type } })
+		);
 	}
 }
 

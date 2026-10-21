@@ -111,7 +111,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.JobScheduleConfig]{
-				Method:         http.MethodPut,
+				Method:         http.MethodPatch,
 				Path:           clitypes.JobSchedules(c.EnvID()),
 				Body:           req,
 				FailureMessage: "failed to update job schedules",
@@ -201,7 +201,7 @@ func newRunCmd() *cobra.Command {
 				value[8] = (value[8] & 0x3f) | 0x80
 				id = fmt.Sprintf("%x-%x-%x-%x-%x", value[0:4], value[4:6], value[6:8], value[8:10], value[10:16])
 			}
-			result, err := c.DoJSON[types.JobRunResponse](cmd.Context(), http.MethodPost, clitypes.JobRun(c.EnvID(), args[0]), nil, http.Header{"Idempotency-Key": []string{id}})
+			result, err := c.DoJSON[types.JobRunResponse](cmd.Context(), http.MethodPost, clitypes.JobAction(c.EnvID(), args[0], "run"), nil, http.Header{"Idempotency-Key": []string{id}})
 			if err != nil {
 				return fmt.Errorf("failed to queue job (reuse --request-id %s if delivery is uncertain): %w", id, err)
 			}

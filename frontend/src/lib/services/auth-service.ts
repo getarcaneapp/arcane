@@ -324,7 +324,7 @@ class AuthService extends BaseAPIService {
 	 * @returns The auto-login config, or null if the request fails
 	 */
 	async getAutoLoginConfig(): Promise<AutoLoginConfig | null> {
-		const result = await tryCatch(this.handleResponse<AutoLoginConfig>(this.api.get('/auth/auto-login-config')));
+		const result = await tryCatch(this.handleResponse<AutoLoginConfig>(this.api.get('/auth/autologin')));
 		// Silently fail - auto-login is optional.
 		return result.data;
 	}
@@ -335,7 +335,7 @@ class AuthService extends BaseAPIService {
 	 * @returns The user if login succeeded, null otherwise
 	 */
 	async attemptAutoLogin(): Promise<User | null> {
-		const result = await tryCatch(this.handleResponse<AuthenticationResponse>(this.api.post('/auth/auto-login')));
+		const result = await tryCatch(this.handleResponse<AuthenticationResponse>(this.api.post('/auth/autologin')));
 		// Silently fail - fall back to normal login flow.
 		if (result.error !== null || result.data.status === 'mfa_required') return null;
 		return this.completeAuthentication(result.data);

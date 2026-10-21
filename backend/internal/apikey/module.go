@@ -44,7 +44,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *ApiKeyService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "list-api-keys",
 		Method:      http.MethodGet,
-		Path:        "/api-keys",
+		Path:        "/apikeys",
 		Summary:     "List API keys",
 		Description: "Get a paginated list of API keys",
 		Tags:        []string{"API Keys"},
@@ -55,7 +55,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *ApiKeyService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "create-api-key",
 		Method:      http.MethodPost,
-		Path:        "/api-keys",
+		Path:        "/apikeys",
 		Summary:     "Create an API key",
 		Description: "Create a new API key for programmatic access",
 		Tags:        []string{"API Keys"},
@@ -66,7 +66,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *ApiKeyService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-api-key",
 		Method:      http.MethodGet,
-		Path:        "/api-keys/{id}",
+		Path:        "/apikeys/{id}",
 		Summary:     "Get an API key",
 		Description: "Get details of a specific API key by ID",
 		Tags:        []string{"API Keys"},
@@ -76,8 +76,8 @@ func RegisterApiKeys(api huma.API, apiKeyService *ApiKeyService) {
 
 	huma.Register(api, huma.Operation{
 		OperationID: "update-api-key",
-		Method:      http.MethodPut,
-		Path:        "/api-keys/{id}",
+		Method:      http.MethodPatch,
+		Path:        "/apikeys/{id}",
 		Summary:     "Update an API key",
 		Description: "Update an existing API key's details",
 		Tags:        []string{"API Keys"},
@@ -88,7 +88,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *ApiKeyService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-api-key",
 		Method:      http.MethodDelete,
-		Path:        "/api-keys/{id}",
+		Path:        "/apikeys/{id}",
 		Summary:     "Delete an API key",
 		Description: "Delete an API key by ID",
 		Tags:        []string{"API Keys"},
@@ -101,7 +101,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *ApiKeyService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "list-my-api-keys",
 		Method:      http.MethodGet,
-		Path:        "/auth/me/api-keys",
+		Path:        "/auth/me/apikeys",
 		Summary:     "List my API keys",
 		Description: "List API keys owned by the current user",
 		Tags:        []string{"API Keys"},
@@ -114,7 +114,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *ApiKeyService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "create-my-api-key",
 		Method:      http.MethodPost,
-		Path:        "/auth/me/api-keys",
+		Path:        "/auth/me/apikeys",
 		Summary:     "Create my API key",
 		Description: "Create a new personal API key owned by the current user. Personal keys inherit the owner's role permissions.",
 		Tags:        []string{"API Keys"},
@@ -126,7 +126,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *ApiKeyService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-my-api-key",
 		Method:      http.MethodDelete,
-		Path:        "/auth/me/api-keys/{id}",
+		Path:        "/auth/me/apikeys/{id}",
 		Summary:     "Delete my API key",
 		Description: "Delete one of the current user's own API keys",
 		Tags:        []string{"API Keys"},

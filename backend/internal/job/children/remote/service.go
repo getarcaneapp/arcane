@@ -111,7 +111,7 @@ func (s *Service) Deliver(ctx context.Context, run types.SchedulerRun) (types.Sc
 			return remoteFailure(marshalErr)
 		}
 		var accepted types.JobRunResponse
-		if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, run.EnvironmentID, http.MethodPost, basePath+"/run", body, &accepted); proxyJSONRequestErr != nil {
+		if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, run.EnvironmentID, http.MethodPost, basePath+"?action=run", body, &accepted); proxyJSONRequestErr != nil {
 			return remoteFailure(proxyJSONRequestErr)
 		}
 		if accepted.RunID != run.ID {
@@ -165,7 +165,7 @@ func (s *Service) Deliver(ctx context.Context, run types.SchedulerRun) (types.Sc
 			return remoteFailure(updateRunErr)
 		}
 		var retried types.SchedulerRun
-		if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, run.EnvironmentID, http.MethodPost, runPath+"/retry", nil, &retried); proxyJSONRequestErr != nil {
+		if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, run.EnvironmentID, http.MethodPost, runPath+"?action=retry", nil, &retried); proxyJSONRequestErr != nil {
 			return remoteFailure(proxyJSONRequestErr)
 		}
 		if retried.ID != run.ID || retried.JobID != run.JobID {
@@ -234,7 +234,7 @@ func (s *Service) Confirm(ctx context.Context, run, remoteRun types.SchedulerRun
 
 func (s *Service) acknowledgeRemote(ctx context.Context, run types.SchedulerRun, path string, outcome types.SchedulerOutcome) (types.SchedulerOutcome, error) {
 	var response types.SchedulerRun
-	if err := s.environments.ProxyJSONRequest(ctx, run.EnvironmentID, http.MethodPost, path+"/ack", nil, &response); err != nil {
+	if err := s.environments.ProxyJSONRequest(ctx, run.EnvironmentID, http.MethodPost, path+"?action=ack", nil, &response); err != nil {
 		return types.SchedulerOutcome{
 			Status:     types.RunStatusWaiting,
 			Message:    "Remote operation completed; waiting for delivery acknowledgement",
@@ -498,7 +498,7 @@ func (s *Service) MutateAgentRun(ctx context.Context, environmentID, jobID, runI
 	if !targetEnvironment.Enabled {
 		return types.SchedulerRun{}, errors.New("environment is disabled")
 	}
-	path := "/api/environments/0/jobs/" + url.PathEscape(jobID) + "/runs/" + url.PathEscape(runID) + "/" + action
+	path := "/api/environments/0/jobs/" + url.PathEscape(jobID) + "/runs/" + url.PathEscape(runID) + "?action=" + action
 	var run types.SchedulerRun
 	// This is an explicit operator action. Never replay a lost mutation response.
 	if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, environmentID, http.MethodPost, path, nil, &run); proxyJSONRequestErr != nil {

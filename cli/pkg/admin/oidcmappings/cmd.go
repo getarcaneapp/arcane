@@ -151,7 +151,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.OidcRoleMapping]{
-				Method:         http.MethodPut,
+				Method:         http.MethodPatch,
 				Path:           clitypes.OidcRoleMapping(args[0]),
 				Body:           body,
 				FailureMessage: "failed to update OIDC mapping",

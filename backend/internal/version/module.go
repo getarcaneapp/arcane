@@ -21,7 +21,7 @@ func RegisterVersion(api huma.API, versionService *VersionService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "getAppVersion",
 		Method:      "GET",
-		Path:        "/app-version",
+		Path:        "/app/version",
 		Summary:     "Get app version",
 		Description: "Get the current application version",
 		Tags:        []string{"Version"},

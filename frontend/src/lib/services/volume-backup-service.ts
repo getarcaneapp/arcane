@@ -22,7 +22,7 @@ class VolumeBackupService extends BaseAPIService {
 
 	async getPolicies(volumeName: string, environmentId?: string): Promise<VolumeBackupPolicyCollection> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.get(`/environments/${envId}/volumes/${volumeName}/backup-policy`));
+		return this.handleResponse(this.api.get(`/environments/${envId}/volumes/${volumeName}/backups/policy`));
 	}
 
 	async updatePolicies(
@@ -31,7 +31,7 @@ class VolumeBackupService extends BaseAPIService {
 		environmentId?: string
 	): Promise<VolumeBackupPolicyCollection> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.put(`/environments/${envId}/volumes/${volumeName}/backup-policy`, { policies }));
+		return this.handleResponse(this.api.put(`/environments/${envId}/volumes/${volumeName}/backups/policy`, { policies }));
 	}
 
 	async createBackup(volumeName: string, request?: CreateVolumeBackupRequest, environmentId?: string): Promise<BackupEntry> {
@@ -58,7 +58,11 @@ class VolumeBackupService extends BaseAPIService {
 
 	async restoreBackup(volumeName: string, backupId: string, environmentId?: string): Promise<unknown> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/volumes/${volumeName}/backups/${backupId}/restore`));
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/volumes/${volumeName}/backups/${backupId}`, undefined, {
+				params: { action: 'restore' }
+			})
+		);
 	}
 
 	async restoreBackupFiles(
@@ -69,9 +73,11 @@ class VolumeBackupService extends BaseAPIService {
 	): Promise<unknown> {
 		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(
-			this.api.post(`/environments/${envId}/volumes/${volumeName}/backups/${backupId}/restore-files`, {
-				...selection
-			})
+			this.api.post(
+				`/environments/${envId}/volumes/${volumeName}/backups/${backupId}`,
+				{ ...selection },
+				{ params: { action: 'restorefiles' } }
+			)
 		);
 	}
 
@@ -89,7 +95,7 @@ class VolumeBackupService extends BaseAPIService {
 
 	async backupHasPath(backupId: string, filePath: string, environmentId?: string): Promise<boolean> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		const res = await this.api.get(`/environments/${envId}/volumes/backups/${backupId}/has-path`, {
+		const res = await this.api.get(`/environments/${envId}/volumes/backups/${backupId}/files/exists`, {
 			params: { path: filePath }
 		});
 		return !!res.data.data?.exists;

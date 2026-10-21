@@ -40,8 +40,9 @@ type DeleteGitRepositoryInput struct {
 	ID string `path:"id" doc:"Repository ID"`
 }
 
-type TestGitRepositoryInput struct {
+type GitRepositoryActionInput struct {
 	ID     string `path:"id" doc:"Repository ID"`
+	Action string `query:"action" required:"true" enum:"test" doc:"Repository action"`
 	Branch string `query:"branch" doc:"Branch to test (optional, uses repository default branch when omitted)"`
 }
 
@@ -174,7 +175,7 @@ func (h *GitRepositoryHandler) DeleteRepository(ctx context.Context, input *Dele
 }
 
 // TestRepository tests connectivity and authentication to a git repository.
-func (h *GitRepositoryHandler) TestRepository(ctx context.Context, input *TestGitRepositoryInput) (*handlerutil.Out[types.MessageResponse], error) {
+func (h *GitRepositoryHandler) TestRepository(ctx context.Context, input *GitRepositoryActionInput) (*handlerutil.Out[types.MessageResponse], error) {
 	actor := handlerutil.CurrentActor(ctx)
 
 	if err := h.repoService.TestConnection(ctx, input.ID, input.Branch, actor); err != nil {

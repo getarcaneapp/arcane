@@ -45,16 +45,14 @@ var errProxiedBodyTooLarge = errors.New("proxied request body is too large")
 
 // managementEndpointSet contains paths handled locally and never proxied to remote environments.
 var managementEndpointSet = map[string]struct{}{
-	"/test":            {},
-	"/heartbeat":       {},
-	"/sync-registries": {},
-	"/sync":            {},
-	"/deployment":      {},
-	"/agent/pair":      {},
-	"/version":         {},
-	"/settings":        {},
-	"/job-schedules":   {},
-	"/jobs":            {},
+	"/test":       {},
+	"/heartbeat":  {},
+	"/sync":       {},
+	"/deployment": {},
+	"/agent/pair": {},
+	"/version":    {},
+	"/settings":   {},
+	"/jobs":       {},
 }
 
 // EnvResolver resolves an environment ID to its connection details.
@@ -338,7 +336,7 @@ func (m *EnvironmentMiddleware) proxyPermissionStatus(c *echo.Context, ps *authz
 		}
 	}
 
-	perm, ok := m.matcher.Lookup(method, suffix).Get()
+	perm, ok := m.matcher.Lookup(method, suffix, req.URL.Query()).Get()
 	if !ok {
 		slog.WarnContext(ctx, "Denying proxied request with no known permission mapping", "method", method, "path", suffix, "environmentId", envID)
 		return http.StatusForbidden
@@ -354,7 +352,7 @@ func (m *EnvironmentMiddleware) proxyPermissionStatus(c *echo.Context, ps *authz
 
 	var required []string
 	var err error
-	if method == http.MethodPut && len(segments) == 3 && segments[0] == "volumes" && segments[1] != "" && segments[2] == "workspace" {
+	if method == http.MethodPatch && len(segments) == 3 && segments[0] == "volumes" && segments[1] != "" && segments[2] == "workspace" {
 		required, err = proxiedVolumeWorkspacePermissions(req)
 	} else {
 		required, err = proxiedGitOpsSyncPermissions(req, method, segments)
@@ -442,9 +440,9 @@ func proxiedVolumeWorkspacePermissions(request *http.Request) ([]string, error) 
 // proxiedGitOpsSyncPermissions mirrors the handler lifecycle and backup gates for gitops sync create, import,
 // and update, since the agent trusts forwarded requests as sudo. Returns nil for any other route.
 func proxiedGitOpsSyncPermissions(request *http.Request, method string, segments []string) ([]string, error) {
-	isCreate := len(segments) == 1 && segments[0] == "gitops-syncs" && method == http.MethodPost
-	isImport := len(segments) == 2 && segments[0] == "gitops-syncs" && segments[1] == "import" && method == http.MethodPost
-	isUpdate := len(segments) == 2 && segments[0] == "gitops-syncs" && segments[1] != "" && method == http.MethodPut
+	isCreate := len(segments) == 2 && segments[0] == "gitops" && segments[1] == "syncs" && method == http.MethodPost
+	isImport := len(segments) == 3 && segments[0] == "gitops" && segments[1] == "syncs" && segments[2] == "import" && method == http.MethodPost
+	isUpdate := len(segments) == 3 && segments[0] == "gitops" && segments[1] == "syncs" && segments[2] != "" && method == http.MethodPatch
 	if !isCreate && !isImport && !isUpdate || request.Body == nil {
 		return nil, nil
 	}
@@ -517,12 +515,12 @@ func IsManagerLocalPath(method, suffix string) bool {
 	}
 
 	switch method + " " + suffix {
-	case "GET /swarm/join-candidates", "GET /swarm/nodes", "POST /swarm/join-environments", "POST /swarm/nodes/agents/reconcile":
+	case "GET /swarm/join/candidates", "GET /swarm/nodes", "POST /swarm/join/environments", "POST /swarm/nodes/agents/reconcile":
 		return true
 	}
 
 	parts := strings.Split(strings.Trim(suffix, "/"), "/")
-	if len(parts) == 3 && parts[0] == "volumes" && parts[1] != "" && parts[2] == "backup-policy" {
+	if len(parts) == 4 && parts[0] == "volumes" && parts[1] != "" && parts[2] == "backups" && parts[3] == "policy" {
 		return method == http.MethodGet || method == http.MethodPut
 	}
 	if len(parts) < 3 || parts[0] != "swarm" || parts[1] != "nodes" {

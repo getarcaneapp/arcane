@@ -224,7 +224,7 @@ func newS3UpdateCmd() *cobra.Command {
 				return errors.New("no updates provided (set at least one flag)")
 			}
 
-			dest, err := c.DoJSON[types.S3Destination](cmd.Context(), http.MethodPut, clitypes.BackupsS3Destination(resolved.ID), req)
+			dest, err := c.DoJSON[types.S3Destination](cmd.Context(), http.MethodPatch, clitypes.BackupsS3Destination(resolved.ID), req)
 			if err != nil {
 				return fmt.Errorf("failed to update S3 destination: %w", err)
 			}
@@ -305,7 +305,7 @@ passing the connection flags (--name, --bucket, --region, ...) with no argument.
 				if resolveErr != nil {
 					return resolveErr
 				}
-				testPath, testBody = clitypes.BackupsS3DestinationTest(resolved.ID), nil
+				testPath, testBody = clitypes.BackupsS3DestinationAction(resolved.ID, "test"), nil
 			} else if opts.Bucket == "" {
 				return errors.New("either a destination name or ID, or connection flags (--name, --bucket, --region, ...) are required")
 			}

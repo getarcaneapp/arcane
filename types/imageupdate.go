@@ -108,16 +108,9 @@ type ImageUpdateSummary struct {
 type BatchImageUpdateRequest struct {
 	// ImageRefs is a list of image references to check for updates.
 	//
-	// Required: true
-	ImageRefs []string `json:"imageRefs" binding:"required"`
-
-	// Credentials is a list of container registry credentials for authentication.
-	//
 	// Required: false
-	Credentials []ContainerRegistryCredential `json:"credentials,omitempty"`
-}
+	ImageRefs []string `json:"imageRefs,omitempty"`
 
-type CheckAllImagesRequest struct {
 	// Credentials is a list of container registry credentials for authentication.
 	//
 	// Required: false

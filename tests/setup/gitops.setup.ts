@@ -2,7 +2,7 @@ import { expect, test as setup } from '../fixtures/test.fixture';
 
 setup('create and verify the GitOps project prerequisite', async ({ page }) => {
 	setup.setTimeout(120_000);
-	const response = await page.request.post('/api/playwright/create-test-gitops-project', {
+	const response = await page.request.post('/api/playwright/gitops', {
 		timeout: 100_000
 	});
 	expect(response.status(), await response.text()).toBe(204);

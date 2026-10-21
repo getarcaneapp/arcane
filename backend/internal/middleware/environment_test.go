@@ -394,9 +394,9 @@ func TestIsManagementPath_SwarmIsMethodAware(t *testing.T) {
 }
 
 func TestIsManagementPath_VolumeBackupPolicyIsMethodAware(t *testing.T) {
-	assert.True(t, IsManagerLocalPath(http.MethodGet, "/volumes/app-data/backup-policy"))
-	assert.True(t, IsManagerLocalPath(http.MethodPut, "/volumes/app-data/backup-policy"))
-	assert.False(t, IsManagerLocalPath(http.MethodPost, "/volumes/app-data/backup-policy"))
+	assert.True(t, IsManagerLocalPath(http.MethodGet, "/volumes/app-data/backups/policy"))
+	assert.True(t, IsManagerLocalPath(http.MethodPut, "/volumes/app-data/backups/policy"))
+	assert.False(t, IsManagerLocalPath(http.MethodPost, "/volumes/app-data/backups/policy"))
 	assert.False(t, IsManagerLocalPath(http.MethodGet, "/volumes/app-data/backups"))
 }
 
@@ -514,7 +514,7 @@ func newProxyVolumeWorkspaceContext(t *testing.T, changes []types.VolumeWorkspac
 
 	rawBody := append([]byte(nil), body.Bytes()...)
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPut, "/api/environments/"+proxyTestEnvID+"/volumes/data/workspace", bytes.NewReader(rawBody))
+	req := httptest.NewRequest(http.MethodPatch, "/api/environments/"+proxyTestEnvID+"/volumes/data/workspace", bytes.NewReader(rawBody))
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	t.Cleanup(func() { _ = req.Body.Close() })
 	return e.NewContext(req, httptest.NewRecorder()), rawBody
@@ -522,7 +522,7 @@ func newProxyVolumeWorkspaceContext(t *testing.T, changes []types.VolumeWorkspac
 
 func TestProxyPermissionDeniedChecksVolumeWorkspaceManifestPermissions(t *testing.T) {
 	matcher := authz.NewPermissionMatcher()
-	matcher.Add(http.MethodPut, "/volumes/{volumeName}/workspace", authz.PermVolumesRead)
+	matcher.Add(http.MethodPatch, "/volumes/{volumeName}/workspace", authz.PermVolumesRead)
 	m := newProxyAuthzMiddleware(matcher)
 	changes := []types.VolumeWorkspaceFileChange{{Operation: types.FileOpRename}}
 
@@ -553,27 +553,27 @@ func TestProxyPermissionDeniedChecksVolumeWorkspaceManifestPermissions(t *testin
 
 func newProxyGitOpsImportContext(body string) *echo.Context {
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/api/environments/"+proxyTestEnvID+"/gitops-syncs/import", bytes.NewReader([]byte(body)))
+	req := httptest.NewRequest(http.MethodPost, "/api/environments/"+proxyTestEnvID+"/gitops/syncs/import", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 	return e.NewContext(req, httptest.NewRecorder())
 }
 
 func TestProxyPermissionDeniedChecksGitOpsImportLifecyclePermission(t *testing.T) {
 	matcher := authz.NewPermissionMatcher()
-	matcher.Add(http.MethodPost, "/gitops-syncs/import", authz.PermGitOpsCreate)
+	matcher.Add(http.MethodPost, "/gitops/syncs/import", authz.PermGitOpsCreate)
 	m := newProxyAuthzMiddleware(matcher)
 	hookBody := `[{"syncName":"a","gitRepo":"r","branch":"main","dockerComposePath":"compose.yaml","preDeployScriptPath":"scripts/run.sh"}]`
 	plainBody := `[{"syncName":"a","gitRepo":"r","branch":"main","dockerComposePath":"compose.yaml"}]`
 
 	createOnly := authz.NewPermissionSet()
 	createOnly.AddEnv(proxyTestEnvID, authz.PermGitOpsCreate)
-	require.Equal(t, http.StatusForbidden, m.proxyPermissionStatus(newProxyGitOpsImportContext(hookBody), createOnly, proxyTestEnvID, "/gitops-syncs/import"))
-	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(newProxyGitOpsImportContext(plainBody), createOnly, proxyTestEnvID, "/gitops-syncs/import"))
+	require.Equal(t, http.StatusForbidden, m.proxyPermissionStatus(newProxyGitOpsImportContext(hookBody), createOnly, proxyTestEnvID, "/gitops/syncs/import"))
+	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(newProxyGitOpsImportContext(plainBody), createOnly, proxyTestEnvID, "/gitops/syncs/import"))
 
 	withLifecycle := authz.NewPermissionSet()
 	withLifecycle.AddEnv(proxyTestEnvID, authz.PermGitOpsCreate, authz.PermGitOpsLifecycle)
 	c := newProxyGitOpsImportContext(hookBody)
-	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(c, withLifecycle, proxyTestEnvID, "/gitops-syncs/import"))
+	require.Equal(t, http.StatusOK, m.proxyPermissionStatus(c, withLifecycle, proxyTestEnvID, "/gitops/syncs/import"))
 	replayed, err := io.ReadAll(c.Request().Body)
 	require.NoError(t, err)
 	require.Equal(t, hookBody, string(replayed))

@@ -118,7 +118,7 @@
 						id: 'download-edge-ca',
 						action: 'save' as const,
 						label: m.environments_download_edge_ca(),
-						href: '/api/edge-mtls/ca',
+						href: '/api/edge/mtls/ca',
 						rel: 'external',
 						icon: DownloadIcon
 					}

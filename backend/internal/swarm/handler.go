@@ -71,8 +71,9 @@ type GetSwarmJoinTokensInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type RotateSwarmJoinTokensInput struct {
+type SwarmJoinTokensActionInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Action        string `query:"action" required:"true" enum:"rotate" doc:"Join token action"`
 	Body          types.SwarmRotateJoinTokensRequest
 }
 
@@ -291,7 +292,7 @@ func (h *SwarmHandler) GetJoinTokens(ctx context.Context, input *GetSwarmJoinTok
 // Returns a confirmation response when rotation succeeds.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when token rotation fails.
-func (h *SwarmHandler) RotateJoinTokens(ctx context.Context, input *RotateSwarmJoinTokensInput) (*handlerutil.Out[types.MessageResponse], error) {
+func (h *SwarmHandler) RotateJoinTokens(ctx context.Context, input *SwarmJoinTokensActionInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.swarmService.RotateSwarmJoinTokens(ctx, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to rotate swarm join tokens")
 	}

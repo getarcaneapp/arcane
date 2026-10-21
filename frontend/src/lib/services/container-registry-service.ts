@@ -14,50 +14,50 @@ import BaseAPIService from './api-service';
 class ContainerRegistryService extends BaseAPIService {
 	async getRegistries(options?: SearchPaginationSortRequest): Promise<Paginated<ContainerRegistry>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get('/container-registries', { params });
+		const res = await this.api.get('/registries', { params });
 		return res.data;
 	}
 
 	async getRegistry(id: string): Promise<ContainerRegistry> {
-		return this.handleResponse(this.api.get(`/container-registries/${id}`));
+		return this.handleResponse(this.api.get(`/registries/${id}`));
 	}
 
 	async getPullUsage(): Promise<ContainerRegistryPullUsageResponse> {
-		return this.handleResponse(this.api.get('/container-registries/pull-usage'));
+		return this.handleResponse(this.api.get('/registries/usage'));
 	}
 
 	async createRegistry(registry: ContainerRegistryCreate): Promise<ContainerRegistry> {
-		return this.handleResponse(this.api.post(`/container-registries`, registry));
+		return this.handleResponse(this.api.post(`/registries`, registry));
 	}
 
 	async updateRegistry(id: string, registry: ContainerRegistryUpdate): Promise<ContainerRegistry> {
-		return this.handleResponse(this.api.put(`/container-registries/${id}`, registry));
+		return this.handleResponse(this.api.patch(`/registries/${id}`, registry));
 	}
 
 	async deleteRegistry(id: string): Promise<void> {
-		return this.handleResponse(this.api.delete(`/container-registries/${id}`));
+		return this.handleResponse(this.api.delete(`/registries/${id}`));
 	}
 
 	async testRegistry(id: string): Promise<unknown> {
-		return this.handleResponse(this.api.post(`/container-registries/${id}/test`));
+		return this.handleResponse(this.api.post(`/registries/${id}`, undefined, { params: { action: 'test' } }));
 	}
 
 	async getRepositories(id: string, options?: SearchPaginationSortRequest): Promise<Paginated<RegistryRepository>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/container-registries/${id}/repositories`, { params });
+		const res = await this.api.get(`/registries/${id}/repositories`, { params });
 		const page: Paginated<Omit<RegistryRepository, 'id'>> = res.data;
 		return { ...page, data: page.data.map((repository) => ({ ...repository, id: repository.name })) };
 	}
 
 	async getTags(id: string, repository: string, options?: SearchPaginationSortRequest): Promise<Paginated<RegistryTag>> {
 		const params = { ...transformPaginationParams(options), repository };
-		const res = await this.api.get(`/container-registries/${id}/tags`, { params });
+		const res = await this.api.get(`/registries/${id}/tags`, { params });
 		const page: Paginated<Omit<RegistryTag, 'id'>> = res.data;
 		return { ...page, data: page.data.map((tag) => ({ ...tag, id: tag.name })) };
 	}
 
 	async deleteTag(id: string, repository: string, tag: string): Promise<{ digest: string }> {
-		return this.handleResponse(this.api.delete(`/container-registries/${id}/tags`, { params: { repository, tag } }));
+		return this.handleResponse(this.api.delete(`/registries/${id}/tags`, { params: { repository, tag } }));
 	}
 }
 

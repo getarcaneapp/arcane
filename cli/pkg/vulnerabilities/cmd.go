@@ -304,7 +304,7 @@ func newIgnoreCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.IgnoredVulnerability]{
 				Method:         http.MethodPost,
-				Path:           clitypes.VulnerabilitiesIgnore(c.EnvID()),
+				Path:           clitypes.VulnerabilitiesIgnored(c.EnvID()),
 				Body:           payload,
 				FailureMessage: "failed to ignore vulnerability",
 				Render: func(data types.IgnoredVulnerability) error {
@@ -386,7 +386,7 @@ func newUnignoreCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to remove ignore record %s?", args[0]),
-				Path:           clitypes.VulnerabilityIgnore(c.EnvID(), args[0]),
+				Path:           clitypes.VulnerabilityIgnored(c.EnvID(), args[0]),
 				FailureMessage: "failed to remove ignore record",
 				SuccessMessage: fmt.Sprintf("Ignore record %s removed", args[0]),
 			})

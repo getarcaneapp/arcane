@@ -102,27 +102,30 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		authz.PermSwarmRead,
 		h.ListServiceTasks,
 	)
-	middleware.RegisterWithPermission(
+	middleware.RegisterWithActionPermissions(
 		api,
 		huma.Operation{
-			OperationID: "rollback-swarm-service",
+			OperationID: "swarm-service-action",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/services/{serviceId}/rollback",
+			Path:        "/environments/{id}/swarm/services/{serviceId}",
 			Summary:     "Rollback a swarm service",
 			Tags: []string{
 				"Swarm",
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmServices,
+		"action",
+		map[string]string{
+			"rollback": authz.PermSwarmServices,
+		},
 		h.RollbackService,
 	)
 	middleware.RegisterWithPermission(
 		api,
 		huma.Operation{
 			OperationID: "scale-swarm-service",
-			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/services/{serviceId}/scale",
+			Method:      http.MethodPatch,
+			Path:        "/environments/{id}/swarm/services/{serviceId}",
 			Summary:     "Scale a swarm service",
 			Tags: []string{
 				"Swarm",

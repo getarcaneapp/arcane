@@ -126,7 +126,7 @@ func newArchiveCmd() *cobra.Command {
 			}
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           clitypes.ProjectArchive(c.EnvID(), resolved.ID),
+				Path:           clitypes.ProjectAction(c.EnvID(), resolved.ID, "archive", nil),
 				FailureMessage: "failed to archive project",
 				Render: func(types.MessageResponse) error {
 					output.Success("%s", fmt.Sprintf("Project %s archived successfully", resolved.Name))
@@ -154,7 +154,7 @@ func newUnarchiveCmd() *cobra.Command {
 			}
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           clitypes.ProjectUnarchive(c.EnvID(), resolved.ID),
+				Path:           clitypes.ProjectAction(c.EnvID(), resolved.ID, "unarchive", nil),
 				FailureMessage: "failed to unarchive project",
 				Render: func(types.MessageResponse) error {
 					output.Success("%s", fmt.Sprintf("Project %s unarchived successfully", resolved.Name))
@@ -217,12 +217,9 @@ func newUpdateServicesCmd() *cobra.Command {
 
 			c.SetTimeout(30 * time.Minute)
 
-			body := types.ProjectUpdateServicesRequest{Services: args[1:]}
-
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           clitypes.ProjectUpdateServices(c.EnvID(), resolved.ID),
-				Body:           body,
+				Path:           clitypes.ProjectAction(c.EnvID(), resolved.ID, "updateservices", args[1:]),
 				FailureMessage: "failed to update project services",
 				Render: func(types.MessageResponse) error {
 					output.Success("Services updated successfully for project %s", resolved.Name)

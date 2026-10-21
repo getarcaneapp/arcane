@@ -160,7 +160,7 @@ async function mockBuildRegistry(
 ) {
 	const registryRequests = { count: 0 };
 
-	await page.route(/\/api\/container-registries(?:\?.*)?$/, async (route) => {
+	await page.route(/\/api\/registries(?:\?.*)?$/, async (route) => {
 		if (route.request().method() !== 'GET') {
 			await route.fallback();
 			return;

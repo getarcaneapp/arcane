@@ -7,24 +7,24 @@ import BaseAPIService from './api-service';
 class FederatedCredentialAPIService extends BaseAPIService {
 	async list(options?: SearchPaginationSortRequest): Promise<Paginated<FederatedCredential>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get('/federated-credentials', { params });
+		const res = await this.api.get('/federated/credentials', { params });
 		return res.data;
 	}
 
 	async get(id: string): Promise<FederatedCredential> {
-		return this.handleResponse(this.api.get(`/federated-credentials/${id}`)) as Promise<FederatedCredential>;
+		return this.handleResponse(this.api.get(`/federated/credentials/${id}`)) as Promise<FederatedCredential>;
 	}
 
 	async create(credential: FederatedCredentialCreate): Promise<FederatedCredential> {
-		return this.handleResponse(this.api.post('/federated-credentials', credential)) as Promise<FederatedCredential>;
+		return this.handleResponse(this.api.post('/federated/credentials', credential)) as Promise<FederatedCredential>;
 	}
 
 	async update(id: string, credential: FederatedCredentialUpdate): Promise<FederatedCredential> {
-		return this.handleResponse(this.api.put(`/federated-credentials/${id}`, credential)) as Promise<FederatedCredential>;
+		return this.handleResponse(this.api.patch(`/federated/credentials/${id}`, credential)) as Promise<FederatedCredential>;
 	}
 
 	async delete(id: string): Promise<void> {
-		return this.handleResponse(this.api.delete(`/federated-credentials/${id}`)) as Promise<void>;
+		return this.handleResponse(this.api.delete(`/federated/credentials/${id}`)) as Promise<void>;
 	}
 }
 

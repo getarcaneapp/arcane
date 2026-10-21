@@ -237,7 +237,7 @@ export async function fetchApiKeysWithRetry(
 	maxRetries = 3
 ): Promise<Paginated<ApiKey>> {
 	return retry(
-		async () => readList<ApiKey>(await page.request.get('/api/api-keys'), 'List apikeys'),
+		async () => readList<ApiKey>(await page.request.get('/api/apikeys'), 'List apikeys'),
 		maxRetries
 	);
 }
@@ -249,13 +249,12 @@ export async function removeApiResource(
 ) {
 	try {
 		const resourcePath = path.split('?')[0];
-		const asynchronous =
-			/\/projects\/[^/]+\/destroy$/.test(resourcePath) || /\/containers\/[^/]+$/.test(resourcePath);
+		const asynchronous = /\/(projects|containers)\/[^/]+$/.test(resourcePath);
 		if (
 			asynchronous ||
 			/\/environments\/[^/]+\/(images|networks|volumes)\/[^/]+$/.test(resourcePath)
 		) {
-			const existing = await page.request.get(resourcePath.replace(/\/destroy$/, ''));
+			const existing = await page.request.get(resourcePath);
 			if (existing.status() === 404) return;
 			if (!existing.ok())
 				throw new Error(
@@ -269,7 +268,7 @@ export async function removeApiResource(
 				await expect
 					.poll(
 						async () => {
-							const remaining = await page.request.get(resourcePath.replace(/\/destroy$/, ''));
+							const remaining = await page.request.get(resourcePath);
 							if (!remaining.ok() && remaining.status() !== 404) {
 								throw new Error(
 									`Cleanup lookup ${resourcePath}: ${remaining.status()} ${await remaining.text()}`

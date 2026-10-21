@@ -56,7 +56,7 @@ var (
 	// remoteWebhookTargetListPaths lists agent endpoints for target types whose records live in the agent's database.
 	remoteWebhookTargetListPaths = map[string]string{
 		WebhookTargetTypeProject: "/api/environments/" + types.LocalDockerEnvironmentID + "/projects/references",
-		WebhookTargetTypeGitOps:  "/api/environments/" + types.LocalDockerEnvironmentID + "/gitops-syncs?limit=-1",
+		WebhookTargetTypeGitOps:  "/api/environments/" + types.LocalDockerEnvironmentID + "/gitops/syncs?limit=-1",
 	}
 )
 
@@ -678,17 +678,21 @@ func remoteWebhookRequest(wh *Webhook, actionType string) (method, path string, 
 		switch actionType {
 		case WebhookActionTypeUpdate:
 			return http.MethodPost, containerPath + "/update", true, nil
-		case WebhookActionTypeStart, WebhookActionTypeStop, WebhookActionTypeRestart, WebhookActionTypeRedeploy:
-			return http.MethodPost, containerPath + "/" + actionType, false, nil
+		case WebhookActionTypeStart, WebhookActionTypeStop, WebhookActionTypeRestart:
+			return http.MethodPost, containerPath + "?action=" + actionType, false, nil
+		case WebhookActionTypeRedeploy:
+			return http.MethodPost, containerPath + "/redeploy", false, nil
 		}
 		return "", "", false, ErrWebhookInvalidAction
 	case WebhookTargetTypeProject:
 		projectPath := apiPrefix + "/projects/" + url.PathEscape(wh.TargetID)
 		switch actionType {
 		case WebhookActionTypeUpdate:
-			return http.MethodPost, projectPath + "/update-services", false, nil
-		case WebhookActionTypeUp, WebhookActionTypeDown, WebhookActionTypeRestart, WebhookActionTypeRedeploy:
-			return http.MethodPost, projectPath + "/" + actionType, false, nil
+			return http.MethodPost, projectPath + "?action=updateservices", false, nil
+		case WebhookActionTypeDown, WebhookActionTypeRestart:
+			return http.MethodPost, projectPath + "?action=" + actionType, false, nil
+		case WebhookActionTypeUp, WebhookActionTypeRedeploy:
+			return http.MethodPost, projectPath + "/deploy?action=" + actionType, false, nil
 		}
 		return "", "", false, ErrWebhookInvalidAction
 	case WebhookTargetTypeUpdater:
@@ -700,7 +704,7 @@ func remoteWebhookRequest(wh *Webhook, actionType string) (method, path string, 
 		if actionType != WebhookActionTypeSync {
 			return "", "", false, ErrWebhookInvalidAction
 		}
-		return http.MethodPost, apiPrefix + "/gitops-syncs/" + url.PathEscape(wh.TargetID) + "/sync", false, nil
+		return http.MethodPost, apiPrefix + "/gitops/syncs/" + url.PathEscape(wh.TargetID) + "?action=sync", false, nil
 	default:
 		return "", "", false, ErrWebhookInvalidType
 	}

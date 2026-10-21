@@ -1,6 +1,7 @@
 package authz
 
 import (
+	"net/url"
 	"strings"
 
 	"github.com/getarcaneapp/arcane/types/v3"
@@ -27,9 +28,11 @@ type PermissionMatcher struct {
 }
 
 type permRoute struct {
-	method   string
-	segments []string // literal segment, or "*" for a path parameter
-	perm     string
+	method      string
+	segments    []string // literal segment, or "*" for a path parameter
+	perm        string
+	actionParam string
+	actionPerms map[string]string
 }
 
 // NewPermissionMatcher returns an empty matcher.
@@ -56,24 +59,37 @@ func (m *PermissionMatcher) AddPublic(method, pathTemplate string) {
 	m.Add(method, pathTemplate, "")
 }
 
+// AddActions registers method + pathTemplate as a proxied route whose
+// permission is selected by the param query parameter. perms maps each accepted
+// value to its permission. Lookup yields None for a missing or unknown value,
+// which the proxy treats as "deny".
+func (m *PermissionMatcher) AddActions(method, pathTemplate, param string, perms map[string]string) {
+	m.routes = append(m.routes, permRoute{
+		method:      strings.ToUpper(method),
+		segments:    templateSegments(pathTemplate),
+		actionParam: param,
+		actionPerms: perms,
+	})
+}
+
 // Lookup returns the permission required for method + suffixPath, where
-// suffixPath is the resource path after /environments/{id} (for example
-// "/containers/abc123/start"). When multiple templates match, the most specific
-// one wins — a route with more literal (non-wildcard) segments is preferred, so
-// static routes such as "/containers/counts" take precedence over
-// parameterized routes such as "/containers/{containerId}".
+// suffixPath is the resource path after /environments/{id} without a query
+// string (for example "/containers/abc123") and query holds the request's
+// query parameters. When multiple templates match, the most specific one wins —
+// a route with more literal (non-wildcard) segments is preferred, so static
+// routes such as "/containers/counts" take precedence over parameterized routes
+// such as "/containers/{containerId}".
 //
 // The returned option contains the required permission when a route matched.
-// Callers should treat None as "deny" for proxied resource paths.
-func (m *PermissionMatcher) Lookup(method, suffixPath string) mo.Option[string] {
-	if i := strings.IndexByte(suffixPath, '?'); i >= 0 {
-		suffixPath = suffixPath[:i]
-	}
+// For action routes (see AddActions) the permission is selected by the action
+// query parameter, and a missing or unknown action yields None. Callers should
+// treat None as "deny" for proxied resource paths.
+func (m *PermissionMatcher) Lookup(method, suffixPath string, query url.Values) mo.Option[string] {
 	reqSegs := pathSegments(suffixPath)
 	method = strings.ToUpper(method)
 
 	bestScore := -1
-	bestPerm := ""
+	var best permRoute
 	found := false
 	for i := range m.routes {
 		r := m.routes[i]
@@ -94,14 +110,21 @@ func (m *PermissionMatcher) Lookup(method, suffixPath string) mo.Option[string] 
 		}
 		if match && score > bestScore {
 			bestScore = score
-			bestPerm = r.perm
+			best = r
 			found = true
 		}
 	}
-	if found {
-		return mo.Some(bestPerm)
+	if !found {
+		return mo.None[string]()
 	}
-	return mo.None[string]()
+	if best.actionParam == "" {
+		return mo.Some(best.perm)
+	}
+	perm, ok := best.actionPerms[query.Get(best.actionParam)]
+	if !ok {
+		return mo.None[string]()
+	}
+	return mo.Some(perm)
 }
 
 func (m *PermissionMatcher) SupportsEnvironmentAggregation(method, suffix string) bool {

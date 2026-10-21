@@ -28,7 +28,7 @@ func TestVersionOutput(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != "/api/app-version" {
+				if r.URL.Path != "/api/app/version" {
 					t.Errorf("unexpected version endpoint: %s", r.URL.Path)
 					w.WriteHeader(http.StatusNotFound)
 					return

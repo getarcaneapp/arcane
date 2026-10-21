@@ -236,7 +236,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.FederatedCredential]{
-				Method:         http.MethodPut,
+				Method:         http.MethodPatch,
 				Path:           clitypes.FederatedCredential(args[0]),
 				FailureMessage: "failed to update federated credential",
 				Body:           body,

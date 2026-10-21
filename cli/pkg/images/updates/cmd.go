@@ -52,7 +52,7 @@ func newCheckCmd() *cobra.Command {
 					return errors.New("--all cannot be combined with image references")
 				}
 
-				result, checkAllUpdatesErr := c.PostJSON[jsontext.Value](cmd.Context(), clitypes.ImageUpdatesCheckAll(c.EnvID()), struct{}{})
+				result, checkAllUpdatesErr := c.PostJSON[jsontext.Value](cmd.Context(), clitypes.ImageUpdatesCheckAction(c.EnvID(), "all"), struct{}{})
 				if checkAllUpdatesErr != nil {
 					return fmt.Errorf("failed to check all updates: %w", checkAllUpdatesErr)
 				}
@@ -64,7 +64,7 @@ func newCheckCmd() *cobra.Command {
 			}
 
 			if len(args) > 1 {
-				result, checkBatchUpdatesErr := c.PostJSON[jsontext.Value](cmd.Context(), clitypes.ImageUpdatesCheckBatch(c.EnvID()), types.BatchImageUpdateRequest{ImageRefs: args})
+				result, checkBatchUpdatesErr := c.PostJSON[jsontext.Value](cmd.Context(), clitypes.ImageUpdatesCheckAction(c.EnvID(), "batch"), types.BatchImageUpdateRequest{ImageRefs: args})
 				if checkBatchUpdatesErr != nil {
 					return fmt.Errorf("failed to check updates: %w", checkBatchUpdatesErr)
 				}
@@ -107,7 +107,7 @@ func newCheckAllCmd() *cobra.Command {
 				return err
 			}
 
-			result, err := c.PostJSON[jsontext.Value](cmd.Context(), clitypes.ImageUpdatesCheckAll(c.EnvID()), struct{}{})
+			result, err := c.PostJSON[jsontext.Value](cmd.Context(), clitypes.ImageUpdatesCheckAction(c.EnvID(), "all"), struct{}{})
 			if err != nil {
 				return fmt.Errorf("failed to check all updates: %w", err)
 			}

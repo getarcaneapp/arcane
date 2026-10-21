@@ -312,14 +312,17 @@ test.describe('Notifications', () => {
 			});
 
 			// Stub the specific test endpoint
-			await page.route(`**/api/environments/*/notifications/test/${provider}**`, async (route) => {
-				testEndpointCalled = true;
-				await route.fulfill({
-					status: 200,
-					contentType: 'application/json',
-					body: JSON.stringify({ success: true })
-				});
-			});
+			await page.route(
+				`**/api/environments/*/notifications/settings/${provider}?action=test**`,
+				async (route) => {
+					testEndpointCalled = true;
+					await route.fulfill({
+						status: 200,
+						contentType: 'application/json',
+						body: JSON.stringify({ success: true })
+					});
+				}
+			);
 
 			await page.goto('/settings/notifications');
 			await page.waitForLoadState('load');

@@ -87,6 +87,8 @@ type GetContainerInput struct {
 type ContainerActionInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ContainerID   string `path:"containerId" doc:"Container ID"`
+	Action        string `query:"action" required:"true" enum:"start,stop,restart,kill,pause,unpause" doc:"Lifecycle action"`
+	Signal        string `query:"signal" doc:"Signal to send for kill (for example SIGTERM, SIGKILL). Defaults to SIGKILL."`
 }
 
 type DeleteContainerInput struct {
@@ -101,13 +103,6 @@ type SetAutoUpdateInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ContainerID   string `path:"containerId" doc:"Container ID"`
 	Body          types.ContainerSetAutoUpdateRequest
-}
-
-// KillContainerInput carries the optional signal for a container kill.
-type KillContainerInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ContainerID   string `path:"containerId" doc:"Container ID"`
-	Signal        string `query:"signal" doc:"Signal to send (for example SIGTERM, SIGKILL). Defaults to SIGKILL."`
 }
 
 type CommitContainerInput struct {
@@ -134,12 +129,12 @@ type GenerateComposeInput struct {
 
 type containerActionConfig struct {
 	ActivityType    types.ActivityType
+	Verb            string
 	Step            string
 	StartMessage    string
 	CompleteMessage string
 	SuccessMessage  string
 	Action          func(context.Context, string, types.Actor) error
-	Error           func(error) error
 }
 
 func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContainersInput) (*ListContainersOutput, error) {
@@ -387,106 +382,66 @@ func (h *ContainerHandler) GenerateCompose(ctx context.Context, input *GenerateC
 	}, nil
 }
 
-func (h *ContainerHandler) StartContainer(ctx context.Context, input *ContainerActionInput) (*handlerutil.Out[types.MessageResponse], error) {
-	return h.runContainerAction(ctx, input, containerActionConfig{
-		ActivityType:    types.ActivityTypeContainerStart,
-		Step:            "Starting container",
-		StartMessage:    "Container start requested",
-		CompleteMessage: "Container started",
-		SuccessMessage:  "Container started successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user types.Actor) error {
-			return h.containerService.StartContainer(runtimeCtx, containerID, user)
+func (h *ContainerHandler) RunContainerAction(ctx context.Context, input *ContainerActionInput) (*handlerutil.Out[types.MessageResponse], error) {
+	cfg := map[string]containerActionConfig{
+		"start": {
+			ActivityType:    types.ActivityTypeContainerStart,
+			Verb:            "start",
+			Step:            "Starting container",
+			StartMessage:    "Container start requested",
+			CompleteMessage: "Container started",
+			SuccessMessage:  "Container started successfully",
+			Action:          h.containerService.StartContainer,
 		},
-		Error: func(err error) error {
-			apiErr := common.ToAPIError(common.ClassifyDockerError(err))
-			return huma.NewError(apiErr.HTTPStatus(), "Failed to start container: "+apiErr.Message)
+		"stop": {
+			ActivityType:    types.ActivityTypeContainerStop,
+			Verb:            "stop",
+			Step:            "Stopping container",
+			StartMessage:    "Container stop requested",
+			CompleteMessage: "Container stopped",
+			SuccessMessage:  "Container stopped successfully",
+			Action:          h.containerService.StopContainer,
 		},
-	})
-}
-
-func (h *ContainerHandler) StopContainer(ctx context.Context, input *ContainerActionInput) (*handlerutil.Out[types.MessageResponse], error) {
-	return h.runContainerAction(ctx, input, containerActionConfig{
-		ActivityType:    types.ActivityTypeContainerStop,
-		Step:            "Stopping container",
-		StartMessage:    "Container stop requested",
-		CompleteMessage: "Container stopped",
-		SuccessMessage:  "Container stopped successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user types.Actor) error {
-			return h.containerService.StopContainer(runtimeCtx, containerID, user)
+		"restart": {
+			ActivityType:    types.ActivityTypeContainerRestart,
+			Verb:            "restart",
+			Step:            "Restarting container",
+			StartMessage:    "Container restart requested",
+			CompleteMessage: "Container restarted",
+			SuccessMessage:  "Container restarted successfully",
+			Action:          h.containerService.RestartContainer,
 		},
-		Error: func(err error) error {
-			apiErr := common.ToAPIError(common.ClassifyDockerError(err))
-			return huma.NewError(apiErr.HTTPStatus(), "Failed to stop container: "+apiErr.Message)
+		"kill": {
+			ActivityType:    types.ActivityTypeContainerKill,
+			Verb:            "kill",
+			Step:            "Killing container",
+			StartMessage:    "Container kill requested",
+			CompleteMessage: "Container killed",
+			SuccessMessage:  "Container killed successfully",
+			Action: func(runtimeCtx context.Context, containerID string, user types.Actor) error {
+				return h.containerService.KillContainer(runtimeCtx, containerID, strings.TrimSpace(input.Signal), user)
+			},
 		},
-	})
-}
-
-func (h *ContainerHandler) RestartContainer(ctx context.Context, input *ContainerActionInput) (*handlerutil.Out[types.MessageResponse], error) {
-	return h.runContainerAction(ctx, input, containerActionConfig{
-		ActivityType:    types.ActivityTypeContainerRestart,
-		Step:            "Restarting container",
-		StartMessage:    "Container restart requested",
-		CompleteMessage: "Container restarted",
-		SuccessMessage:  "Container restarted successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user types.Actor) error {
-			return h.containerService.RestartContainer(runtimeCtx, containerID, user)
+		"pause": {
+			ActivityType:    types.ActivityTypeContainerPause,
+			Verb:            "pause",
+			Step:            "Pausing container",
+			StartMessage:    "Container pause requested",
+			CompleteMessage: "Container paused",
+			SuccessMessage:  "Container paused successfully",
+			Action:          h.containerService.PauseContainer,
 		},
-		Error: func(err error) error {
-			apiErr := common.ToAPIError(common.ClassifyDockerError(err))
-			return huma.NewError(apiErr.HTTPStatus(), "Failed to restart container: "+apiErr.Message)
+		"unpause": {
+			ActivityType:    types.ActivityTypeContainerUnpause,
+			Verb:            "unpause",
+			Step:            "Unpausing container",
+			StartMessage:    "Container unpause requested",
+			CompleteMessage: "Container unpaused",
+			SuccessMessage:  "Container unpaused successfully",
+			Action:          h.containerService.UnpauseContainer,
 		},
-	})
-}
-
-func (h *ContainerHandler) KillContainer(ctx context.Context, input *KillContainerInput) (*handlerutil.Out[types.MessageResponse], error) {
-	return h.runContainerAction(ctx, &ContainerActionInput{EnvironmentID: input.EnvironmentID, ContainerID: input.ContainerID}, containerActionConfig{
-		ActivityType:    types.ActivityTypeContainerKill,
-		Step:            "Killing container",
-		StartMessage:    "Container kill requested",
-		CompleteMessage: "Container killed",
-		SuccessMessage:  "Container killed successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user types.Actor) error {
-			return h.containerService.KillContainer(runtimeCtx, containerID, strings.TrimSpace(input.Signal), user)
-		},
-		Error: func(err error) error {
-			apiErr := common.ToAPIError(common.ClassifyDockerError(err))
-			return huma.NewError(apiErr.HTTPStatus(), "Failed to kill container: "+apiErr.Message)
-		},
-	})
-}
-
-func (h *ContainerHandler) PauseContainer(ctx context.Context, input *ContainerActionInput) (*handlerutil.Out[types.MessageResponse], error) {
-	return h.runContainerAction(ctx, input, containerActionConfig{
-		ActivityType:    types.ActivityTypeContainerPause,
-		Step:            "Pausing container",
-		StartMessage:    "Container pause requested",
-		CompleteMessage: "Container paused",
-		SuccessMessage:  "Container paused successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user types.Actor) error {
-			return h.containerService.PauseContainer(runtimeCtx, containerID, user)
-		},
-		Error: func(err error) error {
-			apiErr := common.ToAPIError(common.ClassifyDockerError(err))
-			return huma.NewError(apiErr.HTTPStatus(), "Failed to pause container: "+apiErr.Message)
-		},
-	})
-}
-
-func (h *ContainerHandler) UnpauseContainer(ctx context.Context, input *ContainerActionInput) (*handlerutil.Out[types.MessageResponse], error) {
-	return h.runContainerAction(ctx, input, containerActionConfig{
-		ActivityType:    types.ActivityTypeContainerUnpause,
-		Step:            "Unpausing container",
-		StartMessage:    "Container unpause requested",
-		CompleteMessage: "Container unpaused",
-		SuccessMessage:  "Container unpaused successfully",
-		Action: func(runtimeCtx context.Context, containerID string, user types.Actor) error {
-			return h.containerService.UnpauseContainer(runtimeCtx, containerID, user)
-		},
-		Error: func(err error) error {
-			apiErr := common.ToAPIError(common.ClassifyDockerError(err))
-			return huma.NewError(apiErr.HTTPStatus(), "Failed to unpause container: "+apiErr.Message)
-		},
-	})
+	}[input.Action]
+	return h.runContainerAction(ctx, input, cfg)
 }
 
 // containerActivityName returns the container's name for activity records, falling back to its ID.
@@ -526,7 +481,8 @@ func (h *ContainerHandler) runContainerAction(ctx context.Context, input *Contai
 	)
 	if actionErr := cfg.Action(runtimeCtx, input.ContainerID, *user); actionErr != nil {
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.CompleteMessage, actionErr)
-		return nil, cfg.Error(actionErr)
+		apiErr := common.ToAPIError(common.ClassifyDockerError(actionErr))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to "+cfg.Verb+" container: "+apiErr.Message)
 	}
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.CompleteMessage, nil)
 
@@ -556,7 +512,7 @@ func (h *ContainerHandler) CommitContainer(ctx context.Context, input *CommitCon
 	}, nil
 }
 
-func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *ContainerActionInput) (*handlerutil.Out[types.ContainerDetails], error) {
+func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *GetContainerInput) (*handlerutil.Out[types.ContainerDetails], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err

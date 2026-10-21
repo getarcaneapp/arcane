@@ -22,7 +22,7 @@ func TestContainerStartSurfacesServerError(t *testing.T) {
 			// Resolution succeeds so the action POST below is reached.
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"success":true,"data":{"id":"abc123","name":"nginx"}}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/environments/0/containers/abc123/start":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/environments/0/containers/abc123" && r.URL.Query().Get("action") == "start":
 			w.WriteHeader(http.StatusForbidden)
 			_, _ = w.Write([]byte(`{"success":false,"data":{"error":"permission denied: containers:start"}}`))
 		default:
@@ -73,7 +73,7 @@ func TestContainerStartSurfacesServerError(t *testing.T) {
 				}
 				if r.Method == http.MethodPost {
 					mu.Lock()
-					mutations = append(mutations, r.URL.Path)
+					mutations = append(mutations, r.URL.RequestURI())
 					mu.Unlock()
 					_, _ = w.Write([]byte(`{"success":true,"data":{"message":"started"}}`))
 					return
@@ -119,7 +119,7 @@ func TestContainerStartSurfacesServerError(t *testing.T) {
 			if tc.search || tc.prefix {
 				resourceID = "abcd1234"
 			}
-			require.Equal(t, []string{"/api/environments/remote/containers/" + resourceID + "/start"}, paths)
+			require.Equal(t, []string{"/api/environments/remote/containers/" + resourceID + "?action=start"}, paths)
 			var result map[string]any
 			require.NoError(t, json.Unmarshal([]byte(out), &result), out)
 			require.NotContains(t, result, "environments")

@@ -32,7 +32,7 @@ class TemplateService extends BaseAPIService {
 	}
 
 	async download(id: string): Promise<Template> {
-		const response = await this.api.post(`/templates/${encodeURIComponent(id)}/download`);
+		const response = await this.api.post(`/templates/${encodeURIComponent(id)}`, undefined, { params: { action: 'download' } });
 		return response.data?.data;
 	}
 
@@ -71,7 +71,7 @@ class TemplateService extends BaseAPIService {
 	}
 
 	async updateRegistry(id: string, registry: TemplateRegistryUpdate): Promise<void> {
-		await this.api.put(`/templates/registries/${id}`, registry);
+		await this.api.patch(`/templates/registries/${id}`, registry);
 	}
 
 	async fetchRegistry(url: string): Promise<RemoteRegistry> {
@@ -88,7 +88,7 @@ class TemplateService extends BaseAPIService {
 	}
 
 	async updateTemplate(id: string, template: TemplateUpdate): Promise<Template> {
-		const response = await this.api.put(`/templates/${encodeURIComponent(id)}`, template);
+		const response = await this.api.patch(`/templates/${encodeURIComponent(id)}`, template);
 		return response.data?.data;
 	}
 

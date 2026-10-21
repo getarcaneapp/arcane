@@ -99,14 +99,10 @@ type DeleteSwarmNodeInput struct {
 	Force         bool   `query:"force" default:"false" doc:"Force node removal"`
 }
 
-type PromoteSwarmNodeInput struct {
+type SwarmNodeActionInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	NodeID        string `path:"nodeId" doc:"Node ID"`
-}
-
-type DemoteSwarmNodeInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	NodeID        string `path:"nodeId" doc:"Node ID"`
+	Action        string `query:"action" required:"true" enum:"promote,demote" doc:"Node role action"`
 }
 
 type ListSwarmNodeTasksInput struct {
@@ -387,46 +383,27 @@ func (h *Handler) DeleteNode(ctx context.Context, input *DeleteSwarmNodeInput) (
 	return handlerutil.MessageOutput("Swarm node removed successfully", ""), nil
 }
 
-// PromoteNode promotes a swarm worker to manager.
-//
-// It requires admin privileges, performs the promotion through the swarm
-// service, and records an audit event after the role change completes.
-//
-// ctx carries request-scoped cancellation, auth, and audit context.
-// input identifies the node to promote.
-//
-// Returns a confirmation response when the promotion succeeds.
-// Returns an authorization error for non-admin callers or a mapped HTTP error
-// when the promotion fails.
-func (h *Handler) PromoteNode(ctx context.Context, input *PromoteSwarmNodeInput) (*handlerutil.Out[types.MessageResponse], error) {
-	if err := h.service.PromoteNode(ctx, input.NodeID); err != nil {
+func (h *Handler) RunNodeAction(ctx context.Context, input *SwarmNodeActionInput) (*handlerutil.Out[types.MessageResponse], error) {
+	action := map[string]struct {
+		Run            func(context.Context, string) error
+		SuccessMessage string
+	}{
+		"promote": {
+			Run:            h.service.PromoteNode,
+			SuccessMessage: "Swarm node promoted successfully",
+		},
+		"demote": {
+			Run:            h.service.DemoteNode,
+			SuccessMessage: "Swarm node demoted successfully",
+		},
+	}[input.Action]
+	if err := action.Run(ctx, input.NodeID); err != nil {
 		return nil, h.mapError(err, "Swarm node not found: "+err.Error())
 	}
 
-	h.audit(ctx, input.EnvironmentID, "node.promote", "swarm_node", input.NodeID, "", map[string]any{"nodeId": input.NodeID})
+	h.audit(ctx, input.EnvironmentID, "node."+input.Action, "swarm_node", input.NodeID, "", map[string]any{"nodeId": input.NodeID})
 
-	return handlerutil.MessageOutput("Swarm node promoted successfully", ""), nil
-}
-
-// DemoteNode demotes a swarm manager to worker.
-//
-// It requires admin privileges, performs the demotion through the swarm
-// service, and records an audit event after the role change completes.
-//
-// ctx carries request-scoped cancellation, auth, and audit context.
-// input identifies the node to demote.
-//
-// Returns a confirmation response when the demotion succeeds.
-// Returns an authorization error for non-admin callers or a mapped HTTP error
-// when the demotion fails.
-func (h *Handler) DemoteNode(ctx context.Context, input *DemoteSwarmNodeInput) (*handlerutil.Out[types.MessageResponse], error) {
-	if err := h.service.DemoteNode(ctx, input.NodeID); err != nil {
-		return nil, h.mapError(err, "Swarm node not found: "+err.Error())
-	}
-
-	h.audit(ctx, input.EnvironmentID, "node.demote", "swarm_node", input.NodeID, "", map[string]any{"nodeId": input.NodeID})
-
-	return handlerutil.MessageOutput("Swarm node demoted successfully", ""), nil
+	return handlerutil.MessageOutput(action.SuccessMessage, ""), nil
 }
 
 // ListNodeTasks lists tasks currently associated with a swarm node.

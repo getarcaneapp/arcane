@@ -2,8 +2,11 @@
 package gitrepo
 
 import (
+	"net/http"
+
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
@@ -40,7 +43,7 @@ func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 		handlerutil.Operation(
 			"listGitRepositories",
 			"GET",
-			"/customize/git-repositories",
+			"/customize/git/repositories",
 			"List git repositories",
 			"Get a paginated list of git repositories",
 			"Customize",
@@ -53,7 +56,7 @@ func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 		handlerutil.Operation(
 			"createGitRepository",
 			"POST",
-			"/customize/git-repositories",
+			"/customize/git/repositories",
 			"Create a git repository",
 			"Create a new git repository configuration",
 			"Customize",
@@ -66,7 +69,7 @@ func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 		handlerutil.Operation(
 			"getGitRepository",
 			"GET",
-			"/customize/git-repositories/{id}",
+			"/customize/git/repositories/{id}",
 			"Get a git repository",
 			"Get a git repository by ID",
 			"Customize",
@@ -78,8 +81,8 @@ func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 		api,
 		handlerutil.Operation(
 			"updateGitRepository",
-			"PUT",
-			"/customize/git-repositories/{id}",
+			"PATCH",
+			"/customize/git/repositories/{id}",
 			"Update a git repository",
 			"Update an existing git repository configuration",
 			"Customize",
@@ -92,7 +95,7 @@ func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 		handlerutil.Operation(
 			"deleteGitRepository",
 			"DELETE",
-			"/customize/git-repositories/{id}",
+			"/customize/git/repositories/{id}",
 			"Delete a git repository",
 			"Delete a git repository configuration by ID",
 			"Customize",
@@ -100,17 +103,21 @@ func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 		authz.PermGitReposDelete,
 		h.DeleteRepository,
 	)
-	handlerutil.RegisterSecured(
+	middleware.RegisterWithActionPermissions(
 		api,
-		handlerutil.Operation(
-			"testGitRepository",
-			"POST",
-			"/customize/git-repositories/{id}/test",
-			"Test a git repository",
-			"Test connectivity and authentication to a git repository",
-			"Customize",
-		),
-		authz.PermGitReposTest,
+		huma.Operation{
+			OperationID: "gitRepositoryAction",
+			Method:      http.MethodPost,
+			Path:        "/customize/git/repositories/{id}",
+			Summary:     "Test a git repository",
+			Description: "Test connectivity and authentication to a git repository",
+			Tags:        []string{"Customize"},
+			Security:    handlerutil.DefaultOperationSecurity(),
+		},
+		"action",
+		map[string]string{
+			"test": authz.PermGitReposTest,
+		},
 		h.TestRepository,
 	)
 	handlerutil.RegisterSecured(
@@ -118,7 +125,7 @@ func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 		handlerutil.Operation(
 			"listGitRepositoryBranches",
 			"GET",
-			"/customize/git-repositories/{id}/branches",
+			"/customize/git/repositories/{id}/branches",
 			"List repository branches",
 			"Get all branches from a git repository with default branch detection",
 			"Customize",
@@ -131,7 +138,7 @@ func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 		handlerutil.Operation(
 			"browseGitRepositoryFiles",
 			"GET",
-			"/customize/git-repositories/{id}/files",
+			"/customize/git/repositories/{id}/files",
 			"Browse repository files",
 			"Browse files and directories in a git repository",
 			"Customize",
@@ -144,7 +151,7 @@ func RegisterGitRepositories(api huma.API, repoService *GitRepositoryService) {
 		handlerutil.Operation(
 			"syncGitRepositories",
 			"POST",
-			"/git-repositories/sync",
+			"/git/repositories/sync",
 			"Sync git repositories",
 			"Sync git repositories from a manager to this agent instance",
 			"Git Repositories",

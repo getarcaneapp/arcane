@@ -54,7 +54,7 @@ var loggerSkipPatterns = []string{
 	"GET /img",
 	"GET /api/health",
 	"HEAD /api/health",
-	"GET /api/app-images/*",
+	"GET /api/app/images/*",
 	"PUT /api/environments/*/uploads/*/*/chunks/*",
 }
 

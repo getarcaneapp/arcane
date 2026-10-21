@@ -894,7 +894,7 @@ func TestJobActivityVisibilityFiltersBeforePagination(t *testing.T) {
 }
 
 func TestSyncResourcesToEnvironmentOutcomes(t *testing.T) {
-	paths := []string{"/api/container-registries/sync", "/api/backups/s3/sync", "/api/git-repositories/sync"}
+	paths := []string{"/api/registries/sync", "/api/backups/s3/sync", "/api/git/repositories/sync"}
 	cases := []struct {
 		name     string
 		failures map[string]string

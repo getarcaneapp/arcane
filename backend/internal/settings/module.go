@@ -74,7 +74,7 @@ func RegisterSettings(api huma.API, settingsService *SettingsService, settingsSe
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-settings",
-		Method:      http.MethodPut,
+		Method:      http.MethodPatch,
 		Path:        "/environments/{id}/settings",
 		Summary:     "Update settings",
 		Description: "Update settings for an environment",

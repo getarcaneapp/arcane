@@ -88,7 +88,7 @@ class PasskeyService extends BaseAPIService {
 
 	async rename(id: string, name: string, stepUpToken: string): Promise<Passkey> {
 		return this.handleResponse(
-			this.api.put(`/auth/me/passkeys/${encodeURIComponent(id)}`, { name }, this.stepUpConfig(stepUpToken))
+			this.api.patch(`/auth/me/passkeys/${encodeURIComponent(id)}`, { name }, this.stepUpConfig(stepUpToken))
 		);
 	}
 
@@ -127,7 +127,10 @@ class PasskeyService extends BaseAPIService {
 
 	async regenerateRecoveryCodes(stepUpToken: string): Promise<RecoveryCodesResponse> {
 		return this.handleResponse(
-			this.api.post('/auth/me/mfa/recovery-codes/regenerate', undefined, this.stepUpConfig(stepUpToken))
+			this.api.post('/auth/me/mfa/recovery', undefined, {
+				...this.stepUpConfig(stepUpToken),
+				params: { action: 'regenerate' }
+			})
 		);
 	}
 

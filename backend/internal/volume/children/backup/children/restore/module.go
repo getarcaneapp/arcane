@@ -14,23 +14,18 @@ import (
 
 // RegisterRoutes registers the volume backup restore endpoints.
 func RegisterRoutes(api huma.API, h *Handler) {
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "restore-volume-backup",
+	middleware.RegisterWithActionPermissions(api, huma.Operation{
+		OperationID: "volume-backup-action",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/volumes/{volumeName}/backups/{backupId}/restore",
+		Path:        "/environments/{id}/volumes/{volumeName}/backups/{backupId}",
 		Summary:     "Restore volume backup",
+		Description: "Restore a full volume backup, or selected files with action restorefiles",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermVolumesBackup, h.RestoreBackup)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "restore-volume-backup-files",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/volumes/{volumeName}/backups/{backupId}/restore-files",
-		Summary:     "Restore specific files from a volume backup",
-		Tags:        []string{"Volume Backup"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermVolumesBackup, h.RestoreBackupFiles)
+	}, "action", map[string]string{
+		"restore":      authz.PermVolumesBackup,
+		"restorefiles": authz.PermVolumesBackup,
+	}, h.RestoreAction)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "upload-volume-backup",

@@ -273,7 +273,7 @@ func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user type
 }
 
 // ConnectContainer connects a container to a network without recreating it.
-func (s *NetworkService) ConnectContainer(ctx context.Context, networkID string, req types.NetworkConnectContainerRequest, user types.Actor) error {
+func (s *NetworkService) ConnectContainer(ctx context.Context, networkID string, req types.NetworkContainerRequest, user types.Actor) error {
 	ipv4, ipv4Err := netip.ParseAddr(strings.TrimSpace(req.IPv4Address))
 	if ipv4Err != nil && strings.TrimSpace(req.IPv4Address) != "" {
 		return common.Classify(common.ErrValidation, fmt.Errorf("invalid IPv4 address %s: %w", strings.TrimSpace(req.IPv4Address), ipv4Err))
@@ -331,7 +331,7 @@ func (s *NetworkService) ConnectContainer(ctx context.Context, networkID string,
 }
 
 // DisconnectContainer disconnects a container from a network.
-func (s *NetworkService) DisconnectContainer(ctx context.Context, networkID string, req types.NetworkDisconnectContainerRequest, user types.Actor) error {
+func (s *NetworkService) DisconnectContainer(ctx context.Context, networkID string, req types.NetworkContainerRequest, user types.Actor) error {
 	if _, networkDisconnectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkDisconnectResult, error) {
 		return dockerClient.NetworkDisconnect(ctx, networkID, client.NetworkDisconnectOptions{
 			Container: req.ContainerID,

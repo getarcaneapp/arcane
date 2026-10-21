@@ -38,9 +38,9 @@ func newKillCmd() *cobra.Command {
 				return err
 			}
 
-			path := clitypes.ContainerKill(c.EnvID(), resolved.ID)
+			path := clitypes.ContainerAction(c.EnvID(), resolved.ID, "kill")
 			if signal := strings.TrimSpace(opts.signal); signal != "" {
-				path += "?signal=" + url.QueryEscape(signal)
+				path += "&" + url.Values{"signal": {signal}}.Encode()
 			}
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
@@ -74,7 +74,7 @@ func newPauseCmd() *cobra.Command {
 			}
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           clitypes.ContainerPause(c.EnvID(), resolved.ID),
+				Path:           clitypes.ContainerAction(c.EnvID(), resolved.ID, "pause"),
 				FailureMessage: "failed to pause container",
 				Render: func(types.MessageResponse) error {
 					output.Success("Container %s paused successfully", containerDisplayName(resolved))
@@ -102,7 +102,7 @@ func newUnpauseCmd() *cobra.Command {
 			}
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           clitypes.ContainerUnpause(c.EnvID(), resolved.ID),
+				Path:           clitypes.ContainerAction(c.EnvID(), resolved.ID, "unpause"),
 				FailureMessage: "failed to unpause container",
 				Render: func(types.MessageResponse) error {
 					output.Success("Container %s unpaused successfully", containerDisplayName(resolved))
@@ -195,7 +195,7 @@ func newEditCmd() *cobra.Command {
 			if opts.file == "" {
 				return cmdutil.Run(cmd, c, cmdutil.Spec[jsontext.Value]{
 					Method:         http.MethodGet,
-					Path:           clitypes.ContainerEditConfig(c.EnvID(), resolved.ID),
+					Path:           clitypes.ContainerConfig(c.EnvID(), resolved.ID),
 					FailureMessage: "failed to get container edit config",
 					Render:         func(data jsontext.Value) error { return cmdutil.PrintRawJSON(data) },
 				})
@@ -213,8 +213,8 @@ func newEditCmd() *cobra.Command {
 			c.SetTimeout(30 * time.Minute)
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ContainerDetails]{
-				Method:         http.MethodPost,
-				Path:           clitypes.ContainerEdit(c.EnvID(), resolved.ID),
+				Method:         http.MethodPut,
+				Path:           clitypes.ContainerConfig(c.EnvID(), resolved.ID),
 				Body:           body,
 				FailureMessage: "failed to edit container",
 				Render: func(data types.ContainerDetails) error {

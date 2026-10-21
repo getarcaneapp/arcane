@@ -4,19 +4,19 @@ import BaseAPIService from './api-service';
 
 class OidcMappingAPIService extends BaseAPIService {
 	async list(): Promise<OidcRoleMapping[]> {
-		return this.handleResponse(this.api.get('/oidc/role-mappings')) as Promise<OidcRoleMapping[]>;
+		return this.handleResponse(this.api.get('/oidc/mappings')) as Promise<OidcRoleMapping[]>;
 	}
 
 	async create(mapping: OidcRoleMappingCreate): Promise<OidcRoleMapping> {
-		return this.handleResponse(this.api.post('/oidc/role-mappings', mapping)) as Promise<OidcRoleMapping>;
+		return this.handleResponse(this.api.post('/oidc/mappings', mapping)) as Promise<OidcRoleMapping>;
 	}
 
 	async update(id: string, mapping: OidcRoleMappingUpdate): Promise<OidcRoleMapping> {
-		return this.handleResponse(this.api.put(`/oidc/role-mappings/${id}`, mapping)) as Promise<OidcRoleMapping>;
+		return this.handleResponse(this.api.patch(`/oidc/mappings/${id}`, mapping)) as Promise<OidcRoleMapping>;
 	}
 
 	async delete(id: string): Promise<void> {
-		return this.handleResponse(this.api.delete(`/oidc/role-mappings/${id}`)) as Promise<void>;
+		return this.handleResponse(this.api.delete(`/oidc/mappings/${id}`)) as Promise<void>;
 	}
 }
 

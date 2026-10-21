@@ -288,7 +288,7 @@ func newWorkspacePutCmd() *cobra.Command {
 				return fmt.Errorf("failed to finalize workspace upload: %w", closeErr)
 			}
 
-			resp, err := c.RequestRaw(cmd.Context(), http.MethodPut, clitypes.VolumeWorkspace(c.EnvID(), resolved.Name), &requestBody, map[string]string{"Content-Type": writer.FormDataContentType()})
+			resp, err := c.RequestRaw(cmd.Context(), http.MethodPatch, clitypes.VolumeWorkspace(c.EnvID(), resolved.Name), &requestBody, map[string]string{"Content-Type": writer.FormDataContentType()})
 			if err != nil {
 				return fmt.Errorf("failed to update volume workspace: %w", err)
 			}

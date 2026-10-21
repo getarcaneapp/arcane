@@ -6,6 +6,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
+	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -24,16 +25,11 @@ type Handler struct {
 }
 
 type RestoreBackupInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-	BackupID      string `path:"backupId" doc:"Backup ID"`
-}
-
-type RestoreBackupFilesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
-	BackupID      string `path:"backupId" doc:"Backup ID"`
-	Body          types.BackupRestoreSelection
+	EnvironmentID string                        `path:"id" doc:"Environment ID"`
+	VolumeName    string                        `path:"volumeName" doc:"Volume name"`
+	BackupID      string                        `path:"backupId" doc:"Backup ID"`
+	Action        string                        `query:"action" required:"true" enum:"restore,restorefiles" doc:"Restore action"`
+	Body          *types.BackupRestoreSelection `required:"false"`
 }
 
 type UploadAndRestoreInput struct {
@@ -46,7 +42,14 @@ func NewHandler(service *Service, activityService *activity.ActivityService, upl
 	return &Handler{service: service, activityService: activityService, uploadService: uploadService, appCtx: appCtx}
 }
 
-func (h *Handler) RestoreBackup(ctx context.Context, input *RestoreBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
+func (h *Handler) RestoreAction(ctx context.Context, input *RestoreBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if input.Action == "restorefiles" {
+		return h.restoreBackupFiles(ctx, input)
+	}
+	return h.restoreBackup(ctx, input)
+}
+
+func (h *Handler) restoreBackup(ctx context.Context, input *RestoreBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -76,7 +79,11 @@ func (h *Handler) RestoreBackup(ctx context.Context, input *RestoreBackupInput) 
 	return handlerutil.MessageOutput("Restore initiated successfully", activityID), nil
 }
 
-func (h *Handler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFilesInput) (*handlerutil.Out[types.MessageResponse], error) {
+func (h *Handler) restoreBackupFiles(ctx context.Context, input *RestoreBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
+	selection := kit.FromPtr(input.Body)
+	if len(selection.Paths) == 0 && !selection.SelectAll {
+		return nil, huma.Error400BadRequest("restorefiles requires paths or selectAll")
+	}
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -96,12 +103,12 @@ func (h *Handler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFi
 		Metadata: database.JSON{
 			"action":    "restore_volume_backup_files",
 			"backupId":  input.BackupID,
-			"paths":     input.Body.Paths,
-			"selectAll": input.Body.SelectAll,
-			"search":    input.Body.Search,
+			"paths":     selection.Paths,
+			"selectAll": selection.SelectAll,
+			"search":    selection.Search,
 		},
 	}, func(runtimeCtx context.Context) error {
-		return h.service.RestoreBackupFiles(runtimeCtx, input.VolumeName, input.BackupID, input.Body, *user)
+		return h.service.RestoreBackupFiles(runtimeCtx, input.VolumeName, input.BackupID, selection, *user)
 	})
 	if errors.Is(err, common.ErrBadRequest) {
 		return nil, huma.Error400BadRequest(err.Error())

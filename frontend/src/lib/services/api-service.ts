@@ -162,7 +162,7 @@ const skipAuthPaths = [
 	'/auth/oidc',
 	'/auth/passkey',
 	'/auth/mfa',
-	'/auth/auto-login',
+	'/auth/autologin',
 	'/settings/public'
 ];
 
@@ -274,7 +274,7 @@ class APIClient {
 			!requestPath.startsWith('/auth/refresh') &&
 			(skipAuthPaths.some((prefix) => requestPath.startsWith(prefix)) ||
 				['/oidc/url', '/oidc/callback', '/oidc/status'].includes(requestPath) ||
-				requestPath.startsWith('/app-version') ||
+				requestPath.startsWith('/app/version') ||
 				requestPath.endsWith('/settings/public'));
 		const session = isSessionFree ? undefined : sessionController.signal;
 		const signal = session ? withSessionSignal(config.signal) : config.signal;

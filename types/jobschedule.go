@@ -70,10 +70,6 @@ type JobSubmitRunInput struct {
 	RunID string `json:"runId"`
 }
 
-type JobInput struct {
-	ID    string `path:"id"`
-	JobID string `path:"jobId" minLength:"1"`
-}
 type JobListRunsInput struct {
 	ID    string `path:"id"`
 	JobID string `path:"jobId" minLength:"1"`

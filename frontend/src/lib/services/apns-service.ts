@@ -8,7 +8,7 @@ class ApnsService extends BaseAPIService {
 	}
 
 	async testDevice(id: string): Promise<void> {
-		await this.api.post(`/apns/devices/${id}/test`);
+		await this.api.post(`/apns/devices/${id}`, undefined, { params: { action: 'test' } });
 	}
 
 	async deleteDevice(id: string): Promise<void> {

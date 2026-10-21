@@ -74,9 +74,10 @@ const (
 	activityStreamRemotePollTimeout    = 15 * time.Second
 )
 
-type CancelActivityInput struct {
+type ActivityActionInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ActivityID    string `path:"activityId" doc:"Activity ID"`
+	Action        string `query:"action" required:"true" enum:"cancel" doc:"Activity action"`
 	RequestedBy   string `query:"requestedBy" doc:"Display name to attribute the cancellation to (used when proxying to a remote environment)"`
 }
 
@@ -189,7 +190,7 @@ func (h *ActivityHandler) ClearHistory(ctx context.Context, input *ClearActivity
 	}, nil
 }
 
-func (h *ActivityHandler) CancelActivity(ctx context.Context, input *CancelActivityInput) (*handlerutil.Out[types.Activity], error) {
+func (h *ActivityHandler) CancelActivity(ctx context.Context, input *ActivityActionInput) (*handlerutil.Out[types.Activity], error) {
 	if input.ActivityID == "" {
 		return nil, huma.Error400BadRequest("activity id is required")
 	}
@@ -204,9 +205,9 @@ func (h *ActivityHandler) CancelActivity(ctx context.Context, input *CancelActiv
 		switch {
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			if input.EnvironmentID != "0" {
-				path := fmt.Sprintf("/api/environments/0/activities/%s/cancel", url.PathEscape(input.ActivityID))
+				path := fmt.Sprintf("/api/environments/0/activities/%s?action=cancel", url.PathEscape(input.ActivityID))
 				if requestedBy != "" {
-					path += "?requestedBy=" + url.QueryEscape(requestedBy)
+					path += "&requestedBy=" + url.QueryEscape(requestedBy)
 				}
 				out, proxyErr := h.environment.ProxyJSONRequest.JSON[types.ApiResponse[types.Activity]](ctx, input.EnvironmentID, http.MethodPost, path, nil)
 				if proxyErr != nil {

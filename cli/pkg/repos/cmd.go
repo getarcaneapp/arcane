@@ -296,7 +296,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.GitRepository]{
-				Method:         http.MethodPut,
+				Method:         http.MethodPatch,
 				Path:           clitypes.GitRepository(resolved.ID),
 				Body:           req,
 				FailureMessage: "failed to update repository",
@@ -382,7 +382,7 @@ func newTestCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           clitypes.GitRepositoryTest(resolved.ID),
+				Path:           clitypes.GitRepositoryAction(resolved.ID, "test"),
 				FailureMessage: "repository connection test failed",
 				Render: func(types.MessageResponse) error {
 					output.Success("%s", "Repository connection test successful")

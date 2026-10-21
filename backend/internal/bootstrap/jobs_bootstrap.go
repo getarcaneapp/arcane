@@ -560,7 +560,7 @@ func syncTimeoutSettingsToAgents(ctx context.Context, localEnvironment timeoutSe
 	slog.InfoContext(ctx, "Syncing environment settings to remote environments", "count", len(envs), "keys", slices.Sorted(maps.Keys(settingsMap)))
 
 	for _, env := range envs {
-		responseBody, statusCode, proxyRequestErr := localEnvironment.ProxyRequest(ctx, env.ID, http.MethodPut, "/api/environments/0/settings", body)
+		responseBody, statusCode, proxyRequestErr := localEnvironment.ProxyRequest(ctx, env.ID, http.MethodPatch, "/api/environments/0/settings", body)
 		if proxyRequestErr != nil {
 			slog.WarnContext(ctx, "Failed to sync timeout settings to environment", "environmentId", env.ID, "environmentName", env.Name, "error", proxyRequestErr)
 			continue

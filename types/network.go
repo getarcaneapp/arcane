@@ -269,9 +269,7 @@ type NetworkCreateOptions struct {
 	EnableIPv6 bool `json:"enableIPv6,omitempty" doc:"Enable IPv6 networking"`
 }
 
-// NetworkConnectContainerRequest contains the parameters for connecting a container
-// to a network.
-type NetworkConnectContainerRequest struct {
+type NetworkContainerRequest struct {
 	// ContainerID is the container to connect.
 	//
 	// Required: true
@@ -280,31 +278,22 @@ type NetworkConnectContainerRequest struct {
 	// Aliases for the container on this network.
 	//
 	// Required: false
-	Aliases []string `json:"aliases,omitempty" doc:"Network-scoped aliases"`
+	Aliases []string `json:"aliases,omitempty" doc:"Network-scoped aliases (connect only)"`
 
 	// IPv4Address is a static IPv4 address for the container on this network.
 	//
 	// Required: false
-	IPv4Address string `json:"ipv4Address,omitempty" doc:"Static IPv4 address"`
+	IPv4Address string `json:"ipv4Address,omitempty" doc:"Static IPv4 address (connect only)"`
 
 	// IPv6Address is a static IPv6 address for the container on this network.
 	//
 	// Required: false
-	IPv6Address string `json:"ipv6Address,omitempty" doc:"Static IPv6 address"`
-}
-
-// NetworkDisconnectContainerRequest contains the parameters for disconnecting a
-// container from a network.
-type NetworkDisconnectContainerRequest struct {
-	// ContainerID is the container to disconnect.
-	//
-	// Required: true
-	ContainerID string `json:"containerId" minLength:"1" doc:"Container ID or name"`
+	IPv6Address string `json:"ipv6Address,omitempty" doc:"Static IPv6 address (connect only)"`
 
 	// Force disconnects even if the container is running.
 	//
 	// Required: false
-	Force bool `json:"force,omitempty" doc:"Force the disconnect"`
+	Force bool `json:"force,omitempty" doc:"Force the disconnect (disconnect only)"`
 }
 
 type NetworkPruneReport struct {

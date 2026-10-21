@@ -81,7 +81,9 @@ class ContainerService extends BaseAPIService {
 
 	async startContainer(containerId: string, environmentId?: string): Promise<any> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/start`));
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/containers/${containerId}`, undefined, { params: { action: 'start' } })
+		);
 	}
 
 	async createContainer(options: ContainerCreate, environmentId?: string): Promise<any> {
@@ -91,29 +93,37 @@ class ContainerService extends BaseAPIService {
 
 	async stopContainer(containerId: string, environmentId?: string): Promise<any> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/stop`));
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/containers/${containerId}`, undefined, { params: { action: 'stop' } })
+		);
 	}
 
 	async restartContainer(containerId: string, environmentId?: string): Promise<any> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/restart`));
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/containers/${containerId}`, undefined, { params: { action: 'restart' } })
+		);
 	}
 
 	async killContainer(containerId: string, signal?: string, environmentId?: string): Promise<any> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		const params: Record<string, string> = {};
+		const params: Record<string, string> = { action: 'kill' };
 		if (signal) params['signal'] = signal;
-		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/kill`, undefined, { params }));
+		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}`, undefined, { params }));
 	}
 
 	async pauseContainer(containerId: string, environmentId?: string): Promise<any> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/pause`));
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/containers/${containerId}`, undefined, { params: { action: 'pause' } })
+		);
 	}
 
 	async unpauseContainer(containerId: string, environmentId?: string): Promise<any> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/unpause`));
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/containers/${containerId}`, undefined, { params: { action: 'unpause' } })
+		);
 	}
 
 	async commitContainer(
@@ -152,17 +162,17 @@ class ContainerService extends BaseAPIService {
 
 	async generateCompose(containerIds: string[], environmentId?: string): Promise<{ composeContent: string }> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/containers/generate-compose`, { containerIds }));
+		return this.handleResponse(this.api.post(`/environments/${envId}/containers/compose`, { containerIds }));
 	}
 
 	async getContainerEditConfig(containerId: string, environmentId?: string): Promise<ContainerEditConfigDto> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.get(`/environments/${envId}/containers/${containerId}/edit-config`));
+		return this.handleResponse(this.api.get(`/environments/${envId}/containers/${containerId}/config`));
 	}
 
 	async editContainer(containerId: string, request: ContainerEditRequest, environmentId?: string): Promise<ContainerDetailsDto> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/edit`, request));
+		return this.handleResponse(this.api.put(`/environments/${envId}/containers/${containerId}/config`, request));
 	}
 
 	async setAutoUpdate(
@@ -171,7 +181,7 @@ class ContainerService extends BaseAPIService {
 		environmentId?: string
 	): Promise<{ success: boolean; data: { message: string } }> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.put(`/environments/${envId}/containers/${containerId}/auto-update`, { enabled }));
+		return this.handleResponse(this.api.put(`/environments/${envId}/containers/${containerId}/autoupdate`, { enabled }));
 	}
 
 	async downloadContainerLogs(containerId: string, environmentId?: string): Promise<void> {

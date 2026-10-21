@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
@@ -75,7 +76,7 @@ func RegisterS3Destinations(api huma.API, service *S3DestinationService, syncRem
 		handlerutil.Operation("create-s3-destination", http.MethodPost, s3DestinationPath, "Create S3 destination", "", s3DestinationTag),
 		authz.PermS3DestinationsCreate, handler.create)
 	handlerutil.RegisterSecured(api,
-		handlerutil.Operation("update-s3-destination", http.MethodPut, s3DestinationPath+"/{id}", "Update S3 destination", "", s3DestinationTag),
+		handlerutil.Operation("update-s3-destination", http.MethodPatch, s3DestinationPath+"/{id}", "Update S3 destination", "", s3DestinationTag),
 		authz.PermS3DestinationsUpdate, handler.update)
 	handlerutil.RegisterSecured(api,
 		handlerutil.Operation(
@@ -87,21 +88,26 @@ func RegisterS3Destinations(api huma.API, service *S3DestinationService, syncRem
 			s3DestinationTag,
 		),
 		authz.PermS3DestinationsTest, handler.testConfiguration)
-	handlerutil.RegisterSecured(api,
-		handlerutil.Operation(
-			"test-s3-destination",
-			http.MethodPost,
-			s3DestinationPath+"/{id}/test",
-			"Test S3 destination",
-			"Verify upload, download, and delete access using the saved or supplied S3 destination configuration",
-			s3DestinationTag,
-		),
-		authz.PermS3DestinationsTest, handler.test)
+	middleware.RegisterWithActionPermissions(api,
+		huma.Operation{
+			OperationID: "s3-destination-action",
+			Method:      http.MethodPost,
+			Path:        s3DestinationPath + "/{id}",
+			Summary:     "Test S3 destination",
+			Description: "Verify upload, download, and delete access using the saved or supplied S3 destination configuration",
+			Tags:        []string{s3DestinationTag},
+			Security:    handlerutil.DefaultOperationSecurity(),
+		},
+		"action",
+		map[string]string{
+			"test": authz.PermS3DestinationsTest,
+		},
+		handler.test)
 	handlerutil.RegisterSecured(api,
 		handlerutil.Operation(
 			"get-s3-destination-usage",
 			http.MethodGet,
-			s3DestinationPath+"/{id}/in-use",
+			s3DestinationPath+"/{id}/usage",
 			"Check S3 destination references",
 			"Report whether backup records, policies, or settings on this environment still reference the destination",
 			s3DestinationTag,

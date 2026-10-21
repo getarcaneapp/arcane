@@ -79,7 +79,9 @@ class NetworkService extends BaseAPIService {
 		environmentId?: string
 	): Promise<any> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/networks/${networkId}/connect`, request));
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/networks/${networkId}`, request, { params: { action: 'connect' } })
+		);
 	}
 
 	async disconnectContainer(
@@ -88,7 +90,9 @@ class NetworkService extends BaseAPIService {
 		environmentId?: string
 	): Promise<any> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/networks/${networkId}/disconnect`, request));
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/networks/${networkId}`, request, { params: { action: 'disconnect' } })
+		);
 	}
 }
 

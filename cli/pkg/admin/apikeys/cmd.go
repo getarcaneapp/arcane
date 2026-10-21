@@ -270,7 +270,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ApiKey]{
-				Method:         http.MethodPut,
+				Method:         http.MethodPatch,
 				Path:           clitypes.ApiKey(args[0]),
 				FailureMessage: "failed to update API key",
 				Body:           body,

@@ -187,7 +187,7 @@ func (s *Service) JSON(
 
 // SyncRegistries syncs all registries from this manager to a remote environment
 func (s *Service) SyncRegistries(ctx context.Context, target *Target) error {
-	return s.fanOutSyncToEnvironment(ctx, target, "registries", "/api/container-registries/sync",
+	return s.fanOutSyncToEnvironment(ctx, target, "registries", "/api/registries/sync",
 		func(reg registry.ContainerRegistry) (types.ContainerRegistrySync, bool, error) {
 			registryType, typeErr := registry.NormalizeRegistryType(reg.RegistryType)
 			if typeErr != nil {
@@ -241,7 +241,7 @@ func (s *Service) SyncS3Destinations(ctx context.Context, target *Target) error 
 
 // SyncRepositories syncs all git repositories from this manager to a remote environment
 func (s *Service) SyncRepositories(ctx context.Context, target *Target) error {
-	return s.fanOutSyncToEnvironment(ctx, target, "git repositories", "/api/git-repositories/sync",
+	return s.fanOutSyncToEnvironment(ctx, target, "git repositories", "/api/git/repositories/sync",
 		func(repo gitrepo.GitRepository) (types.GitRepositorySync, bool, error) {
 			decrypt := func(value, what string) (string, error) {
 				if value == "" {

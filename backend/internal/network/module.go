@@ -85,21 +85,16 @@ func RegisterNetworks(api huma.API, networkSvc *NetworkService, dockerSvc *docke
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermNetworksPrune, h.PruneNetworks)
 
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "connect-network-container",
+	middleware.RegisterWithActionPermissions(api, huma.Operation{
+		OperationID: "network-container-action",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/networks/{networkId}/connect",
-		Summary:     "Connect container to network",
+		Path:        "/environments/{id}/networks/{networkId}",
+		Summary:     "Connect or disconnect a container",
+		Description: "Connect a container to the network or disconnect it. Aliases and static addresses apply to connect; force applies to disconnect.",
 		Tags:        []string{"Networks"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermNetworksConnect, h.ConnectContainer)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "disconnect-network-container",
-		Method:      http.MethodPost,
-		Path:        "/environments/{id}/networks/{networkId}/disconnect",
-		Summary:     "Disconnect container from network",
-		Tags:        []string{"Networks"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermNetworksDisconnect, h.DisconnectContainer)
+	}, "action", map[string]string{
+		"connect":    authz.PermNetworksConnect,
+		"disconnect": authz.PermNetworksDisconnect,
+	}, h.RunNetworkAction)
 }

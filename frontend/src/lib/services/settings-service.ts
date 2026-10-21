@@ -97,7 +97,7 @@ class SettingsService extends BaseAPIService {
 				const v = uiSettings[key];
 				payload[key] = typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v);
 			}
-			await this.api.put('/environments/0/settings', payload);
+			await this.api.patch('/environments/0/settings', payload);
 		}
 
 		// Update environment settings on target environment
@@ -107,7 +107,7 @@ class SettingsService extends BaseAPIService {
 				const v = envSettings[key];
 				payload[key] = typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v);
 			}
-			await this.api.put(`/environments/${envId}/settings`, payload);
+			await this.api.patch(`/environments/${envId}/settings`, payload);
 		}
 
 		// Reload and return merged settings
