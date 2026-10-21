@@ -1088,7 +1088,11 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.S
 	for _, summary := range containers {
 		allIDs = append(allIDs, summary.ID)
 	}
-	if _, _, acquireErr := s.acquireUpdate(ctx, allIDs, true); acquireErr != nil {
+	_, _, acquireErr := s.acquireUpdate(ctx, allIDs, false)
+	if errors.Is(acquireErr, errUpdateBusy) {
+		return common.Classify(common.ErrConflict, errors.New("another container update is in progress; the self-update stays pending for the next run"))
+	}
+	if acquireErr != nil {
 		return acquireErr
 	}
 
