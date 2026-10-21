@@ -1,7 +1,6 @@
 package templates
 
 import (
-	"cmp"
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
@@ -689,7 +688,7 @@ func newUpdateCmd() *cobra.Command {
 }
 
 func newDownloadCmd() *cobra.Command {
-	var opts struct{ outputFile, legacyOutput string }
+	var opts struct{ outputFile string }
 	cmd := &cobra.Command{
 		Use:          "download <template-id>",
 		Short:        "Download template compose file",
@@ -705,10 +704,8 @@ func newDownloadCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to download template: %w", err)
 			}
-			// TODO(v3): drop the deprecated flag handling.
-			jsonMode := cmdutil.JSONOutputEnabled(cmd) || opts.legacyOutput == "json"
-			outputFile := cmp.Or(opts.outputFile, kit.Ternary(slices.Contains([]string{"text", "json"}, opts.legacyOutput), "", opts.legacyOutput))
-			if jsonMode && outputFile == "" {
+			jsonMode := cmdutil.JSONOutputEnabled(cmd)
+			if jsonMode && opts.outputFile == "" {
 				if len(result.Data) == 0 {
 					return cmdutil.PrintJSON(nil)
 				}
@@ -718,21 +715,21 @@ func newDownloadCmd() *cobra.Command {
 			if decodeErr := json.Unmarshal(result.Data, &data); decodeErr != nil {
 				return fmt.Errorf("failed to download template: failed to decode response: %w", decodeErr)
 			}
-			if outputFile != "" {
-				dir := filepath.Dir(outputFile)
+			if opts.outputFile != "" {
+				dir := filepath.Dir(opts.outputFile)
 				if mkdirErr := os.MkdirAll(dir, 0o755); mkdirErr != nil {
 					return fmt.Errorf("failed to create directory %s: %w", dir, mkdirErr)
 				}
-				if writeErr := os.WriteFile(outputFile, []byte(data.Content), 0o600); writeErr != nil {
-					return fmt.Errorf("failed to write file %s: %w", outputFile, writeErr)
+				if writeErr := os.WriteFile(opts.outputFile, []byte(data.Content), 0o600); writeErr != nil {
+					return fmt.Errorf("failed to write file %s: %w", opts.outputFile, writeErr)
 				}
 				if jsonMode {
 					return cmdutil.PrintJSON(struct {
 						Path  string `json:"path"`
 						Bytes int    `json:"bytes"`
-					}{Path: outputFile, Bytes: len(data.Content)})
+					}{Path: opts.outputFile, Bytes: len(data.Content)})
 				}
-				output.Success("Template downloaded to %s", outputFile)
+				output.Success("Template downloaded to %s", opts.outputFile)
 				return nil
 			}
 			_, writeErr := fmt.Fprint(output.Stdout(), data.Content)
@@ -740,9 +737,6 @@ func newDownloadCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&opts.outputFile, "output-file", "o", "", "Output file path")
-	cmd.Flags().StringVar(&opts.legacyOutput, "output", "", "Output file path")
-	// TODO(v3): remove the deprecated --output flag.
-	_ = cmd.Flags().MarkDeprecated("output", "use --output-file or -o")
 	return cmd
 }
 
@@ -801,11 +795,10 @@ func newDefaultsSaveCmd() *cobra.Command {
 
 func newRegistriesUpdateCmd() *cobra.Command {
 	var opts struct {
-		name     string
-		url      string
-		desc     string
-		enabled  bool
-		disabled bool
+		name    string
+		url     string
+		desc    string
+		enabled bool
 	}
 	cmd := &cobra.Command{
 		Use:          "update <registry-id>",
@@ -827,12 +820,7 @@ func newRegistriesUpdateCmd() *cobra.Command {
 				{changed: cmd.Flags().Changed("name"), key: "name", value: opts.name},
 				{changed: cmd.Flags().Changed("url"), key: "url", value: opts.url},
 				{changed: cmd.Flags().Changed("description"), key: "description", value: opts.desc},
-				// TODO(v3): drop the deprecated flag handling.
-				{
-					changed: cmd.Flags().Changed("enabled") || cmd.Flags().Changed("disabled"),
-					key:     "enabled",
-					value:   cmd.Flags().Changed("enabled") && opts.enabled || cmd.Flags().Changed("disabled") && !opts.disabled,
-				},
+				{changed: cmd.Flags().Changed("enabled"), key: "enabled", value: opts.enabled},
 			} {
 				if field.changed {
 					req[field.key] = field.value
@@ -857,11 +845,6 @@ func newRegistriesUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&opts.url, "url", "", "Registry URL")
 	cmd.Flags().StringVar(&opts.desc, "description", "", "Registry description")
 	cmd.Flags().BoolVar(&opts.enabled, "enabled", false, "Enable registry")
-	cmd.Flags().BoolVar(&opts.disabled, "disabled", false, "Disable registry")
-	// TODO(v3): remove the deprecated --disabled flag.
-	_ = cmd.Flags().MarkDeprecated("disabled", "use --enabled=false")
-	// TODO(v3): drop the deprecated flag handling.
-	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error { return cmdutil.ExclusiveFlags(cmd, "enabled", "disabled") }
 	return cmd
 }
 
