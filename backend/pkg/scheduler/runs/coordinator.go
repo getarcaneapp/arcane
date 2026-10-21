@@ -69,46 +69,17 @@ func (q *Coordinator) Submit(ctx context.Context, request types.SchedulerRequest
 		return types.SchedulerRun{}, errors.New("invalid run ID")
 	}
 	now := time.Now().UTC()
-	observed := types.SchedulerRun{CreatedAt: now}
-	var remoteOutcome *types.SchedulerOutcome
-	if agentRun := request.ObservedAgentRun; agentRun != nil {
-		switch {
-		case request.EnvironmentID == "0":
-			return types.SchedulerRun{}, errors.New("observed agent run requires a remote environment")
-		case agentRun.EnvironmentID != "0":
-			return types.SchedulerRun{}, errors.New("observed agent run must belong to the agent's local environment")
-		case agentRun.ID != request.RunID || agentRun.JobID != request.JobID:
-			return types.SchedulerRun{}, errors.New("observed agent run does not match the requested run and job")
-		case agentRun.Status != types.RunStatusNeedsAttention:
-			return types.SchedulerRun{}, errors.New("observed agent run is not awaiting legacy resolution")
-		}
-		observed = *agentRun
-		remoteOutcome = &types.SchedulerOutcome{
-			Status:     observed.Status,
-			Message:    observed.Outcome.Message,
-			ActivityID: observed.Outcome.ActivityID,
-			Targets:    observed.Outcome.Targets,
-			Steps:      observed.Outcome.Steps,
-		}
-	}
 	result := types.SchedulerRun{
-		ID:                      request.RunID,
-		JobID:                   request.JobID,
-		EnvironmentID:           request.EnvironmentID,
-		Trigger:                 request.Trigger,
-		RequestedBy:             request.RequestedBy,
-		RequestedWithKey:        request.RequestedWithKey,
-		Status:                  types.RunStatusQueued,
-		CreatedAt:               observed.CreatedAt,
-		UpdatedAt:               now,
-		StartedAt:               observed.StartedAt,
-		FinishedAt:              observed.FinishedAt,
-		ActivityID:              observed.ActivityID,
-		Outcome:                 observed.Outcome,
-		RemoteAccepted:          request.Trigger == "remote" || request.ObservedAgentRun != nil,
-		RemoteDeliveryAttempted: request.ObservedAgentRun != nil,
-		RemoteAttemptCount:      observed.AttemptCount,
-		RemoteOutcome:           remoteOutcome,
+		ID:               request.RunID,
+		JobID:            request.JobID,
+		EnvironmentID:    request.EnvironmentID,
+		Trigger:          request.Trigger,
+		RequestedBy:      request.RequestedBy,
+		RequestedWithKey: request.RequestedWithKey,
+		Status:           types.RunStatusQueued,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+		RemoteAccepted:   request.Trigger == "remote",
 	}
 	q.associateActivity(&result)
 	fresh := result
@@ -119,7 +90,7 @@ func (q *Coordinator) Submit(ctx context.Context, request types.SchedulerRequest
 		}
 		for _, existing := range record.Runs {
 			// Manual and remote work never joins another run; other triggers join runs still waiting to start.
-			coalesces := request.ObservedAgentRun == nil && !separateTrigger(request.Trigger) && !separateTrigger(existing.Trigger) &&
+			coalesces := !separateTrigger(request.Trigger) && !separateTrigger(existing.Trigger) &&
 				(existing.Status == types.RunStatusQueued || existing.Status == types.RunStatusWaiting || existing.Status == types.RunStatusRetrying)
 			if existing.ID == request.RunID || coalesces {
 				result = existing

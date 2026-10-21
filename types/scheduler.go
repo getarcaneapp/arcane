@@ -254,15 +254,12 @@ type SchedulerOutcome struct {
 }
 
 type SchedulerRequest struct {
-	// ObservedAgentRun adopts existing agent work without another submission.
-	// TODO(v3): remove legacy-agent adoption.
-	ObservedAgentRun *SchedulerRun `json:"-"`
-	RunID            string        `json:"runId,omitempty"`
-	JobID            string        `json:"jobId"`
-	EnvironmentID    string        `json:"environmentId"`
-	Trigger          string        `json:"trigger"`
-	RequestedWithKey string        `json:"requestedWithKey,omitempty"`
-	RequestedBy      string        `json:"requestedBy,omitempty"`
+	RunID            string `json:"runId,omitempty"`
+	JobID            string `json:"jobId"`
+	EnvironmentID    string `json:"environmentId"`
+	Trigger          string `json:"trigger"`
+	RequestedWithKey string `json:"requestedWithKey,omitempty"`
+	RequestedBy      string `json:"requestedBy,omitempty"`
 }
 
 type SchedulerAttempt struct {
