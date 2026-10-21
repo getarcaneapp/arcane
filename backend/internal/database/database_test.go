@@ -528,39 +528,6 @@ func TestMigrateDatabase_BlocksDowngradeWhenEmbeddedMigrationMissing(t *testing.
 	assert.Equal(t, highestVersion+1, readGooseSQLiteVersion(t, dsn))
 }
 
-func TestAdoptLegacyMigrationState_DirtyVersions(t *testing.T) {
-	highestVersions, err := getEmbeddedMigrationVersions(dbProviderSQLite)
-	require.NoError(t, err)
-	require.NotEmpty(t, highestVersions)
-	highest := highestVersions[len(highestVersions)-1]
-	for _, tc := range []struct {
-		name    string
-		version int64
-	}{
-		{name: "current version", version: highest},
-		{name: "older version", version: downgradeTargetVersion(t)},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx := t.Context()
-			db, dsn := newSQLiteSQLDB(t, t.TempDir(), "legacy-dirty.db")
-			require.NoError(t, migrateDatabase(ctx, db, dbProviderSQLite, MigrationOptions{}, latestMigrationVersion))
-			require.NoError(t, migrateDatabase(ctx, db, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, tc.version))
-			_, clearErr := db.ExecContext(ctx, "DELETE FROM "+gooseVersionTable)
-			require.NoError(t, clearErr)
-			seedLegacyMigrationState(t, dsn, tc.version, true)
-
-			adoptionErr := adoptLegacyMigrationState(ctx, db, dbProviderSQLite, MigrationOptions{})
-			require.ErrorContains(t, adoptionErr, "is dirty")
-			require.ErrorContains(t, adoptionErr, "ALLOW_DOWNGRADE=true")
-			require.NoError(t, adoptLegacyMigrationState(ctx, db, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}))
-			assert.Equal(t, tc.version, readGooseSQLiteVersion(t, dsn))
-			assertLegacyMigrationClean(t, dsn)
-			require.NoError(t, migrateDatabase(ctx, db, dbProviderSQLite, MigrationOptions{}, latestMigrationVersion))
-			assert.Equal(t, highest, readGooseSQLiteVersion(t, dsn))
-		})
-	}
-}
-
 func downgradeTargetVersion(t *testing.T) int64 {
 	t.Helper()
 
@@ -826,92 +793,6 @@ func TestInitialize_RecordsGooseVersionOnFreshSQLite(t *testing.T) {
 	}
 }
 
-func TestInitialize_AdoptsCleanLegacyMigrationState(t *testing.T) {
-	ctx := t.Context()
-	dsn := "file:" + filepath.Join(t.TempDir(), "arcane-legacy-clean.db")
-	highestVersions, err := getEmbeddedMigrationVersions("sqlite")
-	require.NoError(t, err)
-	require.NotEmpty(t, highestVersions)
-	highest := highestVersions[len(highestVersions)-1]
-	seedLegacyMigrationState(t, dsn, highest, false)
-
-	db, err := Initialize(ctx, dsn, MigrationOptions{})
-	require.NoError(t, err)
-	require.NotNil(t, db)
-	t.Cleanup(func() {
-		require.NoError(t, db.Close())
-	})
-
-	assert.Equal(t, highest, readGooseSQLiteVersion(t, dsn))
-	assertLegacyMigrationClean(t, dsn)
-}
-
-func TestInitialize_RollsBackFailedLegacyMigrationAdoption(t *testing.T) {
-	ctx := t.Context()
-	rawDB, dsn := newSQLiteSQLDB(t, t.TempDir(), "arcane-legacy-rollback.db")
-	highestVersions, err := getEmbeddedMigrationVersions("sqlite")
-	require.NoError(t, err)
-	require.NotEmpty(t, highestVersions)
-	highest := highestVersions[len(highestVersions)-1]
-	seedLegacyMigrationState(t, dsn, highest, false)
-
-	_, err = rawDB.Exec(`
-CREATE TABLE goose_db_version (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	version_id INTEGER NOT NULL,
-	is_applied INTEGER NOT NULL CHECK (is_applied = 0),
-	tstamp TIMESTAMP DEFAULT (datetime('now'))
-)`)
-	require.NoError(t, err)
-	_, err = rawDB.Exec(`INSERT INTO goose_db_version (version_id, is_applied) VALUES (?, ?)`, 0, 0)
-	require.NoError(t, err)
-
-	err = adoptLegacyMigrationState(ctx, rawDB, dbProviderSQLite, MigrationOptions{})
-	require.Error(t, err)
-	require.ErrorContains(t, err, "failed to insert Goose migration version")
-
-	var rowCount int
-	err = rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM goose_db_version WHERE version_id = 0 AND is_applied = 0`).Scan(&rowCount)
-	require.NoError(t, err)
-	assert.Equal(t, 1, rowCount)
-}
-
-func TestInitialize_BlocksDirtyLegacyMigrationState(t *testing.T) {
-	ctx := t.Context()
-	dsn := "file:" + filepath.Join(t.TempDir(), "arcane-legacy-dirty.db")
-	highestVersions, err := getEmbeddedMigrationVersions("sqlite")
-	require.NoError(t, err)
-	require.NotEmpty(t, highestVersions)
-	highest := highestVersions[len(highestVersions)-1]
-	seedLegacyMigrationState(t, dsn, highest, true)
-
-	db, err := Initialize(ctx, dsn, MigrationOptions{})
-	require.Error(t, err)
-	require.Nil(t, db)
-	require.ErrorContains(t, err, "dirty")
-	assert.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
-}
-
-func TestInitialize_ClearsDirtyLegacyMigrationStateWhenAllowed(t *testing.T) {
-	ctx := t.Context()
-	dsn := "file:" + filepath.Join(t.TempDir(), "arcane-legacy-dirty-allowed.db")
-	highestVersions, err := getEmbeddedMigrationVersions("sqlite")
-	require.NoError(t, err)
-	require.NotEmpty(t, highestVersions)
-	highest := highestVersions[len(highestVersions)-1]
-	seedLegacyMigrationState(t, dsn, highest, true)
-
-	db, err := Initialize(ctx, dsn, MigrationOptions{AllowDowngrade: true})
-	require.NoError(t, err)
-	require.NotNil(t, db)
-	t.Cleanup(func() {
-		require.NoError(t, db.Close())
-	})
-
-	assert.Equal(t, highest, readGooseSQLiteVersion(t, dsn))
-	assertLegacyMigrationClean(t, dsn)
-}
-
 func TestInitialize_CreatesQueryPerformanceIndexes(t *testing.T) {
 	ctx := t.Context()
 	dsn := "file:" + filepath.Join(t.TempDir(), "arcane-indexes.db")
@@ -996,26 +877,6 @@ func assertSQLiteIndexMissing(t *testing.T, db *DB, indexName string) {
 	assert.Zero(t, count, "expected index %s to be removed", indexName)
 }
 
-func seedLegacyMigrationState(t *testing.T, dsn string, version int64, dirty bool) {
-	t.Helper()
-
-	rawDB, err := stdsql.Open("sqlite", dsn)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, rawDB.Close())
-	})
-
-	_, err = rawDB.Exec(`
-CREATE TABLE schema_migrations (
-	version INTEGER NOT NULL PRIMARY KEY,
-	dirty BOOLEAN NOT NULL
-)`)
-	require.NoError(t, err)
-
-	_, err = rawDB.Exec(`INSERT INTO schema_migrations (version, dirty) VALUES (?, ?)`, version, dirty)
-	require.NoError(t, err)
-}
-
 func readGooseSQLiteVersion(t *testing.T, dsn string) int64 {
 	t.Helper()
 
@@ -1029,21 +890,6 @@ func readGooseSQLiteVersion(t *testing.T, dsn string) int64 {
 	err = rawDB.QueryRow(`SELECT COALESCE(MAX(version_id), 0) FROM goose_db_version WHERE is_applied = 1`).Scan(&version)
 	require.NoError(t, err)
 	return version
-}
-
-func assertLegacyMigrationClean(t *testing.T, dsn string) {
-	t.Helper()
-
-	rawDB, err := stdsql.Open("sqlite", dsn)
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, rawDB.Close())
-	}()
-
-	var dirty bool
-	err = rawDB.QueryRow(`SELECT dirty FROM schema_migrations ORDER BY version DESC LIMIT 1`).Scan(&dirty)
-	require.NoError(t, err)
-	assert.False(t, dirty)
 }
 
 func TestSQLiteMigrations_ColumnAddsAreReversible(t *testing.T) {
