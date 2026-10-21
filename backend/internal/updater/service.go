@@ -851,31 +851,43 @@ func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]updater.Ima
 	if err != nil {
 		return nil, fmt.Errorf("list containers: %w", err)
 	}
+	dockerClient, err := s.deps.Docker.GetClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("connect to docker: %w", err)
+	}
 	keysFor := updateAdmissionKeys(containers)
 	configured := map[string]string{}
 	if slices.ContainsFunc(records, func(record updater.ImageUpdateRecord) bool { return record.ContainerID == "" }) {
 		for _, summary := range containers {
-			ref, _ := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
-				return imageref.ConfiguredImage(ctx, dockerClient, summary), nil
-			})
-			configured[summary.ID] = refs.NormalizeImageUpdateRef(ref)
+			configured[summary.ID] = refs.NormalizeImageUpdateRef(imageref.ConfiguredImage(ctx, dockerClient, summary))
 		}
 	}
 	admitted := make([]updater.ImageUpdateRecord, 0, len(records))
 	for _, record := range records {
-		containerIDs := func() []string {
+		containerIDs, matchErr := func() ([]string, error) {
 			if record.ContainerID != "" {
-				return []string{record.ContainerID}
+				return []string{record.ContainerID}, nil
 			}
+			if record.ImageRef() == "" {
+				return nil, nil
+			}
+			inspected, inspectErr := dockerClient.ImageInspect(ctx, record.ImageRef())
+			if inspectErr != nil && !errdefs.IsNotFound(inspectErr) {
+				return nil, fmt.Errorf("inspect pending image %s: %w", record.ImageRef(), inspectErr)
+			}
+			oldIDs := kit.TrimNonEmpty([]string{inspected.ID, record.ID})
 			normalized := refs.NormalizeImageUpdateRef(record.ImageRef())
 			var matched []string
 			for _, summary := range containers {
-				if summary.ImageID == record.ImageRef() || (normalized != "" && configured[summary.ID] == normalized) {
+				if slices.Contains(oldIDs, summary.ImageID) || (normalized != "" && configured[summary.ID] == normalized) {
 					matched = append(matched, summary.ID)
 				}
 			}
-			return matched
+			return matched, nil
 		}()
+		if matchErr != nil {
+			return nil, matchErr
+		}
 		_, _, acquireErr := s.admitUpdate(ctx, keysFor(containerIDs), false)
 		if errors.Is(acquireErr, errUpdateBusy) {
 			slog.InfoContext(ctx, "skipping pending update for a container another update holds", "imageRef", record.ImageRef(), "containerId", record.ContainerID)
@@ -1154,17 +1166,21 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.S
 			<-waitCtx.Done()
 			return
 		}
-		_, _ = s.deps.Docker.Call(waitCtx, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
-			wait := dockerClient.ContainerWait(ctx, upgraderID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
-			select {
-			case <-wait.Result:
-				return struct{}{}, nil
-			case waitErr := <-wait.Error:
-				return struct{}{}, waitErr
-			case <-ctx.Done():
-				return struct{}{}, ctx.Err()
+		dockerClient, clientErr := s.deps.Docker.GetClient(waitCtx)
+		if clientErr != nil {
+			slog.WarnContext(waitCtx, "cannot watch agent upgrader; holding its update keys until the deploy wait ends", "upgraderId", upgraderID, "error", clientErr)
+			<-waitCtx.Done()
+			return
+		}
+		wait := dockerClient.ContainerWait(waitCtx, upgraderID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
+		select {
+		case <-wait.Result:
+		case waitErr := <-wait.Error:
+			if !errdefs.IsNotFound(waitErr) {
+				slog.WarnContext(waitCtx, "agent upgrader wait failed; holding its update keys until the deploy wait ends", "upgraderId", upgraderID, "error", waitErr)
+				<-waitCtx.Done()
 			}
-		})
+		}
 	}()
 	if leases, ok := ctx.Value(updateAdmissionKey{}).(*updateLeases); ok {
 		leases.mu.Lock()
