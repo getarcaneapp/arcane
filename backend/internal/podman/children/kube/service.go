@@ -3,7 +3,7 @@ package kube
 import (
 	"context"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/podman"
 )
@@ -16,31 +16,31 @@ func NewService(runtime func(context.Context) (podman.Runtime, error)) *Service 
 	return &Service{runtime: runtime}
 }
 
-func (s *Service) Play(ctx context.Context, req podmantypes.KubePlayRequest) (podmantypes.KubePlayReport, error) {
+func (s *Service) Play(ctx context.Context, req types.KubePlayRequest) (types.KubePlayReport, error) {
 	rt, err := s.runtime(ctx)
 	if err != nil {
-		return podmantypes.KubePlayReport{}, err
+		return types.KubePlayReport{}, err
 	}
 	return rt.Client.KubePlay(ctx, req)
 }
 
-func (s *Service) Down(ctx context.Context, req podmantypes.KubeDownRequest) (podmantypes.KubeDownReport, error) {
+func (s *Service) Down(ctx context.Context, req types.KubeDownRequest) (types.KubeDownReport, error) {
 	rt, err := s.runtime(ctx)
 	if err != nil {
-		return podmantypes.KubeDownReport{}, err
+		return types.KubeDownReport{}, err
 	}
 	return rt.Client.KubeDown(ctx, req)
 }
 
-func (s *Service) Generate(ctx context.Context, req podmantypes.KubeGenerateRequest) (podmantypes.KubeGenerateResponse, error) {
+func (s *Service) Generate(ctx context.Context, req types.KubeGenerateRequest) (types.KubeGenerateResponse, error) {
 	rt, err := s.runtime(ctx)
 	if err != nil {
-		return podmantypes.KubeGenerateResponse{}, err
+		return types.KubeGenerateResponse{}, err
 	}
 
 	yaml, err := rt.Client.KubeGenerate(ctx, req)
 	if err != nil {
-		return podmantypes.KubeGenerateResponse{}, err
+		return types.KubeGenerateResponse{}, err
 	}
-	return podmantypes.KubeGenerateResponse{YAML: yaml}, nil
+	return types.KubeGenerateResponse{YAML: yaml}, nil
 }

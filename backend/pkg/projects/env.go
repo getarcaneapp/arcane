@@ -17,7 +17,7 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/consts"
 	"github.com/compose-spec/compose-go/v2/dotenv"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/hot"
 	"go.getarcane.app/acfs"
 	kit "go.getarcane.app/kit/pkg"
@@ -105,7 +105,7 @@ func NewEnvLoader(projectsDir, workdir string, autoInjectEnv bool) *EnvLoader {
 // HOME or PUID carry container-internal values that are wrong for projects.
 var processEnvAllowlist = []string{"TZ", "LANG", "LANGUAGE", "LC_ALL"}
 
-func allowedProcessEnvInternal() EnvMap {
+func allowedProcessEnv() EnvMap {
 	envMap := make(EnvMap)
 	for _, key := range processEnvAllowlist {
 		if val, ok := os.LookupEnv(key); ok {
@@ -122,7 +122,7 @@ func allowedProcessEnvInternal() EnvMap {
 // The rest of the Arcane process environment is intentionally excluded so its
 // own variables never leak into compose interpolation of managed projects.
 func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap, injectionVars EnvMap, err error) {
-	envMap = allowedProcessEnvInternal()
+	envMap = allowedProcessEnv()
 	injectionVars = make(EnvMap)
 
 	if strings.TrimSpace(l.projectsDir) != "" {
@@ -136,7 +136,7 @@ func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap, injectionVars 
 	// compose` does. It is read from the sources merged so far — in practice
 	// only .env.global, since the process-env allowlist never includes
 	// COMPOSE_* variables.
-	if parseComposeBoolInternal(envMap, consts.ComposeDisableDefaultEnvFile) {
+	if parseComposeBool(envMap, consts.ComposeDisableDefaultEnvFile) {
 		slog.DebugContext(ctx, "COMPOSE_DISABLE_ENV_FILE set; skipping project .env", "workdir", l.workdir)
 	} else {
 		projectEnvPath := filepath.Join(l.workdir, EffectiveEnvFileName)
@@ -161,15 +161,15 @@ func (l *EnvLoader) LoadEnvironment(ctx context.Context) (envMap, injectionVars 
 
 	// COMPOSE_ENV_FILES, when declared, layers additional env files on top of
 	// the project .env (later entries win). Reuses the mtime-keyed cache.
-	l.mergeComposeEnvFilesInternal(ctx, envMap, injectionVars)
+	l.mergeComposeEnvFiles(ctx, envMap, injectionVars)
 
 	return envMap, injectionVars, nil
 }
 
-func (l *EnvLoader) mergeComposeEnvFilesInternal(ctx context.Context, envMap, injectionVars EnvMap) {
+func (l *EnvLoader) mergeComposeEnvFiles(ctx context.Context, envMap, injectionVars EnvMap) {
 	parse := func(path string, contextEnv EnvMap) (EnvMap, error) {
 		key := strings.Join([]string{path, l.projectsDir, strconv.FormatBool(l.autoInjectEnv), strconv.FormatUint(kit.Fingerprint(contextEnv), 16)}, "\x00")
-		entry, err := loadCachedEnvFileInternal(ctx, projectEnvFileCache, key, path, contextEnv)
+		entry, err := loadCachedEnvFile(ctx, projectEnvFileCache, key, path, contextEnv)
 		if err != nil {
 			return nil, err
 		}
@@ -180,11 +180,11 @@ func (l *EnvLoader) mergeComposeEnvFilesInternal(ctx context.Context, envMap, in
 			maps.Copy(injectionVars, values)
 		}
 	}
-	mergeComposeEnvFilesInternal(ctx, l.workdir, envMap, parse, onMerged)
+	mergeComposeEnvFiles(ctx, l.workdir, envMap, parse, onMerged)
 }
 
 func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envMap, injectionVars EnvMap) error {
-	entry, err := loadCachedEnvFileInternal(ctx, globalEnvFileCache, path, path, envMap)
+	entry, err := loadCachedEnvFile(ctx, globalEnvFileCache, path, path, envMap)
 	if err != nil {
 		return err
 	}
@@ -203,7 +203,7 @@ func (l *EnvLoader) loadAndMergeGlobalEnv(ctx context.Context, path string, envM
 
 func (l *EnvLoader) loadAndMergeProjectEnv(ctx context.Context, path string, envMap, injectionVars EnvMap) error {
 	key := strings.Join([]string{path, l.projectsDir, strconv.FormatBool(l.autoInjectEnv), strconv.FormatUint(kit.Fingerprint(envMap), 16)}, "\x00")
-	entry, err := loadCachedEnvFileInternal(ctx, projectEnvFileCache, key, path, envMap)
+	entry, err := loadCachedEnvFile(ctx, projectEnvFileCache, key, path, envMap)
 	if err != nil {
 		return err
 	}
@@ -222,9 +222,9 @@ func (l *EnvLoader) loadAndMergeProjectEnv(ctx context.Context, path string, env
 	return nil
 }
 
-func loadCachedEnvFileInternal(_ context.Context, envCache *hot.HotCache[string, envFileCacheEntry], key, path string, contextEnv EnvMap) (envFileCacheEntry, error) {
+func loadCachedEnvFile(_ context.Context, envCache *hot.HotCache[string, envFileCacheEntry], key, path string, contextEnv EnvMap) (envFileCacheEntry, error) {
 	if cached, ok := envCache.Peek(key); ok {
-		if validEnvFileCacheEntryInternal(cached) {
+		if validEnvFileCacheEntry(cached) {
 			return cached, nil
 		}
 		envCache.Delete(key)
@@ -244,7 +244,7 @@ func loadCachedEnvFileInternal(_ context.Context, envCache *hot.HotCache[string,
 			return nil, fmt.Errorf("path is a directory: %s", path)
 		}
 
-		parsed, err := parseProjectEnvFileExistingInternal(path, contextEnv)
+		parsed, err := parseProjectEnvFileExisting(path, contextEnv)
 		if err != nil {
 			return nil, fmt.Errorf("parse env file: %w", err)
 		}
@@ -265,7 +265,7 @@ func loadCachedEnvFileInternal(_ context.Context, envCache *hot.HotCache[string,
 	return entry, nil
 }
 
-func validEnvFileCacheEntryInternal(entry envFileCacheEntry) bool {
+func validEnvFileCacheEntry(entry envFileCacheEntry) bool {
 	// os.Stat rather than acfs: env files may be symlinks resolving outside
 	// any confinement root (a supported setup).
 	info, err := os.Stat(entry.path)
@@ -286,7 +286,7 @@ func validEnvFileCacheEntryInternal(entry envFileCacheEntry) bool {
 	return file.Close() == nil
 }
 
-func parseProjectEnvFileExistingInternal(path string, contextEnv EnvMap) (EnvMap, error) {
+func parseProjectEnvFileExisting(path string, contextEnv EnvMap) (EnvMap, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read file: %w", err)
@@ -305,7 +305,7 @@ func ParseProjectEnvFile(path string, contextEnv EnvMap) (EnvMap, error) {
 	if err != nil || info.IsDir() {
 		return nil, nil //nolint:nilerr // missing .env is not an error
 	}
-	return parseProjectEnvFileExistingInternal(path, contextEnv)
+	return parseProjectEnvFileExisting(path, contextEnv)
 }
 
 // ParseProjectEnvContent parses project .env content from a string using
@@ -414,7 +414,7 @@ func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error
 	separated := strings.HasSuffix(gitContent, "\n") || strings.HasPrefix(overrideContent, "\n")
 	concatenated := kit.Ternary(separated, gitContent+overrideContent, gitContent+"\n"+overrideContent)
 
-	candidate, ok := mergeEnvOverridesInPlaceInternal(gitContent, overrideContent, overrideEnv)
+	candidate, ok := mergeEnvOverridesInPlace(gitContent, overrideContent, overrideEnv)
 	if !ok {
 		return concatenated, nil
 	}
@@ -440,12 +440,12 @@ func EnvContentChanged(oldContent, newContent string) bool {
 
 var envKeyLineRegexInternal = regexp.MustCompile(`^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_.-]*)(\s*=)(.*)$`)
 
-// mergeEnvOverridesInPlaceInternal rewrites the value of every gitContent line
+// mergeEnvOverridesInPlace rewrites the value of every gitContent line
 // whose key has an override — keeping line order and trailing inline comments —
 // then appends the override lines whose keys were not rewritten. ok is false when
 // no git line matched an override and the caller should fall back to plain
 // concatenation.
-func mergeEnvOverridesInPlaceInternal(gitContent, overrideContent string, overrideEnv EnvMap) (merged string, ok bool) {
+func mergeEnvOverridesInPlace(gitContent, overrideContent string, overrideEnv EnvMap) (merged string, ok bool) {
 	rewritten := make(map[string]struct{})
 	gitLines := strings.Split(gitContent, "\n")
 
@@ -460,13 +460,13 @@ func mergeEnvOverridesInPlaceInternal(gitContent, overrideContent string, overri
 			continue
 		}
 
-		value, comment := splitEnvValueCommentInternal(match[4])
+		value, comment := splitEnvValueComment(match[4])
 		separator := value[len(strings.TrimRight(value, " \t")):]
 		if comment != "" && separator == "" {
 			separator = " "
 		}
 
-		body = match[1] + match[2] + match[3] + formatEnvValueInternal(overrideValue) + separator + comment
+		body = match[1] + match[2] + match[3] + formatEnvValue(overrideValue) + separator + comment
 		if hadCR {
 			body += "\r"
 		}
@@ -500,10 +500,10 @@ func mergeEnvOverridesInPlaceInternal(gitContent, overrideContent string, overri
 	}
 }
 
-// splitEnvValueCommentInternal splits a raw single-line env value into the value
+// splitEnvValueComment splits a raw single-line env value into the value
 // part and a trailing inline comment. A comment starts at an unquoted '#' that is
 // at the start of the value or preceded by whitespace.
-func splitEnvValueCommentInternal(raw string) (value, comment string) {
+func splitEnvValueComment(raw string) (value, comment string) {
 	var quote byte
 	for i := 0; i < len(raw); i++ {
 		c := raw[i]
@@ -547,7 +547,7 @@ func BuildAdditiveOverrideEnvContent(gitContent, localContent string) (string, e
 		}
 	}
 
-	return formatEnvMapInternal(override), nil
+	return formatEnvMap(override), nil
 }
 
 // BuildOverrideEnvContent derives the editable override file from git-backed and
@@ -586,12 +586,12 @@ func BuildOverrideEnvContent(gitContent, effectiveContent string) (string, error
 		return effectiveContent, nil
 	}
 
-	return formatEnvMapInternal(override), nil
+	return formatEnvMap(override), nil
 }
 
 // CheckProjectEnvAccess reports a configuration error when the runtime user
 // lacks permission to open dir's .env or traverse its path.
-func CheckProjectEnvAccess(ctx context.Context, projectsDir, dir string) *projecttypes.ConfigurationError {
+func CheckProjectEnvAccess(ctx context.Context, projectsDir, dir string) *types.ProjectConfigurationError {
 	envPath := filepath.Join(dir, EffectiveEnvFileName)
 	file, err := os.Open(envPath)
 	if err == nil {
@@ -610,11 +610,11 @@ func CheckProjectEnvAccess(ctx context.Context, projectsDir, dir string) *projec
 		if globalErr != nil {
 			slog.DebugContext(ctx, "Failed to read global env while checking project env access", "path", projectsDir, "error", globalErr)
 		} else {
-			disabled = parseComposeBoolInternal(globalEnv, consts.ComposeDisableDefaultEnvFile)
+			disabled = parseComposeBool(globalEnv, consts.ComposeDisableDefaultEnvFile)
 		}
 	}
 
-	return &projecttypes.ConfigurationError{
+	return &types.ProjectConfigurationError{
 		Code:             common.ConfigurationErrorCodeEnvFileUnreadable,
 		Path:             envPath,
 		UID:              os.Geteuid(),
@@ -624,17 +624,17 @@ func CheckProjectEnvAccess(ctx context.Context, projectsDir, dir string) *projec
 }
 
 func ReadProjectEnvState(projectPath string) (ProjectEnvState, error) {
-	effectiveContent, hasEffective, effectiveUnreadable, err := readOptionalProjectFileInternal(projectPath, EffectiveEnvFileName)
+	effectiveContent, hasEffective, effectiveUnreadable, err := readOptionalProjectFile(projectPath, EffectiveEnvFileName)
 	if err != nil {
 		return ProjectEnvState{}, err
 	}
 
-	gitContent, hasGitSource, gitSourceUnreadable, err := readOptionalProjectFileInternal(projectPath, GitSourceEnvFileName)
+	gitContent, hasGitSource, gitSourceUnreadable, err := readOptionalProjectFile(projectPath, GitSourceEnvFileName)
 	if err != nil {
 		return ProjectEnvState{}, err
 	}
 
-	overrideContent, hasOverride, overrideUnreadable, err := readOptionalProjectFileInternal(projectPath, OverrideEnvFileName)
+	overrideContent, hasOverride, overrideUnreadable, err := readOptionalProjectFile(projectPath, OverrideEnvFileName)
 	if err != nil {
 		return ProjectEnvState{}, err
 	}
@@ -712,7 +712,7 @@ func WriteManagedEnvFile(ctx context.Context, projectsDirectory, projectPath, fi
 	}
 }
 
-// readOptionalProjectFileInternal reads fileName from projectPath. A missing
+// readOptionalProjectFile reads fileName from projectPath. A missing
 // file is reported via exists=false with no error. A permission error or a
 // directory at the path is reported via unreadable=true with no error: its
 // contents cannot be verified, so callers must treat it as absent for merge
@@ -721,7 +721,7 @@ func WriteManagedEnvFile(ctx context.Context, projectsDirectory, projectPath, fi
 // A project env file may itself be a symlink whose target lives outside the
 // project directory, so the read goes through os rather than the root-confined
 // API — the same deliberate exception the .env write path makes (#3556).
-func readOptionalProjectFileInternal(projectPath, fileName string) (content string, exists, unreadable bool, err error) {
+func readOptionalProjectFile(projectPath, fileName string) (content string, exists, unreadable bool, err error) {
 	raw, readErr := os.ReadFile(filepath.Join(projectPath, fileName))
 	if readErr == nil {
 		return string(raw), true, false, nil
@@ -735,10 +735,10 @@ func readOptionalProjectFileInternal(projectPath, fileName string) (content stri
 	return "", false, false, fmt.Errorf("read %s: %w", fileName, readErr)
 }
 
-// formatEnvMapInternal serializes env maps into Arcane's canonical generated
+// formatEnvMap serializes env maps into Arcane's canonical generated
 // format. This is intentionally lossy: comments are omitted and keys are sorted
 // alphabetically to keep persisted merge output stable.
-func formatEnvMapInternal(envMap EnvMap) string {
+func formatEnvMap(envMap EnvMap) string {
 	if len(envMap) == 0 {
 		return ""
 	}
@@ -749,14 +749,14 @@ func formatEnvMapInternal(envMap EnvMap) string {
 	for _, key := range keys {
 		builder.WriteString(key)
 		builder.WriteByte('=')
-		builder.WriteString(formatEnvValueInternal(envMap[key]))
+		builder.WriteString(formatEnvValue(envMap[key]))
 		builder.WriteByte('\n')
 	}
 
 	return builder.String()
 }
 
-func formatEnvValueInternal(value string) string {
+func formatEnvValue(value string) string {
 	if value == "" {
 		return value
 	}
@@ -807,7 +807,7 @@ func ParseComposeEnvOptions(workdir string, env EnvMap) (ComposeEnvOptions, erro
 		ProjectName: strings.TrimSpace(env[consts.ComposeProjectName]),
 	}
 
-	files, err := resolveComposeFileSelectionInternal(workdir, env)
+	files, err := resolveComposeFileSelection(workdir, env)
 	if err != nil {
 		return ComposeEnvOptions{}, err
 	}
@@ -825,8 +825,8 @@ func ParseComposeEnvOptions(workdir string, env EnvMap) (ComposeEnvOptions, erro
 		opts.EnvFiles = append(opts.EnvFiles, resolved)
 	}
 
-	opts.RemoveOrphans = parseComposeBoolInternal(env, composeRemoveOrphansKey)
-	opts.IgnoreOrphans = parseComposeBoolInternal(env, composeIgnoreOrphansKey)
+	opts.RemoveOrphans = parseComposeBool(env, composeRemoveOrphansKey)
+	opts.IgnoreOrphans = parseComposeBool(env, composeIgnoreOrphansKey)
 
 	if raw := strings.TrimSpace(env[composeParallelLimitKey]); raw != "" {
 		if n, convErr := strconv.Atoi(raw); convErr == nil && n > 0 {
@@ -850,7 +850,7 @@ func ComposeFileEnvSelection(ctx context.Context, projectsDir, dir string) ([]st
 	envMap := make(EnvMap)
 	if strings.TrimSpace(projectsDir) != "" {
 		globalEnvPath := filepath.Join(projectsDir, GlobalEnvFileName)
-		globalEnv, err := loadCachedEnvFileInternal(ctx, globalEnvFileCache, globalEnvPath+"\x00compose-file-selection", globalEnvPath, envMap)
+		globalEnv, err := loadCachedEnvFile(ctx, globalEnvFileCache, globalEnvPath+"\x00compose-file-selection", globalEnvPath, envMap)
 		if err != nil {
 			return nil, err
 		}
@@ -859,7 +859,7 @@ func ComposeFileEnvSelection(ctx context.Context, projectsDir, dir string) ([]st
 
 	// COMPOSE_DISABLE_ENV_FILE skips the project .env; it is read only from the
 	// sources merged so far (.env.global), matching LoadEnvironment.
-	if !parseComposeBoolInternal(envMap, consts.ComposeDisableDefaultEnvFile) {
+	if !parseComposeBool(envMap, consts.ComposeDisableDefaultEnvFile) {
 		projectEnvPath := filepath.Join(dir, EffectiveEnvFileName)
 		projectEnv, err := ParseProjectEnvFile(projectEnvPath, envMap)
 		if err != nil {
@@ -879,8 +879,8 @@ func ComposeFileEnvSelection(ctx context.Context, projectsDir, dir string) ([]st
 	if len(envMap) == 0 {
 		return nil, nil
 	}
-	mergeComposeEnvFilesInternal(ctx, dir, envMap, ParseProjectEnvFile, nil)
-	return resolveComposeFileSelectionInternal(dir, envMap)
+	mergeComposeEnvFiles(ctx, dir, envMap, ParseProjectEnvFile, nil)
+	return resolveComposeFileSelection(dir, envMap)
 }
 
 // ComposeFileEntriesFromEnv returns the raw COMPOSE_FILE entries declared in env
@@ -911,11 +911,11 @@ func ComposeEnvFileEntriesFromEnv(env EnvMap) []string {
 	return kit.TrimNonEmpty(strings.Split(raw, ","))
 }
 
-// resolveComposeFileSelectionInternal parses COMPOSE_FILE from env into an
+// resolveComposeFileSelection parses COMPOSE_FILE from env into an
 // ordered list of absolute compose-file paths, or nil when COMPOSE_FILE is
 // unset. Every entry must be a relative path to an existing file within
 // workdir; the first entry (the base file) must sit directly in workdir.
-func resolveComposeFileSelectionInternal(workdir string, env EnvMap) ([]string, error) {
+func resolveComposeFileSelection(workdir string, env EnvMap) ([]string, error) {
 	entries := ComposeFileEntriesFromEnv(env)
 	if len(entries) == 0 {
 		return nil, nil
@@ -958,12 +958,12 @@ func resolveComposeFileSelectionInternal(workdir string, env EnvMap) ([]string, 
 	return files, nil
 }
 
-// mergeComposeEnvFilesInternal merges each COMPOSE_ENV_FILES entry (in order,
+// mergeComposeEnvFiles merges each COMPOSE_ENV_FILES entry (in order,
 // later wins) on top of envMap; bad entries are warned and skipped. Unlike
 // `docker compose`, the entries are additive on top of the project .env rather
 // than a replacement: .env is Arcane's managed effective env file and the place
 // COMPOSE_ENV_FILES itself is declared, so replacing it would be self-defeating.
-func mergeComposeEnvFilesInternal(ctx context.Context, workdir string, envMap EnvMap, parse func(path string, contextEnv EnvMap) (EnvMap, error), onMerged func(values EnvMap)) {
+func mergeComposeEnvFiles(ctx context.Context, workdir string, envMap EnvMap, parse func(path string, contextEnv EnvMap) (EnvMap, error), onMerged func(values EnvMap)) {
 	for _, entry := range ComposeEnvFileEntriesFromEnv(envMap) {
 		resolved, err := ResolvePathWithinDir(workdir, entry)
 		if err != nil {
@@ -991,7 +991,7 @@ func mergeComposeEnvFilesInternal(ctx context.Context, workdir string, envMap En
 	}
 }
 
-func parseComposeBoolInternal(env EnvMap, key string) bool {
+func parseComposeBool(env EnvMap, key string) bool {
 	raw := strings.TrimSpace(env[key])
 	if raw == "" {
 		return false

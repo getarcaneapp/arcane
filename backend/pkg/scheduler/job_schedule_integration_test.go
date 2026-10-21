@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -26,11 +26,11 @@ import (
 func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	ctx := t.Context()
 	databasePath := filepath.Join(t.TempDir(), "arcane.db")
-	db, settingsService := openJobScheduleTestDatabaseInternal(t, ctx, databasePath)
+	db, settingsService := openJobScheduleTestDatabase(t, ctx, databasePath)
 
 	appConfig := &config.Config{Timezone: "UTC"}
 	lifecycleCtx, cancelLifecycle := context.WithCancel(t.Context())
-	jobScheduler := newJobSchedulerForTestInternal(t, lifecycleCtx, appConfig.GetLocation())
+	jobScheduler := newJobSchedulerForTest(t, lifecycleCtx, appConfig.GetLocation())
 
 	jobRuntime := francistest.New(t)
 	jobCoordinator := runs.New(kv.NewKVService(db), jobRuntime.Service(), appConfig.GetLocation())
@@ -53,9 +53,9 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	require.Empty(t, jobScheduler.ListRegisteredJobs())
 
 	requestedSchedule := "0 0 8 * * *"
-	updatedSchedules, err := jobService.UpdateJobSchedules(ctx, jobschedule.Update{
-		PollingInterval: &requestedSchedule,
-	})
+	updatedSchedules, err := jobService.UpdateJobSchedules(ctx, types.JobScheduleConfig{
+		PollingInterval: requestedSchedule,
+	}, map[string]bool{"pollingInterval": true})
 	require.NoError(t, err)
 	require.Equal(t, requestedSchedule, updatedSchedules.PollingInterval)
 
@@ -70,19 +70,19 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 
 	jobs, err := jobService.ListJobs(ctx)
 	require.NoError(t, err)
-	imagePollingStatus := findJobStatusInternal(t, jobs, "image-polling")
+	imagePollingStatus := findJobStatus(t, jobs, "image-polling")
 	require.Equal(t, requestedSchedule, imagePollingStatus.Schedule)
 	require.NotNil(t, imagePollingStatus.NextRun)
 	require.True(t, imagePollingStatus.IsContinuous)
 	require.Equal(t, "pollingInterval", imagePollingStatus.SettingsKey)
 
 	cancelLifecycle()
-	require.NoError(t, stopJobSchedulerForTestInternal(t.Context(), jobScheduler))
-	closeJobScheduleTestDatabaseInternal(t, db)
+	require.NoError(t, stopJobSchedulerForTest(t.Context(), jobScheduler))
+	closeJobScheduleTestDatabase(t, db)
 
-	restartDB, restartSettingsService := openJobScheduleTestDatabaseInternal(t, ctx, databasePath)
+	restartDB, restartSettingsService := openJobScheduleTestDatabase(t, ctx, databasePath)
 	restartLifecycleCtx, cancelRestartLifecycle := context.WithCancel(t.Context())
-	restartScheduler := newJobSchedulerForTestInternal(t, restartLifecycleCtx, appConfig.GetLocation())
+	restartScheduler := newJobSchedulerForTest(t, restartLifecycleCtx, appConfig.GetLocation())
 	restartRuntime := francistest.New(t)
 	restartCoordinator := runs.New(kv.NewKVService(restartDB), restartRuntime.Service(), appConfig.GetLocation())
 	require.NoError(t, restartCoordinator.Register(restartRuntime))
@@ -100,8 +100,8 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	require.NoError(t, restartScheduler.StartScheduler(t.Context()))
 	t.Cleanup(func() {
 		cancelRestartLifecycle()
-		require.NoError(t, stopJobSchedulerForTestInternal(context.WithoutCancel(t.Context()), restartScheduler))
-		closeJobScheduleTestDatabaseInternal(t, restartDB)
+		require.NoError(t, stopJobSchedulerForTest(context.WithoutCancel(t.Context()), restartScheduler))
+		closeJobScheduleTestDatabase(t, restartDB)
 	})
 
 	_, ok = restartScheduler.GetJobRuntimeState("image-polling")
@@ -111,11 +111,11 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 
 	restartedJobs, err := restartJobService.ListJobs(ctx)
 	require.NoError(t, err)
-	require.Equal(t, requestedSchedule, findJobStatusInternal(t, restartedJobs, "image-polling").Schedule)
+	require.Equal(t, requestedSchedule, findJobStatus(t, restartedJobs, "image-polling").Schedule)
 
 	require.NoError(t, restartSettingsService.SetBoolSetting(ctx, "pollingEnabled", false))
 	disabledSchedule := "0 0 9 * * *"
-	_, err = restartJobService.UpdateJobSchedules(ctx, jobschedule.Update{PollingInterval: &disabledSchedule})
+	_, err = restartJobService.UpdateJobSchedules(ctx, types.JobScheduleConfig{PollingInterval: disabledSchedule}, map[string]bool{"pollingInterval": true})
 	require.NoError(t, err)
 
 	_, ok = restartScheduler.GetJobRuntimeState("image-polling")
@@ -124,12 +124,12 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 
 	disabledJobs, err := restartJobService.ListJobs(ctx)
 	require.NoError(t, err)
-	disabledStatus := findJobStatusInternal(t, disabledJobs, "image-polling")
+	disabledStatus := findJobStatus(t, disabledJobs, "image-polling")
 	require.False(t, disabledStatus.Enabled)
 	require.Equal(t, disabledSchedule, disabledStatus.Schedule)
 }
 
-func openJobScheduleTestDatabaseInternal(t *testing.T, ctx context.Context, databasePath string) (*database.DB, *settings.SettingsService) {
+func openJobScheduleTestDatabase(t *testing.T, ctx context.Context, databasePath string) (*database.DB, *settings.SettingsService) {
 	t.Helper()
 
 	gormDB, err := gorm.Open(sqlite.Open(databasePath), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
@@ -137,7 +137,7 @@ func openJobScheduleTestDatabaseInternal(t *testing.T, ctx context.Context, data
 	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}, &kv.KVEntry{}))
 
 	db := &database.DB{DB: gormDB}
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
+	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsService.LoadDatabaseSettings(ctx))
@@ -145,7 +145,7 @@ func openJobScheduleTestDatabaseInternal(t *testing.T, ctx context.Context, data
 	return db, settingsService
 }
 
-func closeJobScheduleTestDatabaseInternal(t *testing.T, db *database.DB) {
+func closeJobScheduleTestDatabase(t *testing.T, db *database.DB) {
 	t.Helper()
 
 	sqlDB, err := db.DB.DB()
@@ -153,7 +153,7 @@ func closeJobScheduleTestDatabaseInternal(t *testing.T, db *database.DB) {
 	require.NoError(t, sqlDB.Close())
 }
 
-func findJobStatusInternal(t *testing.T, jobs *jobschedule.JobListResponse, jobID string) jobschedule.JobStatus {
+func findJobStatus(t *testing.T, jobs *types.JobListResponse, jobID string) types.JobStatus {
 	t.Helper()
 
 	for _, job := range jobs.Jobs {
@@ -162,5 +162,5 @@ func findJobStatusInternal(t *testing.T, jobs *jobschedule.JobListResponse, jobI
 		}
 	}
 	require.FailNowf(t, "unexpected failure", "job %q not found", jobID)
-	return jobschedule.JobStatus{}
+	return types.JobStatus{}
 }

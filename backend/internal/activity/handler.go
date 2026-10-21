@@ -13,8 +13,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/streams/agg"
@@ -31,7 +30,7 @@ import (
 type ActivityHandler struct {
 	activityService *ActivityService
 	environment     EnvironmentDependencies
-	remoteStreamHub *agg.Hub[activity.StreamEvent]
+	remoteStreamHub *agg.Hub[types.ActivityStreamEvent]
 }
 
 type EnvironmentDependencies struct {
@@ -85,15 +84,15 @@ func NewHandler(activityService *ActivityService, localEnvironment EnvironmentDe
 	return &ActivityHandler{
 		activityService: activityService,
 		environment:     localEnvironment,
-		remoteStreamHub: agg.NewHub[activity.StreamEvent](),
+		remoteStreamHub: agg.NewHub[types.ActivityStreamEvent](),
 	}
 }
 
-func (h *ActivityHandler) ListActivities(ctx context.Context, input *ListActivitiesInput) (*handlerutil.Page[activity.Activity], error) {
+func (h *ActivityHandler) ListActivities(ctx context.Context, input *ListActivitiesInput) (*handlerutil.Page[types.Activity], error) {
 	if input.EnvironmentID != "0" {
 		unavailable := false
-		out, err := h.listRemoteActivities(ctx, input, func(path string) (*base.Paginated[activity.Activity], error) {
-			var remote base.Paginated[activity.Activity]
+		out, err := h.listRemoteActivities(ctx, input, func(path string) (*types.Paginated[types.Activity], error) {
+			var remote types.Paginated[types.Activity]
 			if proxyErr := h.environment.ProxyJSONRequest(ctx, input.EnvironmentID, http.MethodGet, path, nil, &remote); proxyErr != nil {
 				var transportErr *remenv.TransportError
 				unavailable = errors.As(proxyErr, &transportErr) && transportErr.Unavailable()
@@ -124,8 +123,8 @@ func (h *ActivityHandler) ListActivities(ctx context.Context, input *ListActivit
 	}
 	h.applyActivitySourceLabels(ctx, input.EnvironmentID, activities)
 
-	return &handlerutil.Page[activity.Activity]{
-		Body: base.Paginated[activity.Activity]{
+	return &handlerutil.Page[types.Activity]{
+		Body: types.Paginated[types.Activity]{
 			Success:    true,
 			Data:       activities,
 			Pagination: handlerutil.PaginationResponse(paginationResp),
@@ -133,7 +132,7 @@ func (h *ActivityHandler) ListActivities(ctx context.Context, input *ListActivit
 	}, nil
 }
 
-func (h *ActivityHandler) GetActivity(ctx context.Context, input *GetActivityInput) (*handlerutil.Out[activity.Detail], error) {
+func (h *ActivityHandler) GetActivity(ctx context.Context, input *GetActivityInput) (*handlerutil.Out[types.ActivityDetail], error) {
 	if input.ActivityID == "" {
 		return nil, huma.Error400BadRequest("activity id is required")
 	}
@@ -143,12 +142,12 @@ func (h *ActivityHandler) GetActivity(ctx context.Context, input *GetActivityInp
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			if input.EnvironmentID != "0" {
 				path := fmt.Sprintf("/api/environments/0/activities/%s?limit=%d", url.PathEscape(input.ActivityID), input.Limit)
-				out, proxyErr := h.environment.ProxyJSONRequest.JSON[base.ApiResponse[activity.Detail]](ctx, input.EnvironmentID, http.MethodGet, path, nil)
+				out, proxyErr := h.environment.ProxyJSONRequest.JSON[types.ApiResponse[types.ActivityDetail]](ctx, input.EnvironmentID, http.MethodGet, path, nil)
 				if proxyErr != nil {
 					return nil, proxyErr
 				}
 				h.applyActivitySourceLabel(ctx, input.EnvironmentID, &out.Data.Activity)
-				return &handlerutil.Out[activity.Detail]{Body: *out}, nil
+				return &handlerutil.Out[types.ActivityDetail]{Body: *out}, nil
 			}
 			return nil, huma.Error404NotFound("activity not found")
 		}
@@ -159,38 +158,38 @@ func (h *ActivityHandler) GetActivity(ctx context.Context, input *GetActivityInp
 	}
 	h.applyActivitySourceLabel(ctx, input.EnvironmentID, &detail.Activity)
 
-	return &handlerutil.Out[activity.Detail]{
-		Body: base.ApiResponse[activity.Detail]{
+	return &handlerutil.Out[types.ActivityDetail]{
+		Body: types.ApiResponse[types.ActivityDetail]{
 			Success: true,
 			Data:    *detail,
 		},
 	}, nil
 }
 
-func (h *ActivityHandler) ClearHistory(ctx context.Context, input *ClearActivityHistoryInput) (*handlerutil.Out[activity.ClearHistoryResult], error) {
+func (h *ActivityHandler) ClearHistory(ctx context.Context, input *ClearActivityHistoryInput) (*handlerutil.Out[types.ActivityClearHistoryResult], error) {
 	deleted, err := h.activityService.DeleteHistory(ctx, input.EnvironmentID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
 	if input.EnvironmentID != "0" {
-		out, proxyErr := h.environment.ProxyJSONRequest.JSON[base.ApiResponse[activity.ClearHistoryResult]](ctx, input.EnvironmentID, http.MethodDelete, "/api/environments/0/activities/history", nil)
+		out, proxyErr := h.environment.ProxyJSONRequest.JSON[types.ApiResponse[types.ActivityClearHistoryResult]](ctx, input.EnvironmentID, http.MethodDelete, "/api/environments/0/activities/history", nil)
 		if proxyErr != nil {
 			return nil, proxyErr
 		}
 		out.Data.Deleted += deleted
-		return &handlerutil.Out[activity.ClearHistoryResult]{Body: *out}, nil
+		return &handlerutil.Out[types.ActivityClearHistoryResult]{Body: *out}, nil
 	}
 
-	return &handlerutil.Out[activity.ClearHistoryResult]{
-		Body: base.ApiResponse[activity.ClearHistoryResult]{
+	return &handlerutil.Out[types.ActivityClearHistoryResult]{
+		Body: types.ApiResponse[types.ActivityClearHistoryResult]{
 			Success: true,
-			Data:    activity.ClearHistoryResult{Deleted: deleted},
+			Data:    types.ActivityClearHistoryResult{Deleted: deleted},
 		},
 	}, nil
 }
 
-func (h *ActivityHandler) CancelActivity(ctx context.Context, input *CancelActivityInput) (*handlerutil.Out[activity.Activity], error) {
+func (h *ActivityHandler) CancelActivity(ctx context.Context, input *CancelActivityInput) (*handlerutil.Out[types.Activity], error) {
 	if input.ActivityID == "" {
 		return nil, huma.Error400BadRequest("activity id is required")
 	}
@@ -209,12 +208,12 @@ func (h *ActivityHandler) CancelActivity(ctx context.Context, input *CancelActiv
 				if requestedBy != "" {
 					path += "?requestedBy=" + url.QueryEscape(requestedBy)
 				}
-				out, proxyErr := h.environment.ProxyJSONRequest.JSON[base.ApiResponse[activity.Activity]](ctx, input.EnvironmentID, http.MethodPost, path, nil)
+				out, proxyErr := h.environment.ProxyJSONRequest.JSON[types.ApiResponse[types.Activity]](ctx, input.EnvironmentID, http.MethodPost, path, nil)
 				if proxyErr != nil {
 					return nil, proxyErr
 				}
 				h.applyActivitySourceLabel(ctx, input.EnvironmentID, &out.Data)
-				return &handlerutil.Out[activity.Activity]{Body: *out}, nil
+				return &handlerutil.Out[types.Activity]{Body: *out}, nil
 			}
 			return nil, huma.Error404NotFound("activity not found")
 		case errors.Is(err, ErrActivityNotCancelable):
@@ -225,15 +224,15 @@ func (h *ActivityHandler) CancelActivity(ctx context.Context, input *CancelActiv
 	}
 	h.applyActivitySourceLabel(ctx, input.EnvironmentID, cancelled)
 
-	return &handlerutil.Out[activity.Activity]{
-		Body: base.ApiResponse[activity.Activity]{
+	return &handlerutil.Out[types.Activity]{
+		Body: types.ApiResponse[types.Activity]{
 			Success: true,
 			Data:    *cancelled,
 		},
 	}, nil
 }
 
-func (h *ActivityHandler) RunLocalStreamProducer(ctx context.Context, limit int, events chan<- activity.StreamEvent) {
+func (h *ActivityHandler) RunLocalStreamProducer(ctx context.Context, limit int, events chan<- types.ActivityStreamEvent) {
 	sendSnapshot := func() bool {
 		activities, _, err := h.activityService.ListActivitiesPaginated(ctx, "0", pagination.QueryParams{
 			Limit:     resolveActivityStreamLimit(limit),
@@ -241,7 +240,7 @@ func (h *ActivityHandler) RunLocalStreamProducer(ctx context.Context, limit int,
 		})
 		if err != nil {
 			if ctx.Err() == nil {
-				agg.Send(ctx, events, activity.StreamEvent{
+				agg.Send(ctx, events, types.ActivityStreamEvent{
 					Type:          "error",
 					EnvironmentID: "0",
 					Error:         err.Error(),
@@ -251,7 +250,7 @@ func (h *ActivityHandler) RunLocalStreamProducer(ctx context.Context, limit int,
 			return false
 		}
 		h.applyActivitySourceLabels(ctx, "0", activities)
-		return agg.Send(ctx, events, activity.StreamEvent{
+		return agg.Send(ctx, events, types.ActivityStreamEvent{
 			Type:          "snapshot",
 			EnvironmentID: "0",
 			Activities:    activities,
@@ -299,7 +298,7 @@ func (h *ActivityHandler) RunLocalStreamProducer(ctx context.Context, limit int,
 // RunRemoteStreamPollers keeps one poller goroutine per
 // enabled remote environment, re-listing periodically so environments added
 // or removed while the stream is open are picked up without a reconnect.
-func (h *ActivityHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz.PermissionSet, limit int, events chan<- activity.StreamEvent) {
+func (h *ActivityHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz.PermissionSet, limit int, events chan<- types.ActivityStreamEvent) {
 	agg.ReconcilePollersByKey(ctx,
 		func(ctx context.Context) ([]environment.Environment, error) {
 			environments, err := h.environment.ListActiveRemoteEnvironments(ctx)
@@ -326,10 +325,10 @@ func (h *ActivityHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz.
 			// events onto this client's stream.
 			key := activityStreamEnvironmentVersion(environment) + ":" + strconv.Itoa(resolveActivityStreamLimit(limit))
 			h.remoteStreamHub.Subscribe(pollCtx, key,
-				func(runCtx context.Context, publish func(activity.StreamEvent)) {
+				func(runCtx context.Context, publish func(types.ActivityStreamEvent)) {
 					h.runRemoteActivityStreamPoller(runCtx, environment, limit, publish)
 				},
-				func(event activity.StreamEvent) bool {
+				func(event types.ActivityStreamEvent) bool {
 					return agg.Send(pollCtx, events, event)
 				})
 		})
@@ -342,7 +341,7 @@ func activityStreamEnvironmentVersion(localEnvironment environment.Environment) 
 	return localEnvironment.ID + ":" + localEnvironment.UpdatedAt.UTC().Format(time.RFC3339Nano)
 }
 
-func (h *ActivityHandler) runRemoteActivityStreamPoller(ctx context.Context, localEnvironment environment.Environment, limit int, publish func(activity.StreamEvent)) {
+func (h *ActivityHandler) runRemoteActivityStreamPoller(ctx context.Context, localEnvironment environment.Environment, limit int, publish func(types.ActivityStreamEvent)) {
 	environmentID := localEnvironment.ID
 	lastFingerprint := ""
 
@@ -360,10 +359,10 @@ func (h *ActivityHandler) runRemoteActivityStreamPoller(ctx context.Context, loc
 			EnvironmentID: environmentID,
 			Limit:         resolveActivityStreamLimit(limit),
 			Order:         "desc",
-		}, func(path string) (*base.Paginated[activity.Activity], error) {
+		}, func(path string) (*types.Paginated[types.Activity], error) {
 			pollCtx, cancelPoll := context.WithTimeout(ctx, activityStreamRemotePollTimeout)
 			defer cancelPoll()
-			var out base.Paginated[activity.Activity]
+			var out types.Paginated[types.Activity]
 			if err := h.environment.ProxyJSONRequestForEnvironment(pollCtx, currentEnvironment, http.MethodGet, path, nil, &out); err != nil {
 				return nil, handlerutil.TranslateRemoteProxyError(err)
 			}
@@ -389,7 +388,7 @@ func (h *ActivityHandler) runRemoteActivityStreamPoller(ctx context.Context, loc
 			return
 		}
 		lastFingerprint = fingerprint
-		publish(activity.StreamEvent{
+		publish(types.ActivityStreamEvent{
 			Type:          kit.Ternary(err == nil, "snapshot", "error"),
 			EnvironmentID: environmentID,
 			Activities:    activities,
@@ -413,7 +412,7 @@ func (h *ActivityHandler) runRemoteActivityStreamPoller(ctx context.Context, loc
 	}
 }
 
-func (h *ActivityHandler) applyActivitySourceLabels(ctx context.Context, environmentID string, activities []activity.Activity) {
+func (h *ActivityHandler) applyActivitySourceLabels(ctx context.Context, environmentID string, activities []types.Activity) {
 	sourceID := cmp.Or(environmentID, environment.LocalEnvironmentID)
 	sourceName := environment.DisplayName(sourceID, "")
 	if h.environment.ResolveEnvironmentName != nil {
@@ -424,17 +423,17 @@ func (h *ActivityHandler) applyActivitySourceLabels(ctx context.Context, environ
 	}
 }
 
-func (h *ActivityHandler) applyActivitySourceLabel(ctx context.Context, environmentID string, item *activity.Activity) {
-	items := []activity.Activity{*item}
+func (h *ActivityHandler) applyActivitySourceLabel(ctx context.Context, environmentID string, item *types.Activity) {
+	items := []types.Activity{*item}
 	h.applyActivitySourceLabels(ctx, environmentID, items)
 	*item = items[0]
 }
 
-func applyActivitySource(item *activity.Activity, sourceID, sourceName string) {
+func applyActivitySource(item *types.Activity, sourceID, sourceName string) {
 	item.SourceEnvironmentID = sourceID
 	item.SourceEnvironmentName = sourceName
 	item.EnvironmentID = sourceID
-	if item.Type == activity.TypeJobRun && item.Metadata != nil {
+	if item.Type == types.ActivityTypeJobRun && item.Metadata != nil {
 		item.Metadata = maps.Clone(item.Metadata)
 		item.Metadata["environmentId"] = sourceID
 	}
@@ -458,13 +457,13 @@ func activityListParams(input *ListActivitiesInput) pagination.QueryParams {
 func (h *ActivityHandler) listRemoteActivities(
 	ctx context.Context,
 	input *ListActivitiesInput,
-	fetch func(string) (*base.Paginated[activity.Activity], error),
-) (*handlerutil.Page[activity.Activity], error) {
+	fetch func(string) (*types.Paginated[types.Activity], error),
+) (*handlerutil.Page[types.Activity], error) {
 	params := normalizeRemoteActivityParams(activityListParams(input))
 	// The agent only ships the newest window the merged page can use, not its
 	// whole history; the stream poller repeats this every few seconds.
 	window := kit.Ternary(params.Limit == -1, -1, params.Start+params.Limit)
-	remoteActivities, remoteTotal, remoteErr := collectActivityWindow(window, func(start, limit int) ([]activity.Activity, int64, error) {
+	remoteActivities, remoteTotal, remoteErr := collectActivityWindow(window, func(start, limit int) ([]types.Activity, int64, error) {
 		query := url.Values{
 			"start": {strconv.Itoa(start)},
 			"limit": {strconv.Itoa(limit)},
@@ -494,7 +493,7 @@ func (h *ActivityHandler) listRemoteActivities(
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	h.applyActivitySourceLabels(ctx, input.EnvironmentID, activities)
-	return &handlerutil.Page[activity.Activity]{Body: base.Paginated[activity.Activity]{
+	return &handlerutil.Page[types.Activity]{Body: types.Paginated[types.Activity]{
 		Success:    remoteErr == nil,
 		Data:       activities,
 		Pagination: handlerutil.PaginationResponse(page),

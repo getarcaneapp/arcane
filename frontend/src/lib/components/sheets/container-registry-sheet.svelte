@@ -7,19 +7,15 @@
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type {
-		ContainerRegistry,
-		ContainerRegistryCreateDto,
-		ContainerRegistryUpdateDto,
-		RegistryType
-	} from '#lib/types/docker.js';
+	import type { ContainerRegistry, ContainerRegistryCreate, ContainerRegistryUpdate, RegistryType } from '#lib/types/docker.js';
 	import { parseLines } from '#lib/utils/form-parsers.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
 	type ContainerRegistryFormProps = {
 		open: boolean;
 		registryToEdit: ContainerRegistry | null;
-		onSubmit: (detail: { registry: ContainerRegistryCreateDto | ContainerRegistryUpdateDto; isEditMode: boolean }) => void;
+		onSubmit: (detail: { registry: ContainerRegistryCreate | ContainerRegistryUpdate; isEditMode: boolean }) => void;
 		isLoading: boolean;
 	};
 
@@ -110,10 +106,15 @@
 
 	let isECR = $derived(inputs.registryType.value === 'ecr');
 
+	function registryFields(values: z.infer<typeof formSchema>): ContainerRegistryCreate {
+		return { ...values, repositoryNames: parseLines(values.repositoryNames ?? '') };
+	}
+
 	function handleSubmit() {
 		const data = form.validate();
 		if (!data) return;
-		onSubmit({ registry: { ...data, repositoryNames: parseLines(data.repositoryNames ?? '') }, isEditMode });
+		const fields = registryFields(data);
+		onSubmit({ registry: isEditMode ? changedFields(registryFields(formData), fields) : fields, isEditMode });
 	}
 
 	function handleOpenChange(newOpenState: boolean) {

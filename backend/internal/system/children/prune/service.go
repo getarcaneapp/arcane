@@ -14,10 +14,7 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	"github.com/getarcaneapp/arcane/types/v2/system"
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.getarcane.app/docker"
@@ -68,7 +65,7 @@ func NewService(
 	}
 }
 
-func (s *Service) PruneAll(ctx context.Context, environmentID string, req system.PruneAllRequest) (*system.PruneAllResult, bool, error) {
+func (s *Service) PruneAll(ctx context.Context, environmentID string, req types.PruneAllRequest) (*types.PruneAllResult, bool, error) {
 	slog.InfoContext(ctx, "Starting selective prune operation",
 		"containers", req.Containers,
 		"images", req.Images,
@@ -80,7 +77,7 @@ func (s *Service) PruneAll(ctx context.Context, environmentID string, req system
 	prune := s.beginSystemPrune(ctx, environmentID, req)
 	if prune.started.IsAbsent() {
 		slog.InfoContext(ctx, "System prune already running", "environmentId", environmentID, "activityId", prune.activityID)
-		return &system.PruneAllResult{
+		return &types.PruneAllResult{
 			Success:    true,
 			ActivityID: mo.EmptyableToOption(strings.TrimSpace(prune.activityID)).ToPointer(),
 		}, false, nil
@@ -89,12 +86,12 @@ func (s *Service) PruneAll(ctx context.Context, environmentID string, req system
 	defer s.finishSystemPrune(environmentID)
 
 	ctx = s.activityService.Track(ctx, prune.activityID)
-	if err := jobcontext.Progress(ctx, scheduler.TargetOutcome{
+	if err := jobcontext.Progress(ctx, types.TargetOutcome{
 		ID:         "scheduled-prune",
-		Status:     scheduler.Running,
+		Status:     types.RunStatusRunning,
 		ActivityID: prune.activityID,
 	}); err != nil {
-		result := &system.PruneAllResult{
+		result := &types.PruneAllResult{
 			Success:    false,
 			Errors:     []string{err.Error()},
 			ActivityID: mo.EmptyableToOption(strings.TrimSpace(prune.activityID)).ToPointer(),
@@ -105,11 +102,11 @@ func (s *Service) PruneAll(ctx context.Context, environmentID string, req system
 	return s.runSystemPrune(ctx, req, prune.activityID), true, nil
 }
 
-func (s *Service) StartPruneAll(ctx context.Context, environmentID string, req system.PruneAllRequest) *system.PruneAllResult {
+func (s *Service) StartPruneAll(ctx context.Context, environmentID string, req types.PruneAllRequest) *types.PruneAllResult {
 	prune := s.beginSystemPrune(ctx, environmentID, req)
 	if prune.started.IsAbsent() {
 		slog.InfoContext(ctx, "System prune already running", "environmentId", environmentID, "activityId", prune.activityID)
-		return &system.PruneAllResult{
+		return &types.PruneAllResult{
 			Success:    true,
 			ActivityID: mo.EmptyableToOption(strings.TrimSpace(prune.activityID)).ToPointer(),
 		}
@@ -121,7 +118,7 @@ func (s *Service) StartPruneAll(ctx context.Context, environmentID string, req s
 		s.runSystemPrune(backgroundCtx, req, prune.activityID)
 	}()
 
-	return &system.PruneAllResult{
+	return &types.PruneAllResult{
 		Success:    true,
 		ActivityID: mo.EmptyableToOption(strings.TrimSpace(prune.activityID)).ToPointer(),
 	}
@@ -132,7 +129,7 @@ type systemPruneBeginResult struct {
 	started    mo.Option[struct{}]
 }
 
-func (s *Service) beginSystemPrune(ctx context.Context, environmentID string, req system.PruneAllRequest) systemPruneBeginResult {
+func (s *Service) beginSystemPrune(ctx context.Context, environmentID string, req types.PruneAllRequest) systemPruneBeginResult {
 	s.pruneMu.Lock()
 	defer s.pruneMu.Unlock()
 
@@ -142,7 +139,7 @@ func (s *Service) beginSystemPrune(ctx context.Context, environmentID string, re
 
 	localActivity, err := s.activityService.StartActivity(ctx, activity.StartActivityRequest{
 		EnvironmentID: environmentID,
-		Type:          activitytypes.TypeSystemPrune,
+		Type:          types.ActivityTypeSystemPrune,
 		ResourceType:  new("system"),
 		ResourceName:  new("Docker resources"),
 		Step:          "Preparing prune",
@@ -170,7 +167,7 @@ func (s *Service) finishSystemPrune(environmentID string) {
 	delete(s.runningPrunes, environmentID)
 }
 
-func (s *Service) runSystemPrune(ctx context.Context, req system.PruneAllRequest, activityID string) *system.PruneAllResult {
+func (s *Service) runSystemPrune(ctx context.Context, req types.PruneAllRequest, activityID string) *types.PruneAllResult {
 	var mu sync.Mutex
 	var errs []string
 	addError := func(format string, err error) {
@@ -178,10 +175,10 @@ func (s *Service) runSystemPrune(ctx context.Context, req system.PruneAllRequest
 		defer mu.Unlock()
 		errs = append(errs, fmt.Sprintf(format, err))
 	}
-	var containers, images, buildCache, volumes, networks system.PruneAllResult
+	var containers, images, buildCache, volumes, networks types.PruneAllResult
 
 	// 1. Prune Containers first (sequential) as it may free up other resources
-	if req.Containers != nil && req.Containers.Mode != system.PruneContainerModeNone {
+	if req.Containers != nil && req.Containers.Mode != types.PruneContainerModeNone {
 		s.appendSystemPruneActivityMessage(ctx, activityID, "Pruning containers", 15)
 		slog.InfoContext(ctx, "Pruning containers...", "mode", req.Containers.Mode, "until", req.Containers.Until)
 		part, err := s.pruneContainers(ctx, *req.Containers)
@@ -194,7 +191,7 @@ func (s *Service) runSystemPrune(ctx context.Context, req system.PruneAllRequest
 	// 2. Prune other resources in parallel
 	g, groupCtx := errgroup.WithContext(ctx)
 
-	if req.Images != nil && req.Images.Mode != system.PruneImageModeNone {
+	if req.Images != nil && req.Images.Mode != types.PruneImageModeNone {
 		g.Go(func() (workerErr error) {
 			defer utils.RecoverToError(&workerErr, "system info worker")
 
@@ -209,7 +206,7 @@ func (s *Service) runSystemPrune(ctx context.Context, req system.PruneAllRequest
 		})
 	}
 
-	if req.BuildCache != nil && req.BuildCache.Mode != system.PruneBuildCacheModeNone {
+	if req.BuildCache != nil && req.BuildCache.Mode != types.PruneBuildCacheModeNone {
 		g.Go(func() (workerErr error) {
 			defer utils.RecoverToError(&workerErr, "system info worker")
 
@@ -227,7 +224,7 @@ func (s *Service) runSystemPrune(ctx context.Context, req system.PruneAllRequest
 		})
 	}
 
-	if req.Volumes != nil && req.Volumes.Mode != system.PruneVolumeModeNone {
+	if req.Volumes != nil && req.Volumes.Mode != types.PruneVolumeModeNone {
 		g.Go(func() (workerErr error) {
 			defer utils.RecoverToError(&workerErr, "system info worker")
 
@@ -242,7 +239,7 @@ func (s *Service) runSystemPrune(ctx context.Context, req system.PruneAllRequest
 		})
 	}
 
-	if req.Networks != nil && req.Networks.Mode != system.PruneNetworkModeNone {
+	if req.Networks != nil && req.Networks.Mode != types.PruneNetworkModeNone {
 		g.Go(func() (workerErr error) {
 			defer utils.RecoverToError(&workerErr, "system info worker")
 
@@ -262,7 +259,7 @@ func (s *Service) runSystemPrune(ctx context.Context, req system.PruneAllRequest
 		addError("Prune worker failed: %v", err)
 	}
 
-	result := &system.PruneAllResult{
+	result := &types.PruneAllResult{
 		ContainersPruned:         containers.ContainersPruned,
 		ImagesDeleted:            images.ImagesDeleted,
 		VolumesDeleted:           volumes.VolumesDeleted,
@@ -313,7 +310,7 @@ func (s *Service) appendSystemPruneActivityMessage(ctx context.Context, activity
 		return
 	}
 	if _, err := s.activityService.AppendMessage(ctx, activityID, activity.AppendActivityMessageRequest{
-		Level:    activitytypes.MessageLevelInfo,
+		Level:    types.ActivityMessageLevelInfo,
 		Message:  message,
 		Progress: &progress,
 		Step:     message,
@@ -322,19 +319,19 @@ func (s *Service) appendSystemPruneActivityMessage(ctx context.Context, activity
 	}
 }
 
-func (s *Service) completeSystemPruneActivity(ctx context.Context, activityID string, result *system.PruneAllResult) {
+func (s *Service) completeSystemPruneActivity(ctx context.Context, activityID string, result *types.PruneAllResult) {
 	if activityID == "" {
 		return
 	}
 
-	status, message, errMessage := func() (activitytypes.Status, string, *string) {
+	status, message, errMessage := func() (types.ActivityStatus, string, *string) {
 		switch {
 		case result.Success && len(result.Errors) == 0:
-			return activitytypes.StatusSuccess, "System prune completed", nil
+			return types.ActivityStatusSuccess, "System prune completed", nil
 		case activitylib.CancelledByContext(ctx):
-			return activitytypes.StatusCancelled, "System prune cancelled", nil
+			return types.ActivityStatusCancelled, "System prune cancelled", nil
 		default:
-			return activitytypes.StatusFailed, "System prune completed with errors", new(strings.Join(result.Errors, "; "))
+			return types.ActivityStatusFailed, "System prune completed with errors", new(strings.Join(result.Errors, "; "))
 		}
 	}()
 	if _, err := s.activityService.CompleteActivity(utils.ActivityRuntimeContext(ctx, nil), activityID, status, message, errMessage); err != nil {
@@ -342,53 +339,53 @@ func (s *Service) completeSystemPruneActivity(ctx context.Context, activityID st
 	}
 }
 
-func (s *Service) pruneContainers(ctx context.Context, options system.PruneContainersOptions) (system.PruneAllResult, error) {
+func (s *Service) pruneContainers(ctx context.Context, options types.PruneContainersOptions) (types.PruneAllResult, error) {
 	filterArgs := make(client.Filters)
-	if options.Mode == system.PruneContainerModeOlderThan {
+	if options.Mode == types.PruneContainerModeOlderThan {
 		if strings.TrimSpace(options.Until) == "" {
-			return system.PruneAllResult{}, errors.New("container prune mode olderThan requires until")
+			return types.PruneAllResult{}, errors.New("container prune mode olderThan requires until")
 		}
 		filterArgs = filterArgs.Add("until", options.Until)
 	}
 
 	cli, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return system.PruneAllResult{}, fmt.Errorf("failed to prune containers: %w", err)
+		return types.PruneAllResult{}, fmt.Errorf("failed to prune containers: %w", err)
 	}
 	report, err := cli.ContainerPrune(ctx, client.ContainerPruneOptions{Filters: filterArgs})
 	if err != nil {
-		return system.PruneAllResult{}, fmt.Errorf("failed to prune containers: %w", err)
+		return types.PruneAllResult{}, fmt.Errorf("failed to prune containers: %w", err)
 	}
 
-	return system.PruneAllResult{
+	return types.PruneAllResult{
 		ContainersPruned:        report.Report.ContainersDeleted,
 		SpaceReclaimed:          report.Report.SpaceReclaimed,
 		ContainerSpaceReclaimed: report.Report.SpaceReclaimed,
 	}, nil
 }
 
-func (s *Service) pruneImages(ctx context.Context, options system.PruneImagesOptions) (system.PruneAllResult, error) {
+func (s *Service) pruneImages(ctx context.Context, options types.PruneImagesOptions) (types.PruneAllResult, error) {
 	filterArgs := make(client.Filters)
 	switch options.Mode {
-	case system.PruneImageModeNone:
-		return system.PruneAllResult{}, errors.New("image prune mode none is not allowed")
-	case system.PruneImageModeDangling:
+	case types.PruneImageModeNone:
+		return types.PruneAllResult{}, errors.New("image prune mode none is not allowed")
+	case types.PruneImageModeDangling:
 		filterArgs = filterArgs.Add("dangling", "true")
-	case system.PruneImageModeAll:
+	case types.PruneImageModeAll:
 		filterArgs = filterArgs.Add("dangling", "false")
-	case system.PruneImageModeOlderThan:
+	case types.PruneImageModeOlderThan:
 		if strings.TrimSpace(options.Until) == "" {
-			return system.PruneAllResult{}, errors.New("image prune mode olderThan requires until")
+			return types.PruneAllResult{}, errors.New("image prune mode olderThan requires until")
 		}
 		filterArgs = filterArgs.Add("dangling", "false")
 		filterArgs = filterArgs.Add("until", options.Until)
 	default:
-		return system.PruneAllResult{}, fmt.Errorf("unsupported image prune mode: %s", options.Mode)
+		return types.PruneAllResult{}, fmt.Errorf("unsupported image prune mode: %s", options.Mode)
 	}
 
 	cli, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return system.PruneAllResult{}, fmt.Errorf("failed to prune images: %w", err)
+		return types.PruneAllResult{}, fmt.Errorf("failed to prune images: %w", err)
 	}
 	existing, listErr := cli.ImageList(ctx, client.ImageListOptions{})
 	if listErr != nil {
@@ -401,7 +398,7 @@ func (s *Service) pruneImages(ctx context.Context, options system.PruneImagesOpt
 
 	report, err := cli.ImagePrune(ctx, client.ImagePruneOptions{Filters: filterArgs})
 	if err != nil {
-		return system.PruneAllResult{}, fmt.Errorf("failed to prune images: %w", err)
+		return types.PruneAllResult{}, fmt.Errorf("failed to prune images: %w", err)
 	}
 
 	var deletedImageIDs, untaggedRefs []string
@@ -420,84 +417,84 @@ func (s *Service) pruneImages(ctx context.Context, options system.PruneImagesOpt
 		slog.WarnContext(ctx, "Failed to delete image update records", "count", len(deletedImageIDs)+len(untaggedRefs), "error", deleteRecordsForImagesErr.Error())
 	}
 
-	return system.PruneAllResult{
+	return types.PruneAllResult{
 		ImagesDeleted:       deletedImageIDs,
 		SpaceReclaimed:      report.Report.SpaceReclaimed,
 		ImageSpaceReclaimed: report.Report.SpaceReclaimed,
 	}, nil
 }
 
-func (s *Service) pruneBuildCache(ctx context.Context, options system.PruneBuildCacheOptions) (system.PruneAllResult, error) {
-	if options.Mode == system.PruneBuildCacheModeOlderThan && strings.TrimSpace(options.Until) == "" {
-		return system.PruneAllResult{}, errors.New("build cache prune mode olderThan requires until")
+func (s *Service) pruneBuildCache(ctx context.Context, options types.PruneBuildCacheOptions) (types.PruneAllResult, error) {
+	if options.Mode == types.PruneBuildCacheModeOlderThan && strings.TrimSpace(options.Until) == "" {
+		return types.PruneAllResult{}, errors.New("build cache prune mode olderThan requires until")
 	}
 
 	slog.DebugContext(ctx, "starting build cache pruning", "mode", options.Mode, "until", options.Until)
 	cli, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "Error pruning build cache", "error", err.Error())
-		return system.PruneAllResult{}, fmt.Errorf("failed to prune build cache: %w", err)
+		return types.PruneAllResult{}, fmt.Errorf("failed to prune build cache: %w", err)
 	}
 	report, err := cli.BuildCachePrune(ctx, client.BuildCachePruneOptions{
-		All:     options.Mode == system.PruneBuildCacheModeAll,
-		Filters: kit.Ternary(options.Mode == system.PruneBuildCacheModeOlderThan, make(client.Filters).Add("until", options.Until), nil),
+		All:     options.Mode == types.PruneBuildCacheModeAll,
+		Filters: kit.Ternary(options.Mode == types.PruneBuildCacheModeOlderThan, make(client.Filters).Add("until", options.Until), nil),
 	})
 	if err != nil {
 		slog.ErrorContext(ctx, "Error pruning build cache", "error", err.Error())
-		return system.PruneAllResult{}, fmt.Errorf("failed to prune build cache: %w", err)
+		return types.PruneAllResult{}, fmt.Errorf("failed to prune build cache: %w", err)
 	}
 
 	slog.InfoContext(ctx, "build cache pruning completed", "cacheEntriesDeleted", len(report.Report.CachesDeleted), "bytesReclaimed", report.Report.SpaceReclaimed)
 
-	return system.PruneAllResult{
+	return types.PruneAllResult{
 		SpaceReclaimed:           report.Report.SpaceReclaimed,
 		BuildCacheSpaceReclaimed: report.Report.SpaceReclaimed,
 	}, nil
 }
 
-func (s *Service) pruneVolumes(ctx context.Context, options system.PruneVolumesOptions) (system.PruneAllResult, error) {
-	plan, err := s.preparePrunePlan(ctx, system.PruneAllRequest{Volumes: &options})
+func (s *Service) pruneVolumes(ctx context.Context, options types.PruneVolumesOptions) (types.PruneAllResult, error) {
+	plan, err := s.preparePrunePlan(ctx, types.PruneAllRequest{Volumes: &options})
 	if err != nil {
-		return system.PruneAllResult{}, err
+		return types.PruneAllResult{}, err
 	}
-	result, err := s.executePrunePlan(ctx, plan, scheduler.Run{}, "", false)
+	result, err := s.executePrunePlan(ctx, plan, types.SchedulerRun{}, "", false)
 	if err != nil {
-		return system.PruneAllResult{}, err
+		return types.PruneAllResult{}, err
 	}
 	if !result.Success {
-		return system.PruneAllResult{}, fmt.Errorf("failed to prune volumes: %s", strings.Join(result.Errors, "; "))
+		return types.PruneAllResult{}, fmt.Errorf("failed to prune volumes: %s", strings.Join(result.Errors, "; "))
 	}
 
 	slog.InfoContext(ctx, "Volume prune completed", "volumesDeleted", len(result.VolumesDeleted), "spaceReclaimed", result.VolumeSpaceReclaimed)
 
-	return system.PruneAllResult{
+	return types.PruneAllResult{
 		VolumesDeleted:       result.VolumesDeleted,
 		SpaceReclaimed:       result.VolumeSpaceReclaimed,
 		VolumeSpaceReclaimed: result.VolumeSpaceReclaimed,
 	}, nil
 }
 
-func (s *Service) pruneNetworks(ctx context.Context, options system.PruneNetworksOptions) (system.PruneAllResult, error) {
+func (s *Service) pruneNetworks(ctx context.Context, options types.PruneNetworksOptions) (types.PruneAllResult, error) {
 	filterArgs := make(client.Filters)
-	if options.Mode == system.PruneNetworkModeOlderThan {
+	if options.Mode == types.PruneNetworkModeOlderThan {
 		if strings.TrimSpace(options.Until) == "" {
-			return system.PruneAllResult{}, errors.New("network prune mode olderThan requires until")
+			return types.PruneAllResult{}, errors.New("network prune mode olderThan requires until")
 		}
 		filterArgs = filterArgs.Add("until", options.Until)
 	}
 
 	cli, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return system.PruneAllResult{}, fmt.Errorf("failed to prune networks: %w", err)
+		return types.PruneAllResult{}, fmt.Errorf("failed to prune networks: %w", err)
 	}
 	report, err := cli.NetworkPrune(ctx, client.NetworkPruneOptions{Filters: filterArgs})
 	if err != nil {
-		return system.PruneAllResult{}, fmt.Errorf("failed to prune networks: %w", err)
+		return types.PruneAllResult{}, fmt.Errorf("failed to prune networks: %w", err)
 	}
 
 	slog.InfoContext(ctx, "Network prune completed", "networksDeleted", len(report.Report.NetworksDeleted))
 
-	return system.PruneAllResult{NetworksDeleted: report.Report.NetworksDeleted}, nil
+	return types.PruneAllResult{NetworksDeleted: report.Report.NetworksDeleted}, nil
 }
 
 type pruneResource struct {
@@ -508,22 +505,22 @@ type pruneResource struct {
 }
 
 type prunePlan struct {
-	Request   system.PruneAllRequest `json:"request"`
-	Resources []pruneResource        `json:"resources"`
+	Request   types.PruneAllRequest `json:"request"`
+	Resources []pruneResource       `json:"resources"`
 }
 
 // PruneScheduled freezes exact targets before applying destructive work.
-func (s *Service) PruneScheduled(ctx context.Context, environmentID string, req system.PruneAllRequest) (*system.PruneAllResult, bool, error) {
+func (s *Service) PruneScheduled(ctx context.Context, environmentID string, req types.PruneAllRequest) (*types.PruneAllResult, bool, error) {
 	prune := s.beginSystemPrune(ctx, environmentID, req)
 	if prune.started.IsAbsent() {
-		return &system.PruneAllResult{
+		return &types.PruneAllResult{
 			Success:    true,
 			ActivityID: mo.EmptyableToOption(prune.activityID).ToPointer(),
 		}, false, nil
 	}
 	defer s.finishSystemPrune(environmentID)
-	fail := func(err error) (*system.PruneAllResult, bool, error) {
-		result := &system.PruneAllResult{
+	fail := func(err error) (*types.PruneAllResult, bool, error) {
+		result := &types.PruneAllResult{
 			Success:    false,
 			Errors:     []string{err.Error()},
 			ActivityID: mo.EmptyableToOption(prune.activityID).ToPointer(),
@@ -542,10 +539,10 @@ func (s *Service) PruneScheduled(ctx context.Context, environmentID string, req 
 	}
 	if progressErr := jobcontext.Progress(
 		ctx,
-		scheduler.TargetOutcome{
+		types.TargetOutcome{
 			ResourceType: "prune_plan",
 			ID:           "prune-plan",
-			Status:       scheduler.Succeeded,
+			Status:       types.RunStatusSucceeded,
 			RecoveryData: payload,
 			ActivityID:   prune.activityID,
 		},
@@ -556,12 +553,12 @@ func (s *Service) PruneScheduled(ctx context.Context, environmentID string, req 
 	result, err := s.executePrunePlan(ctx, plan, previous, prune.activityID, false)
 	s.completeSystemPruneActivity(ctx, prune.activityID, result)
 	if err == nil && result.Success {
-		err = jobcontext.Progress(ctx, scheduler.TargetOutcome{ID: "scheduled-prune", Status: scheduler.Succeeded, ActivityID: prune.activityID})
+		err = jobcontext.Progress(ctx, types.TargetOutcome{ID: "scheduled-prune", Status: types.RunStatusSucceeded, ActivityID: prune.activityID})
 	}
 	return result, true, err
 }
 
-func (s *Service) preparePrunePlan(ctx context.Context, req system.PruneAllRequest) (prunePlan, error) {
+func (s *Service) preparePrunePlan(ctx context.Context, req types.PruneAllRequest) (prunePlan, error) {
 	if req.Volumes != nil {
 		if _, reapErr := s.volumeService.ReapIdleHelpers(ctx, 0); reapErr != nil {
 			slog.WarnContext(ctx, "could not remove idle volume helpers before prune", "error", reapErr.Error())
@@ -602,11 +599,11 @@ func (s *Service) preparePrunePlan(ctx context.Context, req system.PruneAllReque
 	}, nil
 }
 
-func (s *Service) selectPruneContainers(req system.PruneAllRequest, usage client.DiskUsageResult) ([]pruneResource, error) {
-	if req.Containers == nil || req.Containers.Mode == system.PruneContainerModeNone {
+func (s *Service) selectPruneContainers(req types.PruneAllRequest, usage client.DiskUsageResult) ([]pruneResource, error) {
+	if req.Containers == nil || req.Containers.Mode == types.PruneContainerModeNone {
 		return nil, nil
 	}
-	until, err := s.pruneCutoff(req.Containers.Mode == system.PruneContainerModeOlderThan, req.Containers.Until)
+	until, err := s.pruneCutoff(req.Containers.Mode == types.PruneContainerModeOlderThan, req.Containers.Until)
 	if err != nil {
 		return nil, err
 	}
@@ -624,18 +621,18 @@ func (s *Service) selectPruneContainers(req system.PruneAllRequest, usage client
 	return resources, nil
 }
 
-func (s *Service) selectPruneImages(req system.PruneAllRequest, usage client.DiskUsageResult, imageRefs map[string]int) ([]pruneResource, error) {
-	if req.Images == nil || req.Images.Mode == system.PruneImageModeNone {
+func (s *Service) selectPruneImages(req types.PruneAllRequest, usage client.DiskUsageResult, imageRefs map[string]int) ([]pruneResource, error) {
+	if req.Images == nil || req.Images.Mode == types.PruneImageModeNone {
 		return nil, nil
 	}
-	until, err := s.pruneCutoff(req.Images.Mode == system.PruneImageModeOlderThan, req.Images.Until)
+	until, err := s.pruneCutoff(req.Images.Mode == types.PruneImageModeOlderThan, req.Images.Until)
 	if err != nil {
 		return nil, err
 	}
 	var resources []pruneResource
 	for _, item := range usage.Images.Items {
 		if item.Containers > int64(imageRefs[item.ID]) ||
-			(req.Images.Mode == system.PruneImageModeDangling && len(item.RepoTags) > 0) ||
+			(req.Images.Mode == types.PruneImageModeDangling && len(item.RepoTags) > 0) ||
 			(!until.IsZero() && !time.Unix(item.Created, 0).Before(until)) {
 			continue
 		}
@@ -649,8 +646,8 @@ func (s *Service) selectPruneImages(req system.PruneAllRequest, usage client.Dis
 	return resources, nil
 }
 
-func (s *Service) selectPruneVolumes(req system.PruneAllRequest, usage client.DiskUsageResult, volumeRefs map[string]int) []pruneResource {
-	if req.Volumes == nil || req.Volumes.Mode == system.PruneVolumeModeNone {
+func (s *Service) selectPruneVolumes(req types.PruneAllRequest, usage client.DiskUsageResult, volumeRefs map[string]int) []pruneResource {
+	if req.Volumes == nil || req.Volumes.Mode == types.PruneVolumeModeNone {
 		return nil
 	}
 	var resources []pruneResource
@@ -660,7 +657,7 @@ func (s *Service) selectPruneVolumes(req system.PruneAllRequest, usage client.Di
 			strings.EqualFold(item.Labels[libarcane.InternalResourceLabel], "true") || s.volumeService.IsBackupVolume(item.Name) {
 			continue
 		}
-		if _, anonymous := item.Labels["com.docker.volume.anonymous"]; req.Volumes.Mode == system.PruneVolumeModeAnonymous && !anonymous {
+		if _, anonymous := item.Labels["com.docker.volume.anonymous"]; req.Volumes.Mode == types.PruneVolumeModeAnonymous && !anonymous {
 			continue
 		}
 		resources = append(resources, pruneResource{
@@ -672,11 +669,11 @@ func (s *Service) selectPruneVolumes(req system.PruneAllRequest, usage client.Di
 	return resources
 }
 
-func (s *Service) selectPruneNetworks(ctx context.Context, req system.PruneAllRequest, selectedContainers map[string]bool) ([]pruneResource, error) {
-	if req.Networks == nil || req.Networks.Mode == system.PruneNetworkModeNone {
+func (s *Service) selectPruneNetworks(ctx context.Context, req types.PruneAllRequest, selectedContainers map[string]bool) ([]pruneResource, error) {
+	if req.Networks == nil || req.Networks.Mode == types.PruneNetworkModeNone {
 		return nil, nil
 	}
-	until, err := s.pruneCutoff(req.Networks.Mode == system.PruneNetworkModeOlderThan, req.Networks.Until)
+	until, err := s.pruneCutoff(req.Networks.Mode == types.PruneNetworkModeOlderThan, req.Networks.Until)
 	if err != nil {
 		return nil, err
 	}
@@ -711,11 +708,11 @@ nextNetwork:
 	return resources, nil
 }
 
-func (s *Service) selectPruneBuildCache(req system.PruneAllRequest, usage client.DiskUsageResult) ([]pruneResource, error) {
-	if req.BuildCache == nil || req.BuildCache.Mode == system.PruneBuildCacheModeNone {
+func (s *Service) selectPruneBuildCache(req types.PruneAllRequest, usage client.DiskUsageResult) ([]pruneResource, error) {
+	if req.BuildCache == nil || req.BuildCache.Mode == types.PruneBuildCacheModeNone {
 		return nil, nil
 	}
-	until, err := s.pruneCutoff(req.BuildCache.Mode == system.PruneBuildCacheModeOlderThan, req.BuildCache.Until)
+	until, err := s.pruneCutoff(req.BuildCache.Mode == types.PruneBuildCacheModeOlderThan, req.BuildCache.Until)
 	if err != nil {
 		return nil, err
 	}
@@ -775,15 +772,15 @@ func (s *Service) pruneCutoff(olderThan bool, raw string) (time.Time, error) {
 }
 
 func (s *Service) executePrunePlan(
-	ctx context.Context, plan prunePlan, previous scheduler.Run, activityID string, recovery bool,
-) (*system.PruneAllResult, error) {
+	ctx context.Context, plan prunePlan, previous types.SchedulerRun, activityID string, recovery bool,
+) (*types.PruneAllResult, error) {
 	var containersPruned, imagesDeleted, volumesDeleted, networksDeleted, errs []string
 	var spaceReclaimed, containerSpace, imageSpace, volumeSpace, buildCacheSpace uint64
-	finish := func(err error) (*system.PruneAllResult, error) {
+	finish := func(err error) (*types.PruneAllResult, error) {
 		if err != nil {
 			errs = append(errs, err.Error())
 		}
-		return &system.PruneAllResult{
+		return &types.PruneAllResult{
 			ContainersPruned:         containersPruned,
 			ImagesDeleted:            imagesDeleted,
 			VolumesDeleted:           volumesDeleted,
@@ -803,15 +800,15 @@ func (s *Service) executePrunePlan(
 			continue
 		}
 		targetID := "prune:" + resource.Kind + ":" + resource.ID
-		if slices.ContainsFunc(previous.Outcome.Targets, func(target scheduler.TargetOutcome) bool {
-			return target.ID == targetID && (target.Status == scheduler.Succeeded || target.Status == scheduler.Skipped)
+		if slices.ContainsFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
+			return target.ID == targetID && (target.Status == types.RunStatusSucceeded || target.Status == types.RunStatusSkipped)
 		}) {
 			continue
 		}
-		if progressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{
+		if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{
 			ResourceType: resource.Kind,
 			ID:           targetID,
-			Status:       scheduler.Running,
+			Status:       types.RunStatusRunning,
 		}); progressErr != nil {
 			return finish(progressErr)
 		}
@@ -847,19 +844,19 @@ func (s *Service) executePrunePlan(
 				networksDeleted = append(networksDeleted, resource.ID)
 			}
 		}
-		if targetProgressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{
+		if targetProgressErr := jobcontext.Progress(ctx, types.TargetOutcome{
 			ResourceType: resource.Kind,
 			ID:           targetID,
-			Status: func() scheduler.RunStatus {
+			Status: func() types.RunStatus {
 				switch {
 				case !exists:
-					return scheduler.Succeeded
+					return types.RunStatusSucceeded
 				case !eligible:
-					return scheduler.Skipped
+					return types.RunStatusSkipped
 				case removeFailed:
-					return scheduler.Failed
+					return types.RunStatusFailed
 				default:
-					return scheduler.Succeeded
+					return types.RunStatusSucceeded
 				}
 			}(),
 			Message: kit.Ternary(removeFailed, fmt.Sprint(removeErr), ""),
@@ -910,9 +907,9 @@ func (s *Service) removePruneResource(ctx context.Context, resource pruneResourc
 		})
 		return err
 	case "volume":
-		return s.volumeService.DeleteVolume(ctx, resource.ID, false, user.SystemUser)
+		return s.volumeService.DeleteVolume(ctx, resource.ID, false, types.SystemUser)
 	case "network":
-		return s.networkService.RemoveNetwork(ctx, resource.ID, user.SystemUser)
+		return s.networkService.RemoveNetwork(ctx, resource.ID, types.SystemUser)
 	default:
 		return fmt.Errorf("unknown prune target %q", resource.Kind)
 	}
@@ -920,7 +917,7 @@ func (s *Service) removePruneResource(ctx context.Context, resource pruneResourc
 
 func (s *Service) executePruneCache(ctx context.Context, plan prunePlan, recovery bool) (uint64, error) {
 	request := plan.Request.BuildCache
-	if request == nil || request.Mode == system.PruneBuildCacheModeNone {
+	if request == nil || request.Mode == types.PruneBuildCacheModeNone {
 		return 0, nil
 	}
 	if recovery {
@@ -950,7 +947,7 @@ func (s *Service) executePruneCache(ctx context.Context, plan prunePlan, recover
 		}
 		// Docker interprets the ID filter as a regular expression.
 		filters := make(client.Filters).Add("id", "^"+regexp.QuoteMeta(resource.ID)+"$")
-		if request.Mode == system.PruneBuildCacheModeOlderThan {
+		if request.Mode == types.PruneBuildCacheModeOlderThan {
 			filters = filters.Add("until", request.Until)
 		}
 		cli, err := s.dockerService.GetClient(ctx)
@@ -958,7 +955,7 @@ func (s *Service) executePruneCache(ctx context.Context, plan prunePlan, recover
 			return reclaimed, err
 		}
 		report, err := cli.BuildCachePrune(ctx, client.BuildCachePruneOptions{
-			All:     request.Mode == system.PruneBuildCacheModeAll,
+			All:     request.Mode == types.PruneBuildCacheModeAll,
 			Filters: filters,
 		})
 		if err != nil {
@@ -1018,7 +1015,7 @@ func (s *Service) pruneResourceEligible(ctx context.Context, plan prunePlan, res
 		if listErr != nil {
 			return resource.Size, false, true, listErr
 		}
-		return resource.Size, len(users.Items) == 0 && (plan.Request.Images.Mode != system.PruneImageModeDangling || len(inspected.RepoTags) == 0), true, nil
+		return resource.Size, len(users.Items) == 0 && (plan.Request.Images.Mode != types.PruneImageModeDangling || len(inspected.RepoTags) == 0), true, nil
 	case "volume":
 		inspected, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.VolumeInspectResult, error) {
 			return cli.VolumeInspect(ctx, resource.ID, client.VolumeInspectOptions{})
@@ -1042,9 +1039,9 @@ func (s *Service) pruneResourceEligible(ctx context.Context, plan prunePlan, res
 	}
 }
 
-func (s *Service) ReconcileScheduledPrune(ctx context.Context, previous scheduler.Run) (scheduler.Outcome, error) {
+func (s *Service) ReconcileScheduledPrune(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 	outcome := jobcontext.ConfirmedTarget(previous, "scheduled-prune")
-	if outcome.Status == scheduler.Succeeded {
+	if outcome.Status == types.RunStatusSucceeded {
 		return outcome, nil
 	}
 	for _, target := range previous.Outcome.Targets {
@@ -1063,7 +1060,7 @@ func (s *Service) ReconcileScheduledPrune(ctx context.Context, previous schedule
 		result, err := s.executePrunePlan(ctx, plan, previous, "", true)
 		s.completeSystemPruneActivity(ctx, prune.activityID, result)
 		if err != nil {
-			return scheduler.Outcome{
+			return types.SchedulerOutcome{
 				Status:     outcome.Status,
 				Message:    err.Error(),
 				ActivityID: outcome.ActivityID,
@@ -1072,12 +1069,12 @@ func (s *Service) ReconcileScheduledPrune(ctx context.Context, previous schedule
 			}, nil
 		}
 		if !result.Success {
-			return scheduler.Outcome{Status: scheduler.Partial, Targets: previous.Outcome.Targets}, nil
+			return types.SchedulerOutcome{Status: types.RunStatusPartial, Targets: previous.Outcome.Targets}, nil
 		}
-		if progressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{ID: "scheduled-prune", Status: scheduler.Succeeded}); progressErr != nil {
+		if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{ID: "scheduled-prune", Status: types.RunStatusSucceeded}); progressErr != nil {
 			return outcome, progressErr
 		}
-		return scheduler.Outcome{Status: scheduler.Succeeded}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 	}
 	return outcome, nil
 }

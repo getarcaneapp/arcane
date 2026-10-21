@@ -13,17 +13,14 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/upload"
-	"github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 func newRenameCmd() *cobra.Command {
@@ -52,12 +49,12 @@ func newRenameCmd() *cobra.Command {
 				return confirmationErr
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[volume.Volume]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Volume]{
 				Method:         http.MethodPost,
-				Path:           types.VolumeRename(c.EnvID(), resolved.Name),
-				Body:           volume.Rename{Name: args[1]},
+				Path:           clitypes.VolumeRename(c.EnvID(), resolved.Name),
+				Body:           types.VolumeRename{Name: args[1]},
 				FailureMessage: "failed to rename volume",
-				Render: func(data volume.Volume) error {
+				Render: func(data types.Volume) error {
 					output.Success("Volume %s renamed to %s", resolved.Name, data.Name)
 					return nil
 				},
@@ -86,11 +83,11 @@ func newBackupsPolicyCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[volume.BackupPolicyCollection]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.VolumeBackupPolicyCollection]{
 				Method:         http.MethodGet,
-				Path:           types.VolumeBackupPolicy(c.EnvID(), resolved.Name),
+				Path:           clitypes.VolumeBackupPolicy(c.EnvID(), resolved.Name),
 				FailureMessage: "failed to get backup policies",
-				Render: func(data volume.BackupPolicyCollection) error {
+				Render: func(data types.VolumeBackupPolicyCollection) error {
 					return renderVolumePolicies(resolved.Name, data)
 				},
 			})
@@ -124,12 +121,12 @@ func newBackupsPolicyUpdateCmd() *cobra.Command {
 				return policyErr
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[volume.BackupPolicyCollection]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.VolumeBackupPolicyCollection]{
 				Method:         http.MethodPut,
-				Path:           types.VolumeBackupPolicy(c.EnvID(), resolved.Name),
+				Path:           clitypes.VolumeBackupPolicy(c.EnvID(), resolved.Name),
 				Body:           payload,
 				FailureMessage: "failed to update backup policies",
-				Render: func(data volume.BackupPolicyCollection) error {
+				Render: func(data types.VolumeBackupPolicyCollection) error {
 					output.Success("Backup policies for volume %s saved successfully", resolved.Name)
 					return renderVolumePolicies(resolved.Name, data)
 				},
@@ -212,18 +209,18 @@ func newBackupsCreateCmd() *cobra.Command {
 				return err
 			}
 
-			req := volume.CreateBackupRequest{
-				Destination:     volume.BackupDestination(opts.backupCreateDestination),
+			req := types.CreateVolumeBackupRequest{
+				Destination:     types.VolumeBackupDestination(opts.backupCreateDestination),
 				PolicyID:        opts.backupCreatePolicyID,
 				S3DestinationID: opts.backupCreateS3Destination,
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[volume.BackupEntry]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.VolumeBackupEntry]{
 				Method:         http.MethodPost,
-				Path:           types.VolumeBackups(c.EnvID(), resolved.Name),
+				Path:           clitypes.VolumeBackups(c.EnvID(), resolved.Name),
 				Body:           req,
 				FailureMessage: "failed to create backup",
-				Render: func(data volume.BackupEntry) error {
+				Render: func(data types.VolumeBackupEntry) error {
 					output.Success("Backup started for volume %s", resolved.Name)
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Status", data.Status)
@@ -292,39 +289,39 @@ and restored instead (no backup ID).`,
 			}
 			if opts.restoreArchiveFile != "" {
 				c.SetTimeout(30 * time.Minute)
-				sessionID, uploadErr := cmdutil.UploadFileInChunks(cmd.Context(), c, upload.KindVolumeBackup, opts.restoreArchiveFile, !cmdutil.JSONOutputEnabled(cmd))
+				sessionID, uploadErr := cmdutil.UploadFileInChunks(cmd.Context(), c, types.UploadKindVolumeBackup, opts.restoreArchiveFile, !cmdutil.JSONOutputEnabled(cmd))
 				if uploadErr != nil {
 					return uploadErr
 				}
-				restoreErr := cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+				restoreErr := cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 					Method:         http.MethodPost,
-					Path:           types.VolumeBackupUploadRestore(c.EnvID(), resolved.Name),
-					Body:           upload.ConsumeRequest{UploadID: sessionID},
+					Path:           clitypes.VolumeBackupUploadRestore(c.EnvID(), resolved.Name),
+					Body:           types.UploadConsumeRequest{UploadID: sessionID},
 					FailureMessage: "failed to upload and restore backup",
-					Render: func(base.MessageResponse) error {
+					Render: func(types.MessageResponse) error {
 						output.Success("Backup uploaded and restored into volume %s successfully", resolved.Name)
 						return nil
 					},
 				})
 				if restoreErr != nil {
-					cmdutil.AbortUploadSession(cmd.Context(), c, upload.KindVolumeBackup, sessionID)
+					cmdutil.AbortUploadSession(cmd.Context(), c, types.UploadKindVolumeBackup, sessionID)
 				}
 				return restoreErr
 			}
-			spec := cmdutil.Spec[base.MessageResponse]{
+			spec := cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           types.VolumeBackupRestore(c.EnvID(), resolved.Name, backupID),
+				Path:           clitypes.VolumeBackupRestore(c.EnvID(), resolved.Name, backupID),
 				FailureMessage: "failed to restore backup",
-				Render: func(base.MessageResponse) error {
+				Render: func(types.MessageResponse) error {
 					output.Success("%s", fmt.Sprintf("Restore of volume %s from backup %s initiated", resolved.Name, backupID))
 					return nil
 				},
 			}
 			if len(opts.restorePaths) > 0 {
-				spec.Path = types.VolumeBackupRestoreFiles(c.EnvID(), resolved.Name, backupID)
-				spec.Body = backup.RestoreSelection{Paths: opts.restorePaths}
+				spec.Path = clitypes.VolumeBackupRestoreFiles(c.EnvID(), resolved.Name, backupID)
+				spec.Body = types.BackupRestoreSelection{Paths: opts.restorePaths}
 				spec.FailureMessage = "failed to restore backup files"
-				spec.Render = func(base.MessageResponse) error {
+				spec.Render = func(types.MessageResponse) error {
 					output.Success("Restore of %d path(s) into volume %s initiated", len(opts.restorePaths), resolved.Name)
 					return nil
 				}
@@ -357,7 +354,7 @@ func newBackupsDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.forceFlag,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete backup %s?", args[0]),
-				Path:           types.VolumeBackup(c.EnvID(), args[0]),
+				Path:           clitypes.VolumeBackup(c.EnvID(), args[0]),
 				FailureMessage: "failed to delete backup",
 				SuccessMessage: fmt.Sprintf("Backup %s deleted successfully", args[0]),
 			})
@@ -386,13 +383,13 @@ func newBackupsUploadCmd() *cobra.Command {
 			// Uploading large backups can take a long time
 			c.SetTimeout(30 * time.Minute)
 
-			req := volume.UploadBackupRequest{S3DestinationID: opts.backupUploadS3Destination}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[volume.BackupEntry]{
+			req := types.UploadVolumeBackupRequest{S3DestinationID: opts.backupUploadS3Destination}
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.VolumeBackupEntry]{
 				Method:         http.MethodPost,
-				Path:           types.VolumeBackupUpload(c.EnvID(), args[0]),
+				Path:           clitypes.VolumeBackupUpload(c.EnvID(), args[0]),
 				Body:           req,
 				FailureMessage: "failed to upload backup",
-				Render: func(volume.BackupEntry) error {
+				Render: func(types.VolumeBackupEntry) error {
 					output.Success("Backup %s uploaded to S3 successfully", args[0])
 					return nil
 				},
@@ -420,7 +417,7 @@ func newBackupsDownloadCmd() *cobra.Command {
 			// Downloading large backups can take a long time
 			c.SetTimeout(30 * time.Minute)
 
-			resp, err := c.Get(cmd.Context(), types.VolumeBackupDownload(c.EnvID(), args[0]))
+			resp, err := c.Get(cmd.Context(), clitypes.VolumeBackupDownload(c.EnvID(), args[0]))
 			if err != nil {
 				return fmt.Errorf("failed to download backup: %w", err)
 			}
@@ -481,7 +478,7 @@ func newBackupsFilesCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[[]string]{
 				Method:         http.MethodGet,
-				Path:           types.VolumeBackupFiles(c.EnvID(), args[0]),
+				Path:           clitypes.VolumeBackupFiles(c.EnvID(), args[0]),
 				FailureMessage: "failed to list backup files",
 				Render: func(data []string) error {
 					for _, file := range data {
@@ -496,27 +493,27 @@ func newBackupsFilesCmd() *cobra.Command {
 	return cmd
 }
 
-var backupRef = cmdutil.ResourceRef[volume.BackupEntry, volume.BackupEntry]{
+var backupRef = cmdutil.ResourceRef[types.VolumeBackupEntry, types.VolumeBackupEntry]{
 	EnvironmentScoped: true, Singular: "backup", Plural: "backups", IDHint: "the backup ID", ListCmd: "arcane-cli volumes backups list <volume-name>",
-	SearchCandidates: func(ctx context.Context, c *client.Client, identifier string) ([]volume.BackupEntry, error) {
-		volumes, err := c.GetJSON[[]volume.Volume](ctx, types.Volumes(c.EnvID())+"?limit=-1")
+	SearchCandidates: func(ctx context.Context, c *client.Client, identifier string) ([]types.VolumeBackupEntry, error) {
+		volumes, err := c.GetJSON[[]types.Volume](ctx, clitypes.Volumes(c.EnvID())+"?limit=-1")
 		if err != nil {
 			return nil, err
 		}
-		var matches []volume.BackupEntry
+		var matches []types.VolumeBackupEntry
 		var failures []error
 		for _, item := range volumes.Data {
-			backups, listErr := c.GetJSON[[]volume.BackupEntry](ctx, types.VolumeBackups(c.EnvID(), item.Name)+"?limit=-1")
+			backups, listErr := c.GetJSON[[]types.VolumeBackupEntry](ctx, clitypes.VolumeBackups(c.EnvID(), item.Name)+"?limit=-1")
 			if listErr != nil {
 				failures = append(failures, fmt.Errorf("%s: %w", item.Name, listErr))
 				continue
 			}
-			matches = append(matches, slices.DeleteFunc(backups.Data, func(entry volume.BackupEntry) bool { return entry.ID != identifier })...)
+			matches = append(matches, slices.DeleteFunc(backups.Data, func(entry types.VolumeBackupEntry) bool { return entry.ID != identifier })...)
 		}
 		return matches, errors.Join(failures...)
 	},
-	Label:   func(item volume.BackupEntry) string { return item.VolumeName + " (" + item.ID + ")" },
-	Promote: func(item volume.BackupEntry) *volume.BackupEntry { return &item },
+	Label:   func(item types.VolumeBackupEntry) string { return item.VolumeName + " (" + item.ID + ")" },
+	Promote: func(item types.VolumeBackupEntry) *types.VolumeBackupEntry { return &item },
 }
 
 type backupListOptions struct {
@@ -537,7 +534,7 @@ func runBackupList(cmd *cobra.Command, args []string, opts backupListOptions) er
 		return err
 	}
 
-	path, err := cmdutil.ApplyPaginationParams(cmd, types.VolumeBackups(c.EnvID(), resolved.Name), cmdutil.ListParams{
+	path, err := cmdutil.ApplyPaginationParams(cmd, clitypes.VolumeBackups(c.EnvID(), resolved.Name), cmdutil.ListParams{
 		Resource:        "backups",
 		Limit:           opts.limitFlag,
 		FallbackDefault: 20,
@@ -560,7 +557,7 @@ func runBackupList(cmd *cobra.Command, args []string, opts backupListOptions) er
 	if cmdutil.JSONOutputEnabled(cmd) {
 		return cmdutil.PrintRawJSON(body)
 	}
-	var result base.PaginatedWithWarnings[volume.Backup]
+	var result types.PaginatedWithWarnings[types.VolumeBackup]
 	if decodeErr := json.Unmarshal(body, &result); decodeErr != nil {
 		return fmt.Errorf("failed to list backups: failed to decode response: %w", decodeErr)
 	}
@@ -589,7 +586,7 @@ func runBackupList(cmd *cobra.Command, args []string, opts backupListOptions) er
 	return nil
 }
 
-func renderVolumePolicies(name string, data volume.BackupPolicyCollection) error {
+func renderVolumePolicies(name string, data types.VolumeBackupPolicyCollection) error {
 	output.Header("Backup Policies: %s", name)
 	output.KeyValue("S3 Available", data.S3Available)
 	if len(data.Policies) == 0 {
@@ -626,8 +623,8 @@ type backupPolicyOptions struct {
 	policyFile           string
 }
 
-func volumeBackupPolicies(cmd *cobra.Command, c *client.Client, name string, opts backupPolicyOptions) (volume.UpdateBackupPolicies, error) {
-	var payload volume.UpdateBackupPolicies
+func volumeBackupPolicies(cmd *cobra.Command, c *client.Client, name string, opts backupPolicyOptions) (types.UpdateVolumeBackupPolicies, error) {
+	var payload types.UpdateVolumeBackupPolicies
 	if opts.policyFile != "" {
 		raw, readFileErr := os.ReadFile(opts.policyFile)
 		if readFileErr != nil {
@@ -637,14 +634,14 @@ func volumeBackupPolicies(cmd *cobra.Command, c *client.Client, name string, opt
 			return payload, fmt.Errorf("failed to parse policy file: %w", unmarshalErr)
 		}
 	} else {
-		current, policyErr := c.GetJSON[volume.BackupPolicyCollection](cmd.Context(), types.VolumeBackupPolicy(c.EnvID(), name))
+		current, policyErr := c.GetJSON[types.VolumeBackupPolicyCollection](cmd.Context(), clitypes.VolumeBackupPolicy(c.EnvID(), name))
 		if policyErr != nil {
 			return payload, fmt.Errorf("failed to get current backup policies: %w", policyErr)
 		}
 
-		payload.Policies = make([]volume.UpdateBackupPolicy, len(current.Data.Policies))
+		payload.Policies = make([]types.UpdateBackupPolicy, len(current.Data.Policies))
 		for i, p := range current.Data.Policies {
-			payload.Policies[i] = volume.UpdateBackupPolicy{
+			payload.Policies[i] = types.UpdateBackupPolicy{
 				ID:              p.ID,
 				Enabled:         p.Enabled,
 				Schedule:        p.Schedule,
@@ -656,7 +653,7 @@ func volumeBackupPolicies(cmd *cobra.Command, c *client.Client, name string, opt
 			}
 		}
 
-		targetIndex := slices.IndexFunc(payload.Policies, func(policy volume.UpdateBackupPolicy) bool { return opts.policyID != "" && policy.ID == opts.policyID })
+		targetIndex := slices.IndexFunc(payload.Policies, func(policy types.UpdateBackupPolicy) bool { return opts.policyID != "" && policy.ID == opts.policyID })
 		switch {
 		case opts.policyID != "" && targetIndex == -1:
 			return payload, fmt.Errorf("policy %q not found for volume %q", opts.policyID, name)
@@ -669,7 +666,7 @@ func volumeBackupPolicies(cmd *cobra.Command, c *client.Client, name string, opt
 				return payload, errors.New("--schedule is required when creating a new backup policy")
 			}
 			// New policies default to local storage unless --local was set explicitly.
-			payload.Policies = append(payload.Policies, volume.UpdateBackupPolicy{LocalEnabled: !cmd.Flags().Changed("local") || opts.policyLocal})
+			payload.Policies = append(payload.Policies, types.UpdateBackupPolicy{LocalEnabled: !cmd.Flags().Changed("local") || opts.policyLocal})
 			targetIndex = len(payload.Policies) - 1
 		}
 

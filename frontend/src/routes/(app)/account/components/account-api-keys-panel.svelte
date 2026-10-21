@@ -7,7 +7,7 @@
 	import { AddIcon, ApiKeyIcon, CopyIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { apiKeyService } from '#lib/services/api-key-service.js';
-	import type { ApiKey, ApiKeyCreated, ApiKeyPermissionGrant, CreateUserApiKey } from '#lib/types/auth.js';
+	import type { ApiKey, ApiKeyCreated, ApiKeyUpdate, PersonalApiKeyCreate } from '#lib/types/auth.js';
 	import { confirmDeleteApiKey } from '#lib/utils/api-keys.js';
 	import { formatDate, formatRelativeTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -35,23 +35,20 @@
 		}
 	}
 
-	async function createApiKey({
-		apiKey
-	}: {
-		apiKey: { name: string; description?: string; expiresAt?: string; permissions?: ApiKeyPermissionGrant[] };
-		isEditMode: boolean;
-		apiKeyId?: string;
-	}) {
+	async function createApiKey(
+		submission: { isEditMode: true; apiKeyId: string; apiKey: ApiKeyUpdate } | { isEditMode: false; apiKey: PersonalApiKeyCreate }
+	) {
+		if (submission.isEditMode) return;
+		const apiKey = submission.apiKey;
 		creatingKey = true;
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const payload: CreateUserApiKey = {
+					createdKey = await apiKeyService.createMine({
 						name: apiKey.name,
 						description: apiKey.description,
 						expiresAt: apiKey.expiresAt
-					};
-					createdKey = await apiKeyService.createMine(payload);
+					});
 					showCreateKeyForm = false;
 					await loadApiKeys();
 				})()

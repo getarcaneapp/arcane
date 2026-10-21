@@ -10,7 +10,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/require"
 
@@ -27,8 +27,8 @@ func newScopeTestRouter(t *testing.T, limit int) (*echo.Echo, *[]*httpx.Environm
 	router := echo.New()
 	group := router.Group("/api")
 	matcher := authz.NewPermissionMatcher()
-	group.Use(NewEnvironmentScopeMiddleware(func(_ context.Context, id string) (base.EnvironmentRef, error) {
-		return base.EnvironmentRef{ID: id, Name: id}, nil
+	group.Use(NewEnvironmentScopeMiddleware(func(_ context.Context, id string) (types.EnvironmentRef, error) {
+		return types.EnvironmentRef{ID: id, Name: id}, nil
 	}, matcher, func(context.Context) int { return limit }))
 	api := humaecho.NewWithGroup(router, group, huma.DefaultConfig("test", "1.0.0"))
 

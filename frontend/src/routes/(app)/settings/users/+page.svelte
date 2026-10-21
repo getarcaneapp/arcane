@@ -15,8 +15,7 @@
 	import { userService } from '#lib/services/user-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { User } from '#lib/types/auth.js';
-	import type { CreateUser } from '#lib/types/auth.js';
+	import type { User, UserCreate, UserUpdate } from '#lib/types/auth.js';
 	import type { Settings } from '#lib/types/settings.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -102,8 +101,7 @@
 		isEditMode,
 		userId
 	}: {
-		user: Omit<Partial<User>, 'roleAssignments'> & {
-			password?: string;
+		user: UserUpdate & {
 			roleAssignments?: { roleId: string; environmentId?: string }[];
 		};
 		isEditMode: boolean;
@@ -161,7 +159,7 @@
 
 			const safeUsername = user.username!.trim() || m.common_unknown();
 
-			const createUser: CreateUser = {
+			const createUser: UserCreate = {
 				username: user.username!,
 				displayName: user.displayName,
 				email: user.email,

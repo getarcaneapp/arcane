@@ -12,9 +12,17 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { InfoIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import type { CreateFederatedCredential, FederatedCredential, FederatedCredentialMatchType, Role } from '#lib/types/auth.js';
+	import type {
+		FederatedCredential,
+		FederatedCredentialCreate,
+		FederatedCredentialMatchType,
+		FederatedCredentialUpdate,
+		FederatedCredentialWritable,
+		Role
+	} from '#lib/types/auth.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import { plainDateFromInstant, plainDateToInstantString } from '#lib/utils/formatting.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
 	type Props = {
@@ -23,7 +31,11 @@
 		roles: Role[];
 		environments: Environment[];
 		isLoading: boolean;
-		onSubmit: (data: { credential: CreateFederatedCredential; isEditMode: boolean; credentialId?: string }) => void;
+		onSubmit: (
+			data:
+				| { isEditMode: true; credentialId: string; credential: FederatedCredentialUpdate }
+				| { isEditMode: false; credential: FederatedCredentialCreate }
+		) => void;
 	};
 
 	let { open = $bindable(false), credentialToEdit, roles, environments, isLoading, onSubmit }: Props = $props();
@@ -113,9 +125,9 @@
 		const data = form.validate();
 		if (!data) return;
 
-		const payload: CreateFederatedCredential = {
+		const values: Required<Pick<FederatedCredential, FederatedCredentialWritable>> = {
 			name: data.name,
-			description: data.description || undefined,
+			description: data.description || null,
 			enabled: data.enabled,
 			issuerUrl: data.issuerUrl,
 			audiences: parseAudiencesInternal(data.audience),
@@ -123,12 +135,38 @@
 			subjectMatch: data.subjectMatch,
 			matchType: data.matchType,
 			roleId: data.roleId,
-			environmentId: data.environmentId === GLOBAL_OPTION_ID ? undefined : data.environmentId,
+			environmentId: data.environmentId === GLOBAL_OPTION_ID ? null : data.environmentId,
 			tokenTtlSeconds: data.tokenTtlSeconds,
-			expiresAt: data.expiresAt ? plainDateToInstantString(data.expiresAt) : undefined
+			expiresAt: data.expiresAt ? plainDateToInstantString(data.expiresAt) : null
 		};
 
-		onSubmit({ credential: payload, isEditMode, credentialId: credentialToEdit?.id });
+		if (!credentialToEdit) {
+			onSubmit({
+				isEditMode: false,
+				credential: {
+					...values,
+					description: values.description ?? undefined,
+					environmentId: values.environmentId ?? undefined,
+					expiresAt: values.expiresAt ?? undefined
+				}
+			});
+			return;
+		}
+
+		const originalExpiry = plainDateFromInstant(credentialToEdit.expiresAt);
+		onSubmit({
+			isEditMode: true,
+			credentialId: credentialToEdit.id,
+			credential: changedFields(
+				{
+					...credentialToEdit,
+					description: credentialToEdit.description ?? null,
+					environmentId: credentialToEdit.environmentId ?? null,
+					expiresAt: originalExpiry ? plainDateToInstantString(originalExpiry) : null
+				},
+				values
+			)
+		});
 	}
 
 	function handleOpenChange(newOpenState: boolean) {

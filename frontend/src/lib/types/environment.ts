@@ -1,3 +1,5 @@
+import type { CreateRequest, UpdateRequest } from './shared';
+
 // --- Environments & deployment snippets ---
 
 export type EnvironmentStatus = 'online' | 'standby' | 'offline' | 'error' | 'pending';
@@ -33,25 +35,16 @@ export type Environment = {
 	lastSeen?: string;
 	edgeMTLSCertificate?: EdgeMTLSCertificate;
 	apiKey?: string;
+	accessToken?: string;
+	useApiKey?: boolean;
+	regenerateApiKey?: boolean;
 };
 
-export interface CreateEnvironmentDTO {
-	apiUrl: string;
-	name: string;
-	bootstrapToken?: string;
-	useApiKey?: boolean;
-	isEdge?: boolean;
-}
+export type EnvironmentWritable = 'name' | 'apiUrl' | 'enabled' | 'isEdge' | 'accessToken' | 'useApiKey' | 'regenerateApiKey';
 
-export interface UpdateEnvironmentDTO {
-	apiUrl?: string;
-	accessToken?: string;
-	name?: string;
-	enabled?: boolean;
-	isEdge?: boolean;
-	bootstrapToken?: string;
-	regenerateApiKey?: boolean;
-}
+export type EnvironmentCreate = CreateRequest<Environment, Exclude<EnvironmentWritable, 'regenerateApiKey'>, 'name' | 'apiUrl'>;
+
+export type EnvironmentUpdate = UpdateRequest<Environment, Exclude<EnvironmentWritable, 'useApiKey'>>;
 
 export interface DeploymentSnippetFile {
 	name: string;
@@ -104,16 +97,11 @@ export type WebhookCreated = {
 	createdAt: string;
 };
 
-export type CreateWebhook = {
-	name: string;
-	targetType: WebhookTargetType;
-	actionType: WebhookActionType;
-	targetId: string;
-};
+export type WebhookWritable = 'name' | 'targetType' | 'actionType' | 'targetId' | 'enabled';
 
-export type UpdateWebhook = {
-	enabled: boolean;
-};
+export type WebhookCreate = CreateRequest<Webhook, WebhookWritable, 'name' | 'targetType' | 'actionType' | 'targetId'>;
+
+export type WebhookUpdate = UpdateRequest<Webhook, 'enabled'>;
 
 // --- Vulnerability scanning ---
 
@@ -310,14 +298,6 @@ export interface ScannerStatus {
 	version?: string;
 }
 
-export interface IgnoreVulnerabilityPayload {
-	imageId: string;
-	vulnerabilityId: string;
-	pkgName: string;
-	installedVersion: string;
-	reason?: string;
-}
-
 export interface IgnoredVulnerability {
 	id: string;
 	environmentId: string;
@@ -329,6 +309,14 @@ export interface IgnoredVulnerability {
 	createdBy: string;
 	createdAt: string;
 }
+
+export type IgnoredVulnerabilityWritable = 'imageId' | 'vulnerabilityId' | 'pkgName' | 'installedVersion' | 'reason';
+
+export type IgnoredVulnerabilityCreate = CreateRequest<
+	IgnoredVulnerability,
+	IgnoredVulnerabilityWritable,
+	'imageId' | 'vulnerabilityId' | 'pkgName' | 'installedVersion'
+>;
 
 export interface BulkVulnerabilityFilters {
 	search?: string;

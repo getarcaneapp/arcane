@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/testutil"
@@ -60,7 +60,7 @@ func TestImagesUpdatesCheckEncodesImageRefAndDecodesSingleResponse(t *testing.T)
 	require.NotContains(t, receivedRawQuery, "&debug=",
 		"imageRef escaped into a second query parameter: %q", receivedRawQuery)
 
-	var result imageupdate.Response
+	var result types.ImageUpdateResponse
 	{
 		unmarshalErr := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &result)
 		require.NoError(t, unmarshalErr,
@@ -144,7 +144,7 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 	require.NoError(t, err,
 		"check-all: %v (%s)", err, errOut)
 
-	var batch imageupdate.BatchResponse
+	var batch types.ImageUpdateBatchResponse
 	{
 		unmarshalErr := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &batch)
 		require.NoError(t, unmarshalErr,
@@ -162,7 +162,7 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 	require.NoError(t, err,
 		"check-image: %v (%s)", err, errOut)
 
-	var single imageupdate.Response
+	var single types.ImageUpdateResponse
 	{
 		decodeSingleResponseErr := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &single)
 		require.NoError(t, decodeSingleResponseErr,
@@ -180,7 +180,7 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 	require.NoError(t, err,
 		"summary: %v (%s)", err, errOut)
 
-	var summary imageupdate.Summary
+	var summary types.ImageUpdateSummary
 	{
 		decodeSummaryResponseErr := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &summary)
 		require.NoError(t, decodeSummaryResponseErr,

@@ -4,8 +4,7 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -38,13 +37,13 @@ type GetSecretInput struct {
 
 type CreateSecretInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          podmantypes.SecretCreateRequest
+	Body          types.PodmanSecretCreateRequest
 }
 
 type UpdateSecretInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	SecretID      string `path:"secretId" doc:"Secret name"`
-	Body          podmantypes.SecretUpdateRequest
+	Body          types.PodmanSecretUpdateRequest
 }
 
 type DeleteSecretInput struct {
@@ -52,14 +51,14 @@ type DeleteSecretInput struct {
 	SecretID      string `path:"secretId" doc:"Secret name or ID"`
 }
 
-func (h *Handler) List(ctx context.Context, input *ListSecretsInput) (*handlerutil.Page[podmantypes.Secret], error) {
+func (h *Handler) List(ctx context.Context, input *ListSecretsInput) (*handlerutil.Page[types.PodmanSecret], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
 		body, err := h.service.Aggregate(ctx, params)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Failed to list Podman secrets: " + err.Error())
 		}
-		return &handlerutil.Page[podmantypes.Secret]{Body: body}, nil
+		return &handlerutil.Page[types.PodmanSecret]{Body: body}, nil
 	}
 
 	items, page, err := h.service.ListPaginated(ctx, params)
@@ -67,45 +66,45 @@ func (h *Handler) List(ctx context.Context, input *ListSecretsInput) (*handlerut
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to list Podman secrets: "+apiErr.Message)
 	}
-	return &handlerutil.Page[podmantypes.Secret]{
-		Body: base.Paginated[podmantypes.Secret]{
+	return &handlerutil.Page[types.PodmanSecret]{
+		Body: types.Paginated[types.PodmanSecret]{
 			Success:    true,
-			Data:       kit.Ternary(items != nil, items, []podmantypes.Secret{}),
+			Data:       kit.Ternary(items != nil, items, []types.PodmanSecret{}),
 			Pagination: handlerutil.PaginationResponse(page),
 		},
 	}, nil
 }
 
-func (h *Handler) Get(ctx context.Context, input *GetSecretInput) (*handlerutil.Out[podmantypes.Secret], error) {
+func (h *Handler) Get(ctx context.Context, input *GetSecretInput) (*handlerutil.Out[types.PodmanSecret], error) {
 	secret, err := h.service.Inspect(ctx, input.SecretID)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to inspect Podman secret: "+apiErr.Message)
 	}
-	return &handlerutil.Out[podmantypes.Secret]{Body: base.ApiResponse[podmantypes.Secret]{Success: true, Data: secret}}, nil
+	return &handlerutil.Out[types.PodmanSecret]{Body: types.ApiResponse[types.PodmanSecret]{Success: true, Data: secret}}, nil
 }
 
-func (h *Handler) Create(ctx context.Context, input *CreateSecretInput) (*handlerutil.Out[podmantypes.SecretCreateResponse], error) {
+func (h *Handler) Create(ctx context.Context, input *CreateSecretInput) (*handlerutil.Out[types.PodmanSecretCreateResponse], error) {
 	id, err := h.service.Create(ctx, input.Body)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to create Podman secret: "+apiErr.Message)
 	}
 	h.audit(ctx, input.EnvironmentID, "secret.create", "secret", input.Body.Name, map[string]any{"secretId": id})
-	return &handlerutil.Out[podmantypes.SecretCreateResponse]{Body: base.ApiResponse[podmantypes.SecretCreateResponse]{Success: true, Data: podmantypes.SecretCreateResponse{ID: id}}}, nil
+	return &handlerutil.Out[types.PodmanSecretCreateResponse]{Body: types.ApiResponse[types.PodmanSecretCreateResponse]{Success: true, Data: types.PodmanSecretCreateResponse{ID: id}}}, nil
 }
 
-func (h *Handler) Update(ctx context.Context, input *UpdateSecretInput) (*handlerutil.Out[podmantypes.Secret], error) {
+func (h *Handler) Update(ctx context.Context, input *UpdateSecretInput) (*handlerutil.Out[types.PodmanSecret], error) {
 	secret, err := h.service.Update(ctx, input.SecretID, input.Body)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to update Podman secret: "+apiErr.Message)
 	}
 	h.audit(ctx, input.EnvironmentID, "secret.update", "secret", input.SecretID, map[string]any{"secretId": secret.ID})
-	return &handlerutil.Out[podmantypes.Secret]{Body: base.ApiResponse[podmantypes.Secret]{Success: true, Data: secret}}, nil
+	return &handlerutil.Out[types.PodmanSecret]{Body: types.ApiResponse[types.PodmanSecret]{Success: true, Data: secret}}, nil
 }
 
-func (h *Handler) Delete(ctx context.Context, input *DeleteSecretInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *Handler) Delete(ctx context.Context, input *DeleteSecretInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.service.Delete(ctx, input.SecretID); err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to remove Podman secret: "+apiErr.Message)

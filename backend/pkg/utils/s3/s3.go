@@ -24,7 +24,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go"
-	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 )
 
@@ -172,13 +172,13 @@ func TestConnection(ctx context.Context, configuration Configuration) (err error
 	if validateErr := configuration.Validate(true); validateErr != nil {
 		return validateErr
 	}
-	client, err := newClientInternal(ctx, configuration)
+	client, err := newClient(ctx, configuration)
 	if err != nil {
 		return fmt.Errorf("failed to upload S3 connection test object: %w", err)
 	}
 	payload := []byte(connectionTestPayload)
 	remoteKey := path.Join(configuration.Prefix, ".arcane-connection-test-"+uuid.New().String())
-	if putObjectErr := putObjectInternal(ctx, client, configuration.Bucket, remoteKey, payload); putObjectErr != nil {
+	if putObjectErr := putObject(ctx, client, configuration.Bucket, remoteKey, payload); putObjectErr != nil {
 		return fmt.Errorf("failed to upload S3 connection test object: %w", putObjectErr)
 	}
 
@@ -187,19 +187,19 @@ func TestConnection(ctx context.Context, configuration Configuration) (err error
 		if deleted {
 			return
 		}
-		if cleanupErr := deleteObjectInternal(context.WithoutCancel(ctx), client, configuration.Bucket, remoteKey); cleanupErr != nil {
+		if cleanupErr := deleteObject(context.WithoutCancel(ctx), client, configuration.Bucket, remoteKey); cleanupErr != nil {
 			err = errors.Join(err, fmt.Errorf("failed to clean up S3 connection test object: %w", cleanupErr))
 		}
 	}()
 
-	downloaded, err := getObjectInternal(ctx, client, configuration.Bucket, remoteKey)
+	downloaded, err := getObject(ctx, client, configuration.Bucket, remoteKey)
 	if err != nil {
 		return fmt.Errorf("failed to download S3 connection test object: %w", err)
 	}
 	if !bytes.Equal(downloaded, payload) {
 		return errors.New("S3 connection test object contents did not match")
 	}
-	if deleteObjectErr := deleteObjectInternal(ctx, client, configuration.Bucket, remoteKey); deleteObjectErr != nil {
+	if deleteObjectErr := deleteObject(ctx, client, configuration.Bucket, remoteKey); deleteObjectErr != nil {
 		return fmt.Errorf("failed to delete S3 connection test object: %w", deleteObjectErr)
 	}
 	deleted = true
@@ -207,45 +207,45 @@ func TestConnection(ctx context.Context, configuration Configuration) (err error
 }
 
 // CheckRepository reads only the config and, when supplied, one snapshot object.
-func CheckRepository(ctx context.Context, configuration Configuration, root, snapshotID string) (backuptypes.RepositoryObservation, error) {
+func CheckRepository(ctx context.Context, configuration Configuration, root, snapshotID string) (types.BackupRepositoryObservation, error) {
 	configuration = configuration.Normalized()
 	if err := configuration.Validate(true); err != nil {
-		return backuptypes.RepositoryObservation{}, err
+		return types.BackupRepositoryObservation{}, err
 	}
-	client, err := newClientInternal(ctx, configuration)
+	client, err := newClient(ctx, configuration)
 	if err != nil {
-		return backuptypes.RepositoryObservation{}, fmt.Errorf("failed to configure S3 repository check: %w", err)
+		return types.BackupRepositoryObservation{}, fmt.Errorf("failed to configure S3 repository check: %w", err)
 	}
 	configKey := path.Join(configuration.Prefix, root, "config")
-	if checkBackupObjectErr := checkBackupObjectInternal(ctx, client, configuration.Bucket, configKey); checkBackupObjectErr != nil {
-		if isMissingResourceInternal(checkBackupObjectErr, "NoSuchBucket") {
-			return backuptypes.RepositoryObservation{Reason: RepositoryReasonMissingBucket}, nil
+	if checkBackupObjectErr := checkBackupObject(ctx, client, configuration.Bucket, configKey); checkBackupObjectErr != nil {
+		if isMissingResource(checkBackupObjectErr, "NoSuchBucket") {
+			return types.BackupRepositoryObservation{Reason: RepositoryReasonMissingBucket}, nil
 		}
-		if isMissingResourceInternal(checkBackupObjectErr, "NoSuchKey") {
-			return backuptypes.RepositoryObservation{Reason: RepositoryReasonMissingRepository}, nil
+		if isMissingResource(checkBackupObjectErr, "NoSuchKey") {
+			return types.BackupRepositoryObservation{Reason: RepositoryReasonMissingRepository}, nil
 		}
-		return backuptypes.RepositoryObservation{}, checkBackupObjectErr
+		return types.BackupRepositoryObservation{}, checkBackupObjectErr
 	}
-	result := backuptypes.RepositoryObservation{Available: true}
+	result := types.BackupRepositoryObservation{Available: true}
 	if snapshotID == "" {
 		return result, nil
 	}
 	snapshotKey := path.Join(configuration.Prefix, root, "snapshots", snapshotID)
-	if checkBackupObjectErr2 := checkBackupObjectInternal(ctx, client, configuration.Bucket, snapshotKey); checkBackupObjectErr2 != nil {
-		if isMissingResourceInternal(checkBackupObjectErr2, "NoSuchKey") {
+	if checkBackupObjectErr2 := checkBackupObject(ctx, client, configuration.Bucket, snapshotKey); checkBackupObjectErr2 != nil {
+		if isMissingResource(checkBackupObjectErr2, "NoSuchKey") {
 			return result, nil
 		}
-		if isMissingResourceInternal(checkBackupObjectErr2, "NoSuchBucket") {
-			return backuptypes.RepositoryObservation{Reason: RepositoryReasonMissingBucket}, nil
+		if isMissingResource(checkBackupObjectErr2, "NoSuchBucket") {
+			return types.BackupRepositoryObservation{Reason: RepositoryReasonMissingBucket}, nil
 		}
-		return backuptypes.RepositoryObservation{}, checkBackupObjectErr2
+		return types.BackupRepositoryObservation{}, checkBackupObjectErr2
 	}
 	result.SnapshotAvailable = true
 	return result, nil
 }
 
 // A one-byte GET preserves the named S3 errors that generic HEAD responses omit.
-func checkBackupObjectInternal(ctx context.Context, client *awss3.Client, bucket, key string) error {
+func checkBackupObject(ctx context.Context, client *awss3.Client, bucket, key string) error {
 	object, err := client.GetObject(ctx, &awss3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(key), Range: aws.String("bytes=0-0")})
 	if err != nil {
 		return err
@@ -259,7 +259,7 @@ func ListRepositoryRoots(ctx context.Context, configuration Configuration, root 
 	if err := configuration.Validate(true); err != nil {
 		return nil, err
 	}
-	client, err := newClientInternal(ctx, configuration)
+	client, err := newClient(ctx, configuration)
 	if err != nil {
 		return nil, fmt.Errorf("failed to configure S3 repository listing: %w", err)
 	}
@@ -288,7 +288,7 @@ func ListRepositoryRoots(ctx context.Context, configuration Configuration, root 
 	return roots, nil
 }
 
-func isMissingResourceInternal(err error, codes ...string) bool {
+func isMissingResource(err error, codes ...string) bool {
 	var apiErr smithy.APIError
 	if !errors.As(err, &apiErr) {
 		return false
@@ -305,7 +305,7 @@ func (s *gcsHttpSigner) SignHTTP(ctx context.Context, creds aws.Credentials, req
 	return s.wrapped.SignHTTP(ctx, creds, req, payloadHash, service, region, signingTime, optFns...)
 }
 
-func newClientInternal(ctx context.Context, configuration Configuration) (*awss3.Client, error) {
+func newClient(ctx context.Context, configuration Configuration) (*awss3.Client, error) {
 	awsConfiguration, err := awsconfig.LoadDefaultConfig(
 		ctx,
 		awsconfig.WithRegion(cmp.Or(configuration.Region, "us-east-1")),
@@ -329,7 +329,7 @@ func newClientInternal(ctx context.Context, configuration Configuration) (*awss3
 	}), nil
 }
 
-func putObjectInternal(ctx context.Context, client *awss3.Client, bucket, key string, payload []byte) error {
+func putObject(ctx context.Context, client *awss3.Client, bucket, key string, payload []byte) error {
 	_, err := client.PutObject(ctx, &awss3.PutObjectInput{
 		Bucket:        aws.String(bucket),
 		Key:           aws.String(key),
@@ -340,7 +340,7 @@ func putObjectInternal(ctx context.Context, client *awss3.Client, bucket, key st
 	return err
 }
 
-func getObjectInternal(ctx context.Context, client *awss3.Client, bucket, key string) ([]byte, error) {
+func getObject(ctx context.Context, client *awss3.Client, bucket, key string) ([]byte, error) {
 	output, err := client.GetObject(ctx, &awss3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
 	if err != nil {
 		return nil, err
@@ -356,7 +356,7 @@ func getObjectInternal(ctx context.Context, client *awss3.Client, bucket, key st
 	return payload, nil
 }
 
-func deleteObjectInternal(ctx context.Context, client *awss3.Client, bucket, key string) error {
+func deleteObject(ctx context.Context, client *awss3.Client, bucket, key string) error {
 	_, err := client.DeleteObject(ctx, &awss3.DeleteObjectInput{Bucket: aws.String(bucket), Key: aws.String(key)})
 	return err
 }

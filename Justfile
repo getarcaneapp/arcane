@@ -10,7 +10,7 @@ mod dev 'just/dev.just'
 [group('build')]
 mod build 'just/build.just'
 
-# Run tests: e2e, backend, cli, types, all
+# Run tests: e2e, backend, cli, all
 [group('checks')]
 mod test 'just/test.just'
 
@@ -50,9 +50,13 @@ mod i18n 'just/i18n.just'
 [group('performance')]
 mod bench 'just/bench.just'
 
-# Compute the next image version: version [github-output]
+# Release tooling: version [github-output]
 [group('release')]
 mod release 'just/release.just'
+
+# Types module release: check <version> [github-output], verify, publish <version> [previous_tag]
+[group('release')]
+mod types 'just/types.just'
 
 # Repository maintenance: clean
 [group('maintenance')]

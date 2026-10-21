@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
@@ -49,7 +49,7 @@ func TestService_Ready(t *testing.T) {
 	t.Run("ready when database and docker respond", func(t *testing.T) {
 		svc, _ := newReadyTestService(t, make(chan struct{}))
 
-		assert.Equal(t, system.ReadinessResponse{
+		assert.Equal(t, types.ReadinessResponse{
 			Status: readyStatus,
 			Checks: map[string]string{
 				"database": checkOK,

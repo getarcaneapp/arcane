@@ -46,7 +46,7 @@ type fileResourceAdapterInternal struct {
 	Remove       func(context.Context, string) error
 }
 
-func planNetworksInternal(project *composegotypes.Project, ns namespace) map[string]string {
+func planNetworks(project *composegotypes.Project, ns namespace) map[string]string {
 	result := make(map[string]string, len(project.Networks))
 	for key, config := range project.Networks {
 		result[key] = ns.Resolve(key, config.Name)
@@ -54,7 +54,7 @@ func planNetworksInternal(project *composegotypes.Project, ns namespace) map[str
 	return result
 }
 
-func planVolumesInternal(project *composegotypes.Project, ns namespace) map[string]string {
+func planVolumes(project *composegotypes.Project, ns namespace) map[string]string {
 	result := make(map[string]string, len(project.Volumes))
 	for key, config := range project.Volumes {
 		result[key] = ns.Resolve(key, config.Name)
@@ -62,23 +62,23 @@ func planVolumesInternal(project *composegotypes.Project, ns namespace) map[stri
 	return result
 }
 
-func planConfigsInternal(project *composegotypes.Project, ns namespace) (map[string]plannedFileResourceInternal, error) {
+func planConfigs(project *composegotypes.Project, ns namespace) (map[string]plannedFileResourceInternal, error) {
 	configs := make(map[string]composegotypes.FileObjectConfig, len(project.Configs))
 	for key, config := range project.Configs {
 		configs[key] = composegotypes.FileObjectConfig(config)
 	}
-	return planManagedFileResourcesInternal(configs, ns, project.WorkingDir, project.Environment, "config")
+	return planManagedFileResources(configs, ns, project.WorkingDir, project.Environment, "config")
 }
 
-func planSecretsInternal(project *composegotypes.Project, ns namespace) (map[string]plannedFileResourceInternal, error) {
+func planSecrets(project *composegotypes.Project, ns namespace) (map[string]plannedFileResourceInternal, error) {
 	secrets := make(map[string]composegotypes.FileObjectConfig, len(project.Secrets))
 	for key, secret := range project.Secrets {
 		secrets[key] = composegotypes.FileObjectConfig(secret)
 	}
-	return planManagedFileResourcesInternal(secrets, ns, project.WorkingDir, project.Environment, "secret")
+	return planManagedFileResources(secrets, ns, project.WorkingDir, project.Environment, "secret")
 }
 
-func planManagedFileResourcesInternal(
+func planManagedFileResources(
 	resources map[string]composegotypes.FileObjectConfig,
 	ns namespace,
 	workingDir string,
@@ -120,8 +120,8 @@ func planManagedFileResourcesInternal(
 	return result, nil
 }
 
-func ensureSwarmNetworksInternal(ctx context.Context, dockerClient *dockerclient.Client, project *composegotypes.Project, ns namespace, stackLabels map[string]string) (map[string]string, error) {
-	result := planNetworksInternal(project, ns)
+func ensureSwarmNetworks(ctx context.Context, dockerClient *dockerclient.Client, project *composegotypes.Project, ns namespace, stackLabels map[string]string) (map[string]string, error) {
+	result := planNetworks(project, ns)
 	for _, key := range slices.Sorted(maps.Keys(project.Networks)) {
 		cfg := project.Networks[key]
 		networkName := result[key]
@@ -171,12 +171,12 @@ func ensureSwarmNetworksInternal(ctx context.Context, dockerClient *dockerclient
 	return result, nil
 }
 
-// ensureSwarmVolumesInternal pre-creates named volumes that carry a driver or
+// ensureSwarmVolumes pre-creates named volumes that carry a driver or
 // driver_opts so that Swarm services pick up the correct volume configuration.
 // Without this step Docker creates a plain local volume on first use and the
 // driver options are silently ignored — the root cause of issue #2376.
-func ensureSwarmVolumesInternal(ctx context.Context, dockerClient *dockerclient.Client, project *composegotypes.Project, ns namespace, stackLabels map[string]string) error {
-	volumeNameByKey := planVolumesInternal(project, ns)
+func ensureSwarmVolumes(ctx context.Context, dockerClient *dockerclient.Client, project *composegotypes.Project, ns namespace, stackLabels map[string]string) error {
+	volumeNameByKey := planVolumes(project, ns)
 	for _, key := range slices.Sorted(maps.Keys(project.Volumes)) {
 		cfg := project.Volumes[key]
 		// External volumes must already exist; nothing to create.
@@ -212,7 +212,7 @@ func ensureSwarmVolumesInternal(ctx context.Context, dockerClient *dockerclient.
 	return nil
 }
 
-func configFileResourceAdapterInternal(dockerClient *dockerclient.Client) fileResourceAdapterInternal {
+func configFileResourceAdapter(dockerClient *dockerclient.Client) fileResourceAdapterInternal {
 	return fileResourceAdapterInternal{
 		ResourceType: "config",
 		Inspect: func(ctx context.Context, name string) (resourceMeta, error) {
@@ -242,7 +242,7 @@ func configFileResourceAdapterInternal(dockerClient *dockerclient.Client) fileRe
 			if err != nil {
 				return nil, fmt.Errorf("failed to list stack configs: %w", err)
 			}
-			return collectStaleManagedResourcesInternal(configsResult.Items, func(cfg swarm.Config) staleManagedResourceInternal {
+			return collectStaleManagedResources(configsResult.Items, func(cfg swarm.Config) staleManagedResourceInternal {
 				return staleManagedResourceInternal{ID: cfg.ID, Name: cfg.Spec.Name}
 			}), nil
 		},
@@ -253,7 +253,7 @@ func configFileResourceAdapterInternal(dockerClient *dockerclient.Client) fileRe
 	}
 }
 
-func secretFileResourceAdapterInternal(dockerClient *dockerclient.Client) fileResourceAdapterInternal {
+func secretFileResourceAdapter(dockerClient *dockerclient.Client) fileResourceAdapterInternal {
 	return fileResourceAdapterInternal{
 		ResourceType: "secret",
 		Inspect: func(ctx context.Context, name string) (resourceMeta, error) {
@@ -286,7 +286,7 @@ func secretFileResourceAdapterInternal(dockerClient *dockerclient.Client) fileRe
 			if err != nil {
 				return nil, fmt.Errorf("failed to list stack secrets: %w", err)
 			}
-			return collectStaleManagedResourcesInternal(secretsResult.Items, func(secret swarm.Secret) staleManagedResourceInternal {
+			return collectStaleManagedResources(secretsResult.Items, func(secret swarm.Secret) staleManagedResourceInternal {
 				return staleManagedResourceInternal{ID: secret.ID, Name: secret.Spec.Name}
 			}), nil
 		},
@@ -297,7 +297,7 @@ func secretFileResourceAdapterInternal(dockerClient *dockerclient.Client) fileRe
 	}
 }
 
-func ensurePlannedFileResourcesInternal(
+func ensurePlannedFileResources(
 	ctx context.Context,
 	plans map[string]plannedFileResourceInternal,
 	stackLabels map[string]string,
@@ -317,7 +317,7 @@ func ensurePlannedFileResourcesInternal(
 			continue
 		}
 
-		meta, err := ensureManagedFileResourceInternal(ctx, plan, stackLabels, adapter)
+		meta, err := ensureManagedFileResource(ctx, plan, stackLabels, adapter)
 		if err != nil {
 			return nil, err
 		}
@@ -326,7 +326,7 @@ func ensurePlannedFileResourcesInternal(
 	return result, nil
 }
 
-func ensureManagedFileResourceInternal(
+func ensureManagedFileResource(
 	ctx context.Context,
 	plan plannedFileResourceInternal,
 	stackLabels map[string]string,

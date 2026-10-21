@@ -10,14 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/vulnerability"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/images"
 )
 
@@ -46,11 +46,11 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[vulnerability.ScannerStatus]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.VulnerabilityScannerStatus]{
 				Method:         http.MethodGet,
-				Path:           types.VulnerabilitiesScannerStatus(c.EnvID()),
+				Path:           clitypes.VulnerabilitiesScannerStatus(c.EnvID()),
 				FailureMessage: "failed to get scanner status",
-				Render: func(data vulnerability.ScannerStatus) error {
+				Render: func(data types.VulnerabilityScannerStatus) error {
 					output.Header("Vulnerability Scanner")
 					output.KeyValue("Available", data.Available)
 					if data.Version != "" {
@@ -76,11 +76,11 @@ func newSummaryCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[vulnerability.EnvironmentVulnerabilitySummary]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.EnvironmentVulnerabilitySummary]{
 				Method:         http.MethodGet,
-				Path:           types.VulnerabilitiesSummary(c.EnvID()),
+				Path:           clitypes.VulnerabilitiesSummary(c.EnvID()),
 				FailureMessage: "failed to get vulnerability summary",
-				Render: func(data vulnerability.EnvironmentVulnerabilitySummary) error {
+				Render: func(data types.EnvironmentVulnerabilitySummary) error {
 					output.Header("Vulnerability Summary")
 					output.KeyValue("Total Images", data.TotalImages)
 					output.KeyValue("Scanned Images", data.ScannedImages)
@@ -121,13 +121,13 @@ func newListCmd() *cobra.Command {
 				query.Set("imageName", opts.image)
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[vulnerability.VulnerabilityWithImage]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.VulnerabilityWithImage]{
 				Resource: "vulnerabilities",
-				Endpoint: types.VulnerabilitiesAll(c.EnvID()),
+				Endpoint: clitypes.VulnerabilitiesAll(c.EnvID()),
 				Params:   cmdutil.ListParams{Resource: "vulnerabilities", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
 				Query:    query,
 				Headers:  []string{"CVE ID", "SEVERITY", "IMAGE", "PACKAGE", "VERSION", "FIXED IN"},
-				Row: func(item vulnerability.VulnerabilityWithImage) []string {
+				Row: func(item types.VulnerabilityWithImage) []string {
 					return []string{
 						item.VulnerabilityID,
 						string(item.Severity),
@@ -168,12 +168,12 @@ func newScanCmd() *cobra.Command {
 			// Scans can take a long time on large images.
 			c.SetTimeout(30 * time.Minute)
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[vulnerability.ScanResult]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.VulnerabilityScanResult]{
 				Method:         http.MethodPost,
-				Path:           types.ImageVulnerabilitiesScan(c.EnvID(), imageID),
+				Path:           clitypes.ImageVulnerabilitiesScan(c.EnvID(), imageID),
 				Body:           nil,
 				FailureMessage: "failed to scan image",
-				Render: func(data vulnerability.ScanResult) error {
+				Render: func(data types.VulnerabilityScanResult) error {
 					output.Header("Vulnerability Scan")
 					output.KeyValue("Image", data.ImageName)
 					output.KeyValue("Status", string(data.Status))
@@ -219,11 +219,11 @@ func newImageCmd() *cobra.Command {
 			}
 
 			if opts.summary {
-				return cmdutil.Run(cmd, c, cmdutil.Spec[vulnerability.ScanSummary]{
+				return cmdutil.Run(cmd, c, cmdutil.Spec[types.VulnerabilityScanSummary]{
 					Method:         http.MethodGet,
-					Path:           types.ImageVulnerabilitiesSummary(c.EnvID(), imageID),
+					Path:           clitypes.ImageVulnerabilitiesSummary(c.EnvID(), imageID),
 					FailureMessage: "failed to get image vulnerability summary",
-					Render: func(data vulnerability.ScanSummary) error {
+					Render: func(data types.VulnerabilityScanSummary) error {
 						output.Header("Image Vulnerability Summary")
 						output.KeyValue("Image ID", data.ImageID)
 						output.KeyValue("Status", string(data.Status))
@@ -245,13 +245,13 @@ func newImageCmd() *cobra.Command {
 				query.Set("severity", strings.ToUpper(opts.severity))
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[vulnerability.Vulnerability]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.Vulnerability]{
 				Resource: "vulnerabilities",
-				Endpoint: types.ImageVulnerabilitiesList(c.EnvID(), imageID),
+				Endpoint: clitypes.ImageVulnerabilitiesList(c.EnvID(), imageID),
 				Params:   cmdutil.ListParams{Resource: "vulnerabilities", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
 				Query:    query,
 				Headers:  []string{"CVE ID", "SEVERITY", "PACKAGE", "VERSION", "FIXED IN"},
-				Row: func(item vulnerability.Vulnerability) []string {
+				Row: func(item types.Vulnerability) []string {
 					return []string{
 						item.VulnerabilityID,
 						string(item.Severity),
@@ -294,7 +294,7 @@ func newIgnoreCmd() *cobra.Command {
 				return err
 			}
 
-			payload := vulnerability.IgnorePayload{
+			payload := types.IgnoredVulnerability{
 				ImageID:          imageID,
 				VulnerabilityID:  args[0],
 				PkgName:          opts.pkg,
@@ -302,12 +302,12 @@ func newIgnoreCmd() *cobra.Command {
 				Reason:           kit.Ternary(cmd.Flags().Changed("reason"), &opts.reason, nil),
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[vulnerability.IgnoredVulnerability]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.IgnoredVulnerability]{
 				Method:         http.MethodPost,
-				Path:           types.VulnerabilitiesIgnore(c.EnvID()),
+				Path:           clitypes.VulnerabilitiesIgnore(c.EnvID()),
 				Body:           payload,
 				FailureMessage: "failed to ignore vulnerability",
-				Render: func(data vulnerability.IgnoredVulnerability) error {
+				Render: func(data types.IgnoredVulnerability) error {
 					output.Success("Vulnerability %s ignored", data.VulnerabilityID)
 					output.KeyValue("Ignore ID", data.ID)
 					return nil
@@ -342,12 +342,12 @@ func newIgnoredCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[vulnerability.IgnoredVulnerability]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.IgnoredVulnerability]{
 				Resource: "ignored vulnerabilities",
-				Endpoint: types.VulnerabilitiesIgnored(c.EnvID()),
+				Endpoint: clitypes.VulnerabilitiesIgnored(c.EnvID()),
 				Params:   cmdutil.ListParams{Resource: "vulnerabilities", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
 				Headers:  []string{"ID", "CVE ID", "IMAGE ID", "PACKAGE", "REASON", "CREATED"},
-				Row: func(item vulnerability.IgnoredVulnerability) []string {
+				Row: func(item types.IgnoredVulnerability) []string {
 					imageID := strings.TrimPrefix(item.ImageID, "sha256:")
 					imageID = imageID[:min(len(imageID), 12)]
 					return []string{
@@ -386,7 +386,7 @@ func newUnignoreCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to remove ignore record %s?", args[0]),
-				Path:           types.VulnerabilityIgnore(c.EnvID(), args[0]),
+				Path:           clitypes.VulnerabilityIgnore(c.EnvID(), args[0]),
 				FailureMessage: "failed to remove ignore record",
 				SuccessMessage: fmt.Sprintf("Ignore record %s removed", args[0]),
 			})
@@ -397,7 +397,7 @@ func newUnignoreCmd() *cobra.Command {
 	return command
 }
 
-func printSeveritySummary(s *vulnerability.SeveritySummary) {
+func printSeveritySummary(s *types.VulnerabilitySeveritySummary) {
 	if s == nil {
 		output.Info("No vulnerability data available")
 		return
@@ -420,17 +420,17 @@ func resolveImageID(ctx context.Context, c *client.Client, identifier string) (s
 	return resolved.ID, nil
 }
 
-var ignoreRef = cmdutil.ResourceRef[vulnerability.IgnoredVulnerability, vulnerability.IgnoredVulnerability]{
+var ignoreRef = cmdutil.ResourceRef[types.IgnoredVulnerability, types.IgnoredVulnerability]{
 	EnvironmentScoped: true,
 	Singular:          "ignore", Plural: "ignores",
 	IDHint: "the identifier", ListCmd: "arcane-cli images vulnerabilities ignored",
-	GetPath: nil, ListPath: types.VulnerabilitiesIgnored,
-	Matches: func(item vulnerability.IgnoredVulnerability, lower, original string) bool {
+	GetPath: nil, ListPath: clitypes.VulnerabilitiesIgnored,
+	Matches: func(item types.IgnoredVulnerability, lower, original string) bool {
 		return strings.EqualFold(item.ID, original)
 	},
-	Label: func(item vulnerability.IgnoredVulnerability) string {
+	Label: func(item types.IgnoredVulnerability) string {
 		return item.VulnerabilityID + " (" + item.ID + ")"
 	},
-	Promote:      func(item vulnerability.IgnoredVulnerability) *vulnerability.IgnoredVulnerability { return &item },
-	IdentifierOf: func(item vulnerability.IgnoredVulnerability) string { return item.ID },
+	Promote:      func(item types.IgnoredVulnerability) *types.IgnoredVulnerability { return &item },
+	IdentifierOf: func(item types.IgnoredVulnerability) string { return item.ID },
 }

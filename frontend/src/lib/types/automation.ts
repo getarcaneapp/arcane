@@ -1,3 +1,5 @@
+import type { CreateRequest, UpdateRequest } from './shared';
+
 // --- Auto-update ---
 
 export type AutoUpdateResourceType = 'image' | 'container' | 'project';
@@ -78,38 +80,6 @@ export type PruneType = 'containers' | 'images' | 'networks' | 'volumes' | 'buil
 
 // --- GitOps: repositories, syncs, browsing ---
 
-export interface GitRepositoryCreateDto {
-	name: string;
-	url: string;
-	authType: string;
-	username?: string;
-	token?: string;
-	sshKey?: string;
-	sshHostKeyVerification?: string;
-	commitAuthorName?: string;
-	commitAuthorEmail?: string;
-	signingKey?: string;
-	signingKeyPassphrase?: string;
-	description?: string;
-	enabled?: boolean;
-}
-
-export interface GitRepositoryUpdateDto {
-	name?: string;
-	url?: string;
-	authType?: string;
-	username?: string;
-	token?: string;
-	sshKey?: string;
-	sshHostKeyVerification?: string;
-	commitAuthorName?: string;
-	commitAuthorEmail?: string;
-	signingKey?: string;
-	signingKeyPassphrase?: string;
-	description?: string;
-	enabled?: boolean;
-}
-
 export interface GitRepository {
 	id: string;
 	name: string;
@@ -126,7 +96,30 @@ export interface GitRepository {
 	enabled: boolean;
 	createdAt: string;
 	updatedAt: string;
+	token?: string;
+	sshKey?: string;
+	signingKey?: string;
+	signingKeyPassphrase?: string;
 }
+
+export type GitRepositoryWritable =
+	| 'name'
+	| 'url'
+	| 'authType'
+	| 'username'
+	| 'sshHostKeyVerification'
+	| 'commitAuthorName'
+	| 'commitAuthorEmail'
+	| 'description'
+	| 'enabled'
+	| 'token'
+	| 'sshKey'
+	| 'signingKey'
+	| 'signingKeyPassphrase';
+
+export type GitRepositoryCreate = CreateRequest<GitRepository, GitRepositoryWritable, 'name' | 'url' | 'authType'>;
+
+export type GitRepositoryUpdate = UpdateRequest<GitRepository, GitRepositoryWritable>;
 
 export type GitOpsSyncMode = 'deploy' | 'backup';
 
@@ -143,59 +136,6 @@ export type GitOpsBackupFailureReason =
 	| 'destination_occupied'
 	| 'push_rejected';
 
-export interface GitOpsSyncCreateDto {
-	name: string;
-	repositoryId: string;
-	branch: string;
-	composePath?: string;
-	mode?: GitOpsSyncMode;
-	projectId?: string;
-	backupDirectory?: string;
-	backupPaths?: string[];
-	backupOnSave?: boolean;
-	targetType?: string;
-	projectName?: string;
-	autoSync?: boolean;
-	syncInterval?: number;
-	syncDirectory?: boolean;
-	pullImageAfterSync?: boolean;
-	redeployAfterSync?: boolean;
-	maxSyncFiles?: number;
-	maxSyncTotalSize?: number;
-	maxSyncBinarySize?: number;
-	preDeployScriptPath?: string;
-	preDeployRunnerImage?: string;
-	preDeployEnv?: string;
-	preDeployExtraMounts?: string;
-	preDeployTimeoutSec?: number;
-	preDeployNetworkMode?: string;
-}
-
-export interface GitOpsSyncUpdateDto {
-	name?: string;
-	repositoryId?: string;
-	branch?: string;
-	composePath?: string;
-	targetType?: string;
-	projectName?: string;
-	backupPaths?: string[];
-	backupOnSave?: boolean;
-	autoSync?: boolean;
-	syncInterval?: number;
-	syncDirectory?: boolean;
-	pullImageAfterSync?: boolean;
-	redeployAfterSync?: boolean;
-	maxSyncFiles?: number;
-	maxSyncTotalSize?: number;
-	maxSyncBinarySize?: number;
-	preDeployScriptPath?: string;
-	preDeployRunnerImage?: string;
-	preDeployEnv?: string;
-	preDeployExtraMounts?: string;
-	preDeployTimeoutSec?: number;
-	preDeployNetworkMode?: string;
-}
-
 export interface GitOpsSync {
 	id: string;
 	name: string;
@@ -204,7 +144,7 @@ export interface GitOpsSync {
 	repository?: GitRepository;
 	branch: string;
 	composePath: string;
-	targetType?: string;
+	targetType: string;
 	mode: GitOpsSyncMode;
 	backupDirectory?: string;
 	backupPaths?: string[];
@@ -240,6 +180,37 @@ export interface GitOpsSync {
 	createdAt: string;
 	updatedAt: string;
 }
+
+export type GitOpsSyncWritable =
+	| 'name'
+	| 'repositoryId'
+	| 'branch'
+	| 'composePath'
+	| 'targetType'
+	| 'mode'
+	| 'projectId'
+	| 'projectName'
+	| 'backupDirectory'
+	| 'backupPaths'
+	| 'backupOnSave'
+	| 'autoSync'
+	| 'syncInterval'
+	| 'syncDirectory'
+	| 'pullImageAfterSync'
+	| 'redeployAfterSync'
+	| 'maxSyncFiles'
+	| 'maxSyncTotalSize'
+	| 'maxSyncBinarySize'
+	| 'preDeployScriptPath'
+	| 'preDeployRunnerImage'
+	| 'preDeployEnv'
+	| 'preDeployExtraMounts'
+	| 'preDeployTimeoutSec'
+	| 'preDeployNetworkMode';
+
+export type GitOpsSyncCreate = CreateRequest<GitOpsSync, GitOpsSyncWritable, 'name' | 'repositoryId' | 'branch'>;
+
+export type GitOpsSyncUpdate = UpdateRequest<GitOpsSync, GitOpsSyncWritable>;
 
 export interface GitOpsSyncCounts {
 	totalSyncs: number;

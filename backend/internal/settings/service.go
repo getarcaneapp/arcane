@@ -20,11 +20,7 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/category"
-	"github.com/getarcaneapp/arcane/types/v2/features"
-	searchtypes "github.com/getarcaneapp/arcane/types/v2/search"
-	"github.com/getarcaneapp/arcane/types/v2/settings"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 	"go.getarcane.app/kit/normalization"
 	"go.getarcane.app/kit/pkg"
@@ -453,7 +449,7 @@ func validateSettingValue(key, value string) error {
 			return common.Classify(common.ErrValidation, errors.New("allEnvironmentsLimit must be a whole number between 2 and 256"))
 		}
 	}
-	for _, definition := range features.All() {
+	for _, definition := range types.AllFeatures() {
 		if definition.SettingKey == key && value != "true" && value != "false" {
 			return common.Classify(common.ErrValidation, fmt.Errorf("%s must be true or false", key))
 		}
@@ -498,7 +494,7 @@ func (s *SettingsService) UpdateSettingValues(ctx context.Context, updates []lib
 
 // UpdateSettings publishes the refreshed snapshot before returning. Each
 // subscriber's effects remain ordered and may finish after this method returns.
-func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.Update) ([]SettingVariable, error) {
+func (s *SettingsService) UpdateSettings(ctx context.Context, updates types.SettingsUpdate) ([]SettingVariable, error) {
 	if err := normalization.Normalize(&updates); err != nil {
 		return nil, err
 	}
@@ -546,7 +542,7 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 		}
 		for _, field := range required {
 			if strings.TrimSpace(field.value) == "" {
-				return nil, common.Classify(common.ErrValidation, &base.FieldError{Field: field.key, Err: fmt.Errorf("enabling OIDC requires %s", field.key)})
+				return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: field.key, Err: fmt.Errorf("enabling OIDC requires %s", field.key)})
 			}
 		}
 	}
@@ -604,8 +600,8 @@ func (s *SettingsService) publishSettingsChanges(updates []libarcane.SettingUpda
 	}
 }
 
-func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *Settings) ([]SettingVariable, error) {
-	rt := reflect.TypeFor[settings.Update]()
+func (s *SettingsService) prepareUpdateValues(updates types.SettingsUpdate, cfg, defaultCfg *Settings) ([]SettingVariable, error) {
+	rt := reflect.TypeFor[types.SettingsUpdate]()
 	rv := reflect.ValueOf(updates)
 	valuesToUpdate := make([]SettingVariable, 0)
 
@@ -935,9 +931,9 @@ func (s *SettingsService) SetStringSetting(ctx context.Context, key, value strin
 	return s.UpdateSetting(ctx, key, value)
 }
 
-// SetContainerAutoUpdateExclusionInternal adds (excluded) or removes a container name
+// SetContainerAutoUpdateExclusion adds (excluded) or removes a container name
 // in the autoUpdateExcludedContainers setting.
-func (s *SettingsService) SetContainerAutoUpdateExclusionInternal(ctx context.Context, containerName string, excluded bool) error {
+func (s *SettingsService) SetContainerAutoUpdateExclusion(ctx context.Context, containerName string, excluded bool) error {
 	s.writes.Lock()
 	defer s.writes.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -1111,8 +1107,8 @@ func (s *SettingsService) Stop(ctx context.Context) error {
 }
 
 // IsFeatureEnabled resolves feature availability on this environment.
-func (s *SettingsService) IsFeatureEnabled(ctx context.Context, id features.ID) bool {
-	definition, ok := features.Lookup(id)
+func (s *SettingsService) IsFeatureEnabled(ctx context.Context, id types.FeatureID) bool {
+	definition, ok := types.LookupFeature(id)
 	if !ok {
 		return false
 	}
@@ -1129,7 +1125,7 @@ func (s *SettingsService) IsFeatureEnabled(ctx context.Context, id features.ID) 
 }
 
 // RequireFeature rejects operations when their runtime feature is disabled.
-func (s *SettingsService) RequireFeature(ctx context.Context, id features.ID) error {
+func (s *SettingsService) RequireFeature(ctx context.Context, id types.FeatureID) error {
 	if s.IsFeatureEnabled(ctx, id) {
 		return nil
 	}
@@ -1137,14 +1133,14 @@ func (s *SettingsService) RequireFeature(ctx context.Context, id features.ID) er
 }
 
 type SettingsSearchService struct {
-	categories []category.Category
+	categories []types.Category
 }
 
 func NewSettingsSearchService() *SettingsSearchService {
-	return &SettingsSearchService{categories: search.BuildCategories[Settings](searchtypes.SettingsProfile)}
+	return &SettingsSearchService{categories: search.BuildCategories[Settings](types.SearchProfileSettings)}
 }
 
 // GetSettingsCategories returns the category index initialized by the service.
-func (s *SettingsSearchService) GetSettingsCategories() []category.Category {
+func (s *SettingsSearchService) GetSettingsCategories() []types.Category {
 	return s.categories
 }

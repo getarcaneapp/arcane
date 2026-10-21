@@ -18,11 +18,7 @@ import (
 	"time"
 	"uuid"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/recovery"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -71,32 +67,32 @@ var ErrSystemBackupAlreadyRunning = common.Classify(common.ErrConflict, errors.N
 // Store persists system backup runs and policies through their public DTOs;
 // the system domain owns the persistence models.
 type Store struct {
-	CreateRun                 func(ctx context.Context, run *backuptypes.SystemBackupRun) error
-	SaveRun                   func(ctx context.Context, run *backuptypes.SystemBackupRun) error
+	CreateRun                 func(ctx context.Context, run *types.SystemBackupRun) error
+	SaveRun                   func(ctx context.Context, run *types.SystemBackupRun) error
 	FailRun                   func(ctx context.Context, id, message string) error
 	DeleteRun                 func(ctx context.Context, id string) error
-	Run                       func(ctx context.Context, id string) (*backuptypes.SystemBackupRun, error)
-	ListRuns                  func(ctx context.Context, params pagination.QueryParams) ([]backuptypes.SystemBackupRun, pagination.Response, error)
+	Run                       func(ctx context.Context, id string) (*types.SystemBackupRun, error)
+	ListRuns                  func(ctx context.Context, params pagination.QueryParams) ([]types.SystemBackupRun, pagination.Response, error)
 	ExpiredRunIDs             func(ctx context.Context, policyID string, keep int) ([]string, error)
-	RunsByID                  func(ctx context.Context, ids []string) ([]*backuptypes.SystemBackupRun, error)
-	LatestPolicyRun           func(ctx context.Context, policyID string) (*backuptypes.SystemBackupRun, error)
+	RunsByID                  func(ctx context.Context, ids []string) ([]*types.SystemBackupRun, error)
+	LatestPolicyRun           func(ctx context.Context, policyID string) (*types.SystemBackupRun, error)
 	RemoteSnapshotIDs         func(ctx context.Context, destinationID string) ([]string, error)
 	CountRuns                 func(ctx context.Context) (int64, error)
 	CountLocalRuns            func(ctx context.Context) (int64, error)
 	CountVolumeRepositoryRuns func(ctx context.Context) (int64, error)
 	CountRunningVolumeBackups func(ctx context.Context) (int64, error)
-	Policies                  func(ctx context.Context) ([]backuptypes.SystemBackupPolicy, error)
-	Policy                    func(ctx context.Context, id string) (*backuptypes.SystemBackupPolicy, error)
+	Policies                  func(ctx context.Context) ([]types.SystemBackupPolicy, error)
+	Policy                    func(ctx context.Context, id string) (*types.SystemBackupPolicy, error)
 	ReconcilePolicies         func(
 		ctx context.Context,
-		updates []backuptypes.UpdateSystemBackupPolicy,
-		build func(context.Context, *backuptypes.SystemBackupPolicy, backuptypes.UpdateSystemBackupPolicy) error,
+		updates []types.UpdateBackupPolicy,
+		build func(context.Context, *types.SystemBackupPolicy, types.UpdateBackupPolicy) error,
 		unregister func(context.Context, string),
-		reschedule func(context.Context, *backuptypes.SystemBackupPolicy),
+		reschedule func(context.Context, *types.SystemBackupPolicy),
 	) error
-	DisablePolicyRemote  func(ctx context.Context, policy *backuptypes.SystemBackupPolicy, field string) (bool, error)
+	DisablePolicyRemote  func(ctx context.Context, policy *types.SystemBackupPolicy, field string) (bool, error)
 	CheckScheduledRemote func(ctx context.Context, destinationID string) error
-	ListHistory          func(ctx context.Context, params pagination.QueryParams) ([]backuptypes.HistoryEntry, pagination.Response, error)
+	ListHistory          func(ctx context.Context, params pagination.QueryParams) ([]types.SystemVolumeBackupHistoryEntry, pagination.Response, error)
 }
 
 // RuntimeOptionsResolver determines how a helper container reaches the Docker daemon.
@@ -152,7 +148,7 @@ type Service struct {
 // manualBackupInput is a manual backup's workflow payload; the run row is created before it starts.
 type manualBackupInput struct {
 	Checkpoint systemBackupRecovery  `json:"checkpoint"`
-	Requester  backuptypes.Requester `json:"requester"`
+	Requester  types.BackupRequester `json:"requester"`
 }
 
 // systemBackupRecovery is the checkpoint a run records so an interrupted backup can resume.
@@ -163,7 +159,7 @@ type systemBackupRecovery struct {
 }
 
 type preparedSystemBackup struct {
-	run         *backuptypes.SystemBackupRun
+	run         *types.SystemBackupRun
 	recoveryKey string
 	checkpoint  systemBackupRecovery
 }
@@ -297,7 +293,7 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 		Concurrency: 1,
 		Timeout:     24 * time.Hour,
 		Activity: activitylib.StartRequest{
-			Type:          activitytypes.TypeResourceAction,
+			Type:          types.ActivityTypeResourceAction,
 			EnvironmentID: "0",
 			ResourceType:  new("system_backup"),
 			ResourceName:  new("Arcane"),
@@ -315,11 +311,11 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 		Concurrency: 1,
 		Timeout:     24 * time.Hour,
 		Activity: activitylib.StartRequest{
-			Type:          activitytypes.TypeResourceAction,
+			Type:          types.ActivityTypeResourceAction,
 			EnvironmentID: "0",
 			ResourceType:  new("system_backup"),
 			ResourceName:  new("Arcane"),
-			StartedBy:     &usertypes.SystemUser,
+			StartedBy:     &types.SystemUser,
 			Step:          "Creating scheduled system backup",
 			LatestMessage: "Creating scheduled Arcane system backup",
 		},
@@ -330,7 +326,7 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 				return nil, decodeErr
 			}
 			previous, _ := jobcontext.Run(ctx)
-			if slices.ContainsFunc(previous.Outcome.Targets, func(target scheduler.TargetOutcome) bool {
+			if slices.ContainsFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
 				return target.ID == policyID && len(target.RecoveryData) > 0
 			}) {
 				return s.resumeScheduledBackup(ctx, previous, policyID)
@@ -407,7 +403,7 @@ func (s *Service) recoveryKey(ctx context.Context, supplied string) (string, err
 	return key, nil
 }
 
-func (s *Service) CreateBackup(ctx context.Context, user usertypes.Actor, trigger string, request backuptypes.CreateSystemBackupRequest) (*backuptypes.SystemBackupRun, error) {
+func (s *Service) CreateBackup(ctx context.Context, user types.Actor, trigger string, request types.CreateSystemBackupRequest) (*types.SystemBackupRun, error) {
 	lease, err := s.acquireRun(ctx)
 	if err != nil {
 		return nil, err
@@ -421,7 +417,7 @@ func (s *Service) CreateBackup(ctx context.Context, user usertypes.Actor, trigge
 }
 
 // prepareBackup resolves the run's destinations from its policy or destination enum, creates the run row, and records its checkpoint.
-func (s *Service) prepareBackup(ctx context.Context, trigger string, request backuptypes.CreateSystemBackupRequest) (*preparedSystemBackup, error) {
+func (s *Service) prepareBackup(ctx context.Context, trigger string, request types.CreateSystemBackupRequest) (*preparedSystemBackup, error) {
 	if !s.SupportedDatabaseProvider() {
 		return nil, errors.New("arcane system recovery currently requires the SQLite database provider")
 	}
@@ -429,7 +425,7 @@ func (s *Service) prepareBackup(ctx context.Context, trigger string, request bac
 	if err != nil {
 		return nil, err
 	}
-	selected, err := func() (*backuptypes.SystemBackupPolicy, error) {
+	selected, err := func() (*types.SystemBackupPolicy, error) {
 		if request.PolicyID != "" {
 			policy, policyErr := s.store.Policy(ctx, request.PolicyID)
 			if policyErr == nil && policy == nil {
@@ -438,18 +434,18 @@ func (s *Service) prepareBackup(ctx context.Context, trigger string, request bac
 			return policy, policyErr
 		}
 		switch request.Destination {
-		case backuptypes.SystemBackupDestinationLocal, "":
-			return &backuptypes.SystemBackupPolicy{
+		case types.SystemBackupDestinationLocal, "":
+			return &types.SystemBackupPolicy{
 				LocalEnabled:    true,
 				S3DestinationID: strings.TrimSpace(request.S3DestinationID),
 			}, nil
-		case backuptypes.SystemBackupDestinationS3:
-			return &backuptypes.SystemBackupPolicy{
+		case types.SystemBackupDestinationS3:
+			return &types.SystemBackupPolicy{
 				S3Enabled:       true,
 				S3DestinationID: strings.TrimSpace(request.S3DestinationID),
 			}, nil
-		case backuptypes.SystemBackupDestinationLocalS3:
-			return &backuptypes.SystemBackupPolicy{
+		case types.SystemBackupDestinationLocalS3:
+			return &types.SystemBackupPolicy{
 				LocalEnabled:    true,
 				S3Enabled:       true,
 				S3DestinationID: strings.TrimSpace(request.S3DestinationID),
@@ -467,19 +463,19 @@ func (s *Service) prepareBackup(ctx context.Context, trigger string, request bac
 	if selected.S3Enabled && selected.S3DestinationID == "" {
 		return nil, common.Classify(common.ErrValidation, errors.New("select an S3 destination for the system backup"))
 	}
-	run := &backuptypes.SystemBackupRun{
+	run := &types.SystemBackupRun{
 		ID:        "system-" + uuid.New().String(),
 		CreatedAt: time.Now().UTC(),
-		Status:    backuptypes.SystemBackupStatusRunning,
+		Status:    types.SystemBackupStatusRunning,
 		Trigger:   trigger,
-		Destination: func() backuptypes.SystemBackupDestination {
+		Destination: func() types.SystemBackupDestination {
 			switch {
 			case selected.LocalEnabled && selected.S3Enabled:
-				return backuptypes.SystemBackupDestinationLocalS3
+				return types.SystemBackupDestinationLocalS3
 			case selected.LocalEnabled:
-				return backuptypes.SystemBackupDestinationLocal
+				return types.SystemBackupDestinationLocal
 			default:
-				return backuptypes.SystemBackupDestinationS3
+				return types.SystemBackupDestinationS3
 			}
 		}(),
 		S3DestinationID: selected.S3DestinationID,
@@ -495,10 +491,10 @@ func (s *Service) prepareBackup(ctx context.Context, trigger string, request bac
 	}
 	recoveryData, err := json.Marshal(checkpoint)
 	if err == nil {
-		err = jobcontext.Progress(ctx, scheduler.TargetOutcome{
+		err = jobcontext.Progress(ctx, types.TargetOutcome{
 			ResourceType: "system_backup",
 			ID:           cmp.Or(run.PolicyID, run.ID),
-			Status:       scheduler.Running,
+			Status:       types.RunStatusRunning,
 			RecoveryData: recoveryData,
 		})
 	}
@@ -513,7 +509,7 @@ func (s *Service) prepareBackup(ctx context.Context, trigger string, request bac
 }
 
 // executeBackup snapshots straight to S3 for S3-only runs, otherwise keeps a local snapshot and optionally replicates it to S3, then records the run's result.
-func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBackup) (_ *backuptypes.SystemBackupRun, err error) {
+func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBackup) (_ *types.SystemBackupRun, err error) {
 	run, key, checkpoint := prepared.run, prepared.recoveryKey, prepared.checkpoint
 	ctx, finish := s.startOperation(ctx, "create", attribute.String("arcane.backup.id", run.ID), attribute.String("arcane.backup.trigger", run.Trigger))
 	defer func() {
@@ -522,13 +518,13 @@ func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBac
 	}()
 	defer func() {
 		err = cmp.Or(err, ctx.Err())
-		*run = backuptypes.SystemBackupRun{ //exhaustruct:enforce
+		*run = types.SystemBackupRun{ //exhaustruct:enforce
 			RemoteAvailable:   run.RemoteAvailable,
 			ActivityID:        run.ActivityID,
 			ID:                run.ID,
 			Size:              run.Size,
 			CreatedAt:         run.CreatedAt,
-			Status:            kit.Ternary(err != nil, backuptypes.SystemBackupStatusFailed, backuptypes.SystemBackupStatusSucceeded),
+			Status:            kit.Ternary(err != nil, types.SystemBackupStatusFailed, types.SystemBackupStatusSucceeded),
 			Trigger:           run.Trigger,
 			Destination:       run.Destination,
 			LocalSnapshotID:   run.LocalSnapshotID,
@@ -542,16 +538,16 @@ func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBac
 			err = errors.Join(err, fmt.Errorf("failed to save system backup result: %w", saveErr))
 		}
 		if err == nil {
-			err = jobcontext.Progress(ctx, scheduler.TargetOutcome{
+			err = jobcontext.Progress(ctx, types.TargetOutcome{
 				ResourceType: "system_backup",
 				ID:           cmp.Or(run.PolicyID, run.ID),
-				Status:       scheduler.Succeeded,
+				Status:       types.RunStatusSucceeded,
 			})
 		}
 	}()
 	defer utils.RecoverToError(&err, "system backup")
-	progress := func(stage string, status scheduler.RunStatus, message string) error {
-		return jobcontext.Progress(ctx, scheduler.TargetOutcome{
+	progress := func(stage string, status types.RunStatus, message string) error {
+		return jobcontext.Progress(ctx, types.TargetOutcome{
 			ResourceType: "backup_destination",
 			ID:           run.ID + ":" + stage,
 			Status:       status,
@@ -562,7 +558,7 @@ func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBac
 	if err != nil {
 		return run, err
 	}
-	if progressErr := progress("stage", scheduler.Running, ""); progressErr != nil {
+	if progressErr := progress("stage", types.RunStatusRunning, ""); progressErr != nil {
 		return run, progressErr
 	}
 	// S3-only runs write straight to S3 so no local repository is created.
@@ -579,11 +575,11 @@ func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBac
 	if err != nil {
 		return run, fmt.Errorf("failed to create %s system recovery snapshot: %w", kit.Ternary(checkpoint.LocalEnabled, "local", "S3"), err)
 	}
-	if progressErr := progress("stage", scheduler.Succeeded, staged.ID); progressErr != nil {
+	if progressErr := progress("stage", types.RunStatusSucceeded, staged.ID); progressErr != nil {
 		return run, progressErr
 	}
 	if !checkpoint.LocalEnabled {
-		*run = backuptypes.SystemBackupRun{ //exhaustruct:enforce
+		*run = types.SystemBackupRun{ //exhaustruct:enforce
 			RemoteAvailable:   run.RemoteAvailable,
 			ActivityID:        run.ActivityID,
 			ID:                run.ID,
@@ -601,7 +597,7 @@ func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBac
 		}
 		return run, s.store.SaveRun(ctx, run)
 	}
-	*run = backuptypes.SystemBackupRun{ //exhaustruct:enforce
+	*run = types.SystemBackupRun{ //exhaustruct:enforce
 		RemoteAvailable:   run.RemoteAvailable,
 		ActivityID:        run.ActivityID,
 		ID:                run.ID,
@@ -620,7 +616,7 @@ func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBac
 	if saveErr := s.store.SaveRun(ctx, run); saveErr != nil {
 		return run, saveErr
 	}
-	if progressErr := progress("local", scheduler.Succeeded, staged.ID); progressErr != nil {
+	if progressErr := progress("local", types.RunStatusSucceeded, staged.ID); progressErr != nil {
 		return run, progressErr
 	}
 	if !checkpoint.S3Enabled {
@@ -630,14 +626,14 @@ func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBac
 	if err != nil {
 		return run, err
 	}
-	if progressErr := progress("remote", scheduler.Running, ""); progressErr != nil {
+	if progressErr := progress("remote", types.RunStatusRunning, ""); progressErr != nil {
 		return run, progressErr
 	}
 	snapshot, err := s.engine.Replicate(ctx, dockerClient, repository, staged.ID, remote, key, "arcane-system-recovery", backup.RunSnapshotTag(run.ID))
 	if err != nil {
 		return run, fmt.Errorf("failed to create S3 system recovery snapshot: %w", err)
 	}
-	*run = backuptypes.SystemBackupRun{ //exhaustruct:enforce
+	*run = types.SystemBackupRun{ //exhaustruct:enforce
 		RemoteAvailable:   run.RemoteAvailable,
 		ActivityID:        run.ActivityID,
 		ID:                run.ID,
@@ -656,19 +652,19 @@ func (s *Service) executeBackup(ctx context.Context, prepared *preparedSystemBac
 	if saveErr := s.store.SaveRun(ctx, run); saveErr != nil {
 		return run, saveErr
 	}
-	return run, progress("remote", scheduler.Succeeded, snapshot.ID)
+	return run, progress("remote", types.RunStatusSucceeded, snapshot.ID)
 }
 
-func (s *Service) ListBackups(ctx context.Context, params pagination.QueryParams) ([]backuptypes.SystemBackupRun, pagination.Response, error) {
+func (s *Service) ListBackups(ctx context.Context, params pagination.QueryParams) ([]types.SystemBackupRun, pagination.Response, error) {
 	result, response, err := s.store.ListRuns(ctx, params)
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to list system backups: %w", err)
 	}
 	names := s.s3Destinations.DestinationsByID(ctx)
 	remoteAvailable := backup.RemoteSnapshotChecker(ctx, s.s3Destinations)
-	decorated := make([]backuptypes.SystemBackupRun, 0, len(result))
+	decorated := make([]types.SystemBackupRun, 0, len(result))
 	for _, run := range result {
-		decorated = append(decorated, backuptypes.SystemBackupRun{ //exhaustruct:enforce
+		decorated = append(decorated, types.SystemBackupRun{ //exhaustruct:enforce
 			RemoteAvailable:   remoteAvailable(run.S3DestinationID, "arcane-system-recovery", run.RemoteSnapshotID),
 			ActivityID:        run.ActivityID,
 			ID:                run.ID,
@@ -689,7 +685,7 @@ func (s *Service) ListBackups(ctx context.Context, params pagination.QueryParams
 }
 
 // BrowseBackupFiles returns one page from the backup's logical project tree.
-func (s *Service) BrowseBackupFiles(ctx context.Context, id, recoveryKey, requestedPath string, params pagination.QueryParams) ([]backuptypes.BackupFileEntry, pagination.Response, error) {
+func (s *Service) BrowseBackupFiles(ctx context.Context, id, recoveryKey, requestedPath string, params pagination.QueryParams) ([]types.BackupFileEntry, pagination.Response, error) {
 	listPath, recursive, err := backupbrowser.ListScope(requestedPath, params)
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("%w: %w", common.ErrInvalidBackupSelection, err)
@@ -698,7 +694,7 @@ func (s *Service) BrowseBackupFiles(ctx context.Context, id, recoveryKey, reques
 	if err != nil {
 		return nil, pagination.Response{}, err
 	}
-	if run.Status != backuptypes.SystemBackupStatusSucceeded {
+	if run.Status != types.SystemBackupStatusSucceeded {
 		return nil, pagination.Response{}, errors.New("only successful system backups can be opened")
 	}
 	key, err := s.recoveryKey(ctx, recoveryKey)
@@ -714,7 +710,7 @@ func (s *Service) BrowseBackupFiles(ctx context.Context, id, recoveryKey, reques
 
 // RestoreBackupFiles restores selected project files into the current projects
 // directory after creating a safety snapshot.
-func (s *Service) RestoreBackupFiles(ctx context.Context, id string, request backuptypes.RestoreSystemBackupFilesRequest, user usertypes.Actor) (opErr error) {
+func (s *Service) RestoreBackupFiles(ctx context.Context, id string, request types.RestoreSystemBackupFilesRequest, user types.Actor) (opErr error) {
 	ctx, finish := s.startOperation(ctx, "restore_files", attribute.String("arcane.backup.id", id),
 		attribute.Int("arcane.result.count", len(request.Paths)), attribute.Bool("arcane.backup.select_all", request.SelectAll))
 	defer func() { finish(opErr) }()
@@ -727,7 +723,7 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, id string, request bac
 	if err != nil {
 		return err
 	}
-	if run.Status != backuptypes.SystemBackupStatusSucceeded {
+	if run.Status != types.SystemBackupStatusSucceeded {
 		return errors.New("only successful system backups can be restored")
 	}
 	key, err := s.recoveryKey(ctx, request.RecoveryKey)
@@ -738,14 +734,14 @@ func (s *Service) RestoreBackupFiles(ctx context.Context, id string, request bac
 	if err != nil {
 		return err
 	}
-	safetyBackup := func(ctx context.Context, safetyRequest backuptypes.CreateSystemBackupRequest) (*backuptypes.SystemBackupRun, error) {
-		prepared, prepareErr := s.prepareBackup(ctx, backuptypes.SystemBackupTriggerSafety, safetyRequest)
+	safetyBackup := func(ctx context.Context, safetyRequest types.CreateSystemBackupRequest) (*types.SystemBackupRun, error) {
+		prepared, prepareErr := s.prepareBackup(ctx, types.SystemBackupTriggerSafety, safetyRequest)
 		if prepareErr != nil {
 			return nil, prepareErr
 		}
 		return s.executeBackup(ctx, prepared)
 	}
-	return s.snapshots.RestoreFiles(ctx, dockerClient, key, *run, request.RestoreSelection, safetyBackup)
+	return s.snapshots.RestoreFiles(ctx, dockerClient, key, *run, request.BackupRestoreSelection, safetyBackup)
 }
 
 func (s *Service) DeleteBackup(ctx context.Context, id, recoveryKey string) (opErr error) {
@@ -762,14 +758,14 @@ func (s *Service) DeleteBackup(ctx context.Context, id, recoveryKey string) (opE
 	if err != nil {
 		return err
 	}
-	return s.deleteRuns(ctx, []*backuptypes.SystemBackupRun{run}, recoveryKey, true)
+	return s.deleteRuns(ctx, []*types.SystemBackupRun{run}, recoveryKey, true)
 }
 
 // deleteRuns forgets snapshots grouped by repository under the caller's run lease.
-func (s *Service) deleteRuns(ctx context.Context, backupRuns []*backuptypes.SystemBackupRun, recoveryKey string, includeRemote bool) error {
-	var localRuns []*backuptypes.SystemBackupRun
+func (s *Service) deleteRuns(ctx context.Context, backupRuns []*types.SystemBackupRun, recoveryKey string, includeRemote bool) error {
+	var localRuns []*types.SystemBackupRun
 	var localIDs []string
-	remoteGroups := make(map[string][]*backuptypes.SystemBackupRun)
+	remoteGroups := make(map[string][]*types.SystemBackupRun)
 	for _, run := range backupRuns {
 		if run.LocalSnapshotID != "" {
 			localRuns, localIDs = append(localRuns, run), append(localIDs, run.LocalSnapshotID)
@@ -802,7 +798,7 @@ func (s *Service) deleteRuns(ctx context.Context, backupRuns []*backuptypes.Syst
 			deleteErr = fmt.Errorf("failed to delete local snapshots: %w", repoErr)
 		} else {
 			for _, run := range localRuns {
-				*run = backuptypes.SystemBackupRun{ //exhaustruct:enforce
+				*run = types.SystemBackupRun{ //exhaustruct:enforce
 					RemoteAvailable:   run.RemoteAvailable,
 					ActivityID:        run.ActivityID,
 					ID:                run.ID,
@@ -844,7 +840,7 @@ func (s *Service) deleteRuns(ctx context.Context, backupRuns []*backuptypes.Syst
 			continue
 		}
 		for _, run := range group {
-			*run = backuptypes.SystemBackupRun{ //exhaustruct:enforce
+			*run = types.SystemBackupRun{ //exhaustruct:enforce
 				RemoteAvailable:   run.RemoteAvailable,
 				ActivityID:        run.ActivityID,
 				ID:                run.ID,
@@ -869,7 +865,7 @@ func (s *Service) deleteRuns(ctx context.Context, backupRuns []*backuptypes.Syst
 			}
 			continue
 		}
-		*run = backuptypes.SystemBackupRun{ //exhaustruct:enforce
+		*run = types.SystemBackupRun{ //exhaustruct:enforce
 			RemoteAvailable: run.RemoteAvailable,
 			ActivityID:      run.ActivityID,
 			ID:              run.ID,
@@ -877,14 +873,14 @@ func (s *Service) deleteRuns(ctx context.Context, backupRuns []*backuptypes.Syst
 			CreatedAt:       run.CreatedAt,
 			Status:          run.Status,
 			Trigger:         run.Trigger,
-			Destination: func() backuptypes.SystemBackupDestination {
+			Destination: func() types.SystemBackupDestination {
 				switch {
 				case run.LocalSnapshotID != "" && run.RemoteSnapshotID != "":
-					return backuptypes.SystemBackupDestinationLocalS3
+					return types.SystemBackupDestinationLocalS3
 				case run.LocalSnapshotID != "":
-					return backuptypes.SystemBackupDestinationLocal
+					return types.SystemBackupDestinationLocal
 				default:
-					return backuptypes.SystemBackupDestinationS3
+					return types.SystemBackupDestinationS3
 				}
 			}(),
 			LocalSnapshotID:   run.LocalSnapshotID,
@@ -926,7 +922,7 @@ func (s *Service) PruneLocalRepository(ctx context.Context) error {
 	return s.engine.ForgetSnapshots(ctx, dockerClient, repository, key, nil)
 }
 
-func (s *Service) DiscoverRemoteBackups(ctx context.Context, request backuptypes.DiscoverSystemBackupsRequest) (int, error) {
+func (s *Service) DiscoverRemoteBackups(ctx context.Context, request types.DiscoverSystemBackupsRequest) (int, error) {
 	lease, err := s.acquireRun(ctx)
 	if err != nil {
 		return 0, err
@@ -957,10 +953,10 @@ func (s *Service) DiscoverRemoteBackups(ctx context.Context, request backuptypes
 		if strings.TrimSpace(snapshot.ID) == "" || slices.Contains(knownIDs, snapshot.ID) {
 			continue
 		}
-		run := &backuptypes.SystemBackupRun{
+		run := &types.SystemBackupRun{
 			ID: fmt.Sprintf("remote-%s-%s", request.S3DestinationID, snapshot.ID), Size: snapshot.Summary.TotalBytesProcessed,
-			CreatedAt: kit.Ternary(snapshot.Time.IsZero(), time.Now().UTC(), snapshot.Time), Status: backuptypes.SystemBackupStatusSucceeded,
-			Trigger: backuptypes.SystemBackupTriggerManual, Destination: backuptypes.SystemBackupDestinationS3,
+			CreatedAt: kit.Ternary(snapshot.Time.IsZero(), time.Now().UTC(), snapshot.Time), Status: types.SystemBackupStatusSucceeded,
+			Trigger: types.SystemBackupTriggerManual, Destination: types.SystemBackupDestinationS3,
 			RemoteSnapshotID: snapshot.ID, S3DestinationID: request.S3DestinationID,
 		}
 		if createDiscoveredBackupErr := s.store.CreateRun(ctx, run); createDiscoveredBackupErr != nil {
@@ -971,7 +967,7 @@ func (s *Service) DiscoverRemoteBackups(ctx context.Context, request backuptypes
 	return created, nil
 }
 
-func (s *Service) UploadBackup(ctx context.Context, id string, request backuptypes.UploadSystemBackupRequest) (*backuptypes.SystemBackupRun, error) {
+func (s *Service) UploadBackup(ctx context.Context, id string, request types.UploadSystemBackupRequest) (*types.SystemBackupRun, error) {
 	lease, err := s.acquireRun(ctx)
 	if err != nil {
 		return nil, err
@@ -981,7 +977,7 @@ func (s *Service) UploadBackup(ctx context.Context, id string, request backuptyp
 	if err != nil {
 		return nil, err
 	}
-	if run.Status != backuptypes.SystemBackupStatusSucceeded || run.LocalSnapshotID == "" {
+	if run.Status != types.SystemBackupStatusSucceeded || run.LocalSnapshotID == "" {
 		return nil, errors.New("only successful local system backups can be uploaded")
 	}
 	if run.RemoteSnapshotID != "" {
@@ -1010,7 +1006,7 @@ func (s *Service) UploadBackup(ctx context.Context, id string, request backuptyp
 	if err != nil {
 		return nil, fmt.Errorf("failed to upload system recovery snapshot: %w", err)
 	}
-	*run = backuptypes.SystemBackupRun{ //exhaustruct:enforce
+	*run = types.SystemBackupRun{ //exhaustruct:enforce
 		RemoteAvailable:   run.RemoteAvailable,
 		ActivityID:        run.ActivityID,
 		ID:                run.ID,
@@ -1018,7 +1014,7 @@ func (s *Service) UploadBackup(ctx context.Context, id string, request backuptyp
 		CreatedAt:         run.CreatedAt,
 		Status:            run.Status,
 		Trigger:           run.Trigger,
-		Destination:       backuptypes.SystemBackupDestinationLocalS3,
+		Destination:       types.SystemBackupDestinationLocalS3,
 		LocalSnapshotID:   run.LocalSnapshotID,
 		RemoteSnapshotID:  snapshot.ID,
 		S3DestinationID:   request.S3DestinationID,
@@ -1044,7 +1040,7 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 	if err != nil {
 		return err
 	}
-	if run.Status != backuptypes.SystemBackupStatusSucceeded {
+	if run.Status != types.SystemBackupStatusSucceeded {
 		return errors.New("only successful system backups can be restored")
 	}
 	key, err := s.recoveryKey(ctx, recoveryKey)
@@ -1082,8 +1078,8 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 		return err
 	}
 	// A local safety snapshot is created before the detached helper is allowed to stop Arcane and replace its data.
-	prepared, prepareErr := s.prepareBackup(ctx, backuptypes.SystemBackupTriggerSafety, backuptypes.CreateSystemBackupRequest{
-		Destination: backuptypes.SystemBackupDestinationLocal,
+	prepared, prepareErr := s.prepareBackup(ctx, types.SystemBackupTriggerSafety, types.CreateSystemBackupRequest{
+		Destination: types.SystemBackupDestinationLocal,
 		RecoveryKey: key,
 	})
 	if prepareErr != nil {
@@ -1097,7 +1093,7 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 	if err != nil {
 		return err
 	}
-	requestData, err := json.Marshal(recovery.RestoreRequest{
+	requestData, err := json.Marshal(types.RecoveryRestoreRequest{
 		BackupID:         run.ID,
 		ContainerID:      current.ID,
 		ContainerImage:   current.Config.Image,
@@ -1115,7 +1111,7 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 			}
 			return ""
 		}(),
-		SafetyBackup: &recovery.SafetyBackup{
+		SafetyBackup: &types.RecoverySafetyBackup{
 			ID:              safetyBackup.ID,
 			LocalSnapshotID: safetyBackup.LocalSnapshotID,
 			Size:            safetyBackup.Size,
@@ -1211,15 +1207,15 @@ func (s *Service) RestoreBackup(ctx context.Context, id, recoveryKey string) (op
 	return nil
 }
 
-func (s *Service) GenerateRecoveryKey() (*backuptypes.SystemBackupRecoveryKey, error) {
+func (s *Service) GenerateRecoveryKey() (*types.SystemBackupRecoveryKey, error) {
 	recoveryKey, err := backup.GenerateRecoveryKey()
 	if err != nil {
 		return nil, err
 	}
-	return &backuptypes.SystemBackupRecoveryKey{RecoveryKey: recoveryKey}, nil
+	return &types.SystemBackupRecoveryKey{RecoveryKey: recoveryKey}, nil
 }
 
-func (s *Service) SetRecoveryKey(ctx context.Context, recoveryKey string) (*backuptypes.SystemBackupRecoveryKeyStatus, error) {
+func (s *Service) SetRecoveryKey(ctx context.Context, recoveryKey string) (*types.SystemBackupRecoveryKeyStatus, error) {
 	if err := backup.ValidateRecoveryKey(recoveryKey); err != nil {
 		return nil, err
 	}
@@ -1239,7 +1235,7 @@ func (s *Service) SetRecoveryKey(ctx context.Context, recoveryKey string) (*back
 		if setErr := s.recoveryKeys.Set(ctx, recoveryKey); setErr != nil {
 			return nil, setErr
 		}
-		return &backuptypes.SystemBackupRecoveryKeyStatus{Configured: true}, nil
+		return &types.SystemBackupRecoveryKeyStatus{Configured: true}, nil
 	}
 	runningVolumeBackupsErr := common.Classify(common.ErrConflict, errors.New("wait for the running volume backups to finish before replacing the recovery key"))
 	runningVolumeBackups, countErr := s.store.CountRunningVolumeBackups(ctx)
@@ -1268,7 +1264,7 @@ func (s *Service) SetRecoveryKey(ctx context.Context, recoveryKey string) (*back
 	if setErr := s.recoveryKeys.Set(ctx, recoveryKey); setErr != nil {
 		return nil, rollback(setErr)
 	}
-	return &backuptypes.SystemBackupRecoveryKeyStatus{Configured: true}, nil
+	return &types.SystemBackupRecoveryKeyStatus{Configured: true}, nil
 }
 
 func (s *Service) rekeyRepositories(ctx context.Context, previous, next string) error {
@@ -1320,7 +1316,7 @@ func (s *Service) rekeyRepositories(ctx context.Context, previous, next string) 
 	return errors.Join(migrateErr, s.engine.RekeyRepositories(context.WithoutCancel(ctx), dockerClient, systemRepositories, previous, next))
 }
 
-func (s *Service) GetPolicies(ctx context.Context) (*backuptypes.SystemBackupPolicyCollection, error) {
+func (s *Service) GetPolicies(ctx context.Context) (*types.SystemBackupPolicyCollection, error) {
 	policies, err := s.store.Policies(ctx)
 	if err != nil {
 		return nil, err
@@ -1330,13 +1326,13 @@ func (s *Service) GetPolicies(ctx context.Context) (*backuptypes.SystemBackupPol
 		return nil, err
 	}
 	destinations := s.s3Destinations.DestinationsByID(ctx)
-	decorated := make([]backuptypes.SystemBackupPolicy, 0, len(policies))
+	decorated := make([]types.SystemBackupPolicy, 0, len(policies))
 	for _, policy := range policies {
 		lastRun, runErr := s.store.LatestPolicyRun(ctx, policy.ID)
 		if runErr != nil {
 			return nil, fmt.Errorf("failed to load latest system backup: %w", runErr)
 		}
-		decorated = append(decorated, backuptypes.SystemBackupPolicy{ //exhaustruct:enforce
+		decorated = append(decorated, types.SystemBackupPolicy{ //exhaustruct:enforce
 			ID:                policy.ID,
 			Enabled:           policy.Enabled,
 			Schedule:          policy.Schedule,
@@ -1345,11 +1341,11 @@ func (s *Service) GetPolicies(ctx context.Context) (*backuptypes.SystemBackupPol
 			S3Enabled:         policy.S3Enabled,
 			S3DestinationID:   policy.S3DestinationID,
 			S3DestinationName: destinations[policy.S3DestinationID].Name,
-			LastRun: func() *backuptypes.SystemBackupRun {
+			LastRun: func() *types.SystemBackupRun {
 				if lastRun == nil {
 					return nil
 				}
-				return &backuptypes.SystemBackupRun{ //exhaustruct:enforce
+				return &types.SystemBackupRun{ //exhaustruct:enforce
 					RemoteAvailable:   lastRun.RemoteAvailable,
 					ActivityID:        lastRun.ActivityID,
 					ID:                lastRun.ID,
@@ -1368,18 +1364,18 @@ func (s *Service) GetPolicies(ctx context.Context) (*backuptypes.SystemBackupPol
 			}(),
 		})
 	}
-	return &backuptypes.SystemBackupPolicyCollection{
+	return &types.SystemBackupPolicyCollection{
 		Policies:          decorated,
 		RecoveryKeyStored: configured,
 	}, nil
 }
 
-func (s *Service) UpdatePolicies(ctx context.Context, updates []backuptypes.UpdateSystemBackupPolicy) (*backuptypes.SystemBackupPolicyCollection, error) {
+func (s *Service) UpdatePolicies(ctx context.Context, updates []types.UpdateBackupPolicy) (*types.SystemBackupPolicyCollection, error) {
 	configured, err := s.recoveryKeys.Configured(ctx)
 	if err != nil {
 		return nil, err
 	}
-	build := func(ctx context.Context, policy *backuptypes.SystemBackupPolicy, update backuptypes.UpdateSystemBackupPolicy) error {
+	build := func(ctx context.Context, policy *types.SystemBackupPolicy, update types.UpdateBackupPolicy) error {
 		normalized, normalizeErr := backup.ValidatePolicyUpdate(ctx, "system", update, s.s3Destinations)
 		if normalizeErr != nil {
 			return normalizeErr
@@ -1390,7 +1386,7 @@ func (s *Service) UpdatePolicies(ctx context.Context, updates []backuptypes.Upda
 		if normalized.Enabled && !s.SupportedDatabaseProvider() {
 			return errors.New("scheduled system backups require the SQLite database provider")
 		}
-		*policy = backuptypes.SystemBackupPolicy{ //exhaustruct:enforce
+		*policy = types.SystemBackupPolicy{ //exhaustruct:enforce
 			ID:                policy.ID,
 			Enabled:           normalized.Enabled,
 			Schedule:          normalized.Schedule,
@@ -1411,17 +1407,17 @@ func (s *Service) UpdatePolicies(ctx context.Context, updates []backuptypes.Upda
 
 // SetScheduler injects the dynamic scheduler and admission gate for per-policy
 // system backup jobs. Agent mode leaves them unset.
-func (s *Service) SetScheduler(ctx context.Context, dynamicScheduler scheduler.DynamicScheduler, admissionGate *runs.Admission) error {
+func (s *Service) SetScheduler(ctx context.Context, dynamicScheduler types.DynamicScheduler, admissionGate *runs.Admission) error {
 	return s.jobs.SetScheduler(ctx, dynamicScheduler, admissionGate)
 }
 
-func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (scheduler.Outcome, error) {
+func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (types.SchedulerOutcome, error) {
 	policy, loadErr := s.store.Policy(ctx, policyID)
 	if loadErr != nil {
-		return scheduler.Outcome{}, loadErr
+		return types.SchedulerOutcome{}, loadErr
 	}
 	if policy == nil || !policy.Enabled {
-		return scheduler.Outcome{Status: scheduler.Skipped}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
 	remoteErr := func() error {
 		if !policy.S3Enabled {
@@ -1433,46 +1429,46 @@ func (s *Service) runScheduledBackup(ctx context.Context, policyID string) (sche
 		return s.store.DisablePolicyRemote(ctx, policy, field)
 	})
 	if disableErr != nil {
-		return scheduler.Outcome{}, disableErr
+		return types.SchedulerOutcome{}, disableErr
 	}
 	if remoteDisabled {
 		s.rescheduleSystemBackupPolicy(ctx, policy)
 	}
 	if remoteDisabled && !policy.LocalEnabled {
-		return scheduler.Outcome{Status: scheduler.NeedsAttention, Message: backup.RemoteDisabledMessage}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
-	run, runErr := s.CreateBackup(ctx, usertypes.SystemUser, backuptypes.SystemBackupTriggerScheduled, backuptypes.CreateSystemBackupRequest{PolicyID: policy.ID})
+	run, runErr := s.CreateBackup(ctx, types.SystemUser, types.SystemBackupTriggerScheduled, types.CreateSystemBackupRequest{PolicyID: policy.ID})
 	if errors.Is(runErr, ErrSystemBackupAlreadyRunning) {
 		slog.InfoContext(ctx, "Scheduled Arcane system backup skipped; another backup is running", "policyId", policy.ID)
-		return scheduler.Outcome{Status: scheduler.Skipped, Message: "Skipped: another system backup is running"}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusSkipped, Message: "Skipped: another system backup is running"}, nil
 	}
 	if runErr != nil {
 		slog.ErrorContext(ctx, "Scheduled Arcane system backup failed", "policyId", policy.ID, "error", runErr)
 		if policy.RetentionCount > 0 {
 			if retentionErr := s.applyRetention(ctx, policy.ID, policy.RetentionCount, policy.S3Enabled); retentionErr != nil {
 				slog.ErrorContext(ctx, "System backup retention failed", "policyId", policy.ID, "error", retentionErr)
-				return scheduler.Outcome{}, errors.Join(runErr, retentionErr)
+				return types.SchedulerOutcome{}, errors.Join(runErr, retentionErr)
 			}
 		}
-		return scheduler.Outcome{}, runErr
+		return types.SchedulerOutcome{}, runErr
 	}
 	if policy.RetentionCount > 0 {
 		if retentionErr := s.applyRetention(ctx, policy.ID, policy.RetentionCount, policy.S3Enabled); retentionErr != nil {
 			slog.ErrorContext(ctx, "System backup retention failed", "policyId", policy.ID, "error", retentionErr)
-			return scheduler.Outcome{Status: scheduler.Partial, Message: "Backup completed but retention failed"}, retentionErr
+			return types.SchedulerOutcome{Status: types.RunStatusPartial, Message: "Backup completed but retention failed"}, retentionErr
 		}
 	}
 	slog.InfoContext(ctx, "Scheduled Arcane system backup completed", "backupId", run.ID, "policyId", policy.ID)
 	if remoteDisabled {
-		return scheduler.Outcome{Status: scheduler.Partial, Message: backup.RemoteDisabledMessage}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusPartial, Message: backup.RemoteDisabledMessage}, nil
 	}
-	return scheduler.Outcome{Status: scheduler.Succeeded, Message: "Scheduled Arcane system backup created successfully"}, nil
+	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Scheduled Arcane system backup created successfully"}, nil
 }
 
 // resumeScheduledBackup finishes the backup an interrupted scheduled run recorded, then applies retention.
-func (s *Service) resumeScheduledBackup(ctx context.Context, previous scheduler.Run, policyID string) (scheduler.Outcome, error) {
+func (s *Service) resumeScheduledBackup(ctx context.Context, previous types.SchedulerRun, policyID string) (types.SchedulerOutcome, error) {
 	outcome, err := s.reconcileBackup(ctx, previous, policyID, "")
-	if err == nil && outcome.Status != scheduler.Succeeded {
+	if err == nil && outcome.Status != types.RunStatusSucceeded {
 		return outcome, nil
 	}
 	current, policyErr := s.store.Policy(ctx, policyID)
@@ -1489,8 +1485,8 @@ func (s *Service) resumeScheduledBackup(ctx context.Context, previous scheduler.
 	}
 	if current != nil && current.RetentionCount > 0 {
 		if applyRetentionErr := s.applyRetention(ctx, current.ID, current.RetentionCount, current.S3Enabled); applyRetentionErr != nil {
-			return scheduler.Outcome{
-				Status:     scheduler.Partial,
+			return types.SchedulerOutcome{
+				Status:     types.RunStatusPartial,
 				Message:    outcome.Message,
 				ActivityID: outcome.ActivityID,
 				Targets:    outcome.Targets,
@@ -1501,7 +1497,7 @@ func (s *Service) resumeScheduledBackup(ctx context.Context, previous scheduler.
 	return outcome, nil
 }
 
-func (s *Service) rescheduleSystemBackupPolicy(ctx context.Context, policy *backuptypes.SystemBackupPolicy) {
+func (s *Service) rescheduleSystemBackupPolicy(ctx context.Context, policy *types.SystemBackupPolicy) {
 	if !policy.Enabled {
 		s.jobs.Unregister(ctx, policy.ID)
 		return
@@ -1531,7 +1527,7 @@ func (s *Service) rescheduleSystemBackupPolicy(ctx context.Context, policy *back
 			}
 			return current.Schedule
 		},
-		FallbackFn: func(ctx context.Context, previous scheduler.Run) (scheduler.Outcome, error) {
+		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 			return s.resumeScheduledBackup(ctx, previous, policyID)
 		},
 	})
@@ -1573,7 +1569,7 @@ func (s *Service) projectsSetting(ctx context.Context) string {
 }
 
 // StartBackup prepares a manual backup, then submits its workflow.
-func (s *Service) StartBackup(ctx context.Context, user usertypes.Actor, request backuptypes.CreateSystemBackupRequest) (*backuptypes.SystemBackupRun, error) {
+func (s *Service) StartBackup(ctx context.Context, user types.Actor, request types.CreateSystemBackupRequest) (*types.SystemBackupRun, error) {
 	requester := backup.NewRequester(ctx, user, "0", authz.PermSystemBackupsManage)
 	if err := s.engine.Authorize(ctx, requester); err != nil {
 		return nil, err
@@ -1582,7 +1578,7 @@ func (s *Service) StartBackup(ctx context.Context, user usertypes.Actor, request
 	if err != nil {
 		return nil, err
 	}
-	prepared, err := s.prepareBackup(ctx, backuptypes.SystemBackupTriggerManual, request)
+	prepared, err := s.prepareBackup(ctx, types.SystemBackupTriggerManual, request)
 	if err != nil {
 		lease.Release(ctx)
 		return nil, err
@@ -1622,7 +1618,7 @@ func (s *Service) StartBackup(ctx context.Context, user usertypes.Actor, request
 		s.watchBackup(background, run.ID, activityID)
 		release(background)
 	}()
-	return &backuptypes.SystemBackupRun{ //exhaustruct:enforce
+	return &types.SystemBackupRun{ //exhaustruct:enforce
 		RemoteAvailable:   run.RemoteAvailable,
 		ActivityID:        activityID,
 		ID:                run.ID,
@@ -1664,10 +1660,10 @@ func (s *Service) watchBackup(ctx context.Context, runID, instanceID string) {
 	if releaseErr := s.recoveryKeys.ReleaseRunKey(ctx, runID); releaseErr != nil {
 		slog.WarnContext(ctx, "Failed to release system backup recovery key", "runId", runID, "error", releaseErr)
 	}
-	if outcome.Status == scheduler.Succeeded {
+	if outcome.Status == types.RunStatusSucceeded {
 		return
 	}
-	if current, loadErr := s.store.Run(ctx, runID); loadErr == nil && current.Status == backuptypes.SystemBackupStatusRunning {
+	if current, loadErr := s.store.Run(ctx, runID); loadErr == nil && current.Status == types.SystemBackupStatusRunning {
 		if failErr := s.store.FailRun(ctx, runID, cmp.Or(outcome.Message, "Backup did not run")); failErr != nil {
 			slog.WarnContext(ctx, "Failed to close a system backup whose workflow ended early", "runId", runID, "error", failErr)
 		}
@@ -1675,12 +1671,12 @@ func (s *Service) watchBackup(ctx context.Context, runID, instanceID string) {
 }
 
 // reconcileBackup finishes the backup checkpointed under targetID from the snapshots its interrupted run left behind.
-func (s *Service) reconcileBackup(ctx context.Context, previous scheduler.Run, targetID, suppliedKey string) (scheduler.Outcome, error) {
+func (s *Service) reconcileBackup(ctx context.Context, previous types.SchedulerRun, targetID, suppliedKey string) (types.SchedulerOutcome, error) {
 	outcome := jobcontext.ConfirmedTarget(previous, targetID)
-	index := slices.IndexFunc(previous.Outcome.Targets, func(target scheduler.TargetOutcome) bool {
+	index := slices.IndexFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
 		return target.ID == targetID && len(target.RecoveryData) > 0
 	})
-	if outcome.Status == scheduler.Succeeded || index < 0 {
+	if outcome.Status == types.RunStatusSucceeded || index < 0 {
 		return outcome, nil
 	}
 	target := previous.Outcome.Targets[index]
@@ -1688,28 +1684,28 @@ func (s *Service) reconcileBackup(ctx context.Context, previous scheduler.Run, t
 	if err := json.Unmarshal(target.RecoveryData, &checkpoint); err != nil {
 		return outcome, err
 	}
-	confirm := func() (scheduler.Outcome, error) {
-		confirmed := scheduler.TargetOutcome{ //exhaustruct:enforce
+	confirm := func() (types.SchedulerOutcome, error) {
+		confirmed := types.TargetOutcome{ //exhaustruct:enforce
 			RecoveryData: target.RecoveryData,
 			ResourceType: target.ResourceType,
 			ID:           target.ID,
-			Status:       scheduler.Succeeded,
+			Status:       types.RunStatusSucceeded,
 			Message:      target.Message,
 			ActivityID:   target.ActivityID,
 		}
 		if progressErr := jobcontext.Progress(ctx, confirmed); progressErr != nil {
 			return outcome, progressErr
 		}
-		return scheduler.Outcome{
-			Status:  scheduler.Succeeded,
-			Targets: []scheduler.TargetOutcome{confirmed},
+		return types.SchedulerOutcome{
+			Status:  types.RunStatusSucceeded,
+			Targets: []types.TargetOutcome{confirmed},
 		}, nil
 	}
 	run, err := s.store.Run(ctx, checkpoint.BackupID)
 	if err != nil {
 		return outcome, err
 	}
-	if run.Status == backuptypes.SystemBackupStatusSucceeded {
+	if run.Status == types.SystemBackupStatusSucceeded {
 		return confirm()
 	}
 	lease, admitted, err := s.engine.AcquireRun(ctx, backup.SystemAdmissionScope, backup.SystemAdmissionID, "")
@@ -1759,13 +1755,13 @@ func (s *Service) reconcileBackup(ctx context.Context, previous scheduler.Run, t
 			return outcome, forgetErr
 		}
 	}
-	*run = backuptypes.SystemBackupRun{ //exhaustruct:enforce
+	*run = types.SystemBackupRun{ //exhaustruct:enforce
 		RemoteAvailable:   run.RemoteAvailable,
 		ActivityID:        run.ActivityID,
 		ID:                run.ID,
 		Size:              kit.Ternary(checkpoint.LocalEnabled, staged.Size, run.Size),
 		CreatedAt:         run.CreatedAt,
-		Status:            backuptypes.SystemBackupStatusSucceeded,
+		Status:            types.SystemBackupStatusSucceeded,
 		Trigger:           run.Trigger,
 		Destination:       run.Destination,
 		LocalSnapshotID:   kit.Ternary(checkpoint.LocalEnabled, staged.ID, run.LocalSnapshotID),
@@ -1783,17 +1779,17 @@ func (s *Service) reconcileBackup(ctx context.Context, previous scheduler.Run, t
 
 // observeBackupSnapshots finds the snapshots an interrupted run already wrote and records any remote one on run.
 func (s *Service) observeBackupSnapshots(
-	ctx context.Context, dockerClient *client.Client, previous scheduler.Run, run *backuptypes.SystemBackupRun, checkpoint systemBackupRecovery, key string,
+	ctx context.Context, dockerClient *client.Client, previous types.SchedulerRun, run *types.SystemBackupRun, checkpoint systemBackupRecovery, key string,
 ) (backup.Snapshot, backup.Repository, backup.Repository, error) {
 	var staged backup.Snapshot
 	var local, remote backup.Repository
 	targets := previous.Outcome.Targets
-	stageIndex := slices.IndexFunc(targets, func(target scheduler.TargetOutcome) bool { return target.ID == run.ID+":stage" })
+	stageIndex := slices.IndexFunc(targets, func(target types.TargetOutcome) bool { return target.ID == run.ID+":stage" })
 	stageID := run.LocalSnapshotID
-	if stageIndex >= 0 && stageID == "" && targets[stageIndex].Status == scheduler.Succeeded {
+	if stageIndex >= 0 && stageID == "" && targets[stageIndex].Status == types.RunStatusSucceeded {
 		stageID = targets[stageIndex].Message
 	}
-	remoteAttempted := slices.ContainsFunc(targets, func(target scheduler.TargetOutcome) bool { return target.ID == run.ID+":remote" })
+	remoteAttempted := slices.ContainsFunc(targets, func(target types.TargetOutcome) bool { return target.ID == run.ID+":remote" })
 	findStaged := func() error {
 		repository, err := s.localRepository(ctx, dockerClient, false)
 		if err != nil {
@@ -1827,7 +1823,7 @@ func (s *Service) observeBackupSnapshots(
 			return staged, local, remote, findErr
 		}
 		if found {
-			*run = backuptypes.SystemBackupRun{ //exhaustruct:enforce
+			*run = types.SystemBackupRun{ //exhaustruct:enforce
 				RemoteAvailable:   run.RemoteAvailable,
 				ActivityID:        run.ActivityID,
 				ID:                run.ID,
@@ -1874,7 +1870,7 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 		err = errors.Join(err, s.recoveryKeys.ReleaseRunKey(ctx, runID))
 	}()
 	previous, _ := jobcontext.Run(ctx)
-	resuming := slices.ContainsFunc(previous.Outcome.Targets, func(target scheduler.TargetOutcome) bool {
+	resuming := slices.ContainsFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
 		return target.ID == runID && len(target.RecoveryData) > 0
 	})
 	if !resuming {
@@ -1890,12 +1886,12 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 	if authorizeErr := s.engine.Authorize(ctx, input.Requester); authorizeErr != nil {
 		return nil, authorizeErr
 	}
-	succeeded := scheduler.Outcome{Status: scheduler.Succeeded, Message: "Arcane system backup created successfully"}
+	succeeded := types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Arcane system backup created successfully"}
 	run, err := s.store.Run(ctx, runID)
 	if err != nil {
 		return nil, err
 	}
-	if run.Status == backuptypes.SystemBackupStatusSucceeded {
+	if run.Status == types.SystemBackupStatusSucceeded {
 		return succeeded, nil
 	}
 	supplied, err := s.recoveryKeys.RunKey(ctx, runID)
@@ -1911,7 +1907,7 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 		if reconcileErr != nil {
 			return nil, reconcileErr
 		}
-		if outcome.Status != scheduler.Succeeded {
+		if outcome.Status != types.RunStatusSucceeded {
 			return nil, errors.New(outcome.Message)
 		}
 		return succeeded, nil
@@ -1920,10 +1916,10 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 	if err != nil {
 		return nil, err
 	}
-	if progressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{
+	if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{
 		ResourceType: "system_backup",
 		ID:           runID,
-		Status:       scheduler.Running,
+		Status:       types.RunStatusRunning,
 		RecoveryData: checkpoint,
 		ActivityID:   t.ActivityID(),
 	}); progressErr != nil {
@@ -1940,7 +1936,7 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 }
 
 // ListBackupHistory returns a unified, server-paginated view of local backup records.
-func (s *Service) ListBackupHistory(ctx context.Context, params pagination.QueryParams) ([]backuptypes.HistoryEntry, pagination.Response, error) {
+func (s *Service) ListBackupHistory(ctx context.Context, params pagination.QueryParams) ([]types.SystemVolumeBackupHistoryEntry, pagination.Response, error) {
 	history, page, err := s.store.ListHistory(ctx, params)
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("list backup history: %w", err)
@@ -1948,7 +1944,7 @@ func (s *Service) ListBackupHistory(ctx context.Context, params pagination.Query
 	destinations := s.s3Destinations.DestinationsByID(ctx)
 	remoteAvailable := backup.RemoteSnapshotChecker(ctx, s.s3Destinations)
 	instanceID := s.settingsService.GetSettingsConfig().InstanceID.Value
-	decorated := make([]backuptypes.HistoryEntry, 0, len(history))
+	decorated := make([]types.SystemVolumeBackupHistoryEntry, 0, len(history))
 	for _, entry := range history {
 		// Volume backups discovered from another instance live under that instance's root.
 		root := func() string {
@@ -1962,7 +1958,7 @@ func (s *Service) ListBackupHistory(ctx context.Context, params pagination.Query
 				return path.Join(backup.VolumeRoot, owner)
 			}
 		}()
-		decorated = append(decorated, backuptypes.HistoryEntry{ //exhaustruct:enforce
+		decorated = append(decorated, types.SystemVolumeBackupHistoryEntry{ //exhaustruct:enforce
 			RemoteAvailable:   remoteAvailable(entry.S3DestinationID, root, entry.RemoteSnapshotID),
 			ID:                entry.ID,
 			Size:              entry.Size,

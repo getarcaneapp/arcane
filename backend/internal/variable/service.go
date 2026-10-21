@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/env"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/acfs"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
@@ -59,7 +59,7 @@ type VariableService struct {
 	importLocks                   utils.KeyedMutex
 
 	statusMu   sync.RWMutex
-	syncStatus map[string]env.EnvironmentSyncStatus
+	syncStatus map[string]types.EnvironmentSyncStatus
 
 	// syncGate skips the agent PUT when the effective variable set is unchanged.
 	syncGate utils.SyncGate
@@ -71,7 +71,7 @@ func NewVariableService(db *database.DB, environmentService *environment.Environ
 		db:              db,
 		settingsService: settingsService,
 		kvService:       kvService,
-		syncStatus:      make(map[string]env.EnvironmentSyncStatus),
+		syncStatus:      make(map[string]types.EnvironmentSyncStatus),
 	}
 	if environmentService != nil {
 		service.proxyEnvironmentJSON = environmentService.ProxyJSONRequest
@@ -80,26 +80,26 @@ func NewVariableService(db *database.DB, environmentService *environment.Environ
 	return service
 }
 
-func (s *VariableService) ListVariables(ctx context.Context) ([]env.GlobalVariable, error) {
-	variables, err := s.loadVariablesInternal(ctx)
+func (s *VariableService) ListVariables(ctx context.Context) ([]types.GlobalVariable, error) {
+	variables, err := s.loadVariables(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve global variables: %w", err)
 	}
 
-	result := make([]env.GlobalVariable, 0, len(variables))
+	result := make([]types.GlobalVariable, 0, len(variables))
 	for _, variable := range variables {
-		result = append(result, globalVariableToDTOInternal(variable))
+		result = append(result, globalVariableToDTO(variable))
 	}
 	return result, nil
 }
 
-func (s *VariableService) CreateVariable(ctx context.Context, req env.CreateGlobalVariableRequest) (*env.GlobalVariable, error) {
+func (s *VariableService) CreateVariable(ctx context.Context, req types.GlobalVariable) (*types.GlobalVariable, error) {
 	key := strings.TrimSpace(req.Key)
 	if !envKeyPattern.MatchString(key) {
 		return nil, common.Classify(common.ErrInvalidEnvKey, fmt.Errorf("invalid env key %q (must match [A-Za-z_][A-Za-z0-9_]*)", key))
 	}
 
-	envIDs, err := s.normalizeScopeInternal(ctx, req.AllEnvironments, req.EnvironmentIDs)
+	envIDs, err := s.normalizeScope(ctx, req.AllEnvironments, req.EnvironmentIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -120,24 +120,24 @@ func (s *VariableService) CreateVariable(ctx context.Context, req env.CreateGlob
 	}
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if validateScopeConflictErr := s.validateScopeConflictInternal(tx, key, "", allEnvironments, envIDs); validateScopeConflictErr != nil {
+		if validateScopeConflictErr := s.validateScopeConflict(tx, key, "", allEnvironments, envIDs); validateScopeConflictErr != nil {
 			return validateScopeConflictErr
 		}
 		if createVariableErr := tx.Omit("Environments").Create(&variable).Error; createVariableErr != nil {
 			return fmt.Errorf("failed to create global variable: %w", createVariableErr)
 		}
-		return replaceVariableScopeRowsInternal(tx, variable.ID, envIDs)
+		return replaceVariableScopeRows(tx, variable.ID, envIDs)
 	})
 	if err != nil {
-		return nil, wrapVariableMutationErrorInternal(err)
+		return nil, wrapVariableMutationError(err)
 	}
 
-	variable.Environments = environmentsFromIDsInternal(envIDs)
-	dto := globalVariableToDTOInternal(variable)
+	variable.Environments = environmentsFromIDs(envIDs)
+	dto := globalVariableToDTO(variable)
 	return &dto, nil
 }
 
-func (s *VariableService) UpdateVariable(ctx context.Context, id string, req env.UpdateGlobalVariableRequest) (*env.GlobalVariable, error) {
+func (s *VariableService) UpdateVariable(ctx context.Context, id string, req types.GlobalVariable, submitted map[string]bool) (*types.GlobalVariable, error) {
 	var variable GlobalVariable
 	if err := s.db.WithContext(ctx).Preload("Environments").First(&variable, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -146,25 +146,19 @@ func (s *VariableService) UpdateVariable(ctx context.Context, id string, req env
 		return nil, fmt.Errorf("failed to retrieve global variables: %w", err)
 	}
 
-	key := variable.Key
-	if req.Key != nil {
-		key = strings.TrimSpace(*req.Key)
-		if !envKeyPattern.MatchString(key) {
-			return nil, common.Classify(common.ErrInvalidEnvKey, fmt.Errorf("invalid env key %q (must match [A-Za-z_][A-Za-z0-9_]*)", key))
-		}
+	key := kit.Ternary(submitted["key"], strings.TrimSpace(req.Key), variable.Key)
+	if !envKeyPattern.MatchString(key) {
+		return nil, common.Classify(common.ErrInvalidEnvKey, fmt.Errorf("invalid env key %q (must match [A-Za-z_][A-Za-z0-9_]*)", key))
 	}
 
-	isSecret := variable.IsSecret
-	if req.IsSecret != nil {
-		isSecret = *req.IsSecret
-	}
+	isSecret := kit.Ternary(submitted["isSecret"], req.IsSecret, variable.IsSecret)
 
-	value, err := resolveUpdatedValueInternal(&variable, req.Value, isSecret)
+	value, err := resolveUpdatedValue(&variable, req.Value, submitted["value"], isSecret)
 	if err != nil {
 		return nil, err
 	}
 
-	envIDs, allEnvironments, err := s.resolveUpdatedScopeInternal(ctx, &variable, req)
+	envIDs, allEnvironments, err := s.resolveUpdatedScope(ctx, &variable, req, submitted)
 	if err != nil {
 		return nil, err
 	}
@@ -175,28 +169,28 @@ func (s *VariableService) UpdateVariable(ctx context.Context, id string, req env
 	variable.AllEnvironments = allEnvironments
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if validateScopeConflictErr := s.validateScopeConflictInternal(tx, key, variable.ID, allEnvironments, envIDs); validateScopeConflictErr != nil {
+		if validateScopeConflictErr := s.validateScopeConflict(tx, key, variable.ID, allEnvironments, envIDs); validateScopeConflictErr != nil {
 			return validateScopeConflictErr
 		}
 		if updateVariableErr := tx.Omit("Environments").Save(&variable).Error; updateVariableErr != nil {
 			return fmt.Errorf("failed to update global variable: %w", updateVariableErr)
 		}
-		return replaceVariableScopeRowsInternal(tx, variable.ID, envIDs)
+		return replaceVariableScopeRows(tx, variable.ID, envIDs)
 	})
 	if err != nil {
-		return nil, wrapVariableMutationErrorInternal(err)
+		return nil, wrapVariableMutationError(err)
 	}
 
-	variable.Environments = environmentsFromIDsInternal(envIDs)
-	dto := globalVariableToDTOInternal(variable)
+	variable.Environments = environmentsFromIDs(envIDs)
+	dto := globalVariableToDTO(variable)
 	return &dto, nil
 }
 
-// resolveUpdatedValueInternal computes the stored value for an update:
+// resolveUpdatedValue computes the stored value for an update:
 // encrypts when the result is secret and enforces that a secret cannot be
 // made readable without a replacement value (revealing the stored one).
-func resolveUpdatedValueInternal(variable *GlobalVariable, reqValue *string, isSecret bool) (string, error) {
-	if variable.IsSecret && !isSecret && reqValue == nil {
+func resolveUpdatedValue(variable *GlobalVariable, reqValue string, valueSubmitted, isSecret bool) (string, error) {
+	if variable.IsSecret && !isSecret && !valueSubmitted {
 		return "", common.Classify(
 			common.ErrGlobalVariableSecretValueRequired,
 			errors.New(
@@ -206,11 +200,11 @@ func resolveUpdatedValueInternal(variable *GlobalVariable, reqValue *string, isS
 	}
 
 	switch {
-	case reqValue != nil:
+	case valueSubmitted:
 		if !isSecret {
-			return *reqValue, nil
+			return reqValue, nil
 		}
-		encrypted, err := crypto.Encrypt(*reqValue)
+		encrypted, err := crypto.Encrypt(reqValue)
 		if err != nil {
 			return "", fmt.Errorf("failed to update global variables: %w", err)
 		}
@@ -227,24 +221,19 @@ func resolveUpdatedValueInternal(variable *GlobalVariable, reqValue *string, isS
 	}
 }
 
-// resolveUpdatedScopeInternal merges the requested scope change (if any) with
+// resolveUpdatedScope merges the requested scope change (if any) with
 // the variable's current scope and normalizes it.
-func (s *VariableService) resolveUpdatedScopeInternal(ctx context.Context, variable *GlobalVariable, req env.UpdateGlobalVariableRequest) ([]string, bool, error) {
-	envIDs := scopedEnvironmentIDsInternal(variable.Environments)
-	if req.AllEnvironments == nil && req.EnvironmentIDs == nil {
+func (s *VariableService) resolveUpdatedScope(ctx context.Context, variable *GlobalVariable, req types.GlobalVariable, submitted map[string]bool) ([]string, bool, error) {
+	envIDs := scopedEnvironmentIDs(variable.Environments)
+	if !submitted["allEnvironments"] && !submitted["environmentIds"] {
 		return envIDs, variable.AllEnvironments, nil
 	}
 
-	requestedAll := variable.AllEnvironments
-	if req.AllEnvironments != nil {
-		requestedAll = *req.AllEnvironments
-	}
-	requestedIDs := envIDs
-	if req.EnvironmentIDs != nil {
-		requestedIDs = *req.EnvironmentIDs
-	}
-
-	normalized, err := s.normalizeScopeInternal(ctx, requestedAll, requestedIDs)
+	normalized, err := s.normalizeScope(
+		ctx,
+		kit.Ternary(submitted["allEnvironments"], req.AllEnvironments, variable.AllEnvironments),
+		kit.Ternary(submitted["environmentIds"], req.EnvironmentIDs, envIDs),
+	)
 	if err != nil {
 		return nil, false, err
 	}
@@ -263,16 +252,16 @@ func (s *VariableService) DeleteVariable(ctx context.Context, id string) error {
 		return tx.Exec("DELETE FROM global_variable_environments WHERE global_variable_id = ?", id).Error
 	})
 	if err != nil {
-		return wrapVariableMutationErrorInternal(err)
+		return wrapVariableMutationError(err)
 	}
 	return nil
 }
 
-// resolveEffectiveVariablesInternal computes the variable set for one
+// resolveEffectiveVariables computes the variable set for one
 // environment: all-environment variables first, env-scoped variables override.
 // Secret values are decrypted; variables that fail to decrypt are skipped.
-func (s *VariableService) resolveEffectiveVariablesInternal(ctx context.Context, envID string) ([]env.Variable, error) {
-	variables, err := s.loadVariablesInternal(ctx)
+func (s *VariableService) resolveEffectiveVariables(ctx context.Context, envID string) ([]types.EnvVariable, error) {
+	variables, err := s.loadVariables(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -283,7 +272,7 @@ func (s *VariableService) resolveEffectiveVariablesInternal(ctx context.Context,
 			if variable.AllEnvironments == scoped {
 				continue
 			}
-			if scoped && !slices.Contains(scopedEnvironmentIDsInternal(variable.Environments), envID) {
+			if scoped && !slices.Contains(scopedEnvironmentIDs(variable.Environments), envID) {
 				continue
 			}
 			value := variable.Value
@@ -302,9 +291,9 @@ func (s *VariableService) resolveEffectiveVariablesInternal(ctx context.Context,
 
 	keys := slices.Sorted(maps.Keys(effective))
 
-	result := make([]env.Variable, 0, len(effective))
+	result := make([]types.EnvVariable, 0, len(effective))
 	for _, key := range keys {
-		result = append(result, env.Variable{Key: key, Value: effective[key]})
+		result = append(result, types.EnvVariable{Key: key, Value: effective[key]})
 	}
 	return result, nil
 }
@@ -313,8 +302,8 @@ func (s *VariableService) resolveEffectiveVariablesInternal(ctx context.Context,
 // environment's .env.global. Remote environments are imported once before the
 // first overwrite so pre-existing per-env variables are preserved.
 func (s *VariableService) SyncEnvironment(ctx context.Context, envID string) error {
-	err := s.syncEnvironmentInternal(ctx, envID)
-	s.recordSyncStatusInternal(envID, err)
+	err := s.syncEnvironment(ctx, envID)
+	s.recordSyncStatus(envID, err)
 	return err
 }
 
@@ -326,14 +315,14 @@ func (s *VariableService) ForgetSyncState(envID string) {
 	s.statusMu.Unlock()
 }
 
-func (s *VariableService) syncEnvironmentInternal(ctx context.Context, envID string) error {
+func (s *VariableService) syncEnvironment(ctx context.Context, envID string) error {
 	if envID != environment.LocalEnvironmentID {
-		if err := s.importRemoteLegacyVarsOnceInternal(ctx, envID); err != nil {
+		if err := s.importRemoteLegacyVarsOnce(ctx, envID); err != nil {
 			return fmt.Errorf("failed to import existing variables from environment %s: %w", envID, err)
 		}
 	}
 
-	vars, err := s.resolveEffectiveVariablesInternal(ctx, envID)
+	vars, err := s.resolveEffectiveVariables(ctx, envID)
 	if err != nil {
 		return err
 	}
@@ -342,7 +331,7 @@ func (s *VariableService) syncEnvironmentInternal(ctx context.Context, envID str
 		return s.WriteLocalEnvFile(ctx, vars)
 	}
 
-	body, err := json.Marshal(env.Summary{Variables: vars})
+	body, err := json.Marshal(types.EnvSummary{Variables: vars})
 	if err != nil {
 		return fmt.Errorf("failed to marshal variables for sync: %w", err)
 	}
@@ -362,9 +351,9 @@ func (s *VariableService) syncEnvironmentInternal(ctx context.Context, envID str
 	return err
 }
 
-// syncTargetsInternal returns the local environment plus every enabled
+// syncTargets returns the local environment plus every enabled
 // environment, deduplicated.
-func (s *VariableService) syncTargetsInternal(ctx context.Context) []environment.Environment {
+func (s *VariableService) syncTargets(ctx context.Context) []environment.Environment {
 	remotes, err := s.listEnabledRemoteEnvironments(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to list environments for global variable sync", "error", err)
@@ -378,14 +367,14 @@ func (s *VariableService) syncTargetsInternal(ctx context.Context) []environment
 // SyncAll pushes the effective variable set to the local environment and every
 // enabled remote environment in parallel, waiting for all of them. Failures
 // are recorded per environment and never abort the other pushes.
-func (s *VariableService) SyncAll(ctx context.Context) []env.EnvironmentSyncStatus {
-	targets := s.syncTargetsInternal(ctx)
+func (s *VariableService) SyncAll(ctx context.Context) []types.EnvironmentSyncStatus {
+	targets := s.syncTargets(ctx)
 	// An explicit sync exists to repair agents, so every target is resent even
 	// when the manager's payload has not changed.
 	for _, target := range targets {
 		s.ForgetSyncState(target.ID)
 	}
-	s.syncEnvironmentsInternal(ctx, targets)
+	s.syncEnvironments(ctx, targets)
 	return s.SyncStatuses()
 }
 
@@ -393,25 +382,25 @@ func (s *VariableService) SyncAll(ctx context.Context) []env.EnvironmentSyncStat
 // file write, no network) and pushes to remote environments in the background,
 // so mutation requests never block on slow or unreachable agents. Remotes are
 // reported as "pending" until the background push records their result.
-func (s *VariableService) SyncAllBackground(ctx context.Context) []env.EnvironmentSyncStatus {
+func (s *VariableService) SyncAllBackground(ctx context.Context) []types.EnvironmentSyncStatus {
 	if err := s.SyncEnvironment(ctx, environment.LocalEnvironmentID); err != nil {
 		slog.WarnContext(ctx, "Failed to sync global variables locally", "error", err)
 	}
 
-	remotes := slices.DeleteFunc(s.syncTargetsInternal(ctx), func(target environment.Environment) bool {
+	remotes := slices.DeleteFunc(s.syncTargets(ctx), func(target environment.Environment) bool {
 		return target.ID == environment.LocalEnvironmentID
 	})
 	for _, target := range remotes {
-		s.recordSyncPendingInternal(target.ID)
+		s.recordSyncPending(target.ID)
 	}
 
 	bgCtx := context.WithoutCancel(ctx)
-	go s.syncEnvironmentsInternal(bgCtx, remotes)
+	go s.syncEnvironments(bgCtx, remotes)
 
 	return s.SyncStatuses()
 }
 
-func (s *VariableService) syncEnvironmentsInternal(ctx context.Context, targets []environment.Environment) {
+func (s *VariableService) syncEnvironments(ctx context.Context, targets []environment.Environment) {
 	var wg sync.WaitGroup
 	for _, target := range targets {
 		wg.Go(func() {
@@ -419,7 +408,7 @@ func (s *VariableService) syncEnvironmentsInternal(ctx context.Context, targets 
 			defer cancel()
 			if target.IsEdge && !edge.HasActiveTunnel(target.ID) {
 				if _, ok := edge.RequestTunnelAndWait(syncCtx, target.ID, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()).Get(); !ok {
-					s.recordSyncPendingInternal(target.ID)
+					s.recordSyncPending(target.ID)
 					return
 				}
 			}
@@ -431,23 +420,23 @@ func (s *VariableService) syncEnvironmentsInternal(ctx context.Context, targets 
 	wg.Wait()
 }
 
-func (s *VariableService) SyncStatuses() []env.EnvironmentSyncStatus {
+func (s *VariableService) SyncStatuses() []types.EnvironmentSyncStatus {
 	s.statusMu.RLock()
 	defer s.statusMu.RUnlock()
 
-	statuses := make([]env.EnvironmentSyncStatus, 0, len(s.syncStatus))
+	statuses := make([]types.EnvironmentSyncStatus, 0, len(s.syncStatus))
 	for _, status := range s.syncStatus {
 		statuses = append(statuses, status)
 	}
-	slices.SortFunc(statuses, func(a, b env.EnvironmentSyncStatus) int {
+	slices.SortFunc(statuses, func(a, b types.EnvironmentSyncStatus) int {
 		return strings.Compare(a.EnvironmentID, b.EnvironmentID)
 	})
 	return statuses
 }
 
-func (s *VariableService) recordSyncPendingInternal(envID string) {
+func (s *VariableService) recordSyncPending(envID string) {
 	s.statusMu.Lock()
-	status := env.EnvironmentSyncStatus{EnvironmentID: envID, Status: "pending"}
+	status := types.EnvironmentSyncStatus{EnvironmentID: envID, Status: "pending"}
 	if previous, ok := s.syncStatus[envID]; ok {
 		status.LastSyncedAt = previous.LastSyncedAt
 	}
@@ -455,8 +444,8 @@ func (s *VariableService) recordSyncPendingInternal(envID string) {
 	s.statusMu.Unlock()
 }
 
-func (s *VariableService) recordSyncStatusInternal(envID string, err error) {
-	status := env.EnvironmentSyncStatus{EnvironmentID: envID, Status: "synced"}
+func (s *VariableService) recordSyncStatus(envID string, err error) {
+	status := types.EnvironmentSyncStatus{EnvironmentID: envID, Status: "synced"}
 	if err != nil {
 		status.Status = "error"
 		status.Error = err.Error()
@@ -475,7 +464,7 @@ func (s *VariableService) recordSyncStatusInternal(envID string, err error) {
 	s.statusMu.Unlock()
 }
 
-func (s *VariableService) localEnvFilePathInternal(ctx context.Context) (string, error) {
+func (s *VariableService) localEnvFilePath(ctx context.Context) (string, error) {
 	projectsDirectory, err := projects.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
 	if err != nil {
 		return "", fmt.Errorf("failed to get projects directory: %w", err)
@@ -484,8 +473,8 @@ func (s *VariableService) localEnvFilePathInternal(ctx context.Context) (string,
 	return filepath.Join(projectsDirectory, projects.GlobalEnvFileName), nil
 }
 
-func (s *VariableService) ReadLocalEnvFile(ctx context.Context) ([]env.Variable, error) {
-	envPath, err := s.localEnvFilePathInternal(ctx)
+func (s *VariableService) ReadLocalEnvFile(ctx context.Context) ([]types.EnvVariable, error) {
+	envPath, err := s.localEnvFilePath(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -494,12 +483,12 @@ func (s *VariableService) ReadLocalEnvFile(ctx context.Context) ([]env.Variable,
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			slog.DebugContext(ctx, "Global variables file does not exist yet", "path", envPath)
-			return []env.Variable{}, nil
+			return []types.EnvVariable{}, nil
 		}
 		return nil, fmt.Errorf("failed to open global variables file: %w", err)
 	}
 
-	vars := []env.Variable{}
+	vars := []types.EnvVariable{}
 	scanner := bufio.NewScanner(bytes.NewReader(content))
 	lineNum := 0
 
@@ -529,7 +518,7 @@ func (s *VariableService) ReadLocalEnvFile(ctx context.Context) ([]env.Variable,
 			}
 		}
 
-		vars = append(vars, env.Variable{
+		vars = append(vars, types.EnvVariable{
 			Key:   key,
 			Value: value,
 		})
@@ -542,8 +531,8 @@ func (s *VariableService) ReadLocalEnvFile(ctx context.Context) ([]env.Variable,
 	return vars, nil
 }
 
-func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []env.Variable) error {
-	envPath, err := s.localEnvFilePathInternal(ctx)
+func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []types.EnvVariable) error {
+	envPath, err := s.localEnvFilePath(ctx)
 	if err != nil {
 		return err
 	}
@@ -611,18 +600,18 @@ func (s *VariableService) ImportLegacyLocalEnvFile(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if importVariablesErr := s.importVariablesInternal(ctx, vars, ""); importVariablesErr != nil {
+	if importVariablesErr := s.importVariables(ctx, vars, ""); importVariablesErr != nil {
 		return importVariablesErr
 	}
 
 	return s.kvService.SetBool(ctx, flag, true)
 }
 
-// importRemoteLegacyVarsOnceInternal pulls a remote environment's current
+// importRemoteLegacyVarsOnce pulls a remote environment's current
 // variables before the manager's first push and stores any key the manager
 // would not already produce for that environment as an env-scoped variable.
 // An import failure aborts the push so existing agent data is never wiped.
-func (s *VariableService) importRemoteLegacyVarsOnceInternal(ctx context.Context, envID string) error {
+func (s *VariableService) importRemoteLegacyVarsOnce(ctx context.Context, envID string) error {
 	unlock, err := s.importLocks.LockContext(ctx, envID)
 	if err != nil {
 		return err
@@ -639,36 +628,36 @@ func (s *VariableService) importRemoteLegacyVarsOnceInternal(ctx context.Context
 	}
 
 	var out struct {
-		Success bool           `json:"success"`
-		Data    []env.Variable `json:"data"`
+		Success bool                `json:"success"`
+		Data    []types.EnvVariable `json:"data"`
 	}
 	if proxyEnvironmentJSONErr := s.proxyEnvironmentJSON(ctx, envID, http.MethodGet, agentVariablesPath, nil, &out); proxyEnvironmentJSONErr != nil {
 		return proxyEnvironmentJSONErr
 	}
 
-	if importVariablesErr := s.importVariablesInternal(ctx, out.Data, envID); importVariablesErr != nil {
+	if importVariablesErr := s.importVariables(ctx, out.Data, envID); importVariablesErr != nil {
 		return importVariablesErr
 	}
 
 	return s.kvService.SetBool(ctx, flag, true)
 }
 
-// importVariablesInternal inserts legacy entries that the DB does not cover
+// importVariables inserts legacy entries that the DB does not cover
 // yet. An empty scopeEnvID imports as all-environments; otherwise the entry is
 // scoped to that single environment.
-func (s *VariableService) importVariablesInternal(ctx context.Context, vars []env.Variable, scopeEnvID string) error {
+func (s *VariableService) importVariables(ctx context.Context, vars []types.EnvVariable, scopeEnvID string) error {
 	if len(vars) == 0 {
 		return nil
 	}
 
-	existing, err := s.loadVariablesInternal(ctx)
+	existing, err := s.loadVariables(ctx)
 	if err != nil {
 		return err
 	}
 	covered := make(map[string]bool, len(existing))
 	for _, variable := range existing {
 		if variable.AllEnvironments || scopeEnvID == "" ||
-			slices.Contains(scopedEnvironmentIDsInternal(variable.Environments), scopeEnvID) {
+			slices.Contains(scopedEnvironmentIDs(variable.Environments), scopeEnvID) {
 			covered[variable.Key] = true
 		}
 	}
@@ -691,7 +680,7 @@ func (s *VariableService) importVariablesInternal(ctx context.Context, vars []en
 			if scopeEnvID == "" {
 				return nil
 			}
-			return replaceVariableScopeRowsInternal(tx, variable.ID, []string{scopeEnvID})
+			return replaceVariableScopeRows(tx, variable.ID, []string{scopeEnvID})
 		})
 		if transactionErr != nil {
 			return fmt.Errorf("failed to import legacy variable %q: %w", key, transactionErr)
@@ -703,7 +692,7 @@ func (s *VariableService) importVariablesInternal(ctx context.Context, vars []en
 	return nil
 }
 
-func (s *VariableService) loadVariablesInternal(ctx context.Context) ([]GlobalVariable, error) {
+func (s *VariableService) loadVariables(ctx context.Context) ([]GlobalVariable, error) {
 	var variables []GlobalVariable
 	if err := s.db.WithContext(ctx).Preload("Environments").Order("key").Find(&variables).Error; err != nil {
 		return nil, fmt.Errorf("failed to load global variables: %w", err)
@@ -711,9 +700,9 @@ func (s *VariableService) loadVariablesInternal(ctx context.Context) ([]GlobalVa
 	return variables, nil
 }
 
-// normalizeScopeInternal validates the requested scope and returns the
+// normalizeScope validates the requested scope and returns the
 // deduplicated environment ID list ([] means all environments).
-func (s *VariableService) normalizeScopeInternal(ctx context.Context, allEnvironments bool, envIDs []string) ([]string, error) {
+func (s *VariableService) normalizeScope(ctx context.Context, allEnvironments bool, envIDs []string) ([]string, error) {
 	if allEnvironments {
 		return nil, nil
 	}
@@ -749,10 +738,10 @@ func (s *VariableService) normalizeScopeInternal(ctx context.Context, allEnviron
 	return unique, nil
 }
 
-// validateScopeConflictInternal enforces the duplicate-key rule: a key may
+// validateScopeConflict enforces the duplicate-key rule: a key may
 // exist once per overlapping scope. The same key as both an all-environments
 // variable and an env-scoped variable is allowed (that is the override).
-func (s *VariableService) validateScopeConflictInternal(tx *gorm.DB, key, excludeID string, allEnvironments bool, envIDs []string) error {
+func (s *VariableService) validateScopeConflict(tx *gorm.DB, key, excludeID string, allEnvironments bool, envIDs []string) error {
 	var others []GlobalVariable
 	query := tx.Preload("Environments").Where("key = ?", key)
 	if excludeID != "" {
@@ -775,7 +764,7 @@ func (s *VariableService) validateScopeConflictInternal(tx *gorm.DB, key, exclud
 				),
 			)
 		}
-		otherIDs := scopedEnvironmentIDsInternal(other.Environments)
+		otherIDs := scopedEnvironmentIDs(other.Environments)
 		for _, id := range envIDs {
 			if slices.Contains(otherIDs, id) {
 				return common.Classify(
@@ -791,9 +780,9 @@ func (s *VariableService) validateScopeConflictInternal(tx *gorm.DB, key, exclud
 	return nil
 }
 
-// replaceVariableScopeRowsInternal rewrites the join rows explicitly instead
+// replaceVariableScopeRows rewrites the join rows explicitly instead
 // of relying on FK cascades (the sqlite FK pragma is DSN-dependent).
-func replaceVariableScopeRowsInternal(tx *gorm.DB, variableID string, envIDs []string) error {
+func replaceVariableScopeRows(tx *gorm.DB, variableID string, envIDs []string) error {
 	if err := tx.Exec("DELETE FROM global_variable_environments WHERE global_variable_id = ?", variableID).Error; err != nil {
 		return fmt.Errorf("failed to clear variable scope: %w", err)
 	}
@@ -805,14 +794,14 @@ func replaceVariableScopeRowsInternal(tx *gorm.DB, variableID string, envIDs []s
 	return nil
 }
 
-func wrapVariableMutationErrorInternal(err error) error {
+func wrapVariableMutationError(err error) error {
 	if err == nil || errors.Is(err, common.ErrGlobalVariableConflict) || errors.Is(err, common.ErrGlobalVariableNotFound) || errors.Is(err, common.ErrInvalidEnvKey) {
 		return err
 	}
 	return fmt.Errorf("failed to update global variables: %w", err)
 }
 
-func scopedEnvironmentIDsInternal(environments []environment.Environment) []string {
+func scopedEnvironmentIDs(environments []environment.Environment) []string {
 	ids := make([]string, 0, len(environments))
 	for _, environment := range environments {
 		ids = append(ids, environment.ID)
@@ -820,7 +809,7 @@ func scopedEnvironmentIDsInternal(environments []environment.Environment) []stri
 	return ids
 }
 
-func environmentsFromIDsInternal(envIDs []string) []environment.Environment {
+func environmentsFromIDs(envIDs []string) []environment.Environment {
 	environments := make([]environment.Environment, 0, len(envIDs))
 	for _, id := range envIDs {
 		environments = append(environments, environment.Environment{ID: id})
@@ -828,15 +817,15 @@ func environmentsFromIDsInternal(envIDs []string) []environment.Environment {
 	return environments
 }
 
-func globalVariableToDTOInternal(variable GlobalVariable) env.GlobalVariable {
+func globalVariableToDTO(variable GlobalVariable) types.GlobalVariable {
 	value := kit.Ternary(variable.IsSecret, "", variable.Value)
-	return env.GlobalVariable{
+	return types.GlobalVariable{
 		ID:              variable.ID,
 		Key:             variable.Key,
 		Value:           value,
 		IsSecret:        variable.IsSecret,
 		AllEnvironments: variable.AllEnvironments,
-		EnvironmentIDs:  scopedEnvironmentIDsInternal(variable.Environments),
+		EnvironmentIDs:  scopedEnvironmentIDs(variable.Environments),
 		CreatedAt:       variable.CreatedAt,
 		UpdatedAt:       variable.UpdatedAt,
 	}

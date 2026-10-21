@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/apikey"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/kit/pkg"
@@ -248,10 +248,10 @@ func TestUpdateApiKeyRejectsStaticKey(t *testing.T) {
 	created, err := service.CreateDefaultAdminAPIKey(ctx, adminUser.ID, "arc_bootstrapupdateprotected1234567890")
 	require.NoError(t, err)
 
-	updated, err := service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, apikey.UpdateApiKey{
-		Name:        new("renamed"),
+	updated, err := service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, types.ApiKey{
+		Name:        "renamed",
 		Description: new("updated description"),
-	})
+	}, map[string]bool{"name": true, "description": true})
 	require.Nil(t, updated)
 	require.ErrorIs(t, err, ErrApiKeyProtected)
 
@@ -276,16 +276,16 @@ func TestUpdateApiKeyRollsBackMetadataWhenPermissionUpdateFails(t *testing.T) {
 		{RoleID: authz.BuiltInRoleAdmin, EnvironmentID: nil},
 	}))
 
-	created, err := service.CreateApiKey(ctx, admin.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "original"})
+	created, err := service.CreateApiKey(ctx, admin.ID, authz.SudoPermissionSet(), types.ApiKey{Name: "original"})
 	require.NoError(t, err)
 
-	updated, err := service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, apikey.UpdateApiKey{
-		Name: new("renamed"),
-		Permissions: []apikey.PermissionGrant{
+	updated, err := service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, types.ApiKey{
+		Name: "renamed",
+		Permissions: []types.ApiKeyPermissionGrant{
 			{Permission: authz.PermContainersList},
 			{Permission: authz.PermContainersList},
 		},
-	})
+	}, map[string]bool{"name": true, "permissions": true})
 	require.Nil(t, updated)
 	require.Error(t, err)
 
@@ -302,16 +302,16 @@ func TestCreateApiKeyRejectsGrantsBeyondCallerPermissions(t *testing.T) {
 	callerPerms.AddGlobal(authz.PermContainersList)
 
 	// A grant the caller does not hold must be rejected.
-	_, err := service.CreateApiKey(ctx, localUser.ID, callerPerms, apikey.CreateApiKey{
+	_, err := service.CreateApiKey(ctx, localUser.ID, callerPerms, types.ApiKey{
 		Name:        "escalated",
-		Permissions: []apikey.PermissionGrant{{Permission: authz.PermApiKeysCreate}},
+		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermApiKeysCreate}},
 	})
 	require.ErrorIs(t, err, ErrApiKeyPermissionEscalation)
 
 	// A grant within the caller's set succeeds.
-	created, err := service.CreateApiKey(ctx, localUser.ID, callerPerms, apikey.CreateApiKey{
+	created, err := service.CreateApiKey(ctx, localUser.ID, callerPerms, types.ApiKey{
 		Name:        "allowed",
-		Permissions: []apikey.PermissionGrant{{Permission: authz.PermContainersList}},
+		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
 	})
 	require.NoError(t, err)
 	require.Equal(t, ApiKeyKindScoped, created.Kind)
@@ -329,18 +329,18 @@ func TestApiKeyGrantsAreCappedByOwnerRoles(t *testing.T) {
 	owner := createTestAPIKeyUser(t, ctx, userSvc, "roleless-owner", "roleless-owner")
 
 	// Create path: even a sudo caller cannot mint a key above the owner's roles.
-	_, err := service.CreateApiKey(ctx, owner.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{
+	_, err := service.CreateApiKey(ctx, owner.ID, authz.SudoPermissionSet(), types.ApiKey{
 		Name:        "above-owner",
-		Permissions: []apikey.PermissionGrant{{Permission: authz.PermContainersList}},
+		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
 	})
 	require.ErrorIs(t, err, ErrApiKeyPermissionEscalation)
 
 	// Update path: a grantless key cannot gain permissions the owner lacks.
-	created, err := service.CreateApiKey(ctx, owner.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "grantless"})
+	created, err := service.CreateApiKey(ctx, owner.ID, authz.SudoPermissionSet(), types.ApiKey{Name: "grantless"})
 	require.NoError(t, err)
-	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, apikey.UpdateApiKey{
-		Permissions: []apikey.PermissionGrant{{Permission: authz.PermContainersList}},
-	})
+	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, types.ApiKey{
+		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
+	}, map[string]bool{"permissions": true})
 	require.ErrorIs(t, err, ErrApiKeyPermissionEscalation)
 
 	// Ownerless rows (not env-bootstrap; no production path creates these)
@@ -352,9 +352,9 @@ func TestApiKeyGrantsAreCappedByOwnerRoles(t *testing.T) {
 	}).Error)
 	var orphan ApiKey
 	require.NoError(t, db.WithContext(ctx).Where("key_prefix = ?", "arc_orph").First(&orphan).Error)
-	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), orphan.ID, apikey.UpdateApiKey{
-		Permissions: []apikey.PermissionGrant{{Permission: authz.PermContainersList}},
-	})
+	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), orphan.ID, types.ApiKey{
+		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
+	}, map[string]bool{"permissions": true})
 	require.ErrorIs(t, err, ErrApiKeyProtected)
 }
 
@@ -363,9 +363,9 @@ func TestCreatePersonalApiKeyHasNoGrantsAndCannotGainAny(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-personal")
 
-	_, err := service.CreatePersonalApiKey(ctx, localUser.ID, apikey.CreateUserApiKey{Name: " \t "})
+	_, err := service.CreatePersonalApiKey(ctx, localUser.ID, types.ApiKey{Name: " \t "})
 	require.EqualError(t, err, "name: must contain at least 1 characters after normalization")
-	created, err := service.CreatePersonalApiKey(ctx, localUser.ID, apikey.CreateUserApiKey{Name: "  cafe\u0301 personal  "})
+	created, err := service.CreatePersonalApiKey(ctx, localUser.ID, types.ApiKey{Name: "  cafe\u0301 personal  "})
 	require.NoError(t, err)
 	require.Equal(t, "café personal", created.Name)
 	require.Equal(t, ApiKeyKindPersonal, created.Kind)
@@ -373,9 +373,9 @@ func TestCreatePersonalApiKeyHasNoGrantsAndCannotGainAny(t *testing.T) {
 	require.Equal(t, ApiKeyKindPersonal, fetchAPIKey(t, db, created.ID).Kind)
 
 	// Attaching grants to a personal key is rejected even for sudo callers.
-	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, apikey.UpdateApiKey{
-		Permissions: []apikey.PermissionGrant{{Permission: authz.PermContainersList}},
-	})
+	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, types.ApiKey{
+		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
+	}, map[string]bool{"permissions": true})
 	require.ErrorIs(t, err, ErrApiKeyPersonalNoGrants)
 }
 
@@ -440,7 +440,7 @@ func TestReconcileDefaultAdminAPIKeyRotationEvictsRacingCacheFill(t *testing.T) 
 			return
 		}
 		published = true
-		service.storeValidatedKeyInternal(service.cacheGen.Load(), service.hashRawAPIKeyInternal(oldKey), oldRow)
+		service.storeValidatedKey(service.cacheGen.Load(), service.hashRawAPIKey(oldKey), oldRow)
 	}))
 
 	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, newKey))
@@ -471,7 +471,7 @@ func TestReconcileDefaultAdminAPIKeyPreservesUserManagedKeys(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	adminUser := createDefaultAdminUser(t, ctx, userService)
 
-	userCreated, err := service.CreateApiKey(ctx, adminUser.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "manual-key"})
+	userCreated, err := service.CreateApiKey(ctx, adminUser.ID, authz.SudoPermissionSet(), types.ApiKey{Name: "manual-key"})
 	require.NoError(t, err)
 
 	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, "arc_bootstrapmanualsafe1234567890"))
@@ -542,7 +542,7 @@ func TestValidateAPIKeyUpdatesLastUsedAt(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-validate")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "validate-key"})
+	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{Name: "validate-key"})
 	require.NoError(t, err)
 	require.Nil(t, fetchAPIKey(t, db, created.ID).LastUsedAt)
 
@@ -559,7 +559,7 @@ func TestValidateAPIKeyCacheSkipsHashValidationAndInvalidatesOnRevoke(t *testing
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-cached")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "cached-key"})
+	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{Name: "cached-key"})
 	require.NoError(t, err)
 
 	_, err = service.ValidateApiKey(ctx, created.Key)
@@ -584,7 +584,7 @@ func TestValidateAPIKeyCacheFillDroppedWhenRevocationRacesValidation(t *testing.
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-fill-race")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "fill-race-key"})
+	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{Name: "fill-race-key"})
 	require.NoError(t, err)
 
 	// Simulate a validation whose DB read happened before the revocation:
@@ -593,7 +593,7 @@ func TestValidateAPIKeyCacheFillDroppedWhenRevocationRacesValidation(t *testing.
 	gen := service.cacheGen.Load()
 	stored := fetchAPIKey(t, db, created.ID)
 	require.NoError(t, service.DeleteApiKey(ctx, created.ID))
-	service.storeValidatedKeyInternal(gen, service.hashRawAPIKeyInternal(created.Key), stored)
+	service.storeValidatedKey(gen, service.hashRawAPIKey(created.Key), stored)
 
 	_, err = service.ValidateApiKey(ctx, created.Key)
 	require.ErrorIs(t, err, ErrApiKeyInvalid)
@@ -604,7 +604,7 @@ func TestValidateAPIKeyDebouncesLastUsedWrites(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-debounce")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "debounce-key"})
+	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{Name: "debounce-key"})
 	require.NoError(t, err)
 
 	_, err = service.ValidateApiKey(ctx, created.Key)
@@ -625,17 +625,17 @@ func TestValidateAPIKeyDebounceReleasedOnWriteFailure(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-debounce-retry")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "debounce-retry-key"})
+	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{Name: "debounce-retry-key"})
 	require.NoError(t, err)
 
 	canceledCtx, cancel := context.WithCancel(ctx)
 	cancel()
-	service.markApiKeyUsedDebouncedInternal(canceledCtx, created.ID)
+	service.markApiKeyUsedDebounced(canceledCtx, created.ID)
 	require.Nil(t, fetchAPIKey(t, db, created.ID).LastUsedAt)
 
 	// The failed write must not leave the key debounced: the next use inside
 	// the window must retry and persist.
-	service.markApiKeyUsedDebouncedInternal(ctx, created.ID)
+	service.markApiKeyUsedDebounced(ctx, created.ID)
 	require.NotNil(t, fetchAPIKey(t, db, created.ID).LastUsedAt)
 }
 
@@ -644,7 +644,7 @@ func TestValidateAPIKeyLastUsedUpdateIsRequestScoped(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-request-scoped")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "request-scoped-key"})
+	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{Name: "request-scoped-key"})
 	require.NoError(t, err)
 
 	updateStarted := make(chan struct{})
@@ -684,12 +684,12 @@ func TestMarkAPIKeyUsedHonorsRequestCancellation(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-canceled-usage")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "canceled-usage-key"})
+	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{Name: "canceled-usage-key"})
 	require.NoError(t, err)
 
 	canceledCtx, cancel := context.WithCancel(ctx)
 	cancel()
-	err = service.markApiKeyUsedInternal(canceledCtx, created.ID)
+	err = service.markApiKeyUsed(canceledCtx, created.ID)
 	require.ErrorIs(t, err, context.Canceled)
 	require.Nil(t, fetchAPIKey(t, db, created.ID).LastUsedAt)
 }
@@ -699,14 +699,14 @@ func TestMarkAPIKeyUsedReturnsDatabaseErrors(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-usage-error")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "usage-error-key"})
+	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{Name: "usage-error-key"})
 	require.NoError(t, err)
 
 	sqlDB, err := db.DB.DB()
 	require.NoError(t, err)
 	require.NoError(t, sqlDB.Close())
 
-	err = service.markApiKeyUsedInternal(ctx, created.ID)
+	err = service.markApiKeyUsed(ctx, created.ID)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "failed to update API key last-used timestamp")
 }
@@ -716,7 +716,7 @@ func TestValidateAPIKeyRepeatedAuthenticationDoesNotGrowGoroutines(t *testing.T)
 	service, _, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-repeated-auth")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "repeated-auth-key"})
+	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{Name: "repeated-auth-key"})
 	require.NoError(t, err)
 
 	before := runtime.NumGoroutine()
@@ -765,7 +765,7 @@ func TestApiKeyProtectedWhileEnvironmentReferenced(t *testing.T) {
 
 	// Referenced by the environment: protected from update and delete.
 	require.ErrorIs(t, service.DeleteApiKey(ctx, created.ID), ErrApiKeyProtected)
-	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, apikey.UpdateApiKey{Name: new("renamed")})
+	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, types.ApiKey{Name: "renamed"}, map[string]bool{"name": true})
 	require.ErrorIs(t, err, ErrApiKeyProtected)
 
 	// Legacy pre-046 bootstrap rows carry an owner; the reference alone must
@@ -795,7 +795,7 @@ func TestValidateAPIKeyInvalidDoesNotUpdateLastUsedAt(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-invalid")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "invalid-key"})
+	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{Name: "invalid-key"})
 	require.NoError(t, err)
 
 	_, err = service.ValidateApiKey(ctx, invalidateAPIKey(created.Key))
@@ -945,7 +945,7 @@ func TestBackfillPermsForKeyDeduplicatesGlobalAndEnvironmentPermissions(t *testi
 		{RoleID: authz.BuiltInRoleEditor, EnvironmentID: &envID},
 	}))
 
-	perms, err := service.backfillPermsForKeyInternal(ctx, db.WithContext(ctx), ApiKey{
+	perms, err := service.backfillPermsForKey(ctx, db.WithContext(ctx), ApiKey{
 		UserID:        &owner.ID,
 		EnvironmentID: &envID,
 	})

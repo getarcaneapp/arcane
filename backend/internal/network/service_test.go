@@ -10,8 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	networktypes "github.com/getarcaneapp/arcane/types/v2/network"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -35,17 +34,17 @@ func networkScopeContext(t *testing.T, target string, bodies map[string]any) (co
 			}
 			_ = json.NewEncoder(w).Encode(body)
 		}),
-		Resolve: func(_ context.Context, id string) (base.EnvironmentRef, error) {
-			return base.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
 		},
 	}), &queries
 }
 
 func TestAggregateNetworksMergesEnvironments(t *testing.T) {
 	bodies := map[string]any{
-		"a": base.PaginatedWithCounts[networktypes.Summary, networktypes.UsageCounts]{
+		"a": types.PaginatedWithCounts[types.NetworkSummary, types.NetworkUsageCounts]{
 			Success: true,
-			Data: []networktypes.Summary{
+			Data: []types.NetworkSummary{
 				{
 					ID:    "a1",
 					Name:  "bridge",
@@ -53,16 +52,16 @@ func TestAggregateNetworksMergesEnvironments(t *testing.T) {
 				},
 				{ID: "a2", Name: "frontend"},
 			},
-			Counts: networktypes.UsageCounts{
+			Counts: types.NetworkUsageCounts{
 				Inuse:  1,
 				Unused: 1,
 				Total:  2,
 			},
-			Pagination: base.PaginationResponse{TotalItems: 2, GrandTotalItems: 3},
+			Pagination: types.PaginationResponse{TotalItems: 2, GrandTotalItems: 3},
 		},
-		"b": base.PaginatedWithCounts[networktypes.Summary, networktypes.UsageCounts]{
+		"b": types.PaginatedWithCounts[types.NetworkSummary, types.NetworkUsageCounts]{
 			Success: true,
-			Data: []networktypes.Summary{
+			Data: []types.NetworkSummary{
 				{
 					ID:    "b1",
 					Name:  "backend",
@@ -74,11 +73,11 @@ func TestAggregateNetworksMergesEnvironments(t *testing.T) {
 					InUse: true,
 				},
 			},
-			Counts:     networktypes.UsageCounts{Inuse: 2, Total: 2},
-			Pagination: base.PaginationResponse{TotalItems: 2},
+			Counts:     types.NetworkUsageCounts{Inuse: 2, Total: 2},
+			Pagination: types.PaginationResponse{TotalItems: 2},
 		},
 	}
-	rowLabels := func(items []networktypes.Summary) []string {
+	rowLabels := func(items []types.NetworkSummary) []string {
 		out := make([]string, 0, len(items))
 		for _, item := range items {
 			out = append(out, item.EnvironmentID+"/"+item.Name)
@@ -99,12 +98,12 @@ func TestAggregateNetworksMergesEnvironments(t *testing.T) {
 		require.Equal(t, int64(5), body.Pagination.GrandTotalItems)
 		require.Equal(t, int64(2), body.Pagination.TotalPages)
 		require.Equal(t, 2, body.Pagination.CurrentPage)
-		require.Equal(t, networktypes.UsageCounts{
+		require.Equal(t, types.NetworkUsageCounts{
 			Inuse:  3,
 			Unused: 1,
 			Total:  4,
 		}, body.Counts)
-		require.Equal(t, []base.EnvironmentFailure{{Environment: base.EnvironmentRef{ID: "c", Name: "c"}, Message: "environment offline"}}, body.FailedEnvironments)
+		require.Equal(t, []types.EnvironmentFailure{{Environment: types.EnvironmentRef{ID: "c", Name: "c"}, Message: "environment offline"}}, body.FailedEnvironments)
 		for _, id := range []string{"a", "b"} {
 			stored, ok := queries.Load(id)
 			require.True(t, ok)

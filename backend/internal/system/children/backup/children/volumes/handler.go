@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/backup"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -23,23 +23,23 @@ func NewHandler(service *Service, appCtx context.Context) *Handler {
 }
 
 type SystemVolumeBackupConfigOutput struct {
-	Body backup.SystemVolumeBackupPolicyCollection
+	Body types.SystemVolumeBackupPolicyCollection
 }
 
 type UpdateSystemVolumeBackupConfigInput struct {
-	Body backup.UpdateSystemVolumeBackupPolicies
+	Body types.UpdateSystemVolumeBackupPolicies
 }
 
 type SystemVolumeBackupOptionsOutput struct {
-	Body []backup.SystemVolumeBackupOption
+	Body []types.SystemVolumeBackupOption
 }
 
 type SystemVolumeBackupRunOutput struct {
-	Body backup.BackupRunAccepted
+	Body types.BackupRunAccepted
 }
 
 type RunSystemVolumeBackupsInput struct {
-	Body *backup.RunSystemVolumeBackupsRequest `json:"body,omitempty"`
+	Body *types.RunSystemVolumeBackupsRequest `json:"body,omitempty"`
 }
 
 func (h *Handler) GetSystemVolumeConfig(ctx context.Context, _ *struct{}) (*SystemVolumeBackupConfigOutput, error) {

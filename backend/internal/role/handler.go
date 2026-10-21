@@ -5,8 +5,8 @@ import (
 	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	roletypes "github.com/getarcaneapp/arcane/types/v2/role"
+	"github.com/getarcaneapp/arcane/types/v3"
+	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
@@ -31,12 +31,12 @@ type GetRoleInput struct {
 }
 
 type CreateRoleInput struct {
-	Body roletypes.CreateRole
+	types.Create[types.Role]
 }
 
 type UpdateRoleInput struct {
-	ID   string `path:"id" doc:"Role ID"`
-	Body roletypes.UpdateRole
+	ID string `path:"id" doc:"Role ID"`
+	types.Update[types.Role]
 }
 
 type DeleteRoleInput struct {
@@ -49,21 +49,21 @@ type ListUserRoleAssignmentsInput struct {
 
 type SetUserRoleAssignmentsInput struct {
 	UserID string `path:"userId" doc:"User ID"`
-	Body   roletypes.SetUserAssignments
+	Body   types.SetUserRoleAssignments
 }
 
-func (h *RoleHandler) ListRoles(ctx context.Context, input *ListRolesInput) (*handlerutil.Page[roletypes.Role], error) {
+func (h *RoleHandler) ListRoles(ctx context.Context, input *ListRolesInput) (*handlerutil.Page[types.Role], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	roles, paginationResp, err := h.roleService.ListRoles(ctx, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list roles: " + err.Error())
 	}
-	dtos := make([]roletypes.Role, len(roles))
+	dtos := make([]types.Role, len(roles))
 	for i := range roles {
 		dtos[i] = h.toRoleDTO(ctx, &roles[i])
 	}
-	return &handlerutil.Page[roletypes.Role]{
-		Body: base.Paginated[roletypes.Role]{
+	return &handlerutil.Page[types.Role]{
+		Body: types.Paginated[types.Role]{
 			Success:    true,
 			Data:       dtos,
 			Pagination: handlerutil.PaginationResponse(paginationResp),
@@ -71,7 +71,7 @@ func (h *RoleHandler) ListRoles(ctx context.Context, input *ListRolesInput) (*ha
 	}, nil
 }
 
-func (h *RoleHandler) GetRole(ctx context.Context, input *GetRoleInput) (*handlerutil.Out[roletypes.Role], error) {
+func (h *RoleHandler) GetRole(ctx context.Context, input *GetRoleInput) (*handlerutil.Out[types.Role], error) {
 	role, err := h.roleService.GetRole(ctx, input.ID)
 	if err != nil {
 		if errors.Is(err, common.ErrRoleNotFound) {
@@ -79,70 +79,60 @@ func (h *RoleHandler) GetRole(ctx context.Context, input *GetRoleInput) (*handle
 		}
 		return nil, huma.Error500InternalServerError("failed to get role: " + err.Error())
 	}
-	return &handlerutil.Out[roletypes.Role]{
-		Body: base.ApiResponse[roletypes.Role]{Success: true, Data: h.toRoleDTO(ctx, role)},
+	return &handlerutil.Out[types.Role]{
+		Body: types.ApiResponse[types.Role]{Success: true, Data: h.toRoleDTO(ctx, role)},
 	}, nil
 }
 
-func (h *RoleHandler) CreateRole(ctx context.Context, input *CreateRoleInput) (*handlerutil.Out[roletypes.Role], error) {
+func (h *RoleHandler) CreateRole(ctx context.Context, input *CreateRoleInput) (*handlerutil.Out[types.Role], error) {
 	callerPS, _ := middleware.PermissionsFromContext(ctx)
 	if err := h.roleService.ValidatePermissionsAgainstCaller(callerPS, input.Body.Permissions); err != nil {
-		switch {
-		case errors.Is(err, common.ErrUnknownPermission):
-			return nil, huma.Error400BadRequest(err.Error())
-		case errors.Is(err, common.ErrRolePermissionEscalation):
-			return nil, huma.Error403Forbidden(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("failed to validate role permissions: " + err.Error())
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 	role, err := h.roleService.CreateRole(ctx, input.Body.Name, input.Body.Description, input.Body.Permissions)
 	if err != nil {
-		if errors.Is(err, common.ErrRoleNameTaken) {
-			return nil, huma.Error409Conflict("role name already in use")
-		}
-		if errors.Is(err, common.ErrUnknownPermission) {
-			return nil, huma.Error400BadRequest(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("failed to create role: " + err.Error())
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
-	return &handlerutil.Out[roletypes.Role]{
-		Body: base.ApiResponse[roletypes.Role]{Success: true, Data: h.toRoleDTO(ctx, role)},
+	return &handlerutil.Out[types.Role]{
+		Body: types.ApiResponse[types.Role]{Success: true, Data: h.toRoleDTO(ctx, role)},
 	}, nil
 }
 
-func (h *RoleHandler) UpdateRole(ctx context.Context, input *UpdateRoleInput) (*handlerutil.Out[roletypes.Role], error) {
-	callerPS, _ := middleware.PermissionsFromContext(ctx)
-	if err := h.roleService.ValidatePermissionsAgainstCaller(callerPS, input.Body.Permissions); err != nil {
-		switch {
-		case errors.Is(err, common.ErrUnknownPermission):
-			return nil, huma.Error400BadRequest(err.Error())
-		case errors.Is(err, common.ErrRolePermissionEscalation):
-			return nil, huma.Error403Forbidden(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("failed to validate role permissions: " + err.Error())
-	}
-	role, err := h.roleService.UpdateRole(ctx, input.ID, input.Body.Name, input.Body.Description, input.Body.Permissions)
+func (h *RoleHandler) UpdateRole(ctx context.Context, input *UpdateRoleInput) (*handlerutil.Out[types.Role], error) {
+	submitted, err := input.SubmittedFields()
 	if err != nil {
-		switch {
-		case errors.Is(err, common.ErrRoleNotFound):
-			return nil, huma.Error404NotFound("role not found")
-		case errors.Is(err, common.ErrRoleBuiltIn):
-			return nil, huma.Error403Forbidden("built-in roles cannot be modified")
-		case errors.Is(err, common.ErrRoleNameTaken):
-			return nil, huma.Error409Conflict("role name already in use")
-		case errors.Is(err, common.ErrUnknownPermission):
-			return nil, huma.Error400BadRequest(err.Error())
-		case errors.Is(err, common.ErrNoGlobalAdminRemains):
-			return nil, huma.Error409Conflict(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("failed to update role: " + err.Error())
+		return nil, huma.Error400BadRequest("invalid request body")
 	}
-	return &handlerutil.Out[roletypes.Role]{
-		Body: base.ApiResponse[roletypes.Role]{Success: true, Data: h.toRoleDTO(ctx, role)},
+	current, err := h.roleService.GetRole(ctx, input.ID)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
+	permissions := kit.Ternary(submitted["permissions"], input.Body.Permissions, []string(current.Permissions))
+	callerPS, _ := middleware.PermissionsFromContext(ctx)
+	if validateErr := h.roleService.ValidatePermissionsAgainstCaller(callerPS, permissions); validateErr != nil {
+		apiErr := common.ToAPIError(validateErr)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
+	role, err := h.roleService.UpdateRole(
+		ctx,
+		input.ID,
+		kit.Ternary(submitted["name"], input.Body.Name, current.Name),
+		kit.Ternary(submitted["description"], input.Body.Description, current.Description),
+		permissions,
+	)
+	if err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
+	return &handlerutil.Out[types.Role]{
+		Body: types.ApiResponse[types.Role]{Success: true, Data: h.toRoleDTO(ctx, role)},
 	}, nil
 }
 
-func (h *RoleHandler) DeleteRole(ctx context.Context, input *DeleteRoleInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *RoleHandler) DeleteRole(ctx context.Context, input *DeleteRoleInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.roleService.DeleteRole(ctx, input.ID); err != nil {
 		switch {
 		case errors.Is(err, common.ErrRoleNotFound):
@@ -157,27 +147,27 @@ func (h *RoleHandler) DeleteRole(ctx context.Context, input *DeleteRoleInput) (*
 	return handlerutil.MessageOutput("role deleted", ""), nil
 }
 
-func (h *RoleHandler) GetPermissionsManifest(_ context.Context, _ *struct{}) (*handlerutil.Out[roletypes.PermissionsManifest], error) {
-	return &handlerutil.Out[roletypes.PermissionsManifest]{
-		Body: base.ApiResponse[roletypes.PermissionsManifest]{Success: true, Data: buildPermissionsManifestInternal()},
+func (h *RoleHandler) GetPermissionsManifest(_ context.Context, _ *struct{}) (*handlerutil.Out[types.PermissionsManifest], error) {
+	return &handlerutil.Out[types.PermissionsManifest]{
+		Body: types.ApiResponse[types.PermissionsManifest]{Success: true, Data: buildPermissionsManifest()},
 	}, nil
 }
 
-func (h *RoleHandler) ListUserRoleAssignments(ctx context.Context, input *ListUserRoleAssignmentsInput) (*handlerutil.Out[[]roletypes.RoleAssignment], error) {
+func (h *RoleHandler) ListUserRoleAssignments(ctx context.Context, input *ListUserRoleAssignmentsInput) (*handlerutil.Out[[]types.RoleAssignment], error) {
 	rows, err := h.roleService.ListUserAssignments(ctx, input.UserID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list assignments: " + err.Error())
 	}
-	dtos := make([]roletypes.RoleAssignment, len(rows))
+	dtos := make([]types.RoleAssignment, len(rows))
 	for i := range rows {
-		dtos[i] = toAssignmentDTOInternal(&rows[i])
+		dtos[i] = toAssignmentDTO(&rows[i])
 	}
-	return &handlerutil.Out[[]roletypes.RoleAssignment]{
-		Body: base.ApiResponse[[]roletypes.RoleAssignment]{Success: true, Data: dtos},
+	return &handlerutil.Out[[]types.RoleAssignment]{
+		Body: types.ApiResponse[[]types.RoleAssignment]{Success: true, Data: dtos},
 	}, nil
 }
 
-func (h *RoleHandler) SetUserRoleAssignments(ctx context.Context, input *SetUserRoleAssignmentsInput) (*handlerutil.Out[[]roletypes.RoleAssignment], error) {
+func (h *RoleHandler) SetUserRoleAssignments(ctx context.Context, input *SetUserRoleAssignmentsInput) (*handlerutil.Out[[]types.RoleAssignment], error) {
 	desired := make([]UserRoleAssignment, len(input.Body.Assignments))
 	for i, a := range input.Body.Assignments {
 		desired[i] = UserRoleAssignment{RoleID: a.RoleID, EnvironmentID: a.EnvironmentID}
@@ -197,17 +187,17 @@ func (h *RoleHandler) SetUserRoleAssignments(ctx context.Context, input *SetUser
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to read back assignments: " + err.Error())
 	}
-	dtos := make([]roletypes.RoleAssignment, len(rows))
+	dtos := make([]types.RoleAssignment, len(rows))
 	for i := range rows {
-		dtos[i] = toAssignmentDTOInternal(&rows[i])
+		dtos[i] = toAssignmentDTO(&rows[i])
 	}
-	return &handlerutil.Out[[]roletypes.RoleAssignment]{
-		Body: base.ApiResponse[[]roletypes.RoleAssignment]{Success: true, Data: dtos},
+	return &handlerutil.Out[[]types.RoleAssignment]{
+		Body: types.ApiResponse[[]types.RoleAssignment]{Success: true, Data: dtos},
 	}, nil
 }
 
-func (h *RoleHandler) toRoleDTO(ctx context.Context, r *Role) roletypes.Role {
-	out := roletypes.Role{
+func (h *RoleHandler) toRoleDTO(ctx context.Context, r *Role) types.Role {
+	out := types.Role{
 		ID:          r.ID,
 		Name:        r.Name,
 		Description: r.Description,
@@ -222,8 +212,8 @@ func (h *RoleHandler) toRoleDTO(ctx context.Context, r *Role) roletypes.Role {
 	return out
 }
 
-func toAssignmentDTOInternal(r *UserRoleAssignment) roletypes.RoleAssignment {
-	return roletypes.RoleAssignment{
+func toAssignmentDTO(r *UserRoleAssignment) types.RoleAssignment {
+	return types.RoleAssignment{
 		ID:            r.ID,
 		UserID:        r.UserID,
 		RoleID:        r.RoleID,
@@ -233,33 +223,33 @@ func toAssignmentDTOInternal(r *UserRoleAssignment) roletypes.RoleAssignment {
 	}
 }
 
-// buildPermissionsManifestInternal maps the authz-owned permission catalog into
+// buildPermissionsManifest maps the authz-owned permission catalog into
 // the public API manifest shape used by the frontend role editor.
-func buildPermissionsManifestInternal() roletypes.PermissionsManifest {
+func buildPermissionsManifest() types.PermissionsManifest {
 	catalog := authz.PermissionCatalog()
-	resources := make([]roletypes.PermissionResource, len(catalog))
+	resources := make([]types.PermissionResource, len(catalog))
 	for i, resource := range catalog {
-		actions := make([]roletypes.PermissionAction, len(resource.Actions))
+		actions := make([]types.PermissionAction, len(resource.Actions))
 		for j, action := range resource.Actions {
-			actions[j] = roletypes.PermissionAction{
+			actions[j] = types.PermissionAction{
 				Key:         action.Key,
 				Permission:  action.Permission,
 				Label:       action.Label,
 				Description: action.Description,
-				Requires:    requiredPermissionsForPickerInternal(action.Permission),
+				Requires:    requiredPermissionsForPicker(action.Permission),
 			}
 		}
-		resources[i] = roletypes.PermissionResource{
+		resources[i] = types.PermissionResource{
 			Key:     resource.Key,
 			Label:   resource.Label,
 			Scope:   resource.Scope,
 			Actions: actions,
 		}
 	}
-	return roletypes.PermissionsManifest{
+	return types.PermissionsManifest{
 		Resources:      resources,
-		AccessSurfaces: buildAccessSurfaceManifestInternal(),
-		Presets: []roletypes.PermissionPreset{
+		AccessSurfaces: buildAccessSurfaceManifest(),
+		Presets: []types.PermissionPreset{
 			{
 				Key:         "editor",
 				Label:       "All permissions (non-admin)",
@@ -276,11 +266,11 @@ func buildPermissionsManifestInternal() roletypes.PermissionsManifest {
 	}
 }
 
-func buildAccessSurfaceManifestInternal() []roletypes.AccessSurface {
+func buildAccessSurfaceManifest() []types.AccessSurface {
 	surfaces := authz.AccessSurfaces()
-	out := make([]roletypes.AccessSurface, len(surfaces))
+	out := make([]types.AccessSurface, len(surfaces))
 	for i, surface := range surfaces {
-		out[i] = roletypes.AccessSurface{
+		out[i] = types.AccessSurface{
 			ID:            surface.ID,
 			Kind:          surface.Kind,
 			URL:           surface.URL,
@@ -296,7 +286,7 @@ func buildAccessSurfaceManifestInternal() []roletypes.AccessSurface {
 	return out
 }
 
-func requiredPermissionsForPickerInternal(permission string) []string {
+func requiredPermissionsForPicker(permission string) []string {
 	switch permission {
 	case authz.PermSettingsWrite,
 		authz.PermApiKeysList,

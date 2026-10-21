@@ -5,18 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/env"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
-	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 // Command is the parent command for global variable operations.
@@ -36,7 +34,7 @@ func Command() *cobra.Command {
 
 const secretMask = "********"
 
-func printMutationResult(result env.GlobalVariableMutationResponse, message string) error {
+func printMutationResult(result types.GlobalVariableMutationResponse, message string) error {
 	output.Success("%s", message)
 	if result.Variable != nil {
 		output.KeyValue("ID", result.Variable.ID)
@@ -67,11 +65,11 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[[]env.GlobalVariable]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[[]types.GlobalVariable]{
 				Method:         http.MethodGet,
-				Path:           types.Variables(),
+				Path:           clitypes.Variables(),
 				FailureMessage: "failed to list variables",
-				Render: func(data []env.GlobalVariable) error {
+				Render: func(data []types.GlobalVariable) error {
 					headers := []string{"ID", "KEY", "SCOPE", "SECRET", "VALUE"}
 					rows := make([][]string, len(data))
 					for i, variable := range data {
@@ -125,7 +123,7 @@ func newCreateCmd() *cobra.Command {
 				return err
 			}
 
-			req := env.CreateGlobalVariableRequest{
+			req := types.GlobalVariable{
 				Key:             opts.key,
 				Value:           opts.value,
 				IsSecret:        opts.secret,
@@ -133,12 +131,12 @@ func newCreateCmd() *cobra.Command {
 				EnvironmentIDs:  opts.envIDs,
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[env.GlobalVariableMutationResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.GlobalVariableMutationResponse]{
 				Method:         http.MethodPost,
-				Path:           types.Variables(),
+				Path:           clitypes.Variables(),
 				FailureMessage: "failed to create variable",
 				Body:           req,
-				Render: func(data env.GlobalVariableMutationResponse) error {
+				Render: func(data types.GlobalVariableMutationResponse) error {
 					return printMutationResult(data, fmt.Sprintf("Variable %s created successfully", opts.key))
 				},
 			})
@@ -167,7 +165,23 @@ func newUpdateCmd() *cobra.Command {
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !slices.ContainsFunc([]string{"key", "value", "secret", "all-environments", "environment"}, cmd.Flags().Changed) {
+			req := map[string]any{}
+			for _, field := range []struct {
+				flag  string
+				key   string
+				value any
+			}{
+				{flag: "key", key: "key", value: opts.key},
+				{flag: "value", key: "value", value: opts.value},
+				{flag: "secret", key: "isSecret", value: opts.secret},
+				{flag: "all-environments", key: "allEnvironments", value: opts.allEnvs},
+				{flag: "environment", key: "environmentIds", value: opts.envIDs},
+			} {
+				if cmd.Flags().Changed(field.flag) {
+					req[field.key] = field.value
+				}
+			}
+			if len(req) == 0 {
 				return errors.New("no updates provided (set at least one flag)")
 			}
 			c, err := cmdutil.ClientFromCommand(cmd)
@@ -175,20 +189,12 @@ func newUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			req := env.UpdateGlobalVariableRequest{
-				Key:             kit.Ternary(cmd.Flags().Changed("key"), &opts.key, nil),
-				Value:           kit.Ternary(cmd.Flags().Changed("value"), &opts.value, nil),
-				IsSecret:        kit.Ternary(cmd.Flags().Changed("secret"), &opts.secret, nil),
-				AllEnvironments: kit.Ternary(cmd.Flags().Changed("all-environments"), &opts.allEnvs, nil),
-				EnvironmentIDs:  kit.Ternary(cmd.Flags().Changed("environment"), &opts.envIDs, nil),
-			}
-
-			return cmdutil.Run(cmd, c, cmdutil.Spec[env.GlobalVariableMutationResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.GlobalVariableMutationResponse]{
 				Method:         http.MethodPut,
-				Path:           types.Variable(args[0]),
+				Path:           clitypes.Variable(args[0]),
 				FailureMessage: "failed to update variable",
 				Body:           req,
-				Render: func(data env.GlobalVariableMutationResponse) error {
+				Render: func(data types.GlobalVariableMutationResponse) error {
 					return printMutationResult(data, "Variable updated successfully")
 				},
 			})
@@ -220,7 +226,7 @@ func newDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete variable %s?", args[0]),
-				Path:           types.Variable(args[0]),
+				Path:           clitypes.Variable(args[0]),
 				FailureMessage: "failed to delete variable",
 				SuccessMessage: "Variable deleted successfully",
 			})
@@ -245,15 +251,15 @@ func newSyncCmd() *cobra.Command {
 				return err
 			}
 
-			method, path, failureMessage := http.MethodPost, types.VariablesSync(), "failed to sync variables"
+			method, path, failureMessage := http.MethodPost, clitypes.VariablesSync(), "failed to sync variables"
 			if opts.syncStatus {
-				method, path, failureMessage = http.MethodGet, types.VariablesSyncStatus(), "failed to get variable sync status"
+				method, path, failureMessage = http.MethodGet, clitypes.VariablesSyncStatus(), "failed to get variable sync status"
 			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[[]env.EnvironmentSyncStatus]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[[]types.EnvironmentSyncStatus]{
 				Method:         method,
 				Path:           path,
 				FailureMessage: failureMessage,
-				Render: func(data []env.EnvironmentSyncStatus) error {
+				Render: func(data []types.EnvironmentSyncStatus) error {
 					headers := []string{"ENVIRONMENT ID", "NAME", "STATUS", "LAST SYNCED", "ERROR"}
 					rows := make([][]string, len(data))
 					for i, status := range data {

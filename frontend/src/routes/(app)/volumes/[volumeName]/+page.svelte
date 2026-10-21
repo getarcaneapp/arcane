@@ -45,7 +45,7 @@
 	import { volumeService } from '#lib/services/volume-service.js';
 	import { volumeWorkspaceService } from '#lib/services/volume-workspace-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { VolumeDetailDto } from '#lib/types/docker.js';
+	import type { Volume } from '#lib/types/docker.js';
 	import type { BackupEntry } from '#lib/types/shared.js';
 	import type { VolumeWorkspaceFileChange, VolumeWorkspaceFileContent } from '#lib/types/volume-workspace.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
@@ -821,7 +821,7 @@
 	}
 </script>
 
-{#snippet volumeContainers(volume: VolumeDetailDto)}
+{#snippet volumeContainers(volume: Volume)}
 	<DetailSection title={m.volumes_containers_using_title()} icon={ContainersIcon}>
 		{#if containersDetailed.length > 0}
 			<div class="divide-y rounded-lg border">
@@ -865,7 +865,7 @@
 	</DetailSection>
 {/snippet}
 
-{#snippet volumeWorkspaceFileEditor(volume: VolumeDetailDto, relativePath: string)}
+{#snippet volumeWorkspaceFileEditor(volume: Volume, relativePath: string)}
 	{#if workspaceFileLoadErrors[relativePath]}
 		<div class="flex h-full items-center justify-center px-4 text-sm text-destructive">
 			{workspaceFileLoadErrors[relativePath]}
@@ -992,7 +992,7 @@
 	</div>
 {/snippet}
 
-{#snippet volumeWorkspace(volume: VolumeDetailDto)}
+{#snippet volumeWorkspace(volume: Volume)}
 	{#if !canReadVolume}
 		<div class="flex min-h-96 items-center justify-center rounded-lg border text-sm text-muted-foreground">
 			{m.common_access_denied()}
@@ -1055,7 +1055,7 @@
 	{/if}
 {/snippet}
 
-{#snippet volumeOverview(volume: VolumeDetailDto)}
+{#snippet volumeOverview(volume: Volume)}
 	<DetailMetaStrip
 		items={[
 			{ icon: VolumesIcon, label: m.common_driver(), value: volume.driver ?? m.common_unknown() },

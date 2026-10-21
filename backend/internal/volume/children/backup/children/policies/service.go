@@ -10,10 +10,7 @@ import (
 	"strings"
 	"time"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	"github.com/getarcaneapp/arcane/types/v2/user"
-	"github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"gorm.io/gorm"
 
@@ -36,9 +33,9 @@ type Dependencies struct {
 	S3Destinations *s3.S3DestinationService
 	Settings       *settings.SettingsService
 	AlreadyRunning error
-	LatestRun      func(ctx context.Context, policyID string) (*volume.BackupEntry, error)
-	CreateBackup   func(ctx context.Context, volumeName, policyID string) (*volume.Backup, error)
-	Reconcile      func(ctx context.Context, previous scheduler.Run, volumeName string) (scheduler.Outcome, error)
+	LatestRun      func(ctx context.Context, policyID string) (*types.VolumeBackupEntry, error)
+	CreateBackup   func(ctx context.Context, volumeName, policyID string) (*types.VolumeBackup, error)
+	Reconcile      func(ctx context.Context, previous types.SchedulerRun, volumeName string) (types.SchedulerOutcome, error)
 }
 
 // Service owns per-volume backup policies and their scheduled jobs.
@@ -60,7 +57,7 @@ func NewService(deps Dependencies) *Service {
 
 // SetScheduler injects the dynamic scheduler and admission gate for per-policy
 // backup jobs. Agent mode passes them too: agents run their own volume backups.
-func (s *Service) SetScheduler(ctx context.Context, dynamicScheduler scheduler.DynamicScheduler, admissionGate *runs.Admission) error {
+func (s *Service) SetScheduler(ctx context.Context, dynamicScheduler types.DynamicScheduler, admissionGate *runs.Admission) error {
 	return s.jobs.SetScheduler(ctx, dynamicScheduler, admissionGate)
 }
 
@@ -75,7 +72,7 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 		Concurrency: 4,
 		Timeout:     24 * time.Hour,
 		Activity: activitylib.StartRequest{
-			Type: activitytypes.TypeResourceAction, ResourceType: new("volume_backup"), StartedBy: &user.SystemUser,
+			Type: types.ActivityTypeResourceAction, ResourceType: new("volume_backup"), StartedBy: &types.SystemUser,
 			Step: "Creating scheduled backup", LatestMessage: "Creating scheduled volume backup",
 		},
 		Labels: map[string]string{"backup": "Creating scheduled backup"},
@@ -108,12 +105,12 @@ func (s *Service) Policy(ctx context.Context, volumeName, policyID string) (*Vol
 	return &policy, nil
 }
 
-func (s *Service) GetBackupPolicies(ctx context.Context, volumeName string) (*volume.BackupPolicyCollection, error) {
+func (s *Service) GetBackupPolicies(ctx context.Context, volumeName string) (*types.VolumeBackupPolicyCollection, error) {
 	policies, err := s.policies(ctx, volumeName)
 	if err != nil {
 		return nil, err
 	}
-	result := &volume.BackupPolicyCollection{Policies: make([]volume.BackupPolicy, 0, len(policies))}
+	result := &types.VolumeBackupPolicyCollection{Policies: make([]types.VolumeBackupPolicy, 0, len(policies))}
 	destinations := s.deps.S3Destinations.DestinationsByID(ctx)
 	result.S3Available = len(destinations) > 0
 	for i := range policies {
@@ -137,19 +134,19 @@ func (s *Service) GetBackupPolicies(ctx context.Context, volumeName string) (*vo
 	return result, nil
 }
 
-func (s *Service) UpdateBackupPolicies(ctx context.Context, volumeName string, updates []volume.UpdateBackupPolicy) (*volume.BackupPolicyCollection, error) {
+func (s *Service) UpdateBackupPolicies(ctx context.Context, volumeName string, updates []types.UpdateBackupPolicy) (*types.VolumeBackupPolicyCollection, error) {
 	existing, err := s.policies(ctx, volumeName)
 	if err != nil {
 		return nil, err
 	}
-	reconcile := backup.PolicyReconciliation[VolumeBackupPolicy, volume.UpdateBackupPolicy]{
+	reconcile := backup.PolicyReconciliation[VolumeBackupPolicy, types.UpdateBackupPolicy]{
 		Domain:   "volume",
 		DB:       s.deps.DB,
 		Existing: existing,
 		ID:       func(policy *VolumeBackupPolicy) string { return policy.ID },
-		UpdateID: func(update volume.UpdateBackupPolicy) string { return update.ID },
+		UpdateID: func(update types.UpdateBackupPolicy) string { return update.ID },
 		New:      func() VolumeBackupPolicy { return VolumeBackupPolicy{VolumeName: volumeName} },
-		Build: func(ctx context.Context, policy *VolumeBackupPolicy, update volume.UpdateBackupPolicy) error {
+		Build: func(ctx context.Context, policy *VolumeBackupPolicy, update types.UpdateBackupPolicy) error {
 			normalized, validatePolicyUpdateErr := backup.ValidatePolicyUpdate(ctx, "volume", update, s.deps.S3Destinations)
 			if validatePolicyUpdateErr != nil {
 				return validatePolicyUpdateErr
@@ -203,7 +200,7 @@ func (s *Service) runScheduledBackup(ctx context.Context, t flow.Task) (any, err
 	var policy VolumeBackupPolicy
 	if err := s.deps.DB.WithContext(ctx).Where("id = ? AND enabled = ?", input.PolicyID, true).First(&policy).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return scheduler.Outcome{Status: scheduler.Canceled, Message: "Backup policy disabled or deleted"}, nil
+			return types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Backup policy disabled or deleted"}, nil
 		}
 		return nil, err
 	}
@@ -222,12 +219,12 @@ func (s *Service) runScheduledBackup(ctx context.Context, t flow.Task) (any, err
 		s.reschedule(ctx, &policy)
 	}
 	if remoteDisabled && !policy.LocalEnabled {
-		return scheduler.Outcome{Status: scheduler.NeedsAttention, Message: backup.RemoteDisabledMessage}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusNeedsAttention, Message: backup.RemoteDisabledMessage}, nil
 	}
 	entry, err := s.deps.CreateBackup(ctx, policy.VolumeName, policy.ID)
 	if errors.Is(err, s.deps.AlreadyRunning) {
 		slog.InfoContext(ctx, "Scheduled volume backup skipped; another backup is running", "volume", policy.VolumeName)
-		return scheduler.Outcome{Status: scheduler.Skipped, Message: "Skipped: another backup is running for this volume"}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusSkipped, Message: "Skipped: another backup is running for this volume"}, nil
 	}
 	if err != nil {
 		slog.ErrorContext(ctx, "Scheduled volume backup failed", "volume", policy.VolumeName, "error", err)
@@ -235,9 +232,9 @@ func (s *Service) runScheduledBackup(ctx context.Context, t flow.Task) (any, err
 	}
 	slog.InfoContext(ctx, "Scheduled volume backup completed", "volume", policy.VolumeName, "backupId", entry.ID, "remoteSnapshotId", entry.RemoteSnapshotID)
 	if remoteDisabled {
-		return scheduler.Outcome{Status: scheduler.Partial, Message: backup.RemoteDisabledMessage}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusPartial, Message: backup.RemoteDisabledMessage}, nil
 	}
-	return scheduler.Outcome{Status: scheduler.Succeeded, Message: "Scheduled volume backup created successfully"}, nil
+	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Scheduled volume backup created successfully"}, nil
 }
 
 func (s *Service) reschedule(ctx context.Context, policy *VolumeBackupPolicy) {
@@ -269,7 +266,7 @@ func (s *Service) reschedule(ctx context.Context, policy *VolumeBackupPolicy) {
 			}
 			return current.Schedule
 		},
-		FallbackFn: func(ctx context.Context, previous scheduler.Run) (scheduler.Outcome, error) {
+		FallbackFn: func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 			return s.deps.Reconcile(ctx, previous, volumeName)
 		},
 	})

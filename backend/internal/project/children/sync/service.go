@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
@@ -303,15 +303,15 @@ func ApplyGitSyncEnv(ctx context.Context, projectPath, projectsDirectory string,
 // Results are cached by dirPath until a compose, include or env file changes.
 func LoadComposeMetadata(
 	ctx context.Context,
-	cache project.ComposeCache[project.ComposeIdentity],
+	cache types.ComposeCache[types.ComposeIdentity],
 	dirPath, dirName, projectsDirectory string,
 	autoInjectEnv bool,
 	pathMapper *projects.PathMapper,
-) (project.ComposeIdentity, error) {
+) (types.ComposeIdentity, error) {
 	normName := projects.NormalizeProjectName(dirName)
 	composeFile, err := projects.DetectComposeFile(ctx, projectsDirectory, dirPath)
 	if err != nil {
-		return project.ComposeIdentity{ResolvedProjectName: normName}, err
+		return types.ComposeIdentity{ResolvedProjectName: normName}, err
 	}
 	fingerprint := fmt.Sprintf("%q|%q|%q|%t|%#v", composeFile, normName, projectsDirectory, autoInjectEnv, pathMapper)
 	if cached, ok := cache.Get(dirPath, fingerprint); ok {
@@ -320,17 +320,17 @@ func LoadComposeMetadata(
 
 	// Load unnamed first so COMPOSE_PROJECT_NAME from .env wins; fall back to
 	// the normalized directory name when that fails.
-	dependencies := project.ComposeDependencies{}
+	dependencies := types.ComposeDependencies{}
 	loadedAt := time.Now()
 	proj, loadErr := projects.LoadComposeProject(ctx, composeFile, "", projectsDirectory, autoInjectEnv, pathMapper, nil, nil, false, &dependencies, nil, nil)
 	if loadErr != nil {
-		dependencies = project.ComposeDependencies{}
+		dependencies = types.ComposeDependencies{}
 		proj, err = projects.LoadComposeProject(ctx, composeFile, normName, projectsDirectory, autoInjectEnv, pathMapper, nil, nil, false, &dependencies, nil, nil)
 		if err != nil {
-			return project.ComposeIdentity{ResolvedProjectName: normName}, err
+			return types.ComposeIdentity{ResolvedProjectName: normName}, err
 		}
 	}
-	meta := project.ComposeIdentity{
+	meta := types.ComposeIdentity{
 		ServiceCount:        len(proj.Services),
 		ResolvedProjectName: cmp.Or(proj.Name, normName),
 		// Keep a COMPOSE_PROJECT_NAME override so containers match.

@@ -12,8 +12,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/environment"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -104,7 +103,7 @@ func (ref ResourceRef[D, S]) Resolve(ctx context.Context, c *client.Client, iden
 	}
 	app, _ := runtime.From(ctx)
 	preview := app.PreviewEnabled() && ref.EnvironmentScoped
-	environments := []environment.Environment{{ID: c.EnvID()}}
+	environments := []types.Environment{{ID: c.EnvID()}}
 	if preview {
 		var discoveryErr error
 		environments, discoveryErr = app.Environments(ctx)
@@ -249,8 +248,8 @@ func (ref ResourceRef[D, S]) fetchByIdentifier(ctx context.Context, c *client.Cl
 
 	if resp.StatusCode == http.StatusOK {
 		var result struct {
-			base.ApiResponse[D]
-			base.ErrorResponse
+			types.ApiResponse[D]
+			types.ErrorResponse
 		}
 		if unmarshalErr := json.Unmarshal(body, &result); unmarshalErr != nil {
 			return nil, false, fmt.Errorf("failed to parse %s response: %w", ref.Singular, unmarshalErr)
@@ -321,8 +320,8 @@ func (ref ResourceRef[D, S]) listItems(ctx context.Context, c *client.Client, pa
 	}
 
 	var result struct {
-		base.ApiResponse[[]S]
-		base.ErrorResponse
+		types.ApiResponse[[]S]
+		types.ErrorResponse
 	}
 	if unmarshalErr := json.Unmarshal(body, &result); unmarshalErr != nil {
 		return nil, fmt.Errorf("failed to parse %s response: %w", ref.Plural, unmarshalErr)

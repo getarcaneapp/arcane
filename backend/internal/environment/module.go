@@ -6,7 +6,7 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/version"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -52,7 +52,7 @@ func (m *Module) Handler() *EnvironmentHandler {
 }
 
 // RegisterRoutes registers the environment endpoints; localVersion answers version requests for the local environment.
-func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext, localVersion func(context.Context) *version.Info) {
+func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext, localVersion func(context.Context) *types.VersionInfo) {
 	if m == nil {
 		RegisterEnvironments(api, NewHandler(nil, nil, nil, nil, nil, nil))
 		return

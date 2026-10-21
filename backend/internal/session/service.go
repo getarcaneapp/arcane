@@ -10,7 +10,7 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v2/auth"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
@@ -28,7 +28,7 @@ func NewSessionService(db *database.DB) *SessionService {
 	return &SessionService{db: db}
 }
 
-func (s *SessionService) CreateSession(ctx context.Context, userID string, expiresAt time.Time, meta auth.SessionMeta) (*UserSession, string, error) {
+func (s *SessionService) CreateSession(ctx context.Context, userID string, expiresAt time.Time, meta types.SessionMeta) (*UserSession, string, error) {
 	refreshJTI := uuid.New().String()
 	refreshHash := kit.SHA256Hex(refreshJTI)
 
@@ -84,7 +84,7 @@ func (s *SessionService) GetSessionByID(ctx context.Context, sessionID string) (
 	return &session, nil
 }
 
-func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID, refreshJTI string, meta auth.SessionMeta) (*UserSession, string, error) {
+func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID, refreshJTI string, meta types.SessionMeta) (*UserSession, string, error) {
 	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(refreshJTI) == "" {
 		return nil, "", common.ErrInvalidToken
 	}

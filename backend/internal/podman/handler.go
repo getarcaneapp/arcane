@@ -7,8 +7,7 @@ import (
 	"maps"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 	kit "go.getarcane.app/kit/pkg"
 
@@ -33,23 +32,23 @@ type GetPodmanInfoInput struct {
 
 type RunPodmanAutoUpdateInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          *podmantypes.AutoUpdateOptions
+	Body          *types.PodmanAutoUpdateOptions
 }
 
-func (h *Handler) GetStatus(ctx context.Context, _ *GetPodmanStatusInput) (*handlerutil.Out[podmantypes.Status], error) {
-	return &handlerutil.Out[podmantypes.Status]{Body: base.ApiResponse[podmantypes.Status]{Success: true, Data: h.service.Status(ctx)}}, nil
+func (h *Handler) GetStatus(ctx context.Context, _ *GetPodmanStatusInput) (*handlerutil.Out[types.PodmanStatus], error) {
+	return &handlerutil.Out[types.PodmanStatus]{Body: types.ApiResponse[types.PodmanStatus]{Success: true, Data: h.service.Status(ctx)}}, nil
 }
 
-func (h *Handler) GetInfo(ctx context.Context, _ *GetPodmanInfoInput) (*handlerutil.Out[podmantypes.Info], error) {
+func (h *Handler) GetInfo(ctx context.Context, _ *GetPodmanInfoInput) (*handlerutil.Out[types.PodmanInfo], error) {
 	info, err := h.service.Info(ctx)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to get Podman info: "+apiErr.Message)
 	}
-	return &handlerutil.Out[podmantypes.Info]{Body: base.ApiResponse[podmantypes.Info]{Success: true, Data: info}}, nil
+	return &handlerutil.Out[types.PodmanInfo]{Body: types.ApiResponse[types.PodmanInfo]{Success: true, Data: info}}, nil
 }
 
-func (h *Handler) RunAutoUpdate(ctx context.Context, input *RunPodmanAutoUpdateInput) (*handlerutil.Out[podmantypes.AutoUpdateResult], error) {
+func (h *Handler) RunAutoUpdate(ctx context.Context, input *RunPodmanAutoUpdateInput) (*handlerutil.Out[types.PodmanAutoUpdateResult], error) {
 	opts := kit.FromPtr(input.Body)
 	result, err := h.service.AutoUpdate(ctx, opts)
 	if err != nil {
@@ -61,7 +60,7 @@ func (h *Handler) RunAutoUpdate(ctx context.Context, input *RunPodmanAutoUpdateI
 		"dryRun":  opts.DryRun,
 		"reports": len(result.Reports),
 	})
-	return &handlerutil.Out[podmantypes.AutoUpdateResult]{Body: base.ApiResponse[podmantypes.AutoUpdateResult]{Success: true, Data: result}}, nil
+	return &handlerutil.Out[types.PodmanAutoUpdateResult]{Body: types.ApiResponse[types.PodmanAutoUpdateResult]{Success: true, Data: result}}, nil
 }
 
 func (h *Handler) audit(ctx context.Context, environmentID, action, resourceType, resourceName string, metadata map[string]any) {

@@ -9,15 +9,14 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 // Command is the parent command for Arcane system backup operations (admin-only).
@@ -59,12 +58,12 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[backup.SystemBackupRun]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.SystemBackupRun]{
 				Resource: "backups",
-				Endpoint: types.Backups(),
+				Endpoint: clitypes.Backups(),
 				Params:   cmdutil.ListParams{Resource: "backups", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
 				Headers:  []string{"ID", "STATUS", "TRIGGER", "DESTINATION", "SIZE", "S3 DESTINATION", "CREATED"},
-				Row: func(run backup.SystemBackupRun) []string {
+				Row: func(run types.SystemBackupRun) []string {
 					return []string{
 						run.ID,
 						run.Status,
@@ -86,7 +85,7 @@ func newListCmd() *cobra.Command {
 
 func newCreateCmd() *cobra.Command {
 	var opts struct {
-		destination   backup.SystemBackupDestination
+		destination   types.SystemBackupDestination
 		s3Destination string
 		local         bool
 		recoveryKey   string
@@ -121,25 +120,25 @@ alone stores it in S3, and --local together with --s3-destination stores it in b
 			if !cmd.Flags().Changed("destination") {
 				switch {
 				case s3DestinationID != "" && opts.local:
-					destination = backup.SystemBackupDestinationLocalS3
+					destination = types.SystemBackupDestinationLocalS3
 				case s3DestinationID != "":
-					destination = backup.SystemBackupDestinationS3
+					destination = types.SystemBackupDestinationS3
 				default:
-					destination = backup.SystemBackupDestinationLocal
+					destination = types.SystemBackupDestinationLocal
 				}
 			}
-			if (destination == backup.SystemBackupDestinationS3 || destination == backup.SystemBackupDestinationLocalS3) && s3DestinationID == "" {
+			if (destination == types.SystemBackupDestinationS3 || destination == types.SystemBackupDestinationLocalS3) && s3DestinationID == "" {
 				return fmt.Errorf("--destination %s requires --s3-destination", destination)
 			}
 
-			req := backup.CreateSystemBackupRequest{
+			req := types.CreateSystemBackupRequest{
 				Destination:     destination,
 				S3DestinationID: s3DestinationID,
 				RecoveryKey:     opts.recoveryKey,
 				PolicyID:        opts.policyID,
 			}
 
-			run, err := c.DoJSON[backup.SystemBackupRun](cmd.Context(), http.MethodPost, types.Backups(), req)
+			run, err := c.DoJSON[types.SystemBackupRun](cmd.Context(), http.MethodPost, clitypes.Backups(), req)
 			if err != nil {
 				return fmt.Errorf("failed to create backup: %w", err)
 			}
@@ -163,7 +162,7 @@ alone stores it in S3, and --local together with --s3-destination stores it in b
 	}
 	cmdutil.EnumVarP(cmd, cmd.Flags(), &opts.destination, "destination", "", "",
 		"Backup destination (inferred from --local/--s3-destination when omitted)",
-		backup.SystemBackupDestinationLocal, backup.SystemBackupDestinationS3, backup.SystemBackupDestinationLocalS3)
+		types.SystemBackupDestinationLocal, types.SystemBackupDestinationS3, types.SystemBackupDestinationLocalS3)
 	cmd.Flags().StringVar(&opts.s3Destination, "s3-destination", "", "S3 destination name or ID")
 	cmd.Flags().BoolVar(&opts.local, "local", false, "Also keep a local copy when backing up to S3")
 	cmd.Flags().StringVar(&opts.recoveryKey, "recovery-key", "", "Recovery key used to encrypt the backup")
@@ -191,8 +190,8 @@ func newDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete backup %s?", args[0]),
-				Path:           types.Backup(args[0]),
-				Body:           backup.DeleteSystemBackupRequest{RecoveryKey: opts.recoveryKey},
+				Path:           clitypes.Backup(args[0]),
+				Body:           types.DeleteSystemBackupRequest{RecoveryKey: opts.recoveryKey},
 				FailureMessage: "failed to delete backup",
 				SuccessMessage: fmt.Sprintf("Backup %s deleted successfully", args[0]),
 			})
@@ -239,12 +238,12 @@ func newRestoreCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           types.BackupRestore(args[0]),
-				Body:           backup.RestoreSystemBackupRequest{RecoveryKey: key},
+				Path:           clitypes.BackupRestore(args[0]),
+				Body:           types.RestoreSystemBackupRequest{RecoveryKey: key},
 				FailureMessage: "failed to restore backup",
-				Render: func(data base.MessageResponse) error {
+				Render: func(data types.MessageResponse) error {
 					output.Success("%s", data.Message)
 					output.Warning("Arcane will restart while the restore is applied; the server may be unavailable for a short time.")
 					return nil
@@ -278,12 +277,12 @@ func newUploadCmd() *cobra.Command {
 				return err
 			}
 
-			req := backup.UploadSystemBackupRequest{
+			req := types.UploadSystemBackupRequest{
 				S3DestinationID: resolved.ID,
 				RecoveryKey:     opts.recoveryKey,
 			}
 
-			run, err := c.DoJSON[backup.SystemBackupRun](cmd.Context(), http.MethodPost, types.BackupUpload(args[0]), req)
+			run, err := c.DoJSON[types.SystemBackupRun](cmd.Context(), http.MethodPost, clitypes.BackupUpload(args[0]), req)
 			if err != nil {
 				return fmt.Errorf("failed to upload backup: %w", err)
 			}
@@ -328,14 +327,14 @@ func newDiscoverCmd() *cobra.Command {
 				return err
 			}
 
-			req := backup.DiscoverSystemBackupsRequest{
+			req := types.DiscoverSystemBackupsRequest{
 				S3DestinationID: resolved.ID,
 				RecoveryKey:     opts.recoveryKey,
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[int]{
 				Method:         http.MethodPost,
-				Path:           types.BackupsDiscover(),
+				Path:           clitypes.BackupsDiscover(),
 				Body:           req,
 				FailureMessage: "failed to discover backups",
 				Render: func(data int) error {
@@ -363,7 +362,7 @@ func newPoliciesCmd() *cobra.Command {
 				return err
 			}
 
-			result, err := c.DoJSON[backup.SystemBackupPolicyCollection](cmd.Context(), http.MethodGet, types.BackupsPolicies(), nil)
+			result, err := c.DoJSON[types.SystemBackupPolicyCollection](cmd.Context(), http.MethodGet, clitypes.BackupsPolicies(), nil)
 			if err != nil {
 				return fmt.Errorf("failed to get backup policies: %w", err)
 			}
@@ -395,7 +394,7 @@ Alternatively, --file replaces all policies from a raw JSON payload.`,
 				return err
 			}
 
-			var req backup.UpdateSystemBackupPolicies
+			var req types.UpdateSystemBackupPolicies
 			if opts.file != "" {
 				req, err = opts.requestFromFile()
 			} else {
@@ -405,7 +404,7 @@ Alternatively, --file replaces all policies from a raw JSON payload.`,
 				return err
 			}
 
-			result, err := c.DoJSON[backup.SystemBackupPolicyCollection](cmd.Context(), http.MethodPut, types.BackupsPolicies(), req)
+			result, err := c.DoJSON[types.SystemBackupPolicyCollection](cmd.Context(), http.MethodPut, clitypes.BackupsPolicies(), req)
 			if err != nil {
 				return fmt.Errorf("failed to update backup policies: %w", err)
 			}
@@ -473,7 +472,7 @@ func newRecoveryKeyGenerateCmd() *cobra.Command {
 				return err
 			}
 
-			result, err := c.DoJSON[backup.SystemBackupRecoveryKey](cmd.Context(), http.MethodPost, types.BackupsRecoveryKeyGenerate(), nil)
+			result, err := c.DoJSON[types.SystemBackupRecoveryKey](cmd.Context(), http.MethodPost, clitypes.BackupsRecoveryKeyGenerate(), nil)
 			if err != nil {
 				return fmt.Errorf("failed to generate recovery key: %w", err)
 			}
@@ -499,8 +498,8 @@ func newRecoveryKeyGenerateCmd() *cobra.Command {
 				_, _ = fmt.Fprintln(output.Stdout(), "Run `arcane admin backups recovery set` to store it on the server later.")
 				return nil
 			}
-			storeRequest := backup.SystemBackupRecoveryKey{RecoveryKey: result.RecoveryKey}
-			if _, storeErr := c.DoJSON[backup.SystemBackupRecoveryKeyStatus](cmd.Context(), http.MethodPut, types.BackupsRecoveryKey(), storeRequest); storeErr != nil {
+			storeRequest := types.SystemBackupRecoveryKey{RecoveryKey: result.RecoveryKey}
+			if _, storeErr := c.DoJSON[types.SystemBackupRecoveryKeyStatus](cmd.Context(), http.MethodPut, clitypes.BackupsRecoveryKey(), storeRequest); storeErr != nil {
 				return fmt.Errorf("failed to store recovery key: %w", storeErr)
 			}
 			if jsonMode {
@@ -540,7 +539,7 @@ func newRecoveryKeySetCmd() *cobra.Command {
 				return err
 			}
 
-			status, err := c.DoJSON[backup.SystemBackupRecoveryKeyStatus](cmd.Context(), http.MethodPut, types.BackupsRecoveryKey(), backup.SystemBackupRecoveryKey{RecoveryKey: key})
+			status, err := c.DoJSON[types.SystemBackupRecoveryKeyStatus](cmd.Context(), http.MethodPut, clitypes.BackupsRecoveryKey(), types.SystemBackupRecoveryKey{RecoveryKey: key})
 			if err != nil {
 				return fmt.Errorf("failed to set recovery key: %w", err)
 			}
@@ -557,7 +556,7 @@ func newRecoveryKeySetCmd() *cobra.Command {
 	return cmd
 }
 
-func renderSystemPolicies(policies backup.SystemBackupPolicyCollection) error {
+func renderSystemPolicies(policies types.SystemBackupPolicyCollection) error {
 	output.Header("System Backup Policies")
 	output.KeyValue("Recovery Key", kit.Ternary(policies.RecoveryKeyStored, "Configured", "Not configured"))
 
@@ -594,8 +593,8 @@ type policiesUpdateOptions struct {
 	s3Destination string
 }
 
-func (opts policiesUpdateOptions) requestFromFile() (backup.UpdateSystemBackupPolicies, error) {
-	var req backup.UpdateSystemBackupPolicies
+func (opts policiesUpdateOptions) requestFromFile() (types.UpdateSystemBackupPolicies, error) {
+	var req types.UpdateSystemBackupPolicies
 	var data []byte
 	var err error
 	if opts.file == "-" {
@@ -615,17 +614,17 @@ func (opts policiesUpdateOptions) requestFromFile() (backup.UpdateSystemBackupPo
 	return req, nil
 }
 
-func (opts policiesUpdateOptions) requestFromFlags(cmd *cobra.Command, c *client.Client) (backup.UpdateSystemBackupPolicies, error) {
-	var req backup.UpdateSystemBackupPolicies
-	current, err := c.DoJSON[backup.SystemBackupPolicyCollection](cmd.Context(), http.MethodGet, types.BackupsPolicies(), nil)
+func (opts policiesUpdateOptions) requestFromFlags(cmd *cobra.Command, c *client.Client) (types.UpdateSystemBackupPolicies, error) {
+	var req types.UpdateSystemBackupPolicies
+	current, err := c.DoJSON[types.SystemBackupPolicyCollection](cmd.Context(), http.MethodGet, clitypes.BackupsPolicies(), nil)
 	if err != nil {
 		return req, fmt.Errorf("failed to get current backup policies: %w", err)
 	}
 
-	req.Policies = make([]backup.UpdateSystemBackupPolicy, len(current.Policies))
+	req.Policies = make([]types.UpdateBackupPolicy, len(current.Policies))
 	targetIndex := -1
 	for i, p := range current.Policies {
-		req.Policies[i] = backup.UpdateSystemBackupPolicy{
+		req.Policies[i] = types.UpdateBackupPolicy{
 			ID:              p.ID,
 			Enabled:         p.Enabled,
 			Schedule:        p.Schedule,
@@ -651,14 +650,14 @@ func (opts policiesUpdateOptions) requestFromFlags(cmd *cobra.Command, c *client
 			return req, errors.New("--schedule is required when creating a new backup policy")
 		}
 		// New policies default to local storage unless --local was set explicitly.
-		req.Policies = append(req.Policies, backup.UpdateSystemBackupPolicy{LocalEnabled: !cmd.Flags().Changed("local") || opts.local})
+		req.Policies = append(req.Policies, types.UpdateBackupPolicy{LocalEnabled: !cmd.Flags().Changed("local") || opts.local})
 		targetIndex = len(req.Policies) - 1
 	}
 
 	return req, opts.applyFlags(cmd, c, &req.Policies[targetIndex])
 }
 
-func (opts policiesUpdateOptions) applyFlags(cmd *cobra.Command, c *client.Client, target *backup.UpdateSystemBackupPolicy) error {
+func (opts policiesUpdateOptions) applyFlags(cmd *cobra.Command, c *client.Client, target *types.UpdateBackupPolicy) error {
 	// TODO(v3): drop the deprecated flag handling.
 	if cmd.Flags().Changed("enabled") || cmd.Flags().Changed("disabled") {
 		target.Enabled = opts.enabled && !opts.disabled

@@ -2,7 +2,7 @@ import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type {
 	NetworkSummaryDto,
 	NetworkUsageCounts,
-	NetworkCreateRequest,
+	NetworkCreate,
 	NetworkCreateOptions,
 	NetworkInspectDto,
 	NetworkTopologyDto
@@ -61,7 +61,7 @@ class NetworkService extends BaseAPIService {
 
 	async createNetwork(name: string, options: NetworkCreateOptions, environmentId?: string): Promise<any> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		const request: NetworkCreateRequest = {
+		const request: NetworkCreate = {
 			name,
 			options
 		};

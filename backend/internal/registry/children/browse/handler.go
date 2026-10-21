@@ -4,8 +4,7 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
@@ -49,7 +48,7 @@ func NewHandler(service *Service) *Handler {
 }
 
 // ListRepositories returns a paginated list of repositories stored in a registry.
-func (h *Handler) ListRepositories(ctx context.Context, input *ListRegistryRepositoriesInput) (*handlerutil.Page[containerregistry.Repository], error) {
+func (h *Handler) ListRepositories(ctx context.Context, input *ListRegistryRepositoriesInput) (*handlerutil.Page[types.ContainerRegistryRepository], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	repositories, paginationResp, err := h.service.ListRepositories(ctx, input.ID, params)
@@ -58,8 +57,8 @@ func (h *Handler) ListRepositories(ctx context.Context, input *ListRegistryRepos
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to list repositories: "+err.Error())
 	}
 
-	return &handlerutil.Page[containerregistry.Repository]{
-		Body: base.Paginated[containerregistry.Repository]{
+	return &handlerutil.Page[types.ContainerRegistryRepository]{
+		Body: types.Paginated[types.ContainerRegistryRepository]{
 			Success:    true,
 			Data:       repositories,
 			Pagination: handlerutil.PaginationResponse(paginationResp),
@@ -68,7 +67,7 @@ func (h *Handler) ListRepositories(ctx context.Context, input *ListRegistryRepos
 }
 
 // ListTags returns a paginated list of tags of a registry repository.
-func (h *Handler) ListTags(ctx context.Context, input *ListRegistryTagsInput) (*handlerutil.Page[containerregistry.RepositoryTag], error) {
+func (h *Handler) ListTags(ctx context.Context, input *ListRegistryTagsInput) (*handlerutil.Page[types.ContainerRegistryRepositoryTag], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	tags, paginationResp, err := h.service.ListRepositoryTags(ctx, input.ID, input.Repository, params)
@@ -77,8 +76,8 @@ func (h *Handler) ListTags(ctx context.Context, input *ListRegistryTagsInput) (*
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to list tags: "+err.Error())
 	}
 
-	return &handlerutil.Page[containerregistry.RepositoryTag]{
-		Body: base.Paginated[containerregistry.RepositoryTag]{
+	return &handlerutil.Page[types.ContainerRegistryRepositoryTag]{
+		Body: types.Paginated[types.ContainerRegistryRepositoryTag]{
 			Success:    true,
 			Data:       tags,
 			Pagination: handlerutil.PaginationResponse(paginationResp),
@@ -87,17 +86,17 @@ func (h *Handler) ListTags(ctx context.Context, input *ListRegistryTagsInput) (*
 }
 
 // DeleteTag deletes the manifest a repository tag points to.
-func (h *Handler) DeleteTag(ctx context.Context, input *DeleteRegistryTagInput) (*handlerutil.Out[containerregistry.DeleteTagResponse], error) {
+func (h *Handler) DeleteTag(ctx context.Context, input *DeleteRegistryTagInput) (*handlerutil.Out[types.ContainerRegistryDeleteTagResponse], error) {
 	digest, err := h.service.DeleteRepositoryTag(ctx, input.ID, input.Repository, input.Tag)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete tag: "+err.Error())
 	}
 
-	return &handlerutil.Out[containerregistry.DeleteTagResponse]{
-		Body: base.ApiResponse[containerregistry.DeleteTagResponse]{
+	return &handlerutil.Out[types.ContainerRegistryDeleteTagResponse]{
+		Body: types.ApiResponse[types.ContainerRegistryDeleteTagResponse]{
 			Success: true,
-			Data:    containerregistry.DeleteTagResponse{Digest: digest},
+			Data:    types.ContainerRegistryDeleteTagResponse{Digest: digest},
 		},
 	}, nil
 }

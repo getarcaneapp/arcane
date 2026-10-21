@@ -1,3 +1,5 @@
+import type { CreateRequest } from './shared';
+
 // --- Notification settings ---
 
 export type NotificationProvider =
@@ -16,10 +18,19 @@ export type EmailTLSMode = 'none' | 'starttls' | 'ssl';
 export type EmailAuthMode = 'none' | 'auto' | 'plain' | 'login' | 'crammd5';
 
 export interface NotificationSettings {
+	id: number;
 	provider: NotificationProvider;
 	enabled: boolean;
-	config?: Record<string, unknown>;
+	config: Record<string, unknown>;
 }
+
+export type NotificationSettingsWritable = 'provider' | 'enabled' | 'config';
+
+export type NotificationSettingsUpsert = CreateRequest<
+	NotificationSettings,
+	NotificationSettingsWritable,
+	NotificationSettingsWritable
+>;
 
 export interface TestNotificationResponse {
 	success: boolean;
@@ -348,7 +359,7 @@ export function slackSettingsToFormValues(settings?: NotificationSettings): Slac
 	};
 }
 
-export function discordFormValuesToSettings(values: DiscordFormValues): NotificationSettings {
+export function discordFormValuesToSettings(values: DiscordFormValues): NotificationSettingsUpsert {
 	return {
 		provider: 'discord',
 		enabled: values.enabled,
@@ -362,7 +373,7 @@ export function discordFormValuesToSettings(values: DiscordFormValues): Notifica
 	};
 }
 
-export function emailFormValuesToSettings(values: EmailFormValues): NotificationSettings {
+export function emailFormValuesToSettings(values: EmailFormValues): NotificationSettingsUpsert {
 	return {
 		provider: 'email',
 		enabled: values.enabled,
@@ -383,7 +394,7 @@ export function emailFormValuesToSettings(values: EmailFormValues): Notification
 	};
 }
 
-export function telegramFormValuesToSettings(values: TelegramFormValues): NotificationSettings {
+export function telegramFormValuesToSettings(values: TelegramFormValues): NotificationSettingsUpsert {
 	return {
 		provider: 'telegram',
 		enabled: values.enabled,
@@ -398,7 +409,7 @@ export function telegramFormValuesToSettings(values: TelegramFormValues): Notifi
 	};
 }
 
-export function signalFormValuesToSettings(values: SignalFormValues): NotificationSettings {
+export function signalFormValuesToSettings(values: SignalFormValues): NotificationSettingsUpsert {
 	return {
 		provider: 'signal',
 		enabled: values.enabled,
@@ -420,7 +431,7 @@ export function signalFormValuesToSettings(values: SignalFormValues): Notificati
 	};
 }
 
-export function slackFormValuesToSettings(values: SlackFormValues): NotificationSettings {
+export function slackFormValuesToSettings(values: SlackFormValues): NotificationSettingsUpsert {
 	return {
 		provider: 'slack',
 		enabled: values.enabled,
@@ -539,7 +550,7 @@ export function genericSettingsToFormValues(settings?: NotificationSettings): Ge
 	};
 }
 
-export function ntfyFormValuesToSettings(values: NtfyFormValues): NotificationSettings {
+export function ntfyFormValuesToSettings(values: NtfyFormValues): NotificationSettingsUpsert {
 	return {
 		provider: 'ntfy',
 		enabled: values.enabled,
@@ -565,7 +576,7 @@ export function ntfyFormValuesToSettings(values: NtfyFormValues): NotificationSe
 	};
 }
 
-export function pushoverFormValuesToSettings(values: PushoverFormValues): NotificationSettings {
+export function pushoverFormValuesToSettings(values: PushoverFormValues): NotificationSettingsUpsert {
 	return {
 		provider: 'pushover',
 		enabled: values.enabled,
@@ -583,7 +594,7 @@ export function pushoverFormValuesToSettings(values: PushoverFormValues): Notifi
 	};
 }
 
-export function gotifyFormValuesToSettings(values: GotifyFormValues): NotificationSettings {
+export function gotifyFormValuesToSettings(values: GotifyFormValues): NotificationSettingsUpsert {
 	return {
 		provider: 'gotify',
 		enabled: values.enabled,
@@ -602,7 +613,7 @@ export function gotifyFormValuesToSettings(values: GotifyFormValues): Notificati
 	};
 }
 
-export function matrixFormValuesToSettings(values: MatrixFormValues): NotificationSettings {
+export function matrixFormValuesToSettings(values: MatrixFormValues): NotificationSettingsUpsert {
 	return {
 		provider: 'matrix',
 		enabled: values.enabled,
@@ -618,7 +629,7 @@ export function matrixFormValuesToSettings(values: MatrixFormValues): Notificati
 	};
 }
 
-export function googleChatFormValuesToSettings(values: GoogleChatFormValues): NotificationSettings {
+export function googleChatFormValuesToSettings(values: GoogleChatFormValues): NotificationSettingsUpsert {
 	return {
 		provider: 'googlechat',
 		enabled: values.enabled,
@@ -629,7 +640,7 @@ export function googleChatFormValuesToSettings(values: GoogleChatFormValues): No
 	};
 }
 
-export function genericFormValuesToSettings(values: GenericFormValues): NotificationSettings {
+export function genericFormValuesToSettings(values: GenericFormValues): NotificationSettingsUpsert {
 	const customHeaders: Record<string, string> = {};
 	if (values.customHeaders) {
 		const headerPairs = values.customHeaders

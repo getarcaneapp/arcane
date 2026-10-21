@@ -17,7 +17,7 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { isSessionCancelledError, withSessionSignal } from '#lib/services/api-service.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
-	import type { CreateEnvironmentDTO, DeploymentSnippetFile } from '#lib/types/environment.js';
+	import type { EnvironmentCreate, DeploymentSnippetFile } from '#lib/types/environment.js';
 	import { downloadTextFile } from '#lib/utils/formatting.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -47,7 +47,7 @@
 
 	let isLoadingSnippets = $state(false);
 	const createEnvironmentMutation = createMutation(() => ({
-		mutationFn: (variables: { dto: CreateEnvironmentDTO; apiUrl: string; isEdge: boolean; useMTLS: boolean }) =>
+		mutationFn: (variables: { dto: EnvironmentCreate; apiUrl: string; isEdge: boolean; useMTLS: boolean }) =>
 			environmentManagementService.create(variables.dto),
 		onSuccess: async (created, variables) => {
 			await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
@@ -136,7 +136,7 @@
 
 		const fullUrl = `${newAgentUrlProtocol}://${data.apiUrl}`;
 
-		const dto: CreateEnvironmentDTO = {
+		const dto: EnvironmentCreate = {
 			name: data.name,
 			apiUrl: fullUrl,
 			useApiKey: true,
@@ -157,7 +157,7 @@
 			.replace(/(^-|-$)+/g, '');
 		const edgeApiUrl = `edge://${edgeApiHost}`;
 
-		const dto: CreateEnvironmentDTO = {
+		const dto: EnvironmentCreate = {
 			name: data.name,
 			apiUrl: edgeApiUrl,
 			useApiKey: true,

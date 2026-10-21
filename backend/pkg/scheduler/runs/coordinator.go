@@ -16,7 +16,7 @@ import (
 	"time"
 	"uuid"
 
-	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/actor"
 	kit "go.getarcane.app/kit/pkg"
 
@@ -41,9 +41,9 @@ type Coordinator struct {
 	done         chan struct{}
 	wake         chan struct{}
 	enabled      atomic.Bool
-	execute      func(context.Context, st.Run) (st.Outcome, error)
-	reconcile    func(context.Context, st.Run) (st.Outcome, error)
-	observer     st.RunObserver
+	execute      func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error)
+	reconcile    func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error)
+	observer     types.RunObserver
 	observers    utils.KeyedMutex
 	location     *time.Location
 }
@@ -52,38 +52,38 @@ type Coordinator struct {
 // requests within a job and environment. Manual and remote requests stay separate;
 // other triggers coalesce pending work.
 // Cancellation of ctx affects admission only, not an accepted run's lifetime.
-func (q *Coordinator) Submit(ctx context.Context, request st.Request) (st.Run, error) {
+func (q *Coordinator) Submit(ctx context.Context, request types.SchedulerRequest) (types.SchedulerRun, error) {
 	q.mu.Lock()
 	stopping := q.stopping
 	q.mu.Unlock()
 	if stopping {
-		return st.Run{}, errors.New("job queue is stopping")
+		return types.SchedulerRun{}, errors.New("job queue is stopping")
 	}
 	request.EnvironmentID = cmp.Or(request.EnvironmentID, "0")
 	if request.JobID == "" {
-		return st.Run{}, errors.New("job ID required")
+		return types.SchedulerRun{}, errors.New("job ID required")
 	}
 	request.Trigger = cmp.Or(request.Trigger, "manual")
 	request.RunID = cmp.Or(request.RunID, uuid.New().String())
 	if _, err := uuid.Parse(request.RunID); err != nil {
-		return st.Run{}, errors.New("invalid run ID")
+		return types.SchedulerRun{}, errors.New("invalid run ID")
 	}
 	now := time.Now().UTC()
-	observed := st.Run{CreatedAt: now}
-	var remoteOutcome *st.Outcome
+	observed := types.SchedulerRun{CreatedAt: now}
+	var remoteOutcome *types.SchedulerOutcome
 	if agentRun := request.ObservedAgentRun; agentRun != nil {
 		switch {
 		case request.EnvironmentID == "0":
-			return st.Run{}, errors.New("observed agent run requires a remote environment")
+			return types.SchedulerRun{}, errors.New("observed agent run requires a remote environment")
 		case agentRun.EnvironmentID != "0":
-			return st.Run{}, errors.New("observed agent run must belong to the agent's local environment")
+			return types.SchedulerRun{}, errors.New("observed agent run must belong to the agent's local environment")
 		case agentRun.ID != request.RunID || agentRun.JobID != request.JobID:
-			return st.Run{}, errors.New("observed agent run does not match the requested run and job")
-		case agentRun.Status != st.NeedsAttention:
-			return st.Run{}, errors.New("observed agent run is not awaiting legacy resolution")
+			return types.SchedulerRun{}, errors.New("observed agent run does not match the requested run and job")
+		case agentRun.Status != types.RunStatusNeedsAttention:
+			return types.SchedulerRun{}, errors.New("observed agent run is not awaiting legacy resolution")
 		}
 		observed = *agentRun
-		remoteOutcome = &st.Outcome{
+		remoteOutcome = &types.SchedulerOutcome{
 			Status:     observed.Status,
 			Message:    observed.Outcome.Message,
 			ActivityID: observed.Outcome.ActivityID,
@@ -91,14 +91,14 @@ func (q *Coordinator) Submit(ctx context.Context, request st.Request) (st.Run, e
 			Steps:      observed.Outcome.Steps,
 		}
 	}
-	result := st.Run{
+	result := types.SchedulerRun{
 		ID:                      request.RunID,
 		JobID:                   request.JobID,
 		EnvironmentID:           request.EnvironmentID,
 		Trigger:                 request.Trigger,
 		RequestedBy:             request.RequestedBy,
 		RequestedWithKey:        request.RequestedWithKey,
-		Status:                  st.Queued,
+		Status:                  types.RunStatusQueued,
 		CreatedAt:               observed.CreatedAt,
 		UpdatedAt:               now,
 		StartedAt:               observed.StartedAt,
@@ -112,7 +112,7 @@ func (q *Coordinator) Submit(ctx context.Context, request st.Request) (st.Run, e
 	}
 	q.associateActivity(&result)
 	fresh := result
-	err := q.mutate(ctx, request.EnvironmentID, request.JobID, func(record *st.QueueRecord) error {
+	err := q.mutate(ctx, request.EnvironmentID, request.JobID, func(record *types.SchedulerQueueRecord) error {
 		result = fresh
 		if request.Trigger == "scheduled" || request.Trigger == "recovery" {
 			record.LastEnqueuedAt = now
@@ -120,7 +120,7 @@ func (q *Coordinator) Submit(ctx context.Context, request st.Request) (st.Run, e
 		for _, existing := range record.Runs {
 			// Manual and remote work never joins another run; other triggers join runs still waiting to start.
 			coalesces := request.ObservedAgentRun == nil && !separateTrigger(request.Trigger) && !separateTrigger(existing.Trigger) &&
-				(existing.Status == st.Queued || existing.Status == st.Waiting || existing.Status == st.Retrying)
+				(existing.Status == types.RunStatusQueued || existing.Status == types.RunStatusWaiting || existing.Status == types.RunStatusRetrying)
 			if existing.ID == request.RunID || coalesces {
 				result = existing
 				return nil
@@ -163,21 +163,23 @@ func (q *Coordinator) Checkpoint(ctx context.Context, jobID, schedule string, ne
 	first := !q.checkpointed[jobID]
 	q.mu.Unlock()
 	recovered := false
-	var recoveredRun st.Run
-	err := q.mutate(ctx, "0", jobID, func(record *st.QueueRecord) error {
+	var recoveredRun types.SchedulerRun
+	err := q.mutate(ctx, "0", jobID, func(record *types.SchedulerQueueRecord) error {
 		recovered = false
-		recoveredRun = st.Run{}
+		recoveredRun = types.SchedulerRun{}
 		now := time.Now().UTC()
 		if first && record.Schedule == schedule && !record.NextRun.IsZero() && !record.NextRun.After(now) && record.LastEnqueuedAt.Before(record.NextRun) {
-			if !slices.ContainsFunc(record.Runs, func(run st.Run) bool { return !run.Status.Terminal() && run.Status != st.NeedsAttention }) {
+			if !slices.ContainsFunc(record.Runs, func(run types.SchedulerRun) bool {
+				return !run.Status.Terminal() && run.Status != types.RunStatusNeedsAttention
+			}) {
 				recovered = true
 				record.LastEnqueuedAt = now
-				recoveredRun = st.Run{
+				recoveredRun = types.SchedulerRun{
 					ID:            uuid.New().String(),
 					JobID:         jobID,
 					EnvironmentID: "0",
 					Trigger:       "recovery",
-					Status:        st.Queued,
+					Status:        types.RunStatusQueued,
 					CreatedAt:     now,
 					UpdatedAt:     now,
 				}
@@ -249,7 +251,7 @@ func (q *Coordinator) Start(ctx, appCtx context.Context) error {
 		if !changed {
 			continue
 		}
-		if mutateErr := q.mutate(ctx, record.EnvironmentID, record.JobID, func(current *st.QueueRecord) error {
+		if mutateErr := q.mutate(ctx, record.EnvironmentID, record.JobID, func(current *types.SchedulerQueueRecord) error {
 			for i := range current.Runs {
 				normalizeLegacyRun(&current.Runs[i])
 			}
@@ -358,19 +360,19 @@ func (q *Coordinator) pass(ctx context.Context, all, retain bool) (busy, pending
 	return busy, pendingActivity, pruned, err
 }
 
-func (q *Coordinator) persistOutcome(ctx context.Context, run st.Run, outcome st.Outcome) error {
+func (q *Coordinator) persistOutcome(ctx context.Context, run types.SchedulerRun, outcome types.SchedulerOutcome) error {
 	// Keep the execution slot while retrying, but release it after a bounded backoff.
 	wait := time.Second
 	for attempt := 1; ; attempt++ {
 		var conflictOwner string
-		var conflictStatus st.RunStatus
-		err := q.UpdateRun(ctx, run, func(current *st.Run) error {
-			if current.Owner != run.Owner || current.Status != st.Running {
+		var conflictStatus types.RunStatus
+		err := q.UpdateRun(ctx, run, func(current *types.SchedulerRun) error {
+			if current.Owner != run.Owner || current.Status != types.RunStatusRunning {
 				conflictOwner, conflictStatus = current.Owner, current.Status
 				return ErrRunConflict
 			}
 			now := time.Now().UTC()
-			merged := st.Outcome{
+			merged := types.SchedulerOutcome{
 				Status:     outcome.Status,
 				Message:    outcome.Message,
 				ActivityID: cmp.Or(outcome.ActivityID, current.Outcome.ActivityID),
@@ -378,14 +380,14 @@ func (q *Coordinator) persistOutcome(ctx context.Context, run st.Run, outcome st
 				Steps:      kit.Ternary(len(outcome.Steps) == 0, current.Outcome.Steps, outcome.Steps),
 			}
 			for _, target := range current.Outcome.Targets {
-				if !slices.ContainsFunc(outcome.Targets, func(updated st.TargetOutcome) bool { return updated.ID == target.ID }) {
+				if !slices.ContainsFunc(outcome.Targets, func(updated types.TargetOutcome) bool { return updated.ID == target.ID }) {
 					merged.Targets = append(merged.Targets, target)
 				}
 			}
 			current.Status = outcome.Status
 			current.UpdatedAt = now
 			current.Outcome = merged
-			if outcome.Status == st.Retrying || outcome.Status == st.Waiting {
+			if outcome.Status == types.RunStatusRetrying || outcome.Status == types.RunStatusWaiting {
 				delay := 5 * time.Second * time.Duration(1<<min(run.AttemptCount-1, 6))
 				delay = min(delay, 5*time.Minute)
 				var jitter [1]byte
@@ -441,24 +443,24 @@ func (q *Coordinator) persistOutcome(ctx context.Context, run st.Run, outcome st
 
 // Cancel marks an unstarted queued run canceled. Runs already attempted locally
 // or dispatched remotely must be reconciled rather than canceled as pending work.
-func (q *Coordinator) Cancel(ctx context.Context, environmentID, jobID, runID string) (st.Run, error) {
+func (q *Coordinator) Cancel(ctx context.Context, environmentID, jobID, runID string) (types.SchedulerRun, error) {
 	run, err := q.Get(ctx, environmentID, jobID, runID)
 	if err != nil {
 		return run, err
 	}
-	err = q.UpdateRun(ctx, run, func(current *st.Run) error {
-		if current.Status != st.Queued || current.AttemptCount != 0 || current.RemoteDeliveryAttempted {
+	err = q.UpdateRun(ctx, run, func(current *types.SchedulerRun) error {
+		if current.Status != types.RunStatusQueued || current.AttemptCount != 0 || current.RemoteDeliveryAttempted {
 			return errors.New("only unstarted pending runs can be canceled")
 		}
 		now := time.Now().UTC()
-		current.Status = st.Canceled
+		current.Status = types.RunStatusCanceled
 		current.UpdatedAt = now
 		current.FinishedAt = &now
 		run = *current
 		return nil
 	})
 	if err == nil {
-		var state st.CoordinatorState
+		var state types.SchedulerCoordinatorState
 		id := kit.SHA256Hex(environmentID + "\x00" + jobID)
 		actorType := kit.Ternary(
 			strings.HasPrefix(jobID, "environment-health") || jobID == "docker-client-refresh" || jobID == "activity-sweep",
@@ -478,19 +480,19 @@ func (q *Coordinator) Cancel(ctx context.Context, environmentID, jobID, runID st
 
 // Retry requeues a failed, partial, or attention-required run without changing its
 // ID or dropping target progress. Unconfirmed remote work cannot be retried here.
-func (q *Coordinator) Retry(ctx context.Context, environmentID, jobID, runID string) (st.Run, error) {
+func (q *Coordinator) Retry(ctx context.Context, environmentID, jobID, runID string) (types.SchedulerRun, error) {
 	run, err := q.Get(ctx, environmentID, jobID, runID)
 	if err != nil {
 		return run, err
 	}
-	err = q.UpdateRun(ctx, run, func(current *st.Run) error {
-		if current.Status != st.Failed && current.Status != st.NeedsAttention && current.Status != st.Partial {
+	err = q.UpdateRun(ctx, run, func(current *types.SchedulerRun) error {
+		if current.Status != types.RunStatusFailed && current.Status != types.RunStatusNeedsAttention && current.Status != types.RunStatusPartial {
 			return errors.New("run is not eligible for retry")
 		}
 		if current.RemoteAccepted && !current.RemoteSettled {
 			return errors.New("remote outcome must be confirmed before retry")
 		}
-		current.Status = st.Queued
+		current.Status = types.RunStatusQueued
 		current.Owner = ""
 		current.NextAttempt = nil
 		current.FinishedAt = nil
@@ -504,15 +506,15 @@ func (q *Coordinator) Retry(ctx context.Context, environmentID, jobID, runID str
 	return run, err
 }
 
-func (q *Coordinator) nextRun(runs []st.Run) (*st.Run, time.Time) {
-	var interrupted *st.Run
+func (q *Coordinator) nextRun(runs []types.SchedulerRun) (*types.SchedulerRun, time.Time) {
+	var interrupted *types.SchedulerRun
 	blocked := false
 	for index := range runs {
 		run := &runs[index]
-		if run.Status == st.Running && strings.HasPrefix(run.Owner, q.owner+"/") {
+		if run.Status == types.RunStatusRunning && strings.HasPrefix(run.Owner, q.owner+"/") {
 			blocked = true
 		}
-		if run.Status == st.Running && !strings.HasPrefix(run.Owner, q.owner+"/") && interrupted == nil {
+		if run.Status == types.RunStatusRunning && !strings.HasPrefix(run.Owner, q.owner+"/") && interrupted == nil {
 			interrupted = run
 		}
 	}
@@ -523,7 +525,7 @@ func (q *Coordinator) nextRun(runs []st.Run) (*st.Run, time.Time) {
 	now := time.Now()
 	for index := range runs {
 		run := &runs[index]
-		if run.Status.Terminal() || run.Status == st.NeedsAttention {
+		if run.Status.Terminal() || run.Status == types.RunStatusNeedsAttention {
 			continue
 		}
 		if run.NextAttempt == nil || !run.NextAttempt.After(now) {
@@ -538,11 +540,11 @@ func (q *Coordinator) nextRun(runs []st.Run) (*st.Run, time.Time) {
 
 // ExecutionContext binds durable progress for work executing a run. An empty
 // instanceID fences writes by run owner; otherwise by the active workflow instance.
-func (q *Coordinator) ExecutionContext(ctx context.Context, run st.Run, instanceID string) context.Context {
+func (q *Coordinator) ExecutionContext(ctx context.Context, run types.SchedulerRun, instanceID string) context.Context {
 	ctx = utils.WithActivityBatchID(ctx, run.ID)
-	return jobcontext.WithExecution(ctx, run, func(target st.TargetOutcome) error {
-		return q.UpdateRun(ctx, run, func(current *st.Run) error {
-			if !kit.Ternary(instanceID == "", current.Status == st.Running && current.Owner == run.Owner, ActiveWorkflow(*current, instanceID)) {
+	return jobcontext.WithExecution(ctx, run, func(target types.TargetOutcome) error {
+		return q.UpdateRun(ctx, run, func(current *types.SchedulerRun) error {
+			if !kit.Ternary(instanceID == "", current.Status == types.RunStatusRunning && current.Owner == run.Owner, ActiveWorkflow(*current, instanceID)) {
 				return ErrRunConflict
 			}
 			current.Outcome.Targets = jobcontext.Merge(current.Outcome.Targets, target)
@@ -552,9 +554,9 @@ func (q *Coordinator) ExecutionContext(ctx context.Context, run st.Run, instance
 }
 
 // RecordSteps projects workflow step progress onto a running run, fenced like ExecutionContext.
-func (q *Coordinator) RecordSteps(ctx context.Context, run st.Run, instanceID string, steps []st.StepOutcome) error {
-	return q.UpdateRun(ctx, run, func(current *st.Run) error {
-		if !kit.Ternary(instanceID == "", current.Status == st.Running && current.Owner == run.Owner, ActiveWorkflow(*current, instanceID)) {
+func (q *Coordinator) RecordSteps(ctx context.Context, run types.SchedulerRun, instanceID string, steps []types.StepOutcome) error {
+	return q.UpdateRun(ctx, run, func(current *types.SchedulerRun) error {
+		if !kit.Ternary(instanceID == "", current.Status == types.RunStatusRunning && current.Owner == run.Owner, ActiveWorkflow(*current, instanceID)) {
 			return ErrRunConflict
 		}
 		current.Outcome.Steps = steps
@@ -563,9 +565,9 @@ func (q *Coordinator) RecordSteps(ctx context.Context, run st.Run, instanceID st
 }
 
 // ActiveWorkflow reports whether a running run still follows a workflow instance.
-func ActiveWorkflow(run st.Run, instanceID string) bool {
-	return run.Status == st.Running && slices.ContainsFunc(run.Outcome.Targets, func(target st.TargetOutcome) bool {
-		return target.ResourceType == st.WorkflowTarget && target.ID == instanceID && !target.Status.Terminal()
+func ActiveWorkflow(run types.SchedulerRun, instanceID string) bool {
+	return run.Status == types.RunStatusRunning && slices.ContainsFunc(run.Outcome.Targets, func(target types.TargetOutcome) bool {
+		return target.ResourceType == types.SchedulerWorkflowTarget && target.ID == instanceID && !target.Status.Terminal()
 	})
 }
 
@@ -573,25 +575,25 @@ func (q *Coordinator) Active() bool { return q.enabled.Load() }
 
 // Resolve releases legacy reviewed work without discarding execution evidence.
 // TODO(v3): remove this deprecated mixed-version compatibility contract.
-func (q *Coordinator) Resolve(ctx context.Context, environmentID, jobID, runID, resolvedBy string) (st.Run, error) {
+func (q *Coordinator) Resolve(ctx context.Context, environmentID, jobID, runID, resolvedBy string) (types.SchedulerRun, error) {
 	run, err := q.Get(ctx, environmentID, jobID, runID)
 	if err != nil {
 		return run, err
 	}
-	err = q.UpdateRun(ctx, run, func(current *st.Run) error {
-		if current.Status == st.Canceled && current.Resolution != nil {
+	err = q.UpdateRun(ctx, run, func(current *types.SchedulerRun) error {
+		if current.Status == types.RunStatusCanceled && current.Resolution != nil {
 			run = *current
 			return nil
 		}
-		if current.Status != st.NeedsAttention {
+		if current.Status != types.RunStatusNeedsAttention {
 			return errors.New("only runs needing attention can be resolved")
 		}
 		if current.EnvironmentID != "0" && (current.RemoteDeliveryAttempted || current.RemoteAccepted) && !current.RemoteSettled {
 			return errors.New("remote execution must be confirmed and acknowledged before resolution")
 		}
 		now := time.Now().UTC()
-		current.Status = st.Canceled
-		current.Resolution = &st.RunResolution{ResolvedBy: resolvedBy, ResolvedAt: now, Reason: "resolved_after_review"}
+		current.Status = types.RunStatusCanceled
+		current.Resolution = &types.SchedulerRunResolution{ResolvedBy: resolvedBy, ResolvedAt: now, Reason: "resolved_after_review"}
 		current.UpdatedAt = now
 		current.FinishedAt = &now
 		current.NextAttempt = nil

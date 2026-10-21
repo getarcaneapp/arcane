@@ -1,7 +1,7 @@
 package patch
 
 import (
-	"github.com/getarcaneapp/arcane/types/v2/imagepatch"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 )
@@ -27,16 +27,16 @@ func (r *ImagePatchRecord) TableName() string {
 	return "image_patches"
 }
 
-func (r *ImagePatchRecord) ToDto() imagepatch.PatchRecord {
-	return imagepatch.PatchRecord{
+func (r *ImagePatchRecord) ToDto() types.PatchRecord {
+	return types.PatchRecord{
 		ID:              r.ID,
 		EnvironmentID:   r.EnvironmentID,
 		OriginalImageID: r.OriginalImageID,
 		OriginalRef:     r.OriginalRef,
 		OriginalDigest:  r.OriginalDigest,
 		PatchedRef:      r.PatchedRef,
-		Mode:            imagepatch.PatchMode(r.Mode),
-		Status:          imagepatch.PatchStatus(r.Status),
+		Mode:            types.PatchMode(r.Mode),
+		Status:          types.PatchStatus(r.Status),
 		PackagesUpdated: r.PackagesUpdated,
 		Error:           r.Error,
 		ActivityID:      r.ActivityID,

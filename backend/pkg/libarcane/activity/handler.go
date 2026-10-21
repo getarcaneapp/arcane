@@ -10,9 +10,7 @@ import (
 	"net/http"
 	"strings"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -51,11 +49,11 @@ func CancelledByContext(ctx context.Context) bool {
 
 type HandlerOptions struct {
 	EnvironmentID  string
-	Type           activitytypes.Type
+	Type           types.ActivityType
 	ResourceType   string
 	ResourceID     string
 	ResourceName   string
-	User           *usertypes.Actor
+	User           *types.Actor
 	Step           string
 	Message        string
 	SuccessMessage string
@@ -102,11 +100,11 @@ func StartHandlerActivity(
 	ctx context.Context,
 	activityService Service,
 	environmentID string,
-	activityType activitytypes.Type,
+	activityType types.ActivityType,
 	resourceType string,
 	resourceID string,
 	resourceName string,
-	user *usertypes.Actor,
+	user *types.Actor,
 	step string,
 	message string,
 	metadata database.JSON,
@@ -146,17 +144,17 @@ func CompleteHandlerActivity(ctx context.Context, activityService Service, activ
 		return
 	}
 
-	status := activitytypes.StatusSuccess
+	status := types.ActivityStatusSuccess
 	var errMessage *string
 	finalMessage := successMessage
 	if err != nil {
 		// Read the cancellation cause from the (possibly-tracked) work context
 		// before it is re-wrapped for the DB write below.
 		if CancelledByContext(ctx) {
-			status = activitytypes.StatusCancelled
+			status = types.ActivityStatusCancelled
 			finalMessage = cancelledMessage
 		} else {
-			status = activitytypes.StatusFailed
+			status = types.ActivityStatusFailed
 			errText := err.Error()
 			errMessage = &errText
 			finalMessage = errText
@@ -192,14 +190,14 @@ func RunHandlerActivity(ctx context.Context, activityService Service, opts Handl
 		AwaitHandlerActivitySlot(workCtx, activityService, activityID, opts.EnvironmentID)
 	}
 
-	err := jobcontext.Progress(workCtx, schedulertypes.TargetOutcome{ID: opts.ResourceID, Status: schedulertypes.Running, ActivityID: activityID})
+	err := jobcontext.Progress(workCtx, types.TargetOutcome{ID: opts.ResourceID, Status: types.RunStatusRunning, ActivityID: activityID})
 	if err == nil {
 		err = action(workCtx)
 	}
 	CompleteHandlerActivity(workCtx, activityService, activityID, opts.SuccessMessage, err)
-	target := schedulertypes.TargetOutcome{ID: opts.ResourceID, Status: schedulertypes.Succeeded, ActivityID: activityID}
+	target := types.TargetOutcome{ID: opts.ResourceID, Status: types.RunStatusSucceeded, ActivityID: activityID}
 	if err != nil {
-		target.Status = schedulertypes.Failed
+		target.Status = types.RunStatusFailed
 		target.Message = err.Error()
 	}
 	if progressErr := jobcontext.Progress(workCtx, target); progressErr != nil && err == nil {

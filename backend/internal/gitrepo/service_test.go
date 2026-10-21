@@ -7,9 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/gitops"
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,7 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 )
 
-func setupGitRepositoryServiceTestInternal(t *testing.T) *GitRepositoryService {
+func setupGitRepositoryServiceTest(t *testing.T) *GitRepositoryService {
 	t.Helper()
 
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()))
@@ -51,7 +49,7 @@ func setupGitRepositoryServiceTestInternal(t *testing.T) *GitRepositoryService {
 	})
 
 	wrappedDB := &database.DB{DB: db}
-	settingsService, err := newSettingsServiceForTestInternal(t, t.Context(), wrappedDB)
+	settingsService, err := newSettingsServiceForTest(t, t.Context(), wrappedDB)
 	require.NoError(t, err)
 
 	eventService := event.NewEventService(wrappedDB, &config.Config{}, nil)
@@ -59,7 +57,7 @@ func setupGitRepositoryServiceTestInternal(t *testing.T) *GitRepositoryService {
 	return NewGitRepositoryService(wrappedDB, t.TempDir(), eventService, settingsService)
 }
 
-func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
+func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
 	svc, err := settings.NewSettingsService(ctx, db, &config.Config{})
 	if err == nil {
@@ -68,15 +66,15 @@ func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *da
 	return svc, err
 }
 
-func createGitRepositoryServiceTestRepoInternal(t *testing.T, svc *GitRepositoryService, req gitops.CreateRepositoryRequest) *GitRepository {
+func createGitRepositoryServiceTestRepo(t *testing.T, svc *GitRepositoryService, req types.GitRepository) *GitRepository {
 	t.Helper()
 
-	repo, err := svc.CreateRepository(t.Context(), req, user.Actor{
+	repo, err := svc.CreateRepository(t.Context(), req, nil, types.Actor{
 		ID:       "admin-1",
 		Username: "admin",
 	})
 	require.NoError(t, err)
-	mapped, err := mapping.MapOne[*GitRepository, gitops.GitRepository](repo)
+	mapped, err := mapping.MapOne[*GitRepository, types.GitRepository](repo)
 	require.NoError(t, err)
 	assert.Equal(t, req.Token != "", mapped.HasToken)
 	assert.Equal(t, req.SSHKey != "", mapped.HasSshKey)
@@ -89,8 +87,8 @@ func createGitRepositoryServiceTestRepoInternal(t *testing.T, svc *GitRepository
 }
 
 func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredTokenWouldBeReused(t *testing.T) {
-	svc := setupGitRepositoryServiceTestInternal(t)
-	repo := createGitRepositoryServiceTestRepoInternal(t, svc, gitops.CreateRepositoryRequest{
+	svc := setupGitRepositoryServiceTest(t)
+	repo := createGitRepositoryServiceTestRepo(t, svc, types.GitRepository{
 		Name:     "prod-repo",
 		URL:      "https://github.com/acme/private.git",
 		AuthType: "http",
@@ -98,13 +96,13 @@ func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredTokenWo
 		Token:    "ghp_old_token",
 	})
 
-	_, err := svc.UpdateRepository(t.Context(), repo.ID, gitops.UpdateRepositoryRequest{
-		URL: new("https://attacker.tld/repo.git"),
-	}, user.Actor{})
+	_, err := svc.UpdateRepository(t.Context(), repo.ID, types.GitRepository{
+		URL: "https://attacker.tld/repo.git",
+	}, map[string]bool{"url": true}, types.Actor{})
 	require.Error(t, err)
 
 	require.ErrorIs(t, err, common.ErrValidation)
-	fieldErr, ok := errors.AsType[*base.FieldError](err)
+	fieldErr, ok := errors.AsType[*types.FieldError](err)
 	require.True(t, ok)
 	assert.Equal(t, "token", fieldErr.Field)
 	assert.Contains(t, err.Error(), "repository URL")
@@ -116,21 +114,21 @@ func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredTokenWo
 }
 
 func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredSSHKeyWouldBeReused(t *testing.T) {
-	svc := setupGitRepositoryServiceTestInternal(t)
-	repo := createGitRepositoryServiceTestRepoInternal(t, svc, gitops.CreateRepositoryRequest{
+	svc := setupGitRepositoryServiceTest(t)
+	repo := createGitRepositoryServiceTestRepo(t, svc, types.GitRepository{
 		Name:     "infra-repo",
 		URL:      "git@github.com:acme/private.git",
 		AuthType: "ssh",
 		SSHKey:   "-----BEGIN OPENSSH PRIVATE KEY-----\nkey-material\n-----END OPENSSH PRIVATE KEY-----",
 	})
 
-	_, err := svc.UpdateRepository(t.Context(), repo.ID, gitops.UpdateRepositoryRequest{
-		URL: new("git@attacker.tld:acme/private.git"),
-	}, user.Actor{})
+	_, err := svc.UpdateRepository(t.Context(), repo.ID, types.GitRepository{
+		URL: "git@attacker.tld:acme/private.git",
+	}, map[string]bool{"url": true}, types.Actor{})
 	require.Error(t, err)
 
 	require.ErrorIs(t, err, common.ErrValidation)
-	fieldErr, ok := errors.AsType[*base.FieldError](err)
+	fieldErr, ok := errors.AsType[*types.FieldError](err)
 	require.True(t, ok)
 	assert.Equal(t, "sshKey", fieldErr.Field)
 	assert.Contains(t, err.Error(), "repository URL")
@@ -142,8 +140,8 @@ func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredSSHKeyW
 }
 
 func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredTokenAndSSHKeyWouldBeReused(t *testing.T) {
-	svc := setupGitRepositoryServiceTestInternal(t)
-	repo := createGitRepositoryServiceTestRepoInternal(t, svc, gitops.CreateRepositoryRequest{
+	svc := setupGitRepositoryServiceTest(t)
+	repo := createGitRepositoryServiceTestRepo(t, svc, types.GitRepository{
 		Name:     "hybrid-repo",
 		URL:      "https://github.com/acme/private.git",
 		AuthType: "http",
@@ -152,9 +150,9 @@ func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredTokenAn
 		SSHKey:   "-----BEGIN OPENSSH PRIVATE KEY-----\nkey-material\n-----END OPENSSH PRIVATE KEY-----",
 	})
 
-	_, err := svc.UpdateRepository(t.Context(), repo.ID, gitops.UpdateRepositoryRequest{
-		URL: new("https://attacker.tld/repo.git"),
-	}, user.Actor{})
+	_, err := svc.UpdateRepository(t.Context(), repo.ID, types.GitRepository{
+		URL: "https://attacker.tld/repo.git",
+	}, map[string]bool{"url": true}, types.Actor{})
 	require.Error(t, err)
 
 	var apiErr *common.APIError
@@ -165,8 +163,8 @@ func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredTokenAn
 }
 
 func TestGitRepositoryService_UpdateRepository_AllowsURLChangeWhenTokenIsResupplied(t *testing.T) {
-	svc := setupGitRepositoryServiceTestInternal(t)
-	repo := createGitRepositoryServiceTestRepoInternal(t, svc, gitops.CreateRepositoryRequest{
+	svc := setupGitRepositoryServiceTest(t)
+	repo := createGitRepositoryServiceTestRepo(t, svc, types.GitRepository{
 		Name:     "prod-repo",
 		URL:      "https://github.com/acme/private.git",
 		AuthType: "http",
@@ -174,25 +172,25 @@ func TestGitRepositoryService_UpdateRepository_AllowsURLChangeWhenTokenIsResuppl
 		Token:    "ghp_old_token",
 	})
 
-	updated, err := svc.UpdateRepository(t.Context(), repo.ID, gitops.UpdateRepositoryRequest{
-		URL:   new("https://github.com/acme/private-rotated.git"),
-		Token: new("ghp_new_token"),
-	}, user.Actor{})
+	updated, err := svc.UpdateRepository(t.Context(), repo.ID, types.GitRepository{
+		URL:   "https://github.com/acme/private-rotated.git",
+		Token: "ghp_new_token",
+	}, map[string]bool{"url": true, "token": true}, types.Actor{})
 	require.NoError(t, err)
 
 	assert.Equal(t, "https://github.com/acme/private-rotated.git", updated.URL)
 	decryptedToken, decryptErr := crypto.Decrypt(updated.Token)
 	require.NoError(t, decryptErr)
 	assert.Equal(t, "ghp_new_token", decryptedToken)
-	mapped, err := mapping.MapOne[*GitRepository, gitops.GitRepository](updated)
+	mapped, err := mapping.MapOne[*GitRepository, types.GitRepository](updated)
 	require.NoError(t, err)
 	assert.True(t, mapped.HasToken)
 	assert.False(t, mapped.HasSshKey)
 }
 
 func TestGitRepositoryService_UpdateRepository_AllowsURLChangeWhenTokenIsCleared(t *testing.T) {
-	svc := setupGitRepositoryServiceTestInternal(t)
-	repo := createGitRepositoryServiceTestRepoInternal(t, svc, gitops.CreateRepositoryRequest{
+	svc := setupGitRepositoryServiceTest(t)
+	repo := createGitRepositoryServiceTestRepo(t, svc, types.GitRepository{
 		Name:     "prod-repo",
 		URL:      "https://github.com/acme/private.git",
 		AuthType: "http",
@@ -200,23 +198,23 @@ func TestGitRepositoryService_UpdateRepository_AllowsURLChangeWhenTokenIsCleared
 		Token:    "ghp_old_token",
 	})
 
-	updated, err := svc.UpdateRepository(t.Context(), repo.ID, gitops.UpdateRepositoryRequest{
-		URL:   new("https://github.com/acme/public.git"),
-		Token: new(""),
-	}, user.Actor{})
+	updated, err := svc.UpdateRepository(t.Context(), repo.ID, types.GitRepository{
+		URL:   "https://github.com/acme/public.git",
+		Token: "",
+	}, map[string]bool{"url": true, "token": true}, types.Actor{})
 	require.NoError(t, err)
 
 	assert.Equal(t, "https://github.com/acme/public.git", updated.URL)
 	assert.Empty(t, updated.Token)
-	mapped, err := mapping.MapOne[*GitRepository, gitops.GitRepository](updated)
+	mapped, err := mapping.MapOne[*GitRepository, types.GitRepository](updated)
 	require.NoError(t, err)
 	assert.False(t, mapped.HasToken)
 	assert.False(t, mapped.HasSshKey)
 }
 
 func TestGitRepositoryService_UpdateRepository_AllowsSameURLWithoutCredentialResupply(t *testing.T) {
-	svc := setupGitRepositoryServiceTestInternal(t)
-	repo := createGitRepositoryServiceTestRepoInternal(t, svc, gitops.CreateRepositoryRequest{
+	svc := setupGitRepositoryServiceTest(t)
+	repo := createGitRepositoryServiceTestRepo(t, svc, types.GitRepository{
 		Name:     "prod-repo",
 		URL:      "https://github.com/acme/private.git",
 		AuthType: "http",
@@ -224,10 +222,10 @@ func TestGitRepositoryService_UpdateRepository_AllowsSameURLWithoutCredentialRes
 		Token:    "ghp_old_token",
 	})
 
-	updated, err := svc.UpdateRepository(t.Context(), repo.ID, gitops.UpdateRepositoryRequest{
-		URL:      new("https://github.com/acme/private.git"),
-		Username: new("deploy-bot"),
-	}, user.Actor{})
+	updated, err := svc.UpdateRepository(t.Context(), repo.ID, types.GitRepository{
+		URL:      "https://github.com/acme/private.git",
+		Username: "deploy-bot",
+	}, map[string]bool{"url": true, "username": true}, types.Actor{})
 	require.NoError(t, err)
 
 	assert.Equal(t, "deploy-bot", updated.Username)

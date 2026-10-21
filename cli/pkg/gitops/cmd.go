@@ -8,13 +8,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/gitops"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 // Command is the parent command for gitops sync operations
@@ -55,12 +55,12 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[gitops.GitOpsSync]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.GitOpsSync]{
 				Resource: "gitops syncs",
-				Endpoint: types.GitOpsSyncs(c.EnvID()),
+				Endpoint: clitypes.GitOpsSyncs(c.EnvID()),
 				Params:   cmdutil.ListParams{Resource: "gitops-syncs", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
 				Headers:  []string{"ID", "NAME", "BRANCH", "AUTO-SYNC", "LAST STATUS", "LAST SYNC"},
-				Row: func(sync gitops.GitOpsSync) []string {
+				Row: func(sync types.GitOpsSync) []string {
 					return []string{
 						sync.ID,
 						sync.Name,
@@ -101,22 +101,24 @@ func newCreateCmd() *cobra.Command {
 				return err
 			}
 
-			req := gitops.CreateSyncRequest{
-				Name:         opts.name,
-				RepositoryID: opts.repoID,
-				Branch:       opts.branch,
-				ComposePath:  opts.composePath,
-				ProjectName:  opts.projectName,
-				AutoSync:     &opts.autoSync,
-				SyncInterval: kit.Ternary(cmd.Flags().Changed("interval"), &opts.interval, nil),
+			req := map[string]any{
+				"name":         opts.name,
+				"repositoryId": opts.repoID,
+				"branch":       opts.branch,
+				"composePath":  opts.composePath,
+				"projectName":  opts.projectName,
+				"autoSync":     opts.autoSync,
+			}
+			if cmd.Flags().Changed("interval") {
+				req["syncInterval"] = opts.interval
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[gitops.GitOpsSync]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.GitOpsSync]{
 				Method:         http.MethodPost,
-				Path:           types.GitOpsSyncs(c.EnvID()),
+				Path:           clitypes.GitOpsSyncs(c.EnvID()),
 				Body:           req,
 				FailureMessage: "failed to create gitops sync",
-				Render: func(data gitops.GitOpsSync) error {
+				Render: func(data types.GitOpsSync) error {
 					output.Success("GitOps sync %s created successfully (ID: %s)", data.Name, data.ID)
 					return nil
 				},
@@ -209,22 +211,31 @@ func newUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			req := gitops.UpdateSyncRequest{
-				Name:         kit.Ternary(cmd.Flags().Changed("name"), &opts.name, nil),
-				RepositoryID: kit.Ternary(cmd.Flags().Changed("repo-id"), &opts.repoID, nil),
-				Branch:       kit.Ternary(cmd.Flags().Changed("branch"), &opts.branch, nil),
-				ComposePath:  kit.Ternary(cmd.Flags().Changed("compose-path"), &opts.composePath, nil),
-				ProjectName:  kit.Ternary(cmd.Flags().Changed("project-name"), &opts.projectName, nil),
-				AutoSync:     kit.Ternary(cmd.Flags().Changed("auto-sync"), &opts.autoSync, nil),
-				SyncInterval: kit.Ternary(cmd.Flags().Changed("interval"), &opts.interval, nil),
+			req := map[string]any{}
+			for _, field := range []struct {
+				flag  string
+				key   string
+				value any
+			}{
+				{flag: "name", key: "name", value: opts.name},
+				{flag: "repo-id", key: "repositoryId", value: opts.repoID},
+				{flag: "branch", key: "branch", value: opts.branch},
+				{flag: "compose-path", key: "composePath", value: opts.composePath},
+				{flag: "project-name", key: "projectName", value: opts.projectName},
+				{flag: "auto-sync", key: "autoSync", value: opts.autoSync},
+				{flag: "interval", key: "syncInterval", value: opts.interval},
+			} {
+				if cmd.Flags().Changed(field.flag) {
+					req[field.key] = field.value
+				}
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[gitops.GitOpsSync]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.GitOpsSync]{
 				Method:         http.MethodPut,
-				Path:           types.GitOpsSync(c.EnvID(), resolved.ID),
+				Path:           clitypes.GitOpsSync(c.EnvID(), resolved.ID),
 				Body:           req,
 				FailureMessage: "failed to update gitops sync",
-				Render: func(gitops.GitOpsSync) error {
+				Render: func(types.GitOpsSync) error {
 					output.Success("GitOps sync %s updated successfully", resolved.Name)
 					return nil
 				},
@@ -266,7 +277,7 @@ func newDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete gitops sync %s?", cmp.Or(resolved.Name, resolved.ID)),
-				Path:           types.GitOpsSync(c.EnvID(), resolved.ID),
+				Path:           clitypes.GitOpsSync(c.EnvID(), resolved.ID),
 				Body:           nil,
 				FailureMessage: "failed to delete gitops sync",
 				SuccessMessage: fmt.Sprintf("GitOps sync %s deleted successfully", resolved.Name),
@@ -295,11 +306,11 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[gitops.SyncStatus]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.GitOpsSyncStatus]{
 				Method:         http.MethodGet,
-				Path:           types.GitOpsSyncStatus(c.EnvID(), resolved.ID),
+				Path:           clitypes.GitOpsSyncStatus(c.EnvID(), resolved.ID),
 				FailureMessage: "failed to get gitops sync status",
-				Render: func(data gitops.SyncStatus) error {
+				Render: func(data types.GitOpsSyncStatus) error {
 					output.Header("GitOps Sync Status")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Auto Sync", data.AutoSync)
@@ -344,12 +355,12 @@ func newSyncCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[gitops.SyncResult]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.GitOpsSyncResult]{
 				Method:         http.MethodPost,
-				Path:           types.GitOpsSyncTrigger(c.EnvID(), resolved.ID),
+				Path:           clitypes.GitOpsSyncTrigger(c.EnvID(), resolved.ID),
 				Body:           nil,
 				FailureMessage: "failed to trigger gitops sync",
-				Render: func(data gitops.SyncResult) error {
+				Render: func(data types.GitOpsSyncResult) error {
 					if data.Success {
 						output.Success("Sync triggered successfully: %s", data.Message)
 						return nil
@@ -383,16 +394,16 @@ func newFilesCmd() *cobra.Command {
 				return err
 			}
 
-			filesPath := types.GitOpsSyncFiles(c.EnvID(), resolved.ID)
+			filesPath := clitypes.GitOpsSyncFiles(c.EnvID(), resolved.ID)
 			if opts.path != "" {
 				filesPath = cmdutil.AppendQuery(filesPath, url.Values{"path": []string{opts.path}})
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[gitops.BrowseResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.GitOpsBrowseResponse]{
 				Method:         http.MethodGet,
 				Path:           filesPath,
 				FailureMessage: "failed to get gitops sync files",
-				Render: func(data gitops.BrowseResponse) error {
+				Render: func(data types.GitOpsBrowseResponse) error {
 					headers := []string{"NAME", "TYPE", "PATH", "SIZE"}
 					return output.Table(headers, flattenFileTree(data.Files, 0))
 				},
@@ -425,7 +436,7 @@ func newImportCmd() *cobra.Command {
 				return err
 			}
 
-			req := gitops.ImportGitOpsSyncRequest{
+			req := types.ImportGitOpsSyncRequest{
 				SyncName:          opts.name,
 				GitRepo:           opts.repoURL,
 				Branch:            opts.branch,
@@ -437,12 +448,12 @@ func newImportCmd() *cobra.Command {
 
 			// The endpoint accepts a batch, so a single sync still has to be wrapped
 			// in an array.
-			return cmdutil.Run(cmd, c, cmdutil.Spec[gitops.ImportGitOpsSyncResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ImportGitOpsSyncResponse]{
 				Method:         http.MethodPost,
-				Path:           types.GitOpsSyncsImport(c.EnvID()),
-				Body:           []gitops.ImportGitOpsSyncRequest{req},
+				Path:           clitypes.GitOpsSyncsImport(c.EnvID()),
+				Body:           []types.ImportGitOpsSyncRequest{req},
 				FailureMessage: "failed to import gitops sync",
-				Render: func(data gitops.ImportGitOpsSyncResponse) error {
+				Render: func(data types.ImportGitOpsSyncResponse) error {
 					output.Success("Import completed: %d succeeded, %d failed", data.SuccessCount, data.FailedCount)
 					if len(data.Errors) > 0 {
 						output.Warning("Errors:")
@@ -470,33 +481,33 @@ func newImportCmd() *cobra.Command {
 	return cmd
 }
 
-var gitopsSyncRef = cmdutil.ResourceRef[gitops.GitOpsSync, gitops.GitOpsSync]{
+var gitopsSyncRef = cmdutil.ResourceRef[types.GitOpsSync, types.GitOpsSync]{
 	EnvironmentScoped: true,
 	Singular:          "gitops sync",
 	Plural:            "gitops syncs",
 	IDHint:            "the sync ID",
 	ListCmd:           "arcane gitops list",
-	GetPath:           types.GitOpsSync,
-	IdentifierOf:      func(item gitops.GitOpsSync) string { return item.ID },
-	ListPath:          types.GitOpsSyncs,
-	Matches: func(item gitops.GitOpsSync, identifierLower, original string) bool {
+	GetPath:           clitypes.GitOpsSync,
+	IdentifierOf:      func(item types.GitOpsSync) string { return item.ID },
+	ListPath:          clitypes.GitOpsSyncs,
+	Matches: func(item types.GitOpsSync, identifierLower, original string) bool {
 		return strings.Contains(strings.ToLower(item.ID), identifierLower) ||
 			strings.Contains(strings.ToLower(item.Name), identifierLower) || strings.EqualFold(item.Name, original)
 	},
-	Label: func(match gitops.GitOpsSync) string {
+	Label: func(match types.GitOpsSync) string {
 		return fmt.Sprintf("%s (%s, %s)", match.Name, match.ID, cmp.Or(kit.FromPtr(match.LastSyncStatus), "-"))
 	},
-	Promote: func(match gitops.GitOpsSync) *gitops.GitOpsSync { return &match },
+	Promote: func(match types.GitOpsSync) *types.GitOpsSync { return &match },
 }
 
-func flattenFileTree(nodes []gitops.FileTreeNode, depth int) [][]string {
+func flattenFileTree(nodes []types.FileTreeNode, depth int) [][]string {
 	var rows [][]string
 	for _, node := range nodes {
 		rows = append(rows, []string{
 			strings.Repeat("  ", depth) + node.Name,
 			string(node.Type),
 			node.Path,
-			kit.Ternary(node.Type == gitops.FileTreeNodeTypeFile, output.Bytes(node.Size), "-"),
+			kit.Ternary(node.Type == types.FileTreeNodeTypeFile, output.Bytes(node.Size), "-"),
 		})
 		if len(node.Children) > 0 {
 			rows = append(rows, flattenFileTree(node.Children, depth+1)...)

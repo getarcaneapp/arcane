@@ -1,3 +1,5 @@
+import type { CreateRequest, UpdateRequest } from './shared';
+
 export interface GlobalVariable {
 	id: string;
 	key: string;
@@ -9,21 +11,11 @@ export interface GlobalVariable {
 	updatedAt?: string;
 }
 
-export interface GlobalVariableCreateDto {
-	key: string;
-	value: string;
-	isSecret?: boolean;
-	allEnvironments?: boolean;
-	environmentIds?: string[];
-}
+export type GlobalVariableWritable = 'key' | 'value' | 'isSecret' | 'allEnvironments' | 'environmentIds';
 
-export interface GlobalVariableUpdateDto {
-	key?: string;
-	value?: string; // omitted for secrets = keep stored value
-	isSecret?: boolean;
-	allEnvironments?: boolean;
-	environmentIds?: string[];
-}
+export type GlobalVariableCreate = CreateRequest<GlobalVariable, GlobalVariableWritable, 'key' | 'value'>;
+
+export type GlobalVariableUpdate = UpdateRequest<GlobalVariable, GlobalVariableWritable>;
 
 export interface VariableEnvSyncResult {
 	environmentId: string;

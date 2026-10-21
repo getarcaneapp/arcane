@@ -11,13 +11,13 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	internaltypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 func newQuadletsCmd() *cobra.Command {
@@ -48,11 +48,11 @@ func newQuadletsCmd() *cobra.Command {
 					return err
 				}
 
-				return cmdutil.Run(cmd, c, cmdutil.Spec[podman.UnitStatus]{
+				return cmdutil.Run(cmd, c, cmdutil.Spec[types.PodmanUnitStatus]{
 					Method:         http.MethodPost,
-					Path:           types.PodmanQuadletAction(c.EnvID(), args[0], action.name),
+					Path:           internaltypes.PodmanQuadletAction(c.EnvID(), args[0], action.name),
 					FailureMessage: "failed to " + action.name + " quadlet",
-					Render: func(data podman.UnitStatus) error {
+					Render: func(data types.PodmanUnitStatus) error {
 						output.Success("Quadlet %s: %s completed", args[0], action.name)
 						output.KeyValue("Unit", data.Name)
 						output.KeyValue("State", output.TintStatus(data.ActiveState)+" ("+data.SubState+")")
@@ -91,9 +91,9 @@ func newQuadletListCmd() *cobra.Command {
 				"pod":    opts.pods,
 				"status": opts.statuses,
 			}.Encode()
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[podman.QuadletDetail]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.QuadletDetail]{
 				Resource: "quadlets",
-				Endpoint: types.PodmanQuadlets(c.EnvID()) + kit.Ternary(query != "", "?"+query, ""),
+				Endpoint: internaltypes.PodmanQuadlets(c.EnvID()) + kit.Ternary(query != "", "?"+query, ""),
 				Params: cmdutil.ListParams{
 					Resource:        "quadlets",
 					Limit:           opts.limit,
@@ -102,7 +102,7 @@ func newQuadletListCmd() *cobra.Command {
 					All:             opts.all,
 				},
 				Headers: []string{"NAME", "UNIT", "TYPE", "STATUS", "APP"},
-				Row: func(quadlet podman.QuadletDetail) []string {
+				Row: func(quadlet types.QuadletDetail) []string {
 					return []string{
 						quadlet.Name,
 						quadlet.UnitName,
@@ -137,11 +137,11 @@ func newQuadletGetCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[podman.QuadletDetail]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.QuadletDetail]{
 				Method:         http.MethodGet,
-				Path:           types.PodmanQuadlet(c.EnvID(), args[0]),
+				Path:           internaltypes.PodmanQuadlet(c.EnvID(), args[0]),
 				FailureMessage: "failed to get quadlet",
-				Render: func(data podman.QuadletDetail) error {
+				Render: func(data types.QuadletDetail) error {
 					output.Header("Quadlet Details")
 					output.KeyValue("Name", data.Name)
 					output.KeyValue("Unit", data.UnitName)
@@ -189,13 +189,13 @@ func newQuadletInstallCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to read quadlet file: %w", err)
 			}
-			extraFiles := make([]podman.QuadletFile, len(opts.extraFiles))
+			extraFiles := make([]types.QuadletFile, len(opts.extraFiles))
 			for i, extraPath := range opts.extraFiles {
 				extraContent, readErr := os.ReadFile(extraPath)
 				if readErr != nil {
 					return fmt.Errorf("failed to read extra file: %w", readErr)
 				}
-				extraFiles[i] = podman.QuadletFile{
+				extraFiles[i] = types.QuadletFile{
 					Name:    filepath.Base(extraPath),
 					Content: string(extraContent),
 				}
@@ -206,17 +206,17 @@ func newQuadletInstallCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[podman.QuadletInstallReport]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.QuadletInstallReport]{
 				Method: http.MethodPost,
-				Path:   types.PodmanQuadlets(c.EnvID()),
-				Body: podman.QuadletInstallRequest{
+				Path:   internaltypes.PodmanQuadlets(c.EnvID()),
+				Body: types.QuadletInstallRequest{
 					Name:       filepath.Base(args[0]),
 					Content:    string(content),
 					ExtraFiles: extraFiles,
 					App:        opts.app,
 				},
 				FailureMessage: "failed to install quadlet",
-				Render: func(data podman.QuadletInstallReport) error {
+				Render: func(data types.QuadletInstallReport) error {
 					for _, name := range slices.Sorted(maps.Keys(data.InstalledQuadlets)) {
 						output.Success("Installed %s at %s", name, data.InstalledQuadlets[name])
 					}
@@ -256,7 +256,7 @@ func newQuadletDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete quadlet %s?", args[0]),
-				Path:           types.PodmanQuadlet(c.EnvID(), args[0]),
+				Path:           internaltypes.PodmanQuadlet(c.EnvID(), args[0]),
 				FailureMessage: "failed to delete quadlet",
 				SuccessMessage: fmt.Sprintf("Quadlet %s deleted successfully", args[0]),
 			})

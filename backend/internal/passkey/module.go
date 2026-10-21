@@ -25,7 +25,7 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 			ctx.SetHeader("Cache-Control", "no-store")
 			next(ctx)
 		}},
-	}, h.getLoginAvailabilityInternal)
+	}, h.getLoginAvailability)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "begin-passkey-login",

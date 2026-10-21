@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -154,10 +154,10 @@ func TestClientPodListAndInspect(t *testing.T) {
 	assert.Equal(t, uint64(536870912), pod.MemoryLimit)
 	assert.Equal(t, uint64(1073741824), pod.MemorySwap)
 	assert.Equal(t, uint64(300), pod.BlkioWeight)
-	assert.Equal(t, []podmantypes.PodWeightDevice{{Path: "/dev/sda", Weight: 200}}, pod.BlkioWeightDevices)
-	assert.Equal(t, []podmantypes.PodThrottleDevice{{Path: "/dev/sda", Rate: 1048576}}, pod.DeviceReadBps)
-	assert.Equal(t, []podmantypes.PodThrottleDevice{{Path: "/dev/sdb", Rate: 2097152}}, pod.DeviceWriteBps)
-	assert.Equal(t, []podmantypes.PodMount{
+	assert.Equal(t, []types.PodWeightDevice{{Path: "/dev/sda", Weight: 200}}, pod.BlkioWeightDevices)
+	assert.Equal(t, []types.PodThrottleDevice{{Path: "/dev/sda", Rate: 1048576}}, pod.DeviceReadBps)
+	assert.Equal(t, []types.PodThrottleDevice{{Path: "/dev/sdb", Rate: 2097152}}, pod.DeviceWriteBps)
+	assert.Equal(t, []types.PodMount{
 		{
 			Type:        "bind",
 			Source:      "/srv",
@@ -168,7 +168,7 @@ func TestClientPodListAndInspect(t *testing.T) {
 			SubPath:     "sub",
 		},
 	}, pod.Mounts)
-	assert.Equal(t, []podmantypes.PodDevice{
+	assert.Equal(t, []types.PodDevice{
 		{
 			PathOnHost:        "/dev/fuse",
 			PathInContainer:   "/dev/fuse",
@@ -177,8 +177,8 @@ func TestClientPodListAndInspect(t *testing.T) {
 	}, pod.Devices)
 	assert.Equal(t, []string{"seed:ro"}, pod.VolumesFrom)
 	assert.Equal(t, []string{"label=disable"}, pod.SecurityOpts)
-	assert.Equal(t, &podmantypes.PodInfraConfig{
-		PortBindings:       map[string][]podmantypes.PodPortBinding{"80/tcp": {{HostPort: "8080"}}},
+	assert.Equal(t, &types.PodInfraConfig{
+		PortBindings:       map[string][]types.PodPortBinding{"80/tcp": {{HostPort: "8080"}}},
 		StaticIP:           "10.88.0.5",
 		StaticMAC:          "aa:bb:cc:dd:ee:ff",
 		NoManageResolvConf: true,

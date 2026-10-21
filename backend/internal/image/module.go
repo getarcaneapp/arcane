@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
@@ -238,6 +238,6 @@ func RegisterImages(
 			"future release.",
 		Tags:        []string{"Images"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: upload.LegacyMultipartMiddleware(api, h.uploadService, uploadtypes.KindImage),
+		Middlewares: upload.LegacyMultipartMiddleware(api, h.uploadService, types.UploadKindImage),
 	}, authz.PermImagesUpload, h.UploadImage)
 }

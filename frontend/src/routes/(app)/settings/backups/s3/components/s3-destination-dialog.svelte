@@ -9,7 +9,7 @@
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
-	import type { CreateS3Destination, S3Destination } from '#lib/types/s3-destination.js';
+	import type { S3DestinationCreate, S3Destination } from '#lib/types/s3-destination.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -22,7 +22,7 @@
 		open: boolean;
 		destination: S3Destination | null;
 		saving: boolean;
-		onSubmit: (input: CreateS3Destination) => Promise<void>;
+		onSubmit: (input: Required<S3DestinationCreate>) => Promise<void>;
 	} = $props();
 
 	const formSchema = z
@@ -54,7 +54,7 @@
 			}
 		});
 
-	const formData = untrack((): CreateS3Destination => ({
+	const formData = untrack(() => ({
 		name: destination?.name ?? '',
 		endpoint: destination?.endpoint ?? '',
 		bucket: destination?.bucket ?? '',

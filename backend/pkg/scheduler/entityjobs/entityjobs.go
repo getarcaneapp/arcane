@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 )
@@ -21,7 +21,7 @@ type Registry struct {
 	admissionScope string
 
 	lifecycleCtx  context.Context
-	scheduler     schedulertypes.DynamicScheduler
+	scheduler     types.DynamicScheduler
 	admissionGate *runs.Admission
 }
 
@@ -34,7 +34,7 @@ func New(jobPrefix, admissionScope string) *Registry {
 // SetScheduler injects the scheduler, the admission gate, and the app lifecycle context scheduled runs execute on.
 //
 //nolint:contextcheck // scheduled runs must capture the app lifecycle context, not request contexts
-func (r *Registry) SetScheduler(ctx context.Context, scheduler schedulertypes.DynamicScheduler, admissionGate *runs.Admission) error {
+func (r *Registry) SetScheduler(ctx context.Context, scheduler types.DynamicScheduler, admissionGate *runs.Admission) error {
 	if scheduler == nil || admissionGate == nil {
 		return fmt.Errorf("%s scheduler dependencies unavailable", r.admissionScope)
 	}
@@ -51,7 +51,7 @@ func (r *Registry) SetScheduler(ctx context.Context, scheduler schedulertypes.Dy
 func (r *Registry) Enabled() bool { return r.scheduler != nil }
 
 // Scheduler returns the injected scheduler, or nil.
-func (r *Registry) Scheduler() schedulertypes.DynamicScheduler { return r.scheduler }
+func (r *Registry) Scheduler() types.DynamicScheduler { return r.scheduler }
 
 // Context returns the app lifecycle context, or a cancel-detached copy of ctx before one is injected.
 func (r *Registry) Context(ctx context.Context) context.Context {
@@ -69,9 +69,9 @@ func (r *Registry) JobName(entityID string) string { return r.jobPrefix + entity
 
 // Register adds (or replaces) the dynamic job for entityID.
 func (r *Registry) Register(ctx context.Context, entityID string, schedule func(context.Context) string,
-	run func(context.Context) (schedulertypes.Outcome, error), reconcile ...func(context.Context, schedulertypes.Run) (schedulertypes.Outcome, error),
+	run func(context.Context) (types.SchedulerOutcome, error), reconcile ...func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error),
 ) {
-	job := &schedulertypes.GenericJob{JobName: r.JobName(entityID), ScheduleFn: schedule, RunFn: run}
+	job := &types.GenericJob{JobName: r.JobName(entityID), ScheduleFn: schedule, RunFn: run}
 	if len(reconcile) > 0 {
 		job.ReconcileFn = reconcile[0]
 	}
@@ -79,7 +79,7 @@ func (r *Registry) Register(ctx context.Context, entityID string, schedule func(
 }
 
 // Add adds (or replaces) a prebuilt job, such as a flow.Job named with JobName.
-func (r *Registry) Add(ctx context.Context, job schedulertypes.Job) {
+func (r *Registry) Add(ctx context.Context, job types.SchedulerJob) {
 	if r.scheduler == nil {
 		return
 	}
@@ -99,5 +99,5 @@ func (r *Registry) Unregister(ctx context.Context, entityID string) {
 
 // TryAcquire admits one in-flight run per entity ID and refuses at once while one is active.
 func (r *Registry) TryAcquire(ctx context.Context, entityID string) (*runs.Lease, bool, error) {
-	return r.admissionGate.TryAcquire(ctx, schedulertypes.AdmissionKey{Scope: r.admissionScope, ID: entityID})
+	return r.admissionGate.TryAcquire(ctx, types.SchedulerAdmissionKey{Scope: r.admissionScope, ID: entityID})
 }

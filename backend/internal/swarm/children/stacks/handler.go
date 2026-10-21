@@ -5,8 +5,7 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/swarm"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
@@ -37,7 +36,7 @@ type ListSwarmStacksInput struct {
 
 type DeploySwarmStackInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          swarm.StackDeployRequest
+	Body          types.SwarmStackDeployRequest
 }
 
 type GetSwarmStackInput struct {
@@ -53,7 +52,7 @@ type GetSwarmStackSourceInput struct {
 type UpdateSwarmStackSourceInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Name          string `path:"name" doc:"Stack name"`
-	Body          swarm.StackSourceUpdateRequest
+	types.Update[types.SwarmStackSource]
 }
 
 type DeleteSwarmStackInput struct {
@@ -83,7 +82,7 @@ type ListSwarmStackTasksInput struct {
 
 type RenderSwarmStackConfigInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          swarm.StackRenderConfigRequest
+	Body          types.SwarmStackRenderConfigRequest
 }
 
 // ListStacks lists swarm stacks for the current environment.
@@ -96,17 +95,17 @@ type RenderSwarmStackConfigInput struct {
 //
 // Returns a paginated list of stack summaries.
 // Returns a mapped HTTP error when stack enumeration fails.
-func (h *Handler) ListStacks(ctx context.Context, input *ListSwarmStacksInput) (*handlerutil.Page[swarm.StackSummary], error) {
+func (h *Handler) ListStacks(ctx context.Context, input *ListSwarmStacksInput) (*handlerutil.Page[types.SwarmStackSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.service.ListStacksPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to list swarm stacks: "+err.Error())
 	}
 	if items == nil {
-		items = []swarm.StackSummary{}
+		items = []types.SwarmStackSummary{}
 	}
 
-	return &handlerutil.Page[swarm.StackSummary]{Body: base.Paginated[swarm.StackSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
+	return &handlerutil.Page[types.SwarmStackSummary]{Body: types.Paginated[types.SwarmStackSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
 // DeployStack deploys or updates a swarm stack.
@@ -121,7 +120,7 @@ func (h *Handler) ListStacks(ctx context.Context, input *ListSwarmStacksInput) (
 // Returns the deployment response reported by the swarm service.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when rendering, validation, or deployment fails.
-func (h *Handler) DeployStack(ctx context.Context, input *DeploySwarmStackInput) (*handlerutil.Out[swarm.StackDeployResponse], error) {
+func (h *Handler) DeployStack(ctx context.Context, input *DeploySwarmStackInput) (*handlerutil.Out[types.SwarmStackDeployResponse], error) {
 	resp, err := h.service.DeployStack(ctx, input.EnvironmentID, input.Body)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to deploy swarm stack: "+err.Error())
@@ -129,7 +128,7 @@ func (h *Handler) DeployStack(ctx context.Context, input *DeploySwarmStackInput)
 
 	h.audit(ctx, input.EnvironmentID, "stack.deploy", "swarm_stack", input.Body.Name, input.Body.Name, map[string]any{"stack": input.Body.Name})
 
-	return &handlerutil.Out[swarm.StackDeployResponse]{Body: base.ApiResponse[swarm.StackDeployResponse]{Success: true, Data: *resp}}, nil
+	return &handlerutil.Out[types.SwarmStackDeployResponse]{Body: types.ApiResponse[types.SwarmStackDeployResponse]{Success: true, Data: *resp}}, nil
 }
 
 // GetStack returns detailed information for a specific swarm stack.
@@ -143,7 +142,7 @@ func (h *Handler) DeployStack(ctx context.Context, input *DeploySwarmStackInput)
 // Returns the stack inspection payload when the stack exists.
 // Returns `404 Not Found` when the stack does not exist or another mapped HTTP
 // error when inspection fails.
-func (h *Handler) GetStack(ctx context.Context, input *GetSwarmStackInput) (*handlerutil.Out[swarm.StackInspect], error) {
+func (h *Handler) GetStack(ctx context.Context, input *GetSwarmStackInput) (*handlerutil.Out[types.SwarmStackInspect], error) {
 	stack, err := h.service.GetStack(ctx, input.EnvironmentID, input.Name)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -152,7 +151,7 @@ func (h *Handler) GetStack(ctx context.Context, input *GetSwarmStackInput) (*han
 		return nil, h.mapError(err, "Failed to inspect swarm stack")
 	}
 
-	return &handlerutil.Out[swarm.StackInspect]{Body: base.ApiResponse[swarm.StackInspect]{Success: true, Data: *stack}}, nil
+	return &handlerutil.Out[types.SwarmStackInspect]{Body: types.ApiResponse[types.SwarmStackInspect]{Success: true, Data: *stack}}, nil
 }
 
 // GetStackSource returns the stored source content for a swarm stack.
@@ -166,7 +165,7 @@ func (h *Handler) GetStack(ctx context.Context, input *GetSwarmStackInput) (*han
 // Returns the stored compose and environment source for the stack.
 // Returns an authorization error for non-admin callers, `404 Not Found` when
 // no saved source exists, or another mapped HTTP error when loading fails.
-func (h *Handler) GetStackSource(ctx context.Context, input *GetSwarmStackSourceInput) (*handlerutil.Out[swarm.StackSource], error) {
+func (h *Handler) GetStackSource(ctx context.Context, input *GetSwarmStackSourceInput) (*handlerutil.Out[types.SwarmStackSource], error) {
 	source, err := h.service.GetStackSource(ctx, input.EnvironmentID, input.Name)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -175,7 +174,7 @@ func (h *Handler) GetStackSource(ctx context.Context, input *GetSwarmStackSource
 		return nil, h.mapError(err, "Failed to load swarm stack source")
 	}
 
-	return &handlerutil.Out[swarm.StackSource]{Body: base.ApiResponse[swarm.StackSource]{Success: true, Data: *source}}, nil
+	return &handlerutil.Out[types.SwarmStackSource]{Body: types.ApiResponse[types.SwarmStackSource]{Success: true, Data: *source}}, nil
 }
 
 // UpdateStackSource persists the saved compose and env source for a swarm
@@ -184,15 +183,20 @@ func (h *Handler) GetStackSource(ctx context.Context, input *GetSwarmStackSource
 // It requires admin privileges because stack source content can include
 // sensitive configuration. The stack name comes from the route, and the body
 // contains the replacement source files to save.
-func (h *Handler) UpdateStackSource(ctx context.Context, input *UpdateSwarmStackSourceInput) (*handlerutil.Out[swarm.StackSource], error) {
-	source, err := h.service.UpdateStackSource(ctx, input.EnvironmentID, input.Name, input.Body)
+func (h *Handler) UpdateStackSource(ctx context.Context, input *UpdateSwarmStackSourceInput) (*handlerutil.Out[types.SwarmStackSource], error) {
+	submitted, err := input.SubmittedFields()
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid request body")
+	}
+
+	source, err := h.service.UpdateStackSource(ctx, input.EnvironmentID, input.Name, input.Body, submitted)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to update swarm stack source")
 	}
 
 	h.audit(ctx, input.EnvironmentID, "stack.source.update", "swarm_stack", input.Name, input.Name, map[string]any{"stack": input.Name})
 
-	return &handlerutil.Out[swarm.StackSource]{Body: base.ApiResponse[swarm.StackSource]{Success: true, Data: *source}}, nil
+	return &handlerutil.Out[types.SwarmStackSource]{Body: types.ApiResponse[types.SwarmStackSource]{Success: true, Data: *source}}, nil
 }
 
 // DeleteStack removes a swarm stack and its managed resources.
@@ -207,7 +211,7 @@ func (h *Handler) UpdateStackSource(ctx context.Context, input *UpdateSwarmStack
 // Returns a confirmation response when the stack is removed.
 // Returns an authorization error for non-admin callers, `404 Not Found` when
 // the stack does not exist, or another mapped HTTP error when removal fails.
-func (h *Handler) DeleteStack(ctx context.Context, input *DeleteSwarmStackInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *Handler) DeleteStack(ctx context.Context, input *DeleteSwarmStackInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.service.RemoveStack(ctx, input.EnvironmentID, input.Name); err != nil {
 		if errdefs.IsNotFound(err) {
 			return nil, huma.Error404NotFound("Swarm stack not found")
@@ -231,7 +235,7 @@ func (h *Handler) DeleteStack(ctx context.Context, input *DeleteSwarmStackInput)
 // Returns a paginated list of service summaries for the stack.
 // Returns `404 Not Found` when the stack does not exist or another mapped HTTP
 // error when the lookup fails.
-func (h *Handler) ListStackServices(ctx context.Context, input *ListSwarmStackServicesInput) (*handlerutil.Page[swarm.ServiceSummary], error) {
+func (h *Handler) ListStackServices(ctx context.Context, input *ListSwarmStackServicesInput) (*handlerutil.Page[types.SwarmServiceSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.service.ListStackServicesPaginated(ctx, input.Name, params)
 	if err != nil {
@@ -241,10 +245,10 @@ func (h *Handler) ListStackServices(ctx context.Context, input *ListSwarmStackSe
 		return nil, h.mapError(err, "Failed to list swarm stack services")
 	}
 	if items == nil {
-		items = []swarm.ServiceSummary{}
+		items = []types.SwarmServiceSummary{}
 	}
 
-	return &handlerutil.Page[swarm.ServiceSummary]{Body: base.Paginated[swarm.ServiceSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
+	return &handlerutil.Page[types.SwarmServiceSummary]{Body: types.Paginated[types.SwarmServiceSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
 // ListStackTasks lists tasks belonging to a swarm stack.
@@ -258,7 +262,7 @@ func (h *Handler) ListStackServices(ctx context.Context, input *ListSwarmStackSe
 // Returns a paginated list of task summaries for the stack.
 // Returns `404 Not Found` when the stack does not exist or another mapped HTTP
 // error when the lookup fails.
-func (h *Handler) ListStackTasks(ctx context.Context, input *ListSwarmStackTasksInput) (*handlerutil.Page[swarm.TaskSummary], error) {
+func (h *Handler) ListStackTasks(ctx context.Context, input *ListSwarmStackTasksInput) (*handlerutil.Page[types.SwarmTaskSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.service.ListStackTasksPaginated(ctx, input.Name, params)
 	if err != nil {
@@ -268,10 +272,10 @@ func (h *Handler) ListStackTasks(ctx context.Context, input *ListSwarmStackTasks
 		return nil, h.mapError(err, "Failed to list swarm stack tasks")
 	}
 	if items == nil {
-		items = []swarm.TaskSummary{}
+		items = []types.SwarmTaskSummary{}
 	}
 
-	return &handlerutil.Page[swarm.TaskSummary]{Body: base.Paginated[swarm.TaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
+	return &handlerutil.Page[types.SwarmTaskSummary]{Body: types.Paginated[types.SwarmTaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
 // RenderStackConfig renders and validates a swarm stack configuration without deploying it.
@@ -284,11 +288,11 @@ func (h *Handler) ListStackTasks(ctx context.Context, input *ListSwarmStackTasks
 //
 // Returns the rendered compose content together with discovered resource names.
 // Returns a mapped HTTP error when parsing, interpolation, or rendering fails.
-func (h *Handler) RenderStackConfig(ctx context.Context, input *RenderSwarmStackConfigInput) (*handlerutil.Out[swarm.StackRenderConfigResponse], error) {
+func (h *Handler) RenderStackConfig(ctx context.Context, input *RenderSwarmStackConfigInput) (*handlerutil.Out[types.SwarmStackRenderConfigResponse], error) {
 	resp, err := h.service.RenderStackConfig(ctx, input.EnvironmentID, input.Body)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to render swarm stack config")
 	}
 
-	return &handlerutil.Out[swarm.StackRenderConfigResponse]{Body: base.ApiResponse[swarm.StackRenderConfigResponse]{Success: true, Data: *resp}}, nil
+	return &handlerutil.Out[types.SwarmStackRenderConfigResponse]{Body: types.ApiResponse[types.SwarmStackRenderConfigResponse]{Success: true, Data: *resp}}, nil
 }

@@ -10,13 +10,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/upload"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 const uploadChunkAttempts = 3
@@ -39,7 +39,7 @@ func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath st
 	loading := output.StartTracker(ctx, output.Stderr(), showProgress, "Creating upload session", "Uploading chunks")
 	loading.NextStep()
 	defer loading.Stop()
-	created, err := c.PostJSON[upload.Session](ctx, types.UploadSessions(c.EnvID(), kind), upload.CreateSessionRequest{
+	created, err := c.PostJSON[types.UploadSession](ctx, clitypes.UploadSessions(c.EnvID(), kind), types.CreateUploadSessionRequest{
 		Filename: filepath.Base(filePath),
 		Size:     fileInfo.Size(),
 	})
@@ -62,7 +62,7 @@ func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath st
 			return "", fmt.Errorf("failed to read file: %w", readFullErr)
 		}
 
-		chunkPath := types.UploadSessionChunk(c.EnvID(), kind, session.ID, index)
+		chunkPath := clitypes.UploadSessionChunk(c.EnvID(), kind, session.ID, index)
 		for attempt := 1; ; attempt++ {
 			resp, chunkErr := c.RequestRaw(ctx, http.MethodPut, chunkPath, bytes.NewReader(buf[:expected]), map[string]string{"Content-Type": "application/octet-stream"})
 			if chunkErr == nil {
@@ -93,7 +93,7 @@ func UploadFileInChunks(ctx context.Context, c *client.Client, kind, filePath st
 // AbortUploadSession deletes a chunked upload session, ignoring errors. Use it
 // when the consume step after a completed upload fails.
 func AbortUploadSession(ctx context.Context, c *client.Client, kind, sessionID string) {
-	if resp, err := c.Delete(context.WithoutCancel(ctx), types.UploadSession(c.EnvID(), kind, sessionID)); err == nil {
+	if resp, err := c.Delete(context.WithoutCancel(ctx), clitypes.UploadSession(c.EnvID(), kind, sessionID)); err == nil {
 		_ = resp.Body.Close()
 	}
 }

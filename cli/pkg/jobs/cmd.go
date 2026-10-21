@@ -11,14 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
-	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 // Command is the parent command for background jobs and their schedules.
@@ -57,7 +56,7 @@ func newGetCmd() *cobra.Command {
 				return err
 			}
 
-			cfg, err := c.DoJSON[jobschedule.Config](cmd.Context(), http.MethodGet, types.JobSchedules(c.EnvID()), nil)
+			cfg, err := c.DoJSON[types.JobScheduleConfig](cmd.Context(), http.MethodGet, clitypes.JobSchedules(c.EnvID()), nil)
 			if err != nil {
 				return fmt.Errorf("failed to get job schedules: %w", err)
 			}
@@ -89,7 +88,21 @@ func newUpdateCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if !slices.ContainsFunc([]string{"environment-health-interval", "event-cleanup-interval", "expired-sessions-cleanup-interval"}, cmd.Flags().Changed) {
+			req := map[string]any{}
+			for _, field := range []struct {
+				flag  string
+				key   string
+				value string
+			}{
+				{flag: "environment-health-interval", key: "environmentHealthInterval", value: opts.environmentHealthInterval},
+				{flag: "event-cleanup-interval", key: "eventCleanupInterval", value: opts.eventCleanupInterval},
+				{flag: "expired-sessions-cleanup-interval", key: "expiredSessionsCleanupInterval", value: opts.expiredSessionsCleanupInterval},
+			} {
+				if cmd.Flags().Changed(field.flag) {
+					req[field.key] = field.value
+				}
+			}
+			if len(req) == 0 {
 				return errors.New("no updates provided (set at least one interval flag)")
 			}
 			c, err := cmdutil.ClientFromCommand(cmd)
@@ -97,16 +110,12 @@ func newUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[jobschedule.Config]{
-				Method: http.MethodPut,
-				Path:   types.JobSchedules(c.EnvID()),
-				Body: jobschedule.Update{
-					EnvironmentHealthInterval:      kit.Ternary(cmd.Flags().Changed("environment-health-interval"), &opts.environmentHealthInterval, nil),
-					EventCleanupInterval:           kit.Ternary(cmd.Flags().Changed("event-cleanup-interval"), &opts.eventCleanupInterval, nil),
-					ExpiredSessionsCleanupInterval: kit.Ternary(cmd.Flags().Changed("expired-sessions-cleanup-interval"), &opts.expiredSessionsCleanupInterval, nil),
-				},
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.JobScheduleConfig]{
+				Method:         http.MethodPut,
+				Path:           clitypes.JobSchedules(c.EnvID()),
+				Body:           req,
 				FailureMessage: "failed to update job schedules",
-				Render: func(data jobschedule.Config) error {
+				Render: func(data types.JobScheduleConfig) error {
 					output.Success("Job schedules updated")
 					output.KeyValue("Environment health interval", data.EnvironmentHealthInterval)
 					output.KeyValue("Event cleanup interval", data.EventCleanupInterval)
@@ -136,7 +145,7 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			result, err := c.DoJSON[jobschedule.JobListResponse](cmd.Context(), http.MethodGet, types.Jobs(c.EnvID()), nil)
+			result, err := c.DoJSON[types.JobListResponse](cmd.Context(), http.MethodGet, clitypes.Jobs(c.EnvID()), nil)
 			if err != nil {
 				return fmt.Errorf("failed to list jobs: %w", err)
 			}
@@ -192,7 +201,7 @@ func newRunCmd() *cobra.Command {
 				value[8] = (value[8] & 0x3f) | 0x80
 				id = fmt.Sprintf("%x-%x-%x-%x-%x", value[0:4], value[4:6], value[6:8], value[8:10], value[10:16])
 			}
-			result, err := c.DoJSON[jobschedule.JobRunResponse](cmd.Context(), http.MethodPost, types.JobRun(c.EnvID(), args[0]), nil, http.Header{"Idempotency-Key": []string{id}})
+			result, err := c.DoJSON[types.JobRunResponse](cmd.Context(), http.MethodPost, clitypes.JobRun(c.EnvID(), args[0]), nil, http.Header{"Idempotency-Key": []string{id}})
 			if err != nil {
 				return fmt.Errorf("failed to queue job (reuse --request-id %s if delivery is uncertain): %w", id, err)
 			}
@@ -214,16 +223,16 @@ func newRunCmd() *cobra.Command {
 	return cmd
 }
 
-var jobRef = cmdutil.ResourceRef[jobschedule.JobStatus, jobschedule.JobStatus]{
+var jobRef = cmdutil.ResourceRef[types.JobStatus, types.JobStatus]{
 	EnvironmentScoped: true, Singular: "job", Plural: "jobs", IDHint: "the job ID", ListCmd: "arcane-cli jobs list",
-	SearchCandidates: func(ctx context.Context, c *client.Client, identifier string) ([]jobschedule.JobStatus, error) {
-		result, err := c.DoJSON[jobschedule.JobListResponse](ctx, http.MethodGet, types.Jobs(c.EnvID()), nil)
+	SearchCandidates: func(ctx context.Context, c *client.Client, identifier string) ([]types.JobStatus, error) {
+		result, err := c.DoJSON[types.JobListResponse](ctx, http.MethodGet, clitypes.Jobs(c.EnvID()), nil)
 		if err != nil {
 			return nil, err
 		}
-		return slices.DeleteFunc(result.Jobs, func(item jobschedule.JobStatus) bool { return !strings.EqualFold(item.ID, identifier) }), nil
+		return slices.DeleteFunc(result.Jobs, func(item types.JobStatus) bool { return !strings.EqualFold(item.ID, identifier) }), nil
 	},
-	IdentifierOf: func(item jobschedule.JobStatus) string { return item.ID },
-	Label:        func(item jobschedule.JobStatus) string { return item.Name + " (" + item.ID + ")" },
-	Promote:      func(item jobschedule.JobStatus) *jobschedule.JobStatus { return &item },
+	IdentifierOf: func(item types.JobStatus) string { return item.ID },
+	Label:        func(item types.JobStatus) string { return item.Name + " (" + item.ID + ")" },
+	Promote:      func(item types.JobStatus) *types.JobStatus { return &item },
 }

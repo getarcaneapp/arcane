@@ -10,13 +10,13 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 // Command builds the updates command tree.
@@ -52,7 +52,7 @@ func newCheckCmd() *cobra.Command {
 					return errors.New("--all cannot be combined with image references")
 				}
 
-				result, checkAllUpdatesErr := c.PostJSON[jsontext.Value](cmd.Context(), types.ImageUpdatesCheckAll(c.EnvID()), struct{}{})
+				result, checkAllUpdatesErr := c.PostJSON[jsontext.Value](cmd.Context(), clitypes.ImageUpdatesCheckAll(c.EnvID()), struct{}{})
 				if checkAllUpdatesErr != nil {
 					return fmt.Errorf("failed to check all updates: %w", checkAllUpdatesErr)
 				}
@@ -64,19 +64,19 @@ func newCheckCmd() *cobra.Command {
 			}
 
 			if len(args) > 1 {
-				result, checkBatchUpdatesErr := c.PostJSON[jsontext.Value](cmd.Context(), types.ImageUpdatesCheckBatch(c.EnvID()), imageupdate.BatchImageUpdateRequest{ImageRefs: args})
+				result, checkBatchUpdatesErr := c.PostJSON[jsontext.Value](cmd.Context(), clitypes.ImageUpdatesCheckBatch(c.EnvID()), types.BatchImageUpdateRequest{ImageRefs: args})
 				if checkBatchUpdatesErr != nil {
 					return fmt.Errorf("failed to check updates: %w", checkBatchUpdatesErr)
 				}
 				return printBatchResults(cmd, result.Data)
 			}
 
-			result, err := c.GetJSON[jsontext.Value](cmd.Context(), types.ImageUpdatesCheck(c.EnvID(), args[0]))
+			result, err := c.GetJSON[jsontext.Value](cmd.Context(), clitypes.ImageUpdatesCheck(c.EnvID(), args[0]))
 			if err != nil {
 				return fmt.Errorf("failed to check updates: %w", err)
 			}
 
-			var data imageupdate.Response
+			var data types.ImageUpdateResponse
 			if decodeErr := json.Unmarshal(result.Data, &data); decodeErr != nil {
 				return fmt.Errorf("failed to parse response: %w", decodeErr)
 			}
@@ -107,7 +107,7 @@ func newCheckAllCmd() *cobra.Command {
 				return err
 			}
 
-			result, err := c.PostJSON[jsontext.Value](cmd.Context(), types.ImageUpdatesCheckAll(c.EnvID()), struct{}{})
+			result, err := c.PostJSON[jsontext.Value](cmd.Context(), clitypes.ImageUpdatesCheckAll(c.EnvID()), struct{}{})
 			if err != nil {
 				return fmt.Errorf("failed to check all updates: %w", err)
 			}
@@ -130,11 +130,11 @@ func newCheckImageCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[imageupdate.Response]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ImageUpdateResponse]{
 				Method:         http.MethodGet,
-				Path:           types.ImageUpdatesCheckById(c.EnvID(), args[0]),
+				Path:           clitypes.ImageUpdatesCheckById(c.EnvID(), args[0]),
 				FailureMessage: "failed to check image update",
-				Render:         func(data imageupdate.Response) error { return printUpdateStatus(data, "") },
+				Render:         func(data types.ImageUpdateResponse) error { return printUpdateStatus(data, "") },
 			})
 		},
 	}
@@ -153,11 +153,11 @@ func newSummaryCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[imageupdate.Summary]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ImageUpdateSummary]{
 				Method:         http.MethodGet,
-				Path:           types.ImageUpdatesSummary(c.EnvID()),
+				Path:           clitypes.ImageUpdatesSummary(c.EnvID()),
 				FailureMessage: "failed to get summary",
-				Render: func(data imageupdate.Summary) error {
+				Render: func(data types.ImageUpdateSummary) error {
 					output.Header("Image Updates Summary")
 					output.KeyValue("Total Images", strconv.Itoa(data.TotalImages))
 					output.KeyValue("Images with Updates", strconv.Itoa(data.ImagesWithUpdates))
@@ -173,7 +173,7 @@ func newSummaryCmd() *cobra.Command {
 // printBatchResults prints every requested reference, including
 // up-to-date and failed checks.
 func printBatchResults(cmd *cobra.Command, raw jsontext.Value) error {
-	var result imageupdate.BatchResponse
+	var result types.ImageUpdateBatchResponse
 	if decodeErr := json.Unmarshal(raw, &result); decodeErr != nil {
 		return fmt.Errorf("failed to parse response: %w", decodeErr)
 	}
@@ -221,7 +221,7 @@ func printBatchResults(cmd *cobra.Command, raw jsontext.Value) error {
 	return nil
 }
 
-func printUpdateStatus(data imageupdate.Response, imageRef string) error {
+func printUpdateStatus(data types.ImageUpdateResponse, imageRef string) error {
 	output.Header("Image Update Status")
 	if imageRef != "" {
 		output.KeyValue("Image", imageRef)

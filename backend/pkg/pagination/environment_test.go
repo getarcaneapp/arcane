@@ -4,12 +4,12 @@ import (
 	"cmp"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 )
 
 type environmentRow struct {
-	base.EnvironmentTag
+	types.EnvironmentTag
 
 	Name string
 }
@@ -22,8 +22,8 @@ func environmentRowConfig() Config[environmentRow] {
 
 func environmentRowPages() []EnvironmentPage[environmentRow] {
 	return []EnvironmentPage[environmentRow]{
-		{Environment: base.EnvironmentRef{ID: "b", Name: "Beta"}, Items: []environmentRow{{Name: "x"}, {Name: "a"}}, TotalAvailable: 5},
-		{Environment: base.EnvironmentRef{ID: "a", Name: "Alpha"}, Items: []environmentRow{{Name: "x"}, {Name: "c"}}, TotalAvailable: 3},
+		{Environment: types.EnvironmentRef{ID: "b", Name: "Beta"}, Items: []environmentRow{{Name: "x"}, {Name: "a"}}, TotalAvailable: 5},
+		{Environment: types.EnvironmentRef{ID: "a", Name: "Alpha"}, Items: []environmentRow{{Name: "x"}, {Name: "c"}}, TotalAvailable: 3},
 	}
 }
 

@@ -1,6 +1,6 @@
 import type {
-	GitOpsSyncCreateDto,
-	GitOpsSyncUpdateDto,
+	GitOpsSyncCreate,
+	GitOpsSyncUpdate,
 	GitOpsSync,
 	GitOpsSyncCounts,
 	SyncResult,
@@ -29,11 +29,11 @@ class GitOpsSyncService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/gitops-syncs/${syncId}`));
 	}
 
-	async createSync(environmentId: string, sync: GitOpsSyncCreateDto): Promise<GitOpsSync> {
+	async createSync(environmentId: string, sync: GitOpsSyncCreate): Promise<GitOpsSync> {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/gitops-syncs`, sync));
 	}
 
-	async updateSync(environmentId: string, syncId: string, sync: GitOpsSyncUpdateDto): Promise<GitOpsSync> {
+	async updateSync(environmentId: string, syncId: string, sync: GitOpsSyncUpdate): Promise<GitOpsSync> {
 		return this.handleResponse(this.api.put(`/environments/${environmentId}/gitops-syncs/${syncId}`, sync));
 	}
 

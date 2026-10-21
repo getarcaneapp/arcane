@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/docker/go-units"
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/podman"
@@ -38,7 +38,7 @@ func byteSize(field, value string) (*int64, error) {
 	return &size, nil
 }
 
-func deviceLimits[T any](field string, limits []podmantypes.PodDeviceLimit, build func(major, minor int64, value string) (T, error)) ([]T, error) {
+func deviceLimits[T any](field string, limits []types.PodDeviceLimit, build func(major, minor int64, value string) (T, error)) ([]T, error) {
 	out := make([]T, 0, len(limits))
 	for _, limit := range limits {
 		majorText, minorText, ok := strings.Cut(strings.TrimSpace(limit.Device), ":")

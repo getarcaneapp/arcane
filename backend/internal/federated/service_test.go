@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/federated"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jws"
 	"github.com/lestrrat-go/jwx/v4/jwt"
@@ -186,7 +186,7 @@ func setupFederatedCredentialService(t *testing.T, issuer *federatedTestIssuer) 
 		Audiences:       database.StringSlice{"arcane-ci"},
 		SubjectClaim:    "sub",
 		SubjectMatch:    "repo:getarcaneapp/arcane:*",
-		MatchType:       federated.MatchTypeGlob,
+		MatchType:       types.FederatedMatchTypeGlob,
 		RoleID:          viewerRole.ID,
 		IdentityUserID:  serviceUser.ID,
 		TokenTTLSeconds: 900,
@@ -228,10 +228,10 @@ func TestFederatedCredentialServiceExchangeToken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resp, err := service.ExchangeToken(ctx, federated.TokenExchangeRequest{
-				GrantType:        federated.TokenExchangeGrantType,
+			resp, err := service.ExchangeToken(ctx, types.TokenExchangeRequest{
+				GrantType:        types.TokenExchangeGrantType,
 				SubjectToken:     tt.token,
-				SubjectTokenType: federated.SubjectTokenTypeJWT,
+				SubjectTokenType: types.SubjectTokenTypeJWT,
 				Audience:         "https://arcane.example.com",
 			})
 			if tt.wantError != nil {
@@ -244,7 +244,7 @@ func TestFederatedCredentialServiceExchangeToken(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, resp)
 			require.Equal(t, "Bearer", resp.TokenType)
-			require.Equal(t, federated.IssuedTokenTypeAccessToken, resp.IssuedTokenType)
+			require.Equal(t, types.IssuedTokenTypeAccessToken, resp.IssuedTokenType)
 			require.Positive(t, resp.ExpiresIn)
 			require.NotEmpty(t, resp.AccessToken)
 
@@ -266,10 +266,10 @@ func TestFederatedCredentialServiceExchangeTokenRejectsIssuerWithoutCredential(t
 	otherIssuer := newFederatedTestIssuer(t)
 	service, _, _ := setupFederatedCredentialService(t, issuer)
 
-	resp, err := service.ExchangeToken(t.Context(), federated.TokenExchangeRequest{
-		GrantType:        federated.TokenExchangeGrantType,
+	resp, err := service.ExchangeToken(t.Context(), types.TokenExchangeRequest{
+		GrantType:        types.TokenExchangeGrantType,
 		SubjectToken:     otherIssuer.token(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"}),
-		SubjectTokenType: federated.SubjectTokenTypeJWT,
+		SubjectTokenType: types.SubjectTokenTypeJWT,
 		Audience:         "https://arcane.example.com",
 	})
 
@@ -283,10 +283,10 @@ func TestFederatedCredentialServiceExchangeTokenDoesNotRequireGlobalFeatureFlag(
 	service, _, _ := setupFederatedCredentialService(t, issuer)
 	service.settingsService = nil
 
-	resp, err := service.ExchangeToken(t.Context(), federated.TokenExchangeRequest{
-		GrantType:        federated.TokenExchangeGrantType,
+	resp, err := service.ExchangeToken(t.Context(), types.TokenExchangeRequest{
+		GrantType:        types.TokenExchangeGrantType,
 		SubjectToken:     issuer.token(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"}),
-		SubjectTokenType: federated.SubjectTokenTypeJWT,
+		SubjectTokenType: types.SubjectTokenTypeJWT,
 		Audience:         "https://arcane.example.com",
 	})
 
@@ -304,10 +304,10 @@ func TestFederatedCredentialServiceExchangeTokenRejectsExpiredCredential(t *test
 		Where("id = ?", "cred-github-actions").
 		Update("expires_at", expiredAt).Error)
 
-	resp, err := service.ExchangeToken(t.Context(), federated.TokenExchangeRequest{
-		GrantType:        federated.TokenExchangeGrantType,
+	resp, err := service.ExchangeToken(t.Context(), types.TokenExchangeRequest{
+		GrantType:        types.TokenExchangeGrantType,
 		SubjectToken:     issuer.token(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"}),
-		SubjectTokenType: federated.SubjectTokenTypeJWT,
+		SubjectTokenType: types.SubjectTokenTypeJWT,
 		Audience:         "https://arcane.example.com",
 	})
 
@@ -321,18 +321,16 @@ func TestFederatedCredentialServiceUpdateDisableRevokesIssuedSessions(t *testing
 	service, authSvc, _ := setupFederatedCredentialService(t, issuer)
 	ctx := t.Context()
 
-	resp, err := service.ExchangeToken(ctx, federated.TokenExchangeRequest{
-		GrantType:        federated.TokenExchangeGrantType,
+	resp, err := service.ExchangeToken(ctx, types.TokenExchangeRequest{
+		GrantType:        types.TokenExchangeGrantType,
 		SubjectToken:     issuer.token(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"}),
-		SubjectTokenType: federated.SubjectTokenTypeJWT,
+		SubjectTokenType: types.SubjectTokenTypeJWT,
 		Audience:         "https://arcane.example.com",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	_, err = service.Update(ctx, "admin-user", "cred-github-actions", federated.UpdateFederatedCredential{
-		Enabled: new(false),
-	})
+	_, err = service.Update(ctx, "admin-user", "cred-github-actions", types.FederatedCredential{}, map[string]bool{"enabled": true})
 	require.NoError(t, err)
 
 	_, _, err = authSvc.VerifyToken(ctx, resp.AccessToken)
@@ -345,10 +343,10 @@ func TestFederatedCredentialServiceRejectsReplayedSubjectToken(t *testing.T) {
 	service, _, _ := setupFederatedCredentialService(t, issuer)
 	ctx := t.Context()
 	subjectToken := issuer.token(t, "repo:getarcaneapp/arcane:ref:refs/heads/main", []string{"arcane-ci"})
-	req := federated.TokenExchangeRequest{
-		GrantType:        federated.TokenExchangeGrantType,
+	req := types.TokenExchangeRequest{
+		GrantType:        types.TokenExchangeGrantType,
 		SubjectToken:     subjectToken,
-		SubjectTokenType: federated.SubjectTokenTypeJWT,
+		SubjectTokenType: types.SubjectTokenTypeJWT,
 		Audience:         "https://arcane.example.com",
 	}
 
@@ -366,12 +364,12 @@ func TestFederatedCredentialServiceCreateRejectsBareWildcardGlob(t *testing.T) {
 	issuer := newFederatedTestIssuer(t)
 	service, _, _ := setupFederatedCredentialService(t, issuer)
 
-	_, err := service.Create(t.Context(), "admin-user", federated.CreateFederatedCredential{
+	_, err := service.Create(t.Context(), "admin-user", types.FederatedCredential{
 		Name:            "Unsafe wildcard",
 		IssuerURL:       "https://token.actions.githubusercontent.com",
 		Audiences:       []string{"arcane-ci"},
 		SubjectMatch:    "*",
-		MatchType:       federated.MatchTypeGlob,
+		MatchType:       types.FederatedMatchTypeGlob,
 		RoleID:          "role-federated-viewer",
 		TokenTTLSeconds: 900,
 	})

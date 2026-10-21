@@ -4,22 +4,18 @@ import (
 	"bytes"
 	"net/http"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	composetypes "github.com/compose-spec/compose-go/v2/types"
 	humav2 "github.com/danielgtaylor/huma/v2"
-	basetypes "github.com/getarcaneapp/arcane/types/v2/base"
-	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
-	envtypes "github.com/getarcaneapp/arcane/types/v2/env"
-	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
-	networktypes "github.com/getarcaneapp/arcane/types/v2/network"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
-	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
-	dockercontainer "github.com/moby/moby/api/types/container"
-	dockernetwork "github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/swarm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -79,77 +75,71 @@ func TestWorkspaceRoutesReplaceProjectAndVolumeLegacyRoutes(t *testing.T) {
 	}
 }
 
-func TestCustomSchemaNamer_PrefixesArcaneTypesByPackage(t *testing.T) {
-	imageName := customSchemaNamer(reflect.TypeFor[imagetypes.Summary](), "")
-	envName := customSchemaNamer(reflect.TypeFor[envtypes.Summary](), "")
+func TestSchemaRegistry_UsesDescriptiveTypeNames(t *testing.T) {
+	registry := SetupAPIForSpec().OpenAPI().Components.Schemas
 
-	require.Equal(t, "ImageSummary", imageName,
-		"expected ImageSummary, got %q", imageName)
-
-	require.Equal(t, "EnvSummary", envName,
-		"expected EnvSummary, got %q", envName)
+	require.Equal(t, "#/components/schemas/ImageSummary", registry.Schema(reflect.TypeFor[types.ImageSummary](), true, "").Ref)
+	require.Equal(t, "#/components/schemas/EnvSummary", registry.Schema(reflect.TypeFor[types.EnvSummary](), true, "").Ref)
 }
 
-func TestCustomSchemaNamer_PointerMatchesValue(t *testing.T) {
-	valueName := customSchemaNamer(reflect.TypeFor[imagetypes.Summary](), "")
-	pointerName := customSchemaNamer(reflect.TypeFor[*imagetypes.Summary](), "")
+func TestSchemaRegistry_PointerMatchesValue(t *testing.T) {
+	registry := SetupAPIForSpec().OpenAPI().Components.Schemas
 
-	require.Equal(t, pointerName, valueName,
-		"expected pointer and value names to match, got %q and %q", valueName, pointerName)
-
-	genericValueName := customSchemaNamer(reflect.TypeFor[basetypes.ApiResponse[containertypes.StatusCounts]](), "")
-	genericPointerName := customSchemaNamer(reflect.TypeFor[*basetypes.ApiResponse[containertypes.StatusCounts]](), "")
-
-	require.Equal(t, genericPointerName, genericValueName,
-		"expected generic pointer and value names to match, got %q and %q", genericValueName, genericPointerName)
+	require.Equal(t,
+		registry.Schema(reflect.TypeFor[types.ImageSummary](), true, "").Ref,
+		registry.Schema(reflect.TypeFor[*types.ImageSummary](), true, "").Ref,
+	)
+	require.Equal(t,
+		registry.Schema(reflect.TypeFor[types.ApiResponse[types.ContainerStatusCounts]](), true, "").Ref,
+		registry.Schema(reflect.TypeFor[*types.ApiResponse[types.ContainerStatusCounts]](), true, "").Ref,
+	)
 }
 
-func TestCustomSchemaNamer_PrefixesDockerTypes(t *testing.T) {
-	name := customSchemaNamer(reflect.TypeFor[dockernetwork.Inspect](), "")
+func TestSchemaRegistry_AliasesCollidingDockerTypes(t *testing.T) {
+	registry := SetupAPIForSpec().OpenAPI().Components.Schemas
 
-	require.True(t, strings.HasPrefix(name, "DockerNetwork"),
-		"expected DockerNetwork prefix, got %q", name)
+	require.Equal(t, "#/components/schemas/DockerSwarmPlacement", registry.Schema(reflect.TypeFor[swarm.Placement](), true, "").Ref)
+	require.Equal(t, "#/components/schemas/DockerNetworkConfigReference", registry.Schema(reflect.TypeFor[*network.ConfigReference](), true, "").Ref)
+	require.Equal(t, "#/components/schemas/Placement", registry.Schema(reflect.TypeFor[composetypes.Placement](), true, "").Ref)
 }
 
-func TestCustomSchemaNamer_DisambiguatesGenericDomainTypes(t *testing.T) {
-	volumeResp := customSchemaNamer(reflect.TypeFor[basetypes.ApiResponse[volumetypes.UsageCounts]](), "")
-	imageResp := customSchemaNamer(reflect.TypeFor[basetypes.ApiResponse[imagetypes.UsageCounts]](), "")
+func TestSchemaRegistry_DisambiguatesGenericDomainTypes(t *testing.T) {
+	registry := SetupAPIForSpec().OpenAPI().Components.Schemas
 
-	require.Contains(t, volumeResp, "VolumeUsageCounts",
-		"expected VolumeUsageCounts in name, got %q", volumeResp)
+	testCases := []struct {
+		typ  reflect.Type
+		want string
+	}{
+		{typ: reflect.TypeFor[types.ApiResponse[types.VolumeUsageCounts]](), want: "ApiResponseVolumeUsageCounts"},
+		{typ: reflect.TypeFor[types.ApiResponse[types.ImageUsageCounts]](), want: "ApiResponseImageUsageCounts"},
+		{typ: reflect.TypeFor[types.ApiResponse[types.ContainerStatusCounts]](), want: "ApiResponseContainerStatusCounts"},
+		{typ: reflect.TypeFor[types.ApiResponse[types.ProjectStatusCounts]](), want: "ApiResponseProjectStatusCounts"},
+		{typ: reflect.TypeFor[types.Paginated[types.ContainerSummary]](), want: "PaginatedContainerSummary"},
+		{typ: reflect.TypeFor[types.PaginatedWithCounts[types.NetworkSummary, types.NetworkUsageCounts]](), want: "PaginatedWithCountsNetworkSummaryNetworkUsageCounts"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.want, func(t *testing.T) {
+			require.Equal(t, "#/components/schemas/"+testCase.want, registry.Schema(testCase.typ, true, "").Ref)
+		})
+	}
+}
 
-	require.Contains(t, imageResp, "ImageUsageCounts",
-		"expected ImageUsageCounts in name, got %q", imageResp)
+func TestSchemaRegistry_RefsResolve(t *testing.T) {
+	api := SetupAPIForSpec()
+	document, err := api.OpenAPI().MarshalJSON()
+	require.NoError(t, err)
+	schemas := api.OpenAPI().Components.Schemas.Map()
 
-	require.NotEqual(t, imageResp, volumeResp,
-		"expected unique generic schema names, got %q", volumeResp)
+	matches := regexp.MustCompile(`"\$ref":"#/components/schemas/([^"]+)"`).FindAllSubmatch(document, -1)
+	require.NotEmpty(t, matches)
 
-	containerResp := customSchemaNamer(reflect.TypeFor[basetypes.ApiResponse[containertypes.StatusCounts]](), "")
-	projectResp := customSchemaNamer(reflect.TypeFor[basetypes.ApiResponse[projecttypes.StatusCounts]](), "")
-
-	require.Contains(t, containerResp, "ContainerStatusCounts",
-		"expected ContainerStatusCounts in name, got %q", containerResp)
-
-	require.Contains(t, projectResp, "ProjectStatusCounts",
-		"expected ProjectStatusCounts in name, got %q", projectResp)
-
-	require.NotEqual(t, projectResp, containerResp,
-		"expected unique generic schema names, got %q", containerResp)
-
-	baseResp := customSchemaNamer(reflect.TypeFor[basetypes.ApiResponse[basetypes.MessageResponse]](), "")
-
-	require.NotContains(t, baseResp, "BaseApiResponseBase",
-		"expected base generic argument without redundant package prefix, got %q", baseResp)
-
-	multiArgument := customSchemaNamer(reflect.TypeFor[basetypes.PaginatedWithCounts[networktypes.Summary, networktypes.UsageCounts]](), "")
-
-	require.Equal(t, "BasePaginatedWithCountsNetworkSummaryNetworkUsageCounts", multiArgument,
-		"expected both generic arguments to be package-qualified in order, got %q", multiArgument)
-
-	mixedPackages := customSchemaNamer(reflect.TypeFor[basetypes.PaginatedWithCounts[dockercontainer.Summary, imagetypes.Summary]](), "")
-
-	require.Equal(t, "BasePaginatedWithCountsSummaryImageSummary", mixedPackages,
-		"expected only the Arcane argument to be qualified in place, got %q", mixedPackages)
+	var unresolved []string
+	for _, match := range matches {
+		if _, ok := schemas[string(match[1])]; !ok {
+			unresolved = append(unresolved, string(match[1]))
+		}
+	}
+	require.Empty(t, unresolved)
 }
 
 func TestHandlerDeps_ZeroValue(t *testing.T) {

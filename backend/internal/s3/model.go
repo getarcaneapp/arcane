@@ -3,7 +3,7 @@ package s3
 import (
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/backup"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 )
@@ -26,8 +26,8 @@ func (S3Destination) TableName() string {
 	return "s3_destinations"
 }
 
-func (d S3Destination) ToDTO() backup.S3Destination {
-	return backup.S3Destination{
+func (d S3Destination) ToDTO() types.S3Destination {
+	return types.S3Destination{
 		ID:               d.ID,
 		Name:             d.Name,
 		Endpoint:         d.Endpoint,
@@ -43,8 +43,8 @@ func (d S3Destination) ToDTO() backup.S3Destination {
 	}
 }
 
-func (d S3Destination) ToSync(secretAccessKey string) backup.S3DestinationSync {
-	return backup.S3DestinationSync{
+func (d S3Destination) ToSync(secretAccessKey string) types.S3Destination {
+	return types.S3Destination{
 		ID:              d.ID,
 		Name:            d.Name,
 		Endpoint:        d.Endpoint,

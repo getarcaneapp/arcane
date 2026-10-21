@@ -4,9 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	"github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/sys/crypto"
@@ -18,7 +16,7 @@ import (
 	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
 )
 
-func noLatestRun(context.Context, string) (*volume.BackupEntry, error) {
+func noLatestRun(context.Context, string) (*types.VolumeBackupEntry, error) {
 	return nil, nil
 }
 
@@ -32,11 +30,11 @@ func newVolumeAdmissionForTest(t testing.TB) *runs.Admission {
 }
 
 type volumeBackupPolicyScheduler struct {
-	submitted []scheduler.Request
-	jobs      map[string]scheduler.Job
+	submitted []types.SchedulerRequest
+	jobs      map[string]types.SchedulerJob
 }
 
-func (s *volumeBackupPolicyScheduler) AddJob(_ context.Context, job scheduler.Job) error {
+func (s *volumeBackupPolicyScheduler) AddJob(_ context.Context, job types.SchedulerJob) error {
 	s.jobs[job.Name()] = job
 	return nil
 }
@@ -55,7 +53,7 @@ func TestVolumeBackupPolicy_UpdateRegistersIndependentJobsAndSettings(t *testing
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&VolumeBackupPolicy{}))
 	db := &database.DB{DB: gormDB}
-	jobScheduler := &volumeBackupPolicyScheduler{jobs: make(map[string]scheduler.Job)}
+	jobScheduler := &volumeBackupPolicyScheduler{jobs: make(map[string]types.SchedulerJob)}
 	service := NewService(Dependencies{
 		DB:             db,
 		S3Destinations: s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }),
@@ -64,7 +62,7 @@ func TestVolumeBackupPolicy_UpdateRegistersIndependentJobsAndSettings(t *testing
 	gate := newVolumeAdmissionForTest(t)
 	require.NoError(t, service.SetScheduler(t.Context(), jobScheduler, gate))
 
-	collection, err := service.UpdateBackupPolicies(t.Context(), "app-data", []volume.UpdateBackupPolicy{
+	collection, err := service.UpdateBackupPolicies(t.Context(), "app-data", []types.UpdateBackupPolicy{
 		{Enabled: true, Schedule: "0 */15 * * * *", RetentionCount: 5, StopContainers: true, LocalEnabled: true},
 		{Enabled: true, Schedule: "0 0 2 * * *", RetentionCount: 30, LocalEnabled: true},
 	})
@@ -76,7 +74,7 @@ func TestVolumeBackupPolicy_UpdateRegistersIndependentJobsAndSettings(t *testing
 	require.Len(t, jobScheduler.jobs, 2)
 
 	firstID := collection.Policies[0].ID
-	collection, err = service.UpdateBackupPolicies(t.Context(), "app-data", []volume.UpdateBackupPolicy{{
+	collection, err = service.UpdateBackupPolicies(t.Context(), "app-data", []types.UpdateBackupPolicy{{
 		ID: firstID, Schedule: "0 */30 * * * *", RetentionCount: 9, LocalEnabled: true,
 	}})
 	require.NoError(t, err)
@@ -94,15 +92,15 @@ func TestVolumeBackupPolicy_GetReturnsLastRunForEachPolicy(t *testing.T) {
 	second := &VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 0 14 * * *", LocalEnabled: true}
 	require.NoError(t, gormDB.Create(first).Error)
 	require.NoError(t, gormDB.Create(second).Error)
-	latest := map[string]*volume.BackupEntry{
-		first.ID:  {VolumeName: "app-data", PolicyID: first.ID, Status: backup.VolumeBackupStatusSucceeded},
-		second.ID: {VolumeName: "app-data", PolicyID: second.ID, Status: backup.VolumeBackupStatusFailed},
+	latest := map[string]*types.VolumeBackupEntry{
+		first.ID:  {VolumeName: "app-data", PolicyID: first.ID, Status: types.VolumeBackupStatusSucceeded},
+		second.ID: {VolumeName: "app-data", PolicyID: second.ID, Status: types.VolumeBackupStatusFailed},
 	}
 
 	service := NewService(Dependencies{
 		DB:             &database.DB{DB: gormDB},
 		S3Destinations: s3.NewS3DestinationService(&database.DB{DB: gormDB}, func(context.Context, string) error { return nil }),
-		LatestRun: func(_ context.Context, policyID string) (*volume.BackupEntry, error) {
+		LatestRun: func(_ context.Context, policyID string) (*types.VolumeBackupEntry, error) {
 			return latest[policyID], nil
 		},
 	})
@@ -138,7 +136,7 @@ func TestVolumeBackupPolicy_UpdateUsesSelectedS3Destination(t *testing.T) {
 		S3Destinations: s3.NewS3DestinationService(db, nil),
 		LatestRun:      noLatestRun,
 	})
-	collection, err := service.UpdateBackupPolicies(t.Context(), "app-data", []volume.UpdateBackupPolicy{{
+	collection, err := service.UpdateBackupPolicies(t.Context(), "app-data", []types.UpdateBackupPolicy{{
 		Schedule:        "0 0 2 * * *",
 		RetentionCount:  7,
 		S3Enabled:       true,
@@ -181,7 +179,7 @@ func TestBackupPolicyDestinationLookupFailure(t *testing.T) {
 	}
 }
 
-func (s *volumeBackupPolicyScheduler) Submit(_ context.Context, request scheduler.Request) (scheduler.Run, error) {
+func (s *volumeBackupPolicyScheduler) Submit(_ context.Context, request types.SchedulerRequest) (types.SchedulerRun, error) {
 	s.submitted = append(s.submitted, request)
-	return scheduler.Run{ID: request.RunID, JobID: request.JobID, EnvironmentID: request.EnvironmentID, Status: scheduler.Queued}, nil
+	return types.SchedulerRun{ID: request.RunID, JobID: request.JobID, EnvironmentID: request.EnvironmentID, Status: types.RunStatusQueued}, nil
 }

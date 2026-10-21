@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
@@ -195,7 +195,7 @@ func (h *WebSocketHandler) ProjectLogs(c *echo.Context) error {
 	}
 
 	params := parseLogStreamParams(c)
-	h.serveLogStream(c, systemtypes.WSKindProjectLogs, projectID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
+	h.serveLogStream(c, types.WSKindProjectLogs, projectID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
 		return h.startLogHub(
 			streamKey,
 			projectID,
@@ -394,7 +394,7 @@ func (h *WebSocketHandler) ContainerLogs(c *echo.Context) error {
 	}
 
 	params := parseLogStreamParams(c)
-	h.serveLogStream(c, systemtypes.WSKindContainerLogs, containerID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
+	h.serveLogStream(c, types.WSKindContainerLogs, containerID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
 		return h.startLogHub(
 			streamKey,
 			containerID,
@@ -434,7 +434,7 @@ func (h *WebSocketHandler) ServiceLogs(c *echo.Context) error {
 	}
 
 	params := parseLogStreamParams(c)
-	h.serveLogStream(c, systemtypes.WSKindServiceLogs, serviceID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
+	h.serveLogStream(c, types.WSKindServiceLogs, serviceID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
 		return h.startLogHub(
 			streamKey,
 			serviceID,

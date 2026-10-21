@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/swarm"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -54,7 +54,7 @@ func createSwarmTestEnvironment(t *testing.T, db *database.DB, id, apiURL, statu
 }
 
 func TestSelectSwarmManagerAddresses(t *testing.T) {
-	nodes := []swarm.NodeSummary{
+	nodes := []types.SwarmNode{
 		{ID: "manager-1", ManagerAddress: "10.0.0.1:2377"},
 		{ID: "worker-1"},
 		{ID: "manager-2", ManagerAddress: "10.0.0.2:2377"},
@@ -68,7 +68,7 @@ func TestSelectSwarmManagerAddresses(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"10.0.0.1:2377", "10.0.0.2:2377"}, addrs)
 
-	_, err = selectSwarmManagerAddresses(nil, []swarm.NodeSummary{{ID: "worker-1"}})
+	_, err = selectSwarmManagerAddresses(nil, []types.SwarmNode{{ID: "worker-1"}})
 	require.ErrorIs(t, err, common.ErrBadRequest)
 }
 
@@ -148,7 +148,7 @@ func TestService_FetchSwarmNodeIdentityViaEdge_UsesEnvironmentAccessToken(t *tes
 	require.True(t, identity.SwarmActive)
 }
 
-// TestService_BuildNodeAgentStatusInternal covers the state classification.
+// TestService_BuildNodeAgentStatus covers the state classification.
 // The regression case is a poll-mode agent: its persisted env.Status never leaves
 // "pending" (HandlePoll only updates the in-memory poll registry), so a fresh
 // lastPollAt must still resolve to "connected" rather than "pending".
@@ -161,37 +161,37 @@ func TestService_BuildNodeAgentStatus(t *testing.T) {
 		name    string
 		env     *environment.Environment
 		runtime swarmNodeAgentRuntime
-		want    swarm.NodeAgentState
+		want    types.NodeAgentState
 	}{
 		{
 			name:    "poll-mode check-in reports connected despite stale pending status",
 			env:     &environment.Environment{Status: string(environment.EnvironmentStatusPending)},
 			runtime: swarmNodeAgentRuntime{lastPollAt: &now},
-			want:    swarm.NodeAgentStateConnected,
+			want:    types.NodeAgentStateConnected,
 		},
 		{
 			name:    "no runtime activity and never paired stays pending",
 			env:     &environment.Environment{Status: string(environment.EnvironmentStatusPending)},
 			runtime: swarmNodeAgentRuntime{},
-			want:    swarm.NodeAgentStatePending,
+			want:    types.NodeAgentStatePending,
 		},
 		{
 			name:    "tunnel with mismatched identity reports mismatched",
 			env:     &environment.Environment{Status: string(environment.EnvironmentStatusOnline)},
 			runtime: swarmNodeAgentRuntime{connected: true, identity: &SwarmNodeIdentity{SwarmNodeID: "other-node", SwarmActive: true}},
-			want:    swarm.NodeAgentStateMismatched,
+			want:    types.NodeAgentStateMismatched,
 		},
 		{
 			name:    "tunnel connected without identity probe reports connected",
 			env:     &environment.Environment{Status: string(environment.EnvironmentStatusPending)},
 			runtime: swarmNodeAgentRuntime{connected: true},
-			want:    swarm.NodeAgentStateConnected,
+			want:    types.NodeAgentStateConnected,
 		},
 		{
 			name:    "previously seen agent with no activity reports offline",
 			env:     &environment.Environment{Status: string(environment.EnvironmentStatusOnline), LastSeen: &now},
 			runtime: swarmNodeAgentRuntime{},
-			want:    swarm.NodeAgentStateOffline,
+			want:    types.NodeAgentStateOffline,
 		},
 	}
 

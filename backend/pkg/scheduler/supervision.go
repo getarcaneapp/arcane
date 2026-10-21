@@ -9,31 +9,31 @@ import (
 	"sync"
 	"time"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 )
 
 type watcherSupervisorInternal struct {
-	watcher schedulertypes.BusWatcher
+	watcher types.BusWatcher
 	mu      sync.Mutex
-	health  schedulertypes.WorkerHealth
+	health  types.SchedulerWorkerHealth
 	restart chan struct{}
 	cancel  context.CancelFunc
 }
 
-func newWatcherSupervisorInternal(watcher schedulertypes.BusWatcher) *watcherSupervisorInternal {
-	return &watcherSupervisorInternal{watcher: watcher, restart: make(chan struct{}, 1), health: schedulertypes.WorkerHealth{Status: "starting", UpdatedAt: time.Now()}}
+func newWatcherSupervisor(watcher types.BusWatcher) *watcherSupervisorInternal {
+	return &watcherSupervisorInternal{watcher: watcher, restart: make(chan struct{}, 1), health: types.SchedulerWorkerHealth{Status: "starting", UpdatedAt: time.Now()}}
 }
 
-func (s *watcherSupervisorInternal) setHealthInternal(status string, err error, next *time.Time) {
+func (s *watcherSupervisorInternal) setHealth(status string, err error, next *time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.health = schedulertypes.WorkerHealth{Status: status, NextRetry: next, UpdatedAt: time.Now()}
+	s.health = types.SchedulerWorkerHealth{Status: status, NextRetry: next, UpdatedAt: time.Now()}
 	if err != nil {
 		s.health.LastError = err.Error()
 	}
 }
 
-func (s *watcherSupervisorInternal) runInternal(ctx context.Context) error {
+func (s *watcherSupervisorInternal) run(ctx context.Context) error {
 	delay := 5 * time.Second
 	unexpected := 0
 	for ctx.Err() == nil {
@@ -41,9 +41,9 @@ func (s *watcherSupervisorInternal) runInternal(ctx context.Context) error {
 		s.mu.Lock()
 		s.cancel = cancel
 		s.mu.Unlock()
-		s.setHealthInternal("running", nil, nil)
+		s.setHealth("running", nil, nil)
 		started := time.Now()
-		panicked, err := s.startInternal(runCtx)
+		panicked, err := s.start(runCtx)
 		cancel()
 		if ctx.Err() != nil {
 			break
@@ -62,7 +62,7 @@ func (s *watcherSupervisorInternal) runInternal(ctx context.Context) error {
 			err = errors.New("worker exited unexpectedly")
 		}
 		if unexpected >= 3 {
-			s.setHealthInternal("needs_attention", err, nil)
+			s.setHealth("needs_attention", err, nil)
 			select {
 			case <-ctx.Done():
 			case <-s.restart:
@@ -80,7 +80,7 @@ func (s *watcherSupervisorInternal) runInternal(ctx context.Context) error {
 			return fmt.Errorf("generate watcher retry delay: %w", jitterErr)
 		}
 		next := time.Now().Add(delay/2 + time.Duration(jitter.Int64()))
-		s.setHealthInternal("retrying", err, &next)
+		s.setHealth("retrying", err, &next)
 		timer := time.NewTimer(time.Until(next))
 		select {
 		case <-ctx.Done():
@@ -92,11 +92,11 @@ func (s *watcherSupervisorInternal) runInternal(ctx context.Context) error {
 		}
 		timer.Stop()
 	}
-	s.setHealthInternal("stopped", nil, nil)
+	s.setHealth("stopped", nil, nil)
 	return ctx.Err()
 }
 
-func (s *watcherSupervisorInternal) startInternal(ctx context.Context) (panicked bool, err error) {
+func (s *watcherSupervisorInternal) start(ctx context.Context) (panicked bool, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("worker panic: %v", recovered)
@@ -106,17 +106,17 @@ func (s *watcherSupervisorInternal) startInternal(ctx context.Context) (panicked
 	return false, s.watcher.Start(ctx)
 }
 
-func (js *jobSchedulerInternal) Submit(ctx context.Context, request schedulertypes.Request) (schedulertypes.Run, error) {
+func (js *jobSchedulerInternal) Submit(ctx context.Context, request types.SchedulerRequest) (types.SchedulerRun, error) {
 	if js.context.Err() != nil {
-		return schedulertypes.Run{}, errJobSchedulerStoppedInternal
+		return types.SchedulerRun{}, errJobSchedulerStoppedInternal
 	}
 	return js.coordinator.Submit(ctx, request)
 }
 
-func (js *jobSchedulerInternal) ListRegisteredJobs() []schedulertypes.Job {
+func (js *jobSchedulerInternal) ListRegisteredJobs() []types.SchedulerJob {
 	js.mu.RLock()
 	defer js.mu.RUnlock()
-	jobs := make([]schedulertypes.Job, 0, len(js.jobsByID))
+	jobs := make([]types.SchedulerJob, 0, len(js.jobsByID))
 	for _, job := range js.jobsByID {
 		jobs = append(jobs, job)
 	}
@@ -149,12 +149,12 @@ func (js *jobSchedulerInternal) RestartWatcher(ctx context.Context, id string) e
 	return nil
 }
 
-func (js *jobSchedulerInternal) WatcherHealth(id string) (schedulertypes.WorkerHealth, bool) {
+func (js *jobSchedulerInternal) WatcherHealth(id string) (types.SchedulerWorkerHealth, bool) {
 	js.mu.RLock()
 	supervisor, ok := js.supervisors[id]
 	js.mu.RUnlock()
 	if !ok {
-		return schedulertypes.WorkerHealth{}, false
+		return types.SchedulerWorkerHealth{}, false
 	}
 	supervisor.mu.Lock()
 	defer supervisor.mu.Unlock()

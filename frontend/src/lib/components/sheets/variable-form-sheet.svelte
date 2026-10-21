@@ -13,14 +13,15 @@
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import type { Environment } from '#lib/types/environment.js';
-	import type { GlobalVariable, GlobalVariableCreateDto, GlobalVariableUpdateDto } from '#lib/types/variable.js';
+	import type { GlobalVariable, GlobalVariableCreate, GlobalVariableUpdate } from '#lib/types/variable.js';
 	import { parseEnvText, normalizeVariableKeyInput } from '#lib/utils/env-file.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
 	type VariableFormPayload =
-		| { mode: 'create'; variable: GlobalVariableCreateDto }
-		| { mode: 'edit'; id: string; variable: GlobalVariableUpdateDto }
-		| { mode: 'bulk'; variables: GlobalVariableCreateDto[] };
+		| { mode: 'create'; variable: GlobalVariableCreate }
+		| { mode: 'edit'; id: string; variable: GlobalVariableUpdate }
+		| { mode: 'bulk'; variables: GlobalVariableCreate[] };
 
 	let {
 		open = $bindable(false),
@@ -120,7 +121,7 @@
 		return !scopeError;
 	}
 
-	function scopeDto(): Pick<GlobalVariableCreateDto, 'allEnvironments' | 'environmentIds'> {
+	function scopeDto(): Pick<GlobalVariable, 'allEnvironments' | 'environmentIds'> {
 		return scope === 'all'
 			? { allEnvironments: true, environmentIds: [] }
 			: { allEnvironments: false, environmentIds: [...selectedEnvIds] };
@@ -154,10 +155,11 @@
 		if (!data || !scopeValid) return;
 
 		if (isEditMode && variableToEdit) {
-			const dto: GlobalVariableUpdateDto = { key: data.key, isSecret: data.isSecret, ...scopeDto() };
-			// Editing a secret with an empty value keeps the stored value.
-			if (!(variableToEdit.isSecret && data.value === '')) dto.value = data.value;
-			onSubmit({ mode: 'edit', id: variableToEdit.id, variable: dto });
+			onSubmit({
+				mode: 'edit',
+				id: variableToEdit.id,
+				variable: changedFields(variableToEdit, { key: data.key, value: data.value, isSecret: data.isSecret, ...scopeDto() })
+			});
 		} else {
 			onSubmit({ mode: 'create', variable: { key: data.key, value: data.value, isSecret: data.isSecret, ...scopeDto() } });
 		}

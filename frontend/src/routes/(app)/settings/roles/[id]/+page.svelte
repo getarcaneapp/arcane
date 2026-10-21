@@ -4,8 +4,9 @@
 
 	import { m } from '#lib/paraglide/messages.js';
 	import { roleService } from '#lib/services/role-service.js';
-	import type { UpdateRole, CreateRole } from '#lib/types/auth.js';
+	import type { Role, RoleCreate, RoleWritable } from '#lib/types/auth.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import RoleEditorPage from '../components/role-editor-page.svelte';
@@ -14,11 +15,13 @@
 
 	let isLoading = $state(false);
 
-	async function handleSubmit(payload: UpdateRole) {
+	async function handleSubmit(payload: Pick<Role, RoleWritable>) {
 		isLoading = true;
-		const safeName = payload.name?.trim() || data.role.name || m.common_unknown();
+		const safeName = payload.name.trim() || data.role.name || m.common_unknown();
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(roleService.update(data.role.id, payload)),
+			result: await tryCatch(
+				roleService.update(data.role.id, changedFields({ ...data.role, description: data.role.description ?? null }, payload))
+			),
 			message: m.common_update_failed({ resource: `${m.resource_role()} "${safeName}"` }),
 			setLoadingState: (value) => (isLoading = value),
 			onSuccess: async () => {
@@ -30,7 +33,7 @@
 
 	async function handleClone() {
 		isLoading = true;
-		const clonePayload: CreateRole = {
+		const clonePayload: RoleCreate = {
 			name: `${data.role.name} (copy)`,
 			description: data.role.description,
 			permissions: [...data.role.permissions]

@@ -12,8 +12,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -23,15 +22,15 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 )
 
-var installableTypes = []podmantypes.QuadletType{
-	podmantypes.QuadletTypeContainer,
-	podmantypes.QuadletTypePod,
-	podmantypes.QuadletTypeKube,
-	podmantypes.QuadletTypeNetwork,
-	podmantypes.QuadletTypeVolume,
-	podmantypes.QuadletTypeImage,
-	podmantypes.QuadletTypeBuild,
-	podmantypes.QuadletTypeArtifact,
+var installableTypes = []types.QuadletType{
+	types.QuadletTypeContainer,
+	types.QuadletTypePod,
+	types.QuadletTypeKube,
+	types.QuadletTypeNetwork,
+	types.QuadletTypeVolume,
+	types.QuadletTypeImage,
+	types.QuadletTypeBuild,
+	types.QuadletTypeArtifact,
 }
 
 type Runtime struct {
@@ -48,7 +47,7 @@ func NewService(runtime func(context.Context) (Runtime, error)) *Service {
 	return &Service{runtime: runtime}
 }
 
-func (s *Service) List(ctx context.Context, filters map[string][]string) ([]podmantypes.QuadletDetail, error) {
+func (s *Service) List(ctx context.Context, filters map[string][]string) ([]types.QuadletDetail, error) {
 	rt, err := s.runtime(ctx)
 	if err != nil {
 		return nil, err
@@ -59,51 +58,51 @@ func (s *Service) List(ctx context.Context, filters map[string][]string) ([]podm
 		return nil, err
 	}
 
-	out := make([]podmantypes.QuadletDetail, 0, len(entries))
+	out := make([]types.QuadletDetail, 0, len(entries))
 	for _, entry := range entries {
 		out = append(out, describe(entry))
 	}
 	return out, nil
 }
 
-var quadletPagination = pagination.Config[podmantypes.QuadletDetail]{
-	SearchAccessors: []pagination.SearchAccessor[podmantypes.QuadletDetail]{
-		func(quadlet podmantypes.QuadletDetail) (string, error) {
+var quadletPagination = pagination.Config[types.QuadletDetail]{
+	SearchAccessors: []pagination.SearchAccessor[types.QuadletDetail]{
+		func(quadlet types.QuadletDetail) (string, error) {
 			return quadlet.Name, nil
 		},
-		func(quadlet podmantypes.QuadletDetail) (string, error) {
+		func(quadlet types.QuadletDetail) (string, error) {
 			return quadlet.UnitName, nil
 		},
-		func(quadlet podmantypes.QuadletDetail) (string, error) {
+		func(quadlet types.QuadletDetail) (string, error) {
 			return string(quadlet.Type), nil
 		},
-		func(quadlet podmantypes.QuadletDetail) (string, error) {
+		func(quadlet types.QuadletDetail) (string, error) {
 			return quadlet.Status, nil
 		},
-		func(quadlet podmantypes.QuadletDetail) (string, error) {
+		func(quadlet types.QuadletDetail) (string, error) {
 			return quadlet.App, nil
 		},
 	},
-	SortBindings: []pagination.SortBinding[podmantypes.QuadletDetail]{
-		{Key: "name", Fn: func(a, b podmantypes.QuadletDetail) int {
+	SortBindings: []pagination.SortBinding[types.QuadletDetail]{
+		{Key: "name", Fn: func(a, b types.QuadletDetail) int {
 			return strings.Compare(a.Name, b.Name)
 		}},
-		{Key: "type", Fn: func(a, b podmantypes.QuadletDetail) int {
+		{Key: "type", Fn: func(a, b types.QuadletDetail) int {
 			return strings.Compare(string(a.Type), string(b.Type))
 		}},
-		{Key: "status", Fn: func(a, b podmantypes.QuadletDetail) int {
+		{Key: "status", Fn: func(a, b types.QuadletDetail) int {
 			return strings.Compare(a.Status, b.Status)
 		}},
-		{Key: "unitName", Fn: func(a, b podmantypes.QuadletDetail) int {
+		{Key: "unitName", Fn: func(a, b types.QuadletDetail) int {
 			return strings.Compare(a.UnitName, b.UnitName)
 		}},
-		{Key: "app", Fn: func(a, b podmantypes.QuadletDetail) int {
+		{Key: "app", Fn: func(a, b types.QuadletDetail) int {
 			return strings.Compare(a.App, b.App)
 		}},
 	},
 }
 
-func (s *Service) ListPaginated(ctx context.Context, filters map[string][]string, params pagination.QueryParams) ([]podmantypes.QuadletDetail, pagination.Response, error) {
+func (s *Service) ListPaginated(ctx context.Context, filters map[string][]string, params pagination.QueryParams) ([]types.QuadletDetail, pagination.Response, error) {
 	items, err := s.List(ctx, filters)
 	if err != nil {
 		return nil, pagination.Response{}, err
@@ -112,15 +111,15 @@ func (s *Service) ListPaginated(ctx context.Context, filters map[string][]string
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params), nil
 }
 
-func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) (base.Paginated[podmantypes.QuadletDetail], error) {
-	collection, err := httpx.CollectEnvironments[base.Paginated[podmantypes.QuadletDetail]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.QuadletDetail], error) {
+	collection, err := httpx.CollectEnvironments[types.Paginated[types.QuadletDetail]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
 	if err != nil {
-		return base.Paginated[podmantypes.QuadletDetail]{}, err
+		return types.Paginated[types.QuadletDetail]{}, err
 	}
 
-	pages := make([]pagination.EnvironmentPage[podmantypes.QuadletDetail], 0, len(collection.Results))
+	pages := make([]pagination.EnvironmentPage[types.QuadletDetail], 0, len(collection.Results))
 	for _, result := range collection.Results {
-		pages = append(pages, pagination.EnvironmentPage[podmantypes.QuadletDetail]{
+		pages = append(pages, pagination.EnvironmentPage[types.QuadletDetail]{
 			Environment:    result.Environment,
 			Items:          result.Value.Data,
 			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
@@ -128,7 +127,7 @@ func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) 
 	}
 	data, resp := pagination.MergeEnvironmentPages(quadletPagination, pages, params)
 
-	return base.Paginated[podmantypes.QuadletDetail]{
+	return types.Paginated[types.QuadletDetail]{
 		Success:            true,
 		Data:               data,
 		Pagination:         handlerutil.PaginationResponse(resp),
@@ -136,28 +135,28 @@ func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) 
 	}, nil
 }
 
-func (s *Service) Get(ctx context.Context, name string) (podmantypes.QuadletDetail, error) {
+func (s *Service) Get(ctx context.Context, name string) (types.QuadletDetail, error) {
 	rt, err := s.runtime(ctx)
 	if err != nil {
-		return podmantypes.QuadletDetail{}, err
+		return types.QuadletDetail{}, err
 	}
 
 	entry, err := find(ctx, rt.Client, name)
 	if err != nil {
-		return podmantypes.QuadletDetail{}, err
+		return types.QuadletDetail{}, err
 	}
 
 	detail := describe(entry)
-	containers, err := rt.Client.ContainerList(ctx, []string{podmantypes.SystemdUnitLabel + "=" + detail.UnitName}, nil)
+	containers, err := rt.Client.ContainerList(ctx, []string{types.PodmanSystemdUnitLabel + "=" + detail.UnitName}, nil)
 	if err != nil {
-		return podmantypes.QuadletDetail{}, err
+		return types.QuadletDetail{}, err
 	}
 	unitStatus, unitErr := rt.Systemd.UnitStatus(ctx, detail.UnitName)
 	if unitErr != nil {
 		slog.DebugContext(ctx, "Quadlet unit status unavailable", "quadlet", name, "unit", detail.UnitName, "error", unitErr)
 	}
 
-	return podmantypes.QuadletDetail{
+	return types.QuadletDetail{
 		Name:       detail.Name,
 		UnitName:   detail.UnitName,
 		Path:       detail.Path,
@@ -170,36 +169,36 @@ func (s *Service) Get(ctx context.Context, name string) (podmantypes.QuadletDeta
 	}, nil
 }
 
-func (s *Service) File(ctx context.Context, name string) (podmantypes.QuadletFile, error) {
+func (s *Service) File(ctx context.Context, name string) (types.QuadletFile, error) {
 	rt, err := s.runtime(ctx)
 	if err != nil {
-		return podmantypes.QuadletFile{}, err
+		return types.QuadletFile{}, err
 	}
 
 	content, err := rt.Client.QuadletFile(ctx, name)
 	if err != nil {
-		return podmantypes.QuadletFile{}, err
+		return types.QuadletFile{}, err
 	}
-	return podmantypes.QuadletFile{Name: name, Content: content}, nil
+	return types.QuadletFile{Name: name, Content: content}, nil
 }
 
-func (s *Service) Install(ctx context.Context, req podmantypes.QuadletInstallRequest) (podmantypes.QuadletInstallReport, error) {
+func (s *Service) Install(ctx context.Context, req types.QuadletInstallRequest) (types.QuadletInstallReport, error) {
 	rt, err := s.runtime(ctx)
 	if err != nil {
-		return podmantypes.QuadletInstallReport{}, err
+		return types.QuadletInstallReport{}, err
 	}
 
 	name := strings.TrimSpace(req.Name)
-	quadletType := podmantypes.QuadletType(strings.TrimPrefix(path.Ext(name), "."))
+	quadletType := types.QuadletType(strings.TrimPrefix(path.Ext(name), "."))
 	if strings.TrimSuffix(name, path.Ext(name)) == "" || !slices.Contains(installableTypes, quadletType) {
-		return podmantypes.QuadletInstallReport{}, common.Classify(common.ErrBadRequest, fmt.Errorf("unsupported quadlet file %q", name))
+		return types.QuadletInstallReport{}, common.Classify(common.ErrBadRequest, fmt.Errorf("unsupported quadlet file %q", name))
 	}
 	if req.App != "" && !rt.AppsSupported {
-		return podmantypes.QuadletInstallReport{}, common.Classify(common.ErrBadRequest, errors.New("quadlet applications require Podman 6.1 or later"))
+		return types.QuadletInstallReport{}, common.Classify(common.ErrBadRequest, errors.New("quadlet applications require Podman 6.1 or later"))
 	}
 
 	return rt.Client.QuadletInstall(ctx, podman.QuadletInstallOptions{
-		File: podmantypes.QuadletFile{
+		File: types.QuadletFile{
 			Name:    name,
 			Content: req.Content,
 		},
@@ -209,19 +208,19 @@ func (s *Service) Install(ctx context.Context, req podmantypes.QuadletInstallReq
 	})
 }
 
-func (s *Service) Update(ctx context.Context, name string, req podmantypes.QuadletUpdateRequest) (podmantypes.QuadletInstallReport, error) {
+func (s *Service) Update(ctx context.Context, name string, req types.QuadletUpdateRequest) (types.QuadletInstallReport, error) {
 	rt, err := s.runtime(ctx)
 	if err != nil {
-		return podmantypes.QuadletInstallReport{}, err
+		return types.QuadletInstallReport{}, err
 	}
 
 	entry, err := find(ctx, rt.Client, name)
 	if err != nil {
-		return podmantypes.QuadletInstallReport{}, err
+		return types.QuadletInstallReport{}, err
 	}
 
 	return rt.Client.QuadletInstall(ctx, podman.QuadletInstallOptions{
-		File: podmantypes.QuadletFile{
+		File: types.QuadletFile{
 			Name:    entry.Name,
 			Content: req.Content,
 		},
@@ -232,14 +231,14 @@ func (s *Service) Update(ctx context.Context, name string, req podmantypes.Quadl
 	})
 }
 
-func (s *Service) Delete(ctx context.Context, name string) (podmantypes.QuadletRemoveReport, error) {
+func (s *Service) Delete(ctx context.Context, name string) (types.QuadletRemoveReport, error) {
 	rt, err := s.runtime(ctx)
 	if err != nil {
-		return podmantypes.QuadletRemoveReport{}, err
+		return types.QuadletRemoveReport{}, err
 	}
 	report, err := rt.Client.QuadletRemove(ctx, name, podman.QuadletRemoveOptions{Force: true})
 	if err != nil {
-		return podmantypes.QuadletRemoveReport{}, err
+		return types.QuadletRemoveReport{}, err
 	}
 	if len(report.Errors) > 0 {
 		failures := make([]string, 0, len(report.Errors))
@@ -251,54 +250,54 @@ func (s *Service) Delete(ctx context.Context, name string) (podmantypes.QuadletR
 	return report, nil
 }
 
-func (s *Service) Lifecycle(ctx context.Context, name string, action func(podman.Systemd, context.Context, string) error) (podmantypes.UnitStatus, error) {
+func (s *Service) Lifecycle(ctx context.Context, name string, action func(podman.Systemd, context.Context, string) error) (types.PodmanUnitStatus, error) {
 	rt, err := s.runtime(ctx)
 	if err != nil {
-		return podmantypes.UnitStatus{}, err
+		return types.PodmanUnitStatus{}, err
 	}
 
 	entry, err := find(ctx, rt.Client, name)
 	if err != nil {
-		return podmantypes.UnitStatus{}, err
+		return types.PodmanUnitStatus{}, err
 	}
 
 	detail := describe(entry)
 	if detail.Template {
-		return podmantypes.UnitStatus{}, common.Classify(common.ErrConflict, fmt.Errorf("quadlet %s is a template and has no lifecycle actions", name))
+		return types.PodmanUnitStatus{}, common.Classify(common.ErrConflict, fmt.Errorf("quadlet %s is a template and has no lifecycle actions", name))
 	}
 	if actionErr := action(rt.Systemd, ctx, detail.UnitName); actionErr != nil {
-		return podmantypes.UnitStatus{}, actionErr
+		return types.PodmanUnitStatus{}, actionErr
 	}
 	return rt.Systemd.UnitStatus(ctx, detail.UnitName)
 }
 
-func find(ctx context.Context, client *podman.Client, name string) (podmantypes.Quadlet, error) {
+func find(ctx context.Context, client *podman.Client, name string) (types.Quadlet, error) {
 	entries, err := client.QuadletList(ctx, map[string][]string{"name": {name}})
 	if err != nil {
-		return podmantypes.Quadlet{}, err
+		return types.Quadlet{}, err
 	}
 
-	index := slices.IndexFunc(entries, func(entry podmantypes.Quadlet) bool {
+	index := slices.IndexFunc(entries, func(entry types.Quadlet) bool {
 		return entry.Name == name
 	})
 	if index < 0 {
-		return podmantypes.Quadlet{}, common.Classify(common.ErrNotFound, fmt.Errorf("quadlet %s not found", name))
+		return types.Quadlet{}, common.Classify(common.ErrNotFound, fmt.Errorf("quadlet %s not found", name))
 	}
 	return entries[index], nil
 }
 
-func describe(entry podmantypes.Quadlet) podmantypes.QuadletDetail {
+func describe(entry types.Quadlet) types.QuadletDetail {
 	ext := path.Ext(entry.Name)
 	stem := strings.TrimSuffix(entry.Name, ext)
-	quadletType := podmantypes.QuadletType(strings.TrimPrefix(ext, "."))
+	quadletType := types.QuadletType(strings.TrimPrefix(ext, "."))
 
-	return podmantypes.QuadletDetail{
+	return types.QuadletDetail{
 		Name: entry.Name,
 		UnitName: cmp.Or(entry.UnitName, func() string {
 			switch quadletType {
-			case podmantypes.QuadletTypeContainer, podmantypes.QuadletTypeKube:
+			case types.QuadletTypeContainer, types.QuadletTypeKube:
 				return stem + ".service"
-			case podmantypes.QuadletTypePod:
+			case types.QuadletTypePod:
 				return stem + "-pod.service"
 			default:
 				return stem + "-" + string(quadletType) + ".service"

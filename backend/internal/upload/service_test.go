@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/upload"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 )
@@ -18,12 +18,12 @@ func TestSessionChunkRoundTrip(t *testing.T) {
 	service := &UploadService{root: filepath.Join(t.TempDir(), "uploads")}
 	ctx := t.Context()
 
-	chunkSize := upload.MinChunkSize
+	chunkSize := types.UploadMinChunkSize
 	payload := bytes.Repeat([]byte("a"), int(chunkSize))
 	payload = append(payload, bytes.Repeat([]byte("b"), int(chunkSize))...)
 	payload = append(payload, []byte("short-tail")...)
 
-	session, err := service.CreateSession(ctx, upload.KindBuildWorkspace, upload.CreateSessionRequest{
+	session, err := service.CreateSession(ctx, types.UploadKindBuildWorkspace, types.CreateUploadSessionRequest{
 		Filename:  "artifact.bin",
 		Size:      int64(len(payload)),
 		ChunkSize: chunkSize,
@@ -35,36 +35,36 @@ func TestSessionChunkRoundTrip(t *testing.T) {
 		t.Fatalf("TotalChunks = %d, want 3", session.TotalChunks)
 	}
 
-	if _, writeChunkErr := service.WriteChunk(ctx, upload.KindBuildWorkspace, session.ID, 3, payload[:chunkSize]); !errors.Is(writeChunkErr, common.ErrUploadChunkInvalid) {
+	if _, writeChunkErr := service.WriteChunk(ctx, types.UploadKindBuildWorkspace, session.ID, 3, payload[:chunkSize]); !errors.Is(writeChunkErr, common.ErrUploadChunkInvalid) {
 		t.Fatalf("out-of-range chunk error = %v, want ErrUploadChunkInvalid", writeChunkErr)
 	}
-	if _, writeChunkErr2 := service.WriteChunk(ctx, upload.KindBuildWorkspace, session.ID, 2, payload[:chunkSize]); !errors.Is(writeChunkErr2, common.ErrUploadChunkInvalid) {
+	if _, writeChunkErr2 := service.WriteChunk(ctx, types.UploadKindBuildWorkspace, session.ID, 2, payload[:chunkSize]); !errors.Is(writeChunkErr2, common.ErrUploadChunkInvalid) {
 		t.Fatalf("wrong-length chunk error = %v, want ErrUploadChunkInvalid", writeChunkErr2)
 	}
 
 	// Chunks arrive out of order; the session stays resumable in between.
-	if _, writeChunkErr3 := service.WriteChunk(ctx, upload.KindBuildWorkspace, session.ID, 2, payload[2*chunkSize:]); writeChunkErr3 != nil {
+	if _, writeChunkErr3 := service.WriteChunk(ctx, types.UploadKindBuildWorkspace, session.ID, 2, payload[2*chunkSize:]); writeChunkErr3 != nil {
 		t.Fatalf("WriteChunk(2): %v", writeChunkErr3)
 	}
-	updated, err := service.WriteChunk(ctx, upload.KindBuildWorkspace, session.ID, 0, payload[:chunkSize])
+	updated, err := service.WriteChunk(ctx, types.UploadKindBuildWorkspace, session.ID, 0, payload[:chunkSize])
 	if err != nil {
 		t.Fatalf("WriteChunk(0): %v", err)
 	}
 	if got := updated.ReceivedChunks; len(got) != 2 || got[0] != 0 || got[1] != 2 || updated.Complete {
 		t.Fatalf("session after partial upload = %+v", updated)
 	}
-	if _, _, _, consumeErr := service.Consume(ctx, upload.KindBuildWorkspace, session.ID); !errors.Is(consumeErr, common.ErrUploadSessionIncomplete) {
+	if _, _, _, consumeErr := service.Consume(ctx, types.UploadKindBuildWorkspace, session.ID); !errors.Is(consumeErr, common.ErrUploadSessionIncomplete) {
 		t.Fatalf("incomplete Consume error = %v, want ErrUploadSessionIncomplete", consumeErr)
 	}
 
-	if _, writeChunkErr4 := service.WriteChunk(ctx, upload.KindBuildWorkspace, session.ID, 1, payload[chunkSize:2*chunkSize]); writeChunkErr4 != nil {
+	if _, writeChunkErr4 := service.WriteChunk(ctx, types.UploadKindBuildWorkspace, session.ID, 1, payload[chunkSize:2*chunkSize]); writeChunkErr4 != nil {
 		t.Fatalf("WriteChunk(1): %v", writeChunkErr4)
 	}
-	if _, _, _, consumeErr2 := service.Consume(ctx, upload.KindImage, session.ID); !errors.Is(consumeErr2, common.ErrUploadKindMismatch) {
+	if _, _, _, consumeErr2 := service.Consume(ctx, types.UploadKindImage, session.ID); !errors.Is(consumeErr2, common.ErrUploadKindMismatch) {
 		t.Fatalf("wrong-kind Consume error = %v, want ErrUploadKindMismatch", consumeErr2)
 	}
 
-	file, consumed, cleanup, err := service.Consume(ctx, upload.KindBuildWorkspace, session.ID)
+	file, consumed, cleanup, err := service.Consume(ctx, types.UploadKindBuildWorkspace, session.ID)
 	if err != nil {
 		t.Fatalf("Consume: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestSessionChunkRoundTrip(t *testing.T) {
 		t.Fatalf("consumed session = %+v", consumed)
 	}
 	// Sessions are single-use: a concurrent second consumer must not see it.
-	if _, _, _, consumeErr3 := service.Consume(ctx, upload.KindBuildWorkspace, session.ID); !errors.Is(consumeErr3, common.ErrUploadSessionNotFound) {
+	if _, _, _, consumeErr3 := service.Consume(ctx, types.UploadKindBuildWorkspace, session.ID); !errors.Is(consumeErr3, common.ErrUploadSessionNotFound) {
 		t.Fatalf("second Consume error = %v, want ErrUploadSessionNotFound", consumeErr3)
 	}
 	assembled, err := io.ReadAll(file)
@@ -93,7 +93,7 @@ func TestIngestSessionCreatesCompleteSession(t *testing.T) {
 	ctx := t.Context()
 	payload := []byte("legacy-multipart-body")
 
-	session, err := service.IngestSession(ctx, upload.KindBuildWorkspace, "legacy.bin", int64(len(payload)), bytes.NewReader(payload))
+	session, err := service.IngestSession(ctx, types.UploadKindBuildWorkspace, "legacy.bin", int64(len(payload)), bytes.NewReader(payload))
 	if err != nil {
 		t.Fatalf("IngestSession: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestIngestSessionCreatesCompleteSession(t *testing.T) {
 		t.Fatalf("ingested session not complete: %+v", session)
 	}
 
-	file, _, cleanup, err := service.Consume(ctx, upload.KindBuildWorkspace, session.ID)
+	file, _, cleanup, err := service.Consume(ctx, types.UploadKindBuildWorkspace, session.ID)
 	if err != nil {
 		t.Fatalf("Consume: %v", err)
 	}
@@ -114,7 +114,7 @@ func TestIngestSessionCreatesCompleteSession(t *testing.T) {
 		t.Fatalf("assembled = %q, want %q", assembled, payload)
 	}
 
-	if _, ingestSessionErr := service.IngestSession(ctx, upload.KindBuildWorkspace, "short.bin", 10, bytes.NewReader([]byte("abc"))); ingestSessionErr == nil {
+	if _, ingestSessionErr := service.IngestSession(ctx, types.UploadKindBuildWorkspace, "short.bin", 10, bytes.NewReader([]byte("abc"))); ingestSessionErr == nil {
 		t.Fatal("IngestSession with short source unexpectedly succeeded")
 	}
 }
@@ -123,7 +123,7 @@ func TestPurgeExpiredSessionsRemovesOnlyStaleSessions(t *testing.T) {
 	service := &UploadService{root: filepath.Join(t.TempDir(), "uploads")}
 	ctx := t.Context()
 
-	stale, err := service.CreateSession(ctx, upload.KindBuildWorkspace, upload.CreateSessionRequest{Filename: "stale.bin", Size: 1})
+	stale, err := service.CreateSession(ctx, types.UploadKindBuildWorkspace, types.CreateUploadSessionRequest{Filename: "stale.bin", Size: 1})
 	if err != nil {
 		t.Fatalf("CreateSession(stale): %v", err)
 	}
@@ -134,7 +134,7 @@ func TestPurgeExpiredSessionsRemovesOnlyStaleSessions(t *testing.T) {
 			t.Fatalf("backdate stale session: %v", chtimesErr)
 		}
 	}
-	fresh, err := service.CreateSession(ctx, upload.KindBuildWorkspace, upload.CreateSessionRequest{Filename: "fresh.bin", Size: 1})
+	fresh, err := service.CreateSession(ctx, types.UploadKindBuildWorkspace, types.CreateUploadSessionRequest{Filename: "fresh.bin", Size: 1})
 	if err != nil {
 		t.Fatalf("CreateSession(fresh): %v", err)
 	}
@@ -146,10 +146,10 @@ func TestPurgeExpiredSessionsRemovesOnlyStaleSessions(t *testing.T) {
 	if removed != 1 {
 		t.Fatalf("removed = %d, want 1", removed)
 	}
-	if _, getSessionErr := service.GetSession(ctx, upload.KindBuildWorkspace, stale.ID); !errors.Is(getSessionErr, common.ErrUploadSessionNotFound) {
+	if _, getSessionErr := service.GetSession(ctx, types.UploadKindBuildWorkspace, stale.ID); !errors.Is(getSessionErr, common.ErrUploadSessionNotFound) {
 		t.Fatalf("stale session error = %v, want ErrUploadSessionNotFound", getSessionErr)
 	}
-	if _, getSessionErr2 := service.GetSession(ctx, upload.KindBuildWorkspace, fresh.ID); getSessionErr2 != nil {
+	if _, getSessionErr2 := service.GetSession(ctx, types.UploadKindBuildWorkspace, fresh.ID); getSessionErr2 != nil {
 		t.Fatalf("fresh session should survive purge: %v", getSessionErr2)
 	}
 }

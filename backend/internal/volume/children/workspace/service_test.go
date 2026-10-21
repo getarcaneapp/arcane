@@ -16,15 +16,13 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
-	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
-	"github.com/getarcaneapp/arcane/types/v2/workspace"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/acfs/types"
+	acfstypes "go.getarcane.app/acfs/types"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
@@ -77,9 +75,9 @@ func TestUpdateVolumeWorkspaceValidationFailureReturnsNoWorkspace(t *testing.T) 
 	tree, err := (&Service{}).UpdateVolumeWorkspace(
 		t.Context(),
 		"volume",
-		volumetypes.WorkspaceUpdateManifest{},
+		types.VolumeWorkspaceUpdateManifest{},
 		nil,
-		usertypes.Actor{},
+		types.Actor{},
 	)
 
 	require.Nil(t, tree)
@@ -101,53 +99,53 @@ func TestVolumeWorkspaceFileContentResponse(t *testing.T) {
 	above, err := volumeWorkspaceFileContentResponse("notes.txt", "regular", maxFileSizeBytes+1, text, maxFileSizeBytes)
 	require.NoError(t, err)
 	require.False(t, above.Editable)
-	require.Equal(t, workspace.FileReadOnlyTooLarge, above.ReadOnlyReason)
+	require.Equal(t, types.FileReadOnlyTooLarge, above.ReadOnlyReason)
 
 	binaryContent, err := volumeWorkspaceFileContentResponse("data.bin", "regular", 2, []byte{0xff, 0x00}, maxFileSizeBytes)
 	require.NoError(t, err)
-	require.Equal(t, workspace.FileReadOnlyBinary, binaryContent.ReadOnlyReason)
+	require.Equal(t, types.FileReadOnlyBinary, binaryContent.ReadOnlyReason)
 
 	special, err := volumeWorkspaceFileContentResponse("pipe", "special", 0, nil, maxFileSizeBytes)
 	require.NoError(t, err)
-	require.Equal(t, workspace.FileReadOnlySpecial, special.ReadOnlyReason)
+	require.Equal(t, types.FileReadOnlySpecial, special.ReadOnlyReason)
 }
 
 func TestValidateVolumeWorkspaceFileChangeOperationsAndMultipartMapping(t *testing.T) {
 	first := 0
 	second := 1
-	tests := []volumetypes.WorkspaceFileChange{
-		{Operation: volumetypes.FileOpCreateFile, RelativePath: "empty.txt", UploadIndex: &first},
-		{Operation: volumetypes.FileOpUpdateFile, RelativePath: "first.bin", UploadIndex: &first},
-		{Operation: volumetypes.FileOpCreateFile, RelativePath: "second.bin", UploadIndex: &second},
-		{Operation: volumetypes.FileOpCreateFolder, RelativePath: "folder"},
-		{Operation: volumetypes.FileOpRename, RelativePath: "old.txt", NewName: "new.txt"},
-		{Operation: volumetypes.FileOpMove, RelativePath: "new.txt", NewParentPath: "folder"},
-		{Operation: volumetypes.FileOpDelete, RelativePath: "folder", Recursive: true},
-		{Operation: volumetypes.FileOpRestoreFile, RelativePath: "restored.txt", BackupID: "backup-id"},
+	tests := []types.VolumeWorkspaceFileChange{
+		{Operation: types.FileOpCreateFile, RelativePath: "empty.txt", UploadIndex: &first},
+		{Operation: types.FileOpUpdateFile, RelativePath: "first.bin", UploadIndex: &first},
+		{Operation: types.FileOpCreateFile, RelativePath: "second.bin", UploadIndex: &second},
+		{Operation: types.FileOpCreateFolder, RelativePath: "folder"},
+		{Operation: types.FileOpRename, RelativePath: "old.txt", NewName: "new.txt"},
+		{Operation: types.FileOpMove, RelativePath: "new.txt", NewParentPath: "folder"},
+		{Operation: types.FileOpDelete, RelativePath: "folder", Recursive: true},
+		{Operation: types.FileOpRestoreFile, RelativePath: "restored.txt", BackupID: "backup-id"},
 	}
 	for _, change := range tests {
 		require.NoError(t, validateVolumeWorkspaceFileChange(change), change.Operation)
 	}
 
-	require.Error(t, validateVolumeWorkspaceFileChange(volumetypes.WorkspaceFileChange{
-		Operation: volumetypes.FileOpUpdateFile, RelativePath: "missing.bin",
+	require.Error(t, validateVolumeWorkspaceFileChange(types.VolumeWorkspaceFileChange{
+		Operation: types.FileOpUpdateFile, RelativePath: "missing.bin",
 	}))
-	require.Error(t, validateVolumeWorkspaceFileChange(volumetypes.WorkspaceFileChange{
-		Operation: volumetypes.FileOpRestoreFile, RelativePath: "file.txt",
+	require.Error(t, validateVolumeWorkspaceFileChange(types.VolumeWorkspaceFileChange{
+		Operation: types.FileOpRestoreFile, RelativePath: "file.txt",
 	}))
-	require.Error(t, validateVolumeWorkspaceFileChange(volumetypes.WorkspaceFileChange{
+	require.Error(t, validateVolumeWorkspaceFileChange(types.VolumeWorkspaceFileChange{
 		Operation: "unknown", RelativePath: "file.txt",
 	}))
-	require.Error(t, validateVolumeWorkspaceFileChange(volumetypes.WorkspaceFileChange{
-		Operation: volumetypes.FileOpDelete, RelativePath: "../escape",
+	require.Error(t, validateVolumeWorkspaceFileChange(types.VolumeWorkspaceFileChange{
+		Operation: types.FileOpDelete, RelativePath: "../escape",
 	}))
 }
 
 func TestVolumeWorkspaceBackupScopeCoversSourcesAndDestinations(t *testing.T) {
-	changes := []volumetypes.WorkspaceFileChange{
-		{Operation: volumetypes.FileOpRename, RelativePath: "docs/a.txt", NewName: "b.txt"},
-		{Operation: volumetypes.FileOpMove, RelativePath: "cache", NewParentPath: "docs"},
-		{Operation: volumetypes.FileOpCreateFile, RelativePath: "docs/a.txt/child", UploadIndex: new(0)},
+	changes := []types.VolumeWorkspaceFileChange{
+		{Operation: types.FileOpRename, RelativePath: "docs/a.txt", NewName: "b.txt"},
+		{Operation: types.FileOpMove, RelativePath: "cache", NewParentPath: "docs"},
+		{Operation: types.FileOpCreateFile, RelativePath: "docs/a.txt/child", UploadIndex: new(0)},
 	}
 	scope, err := volumeWorkspaceBackupScope(changes)
 	require.NoError(t, err)
@@ -273,7 +271,7 @@ func TestStageVolumeWorkspaceChangesClearsAndCopiesContentsInOneArchive(t *testi
 	})
 	firstUpload := 0
 	secondUpload := 1
-	firstStaged, err := service.stageVolumeWorkspaceChanges(t.Context(), dockerClient, "helper", []volumetypes.WorkspaceFileChange{
+	firstStaged, err := service.stageVolumeWorkspaceChanges(t.Context(), dockerClient, "helper", []types.VolumeWorkspaceFileChange{
 		{UploadIndex: &firstUpload},
 		{},
 		{UploadIndex: &secondUpload},
@@ -286,7 +284,7 @@ func TestStageVolumeWorkspaceChangesClearsAndCopiesContentsInOneArchive(t *testi
 		t.Context(),
 		dockerClient,
 		"helper",
-		[]volumetypes.WorkspaceFileChange{
+		[]types.VolumeWorkspaceFileChange{
 			{
 				UploadIndex: &firstUpload,
 			},
@@ -357,7 +355,7 @@ func TestVolumeWorkspaceWritesUseRuntimeIdentity(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	dockerClient := newVolumeWorkspaceTestDockerClient(t, server)
-	applyResponse, err := json.Marshal(types.ApplyResponse{Version: types.ProtocolVersion, Applied: 1})
+	applyResponse, err := json.Marshal(acfstypes.ApplyResponse{Version: acfstypes.ProtocolVersion, Applied: 1})
 	require.NoError(t, err)
 	service := NewService(Dependencies{
 		Docker: docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient),
@@ -368,7 +366,7 @@ func TestVolumeWorkspaceWritesUseRuntimeIdentity(t *testing.T) {
 	})
 	identity := volumeWorkspaceWriteIdentityFromConfigUser("1000:1000")
 	uploadIndex := 0
-	changes := []volumetypes.WorkspaceFileChange{{Operation: volumetypes.FileOpCreateFile, RelativePath: "config.txt", UploadIndex: &uploadIndex}}
+	changes := []types.VolumeWorkspaceFileChange{{Operation: types.FileOpCreateFile, RelativePath: "config.txt", UploadIndex: &uploadIndex}}
 	stagedFiles, err := service.stageVolumeWorkspaceChanges(t.Context(), dockerClient, "helper", changes, map[int][]byte{0: []byte("content")}, identity)
 	require.NoError(t, err)
 	require.NoError(t, service.executeVolumeWorkspaceACFSBatch(t.Context(), dockerClient, "helper", changes, stagedFiles, 0, identity))

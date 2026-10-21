@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/settings"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -72,7 +72,7 @@ func TestSettingsHandlerUpdateLocalEnvironmentRejectsUnreadableProjectsDirectory
 	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o700) })
 
 	handler := &SettingsHandler{settingsService: settingsService, cfg: &config.Config{}}
-	_, err = handler.UpdateSettings(ctx, &UpdateSettingsInput{EnvironmentID: "0", Body: settings.Update{ProjectsDirectory: new(unreadable)}})
+	_, err = handler.UpdateSettings(ctx, &UpdateSettingsInput{EnvironmentID: "0", Body: types.SettingsUpdate{ProjectsDirectory: new(unreadable)}})
 	require.Error(t, err)
 
 	var statusErr huma.StatusError
@@ -83,7 +83,7 @@ func TestSettingsHandlerUpdateLocalEnvironmentRejectsUnreadableProjectsDirectory
 }
 
 func TestSettingsHandlerRemoteWorkspaceSettingsVisibility(t *testing.T) {
-	remoteSettings := []settings.PublicSetting{
+	remoteSettings := []types.PublicSetting{
 		{Key: "dockerHost", Type: "string", Value: "unix:///var/run/docker.sock"},
 		{Key: "baseServerUrl", Type: "string", Value: "https://manager.example"},
 		{Key: "defaultShell", Type: "string", Value: "/bin/bash"},
@@ -108,7 +108,7 @@ func TestSettingsHandlerRemoteWorkspaceSettingsVisibility(t *testing.T) {
 	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, permissions)
 	output, err := handler.GetSettings(ctx, &GetSettingsInput{EnvironmentID: "env-remote"})
 	require.NoError(t, err)
-	require.Equal(t, []settings.PublicSetting{remoteSettings[0], remoteSettings[3], remoteSettings[4]}, output.Body)
+	require.Equal(t, []types.PublicSetting{remoteSettings[0], remoteSettings[3], remoteSettings[4]}, output.Body)
 
 	adminCtx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
 	output, err = handler.GetSettings(adminCtx, &GetSettingsInput{EnvironmentID: "env-remote"})
@@ -116,7 +116,7 @@ func TestSettingsHandlerRemoteWorkspaceSettingsVisibility(t *testing.T) {
 	require.Equal(t, remoteSettings, output.Body)
 }
 
-func runtimeSettingKeys(publicSettings []settings.PublicSetting) map[string]string {
+func runtimeSettingKeys(publicSettings []types.PublicSetting) map[string]string {
 	keys := make(map[string]string, len(publicSettings))
 	for _, setting := range publicSettings {
 		keys[setting.Key] = setting.Value

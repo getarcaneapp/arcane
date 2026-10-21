@@ -9,8 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	imageupdatetypes "github.com/getarcaneapp/arcane/types/v2/imageupdate"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/events"
 	"go.getarcane.app/streams/bus"
 
@@ -32,7 +31,7 @@ const (
 )
 
 type imageUpdateScannerInternal interface {
-	RunImageCheck(ctx context.Context, request imageupdatetypes.CheckRequest) (schedulertypes.Outcome, error)
+	RunImageCheck(ctx context.Context, request types.ImageUpdateCheckRequest) (types.SchedulerOutcome, error)
 }
 
 type pollingSettingReaderInternal interface {
@@ -147,7 +146,7 @@ func (w *ImageUpdateWatcher) runEventLoop(runCtx context.Context) error {
 	metadata := make(chan struct{}, 1)
 	submitted := make(chan error, 1)
 	submitting := false
-	workers.Go(func() { w.runMetadataBackfillInternal(runCtx, metadata) })
+	workers.Go(func() { w.runMetadataBackfill(runCtx, metadata) })
 	w.RefreshSchedule()
 	ready := false
 	for {
@@ -163,12 +162,12 @@ func (w *ImageUpdateWatcher) runEventLoop(runCtx context.Context) error {
 				timer.Reset(w.debounce)
 			}
 		case <-timer.C:
-			if !w.scanAdmissionReadyInternal(timer, ready, submitting) {
+			if !w.scanAdmissionReady(timer, ready, submitting) {
 				continue
 			}
 			submitting = true
 			generation := w.triggerGeneration.Load()
-			workers.Go(func() { w.submitTriggeredScanInternal(runCtx, generation, submitted) })
+			workers.Go(func() { w.submitTriggeredScan(runCtx, generation, submitted) })
 		case err := <-submitted:
 			submitting = false
 			if err != nil && runCtx.Err() == nil {
@@ -194,12 +193,12 @@ func (w *ImageUpdateWatcher) runEventLoop(runCtx context.Context) error {
 	}
 }
 
-func (w *ImageUpdateWatcher) runMetadataBackfillInternal(ctx context.Context, metadata chan<- struct{}) {
+func (w *ImageUpdateWatcher) runMetadataBackfill(ctx context.Context, metadata chan<- struct{}) {
 	for attempt := 1; ctx.Err() == nil; attempt++ {
 		var err error
 		func() {
 			defer utils.RecoverToError(&err, "image metadata backfill")
-			err = w.backfillProjectImageRefsInternal(ctx, attempt)
+			err = w.backfillProjectImageRefs(ctx, attempt)
 		}()
 		if err == nil {
 			select {
@@ -222,7 +221,7 @@ func (w *ImageUpdateWatcher) runMetadataBackfillInternal(ctx context.Context, me
 	}
 }
 
-func (w *ImageUpdateWatcher) scanAdmissionReadyInternal(timer *time.Timer, ready, submitting bool) bool {
+func (w *ImageUpdateWatcher) scanAdmissionReady(timer *time.Timer, ready, submitting bool) bool {
 	if !ready || submitting || w.triggerGeneration.Load() == w.acknowledgedGeneration.Load() {
 		return false
 	}
@@ -233,7 +232,7 @@ func (w *ImageUpdateWatcher) scanAdmissionReadyInternal(timer *time.Timer, ready
 	return true
 }
 
-func (w *ImageUpdateWatcher) submitTriggeredScanInternal(ctx context.Context, generation uint64, submitted chan<- error) {
+func (w *ImageUpdateWatcher) submitTriggeredScan(ctx context.Context, generation uint64, submitted chan<- error) {
 	var err error
 	func() {
 		defer utils.RecoverToError(&err, "image scan admission")
@@ -244,7 +243,7 @@ func (w *ImageUpdateWatcher) submitTriggeredScanInternal(ctx context.Context, ge
 			err = errors.New("durable job coordinator unavailable")
 			return
 		}
-		_, err = coordinator.Submit(ctx, schedulertypes.Request{JobID: w.Name(), EnvironmentID: "0", Trigger: "watcher"})
+		_, err = coordinator.Submit(ctx, types.SchedulerRequest{JobID: w.Name(), EnvironmentID: "0", Trigger: "watcher"})
 	}()
 	if err == nil {
 		w.acknowledgedGeneration.Store(generation)
@@ -306,7 +305,7 @@ func (w *ImageUpdateWatcher) RunNow(ctx context.Context) (err error) {
 		}
 		defer w.scanRunning.Store(false)
 		defer utils.RecoverToError(&err, "image update scan worker")
-		return w.executeScanInternal(ctx)
+		return w.executeScan(ctx)
 	}
 	if w.scanRunning.Load() {
 		return common.Classify(common.ErrImageScanInProgress, errors.New("an image update check is already in progress"))
@@ -317,7 +316,7 @@ func (w *ImageUpdateWatcher) RunNow(ctx context.Context) (err error) {
 	if coordinator == nil {
 		return errors.New("durable job coordinator unavailable")
 	}
-	run, err := coordinator.Submit(ctx, schedulertypes.Request{JobID: w.Name(), EnvironmentID: "0", Trigger: "manual"})
+	run, err := coordinator.Submit(ctx, types.SchedulerRequest{JobID: w.Name(), EnvironmentID: "0", Trigger: "manual"})
 	if err != nil {
 		return err
 	}
@@ -327,11 +326,11 @@ func (w *ImageUpdateWatcher) RunNow(ctx context.Context) (err error) {
 		if getErr != nil {
 			return getErr
 		}
-		if current.Status.Terminal() || current.Status == schedulertypes.NeedsAttention {
-			if current.Status == schedulertypes.Succeeded {
+		if current.Status.Terminal() || current.Status == types.RunStatusNeedsAttention {
+			if current.Status == types.RunStatusSucceeded {
 				return nil
 			}
-			return &schedulertypes.OutcomeError{Outcome: current.Outcome}
+			return &types.SchedulerOutcomeError{Outcome: current.Outcome}
 		}
 		select {
 		case <-ctx.Done():
@@ -343,7 +342,7 @@ func (w *ImageUpdateWatcher) RunNow(ctx context.Context) (err error) {
 	}
 }
 
-func (w *ImageUpdateWatcher) executeScanInternal(ctx context.Context) error {
+func (w *ImageUpdateWatcher) executeScan(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -353,18 +352,18 @@ func (w *ImageUpdateWatcher) executeScanInternal(ctx context.Context) error {
 	}
 
 	slog.InfoContext(ctx, "image scan run started")
-	outcome, err := w.imageUpdateService.RunImageCheck(ctx, imageupdatetypes.CheckRequest{All: true})
+	outcome, err := w.imageUpdateService.RunImageCheck(ctx, types.ImageUpdateCheckRequest{All: true})
 	if err != nil {
 		return fmt.Errorf("image scan failed: %w", err)
 	}
 	slog.InfoContext(ctx, "image scan run completed", "status", outcome.Status, "message", outcome.Message)
-	if outcome.Status != schedulertypes.Succeeded {
-		return &schedulertypes.OutcomeError{Outcome: outcome}
+	if outcome.Status != types.RunStatusSucceeded {
+		return &types.SchedulerOutcomeError{Outcome: outcome}
 	}
 	return nil
 }
 
-func (w *ImageUpdateWatcher) backfillProjectImageRefsInternal(ctx context.Context, attempt int) error {
+func (w *ImageUpdateWatcher) backfillProjectImageRefs(ctx context.Context, attempt int) error {
 	started := time.Now()
 	count, err := w.projectService.BackfillProjectImageRefs(ctx)
 	if err == nil {

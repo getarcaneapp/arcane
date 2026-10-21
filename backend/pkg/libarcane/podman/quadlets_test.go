@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -36,8 +36,8 @@ func TestClientQuadletInstall(t *testing.T) {
 			})
 
 			report, err := client.QuadletInstall(t.Context(), QuadletInstallOptions{
-				File:          podmantypes.QuadletFile{Name: "web.kube", Content: "[Kube]\nYaml=web.yaml\n"},
-				ExtraFiles:    []podmantypes.QuadletFile{{Name: "web.yaml", Content: "kind: Pod\n"}},
+				File:          types.QuadletFile{Name: "web.kube", Content: "[Kube]\nYaml=web.yaml\n"},
+				ExtraFiles:    []types.QuadletFile{{Name: "web.yaml", Content: "kind: Pod\n"}},
 				Replace:       true,
 				Application:   "shop",
 				AppsSupported: tt.appsSupported,
@@ -75,7 +75,7 @@ func TestClientQuadletListFileRemove(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, quadlets, 1)
-	assert.Equal(t, podmantypes.Quadlet{
+	assert.Equal(t, types.Quadlet{
 		Name:     "web.container",
 		UnitName: "web.service",
 		Path:     "/etc/containers/systemd/web.container",

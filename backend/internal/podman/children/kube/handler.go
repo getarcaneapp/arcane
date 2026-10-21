@@ -4,8 +4,7 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
@@ -22,44 +21,44 @@ func NewHandler(service *Service, audit func(ctx context.Context, environmentID,
 
 type PlayKubeInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          podmantypes.KubePlayRequest
+	Body          types.KubePlayRequest
 }
 
 type DownKubeInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          podmantypes.KubeDownRequest
+	Body          types.KubeDownRequest
 }
 
 type GenerateKubeInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          podmantypes.KubeGenerateRequest
+	Body          types.KubeGenerateRequest
 }
 
-func (h *Handler) Play(ctx context.Context, input *PlayKubeInput) (*handlerutil.Out[podmantypes.KubePlayReport], error) {
+func (h *Handler) Play(ctx context.Context, input *PlayKubeInput) (*handlerutil.Out[types.KubePlayReport], error) {
 	report, err := h.service.Play(ctx, input.Body)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to play kube YAML: "+apiErr.Message)
 	}
 	h.audit(ctx, input.EnvironmentID, "kube.play", "kube", "", map[string]any{"pods": len(report.Pods), "replace": input.Body.Replace})
-	return &handlerutil.Out[podmantypes.KubePlayReport]{Body: base.ApiResponse[podmantypes.KubePlayReport]{Success: true, Data: report}}, nil
+	return &handlerutil.Out[types.KubePlayReport]{Body: types.ApiResponse[types.KubePlayReport]{Success: true, Data: report}}, nil
 }
 
-func (h *Handler) Down(ctx context.Context, input *DownKubeInput) (*handlerutil.Out[podmantypes.KubeDownReport], error) {
+func (h *Handler) Down(ctx context.Context, input *DownKubeInput) (*handlerutil.Out[types.KubeDownReport], error) {
 	report, err := h.service.Down(ctx, input.Body)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to tear down kube YAML: "+apiErr.Message)
 	}
 	h.audit(ctx, input.EnvironmentID, "kube.down", "kube", "", map[string]any{"pods": len(report.RmReport), "force": input.Body.Force})
-	return &handlerutil.Out[podmantypes.KubeDownReport]{Body: base.ApiResponse[podmantypes.KubeDownReport]{Success: true, Data: report}}, nil
+	return &handlerutil.Out[types.KubeDownReport]{Body: types.ApiResponse[types.KubeDownReport]{Success: true, Data: report}}, nil
 }
 
-func (h *Handler) Generate(ctx context.Context, input *GenerateKubeInput) (*handlerutil.Out[podmantypes.KubeGenerateResponse], error) {
+func (h *Handler) Generate(ctx context.Context, input *GenerateKubeInput) (*handlerutil.Out[types.KubeGenerateResponse], error) {
 	generated, err := h.service.Generate(ctx, input.Body)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to generate kube YAML: "+apiErr.Message)
 	}
-	return &handlerutil.Out[podmantypes.KubeGenerateResponse]{Body: base.ApiResponse[podmantypes.KubeGenerateResponse]{Success: true, Data: generated}}, nil
+	return &handlerutil.Out[types.KubeGenerateResponse]{Body: types.ApiResponse[types.KubeGenerateResponse]{Success: true, Data: generated}}, nil
 }

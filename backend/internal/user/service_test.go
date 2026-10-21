@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -20,7 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 )
 
-func setupAuthServiceTestDBInternal(t *testing.T) *database.DB {
+func setupAuthServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
@@ -58,7 +58,7 @@ func setupAuthServiceTestDBInternal(t *testing.T) *database.DB {
 // does, so the legacy-admin-guard tests exercise the real RBAC path.
 func setupUserAndRoleServices(t *testing.T) (*userdomain.UserService, *role.RoleService) {
 	t.Helper()
-	db := setupAuthServiceTestDBInternal(t)
+	db := setupAuthServiceTestDB(t)
 	localRole := role.NewRoleService(db)
 	require.NoError(t, localRole.EnsureBuiltInRoles(t.Context()))
 	userRecord := userdomain.NewUserService(db, localRole, session.RevokeAllUserSessionsExceptInDB)
@@ -279,12 +279,12 @@ func TestUpdateUserPersistsTimeFormatAndMapsToDto(t *testing.T) {
 	ctx := t.Context()
 
 	u := createTestUser(t, userSvc, "user-1", "time-format-user")
-	require.Equal(t, user.TimeFormatAuto, u.TimeFormat)
+	require.Equal(t, types.TimeFormatAuto, u.TimeFormat)
 
-	for _, timeFormat := range []user.TimeFormat{
-		user.TimeFormatAuto,
-		user.TimeFormat12Hour,
-		user.TimeFormat24Hour,
+	for _, timeFormat := range []types.TimeFormat{
+		types.TimeFormatAuto,
+		types.TimeFormat12Hour,
+		types.TimeFormat24Hour,
 	} {
 		t.Run(string(timeFormat), func(t *testing.T) {
 			u.TimeFormat = timeFormat
@@ -338,7 +338,7 @@ func TestUpdateUserAllowsGlobalAdminActorEditingAdmin(t *testing.T) {
 	require.NoError(t, err)
 
 	admin.DisplayName = new("Renamed Admin")
-	actorCtx := context.WithValue(ctx, user.CurrentUserContextKey{}, other)
+	actorCtx := context.WithValue(ctx, types.CurrentUserContextKey{}, other)
 	_, err = userSvc.UpdateUser(actorCtx, admin, otherPerms)
 	require.NoError(t, err)
 }
@@ -374,7 +374,7 @@ func TestUpdateUserAllowsSelfEditByNonAdmin(t *testing.T) {
 	require.NoError(t, err)
 
 	admin.DisplayName = new("Self Rename")
-	actorCtx := context.WithValue(ctx, user.CurrentUserContextKey{}, admin)
+	actorCtx := context.WithValue(ctx, types.CurrentUserContextKey{}, admin)
 	_, err = userSvc.UpdateUser(actorCtx, admin, adminPerms)
 	require.NoError(t, err)
 }
@@ -417,7 +417,7 @@ func TestDeleteUserAllowsGlobalAdminActorDeletingAdmin(t *testing.T) {
 	otherPerms, err := roleSvc.ResolvePermissions(ctx, other.ID)
 	require.NoError(t, err)
 
-	actorCtx := context.WithValue(ctx, user.CurrentUserContextKey{}, other)
+	actorCtx := context.WithValue(ctx, types.CurrentUserContextKey{}, other)
 	require.NoError(t, userSvc.DeleteUser(actorCtx, admin.ID, otherPerms))
 }
 
@@ -452,7 +452,7 @@ func TestCreateDefaultAdminRecoversArcaneUserWhenNoGlobalAdminExists(t *testing.
 }
 
 func TestUserDisplayNameNormalization(t *testing.T) {
-	svc := userdomain.NewUserService(setupAuthServiceTestDBInternal(t), nil, session.RevokeAllUserSessionsExceptInDB)
+	svc := userdomain.NewUserService(setupAuthServiceTestDB(t), nil, session.RevokeAllUserSessionsExceptInDB)
 	ctx := t.Context()
 	created, err := svc.CreateUser(ctx, &userdomain.User{ID: "normalized", Username: " Jose\u0301 ", Email: new(" Jose\u0301@example.com "), DisplayName: new(" Jose\u0301 ")})
 	require.NoError(t, err)

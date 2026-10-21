@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
@@ -57,7 +57,7 @@ func TestService_UpdateConfig_KeepsDataAndReplacesLabels(t *testing.T) {
 	svc := NewService(&docker.DockerClientService{Client: cli}, func(context.Context) error {
 		return nil
 	})
-	updated, err := svc.UpdateConfig(t.Context(), "config-1", swarmtypes.ConfigUpdateRequest{
+	updated, err := svc.UpdateConfig(t.Context(), "config-1", types.SwarmConfigUpdateRequest{
 		Version: 4,
 		Labels:  map[string]string{"tier": "db"},
 	})

@@ -22,13 +22,14 @@
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { SwarmSyncFile } from '#lib/types/swarm.js';
+	import type { SwarmStackSourceUpdate, SwarmStackSourceWritable, SwarmSyncFile } from '#lib/types/swarm.js';
 	import {
 		createComposeEditorSchema,
 		createComposeTemplateDialogFlow,
 		submitComposeResourceForm,
 		templateNameSlug
 	} from '#lib/utils/compose-flow.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { preventDefault, createForm } from '#lib/utils/settings.svelte.js';
 	import { globalVariablesToMap } from '#lib/utils/template-load.js';
 	import {
@@ -232,12 +233,23 @@
 			validate: form.validate,
 			setLoading: (value) => (ui.saving = value),
 			submit: ({ name, composeContent, envContent }) =>
-				swarmService.updateStackSource(name, {
-					composeContent,
-					overrideContent,
-					envContent,
-					files: buildStackFilePayload()
-				}),
+				swarmService.updateStackSource(
+					name,
+					changedFields<SwarmStackSourceUpdate, SwarmStackSourceWritable>(
+						{
+							composeContent: data.defaultTemplate,
+							overrideContent: data.overrideTemplate,
+							envContent: data.envTemplate,
+							files: data.sourceFiles
+						},
+						{
+							composeContent,
+							overrideContent,
+							envContent,
+							files: buildStackFilePayload()
+						}
+					)
+				),
 			failureMessage: (name) => m.common_update_failed({ resource: `${m.swarm_stack()} "${name}"` }),
 			onSuccess: async (_result, { name }) => {
 				toast.success(m.common_update_success({ resource: `${m.swarm_stack()} "${name}"` }));

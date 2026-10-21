@@ -4,8 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
-	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
@@ -42,18 +41,18 @@ func (j *ScheduledPruneJob) Schedule(ctx context.Context) string {
 	return scheduleutil.Or(ctx, j.settingsService.GetStringSetting(ctx, "scheduledPruneInterval", "0 0 0 * * *"), "0 0 0 * * *", "scheduled-prune")
 }
 
-func (j *ScheduledPruneJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
+func (j *ScheduledPruneJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 	enabled := j.settingsService.GetBoolSetting(ctx, "scheduledPruneEnabled", false)
 	if !enabled {
 		slog.DebugContext(ctx, "scheduled prune disabled; skipping run")
-		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
 
-	req := buildScheduledPruneRequestInternal(ctx, j.settingsService)
+	req := buildScheduledPruneRequest(ctx, j.settingsService)
 
-	if !hasScheduledPruneTargetsInternal(req) {
+	if !hasScheduledPruneTargets(req) {
 		slog.InfoContext(ctx, "scheduled prune run skipped; no resource types selected")
-		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
 
 	slog.InfoContext(ctx, "scheduled prune run started",
@@ -76,11 +75,11 @@ func (j *ScheduledPruneJob) Run(ctx context.Context) (schedulertypes.Outcome, er
 	}
 	if err != nil {
 		slog.ErrorContext(ctx, "scheduled prune run failed", "error", err)
-		return schedulertypes.Outcome{}, err
+		return types.SchedulerOutcome{}, err
 	}
 	if !started {
 		slog.InfoContext(ctx, "scheduled prune run skipped; prune already in progress", "activityId", result.ActivityID)
-		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
 
 	slog.InfoContext(ctx, "scheduled prune run completed",
@@ -96,12 +95,12 @@ func (j *ScheduledPruneJob) Run(ctx context.Context) (schedulertypes.Outcome, er
 		slog.DebugContext(ctx, "scheduled prune run errors", "errors", result.Errors)
 	}
 
-	outcome := schedulertypes.Outcome{Status: schedulertypes.Succeeded}
+	outcome := types.SchedulerOutcome{Status: types.RunStatusSucceeded}
 	if result.ActivityID != nil {
 		outcome.ActivityID = *result.ActivityID
 	}
 	if len(result.Errors) > 0 {
-		outcome.Status = schedulertypes.Partial
+		outcome.Status = types.RunStatusPartial
 		outcome.Message = "Some resources could not be pruned; see activity details"
 	}
 	return outcome, nil
@@ -112,76 +111,76 @@ func (j *ScheduledPruneJob) Reschedule(ctx context.Context) error {
 	return nil
 }
 
-func buildScheduledPruneRequestInternal(ctx context.Context, settingsService *settings.SettingsService) systemtypes.PruneAllRequest {
-	return systemtypes.PruneAllRequest{
-		Containers: buildScheduledContainerPruneOptionsInternal(ctx, settingsService),
-		Images:     buildScheduledImagePruneOptionsInternal(ctx, settingsService),
-		Volumes:    buildScheduledVolumePruneOptionsInternal(ctx, settingsService),
-		Networks:   buildScheduledNetworkPruneOptionsInternal(ctx, settingsService),
-		BuildCache: buildScheduledBuildCachePruneOptionsInternal(ctx, settingsService),
+func buildScheduledPruneRequest(ctx context.Context, settingsService *settings.SettingsService) types.PruneAllRequest {
+	return types.PruneAllRequest{
+		Containers: buildScheduledContainerPruneOptions(ctx, settingsService),
+		Images:     buildScheduledImagePruneOptions(ctx, settingsService),
+		Volumes:    buildScheduledVolumePruneOptions(ctx, settingsService),
+		Networks:   buildScheduledNetworkPruneOptions(ctx, settingsService),
+		BuildCache: buildScheduledBuildCachePruneOptions(ctx, settingsService),
 	}
 }
 
-func hasScheduledPruneTargetsInternal(req systemtypes.PruneAllRequest) bool {
+func hasScheduledPruneTargets(req types.PruneAllRequest) bool {
 	return req.Containers != nil || req.Images != nil || req.Volumes != nil || req.Networks != nil || req.BuildCache != nil
 }
 
-func buildScheduledContainerPruneOptionsInternal(ctx context.Context, settingsService *settings.SettingsService) *systemtypes.PruneContainersOptions {
+func buildScheduledContainerPruneOptions(ctx context.Context, settingsService *settings.SettingsService) *types.PruneContainersOptions {
 	mode := settingsService.GetStringSetting(ctx, "pruneContainerMode", "stopped")
-	if mode == "" || mode == string(systemtypes.PruneContainerModeNone) {
+	if mode == "" || mode == string(types.PruneContainerModeNone) {
 		return nil
 	}
 
-	return &systemtypes.PruneContainersOptions{
-		Mode:  systemtypes.PruneContainerMode(mode),
+	return &types.PruneContainersOptions{
+		Mode:  types.PruneContainerMode(mode),
 		Until: settingsService.GetStringSetting(ctx, "pruneContainerUntil", ""),
 	}
 }
 
-func buildScheduledImagePruneOptionsInternal(ctx context.Context, settingsService *settings.SettingsService) *systemtypes.PruneImagesOptions {
+func buildScheduledImagePruneOptions(ctx context.Context, settingsService *settings.SettingsService) *types.PruneImagesOptions {
 	mode := settingsService.GetStringSetting(ctx, "pruneImageMode", "dangling")
-	if mode == "" || mode == string(systemtypes.PruneImageModeNone) {
+	if mode == "" || mode == string(types.PruneImageModeNone) {
 		return nil
 	}
 
-	return &systemtypes.PruneImagesOptions{
-		Mode:  systemtypes.PruneImageMode(mode),
+	return &types.PruneImagesOptions{
+		Mode:  types.PruneImageMode(mode),
 		Until: settingsService.GetStringSetting(ctx, "pruneImageUntil", ""),
 	}
 }
 
-func buildScheduledVolumePruneOptionsInternal(ctx context.Context, settingsService *settings.SettingsService) *systemtypes.PruneVolumesOptions {
+func buildScheduledVolumePruneOptions(ctx context.Context, settingsService *settings.SettingsService) *types.PruneVolumesOptions {
 	mode := settingsService.GetStringSetting(ctx, "pruneVolumeMode", "none")
-	if mode == "" || mode == string(systemtypes.PruneVolumeModeNone) {
+	if mode == "" || mode == string(types.PruneVolumeModeNone) {
 		return nil
 	}
-	return &systemtypes.PruneVolumesOptions{Mode: systemtypes.PruneVolumeMode(mode)}
+	return &types.PruneVolumesOptions{Mode: types.PruneVolumeMode(mode)}
 }
 
-func buildScheduledNetworkPruneOptionsInternal(ctx context.Context, settingsService *settings.SettingsService) *systemtypes.PruneNetworksOptions {
+func buildScheduledNetworkPruneOptions(ctx context.Context, settingsService *settings.SettingsService) *types.PruneNetworksOptions {
 	mode := settingsService.GetStringSetting(ctx, "pruneNetworkMode", "unused")
-	if mode == "" || mode == string(systemtypes.PruneNetworkModeNone) {
+	if mode == "" || mode == string(types.PruneNetworkModeNone) {
 		return nil
 	}
 
-	return &systemtypes.PruneNetworksOptions{
-		Mode:  systemtypes.PruneNetworkMode(mode),
+	return &types.PruneNetworksOptions{
+		Mode:  types.PruneNetworkMode(mode),
 		Until: settingsService.GetStringSetting(ctx, "pruneNetworkUntil", ""),
 	}
 }
 
-func buildScheduledBuildCachePruneOptionsInternal(ctx context.Context, settingsService *settings.SettingsService) *systemtypes.PruneBuildCacheOptions {
+func buildScheduledBuildCachePruneOptions(ctx context.Context, settingsService *settings.SettingsService) *types.PruneBuildCacheOptions {
 	mode := settingsService.GetStringSetting(ctx, "pruneBuildCacheMode", "none")
-	if mode == "" || mode == string(systemtypes.PruneBuildCacheModeNone) {
+	if mode == "" || mode == string(types.PruneBuildCacheModeNone) {
 		return nil
 	}
 
-	return &systemtypes.PruneBuildCacheOptions{
-		Mode:  systemtypes.PruneBuildCacheMode(mode),
+	return &types.PruneBuildCacheOptions{
+		Mode:  types.PruneBuildCacheMode(mode),
 		Until: settingsService.GetStringSetting(ctx, "pruneBuildCacheUntil", ""),
 	}
 }
 
-func (j *ScheduledPruneJob) Reconcile(ctx context.Context, previous schedulertypes.Run) (schedulertypes.Outcome, error) {
+func (j *ScheduledPruneJob) Reconcile(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 	return j.systemService.ReconcileScheduledPrune(ctx, previous)
 }

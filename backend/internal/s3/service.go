@@ -8,12 +8,13 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/backup"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/kit/normalization"
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -21,7 +22,7 @@ import (
 )
 
 var (
-	ErrS3DestinationNotFound = errors.New("S3 destination not found")
+	ErrS3DestinationNotFound = common.Classify(common.ErrNotFound, errors.New("S3 destination not found"))
 	ErrS3DestinationInUse    = errors.New("S3 destination is in use")
 	// errS3SecretRequired enforces the fresh-secret rule: a stored
 	// secret is never combined with changed connection or trust settings.
@@ -40,7 +41,7 @@ func NewS3DestinationService(db *database.DB, checkRemoteReferences func(context
 	return &S3DestinationService{db: db, checkRemoteReferences: checkRemoteReferences}
 }
 
-func destinationConfiguration(id string, input backup.CreateS3Destination) s3.Configuration {
+func destinationConfiguration(id string, input types.S3Destination) s3.Configuration {
 	return s3.Configuration{
 		ID:              id,
 		Name:            input.Name,
@@ -55,7 +56,7 @@ func destinationConfiguration(id string, input backup.CreateS3Destination) s3.Co
 	}.Normalized()
 }
 
-func (s *S3DestinationService) ListS3Destinations(ctx context.Context, params pagination.QueryParams) ([]backup.S3Destination, pagination.Response, error) {
+func (s *S3DestinationService) ListS3Destinations(ctx context.Context, params pagination.QueryParams) ([]types.S3Destination, pagination.Response, error) {
 	var destinations []S3Destination
 	query := s.db.WithContext(ctx).Model(&S3Destination{})
 	if term := strings.TrimSpace(params.Search); term != "" {
@@ -66,19 +67,19 @@ func (s *S3DestinationService) ListS3Destinations(ctx context.Context, params pa
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to list S3 destinations: %w", err)
 	}
-	result := make([]backup.S3Destination, len(destinations))
+	result := make([]types.S3Destination, len(destinations))
 	for i := range destinations {
 		result[i] = destinations[i].ToDTO()
 	}
 	return result, response, nil
 }
 
-func (s *S3DestinationService) ListAllS3Destinations(ctx context.Context) ([]backup.S3Destination, error) {
+func (s *S3DestinationService) ListAllS3Destinations(ctx context.Context) ([]types.S3Destination, error) {
 	var destinations []S3Destination
 	if err := s.db.WithContext(ctx).Order("name ASC").Find(&destinations).Error; err != nil {
 		return nil, fmt.Errorf("failed to list S3 destinations: %w", err)
 	}
-	result := make([]backup.S3Destination, len(destinations))
+	result := make([]types.S3Destination, len(destinations))
 	for i := range destinations {
 		result[i] = destinations[i].ToDTO()
 	}
@@ -87,13 +88,13 @@ func (s *S3DestinationService) ListAllS3Destinations(ctx context.Context) ([]bac
 
 // DestinationsByID indexes destinations to decorate backup records, such as with their names. Decoration never fails
 // its caller, so a failed listing yields an empty index.
-func (s *S3DestinationService) DestinationsByID(ctx context.Context) map[string]backup.S3Destination {
+func (s *S3DestinationService) DestinationsByID(ctx context.Context) map[string]types.S3Destination {
 	destinations, err := s.ListAllS3Destinations(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "could not list S3 destinations", "error", err)
 		return nil
 	}
-	indexed := make(map[string]backup.S3Destination, len(destinations))
+	indexed := make(map[string]types.S3Destination, len(destinations))
 	for _, destination := range destinations {
 		indexed[destination.ID] = destination
 	}
@@ -111,7 +112,7 @@ func (s *S3DestinationService) getS3DestinationModel(ctx context.Context, id str
 	return &destination, nil
 }
 
-func (s *S3DestinationService) GetS3Destination(ctx context.Context, id string) (*backup.S3Destination, error) {
+func (s *S3DestinationService) GetS3Destination(ctx context.Context, id string) (*types.S3Destination, error) {
 	destination, err := s.getS3DestinationModel(ctx, id)
 	if err != nil {
 		return nil, err
@@ -120,7 +121,7 @@ func (s *S3DestinationService) GetS3Destination(ctx context.Context, id string) 
 	return &dto, nil
 }
 
-func (s *S3DestinationService) CreateS3Destination(ctx context.Context, input backup.CreateS3Destination) (*backup.S3Destination, error) {
+func (s *S3DestinationService) CreateS3Destination(ctx context.Context, input types.S3Destination) (*types.S3Destination, error) {
 	if err := normalization.Normalize(&input); err != nil {
 		return nil, err
 	}
@@ -150,7 +151,25 @@ func (s *S3DestinationService) CreateS3Destination(ctx context.Context, input ba
 	return &dto, nil
 }
 
-func (s *S3DestinationService) UpdateS3Destination(ctx context.Context, id string, input backup.UpdateS3Destination) (*backup.S3Destination, error) {
+func (s *S3DestinationService) MergeS3Destination(ctx context.Context, id string, update types.S3Destination, submitted map[string]bool) (types.S3Destination, error) {
+	destination, err := s.getS3DestinationModel(ctx, id)
+	if err != nil {
+		return types.S3Destination{}, err
+	}
+	return types.S3Destination{
+		Name:            kit.Ternary(submitted["name"], update.Name, destination.Name),
+		Endpoint:        kit.Ternary(submitted["endpoint"], update.Endpoint, destination.Endpoint),
+		Bucket:          kit.Ternary(submitted["bucket"], update.Bucket, destination.Bucket),
+		Region:          kit.Ternary(submitted["region"], update.Region, destination.Region),
+		AccessKeyID:     kit.Ternary(submitted["accessKeyId"], update.AccessKeyID, destination.AccessKeyID),
+		SecretAccessKey: kit.Ternary(submitted["secretAccessKey"], update.SecretAccessKey, ""),
+		Prefix:          kit.Ternary(submitted["prefix"], update.Prefix, destination.Prefix),
+		UseSSL:          kit.Ternary(submitted["useSsl"], update.UseSSL, destination.UseSSL),
+		ForcePathStyle:  kit.Ternary(submitted["forcePathStyle"], update.ForcePathStyle, destination.ForcePathStyle),
+	}, nil
+}
+
+func (s *S3DestinationService) UpdateS3Destination(ctx context.Context, id string, input types.S3Destination) (*types.S3Destination, error) {
 	if err := normalization.Normalize(&input); err != nil {
 		return nil, err
 	}
@@ -270,7 +289,7 @@ func (s *S3DestinationService) S3DestinationExists(ctx context.Context, id strin
 }
 
 // SyncS3Destinations replaces an agent's destination cache with the manager-owned destinations.
-func (s *S3DestinationService) SyncS3Destinations(ctx context.Context, destinations []backup.S3DestinationSync) error {
+func (s *S3DestinationService) SyncS3Destinations(ctx context.Context, destinations []types.S3Destination) error {
 	if err := normalization.Normalize(&destinations); err != nil {
 		return err
 	}
@@ -285,7 +304,7 @@ func (s *S3DestinationService) SyncS3Destinations(ctx context.Context, destinati
 
 	syncedIDs := make(map[string]struct{}, len(destinations))
 	for _, item := range destinations {
-		configuration := destinationConfiguration(item.ID, item.CreateS3Destination)
+		configuration := destinationConfiguration(item.ID, item)
 		if configuration.ID == "" {
 			return errors.New("S3 destination ID is required")
 		}
@@ -372,7 +391,7 @@ func (s *S3DestinationService) Configuration(ctx context.Context, id string) (s3
 	}.Normalized(), nil
 }
 
-func (s *S3DestinationService) TestS3Destination(ctx context.Context, id string, input *backup.UpdateS3Destination) error {
+func (s *S3DestinationService) TestS3Destination(ctx context.Context, id string, input *types.S3Destination) error {
 	configuration, err := s.Configuration(ctx, id)
 	if err != nil {
 		return err
@@ -403,7 +422,7 @@ func (s *S3DestinationService) TestS3Destination(ctx context.Context, id string,
 	})
 }
 
-func (s *S3DestinationService) TestS3DestinationConfiguration(ctx context.Context, input backup.CreateS3Destination) error {
+func (s *S3DestinationService) TestS3DestinationConfiguration(ctx context.Context, input types.S3Destination) error {
 	if err := normalization.Normalize(&input); err != nil {
 		return err
 	}

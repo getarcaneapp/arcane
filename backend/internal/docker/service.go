@@ -11,8 +11,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
-	"github.com/getarcaneapp/arcane/types/v2/dashboard"
-	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/api/types/network"
@@ -339,7 +338,7 @@ func (s *DockerClientService) ListImages(ctx context.Context) ([]image.Summary, 
 	})
 }
 
-func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*dashboard.DockerSnapshot, error) {
+func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*types.DashboardDockerSnapshot, error) {
 	g, groupCtx := errgroup.WithContext(ctx)
 
 	var containers []container.Summary
@@ -397,7 +396,7 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*d
 		return nil, err
 	}
 
-	return &dashboard.DockerSnapshot{
+	return &types.DashboardDockerSnapshot{
 		Containers: containers,
 		Images:     images,
 		Networks:   networks,
@@ -426,7 +425,7 @@ func (s *DockerClientService) GetAllContainers(ctx context.Context) ([]container
 
 // GetAllImages lists images and containers concurrently and returns the
 // images together with their usage counts, including total image size.
-func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary, imagetypes.UsageCounts, error) {
+func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary, types.ImageUsageCounts, error) {
 	g, groupCtx := errgroup.WithContext(ctx)
 
 	var images []image.Summary
@@ -447,7 +446,7 @@ func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary
 		return err
 	})
 	if err := g.Wait(); err != nil {
-		return nil, imagetypes.UsageCounts{}, err
+		return nil, types.ImageUsageCounts{}, err
 	}
 
 	return images, CountImageUsage(images, containers), nil
@@ -455,7 +454,7 @@ func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary
 
 // CountImageUsage tallies in-use, unused, and total image counts plus the summed
 // image size. An image is in use when a container references its ID.
-func CountImageUsage(images []image.Summary, containers []container.Summary) imagetypes.UsageCounts {
+func CountImageUsage(images []image.Summary, containers []container.Summary) types.ImageUsageCounts {
 	inUseImageIDs := make(map[string]struct{}, len(containers))
 	for _, c := range containers {
 		if c.ImageID == "" {
@@ -464,7 +463,7 @@ func CountImageUsage(images []image.Summary, containers []container.Summary) ima
 		inUseImageIDs[c.ImageID] = struct{}{}
 	}
 
-	var counts imagetypes.UsageCounts
+	var counts types.ImageUsageCounts
 	for _, img := range images {
 		counts.Total++
 		counts.TotalSize += img.Size

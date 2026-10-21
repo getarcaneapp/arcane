@@ -10,13 +10,13 @@
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { WebhookActionType, WebhookTargetType, CreateWebhook } from '#lib/types/environment.js';
+	import type { WebhookActionType, WebhookTargetType, WebhookCreate } from '#lib/types/environment.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	type WebhookFormProps = {
 		open: boolean;
-		onSubmit: (data: CreateWebhook) => void;
+		onSubmit: (data: WebhookCreate) => void;
 		isLoading: boolean;
 	};
 

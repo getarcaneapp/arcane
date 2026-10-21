@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
@@ -42,6 +42,6 @@ func RegisterRoutes(api huma.API, h *Handler) {
 			"and will be removed in a future release.",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: upload.LegacyMultipartMiddleware(api, h.uploadService, uploadtypes.KindVolumeBackup),
+		Middlewares: upload.LegacyMultipartMiddleware(api, h.uploadService, types.UploadKindVolumeBackup),
 	}, authz.PermVolumesUpload, h.UploadAndRestore)
 }

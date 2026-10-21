@@ -10,7 +10,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/environment"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 	kit "go.getarcane.app/kit/pkg"
 
@@ -41,7 +41,7 @@ func (s *Service) AgentIdentity(parentEnvironmentID, nodeID, hostname string) (s
 // replace a node's visible binding unless rebind is set. countVisibleBindings
 // returns the other visible environments already bound to the node.
 func (s *Service) AuthorizeBinding(
-	candidate environment.SwarmBindingCandidate,
+	candidate types.SwarmBindingCandidate,
 	parentEnvironmentID, nodeID string,
 	rebind bool,
 	countVisibleBindings func() (int64, error),

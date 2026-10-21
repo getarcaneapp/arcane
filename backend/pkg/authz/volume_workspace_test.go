@@ -3,20 +3,20 @@ package authz
 import (
 	"testing"
 
-	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 )
 
 func TestVolumeWorkspaceRequiredPermissions(t *testing.T) {
-	permissions, valid := VolumeWorkspaceRequiredPermissions([]volumetypes.WorkspaceFileChange{
-		{Operation: volumetypes.FileOpCreateFile},
-		{Operation: volumetypes.FileOpRename},
-		{Operation: volumetypes.FileOpRestoreFile},
+	permissions, valid := VolumeWorkspaceRequiredPermissions([]types.VolumeWorkspaceFileChange{
+		{Operation: types.FileOpCreateFile},
+		{Operation: types.FileOpRename},
+		{Operation: types.FileOpRestoreFile},
 	})
 	require.True(t, valid)
 	require.Equal(t, []string{PermVolumesUpload, PermVolumesDelete, PermVolumesBackup}, permissions)
 
-	permissions, valid = VolumeWorkspaceRequiredPermissions([]volumetypes.WorkspaceFileChange{{Operation: "unknown"}})
+	permissions, valid = VolumeWorkspaceRequiredPermissions([]types.VolumeWorkspaceFileChange{{Operation: "unknown"}})
 	require.False(t, valid)
 	require.Nil(t, permissions)
 }

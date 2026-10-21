@@ -44,7 +44,7 @@
 				environmentId
 			);
 		} else {
-			await projectService.updateProject(project.id, undefined, composeContent, undefined, undefined, environmentId);
+			await projectService.updateProject(project.id, { composeContent }, environmentId);
 		}
 	}
 </script>

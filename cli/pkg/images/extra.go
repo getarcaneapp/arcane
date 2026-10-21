@@ -16,8 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/image"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	buildtypes "go.getarcane.app/builds/types"
 	kit "go.getarcane.app/kit/pkg"
@@ -25,7 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 func newSearchCmd() *cobra.Command {
@@ -42,15 +41,15 @@ func newSearchCmd() *cobra.Command {
 				return err
 			}
 
-			path := types.ImagesSearch(c.EnvID()) + "?term=" + url.QueryEscape(args[0])
+			path := clitypes.ImagesSearch(c.EnvID()) + "?term=" + url.QueryEscape(args[0])
 
 			log.Debugf("Searching images from: %s", path)
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[[]image.SearchResult]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[[]types.ImageSearchResult]{
 				Method:         http.MethodGet,
 				Path:           path,
 				FailureMessage: "failed to search images",
-				Render: func(data []image.SearchResult) error {
+				Render: func(data []types.ImageSearchResult) error {
 					headers := []string{"NAME", "DESCRIPTION", "STARS", "OFFICIAL"}
 					var rows [][]string
 					for _, item := range data {
@@ -84,13 +83,13 @@ func newHistoryCmd() *cobra.Command {
 				return err
 			}
 			imageID := resolved.ID
-			path := types.ImageHistory(c.EnvID(), imageID)
+			path := clitypes.ImageHistory(c.EnvID(), imageID)
 
 			log.Debugf("Getting image history from: %s", path)
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[[]image.HistoryItem]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[[]types.ImageHistoryItem]{
 				Method: http.MethodGet, Path: path, Body: nil, FailureMessage: "failed to get image history",
-				Render: func(data []image.HistoryItem) error {
+				Render: func(data []types.ImageHistoryItem) error {
 					headers := []string{"CREATED", "CREATED BY", "SIZE", "COMMENT"}
 					var rows [][]string
 					for _, item := range data {
@@ -137,13 +136,13 @@ func newTagCmd() *cobra.Command {
 				return errors.New("target repository is required")
 			}
 
-			path := types.ImageTag(c.EnvID(), imageID)
+			path := clitypes.ImageTag(c.EnvID(), imageID)
 
 			log.Debugf("Tagging image via: %s", path)
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
-				Method: http.MethodPost, Path: path, Body: image.TagRequest{Repository: repository, Tag: tag}, FailureMessage: "failed to tag image",
-				Render: func(data base.MessageResponse) error {
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
+				Method: http.MethodPost, Path: path, Body: types.ImageTagRequest{Repository: repository, Tag: tag}, FailureMessage: "failed to tag image",
+				Render: func(data types.MessageResponse) error {
 					output.Success("%s", data.Message)
 
 					return nil
@@ -183,7 +182,7 @@ func newExportCmd() *cobra.Command {
 				outputFile = args[1]
 			}
 
-			path := types.ImageExport(c.EnvID(), imageID)
+			path := clitypes.ImageExport(c.EnvID(), imageID)
 
 			log.Debugf("Exporting image from: %s", path)
 
@@ -246,7 +245,7 @@ func newAttestationsCmd() *cobra.Command {
 				return errors.New("image identifier is required")
 			}
 
-			u, err := url.Parse(types.ImageAttestations(c.EnvID(), imageName))
+			u, err := url.Parse(clitypes.ImageAttestations(c.EnvID(), imageName))
 			if err != nil {
 				return fmt.Errorf("failed to parse endpoint path: %w", err)
 			}
@@ -271,7 +270,7 @@ func newAttestationsCmd() *cobra.Command {
 					if opts.statement {
 						return cmdutil.PrintRawJSON(raw)
 					}
-					var data image.AttestationList
+					var data types.ImageAttestationList
 					if decodeErr := json.Unmarshal(raw, &data); decodeErr != nil {
 						return fmt.Errorf("failed to parse response: %w", decodeErr)
 					}
@@ -371,7 +370,7 @@ func newBuildCmd() *cobra.Command {
 				return fmt.Errorf("failed to build image: %w", marshalErr)
 			}
 
-			path := types.ImagesBuild(c.EnvID())
+			path := clitypes.ImagesBuild(c.EnvID())
 
 			log.Debugf("Building image via: %s", path)
 
@@ -430,13 +429,13 @@ func newBuildsCmd() *cobra.Command {
 				query.Set("provider", opts.provider)
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[image.BuildRecord]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.ImageBuildRecord]{
 				Resource: "builds",
-				Endpoint: types.ImageBuilds(c.EnvID()),
+				Endpoint: clitypes.ImageBuilds(c.EnvID()),
 				Params:   cmdutil.ListParams{Resource: "builds", Limit: opts.limit, FallbackDefault: 0, Start: opts.start, All: opts.all},
 				Query:    query,
 				Headers:  []string{"ID", "IMAGE", "STATUS", "STARTED", "DURATION"},
-				Row: func(record image.BuildRecord) []string {
+				Row: func(record types.ImageBuildRecord) []string {
 					label := truncateCell(record.ContextDir, 40)
 					if len(record.Tags) > 0 {
 						label = record.Tags[0]
@@ -478,13 +477,13 @@ func newBuildsGetCmd() *cobra.Command {
 				return err
 			}
 
-			path := types.ImageBuild(c.EnvID(), args[0])
+			path := clitypes.ImageBuild(c.EnvID(), args[0])
 
 			log.Debugf("Getting image build from: %s", path)
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[image.BuildRecord]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ImageBuildRecord]{
 				Method: http.MethodGet, Path: path, Body: nil, FailureMessage: "failed to get image build",
-				Render: func(data image.BuildRecord) error {
+				Render: func(data types.ImageBuildRecord) error {
 					record := data
 
 					output.Header("Build Details")
@@ -547,15 +546,17 @@ func truncateCell(value string, limit int) string {
 	return value
 }
 
-var buildRef = cmdutil.ResourceRef[image.BuildRecord, image.BuildRecord]{
+var buildRef = cmdutil.ResourceRef[types.ImageBuildRecord, types.ImageBuildRecord]{
 	EnvironmentScoped: true,
 	Singular:          "build", Plural: "builds",
 	IDHint: "the identifier", ListCmd: "arcane-cli images builds",
-	GetPath: types.ImageBuild, ListPath: types.ImageBuilds,
-	Matches:      func(item image.BuildRecord, lower, original string) bool { return strings.EqualFold(item.ID, original) },
-	Label:        func(item image.BuildRecord) string { return item.ID },
-	Promote:      func(item image.BuildRecord) *image.BuildRecord { return &item },
-	IdentifierOf: func(item image.BuildRecord) string { return item.ID },
+	GetPath: clitypes.ImageBuild, ListPath: clitypes.ImageBuilds,
+	Matches: func(item types.ImageBuildRecord, lower, original string) bool {
+		return strings.EqualFold(item.ID, original)
+	},
+	Label:        func(item types.ImageBuildRecord) string { return item.ID },
+	Promote:      func(item types.ImageBuildRecord) *types.ImageBuildRecord { return &item },
+	IdentifierOf: func(item types.ImageBuildRecord) string { return item.ID },
 }
 
 func readBuildStream(cmd *cobra.Command, reader io.Reader) error {

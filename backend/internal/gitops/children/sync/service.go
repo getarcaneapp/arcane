@@ -18,11 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/gitops"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -54,7 +50,7 @@ type (
 		swarmService   *swarm.SwarmService
 		eventService   *event.EventService
 		limits         func(context.Context, *projectpkg.GitOpsSync) (int, int64, int64)
-		logError       func(context.Context, *projectpkg.GitOpsSync, user.Actor, string)
+		logError       func(context.Context, *projectpkg.GitOpsSync, types.Actor, string)
 		unregisterJob  func(context.Context, string)
 	}
 
@@ -105,7 +101,7 @@ func New(
 	swarmService *swarm.SwarmService,
 	eventService *event.EventService,
 	limits func(context.Context, *projectpkg.GitOpsSync) (int, int64, int64),
-	logError func(context.Context, *projectpkg.GitOpsSync, user.Actor, string),
+	logError func(context.Context, *projectpkg.GitOpsSync, types.Actor, string),
 	unregisterJob func(context.Context, string),
 ) *Service {
 	return &Service{
@@ -123,10 +119,10 @@ func New(
 // Run clones the sync source and applies it to its project or Swarm stack within sourceTimeout; the redeploy
 // keeps ctx's own budget. A retry replays the revision its run pinned, and redeploys it unless the record
 // already confirms that revision.
-func (s *Service) Run(ctx context.Context, sourceTimeout time.Duration, sync *projectpkg.GitOpsSync, actor user.Actor, result *gitops.SyncResult) (*gitops.SyncResult, error) {
+func (s *Service) Run(ctx context.Context, sourceTimeout time.Duration, sync *projectpkg.GitOpsSync, actor types.Actor, result *types.GitOpsSyncResult) (*types.GitOpsSyncResult, error) {
 	pinned := ""
 	if run, ok := jobcontext.Run(ctx); ok {
-		index := slices.IndexFunc(run.Outcome.Targets, func(target scheduler.TargetOutcome) bool {
+		index := slices.IndexFunc(run.Outcome.Targets, func(target types.TargetOutcome) bool {
 			return target.ID == sync.ID && len(target.RecoveryData) > 0
 		})
 		var revision syncRevision
@@ -168,13 +164,13 @@ func (s *Service) Run(ctx context.Context, sourceTimeout time.Duration, sync *pr
 		if s.swarmService == nil {
 			return result, s.failSync(ctx, result, sync, actor, "Swarm service is unavailable", errors.New("swarm service is unavailable"))
 		}
-		swarmFiles := make([]swarmtypes.SyncFile, len(syncFiles))
+		swarmFiles := make([]types.SwarmSyncFile, len(syncFiles))
 		for i, file := range syncFiles {
-			swarmFiles[i] = swarmtypes.SyncFile{RelativePath: file.RelativePath, Content: file.Content}
+			swarmFiles[i] = types.SwarmSyncFile{RelativePath: file.RelativePath, Content: file.Content}
 			syncedFiles = append(syncedFiles, file.RelativePath)
 		}
 		// Swarm tasks pull with only the auth embedded in the service spec, so registry auth is always resolved.
-		request := swarmtypes.StackDeployRequest{
+		request := types.SwarmStackDeployRequest{
 			Name:             sync.ProjectName,
 			ComposeContent:   source.composeContent,
 			OverrideContent:  kit.FromPtr(source.overrideContent),
@@ -243,14 +239,14 @@ func (s *Service) Run(ctx context.Context, sourceTimeout time.Duration, sync *pr
 
 // deployOnce redeploys the synced project, recording the deploy on the run. The deploy runs lifecycle hooks, so a
 // replay skips a deploy the run confirmed and refuses one that started without a recorded result.
-func (s *Service) deployOnce(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor user.Actor, replay bool) error {
-	target := scheduler.TargetOutcome{ResourceType: "gitops_deploy", ID: sync.ID + ":deploy", Status: scheduler.Running}
+func (s *Service) deployOnce(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor types.Actor, replay bool) error {
+	target := types.TargetOutcome{ResourceType: "gitops_deploy", ID: sync.ID + ":deploy", Status: types.RunStatusRunning}
 	previous, _ := jobcontext.Run(ctx)
-	if index := slices.IndexFunc(previous.Outcome.Targets, func(recorded scheduler.TargetOutcome) bool { return recorded.ID == target.ID }); replay && index >= 0 {
+	if index := slices.IndexFunc(previous.Outcome.Targets, func(recorded types.TargetOutcome) bool { return recorded.ID == target.ID }); replay && index >= 0 {
 		switch previous.Outcome.Targets[index].Status {
-		case scheduler.Succeeded:
+		case types.RunStatusSucceeded:
 			return nil
-		case scheduler.Running:
+		case types.RunStatusRunning:
 			return errors.New("the interrupted deploy may already have run its lifecycle hooks; redeploy the project to finish it")
 		default:
 		}
@@ -263,13 +259,13 @@ func (s *Service) deployOnce(ctx context.Context, sync *projectpkg.GitOpsSync, p
 	if ctx.Err() != nil {
 		return cmp.Or(deployErr, ctx.Err())
 	}
-	target.Status = kit.Ternary(deployErr == nil, scheduler.Succeeded, scheduler.Failed)
+	target.Status = kit.Ternary(deployErr == nil, types.RunStatusSucceeded, types.RunStatusFailed)
 	return errors.Join(deployErr, jobcontext.Progress(ctx, target))
 }
 
 // prepareSyncSource clones the source at the pinned revision, or the branch head, records that revision on
 // the run, and reads the compose, env and override inputs.
-func (s *Service) prepareSyncSource(ctx context.Context, sync *projectpkg.GitOpsSync, result *gitops.SyncResult, actor user.Actor, pinned string) (*preparedSyncSource, error) {
+func (s *Service) prepareSyncSource(ctx context.Context, sync *projectpkg.GitOpsSync, result *types.GitOpsSyncResult, actor types.Actor, pinned string) (*preparedSyncSource, error) {
 	repository := sync.Repository
 	if repository == nil {
 		return nil, s.failSync(ctx, result, sync, actor, "Repository not found", errors.New("repository not found"))
@@ -314,7 +310,7 @@ func (s *Service) prepareSyncSource(ctx context.Context, sync *projectpkg.GitOps
 	if err != nil {
 		return source, err
 	}
-	progress := scheduler.TargetOutcome{ResourceType: "gitops_sync", ID: sync.ID, Status: scheduler.Running, RecoveryData: revision}
+	progress := types.TargetOutcome{ResourceType: "gitops_sync", ID: sync.ID, Status: types.RunStatusRunning, RecoveryData: revision}
 	if progressErr := jobcontext.Progress(ctx, progress); progressErr != nil {
 		return source, progressErr
 	}
@@ -361,7 +357,7 @@ func (s *Service) prepareSyncSource(ctx context.Context, sync *projectpkg.GitOps
 
 // syncComposeFile applies a single-file sync, creating the project on the first sync. It reports whether the
 // project files changed.
-func (s *Service) syncComposeFile(ctx context.Context, sync *projectpkg.GitOpsSync, actor user.Actor, result *gitops.SyncResult, source *preparedSyncSource) (*projectpkg.Project, bool, error) {
+func (s *Service) syncComposeFile(ctx context.Context, sync *projectpkg.GitOpsSync, actor types.Actor, result *types.GitOpsSyncResult, source *preparedSyncSource) (*projectpkg.Project, bool, error) {
 	slog.InfoContext(ctx, "Using single file sync mode", "syncId", sync.ID, "composePath", sync.ComposePath)
 	// Files referenced through COMPOSE_FILE or COMPOSE_ENV_FILES never reach a single-file project.
 	if projects.ComposeEnvRequiresDirectorySync(sync.ComposePath, source.overrideFileName, source.envContent) {
@@ -388,7 +384,7 @@ func (s *Service) syncComposeFile(ctx context.Context, sync *projectpkg.GitOpsSy
 	}
 
 	// The non-suffixing create: a name collision means the binding is broken, never a "-N" duplicate.
-	project, err := s.projectService.CreateProject(ctx, sync.ProjectName, source.composeContent, source.envContent, projecttypes.CreateProjectWorkspaceManifest{}, nil, nil, nil, actor, false)
+	project, err := s.projectService.CreateProject(ctx, sync.ProjectName, source.composeContent, source.envContent, types.CreateProjectWorkspaceManifest{}, nil, nil, nil, actor, false)
 	if errors.Is(err, projects.ErrProjectDirExists) || errors.Is(err, common.ErrProjectWorkspaceConflict) {
 		err = common.Classify(common.ErrGitOpsSyncProjectBindingBroken, fmt.Errorf("GitOps sync project binding broken: sync %s cannot create project %q: a project or directory with that name "+
 			"already exists; refusing to create a duplicate", sync.ID, projects.SanitizeProjectName(sync.ProjectName)))
@@ -412,13 +408,13 @@ func (s *Service) syncComposeFile(ctx context.Context, sync *projectpkg.GitOpsSy
 
 // redeployIfRunningAfterSync rebuilds and redeploys a running project, or any project when RedeployAfterSync is on. A project
 // left stopped still gets its images pulled when PullImageAfterSync is on, so a re-pointed tag stays available.
-func (s *Service) redeployIfRunningAfterSync(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor user.Actor) error {
-	details, err := s.projectService.GetProjectDetails(ctx, project.ID, projecttypes.DetailsOptions{})
+func (s *Service) redeployIfRunningAfterSync(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor types.Actor) error {
+	details, err := s.projectService.GetProjectDetails(ctx, project.ID, types.ProjectDetailsOptions{})
 	running := err == nil && (details.Status == string(projectpkg.ProjectStatusRunning) || details.Status == string(projectpkg.ProjectStatusPartiallyRunning))
 	switch {
 	case running || sync.RedeployAfterSync:
 		slog.InfoContext(ctx, "Redeploying project after Git sync", "projectName", project.Name, "projectId", project.ID, "wasRunning", running)
-		if redeployErr := s.projectService.RedeployProject(ctx, project.ID, actor, &projecttypes.DeployOptions{Build: true}); redeployErr != nil {
+		if redeployErr := s.projectService.RedeployProject(ctx, project.ID, actor, &types.ProjectDeployOptions{Build: true}); redeployErr != nil {
 			slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "error", redeployErr, "projectId", project.ID)
 			return common.Classify(common.ErrRedeployAfterSyncFailed, fmt.Errorf("redeploy failed: %w", redeployErr))
 		}
@@ -457,7 +453,7 @@ func (s *Service) updateSyncStatus(ctx context.Context, id, status, errorMsg, co
 
 // failSync records a failed sync on the result, the row and an event, and returns err. A broken project
 // binding also turns auto-sync off so the sync stops retrying.
-func (s *Service) failSync(ctx context.Context, result *gitops.SyncResult, sync *projectpkg.GitOpsSync, actor user.Actor, message string, err error) error {
+func (s *Service) failSync(ctx context.Context, result *types.GitOpsSyncResult, sync *projectpkg.GitOpsSync, actor types.Actor, message string, err error) error {
 	errMsg := err.Error()
 	result.Message = message
 	result.Error = &errMsg
@@ -475,7 +471,7 @@ func (s *Service) failSync(ctx context.Context, result *gitops.SyncResult, sync 
 
 // syncProjectDirectory stages and validates the synced tree, then creates or updates the project. It reports
 // the synced paths, whether it created the project, and whether the contents changed.
-func (s *Service) syncProjectDirectory(ctx context.Context, sync *projectpkg.GitOpsSync, syncFiles []projects.SyncFile, actor user.Actor) (*projectpkg.Project, []string, bool, bool, error) {
+func (s *Service) syncProjectDirectory(ctx context.Context, sync *projectpkg.GitOpsSync, syncFiles []projects.SyncFile, actor types.Actor) (*projectpkg.Project, []string, bool, bool, error) {
 	projectsDir, err := s.projectService.GetProjectsDirectory(ctx)
 	if err != nil {
 		return nil, nil, false, false, fmt.Errorf("failed to get projects directory: %w", err)
@@ -702,7 +698,7 @@ func (s *Service) recoverProject(ctx context.Context, sync *projectpkg.GitOpsSyn
 	if project.ServiceCount, err = s.projectService.CountServicesFromCompose(ctx, project); err != nil {
 		slog.WarnContext(ctx, "Failed to count services while recovering GitOps project", "syncId", sync.ID, "path", matches[0], "error", err)
 	}
-	if createErr := s.projectService.CreateGitOpsManagedProject(ctx, sync, &project, user.Actor{}, false); createErr != nil {
+	if createErr := s.projectService.CreateGitOpsManagedProject(ctx, sync, &project, types.Actor{}, false); createErr != nil {
 		return nil, createErr
 	}
 	return &project, nil
@@ -780,7 +776,7 @@ func (s *Service) applyDirectorySync(ctx context.Context, targetPath string, sta
 
 // createDirectorySyncProject promotes a validated staged tree into a new
 // managed project directory and links it back to the Git sync record.
-func (s *Service) createDirectorySyncProject(ctx context.Context, sync *projectpkg.GitOpsSync, stage *stagedDirectorySync, actor user.Actor) (*projectpkg.Project, error) {
+func (s *Service) createDirectorySyncProject(ctx context.Context, sync *projectpkg.GitOpsSync, stage *stagedDirectorySync, actor types.Actor) (*projectpkg.Project, error) {
 	projectsDir, err := s.projectService.GetProjectsDirectory(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get projects directory: %w", err)

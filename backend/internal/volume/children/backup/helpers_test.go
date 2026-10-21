@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -217,7 +217,7 @@ func TestVolumeBackupContainerLifecycleStopsAndRestartsOnlyRunningContainersUsin
 	})
 
 	service := setupVolumeBackupLifecycleTest(t, serverHandler)
-	actor := user.Actor{ID: "user-1", Username: "tester"}
+	actor := types.Actor{ID: "user-1", Username: "tester"}
 	stopped, err := service.stopRunningContainersForBackup(t.Context(), "app-data", actor, false)
 	require.NoError(t, err)
 	require.Len(t, stopped, 1)
@@ -261,7 +261,7 @@ func TestVolumeBackupContainerLifecycleRollsBackStoppedContainersOnStopFailure(t
 	})
 
 	service := setupVolumeBackupLifecycleTest(t, serverHandler)
-	actor := user.Actor{ID: "user-1", Username: "tester"}
+	actor := types.Actor{ID: "user-1", Username: "tester"}
 	stillStopped, err := service.stopRunningContainersForBackup(t.Context(), "app-data", actor, false)
 	require.ErrorContains(t, err, "failed to stop container second")
 	require.Empty(t, stillStopped)
@@ -321,7 +321,7 @@ func TestVolumeBackupContainerLifecycleWaitsForRunningComposeReplacement(t *test
 	})
 
 	service := setupVolumeBackupLifecycleTest(t, serverHandler)
-	actor := user.Actor{ID: "user-1", Username: "tester"}
+	actor := types.Actor{ID: "user-1", Username: "tester"}
 	stopped, err := service.stopRunningContainersForBackup(t.Context(), "app-data", actor, false)
 	require.NoError(t, err)
 	require.Len(t, stopped, 1)

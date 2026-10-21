@@ -8,9 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
-	"github.com/getarcaneapp/arcane/types/v2/notification"
-	"github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
@@ -25,7 +23,7 @@ func NewService(appURL func() string) *Service {
 	return &Service{appURL: appURL}
 }
 
-func (s *Service) ImageUpdate(environmentName, imageRef string, updateInfo *imageupdate.Response) notifications.Content {
+func (s *Service) ImageUpdate(environmentName, imageRef string, updateInfo *types.ImageUpdateResponse) notifications.Content {
 	return notifications.Content{
 		Text: notifications.TextByFormat(func(format notifications.MessageFormat) string {
 			return notifications.BuildImageUpdateNotificationMessage(format, environmentName, imageRef, updateInfo)
@@ -87,7 +85,7 @@ func (s *Service) ContainerUpdate(environmentName, containerName, imageRef, oldD
 	}
 }
 
-func (s *Service) Vulnerability(environmentName string, payload notification.DispatchVulnerabilityFound) notifications.Content {
+func (s *Service) Vulnerability(environmentName string, payload types.NotificationDispatchVulnerabilityFound) notifications.Content {
 	defaultTitle := notifications.BuildEmailSubject(environmentName, "Daily Vulnerability Summary")
 	return notifications.Content{
 		Text: notifications.TextByFormat(func(format notifications.MessageFormat) string {
@@ -128,7 +126,7 @@ func (s *Service) Vulnerability(environmentName string, payload notification.Dis
 	}
 }
 
-func (s *Service) BatchImageUpdate(environmentName string, updates map[string]*imageupdate.Response) notifications.Content {
+func (s *Service) BatchImageUpdate(environmentName string, updates map[string]*types.ImageUpdateResponse) notifications.Content {
 	ntfyTitle := fmt.Sprintf("📦 %d Container Image Updates", len(updates))
 	if len(updates) == 1 {
 		ntfyTitle = "📦 1 Container Image Update"
@@ -207,7 +205,7 @@ func (s *Service) BatchContainerUpdate(environmentName string, entries []notific
 	}
 }
 
-func (s *Service) PruneReport(environmentName string, result *system.PruneAllResult) notifications.Content {
+func (s *Service) PruneReport(environmentName string, result *types.PruneAllResult) notifications.Content {
 	defaultTitle := notifications.BuildEmailSubject(environmentName, "System Prune Report")
 	return notifications.Content{
 		Text: notifications.TextByFormat(func(format notifications.MessageFormat) string {

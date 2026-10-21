@@ -3,12 +3,12 @@ package volumes
 import (
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/backup"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 )
 
 func TestSystemVolumeBackupSelection(t *testing.T) {
-	options := []backup.SystemVolumeBackupOption{
+	options := []types.SystemVolumeBackupOption{
 		{Name: "app", Available: true},
 		{Name: "cache", Available: true},
 		{Name: "anonymous", Anonymous: true, Available: true},
@@ -16,22 +16,22 @@ func TestSystemVolumeBackupSelection(t *testing.T) {
 	}
 	tests := []struct {
 		name     string
-		config   backup.SystemVolumeBackupPolicy
+		config   types.SystemVolumeBackupPolicy
 		expected []string
 	}{
 		{
 			name:     "all includes future named volumes",
-			config:   backup.SystemVolumeBackupPolicy{SelectionMode: backup.SystemVolumeSelectionAll, IgnoreAnonymous: true},
+			config:   types.SystemVolumeBackupPolicy{SelectionMode: types.SystemVolumeSelectionAll, IgnoreAnonymous: true},
 			expected: []string{"app", "cache"},
 		},
 		{
 			name:     "allowlist includes exact live names only",
-			config:   backup.SystemVolumeBackupPolicy{SelectionMode: backup.SystemVolumeSelectionAllowlist, VolumeNames: []string{"app", "deleted"}},
+			config:   types.SystemVolumeBackupPolicy{SelectionMode: types.SystemVolumeSelectionAllowlist, VolumeNames: []string{"app", "deleted"}},
 			expected: []string{"app"},
 		},
 		{
 			name:     "blocklist includes unselected future and anonymous volumes",
-			config:   backup.SystemVolumeBackupPolicy{SelectionMode: backup.SystemVolumeSelectionBlocklist, VolumeNames: []string{"cache"}},
+			config:   types.SystemVolumeBackupPolicy{SelectionMode: types.SystemVolumeSelectionBlocklist, VolumeNames: []string{"cache"}},
 			expected: []string{"app", "anonymous"},
 		},
 	}

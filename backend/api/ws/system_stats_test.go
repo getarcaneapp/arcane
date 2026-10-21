@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -71,12 +71,12 @@ func TestSystemStatsSamplerRearmsOnFasterSubscriber(t *testing.T) {
 	h := &WebSocketHandler{
 		ctx:            t.Context(),
 		cpuUsageReader: func(time.Duration) (float64, bool) { return 0, true },
-		systemStatsCollector: func(context.Context) systemtypes.SystemStats {
+		systemStatsCollector: func(context.Context) types.SystemStats {
 			select {
 			case collections <- struct{}{}:
 			default:
 			}
-			return systemtypes.SystemStats{}
+			return types.SystemStats{}
 		},
 	}
 

@@ -7,7 +7,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/auth"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
@@ -18,7 +18,7 @@ type Module struct {
 	service                *AuthService
 	user                   *user.UserService
 	settings               *settings.SettingsService
-	beginMFAAuthentication func(context.Context, string, auth.SessionMeta, string) (*auth.MFAChallenge, error)
+	beginMFAAuthentication func(context.Context, string, types.SessionMeta, string) (*types.MFAChallenge, error)
 }
 
 func New(
@@ -28,10 +28,10 @@ func New(
 	beginMFAAuthentication func(
 		context.Context,
 		string,
-		auth.SessionMeta,
+		types.SessionMeta,
 		string,
 	) (
-		*auth.MFAChallenge,
+		*types.MFAChallenge,
 		error,
 	),
 ) *Module {
@@ -62,10 +62,10 @@ func RegisterAuth(
 	beginMFAAuthentication func(
 		context.Context,
 		string,
-		auth.SessionMeta,
+		types.SessionMeta,
 		string,
 	) (
-		*auth.MFAChallenge,
+		*types.MFAChallenge,
 		error,
 	),
 ) {

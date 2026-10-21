@@ -5,18 +5,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/workspace"
+	"github.com/getarcaneapp/arcane/types/v3"
 	acfstypes "go.getarcane.app/acfs/types"
 )
 
 // FileEntry converts ACFS metadata to Arcane's shared workspace entry type.
-func FileEntry(entry acfstypes.Entry) workspace.FileEntry {
+func FileEntry(entry acfstypes.Entry) types.WorkspaceFileEntry {
 	modTime := entry.ModTime
 	if entry.ModTimeUnixNano != 0 {
 		modTime = time.Unix(0, entry.ModTimeUnixNano)
 	}
 
-	return workspace.FileEntry{
+	return types.WorkspaceFileEntry{
 		ModTime:      modTime,
 		Name:         entry.Name,
 		Path:         entry.Path,

@@ -10,7 +10,7 @@ import (
 
 func TestAutoUpdateJob_ShouldSchedule_RequiresAutoUpdateAndPolling(t *testing.T) {
 	ctx := t.Context()
-	_, settingsSvc, _ := setupAnalyticsStateServicesInternal(t)
+	_, settingsSvc, _ := setupAnalyticsStateServices(t)
 	job := NewAutoUpdateJob(nil, &updater.UpdaterService{}, settingsSvc)
 
 	require.False(t, job.ShouldSchedule(ctx))

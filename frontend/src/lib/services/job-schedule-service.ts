@@ -1,14 +1,14 @@
 import type { JobRun, JobRunList } from '#lib/types/job.js';
-import type { JobSchedules, JobSchedulesUpdate, JobListResponse, JobRunResponse } from '#lib/types/settings.js';
+import type { JobScheduleConfig, JobScheduleConfigUpdate, JobListResponse, JobRunResponse } from '#lib/types/settings.js';
 
 import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 class JobScheduleService extends BaseAPIService {
-	async getJobSchedules(environmentId: string = '0'): Promise<JobSchedules> {
+	async getJobSchedules(environmentId: string = '0'): Promise<JobScheduleConfig> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/job-schedules`));
 	}
 
-	async updateJobSchedules(update: JobSchedulesUpdate, environmentId: string = '0'): Promise<JobSchedules> {
+	async updateJobSchedules(update: JobScheduleConfigUpdate, environmentId: string = '0'): Promise<JobScheduleConfig> {
 		return this.handleResponse(this.api.put(`/environments/${environmentId}/job-schedules`, update));
 	}
 

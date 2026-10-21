@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 )
 
 type APIErrorCode string
@@ -99,7 +99,7 @@ func ToAPIError(err error) *APIError {
 	switch {
 	case errors.Is(err, ErrValidation):
 		var details map[string]any
-		if fieldErr, ok := errors.AsType[*base.FieldError](err); ok {
+		if fieldErr, ok := errors.AsType[*types.FieldError](err); ok {
 			details = map[string]any{"field": fieldErr.Field}
 		}
 		return NewAPIErrorWithDetails(err.Error(), APIErrorCodeValidationError, http.StatusBadRequest, details)

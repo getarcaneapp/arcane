@@ -19,10 +19,7 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/distribution/reference"
-	"github.com/getarcaneapp/arcane/types/v2/podman"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
-	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -206,7 +203,7 @@ func (s *Service) CanUpgrade(ctx context.Context) (bool, error) {
 	if inspectErr != nil {
 		return false, errors.New("arcane is not running in a Docker container")
 	}
-	if unit := podman.QuadletUnit(kit.FromPtr(self.Config).Labels); unit != "" {
+	if unit := types.QuadletUnit(kit.FromPtr(self.Config).Labels); unit != "" {
 		return false, fmt.Errorf("arcane runs from the Quadlet unit %s; update it with podman auto-update instead", unit)
 	}
 	return true, nil
@@ -220,7 +217,7 @@ func (s *Service) AlreadyOnNewestImage(ctx context.Context) bool {
 
 // TriggerUpgradeViaCLI runs the upgrade from a separate upgrader container and returns its ID.
 // A zero-value target resolves the image from the version check; an explicit target is used as-is.
-func (s *Service) TriggerUpgradeViaCLI(ctx context.Context, user usertypes.Actor, target updater.SelfUpdateTarget) (string, error) {
+func (s *Service) TriggerUpgradeViaCLI(ctx context.Context, user types.Actor, target updater.SelfUpdateTarget) (string, error) {
 	prepared, err := s.prepareUpgrade(ctx, user, target, "")
 	if err != nil {
 		return "", err
@@ -230,7 +227,7 @@ func (s *Service) TriggerUpgradeViaCLI(ctx context.Context, user usertypes.Actor
 
 // TriggerUpgradeAsync validates synchronously, then pulls and spawns the upgrader in the background (#3628).
 // The run follows the app lifecycle with a deadline so a stalled daemon cannot hold the upgrading guard forever.
-func (s *Service) TriggerUpgradeAsync(ctx context.Context, user usertypes.Actor, targetVersion string) error {
+func (s *Service) TriggerUpgradeAsync(ctx context.Context, user types.Actor, targetVersion string) error {
 	prepared, err := s.prepareUpgrade(ctx, user, updater.SelfUpdateTarget{}, targetVersion)
 	if err != nil {
 		return err
@@ -268,7 +265,7 @@ func (s *Service) TriggerUpgradeAsync(ctx context.Context, user usertypes.Actor,
 }
 
 // prepareUpgrade takes the upgrading guard, released by runPreparedUpgrade (or here on error).
-func (s *Service) prepareUpgrade(ctx context.Context, user usertypes.Actor, target updater.SelfUpdateTarget, targetVersion string) (prepared *preparedUpgrade, err error) {
+func (s *Service) prepareUpgrade(ctx context.Context, user types.Actor, target updater.SelfUpdateTarget, targetVersion string) (prepared *preparedUpgrade, err error) {
 	if !s.upgrading.CompareAndSwap(false, true) {
 		return nil, common.Classify(common.ErrUpgradeInProgress, errors.New("an upgrade is already in progress"))
 	}
@@ -329,7 +326,7 @@ func (s *Service) prepareUpgrade(ctx context.Context, user usertypes.Actor, targ
 	if err != nil {
 		return nil, err
 	}
-	if unit := podman.QuadletUnit(kit.FromPtr(current.Config).Labels); unit != "" {
+	if unit := types.QuadletUnit(kit.FromPtr(current.Config).Labels); unit != "" {
 		return nil, fmt.Errorf("systemd unit %s: %w", unit, common.ErrContainerQuadletManaged)
 	}
 
@@ -341,7 +338,7 @@ func (s *Service) prepareUpgrade(ctx context.Context, user usertypes.Actor, targ
 	if targetImage == "" {
 		// A blank target resolves against the version check; a manager-supplied version outranks this instance's own.
 		info := s.versionService.GetAppVersionInfo(ctx)
-		if targetImage, err = resolveSelfUpgradeTargetImage(config.Image, &versiontypes.Info{
+		if targetImage, err = resolveSelfUpgradeTargetImage(config.Image, &types.VersionInfo{
 			NewestVersion: cmp.Or(strings.TrimSpace(targetVersion), kit.FromPtr(info).NewestVersion),
 			NewestDigest:  kit.FromPtr(info).NewestDigest,
 		}); err != nil {
@@ -560,7 +557,7 @@ func (s *Service) configuredTargetImage(ctx context.Context, current container.I
 
 // resolveSelfUpgradeTargetImage moves exact release tags to the newest release and digest pins to the newest digest;
 // mutable channels keep their reference. Unresolved or older exact-version targets fail (#3687).
-func resolveSelfUpgradeTargetImage(currentImageRef string, info *versiontypes.Info) (string, error) {
+func resolveSelfUpgradeTargetImage(currentImageRef string, info *types.VersionInfo) (string, error) {
 	currentImageRef = strings.TrimSpace(currentImageRef)
 	if currentImageRef == "" {
 		return "", errors.New("running container has no image reference to upgrade from")
@@ -619,7 +616,7 @@ func resolveSelfUpgradeTargetImage(currentImageRef string, info *versiontypes.In
 
 // StartUpdateAll records an update-all job and submits the workflow that upgrades every agent, then the manager.
 // Every environment pulls the latest image, whether or not it reports an update.
-func (s *Service) StartUpdateAll(ctx context.Context, user usertypes.Actor) (*EnvironmentUpdateJob, error) {
+func (s *Service) StartUpdateAll(ctx context.Context, user types.Actor) (*EnvironmentUpdateJob, error) {
 	// Closes the in-process check-then-create window (e.g. a double-click); the job row is the durable guard.
 	if !s.updatingAll.CompareAndSwap(false, true) {
 		return nil, errUpdateAllInProgress
@@ -682,7 +679,7 @@ func (s *Service) StartUpdateAll(ctx context.Context, user usertypes.Actor) (*En
 // and refuse every later run.
 func (s *Service) watchUpdateAll(ctx context.Context, jobID, instanceID string) {
 	outcome, err := s.flow.Wait(ctx, s.updateAllWorkflow, instanceID)
-	if err != nil || outcome.Status == scheduler.Succeeded {
+	if err != nil || outcome.Status == types.RunStatusSucceeded {
 		return
 	}
 	current, err := s.loadUpdateAllJob(ctx, jobID)
@@ -707,7 +704,7 @@ func (s *Service) ResumeUpdateAllOnStartup(ctx context.Context) {
 	// A running job resumes with its workflow; one without a live workflow cannot resume, so fail it.
 	if job.Status == EnvironmentUpdateJobStatusRunning {
 		standalone, standaloneErr := s.flow.Standalone(ctx)
-		if index := slices.IndexFunc(standalone, func(run scheduler.Run) bool { return run.JobID == updateAllWorkflowName }); standaloneErr == nil && index >= 0 {
+		if index := slices.IndexFunc(standalone, func(run types.SchedulerRun) bool { return run.JobID == updateAllWorkflowName }); standaloneErr == nil && index >= 0 {
 			go s.watchUpdateAll(context.WithoutCancel(ctx), job.ID, standalone[index].ID)
 			return
 		}
@@ -820,9 +817,9 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 		}
 	}()
 
-	var info versiontypes.Info
+	var info types.VersionInfo
 	if triggered {
-		info = versiontypes.Info{
+		info = types.VersionInfo{
 			CurrentVersion: result.FromVersion,
 			CurrentDigest:  result.FromDigest,
 		}
@@ -906,7 +903,7 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 		case <-ticker.C:
 		}
 		pollCtx, pollCancel := context.WithTimeout(ctx, updateAllAgentRequestTimeout)
-		var current versiontypes.Info
+		var current types.VersionInfo
 		pollErr := s.environments.ProxyJSONRequest(pollCtx, remote.ID, http.MethodGet, "/api/app-version", nil, &current)
 		pollCancel()
 		if pollErr != nil {
@@ -1006,7 +1003,7 @@ func (s *Service) upgradeManagerTask(ctx context.Context, t flow.Task) (any, err
 		}
 		// Only a manager already on the newest image makes a no-op upgrader run expected; checked after the fact it proves nothing.
 		wasAlreadyNewest := s.AlreadyOnNewestImage(ctx)
-		upgraderID, triggerErr := s.TriggerUpgradeViaCLI(ctx, usertypes.Actor{ID: job.UserID, Username: job.Username}, updater.SelfUpdateTarget{})
+		upgraderID, triggerErr := s.TriggerUpgradeViaCLI(ctx, types.Actor{ID: job.UserID, Username: job.Username}, updater.SelfUpdateTarget{})
 		if triggerErr != nil {
 			// No restart is coming, so this flips the manager's updating row to failed now.
 			s.markUpdateAllFailed(ctx, job, fmt.Sprintf("manager upgrade trigger failed: %v", triggerErr))
@@ -1025,9 +1022,9 @@ func (s *Service) upgradeManagerTask(ctx context.Context, t flow.Task) (any, err
 		}
 	}
 	if job.Status == EnvironmentUpdateJobStatusFailed {
-		return scheduler.Outcome{Status: scheduler.Failed, Message: kit.FromPtr(job.Error)}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: kit.FromPtr(job.Error)}, nil
 	}
-	return scheduler.Outcome{Status: scheduler.Succeeded, Message: "Update-all finished; " + string(job.Status)}, nil
+	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Update-all finished; " + string(job.Status)}, nil
 }
 
 // watchManagerUpgrader closes out a pending_restart job whose manager was never recreated, which a recreate would have

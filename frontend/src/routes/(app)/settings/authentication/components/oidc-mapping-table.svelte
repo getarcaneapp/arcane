@@ -77,7 +77,7 @@
 		return rolesById[roleId]?.name ?? roleId;
 	}
 
-	function getEnvName(environmentId: string | undefined): string {
+	function getEnvName(environmentId: string | null | undefined): string {
 		if (!environmentId) return m.global_org_wide();
 		return envsById[environmentId]?.name ?? environmentId;
 	}

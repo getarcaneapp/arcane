@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/auth"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/libtnb/sqlite"
@@ -162,7 +162,7 @@ func makeRefreshToken(t *testing.T, key *mldsa.PrivateKey, id string, exp time.T
 func createTestSession(t *testing.T, db *database.DB, userID string, expiresAt time.Time) (*session.UserSession, string) {
 	t.Helper()
 	sessionSvc := session.NewSessionService(db)
-	localSession, refreshJTI, err := sessionSvc.CreateSession(t.Context(), userID, expiresAt, auth.SessionMeta{
+	localSession, refreshJTI, err := sessionSvc.CreateSession(t.Context(), userID, expiresAt, types.SessionMeta{
 		UserAgent: "test-agent",
 		IPAddress: "127.0.0.1",
 	})
@@ -321,7 +321,7 @@ func TestPersistOidcTokens_SetsFields(t *testing.T) {
 	s := newTestAuthService()
 	localUser := &user.User{}
 	start := time.Now()
-	resp := &auth.OidcTokenResponse{
+	resp := &types.OidcTokenResponse{
 		AccessToken:  "at-123",
 		RefreshToken: "rt-456",
 		ExpiresIn:    7,
@@ -384,7 +384,7 @@ func TestRefreshToken_Valid(t *testing.T) {
 	localSession, refreshJTI := createTestSession(t, db, "u-refresh", exp)
 	token := makeRefreshToken(t, s.signingKey, refreshJTI, exp, "u-refresh", localSession.ID)
 
-	tokenPair, err := s.RefreshToken(t.Context(), token, auth.SessionMeta{})
+	tokenPair, err := s.RefreshToken(t.Context(), token, types.SessionMeta{})
 	require.NoError(t, err)
 	require.NotNil(t, tokenPair)
 	require.NotEmpty(t, tokenPair.AccessToken)
@@ -432,7 +432,7 @@ func TestRefreshToken_VersionMismatchRotates(t *testing.T) {
 	token := makeRefreshToken(t, s.signingKey, refreshJTI, exp, localUser.ID, localSession.ID)
 	config.Version = "2.0.0"
 
-	tokenPair, err := s.RefreshToken(t.Context(), token, auth.SessionMeta{})
+	tokenPair, err := s.RefreshToken(t.Context(), token, types.SessionMeta{})
 	require.NoError(t, err)
 	require.NotNil(t, tokenPair)
 	require.NotEmpty(t, tokenPair.AccessToken)
@@ -592,11 +592,11 @@ func TestRefreshToken_RotatesJTI(t *testing.T) {
 	localSession, refreshJTI := createTestSession(t, db, localUser.ID, exp)
 	token := makeRefreshToken(t, s.signingKey, refreshJTI, exp, localUser.ID, localSession.ID)
 
-	tokenPair, err := s.RefreshToken(t.Context(), token, auth.SessionMeta{})
+	tokenPair, err := s.RefreshToken(t.Context(), token, types.SessionMeta{})
 	require.NoError(t, err)
 	require.NotEmpty(t, tokenPair.RefreshToken)
 
-	_, err = s.RefreshToken(t.Context(), token, auth.SessionMeta{})
+	_, err = s.RefreshToken(t.Context(), token, types.SessionMeta{})
 	require.ErrorIs(t, err, common.ErrInvalidToken)
 }
 
@@ -619,22 +619,22 @@ func TestRefreshToken_AcceptsBrowserRefreshToken(t *testing.T) {
 
 	exp := time.Now().Add(5 * time.Minute)
 	localSession, refreshJTI := createTestSession(t, db, localUser.ID, exp)
-	first, err := s.RefreshToken(t.Context(), makeRefreshToken(t, s.signingKey, refreshJTI, exp, localUser.ID, localSession.ID), auth.SessionMeta{})
+	first, err := s.RefreshToken(t.Context(), makeRefreshToken(t, s.signingKey, refreshJTI, exp, localUser.ID, localSession.ID), types.SessionMeta{})
 	require.NoError(t, err)
 	require.NotEmpty(t, first.BrowserRefresh)
 	require.Less(t, len(first.BrowserRefresh), 4096)
 	require.WithinDuration(t, exp, first.RefreshExpiresAt, time.Second)
 
-	second, err := s.RefreshToken(t.Context(), first.BrowserRefresh, auth.SessionMeta{})
+	second, err := s.RefreshToken(t.Context(), first.BrowserRefresh, types.SessionMeta{})
 	require.NoError(t, err)
 
-	_, err = s.RefreshToken(t.Context(), first.RefreshToken, auth.SessionMeta{})
+	_, err = s.RefreshToken(t.Context(), first.RefreshToken, types.SessionMeta{})
 	require.ErrorIs(t, err, common.ErrInvalidToken)
-	_, err = s.RefreshToken(t.Context(), first.BrowserRefresh, auth.SessionMeta{})
+	_, err = s.RefreshToken(t.Context(), first.BrowserRefresh, types.SessionMeta{})
 	require.ErrorIs(t, err, common.ErrInvalidToken)
 
 	require.NoError(t, s.RevokeSessionByRefreshToken(t.Context(), second.BrowserRefresh))
-	_, err = s.RefreshToken(t.Context(), second.BrowserRefresh, auth.SessionMeta{})
+	_, err = s.RefreshToken(t.Context(), second.BrowserRefresh, types.SessionMeta{})
 	require.ErrorIs(t, err, common.ErrSessionRevoked)
 }
 
@@ -660,7 +660,7 @@ func TestRefreshToken_RejectsRevokedSession(t *testing.T) {
 	require.NoError(t, s.RevokeSession(t.Context(), localSession.ID))
 	token := makeRefreshToken(t, s.signingKey, refreshJTI, exp, localUser.ID, localSession.ID)
 
-	_, err = s.RefreshToken(t.Context(), token, auth.SessionMeta{})
+	_, err = s.RefreshToken(t.Context(), token, types.SessionMeta{})
 	require.ErrorIs(t, err, common.ErrSessionRevoked)
 }
 
@@ -734,7 +734,7 @@ func TestRefreshToken_RejectsNonHMACAlg(t *testing.T) {
 		"exp": exp.Unix(),
 	})
 
-	_, err := s.RefreshToken(t.Context(), token, auth.SessionMeta{})
+	_, err := s.RefreshToken(t.Context(), token, types.SessionMeta{})
 
 	assert.ErrorIs(t, err, common.ErrInvalidToken,
 		"want common.ErrInvalidToken, got %v", err)
@@ -821,7 +821,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_Creat
 	})
 	require.NoError(t, err)
 
-	userInfo := auth.OidcUserInfo{
+	userInfo := types.OidcUserInfo{
 		Subject:           "sub-123",
 		Email:             " ne\u0301w@example.com ",
 		PreferredUsername: " Jose\u0301 ",
@@ -829,7 +829,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_Creat
 		EmailVerified:     false, // provider omitted/false
 	}
 
-	created, isNew, err := authSvc.findOrCreateOidcUser(ctx, userInfo, &auth.OidcTokenResponse{AccessToken: "at"})
+	created, isNew, err := authSvc.findOrCreateOidcUser(ctx, userInfo, &types.OidcTokenResponse{AccessToken: "at"})
 	require.NoError(t, err)
 	require.True(t, isNew)
 	require.NotEqual(t, existing.ID, created.ID)
@@ -849,7 +849,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_Creat
 	otherInfo := userInfo
 	otherInfo.Subject = "another-subject"
 	otherInfo.Email = "other@example.com"
-	other, isNew, err := authSvc.findOrCreateOidcUser(ctx, otherInfo, &auth.OidcTokenResponse{AccessToken: "other-token"})
+	other, isNew, err := authSvc.findOrCreateOidcUser(ctx, otherInfo, &types.OidcTokenResponse{AccessToken: "other-token"})
 	require.NoError(t, err)
 	require.True(t, isNew)
 	require.NotEqual(t, created.ID, other.ID)
@@ -888,7 +888,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_WithExistingUser(t *testing.T) {
 			authSvc.userService = userSvc
 			authSvc.settingsService = settingsSvc
 
-			userInfo := auth.OidcUserInfo{
+			userInfo := types.OidcUserInfo{
 				Subject:       "sub-merge",
 				Email:         email,
 				Name:          "OIDC Name",
@@ -896,7 +896,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_WithExistingUser(t *testing.T) {
 				Extra:         tc.extra,
 			}
 
-			got, isNew, err := authSvc.findOrCreateOidcUser(ctx, userInfo, &auth.OidcTokenResponse{AccessToken: "at", RefreshToken: "rt", ExpiresIn: 60})
+			got, isNew, err := authSvc.findOrCreateOidcUser(ctx, userInfo, &types.OidcTokenResponse{AccessToken: "at", RefreshToken: "rt", ExpiresIn: 60})
 			fetched, fetchErr := userSvc.GetUserByID(ctx, existing.ID)
 			require.NoError(t, fetchErr)
 

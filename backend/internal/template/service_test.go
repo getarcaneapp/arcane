@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	tmpl "github.com/getarcaneapp/arcane/types/v2/template"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/samber/mo"
 	"github.com/stretchr/testify/require"
@@ -239,7 +239,7 @@ func TestDownloadTemplate_PreservesIconURL(t *testing.T) {
 		{"x-arcane:\n  icon: https://cdn.example/compose.png\nservices:\n  app:\n    image: nginx:alpine\n", "https://cdn.example/compose.png"},
 		{"services:\n  app:\n    image: nginx:alpine\n", "https://cdn.example/download.png"},
 	} {
-		require.NoError(t, service.UpdateTemplate(t.Context(), downloaded.ID, &ComposeTemplate{Name: stored.Name, Description: stored.Description, Content: tc.compose}))
+		require.NoError(t, service.UpdateTemplate(t.Context(), downloaded.ID, types.Template{Content: tc.compose}, map[string]bool{"content": true, "envContent": true}))
 		require.NoError(t, service.db.WithContext(t.Context()).First(&stored, "id = ?", downloaded.ID).Error)
 		require.NotNil(t, stored.Metadata)
 		require.NotNil(t, stored.Metadata.IconURL)
@@ -388,7 +388,7 @@ func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 	}
 }
 
-func templateIDs(templates []tmpl.Template) []string {
+func templateIDs(templates []types.Template) []string {
 	ids := make([]string, 0, len(templates))
 	for _, template := range templates {
 		ids = append(ids, template.ID)

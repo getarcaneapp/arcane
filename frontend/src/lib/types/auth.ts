@@ -1,5 +1,6 @@
 import type { Locale } from '#lib/paraglide/runtime.js';
 import type { ApplicationTheme, IconCatalog } from '#lib/types/settings.js';
+import type { CreateRequest, UpdateRequest } from '#lib/types/shared.js';
 
 // --- RBAC: roles, permissions, assignments ---
 
@@ -8,7 +9,7 @@ export type RoleScope = 'global' | 'env';
 export type Role = {
 	id: string;
 	name: string;
-	description?: string;
+	description?: string | null;
 	permissions: string[];
 	builtIn: boolean;
 	assignedUserCount: number;
@@ -16,17 +17,11 @@ export type Role = {
 	updatedAt?: string;
 };
 
-export type CreateRole = {
-	name: string;
-	description?: string;
-	permissions: string[];
-};
+export type RoleWritable = 'name' | 'description' | 'permissions';
 
-export type UpdateRole = {
-	name: string;
-	description?: string;
-	permissions: string[];
-};
+export type RoleCreate = CreateRequest<Role, RoleWritable, 'name' | 'permissions'>;
+
+export type RoleUpdate = UpdateRequest<Role, RoleWritable>;
 
 export type RoleAssignment = {
 	id: string;
@@ -53,19 +48,17 @@ export type OidcRoleMapping = {
 	id: string;
 	claimValue: string;
 	roleId: string;
-	environmentId?: string;
+	environmentId?: string | null;
 	source: OidcMappingSource;
 	createdAt: string;
 	updatedAt?: string;
 };
 
-export type CreateOidcRoleMapping = {
-	claimValue: string;
-	roleId: string;
-	environmentId?: string;
-};
+export type OidcRoleMappingWritable = 'claimValue' | 'roleId' | 'environmentId';
 
-export type UpdateOidcRoleMapping = CreateOidcRoleMapping;
+export type OidcRoleMappingCreate = CreateRequest<OidcRoleMapping, OidcRoleMappingWritable, 'claimValue' | 'roleId'>;
+
+export type OidcRoleMappingUpdate = UpdateRequest<OidcRoleMapping, OidcRoleMappingWritable>;
 
 export type PermissionsManifest = {
 	resources: PermissionResource[];
@@ -161,42 +154,34 @@ export type UserPreferences = {
 export type User = {
 	id: string;
 	username: string;
-	passwordHash?: string;
-	displayName?: string;
-	email?: string;
+	password?: string;
+	displayName?: string | null;
+	email?: string | null;
 	avatarUrl?: string;
 	roleAssignments: RoleAssignmentSummary[];
 	permissionsByEnv: Record<string, string[]>;
-	isGlobalAdmin?: boolean;
-	canDelete?: boolean;
+	isGlobalAdmin: boolean;
+	canDelete: boolean;
 	createdAt: string;
 	lastLogin?: string;
 	updatedAt?: string;
 	oidcSubjectId?: string;
-	locale?: Locale;
+	locale?: Locale | null;
 	timeFormat: TimeFormat;
 	fontSize?: number;
-	preferences?: UserPreferences;
-	requiresPasswordChange?: boolean;
+	preferences: UserPreferences;
+	requiresPasswordChange: boolean;
 };
 
-export type CreateUser = Omit<
-	User,
-	| 'id'
-	| 'createdAt'
-	| 'updatedAt'
-	| 'lastLogin'
-	| 'oidcSubjectId'
-	| 'passwordHash'
-	| 'isGlobalAdmin'
-	| 'requiresPasswordChange'
-	| 'roleAssignments'
-	| 'permissionsByEnv'
-	| 'timeFormat'
-> & {
-	password: string;
-	timeFormat?: TimeFormat;
-};
+export type UserWritable = 'username' | 'password' | 'displayName' | 'email' | 'locale' | 'timeFormat';
+
+export type UserCreate = CreateRequest<User, UserWritable, 'username' | 'password'>;
+
+export type UserUpdate = UpdateRequest<User, UserWritable>;
+
+export type ProfileWritable = 'displayName' | 'email' | 'locale' | 'timeFormat' | 'fontSize' | 'preferences';
+
+export type ProfileUpdate = UpdateRequest<User, ProfileWritable>;
 
 // --- Auth: login, OIDC ---
 
@@ -290,43 +275,30 @@ export interface AutoLoginConfig {
 export type ApiKey = {
 	id: string;
 	name: string;
-	description?: string;
+	description?: string | null;
 	keyPrefix: string;
-	userId: string;
-	kind?: 'scoped' | 'personal';
+	userId?: string;
+	kind: 'scoped' | 'personal';
 	isStatic: boolean;
 	isBootstrap: boolean;
-	expiresAt?: string;
+	expiresAt?: string | null;
 	lastUsedAt?: string;
 	createdAt: string;
 	updatedAt?: string;
-	permissions?: ApiKeyPermissionGrant[];
+	permissions: ApiKeyPermissionGrant[] | null;
 };
 
 export type ApiKeyCreated = ApiKey & {
 	key: string;
 };
 
-export type CreateApiKey = {
-	name: string;
-	description?: string;
-	expiresAt?: string;
-	permissions: ApiKeyPermissionGrant[];
-};
+export type ApiKeyWritable = 'name' | 'description' | 'expiresAt' | 'permissions';
 
-// Personal keys carry no grants; they inherit the owner's role permissions.
-export type CreateUserApiKey = {
-	name: string;
-	description?: string;
-	expiresAt?: string;
-};
+export type ApiKeyCreate = CreateRequest<ApiKey, ApiKeyWritable, 'name' | 'permissions'>;
 
-export type UpdateApiKey = {
-	name?: string;
-	description?: string;
-	expiresAt?: string;
-	permissions?: ApiKeyPermissionGrant[];
-};
+export type PersonalApiKeyCreate = CreateRequest<ApiKey, Exclude<ApiKeyWritable, 'permissions'>, 'name'>;
+
+export type ApiKeyUpdate = UpdateRequest<ApiKey, ApiKeyWritable>;
 
 // --- Federated credentials ---
 
@@ -335,7 +307,7 @@ export type FederatedCredentialMatchType = 'exact' | 'glob';
 export type FederatedCredential = {
 	id: string;
 	name: string;
-	description?: string;
+	description?: string | null;
 	enabled: boolean;
 	issuerUrl: string;
 	audiences: string[];
@@ -343,11 +315,11 @@ export type FederatedCredential = {
 	subjectMatch: string;
 	matchType: FederatedCredentialMatchType;
 	roleId: string;
-	environmentId?: string;
+	environmentId?: string | null;
 	identityUserId: string;
 	tokenTtlSeconds: number;
 	lastUsedAt?: string;
-	expiresAt?: string;
+	expiresAt?: string | null;
 	createdAt: string;
 	updatedAt?: string;
 	serviceUsername?: string;
@@ -355,19 +327,24 @@ export type FederatedCredential = {
 	environmentName?: string;
 };
 
-export type CreateFederatedCredential = {
-	name: string;
-	description?: string;
-	enabled: boolean;
-	issuerUrl: string;
-	audiences: string[];
-	subjectClaim?: string;
-	subjectMatch: string;
-	matchType?: FederatedCredentialMatchType;
-	roleId: string;
-	environmentId?: string;
-	tokenTtlSeconds?: number;
-	expiresAt?: string;
-};
+export type FederatedCredentialWritable =
+	| 'name'
+	| 'description'
+	| 'enabled'
+	| 'issuerUrl'
+	| 'audiences'
+	| 'subjectClaim'
+	| 'subjectMatch'
+	| 'matchType'
+	| 'roleId'
+	| 'environmentId'
+	| 'tokenTtlSeconds'
+	| 'expiresAt';
 
-export type UpdateFederatedCredential = Partial<CreateFederatedCredential>;
+export type FederatedCredentialCreate = CreateRequest<
+	FederatedCredential,
+	FederatedCredentialWritable,
+	'name' | 'enabled' | 'issuerUrl' | 'audiences' | 'subjectMatch' | 'roleId'
+>;
+
+export type FederatedCredentialUpdate = UpdateRequest<FederatedCredential, FederatedCredentialWritable>;

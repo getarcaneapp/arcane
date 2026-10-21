@@ -1,5 +1,5 @@
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-import type { Webhook, WebhookCreated, CreateWebhook, UpdateWebhook } from '#lib/types/environment.js';
+import type { Webhook, WebhookCreated, WebhookCreate, WebhookUpdate } from '#lib/types/environment.js';
 
 import BaseAPIService from './api-service';
 
@@ -14,12 +14,12 @@ class WebhookAPIService extends BaseAPIService {
 		return res.data.data;
 	}
 
-	async create(webhook: CreateWebhook, environmentId?: string): Promise<WebhookCreated> {
+	async create(webhook: WebhookCreate, environmentId?: string): Promise<WebhookCreated> {
 		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/webhooks`, webhook)) as Promise<WebhookCreated>;
 	}
 
-	async update(webhookId: string, data: UpdateWebhook, environmentId?: string): Promise<Webhook> {
+	async update(webhookId: string, data: WebhookUpdate, environmentId?: string): Promise<Webhook> {
 		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.patch(`/environments/${envId}/webhooks/${webhookId}`, data)) as Promise<Webhook>;
 	}

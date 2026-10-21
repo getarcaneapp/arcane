@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 )
@@ -23,8 +23,8 @@ type Job struct {
 	ShouldRunFn func(ctx context.Context) bool
 	// FallbackFn recovers a run whose instance cannot resume; nil fails the run so
 	// a retry starts a fresh instance under a new attempt.
-	FallbackFn      func(ctx context.Context, previous scheduler.Run) (scheduler.Outcome, error)
-	ValidateRetryFn func(ctx context.Context, run scheduler.Run) error
+	FallbackFn      func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error)
+	ValidateRetryFn func(ctx context.Context, run types.SchedulerRun) error
 }
 
 // Name is the scheduler job name.
@@ -39,22 +39,22 @@ func (j *Job) ShouldSchedule(ctx context.Context) bool {
 }
 
 // Run skips when the job's condition no longer holds, then runs the workflow.
-func (j *Job) Run(ctx context.Context) (scheduler.Outcome, error) {
+func (j *Job) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 	if !j.ShouldSchedule(ctx) {
-		return scheduler.Outcome{Status: scheduler.Skipped}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
 	return j.Engine.Run(ctx, j.Workflow, j.Payload, j.Activity, nil)
 }
 
 // Reconcile resumes an interrupted run's instance, falling back to FallbackFn when it cannot be resumed.
 // A job disabled since the run started makes no further changes.
-func (j *Job) Reconcile(ctx context.Context, previous scheduler.Run) (scheduler.Outcome, error) {
+func (j *Job) Reconcile(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 	if !j.ShouldSchedule(ctx) {
 		const message = "Job is disabled; the interrupted run was not resumed"
 		if outcome, finished, err := j.Engine.Retire(ctx, j.Workflow, previous, message); finished {
 			return outcome, err
 		}
-		return scheduler.Outcome{Status: scheduler.Failed, Message: message}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: message}, nil
 	}
 	outcome, err := j.Engine.Resume(ctx, j.Workflow, previous)
 	if !errors.Is(err, ErrNotResumable) {
@@ -64,11 +64,11 @@ func (j *Job) Reconcile(ctx context.Context, previous scheduler.Run) (scheduler.
 		return j.FallbackFn(ctx, previous)
 	}
 	// Running again here could reuse the superseded instance's ID within this attempt.
-	return scheduler.Outcome{Status: scheduler.Failed, Message: "Workflow instance could not be resumed; retry the run"}, nil
+	return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: "Workflow instance could not be resumed; retry the run"}, nil
 }
 
 // ValidateRetry rejects a retry that ValidateRetryFn reports unsafe.
-func (j *Job) ValidateRetry(ctx context.Context, run scheduler.Run) error {
+func (j *Job) ValidateRetry(ctx context.Context, run types.SchedulerRun) error {
 	if j.ValidateRetryFn == nil {
 		return nil
 	}

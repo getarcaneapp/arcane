@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
@@ -44,7 +44,7 @@ func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 	cols, _ := strconv.ParseUint(c.QueryParam("cols"), 10, 16)
 	rows, _ := strconv.ParseUint(c.QueryParam("rows"), 10, 16)
 
-	conn, unregister, ok := h.acceptWS(c, systemtypes.WSKindContainerExec, containerID)
+	conn, unregister, ok := h.acceptWS(c, types.WSKindContainerExec, containerID)
 	if !ok {
 		return nil
 	}

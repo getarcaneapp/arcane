@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/backup"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
@@ -38,8 +38,8 @@ func TestHistoryDestinationDecoration(t *testing.T) {
 		S3Destinations: s3.NewS3DestinationService(store, func(context.Context, string) error { return nil }),
 		Settings:       settingsService,
 		Store: Store{
-			ListHistory: func(context.Context, pagination.QueryParams) ([]backup.HistoryEntry, pagination.Response, error) {
-				return []backup.HistoryEntry{
+			ListHistory: func(context.Context, pagination.QueryParams) ([]types.SystemVolumeBackupHistoryEntry, pagination.Response, error) {
+				return []types.SystemVolumeBackupHistoryEntry{
 					{S3DestinationID: destination.ID},
 					{S3DestinationID: "missing"},
 				}, pagination.Response{}, nil

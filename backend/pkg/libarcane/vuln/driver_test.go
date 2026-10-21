@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/vulnerability"
+	"github.com/getarcaneapp/arcane/types/v3"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/require"
@@ -29,9 +29,9 @@ func TestDecodeTrivyReportFromFileInternal_LargePayload(t *testing.T) {
 	}()
 
 	const vulnCount = 4000
-	vulns := make([]vulnerability.TrivyVulnerability, 0, vulnCount)
+	vulns := make([]types.TrivyVulnerability, 0, vulnCount)
 	for i := range vulnCount {
-		vulns = append(vulns, vulnerability.TrivyVulnerability{
+		vulns = append(vulns, types.TrivyVulnerability{
 			VulnerabilityID:  fmt.Sprintf("CVE-2026-%04d", i),
 			PkgName:          fmt.Sprintf("pkg-%d", i),
 			InstalledVersion: "1.0.0",
@@ -40,11 +40,11 @@ func TestDecodeTrivyReportFromFileInternal_LargePayload(t *testing.T) {
 		})
 	}
 
-	report := vulnerability.TrivyReport{
+	report := types.TrivyReport{
 		SchemaVersion: 2,
 		ArtifactName:  "example/image:latest",
 		ArtifactType:  "container_image",
-		Results: []vulnerability.TrivyResults{
+		Results: []types.TrivyResults{
 			{
 				Target:          "alpine:3.20",
 				Class:           "os-pkgs",
@@ -75,11 +75,11 @@ func TestDecodeTrivyReportFromFileInternal_RecoversFromPrefixedAndTrailingNoise(
 		require.NoError(t, tmpFile.Close())
 	}()
 
-	report := vulnerability.TrivyReport{
+	report := types.TrivyReport{
 		SchemaVersion: 2,
 		ArtifactName:  "ghcr.io/getarcaneapp/example:latest",
 		ArtifactType:  "container_image",
-		Results: []vulnerability.TrivyResults{
+		Results: []types.TrivyResults{
 			{Target: "alpine:3.20", Class: "os-pkgs", Type: "alpine"},
 		},
 	}
@@ -111,11 +111,11 @@ func TestDecodeTrivyReportFromFileInternal_SelectsReportFromMultipleJSONObjects(
 		require.NoError(t, tmpFile.Close())
 	}()
 
-	report := vulnerability.TrivyReport{
+	report := types.TrivyReport{
 		SchemaVersion: 2,
 		ArtifactName:  "ghcr.io/getarcaneapp/example:stable",
 		ArtifactType:  "container_image",
-		Results: []vulnerability.TrivyResults{
+		Results: []types.TrivyResults{
 			{Target: "debian:12", Class: "os-pkgs", Type: "debian"},
 		},
 	}
@@ -145,11 +145,11 @@ func TestDecodeTrivyReportFromFileInternal_HandlesConcatenatedJSONObjects(t *tes
 		require.NoError(t, tmpFile.Close())
 	}()
 
-	report := vulnerability.TrivyReport{
+	report := types.TrivyReport{
 		SchemaVersion: 2,
 		ArtifactName:  "ghcr.io/getarcaneapp/example:concat",
 		ArtifactType:  "container_image",
-		Results: []vulnerability.TrivyResults{
+		Results: []types.TrivyResults{
 			{Target: "ubuntu:24.04", Class: "os-pkgs", Type: "ubuntu"},
 		},
 	}
@@ -365,7 +365,7 @@ func TestBuildTrivyHostConfig_IncludesInheritedSocketMount(t *testing.T) {
 	require.Equal(t, "cache-volume", hostConfig.Mounts[1].Source)
 }
 
-func TestApplyTrivyRuntimeSecurityInternal(t *testing.T) {
+func TestApplyTrivyRuntimeSecurity(t *testing.T) {
 	hostConfig := &containertypes.HostConfig{}
 
 	ApplyRuntimeSecurity(hostConfig, []string{"label=disable"}, true)
@@ -374,13 +374,13 @@ func TestApplyTrivyRuntimeSecurityInternal(t *testing.T) {
 	require.True(t, hostConfig.Privileged)
 }
 
-func TestSelectDefaultTrivyNetworkModeInternal(t *testing.T) {
+func TestSelectDefaultTrivyNetworkMode(t *testing.T) {
 	require.Equal(t, DefaultNetworkMode, SelectDefaultNetworkMode(""))
 	require.Equal(t, DefaultNetworkMode, SelectDefaultNetworkMode(" \t\n "))
 	require.Equal(t, "arcane-external", SelectDefaultNetworkMode("arcane-external"))
 }
 
-func TestResolveTrivyUnixSocketSourceInternal(t *testing.T) {
+func TestResolveTrivyUnixSocketSource(t *testing.T) {
 	t.Run("uses resolved host path", func(t *testing.T) {
 		source, err := ResolveUnixSocketSource(
 			t.Context(),
@@ -424,7 +424,7 @@ func TestResolveTrivyUnixSocketSourceInternal(t *testing.T) {
 	})
 }
 
-func TestIsSynologyDockerHostInternal(t *testing.T) {
+func TestIsSynologyDockerHost(t *testing.T) {
 	// DS220+ (Kernel 4.x): single-line
 	require.True(t, IsSynologyDockerHost("Synology NAS"))
 	// DS925+ (Kernel 5.x): OS field contains a newline before "(containerized)"
@@ -443,7 +443,7 @@ func TestIsSynologyDockerHostInternal(t *testing.T) {
 	require.False(t, IsSynologyDockerHost("Ubuntu 24.04.1 LTS\n (containerized)"))
 }
 
-func TestBuildTrivyCPUSetInternal(t *testing.T) {
+func TestBuildTrivyCPUSet(t *testing.T) {
 	require.Empty(t, BuildCPUSet(0, 4))
 	require.Equal(t, "0", BuildCPUSet(1_000_000_000, 4))
 	require.Equal(t, "0-1", BuildCPUSet(2_500_000_000, 4))
@@ -451,7 +451,7 @@ func TestBuildTrivyCPUSetInternal(t *testing.T) {
 	require.Equal(t, "0", BuildCPUSet(1_000_000_000, 0))
 }
 
-func TestTrivyMountSummariesInternal(t *testing.T) {
+func TestTrivyMountSummaries(t *testing.T) {
 	require.Nil(t, MountSummaries(nil))
 
 	hostConfig := &containertypes.HostConfig{
@@ -483,7 +483,7 @@ func TestTrivyMountSummariesInternal(t *testing.T) {
 	)
 }
 
-func TestTruncateTrivyLogOutputInternal(t *testing.T) {
+func TestTruncateTrivyLogOutput(t *testing.T) {
 	require.Empty(t, TruncateLogOutput("", 32))
 	require.Equal(t, "keep me", TruncateLogOutput("  keep me  ", 32))
 
@@ -492,7 +492,7 @@ func TestTruncateTrivyLogOutputInternal(t *testing.T) {
 	require.Equal(t, strings.Repeat("x", 16)+" ...<truncated>", truncated)
 }
 
-func TestTrivyContainerWaitTimeoutInternal(t *testing.T) {
+func TestTrivyContainerWaitTimeout(t *testing.T) {
 	require.Equal(t, timeouts.DefaultTrivyScan+timeouts.DefaultDockerAPI, ContainerWaitTimeout(""))
 	require.Equal(t, 5*time.Minute+timeouts.DefaultDockerAPI, ContainerWaitTimeout("5m"))
 	require.Equal(t, timeouts.DefaultTrivyScan+timeouts.DefaultDockerAPI, ContainerWaitTimeout("not-a-duration"))

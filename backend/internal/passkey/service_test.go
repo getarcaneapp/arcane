@@ -5,7 +5,7 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v2/auth"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -135,7 +135,7 @@ func TestPasskeyService_FirstEnrollmentUsesActiveSession(t *testing.T) {
 	ctx := t.Context()
 	user := createPasskeyTestUser(t, db, "first-enrollment-user")
 	sessionService := session.NewSessionService(db)
-	localSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), auth.SessionMeta{})
+	localSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), types.SessionMeta{})
 	require.NoError(t, err)
 
 	capabilities, err := service.GetCapabilities(ctx, user.ID, false)
@@ -162,11 +162,11 @@ func TestPasskeyService_FirstEnrollmentUsesActiveSession(t *testing.T) {
 
 func TestPasskeyService_DefaultPasskeyNameUsesAAGUIDCatalog(t *testing.T) {
 	aaguid := uuid.MustParse("fbfc3007-154e-4ecc-8c0b-6e020557d7bd")
-	require.Equal(t, "Apple Passwords Passkey", defaultPasskeyNameInternal(aaguid[:]))
-	require.Equal(t, aaguid.String(), formatAAGUIDInternal(aaguid[:]))
-	require.Equal(t, "New Passkey", defaultPasskeyNameInternal([]byte{0xff, 0xff, 0xff, 0xff}))
+	require.Equal(t, "Apple Passwords Passkey", defaultPasskeyName(aaguid[:]))
+	require.Equal(t, aaguid.String(), formatAAGUID(aaguid[:]))
+	require.Equal(t, "New Passkey", defaultPasskeyName([]byte{0xff, 0xff, 0xff, 0xff}))
 
-	summary := passkeySummaryInternal(Passkey{AAGUID: aaguid[:]})
+	summary := passkeySummary(Passkey{AAGUID: aaguid[:]})
 	require.Equal(t, aaguid.String(), summary.AAGUID)
 }
 
@@ -176,7 +176,7 @@ func TestPasskeyService_PasswordStepUpGrantIsBoundToActiveSessionAndReusableUnti
 	ctx := t.Context()
 	user := createPasskeyTestUser(t, db, "step-up-user")
 	sessionService := session.NewSessionService(db)
-	localSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), auth.SessionMeta{})
+	localSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), types.SessionMeta{})
 	require.NoError(t, err)
 
 	_, err = service.CreatePasswordStepUpGrant(ctx, user.ID, "missing-session")
@@ -202,12 +202,12 @@ func TestPasskeyService_RecoveryCodeConsumptionIsAtomicAndSingleUse(t *testing.T
 	ctx := t.Context()
 	user := createPasskeyTestUser(t, db, "recovery-user")
 
-	codes, rows, err := generateRecoveryCodeRowsInternal(user.ID)
+	codes, rows, err := generateRecoveryCodeRows(user.ID)
 	require.NoError(t, err)
 	require.Len(t, codes, recoveryCodeCount)
 	require.NoError(t, db.Create(&rows).Error)
 
-	transaction := newAuthTransactionInternal(user.ID, authTransactionKindMFA, session.UserSessionSourceLocal, auth.SessionMeta{
+	transaction := newAuthTransaction(user.ID, authTransactionKindMFA, session.UserSessionSourceLocal, types.SessionMeta{
 		UserAgent: "test-agent",
 		IPAddress: "127.0.0.1",
 	}, nil)
@@ -249,9 +249,9 @@ func TestPasskeyService_EnableAndDisableMFAManagesCodesAndSessions(t *testing.T)
 	user := createPasskeyTestUser(t, db, "mfa-user")
 	createPasskeyTestCredential(t, db, service, user.ID, "mfa-passkey")
 	sessionService := session.NewSessionService(db)
-	currentSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), auth.SessionMeta{})
+	currentSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), types.SessionMeta{})
 	require.NoError(t, err)
-	otherSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), auth.SessionMeta{})
+	otherSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), types.SessionMeta{})
 	require.NoError(t, err)
 
 	grant, err := service.CreatePasswordStepUpGrant(ctx, user.ID, currentSession.ID)
@@ -294,15 +294,15 @@ func TestPasskeyService_ResetMFARevokesSessionsAndPreservesPasskeys(t *testing.T
 	require.NoError(t, db.Save(user).Error)
 	passkey := createPasskeyTestCredential(t, db, service, user.ID, "reset-passkey")
 	sessionService := session.NewSessionService(db)
-	firstSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), auth.SessionMeta{})
+	firstSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), types.SessionMeta{})
 	require.NoError(t, err)
-	secondSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), auth.SessionMeta{})
+	secondSession, _, err := sessionService.CreateSession(ctx, user.ID, time.Now().Add(time.Hour), types.SessionMeta{})
 	require.NoError(t, err)
 
-	_, rows, err := generateRecoveryCodeRowsInternal(user.ID)
+	_, rows, err := generateRecoveryCodeRows(user.ID)
 	require.NoError(t, err)
 	require.NoError(t, db.Create(&rows).Error)
-	transaction := newAuthTransactionInternal(user.ID, authTransactionKindMFA, session.UserSessionSourceLocal, auth.SessionMeta{}, nil)
+	transaction := newAuthTransaction(user.ID, authTransactionKindMFA, session.UserSessionSourceLocal, types.SessionMeta{}, nil)
 	require.NoError(t, db.Create(transaction).Error)
 	ceremony := &PasskeyCeremony{
 		ID:                "reset-ceremony",

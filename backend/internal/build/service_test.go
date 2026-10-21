@@ -17,13 +17,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/image"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/builds/types"
+	buildtypes "go.getarcane.app/builds/types"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
@@ -45,12 +43,12 @@ func TestBuildService_ResolveBuildRequest_PassesThroughLocalContext(t *testing.T
 		},
 	}
 
-	req := types.BuildRequest{
+	req := buildtypes.BuildRequest{
 		ContextDir: contextDir,
 		Dockerfile: "Dockerfile",
 	}
 
-	resolvedReq, cleanup, err := svc.resolveBuildRequestInternal(t.Context(), req, nil, "")
+	resolvedReq, cleanup, err := svc.resolveBuildRequest(t.Context(), req, nil, "")
 	require.NoError(t, err)
 	require.NotNil(t, cleanup)
 	assert.Equal(t, req, resolvedReq)
@@ -92,12 +90,12 @@ func TestBuildService_ResolveBuildRequest_ClonesRemoteGitContext(t *testing.T) {
 		},
 	}
 
-	req := types.BuildRequest{
+	req := buildtypes.BuildRequest{
 		ContextDir: "https://github.com/getarcaneapp/arcane.git#main:docker/app",
 		Dockerfile: "Dockerfile",
 	}
 
-	resolvedReq, cleanup, err := svc.resolveBuildRequestInternal(t.Context(), req, nil, "manual")
+	resolvedReq, cleanup, err := svc.resolveBuildRequest(t.Context(), req, nil, "manual")
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Join(repoPath, "docker", "app"), resolvedReq.ContextDir)
 	require.NoError(t, cleanup())
@@ -128,9 +126,9 @@ func TestBuildService_ResolveBuildRequest_ProbesAndClonesRemoteGitContextWithout
 		gitCleanupFn: func(string) error { return nil },
 	}
 
-	resolvedReq, cleanup, err := svc.resolveBuildRequestInternal(
+	resolvedReq, cleanup, err := svc.resolveBuildRequest(
 		t.Context(),
-		types.BuildRequest{ContextDir: "https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app"},
+		buildtypes.BuildRequest{ContextDir: "https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app"},
 		nil,
 		"",
 	)
@@ -144,9 +142,9 @@ func TestBuildService_ResolveBuildRequest_ProbesAndClonesRemoteGitContextWithout
 func TestBuildService_ResolveBuildRequest_RequiresGitRepositoryServiceForRemoteContext(t *testing.T) {
 	svc := &BuildService{}
 
-	_, cleanup, err := svc.resolveBuildRequestInternal(
+	_, cleanup, err := svc.resolveBuildRequest(
 		t.Context(),
-		types.BuildRequest{ContextDir: "https://github.com/getarcaneapp/arcane.git#main"},
+		buildtypes.BuildRequest{ContextDir: "https://github.com/getarcaneapp/arcane.git#main"},
 		nil,
 		"",
 	)
@@ -168,9 +166,9 @@ func TestBuildService_ResolveBuildRequest_RejectsNonGitHTTPContextViaProbeFailur
 		},
 	}
 
-	_, cleanup, err := svc.resolveBuildRequestInternal(
+	_, cleanup, err := svc.resolveBuildRequest(
 		t.Context(),
-		types.BuildRequest{ContextDir: "https://example.com/archive.tar.gz"},
+		buildtypes.BuildRequest{ContextDir: "https://example.com/archive.tar.gz"},
 		nil,
 		"",
 	)
@@ -230,9 +228,9 @@ func TestBuildService_ResolveBuildRequest_UsesSavedGitCredentials(t *testing.T) 
 			gitCleanupFn: func(string) error { return nil },
 		}
 
-		_, cleanup, resolveBuildRequestErr := svc.resolveBuildRequestInternal(
+		_, cleanup, resolveBuildRequestErr := svc.resolveBuildRequest(
 			t.Context(),
-			types.BuildRequest{ContextDir: "https://github.com/getarcaneapp/private-build#main"},
+			buildtypes.BuildRequest{ContextDir: "https://github.com/getarcaneapp/private-build#main"},
 			nil,
 			"",
 		)
@@ -256,9 +254,9 @@ func TestBuildService_ResolveBuildRequest_UsesSavedGitCredentials(t *testing.T) 
 			gitCleanupFn: func(string) error { return nil },
 		}
 
-		_, cleanup, resolveBuildRequestErr := svc.resolveBuildRequestInternal(
+		_, cleanup, resolveBuildRequestErr := svc.resolveBuildRequest(
 			t.Context(),
-			types.BuildRequest{ContextDir: "git@github.com:getarcaneapp/private-ssh.git#main"},
+			buildtypes.BuildRequest{ContextDir: "git@github.com:getarcaneapp/private-ssh.git#main"},
 			nil,
 			"",
 		)
@@ -274,11 +272,11 @@ func TestBuildService_BuildImage_PreservesRemoteSourceInHistory(t *testing.T) {
 	repoPath := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(repoPath, "Dockerfile"), []byte("FROM alpine:3.20\n"), 0o644))
 
-	captured := types.BuildRequest{}
+	captured := buildtypes.BuildRequest{}
 	svc := &BuildService{
 		db: db,
 		builder: testBuildRecorder{
-			onBuild: func(req types.BuildRequest) {
+			onBuild: func(req buildtypes.BuildRequest) {
 				captured = req
 			},
 		},
@@ -288,7 +286,7 @@ func TestBuildService_BuildImage_PreservesRemoteSourceInHistory(t *testing.T) {
 		gitCleanupFn: func(string) error { return nil },
 	}
 
-	req := types.BuildRequest{
+	req := buildtypes.BuildRequest{
 		ContextDir: "https://github.com/getarcaneapp/arcane.git#main",
 		Dockerfile: "Dockerfile",
 		Tags:       []string{"ghcr.io/getarcaneapp/arcane:test"},
@@ -316,12 +314,12 @@ func TestBuildService_BuildImage_FailureRecordsHistoryAndEvent(t *testing.T) {
 			err: buildErr,
 		},
 	}
-	user := &usertypes.Actor{
+	user := &types.Actor{
 		ID:       "user-1",
 		Username: "tester",
 	}
 
-	req := types.BuildRequest{
+	req := buildtypes.BuildRequest{
 		ContextDir: "/builds/demo",
 		Dockerfile: "Dockerfile",
 		Tags:       []string{"arcane.local/demo:test"},
@@ -355,7 +353,7 @@ func TestBuildService_BuildImage_FailureExporterErrorsAppearInOutputHistoryAndEv
 	db, err := setupBuildHistoryTestDB()
 	require.NoError(t, err)
 
-	buildErr := &types.BuildKitImageExporterError{
+	buildErr := &buildtypes.BuildKitImageExporterError{
 		ProviderName: "depot",
 		Err:          errors.New(`failed to solve: failed to solve: exporter "image" could not be found`),
 	}
@@ -366,18 +364,18 @@ func TestBuildService_BuildImage_FailureExporterErrorsAppearInOutputHistoryAndEv
 		eventService: event.NewEventService(db, nil, nil),
 		builder: testBuildRecorder{
 			err: buildErr,
-			onProgress: func(_ types.BuildRequest, w io.Writer) {
+			onProgress: func(_ buildtypes.BuildRequest, w io.Writer) {
 				_, _ = w.Write([]byte(buildErr.Error()))
 			},
 		},
 	}
 
-	user := &usertypes.Actor{
+	user := &types.Actor{
 		ID:       "user-2",
 		Username: "registry-test",
 	}
 
-	req := types.BuildRequest{
+	req := buildtypes.BuildRequest{
 		ContextDir: "/builds/demo",
 		Dockerfile: "Dockerfile",
 		Tags:       []string{"ghcr.io/getarcaneapp/arcane:test"},
@@ -419,23 +417,23 @@ func TestSanitizeBuildContextForEventInternal_RedactsURLCredentials(t *testing.T
 	assert.Equal(
 		t,
 		"https://redacted@github.com/zeroZshadow/secretproject.git#main:app",
-		sanitizeBuildContextForEventInternal("https://myaccesstoken@github.com/zeroZshadow/secretproject.git#main:app"),
+		sanitizeBuildContextForEvent("https://myaccesstoken@github.com/zeroZshadow/secretproject.git#main:app"),
 	)
 	assert.Equal(
 		t,
 		"[unparseable URL]",
-		sanitizeBuildContextForEventInternal("https://user:pass@[bad-host/repo.git"),
+		sanitizeBuildContextForEvent("https://user:pass@[bad-host/repo.git"),
 	)
-	assert.Equal(t, "/builds/demo", sanitizeBuildContextForEventInternal("/builds/demo"))
+	assert.Equal(t, "/builds/demo", sanitizeBuildContextForEvent("/builds/demo"))
 }
 
 type testBuildRecorder struct {
-	onBuild    func(types.BuildRequest)
-	onProgress func(types.BuildRequest, io.Writer)
+	onBuild    func(buildtypes.BuildRequest)
+	onProgress func(buildtypes.BuildRequest, io.Writer)
 	err        error
 }
 
-func (b testBuildRecorder) BuildImage(_ context.Context, req types.BuildRequest, writer io.Writer, _ string) (*types.BuildResult, error) {
+func (b testBuildRecorder) BuildImage(_ context.Context, req buildtypes.BuildRequest, writer io.Writer, _ string) (*buildtypes.BuildResult, error) {
 	if b.onBuild != nil {
 		b.onBuild(req)
 	}
@@ -445,7 +443,7 @@ func (b testBuildRecorder) BuildImage(_ context.Context, req types.BuildRequest,
 		}
 		return nil, b.err
 	}
-	return &types.BuildResult{Provider: "local"}, nil
+	return &buildtypes.BuildResult{Provider: "local"}, nil
 }
 
 func TestBuildService_ListImageBuilds_OmitsOutputColumn(t *testing.T) {
@@ -568,8 +566,8 @@ func buildScopeContext(t *testing.T, target string, bodies map[string]any) (cont
 			}
 			_ = json.MarshalWrite(w, body)
 		}),
-		Resolve: func(_ context.Context, id string) (base.EnvironmentRef, error) {
-			return base.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
 		},
 	}), &queries
 }
@@ -577,15 +575,15 @@ func buildScopeContext(t *testing.T, target string, bodies map[string]any) (cont
 func TestAggregateImageBuildsMergesEnvironments(t *testing.T) {
 	start := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	bodies := map[string]any{
-		"a": base.Paginated[image.BuildRecord]{Success: true, Data: []image.BuildRecord{
+		"a": types.Paginated[types.ImageBuildRecord]{Success: true, Data: []types.ImageBuildRecord{
 			{ID: "a1", EnvironmentID: "0", Status: "success", CreatedAt: start.Add(time.Hour)},
 			{ID: "a2", EnvironmentID: "0", Status: "failed", CreatedAt: start.Add(3 * time.Hour)},
-		}, Pagination: base.PaginationResponse{TotalItems: 2}},
-		"b": base.Paginated[image.BuildRecord]{Success: true, Data: []image.BuildRecord{
+		}, Pagination: types.PaginationResponse{TotalItems: 2}},
+		"b": types.Paginated[types.ImageBuildRecord]{Success: true, Data: []types.ImageBuildRecord{
 			{ID: "b1", EnvironmentID: "0", Status: "success", CreatedAt: start.Add(2 * time.Hour)},
-		}, Pagination: base.PaginationResponse{TotalItems: 1}},
+		}, Pagination: types.PaginationResponse{TotalItems: 1}},
 	}
-	rowLabels := func(items []image.BuildRecord) []string {
+	rowLabels := func(items []types.ImageBuildRecord) []string {
 		out := make([]string, 0, len(items))
 		for _, item := range items {
 			out = append(out, item.EnvironmentID+"/"+item.ID)

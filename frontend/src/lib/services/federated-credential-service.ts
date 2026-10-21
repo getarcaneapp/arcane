@@ -1,4 +1,4 @@
-import type { CreateFederatedCredential, FederatedCredential, UpdateFederatedCredential } from '#lib/types/auth.js';
+import type { FederatedCredential, FederatedCredentialCreate, FederatedCredentialUpdate } from '#lib/types/auth.js';
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
@@ -15,11 +15,11 @@ class FederatedCredentialAPIService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/federated-credentials/${id}`)) as Promise<FederatedCredential>;
 	}
 
-	async create(credential: CreateFederatedCredential): Promise<FederatedCredential> {
+	async create(credential: FederatedCredentialCreate): Promise<FederatedCredential> {
 		return this.handleResponse(this.api.post('/federated-credentials', credential)) as Promise<FederatedCredential>;
 	}
 
-	async update(id: string, credential: UpdateFederatedCredential): Promise<FederatedCredential> {
+	async update(id: string, credential: FederatedCredentialUpdate): Promise<FederatedCredential> {
 		return this.handleResponse(this.api.put(`/federated-credentials/${id}`, credential)) as Promise<FederatedCredential>;
 	}
 

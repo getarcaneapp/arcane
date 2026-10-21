@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
@@ -46,9 +46,9 @@ func (j *PruningVolumeHelperJob) Schedule(ctx context.Context) string {
 	return volumeHelperPruningSchedule
 }
 
-func (j *PruningVolumeHelperJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
+func (j *PruningVolumeHelperJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 	if j.volumeService == nil {
-		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
 
 	minutes := defaultVolumeHelperIdleTimeoutMinutes
@@ -57,13 +57,13 @@ func (j *PruningVolumeHelperJob) Run(ctx context.Context) (schedulertypes.Outcom
 	}
 	if minutes <= 0 {
 		// 0 (or negative) disables idle pruning.
-		return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
 
 	removed, err := j.volumeService.ReapIdleHelpers(ctx, time.Duration(minutes)*time.Minute)
 	if err != nil {
 		slog.ErrorContext(ctx, "volume helper pruning failed", "jobName", PruningVolumeHelperJobName, "error", err)
-		return schedulertypes.Outcome{}, err
+		return types.SchedulerOutcome{}, err
 	}
 	if removed > 0 {
 		slog.InfoContext(ctx, "volume helper pruning completed",
@@ -71,7 +71,7 @@ func (j *PruningVolumeHelperJob) Run(ctx context.Context) (schedulertypes.Outcom
 			"removed", removed,
 			"idleTimeoutMinutes", minutes)
 	}
-	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
+	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 }
 
 func (j *PruningVolumeHelperJob) Reschedule(ctx context.Context) error {

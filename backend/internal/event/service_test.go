@@ -13,7 +13,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/event"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/events"
 	"github.com/stretchr/testify/assert"
@@ -319,7 +319,7 @@ func TestEventService_GetEventSeverityCounts(t *testing.T) {
 
 	counts, err := svc.GetEventSeverityCounts(ctx)
 	require.NoError(t, err)
-	require.Equal(t, event.SeverityCounts{Total: 4, Info: 2, Success: 1, Warning: 0, Error: 1}, counts)
+	require.Equal(t, types.EventSeverityCounts{Total: 4, Info: 2, Success: 1, Warning: 0, Error: 1}, counts)
 }
 
 func TestEventService_ListEventsPaginated_TypeCategoryFilter(t *testing.T) {
@@ -496,7 +496,7 @@ func TestEventStreamProducerCoalescesAndCancels(t *testing.T) {
 		service := NewEventService(nil, nil, nil)
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
-		output := make(chan event.StreamEvent)
+		output := make(chan types.EventStreamEvent)
 		stopped := make(chan struct{})
 		go func() {
 			defer close(stopped)
@@ -531,8 +531,8 @@ func TestEventStreamProducerBroadcasts(t *testing.T) {
 		service := NewEventService(nil, nil, nil)
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
-		first := make(chan event.StreamEvent, 1)
-		second := make(chan event.StreamEvent, 1)
+		first := make(chan types.EventStreamEvent, 1)
+		second := make(chan types.EventStreamEvent, 1)
 		go service.RunStreamProducer(ctx, first)
 		go service.RunStreamProducer(ctx, second)
 		synctest.Wait()

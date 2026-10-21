@@ -1,7 +1,7 @@
 import type {
 	GlobalVariable,
-	GlobalVariableCreateDto,
-	GlobalVariableUpdateDto,
+	GlobalVariableCreate,
+	GlobalVariableUpdate,
 	VariableMutationResponse
 } from '#lib/types/variable.js';
 
@@ -13,12 +13,12 @@ class VariableService extends BaseAPIService {
 		return response.data?.data ?? [];
 	}
 
-	async create(dto: GlobalVariableCreateDto): Promise<VariableMutationResponse> {
+	async create(dto: GlobalVariableCreate): Promise<VariableMutationResponse> {
 		const response = await this.api.post('/variables', dto);
 		return response.data?.data ?? {};
 	}
 
-	async createMany(dtos: GlobalVariableCreateDto[]): Promise<VariableMutationResponse> {
+	async createMany(dtos: GlobalVariableCreate[]): Promise<VariableMutationResponse> {
 		let last: VariableMutationResponse = {};
 		for (const dto of dtos) {
 			last = await this.create(dto);
@@ -26,7 +26,7 @@ class VariableService extends BaseAPIService {
 		return last;
 	}
 
-	async update(id: string, dto: GlobalVariableUpdateDto): Promise<VariableMutationResponse> {
+	async update(id: string, dto: GlobalVariableUpdate): Promise<VariableMutationResponse> {
 		const response = await this.api.put(`/variables/${encodeURIComponent(id)}`, dto);
 		return response.data?.data ?? {};
 	}

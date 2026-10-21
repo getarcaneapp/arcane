@@ -1,4 +1,4 @@
-import type { User, CreateUser, TimeFormat, UserPreferences } from '#lib/types/auth.js';
+import type { ProfileUpdate, User, UserCreate, UserUpdate } from '#lib/types/auth.js';
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
@@ -19,11 +19,11 @@ class UserAPIService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/auth/me`)) as Promise<User>;
 	}
 
-	async create(user: CreateUser): Promise<User> {
+	async create(user: UserCreate): Promise<User> {
 		return this.handleResponse(this.api.post('/users', user)) as Promise<User>;
 	}
 
-	async update(id: string, user: Partial<User>): Promise<User> {
+	async update(id: string, user: UserUpdate): Promise<User> {
 		return this.handleResponse(this.api.put(`/users/${id}`, user)) as Promise<User>;
 	}
 
@@ -39,14 +39,7 @@ class UserAPIService extends BaseAPIService {
 		return this.handleResponse(this.api.post('/auth/sessions/logout-all')) as Promise<void>;
 	}
 
-	async updateMyProfile(data: {
-		displayName?: string;
-		email?: string;
-		locale?: string;
-		timeFormat?: TimeFormat;
-		fontSize?: number;
-		preferences?: Partial<UserPreferences>;
-	}): Promise<User> {
+	async updateMyProfile(data: ProfileUpdate): Promise<User> {
 		return this.handleResponse(this.api.put('/auth/me/profile', data)) as Promise<User>;
 	}
 

@@ -21,6 +21,7 @@
 	import { avatarUploadLimitBytes, prepareAvatarUploadFile } from '#lib/utils/avatar-upload.js';
 	import { getDefaultProfilePicture } from '#lib/utils/docker.js';
 	import { formatDate, formatRelativeTime } from '#lib/utils/formatting.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import AccountApiKeysPanel from './components/account-api-keys-panel.svelte';
@@ -75,7 +76,7 @@
 	const profileEmail = $derived(activeProfileDraft?.email ?? currentUser?.email ?? '');
 	let profileSaving = $state(false);
 
-	const avatarUrl = $derived(updateAvatar(currentUser?.email, gravatarEnabled));
+	const avatarUrl = $derived(updateAvatar(currentUser?.email ?? undefined, gravatarEnabled));
 	let avatarCacheBuster = $state(Temporal.Now.instant().epochMilliseconds);
 	const avatarSrc = $derived(currentUser?.avatarUrl ? `${currentUser.avatarUrl}?t=${avatarCacheBuster}` : '');
 	let cropperAvatarSrc = $state('');
@@ -117,10 +118,12 @@
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const updated = await userService.updateMyProfile({
-						displayName: profileDisplayName.trim(),
-						email: profileEmail.trim()
-					});
+					const updated = await userService.updateMyProfile(
+						changedFields(
+							{ ...currentUser, displayName: currentUser.displayName || null, email: currentUser.email || null },
+							{ displayName: profileDisplayName.trim() || null, email: profileEmail.trim() || null }
+						)
+					);
 					await userStore.setUser(updated);
 					await queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
 					if (profileDraft === submittedDraft) profileDraft = null;

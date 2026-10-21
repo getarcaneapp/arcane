@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
@@ -40,7 +40,7 @@ func (j *BackupRepositoryPruneJob) Schedule(_ context.Context) string {
 }
 
 // Run prunes the local system and volume backup repositories.
-func (j *BackupRepositoryPruneJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
+func (j *BackupRepositoryPruneJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 	var pruneErr error
 	if err := j.systemService.PruneLocalBackupRepository(ctx); err != nil {
 		pruneErr = fmt.Errorf("prune system backup repository: %w", err)
@@ -50,9 +50,9 @@ func (j *BackupRepositoryPruneJob) Run(ctx context.Context) (schedulertypes.Outc
 	}
 	if pruneErr != nil {
 		slog.ErrorContext(ctx, "Failed to prune local backup repositories", "jobName", BackupRepositoryPruneJobName, "error", pruneErr)
-		return schedulertypes.Outcome{}, pruneErr
+		return types.SchedulerOutcome{}, pruneErr
 	}
-	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
+	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 }
 
 // Reschedule is a no-op: the schedule is fixed.

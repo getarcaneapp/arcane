@@ -18,13 +18,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/compose-spec/compose-go/v2/types"
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/podman"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	arcaneupdater "github.com/getarcaneapp/arcane/types/v2/updater"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
+	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/pkg/authconfig"
 	"github.com/moby/moby/api/types/container"
@@ -98,7 +93,7 @@ type fakeProjectUpdater struct {
 type mockSystemUpgradeService struct {
 	triggerCalled  bool
 	triggerError   error
-	capturedUser   *usertypes.Actor
+	capturedUser   *types.Actor
 	capturedTarget *updater.SelfUpdateTarget
 }
 
@@ -239,7 +234,7 @@ func newUpdaterApplyPendingDockerServer(
 	return server
 }
 
-func (m *mockSystemUpgradeService) TriggerUpgradeViaCLI(_ context.Context, user usertypes.Actor, target updater.SelfUpdateTarget) (string, error) {
+func (m *mockSystemUpgradeService) TriggerUpgradeViaCLI(_ context.Context, user types.Actor, target updater.SelfUpdateTarget) (string, error) {
 	m.triggerCalled = true
 	m.capturedUser = &user
 	m.capturedTarget = &target
@@ -276,11 +271,11 @@ func TestUpdaterService_ApplyPendingNoRecords(t *testing.T) {
 	require.NoError(t, svcErr)
 	harness.Start(t)
 
-	var checkpoints []scheduler.TargetOutcome
-	ctx = jobcontext.WithExecution(ctx, scheduler.Run{AttemptCount: 1}, func(target scheduler.TargetOutcome) error { checkpoints = append(checkpoints, target); return nil })
-	result, err := svc.ApplyPending(ctx, arcaneupdater.Options{DryRun: true})
+	var checkpoints []types.TargetOutcome
+	ctx = jobcontext.WithExecution(ctx, types.SchedulerRun{AttemptCount: 1}, func(target types.TargetOutcome) error { checkpoints = append(checkpoints, target); return nil })
+	result, err := svc.ApplyPending(ctx, types.UpdaterOptions{DryRun: true})
 	require.Len(t, checkpoints, 1)
-	assert.Equal(t, scheduler.Succeeded, checkpoints[0].Status)
+	assert.Equal(t, types.RunStatusSucceeded, checkpoints[0].Status)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -289,21 +284,21 @@ func TestUpdaterService_ApplyPendingNoRecords(t *testing.T) {
 	assert.Zero(t, result.Skipped)
 	assert.Zero(t, result.Failed)
 	assert.Empty(t, result.Items)
-	ctx = jobcontext.WithExecution(t.Context(), scheduler.Run{AttemptCount: 1}, func(scheduler.TargetOutcome) error { return errors.New("checkpoint unavailable") })
-	_, err = svc.ApplyPending(ctx, arcaneupdater.Options{DryRun: true})
+	ctx = jobcontext.WithExecution(t.Context(), types.SchedulerRun{AttemptCount: 1}, func(types.TargetOutcome) error { return errors.New("checkpoint unavailable") })
+	_, err = svc.ApplyPending(ctx, types.UpdaterOptions{DryRun: true})
 	require.ErrorContains(t, err, "checkpoint unavailable")
-	var outcomeErr *scheduler.OutcomeError
+	var outcomeErr *types.SchedulerOutcomeError
 	require.ErrorAs(t, err, &outcomeErr)
-	assert.Equal(t, scheduler.NeedsAttention, outcomeErr.Outcome.Status)
+	assert.Equal(t, types.RunStatusNeedsAttention, outcomeErr.Outcome.Status)
 	checkpoints = nil
-	ctx = jobcontext.WithExecution(t.Context(), scheduler.Run{AttemptCount: 1}, func(target scheduler.TargetOutcome) error {
+	ctx = jobcontext.WithExecution(t.Context(), types.SchedulerRun{AttemptCount: 1}, func(target types.TargetOutcome) error {
 		checkpoints = append(checkpoints, target)
 		return nil
 	})
 	svc.engine = nil
-	require.Panics(t, func() { _, _ = svc.ApplyPending(ctx, arcaneupdater.Options{}) })
+	require.Panics(t, func() { _, _ = svc.ApplyPending(ctx, types.UpdaterOptions{}) })
 	require.NotEmpty(t, checkpoints)
-	assert.Equal(t, scheduler.NeedsAttention, checkpoints[len(checkpoints)-1].Status)
+	assert.Equal(t, types.RunStatusNeedsAttention, checkpoints[len(checkpoints)-1].Status)
 }
 
 func TestUpdaterService_ResultFromModulePreservesRestarted(t *testing.T) {
@@ -326,7 +321,7 @@ func TestUpdaterService_ResultFromModulePreservesRestarted(t *testing.T) {
 	require.NotNil(t, got)
 	assert.Equal(t, 1, got.Restarted)
 	require.Len(t, got.Items, 1)
-	assert.Equal(t, arcaneupdater.StatusRestarted, got.Items[0].Status)
+	assert.Equal(t, types.UpdaterStatusRestarted, got.Items[0].Status)
 	assert.True(t, got.Items[0].UpdateApplied)
 }
 
@@ -353,8 +348,8 @@ func TestUpdaterService_TriggerSelfUpdateViaCLI(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, mockUpgrade.triggerCalled)
 		require.NotNil(t, mockUpgrade.capturedUser)
-		assert.Equal(t, usertypes.SystemUser.ID, mockUpgrade.capturedUser.ID)
-		assert.Equal(t, usertypes.SystemUser.Username, mockUpgrade.capturedUser.Username)
+		assert.Equal(t, types.SystemUser.ID, mockUpgrade.capturedUser.ID)
+		assert.Equal(t, types.SystemUser.Username, mockUpgrade.capturedUser.Username)
 		require.NotNil(t, mockUpgrade.capturedTarget)
 		assert.Equal(t, "container-1", mockUpgrade.capturedTarget.ContainerID)
 		assert.Equal(t, "arcane", mockUpgrade.capturedTarget.ContainerName)
@@ -367,7 +362,7 @@ func TestUpdaterService_TriggerSelfUpdateViaCLI(t *testing.T) {
 		svc, svcErr := NewUpdaterService(nil, nil, newEmptyContainerListDockerService(t), nil, nil, nil, nil, nil, nil, mockUpgrade, nil, nil, newAdmission(t), nil)
 		require.NoError(t, svcErr)
 
-		frozen := svc.recovery.WithSingleTarget(ctx, &arcaneupdater.FrozenUpdateTarget{
+		frozen := svc.recovery.WithSingleTarget(ctx, &types.FrozenUpdateTarget{
 			ContainerID:     "container-1",
 			DesiredImageRef: "ghcr.io/getarcaneapp/arcane:next",
 			DesiredDigest:   "sha256:frozen",
@@ -768,8 +763,8 @@ func TestUpdaterService_RecordUpdateRunAdapter(t *testing.T) {
 	assert.Equal(t, "test", record.Details["source"])
 	progress := &updateProgress{}
 	ctx = context.WithValue(ctx, updateProgressKey{}, progress)
-	ctx = jobcontext.WithExecution(ctx, scheduler.Run{AttemptCount: 1}, func(target scheduler.TargetOutcome) error {
-		assert.Equal(t, scheduler.Failed, target.Status)
+	ctx = jobcontext.WithExecution(ctx, types.SchedulerRun{AttemptCount: 1}, func(target types.TargetOutcome) error {
+		assert.Equal(t, types.RunStatusFailed, target.Status)
 		return errors.New("progress unavailable")
 	})
 	err = svc.RecordUpdateRun(ctx, updater.ResourceResult{
@@ -792,7 +787,7 @@ func TestUpdaterService_RecordUpdateRunAppendsActivityMessage(t *testing.T) {
 	for _, tt := range []struct {
 		name        string
 		result      updater.ResourceResult
-		wantLevel   activitytypes.MessageLevel
+		wantLevel   types.ActivityMessageLevel
 		wantMessage string
 	}{
 		{
@@ -804,7 +799,7 @@ func TestUpdaterService_RecordUpdateRunAppendsActivityMessage(t *testing.T) {
 				Status:       updater.StatusFailed,
 				Error:        "pull failed: unexpected EOF",
 			},
-			wantLevel:   activitytypes.MessageLevelError,
+			wantLevel:   types.ActivityMessageLevelError,
 			wantMessage: "sonarr: pull failed: unexpected EOF",
 		},
 		{
@@ -815,7 +810,7 @@ func TestUpdaterService_RecordUpdateRunAppendsActivityMessage(t *testing.T) {
 				ResourceType: updater.ResourceTypeContainer,
 				Status:       updater.StatusFailed,
 			},
-			wantLevel:   activitytypes.MessageLevelError,
+			wantLevel:   types.ActivityMessageLevelError,
 			wantMessage: "dozzle: failed",
 		},
 		{
@@ -828,7 +823,7 @@ func TestUpdaterService_RecordUpdateRunAppendsActivityMessage(t *testing.T) {
 				OldImage:     "sha256:old",
 				NewImage:     "ghcr.io/maintainerr/maintainerr:latest",
 			},
-			wantLevel:   activitytypes.MessageLevelInfo,
+			wantLevel:   types.ActivityMessageLevelInfo,
 			wantMessage: "maintainerr: updated (sha256:old -> ghcr.io/maintainerr/maintainerr:latest)",
 		},
 		{
@@ -839,12 +834,12 @@ func TestUpdaterService_RecordUpdateRunAppendsActivityMessage(t *testing.T) {
 				Status:       updater.StatusSkipped,
 				Error:        "container excluded by settings",
 			},
-			wantLevel:   activitytypes.MessageLevelInfo,
+			wantLevel:   types.ActivityMessageLevelInfo,
 			wantMessage: "arcane-id: skipped (container excluded by settings)",
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			started, err := activityService.StartActivity(ctx, activitylib.StartRequest{EnvironmentID: "0", Type: activitytypes.TypeAutoUpdate})
+			started, err := activityService.StartActivity(ctx, activitylib.StartRequest{EnvironmentID: "0", Type: types.ActivityTypeAutoUpdate})
 			require.NoError(t, err)
 
 			require.NoError(t, svc.RecordUpdateRun(contextWithActivityID(ctx, started.ID), tt.result))
@@ -877,7 +872,7 @@ func TestUpdaterService_AcceptSingleContainerUpdateUsesQueuedActivity(t *testing
 			harness.Start(t)
 
 			// Holding the update admission makes the workflow hand its task back until the lease is released.
-			held, admitted, err := admission.TryAcquire(t.Context(), scheduler.AdmissionKey{Scope: "updater", ID: "id:missing-container"})
+			held, admitted, err := admission.TryAcquire(t.Context(), types.SchedulerAdmissionKey{Scope: "updater", ID: "id:missing-container"})
 			require.NoError(t, err)
 			require.True(t, admitted)
 			var releaseOnce sync.Once
@@ -887,7 +882,7 @@ func TestUpdaterService_AcceptSingleContainerUpdateUsesQueuedActivity(t *testing
 			requestCtx, cancelRequest := context.WithCancel(t.Context())
 			workCtx := utils.ActivityRuntimeContext(requestCtx, t.Context())
 			type acceptResult struct {
-				activity *activitytypes.Activity
+				activity *types.Activity
 				err      error
 			}
 			accepted := make(chan acceptResult, 1)
@@ -895,7 +890,7 @@ func TestUpdaterService_AcceptSingleContainerUpdateUsesQueuedActivity(t *testing
 				item, acceptErr := svc.AcceptSingleContainerUpdate(workCtx, "missing-container")
 				accepted <- acceptResult{activity: item, err: acceptErr}
 			}()
-			var item *activitytypes.Activity
+			var item *types.Activity
 			select {
 			case result := <-accepted:
 				require.NoError(t, result.err)
@@ -903,7 +898,7 @@ func TestUpdaterService_AcceptSingleContainerUpdateUsesQueuedActivity(t *testing
 			case <-time.After(time.Second):
 				require.FailNow(t, "acceptance waited for executor work")
 			}
-			require.Equal(t, activitytypes.StatusQueued, item.Status)
+			require.Equal(t, types.ActivityStatusQueued, item.Status)
 			cancelRequest()
 			if cancelActivity {
 				_, err = activityService.CancelActivity(t.Context(), "0", item.ID, "test")
@@ -911,7 +906,7 @@ func TestUpdaterService_AcceptSingleContainerUpdateUsesQueuedActivity(t *testing
 			}
 			release()
 
-			wantStatus := kit.Ternary(cancelActivity, activitytypes.StatusCancelled, activitytypes.StatusFailed)
+			wantStatus := kit.Ternary(cancelActivity, types.ActivityStatusCancelled, types.ActivityStatusFailed)
 			require.Eventually(t, func() bool {
 				var saved activity.Activity
 				return db.First(&saved, "id = ?", item.ID).Error == nil && saved.Status == wantStatus
@@ -934,7 +929,7 @@ func TestUpdaterService_AcceptSingleContainerUpdateFailureFinalizes(t *testing.T
 	require.ErrorContains(t, err, "start container-update")
 	var saved activity.Activity
 	require.NoError(t, db.First(&saved, "resource_id = ?", "container-1").Error)
-	require.Equal(t, activitytypes.StatusFailed, saved.Status)
+	require.Equal(t, types.ActivityStatusFailed, saved.Status)
 
 	unmigrated := setupProjectTestDB(t)
 	require.NoError(t, svc.execution.RegisterWorkflows(flowtest.New(t, activity.NewActivityService(unmigrated, nil)).Engine))
@@ -946,65 +941,65 @@ func TestUpdaterService_AcceptSingleContainerUpdateFailureFinalizes(t *testing.T
 func TestUpdaterService_SingleContainerActivityResultMessages(t *testing.T) {
 	for _, tt := range []struct {
 		name        string
-		result      *arcaneupdater.Result
-		wantStatus  activitytypes.Status
+		result      *types.UpdaterResult
+		wantStatus  types.ActivityStatus
 		wantMessage string
 	}{
 		{
 			name: "updated",
-			result: &arcaneupdater.Result{
+			result: &types.UpdaterResult{
 				Updated: 1,
-				Items: []arcaneupdater.ResourceResult{{
+				Items: []types.UpdaterResourceResult{{
 					Status:       string(updater.StatusUpdated),
 					ResourceName: "web",
 				}},
 			},
-			wantStatus:  activitytypes.StatusSuccess,
+			wantStatus:  types.ActivityStatusSuccess,
 			wantMessage: "Container updated",
 		},
 		{
 			name: "restarted",
-			result: &arcaneupdater.Result{
+			result: &types.UpdaterResult{
 				Restarted: 1,
-				Items: []arcaneupdater.ResourceResult{{
+				Items: []types.UpdaterResourceResult{{
 					Status:       string(updater.StatusRestarted),
 					ResourceName: "web",
 				}},
 			},
-			wantStatus:  activitytypes.StatusSuccess,
+			wantStatus:  types.ActivityStatusSuccess,
 			wantMessage: "Container updated",
 		},
 		{
 			name: "skipped",
-			result: &arcaneupdater.Result{
+			result: &types.UpdaterResult{
 				Skipped: 1,
-				Items: []arcaneupdater.ResourceResult{{
+				Items: []types.UpdaterResourceResult{{
 					Status: string(updater.StatusSkipped),
 					Error:  "immutable image reference",
 				}},
 			},
-			wantStatus:  activitytypes.StatusSuccess,
+			wantStatus:  types.ActivityStatusSuccess,
 			wantMessage: "Container update skipped: immutable image reference",
 		},
 		{
 			name: "already current",
-			result: &arcaneupdater.Result{
+			result: &types.UpdaterResult{
 				Checked: 1,
-				Items:   []arcaneupdater.ResourceResult{{Status: string(updater.StatusUpToDate)}},
+				Items:   []types.UpdaterResourceResult{{Status: string(updater.StatusUpToDate)}},
 			},
-			wantStatus:  activitytypes.StatusSuccess,
+			wantStatus:  types.ActivityStatusSuccess,
 			wantMessage: "Container already current",
 		},
 		{
 			name: "failed",
-			result: &arcaneupdater.Result{
+			result: &types.UpdaterResult{
 				Failed: 1,
-				Items: []arcaneupdater.ResourceResult{{
+				Items: []types.UpdaterResourceResult{{
 					Status: string(updater.StatusFailed),
 					Error:  "pull failed",
 				}},
 			},
-			wantStatus:  activitytypes.StatusFailed,
+			wantStatus:  types.ActivityStatusFailed,
 			wantMessage: "pull failed",
 		},
 	} {
@@ -1018,7 +1013,7 @@ func TestUpdaterService_SingleContainerActivityResultMessages(t *testing.T) {
 				t.Context(),
 				activitylib.StartRequest{
 					EnvironmentID: "0",
-					Type:          activitytypes.TypeAutoUpdate,
+					Type:          types.ActivityTypeAutoUpdate,
 					Metadata:      database.JSON{"containerID": "old-id"},
 				},
 			)
@@ -1201,7 +1196,7 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjects(t *
 	})
 	svc.engine = engine
 
-	result, err := svc.ApplyPending(ctx, arcaneupdater.Options{})
+	result, err := svc.ApplyPending(ctx, types.UpdaterOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	assert.Equal(t, 1, result.Updated, "tag updates report successfully recreated containers")
@@ -1343,18 +1338,18 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgrade(
 	svc.engine = engine
 
 	frozenPlan, planErr := json.Marshal(struct {
-		Targets []arcaneupdater.FrozenUpdateTarget
-	}{Targets: []arcaneupdater.FrozenUpdateTarget{{
+		Targets []types.FrozenUpdateTarget
+	}{Targets: []types.FrozenUpdateTarget{{
 		ContainerID:     "arcane-container",
 		DesiredImageRef: newRef,
 		DesiredDigest:   "sha256:desired",
 	}}})
 	require.NoError(t, planErr)
-	ctx = jobcontext.WithExecution(ctx, scheduler.Run{
+	ctx = jobcontext.WithExecution(ctx, types.SchedulerRun{
 		AttemptCount: 1,
-		Outcome:      scheduler.Outcome{Targets: []scheduler.TargetOutcome{{ID: "auto-update", RecoveryData: frozenPlan}}},
+		Outcome:      types.SchedulerOutcome{Targets: []types.TargetOutcome{{ID: "auto-update", RecoveryData: frozenPlan}}},
 	}, nil)
-	result, err := svc.ApplyPending(ctx, arcaneupdater.Options{})
+	result, err := svc.ApplyPending(ctx, types.UpdaterOptions{})
 	require.ErrorContains(t, err, "self-update was triggered")
 	require.NotNil(t, result)
 	assert.True(t, mockUpgrade.triggerCalled, "scheduled auto-update should use CLI self-upgrade for legacy Arcane server labels")
@@ -1368,8 +1363,8 @@ func TestUpdateLabelPolicyMarksQuadletContainersUnmanaged(t *testing.T) {
 		unmanaged bool
 	}{
 		{name: "unlabelled", labels: map[string]string{}},
-		{name: "quadlet unit", labels: map[string]string{podman.SystemdUnitLabel: "web.service"}, unmanaged: true},
-		{name: "empty quadlet unit", labels: map[string]string{podman.SystemdUnitLabel: ""}},
+		{name: "quadlet unit", labels: map[string]string{types.PodmanSystemdUnitLabel: "web.service"}, unmanaged: true},
+		{name: "empty quadlet unit", labels: map[string]string{types.PodmanSystemdUnitLabel: ""}},
 		{name: "updater opt out", labels: map[string]string{labels.LabelUpdater: "false"}},
 	}
 
@@ -1748,14 +1743,14 @@ func TestUpdaterProjectChecksWithoutContainers(t *testing.T) {
 				target:     "3.20.0",
 			},
 		} {
-			localConfig := types.ServiceConfig{
+			localConfig := composetypes.ServiceConfig{
 				Name:   tt.name,
 				Image:  "alpine:3.20.0",
 				Labels: map[string]string{labels.LabelUpdateConstraint: tt.constraint},
 			}
 			if metadata {
 				compose := "x-arcane:\n  updater:\n    strategy: auto\nservices:\n  %s:\n    image: alpine:3.20.0\n    x-arcane:\n      updater:\n        constraint: %q\n"
-				model, loadErr := projects.LoadComposeProjectFromContent(t.Context(), projecttypes.ComposeContentOptions{
+				model, loadErr := projects.LoadComposeProjectFromContent(t.Context(), types.ComposeContentOptions{
 					ProjectName:    "metadata",
 					WorkingDir:     t.TempDir(),
 					ComposeContent: fmt.Sprintf(compose, tt.name, tt.constraint),
@@ -1840,11 +1835,11 @@ func TestSingleUpdatePersistsSuccessfulActivity(t *testing.T) {
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		detail, getActivityDetailErr := activityService.GetActivityDetail(t.Context(), "0", accepted.ID, 1)
-		return getActivityDetailErr == nil && detail.Activity.Status == activitytypes.StatusSuccess
+		return getActivityDetailErr == nil && detail.Activity.Status == types.ActivityStatusSuccess
 	}, 5*time.Second, 10*time.Millisecond)
 	detail, err := activityService.GetActivityDetail(t.Context(), "0", accepted.ID, 1)
 	require.NoError(t, err)
-	require.Equal(t, activitytypes.StatusSuccess, detail.Activity.Status)
+	require.Equal(t, types.ActivityStatusSuccess, detail.Activity.Status)
 }
 
 func TestUpdaterService_WorkflowDefinitionsAreVersioned(t *testing.T) {

@@ -13,13 +13,13 @@ import (
 	"strings"
 
 	"github.com/docker/go-connections/nat"
-	"github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	internaltypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 var podNetworkModes = []string{"bridge", "host", "none", "private", "slirp4netns", "pasta", "ns"}
@@ -96,12 +96,12 @@ func newPodCreateCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[podman.PodCreateResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.PodCreateResponse]{
 				Method:         http.MethodPost,
-				Path:           types.PodmanPods(c.EnvID()),
+				Path:           internaltypes.PodmanPods(c.EnvID()),
 				Body:           req,
 				FailureMessage: "failed to create pod",
-				Render: func(data podman.PodCreateResponse) error {
+				Render: func(data types.PodCreateResponse) error {
 					output.Success("Pod %s created successfully", opts.name)
 					output.KeyValue("ID", data.ID)
 					return nil
@@ -166,24 +166,24 @@ func newPodCreateCmd() *cobra.Command {
 	return cmd
 }
 
-func (o podCreateOptions) request(cmd *cobra.Command) (podman.PodCreateRequest, error) {
+func (o podCreateOptions) request(cmd *cobra.Command) (types.PodCreateRequest, error) {
 	labels, err := o.allLabels()
 	if err != nil {
-		return podman.PodCreateRequest{}, err
+		return types.PodCreateRequest{}, err
 	}
 
-	ports := make([]podman.PodPortMapping, 0, len(o.publish))
+	ports := make([]types.PodPortMapping, 0, len(o.publish))
 	for _, spec := range o.publish {
 		mappings, parseErr := nat.ParsePortSpec(spec)
 		if parseErr != nil {
-			return podman.PodCreateRequest{}, fmt.Errorf("invalid --publish %q: %w", spec, parseErr)
+			return types.PodCreateRequest{}, fmt.Errorf("invalid --publish %q: %w", spec, parseErr)
 		}
 		for _, mapping := range mappings {
 			hostPort, portErr := strconv.ParseUint(cmp.Or(mapping.Binding.HostPort, "0"), 10, 16)
 			if portErr != nil {
-				return podman.PodCreateRequest{}, fmt.Errorf("invalid --publish %q: %w", spec, portErr)
+				return types.PodCreateRequest{}, fmt.Errorf("invalid --publish %q: %w", spec, portErr)
 			}
-			ports = append(ports, podman.PodPortMapping{
+			ports = append(ports, types.PodPortMapping{
 				ContainerPort: uint16(mapping.Port.Int()),
 				HostPort:      uint16(hostPort),
 				HostIP:        mapping.Binding.HostIP,
@@ -194,40 +194,40 @@ func (o podCreateOptions) request(cmd *cobra.Command) (podman.PodCreateRequest, 
 
 	networkMode, networkOptions, networks, err := o.networkSettings()
 	if err != nil {
-		return podman.PodCreateRequest{}, err
+		return types.PodCreateRequest{}, err
 	}
 
-	deviceLimits := func(flag string, values []string) ([]podman.PodDeviceLimit, error) {
-		out := make([]podman.PodDeviceLimit, 0, len(values))
+	deviceLimits := func(flag string, values []string) ([]types.PodDeviceLimit, error) {
+		out := make([]types.PodDeviceLimit, 0, len(values))
 		for _, value := range values {
 			index := strings.LastIndex(value, ":")
 			if index <= 0 {
 				return nil, fmt.Errorf("invalid --%s %q: use MAJOR:MINOR:VALUE", flag, value)
 			}
-			out = append(out, podman.PodDeviceLimit{Device: value[:index], Value: value[index+1:]})
+			out = append(out, types.PodDeviceLimit{Device: value[:index], Value: value[index+1:]})
 		}
 		return out, nil
 	}
 	weightDevices, err := deviceLimits("blkio-weight-device", o.blkioWeightDevices)
 	if err != nil {
-		return podman.PodCreateRequest{}, err
+		return types.PodCreateRequest{}, err
 	}
 	readBps, err := deviceLimits("device-read-bps", o.deviceReadBps)
 	if err != nil {
-		return podman.PodCreateRequest{}, err
+		return types.PodCreateRequest{}, err
 	}
 	writeBps, err := deviceLimits("device-write-bps", o.deviceWriteBps)
 	if err != nil {
-		return podman.PodCreateRequest{}, err
+		return types.PodCreateRequest{}, err
 	}
 
-	volumes := make([]podman.PodVolume, 0, len(o.volumes))
+	volumes := make([]types.PodVolume, 0, len(o.volumes))
 	for _, value := range o.volumes {
 		parts := strings.SplitN(value, ":", 3)
 		if len(parts) < 2 {
-			return podman.PodCreateRequest{}, fmt.Errorf("invalid --volume %q: use SOURCE:DESTINATION[:OPTIONS]", value)
+			return types.PodCreateRequest{}, fmt.Errorf("invalid --volume %q: use SOURCE:DESTINATION[:OPTIONS]", value)
 		}
-		volumes = append(volumes, podman.PodVolume{
+		volumes = append(volumes, types.PodVolume{
 			Source:      parts[0],
 			Destination: parts[1],
 			Options:     kit.Ternary(len(parts) == 3, strings.Split(parts[len(parts)-1], ","), nil),
@@ -237,12 +237,12 @@ func (o podCreateOptions) request(cmd *cobra.Command) (podman.PodCreateRequest, 
 	policy, retries, hasRetries := strings.Cut(o.restart, ":")
 	restartRetries, err := strconv.ParseUint(cmp.Or(retries, "0"), 10, 32)
 	if err != nil {
-		return podman.PodCreateRequest{}, fmt.Errorf("invalid --restart %q: %w", o.restart, err)
+		return types.PodCreateRequest{}, fmt.Errorf("invalid --restart %q: %w", o.restart, err)
 	}
 
 	share := strings.TrimSpace(o.share)
 	noShare := cmd.Flags().Changed("share") && (share == "" || share == "none")
-	return podman.PodCreateRequest{
+	return types.PodCreateRequest{
 		Name:               o.name,
 		Hostname:           o.hostname,
 		Labels:             kit.Ternary(len(labels) > 0, labels, nil),
@@ -330,10 +330,10 @@ func (o podCreateOptions) allLabels() (map[string]string, error) {
 	return labels, nil
 }
 
-func (o podCreateOptions) networkSettings() (string, []string, []podman.PodNetwork, error) {
+func (o podCreateOptions) networkSettings() (string, []string, []types.PodNetwork, error) {
 	var mode string
 	var options []string
-	var networks []podman.PodNetwork
+	var networks []types.PodNetwork
 	for _, value := range o.networks {
 		name, rest, _ := strings.Cut(value, ":")
 		if slices.Contains(podNetworkModes, name) {
@@ -341,7 +341,7 @@ func (o podCreateOptions) networkSettings() (string, []string, []podman.PodNetwo
 			options = kit.Ternary(name == "ns" || rest == "", options, strings.Split(rest, ","))
 			continue
 		}
-		network := podman.PodNetwork{Name: name}
+		network := types.PodNetwork{Name: name}
 		for option := range strings.SplitSeq(rest, ",") {
 			key, optionValue, _ := strings.Cut(option, "=")
 			switch key {
@@ -366,7 +366,7 @@ func (o podCreateOptions) networkSettings() (string, []string, []podman.PodNetwo
 	if len(networks) != 1 {
 		return "", nil, nil, errors.New("--ip, --ip6, --mac-address, and --network-alias need exactly one --network NAME")
 	}
-	networks[0] = podman.PodNetwork{
+	networks[0] = types.PodNetwork{
 		Name:    networks[0].Name,
 		Aliases: append(networks[0].Aliases, o.networkAliases...),
 		StaticIPs: slices.DeleteFunc(append(networks[0].StaticIPs, o.ip, o.ip6), func(ip string) bool {

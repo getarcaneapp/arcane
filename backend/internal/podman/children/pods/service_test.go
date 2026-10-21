@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -19,18 +19,18 @@ import (
 func TestCreateMapsRequestToPodSpec(t *testing.T) {
 	tests := []struct {
 		name string
-		req  podmantypes.PodCreateRequest
+		req  types.PodCreateRequest
 		want map[string]any
 	}{
 		{
 			name: "named network with ports",
-			req: podmantypes.PodCreateRequest{
+			req: types.PodCreateRequest{
 				Name:             " web ",
 				Hostname:         "web-host",
 				Labels:           map[string]string{"tier": "front"},
-				Networks:         []podmantypes.PodNetwork{{Name: "frontend"}},
+				Networks:         []types.PodNetwork{{Name: "frontend"}},
 				SharedNamespaces: []string{"net", "ipc"},
-				PortMappings: []podmantypes.PodPortMapping{
+				PortMappings: []types.PodPortMapping{
 					{
 						ContainerPort: 80,
 						HostPort:      8080,
@@ -57,7 +57,7 @@ func TestCreateMapsRequestToPodSpec(t *testing.T) {
 		},
 		{
 			name: "host network without infra",
-			req: podmantypes.PodCreateRequest{
+			req: types.PodCreateRequest{
 				Name:        "host-pod",
 				NetworkMode: "host",
 				NoInfra:     true,
@@ -71,7 +71,7 @@ func TestCreateMapsRequestToPodSpec(t *testing.T) {
 		},
 		{
 			name: "every option",
-			req: podmantypes.PodCreateRequest{
+			req: types.PodCreateRequest{
 				Name:               "full",
 				ExitPolicy:         "stop",
 				RestartPolicy:      "on-failure",
@@ -88,7 +88,7 @@ func TestCreateMapsRequestToPodSpec(t *testing.T) {
 				UIDMap:             []string{"0:100000:65536"},
 				NetworkMode:        "pasta",
 				NetworkOptions:     []string{"--ipv4-only"},
-				Networks: []podmantypes.PodNetwork{{
+				Networks: []types.PodNetwork{{
 					Name:          "backend",
 					Aliases:       []string{"api"},
 					StaticIPs:     []string{"10.89.0.10"},
@@ -111,12 +111,12 @@ func TestCreateMapsRequestToPodSpec(t *testing.T) {
 				Memory:             "512m",
 				MemorySwap:         "-1",
 				BlkioWeight:        300,
-				BlkioWeightDevices: []podmantypes.PodDeviceLimit{{Device: "8:0", Value: "200"}},
-				DeviceReadBps:      []podmantypes.PodDeviceLimit{{Device: "8:0", Value: "1mb"}},
-				DeviceWriteBps:     []podmantypes.PodDeviceLimit{{Device: "8:16", Value: "2mb"}},
+				BlkioWeightDevices: []types.PodDeviceLimit{{Device: "8:0", Value: "200"}},
+				DeviceReadBps:      []types.PodDeviceLimit{{Device: "8:0", Value: "1mb"}},
+				DeviceWriteBps:     []types.PodDeviceLimit{{Device: "8:16", Value: "2mb"}},
 				Devices:            []string{"/dev/fuse"},
 				GPUs:               []string{"all"},
-				Volumes: []podmantypes.PodVolume{
+				Volumes: []types.PodVolume{
 					{
 						Source:      "/srv/data",
 						Destination: "/data",
@@ -259,12 +259,12 @@ func TestCreateMapsRequestToPodSpec(t *testing.T) {
 func TestCreateRejectsInvalidOptions(t *testing.T) {
 	tests := []struct {
 		name string
-		req  podmantypes.PodCreateRequest
+		req  types.PodCreateRequest
 	}{
-		{name: "memory", req: podmantypes.PodCreateRequest{Name: "bad", Memory: "lots"}},
-		{name: "device", req: podmantypes.PodCreateRequest{Name: "bad", DeviceReadBps: []podmantypes.PodDeviceLimit{{Device: "/dev/sda", Value: "1mb"}}}},
-		{name: "weight", req: podmantypes.PodCreateRequest{Name: "bad", BlkioWeightDevices: []podmantypes.PodDeviceLimit{{Device: "8:0", Value: "heavy"}}}},
-		{name: "id map", req: podmantypes.PodCreateRequest{Name: "bad", GIDMap: []string{"0:100000"}}},
+		{name: "memory", req: types.PodCreateRequest{Name: "bad", Memory: "lots"}},
+		{name: "device", req: types.PodCreateRequest{Name: "bad", DeviceReadBps: []types.PodDeviceLimit{{Device: "/dev/sda", Value: "1mb"}}}},
+		{name: "weight", req: types.PodCreateRequest{Name: "bad", BlkioWeightDevices: []types.PodDeviceLimit{{Device: "8:0", Value: "heavy"}}}},
+		{name: "id map", req: types.PodCreateRequest{Name: "bad", GIDMap: []string{"0:100000"}}},
 	}
 
 	for _, tt := range tests {
@@ -283,13 +283,13 @@ func TestInspectMergesContainerDetails(t *testing.T) {
 	tests := []struct {
 		name       string
 		listStatus int
-		want       []podmantypes.PodInspectContainer
+		want       []types.PodInspectContainer
 		wantErr    bool
 	}{
 		{
 			name:       "merges list details by id",
 			listStatus: http.StatusOK,
-			want: []podmantypes.PodInspectContainer{
+			want: []types.PodInspectContainer{
 				{
 					ID:      "infra1",
 					Name:    "web-infra",
@@ -298,7 +298,7 @@ func TestInspectMergesContainerDetails(t *testing.T) {
 					Status:  "Up 2 minutes",
 					Created: time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC),
 					IsInfra: true,
-					Ports: []podmantypes.PodPortMapping{
+					Ports: []types.PodPortMapping{
 						{
 							ContainerPort: 80,
 							HostPort:      8080,
@@ -315,7 +315,7 @@ func TestInspectMergesContainerDetails(t *testing.T) {
 					Status:   "Exited (1) 1 minute ago",
 					Created:  time.Date(2026, 10, 1, 12, 1, 0, 0, time.UTC),
 					ExitCode: 1,
-					Ports:    []podmantypes.PodPortMapping{},
+					Ports:    []types.PodPortMapping{},
 				},
 				{
 					ID:    "gone1",

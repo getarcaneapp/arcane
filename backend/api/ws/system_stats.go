@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
@@ -160,7 +160,7 @@ func (h *WebSocketHandler) systemStatsSamplerInterval() time.Duration {
 	return systemStatsSamplerDefaultInterval
 }
 
-func (h *WebSocketHandler) runSystemStatsSampler(ctx context.Context, wake <-chan struct{}, collect func(context.Context) systemtypes.SystemStats) {
+func (h *WebSocketHandler) runSystemStatsSampler(ctx context.Context, wake <-chan struct{}, collect func(context.Context) types.SystemStats) {
 	interval := h.systemStatsSamplerInterval()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -191,7 +191,7 @@ func (h *WebSocketHandler) runSystemStatsSampler(ctx context.Context, wake <-cha
 }
 
 // collectSystemStats gathers all system statistics.
-func (h *WebSocketHandler) collectSystemStats(ctx context.Context) systemtypes.SystemStats {
+func (h *WebSocketHandler) collectSystemStats(ctx context.Context) types.SystemStats {
 	cpuUsage, _ := h.cpuCache.Load()
 
 	h.systemStaticInfo.once.Do(func() {
@@ -225,14 +225,14 @@ func (h *WebSocketHandler) collectSystemStats(ctx context.Context) systemtypes.S
 		diskInfo, _ = disk.Usage("/")
 	}
 
-	var gpuStats []systemtypes.GPUStats
+	var gpuStats []types.GPUStats
 	if h.gpuMonitor != nil && h.gpuMonitor.Enabled() {
 		if stats, statsErr := h.gpuMonitor.Stats(ctx); statsErr == nil {
 			gpuStats = stats
 		}
 	}
 
-	return systemtypes.SystemStats{
+	return types.SystemStats{
 		CPUUsage:     cpuUsage,
 		MemoryUsage:  memUsed,
 		MemoryTotal:  memTotal,
@@ -359,7 +359,7 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 		}
 	}()
 
-	conn, unregister, ok := h.acceptWS(c, systemtypes.WSKindSystemStats, "")
+	conn, unregister, ok := h.acceptWS(c, types.WSKindSystemStats, "")
 	if !ok {
 		return nil
 	}

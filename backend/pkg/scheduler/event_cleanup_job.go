@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"time"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
@@ -51,7 +51,7 @@ func (j *EventCleanupJob) Schedule(ctx context.Context) string {
 	return schedule.Or(ctx, j.settingsService.GetStringSetting(ctx, "eventCleanupInterval", "0 0 */6 * * *"), "0 0 */6 * * *", EventCleanupJobName)
 }
 
-func (j *EventCleanupJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
+func (j *EventCleanupJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 	slog.InfoContext(ctx, "Running event cleanup job", "jobName", EventCleanupJobName)
 
 	var cleanupErr error
@@ -98,9 +98,9 @@ func (j *EventCleanupJob) Run(ctx context.Context) (schedulertypes.Outcome, erro
 
 	if cleanupErr != nil {
 		slog.ErrorContext(ctx, "Event cleanup job failed", "jobName", EventCleanupJobName, "error", cleanupErr)
-		return schedulertypes.Outcome{}, cleanupErr
+		return types.SchedulerOutcome{}, cleanupErr
 	}
-	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
+	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 }
 
 func (j *EventCleanupJob) Reschedule(ctx context.Context) error {

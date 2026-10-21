@@ -10,7 +10,7 @@
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { webhookService } from '#lib/services/webhook-service.js';
-	import type { Webhook, WebhookCreated, CreateWebhook } from '#lib/types/environment.js';
+	import type { Webhook, WebhookCreated, WebhookCreate } from '#lib/types/environment.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -38,7 +38,7 @@
 		return `${origin}/api/webhooks/trigger/${encodeURIComponent(newlyCreatedWebhook.token)}`;
 	});
 
-	async function handleCreateWebhook(webhook: CreateWebhook) {
+	async function handleCreateWebhook(webhook: WebhookCreate) {
 		isLoading.creating = true;
 		const result = await tryCatch(webhookService.create(webhook));
 		await handleApiResultWithCallbacks({

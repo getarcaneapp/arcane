@@ -14,7 +14,7 @@ import (
 	"time"
 	"uuid"
 
-	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/actor"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
@@ -35,33 +35,33 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
 	store := kv.NewKVService(&database.DB{DB: db})
-	legacy := st.QueueRecord{
+	legacy := types.SchedulerQueueRecord{
 		JobID:         "legacy",
 		EnvironmentID: "0",
-		Runs: []st.Run{{
+		Runs: []types.SchedulerRun{{
 			ID:            uuid.New().String(),
 			JobID:         "legacy",
 			EnvironmentID: "0",
 			Trigger:       "manual",
-			Status:        st.Succeeded,
+			Status:        types.RunStatusSucceeded,
 			CreatedAt:     time.Now().UTC(),
 			UpdatedAt:     time.Now().UTC(),
 		}},
 	}
 	legacy.Runs[0].ActivityID = legacy.Runs[0].ID
 	for _, jobID := range []string{"gitops-sync:first", "gitops-sync:second"} {
-		record := st.QueueRecord{JobID: jobID, EnvironmentID: "0", Schedule: "@every 5m", NextRun: time.Now().UTC().Add(time.Hour)}
+		record := types.SchedulerQueueRecord{JobID: jobID, EnvironmentID: "0", Schedule: "@every 5m", NextRun: time.Now().UTC().Add(time.Hour)}
 		for i := range 1600 {
 			created := time.Now().UTC().Add(-time.Duration(1600-i) * 5 * time.Minute)
 			record.Runs = append(
 				record.Runs,
-				st.Run{
+				types.SchedulerRun{
 					ID:            uuid.New().String(),
 					ActivityID:    uuid.New().String(),
 					JobID:         jobID,
 					EnvironmentID: "0",
 					Trigger:       "scheduled",
-					Status:        st.NeedsAttention,
+					Status:        types.RunStatusNeedsAttention,
 					CreatedAt:     created,
 					UpdatedAt:     created,
 				},
@@ -85,16 +85,16 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 	observer := &activityObserverFake{existingOnly: true}
 	observer.unavailable.Store(true)
 	q.SetObserver(observer)
-	_, err = q.Submit(t.Context(), st.Request{JobID: legacy.JobID, RunID: legacy.Runs[0].ID, Trigger: "manual"})
+	_, err = q.Submit(t.Context(), types.SchedulerRequest{JobID: legacy.JobID, RunID: legacy.Runs[0].ID, Trigger: "manual"})
 	require.NoError(t, err)
-	require.NoError(t, q.UpdateRun(t.Context(), legacy.Runs[0], func(run *st.Run) error {
-		run.Outcome.Targets = []st.TargetOutcome{{ID: "artifact", Status: st.Succeeded, RecoveryData: jsontext.Value(`{"backupId":"artifact"}`)}}
+	require.NoError(t, q.UpdateRun(t.Context(), legacy.Runs[0], func(run *types.SchedulerRun) error {
+		run.Outcome.Targets = []types.TargetOutcome{{ID: "artifact", Status: types.RunStatusSucceeded, RecoveryData: jsontext.Value(`{"backupId":"artifact"}`)}}
 		return nil
 	}))
 	require.True(t, pendingActivitySync(t, q))
-	q.SetExecutor(func(context.Context, st.Run) (st.Outcome, error) {
+	q.SetExecutor(func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error) {
 		t.Error("startup must not execute jobs before activation")
-		return st.Outcome{Status: st.Failed}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusFailed}, nil
 	}, nil)
 	require.NoError(t, q.Start(t.Context(), t.Context()))
 	require.NoError(t, q.Stop(t.Context()))
@@ -113,15 +113,15 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 		history, listErr := restored.List(t.Context(), "0", jobID, 1, 100)
 		require.NoError(t, listErr)
 		require.Equal(t, 100, history.Total)
-		require.Equal(t, st.Failed, history.Runs[0].Status)
+		require.Equal(t, types.RunStatusFailed, history.Runs[0].Status)
 		state, stateErr := restored.ScheduleState(t.Context(), jobID)
 		require.NoError(t, stateErr)
 		require.Equal(t, "@every 5m", state.Schedule)
 		require.True(t, state.NextRun.After(time.Now()))
 	}
-	duplicate, err := restored.Submit(t.Context(), st.Request{JobID: legacy.JobID, RunID: legacy.Runs[0].ID, Trigger: "manual"})
+	duplicate, err := restored.Submit(t.Context(), types.SchedulerRequest{JobID: legacy.JobID, RunID: legacy.Runs[0].ID, Trigger: "manual"})
 	require.NoError(t, err)
-	require.Equal(t, st.Succeeded, duplicate.Status)
+	require.Equal(t, types.RunStatusSucceeded, duplicate.Status)
 	require.Equal(t, jsontext.Value(`{"backupId":"artifact"}`), duplicate.Outcome.Targets[0].RecoveryData)
 	history, err := restored.List(t.Context(), "0", legacy.JobID, 1, 20)
 	require.NoError(t, err)
@@ -136,10 +136,10 @@ func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {
 	require.True(t, exists)
 }
 
-type occurrenceEnvelope struct{ occurrence st.ScheduleOccurrence }
+type occurrenceEnvelope struct{ occurrence types.ScheduleOccurrence }
 
 func (e occurrenceEnvelope) Decode(value any) error {
-	*value.(*st.ScheduleOccurrence) = e.occurrence
+	*value.(*types.ScheduleOccurrence) = e.occurrence
 	return nil
 }
 
@@ -152,7 +152,7 @@ func TestAlarmIgnoresStaleGeneration(t *testing.T) {
 	q.enabled.Store(true)
 	defer q.enabled.Store(false)
 	coordinator := &coordinatorActor{id: kit.SHA256Hex("0\x00schedule"), q: q}
-	require.NoError(t, coordinator.Alarm(t.Context(), "old", occurrenceEnvelope{st.ScheduleOccurrence{Generation: before.Generation - 1, Sequence: before.Sequence}}))
+	require.NoError(t, coordinator.Alarm(t.Context(), "old", occurrenceEnvelope{types.ScheduleOccurrence{Generation: before.Generation - 1, Sequence: before.Sequence}}))
 	after, err := q.ScheduleState(t.Context(), "schedule")
 	require.NoError(t, err)
 	require.Equal(t, before.Generation, after.Generation)
@@ -170,14 +170,18 @@ func TestDuplicateDispatchAndCanceledDelivery(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			q := newResolutionQueue(t)
 			var executed atomic.Int32
-			q.SetExecutor(func(context.Context, st.Run) (st.Outcome, error) {
+			q.SetExecutor(func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error) {
 				executed.Add(1)
-				return st.Outcome{Status: st.NeedsAttention, Message: "Completion could not be confirmed", Targets: []st.TargetOutcome{{ID: "target", Status: st.NeedsAttention}}}, nil
+				return types.SchedulerOutcome{
+					Status:  types.RunStatusNeedsAttention,
+					Message: "Completion could not be confirmed",
+					Targets: []types.TargetOutcome{{ID: "target", Status: types.RunStatusNeedsAttention}},
+				}, nil
 			}, nil)
-			run, err := q.Submit(t.Context(), st.Request{JobID: "dispatch", Trigger: "manual"})
+			run, err := q.Submit(t.Context(), types.SchedulerRequest{JobID: "dispatch", Trigger: "manual"})
 			require.NoError(t, err)
 			id := kit.SHA256Hex("0\x00" + run.JobID)
-			command := st.ExecutionCommand{EnvironmentID: "0", JobID: run.JobID, RunID: run.ID, Attempt: 1}
+			command := types.SchedulerExecutionCommand{EnvironmentID: "0", JobID: run.JobID, RunID: run.ID, Attempt: 1}
 			jobID, created, err := q.service.Dispatch(t.Context(), executorType, id, "execute", command, actor.WithIdempotencyKey(run.ID+"-1"))
 			require.NoError(t, err)
 			require.True(t, created)
@@ -199,13 +203,13 @@ func TestDuplicateDispatchAndCanceledDelivery(t *testing.T) {
 			persisted, err := q.Get(t.Context(), "0", run.JobID, run.ID)
 			require.NoError(t, err)
 			if cancel {
-				require.Equal(t, st.Canceled, persisted.Status)
+				require.Equal(t, types.RunStatusCanceled, persisted.Status)
 				require.Zero(t, executed.Load())
 				require.Zero(t, persisted.AttemptCount)
 			} else {
-				require.Equal(t, st.Failed, persisted.Status)
+				require.Equal(t, types.RunStatusFailed, persisted.Status)
 				require.Equal(t, "Completion could not be confirmed", persisted.Outcome.Message)
-				require.Equal(t, st.NeedsAttention, persisted.Outcome.Targets[0].Status)
+				require.Equal(t, types.RunStatusNeedsAttention, persisted.Outcome.Targets[0].Status)
 				require.NotNil(t, persisted.FinishedAt)
 				require.Equal(t, int32(1), executed.Load())
 				require.Equal(t, 1, persisted.AttemptCount)
@@ -220,7 +224,7 @@ func TestCapacityGroupsReserveHealthSlots(t *testing.T) {
 	release := make(chan struct{})
 	var once sync.Once
 	t.Cleanup(func() { once.Do(func() { close(release) }) })
-	q.SetExecutor(func(ctx context.Context, run st.Run) (st.Outcome, error) {
+	q.SetExecutor(func(ctx context.Context, run types.SchedulerRun) (types.SchedulerOutcome, error) {
 		counter := &ordinary
 		if strings.HasPrefix(run.JobID, "environment-health") {
 			counter = &health
@@ -229,13 +233,13 @@ func TestCapacityGroupsReserveHealthSlots(t *testing.T) {
 		defer counter.Add(-1)
 		select {
 		case <-ctx.Done():
-			return st.Outcome{}, ctx.Err()
+			return types.SchedulerOutcome{}, ctx.Err()
 		case <-release:
-			return st.Outcome{Status: st.Succeeded}, nil
+			return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 		}
 	}, nil)
 	for _, job := range []string{"one", "two", "three", "four", "five", "six", "environment-health-one", "environment-health-two"} {
-		_, err := q.Submit(t.Context(), st.Request{JobID: job, Trigger: "manual"})
+		_, err := q.Submit(t.Context(), types.SchedulerRequest{JobID: job, Trigger: "manual"})
 		require.NoError(t, err)
 	}
 	require.NoError(t, q.Start(t.Context(), t.Context()))
@@ -252,7 +256,7 @@ func TestCapacityGroupsReserveHealthSlots(t *testing.T) {
 			return false
 		}
 		for _, run := range history.Runs {
-			if run.Status != st.Succeeded {
+			if run.Status != types.RunStatusSucceeded {
 				return false
 			}
 		}
@@ -286,7 +290,7 @@ func TestAdmissionAndCompletionRejectStaleTokens(t *testing.T) {
 	first := NewAdmission(host.Service(), "first")
 	require.NoError(t, first.Register(host))
 	francistest.Start(t, host)
-	key := st.AdmissionKey{Scope: "volume-backup", ID: "shared"}
+	key := types.SchedulerAdmissionKey{Scope: "volume-backup", ID: "shared"}
 	old, admitted, err := first.TryAcquire(t.Context(), key)
 	require.NoError(t, err)
 	require.True(t, admitted)
@@ -308,14 +312,18 @@ func TestAdmissionAndCompletionRejectStaleTokens(t *testing.T) {
 	replacement.Release(t.Context())
 
 	q := newResolutionQueue(t)
-	run, err := q.Submit(t.Context(), st.Request{JobID: "tokens"})
+	run, err := q.Submit(t.Context(), types.SchedulerRequest{JobID: "tokens"})
 	require.NoError(t, err)
-	require.NoError(t, q.UpdateRun(t.Context(), run, func(current *st.Run) error { current.Status = st.Running; current.Owner = "new-token"; return nil }))
+	require.NoError(t, q.UpdateRun(t.Context(), run, func(current *types.SchedulerRun) error {
+		current.Status = types.RunStatusRunning
+		current.Owner = "new-token"
+		return nil
+	}))
 	run.Owner = "stale-token"
-	require.NoError(t, q.persistOutcome(t.Context(), run, st.Outcome{Status: st.Succeeded}))
+	require.NoError(t, q.persistOutcome(t.Context(), run, types.SchedulerOutcome{Status: types.RunStatusSucceeded}))
 	persisted, err := q.Get(t.Context(), "0", run.JobID, run.ID)
 	require.NoError(t, err)
-	require.Equal(t, st.Running, persisted.Status)
+	require.Equal(t, types.RunStatusRunning, persisted.Status)
 	require.Equal(t, "new-token", persisted.Owner)
 }
 
@@ -324,7 +332,7 @@ func TestAdmissionAcquireWaitsForRelease(t *testing.T) {
 	admission := NewAdmission(host.Service(), "epoch")
 	require.NoError(t, admission.Register(host))
 	francistest.Start(t, host)
-	key := st.AdmissionKey{Scope: "updater", ID: "container:solo"}
+	key := types.SchedulerAdmissionKey{Scope: "updater", ID: "container:solo"}
 	held, admitted, err := admission.TryAcquire(t.Context(), key)
 	require.NoError(t, err)
 	require.True(t, admitted)
@@ -363,16 +371,16 @@ func TestLostDispatchAcknowledgementRetainsOneExecution(t *testing.T) {
 	finish := make(chan struct{})
 	var once sync.Once
 	t.Cleanup(func() { once.Do(func() { close(finish) }) })
-	q.SetExecutor(func(ctx context.Context, _ st.Run) (st.Outcome, error) {
+	q.SetExecutor(func(ctx context.Context, _ types.SchedulerRun) (types.SchedulerOutcome, error) {
 		close(entered)
 		select {
 		case <-ctx.Done():
-			return st.Outcome{}, ctx.Err()
+			return types.SchedulerOutcome{}, ctx.Err()
 		case <-finish:
-			return st.Outcome{Status: st.Succeeded}, nil
+			return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 		}
 	}, nil)
-	run, err := q.Submit(t.Context(), st.Request{JobID: "lost-ack"})
+	run, err := q.Submit(t.Context(), types.SchedulerRequest{JobID: "lost-ack"})
 	require.NoError(t, err)
 	require.NoError(t, q.Start(t.Context(), t.Context()))
 	q.Activate()
@@ -386,7 +394,7 @@ func TestLostDispatchAcknowledgementRetainsOneExecution(t *testing.T) {
 		t.Fatal("execution did not start")
 	}
 	id := kit.SHA256Hex("0\x00" + run.JobID)
-	var state st.CoordinatorState
+	var state types.SchedulerCoordinatorState
 	require.NoError(t, q.service.GetState(t.Context(), coordinatorType, id, &state))
 	key := run.ID + "-1"
 	original := state.Dispatches[key].JobID
@@ -406,6 +414,6 @@ func TestLostDispatchAcknowledgementRetainsOneExecution(t *testing.T) {
 	once.Do(func() { close(finish) })
 	require.Eventually(t, func() bool {
 		stored, getErr := q.Get(t.Context(), "0", run.JobID, run.ID)
-		return getErr == nil && stored.Status == st.Succeeded
+		return getErr == nil && stored.Status == types.RunStatusSucceeded
 	}, 5*time.Second, 10*time.Millisecond)
 }

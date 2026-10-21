@@ -15,8 +15,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
-	authtypes "github.com/getarcaneapp/arcane/types/v2/auth"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/require"
 )
@@ -89,12 +88,12 @@ func TestNormalizationBeforeHumaValidation(t *testing.T) {
 		router := echo.New()
 		api := humaecho.New(router, huma.DefaultConfig("test", "1"))
 		registerNormalization(api)
-		var received usertypes.CreateUser
+		var received types.User
 		huma.Register(api, huma.Operation{
 			OperationID: "create",
 			Method:      http.MethodPost,
 			Path:        "/create",
-		}, func(_ context.Context, input *struct{ Body usertypes.CreateUser }) (*struct{}, error) {
+		}, func(_ context.Context, input *struct{ Body types.User }) (*struct{}, error) {
 			received = input.Body
 			return &struct{}{}, nil
 		})
@@ -112,12 +111,12 @@ func TestNormalizationBeforeHumaValidation(t *testing.T) {
 		require.Equal(t, "José", *received.DisplayName)
 		require.Equal(t, " password ", received.Password)
 
-		var login authtypes.Login
+		var login types.AuthLogin
 		huma.Register(api, huma.Operation{
 			OperationID: "login",
 			Method:      http.MethodPost,
 			Path:        "/login",
-		}, func(_ context.Context, input *struct{ Body authtypes.Login }) (*struct{}, error) {
+		}, func(_ context.Context, input *struct{ Body types.AuthLogin }) (*struct{}, error) {
 			login = input.Body
 			return &struct{}{}, nil
 		})

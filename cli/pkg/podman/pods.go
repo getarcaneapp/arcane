@@ -8,14 +8,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	internaltypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 func newPodsCmd() *cobra.Command {
@@ -47,12 +46,12 @@ func newPodsCmd() *cobra.Command {
 					return err
 				}
 
-				return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+				return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 					Method:         http.MethodPost,
-					Path:           types.PodmanPodAction(c.EnvID(), args[0], action.name),
-					Body:           podman.PodActionRequest{Timeout: kit.Ternary(cmd.Flags().Changed("timeout"), new(timeout), nil)},
+					Path:           internaltypes.PodmanPodAction(c.EnvID(), args[0], action.name),
+					Body:           types.PodActionRequest{Timeout: kit.Ternary(cmd.Flags().Changed("timeout"), new(timeout), nil)},
 					FailureMessage: "failed to " + action.name + " pod",
-					Render: func(base.MessageResponse) error {
+					Render: func(types.MessageResponse) error {
 						output.Success("Pod %s: %s completed", args[0], action.name)
 						return nil
 					},
@@ -85,9 +84,9 @@ func newPodListCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[podman.Pod]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.Pod]{
 				Resource: "pods",
-				Endpoint: types.PodmanPods(c.EnvID()),
+				Endpoint: internaltypes.PodmanPods(c.EnvID()),
 				Params: cmdutil.ListParams{
 					Resource:        "pods",
 					Limit:           opts.limit,
@@ -96,7 +95,7 @@ func newPodListCmd() *cobra.Command {
 					All:             opts.all,
 				},
 				Headers: []string{"ID", "NAME", "STATUS", "CONTAINERS", "CREATED"},
-				Row: func(pod podman.Pod) []string {
+				Row: func(pod types.Pod) []string {
 					return []string{
 						pod.ID[:min(len(pod.ID), 12)],
 						pod.Name,
@@ -128,11 +127,11 @@ func newPodInspectCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[podman.PodInspect]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.PodInspect]{
 				Method:         http.MethodGet,
-				Path:           types.PodmanPod(c.EnvID(), args[0]),
+				Path:           internaltypes.PodmanPod(c.EnvID(), args[0]),
 				FailureMessage: "failed to inspect pod",
-				Render: func(data podman.PodInspect) error {
+				Render: func(data types.PodInspect) error {
 					output.Header("Pod Details")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Name", data.Name)
@@ -175,7 +174,7 @@ func newPodDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete pod %s?", args[0]),
-				Path:           cmdutil.AppendQuery(types.PodmanPod(c.EnvID(), args[0]), url.Values{"force": []string{strconv.FormatBool(opts.force)}}),
+				Path:           cmdutil.AppendQuery(internaltypes.PodmanPod(c.EnvID(), args[0]), url.Values{"force": []string{strconv.FormatBool(opts.force)}}),
 				FailureMessage: "failed to delete pod",
 				SuccessMessage: fmt.Sprintf("Pod %s deleted successfully", args[0]),
 			})

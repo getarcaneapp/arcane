@@ -9,11 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/environment"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 type contextKey string
@@ -40,10 +40,10 @@ type Options struct {
 type AppContext struct {
 	Options
 	FleetConfirmed   bool
-	cfg              *types.Config
+	cfg              *clitypes.Config
 	selectedEnv      string
 	environmentsOnce sync.Once
-	environments     []environment.Environment
+	environments     []types.Environment
 	environmentsErr  error
 
 	clientOnce sync.Once
@@ -81,7 +81,7 @@ func From(ctx context.Context) (*AppContext, bool) {
 	return app, ok && app != nil
 }
 
-func (a *AppContext) Config() *types.Config {
+func (a *AppContext) Config() *clitypes.Config {
 	if a == nil || a.cfg == nil {
 		return nil
 	}
@@ -155,20 +155,20 @@ func (a *AppContext) SelectEnvironment(id string) {
 }
 
 // Environments loads the complete visible, enabled environment list once per invocation.
-func (a *AppContext) Environments(ctx context.Context) ([]environment.Environment, error) {
+func (a *AppContext) Environments(ctx context.Context) ([]types.Environment, error) {
 	a.environmentsOnce.Do(func() {
 		c, err := a.Client()
 		if err != nil {
 			a.environmentsErr = err
 			return
 		}
-		response, err := c.GetJSON[[]environment.Environment](ctx, types.Environments()+"?limit=-1")
+		response, err := c.GetJSON[[]types.Environment](ctx, clitypes.Environments()+"?limit=-1")
 		if err != nil {
 			a.environmentsErr = fmt.Errorf("failed to discover environments: %w", err)
 			return
 		}
-		a.environments = slices.DeleteFunc(response.Data, func(env environment.Environment) bool { return !env.Enabled })
-		slices.SortFunc(a.environments, func(left, right environment.Environment) int {
+		a.environments = slices.DeleteFunc(response.Data, func(env types.Environment) bool { return !env.Enabled })
+		slices.SortFunc(a.environments, func(left, right types.Environment) int {
 			return cmp.Or(cmp.Compare(strings.ToLower(cmp.Or(left.Name, left.ID)), strings.ToLower(cmp.Or(right.Name, right.ID))), cmp.Compare(left.ID, right.ID))
 		})
 	})

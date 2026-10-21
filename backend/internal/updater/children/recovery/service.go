@@ -9,9 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	arcaneupdater "github.com/getarcaneapp/arcane/types/v2/updater"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"go.getarcane.app/docker/compat"
@@ -35,12 +33,12 @@ type Service struct {
 	pendingUpdates func(ctx context.Context) ([]updater.ImageUpdateRecord, error)
 	activityID     func(ctx context.Context) string
 	acquireUpdate  func(ctx context.Context, ids []string) (context.Context, func(), error)
-	applyPending   func(ctx context.Context, options arcaneupdater.Options) (*arcaneupdater.Result, error)
+	applyPending   func(ctx context.Context, options types.UpdaterOptions) (*types.UpdaterResult, error)
 }
 
 // remoteDigester resolves registry digests; the image service implements it.
 type remoteDigester interface {
-	RemoteDigest(ctx context.Context, imageRef string, credentials []containerregistry.Credential) (string, error)
+	RemoteDigest(ctx context.Context, imageRef string, credentials []types.ContainerRegistryCredential) (string, error)
 }
 
 type (
@@ -48,12 +46,12 @@ type (
 	frozenSingleKey  struct{}
 	frozenUpdatePlan struct {
 		Records []updater.ImageUpdateRecord
-		Targets []arcaneupdater.FrozenUpdateTarget
+		Targets []types.FrozenUpdateTarget
 	}
 )
 
 type frozenSingle struct {
-	Target  *arcaneupdater.FrozenUpdateTarget
+	Target  *types.FrozenUpdateTarget
 	Persist func() error
 }
 
@@ -63,7 +61,7 @@ func NewService(
 	pendingUpdates func(ctx context.Context) ([]updater.ImageUpdateRecord, error),
 	activityID func(ctx context.Context) string,
 	acquireUpdate func(ctx context.Context, ids []string) (context.Context, func(), error),
-	applyPending func(ctx context.Context, options arcaneupdater.Options) (*arcaneupdater.Result, error),
+	applyPending func(ctx context.Context, options types.UpdaterOptions) (*types.UpdaterResult, error),
 ) *Service {
 	return &Service{
 		dockerService:  dockerService,
@@ -85,7 +83,7 @@ func (s *Service) FrozenRecords(ctx context.Context) ([]updater.ImageUpdateRecor
 }
 
 // WithSingleTarget scopes pulls in ctx to one accepted container update.
-func (s *Service) WithSingleTarget(ctx context.Context, target *arcaneupdater.FrozenUpdateTarget, persist func() error) context.Context {
+func (s *Service) WithSingleTarget(ctx context.Context, target *types.FrozenUpdateTarget, persist func() error) context.Context {
 	return context.WithValue(ctx, frozenSingleKey{}, &frozenSingle{Target: target, Persist: persist})
 }
 
@@ -95,7 +93,7 @@ func (s *Service) VerifyResult(ctx context.Context, resourceID string) error {
 	if !ok {
 		return nil
 	}
-	index := slices.IndexFunc(plan.Targets, func(target arcaneupdater.FrozenUpdateTarget) bool { return target.ContainerID == resourceID })
+	index := slices.IndexFunc(plan.Targets, func(target types.FrozenUpdateTarget) bool { return target.ContainerID == resourceID })
 	if index < 0 {
 		return nil
 	}
@@ -113,7 +111,7 @@ func (s *Service) VerifyResult(ctx context.Context, resourceID string) error {
 // that already holds a plan keeps it. Image refs and container IDs in excluded are left
 // out, and a target that cannot be frozen fails alone instead of aborting the batch.
 // Candidates that deferred reports are skipped without failing, so a later run picks them up.
-func (s *Service) FreezePending(ctx context.Context, run scheduler.Run, excluded map[string]bool, deferred func(updater.ImageUpdateRecord, container.Summary) bool) (context.Context, error) {
+func (s *Service) FreezePending(ctx context.Context, run types.SchedulerRun, excluded map[string]bool, deferred func(updater.ImageUpdateRecord, container.Summary) bool) (context.Context, error) {
 	if _, ok := ctx.Value(frozenPendingKey{}).(*frozenUpdatePlan); ok {
 		return ctx, nil
 	}
@@ -130,7 +128,7 @@ func (s *Service) FreezePending(ctx context.Context, run scheduler.Run, excluded
 	failures := map[string]error{}
 	digests := map[string]string{}
 	selected := make([]updater.ImageUpdateRecord, 0, len(records))
-	var targets []arcaneupdater.FrozenUpdateTarget
+	var targets []types.FrozenUpdateTarget
 	if len(records) > 0 {
 		listed, listErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
 			return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: false})
@@ -175,30 +173,30 @@ func (s *Service) FreezePending(ctx context.Context, run scheduler.Run, excluded
 	activityID := s.activityID(ctx)
 	// Failures are recorded before the plan, since a delivery that finds the plan never plans again.
 	for containerID, freezeErr := range failures {
-		if failedProgressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{
+		if failedProgressErr := jobcontext.Progress(ctx, types.TargetOutcome{
 			ID:           containerID,
 			ResourceType: "container",
-			Status:       scheduler.Failed,
+			Status:       types.RunStatusFailed,
 			Message:      "Update could not be planned: " + freezeErr.Error(),
 			ActivityID:   activityID,
 		}); failedProgressErr != nil {
 			return ctx, failedProgressErr
 		}
 	}
-	if progressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{
+	if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{
 		ID:           "auto-update",
 		ResourceType: "update-batch",
-		Status:       scheduler.Running,
+		Status:       types.RunStatusRunning,
 		RecoveryData: raw,
 		ActivityID:   activityID,
 	}); progressErr != nil {
 		return ctx, progressErr
 	}
 	for _, target := range plan.Targets {
-		if queuedProgressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{
+		if queuedProgressErr := jobcontext.Progress(ctx, types.TargetOutcome{
 			ID:           target.ContainerID,
 			ResourceType: "container",
-			Status:       scheduler.Queued,
+			Status:       types.RunStatusQueued,
 		}); queuedProgressErr != nil {
 			return ctx, queuedProgressErr
 		}
@@ -211,7 +209,7 @@ func (s *Service) freezeRecordTarget(
 	record updater.ImageUpdateRecord,
 	containerID string,
 	digests map[string]string,
-) (*arcaneupdater.FrozenUpdateTarget, updater.ImageUpdateRecord, error) {
+) (*types.FrozenUpdateTarget, updater.ImageUpdateRecord, error) {
 	frozen, err := s.FreezeContainer(ctx, containerID)
 	if err != nil {
 		return nil, record, err
@@ -232,7 +230,7 @@ func (s *Service) freezeRecordTarget(
 		return nil, record, errors.New("registry returned no desired digest")
 	}
 	digests[record.NewImageRef()] = digest
-	return &arcaneupdater.FrozenUpdateTarget{ //exhaustruct:enforce
+	return &types.FrozenUpdateTarget{ //exhaustruct:enforce
 			ContainerID:          frozen.ContainerID,
 			ContainerName:        frozen.ContainerName,
 			ComposeProject:       frozen.ComposeProject,
@@ -262,14 +260,14 @@ func (s *Service) freezeRecordTarget(
 }
 
 // FreezeContainer captures the identity evidence of one container.
-func (s *Service) FreezeContainer(ctx context.Context, id string) (*arcaneupdater.FrozenUpdateTarget, error) {
+func (s *Service) FreezeContainer(ctx context.Context, id string) (*types.FrozenUpdateTarget, error) {
 	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
 		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, id, client.ContainerInspectOptions{})
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &arcaneupdater.FrozenUpdateTarget{
+	return &types.FrozenUpdateTarget{
 		ContainerID:          result.Container.ID,
 		ContainerName:        strings.TrimPrefix(result.Container.Name, "/"),
 		ComposeProject:       kit.FromPtr(result.Container.Config).Labels["com.docker.compose.project"],
@@ -282,7 +280,7 @@ func (s *Service) FreezeContainer(ctx context.Context, id string) (*arcaneupdate
 	}, nil
 }
 
-func (s *Service) ResumeTarget(ctx context.Context, target arcaneupdater.FrozenUpdateTarget) (arcaneupdater.FrozenUpdateTarget, bool, error) {
+func (s *Service) ResumeTarget(ctx context.Context, target types.FrozenUpdateTarget) (types.FrozenUpdateTarget, bool, error) {
 	current, err := s.FreezeContainer(ctx, target.ContainerID)
 	if err != nil {
 		return target, false, err
@@ -299,7 +297,7 @@ func (s *Service) ResumeTarget(ctx context.Context, target arcaneupdater.FrozenU
 	if err != nil {
 		return target, false, err
 	}
-	return arcaneupdater.FrozenUpdateTarget{ //exhaustruct:enforce
+	return types.FrozenUpdateTarget{ //exhaustruct:enforce
 		ContainerID:          target.ContainerID,
 		ContainerName:        target.ContainerName,
 		ComposeProject:       target.ComposeProject,
@@ -322,7 +320,7 @@ func (s *Service) PreparePull(ctx context.Context, imageRef string) (string, err
 			if err != nil {
 				return "", err
 			}
-			*single.Target = arcaneupdater.FrozenUpdateTarget{ //exhaustruct:enforce
+			*single.Target = types.FrozenUpdateTarget{ //exhaustruct:enforce
 				ContainerID:          single.Target.ContainerID,
 				ContainerName:        single.Target.ContainerName,
 				ComposeProject:       single.Target.ComposeProject,
@@ -361,10 +359,10 @@ func (s *Service) PreparePull(ctx context.Context, imageRef string) (string, err
 			return "", errors.New("conflicting frozen digests for one image reference")
 		}
 		immutable = selected
-		if progressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{
+		if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{
 			ID:           target.ContainerID,
 			ResourceType: "container",
-			Status:       scheduler.Running,
+			Status:       types.RunStatusRunning,
 		}); progressErr != nil {
 			return "", progressErr
 		}
@@ -377,7 +375,7 @@ func (s *Service) PreparePull(ctx context.Context, imageRef string) (string, err
 
 // ConfirmTarget returns whether the desired effect is confirmed,
 // or whether the exact original container is unchanged and safe to resume.
-func (s *Service) ConfirmTarget(ctx context.Context, target arcaneupdater.FrozenUpdateTarget) (bool, bool, error) {
+func (s *Service) ConfirmTarget(ctx context.Context, target types.FrozenUpdateTarget) (bool, bool, error) {
 	listed, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
 		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	})
@@ -439,51 +437,51 @@ func (s *Service) ConfirmTarget(ctx context.Context, target arcaneupdater.Frozen
 }
 
 // ReconcilePending resumes only frozen targets whose original container is unchanged.
-func (s *Service) ReconcilePending(ctx context.Context, run scheduler.Run) (scheduler.Outcome, error) {
+func (s *Service) ReconcilePending(ctx context.Context, run types.SchedulerRun) (types.SchedulerOutcome, error) {
 	targetIDs, err := s.TargetRefs(run)
 	if err != nil {
-		return scheduler.Outcome{Status: scheduler.Waiting}, err
+		return types.SchedulerOutcome{Status: types.RunStatusWaiting}, err
 	}
 	ctx, release, err := s.acquireUpdate(ctx, targetIDs)
 	if err != nil {
-		return scheduler.Outcome{Status: scheduler.Waiting}, err
+		return types.SchedulerOutcome{Status: types.RunStatusWaiting}, err
 	}
 	defer release()
 	ctx, remaining, unresolved, err := s.ResumePlan(ctx, run)
 	if errors.Is(err, errNoFrozenPlan) {
-		return scheduler.Outcome{
-			Status:  scheduler.Failed,
+		return types.SchedulerOutcome{
+			Status:  types.RunStatusFailed,
 			Message: "Interrupted update has no frozen target plan",
 			Targets: run.Outcome.Targets,
 		}, nil
 	}
 	if err != nil {
-		return scheduler.Outcome{Status: scheduler.Waiting}, err
+		return types.SchedulerOutcome{Status: types.RunStatusWaiting}, err
 	}
 	if remaining > 0 {
-		result, applyPendingErr := s.applyPending(ctx, arcaneupdater.Options{})
+		result, applyPendingErr := s.applyPending(ctx, types.UpdaterOptions{})
 		if applyPendingErr != nil || result == nil || result.Failed > 0 {
-			return scheduler.Outcome{Status: scheduler.Failed, Message: "Frozen update recovery could not confirm completion"}, applyPendingErr
+			return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: "Frozen update recovery could not confirm completion"}, applyPendingErr
 		}
 	}
 	// Containers that could not be planned were never updated, so recovery reports them as finalize does.
 	unplanned := s.Unplanned(run)
 	switch {
 	case unresolved:
-		return scheduler.Outcome{
-			Status:  scheduler.Failed,
+		return types.SchedulerOutcome{
+			Status:  types.RunStatusFailed,
 			Message: "Some update effects could not be confirmed",
 			Targets: unplanned,
 		}, nil
 	case len(unplanned) > 0:
-		return scheduler.Outcome{
-			Status:  scheduler.Partial,
+		return types.SchedulerOutcome{
+			Status:  types.RunStatusPartial,
 			Message: "Some updates failed",
 			Targets: unplanned,
 		}, nil
 	}
-	return scheduler.Outcome{
-		Status:  scheduler.Succeeded,
+	return types.SchedulerOutcome{
+		Status:  types.RunStatusSucceeded,
 		Message: "Frozen update targets confirmed",
 		Targets: unplanned,
 	}, nil
@@ -492,7 +490,7 @@ func (s *Service) ReconcilePending(ctx context.Context, run scheduler.Run) (sche
 // ResumePlan confirms each unsettled frozen target before anything repeats and
 // scopes ctx to the targets still to apply. Targets that changed without
 // reaching the desired image are marked for review and reported as unresolved.
-func (s *Service) ResumePlan(ctx context.Context, run scheduler.Run) (context.Context, int, bool, error) {
+func (s *Service) ResumePlan(ctx context.Context, run types.SchedulerRun) (context.Context, int, bool, error) {
 	plan, found, err := frozenPlan(run)
 	if err != nil {
 		return ctx, 0, false, err
@@ -501,13 +499,13 @@ func (s *Service) ResumePlan(ctx context.Context, run scheduler.Run) (context.Co
 		return ctx, 0, false, errNoFrozenPlan
 	}
 	var (
-		targets    []arcaneupdater.FrozenUpdateTarget
+		targets    []types.FrozenUpdateTarget
 		records    []updater.ImageUpdateRecord
 		unresolved bool
 	)
 	for position, target := range plan.Targets {
-		if slices.ContainsFunc(run.Outcome.Targets, func(outcome scheduler.TargetOutcome) bool {
-			return outcome.ID == target.ContainerID && (outcome.Status == scheduler.Succeeded || outcome.Status == scheduler.Skipped)
+		if slices.ContainsFunc(run.Outcome.Targets, func(outcome types.TargetOutcome) bool {
+			return outcome.ID == target.ContainerID && (outcome.Status == types.RunStatusSucceeded || outcome.Status == types.RunStatusSkipped)
 		}) {
 			continue
 		}
@@ -526,10 +524,10 @@ func (s *Service) ResumePlan(ctx context.Context, run scheduler.Run) (context.Co
 				if marshalErr != nil {
 					return ctx, 0, false, marshalErr
 				}
-				if progressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{
+				if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{
 					ID:           "auto-update",
 					ResourceType: "update-batch",
-					Status:       scheduler.Running,
+					Status:       types.RunStatusRunning,
 					RecoveryData: raw,
 					ActivityID:   s.activityID(ctx),
 				}); progressErr != nil {
@@ -543,10 +541,10 @@ func (s *Service) ResumePlan(ctx context.Context, run scheduler.Run) (context.Co
 			continue
 		}
 		unresolved = unresolved || !confirmed
-		if progressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{
+		if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{
 			ID:           target.ContainerID,
 			ResourceType: "container",
-			Status:       kit.Ternary(confirmed, scheduler.Succeeded, scheduler.NeedsAttention),
+			Status:       kit.Ternary(confirmed, types.RunStatusSucceeded, types.RunStatusNeedsAttention),
 			Message: kit.Ternary(
 				confirmed,
 				"Frozen desired image confirmed",
@@ -560,25 +558,25 @@ func (s *Service) ResumePlan(ctx context.Context, run scheduler.Run) (context.Co
 }
 
 // Planned reports whether the run already holds a frozen plan, as a retry does.
-func (s *Service) Planned(run scheduler.Run) bool {
+func (s *Service) Planned(run types.SchedulerRun) bool {
 	_, found, err := frozenPlan(run)
 	return found && err == nil
 }
 
 // Started reports whether applying the frozen plan began: a planned container moved past queued.
-func (s *Service) Started(run scheduler.Run) bool {
+func (s *Service) Started(run types.SchedulerRun) bool {
 	plan, found, err := frozenPlan(run)
 	if err != nil || !found {
 		return false
 	}
-	return slices.ContainsFunc(plan.Targets, func(planned arcaneupdater.FrozenUpdateTarget) bool {
-		return slices.ContainsFunc(run.Outcome.Targets, func(target scheduler.TargetOutcome) bool {
-			return target.ID == planned.ContainerID && target.Status != scheduler.Queued
+	return slices.ContainsFunc(plan.Targets, func(planned types.FrozenUpdateTarget) bool {
+		return slices.ContainsFunc(run.Outcome.Targets, func(target types.TargetOutcome) bool {
+			return target.ID == planned.ContainerID && target.Status != types.RunStatusQueued
 		})
 	})
 }
 
-func (s *Service) TargetRefs(run scheduler.Run) ([]string, error) {
+func (s *Service) TargetRefs(run types.SchedulerRun) ([]string, error) {
 	plan, _, err := frozenPlan(run)
 	if err != nil {
 		return nil, fmt.Errorf("decode frozen update plan: %w", err)
@@ -594,15 +592,15 @@ func (s *Service) TargetRefs(run scheduler.Run) ([]string, error) {
 }
 
 // Unsettled counts the frozen targets a retry would still resume.
-func (s *Service) Unsettled(run scheduler.Run) (int, error) {
+func (s *Service) Unsettled(run types.SchedulerRun) (int, error) {
 	plan, found, err := frozenPlan(run)
 	if err != nil || !found {
 		return 0, cmp.Or(err, errNoFrozenPlan)
 	}
 	unsettled := 0
 	for _, target := range plan.Targets {
-		if !slices.ContainsFunc(run.Outcome.Targets, func(outcome scheduler.TargetOutcome) bool {
-			return outcome.ID == target.ContainerID && (outcome.Status == scheduler.Succeeded || outcome.Status == scheduler.Skipped)
+		if !slices.ContainsFunc(run.Outcome.Targets, func(outcome types.TargetOutcome) bool {
+			return outcome.ID == target.ContainerID && (outcome.Status == types.RunStatusSucceeded || outcome.Status == types.RunStatusSkipped)
 		}) {
 			unsettled++
 		}
@@ -611,19 +609,19 @@ func (s *Service) Unsettled(run scheduler.Run) (int, error) {
 }
 
 // Unplanned lists the images and containers that never reached the frozen plan: failed checks and failed freezes.
-func (s *Service) Unplanned(run scheduler.Run) []scheduler.TargetOutcome {
+func (s *Service) Unplanned(run types.SchedulerRun) []types.TargetOutcome {
 	plan, found, err := frozenPlan(run)
 	if err != nil || !found {
 		return nil
 	}
-	return slices.DeleteFunc(slices.Clone(run.Outcome.Targets), func(target scheduler.TargetOutcome) bool {
-		return (target.ResourceType != "container" && target.ResourceType != "image") || target.Status != scheduler.Failed ||
-			slices.ContainsFunc(plan.Targets, func(planned arcaneupdater.FrozenUpdateTarget) bool { return planned.ContainerID == target.ID })
+	return slices.DeleteFunc(slices.Clone(run.Outcome.Targets), func(target types.TargetOutcome) bool {
+		return (target.ResourceType != "container" && target.ResourceType != "image") || target.Status != types.RunStatusFailed ||
+			slices.ContainsFunc(plan.Targets, func(planned types.FrozenUpdateTarget) bool { return planned.ContainerID == target.ID })
 	})
 }
 
 // frozenPlan decodes the plan persisted on the run's batch target.
-func frozenPlan(run scheduler.Run) (frozenUpdatePlan, bool, error) {
+func frozenPlan(run types.SchedulerRun) (frozenUpdatePlan, bool, error) {
 	var plan frozenUpdatePlan
 	for _, target := range run.Outcome.Targets {
 		if target.ID == "auto-update" && len(target.RecoveryData) > 0 {
@@ -634,7 +632,7 @@ func frozenPlan(run scheduler.Run) (frozenUpdatePlan, bool, error) {
 	return plan, false, nil
 }
 
-func immutableImage(target arcaneupdater.FrozenUpdateTarget) (string, error) {
+func immutableImage(target types.FrozenUpdateTarget) (string, error) {
 	reference, err := refs.NormalizeReference(target.DesiredImageRef)
 	if err != nil {
 		return "", err

@@ -7,14 +7,13 @@ import (
 	"slices"
 	"strconv"
 
-	"github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 func newS3Cmd() *cobra.Command {
@@ -49,12 +48,12 @@ func newS3ListCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[backup.S3Destination]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.S3Destination]{
 				Resource: "S3 destinations",
-				Endpoint: types.BackupsS3(),
+				Endpoint: clitypes.BackupsS3(),
 				Params:   cmdutil.ListParams{Resource: "s3 destinations", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
 				Headers:  []string{"ID", "NAME", "BUCKET", "REGION", "ENDPOINT", "SSL", "SECRET"},
-				Row: func(dest backup.S3Destination) []string {
+				Row: func(dest types.S3Destination) []string {
 					return []string{
 						dest.ID,
 						dest.Name,
@@ -103,15 +102,15 @@ func newS3GetCmd() *cobra.Command {
 				return nil
 			}
 
-			usage, err := c.DoJSON[backup.S3DestinationUsage](cmd.Context(), http.MethodGet, types.BackupsS3DestinationInUse(resolved.ID), nil)
+			usage, err := c.DoJSON[types.S3DestinationUsage](cmd.Context(), http.MethodGet, clitypes.BackupsS3DestinationInUse(resolved.ID), nil)
 			if err != nil {
 				return fmt.Errorf("failed to check S3 destination usage: %w", err)
 			}
 
 			if cmdutil.JSONOutputEnabled(cmd) {
 				return cmdutil.PrintJSON(struct {
-					Destination backup.S3Destination `json:"destination"`
-					InUse       bool                 `json:"inUse"`
+					Destination types.S3Destination `json:"destination"`
+					InUse       bool                `json:"inUse"`
 				}{Destination: dest, InUse: usage.InUse})
 			}
 
@@ -128,7 +127,7 @@ func newS3GetCmd() *cobra.Command {
 	return cmd
 }
 
-func printS3Destination(dest backup.S3Destination) {
+func printS3Destination(dest types.S3Destination) {
 	output.Header("S3 Destination Details")
 	output.KeyValue("ID", dest.ID)
 	output.KeyValue("Name", dest.Name)
@@ -148,7 +147,7 @@ func printS3Destination(dest backup.S3Destination) {
 }
 
 func newS3CreateCmd() *cobra.Command {
-	var opts backup.CreateS3Destination
+	var opts types.S3Destination
 	cmd := &cobra.Command{
 		Use:          "create",
 		Short:        "Create an S3 backup destination",
@@ -160,7 +159,7 @@ func newS3CreateCmd() *cobra.Command {
 				return err
 			}
 
-			dest, err := c.DoJSON[backup.S3Destination](cmd.Context(), http.MethodPost, types.BackupsS3(), opts)
+			dest, err := c.DoJSON[types.S3Destination](cmd.Context(), http.MethodPost, clitypes.BackupsS3(), opts)
 			if err != nil {
 				return fmt.Errorf("failed to create S3 destination: %w", err)
 			}
@@ -184,7 +183,7 @@ func newS3CreateCmd() *cobra.Command {
 }
 
 func newS3UpdateCmd() *cobra.Command {
-	var opts backup.CreateS3Destination
+	var opts types.S3Destination
 	cmd := &cobra.Command{
 		Use:          "update <destination>",
 		Short:        "Update an S3 backup destination by name or ID",
@@ -201,7 +200,31 @@ func newS3UpdateCmd() *cobra.Command {
 				return err
 			}
 
-			dest, err := c.DoJSON[backup.S3Destination](cmd.Context(), http.MethodPut, types.BackupsS3Destination(resolved.ID), opts)
+			req := map[string]any{}
+			for _, field := range []struct {
+				flag  string
+				key   string
+				value any
+			}{
+				{flag: "name", key: "name", value: opts.Name},
+				{flag: "endpoint", key: "endpoint", value: opts.Endpoint},
+				{flag: "bucket", key: "bucket", value: opts.Bucket},
+				{flag: "region", key: "region", value: opts.Region},
+				{flag: "access-key-id", key: "accessKeyId", value: opts.AccessKeyID},
+				{flag: "secret-access-key", key: "secretAccessKey", value: opts.SecretAccessKey},
+				{flag: "prefix", key: "prefix", value: opts.Prefix},
+				{flag: "use-ssl", key: "useSsl", value: opts.UseSSL},
+				{flag: "force-path-style", key: "forcePathStyle", value: opts.ForcePathStyle},
+			} {
+				if cmd.Flags().Changed(field.flag) {
+					req[field.key] = field.value
+				}
+			}
+			if len(req) == 0 {
+				return errors.New("no updates provided (set at least one flag)")
+			}
+
+			dest, err := c.DoJSON[types.S3Destination](cmd.Context(), http.MethodPut, clitypes.BackupsS3Destination(resolved.ID), req)
 			if err != nil {
 				return fmt.Errorf("failed to update S3 destination: %w", err)
 			}
@@ -216,10 +239,6 @@ func newS3UpdateCmd() *cobra.Command {
 		},
 	}
 	addS3ConnectionFlags(cmd, &opts)
-	_ = cmd.MarkFlagRequired("name")
-	_ = cmd.MarkFlagRequired("bucket")
-	_ = cmd.MarkFlagRequired("region")
-	_ = cmd.MarkFlagRequired("access-key-id")
 	return cmd
 }
 
@@ -247,7 +266,7 @@ func newS3DeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete S3 destination %s?", resolved.Name),
-				Path:           types.BackupsS3Destination(resolved.ID),
+				Path:           clitypes.BackupsS3Destination(resolved.ID),
 				Body:           nil,
 				FailureMessage: "failed to delete S3 destination",
 				SuccessMessage: fmt.Sprintf("S3 destination %s deleted successfully", resolved.Name),
@@ -259,7 +278,7 @@ func newS3DeleteCmd() *cobra.Command {
 }
 
 func newS3TestCmd() *cobra.Command {
-	var opts backup.CreateS3Destination
+	var opts types.S3Destination
 	cmd := &cobra.Command{
 		Use:   "test [destination]",
 		Short: "Test an S3 destination connection",
@@ -276,7 +295,7 @@ passing the connection flags (--name, --bucket, --region, ...) with no argument.
 				return err
 			}
 
-			testPath := types.BackupsS3Test()
+			testPath := clitypes.BackupsS3Test()
 			var testBody any = opts
 			if len(args) == 1 {
 				if connectionFlagsSet {
@@ -286,17 +305,17 @@ passing the connection flags (--name, --bucket, --region, ...) with no argument.
 				if resolveErr != nil {
 					return resolveErr
 				}
-				testPath, testBody = types.BackupsS3DestinationTest(resolved.ID), nil
+				testPath, testBody = clitypes.BackupsS3DestinationTest(resolved.ID), nil
 			} else if opts.Bucket == "" {
 				return errors.New("either a destination name or ID, or connection flags (--name, --bucket, --region, ...) are required")
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
 				Path:           testPath,
 				Body:           testBody,
 				FailureMessage: "failed to test S3 destination",
-				Render:         func(base.MessageResponse) error { output.Success("%s", "S3 connection test succeeded"); return nil },
+				Render:         func(types.MessageResponse) error { output.Success("%s", "S3 connection test succeeded"); return nil },
 			})
 		},
 	}
@@ -304,7 +323,7 @@ passing the connection flags (--name, --bucket, --region, ...) with no argument.
 	return cmd
 }
 
-func addS3ConnectionFlags(cmd *cobra.Command, opts *backup.CreateS3Destination) {
+func addS3ConnectionFlags(cmd *cobra.Command, opts *types.S3Destination) {
 	cmd.Flags().StringVar(&opts.Name, "name", "", "Destination name")
 	cmd.Flags().StringVar(&opts.Endpoint, "endpoint", "", "S3 endpoint (empty for AWS S3)")
 	cmd.Flags().StringVar(&opts.Bucket, "bucket", "", "Bucket name")

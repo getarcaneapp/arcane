@@ -11,7 +11,7 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
 	import type { ContainerRegistry, ContainerRegistryPullUsage } from '#lib/types/docker.js';
-	import type { ContainerRegistryCreateDto, ContainerRegistryUpdateDto } from '#lib/types/docker.js';
+	import type { ContainerRegistryCreate, ContainerRegistryUpdate } from '#lib/types/docker.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -67,7 +67,7 @@
 	}
 
 	async function handleRegistryDialogSubmit(detail: {
-		registry: ContainerRegistryCreateDto | ContainerRegistryUpdateDto;
+		registry: ContainerRegistryCreate | ContainerRegistryUpdate;
 		isEditMode: boolean;
 	}) {
 		const { registry, isEditMode } = detail;
@@ -78,10 +78,10 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					if (isEditMode && registryToEdit?.id) {
-						await containerRegistryService.updateRegistry(registryToEdit.id, registry as ContainerRegistryUpdateDto);
+						await containerRegistryService.updateRegistry(registryToEdit.id, registry as ContainerRegistryUpdate);
 						toast.success(m.common_update_success({ resource: m.resource_registry() }));
 					} else {
-						await containerRegistryService.createRegistry(registry as ContainerRegistryCreateDto);
+						await containerRegistryService.createRegistry(registry as ContainerRegistryCreate);
 						toast.success(m.common_create_success({ resource: m.resource_registry() }));
 					}
 

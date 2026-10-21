@@ -10,7 +10,7 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/containerd/platforms"
 	composeapi "github.com/docker/compose/v5/pkg/api"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 	kit "go.getarcane.app/kit/pkg"
@@ -63,7 +63,7 @@ func BuildImageRefsFromComposeProject(project *composetypes.Project) []string {
 
 	serviceNames := slices.Sorted(maps.Keys(project.Services))
 
-	return uniqueImageRefsInternal(len(serviceNames), func(yield func(string)) {
+	return uniqueImageRefs(len(serviceNames), func(yield func(string)) {
 		for _, name := range serviceNames {
 			svc := project.Services[name]
 			if svc.Build == nil {
@@ -78,7 +78,7 @@ func BuildImageRefsFromComposeProject(project *composetypes.Project) []string {
 // ImageRefsFromComposeConfigs returns unique, non-empty image references from
 // compose service configs while preserving first-seen order.
 func ImageRefsFromComposeConfigs(services []composetypes.ServiceConfig) []string {
-	return uniqueImageRefsInternal(len(services), func(yield func(string)) {
+	return uniqueImageRefs(len(services), func(yield func(string)) {
 		for _, svc := range services {
 			yield(svc.Image)
 		}
@@ -87,15 +87,15 @@ func ImageRefsFromComposeConfigs(services []composetypes.ServiceConfig) []string
 
 // ImageRefsFromRuntimeServices returns unique, non-empty image references from
 // runtime service DTOs while preserving first-seen order.
-func ImageRefsFromRuntimeServices(services []projecttypes.RuntimeService) []string {
-	return uniqueImageRefsInternal(len(services), func(yield func(string)) {
+func ImageRefsFromRuntimeServices(services []types.ProjectRuntimeService) []string {
+	return uniqueImageRefs(len(services), func(yield func(string)) {
 		for _, svc := range services {
 			yield(svc.Image)
 		}
 	})
 }
 
-func uniqueImageRefsInternal(size int, collect func(yield func(string))) []string {
+func uniqueImageRefs(size int, collect func(yield func(string))) []string {
 	refs := make([]string, 0, size)
 	collect(func(image string) { refs = append(refs, image) })
 	return kit.Unique(kit.TrimNonEmpty(refs))
@@ -106,7 +106,7 @@ func PullableImageRefs(project *composetypes.Project) []string {
 	if project == nil {
 		return nil
 	}
-	return uniqueImageRefsInternal(len(project.Services), func(yield func(string)) {
+	return uniqueImageRefs(len(project.Services), func(yield func(string)) {
 		for _, service := range project.Services {
 			if service.Build == nil {
 				yield(service.Image)

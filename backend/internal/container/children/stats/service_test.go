@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/container"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 
@@ -23,33 +23,33 @@ func TestResourceSortPermissionCheck(t *testing.T) {
 	full := authz.NewPermissionSet()
 	full.AddEnv("env-1", authz.PermContainersList, authz.PermContainersRead)
 
-	require.True(t, ContainerResourceSortPermissionDenied(listOnly, "env-1", container.SortCPUUsage))
-	require.True(t, ContainerResourceSortPermissionDenied(listOnly, "env-1", container.SortMemoryUsage))
-	require.False(t, ContainerResourceSortPermissionDenied(full, "env-1", container.SortMemoryUsage))
+	require.True(t, ContainerResourceSortPermissionDenied(listOnly, "env-1", types.ContainerSortCPUUsage))
+	require.True(t, ContainerResourceSortPermissionDenied(listOnly, "env-1", types.ContainerSortMemoryUsage))
+	require.False(t, ContainerResourceSortPermissionDenied(full, "env-1", types.ContainerSortMemoryUsage))
 	require.False(t, ContainerResourceSortPermissionDenied(listOnly, "env-1", "name"),
 		"non-resource sorts keep the endpoint's containers:list requirement")
-	require.False(t, ContainerResourceSortPermissionDenied(authz.SudoPermissionSet(), "env-1", container.SortCPUUsage))
+	require.False(t, ContainerResourceSortPermissionDenied(authz.SudoPermissionSet(), "env-1", types.ContainerSortCPUUsage))
 }
 
 func TestResourceSortComparatorKeepsUnavailableLast(t *testing.T) {
-	asc := ContainerResourceSampleSort(container.SortMemoryUsage, false)
-	desc := ContainerResourceSampleSort(container.SortMemoryUsage, true)
-	sampled := container.Summary{
+	asc := ContainerResourceSampleSort(types.ContainerSortMemoryUsage, false)
+	desc := ContainerResourceSampleSort(types.ContainerSortMemoryUsage, true)
+	sampled := types.ContainerSummary{
 		ID:             "b",
 		Names:          []string{"b"},
-		ResourceSample: &container.ResourceSample{MemoryUsageBytes: 1},
+		ResourceSample: &types.ContainerResourceSample{MemoryUsageBytes: 1},
 	}
-	unsampled := container.Summary{ID: "a", Names: []string{"a"}}
+	unsampled := types.ContainerSummary{ID: "a", Names: []string{"a"}}
 
 	require.Equal(t, 1, asc(unsampled, sampled))
 	require.Equal(t, -1, asc(sampled, unsampled))
 	require.Equal(t, 1, desc(unsampled, sampled))
 	require.Equal(t, -1, desc(sampled, unsampled))
 
-	zero := container.Summary{
+	zero := types.ContainerSummary{
 		ID:             "z",
 		Names:          []string{"z"},
-		ResourceSample: &container.ResourceSample{MemoryUsageBytes: 0},
+		ResourceSample: &types.ContainerResourceSample{MemoryUsageBytes: 0},
 	}
 	require.Equal(t, -1, asc(zero, unsampled), "zero is a valid value, not unavailable")
 	require.Equal(t, -1, asc(zero, sampled))
@@ -92,7 +92,7 @@ func TestCollectMaxAge(t *testing.T) {
 				0,
 			)
 			for range 2 {
-				samples, collectErr := svc.Collect(t.Context(), []container.Summary{{ID: "web", State: "running"}}, tt.maxAge)
+				samples, collectErr := svc.Collect(t.Context(), []types.ContainerSummary{{ID: "web", State: "running"}}, tt.maxAge)
 				require.NoError(t, collectErr)
 				require.Contains(t, samples, "web")
 			}

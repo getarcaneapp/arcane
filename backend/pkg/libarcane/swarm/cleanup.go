@@ -9,7 +9,7 @@ import (
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
-	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
+	"github.com/getarcaneapp/arcane/types/v3"
 	dockerclient "github.com/moby/moby/client"
 	kit "go.getarcane.app/kit/pkg"
 )
@@ -20,7 +20,7 @@ const staleSwarmResourceRemoveAttemptsInternal = 5
 
 var staleSwarmResourceRemoveBackoffInternal = 500 * time.Millisecond
 
-func cleanupStackResourcesInternal(
+func cleanupStackResources(
 	ctx context.Context,
 	dockerClient *dockerclient.Client,
 	stackName string,
@@ -31,11 +31,11 @@ func cleanupStackResourcesInternal(
 	for _, meta := range configMetaByKey {
 		desiredConfigNames[meta.Name] = struct{}{}
 	}
-	if err := cleanupStaleManagedResourcesInternal(
+	if err := cleanupStaleManagedResources(
 		ctx,
 		stackName,
 		desiredConfigNames,
-		configFileResourceAdapterInternal(dockerClient),
+		configFileResourceAdapter(dockerClient),
 		true,
 		true,
 	); err != nil {
@@ -46,11 +46,11 @@ func cleanupStackResourcesInternal(
 	for _, meta := range secretMetaByKey {
 		desiredSecretNames[meta.Name] = struct{}{}
 	}
-	if err := cleanupStaleManagedResourcesInternal(
+	if err := cleanupStaleManagedResources(
 		ctx,
 		stackName,
 		desiredSecretNames,
-		secretFileResourceAdapterInternal(dockerClient),
+		secretFileResourceAdapter(dockerClient),
 		true,
 		true,
 	); err != nil {
@@ -60,7 +60,7 @@ func cleanupStackResourcesInternal(
 	return nil
 }
 
-func collectStaleManagedResourcesInternal[T any](items []T, convert func(T) staleManagedResourceInternal) []staleManagedResourceInternal {
+func collectStaleManagedResources[T any](items []T, convert func(T) staleManagedResourceInternal) []staleManagedResourceInternal {
 	resources := make([]staleManagedResourceInternal, 0, len(items))
 	for _, item := range items {
 		resources = append(resources, convert(item))
@@ -73,7 +73,7 @@ type staleManagedResourceInternal struct {
 	Name string
 }
 
-func cleanupStaleManagedResourcesInternal(
+func cleanupStaleManagedResources(
 	ctx context.Context,
 	stackName string,
 	desiredNames map[string]struct{},
@@ -90,7 +90,7 @@ func cleanupStaleManagedResourcesInternal(
 	seenResourceIDs := make(map[string]struct{})
 	for _, typeLabel := range resourceTypeLabels {
 		filters := make(dockerclient.Filters)
-		filters.Add("label", fmt.Sprintf("%s=%s", swarmtypes.StackNamespaceLabel, stackName))
+		filters.Add("label", fmt.Sprintf("%s=%s", types.SwarmStackNamespaceLabel, stackName))
 		if typeLabel != "" {
 			filters.Add("label", typeLabel+"="+adapter.ResourceType)
 		}
@@ -112,7 +112,7 @@ func cleanupStaleManagedResourcesInternal(
 		if _, ok := desiredNames[resource.Name]; ok {
 			continue
 		}
-		if err := removeStaleSwarmResourceInternal(ctx, tolerateInUse, func(ctx context.Context) error {
+		if err := removeStaleSwarmResource(ctx, tolerateInUse, func(ctx context.Context) error {
 			return adapter.Remove(ctx, resource.ID)
 		}); err != nil {
 			return fmt.Errorf("failed to remove stale stack %s %s: %w", adapter.ResourceType, resource.Name, err)
@@ -122,12 +122,12 @@ func cleanupStaleManagedResourcesInternal(
 	return nil
 }
 
-// removeStaleSwarmResourceInternal removes a resource, retrying while Swarm still
+// removeStaleSwarmResource removes a resource, retrying while Swarm still
 // reports it as in use. When tolerateInUse is set the caller is reconciling a live
 // stack and a later cleanup pass picks the resource up, so a single attempt is enough;
 // otherwise the stack is being deleted and a lingering resource must surface as an error
 // instead of being silently orphaned.
-func removeStaleSwarmResourceInternal(ctx context.Context, tolerateInUse bool, remove func(context.Context) error) error {
+func removeStaleSwarmResource(ctx context.Context, tolerateInUse bool, remove func(context.Context) error) error {
 	attempts := kit.Ternary(tolerateInUse, 1, staleSwarmResourceRemoveAttemptsInternal)
 
 	var err error
@@ -136,7 +136,7 @@ func removeStaleSwarmResourceInternal(ctx context.Context, tolerateInUse bool, r
 		if err == nil || cerrdefs.IsNotFound(err) {
 			return nil
 		}
-		if !isStaleSwarmResourceStillInUseInternal(err) {
+		if !isStaleSwarmResourceStillInUse(err) {
 			return err
 		}
 		if attempt == attempts-1 {
@@ -160,14 +160,14 @@ func RemoveStackResources(ctx context.Context, dockerClient *dockerclient.Client
 	}
 
 	emptyDesiredSet := map[string]struct{}{}
-	if err := cleanupStaleManagedResourcesInternal(ctx, stackName, emptyDesiredSet, configFileResourceAdapterInternal(dockerClient), false, false); err != nil {
+	if err := cleanupStaleManagedResources(ctx, stackName, emptyDesiredSet, configFileResourceAdapter(dockerClient), false, false); err != nil {
 		return err
 	}
-	if err := cleanupStaleManagedResourcesInternal(ctx, stackName, emptyDesiredSet, secretFileResourceAdapterInternal(dockerClient), false, false); err != nil {
+	if err := cleanupStaleManagedResources(ctx, stackName, emptyDesiredSet, secretFileResourceAdapter(dockerClient), false, false); err != nil {
 		return err
 	}
 
-	filters := make(dockerclient.Filters).Add("label", fmt.Sprintf("%s=%s", swarmtypes.StackNamespaceLabel, stackName))
+	filters := make(dockerclient.Filters).Add("label", fmt.Sprintf("%s=%s", types.SwarmStackNamespaceLabel, stackName))
 	networksResult, err := dockerClient.NetworkList(ctx, dockerclient.NetworkListOptions{Filters: filters})
 	if err != nil {
 		return fmt.Errorf("failed to list stack networks: %w", err)
@@ -180,7 +180,7 @@ func RemoveStackResources(ctx context.Context, dockerClient *dockerclient.Client
 		if stackNetwork.Ingress {
 			continue
 		}
-		if removeStaleSwarmResourceErr := removeStaleSwarmResourceInternal(ctx, false, func(ctx context.Context) error {
+		if removeStaleSwarmResourceErr := removeStaleSwarmResource(ctx, false, func(ctx context.Context) error {
 			_, networkRemoveErr := dockerClient.NetworkRemove(ctx, stackNetwork.ID, dockerclient.NetworkRemoveOptions{})
 			return networkRemoveErr
 		}); removeStaleSwarmResourceErr != nil {
@@ -191,7 +191,7 @@ func RemoveStackResources(ctx context.Context, dockerClient *dockerclient.Client
 	return nil
 }
 
-func isStaleSwarmResourceStillInUseInternal(err error) bool {
+func isStaleSwarmResourceStillInUse(err error) bool {
 	if cerrdefs.IsConflict(err) {
 		return true
 	}

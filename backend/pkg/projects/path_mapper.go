@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/getarcaneapp/arcane/types/v3"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
@@ -135,17 +135,17 @@ func ResolveHostPath(mounts []HostMount, containerPath string) mo.Option[string]
 
 	host := bestSource
 	if bestRel != "." {
-		host = joinHostRelativePathInternal(host, bestRel)
+		host = joinHostRelativePath(host, bestRel)
 	}
 	return mo.Some(host)
 }
 
-// joinHostRelativePathInternal joins rel onto a host base path and cleans the
+// joinHostRelativePath joins rel onto a host base path and cleans the
 // result. A Windows drive prefix is held aside while cleaning so that ".."
 // segments cannot consume it, and the base's separator style is preserved:
 // backslashes are kept for a Windows drive path written with them, forward
 // slashes otherwise (Docker on Windows accepts forward slashes fine).
-func joinHostRelativePathInternal(base, rel string) string {
+func joinHostRelativePath(base, rel string) string {
 	rel = strings.ReplaceAll(rel, "\\", "/")
 	if rel == "" || rel == "." {
 		return base
@@ -266,7 +266,7 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, tran
 	// Translate bind-backed named volumes. The Docker daemon, not Arcane, opens
 	// the device path, so it needs the same translation as a bind mount source.
 	for name, volume := range project.Volumes {
-		device, ok := bindVolumeDeviceInternal(volume)
+		device, ok := bindVolumeDevice(volume)
 		// Only absolute devices can be translated. compose-go absolutizes a
 		// relative device only when `o` is exactly "bind", so one that is still
 		// relative here keeps its existing behavior instead of failing the load.
@@ -285,7 +285,7 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, tran
 	return nil
 }
 
-// bindVolumeDeviceInternal returns the device path of a bind-backed named volume
+// bindVolumeDevice returns the device path of a bind-backed named volume
 // (local driver with `o: bind`), which compose-go resolves against the working
 // directory just like a bind mount source.
 //
@@ -293,7 +293,7 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, tran
 // local because that is how Docker defaults it, and `o` only has to contain
 // "bind" rather than equal it, since a device is a host path whether or not
 // compose-go chose to resolve it.
-func bindVolumeDeviceInternal(volume composetypes.VolumeConfig) (string, bool) {
+func bindVolumeDevice(volume composetypes.VolumeConfig) (string, bool) {
 	if volume.Driver != "" && volume.Driver != "local" {
 		return "", false
 	}
@@ -334,7 +334,7 @@ func VolumeSourceKey(service, target string) string {
 // independently-bind-mounted directories keep resolving through the mount table.
 func RemapEscapedRelativeSources(
 	ctx context.Context,
-	pathMapper projecttypes.VolumeSourcePathMapper,
+	pathMapper types.VolumeSourcePathMapper,
 	project *composetypes.Project,
 	containerWorkingDir string,
 	rawSources map[string]string,
@@ -345,11 +345,11 @@ func RemapEscapedRelativeSources(
 	}
 
 	hostWorkingDir := "" // resolved on first use, so a project with nothing to remap logs nothing
-	for _, target := range remapTargetsInternal(project, includeFileResources) {
+	for _, target := range remapTargets(project, includeFileResources) {
 		// A missing key yields "", which is not remappable, so absent raw sources
 		// fall out here along with absolute ones.
 		rawSource := rawSources[target.key]
-		if !isRemappableSourceInternal(rawSource) {
+		if !isRemappableSource(rawSource) {
 			continue
 		}
 		if target.current != filepath.Clean(filepath.Join(containerWorkingDir, rawSource)) {
@@ -357,14 +357,14 @@ func RemapEscapedRelativeSources(
 		}
 
 		if hostWorkingDir == "" {
-			resolved, ok := hostWorkingDirInternal(ctx, pathMapper, containerWorkingDir)
+			resolved, ok := resolveHostWorkingDir(ctx, pathMapper, containerWorkingDir)
 			if !ok {
 				return // without a host project directory nothing can be anchored
 			}
 			hostWorkingDir = resolved
 		}
 
-		hostPath := joinHostRelativePathInternal(hostWorkingDir, rawSource)
+		hostPath := joinHostRelativePath(hostWorkingDir, rawSource)
 		if hostPath == target.current {
 			continue // identity mount: the Docker host already resolves it the same way
 		}
@@ -387,11 +387,11 @@ type remapTarget struct {
 	apply   func(hostPath string)
 }
 
-// remapTargetsInternal collects every daemon-side path in the project, so that
+// remapTargets collects every daemon-side path in the project, so that
 // deciding which ones to rewrite stays a single flat pass. File-backed secrets
 // and configs are included only when the Docker host, rather than Arcane itself,
 // reads them — matching TranslateVolumeSources.
-func remapTargetsInternal(project *composetypes.Project, includeFileResources bool) []remapTarget {
+func remapTargets(project *composetypes.Project, includeFileResources bool) []remapTarget {
 	var targets []remapTarget
 
 	for name, service := range project.Services {
@@ -413,7 +413,7 @@ func remapTargetsInternal(project *composetypes.Project, includeFileResources bo
 	}
 
 	for name, volume := range project.Volumes {
-		device, ok := bindVolumeDeviceInternal(volume)
+		device, ok := bindVolumeDevice(volume)
 		if !ok {
 			continue
 		}
@@ -453,12 +453,12 @@ func remapTargetsInternal(project *composetypes.Project, includeFileResources bo
 	return targets
 }
 
-// isRemappableSourceInternal reports whether a raw Compose path can be
+// isRemappableSource reports whether a raw Compose path can be
 // re-resolved against a different working directory. Absolute paths (including
 // Windows drive and UNC paths, which compose-go also leaves alone) are already
 // meaningful to the Docker host, and `~` expands against the container's home
 // directory, which has no host equivalent — all keep their current behavior.
-func isRemappableSourceInternal(rawSource string) bool {
+func isRemappableSource(rawSource string) bool {
 	rawSource = strings.TrimSpace(rawSource)
 	if rawSource == "" || strings.HasPrefix(rawSource, "~") || strings.HasPrefix(rawSource, `\\`) {
 		return false
@@ -466,11 +466,11 @@ func isRemappableSourceInternal(rawSource string) bool {
 	return !filepath.IsAbs(rawSource) && !IsWindowsDrivePath(rawSource)
 }
 
-// hostWorkingDirInternal resolves the host-side project directory that relative
+// resolveHostWorkingDir resolves the host-side project directory that relative
 // paths must be re-resolved against. It reports false when the project directory
 // itself is not inside a mounted directory, since there is then no host path to
 // anchor to.
-func hostWorkingDirInternal(ctx context.Context, pathMapper projecttypes.VolumeSourcePathMapper, containerWorkingDir string) (string, bool) {
+func resolveHostWorkingDir(ctx context.Context, pathMapper types.VolumeSourcePathMapper, containerWorkingDir string) (string, bool) {
 	hostWorkingDir, mapped, err := pathMapper.ContainerToHost(containerWorkingDir)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to resolve host path for project directory; relative paths outside the projects mount may resolve incorrectly",

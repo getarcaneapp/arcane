@@ -6,8 +6,7 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/swarm"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
@@ -62,18 +61,18 @@ type SwarmNodeAgentDeployment struct {
 	environment.DeploymentSnippet
 
 	EnvironmentID string                `json:"environmentId"`
-	Agent         swarm.NodeAgentStatus `json:"agent"`
+	Agent         types.NodeAgentStatus `json:"agent"`
 }
 
 type ReconcileSwarmNodeAgentsInput struct {
-	Body          swarm.NodeAgentReconcileRequest
+	Body          types.NodeAgentReconcileRequest
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
 type PutSwarmNodeAgentBindingInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	NodeID        string `path:"nodeId" doc:"Node ID"`
-	Body          swarm.NodeAgentBindingRequest
+	Body          types.NodeAgentBindingRequest
 }
 
 type DeleteSwarmNodeAgentBindingInput struct {
@@ -91,7 +90,7 @@ type GetSwarmNodeIdentityInput struct{}
 type UpdateSwarmNodeInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	NodeID        string `path:"nodeId" doc:"Node ID"`
-	Body          swarm.NodeUpdateRequest
+	types.Update[types.SwarmNode]
 }
 
 type DeleteSwarmNodeInput struct {
@@ -126,7 +125,7 @@ type GetSwarmJoinCandidatesInput struct {
 
 type JoinSwarmEnvironmentsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          swarm.SwarmJoinEnvironmentsRequest
+	Body          types.SwarmJoinEnvironmentsRequest
 }
 
 // ListNodes lists swarm nodes for an environment and returns a paginated response.
@@ -139,17 +138,17 @@ type JoinSwarmEnvironmentsInput struct {
 //
 // Returns a paginated list of node summaries.
 // Returns a mapped HTTP error when node enumeration fails.
-func (h *Handler) ListNodes(ctx context.Context, input *ListSwarmNodesInput) (*handlerutil.Page[swarm.NodeSummary], error) {
+func (h *Handler) ListNodes(ctx context.Context, input *ListSwarmNodesInput) (*handlerutil.Page[types.SwarmNode], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.service.ListNodesPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to list swarm nodes: "+err.Error())
 	}
 	if items == nil {
-		items = []swarm.NodeSummary{}
+		items = []types.SwarmNode{}
 	}
 
-	return &handlerutil.Page[swarm.NodeSummary]{Body: base.Paginated[swarm.NodeSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
+	return &handlerutil.Page[types.SwarmNode]{Body: types.Paginated[types.SwarmNode]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
 // GetNode returns detailed information for a single swarm node.
@@ -163,7 +162,7 @@ func (h *Handler) ListNodes(ctx context.Context, input *ListSwarmNodesInput) (*h
 // Returns a successful response containing the node summary.
 // Returns `404 Not Found` when the node does not exist or another mapped HTTP
 // error when the inspection fails.
-func (h *Handler) GetNode(ctx context.Context, input *GetSwarmNodeInput) (*handlerutil.Out[swarm.NodeSummary], error) {
+func (h *Handler) GetNode(ctx context.Context, input *GetSwarmNodeInput) (*handlerutil.Out[types.SwarmNode], error) {
 	node, err := h.service.GetNode(ctx, input.EnvironmentID, input.NodeID)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -172,7 +171,7 @@ func (h *Handler) GetNode(ctx context.Context, input *GetSwarmNodeInput) (*handl
 		return nil, h.mapError(err, "Swarm node not found: "+err.Error())
 	}
 
-	return &handlerutil.Out[swarm.NodeSummary]{Body: base.ApiResponse[swarm.NodeSummary]{Success: true, Data: *node}}, nil
+	return &handlerutil.Out[types.SwarmNode]{Body: types.ApiResponse[types.SwarmNode]{Success: true, Data: *node}}, nil
 }
 
 // GetNodeAgentDeployment returns deployment snippets for attaching an Arcane Remote Environment to a swarm node.
@@ -239,7 +238,7 @@ func (h *Handler) GetNodeAgentDeployment(ctx context.Context, input *GetSwarmNod
 	}
 
 	return &handlerutil.Out[SwarmNodeAgentDeployment]{
-		Body: base.ApiResponse[SwarmNodeAgentDeployment]{
+		Body: types.ApiResponse[SwarmNodeAgentDeployment]{
 			Success: true,
 			Data: SwarmNodeAgentDeployment{
 				DeploymentSnippet: environment.DeploymentSnippet{
@@ -254,16 +253,16 @@ func (h *Handler) GetNodeAgentDeployment(ctx context.Context, input *GetSwarmNod
 }
 
 // ReconcileNodeAgents verifies and persists unique visible-environment node bindings.
-func (h *Handler) ReconcileNodeAgents(ctx context.Context, input *ReconcileSwarmNodeAgentsInput) (*handlerutil.Out[swarm.NodeAgentReconcileResponse], error) {
+func (h *Handler) ReconcileNodeAgents(ctx context.Context, input *ReconcileSwarmNodeAgentsInput) (*handlerutil.Out[types.NodeAgentReconcileResponse], error) {
 	result, err := h.service.ReconcileNodeAgents(ctx, input.EnvironmentID)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to reconcile swarm node agents")
 	}
-	return &handlerutil.Out[swarm.NodeAgentReconcileResponse]{Body: base.ApiResponse[swarm.NodeAgentReconcileResponse]{Success: true, Data: *result}}, nil
+	return &handlerutil.Out[types.NodeAgentReconcileResponse]{Body: types.ApiResponse[types.NodeAgentReconcileResponse]{Success: true, Data: *result}}, nil
 }
 
 // PutNodeAgentBinding verifies and attaches an existing visible environment.
-func (h *Handler) PutNodeAgentBinding(ctx context.Context, input *PutSwarmNodeAgentBindingInput) (*handlerutil.Out[swarm.NodeSummary], error) {
+func (h *Handler) PutNodeAgentBinding(ctx context.Context, input *PutSwarmNodeAgentBindingInput) (*handlerutil.Out[types.SwarmNode], error) {
 	if _, err := h.service.BindNodeAgent(ctx, input.EnvironmentID, input.NodeID, input.Body); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -287,11 +286,11 @@ func (h *Handler) PutNodeAgentBinding(ctx context.Context, input *PutSwarmNodeAg
 	if err != nil {
 		return nil, h.mapError(err, "Failed to refresh swarm node binding")
 	}
-	return &handlerutil.Out[swarm.NodeSummary]{Body: base.ApiResponse[swarm.NodeSummary]{Success: true, Data: *node}}, nil
+	return &handlerutil.Out[types.SwarmNode]{Body: types.ApiResponse[types.SwarmNode]{Success: true, Data: *node}}, nil
 }
 
 // DeleteNodeAgentBinding detaches the visible environment currently bound to a node.
-func (h *Handler) DeleteNodeAgentBinding(ctx context.Context, input *DeleteSwarmNodeAgentBindingInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *Handler) DeleteNodeAgentBinding(ctx context.Context, input *DeleteSwarmNodeAgentBindingInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.environmentService.DetachSwarmNodeEnvironment(ctx, input.EnvironmentID, input.NodeID); err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
@@ -299,7 +298,7 @@ func (h *Handler) DeleteNodeAgentBinding(ctx context.Context, input *DeleteSwarm
 }
 
 // DeleteNodeAgentDeployment removes a dedicated hidden node-agent registration.
-func (h *Handler) DeleteNodeAgentDeployment(ctx context.Context, input *DeleteSwarmNodeAgentDeploymentInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *Handler) DeleteNodeAgentDeployment(ctx context.Context, input *DeleteSwarmNodeAgentDeploymentInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -334,7 +333,7 @@ func (h *Handler) GetNodeIdentity(ctx context.Context, _ *GetSwarmNodeIdentityIn
 	}
 
 	return &handlerutil.Out[SwarmNodeIdentity]{
-		Body: base.ApiResponse[SwarmNodeIdentity]{
+		Body: types.ApiResponse[SwarmNodeIdentity]{
 			Success: true,
 			Data:    *identity,
 		},
@@ -352,9 +351,14 @@ func (h *Handler) GetNodeIdentity(ctx context.Context, _ *GetSwarmNodeIdentityIn
 // Returns a confirmation response when the update succeeds.
 // Returns an authorization error for non-admin callers or a mapped HTTP error
 // when the node update fails.
-func (h *Handler) UpdateNode(ctx context.Context, input *UpdateSwarmNodeInput) (*handlerutil.Out[base.MessageResponse], error) {
-	if err := h.service.UpdateNode(ctx, input.NodeID, input.Body); err != nil {
-		return nil, h.mapError(err, "Swarm node not found: "+err.Error())
+func (h *Handler) UpdateNode(ctx context.Context, input *UpdateSwarmNodeInput) (*handlerutil.Out[types.MessageResponse], error) {
+	submitted, err := input.SubmittedFields()
+	if err != nil {
+		return nil, huma.Error400BadRequest("invalid request body")
+	}
+
+	if updateErr := h.service.UpdateNode(ctx, input.NodeID, input.Body, submitted); updateErr != nil {
+		return nil, h.mapError(updateErr, "Swarm node not found: "+updateErr.Error())
 	}
 
 	h.audit(ctx, input.EnvironmentID, "node.update", "swarm_node", input.NodeID, "", map[string]any{"nodeId": input.NodeID})
@@ -373,7 +377,7 @@ func (h *Handler) UpdateNode(ctx context.Context, input *UpdateSwarmNodeInput) (
 // Returns a confirmation response when the node is removed.
 // Returns an authorization error for non-admin callers or a mapped HTTP error
 // when the node cannot be removed.
-func (h *Handler) DeleteNode(ctx context.Context, input *DeleteSwarmNodeInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *Handler) DeleteNode(ctx context.Context, input *DeleteSwarmNodeInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.service.RemoveNode(ctx, input.NodeID, input.Force); err != nil {
 		return nil, h.mapError(err, "Swarm node not found: "+err.Error())
 	}
@@ -394,7 +398,7 @@ func (h *Handler) DeleteNode(ctx context.Context, input *DeleteSwarmNodeInput) (
 // Returns a confirmation response when the promotion succeeds.
 // Returns an authorization error for non-admin callers or a mapped HTTP error
 // when the promotion fails.
-func (h *Handler) PromoteNode(ctx context.Context, input *PromoteSwarmNodeInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *Handler) PromoteNode(ctx context.Context, input *PromoteSwarmNodeInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.service.PromoteNode(ctx, input.NodeID); err != nil {
 		return nil, h.mapError(err, "Swarm node not found: "+err.Error())
 	}
@@ -415,7 +419,7 @@ func (h *Handler) PromoteNode(ctx context.Context, input *PromoteSwarmNodeInput)
 // Returns a confirmation response when the demotion succeeds.
 // Returns an authorization error for non-admin callers or a mapped HTTP error
 // when the demotion fails.
-func (h *Handler) DemoteNode(ctx context.Context, input *DemoteSwarmNodeInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *Handler) DemoteNode(ctx context.Context, input *DemoteSwarmNodeInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.service.DemoteNode(ctx, input.NodeID); err != nil {
 		return nil, h.mapError(err, "Swarm node not found: "+err.Error())
 	}
@@ -435,22 +439,22 @@ func (h *Handler) DemoteNode(ctx context.Context, input *DemoteSwarmNodeInput) (
 //
 // Returns a paginated list of node task summaries.
 // Returns a mapped HTTP error when the underlying lookup fails.
-func (h *Handler) ListNodeTasks(ctx context.Context, input *ListSwarmNodeTasksInput) (*handlerutil.Page[swarm.TaskSummary], error) {
+func (h *Handler) ListNodeTasks(ctx context.Context, input *ListSwarmNodeTasksInput) (*handlerutil.Page[types.SwarmTaskSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.service.ListNodeTasksPaginated(ctx, input.NodeID, params)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to list swarm tasks: "+err.Error())
 	}
 	if items == nil {
-		items = []swarm.TaskSummary{}
+		items = []types.SwarmTaskSummary{}
 	}
 
-	return &handlerutil.Page[swarm.TaskSummary]{Body: base.Paginated[swarm.TaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
+	return &handlerutil.Page[types.SwarmTaskSummary]{Body: types.Paginated[types.SwarmTaskSummary]{Success: true, Data: items, Pagination: handlerutil.PaginationResponse(paginationResp)}}, nil
 }
 
 // GetJoinCandidates lists enabled visible environments the caller can join.
-func (h *Handler) GetJoinCandidates(ctx context.Context, input *GetSwarmJoinCandidatesInput) (*handlerutil.Out[[]swarm.SwarmJoinCandidate], error) {
-	if err := requireEasyJoinManagerPermissionsInternal(ctx, input.EnvironmentID); err != nil {
+func (h *Handler) GetJoinCandidates(ctx context.Context, input *GetSwarmJoinCandidatesInput) (*handlerutil.Out[[]types.SwarmJoinCandidate], error) {
+	if err := requireEasyJoinManagerPermissions(ctx, input.EnvironmentID); err != nil {
 		return nil, err
 	}
 	candidates, err := h.service.GetJoinCandidates(ctx, input.EnvironmentID)
@@ -458,16 +462,16 @@ func (h *Handler) GetJoinCandidates(ctx context.Context, input *GetSwarmJoinCand
 		return nil, h.mapError(err, "Failed to list Easy Join candidates")
 	}
 	permissions, _ := middleware.PermissionsFromContext(ctx)
-	candidates = slices.DeleteFunc(candidates, func(candidate swarm.SwarmJoinCandidate) bool {
+	candidates = slices.DeleteFunc(candidates, func(candidate types.SwarmJoinCandidate) bool {
 		return !permissions.Allows(authz.PermSwarmJoin, candidate.EnvironmentID)
 	})
 
-	return &handlerutil.Out[[]swarm.SwarmJoinCandidate]{Body: base.ApiResponse[[]swarm.SwarmJoinCandidate]{Success: true, Data: candidates}}, nil
+	return &handlerutil.Out[[]types.SwarmJoinCandidate]{Body: types.ApiResponse[[]types.SwarmJoinCandidate]{Success: true, Data: candidates}}, nil
 }
 
 // JoinEnvironments performs Easy Join without returning manager join tokens.
-func (h *Handler) JoinEnvironments(ctx context.Context, input *JoinSwarmEnvironmentsInput) (*handlerutil.Out[swarm.SwarmJoinEnvironmentsResponse], error) {
-	if err := requireEasyJoinManagerPermissionsInternal(ctx, input.EnvironmentID); err != nil {
+func (h *Handler) JoinEnvironments(ctx context.Context, input *JoinSwarmEnvironmentsInput) (*handlerutil.Out[types.SwarmJoinEnvironmentsResponse], error) {
+	if err := requireEasyJoinManagerPermissions(ctx, input.EnvironmentID); err != nil {
 		return nil, err
 	}
 
@@ -476,7 +480,7 @@ func (h *Handler) JoinEnvironments(ctx context.Context, input *JoinSwarmEnvironm
 		if target.EnvironmentID == input.EnvironmentID {
 			return nil, huma.Error400BadRequest("selected swarm manager cannot also be a join target")
 		}
-		if target.Role != swarm.SwarmJoinEnvironmentRoleWorker && target.Role != swarm.SwarmJoinEnvironmentRoleManager {
+		if target.Role != types.SwarmJoinEnvironmentRoleWorker && target.Role != types.SwarmJoinEnvironmentRoleManager {
 			return nil, huma.Error400BadRequest("join target role must be worker or manager")
 		}
 		if permissions == nil || !permissions.Allows(authz.PermSwarmJoin, target.EnvironmentID) {
@@ -488,10 +492,10 @@ func (h *Handler) JoinEnvironments(ctx context.Context, input *JoinSwarmEnvironm
 	if err != nil {
 		return nil, h.mapError(err, "Failed to join swarm environments")
 	}
-	return &handlerutil.Out[swarm.SwarmJoinEnvironmentsResponse]{Body: base.ApiResponse[swarm.SwarmJoinEnvironmentsResponse]{Success: true, Data: *result}}, nil
+	return &handlerutil.Out[types.SwarmJoinEnvironmentsResponse]{Body: types.ApiResponse[types.SwarmJoinEnvironmentsResponse]{Success: true, Data: *result}}, nil
 }
 
-func requireEasyJoinManagerPermissionsInternal(ctx context.Context, environmentID string) error {
+func requireEasyJoinManagerPermissions(ctx context.Context, environmentID string) error {
 	permissions, _ := middleware.PermissionsFromContext(ctx)
 	if permissions == nil || !permissions.Allows(authz.PermSwarmJoin, environmentID) {
 		return huma.Error403Forbidden("swarm:join permission is required on the manager environment")

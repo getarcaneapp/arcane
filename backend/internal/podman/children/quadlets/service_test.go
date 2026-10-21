@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -18,8 +18,8 @@ type fakeSystemd struct {
 	calls []string
 }
 
-func (f *fakeSystemd) Availability(context.Context) podmantypes.SystemdAvailability {
-	return podmantypes.SystemdAvailability{Available: true}
+func (f *fakeSystemd) Availability(context.Context) types.PodmanSystemdAvailability {
+	return types.PodmanSystemdAvailability{Available: true}
 }
 
 func (f *fakeSystemd) Start(_ context.Context, unit string) error {
@@ -37,8 +37,8 @@ func (f *fakeSystemd) Restart(_ context.Context, unit string) error {
 	return nil
 }
 
-func (f *fakeSystemd) UnitStatus(_ context.Context, unit string) (podmantypes.UnitStatus, error) {
-	return podmantypes.UnitStatus{
+func (f *fakeSystemd) UnitStatus(_ context.Context, unit string) (types.PodmanUnitStatus, error) {
+	return types.PodmanUnitStatus{
 		Name:        unit,
 		LoadState:   "loaded",
 		ActiveState: "active",
@@ -81,82 +81,82 @@ func listHandler(body string, next http.HandlerFunc) http.HandlerFunc {
 func TestDescribeDerivesUnitsAndTemplates(t *testing.T) {
 	tests := []struct {
 		name  string
-		entry podmantypes.Quadlet
-		want  podmantypes.QuadletDetail
+		entry types.Quadlet
+		want  types.QuadletDetail
 	}{
 		{
 			name:  "container",
-			entry: podmantypes.Quadlet{Name: "web.container", Status: "active"},
-			want: podmantypes.QuadletDetail{
+			entry: types.Quadlet{Name: "web.container", Status: "active"},
+			want: types.QuadletDetail{
 				Name:     "web.container",
 				UnitName: "web.service",
 				Status:   "active",
-				Type:     podmantypes.QuadletTypeContainer,
+				Type:     types.QuadletTypeContainer,
 			},
 		},
 		{
 			name:  "kube",
-			entry: podmantypes.Quadlet{Name: "shop.kube", Status: "inactive"},
-			want: podmantypes.QuadletDetail{
+			entry: types.Quadlet{Name: "shop.kube", Status: "inactive"},
+			want: types.QuadletDetail{
 				Name:     "shop.kube",
 				UnitName: "shop.service",
 				Status:   "inactive",
-				Type:     podmantypes.QuadletTypeKube,
+				Type:     types.QuadletTypeKube,
 			},
 		},
 		{
 			name:  "pod",
-			entry: podmantypes.Quadlet{Name: "stack.pod", Status: "active"},
-			want: podmantypes.QuadletDetail{
+			entry: types.Quadlet{Name: "stack.pod", Status: "active"},
+			want: types.QuadletDetail{
 				Name:     "stack.pod",
 				UnitName: "stack-pod.service",
 				Status:   "active",
-				Type:     podmantypes.QuadletTypePod,
+				Type:     types.QuadletTypePod,
 			},
 		},
 		{
 			name:  "network",
-			entry: podmantypes.Quadlet{Name: "backend.network", Status: "Not loaded"},
-			want: podmantypes.QuadletDetail{
+			entry: types.Quadlet{Name: "backend.network", Status: "Not loaded"},
+			want: types.QuadletDetail{
 				Name:     "backend.network",
 				UnitName: "backend-network.service",
 				Status:   "Not loaded",
-				Type:     podmantypes.QuadletTypeNetwork,
+				Type:     types.QuadletTypeNetwork,
 			},
 		},
 		{
 			name: "reported unit wins",
-			entry: podmantypes.Quadlet{
+			entry: types.Quadlet{
 				Name:     "data.volume",
 				UnitName: "custom.service",
 				Status:   "active",
 			},
-			want: podmantypes.QuadletDetail{
+			want: types.QuadletDetail{
 				Name:     "data.volume",
 				UnitName: "custom.service",
 				Status:   "active",
-				Type:     podmantypes.QuadletTypeVolume,
+				Type:     types.QuadletTypeVolume,
 			},
 		},
 		{
 			name:  "template file name",
-			entry: podmantypes.Quadlet{Name: "worker@.container", Status: "inactive"},
-			want: podmantypes.QuadletDetail{
+			entry: types.Quadlet{Name: "worker@.container", Status: "inactive"},
+			want: types.QuadletDetail{
 				Name:     "worker@.container",
 				UnitName: "worker@.service",
 				Status:   "inactive",
-				Type:     podmantypes.QuadletTypeContainer,
+				Type:     types.QuadletTypeContainer,
 				Template: true,
 			},
 		},
 		{
 			name:  "template status",
-			entry: podmantypes.Quadlet{Name: "job.container", Status: "loaded template"},
-			want: podmantypes.QuadletDetail{
+			entry: types.Quadlet{Name: "job.container", Status: "loaded template"},
+			want: types.QuadletDetail{
 				Name:     "job.container",
 				UnitName: "job.service",
 				Status:   "loaded template",
-				Type:     podmantypes.QuadletTypeContainer,
+				Type:     types.QuadletTypeContainer,
 				Template: true,
 			},
 		},
@@ -230,7 +230,7 @@ func TestUpdateReplacesAndKeepsApplication(t *testing.T) {
 				_, _ = w.Write([]byte(`{"InstalledQuadlets":{"web.container":"/etc/containers/systemd/web.container"},"QuadletErrors":{}}`))
 			}))
 
-			report, err := svc.Update(t.Context(), "web.container", podmantypes.QuadletUpdateRequest{Content: "[Container]\nImage=nginx\n"})
+			report, err := svc.Update(t.Context(), "web.container", types.QuadletUpdateRequest{Content: "[Container]\nImage=nginx\n"})
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantQuery, gotQuery)
 			assert.Contains(t, report.InstalledQuadlets, "web.container")
@@ -241,12 +241,12 @@ func TestUpdateReplacesAndKeepsApplication(t *testing.T) {
 func TestInstallValidatesTypeAndApplication(t *testing.T) {
 	tests := []struct {
 		name          string
-		req           podmantypes.QuadletInstallRequest
+		req           types.QuadletInstallRequest
 		appsSupported bool
 	}{
-		{name: "unsupported extension", req: podmantypes.QuadletInstallRequest{Name: "web.service", Content: "[Unit]\n"}, appsSupported: true},
-		{name: "missing stem", req: podmantypes.QuadletInstallRequest{Name: ".container", Content: "[Container]\n"}, appsSupported: true},
-		{name: "application without support", req: podmantypes.QuadletInstallRequest{Name: "web.container", Content: "[Container]\n", App: "shop"}},
+		{name: "unsupported extension", req: types.QuadletInstallRequest{Name: "web.service", Content: "[Unit]\n"}, appsSupported: true},
+		{name: "missing stem", req: types.QuadletInstallRequest{Name: ".container", Content: "[Container]\n"}, appsSupported: true},
+		{name: "application without support", req: types.QuadletInstallRequest{Name: "web.container", Content: "[Container]\n", App: "shop"}},
 	}
 
 	for _, tt := range tests {

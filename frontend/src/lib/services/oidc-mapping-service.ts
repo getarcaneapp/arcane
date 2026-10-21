@@ -1,4 +1,4 @@
-import type { OidcRoleMapping, CreateOidcRoleMapping, UpdateOidcRoleMapping } from '#lib/types/auth.js';
+import type { OidcRoleMapping, OidcRoleMappingCreate, OidcRoleMappingUpdate } from '#lib/types/auth.js';
 
 import BaseAPIService from './api-service';
 
@@ -7,11 +7,11 @@ class OidcMappingAPIService extends BaseAPIService {
 		return this.handleResponse(this.api.get('/oidc/role-mappings')) as Promise<OidcRoleMapping[]>;
 	}
 
-	async create(mapping: CreateOidcRoleMapping): Promise<OidcRoleMapping> {
+	async create(mapping: OidcRoleMappingCreate): Promise<OidcRoleMapping> {
 		return this.handleResponse(this.api.post('/oidc/role-mappings', mapping)) as Promise<OidcRoleMapping>;
 	}
 
-	async update(id: string, mapping: UpdateOidcRoleMapping): Promise<OidcRoleMapping> {
+	async update(id: string, mapping: OidcRoleMappingUpdate): Promise<OidcRoleMapping> {
 		return this.handleResponse(this.api.put(`/oidc/role-mappings/${id}`, mapping)) as Promise<OidcRoleMapping>;
 	}
 

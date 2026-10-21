@@ -9,13 +9,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	internaltypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 func newKubeCmd() *cobra.Command {
@@ -53,18 +53,18 @@ func newKubePlayCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[podman.KubePlayReport]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.KubePlayReport]{
 				Method: http.MethodPost,
-				Path:   types.PodmanKube(c.EnvID(), "play"),
-				Body: podman.KubePlayRequest{
+				Path:   internaltypes.PodmanKube(c.EnvID(), "play"),
+				Body: types.KubePlayRequest{
 					YAML:     string(content),
 					Start:    kit.Ternary(opts.noStart, new(false), nil),
 					Replace:  opts.replace,
 					Networks: opts.networks,
 				},
 				FailureMessage: "failed to play kube YAML",
-				Render: func(data podman.KubePlayReport) error {
-					failed := slices.ContainsFunc(data.Pods, func(pod podman.KubePlayPod) bool {
+				Render: func(data types.KubePlayReport) error {
+					failed := slices.ContainsFunc(data.Pods, func(pod types.KubePlayPod) bool {
 						return len(pod.ContainerErrors) > 0
 					})
 					if !failed {
@@ -127,15 +127,15 @@ func newKubeDownCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[podman.KubeDownReport]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.KubeDownReport]{
 				Method: http.MethodPost,
-				Path:   types.PodmanKube(c.EnvID(), "down"),
-				Body: podman.KubeDownRequest{
+				Path:   internaltypes.PodmanKube(c.EnvID(), "down"),
+				Body: types.KubeDownRequest{
 					YAML:  string(content),
 					Force: opts.force,
 				},
 				FailureMessage: "failed to tear down kube YAML",
-				Render: func(data podman.KubeDownReport) error {
+				Render: func(data types.KubeDownReport) error {
 					output.Success("Kube YAML torn down successfully")
 					output.KeyValue("Stopped pods", len(data.StopReport))
 					output.KeyValue("Removed pods", len(data.RmReport))
@@ -150,7 +150,7 @@ func newKubeDownCmd() *cobra.Command {
 
 func newKubeGenerateCmd() *cobra.Command {
 	var opts struct {
-		kind    podman.KubeGenerateType
+		kind    types.KubeGenerateType
 		service bool
 	}
 	cmd := &cobra.Command{
@@ -164,28 +164,28 @@ func newKubeGenerateCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[podman.KubeGenerateResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.KubeGenerateResponse]{
 				Method: http.MethodPost,
-				Path:   types.PodmanKube(c.EnvID(), "generate"),
-				Body: podman.KubeGenerateRequest{
+				Path:   internaltypes.PodmanKube(c.EnvID(), "generate"),
+				Body: types.KubeGenerateRequest{
 					Names:   args,
 					Type:    opts.kind,
 					Service: opts.service,
 				},
 				FailureMessage: "failed to generate kube YAML",
-				Render: func(data podman.KubeGenerateResponse) error {
+				Render: func(data types.KubeGenerateResponse) error {
 					_, writeErr := fmt.Fprint(output.Stdout(), data.YAML)
 					return writeErr
 				},
 			})
 		},
 	}
-	cmdutil.EnumVarP(cmd, cmd.Flags(), &opts.kind, "type", "", podman.KubeGenerateTypePod, "Kubernetes kind to generate",
-		podman.KubeGenerateTypePod,
-		podman.KubeGenerateTypeService,
-		podman.KubeGenerateTypeDeployment,
-		podman.KubeGenerateTypeDaemonSet,
-		podman.KubeGenerateTypeJob,
+	cmdutil.EnumVarP(cmd, cmd.Flags(), &opts.kind, "type", "", types.KubeGenerateTypePod, "Kubernetes kind to generate",
+		types.KubeGenerateTypePod,
+		types.KubeGenerateTypeService,
+		types.KubeGenerateTypeDeployment,
+		types.KubeGenerateTypeDaemonSet,
+		types.KubeGenerateTypeJob,
 	)
 	cmd.Flags().BoolVar(&opts.service, "service", false, "Also generate a Kubernetes service")
 	cmdutil.SetScope(cmdutil.ScopeRead, cmd)

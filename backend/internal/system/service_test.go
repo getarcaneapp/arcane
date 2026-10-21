@@ -8,9 +8,7 @@ import (
 	"testing"
 	"time"
 
-	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -127,16 +125,16 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 	now := time.Now().UTC()
 	require.NoError(t, gormDB.Create(&SystemBackupRun{
 		CreatedAt: now.Add(-2 * time.Minute), Status: SystemBackupStatusSucceeded, Trigger: SystemBackupTriggerManual,
-		Destination: backuptypes.SystemBackupDestinationLocal,
+		Destination: types.SystemBackupDestinationLocal,
 	}).Error)
 	require.NoError(t, gormDB.Create(&volume.VolumeBackup{
 		VolumeName: "app-data", CreatedAt: now.Add(-time.Minute), Status: volume.VolumeBackupStatusSucceeded,
-		Trigger: volume.VolumeBackupTriggerScheduled, Destination: volumetypes.BackupDestinationLocal,
-		Format: volume.VolumeBackupFormatRustic, PolicyID: backuptypes.SystemVolumePolicyPrefix + "nightly:" + kit.SHA256Hex("app-data")[:16],
+		Trigger: volume.VolumeBackupTriggerScheduled, Destination: types.VolumeBackupDestinationLocal,
+		Format: volume.VolumeBackupFormatRustic, PolicyID: types.SystemVolumePolicyPrefix + "nightly:" + kit.SHA256Hex("app-data")[:16],
 	}).Error)
 	require.NoError(t, gormDB.Create(&volume.VolumeBackup{
 		VolumeName: "cache", CreatedAt: now, Status: volume.VolumeBackupStatusSucceeded,
-		Trigger: volume.VolumeBackupTriggerManual, Destination: volumetypes.BackupDestinationLocal,
+		Trigger: volume.VolumeBackupTriggerManual, Destination: types.VolumeBackupDestinationLocal,
 		Format: volume.VolumeBackupFormatRustic,
 	}).Error)
 	db := &database.DB{DB: gormDB}
@@ -155,7 +153,7 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 2, page.TotalItems)
 	require.Len(t, systemRows, 2)
-	require.Equal(t, backuptypes.ManagementTypeSystem, systemRows[0].Type)
+	require.Equal(t, types.BackupManagementTypeSystem, systemRows[0].Type)
 	require.Equal(t, "app-data", systemRows[0].ResourceName)
 	require.Equal(t, "volume", systemRows[0].ResourceType)
 
@@ -166,7 +164,7 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 1, page.TotalItems)
 	require.Len(t, volumeRows, 1)
-	require.Equal(t, backuptypes.ManagementTypeVolume, volumeRows[0].Type)
+	require.Equal(t, types.BackupManagementTypeVolume, volumeRows[0].Type)
 	require.Equal(t, "cache", volumeRows[0].ResourceName)
 }
 
@@ -180,11 +178,11 @@ func newSystemBackupAdmissionGateForTest(t testing.TB) *runs.Admission {
 }
 
 type systemBackupPolicyScheduler struct {
-	submitted []scheduler.Request
-	jobs      map[string]scheduler.Job
+	submitted []types.SchedulerRequest
+	jobs      map[string]types.SchedulerJob
 }
 
-func (s *systemBackupPolicyScheduler) AddJob(_ context.Context, job scheduler.Job) error {
+func (s *systemBackupPolicyScheduler) AddJob(_ context.Context, job types.SchedulerJob) error {
 	s.jobs[job.Name()] = job
 	return nil
 }
@@ -198,9 +196,9 @@ func (s *systemBackupPolicyScheduler) HasJob(name string) bool {
 	return ok
 }
 
-func (s *systemBackupPolicyScheduler) Submit(_ context.Context, request scheduler.Request) (scheduler.Run, error) {
+func (s *systemBackupPolicyScheduler) Submit(_ context.Context, request types.SchedulerRequest) (types.SchedulerRun, error) {
 	s.submitted = append(s.submitted, request)
-	return scheduler.Run{ID: request.RunID, JobID: request.JobID, EnvironmentID: request.EnvironmentID, Status: scheduler.Queued}, nil
+	return types.SchedulerRun{ID: request.RunID, JobID: request.JobID, EnvironmentID: request.EnvironmentID, Status: types.RunStatusQueued}, nil
 }
 
 func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
@@ -250,7 +248,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
 	require.NoError(t, service.backup.RegisterWorkflows(harness.Engine))
 	harness.Start(t)
-	jobScheduler := &systemBackupPolicyScheduler{jobs: make(map[string]scheduler.Job)}
+	jobScheduler := &systemBackupPolicyScheduler{jobs: make(map[string]types.SchedulerJob)}
 	require.NoError(t, service.SetBackupScheduler(t.Context(), jobScheduler, gate))
 
 	status, err := service.backup.SetRecoveryKey(t.Context(), "QWERTY-ABCDEF-234567-GHIJKL-MNOPQR-STUVWX-YZ2345-ZXCVBN")
@@ -260,7 +258,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "QWERTY-ABCDEF-234567-GHIJKL-MNOPQR-STUVWX-YZ2345-ZXCVBN", storedKey)
 
-	collection, err := service.backup.UpdatePolicies(t.Context(), []backuptypes.UpdateSystemBackupPolicy{
+	collection, err := service.backup.UpdatePolicies(t.Context(), []types.UpdateBackupPolicy{
 		{Enabled: true, Schedule: "0 0 2 * * *", RetentionCount: 5, LocalEnabled: true},
 		{Enabled: true, Schedule: "0 0 14 * * *", RetentionCount: 30, LocalEnabled: true},
 	})
@@ -270,7 +268,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	require.Len(t, jobScheduler.jobs, 2)
 
 	firstID := collection.Policies[0].ID
-	collection, err = service.backup.UpdatePolicies(t.Context(), []backuptypes.UpdateSystemBackupPolicy{{
+	collection, err = service.backup.UpdatePolicies(t.Context(), []types.UpdateBackupPolicy{{
 		ID: firstID, Enabled: true, Schedule: "0 */30 * * * *", RetentionCount: 9, LocalEnabled: true,
 	}})
 	require.NoError(t, err)
@@ -285,7 +283,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		_, _ = w.Write([]byte("<Error><Code>NoSuchBucket</Code></Error>"))
 	}))
 	defer server.Close()
-	destination, err := s3Destinations.CreateS3Destination(t.Context(), backuptypes.CreateS3Destination{
+	destination, err := s3Destinations.CreateS3Destination(t.Context(), types.S3Destination{
 		Name: "Missing storage", Endpoint: server.URL, Bucket: "backups", AccessKeyID: "test", SecretAccessKey: "test", ForcePathStyle: true,
 	})
 	require.NoError(t, err)
@@ -302,10 +300,10 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		outcome, runErr := job.Run(t.Context())
 		require.NoError(t, runErr)
 		if local {
-			require.Equal(t, scheduler.Failed, outcome.Status)
+			require.Equal(t, types.RunStatusFailed, outcome.Status)
 			require.Contains(t, outcome.Message, "failed to create local system recovery snapshot")
 		} else {
-			require.Equal(t, scheduler.NeedsAttention, outcome.Status)
+			require.Equal(t, types.RunStatusNeedsAttention, outcome.Status)
 			require.Equal(t, backup.RemoteDisabledMessage, outcome.Message)
 		}
 		require.NoError(t, gormDB.First(policy, "id = ?", policy.ID).Error)
@@ -326,7 +324,7 @@ func TestSystemBackupPolicyRequiresConfiguredRecoveryKeyWhenEnabled(t *testing.T
 		backup.NewRecoveryKeyStore(db), nil, &config.Config{DatabaseURL: "file:system-backup-key-required-test.db"},
 	)
 
-	_, err = service.backup.UpdatePolicies(t.Context(), []backuptypes.UpdateSystemBackupPolicy{{
+	_, err = service.backup.UpdatePolicies(t.Context(), []types.UpdateBackupPolicy{{
 		Enabled: true, Schedule: "0 0 2 * * *", RetentionCount: 7, LocalEnabled: true,
 	}})
 	require.ErrorContains(t, err, "configure a recovery key")

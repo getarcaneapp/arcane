@@ -13,8 +13,7 @@ import (
 	"strings"
 	"time"
 
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
-	"github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -112,7 +111,7 @@ func (s *Service) StorageMount(ctx context.Context, dockerClient *client.Client,
 	return mount.Mount{Type: mount.TypeVolume, Source: s.deps.BackupVolumeName, Target: target, ReadOnly: readOnly}, nil
 }
 
-func (s *Service) stopRunningContainersForBackup(ctx context.Context, volumeName string, user usertypes.Actor, refuseArcaneWriters bool) ([]container.Summary, error) {
+func (s *Service) stopRunningContainersForBackup(ctx context.Context, volumeName string, user types.Actor, refuseArcaneWriters bool) ([]container.Summary, error) {
 	if s.deps.StopContainer == nil || s.deps.StartContainer == nil {
 		return nil, errors.New("container service is unavailable")
 	}
@@ -160,7 +159,7 @@ func (s *Service) stopRunningContainersForBackup(ctx context.Context, volumeName
 }
 
 //nolint:gocognit // recovery retries must reconcile IDs, names, and Compose identities in one bounded loop
-func (s *Service) startContainersAfterBackup(ctx context.Context, stoppedContainers []container.Summary, user usertypes.Actor) ([]container.Summary, error) {
+func (s *Service) startContainersAfterBackup(ctx context.Context, stoppedContainers []container.Summary, user types.Actor) ([]container.Summary, error) {
 	recoveryCtx, cancel := context.WithTimeout(ctx, volumeBackupContainerRecoveryTimeout)
 	defer cancel()
 
@@ -337,20 +336,20 @@ func (s *Service) acquireVolumeRun(ctx context.Context, volumeName string) (*run
 }
 
 // backupDestination names the destination that holds a backup's local and remote copies.
-func backupDestination(local, remote bool) volume.BackupDestination {
+func backupDestination(local, remote bool) types.VolumeBackupDestination {
 	switch {
 	case local && remote:
-		return volume.BackupDestinationLocalS3
+		return types.VolumeBackupDestinationLocalS3
 	case remote:
-		return volume.BackupDestinationS3
+		return types.VolumeBackupDestinationS3
 	default:
-		return volume.BackupDestinationLocal
+		return types.VolumeBackupDestinationLocal
 	}
 }
 
 // logBackupEvent records a volume backup event; a nil user logs as the system user.
-func (s *Service) logBackupEvent(ctx context.Context, eventType event.EventType, volumeName string, user *usertypes.Actor, metadata database.JSON) {
-	actor := cmp.Or(user, &usertypes.SystemUser)
+func (s *Service) logBackupEvent(ctx context.Context, eventType event.EventType, volumeName string, user *types.Actor, metadata database.JSON) {
+	actor := cmp.Or(user, &types.SystemUser)
 	if err := s.deps.Events.LogVolumeEvent(ctx, eventType, volumeName, volumeName, actor.ID, actor.Username, "0", metadata); err != nil {
 		slog.WarnContext(ctx, "could not log volume backup event", "volume", volumeName, "action", metadata["action"], "error", err)
 	}

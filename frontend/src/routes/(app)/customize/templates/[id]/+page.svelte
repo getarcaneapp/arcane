@@ -28,6 +28,7 @@
 	import { templateService } from '#lib/services/template-service.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
 	import {
 		createNamedTemplateSchema,
@@ -96,12 +97,18 @@
 			validationState,
 			validate: form.validate,
 			save: (validated) =>
-				templateService.updateTemplate(template.id, {
-					name: validated.name,
-					description: validated.description,
-					content: validated.composeContent,
-					envContent: validated.envContent
-				}),
+				templateService.updateTemplate(
+					template.id,
+					changedFields(
+						{ name: originalName, description: originalDescription, content: originalCompose, envContent: originalEnv },
+						{
+							name: validated.name,
+							description: validated.description,
+							content: validated.composeContent,
+							envContent: validated.envContent
+						}
+					)
+				),
 			failureMessage: m.templates_save_template_failed(),
 			setLoading: (value) => (status.saving = value),
 			onSuccess: async (validated) => {

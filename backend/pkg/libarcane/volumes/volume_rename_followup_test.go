@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -35,8 +35,8 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackExplainsPreservedTar
 	t.Cleanup(server.Close)
 
 	migration := &dockerProjectVolumeRenameMigrationInternal{
-		dockerClient: newTestDockerClientInternal(t, server),
-		createdNew: []volumetypes.RenameEntry{
+		dockerClient: newTestDockerClient(t, server),
+		createdNew: []types.VolumeRenameEntry{
 			{OldName: "nginx_data", NewName: "web_data"},
 		},
 	}
@@ -44,7 +44,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackExplainsPreservedTar
 	err := migration.Rollback(t.Context())
 
 	require.Error(t, err)
-	var preserved *volumetypes.TargetPreservedDuringRollbackError
+	var preserved *types.TargetPreservedDuringRollbackError
 	require.ErrorAs(t, err, &preserved)
 	require.Contains(t, err.Error(), "avoid data loss")
 	require.Contains(t, err.Error(), "only remaining data copy")
@@ -67,13 +67,13 @@ func TestRollbackVolume_ExplainsPreservedTargetWhenSourceMissing(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	err := RollbackVolume(t.Context(), newTestDockerClientInternal(t, server), volumetypes.JournalVolume{
+	err := RollbackVolume(t.Context(), newTestDockerClient(t, server), types.VolumeJournalVolume{
 		OldName: "nginx_data",
 		NewName: "web_data",
 	})
 
 	require.Error(t, err)
-	var preserved *volumetypes.TargetPreservedDuringRollbackError
+	var preserved *types.TargetPreservedDuringRollbackError
 	require.ErrorAs(t, err, &preserved)
 	require.Contains(t, err.Error(), "avoid data loss")
 	require.Contains(t, err.Error(), "only remaining data copy")

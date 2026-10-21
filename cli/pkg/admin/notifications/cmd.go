@@ -9,12 +9,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/notification"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 // Command is the parent command for notification operations
@@ -53,7 +53,7 @@ func newSettingsGetCmd() *cobra.Command {
 				return err
 			}
 
-			body, err := c.DoRaw(cmd.Context(), http.MethodGet, types.NotificationsSettings(c.EnvID()), nil)
+			body, err := c.DoRaw(cmd.Context(), http.MethodGet, clitypes.NotificationsSettings(c.EnvID()), nil)
 			if err != nil {
 				return fmt.Errorf("failed to get settings: %w", err)
 			}
@@ -62,7 +62,7 @@ func newSettingsGetCmd() *cobra.Command {
 				return cmdutil.PrintRawJSON(body)
 			}
 
-			var result []notification.Response
+			var result []types.NotificationSettings
 			if decodeErr := json.Unmarshal(body, &result); decodeErr != nil {
 				return fmt.Errorf("failed to get settings: %w", decodeErr)
 			}
@@ -104,7 +104,7 @@ func newSettingsDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete notification settings for %s?", args[0]),
-				Path:           types.NotificationSettingsProvider(c.EnvID(), args[0]),
+				Path:           clitypes.NotificationSettingsProvider(c.EnvID(), args[0]),
 				FailureMessage: "failed to delete notification settings",
 				SuccessMessage: fmt.Sprintf("Notification settings for %s deleted successfully", args[0]),
 			})
@@ -117,7 +117,7 @@ func newSettingsDeleteCmd() *cobra.Command {
 
 func newSettingsSetCmd() *cobra.Command {
 	var opts struct {
-		provider notification.Provider
+		provider types.NotificationProvider
 		enabled  bool
 		config   string
 		file     string
@@ -130,7 +130,7 @@ func newSettingsSetCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var req notification.Update
+			var req types.NotificationSettings
 			if opts.file != "" {
 				data, err := os.ReadFile(opts.file)
 				if err != nil {
@@ -170,7 +170,7 @@ func newSettingsSetCmd() *cobra.Command {
 				return err
 			}
 
-			body, err := c.DoRaw(cmd.Context(), http.MethodPost, types.NotificationsSettings(c.EnvID()), req)
+			body, err := c.DoRaw(cmd.Context(), http.MethodPost, clitypes.NotificationsSettings(c.EnvID()), req)
 			if err != nil {
 				return fmt.Errorf("failed to save notification settings: %w", err)
 			}
@@ -179,7 +179,7 @@ func newSettingsSetCmd() *cobra.Command {
 				return cmdutil.PrintRawJSON(body)
 			}
 
-			var result notification.Response
+			var result types.NotificationSettings
 			if decodeErr := json.Unmarshal(body, &result); decodeErr != nil {
 				return fmt.Errorf("failed to save notification settings: %w", decodeErr)
 			}
@@ -191,10 +191,10 @@ func newSettingsSetCmd() *cobra.Command {
 	}
 	cmdutil.SetScope(cmdutil.ScopeFleet, command)
 	cmdutil.EnumVarP(command, command.Flags(), &opts.provider, "provider", "", "", "Notification provider",
-		notification.NotificationProviderDiscord, notification.NotificationProviderEmail, notification.NotificationProviderTelegram,
-		notification.NotificationProviderSignal, notification.NotificationProviderSlack, notification.NotificationProviderNtfy,
-		notification.NotificationProviderPushover, notification.NotificationProviderGotify, notification.NotificationProviderMatrix,
-		notification.NotificationProviderGoogleChat, notification.NotificationProviderGeneric)
+		types.NotificationProviderDiscord, types.NotificationProviderEmail, types.NotificationProviderTelegram,
+		types.NotificationProviderSignal, types.NotificationProviderSlack, types.NotificationProviderNtfy,
+		types.NotificationProviderPushover, types.NotificationProviderGotify, types.NotificationProviderMatrix,
+		types.NotificationProviderGoogleChat, types.NotificationProviderGeneric)
 	command.Flags().BoolVar(&opts.enabled, "enabled", false, "Enable the provider")
 	command.Flags().StringVar(&opts.config, "provider-config", "", "Provider configuration as a JSON object")
 	command.Flags().StringVar(&opts.config, "config", "", "Provider configuration as a JSON object")
@@ -216,11 +216,11 @@ func newTestProviderCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[notification.TestResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.NotificationTestResponse]{
 				Method:         http.MethodPost,
-				Path:           types.NotificationsTestProvider(c.EnvID(), args[0]),
+				Path:           clitypes.NotificationsTestProvider(c.EnvID(), args[0]),
 				FailureMessage: "failed to test notification provider",
-				Render: func(notification.TestResponse) error {
+				Render: func(types.NotificationTestResponse) error {
 					output.Success("%s", fmt.Sprintf("Notification test for %s successful", args[0]))
 					return nil
 				},
@@ -231,15 +231,15 @@ func newTestProviderCmd() *cobra.Command {
 	return command
 }
 
-var providerRef = cmdutil.ResourceRef[notification.Response, notification.Response]{
+var providerRef = cmdutil.ResourceRef[types.NotificationSettings, types.NotificationSettings]{
 	EnvironmentScoped: true,
 	Singular:          "provider", Plural: "providers",
 	IDHint: "the identifier", ListCmd: "arcane-cli admin notifications settings get",
-	GetPath: types.NotificationSettingsProvider, ListPath: types.NotificationsSettings,
-	Matches: func(item notification.Response, lower, original string) bool {
+	GetPath: clitypes.NotificationSettingsProvider, ListPath: clitypes.NotificationsSettings,
+	Matches: func(item types.NotificationSettings, lower, original string) bool {
 		return strings.EqualFold(string(item.Provider), original)
 	},
-	Label:        func(item notification.Response) string { return string(item.Provider) },
-	Promote:      func(item notification.Response) *notification.Response { return &item },
-	IdentifierOf: func(item notification.Response) string { return string(item.Provider) },
+	Label:        func(item types.NotificationSettings) string { return string(item.Provider) },
+	Promote:      func(item types.NotificationSettings) *types.NotificationSettings { return &item },
+	IdentifierOf: func(item types.NotificationSettings) string { return string(item.Provider) },
 }

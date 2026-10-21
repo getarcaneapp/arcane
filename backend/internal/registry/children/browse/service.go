@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1"
@@ -39,7 +39,7 @@ const (
 
 // Service browses repositories and tags through the distribution API.
 type Service struct {
-	resolve       func(ctx context.Context, id string) (containerregistry.ContainerRegistry, *containerregistry.Credential, error)
+	resolve       func(ctx context.Context, id string) (types.ContainerRegistry, *types.ContainerRegistryCredential, error)
 	lookupContext func(ctx context.Context) (context.Context, context.CancelFunc)
 	transport     http.RoundTripper
 	names         *hot.HotCache[string, []string]
@@ -56,7 +56,7 @@ type target struct {
 }
 
 func NewService(
-	resolve func(ctx context.Context, id string) (containerregistry.ContainerRegistry, *containerregistry.Credential, error),
+	resolve func(ctx context.Context, id string) (types.ContainerRegistry, *types.ContainerRegistryCredential, error),
 	lookupContext func(ctx context.Context) (context.Context, context.CancelFunc),
 	roundTripper http.RoundTripper,
 ) *Service {
@@ -82,7 +82,7 @@ func (s *Service) cachedNames(key string, list func() ([]string, error)) ([]stri
 
 // ListRepositories lists the repositories of a configured registry through the
 // catalog API, limited to the namespace of the registry URL.
-func (s *Service) ListRepositories(ctx context.Context, id string, params pagination.QueryParams) (listed []containerregistry.Repository, paging pagination.Response, listErr error) {
+func (s *Service) ListRepositories(ctx context.Context, id string, params pagination.QueryParams) (listed []types.ContainerRegistryRepository, paging pagination.Response, listErr error) {
 	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "registry.list_repositories", trace.WithAttributes(attribute.String("arcane.registry.id", id)))
 	defer func() {
 		span.SetAttributes(attribute.Int("arcane.result.count", len(listed)))
@@ -106,16 +106,20 @@ func (s *Service) ListRepositories(ctx context.Context, id string, params pagina
 	page, response := paginateNames(slices.DeleteFunc(names, func(repositoryName string) bool {
 		return target.prefix != "" && !strings.HasPrefix(repositoryName, target.prefix+"/")
 	}), params)
-	items := make([]containerregistry.Repository, 0, len(page))
+	items := make([]types.ContainerRegistryRepository, 0, len(page))
 	for _, repositoryName := range page {
-		items = append(items, containerregistry.Repository{Name: repositoryName})
+		items = append(items, types.ContainerRegistryRepository{Name: repositoryName})
 	}
 	return items, response, nil
 }
 
 // ListRepositoryTags lists the tags of a repository, fetching manifest details only for the requested page.
 // A manifest failure is recorded on its tag so it does not hide the rest of the page.
-func (s *Service) ListRepositoryTags(ctx context.Context, id, repository string, params pagination.QueryParams) (listed []containerregistry.RepositoryTag, paging pagination.Response, listErr error) {
+func (s *Service) ListRepositoryTags(
+	ctx context.Context,
+	id, repository string,
+	params pagination.QueryParams,
+) (listed []types.ContainerRegistryRepositoryTag, paging pagination.Response, listErr error) {
 	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "registry.list_tags", trace.WithAttributes(
 		attribute.String("arcane.registry.id", id),
 		attribute.String("arcane.registry.repository", repository),
@@ -145,7 +149,7 @@ func (s *Service) ListRepositoryTags(ctx context.Context, id, repository string,
 	}
 
 	page, response := paginateNames(names, params)
-	items := make([]containerregistry.RepositoryTag, len(page))
+	items := make([]types.ContainerRegistryRepositoryTag, len(page))
 	group := errgroup.Group{}
 	group.SetLimit(tagDetailsConcurrency)
 	for i, tagName := range page {
@@ -298,16 +302,16 @@ func IsUnauthorizedRegistryError(err error) bool {
 }
 
 // tagPlatform describes one platform image with its compressed config and layer size.
-func tagPlatform(img v1.Image, platform *v1.Platform, digest v1.Hash) (containerregistry.TagPlatform, error) {
+func tagPlatform(img v1.Image, platform *v1.Platform, digest v1.Hash) (types.ContainerRegistryTagPlatform, error) {
 	manifest, err := img.Manifest()
 	if err != nil {
-		return containerregistry.TagPlatform{}, err
+		return types.ContainerRegistryTagPlatform{}, err
 	}
 	size := manifest.Config.Size
 	for _, layer := range manifest.Layers {
 		size += layer.Size
 	}
-	return containerregistry.TagPlatform{
+	return types.ContainerRegistryTagPlatform{
 		OS:           cmp.Or(platform, &v1.Platform{}).OS,
 		Architecture: cmp.Or(platform, &v1.Platform{}).Architecture,
 		Variant:      cmp.Or(platform, &v1.Platform{}).Variant,
@@ -318,21 +322,21 @@ func tagPlatform(img v1.Image, platform *v1.Platform, digest v1.Hash) (container
 
 // tagDetails resolves the manifest behind a tag. A single image yields
 // one platform; an index yields one per platform image, skipping attestations.
-func tagDetails(repo name.Repository, options []remote.Option, tagName string) containerregistry.RepositoryTag {
+func tagDetails(repo name.Repository, options []remote.Option, tagName string) types.ContainerRegistryRepositoryTag {
 	descriptor, err := remote.Get(repo.Tag(tagName), options...)
 	if err != nil {
-		return containerregistry.RepositoryTag{
+		return types.ContainerRegistryRepositoryTag{
 			Name:      tagName,
-			Platforms: []containerregistry.TagPlatform{},
+			Platforms: []types.ContainerRegistryTagPlatform{},
 			Error:     err.Error(),
 		}
 	}
-	tag := func(platforms []containerregistry.TagPlatform, created *time.Time, detailsErr error) containerregistry.RepositoryTag {
+	tag := func(platforms []types.ContainerRegistryTagPlatform, created *time.Time, detailsErr error) types.ContainerRegistryRepositoryTag {
 		var size int64
 		for _, platform := range platforms {
 			size += platform.Size
 		}
-		return containerregistry.RepositoryTag{
+		return types.ContainerRegistryRepositoryTag{
 			Name:      tagName,
 			Digest:    descriptor.Digest.String(),
 			MediaType: string(descriptor.MediaType),
@@ -346,18 +350,18 @@ func tagDetails(repo name.Repository, options []remote.Option, tagName string) c
 	if !descriptor.MediaType.IsIndex() {
 		img, imageErr := descriptor.Image()
 		if imageErr != nil {
-			return tag([]containerregistry.TagPlatform{}, nil, imageErr)
+			return tag([]types.ContainerRegistryTagPlatform{}, nil, imageErr)
 		}
 		config, imageErr := img.ConfigFile()
 		if imageErr != nil {
-			return tag([]containerregistry.TagPlatform{}, nil, imageErr)
+			return tag([]types.ContainerRegistryTagPlatform{}, nil, imageErr)
 		}
 		platform, imageErr := tagPlatform(img, config.Platform(), descriptor.Digest)
 		if imageErr != nil {
-			return tag([]containerregistry.TagPlatform{}, nil, imageErr)
+			return tag([]types.ContainerRegistryTagPlatform{}, nil, imageErr)
 		}
 		return tag(
-			[]containerregistry.TagPlatform{platform},
+			[]types.ContainerRegistryTagPlatform{platform},
 			kit.Ternary(config.Created.IsZero(), nil, new(config.Created.UTC())),
 			nil,
 		)
@@ -365,15 +369,15 @@ func tagDetails(repo name.Repository, options []remote.Option, tagName string) c
 
 	index, err := descriptor.ImageIndex()
 	if err != nil {
-		return tag([]containerregistry.TagPlatform{}, nil, err)
+		return tag([]types.ContainerRegistryTagPlatform{}, nil, err)
 	}
 	manifest, err := index.IndexManifest()
 	if err != nil {
-		return tag([]containerregistry.TagPlatform{}, nil, err)
+		return tag([]types.ContainerRegistryTagPlatform{}, nil, err)
 	}
 
 	var mu sync.Mutex
-	platforms := []containerregistry.TagPlatform{}
+	platforms := []types.ContainerRegistryTagPlatform{}
 	group := errgroup.Group{}
 	group.SetLimit(tagDetailsConcurrency)
 	for _, child := range manifest.Manifests {
@@ -399,7 +403,7 @@ func tagDetails(repo name.Repository, options []remote.Option, tagName string) c
 		return tag(platforms, nil, waitErr)
 	}
 
-	slices.SortFunc(platforms, func(a, b containerregistry.TagPlatform) int {
+	slices.SortFunc(platforms, func(a, b types.ContainerRegistryTagPlatform) int {
 		return cmp.Or(
 			strings.Compare(a.OS, b.OS),
 			strings.Compare(a.Architecture, b.Architecture),

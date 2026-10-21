@@ -6,8 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/podman"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -25,7 +24,7 @@ func newTestAutoHealJob() *AutoHealJob {
 }
 
 func TestAutoHeal_ListOptionsFilterUnhealthyAtDaemon(t *testing.T) {
-	opts := autoHealListOptionsInternal()
+	opts := autoHealListOptions()
 	require.False(t, opts.All)
 	require.Equal(t, make(client.Filters).Add("health", string(container.Unhealthy)), opts.Filters)
 }
@@ -40,43 +39,43 @@ func TestAutoHeal_FilterCandidates_SkipsSelfContainer(t *testing.T) {
 	}
 
 	// Hostname-based detection yields the short 12-char ID.
-	candidates := job.filterCandidatesInternal(containers, nil, selfFullID[:12])
+	candidates := job.filterCandidates(containers, nil, selfFullID[:12])
 	require.Len(t, candidates, 1)
 	require.Equal(t, "/other", candidates[0].Names[0])
 
 	// cgroup/mountinfo-based detection yields the full ID.
-	candidates = job.filterCandidatesInternal(containers, nil, selfFullID)
+	candidates = job.filterCandidates(containers, nil, selfFullID)
 	require.Len(t, candidates, 1)
 	require.Equal(t, "/other", candidates[0].Names[0])
 
 	// Outside Docker no self ID is detected and the guard is a no-op.
-	candidates = job.filterCandidatesInternal(containers, nil, "")
+	candidates = job.filterCandidates(containers, nil, "")
 	require.Len(t, candidates, 2)
 }
 
 func TestAutoHeal_ProcessCandidate_SkipsQuadletContainers(t *testing.T) {
 	job := &AutoHealJob{
 		restarts: make(map[string]*restartRecord),
-		inspectContainer: func(context.Context, *client.Client, string) (container.InspectResponse, error) {
+		inspectContainerFn: func(context.Context, *client.Client, string) (container.InspectResponse, error) {
 			t.Fatal("quadlet-managed containers must not be inspected")
 			return container.InspectResponse{}, nil
 		},
-		restartContainer: func(context.Context, *client.Client, string) error {
+		restartContainerFn: func(context.Context, *client.Client, string) error {
 			t.Fatal("quadlet-managed containers must not be restarted")
 			return nil
 		},
 	}
 
-	target, err := job.processCandidateInternal(t.Context(), nil, container.Summary{
+	target, err := job.processCandidate(t.Context(), nil, container.Summary{
 		ID:     "quadlet-id",
 		Names:  []string{"/web"},
-		Labels: map[string]string{podman.SystemdUnitLabel: "web.service"},
+		Labels: map[string]string{types.PodmanSystemdUnitLabel: "web.service"},
 	}, 5, 30*time.Minute, 30)
 	require.NoError(t, err)
-	require.Equal(t, schedulertypes.TargetOutcome{
+	require.Equal(t, types.TargetOutcome{
 		ResourceType: "container",
 		ID:           "quadlet-id",
-		Status:       schedulertypes.Skipped,
+		Status:       types.RunStatusSkipped,
 		Message:      "managed by systemd unit web.service; its Restart= policy owns recovery",
 	}, target)
 }
@@ -167,8 +166,8 @@ func TestAutoHeal_Schedule_Default(t *testing.T) {
 
 func TestAutoHeal_ShouldSchedule(t *testing.T) {
 	ctx := t.Context()
-	_, settingsSvc, _ := setupAnalyticsStateServicesInternal(t)
-	job, err := NewAutoHealJob(nil, settingsSvc, nil, nil, newTestAdmissionGateInternal(t))
+	_, settingsSvc, _ := setupAnalyticsStateServices(t)
+	job, err := NewAutoHealJob(nil, settingsSvc, nil, nil, newTestAdmissionGate(t))
 	require.NoError(t, err)
 
 	require.False(t, job.ShouldSchedule(ctx))
@@ -200,14 +199,14 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
 
-	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, &database.DB{DB: db})
+	settingsSvc, err := newSettingsServiceForTest(t, ctx, &database.DB{DB: db})
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "autoHealEnabled", true))
 	require.NoError(t, settingsSvc.SetStringSetting(ctx, "autoHealExcludedContainers", "skip-me"))
 
-	job, err := NewAutoHealJob(nil, settingsSvc, nil, nil, newTestAdmissionGateInternal(t))
+	job, err := NewAutoHealJob(nil, settingsSvc, nil, nil, newTestAdmissionGate(t))
 	require.NoError(t, err)
-	job.getDockerClient = func() (*client.Client, error) { return nil, nil }
+	job.getDockerClientFn = func() (*client.Client, error) { return nil, nil }
 	job.listContainers = func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
 		return []container.Summary{
 			{ID: "c1", Names: []string{"/one"}},
@@ -224,7 +223,7 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 	var maxConcurrent atomic.Int32
 	var restarts atomic.Int32
 
-	job.inspectContainer = func(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error) {
+	job.inspectContainerFn = func(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error) {
 		active := current.Add(1)
 		for {
 			maxSeen := maxConcurrent.Load()
@@ -245,7 +244,7 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 			return container.InspectResponse{State: &container.State{Health: &container.Health{Status: container.Unhealthy}}}, nil
 		}
 	}
-	job.restartContainer = func(ctx context.Context, dockerClient *client.Client, containerID string) error {
+	job.restartContainerFn = func(ctx context.Context, dockerClient *client.Client, containerID string) error {
 		restarts.Add(1)
 		return nil
 	}
@@ -258,14 +257,14 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 	require.Equal(t, int32(4), restarts.Load())
 }
 
-func TestAutoHealJob_OverlappingRunIsSkippedInternal(t *testing.T) {
+func TestAutoHealJob_OverlappingRunIsSkipped(t *testing.T) {
 	ctx := t.Context()
-	_, settingsSvc, _ := setupAnalyticsStateServicesInternal(t)
+	_, settingsSvc, _ := setupAnalyticsStateServices(t)
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "autoHealEnabled", true))
 
-	job, err := NewAutoHealJob(nil, settingsSvc, nil, nil, newTestAdmissionGateInternal(t))
+	job, err := NewAutoHealJob(nil, settingsSvc, nil, nil, newTestAdmissionGate(t))
 	require.NoError(t, err)
-	job.getDockerClient = func() (*client.Client, error) { return nil, nil }
+	job.getDockerClientFn = func() (*client.Client, error) { return nil, nil }
 	started := make(chan struct{}, 1)
 	release := make(chan struct{})
 	var calls atomic.Int32

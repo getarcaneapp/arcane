@@ -11,15 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/project"
-	"github.com/getarcaneapp/arcane/types/v2/workspace"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 func newTagsCmd() *cobra.Command {
@@ -34,11 +32,11 @@ func newTagsCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[[]project.TagOption]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[[]types.ProjectTagOption]{
 				Method:         http.MethodGet,
-				Path:           types.ProjectsTags(c.EnvID()),
+				Path:           clitypes.ProjectsTags(c.EnvID()),
 				FailureMessage: "failed to list project tags",
-				Render: func(data []project.TagOption) error {
+				Render: func(data []types.ProjectTagOption) error {
 					headers := []string{"NAME", "COLOR"}
 					rows := make([][]string, len(data))
 					for i, tag := range data {
@@ -82,18 +80,18 @@ func newTagCmd() *cobra.Command {
 				return err
 			}
 
-			body := project.UpdateTag{
+			body := types.UpdateProjectTag{
 				Name:     cmp.Or(opts.tagRemove, opts.tagAdd),
 				Attached: opts.tagAdd != "",
-				Color:    project.TagColor(opts.tagColor),
+				Color:    types.ProjectTagColor(opts.tagColor),
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[project.UpdateTagResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.UpdateProjectTagResponse]{
 				Method:         http.MethodPatch,
-				Path:           types.ProjectTags(c.EnvID(), resolved.ID),
+				Path:           clitypes.ProjectTags(c.EnvID(), resolved.ID),
 				Body:           body,
 				FailureMessage: "failed to update project tag",
-				Render: func(data project.UpdateTagResponse) error {
+				Render: func(data types.UpdateProjectTagResponse) error {
 					names := make([]string, len(data.Tags))
 					for i, tag := range data.Tags {
 						names[i] = tag.Name
@@ -126,11 +124,11 @@ func newArchiveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           types.ProjectArchive(c.EnvID(), resolved.ID),
+				Path:           clitypes.ProjectArchive(c.EnvID(), resolved.ID),
 				FailureMessage: "failed to archive project",
-				Render: func(base.MessageResponse) error {
+				Render: func(types.MessageResponse) error {
 					output.Success("%s", fmt.Sprintf("Project %s archived successfully", resolved.Name))
 					return nil
 				},
@@ -154,11 +152,11 @@ func newUnarchiveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           types.ProjectUnarchive(c.EnvID(), resolved.ID),
+				Path:           clitypes.ProjectUnarchive(c.EnvID(), resolved.ID),
 				FailureMessage: "failed to unarchive project",
-				Render: func(base.MessageResponse) error {
+				Render: func(types.MessageResponse) error {
 					output.Success("%s", fmt.Sprintf("Project %s unarchived successfully", resolved.Name))
 					return nil
 				},
@@ -181,10 +179,10 @@ func newBuildCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runProjectStreamAction(cmd, args[0], projectStreamActionConfig{
-				endpoint:       types.ProjectBuild,
+				endpoint:       clitypes.ProjectBuild,
 				failureMessage: "failed to build project images",
 				successMessage: "Images built successfully for project %s",
-				body: project.BuildRequest{
+				body: types.ProjectBuildRequest{
 					Services: opts.buildServices,
 					Provider: opts.buildProvider,
 					Push:     kit.Ternary(cmd.Flags().Changed("push"), &opts.buildPush, nil),
@@ -219,14 +217,14 @@ func newUpdateServicesCmd() *cobra.Command {
 
 			c.SetTimeout(30 * time.Minute)
 
-			body := project.UpdateServicesRequest{Services: args[1:]}
+			body := types.ProjectUpdateServicesRequest{Services: args[1:]}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           types.ProjectUpdateServices(c.EnvID(), resolved.ID),
+				Path:           clitypes.ProjectUpdateServices(c.EnvID(), resolved.ID),
 				Body:           body,
 				FailureMessage: "failed to update project services",
-				Render: func(base.MessageResponse) error {
+				Render: func(types.MessageResponse) error {
 					output.Success("Services updated successfully for project %s", resolved.Name)
 					return nil
 				},
@@ -265,12 +263,12 @@ func newWorkspaceCatCmd() *cobra.Command {
 				return err
 			}
 
-			reqPath := types.ProjectWorkspaceFile(c.EnvID(), resolved.ID) + "?relativePath=" + url.QueryEscape(args[1])
-			return cmdutil.Run(cmd, c, cmdutil.Spec[workspace.FileContent]{
+			reqPath := clitypes.ProjectWorkspaceFile(c.EnvID(), resolved.ID) + "?relativePath=" + url.QueryEscape(args[1])
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.WorkspaceFileContent]{
 				Method:         http.MethodGet,
 				Path:           reqPath,
 				FailureMessage: "failed to get workspace file",
-				Render: func(data workspace.FileContent) error {
+				Render: func(data types.WorkspaceFileContent) error {
 					if data.Content == "" && data.ReadOnlyReason != "" {
 						return fmt.Errorf("file %s has no inline content (%s); use `arcane projects workspace download` instead", args[1], data.ReadOnlyReason)
 					}
@@ -299,7 +297,7 @@ func newWorkspaceDownloadCmd() *cobra.Command {
 				return err
 			}
 
-			reqPath := types.ProjectWorkspaceFileDownload(c.EnvID(), resolved.ID) + "?relativePath=" + url.QueryEscape(args[1])
+			reqPath := clitypes.ProjectWorkspaceFileDownload(c.EnvID(), resolved.ID) + "?relativePath=" + url.QueryEscape(args[1])
 			resp, err := c.Get(cmd.Context(), reqPath)
 			if err != nil {
 				return fmt.Errorf("failed to download workspace file: %w", err)

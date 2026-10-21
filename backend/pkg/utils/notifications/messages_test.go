@@ -4,8 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
-	"github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,7 +25,7 @@ func TestNtfyNotificationMessagesVisualLayout(t *testing.T) {
 					MessageFormatNtfyMarkdown,
 					"Local Docker",
 					"binwiederhier/ntfy:latest",
-					&imageupdate.Response{
+					&types.ImageUpdateResponse{
 						HasUpdate:     true,
 						UpdateType:    "digest",
 						CurrentDigest: currentDigest,
@@ -52,7 +51,7 @@ func TestNtfyNotificationMessagesVisualLayout(t *testing.T) {
 				return BuildBatchImageUpdateNotificationMessage(
 					MessageFormatNtfyMarkdown,
 					"Local Docker",
-					map[string]*imageupdate.Response{
+					map[string]*types.ImageUpdateResponse{
 						"binwiederhier/ntfy:latest": {
 							HasUpdate:     true,
 							UpdateType:    "digest",
@@ -218,7 +217,7 @@ func TestNtfyNotificationMessagesVisualLayout(t *testing.T) {
 				return BuildPruneReportNotificationMessage(
 					MessageFormatNtfyMarkdown,
 					"Local Docker",
-					&system.PruneAllResult{
+					&types.PruneAllResult{
 						SpaceReclaimed:           3825205248,
 						ContainerSpaceReclaimed:  503316480,
 						ImageSpaceReclaimed:      2449473536,
@@ -285,7 +284,7 @@ func TestNtfyImageUpdateTagUsesVersions(t *testing.T) {
 		MessageFormatNtfyMarkdown,
 		"Local Docker",
 		"example/app:1.2",
-		&imageupdate.Response{
+		&types.ImageUpdateResponse{
 			HasUpdate:      true,
 			UpdateType:     "tag",
 			CurrentVersion: "1.2.3",

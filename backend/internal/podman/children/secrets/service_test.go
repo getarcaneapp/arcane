@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -49,7 +49,7 @@ func TestUpdateReplacesSecretAndReturnsInspect(t *testing.T) {
 		}
 	})
 
-	secret, err := svc.Update(t.Context(), "db-pass", podmantypes.SecretUpdateRequest{
+	secret, err := svc.Update(t.Context(), "db-pass", types.PodmanSecretUpdateRequest{
 		Data:   "rotated",
 		Driver: "file",
 		Labels: map[string]string{"tier": "db"},

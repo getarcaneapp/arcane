@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 	updaterlabels "go.getarcane.app/updater/labels"
 
@@ -119,9 +119,9 @@ services: {}
 
 	meta, err := ParseArcaneComposeMetadata(t.Context(), filepath.Join(tempDir, "compose.yaml"), tempDir, false)
 	require.NoError(t, err)
-	require.Equal(t, []projecttypes.TagOption{
-		{Name: "database", Color: projecttypes.TagColorPurple},
-		{Name: "maintenance-window", Color: projecttypes.TagColorOrange},
+	require.Equal(t, []types.ProjectTagOption{
+		{Name: "database", Color: types.ProjectTagColorPurple},
+		{Name: "maintenance-window", Color: types.ProjectTagColorOrange},
 	}, meta.ProjectTags)
 }
 
@@ -203,7 +203,7 @@ func TestNormalizeProjectTags(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestUpdaterMetadataLabelsInternal(t *testing.T) {
+func TestUpdaterMetadataLabels(t *testing.T) {
 	const content = `x-arcane:
   icon: alpine
   updater:
@@ -235,7 +235,7 @@ services:
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 	disk, err := LoadComposeProject(t.Context(), path, "metadata", dir, false, nil, nil, nil, false, nil, nil, nil)
 	require.NoError(t, err)
-	memory, err := LoadComposeProjectFromContent(t.Context(), projecttypes.ComposeContentOptions{ComposeContent: content, WorkingDir: dir, ProjectName: "metadata"})
+	memory, err := LoadComposeProjectFromContent(t.Context(), types.ComposeContentOptions{ComposeContent: content, WorkingDir: dir, ProjectName: "metadata"})
 	require.NoError(t, err)
 	for _, project := range []*composetypes.Project{disk, memory} {
 		inherited := project.Services["inherited"].Labels
@@ -256,7 +256,7 @@ services:
 	require.Equal(t, content, string(source), "loading must not rewrite source into labels")
 }
 
-func TestUpdaterMetadataValidationInternal(t *testing.T) {
+func TestUpdaterMetadataValidation(t *testing.T) {
 	for _, config := range []string{
 		"updater: true",
 		"updater: {enabled: maybe}",
@@ -268,7 +268,7 @@ func TestUpdaterMetadataValidationInternal(t *testing.T) {
 		t.Run(config, func(t *testing.T) {
 			_, err := LoadComposeProjectFromContent(
 				t.Context(),
-				projecttypes.ComposeContentOptions{
+				types.ComposeContentOptions{
 					ComposeContent: "services:\n  app:\n    image: alpine:3.20.0\nx-arcane:\n  " + config + "\n",
 					WorkingDir:     t.TempDir(),
 					ProjectName:    "metadata",
@@ -302,7 +302,7 @@ services:
 	require.NoError(t, err)
 	memory, err := LoadComposeProjectFromContent(
 		t.Context(),
-		projecttypes.ComposeContentOptions{
+		types.ComposeContentOptions{
 			ComposeContent: content,
 			WorkingDir:     dir,
 			ProjectName:    "metadata",
@@ -324,7 +324,7 @@ func TestUpdateCheckMetadataValidation(t *testing.T) {
 		t.Run(content, func(t *testing.T) {
 			_, err := LoadComposeProjectFromContent(
 				t.Context(),
-				projecttypes.ComposeContentOptions{
+				types.ComposeContentOptions{
 					ComposeContent: content,
 					WorkingDir:     t.TempDir(),
 					ProjectName:    "metadata",
@@ -356,7 +356,7 @@ services:
 `
 	project, err := LoadComposeProjectFromContent(
 		t.Context(),
-		projecttypes.ComposeContentOptions{
+		types.ComposeContentOptions{
 			ComposeContent: content,
 			WorkingDir:     t.TempDir(),
 			ProjectName:    "metadata",
@@ -373,7 +373,7 @@ func TestUpdaterDelayMetadataValidation(t *testing.T) {
 		t.Run(delay, func(t *testing.T) {
 			_, err := LoadComposeProjectFromContent(
 				t.Context(),
-				projecttypes.ComposeContentOptions{
+				types.ComposeContentOptions{
 					ComposeContent: "services:\n  app:\n    image: alpine:3.20.0\n    x-arcane:\n      updater:\n        delay: " + delay + "\n",
 					WorkingDir:     t.TempDir(),
 					ProjectName:    "metadata",
@@ -385,7 +385,7 @@ func TestUpdaterDelayMetadataValidation(t *testing.T) {
 	}
 }
 
-func TestUpdaterMetadataInterpolationAndIncludesInternal(t *testing.T) {
+func TestUpdaterMetadataInterpolationAndIncludes(t *testing.T) {
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte("UPDATE_RANGE=3.20.x\nUPDATE_ENABLED=false\n"), 0o600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(`include:

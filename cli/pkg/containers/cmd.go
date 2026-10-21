@@ -13,16 +13,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/container"
-	"github.com/getarcaneapp/arcane/types/v2/updater"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/docker"
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 // Command builds the containers command tree.
@@ -105,13 +103,13 @@ func newContainerListCmd(updatesOnly bool) *cobra.Command {
 				output.Header("Container Updates")
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[container.Summary]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.ContainerSummary]{
 				Resource: "containers",
-				Endpoint: types.Containers(c.EnvID()),
+				Endpoint: clitypes.Containers(c.EnvID()),
 				Params:   cmdutil.ListParams{Resource: "containers", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
 				Query:    query,
 				Headers:  kit.Ternary(updatesFilter != "", []string{"ID", "NAME", "IMAGE", "STATE", "UPDATES", "LATEST"}, []string{"ID", "NAME", "IMAGE", "STATE", "STATUS"}),
-				Row: func(item container.Summary) []string {
+				Row: func(item types.ContainerSummary) []string {
 					if updatesFilter == "" {
 						return []string{
 							item.ID[:min(len(item.ID), 12)],
@@ -217,11 +215,11 @@ func newStartCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           types.ContainerStart(c.EnvID(), resolved.ID),
+				Path:           clitypes.ContainerStart(c.EnvID(), resolved.ID),
 				FailureMessage: "failed to start container",
-				Render: func(base.MessageResponse) error {
+				Render: func(types.MessageResponse) error {
 					output.Success("Container %s started successfully", containerDisplayName(resolved))
 					return nil
 				},
@@ -247,11 +245,11 @@ func newStopCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           types.ContainerStop(c.EnvID(), resolved.ID),
+				Path:           clitypes.ContainerStop(c.EnvID(), resolved.ID),
 				FailureMessage: "failed to stop container",
-				Render: func(base.MessageResponse) error {
+				Render: func(types.MessageResponse) error {
 					output.Success("Container %s stopped successfully", containerDisplayName(resolved))
 					return nil
 				},
@@ -277,11 +275,11 @@ func newRestartCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           types.ContainerRestart(c.EnvID(), resolved.ID),
+				Path:           clitypes.ContainerRestart(c.EnvID(), resolved.ID),
 				FailureMessage: "failed to restart container",
-				Render: func(base.MessageResponse) error {
+				Render: func(types.MessageResponse) error {
 					output.Success("Container %s restarted successfully", containerDisplayName(resolved))
 					return nil
 				},
@@ -309,11 +307,11 @@ func newUpdateCmd() *cobra.Command {
 
 			// This route is served by the updater handler, so it answers with an
 			// updater.Result rather than a container.ActionResult.
-			return cmdutil.Run(cmd, c, cmdutil.Spec[updater.Result]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.UpdaterResult]{
 				Method:         http.MethodPost,
-				Path:           types.ContainerUpdate(c.EnvID(), resolved.ID),
+				Path:           clitypes.ContainerUpdate(c.EnvID(), resolved.ID),
 				FailureMessage: "failed to update container",
-				Render: func(updater.Result) error {
+				Render: func(types.UpdaterResult) error {
 					output.Success("Container %s updated successfully", containerDisplayName(resolved))
 					return nil
 				},
@@ -340,11 +338,11 @@ func newRedeployCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[container.Details]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ContainerDetails]{
 				Method:         http.MethodPost,
-				Path:           types.ContainerRedeploy(c.EnvID(), resolved.ID),
+				Path:           clitypes.ContainerRedeploy(c.EnvID(), resolved.ID),
 				FailureMessage: "failed to redeploy container",
-				Render: func(container.Details) error {
+				Render: func(types.ContainerDetails) error {
 					output.Success("Container %s redeployed successfully", containerDisplayName(resolved))
 					return nil
 				},
@@ -382,7 +380,7 @@ func newDeleteCmd() *cobra.Command {
 				"force":   {strconv.FormatBool(opts.force)},
 				"volumes": {strconv.FormatBool(opts.deleteVolumes)},
 			}
-			path := types.Container(c.EnvID(), resolved.ID) + "?" + query.Encode()
+			path := clitypes.Container(c.EnvID(), resolved.ID) + "?" + query.Encode()
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete container %s?", displayName),
@@ -410,11 +408,11 @@ func newCountsCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[container.StatusCounts]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ContainerStatusCounts]{
 				Method:         http.MethodGet,
-				Path:           types.ContainersCounts(c.EnvID()),
+				Path:           clitypes.ContainersCounts(c.EnvID()),
 				FailureMessage: "failed to get container counts",
-				Render: func(data container.StatusCounts) error {
+				Render: func(data types.ContainerStatusCounts) error {
 					output.Header("Container Status Counts")
 					output.KeyValue("Running", data.RunningContainers)
 					output.KeyValue("Stopped", data.StoppedContainers)
@@ -468,12 +466,12 @@ func newCreateCmd() *cobra.Command {
 				return requestErr
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[container.Created]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ContainerCreated]{
 				Method:         http.MethodPost,
-				Path:           types.Containers(c.EnvID()),
+				Path:           clitypes.Containers(c.EnvID()),
 				Body:           req,
 				FailureMessage: "failed to create container",
-				Render: func(data container.Created) error {
+				Render: func(data types.ContainerCreated) error {
 					output.Success("Container %s created successfully", data.Name)
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Name", data.Name)
@@ -507,7 +505,7 @@ func newCreateCmd() *cobra.Command {
 	return command
 }
 
-func containerDisplayName(details *container.Details) string {
+func containerDisplayName(details *types.ContainerDetails) string {
 	if details == nil {
 		return ""
 	}
@@ -517,15 +515,15 @@ func containerDisplayName(details *container.Details) string {
 	return details.ID[:min(len(details.ID), 12)]
 }
 
-var ContainerRef = cmdutil.ResourceRef[container.Details, container.Summary]{
+var ContainerRef = cmdutil.ResourceRef[types.ContainerDetails, types.ContainerSummary]{
 	EnvironmentScoped: true,
 	Singular:          "container",
 	Plural:            "containers",
 	IDHint:            "the container ID",
 	ListCmd:           "arcane containers list",
-	GetPath:           types.Container,
-	ListPath:          types.Containers,
-	Matches: func(item container.Summary, identifierLower, original string) bool {
+	GetPath:           clitypes.Container,
+	ListPath:          clitypes.Containers,
+	Matches: func(item types.ContainerSummary, identifierLower, original string) bool {
 		return strings.Contains(strings.ToLower(item.ID), identifierLower) ||
 			strings.Contains(strings.ToLower(item.Image), identifierLower) ||
 			slices.ContainsFunc(item.Names, func(name string) bool {
@@ -533,21 +531,21 @@ var ContainerRef = cmdutil.ResourceRef[container.Details, container.Summary]{
 				return strings.Contains(strings.ToLower(trimmedName), identifierLower) || strings.EqualFold(trimmedName, original) || strings.EqualFold(name, original)
 			})
 	},
-	Label: func(item container.Summary) string {
+	Label: func(item types.ContainerSummary) string {
 		name := cmp.Or(docker.ContainerNameFromNames(item.Names), item.ID[:min(len(item.ID), 12)])
 		image := cmp.Or(item.Image, "<unknown>")
 		state := cmp.Or(item.State, "unknown")
 		return fmt.Sprintf("%s (%s, %s)", name, item.ID[:min(len(item.ID), 12)], image+" / "+state)
 	},
-	Promote: func(summary container.Summary) *container.Details {
-		return &container.Details{ID: summary.ID, Name: docker.ContainerNameFromNames(summary.Names)}
+	Promote: func(summary types.ContainerSummary) *types.ContainerDetails {
+		return &types.ContainerDetails{ID: summary.ID, Name: docker.ContainerNameFromNames(summary.Names)}
 	},
-	IDOf:         func(item container.Summary) string { return item.ID },
-	IdentifierOf: func(details container.Details) string { return details.ID },
+	IDOf:         func(item types.ContainerSummary) string { return item.ID },
+	IdentifierOf: func(details types.ContainerDetails) string { return details.ID },
 }
 
-func (opts *createOptions) request(cmd *cobra.Command) (container.Create, error) {
-	var req container.Create
+func (opts *createOptions) request(cmd *cobra.Command) (types.Container, error) {
+	var req types.Container
 
 	// File mode: read base config from file
 	if opts.file != "" {

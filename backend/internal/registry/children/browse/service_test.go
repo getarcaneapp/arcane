@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/registry"
@@ -40,22 +40,22 @@ func newTestRegistry(t *testing.T) string {
 }
 
 // testRegistries is an in-memory registry store keyed by ID.
-type testRegistries map[string]containerregistry.Credential
+type testRegistries map[string]types.ContainerRegistryCredential
 
 func (r testRegistries) add(registryURL, username, token string) string {
 	id := fmt.Sprintf("registry-%d", len(r)+1)
-	r[id] = containerregistry.Credential{URL: registryURL, Username: username, Token: token, Enabled: true}
+	r[id] = types.ContainerRegistryCredential{URL: registryURL, Username: username, Token: token, Enabled: true}
 	return id
 }
 
 func newTestService(registries testRegistries) *Service {
 	return NewService(
-		func(_ context.Context, id string) (containerregistry.ContainerRegistry, *containerregistry.Credential, error) {
+		func(_ context.Context, id string) (types.ContainerRegistry, *types.ContainerRegistryCredential, error) {
 			credential, ok := registries[id]
 			if !ok {
-				return containerregistry.ContainerRegistry{}, nil, common.Classify(common.ErrNotFound, errors.New("registry not found"))
+				return types.ContainerRegistry{}, nil, common.Classify(common.ErrNotFound, errors.New("registry not found"))
 			}
-			registryRecord := containerregistry.ContainerRegistry{ID: id, URL: credential.URL}
+			registryRecord := types.ContainerRegistry{ID: id, URL: credential.URL}
 			if credential.Username == "" {
 				return registryRecord, nil, nil
 			}
@@ -334,7 +334,7 @@ func TestService_BrowseErrors(t *testing.T) {
 	}
 }
 
-func repositoryNames(repositories []containerregistry.Repository) []string {
+func repositoryNames(repositories []types.ContainerRegistryRepository) []string {
 	names := make([]string, 0, len(repositories))
 	for _, repository := range repositories {
 		names = append(names, repository.Name)

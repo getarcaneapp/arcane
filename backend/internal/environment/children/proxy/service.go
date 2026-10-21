@@ -12,9 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
-	"github.com/getarcaneapp/arcane/types/v2/gitops"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 
@@ -190,19 +188,19 @@ func (s *Service) JSON(
 // SyncRegistries syncs all registries from this manager to a remote environment
 func (s *Service) SyncRegistries(ctx context.Context, target *Target) error {
 	return s.fanOutSyncToEnvironment(ctx, target, "registries", "/api/container-registries/sync",
-		func(reg registry.ContainerRegistry) (containerregistry.Sync, bool, error) {
+		func(reg registry.ContainerRegistry) (types.ContainerRegistrySync, bool, error) {
 			registryType, typeErr := registry.NormalizeRegistryType(reg.RegistryType)
 			if typeErr != nil {
-				return containerregistry.Sync{}, false, fmt.Errorf("normalize registry type for sync %s: %w", reg.ID, typeErr)
+				return types.ContainerRegistrySync{}, false, fmt.Errorf("normalize registry type for sync %s: %w", reg.ID, typeErr)
 			}
 
 			decrypted, err := crypto.Decrypt(kit.Ternary(registryType == registry.RegistryTypeECR, reg.AWSSecretAccessKey, reg.Token))
 			if err != nil {
-				return containerregistry.Sync{}, false, fmt.Errorf("failed to decrypt %s for registry %s for sync: %w",
+				return types.ContainerRegistrySync{}, false, fmt.Errorf("failed to decrypt %s for registry %s for sync: %w",
 					kit.Ternary(registryType == registry.RegistryTypeECR, "ECR secret", "token"), reg.ID, err)
 			}
 
-			return containerregistry.Sync{
+			return types.ContainerRegistrySync{
 				ID:                 reg.ID,
 				URL:                reg.URL,
 				Username:           kit.Ternary(registryType == registry.RegistryTypeECR, "", reg.Username),
@@ -219,8 +217,8 @@ func (s *Service) SyncRegistries(ctx context.Context, target *Target) error {
 				UpdatedAt:          reg.UpdatedAt,
 			}, true, nil
 		},
-		func(items []containerregistry.Sync) containerregistry.SyncRequest {
-			return containerregistry.SyncRequest{Registries: items}
+		func(items []types.ContainerRegistrySync) types.ContainerRegistrySyncRequest {
+			return types.ContainerRegistrySyncRequest{Registries: items}
 		},
 	)
 }
@@ -228,15 +226,15 @@ func (s *Service) SyncRegistries(ctx context.Context, target *Target) error {
 // SyncS3Destinations sends manager-owned destinations to one remote environment.
 func (s *Service) SyncS3Destinations(ctx context.Context, target *Target) error {
 	return s.fanOutSyncToEnvironment(ctx, target, "S3 destinations", "/api/backups/s3/sync",
-		func(destination s3.S3Destination) (backup.S3DestinationSync, bool, error) {
+		func(destination s3.S3Destination) (types.S3Destination, bool, error) {
 			secret, err := crypto.Decrypt(destination.SecretAccessKey)
 			if err != nil {
-				return backup.S3DestinationSync{}, false, fmt.Errorf("failed to decrypt S3 destination %s for sync: %w", destination.ID, err)
+				return types.S3Destination{}, false, fmt.Errorf("failed to decrypt S3 destination %s for sync: %w", destination.ID, err)
 			}
 			return destination.ToSync(secret), true, nil
 		},
-		func(items []backup.S3DestinationSync) backup.S3DestinationSyncRequest {
-			return backup.S3DestinationSyncRequest{Destinations: items}
+		func(items []types.S3Destination) types.S3DestinationSyncRequest {
+			return types.S3DestinationSyncRequest{Destinations: items}
 		},
 	)
 }
@@ -244,7 +242,7 @@ func (s *Service) SyncS3Destinations(ctx context.Context, target *Target) error 
 // SyncRepositories syncs all git repositories from this manager to a remote environment
 func (s *Service) SyncRepositories(ctx context.Context, target *Target) error {
 	return s.fanOutSyncToEnvironment(ctx, target, "git repositories", "/api/git-repositories/sync",
-		func(repo gitrepo.GitRepository) (gitops.RepositorySync, bool, error) {
+		func(repo gitrepo.GitRepository) (types.GitRepositorySync, bool, error) {
 			decrypt := func(value, what string) (string, error) {
 				if value == "" {
 					return "", nil
@@ -257,22 +255,22 @@ func (s *Service) SyncRepositories(ctx context.Context, target *Target) error {
 			}
 			token, err := decrypt(repo.Token, "token")
 			if err != nil {
-				return gitops.RepositorySync{}, false, err
+				return types.GitRepositorySync{}, false, err
 			}
 			sshKey, err := decrypt(repo.SSHKey, "SSH key")
 			if err != nil {
-				return gitops.RepositorySync{}, false, err
+				return types.GitRepositorySync{}, false, err
 			}
 			signingKey, err := decrypt(repo.SigningKey, "signing key")
 			if err != nil {
-				return gitops.RepositorySync{}, false, err
+				return types.GitRepositorySync{}, false, err
 			}
 			passphrase, err := decrypt(repo.SigningKeyPassphrase, "signing key passphrase")
 			if err != nil {
-				return gitops.RepositorySync{}, false, err
+				return types.GitRepositorySync{}, false, err
 			}
 
-			return gitops.RepositorySync{
+			return types.GitRepositorySync{
 				ID:                     repo.ID,
 				Name:                   repo.Name,
 				URL:                    repo.URL,
@@ -291,8 +289,8 @@ func (s *Service) SyncRepositories(ctx context.Context, target *Target) error {
 				UpdatedAt:              kit.FromPtr(repo.UpdatedAt),
 			}, true, nil
 		},
-		func(items []gitops.RepositorySync) gitops.RepositorySyncRequest {
-			return gitops.RepositorySyncRequest{Repositories: items}
+		func(items []types.GitRepositorySync) types.GitRepositorySyncRequest {
+			return types.GitRepositorySyncRequest{Repositories: items}
 		},
 	)
 }

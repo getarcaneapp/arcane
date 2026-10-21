@@ -3,8 +3,7 @@ package authz
 import (
 	"strings"
 
-	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
-	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 	kit "go.getarcane.app/kit/pkg"
 )
@@ -45,7 +44,7 @@ func NewPermissionMatcher() *PermissionMatcher {
 func (m *PermissionMatcher) Add(method, pathTemplate, perm string) {
 	m.routes = append(m.routes, permRoute{
 		method:   strings.ToUpper(method),
-		segments: templateSegmentsInternal(pathTemplate),
+		segments: templateSegments(pathTemplate),
 		perm:     perm,
 	})
 }
@@ -70,7 +69,7 @@ func (m *PermissionMatcher) Lookup(method, suffixPath string) mo.Option[string] 
 	if i := strings.IndexByte(suffixPath, '?'); i >= 0 {
 		suffixPath = suffixPath[:i]
 	}
-	reqSegs := pathSegmentsInternal(suffixPath)
+	reqSegs := pathSegments(suffixPath)
 	method = strings.ToUpper(method)
 
 	bestScore := -1
@@ -110,9 +109,9 @@ func (m *PermissionMatcher) SupportsEnvironmentAggregation(method, suffix string
 	return ok
 }
 
-// pathSegmentsInternal splits a path into its non-empty segments, ignoring
+// pathSegments splits a path into its non-empty segments, ignoring
 // leading and trailing slashes.
-func pathSegmentsInternal(p string) []string {
+func pathSegments(p string) []string {
 	p = strings.Trim(p, "/")
 	if p == "" {
 		return nil
@@ -120,19 +119,19 @@ func pathSegmentsInternal(p string) []string {
 	return strings.Split(p, "/")
 }
 
-// templateSegmentsInternal splits a path template into segments, normalizing
+// templateSegments splits a path template into segments, normalizing
 // any path parameter ("{name}" or ":name") to the "*" wildcard.
-func templateSegmentsInternal(t string) []string {
-	segs := pathSegmentsInternal(t)
+func templateSegments(t string) []string {
+	segs := pathSegments(t)
 	for i, s := range segs {
-		if isParamSegmentInternal(s) {
+		if isParamSegment(s) {
 			segs[i] = "*"
 		}
 	}
 	return segs
 }
 
-func isParamSegmentInternal(s string) bool {
+func isParamSegment(s string) bool {
 	if strings.HasPrefix(s, ":") {
 		return true
 	}
@@ -144,11 +143,11 @@ func isParamSegmentInternal(s string) bool {
 // is false for unknown kinds so callers (and remote proxies) fail closed.
 func UploadKindPermission(kind string) (string, bool) {
 	switch kind {
-	case uploadtypes.KindImage:
+	case types.UploadKindImage:
 		return PermImagesUpload, true
-	case uploadtypes.KindVolumeBackup:
+	case types.UploadKindVolumeBackup:
 		return PermVolumesUpload, true
-	case uploadtypes.KindBuildWorkspace:
+	case types.UploadKindBuildWorkspace:
 		return PermBuildWorkspacesManage, true
 	}
 	return "", false
@@ -157,19 +156,19 @@ func UploadKindPermission(kind string) (string, bool) {
 // VolumeWorkspaceRequiredPermissions returns the distinct mutation permissions
 // required by a Volume Workspace manifest. The boolean is false when a change
 // uses an unknown operation so remote proxies can fail closed.
-func VolumeWorkspaceRequiredPermissions(changes []volumetypes.WorkspaceFileChange) ([]string, bool) {
+func VolumeWorkspaceRequiredPermissions(changes []types.VolumeWorkspaceFileChange) ([]string, bool) {
 	required := make([]string, 0, 3)
 
 	for _, change := range changes {
 		switch change.Operation {
-		case volumetypes.FileOpCreateFile, volumetypes.FileOpCreateFolder, volumetypes.FileOpUpdateFile:
+		case types.FileOpCreateFile, types.FileOpCreateFolder, types.FileOpUpdateFile:
 			required = append(required, PermVolumesUpload)
-		case volumetypes.FileOpRename, volumetypes.FileOpMove:
+		case types.FileOpRename, types.FileOpMove:
 			required = append(required, PermVolumesUpload)
 			required = append(required, PermVolumesDelete)
-		case volumetypes.FileOpDelete:
+		case types.FileOpDelete:
 			required = append(required, PermVolumesDelete)
-		case volumetypes.FileOpRestoreFile:
+		case types.FileOpRestoreFile:
 			required = append(required, PermVolumesBackup)
 		default:
 			return nil, false

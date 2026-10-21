@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/apikey"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 // Command is the parent command for API key operations
@@ -50,12 +50,12 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[apikey.ApiKey]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.ApiKey]{
 				Resource: "API keys",
-				Endpoint: types.ApiKeys(),
+				Endpoint: clitypes.ApiKeys(),
 				Params:   cmdutil.ListParams{Resource: "apikeys", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
 				Headers:  []string{"ID", "NAME", "DESCRIPTION", "PERMISSIONS", "CREATED", "LAST USED"},
-				Row: func(key apikey.ApiKey) []string {
+				Row: func(key types.ApiKey) []string {
 					lastUsed := "Never"
 					if key.LastUsedAt != nil {
 						lastUsed = key.LastUsedAt.Format("2006-01-02 15:04")
@@ -111,17 +111,17 @@ func newCreateCmd() *cobra.Command {
 				expiresAt = &parsed
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[apikey.ApiKeyCreatedDto]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ApiKeyCreatedDto]{
 				Method:         http.MethodPost,
-				Path:           types.ApiKeys(),
+				Path:           clitypes.ApiKeys(),
 				FailureMessage: "failed to create API key",
-				Body: apikey.CreateApiKey{
+				Body: types.ApiKey{
 					Name:        args[0],
 					Permissions: grants,
 					Description: kit.Ternary(opts.description != "", &opts.description, nil),
 					ExpiresAt:   expiresAt,
 				},
-				Render: func(data apikey.ApiKeyCreatedDto) error {
+				Render: func(data types.ApiKeyCreatedDto) error {
 					output.Success("API key created successfully")
 					output.Header("API Key Details")
 					output.KeyValue("ID", data.ID)
@@ -160,7 +160,7 @@ func newDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete API key %s?", args[0]),
-				Path:           types.ApiKey(args[0]),
+				Path:           clitypes.ApiKey(args[0]),
 				FailureMessage: "failed to delete API key",
 				SuccessMessage: "API key deleted successfully",
 			})
@@ -182,11 +182,11 @@ func newGetCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[apikey.ApiKey]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ApiKey]{
 				Method:         http.MethodGet,
-				Path:           types.ApiKey(args[0]),
+				Path:           clitypes.ApiKey(args[0]),
 				FailureMessage: "failed to get API key",
-				Render: func(data apikey.ApiKey) error {
+				Render: func(data types.ApiKey) error {
 					output.Header("API Key Details")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Name", data.Name)
@@ -241,33 +241,40 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			var expiresAt *time.Time
-			var permissions []apikey.PermissionGrant
-			if cmd.Flags().Changed("expires-at") && opts.expiresAt != "" {
+			if opts.expiresAt != "" {
 				parsedTime, parseErr := time.Parse(time.RFC3339, opts.expiresAt)
 				if parseErr != nil {
 					return fmt.Errorf("invalid expires-at format (use RFC3339): %w", parseErr)
 				}
 				expiresAt = &parsedTime
 			}
-			if cmd.Flags().Changed("permission") {
-				var grantsErr error
-				permissions, grantsErr = permissionGrants(opts.permissions)
-				if grantsErr != nil {
-					return grantsErr
+			permissions, grantsErr := permissionGrants(opts.permissions)
+			if grantsErr != nil {
+				return grantsErr
+			}
+
+			body := map[string]any{}
+			for _, field := range []struct {
+				flag  string
+				key   string
+				value any
+			}{
+				{flag: "name", key: "name", value: opts.name},
+				{flag: "description", key: "description", value: opts.description},
+				{flag: "expires-at", key: "expiresAt", value: expiresAt},
+				{flag: "permission", key: "permissions", value: permissions},
+			} {
+				if cmd.Flags().Changed(field.flag) {
+					body[field.key] = field.value
 				}
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[apikey.ApiKey]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ApiKey]{
 				Method:         http.MethodPut,
-				Path:           types.ApiKey(args[0]),
+				Path:           clitypes.ApiKey(args[0]),
 				FailureMessage: "failed to update API key",
-				Body: apikey.UpdateApiKey{
-					Name:        kit.Ternary(cmd.Flags().Changed("name"), &opts.name, nil),
-					Description: kit.Ternary(cmd.Flags().Changed("description"), &opts.description, nil),
-					ExpiresAt:   expiresAt,
-					Permissions: permissions,
-				},
-				Render: func(apikey.ApiKey) error {
+				Body:           body,
+				Render: func(types.ApiKey) error {
 					output.Success("API key updated successfully")
 					return nil
 				},
@@ -282,8 +289,8 @@ func newUpdateCmd() *cobra.Command {
 	return command
 }
 
-func permissionGrants(rawPermissions []string) ([]apikey.PermissionGrant, error) {
-	grants := make([]apikey.PermissionGrant, 0, len(rawPermissions))
+func permissionGrants(rawPermissions []string) ([]types.ApiKeyPermissionGrant, error) {
+	grants := make([]types.ApiKeyPermissionGrant, 0, len(rawPermissions))
 	for _, raw := range rawPermissions {
 		token := strings.TrimSpace(raw)
 		if token == "" {
@@ -297,7 +304,7 @@ func permissionGrants(rawPermissions []string) ([]apikey.PermissionGrant, error)
 		if len(parts) == 3 {
 			environmentID = new(parts[2])
 		}
-		grants = append(grants, apikey.PermissionGrant{
+		grants = append(grants, types.ApiKeyPermissionGrant{
 			Permission:    parts[0] + ":" + parts[1],
 			EnvironmentID: environmentID,
 		})

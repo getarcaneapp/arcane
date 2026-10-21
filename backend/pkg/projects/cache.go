@@ -9,7 +9,7 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/hot"
 )
 
@@ -31,16 +31,16 @@ type composeCacheStampInternal struct {
 
 // NewComposeCache caches Compose-derived values and their file dependencies.
 // clone, when supplied, isolates stored values from mutations by callers.
-func NewComposeCache[T any](capacity int, clone func(T) T) projecttypes.ComposeCache[T] {
+func NewComposeCache[T any](capacity int, clone func(T) T) types.ComposeCache[T] {
 	return &composeCacheInternal[T]{entries: hot.NewHotCache[string, composeCacheEntryInternal[T]](hot.LRU, capacity).Build(), clone: clone}
 }
 
 // NewParsedComposeCache keeps operation-local models separate from cached state.
-func NewParsedComposeCache() projecttypes.ComposeCache[*composetypes.Project] {
-	return NewComposeCache(2048, cloneComposeProjectInternal)
+func NewParsedComposeCache() types.ComposeCache[*composetypes.Project] {
+	return NewComposeCache(2048, cloneComposeProject)
 }
 
-func cloneComposeProjectInternal(project *composetypes.Project) *composetypes.Project {
+func cloneComposeProject(project *composetypes.Project) *composetypes.Project {
 	if project == nil {
 		return nil
 	}
@@ -50,7 +50,7 @@ func cloneComposeProjectInternal(project *composetypes.Project) *composetypes.Pr
 
 func (c *composeCacheInternal[T]) Get(projectID, fingerprint string) (T, bool) {
 	entry, found := c.entries.Peek(projectID)
-	if found && entry.fingerprint == fingerprint && validComposeCacheEntryInternal(entry.stamps) {
+	if found && entry.fingerprint == fingerprint && validComposeCacheEntry(entry.stamps) {
 		if c.clone != nil {
 			return c.clone(entry.value), true
 		}
@@ -111,7 +111,7 @@ func (c *composeCacheInternal[T]) Invalidate(projectID string) {
 	c.entries.Delete(projectID)
 }
 
-func validComposeCacheEntryInternal(stamps map[string]composeCacheStampInternal) bool {
+func validComposeCacheEntry(stamps map[string]composeCacheStampInternal) bool {
 	for path, stamp := range stamps {
 		info, err := os.Stat(path)
 		if err != nil {
@@ -137,7 +137,7 @@ func validComposeCacheEntryInternal(stamps map[string]composeCacheStampInternal)
 
 // LoadCachedComposeProject resolves an executable model with isolated cached state.
 func LoadCachedComposeProject(ctx context.Context,
-	cache projecttypes.ComposeCache[*composetypes.Project],
+	cache types.ComposeCache[*composetypes.Project],
 	projectID,
 	projectPath,
 	composePath,
@@ -153,7 +153,7 @@ func LoadCachedComposeProject(ctx context.Context,
 			return cached, nil
 		}
 	}
-	dependencies := projecttypes.ComposeDependencies{}
+	dependencies := types.ComposeDependencies{}
 	loadedAt := time.Now()
 	model, err := LoadComposeProject(ctx, composePath, projectName, projectsDirectory, autoInject, pathMapper, nil, nil, false, &dependencies, nil, nil)
 	if err != nil {
@@ -178,7 +178,7 @@ func LoadCachedComposeProject(ctx context.Context,
 func ComposeCacheDependencies(
 	ctx context.Context,
 	model *composetypes.Project,
-	dependencies projecttypes.ComposeDependencies,
+	dependencies types.ComposeDependencies,
 	composePath, projectsDirectory string,
 	autoInject bool,
 ) ([]string, []string, bool) {

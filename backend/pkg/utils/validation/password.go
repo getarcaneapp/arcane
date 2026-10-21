@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 )
@@ -106,7 +106,7 @@ func ValidateCredentialTargetChange(
 	if len(missingFields) == 1 {
 		//nolint:staticcheck // Preserve the existing error message.
 		return common.Classify(common.ErrValidation,
-			&base.FieldError{
+			&types.FieldError{
 				Field: missingFields[0],
 				Err: fmt.Errorf("Changing %s requires re-entering the %s",
 					targetName,

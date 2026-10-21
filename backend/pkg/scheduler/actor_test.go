@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -23,7 +23,7 @@ import (
 
 var schedulerTestRuntimesInternal sync.Map
 
-func newTestAdmissionGateInternal(t *testing.T) *runs.Admission {
+func newTestAdmissionGate(t *testing.T) *runs.Admission {
 	t.Helper()
 	runtime := francistest.New(t)
 	admission := runs.NewAdmission(runtime.Service(), t.Name())
@@ -32,11 +32,11 @@ func newTestAdmissionGateInternal(t *testing.T) *runs.Admission {
 	return admission
 }
 
-func newTestCoordinatorInternal(t testing.TB,
+func newTestCoordinator(t testing.TB,
 	ctx context.Context,
 	location *time.Location,
 	execute func(context.Context,
-		schedulertypes.Run) (schedulertypes.Outcome, error),
+		types.SchedulerRun) (types.SchedulerOutcome, error),
 ) (*runs.Coordinator, *francis.Runtime) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -58,13 +58,13 @@ func newTestCoordinatorInternal(t testing.TB,
 	return coordinator, runtime
 }
 
-func newJobSchedulerForTestInternal(t testing.TB, ctx context.Context, location *time.Location) *jobSchedulerInternal {
+func newJobSchedulerForTest(t testing.TB, ctx context.Context, location *time.Location) *jobSchedulerInternal {
 	t.Helper()
 	var scheduler *jobSchedulerInternal
-	coordinator, runtime := newTestCoordinatorInternal(t, ctx, location, func(ctx context.Context, run schedulertypes.Run) (schedulertypes.Outcome, error) {
+	coordinator, runtime := newTestCoordinator(t, ctx, location, func(ctx context.Context, run types.SchedulerRun) (types.SchedulerOutcome, error) {
 		job, ok := scheduler.GetJob(run.JobID)
 		if !ok {
-			return schedulertypes.Outcome{Status: schedulertypes.Skipped}, nil
+			return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 		}
 		return job.Run(jobcontext.WithExecution(ctx, run, nil))
 	})
@@ -79,7 +79,7 @@ func newJobSchedulerForTestInternal(t testing.TB, ctx context.Context, location 
 	return scheduler
 }
 
-func stopJobSchedulerForTestInternal(ctx context.Context, scheduler *jobSchedulerInternal) error {
+func stopJobSchedulerForTest(ctx context.Context, scheduler *jobSchedulerInternal) error {
 	if err := scheduler.Stop(ctx); err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func stopJobSchedulerForTestInternal(ctx context.Context, scheduler *jobSchedule
 	return runtime.(*francis.Runtime).Stop(ctx)
 }
 
-func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
+func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
 	svc, err := settings.NewSettingsService(ctx, db, &config.Config{})
 	if err == nil {

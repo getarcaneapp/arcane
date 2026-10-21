@@ -5,10 +5,7 @@ import (
 	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -36,20 +33,20 @@ type RestoreBackupFilesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 	BackupID      string `path:"backupId" doc:"Backup ID"`
-	Body          backup.RestoreSelection
+	Body          types.BackupRestoreSelection
 }
 
 type UploadAndRestoreInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
-	Body          uploadtypes.ConsumeRequest
+	Body          types.UploadConsumeRequest
 }
 
 func NewHandler(service *Service, activityService *activity.ActivityService, uploadService *upload.UploadService, appCtx context.Context) *Handler {
 	return &Handler{service: service, activityService: activityService, uploadService: uploadService, appCtx: appCtx}
 }
 
-func (h *Handler) RestoreBackup(ctx context.Context, input *RestoreBackupInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *Handler) RestoreBackup(ctx context.Context, input *RestoreBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -58,7 +55,7 @@ func (h *Handler) RestoreBackup(ctx context.Context, input *RestoreBackupInput) 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           activitytypes.TypeResourceAction,
+		Type:           types.ActivityTypeResourceAction,
 		ResourceType:   "volume",
 		ResourceID:     input.VolumeName,
 		ResourceName:   input.VolumeName,
@@ -79,7 +76,7 @@ func (h *Handler) RestoreBackup(ctx context.Context, input *RestoreBackupInput) 
 	return handlerutil.MessageOutput("Restore initiated successfully", activityID), nil
 }
 
-func (h *Handler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFilesInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *Handler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFilesInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -88,7 +85,7 @@ func (h *Handler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFi
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           activitytypes.TypeResourceAction,
+		Type:           types.ActivityTypeResourceAction,
 		ResourceType:   "volume",
 		ResourceID:     input.VolumeName,
 		ResourceName:   input.VolumeName,
@@ -116,13 +113,13 @@ func (h *Handler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFi
 	return handlerutil.MessageOutput("Restore initiated successfully", activityID), nil
 }
 
-func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	file, session, cleanup, err := h.uploadService.Consume(ctx, uploadtypes.KindVolumeBackup, input.Body.UploadID)
+	file, session, cleanup, err := h.uploadService.Consume(ctx, types.UploadKindVolumeBackup, input.Body.UploadID)
 	if err != nil {
 		if httpErr := upload.SessionHTTPError(err); httpErr != nil {
 			return nil, httpErr
@@ -134,7 +131,7 @@ func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreI
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           activitytypes.TypeResourceAction,
+		Type:           types.ActivityTypeResourceAction,
 		ResourceType:   "volume",
 		ResourceID:     input.VolumeName,
 		ResourceName:   input.VolumeName,

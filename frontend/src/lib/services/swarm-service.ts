@@ -2,7 +2,7 @@ import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
 import type {
 	SwarmServiceSummary,
-	SwarmNodeSummary,
+	SwarmNode,
 	SwarmTaskSummary,
 	SwarmStackSummary,
 	SwarmInfo,
@@ -18,12 +18,12 @@ import type {
 	SwarmStackDeployRequest,
 	SwarmStackDeployResponse,
 	SwarmServiceScaleRequest,
-	SwarmNodeUpdateRequest,
+	SwarmNodeUpdate,
 	SwarmStackInspect,
 	SwarmStackRenderConfigRequest,
 	SwarmStackRenderConfigResponse,
 	SwarmStackSource,
-	SwarmStackSourceUpdateRequest,
+	SwarmStackSourceUpdate,
 	SwarmInitRequest,
 	SwarmInitResponse,
 	SwarmJoinRequest,
@@ -46,7 +46,7 @@ import { transformPaginationParams } from '#lib/utils/tables.js';
 import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 export type SwarmServicesPaginatedResponse = Paginated<SwarmServiceSummary>;
-export type SwarmNodesPaginatedResponse = Paginated<SwarmNodeSummary>;
+export type SwarmNodesPaginatedResponse = Paginated<SwarmNode>;
 export type SwarmTasksPaginatedResponse = Paginated<SwarmTaskSummary>;
 export type SwarmStacksPaginatedResponse = Paginated<SwarmStackSummary>;
 
@@ -112,7 +112,7 @@ class SwarmService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/nodes/agents/reconcile`, {}));
 	}
 
-	async bindNodeAgent(nodeId: string, request: SwarmNodeAgentBindingRequest): Promise<SwarmNodeSummary> {
+	async bindNodeAgent(nodeId: string, request: SwarmNodeAgentBindingRequest): Promise<SwarmNode> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.put(`/environments/${envId}/swarm/nodes/${nodeId}/agent/binding`, request));
 	}
@@ -127,7 +127,7 @@ class SwarmService extends BaseAPIService {
 		await this.handleResponse(this.api.delete(`/environments/${envId}/swarm/nodes/${nodeId}/agent/deployment`));
 	}
 
-	async updateNode(nodeId: string, request: SwarmNodeUpdateRequest): Promise<void> {
+	async updateNode(nodeId: string, request: SwarmNodeUpdate): Promise<void> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		await this.handleResponse(this.api.patch(`/environments/${envId}/swarm/nodes/${nodeId}`, request));
 	}
@@ -183,7 +183,7 @@ class SwarmService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/stacks/${name}/source`));
 	}
 
-	async updateStackSource(name: string, request: SwarmStackSourceUpdateRequest): Promise<SwarmStackSource> {
+	async updateStackSource(name: string, request: SwarmStackSourceUpdate): Promise<SwarmStackSource> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.put(`/environments/${envId}/swarm/stacks/${name}/source`, request));
 	}

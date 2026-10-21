@@ -5,7 +5,7 @@ import (
 	"context"
 	"slices"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 )
 
 type (
@@ -14,7 +14,7 @@ type (
 )
 
 // WithExecution binds the run a job executes and, when persist is set, how its target progress is saved.
-func WithExecution(ctx context.Context, run schedulertypes.Run, persist func(schedulertypes.TargetOutcome) error) context.Context {
+func WithExecution(ctx context.Context, run types.SchedulerRun, persist func(types.TargetOutcome) error) context.Context {
 	ctx = context.WithValue(ctx, runKeyInternal{}, run)
 	if persist != nil {
 		ctx = context.WithValue(ctx, progressKeyInternal{}, persist)
@@ -23,16 +23,16 @@ func WithExecution(ctx context.Context, run schedulertypes.Run, persist func(sch
 }
 
 // Progress saves target progress for the executing run; it is a no-op outside one.
-func Progress(ctx context.Context, target schedulertypes.TargetOutcome) error {
-	if persist, ok := ctx.Value(progressKeyInternal{}).(func(schedulertypes.TargetOutcome) error); ok {
+func Progress(ctx context.Context, target types.TargetOutcome) error {
+	if persist, ok := ctx.Value(progressKeyInternal{}).(func(types.TargetOutcome) error); ok {
 		return persist(target)
 	}
 	return nil
 }
 
 // Merge records target progress in place of the entry with its ID, keeping recovery data the update omits.
-func Merge(targets []schedulertypes.TargetOutcome, target schedulertypes.TargetOutcome) []schedulertypes.TargetOutcome {
-	index := slices.IndexFunc(targets, func(existing schedulertypes.TargetOutcome) bool { return existing.ID == target.ID })
+func Merge(targets []types.TargetOutcome, target types.TargetOutcome) []types.TargetOutcome {
+	index := slices.IndexFunc(targets, func(existing types.TargetOutcome) bool { return existing.ID == target.ID })
 	if index < 0 {
 		return append(targets, target)
 	}
@@ -44,18 +44,18 @@ func Merge(targets []schedulertypes.TargetOutcome, target schedulertypes.TargetO
 }
 
 // Run returns the run being executed, as of when its execution started.
-func Run(ctx context.Context) (schedulertypes.Run, bool) {
-	run, ok := ctx.Value(runKeyInternal{}).(schedulertypes.Run)
+func Run(ctx context.Context) (types.SchedulerRun, bool) {
+	run, ok := ctx.Value(runKeyInternal{}).(types.SchedulerRun)
 	return run, ok
 }
 
 // ConfirmedTarget returns a terminal outcome only for a target whose completion
 // was persisted or confirmed against its activity by the execution coordinator.
-func ConfirmedTarget(run schedulertypes.Run, targetID string) schedulertypes.Outcome {
+func ConfirmedTarget(run types.SchedulerRun, targetID string) types.SchedulerOutcome {
 	for _, target := range run.Outcome.Targets {
-		if target.ID == targetID && target.Status == schedulertypes.Succeeded {
-			return schedulertypes.Outcome{Status: schedulertypes.Succeeded, ActivityID: target.ActivityID, Targets: run.Outcome.Targets}
+		if target.ID == targetID && target.Status == types.RunStatusSucceeded {
+			return types.SchedulerOutcome{Status: types.RunStatusSucceeded, ActivityID: target.ActivityID, Targets: run.Outcome.Targets}
 		}
 	}
-	return schedulertypes.Outcome{Status: schedulertypes.Failed, Message: "The interrupted operation has no confirmed completion", Targets: run.Outcome.Targets}
+	return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: "The interrupted operation has no confirmed completion", Targets: run.Outcome.Targets}
 }

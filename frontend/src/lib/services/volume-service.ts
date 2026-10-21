@@ -1,10 +1,9 @@
 import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import type {
-	VolumeSummaryDto,
-	VolumeDetailDto,
+	Volume,
 	VolumeUsageDto,
 	VolumeUsageCounts,
-	VolumeCreateRequest,
+	VolumeCreate,
 	VolumeRenameRequest,
 	VolumeSizeInfo
 } from '#lib/types/docker.js';
@@ -13,7 +12,7 @@ import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService, { type APIRequestConfig } from './api-service';
 
-export type VolumesPaginatedResponse = Paginated<VolumeSummaryDto, VolumeUsageCounts>;
+export type VolumesPaginatedResponse = Paginated<Volume, VolumeUsageCounts>;
 
 class VolumeService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
@@ -35,13 +34,13 @@ class VolumeService extends BaseAPIService {
 		return res.data;
 	}
 
-	async getVolume(volumeName: string): Promise<VolumeDetailDto> {
+	async getVolume(volumeName: string): Promise<Volume> {
 		const envId = await this.resolveEnvironmentId();
 		return this.getVolumeForEnvironment(envId, volumeName);
 	}
 
-	async getVolumeForEnvironment(environmentId: string, volumeName: string): Promise<VolumeDetailDto> {
-		return this.handleResponse(this.api.get(`/environments/${environmentId}/volumes/${volumeName}`)) as Promise<VolumeDetailDto>;
+	async getVolumeForEnvironment(environmentId: string, volumeName: string): Promise<Volume> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/volumes/${volumeName}`)) as Promise<Volume>;
 	}
 
 	async getVolumeUsage(volumeName: string, environmentId?: string): Promise<VolumeUsageDto> {
@@ -60,16 +59,16 @@ class VolumeService extends BaseAPIService {
 		return res.data.data;
 	}
 
-	async createVolume(options: VolumeCreateRequest, environmentId?: string): Promise<any> {
+	async createVolume(options: VolumeCreate, environmentId?: string): Promise<Volume> {
 		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/volumes`, options));
 	}
 
-	async renameVolume(sourceName: string, options: VolumeRenameRequest, environmentId?: string): Promise<VolumeDetailDto> {
+	async renameVolume(sourceName: string, options: VolumeRenameRequest, environmentId?: string): Promise<Volume> {
 		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(
 			this.api.post(`/environments/${envId}/volumes/${encodeURIComponent(sourceName)}/rename`, options)
-		) as Promise<VolumeDetailDto>;
+		) as Promise<Volume>;
 	}
 
 	async deleteVolume(volumeName: string, environmentId?: string): Promise<any> {

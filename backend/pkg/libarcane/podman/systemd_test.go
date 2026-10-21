@@ -3,7 +3,7 @@ package podman
 import (
 	"testing"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -22,7 +22,7 @@ func TestNewSystemd(t *testing.T) {
 			name: "rootful default system bus",
 			want: &dbusSystemd{
 				address: defaultSystemBusAddress,
-				scope:   podmantypes.SystemdScopeSystem,
+				scope:   types.PodmanSystemdScopeSystem,
 			},
 		},
 		{
@@ -30,7 +30,7 @@ func TestNewSystemd(t *testing.T) {
 			env:  map[string]string{"DBUS_SYSTEM_BUS_ADDRESS": "unix:path=/host/bus"},
 			want: &dbusSystemd{
 				address: "unix:path=/host/bus",
-				scope:   podmantypes.SystemdScopeSystem,
+				scope:   types.PodmanSystemdScopeSystem,
 			},
 		},
 		{
@@ -42,7 +42,7 @@ func TestNewSystemd(t *testing.T) {
 			},
 			want: &dbusSystemd{
 				address: "unix:path=/run/user/1000/bus",
-				scope:   podmantypes.SystemdScopeUser,
+				scope:   types.PodmanSystemdScopeUser,
 			},
 		},
 		{
@@ -50,14 +50,14 @@ func TestNewSystemd(t *testing.T) {
 			host: "unix:///run/podman/podman.sock",
 			want: &dbusSystemd{
 				address: defaultSystemBusAddress,
-				scope:   podmantypes.SystemdScopeSystem,
+				scope:   types.PodmanSystemdScopeSystem,
 			},
 		},
 		{
 			name: "remote engine without bus",
 			host: "tcp://podman.example:2375",
 			want: &dbusSystemd{
-				scope:  podmantypes.SystemdScopeSystem,
+				scope:  types.PodmanSystemdScopeSystem,
 				reason: "the Podman engine at tcp://podman.example:2375 is remote; set DBUS_SYSTEM_BUS_ADDRESS to that host's bus to manage its systemd units",
 			},
 		},
@@ -68,7 +68,7 @@ func TestNewSystemd(t *testing.T) {
 			env:      map[string]string{"DBUS_SESSION_BUS_ADDRESS": "tcp:host=podman.example,port=55556"},
 			want: &dbusSystemd{
 				address: "tcp:host=podman.example,port=55556",
-				scope:   podmantypes.SystemdScopeUser,
+				scope:   types.PodmanSystemdScopeUser,
 			},
 		},
 	}
@@ -89,7 +89,7 @@ func TestSystemdRootlessWithoutSessionBus(t *testing.T) {
 
 	availability := systemd.Availability(t.Context())
 	assert.False(t, availability.Available)
-	assert.Equal(t, podmantypes.SystemdScopeUser, availability.Scope)
+	assert.Equal(t, types.PodmanSystemdScopeUser, availability.Scope)
 	assert.Contains(t, availability.Reason, "DBUS_SESSION_BUS_ADDRESS")
 
 	require.ErrorIs(t, systemd.Start(t.Context(), "web.service"), common.ErrUnavailable)

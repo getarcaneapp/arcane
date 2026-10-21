@@ -6,7 +6,7 @@ import type { PortMappingRow } from '#lib/components/form/port-mapping-editor.sv
 import type { VolumeMountRow } from '#lib/components/form/volume-mount-editor.svelte';
 import { m } from '#lib/paraglide/messages.js';
 import type {
-	ContainerCreateRequest,
+	ContainerCreate,
 	ContainerEditConfigDto,
 	ContainerEditRequest,
 	ContainerHealthcheckCreate,
@@ -363,7 +363,7 @@ function buildRestartPolicy(values: ContainerFormValues) {
 	};
 }
 
-export function toCreateRequest(values: ContainerFormValues, rows: ContainerFormRows): ContainerCreateRequest {
+export function toCreateRequest(values: ContainerFormValues, rows: ContainerFormRows): ContainerCreate {
 	const env = buildEnv(rows);
 	const labels = buildLabels(rows);
 	const portBindings = buildPortBindings(rows);

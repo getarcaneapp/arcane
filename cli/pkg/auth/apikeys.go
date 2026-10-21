@@ -5,13 +5,13 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/apikey"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 // apiKeysCmd manages personal keys, which inherit the owner's role permissions.
@@ -41,11 +41,11 @@ func newAPIKeysListCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[[]apikey.ApiKey]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[[]types.ApiKey]{
 				Method:         http.MethodGet,
-				Path:           types.AuthMeApiKeys(),
+				Path:           clitypes.AuthMeApiKeys(),
 				FailureMessage: "failed to list API keys",
-				Render: func(data []apikey.ApiKey) error {
+				Render: func(data []types.ApiKey) error {
 					if len(data) == 0 {
 						output.Info("No API keys found")
 						return nil
@@ -96,16 +96,16 @@ func newAPIKeysCreateCmd() *cobra.Command {
 				expiresAt = &parsed
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[apikey.ApiKeyCreatedDto]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ApiKeyCreatedDto]{
 				Method: http.MethodPost,
-				Path:   types.AuthMeApiKeys(),
-				Body: apikey.CreateUserApiKey{
+				Path:   clitypes.AuthMeApiKeys(),
+				Body: types.ApiKey{
 					Name:        args[0],
 					Description: kit.Ternary(cmd.Flags().Changed("description"), &opts.description, nil),
 					ExpiresAt:   expiresAt,
 				},
 				FailureMessage: "failed to create API key",
-				Render: func(data apikey.ApiKeyCreatedDto) error {
+				Render: func(data types.ApiKeyCreatedDto) error {
 					output.Success("API key created")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Name", data.Name)
@@ -140,7 +140,7 @@ func newAPIKeysDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete API key %s?", args[0]),
-				Path:           types.AuthMeApiKey(args[0]),
+				Path:           clitypes.AuthMeApiKey(args[0]),
 				FailureMessage: "failed to delete API key",
 				SuccessMessage: "API key deleted",
 			})

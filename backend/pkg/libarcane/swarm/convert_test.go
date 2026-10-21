@@ -6,8 +6,7 @@ import (
 	"testing"
 
 	composegotypes "github.com/compose-spec/compose-go/v2/types"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
-	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/stretchr/testify/require"
@@ -31,7 +30,7 @@ func TestConvertServiceMountsResolvesComposeResourceNames(t *testing.T) {
 			"named":    {Name: "custom"},
 			"external": {Name: "external", External: true},
 		},
-		map[string]string{swarmtypes.StackNamespaceLabel: "stack"},
+		map[string]string{types.SwarmStackNamespaceLabel: "stack"},
 	)
 	require.NoError(t, err)
 	require.Len(t, mounts, 4)
@@ -72,7 +71,7 @@ func TestApplyDeployConfigConvertsCPUFractionToNanoCPUs(t *testing.T) {
 func TestPlanConfigsUsesComposeProjectEnvironment(t *testing.T) {
 	t.Setenv("ARCANE_SWARM_CONFIG_SOURCE", "process-value")
 
-	project, err := projects.LoadComposeProjectFromContent(t.Context(), projecttypes.ComposeContentOptions{
+	project, err := projects.LoadComposeProjectFromContent(t.Context(), types.ComposeContentOptions{
 		ProjectName: "stack",
 		ComposeContent: `
 services:
@@ -88,7 +87,7 @@ configs:
 	})
 	require.NoError(t, err)
 
-	plans, err := planConfigsInternal(project, namespace{name: "stack"})
+	plans, err := planConfigs(project, namespace{name: "stack"})
 	require.NoError(t, err)
 	require.Empty(t, plans["app_config"].Data)
 	require.Equal(t, managedResourceNameInternal("stack_app_config", kit.SHA256Hex[[]byte](nil)), plans["app_config"].Meta.Name)
@@ -191,7 +190,7 @@ func TestBuildServiceSpecConformance(t *testing.T) {
 			spec, err := buildServiceSpecInternal(
 				service,
 				namespace{name: "stack"},
-				map[string]string{swarmtypes.StackNamespaceLabel: "stack"},
+				map[string]string{types.SwarmStackNamespaceLabel: "stack"},
 				map[string]string{"default": "stack_default"},
 				nil,
 				nil,
@@ -206,7 +205,7 @@ func TestStackConversionEndToEnd(t *testing.T) {
 	workingDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(workingDir, "db_pw.txt"), []byte("secret"), 0o600))
 
-	project, err := projects.LoadComposeProjectFromContent(t.Context(), projecttypes.ComposeContentOptions{
+	project, err := projects.LoadComposeProjectFromContent(t.Context(), types.ComposeContentOptions{
 		ProjectName: "stack",
 		ComposeContent: `
 services:
@@ -245,11 +244,11 @@ secrets:
 	require.NoError(t, err)
 
 	ns := namespace{name: "stack"}
-	networkNames := planNetworksInternal(project, ns)
-	volumeNames := planVolumesInternal(project, ns)
-	configPlans, err := planConfigsInternal(project, ns)
+	networkNames := planNetworks(project, ns)
+	volumeNames := planVolumes(project, ns)
+	configPlans, err := planConfigs(project, ns)
 	require.NoError(t, err)
-	secretPlans, err := planSecretsInternal(project, ns)
+	secretPlans, err := planSecrets(project, ns)
 	require.NoError(t, err)
 	configMeta := make(map[string]resourceMeta, len(configPlans))
 	for key, plan := range configPlans {
@@ -259,7 +258,7 @@ secrets:
 	for key, plan := range secretPlans {
 		secretMeta[key] = resourceMeta{ID: "secret-id", Name: plan.Meta.Name}
 	}
-	stackLabels := map[string]string{swarmtypes.StackNamespaceLabel: "stack"}
+	stackLabels := map[string]string{types.SwarmStackNamespaceLabel: "stack"}
 
 	build := func() swarm.ServiceSpec {
 		spec, buildErr := buildServiceSpecInternal(
@@ -294,7 +293,7 @@ secrets:
 		{"volume options", func(t *testing.T) {
 			volumeMount := spec.TaskTemplate.ContainerSpec.Mounts[0]
 			require.Equal(t, "stack_data", volumeMount.Source)
-			require.Equal(t, "stack", volumeMount.VolumeOptions.Labels[swarmtypes.StackNamespaceLabel])
+			require.Equal(t, "stack", volumeMount.VolumeOptions.Labels[types.SwarmStackNamespaceLabel])
 			require.NotNil(t, volumeMount.VolumeOptions.DriverConfig)
 		}},
 		{"file targets", func(t *testing.T) {

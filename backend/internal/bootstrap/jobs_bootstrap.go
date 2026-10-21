@@ -12,8 +12,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/getarcaneapp/arcane/types/v2/features"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/actor"
 	"go.uber.org/fx"
 
@@ -48,7 +47,7 @@ func newJobScheduler(
 	gitopsSync *gitops.GitOpsSyncService,
 	actors *francis.Runtime,
 ) (
-	schedulertypes.JobScheduler,
+	types.JobScheduler,
 	error,
 ) {
 	schedulerCtx, cancelScheduler := context.WithCancel(appCtx)
@@ -90,7 +89,7 @@ func newJobScheduler(
 			}
 			jobService.Coordinator().Activate()
 			if analytics != nil {
-				if _, submitErr := jobService.Coordinator().Submit(ctx, schedulertypes.Request{JobID: analytics.Name(), EnvironmentID: "0", Trigger: "startup"}); submitErr != nil {
+				if _, submitErr := jobService.Coordinator().Submit(ctx, types.SchedulerRequest{JobID: analytics.Name(), EnvironmentID: "0", Trigger: "startup"}); submitErr != nil {
 					return fmt.Errorf("submit startup job %q: %w", analytics.Name(), submitErr)
 				}
 			}
@@ -194,7 +193,7 @@ func reconcileCoordinatorStartup(
 		return err
 	}
 	activities, backups := []string{}, []string{}
-	for _, record := range append(records, schedulertypes.QueueRecord{Runs: standalone}) {
+	for _, record := range append(records, types.SchedulerQueueRecord{Runs: standalone}) {
 		for _, run := range record.Runs {
 			if run.Status.Terminal() {
 				continue
@@ -244,7 +243,7 @@ type registerJobsParams struct {
 	Lifecycle fx.Lifecycle
 	AppCtx    context.Context
 	Config    *config.Config
-	Scheduler schedulertypes.JobScheduler
+	Scheduler types.JobScheduler
 
 	Activity    *activity.ActivityService
 	GitOpsSync  *gitops.GitOpsSyncService
@@ -260,7 +259,7 @@ type registerJobsParams struct {
 	ImageUpdateWatcher     *scheduler.ImageUpdateWatcher
 	DockerClientRefresh    *scheduler.DockerClientRefreshJob
 	Analytics              *scheduler.AnalyticsJob
-	UpgradeLogCleanup      schedulertypes.Job `name:"upgrade-log-cleanup"`
+	UpgradeLogCleanup      types.SchedulerJob `name:"upgrade-log-cleanup"`
 	EventCleanup           *scheduler.EventCleanupJob
 	PruningVolumeHelper    *scheduler.PruningVolumeHelperJob
 	ExpiredSessionsCleanup *scheduler.ExpiredSessionsCleanupJob
@@ -280,7 +279,7 @@ type registerJobsParams struct {
 func registerJobs(params registerJobsParams) error {
 	params.JobSchedule.SetScheduler(params.AppCtx, params.Scheduler)
 
-	for _, job := range []schedulertypes.Job{
+	for _, job := range []types.SchedulerJob{
 		params.AutoUpdate,
 		params.DockerClientRefresh,
 		params.Analytics,
@@ -351,7 +350,7 @@ func registerJobs(params registerJobsParams) error {
 type dynamicJobsParams struct {
 	AppCtx      context.Context
 	Config      *config.Config
-	Scheduler   schedulertypes.JobScheduler
+	Scheduler   types.JobScheduler
 	GitOpsSync  *gitops.GitOpsSyncService
 	Environment *environment.EnvironmentService
 	JobSchedule *job.JobService
@@ -430,7 +429,7 @@ type settingsChangeSubscriber interface {
 }
 
 type settingsEffectsScheduler interface {
-	RescheduleJob(ctx context.Context, job schedulertypes.Job) error
+	RescheduleJob(ctx context.Context, job types.SchedulerJob) error
 }
 
 type timeoutSettingsEnvironment interface {
@@ -443,7 +442,7 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 	subscribe := func(keys []string, callback func([]libarcane.SettingUpdate)) {
 		unsubscribes = append(unsubscribes, params.Settings.SubscribeSettingsChanges(keys, callback))
 	}
-	rescheduleOn := func(keys []string, job schedulertypes.Job) {
+	rescheduleOn := func(keys []string, job types.SchedulerJob) {
 		subscribe(keys, func(_ []libarcane.SettingUpdate) {
 			if err := params.Scheduler.RescheduleJob(params.LifecycleCtx, job); err != nil {
 				slog.WarnContext(params.LifecycleCtx, "Failed to reschedule job", "job", job.Name(), "error", err)
@@ -494,11 +493,11 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 
 	rescheduleOn([]string{"scheduledPruneEnabled", "scheduledPruneInterval"}, params.ScheduledPrune)
 	rescheduleOn([]string{
-		features.VulnerabilityManagementSettingKey, "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged",
+		types.FeatureVulnerabilityManagementSettingKey, "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged",
 		"trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers",
 	}, params.VulnerabilityScan)
-	rescheduleOn([]string{features.VulnerabilityManagementSettingKey}, params.VulnerabilityRisk)
-	rescheduleOn([]string{features.VulnerabilityManagementSettingKey, "imageAutoPatchEnabled", "imageAutoPatchInterval"}, params.AutoPatch)
+	rescheduleOn([]string{types.FeatureVulnerabilityManagementSettingKey}, params.VulnerabilityRisk)
+	rescheduleOn([]string{types.FeatureVulnerabilityManagementSettingKey, "imageAutoPatchEnabled", "imageAutoPatchInterval"}, params.AutoPatch)
 	rescheduleOn([]string{"autoHealEnabled", "autoHealInterval", "autoHealExcludedContainers", "autoHealMaxRestarts", "autoHealRestartWindow"}, params.AutoHeal)
 
 	params.Lifecycle.Append(fx.Hook{

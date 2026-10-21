@@ -11,7 +11,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
@@ -61,7 +61,7 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 	merged, _ := cmd.Context().Value(mergedScopeKey{}).(*mergedScope)
 	if JSONOutputEnabled(cmd) {
 		if merged != nil {
-			var envelope base.Paginated[jsontext.Value]
+			var envelope types.Paginated[jsontext.Value]
 			if unmarshalErr := json.Unmarshal(body, &envelope); unmarshalErr != nil {
 				return fmt.Errorf("failed to parse response: %w", unmarshalErr)
 			}
@@ -70,7 +70,7 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 		return PrintRawJSON(body)
 	}
 
-	var result base.Paginated[T]
+	var result types.Paginated[T]
 	if unmarshalErr := json.Unmarshal(body, &result); unmarshalErr != nil {
 		return fmt.Errorf("failed to parse response: %w", unmarshalErr)
 	}
@@ -87,8 +87,8 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 		if merged == nil {
 			continue
 		}
-		var ref base.EnvironmentRef
-		if tagged, ok := any(item).(interface{ Environment() base.EnvironmentRef }); ok {
+		var ref types.EnvironmentRef
+		if tagged, ok := any(item).(interface{ Environment() types.EnvironmentRef }); ok {
 			ref = tagged.Environment()
 		}
 		rows[i] = slices.Concat([]string{cmp.Or(ref.Name, merged.names[cmp.Or(ref.ID, c.EnvID())], ref.ID)}, rows[i])
