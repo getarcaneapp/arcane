@@ -23,8 +23,8 @@ func TestFilesystemWatcherJob_ProjectWatcherOptions_UsesConfiguredMaxDepth(t *te
 	assert.True(t, opts.FollowSymlinkDirs)
 }
 
-func TestFilesystemWatcherJob_ConcurrentProjectRestartsAreSerializedInternal(t *testing.T) {
-	_, settingsService, _ := setupAnalyticsStateServicesInternal(t)
+func TestFilesystemWatcherJob_ConcurrentProjectRestartsAreSerialized(t *testing.T) {
+	_, settingsService, _ := setupAnalyticsStateServices(t)
 	require.NoError(t, settingsService.SetStringSetting(t.Context(), "projectsDirectory", t.TempDir()))
 	require.NoError(t, settingsService.SetStringSetting(t.Context(), "templatesDirectory", t.TempDir()))
 
@@ -61,7 +61,7 @@ func TestFilesystemWatcherJob_ConcurrentProjectRestartsAreSerializedInternal(t *
 }
 
 func TestFilesystemWatcherJob_RequestRestartRearmsSupervisor(t *testing.T) {
-	_, settingsService, _ := setupAnalyticsStateServicesInternal(t)
+	_, settingsService, _ := setupAnalyticsStateServices(t)
 	require.NoError(t, settingsService.SetStringSetting(t.Context(), "projectsDirectory", t.TempDir()))
 	require.NoError(t, settingsService.SetStringSetting(t.Context(), "templatesDirectory", t.TempDir()))
 

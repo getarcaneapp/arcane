@@ -16,8 +16,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/template"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
@@ -25,7 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 // Command is the parent command for template operations
@@ -69,11 +68,11 @@ func newListCmd() *cobra.Command {
 			headers := []string{"NAME", "CUSTOM", "REMOTE", "DESCRIPTION"}
 
 			if opts.templateListAll {
-				return cmdutil.Run(cmd, c, cmdutil.Spec[[]template.Template]{
+				return cmdutil.Run(cmd, c, cmdutil.Spec[[]types.Template]{
 					Method:         http.MethodGet,
-					Path:           types.TemplatesAll(),
+					Path:           clitypes.TemplatesAll(),
 					FailureMessage: "failed to list templates",
-					Render: func(data []template.Template) error {
+					Render: func(data []types.Template) error {
 						rows := make([][]string, len(data))
 						for i, tpl := range data {
 							rows[i] = []string{
@@ -92,12 +91,12 @@ func newListCmd() *cobra.Command {
 				})
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[template.Template]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.Template]{
 				Resource: "templates",
-				Endpoint: types.Templates(),
+				Endpoint: clitypes.Templates(),
 				Params:   cmdutil.ListParams{Resource: "templates", Limit: opts.limit, FallbackDefault: 20, Start: opts.start},
 				Headers:  headers,
-				Row: func(tpl template.Template) []string {
+				Row: func(tpl types.Template) []string {
 					return []string{
 						tpl.Name,
 						kit.Ternary(tpl.IsCustom, "yes", "no"),
@@ -132,11 +131,11 @@ func newDefaultCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[template.DefaultTemplatesResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.DefaultTemplatesResponse]{
 				Method:         http.MethodGet,
-				Path:           types.TemplatesDefault(),
+				Path:           clitypes.TemplatesDefault(),
 				FailureMessage: "failed to get default templates",
-				Render: func(data template.DefaultTemplatesResponse) error {
+				Render: func(data types.DefaultTemplatesResponse) error {
 					output.Header("Default Templates")
 					output.KeyValue("Compose Template", fmt.Sprintf("%d bytes", len(data.ComposeTemplate)))
 					output.KeyValue("Env Template", fmt.Sprintf("%d bytes", len(data.EnvTemplate)))
@@ -161,11 +160,11 @@ func newContentCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[template.TemplateContent]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.TemplateContent]{
 				Method:         http.MethodGet,
-				Path:           types.TemplateContent(args[0]),
+				Path:           clitypes.TemplateContent(args[0]),
 				FailureMessage: "failed to get template content",
-				Render: func(data template.TemplateContent) error {
+				Render: func(data types.TemplateContent) error {
 					output.Header("Template Content")
 					output.KeyValue("Name", data.Template.Name)
 					output.KeyValue("Description", data.Template.Description)
@@ -197,11 +196,11 @@ func newRegistriesCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[[]template.TemplateRegistry]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[[]types.TemplateRegistry]{
 				Method:         http.MethodGet,
-				Path:           types.TemplatesRegistries(),
+				Path:           clitypes.TemplatesRegistries(),
 				FailureMessage: "failed to list registries",
-				Render: func(data []template.TemplateRegistry) error {
+				Render: func(data []types.TemplateRegistry) error {
 					headers := []string{"ID", "NAME", "URL", "ENABLED"}
 					rows := make([][]string, len(data))
 					for i, reg := range data {
@@ -248,7 +247,7 @@ func newDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete %s?", label),
-				Path:           types.Template(args[0]),
+				Path:           clitypes.Template(args[0]),
 				Body:           nil,
 				FailureMessage: "failed to delete " + label,
 				SuccessMessage: fmt.Sprintf("Deleted %s successfully", label),
@@ -279,7 +278,7 @@ func newDeleteRegistryCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete %s?", label),
-				Path:           types.TemplateRegistry(args[0]),
+				Path:           clitypes.TemplateRegistry(args[0]),
 				Body:           nil,
 				FailureMessage: "failed to delete " + label,
 				SuccessMessage: fmt.Sprintf("Deleted %s successfully", label),
@@ -326,29 +325,29 @@ func newGetCmd() *cobra.Command {
 	}
 }
 
-var templateRef = cmdutil.ResourceRef[template.Template, template.Template]{
+var templateRef = cmdutil.ResourceRef[types.Template, types.Template]{
 	Singular:         "template",
 	Plural:           "templates",
 	IDHint:           "the template ID",
 	ListCmd:          "arcane templates list",
-	GetPath:          func(_, identifier string) string { return types.Template(identifier) },
+	GetPath:          func(_, identifier string) string { return clitypes.Template(identifier) },
 	SearchCandidates: searchTemplateCandidates,
 	SelectCandidate:  selectTemplateCandidate,
-	Promote:          func(match template.Template) *template.Template { return &match },
+	Promote:          func(match types.Template) *types.Template { return &match },
 }
 
-func searchTemplateCandidates(ctx context.Context, c *client.Client, identifier string) ([]template.Template, error) {
-	result, err := c.GetJSON[[]template.Template](ctx, types.TemplatesAll())
+func searchTemplateCandidates(ctx context.Context, c *client.Client, identifier string) ([]types.Template, error) {
+	result, err := c.GetJSON[[]types.Template](ctx, clitypes.TemplatesAll())
 	if err != nil {
 		return nil, fmt.Errorf("failed to search templates: %w", err)
 	}
 
 	identifierLower := strings.ToLower(identifier)
-	exactNameMatches := make([]template.Template, 0)
-	partialMatches := make([]template.Template, 0)
+	exactNameMatches := make([]types.Template, 0)
+	partialMatches := make([]types.Template, 0)
 	for _, candidate := range result.Data {
 		if strings.EqualFold(candidate.ID, identifier) {
-			return []template.Template{candidate}, nil
+			return []types.Template{candidate}, nil
 		}
 		if strings.EqualFold(candidate.Name, identifier) {
 			exactNameMatches = append(exactNameMatches, candidate)
@@ -376,17 +375,17 @@ func searchTemplateCandidates(ctx context.Context, c *client.Client, identifier 
 	}
 	best := ranked[0].score
 	if best <= 110 && (len(ranked) == 1 || ranked[1].score-best >= 8) {
-		return []template.Template{ranked[0].template}, nil
+		return []types.Template{ranked[0].template}, nil
 	}
 	limit := min(cmdutil.MaxPromptOptions, len(ranked))
-	selected := make([]template.Template, 0, limit)
+	selected := make([]types.Template, 0, limit)
 	for i := range limit {
 		selected = append(selected, ranked[i].template)
 	}
 	return selected, nil
 }
 
-func selectTemplateCandidate(matches []template.Template, identifier string, allowPrompt bool) (*template.Template, error) {
+func selectTemplateCandidate(matches []types.Template, identifier string, allowPrompt bool) (*types.Template, error) {
 	if len(matches) == 0 {
 		return nil, nil
 	}
@@ -430,11 +429,11 @@ func selectTemplateCandidate(matches []template.Template, identifier string, all
 }
 
 type rankedTemplateMatch struct {
-	template template.Template
+	template types.Template
 	score    int
 }
 
-func rankFuzzyTemplateMatches(query string, candidates []template.Template) []rankedTemplateMatch {
+func rankFuzzyTemplateMatches(query string, candidates []types.Template) []rankedTemplateMatch {
 	normalizedQuery := normalizeSearchToken(query)
 	if normalizedQuery == "" {
 		return nil
@@ -591,11 +590,13 @@ func newCreateCmd() *cobra.Command {
 				envContent = string(envData)
 			}
 
-			req := template.CreateRequest{
-				Name:        opts.name,
-				Description: opts.description,
-				Content:     string(content),
-				EnvContent:  envContent,
+			req := types.Template{
+				BaseTemplate: types.BaseTemplate{
+					Name:        opts.name,
+					Description: opts.description,
+				},
+				Content:    string(content),
+				EnvContent: &envContent,
 			}
 
 			c, err := client.NewFromConfig()
@@ -603,12 +604,12 @@ func newCreateCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[template.Template]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Template]{
 				Method:         http.MethodPost,
-				Path:           types.Templates(),
+				Path:           clitypes.Templates(),
 				Body:           req,
 				FailureMessage: "failed to create template",
-				Render: func(data template.Template) error {
+				Render: func(data types.Template) error {
 					output.Success("Template created successfully")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Name", data.Name)
@@ -644,44 +645,34 @@ func newUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			// Preserve stored content and overlay only the changed flags.
-			currentResult, err := c.GetJSON[template.Template](cmd.Context(), types.Template(args[0]))
-			if err != nil {
-				return fmt.Errorf("failed to load template: %w", err)
+			req := map[string]any{}
+			if cmd.Flags().Changed("name") {
+				req["name"] = opts.name
 			}
-			current := currentResult.Data
-
-			content := current.Content
-			envContent := kit.FromPtr(current.EnvContent)
+			if cmd.Flags().Changed("description") {
+				req["description"] = opts.description
+			}
 			if opts.file != "" {
 				contentData, readFileErr := os.ReadFile(opts.file)
 				if readFileErr != nil {
 					return fmt.Errorf("failed to read file %s: %w", opts.file, readFileErr)
 				}
-				content = string(contentData)
+				req["content"] = string(contentData)
 			}
-
 			if opts.envFile != "" {
 				envData, readEnvFileErr := os.ReadFile(opts.envFile)
 				if readEnvFileErr != nil {
 					return fmt.Errorf("failed to read env file %s: %w", opts.envFile, readEnvFileErr)
 				}
-				envContent = string(envData)
+				req["envContent"] = string(envData)
 			}
 
-			req := template.UpdateRequest{
-				Name:        kit.Ternary(cmd.Flags().Changed("name"), opts.name, current.Name),
-				Description: kit.Ternary(cmd.Flags().Changed("description"), opts.description, current.Description),
-				Content:     content,
-				EnvContent:  envContent,
-			}
-
-			return cmdutil.Run(cmd, c, cmdutil.Spec[template.Template]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Template]{
 				Method:         http.MethodPut,
-				Path:           types.Template(args[0]),
+				Path:           clitypes.Template(args[0]),
 				Body:           req,
 				FailureMessage: "failed to update template",
-				Render: func(data template.Template) error {
+				Render: func(data types.Template) error {
 					output.Success("Template updated successfully")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Name", data.Name)
@@ -710,7 +701,7 @@ func newDownloadCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := c.PostJSON[jsontext.Value](cmd.Context(), types.TemplateDownload(args[0]), nil)
+			result, err := c.PostJSON[jsontext.Value](cmd.Context(), clitypes.TemplateDownload(args[0]), nil)
 			if err != nil {
 				return fmt.Errorf("failed to download template: %w", err)
 			}
@@ -723,7 +714,7 @@ func newDownloadCmd() *cobra.Command {
 				}
 				return cmdutil.PrintRawJSON(result.Data)
 			}
-			var data template.Template
+			var data types.Template
 			if decodeErr := json.Unmarshal(result.Data, &data); decodeErr != nil {
 				return fmt.Errorf("failed to download template: failed to decode response: %w", decodeErr)
 			}
@@ -780,7 +771,7 @@ func newDefaultsSaveCmd() *cobra.Command {
 				envContent = string(envData)
 			}
 
-			req := template.SaveDefaultTemplatesRequest{
+			req := types.SaveDefaultTemplatesRequest{
 				ComposeContent: string(content),
 				EnvContent:     envContent,
 			}
@@ -790,12 +781,12 @@ func newDefaultsSaveCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           types.TemplatesDefault(),
+				Path:           clitypes.TemplatesDefault(),
 				Body:           req,
 				FailureMessage: "failed to save default templates",
-				Render: func(base.MessageResponse) error {
+				Render: func(types.MessageResponse) error {
 					output.Success("%s", "Default templates saved successfully")
 					return nil
 				},
@@ -827,37 +818,36 @@ func newRegistriesUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			// Preserve required registry fields and overlay only the changed flags.
-			listed, err := c.GetJSON[[]template.TemplateRegistry](cmd.Context(), types.TemplatesRegistries())
-			if err != nil {
-				return fmt.Errorf("failed to load registry: %w", err)
-			}
-			index := slices.IndexFunc(listed.Data, func(registry template.TemplateRegistry) bool { return registry.ID == args[0] })
-			if index < 0 {
-				return fmt.Errorf("template registry %q not found", args[0])
-			}
-			current := listed.Data[index]
-
-			req := template.UpdateRegistryRequest{
-				Name:        kit.Ternary(cmd.Flags().Changed("name"), opts.name, current.Name),
-				URL:         kit.Ternary(cmd.Flags().Changed("url"), opts.url, current.URL),
-				Description: kit.Ternary(cmd.Flags().Changed("description"), opts.desc, current.Description),
+			req := map[string]any{}
+			for _, field := range []struct {
+				changed bool
+				key     string
+				value   any
+			}{
+				{changed: cmd.Flags().Changed("name"), key: "name", value: opts.name},
+				{changed: cmd.Flags().Changed("url"), key: "url", value: opts.url},
+				{changed: cmd.Flags().Changed("description"), key: "description", value: opts.desc},
 				// TODO(v3): drop the deprecated flag handling.
-				Enabled: cmd.Flags().Changed("enabled") && opts.enabled ||
-					cmd.Flags().Changed("disabled") && !opts.disabled ||
-					!cmd.Flags().Changed("enabled") && !cmd.Flags().Changed("disabled") && current.Enabled,
+				{
+					changed: cmd.Flags().Changed("enabled") || cmd.Flags().Changed("disabled"),
+					key:     "enabled",
+					value:   cmd.Flags().Changed("enabled") && opts.enabled || cmd.Flags().Changed("disabled") && !opts.disabled,
+				},
+			} {
+				if field.changed {
+					req[field.key] = field.value
+				}
 			}
 
 			// The handler answers with a plain message, not the updated registry.
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPut,
-				Path:           types.TemplateRegistry(args[0]),
+				Path:           clitypes.TemplateRegistry(args[0]),
 				Body:           req,
 				FailureMessage: "failed to update registry",
-				Render: func(base.MessageResponse) error {
+				Render: func(types.MessageResponse) error {
 					output.Success("Template registry updated successfully")
-					output.KeyValue("ID", current.ID)
-					output.KeyValue("Name", req.Name)
+					output.KeyValue("ID", args[0])
 					return nil
 				},
 			})
@@ -890,12 +880,12 @@ func newFetchCmd() *cobra.Command {
 				return err
 			}
 
-			path := cmdutil.AppendQuery(types.TemplateFetch(), url.Values{"url": []string{opts.url}})
-			return cmdutil.Run(cmd, c, cmdutil.Spec[template.RemoteRegistry]{
+			path := cmdutil.AppendQuery(clitypes.TemplateFetch(), url.Values{"url": []string{opts.url}})
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.TemplateRemoteRegistry]{
 				Method:         http.MethodGet,
 				Path:           path,
 				FailureMessage: "failed to fetch templates",
-				Render: func(data template.RemoteRegistry) error {
+				Render: func(data types.TemplateRemoteRegistry) error {
 					output.Success("Remote templates fetched successfully")
 					return nil
 				},

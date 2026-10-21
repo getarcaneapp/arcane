@@ -8,116 +8,50 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/federated"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 	"go.getarcane.app/kit/normalization"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
 
-func normalizeCreateFederatedCredentialInternal(req federated.CreateFederatedCredential) (federated.CreateFederatedCredential, error) {
+func normalizeFederatedCredential(req types.FederatedCredential) (types.FederatedCredential, error) {
 	if err := normalization.Normalize(&req); err != nil {
 		return req, common.Classify(common.ErrFederatedCredentialInvalid, err)
 	}
-	req.IssuerURL = strings.TrimRight(strings.TrimSpace(req.IssuerURL), "/")
-	req.SubjectClaim = strings.TrimSpace(req.SubjectClaim)
-	req.SubjectMatch = strings.TrimSpace(req.SubjectMatch)
-	req.MatchType = kit.Ternary(
-		strings.EqualFold(strings.TrimSpace(req.MatchType), federated.MatchTypeGlob),
-		federated.MatchTypeGlob,
-		federated.MatchTypeExact,
-	)
-	req.Audiences = kit.Unique(kit.TrimNonEmpty(req.Audiences))
-	req.EnvironmentID = mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(req.EnvironmentID).OrEmpty())).ToPointer()
-	req.TokenTTLSeconds = auth.ClampFederatedTokenTTLSeconds(req.TokenTTLSeconds)
-
-	req.SubjectClaim = cmp.Or(req.SubjectClaim, defaultFederatedSubjectClaim)
-	if req.SubjectMatch == "" || req.RoleID == "" || len(req.Audiences) == 0 {
-		return req, common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
+	normalized := types.FederatedCredential{
+		Name:         req.Name,
+		Description:  req.Description,
+		Enabled:      req.Enabled,
+		IssuerURL:    strings.TrimRight(strings.TrimSpace(req.IssuerURL), "/"),
+		Audiences:    kit.Unique(kit.TrimNonEmpty(req.Audiences)),
+		SubjectClaim: cmp.Or(strings.TrimSpace(req.SubjectClaim), defaultFederatedSubjectClaim),
+		SubjectMatch: strings.TrimSpace(req.SubjectMatch),
+		MatchType: kit.Ternary(
+			strings.EqualFold(strings.TrimSpace(req.MatchType), types.FederatedMatchTypeGlob),
+			types.FederatedMatchTypeGlob,
+			types.FederatedMatchTypeExact,
+		),
+		RoleID:          strings.TrimSpace(req.RoleID),
+		EnvironmentID:   mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(req.EnvironmentID).OrEmpty())).ToPointer(),
+		TokenTTLSeconds: auth.ClampFederatedTokenTTLSeconds(req.TokenTTLSeconds),
+		ExpiresAt:       req.ExpiresAt,
 	}
-	if err := validateIssuerURLInternal(req.IssuerURL); err != nil {
-		return req, err
+	if normalized.Name == "" || normalized.SubjectMatch == "" || normalized.RoleID == "" || len(normalized.Audiences) == 0 {
+		return normalized, common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
 	}
-	if err := validateSubjectMatchInternal(req.MatchType, req.SubjectMatch); err != nil {
-		return req, err
+	if err := validateIssuerURL(normalized.IssuerURL); err != nil {
+		return normalized, err
 	}
-	return req, nil
+	if err := validateSubjectMatch(normalized.MatchType, normalized.SubjectMatch); err != nil {
+		return normalized, err
+	}
+	return normalized, nil
 }
 
-func applyFederatedCredentialUpdateInternal(existing FederatedCredential, req federated.UpdateFederatedCredential) (FederatedCredential, bool, error) {
-	if err := normalization.Normalize(&req); err != nil {
-		return existing, false, common.Classify(common.ErrFederatedCredentialInvalid, err)
-	}
-	utils.ApplyChanged(&existing.Name, mo.PointerToOption(req.Name))
-	if req.Description != nil {
-		existing.Description = req.Description
-	}
-	if req.Enabled != nil {
-		existing.Enabled = *req.Enabled
-	}
-	if req.IssuerURL != nil {
-		issuerURL := strings.TrimRight(strings.TrimSpace(*req.IssuerURL), "/")
-		if err := validateIssuerURLInternal(issuerURL); err != nil {
-			return existing, false, err
-		}
-		existing.IssuerURL = issuerURL
-	}
-	if req.Audiences != nil {
-		audiences := kit.Unique(kit.TrimNonEmpty(req.Audiences))
-		if len(audiences) == 0 {
-			return existing, false, common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
-		}
-		existing.Audiences = audiences
-	}
-	if req.SubjectClaim != nil {
-		subjectClaim := cmp.Or(strings.TrimSpace(*req.SubjectClaim), defaultFederatedSubjectClaim)
-		existing.SubjectClaim = subjectClaim
-	}
-	if req.SubjectMatch != nil {
-		subjectMatch := strings.TrimSpace(*req.SubjectMatch)
-		if subjectMatch == "" {
-			return existing, false, common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
-		}
-		existing.SubjectMatch = subjectMatch
-	}
-	if req.MatchType != nil {
-		existing.MatchType = kit.Ternary(
-			strings.EqualFold(strings.TrimSpace(*req.MatchType), federated.MatchTypeGlob),
-			federated.MatchTypeGlob,
-			federated.MatchTypeExact,
-		)
-	}
-	if err := validateSubjectMatchInternal(existing.MatchType, existing.SubjectMatch); err != nil {
-		return existing, false, err
-	}
-
-	roleChanged := false
-	if req.RoleID != nil {
-		roleID := strings.TrimSpace(*req.RoleID)
-		if roleID == "" {
-			return existing, false, common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
-		}
-		roleChanged = roleID != existing.RoleID
-		existing.RoleID = roleID
-	}
-	if req.EnvironmentID != nil {
-		environmentID := mo.EmptyableToOption(strings.TrimSpace(*req.EnvironmentID)).ToPointer()
-		roleChanged = roleChanged || mo.PointerToOption(existing.EnvironmentID).OrEmpty() != mo.PointerToOption(environmentID).OrEmpty()
-		existing.EnvironmentID = environmentID
-	}
-	if req.TokenTTLSeconds != nil {
-		existing.TokenTTLSeconds = auth.ClampFederatedTokenTTLSeconds(*req.TokenTTLSeconds)
-	}
-	if req.ExpiresAt != nil {
-		existing.ExpiresAt = req.ExpiresAt
-	}
-	return existing, roleChanged, nil
-}
-
-func validateIssuerURLInternal(rawURL string) error {
+func validateIssuerURL(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil || parsed == nil || parsed.Host == "" || parsed.Scheme != "https" {
 		return common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential: issuerUrl must be an HTTPS URL"))
@@ -125,14 +59,14 @@ func validateIssuerURLInternal(rawURL string) error {
 	return nil
 }
 
-func validateSubjectMatchInternal(matchType, subjectMatch string) error {
-	if strings.TrimSpace(subjectMatch) == "" || strings.EqualFold(strings.TrimSpace(matchType), federated.MatchTypeGlob) && strings.TrimSpace(subjectMatch) == "*" {
+func validateSubjectMatch(matchType, subjectMatch string) error {
+	if strings.TrimSpace(subjectMatch) == "" || strings.EqualFold(strings.TrimSpace(matchType), types.FederatedMatchTypeGlob) && strings.TrimSpace(subjectMatch) == "*" {
 		return common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
 	}
 	return nil
 }
 
-func (s *FederatedCredentialService) validateRoleGrantAgainstUserInternal(ctx context.Context, userID, roleID string, environmentID *string) error {
+func (s *FederatedCredentialService) validateRoleGrantAgainstUser(ctx context.Context, userID, roleID string, environmentID *string) error {
 	if s.roleService == nil || strings.TrimSpace(userID) == "" {
 		return nil
 	}
@@ -154,11 +88,11 @@ func (s *FederatedCredentialService) validateRoleGrantAgainstUserInternal(ctx co
 	return nil
 }
 
-func toFederatedCredentialDTOInternal(credential *FederatedCredential) federated.FederatedCredential {
+func toFederatedCredentialDTO(credential *FederatedCredential) types.FederatedCredential {
 	if credential == nil {
-		return federated.FederatedCredential{}
+		return types.FederatedCredential{}
 	}
-	dto := federated.FederatedCredential{
+	dto := types.FederatedCredential{
 		ID:              credential.ID,
 		Name:            credential.Name,
 		Description:     credential.Description,

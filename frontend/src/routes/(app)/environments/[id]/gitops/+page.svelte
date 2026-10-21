@@ -12,9 +12,9 @@
 	import type {
 		GitOpsSync,
 		GitOpsSyncCounts,
-		GitOpsSyncCreateDto,
+		GitOpsSyncCreate,
 		GitOpsSyncMode,
-		GitOpsSyncUpdateDto,
+		GitOpsSyncUpdate,
 		ImportGitOpsSyncRequest
 	} from '#lib/types/automation.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -126,7 +126,7 @@
 		});
 	}
 
-	async function handleSyncDialogSubmit(detail: { sync: GitOpsSyncCreateDto | GitOpsSyncUpdateDto; isEditMode: boolean }) {
+	async function handleSyncDialogSubmit(detail: { sync: GitOpsSyncCreate | GitOpsSyncUpdate; isEditMode: boolean }) {
 		const { sync, isEditMode } = detail;
 		const loadingKey = isEditMode ? 'edit' : 'create';
 		isLoading[loadingKey] = true;
@@ -135,10 +135,10 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					if (isEditMode && syncToEdit?.id) {
-						await gitOpsSyncService.updateSync(environmentId, syncToEdit.id, sync as GitOpsSyncUpdateDto);
+						await gitOpsSyncService.updateSync(environmentId, syncToEdit.id, sync as GitOpsSyncUpdate);
 						toast.success(m.common_update_success({ resource: m.resource_sync() }));
 					} else {
-						await gitOpsSyncService.createSync(environmentId, sync as GitOpsSyncCreateDto);
+						await gitOpsSyncService.createSync(environmentId, sync as GitOpsSyncCreate);
 						toast.success(m.common_create_success({ resource: m.resource_sync() }));
 					}
 

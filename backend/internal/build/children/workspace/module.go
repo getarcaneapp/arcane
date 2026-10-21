@@ -2,7 +2,7 @@ package workspace
 
 import (
 	"github.com/danielgtaylor/huma/v2"
-	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
@@ -54,7 +54,7 @@ func Register(api huma.API, workspaceService *Service, uploadService *upload.Upl
 			"future release.",
 		Tags:        []string{"Builds"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: upload.LegacyMultipartMiddleware(api, uploadService, uploadtypes.KindBuildWorkspace),
+		Middlewares: upload.LegacyMultipartMiddleware(api, uploadService, types.UploadKindBuildWorkspace),
 	}, authz.PermBuildWorkspacesManage, h.UploadFile)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

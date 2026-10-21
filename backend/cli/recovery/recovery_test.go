@@ -5,8 +5,7 @@ import (
 	"testing"
 	"time"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	recoverytypes "github.com/getarcaneapp/arcane/types/v2/recovery"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/sys/crypto"
@@ -19,7 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
 )
 
-func newRestoredDatabaseForTestInternal(t *testing.T, runIDs ...string) (string, string) {
+func newRestoredDatabaseForTest(t *testing.T, runIDs ...string) (string, string) {
 	t.Helper()
 	databaseURL := "file:" + filepath.Join(t.TempDir(), "arcane.db")
 	dsn, err := database.ParseSQLiteConnectionString(databaseURL)
@@ -36,8 +35,8 @@ func newRestoredDatabaseForTestInternal(t *testing.T, runIDs ...string) (string,
 	}
 	resourceType := "system_backup"
 	require.NoError(t, db.Create(&activity.Activity{
-		ID: "activity-1", EnvironmentID: "0", Type: activitytypes.TypeResourceAction,
-		Status: activitytypes.StatusRunning, ResourceType: &resourceType,
+		ID: "activity-1", EnvironmentID: "0", Type: types.ActivityTypeResourceAction,
+		Status: types.ActivityStatusRunning, ResourceType: &resourceType,
 		StartedAt: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC),
 	}).Error)
 	sqlDB, err := db.DB()
@@ -46,17 +45,17 @@ func newRestoredDatabaseForTestInternal(t *testing.T, runIDs ...string) (string,
 	return databaseURL, dsn
 }
 
-func TestFinalizeRestoredBackupInternal(t *testing.T) {
-	databaseURL, dsn := newRestoredDatabaseForTestInternal(t, "older", "selected")
+func TestFinalizeRestoredBackup(t *testing.T) {
+	databaseURL, dsn := newRestoredDatabaseForTest(t, "older", "selected")
 	crypto.InitEncryption(&crypto.Config{EncryptionKey: "recovery-finalize-test-key-32bytes", Environment: "test"})
 	recoveryKey, err := backup.GenerateRecoveryKey()
 	require.NoError(t, err)
 
-	require.NoError(t, finalizeRestoredBackupInternal(t.Context(), databaseURL, "selected", "activity-1", recoverytypes.RestoreRequest{
+	require.NoError(t, finalizeRestoredBackup(t.Context(), databaseURL, "selected", "activity-1", types.RecoveryRestoreRequest{
 		BackupID: "request-id", RemoteSnapshotID: "snapshot-1", S3DestinationID: "destination-1", Size: 1234,
 		RecoveryKey:     recoveryKey,
 		ProjectsSetting: "/srv/projects",
-		SafetyBackup: &recoverytypes.SafetyBackup{
+		SafetyBackup: &types.RecoverySafetyBackup{
 			ID: "safety", LocalSnapshotID: "safety-snapshot", Size: 4321,
 			CreatedAt: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC),
 		},
@@ -79,7 +78,7 @@ func TestFinalizeRestoredBackupInternal(t *testing.T) {
 	require.EqualValues(t, 4321, safety.Size)
 	var entry activity.Activity
 	require.NoError(t, db.First(&entry, "id = ?", "activity-1").Error)
-	require.Equal(t, activitytypes.StatusSuccess, entry.Status)
+	require.Equal(t, types.ActivityStatusSuccess, entry.Status)
 	var projectsSetting settings.SettingVariable
 	require.NoError(t, db.First(&projectsSetting, "key = ?", "projectsDirectory").Error)
 	require.Equal(t, "/srv/projects", projectsSetting.Value)
@@ -89,9 +88,9 @@ func TestFinalizeRestoredBackupInternal(t *testing.T) {
 }
 
 func TestFinalizeRestoredBackupInternalFallsBackForLegacyManifest(t *testing.T) {
-	databaseURL, dsn := newRestoredDatabaseForTestInternal(t, "older", "newest")
+	databaseURL, dsn := newRestoredDatabaseForTest(t, "older", "newest")
 
-	require.NoError(t, finalizeRestoredBackupInternal(t.Context(), databaseURL, "", "", recoverytypes.RestoreRequest{BackupID: "missing-discovery-id"}))
+	require.NoError(t, finalizeRestoredBackup(t.Context(), databaseURL, "", "", types.RecoveryRestoreRequest{BackupID: "missing-discovery-id"}))
 
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
@@ -100,10 +99,10 @@ func TestFinalizeRestoredBackupInternalFallsBackForLegacyManifest(t *testing.T) 
 	require.Equal(t, system.SystemBackupStatusSucceeded, newest.Status)
 	var entry activity.Activity
 	require.NoError(t, db.First(&entry, "id = ?", "activity-1").Error)
-	require.Equal(t, activitytypes.StatusSuccess, entry.Status)
+	require.Equal(t, types.ActivityStatusSuccess, entry.Status)
 }
 
 func TestRunStagesInternalRejectsStagesWithoutDestination(t *testing.T) {
-	err := runStagesInternal(t.Context(), nil, recoverytypes.RestoreRequest{}, []recoverytypes.RestoreStage{{SourcePath: "/data"}})
+	err := runStages(t.Context(), nil, types.RecoveryRestoreRequest{}, []types.RecoveryRestoreStage{{SourcePath: "/data"}})
 	require.ErrorContains(t, err, "restore stage for /data has no destination")
 }

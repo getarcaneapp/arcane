@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/docker/compose/v5/pkg/api"
-	"github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,37 +20,37 @@ import (
 func TestCalculateProjectStatus(t *testing.T) {
 	tests := []struct {
 		name     string
-		services []project.RuntimeService
+		services []types.ProjectRuntimeService
 		want     string
 	}{
 		{
 			name:     "empty",
-			services: []project.RuntimeService{},
-			want:     project.StatusUnknown,
+			services: []types.ProjectRuntimeService{},
+			want:     types.ProjectStatusUnknown,
 		},
 		{
 			name: "all running",
-			services: []project.RuntimeService{
+			services: []types.ProjectRuntimeService{
 				{Status: "running"},
 				{Status: "up"},
 			},
-			want: project.StatusRunning,
+			want: types.ProjectStatusRunning,
 		},
 		{
 			name: "all stopped",
-			services: []project.RuntimeService{
+			services: []types.ProjectRuntimeService{
 				{Status: "exited"},
 				{Status: "stopped"},
 			},
-			want: project.StatusStopped,
+			want: types.ProjectStatusStopped,
 		},
 		{
 			name: "partial",
-			services: []project.RuntimeService{
+			services: []types.ProjectRuntimeService{
 				{Status: "running"},
 				{Status: "exited"},
 			},
-			want: project.StatusPartiallyRunning,
+			want: types.ProjectStatusPartiallyRunning,
 		},
 	}
 
@@ -65,20 +65,20 @@ func TestCalculateProjectStatus(t *testing.T) {
 func TestStatusCounts_FallsBackToStoredStatus(t *testing.T) {
 	svc := New(func(context.Context) ([]container.Summary, error) { return nil, errors.New("docker unavailable") }, nil, nil)
 
-	counts := svc.StatusCounts(t.Context(), []project.Record{
-		{Status: project.StatusRunning},
-		{Status: project.StatusStopped},
-		{Status: project.StatusUnknown},
-		{Status: project.StatusRunning, IsArchived: true},
+	counts := svc.StatusCounts(t.Context(), []types.ProjectRecord{
+		{Status: types.ProjectStatusRunning},
+		{Status: types.ProjectStatusStopped},
+		{Status: types.ProjectStatusUnknown},
+		{Status: types.ProjectStatusRunning, IsArchived: true},
 	})
 
-	assert.Equal(t, project.StatusCounts{TotalProjects: 4, ArchivedProjects: 1, RunningProjects: 1, StoppedProjects: 1}, counts)
+	assert.Equal(t, types.ProjectStatusCounts{TotalProjects: 4, ArchivedProjects: 1, RunningProjects: 1, StoppedProjects: 1}, counts)
 }
 
 func TestMapProjectToDto_SetsRedeployDisabledFromRuntimeServices(t *testing.T) {
 	projectPath := filepath.Join(t.TempDir(), "arcane")
 	now := time.Now()
-	proj := project.Record{
+	proj := types.ProjectRecord{
 		Name:         "arcane-directory",
 		Path:         projectPath,
 		ServiceCount: 1,
@@ -204,7 +204,7 @@ func TestProjectListRow_SeedsHasBuildDirectiveFromPersistedRefs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := project.Record{ID: tt.name, Name: tt.name, Path: t.TempDir(), UpdatedAt: &now, BuildImageRefsJSON: tt.buildImageRefsJSON}
+			p := types.ProjectRecord{ID: tt.name, Name: tt.name, Path: t.TempDir(), UpdatedAt: &now, BuildImageRefsJSON: tt.buildImageRefsJSON}
 			assert.Equal(t, tt.want, row(projectsDirectory, iconcatalog.DefaultCatalog, p, Snapshot{}, nil).HasBuildDirective)
 		})
 	}
@@ -213,13 +213,13 @@ func TestProjectListRow_SeedsHasBuildDirectiveFromPersistedRefs(t *testing.T) {
 func TestServiceCounts(t *testing.T) {
 	tests := []struct {
 		name        string
-		services    []project.RuntimeService
+		services    []types.ProjectRuntimeService
 		wantTotal   int
 		wantRunning int
 	}{
 		{
 			name: "mixed status",
-			services: []project.RuntimeService{
+			services: []types.ProjectRuntimeService{
 				{Name: "s1", Status: "running"},
 				{Name: "s2", Status: "exited"},
 				{Name: "s3", Status: "up"},
@@ -229,7 +229,7 @@ func TestServiceCounts(t *testing.T) {
 		},
 		{
 			name: "all stopped",
-			services: []project.RuntimeService{
+			services: []types.ProjectRuntimeService{
 				{Name: "s1", Status: "exited"},
 			},
 			wantTotal:   1,
@@ -237,7 +237,7 @@ func TestServiceCounts(t *testing.T) {
 		},
 		{
 			name:        "empty",
-			services:    []project.RuntimeService{},
+			services:    []types.ProjectRuntimeService{},
 			wantTotal:   0,
 			wantRunning: 0,
 		},

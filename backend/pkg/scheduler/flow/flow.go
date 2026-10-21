@@ -30,8 +30,7 @@ import (
 	"time"
 	"uuid"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/builtin/workflow"
 
@@ -89,7 +88,7 @@ type (
 		activitylib.Service
 		activitylib.MessageAppender
 		activitylib.Tracker
-		UpdateActivity(ctx context.Context, activityID string, req activitylib.UpdateRequest) (*activitytypes.Activity, error)
+		UpdateActivity(ctx context.Context, activityID string, req activitylib.UpdateRequest) (*types.Activity, error)
 		AwaitActivitySlotBounded(ctx context.Context, activityID, environmentID string) error
 	}
 
@@ -211,13 +210,13 @@ func (e *Engine) Ready() {
 
 // Standalone lists unfinished instances started by Submit or an unbound Run as runs of the workflow's
 // name, carrying the targets their tasks recorded, so startup recovery can protect their work.
-func (e *Engine) Standalone(ctx context.Context) ([]scheduler.Run, error) {
-	var standalone []scheduler.Run
+func (e *Engine) Standalone(ctx context.Context) ([]types.SchedulerRun, error) {
+	var standalone []types.SchedulerRun
 	err := e.eachRoot(ctx, func(wf *Workflow, instanceID string) error {
 		if isInstanceOf(instanceID, wf.def.Name) {
 			return nil
 		}
-		run := scheduler.Run{ID: instanceID, JobID: wf.def.Name, ActivityID: wf.activityFor(instanceID), Status: scheduler.Running}
+		run := types.SchedulerRun{ID: instanceID, JobID: wf.def.Name, ActivityID: wf.activityFor(instanceID), Status: types.RunStatusRunning}
 		if err := e.runtime.Service().GetState(ctx, evidenceActorType, instanceID, &run.Outcome.Targets); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
 			return fmt.Errorf("load %s progress: %w", instanceID, err)
 		}
@@ -263,7 +262,7 @@ func (e *Engine) Stop(context.Context) error {
 // Run starts the workflow, or attaches to the run's active instance, and waits for its outcome. A run in
 // ctx (jobcontext.Run) binds the instance to that run; set fields of activity override the definition's
 // activity template; a non-nil output receives the last step's data alongside its scheduler.Outcome fields.
-func (e *Engine) Run(ctx context.Context, wf *Workflow, payload any, activity activitylib.StartRequest, output any) (scheduler.Outcome, error) {
+func (e *Engine) Run(ctx context.Context, wf *Workflow, payload any, activity activitylib.StartRequest, output any) (types.SchedulerOutcome, error) {
 	run, bound := jobcontext.Run(ctx)
 	instanceID := ""
 	if bound {
@@ -271,7 +270,7 @@ func (e *Engine) Run(ctx context.Context, wf *Workflow, payload any, activity ac
 		if target, ok := activeTarget(run, wf.def.Name, false); ok {
 			status, err := wf.svc.GetStatus(ctx, target.ID)
 			if err != nil && !errors.Is(err, workflow.ErrInstanceNotFound) {
-				return scheduler.Outcome{}, fmt.Errorf("read %s instance: %w", wf.def.Name, err)
+				return types.SchedulerOutcome{}, fmt.Errorf("read %s instance: %w", wf.def.Name, err)
 			}
 			if err == nil && status.Version == wf.def.Version {
 				instanceID = target.ID
@@ -283,7 +282,7 @@ func (e *Engine) Run(ctx context.Context, wf *Workflow, payload any, activity ac
 	if instanceID == "" {
 		var err error
 		if instanceID, err = e.startInstance(ctx, wf, run, bound, payload, activity, nil); err != nil {
-			return scheduler.Outcome{Status: scheduler.Failed, Message: err.Error()}, err
+			return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: err.Error()}, err
 		}
 	}
 	outcome, err := e.await(ctx, wf, run, bound, instanceID)
@@ -300,8 +299,8 @@ func (e *Engine) Run(ctx context.Context, wf *Workflow, payload any, activity ac
 // Submit starts a standalone instance without waiting for it and returns its ID,
 // which is also its activity's ID. Its tasks record target progress like a run's;
 // evidence is recorded before the instance starts, such as the record it owns.
-func (e *Engine) Submit(ctx context.Context, wf *Workflow, payload any, activity activitylib.StartRequest, evidence ...scheduler.TargetOutcome) (string, error) {
-	instanceID, err := e.startInstance(ctx, wf, scheduler.Run{}, false, payload, activity, evidence)
+func (e *Engine) Submit(ctx context.Context, wf *Workflow, payload any, activity activitylib.StartRequest, evidence ...types.TargetOutcome) (string, error) {
+	instanceID, err := e.startInstance(ctx, wf, types.SchedulerRun{}, false, payload, activity, evidence)
 	if err != nil {
 		return "", err
 	}
@@ -310,29 +309,29 @@ func (e *Engine) Submit(ctx context.Context, wf *Workflow, payload any, activity
 }
 
 // Wait blocks until a submitted instance finishes, ctx ends, or the engine stops.
-func (e *Engine) Wait(ctx context.Context, wf *Workflow, instanceID string) (scheduler.Outcome, error) {
+func (e *Engine) Wait(ctx context.Context, wf *Workflow, instanceID string) (types.SchedulerOutcome, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	defer context.AfterFunc(e.ctx, cancel)()
-	return e.await(ctx, wf, scheduler.Run{}, false, instanceID)
+	return e.await(ctx, wf, types.SchedulerRun{}, false, instanceID)
 }
 
 // Resume attaches to the run's active instance, or reads the result of one that finished before the run saved it.
 // When the instance is gone or belongs to a version this host no longer serves, a recorded non-failed result is
 // returned; otherwise it returns ErrNotResumable so the job's fallback can run.
-func (e *Engine) Resume(ctx context.Context, wf *Workflow, run scheduler.Run) (scheduler.Outcome, error) {
+func (e *Engine) Resume(ctx context.Context, wf *Workflow, run types.SchedulerRun) (types.SchedulerOutcome, error) {
 	target, ok := activeTarget(run, wf.def.Name, true)
 	if !ok {
-		return scheduler.Outcome{}, ErrNotResumable
+		return types.SchedulerOutcome{}, ErrNotResumable
 	}
 	defer e.admit(run.ID)()
 	status, err := wf.svc.GetStatus(ctx, target.ID)
 	if err != nil && !errors.Is(err, workflow.ErrInstanceNotFound) {
-		return scheduler.Outcome{}, fmt.Errorf("read %s instance: %w", wf.def.Name, err)
+		return types.SchedulerOutcome{}, fmt.Errorf("read %s instance: %w", wf.def.Name, err)
 	}
 	if err != nil || status.Version != wf.def.Version {
-		if target.Status.Terminal() && target.Status != scheduler.Failed {
-			return scheduler.Outcome{
+		if target.Status.Terminal() && target.Status != types.RunStatusFailed {
+			return types.SchedulerOutcome{
 				Status:     target.Status,
 				Message:    target.Message,
 				ActivityID: target.ActivityID,
@@ -341,14 +340,14 @@ func (e *Engine) Resume(ctx context.Context, wf *Workflow, run scheduler.Run) (s
 		if !target.Status.Terminal() {
 			e.supersede(ctx, wf, target, "Workflow instance could not be resumed")
 		}
-		return scheduler.Outcome{}, ErrNotResumable
+		return types.SchedulerOutcome{}, ErrNotResumable
 	}
 	return e.await(ctx, wf, run, true, target.ID)
 }
 
 // Retire cancels the run's unfinished instance without resuming it, such as for a job that was disabled. An instance
 // that finished before the run saved its result reports that result instead, with finished set.
-func (e *Engine) Retire(ctx context.Context, wf *Workflow, run scheduler.Run, reason string) (outcome scheduler.Outcome, finished bool, err error) {
+func (e *Engine) Retire(ctx context.Context, wf *Workflow, run types.SchedulerRun, reason string) (outcome types.SchedulerOutcome, finished bool, err error) {
 	if target, ok := activeTarget(run, wf.def.Name, true); ok && target.Status.Terminal() {
 		if outcome, err = e.Resume(ctx, wf, run); !errors.Is(err, ErrNotResumable) {
 			return outcome, true, err
@@ -357,10 +356,10 @@ func (e *Engine) Retire(ctx context.Context, wf *Workflow, run scheduler.Run, re
 	if target, ok := activeTarget(run, wf.def.Name, false); ok {
 		e.supersede(ctx, wf, target, reason)
 	}
-	return scheduler.Outcome{}, false, nil
+	return types.SchedulerOutcome{}, false, nil
 }
 
-func (e *Engine) startInstance(ctx context.Context, wf *Workflow, run scheduler.Run, bound bool, payload any, activity activitylib.StartRequest, evidence []scheduler.TargetOutcome) (string, error) {
+func (e *Engine) startInstance(ctx context.Context, wf *Workflow, run types.SchedulerRun, bound bool, payload any, activity activitylib.StartRequest, evidence []types.TargetOutcome) (string, error) {
 	instanceID := wf.def.Name + "-" + uuid.NewV7().String()
 	binding := Binding{RootID: instanceID}
 	if bound {
@@ -374,7 +373,7 @@ func (e *Engine) startInstance(ctx context.Context, wf *Workflow, run scheduler.
 	activityID := wf.activityFor(instanceID)
 	if bound {
 		// Record the instance first so its tasks pass the run fence.
-		target := scheduler.TargetOutcome{ResourceType: scheduler.WorkflowTarget, ID: instanceID, Status: scheduler.Running, ActivityID: activityID}
+		target := types.TargetOutcome{ResourceType: types.SchedulerWorkflowTarget, ID: instanceID, Status: types.RunStatusRunning, ActivityID: activityID}
 		if progressErr := jobcontext.Progress(ctx, target); progressErr != nil {
 			return "", fmt.Errorf("record %s instance: %w", wf.def.Name, progressErr)
 		}
@@ -404,7 +403,7 @@ func (e *Engine) startInstance(ctx context.Context, wf *Workflow, run scheduler.
 		if activityID != "" {
 			e.untrack(activityID)
 			message := startErr.Error()
-			_, _ = e.activities.CompleteActivity(ctx, activityID, activitytypes.StatusFailed, "Failed to start workflow", &message)
+			_, _ = e.activities.CompleteActivity(ctx, activityID, types.ActivityStatusFailed, "Failed to start workflow", &message)
 		}
 		return "", fmt.Errorf("start %s: %w", wf.def.Name, startErr)
 	}
@@ -434,7 +433,7 @@ func (e *Engine) startActivity(ctx context.Context, wf *Workflow, activityID, en
 		e.untrack(activityID)
 		// Completing drops the service's cancel registration and settles a row the failed start may have left.
 		message := err.Error()
-		_, _ = e.activities.CompleteActivity(context.WithoutCancel(ctx), activityID, activitytypes.StatusFailed, "Failed to start workflow", &message)
+		_, _ = e.activities.CompleteActivity(context.WithoutCancel(ctx), activityID, types.ActivityStatusFailed, "Failed to start workflow", &message)
 		return fmt.Errorf("start %s activity: %w", wf.def.Name, err)
 	}
 	// A deferred slot is awaited by the task that does the work, so a submit never blocks on it.
@@ -445,13 +444,13 @@ func (e *Engine) startActivity(ctx context.Context, wf *Workflow, activityID, en
 		if err := e.activities.AwaitActivitySlotBounded(waitCtx, activityID, request.EnvironmentID); err != nil && !errors.Is(context.Cause(tracked), activitylib.ErrCanceled) {
 			e.untrack(activityID)
 			message := err.Error()
-			_, _ = e.activities.CompleteActivity(context.WithoutCancel(ctx), activityID, activitytypes.StatusFailed, "Failed to start workflow", &message)
+			_, _ = e.activities.CompleteActivity(context.WithoutCancel(ctx), activityID, types.ActivityStatusFailed, "Failed to start workflow", &message)
 			return err
 		}
 	}
 	if errors.Is(context.Cause(tracked), activitylib.ErrCanceled) {
 		e.untrack(activityID)
-		_, _ = e.activities.CompleteActivity(context.WithoutCancel(ctx), activityID, activitytypes.StatusCancelled, activitylib.ErrCanceled.Error(), nil)
+		_, _ = e.activities.CompleteActivity(context.WithoutCancel(ctx), activityID, types.ActivityStatusCancelled, activitylib.ErrCanceled.Error(), nil)
 		return fmt.Errorf("start %s: %w", wf.def.Name, activitylib.ErrCanceled)
 	}
 	return nil
@@ -466,9 +465,9 @@ func (e *Engine) untrack(activityID string) {
 
 // await waits for the instance's outcome, projecting steps onto a bound run at
 // most every stepWriteInterval.
-func (e *Engine) await(ctx context.Context, wf *Workflow, run scheduler.Run, bound bool, instanceID string) (scheduler.Outcome, error) {
+func (e *Engine) await(ctx context.Context, wf *Workflow, run types.SchedulerRun, bound bool, instanceID string) (types.SchedulerOutcome, error) {
 	monitor := e.monitor(wf, instanceID)
-	var recorded []scheduler.StepOutcome
+	var recorded []types.StepOutcome
 	var lastWrite time.Time
 	for {
 		steps, outcome, changed := monitor.snapshot()
@@ -485,10 +484,10 @@ func (e *Engine) await(ctx context.Context, wf *Workflow, run scheduler.Run, bou
 		if outcome != nil {
 			if bound {
 				// Bound to the executor: a write lost to shutdown is redone when reconcile re-attaches.
-				target := scheduler.TargetOutcome{ResourceType: scheduler.WorkflowTarget, ID: instanceID, Status: outcome.Status, ActivityID: wf.activityFor(instanceID)}
+				target := types.TargetOutcome{ResourceType: types.SchedulerWorkflowTarget, ID: instanceID, Status: outcome.Status, ActivityID: wf.activityFor(instanceID)}
 				// Run never attaches a finished instance, so a retry starts a new one.
 				if !target.Status.Terminal() {
-					target.Status = scheduler.Failed
+					target.Status = types.RunStatusFailed
 				}
 				if err := jobcontext.Progress(ctx, target); err != nil {
 					slog.WarnContext(ctx, "Failed to record workflow completion", "instanceId", instanceID, "error", err)
@@ -498,7 +497,7 @@ func (e *Engine) await(ctx context.Context, wf *Workflow, run scheduler.Run, bou
 		}
 		select {
 		case <-ctx.Done():
-			return scheduler.Outcome{}, ctx.Err()
+			return types.SchedulerOutcome{}, ctx.Err()
 		case <-changed:
 		case <-flush:
 		}
@@ -506,8 +505,8 @@ func (e *Engine) await(ctx context.Context, wf *Workflow, run scheduler.Run, bou
 }
 
 // supersede retires an instance that a run no longer follows.
-func (e *Engine) supersede(ctx context.Context, wf *Workflow, target scheduler.TargetOutcome, reason string) {
-	target.Status = scheduler.Failed
+func (e *Engine) supersede(ctx context.Context, wf *Workflow, target types.TargetOutcome, reason string) {
+	target.Status = types.RunStatusFailed
 	target.Message = reason
 	if err := jobcontext.Progress(ctx, target); err != nil {
 		slog.WarnContext(ctx, "Failed to retire workflow instance", "instanceId", target.ID, "error", err)
@@ -524,7 +523,7 @@ func (e *Engine) supersede(ctx context.Context, wf *Workflow, target scheduler.T
 	}
 	e.releaseRoot(target.ID)
 	if target.ActivityID != "" {
-		_, _ = e.activities.CompleteActivity(ctx, target.ActivityID, activitytypes.StatusFailed, reason, new(reason))
+		_, _ = e.activities.CompleteActivity(ctx, target.ActivityID, types.ActivityStatusFailed, reason, new(reason))
 	}
 }
 
@@ -576,9 +575,9 @@ func (e *Engine) releaseRoot(rootID string) {
 
 // activeTarget returns the run's latest instance of a workflow and whether the run may attach to it: an unfinished
 // instance, or when recovering, a finished one whose attempt ended before the run saved its result.
-func activeTarget(run scheduler.Run, name string, recovering bool) (scheduler.TargetOutcome, bool) {
+func activeTarget(run types.SchedulerRun, name string, recovering bool) (types.TargetOutcome, bool) {
 	for _, target := range slices.Backward(run.Outcome.Targets) {
-		if target.ResourceType != scheduler.WorkflowTarget || !isInstanceOf(target.ID, name) {
+		if target.ResourceType != types.SchedulerWorkflowTarget || !isInstanceOf(target.ID, name) {
 			continue
 		}
 		if !recovering || !target.Status.Terminal() {
@@ -596,7 +595,7 @@ func activeTarget(run scheduler.Run, name string, recovering bool) (scheduler.Ta
 		}
 		return target, false
 	}
-	return scheduler.TargetOutcome{}, false
+	return types.TargetOutcome{}, false
 }
 
 // isInstanceOf matches run-bound instance IDs of the form <name>-<runID>-<attempt>.

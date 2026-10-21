@@ -7,8 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/project"
-	"github.com/getarcaneapp/arcane/types/v2/workspace"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	kit "go.getarcane.app/kit/pkg"
@@ -85,12 +84,12 @@ func TestApplyWorkspaceFileChanges_RejectsUnsafePathsAndProtectedFiles(t *testin
 
 	testCases := []struct {
 		name   string
-		change project.WorkspaceFileChange
+		change types.WorkspaceFileChange
 		upload []byte
 	}{
 		{
 			name: "traversal",
-			change: project.WorkspaceFileChange{
+			change: types.WorkspaceFileChange{
 				Operation:    "create_file",
 				RelativePath: "../escape.txt",
 				UploadIndex:  new(0),
@@ -99,14 +98,14 @@ func TestApplyWorkspaceFileChanges_RejectsUnsafePathsAndProtectedFiles(t *testin
 		},
 		{
 			name: "protected compose",
-			change: project.WorkspaceFileChange{
+			change: types.WorkspaceFileChange{
 				Operation:    "delete",
 				RelativePath: "compose.yaml",
 			},
 		},
 		{
 			name: "move protected compose",
-			change: project.WorkspaceFileChange{
+			change: types.WorkspaceFileChange{
 				Operation:     "move",
 				RelativePath:  "compose.yaml",
 				NewParentPath: "config",
@@ -114,7 +113,7 @@ func TestApplyWorkspaceFileChanges_RejectsUnsafePathsAndProtectedFiles(t *testin
 		},
 		{
 			name: "protected compose descendant",
-			change: project.WorkspaceFileChange{
+			change: types.WorkspaceFileChange{
 				Operation:    "create_file",
 				RelativePath: "compose.yaml/child.yaml",
 				UploadIndex:  new(0),
@@ -129,7 +128,7 @@ func TestApplyWorkspaceFileChanges_RejectsUnsafePathsAndProtectedFiles(t *testin
 			if tc.upload != nil {
 				uploads[0] = tc.upload
 			}
-			err := ApplyProjectWorkspaceChanges(t.Context(), projectDir, []project.WorkspaceFileChange{tc.change}, uploads, ProjectWorkspaceApplyOptions{ComposeFileName: "compose.yaml"})
+			err := ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{tc.change}, uploads, ProjectWorkspaceApplyOptions{ComposeFileName: "compose.yaml"})
 			require.Error(t, err)
 		})
 	}
@@ -142,7 +141,7 @@ func TestApplyWorkspaceFileChanges_CreatesBinaryFileVerbatim(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
 
 	binary := []byte{0x1f, 0x8b, 0x08, 0x00, 0xff, 0x00, 0xde, 0xad, 0xbe, 0xef}
-	err := ApplyProjectWorkspaceChanges(t.Context(), projectDir, []project.WorkspaceFileChange{
+	err := ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{
 		{Operation: "create_file", RelativePath: "db.sqlite", UploadIndex: new(0)},
 	}, map[int][]byte{0: binary}, ProjectWorkspaceApplyOptions{ComposeFileName: "compose.yaml"})
 	require.NoError(t, err)
@@ -158,7 +157,7 @@ func TestApplyWorkspaceFileChanges_WrapsForbiddenSentinelErrors(t *testing.T) {
 	projectDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
 
-	err := ApplyProjectWorkspaceChanges(t.Context(), projectDir, []project.WorkspaceFileChange{
+	err := ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{
 		{Operation: "delete", RelativePath: "compose.yaml"},
 	}, nil, ProjectWorkspaceApplyOptions{ComposeFileName: "compose.yaml"})
 	require.Error(t, err)
@@ -172,7 +171,7 @@ func TestApplyWorkspaceFileChanges_WrapsForbiddenSentinelErrors(t *testing.T) {
 	}
 
 	content := []byte("updated\n")
-	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []project.WorkspaceFileChange{
+	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{
 		{Operation: "update_file", RelativePath: "link.txt", UploadIndex: new(0)},
 	}, map[int][]byte{0: content}, ProjectWorkspaceApplyOptions{ComposeFileName: "compose.yaml"})
 	require.Error(t, err)
@@ -185,7 +184,7 @@ func TestApplyWorkspaceFileChanges_WrapsForbiddenSentinelErrors(t *testing.T) {
 		t.Skipf("symlink creation is unavailable: %v", symlinkErr2)
 	}
 
-	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []project.WorkspaceFileChange{
+	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{
 		{Operation: "update_file", RelativePath: "link-dir/outside.txt", UploadIndex: new(0)},
 	}, map[int][]byte{0: content}, ProjectWorkspaceApplyOptions{ComposeFileName: "compose.yaml"})
 	require.Error(t, err)
@@ -203,7 +202,7 @@ func TestApplyWorkspaceFileChanges_UsesRevisionConflictDetection(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "notes.txt"), []byte("changed elsewhere\n"), 0o644))
 
-	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []project.WorkspaceFileChange{
+	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{
 		{Operation: "update_file", RelativePath: "notes.txt", UploadIndex: new(0)},
 	}, map[int][]byte{0: []byte("new\n")}, ProjectWorkspaceApplyOptions{
 		ExpectedRevision: revision,
@@ -221,7 +220,7 @@ func TestApplyWorkspaceFileChanges_AppliesOrderedTextFileOperations(t *testing.T
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
 
 	updated := []byte("updated\n")
-	err := ApplyProjectWorkspaceChanges(t.Context(), projectDir, []project.WorkspaceFileChange{
+	err := ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{
 		{Operation: "create_folder", RelativePath: "config"},
 		{Operation: "create_file", RelativePath: "config/app.yaml", UploadIndex: new(0)},
 		{Operation: "update_file", RelativePath: "config/app.yaml", UploadIndex: new(1)},
@@ -244,7 +243,7 @@ func TestApplyWorkspaceFileChanges_MovesProjectPaths(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config", "app.yaml"), []byte("value: true\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config", "nested", "child.txt"), []byte("child\n"), 0o644))
 
-	err := ApplyProjectWorkspaceChanges(t.Context(), projectDir, []project.WorkspaceFileChange{
+	err := ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{
 		{Operation: "move", RelativePath: "config/app.yaml", NewParentPath: "archive"},
 		{Operation: "move", RelativePath: "config/nested"},
 	}, nil, ProjectWorkspaceApplyOptions{ComposeFileName: "compose.yaml"})
@@ -302,7 +301,7 @@ func TestApplyWorkspaceFileChanges_RejectsInvalidMoves(t *testing.T) {
 			require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config", "app.yaml"), []byte("value: true\n"), 0o644))
 			require.NoError(t, os.WriteFile(filepath.Join(projectDir, "archive", "app.yaml"), []byte("existing\n"), 0o644))
 
-			err := ApplyProjectWorkspaceChanges(t.Context(), projectDir, []project.WorkspaceFileChange{
+			err := ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{
 				{Operation: "move", RelativePath: tc.relativePath, NewParentPath: tc.newParentPath},
 			}, nil, ProjectWorkspaceApplyOptions{ComposeFileName: "compose.yaml"})
 			require.Error(t, err)
@@ -319,13 +318,13 @@ func TestApplyWorkspaceFileChanges_RequiresRecursiveForNonEmptyFolderDelete(t *t
 	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, "config"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config", "app.yaml"), []byte("value: true\n"), 0o644))
 
-	err := ApplyProjectWorkspaceChanges(t.Context(), projectDir, []project.WorkspaceFileChange{
+	err := ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{
 		{Operation: "delete", RelativePath: "config"},
 	}, nil, ProjectWorkspaceApplyOptions{ComposeFileName: "compose.yaml"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "folder is not empty")
 
-	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []project.WorkspaceFileChange{
+	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{
 		{Operation: "delete", RelativePath: "config", Recursive: true},
 	}, nil, ProjectWorkspaceApplyOptions{ComposeFileName: "compose.yaml"})
 	require.NoError(t, err)
@@ -362,7 +361,7 @@ func TestReadProjectWorkspace_CapsEntriesWithStableRevision(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, truncated)
 	assert.Len(t, files, 3)
-	assert.True(t, slices.ContainsFunc(files, func(entry workspace.FileEntry) bool {
+	assert.True(t, slices.ContainsFunc(files, func(entry types.WorkspaceFileEntry) bool {
 		return entry.RelativePath == "z-later.txt"
 	}), "a large early subtree must not hide later root-level siblings")
 
@@ -385,7 +384,7 @@ func TestApplyWorkspaceFileChanges_SucceedsWithCappedRevision(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, truncated)
 
-	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []project.WorkspaceFileChange{
+	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{
 		{Operation: "update_file", RelativePath: "file-0.txt", UploadIndex: new(0)},
 	}, map[int][]byte{0: []byte("new\n")}, ProjectWorkspaceApplyOptions{
 		ExpectedRevision: revision,
@@ -418,15 +417,15 @@ func TestApplyProjectWorkspaceChanges_ContentChurnDoesNotConflict(t *testing.T) 
 	// (changed size + mtime) must not invalidate the workspace draft (#3199).
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "app.log"), []byte("line1\nline2\n"), 0o644))
 
-	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []project.WorkspaceFileChange{
-		{Operation: project.FileOpCreateFile, RelativePath: "notes.txt", UploadIndex: new(0)},
+	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: types.FileOpCreateFile, RelativePath: "notes.txt", UploadIndex: new(0)},
 	}, map[int][]byte{0: []byte("hello")}, ProjectWorkspaceApplyOptions{ComposeFileName: "compose.yaml", ExpectedRevision: revision, MaxDepth: 3})
 	require.NoError(t, err)
 	require.FileExists(t, filepath.Join(projectDir, "notes.txt"))
 
 	// Structural drift (notes.txt now exists) does conflict against the old revision.
-	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []project.WorkspaceFileChange{
-		{Operation: project.FileOpDelete, RelativePath: "app.log"},
+	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: types.FileOpDelete, RelativePath: "app.log"},
 	}, nil, ProjectWorkspaceApplyOptions{ComposeFileName: "compose.yaml", ExpectedRevision: revision, MaxDepth: 3})
 	require.ErrorIs(t, err, ErrProjectWorkspaceRevisionConflict)
 }
@@ -443,8 +442,8 @@ func TestApplyProjectWorkspaceChanges_BaselineGuardsConcurrentEdit(t *testing.T)
 	// but the uploaded baseline no longer matches the on-disk content: the
 	// stale draft must conflict instead of silently overwriting the newer file.
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config.txt"), []byte("external newer edit\n"), 0o644))
-	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []project.WorkspaceFileChange{
-		{Operation: project.FileOpUpdateFile, RelativePath: "config.txt", UploadIndex: new(0), BaselineIndex: new(1)},
+	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: types.FileOpUpdateFile, RelativePath: "config.txt", UploadIndex: new(0), BaselineIndex: new(1)},
 	}, map[int][]byte{0: []byte("stale draft\n"), 1: []byte("original\n")}, ProjectWorkspaceApplyOptions{ComposeFileName: "compose.yaml", ExpectedRevision: revision, MaxDepth: 3})
 	require.ErrorIs(t, err, ErrProjectWorkspaceRevisionConflict)
 	content, err := os.ReadFile(filepath.Join(projectDir, "config.txt"))
@@ -452,8 +451,8 @@ func TestApplyProjectWorkspaceChanges_BaselineGuardsConcurrentEdit(t *testing.T)
 	require.Equal(t, "external newer edit\n", string(content))
 
 	// A baseline matching the current on-disk content saves normally.
-	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []project.WorkspaceFileChange{
-		{Operation: project.FileOpUpdateFile, RelativePath: "config.txt", UploadIndex: new(0), BaselineIndex: new(1)},
+	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{
+		{Operation: types.FileOpUpdateFile, RelativePath: "config.txt", UploadIndex: new(0), BaselineIndex: new(1)},
 	}, map[int][]byte{
 		0: []byte("fresh draft\n"),
 		1: []byte("external newer edit\n"),
@@ -496,7 +495,7 @@ func TestApplyWorkspaceFileChanges_EnvDirectory(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".env", "app.env"), []byte("A=1\n"), 0o644))
 	opts := ProjectWorkspaceApplyOptions{ComposeFileName: "compose.yaml"}
 
-	require.NoError(t, ApplyProjectWorkspaceChanges(t.Context(), projectDir, []project.WorkspaceFileChange{
+	require.NoError(t, ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{
 		{Operation: "update_file", RelativePath: ".env/app.env", UploadIndex: new(0)},
 	}, map[int][]byte{0: []byte("A=2\n")}, opts))
 	content, err := os.ReadFile(filepath.Join(projectDir, ".env", "app.env"))
@@ -505,7 +504,7 @@ func TestApplyWorkspaceFileChanges_EnvDirectory(t *testing.T) {
 
 	// Once the directory is gone, the name is protected configuration again,
 	// even within the same batch.
-	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []project.WorkspaceFileChange{
+	err = ApplyProjectWorkspaceChanges(t.Context(), projectDir, []types.WorkspaceFileChange{
 		{Operation: "delete", RelativePath: ".env", Recursive: true},
 		{Operation: "create_file", RelativePath: ".env", UploadIndex: new(0)},
 	}, map[int][]byte{0: []byte("B=1\n")}, opts)

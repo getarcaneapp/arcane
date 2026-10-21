@@ -12,7 +12,7 @@ import (
 	"time"
 	"uuid"
 
-	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/host/local"
 	"github.com/robfig/cron/v3"
@@ -64,14 +64,14 @@ func (q *Coordinator) Register(runtime *francis.Runtime) error {
 }
 
 func (a *coordinatorActor) Invoke(ctx context.Context, method string, data actor.Envelope) (any, error) {
-	var state st.CoordinatorState
+	var state types.SchedulerCoordinatorState
 	if err := a.q.service.GetState(ctx, coordinatorType, a.id, &state); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
 		return nil, err
 	}
 	normalizeRecordTimes(&state.Record)
 	switch method {
 	case "replace":
-		var next st.CoordinatorState
+		var next types.SchedulerCoordinatorState
 		if err := data.Decode(&next); err != nil {
 			return nil, err
 		}
@@ -89,7 +89,7 @@ func (a *coordinatorActor) Invoke(ctx context.Context, method string, data actor
 		}
 		return true, nil
 	case "activity-synced":
-		var command st.ActivitySyncCommand
+		var command types.SchedulerActivitySyncCommand
 		if err := data.Decode(&command); err != nil {
 			return nil, err
 		}
@@ -111,7 +111,7 @@ func (a *coordinatorActor) Invoke(ctx context.Context, method string, data actor
 		}
 		return true, nil
 	case "import":
-		var command st.CoordinatorImport
+		var command types.SchedulerCoordinatorImport
 		if err := data.Decode(&command); err != nil {
 			return nil, err
 		}
@@ -137,7 +137,7 @@ func (a *coordinatorActor) Invoke(ctx context.Context, method string, data actor
 	}
 }
 
-func (a *coordinatorActor) flush(ctx context.Context, state *st.CoordinatorState) error {
+func (a *coordinatorActor) flush(ctx context.Context, state *types.SchedulerCoordinatorState) error {
 	if !a.q.enabled.Load() {
 		return nil
 	}
@@ -146,15 +146,15 @@ func (a *coordinatorActor) flush(ctx context.Context, state *st.CoordinatorState
 		name := fmt.Sprintf("schedule-%d-%d", record.Generation, record.Sequence)
 		properties := actor.AlarmProperties{
 			DueTime: record.NextRun,
-			Data:    st.ScheduleOccurrence{Generation: record.Generation, Sequence: record.Sequence},
+			Data:    types.ScheduleOccurrence{Generation: record.Generation, Sequence: record.Sequence},
 		}
 		if err := a.q.service.SetAlarm(ctx, coordinatorType, a.id, name, properties); err != nil {
 			return err
 		}
 	}
-	var selected *st.Run
+	var selected *types.SchedulerRun
 	for i := range record.Runs {
-		if record.Runs[i].Status == st.Running {
+		if record.Runs[i].Status == types.RunStatusRunning {
 			selected = &record.Runs[i]
 			break
 		}
@@ -170,7 +170,7 @@ func (a *coordinatorActor) flush(ctx context.Context, state *st.CoordinatorState
 		name := fmt.Sprintf("retry-%d", retryAt.UnixNano())
 		return a.q.service.SetAlarm(ctx, coordinatorType, a.id, name, actor.AlarmProperties{DueTime: retryAt})
 	}
-	if selected.Status == st.Running {
+	if selected.Status == types.RunStatusRunning {
 		active, err := a.reconcileDispatch(ctx, state, *selected)
 		if err != nil {
 			return err
@@ -183,7 +183,7 @@ func (a *coordinatorActor) flush(ctx context.Context, state *st.CoordinatorState
 }
 
 // reconcileDispatch recovers a lost job ID before considering redelivery.
-func (a *coordinatorActor) reconcileDispatch(ctx context.Context, state *st.CoordinatorState, run st.Run) (bool, error) {
+func (a *coordinatorActor) reconcileDispatch(ctx context.Context, state *types.SchedulerCoordinatorState, run types.SchedulerRun) (bool, error) {
 	key := fmt.Sprintf("%s-%d", run.ID, run.AttemptCount)
 	previous, exists := state.Dispatches[key]
 	if !exists {
@@ -195,7 +195,7 @@ func (a *coordinatorActor) reconcileDispatch(ctx context.Context, state *st.Coor
 		executorType,
 	)
 	if previous.JobID == "" {
-		command := st.ExecutionCommand{
+		command := types.SchedulerExecutionCommand{
 			EnvironmentID: run.EnvironmentID,
 			JobID:         run.JobID,
 			RunID:         run.ID,
@@ -229,10 +229,10 @@ func (a *coordinatorActor) reconcileDispatch(ctx context.Context, state *st.Coor
 	return false, nil
 }
 
-func (a *coordinatorActor) dispatchRun(ctx context.Context, state *st.CoordinatorState, run st.Run, attempt int) error {
+func (a *coordinatorActor) dispatchRun(ctx context.Context, state *types.SchedulerCoordinatorState, run types.SchedulerRun, attempt int) error {
 	key := fmt.Sprintf("%s-%d", run.ID, attempt)
 	if state.Dispatches == nil {
-		state.Dispatches = make(map[string]st.DispatchIntent)
+		state.Dispatches = make(map[string]types.SchedulerDispatchIntent)
 	}
 	actorType := kit.Ternary(
 		strings.HasPrefix(run.JobID, "environment-health") || run.JobID == "docker-client-refresh" || run.JobID == "activity-sweep",
@@ -254,7 +254,7 @@ func (a *coordinatorActor) dispatchRun(ctx context.Context, state *st.Coordinato
 			}
 		}
 	}
-	state.Dispatches[key] = st.DispatchIntent{RunID: run.ID, Attempt: attempt}
+	state.Dispatches[key] = types.SchedulerDispatchIntent{RunID: run.ID, Attempt: attempt}
 	state.Revision++
 	if err := a.q.service.SetState(ctx, coordinatorType, a.id, *state, nil); err != nil {
 		return err
@@ -263,7 +263,7 @@ func (a *coordinatorActor) dispatchRun(ctx context.Context, state *st.Coordinato
 	if run.NextAttempt != nil && run.NextAttempt.After(time.Now()) {
 		options = append(options, actor.WithJobDueTime(*run.NextAttempt))
 	}
-	command := st.ExecutionCommand{
+	command := types.SchedulerExecutionCommand{
 		EnvironmentID: run.EnvironmentID,
 		JobID:         run.JobID,
 		RunID:         run.ID,
@@ -286,7 +286,7 @@ func (a *coordinatorActor) dispatchRun(ctx context.Context, state *st.Coordinato
 			return err
 		}
 	}
-	state.Dispatches[key] = st.DispatchIntent{RunID: run.ID, Attempt: attempt, JobID: id}
+	state.Dispatches[key] = types.SchedulerDispatchIntent{RunID: run.ID, Attempt: attempt, JobID: id}
 	state.Revision++
 	return a.q.service.SetState(ctx, coordinatorType, a.id, *state, nil)
 }
@@ -295,7 +295,7 @@ func (a *coordinatorActor) Alarm(ctx context.Context, name string, data actor.En
 	if !a.q.enabled.Load() {
 		return nil
 	}
-	var state st.CoordinatorState
+	var state types.SchedulerCoordinatorState
 	if err := a.q.service.GetState(ctx, coordinatorType, a.id, &state); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
 		return err
 	}
@@ -303,7 +303,7 @@ func (a *coordinatorActor) Alarm(ctx context.Context, name string, data actor.En
 	if strings.HasPrefix(name, "retry-") {
 		return a.flush(ctx, &state)
 	}
-	var occurrence st.ScheduleOccurrence
+	var occurrence types.ScheduleOccurrence
 	if err := data.Decode(&occurrence); err != nil {
 		return err
 	}
@@ -327,16 +327,16 @@ func (a *coordinatorActor) Alarm(ctx context.Context, name string, data actor.En
 	if !nextOccurrence.After(now) {
 		trigger = "recovery"
 	}
-	pending := slices.ContainsFunc(record.Runs, func(run st.Run) bool {
-		return !separateTrigger(run.Trigger) && !run.Status.Terminal() && run.Status != st.NeedsAttention
+	pending := slices.ContainsFunc(record.Runs, func(run types.SchedulerRun) bool {
+		return !separateTrigger(run.Trigger) && !run.Status.Terminal() && run.Status != types.RunStatusNeedsAttention
 	})
 	if !pending {
-		run := st.Run{
+		run := types.SchedulerRun{
 			ID:            uuid.New().String(),
 			EnvironmentID: record.EnvironmentID,
 			JobID:         record.JobID,
 			Trigger:       trigger,
-			Status:        st.Queued,
+			Status:        types.RunStatusQueued,
 			CreatedAt:     now,
 			UpdatedAt:     now,
 		}
@@ -360,9 +360,11 @@ func (a *coordinatorActor) Alarm(ctx context.Context, name string, data actor.En
 
 // repair flushes coordinators so schedule alarms and dispatches are restored.
 // Unless all is set, it skips records without unfinished runs so idle coordinators can deactivate.
-func (q *Coordinator) repair(ctx context.Context, states []st.CoordinatorState, all bool) (busy bool, err error) {
-	unfinished := func(state st.CoordinatorState) bool {
-		return slices.ContainsFunc(state.Record.Runs, func(run st.Run) bool { return !run.Status.Terminal() && run.Status != st.NeedsAttention })
+func (q *Coordinator) repair(ctx context.Context, states []types.SchedulerCoordinatorState, all bool) (busy bool, err error) {
+	unfinished := func(state types.SchedulerCoordinatorState) bool {
+		return slices.ContainsFunc(state.Record.Runs, func(run types.SchedulerRun) bool {
+			return !run.Status.Terminal() && run.Status != types.RunStatusNeedsAttention
+		})
 	}
 	for _, state := range states {
 		if !all && !unfinished(state) {
@@ -389,7 +391,7 @@ func (q *Coordinator) importLegacy(ctx context.Context) error {
 		if done {
 			continue
 		}
-		var record st.QueueRecord
+		var record types.SchedulerQueueRecord
 		if unmarshalErr := json.Unmarshal([]byte(entry.Value), &record); unmarshalErr != nil {
 			return fmt.Errorf("decode legacy job record %q: %w", entry.Key, unmarshalErr)
 		}
@@ -398,11 +400,11 @@ func (q *Coordinator) importLegacy(ctx context.Context) error {
 			return fmt.Errorf("invalid legacy job key %q for job %q in environment %q", entry.Key, record.JobID, record.EnvironmentID)
 		}
 		sourceHash := kit.SHA256Hex(entry.Value)
-		command := st.CoordinatorImport{Record: record, SourceHash: sourceHash}
+		command := types.SchedulerCoordinatorImport{Record: record, SourceHash: sourceHash}
 		if _, invokeErr := q.service.Invoke(ctx, coordinatorType, id, "import", command); invokeErr != nil {
 			return fmt.Errorf("import legacy job record %q: %w", entry.Key, invokeErr)
 		}
-		var imported st.CoordinatorState
+		var imported types.SchedulerCoordinatorState
 		if getStateErr := q.service.GetState(ctx, coordinatorType, id, &imported); getStateErr != nil {
 			return fmt.Errorf("import legacy job record %q: %w", entry.Key, getStateErr)
 		}
@@ -437,7 +439,7 @@ func (a *executorActor) Job(ctx context.Context, _ string, data actor.Envelope) 
 	if !q.enabled.Load() {
 		return actor.ErrJobRejected
 	}
-	var command st.ExecutionCommand
+	var command types.SchedulerExecutionCommand
 	if err := data.Decode(&command); err != nil {
 		return errors.Join(err, actor.ErrJobPermanentFailure)
 	}
@@ -451,10 +453,10 @@ func (a *executorActor) Job(ctx context.Context, _ string, data actor.Envelope) 
 	if !claim.Claimed {
 		return nil
 	}
-	outcome, runErr := func() (outcome st.Outcome, err error) {
+	outcome, runErr := func() (outcome types.SchedulerOutcome, err error) {
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				outcome = st.Outcome{Status: st.Failed, Message: "Job panicked; inspect logs before retrying"}
+				outcome = types.SchedulerOutcome{Status: types.RunStatusFailed, Message: "Job panicked; inspect logs before retrying"}
 				err = fmt.Errorf("job panic: %v", recovered)
 				slog.ErrorContext(ctx, "Job panicked", "runId", claim.Run.ID, "error", err)
 			}
@@ -465,9 +467,9 @@ func (a *executorActor) Job(ctx context.Context, _ string, data actor.Envelope) 
 		return q.execute(ctx, claim.Run)
 	}()
 	// Domain recovery may still report uncertainty; job runs finish as failures.
-	status := cmp.Or(outcome.Status, kit.Ternary(runErr != nil, st.Failed, st.Succeeded))
-	outcome = st.Outcome{
-		Status:     kit.Ternary(status == st.NeedsAttention, st.Failed, status),
+	status := cmp.Or(outcome.Status, kit.Ternary(runErr != nil, types.RunStatusFailed, types.RunStatusSucceeded))
+	outcome = types.SchedulerOutcome{
+		Status:     kit.Ternary(status == types.RunStatusNeedsAttention, types.RunStatusFailed, status),
 		Message:    cmp.Or(outcome.Message, kit.Ternary(runErr != nil, fmt.Sprint(runErr), "")),
 		ActivityID: outcome.ActivityID,
 		Targets:    outcome.Targets,
@@ -485,32 +487,32 @@ func (a *executorActor) Job(ctx context.Context, _ string, data actor.Envelope) 
 	return cmp.Or(q.persistOutcome(persistCtx, claim.Run, outcome), ctx.Err())
 }
 
-func (q *Coordinator) claimExecution(ctx context.Context, command st.ExecutionCommand) (st.ExecutionClaim, error) {
-	var claim st.ExecutionClaim
-	err := q.mutate(ctx, command.EnvironmentID, command.JobID, func(record *st.QueueRecord) error {
-		claim = st.ExecutionClaim{}
+func (q *Coordinator) claimExecution(ctx context.Context, command types.SchedulerExecutionCommand) (types.SchedulerExecutionClaim, error) {
+	var claim types.SchedulerExecutionClaim
+	err := q.mutate(ctx, command.EnvironmentID, command.JobID, func(record *types.SchedulerQueueRecord) error {
+		claim = types.SchedulerExecutionClaim{}
 		for i := range record.Runs {
 			current := &record.Runs[i]
 			if current.ID != command.RunID {
 				continue
 			}
-			if current.Status.Terminal() || current.Status == st.NeedsAttention {
+			if current.Status.Terminal() || current.Status == types.RunStatusNeedsAttention {
 				return nil
 			}
 			if current.AttemptCount > command.Attempt {
 				return nil
 			}
-			if current.AttemptCount == command.Attempt && current.Status != st.Running {
+			if current.AttemptCount == command.Attempt && current.Status != types.RunStatusRunning {
 				return nil
 			}
 			// Executor turns serialize attempts for this coordinator.
 			now := time.Now().UTC()
 			if current.NextAttempt != nil && current.NextAttempt.After(now) {
-				claim = st.ExecutionClaim{Deferred: true}
+				claim = types.SchedulerExecutionClaim{Deferred: true}
 				return nil
 			}
-			reconcile := current.Status == st.Running
-			current.Status = st.Running
+			reconcile := current.Status == types.RunStatusRunning
+			current.Status = types.RunStatusRunning
 			current.Owner = q.owner + "/" + uuid.New().String()
 			current.UpdatedAt = now
 			// Manager claims track delivery; accepted agent runs keep execution timestamps.
@@ -519,11 +521,11 @@ func (q *Coordinator) claimExecution(ctx context.Context, command st.ExecutionCo
 			}
 			current.NextAttempt = nil
 			current.AttemptCount = command.Attempt
-			current.Attempts = append(current.Attempts, st.Attempt{Number: current.AttemptCount, StartedAt: now})
+			current.Attempts = append(current.Attempts, types.SchedulerAttempt{Number: current.AttemptCount, StartedAt: now})
 			if len(current.Attempts) > 100 {
 				current.Attempts = current.Attempts[len(current.Attempts)-100:]
 			}
-			claim = st.ExecutionClaim{
+			claim = types.SchedulerExecutionClaim{
 				Run:       *current,
 				Claimed:   true,
 				Reconcile: reconcile,

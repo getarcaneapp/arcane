@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
@@ -34,7 +34,7 @@ func (h *WebSocketHandler) ContainerStats(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
 	}
 
-	conn, onRemove, ok := h.acceptWS(c, systemtypes.WSKindContainerStats, containerID)
+	conn, onRemove, ok := h.acceptWS(c, types.WSKindContainerStats, containerID)
 	if !ok {
 		return nil
 	}

@@ -6,8 +6,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -32,7 +31,7 @@ type CheckUpgradeInput struct {
 }
 
 type CheckUpgradeOutput struct {
-	Body system.UpgradeCheckResult
+	Body types.UpgradeCheckResult
 }
 
 type TriggerUpgradeInput struct {
@@ -65,7 +64,7 @@ func (h *Handler) CheckUpgradeAvailable(ctx context.Context, input *CheckUpgrade
 	if err != nil {
 		slog.DebugContext(ctx, "System upgrade check failed", "error", err)
 		return &CheckUpgradeOutput{
-			Body: system.UpgradeCheckResult{
+			Body: types.UpgradeCheckResult{
 				CanUpgrade: false,
 				Error:      true,
 				Message:    "Failed to check for updates: " + err.Error(),
@@ -74,7 +73,7 @@ func (h *Handler) CheckUpgradeAvailable(ctx context.Context, input *CheckUpgrade
 	}
 
 	return &CheckUpgradeOutput{
-		Body: system.UpgradeCheckResult{
+		Body: types.UpgradeCheckResult{
 			CanUpgrade: canUpgrade,
 			Error:      false,
 			Message:    "System can be upgraded",
@@ -108,7 +107,7 @@ func (h *Handler) TriggerUpgrade(ctx context.Context, input *TriggerUpgradeInput
 	)
 
 	return &handlerutil.Out[TriggerUpgradeData]{
-		Body: base.ApiResponse[TriggerUpgradeData]{
+		Body: types.ApiResponse[TriggerUpgradeData]{
 			Success: true,
 			Data: TriggerUpgradeData{
 				Message:  message,
@@ -119,7 +118,7 @@ func (h *Handler) TriggerUpgrade(ctx context.Context, input *TriggerUpgradeInput
 }
 
 // TriggerUpdateAll starts a fleet-wide update: every remote agent in turn, then the manager last.
-func (h *Handler) TriggerUpdateAll(ctx context.Context, input *TriggerUpdateAllInput) (*handlerutil.Out[system.EnvironmentUpdateJob], error) {
+func (h *Handler) TriggerUpdateAll(ctx context.Context, input *TriggerUpdateAllInput) (*handlerutil.Out[types.EnvironmentUpdateJob], error) {
 	if h.cfg.AgentMode {
 		return nil, huma.Error400BadRequest("update-all is managed on the Arcane manager")
 	}
@@ -139,17 +138,17 @@ func (h *Handler) TriggerUpdateAll(ctx context.Context, input *TriggerUpdateAllI
 		return nil, huma.Error500InternalServerError("Failed to initiate upgrade: " + err.Error())
 	}
 
-	body, err := handlerutil.MapOneAPIResponse[*EnvironmentUpdateJob, system.EnvironmentUpdateJob](job, func(mapErr error) string {
+	body, err := handlerutil.MapOneAPIResponse[*EnvironmentUpdateJob, types.EnvironmentUpdateJob](job, func(mapErr error) string {
 		return "Failed to initiate upgrade: " + mapErr.Error()
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &handlerutil.Out[system.EnvironmentUpdateJob]{Body: body}, nil
+	return &handlerutil.Out[types.EnvironmentUpdateJob]{Body: body}, nil
 }
 
 // GetUpdateAllStatus returns the latest update-all job for live progress polling.
-func (h *Handler) GetUpdateAllStatus(ctx context.Context, input *UpdateAllStatusInput) (*handlerutil.Out[system.EnvironmentUpdateJob], error) {
+func (h *Handler) GetUpdateAllStatus(ctx context.Context, input *UpdateAllStatusInput) (*handlerutil.Out[types.EnvironmentUpdateJob], error) {
 	if h.cfg.AgentMode {
 		return nil, huma.Error400BadRequest("update-all is managed on the Arcane manager")
 	}
@@ -162,11 +161,11 @@ func (h *Handler) GetUpdateAllStatus(ctx context.Context, input *UpdateAllStatus
 		return nil, huma.Error404NotFound("no update-all job found")
 	}
 
-	body, err := handlerutil.MapOneAPIResponse[*EnvironmentUpdateJob, system.EnvironmentUpdateJob](job, func(mapErr error) string {
+	body, err := handlerutil.MapOneAPIResponse[*EnvironmentUpdateJob, types.EnvironmentUpdateJob](job, func(mapErr error) string {
 		return mapErr.Error()
 	})
 	if err != nil {
 		return nil, err
 	}
-	return &handlerutil.Out[system.EnvironmentUpdateJob]{Body: body}, nil
+	return &handlerutil.Out[types.EnvironmentUpdateJob]{Body: body}, nil
 }

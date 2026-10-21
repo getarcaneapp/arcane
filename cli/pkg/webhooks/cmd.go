@@ -11,13 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/webhook"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 // Command is the parent command for webhook operations.
@@ -49,11 +49,11 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[[]webhook.Summary]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[[]types.Webhook]{
 				Method:         http.MethodGet,
-				Path:           types.Webhooks(c.EnvID()),
+				Path:           clitypes.Webhooks(c.EnvID()),
 				FailureMessage: "failed to list webhooks",
-				Render: func(data []webhook.Summary) error {
+				Render: func(data []types.Webhook) error {
 					headers := []string{"ID", "NAME", "ACTION", "TARGET", "TOKEN", "ENABLED", "LAST TRIGGERED"}
 					rows := make([][]string, len(data))
 					for i, item := range data {
@@ -103,17 +103,17 @@ func newCreateCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[webhook.Created]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.WebhookCreated]{
 				Method:         http.MethodPost,
-				Path:           types.Webhooks(c.EnvID()),
+				Path:           clitypes.Webhooks(c.EnvID()),
 				FailureMessage: "failed to create webhook",
-				Body: webhook.CreateInput{
+				Body: types.Webhook{
 					Name:       opts.name,
 					TargetType: opts.target,
 					ActionType: opts.action,
 					TargetID:   opts.targetID,
 				},
-				Render: func(data webhook.Created) error {
+				Render: func(data types.WebhookCreated) error {
 					output.Success("Webhook %s created successfully", data.Name)
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Target Type", data.TargetType)
@@ -161,8 +161,8 @@ func newUpdateCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[jsontext.Value]{
 				Method:         http.MethodPatch,
-				Path:           types.Webhook(c.EnvID(), args[0]),
-				Body:           webhook.UpdateInput{Enabled: opts.enabled},
+				Path:           clitypes.Webhook(c.EnvID(), args[0]),
+				Body:           map[string]any{"enabled": opts.enabled},
 				FailureMessage: "failed to update webhook",
 				Render: func(jsontext.Value) error {
 					output.Success("Webhook %s %s", args[0], kit.Ternary(opts.enabled, "enabled", "disabled"))
@@ -194,7 +194,7 @@ func newDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete webhook %s?", args[0]),
-				Path:           types.Webhook(c.EnvID(), args[0]),
+				Path:           clitypes.Webhook(c.EnvID(), args[0]),
 				FailureMessage: "failed to delete webhook",
 				SuccessMessage: fmt.Sprintf("Webhook %s deleted successfully", args[0]),
 			})
@@ -220,7 +220,7 @@ func newTriggerCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[jsontext.Value]{
 				Method:         http.MethodPost,
-				Path:           types.WebhookTrigger(args[0]),
+				Path:           clitypes.WebhookTrigger(args[0]),
 				FailureMessage: "failed to trigger webhook",
 				Render: func(jsontext.Value) error {
 					output.Success("Webhook trigger accepted; the action is running in the background")
@@ -233,13 +233,15 @@ func newTriggerCmd() *cobra.Command {
 	return command
 }
 
-var webhookRef = cmdutil.ResourceRef[webhook.Summary, webhook.Summary]{
+var webhookRef = cmdutil.ResourceRef[types.Webhook, types.Webhook]{
 	EnvironmentScoped: true,
 	Singular:          "webhook", Plural: "webhooks",
 	IDHint: "the identifier", ListCmd: "arcane-cli webhooks list",
-	GetPath: nil, ListPath: types.Webhooks,
-	Matches:      func(item webhook.Summary, lower, original string) bool { return strings.EqualFold(item.ID, original) },
-	Label:        func(item webhook.Summary) string { return item.Name + " (" + item.ID + ")" },
-	Promote:      func(item webhook.Summary) *webhook.Summary { return &item },
-	IdentifierOf: func(item webhook.Summary) string { return item.ID },
+	GetPath: nil, ListPath: clitypes.Webhooks,
+	Matches: func(item types.Webhook, lower, original string) bool {
+		return strings.EqualFold(item.ID, original)
+	},
+	Label:        func(item types.Webhook) string { return item.Name + " (" + item.ID + ")" },
+	Promote:      func(item types.Webhook) *types.Webhook { return &item },
+	IdentifierOf: func(item types.Webhook) string { return item.ID },
 }

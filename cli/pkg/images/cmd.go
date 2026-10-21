@@ -14,9 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/image"
-	"github.com/getarcaneapp/arcane/types/v2/upload"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	kit "go.getarcane.app/kit/pkg"
 
@@ -24,7 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/images/updates"
 )
 
@@ -97,9 +95,9 @@ func newListCmd() *cobra.Command {
 				query.Set("updates", opts.updatesFilter)
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[image.Summary]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.ImageSummary]{
 				Resource: "images",
-				Endpoint: types.Images(c.EnvID()),
+				Endpoint: clitypes.Images(c.EnvID()),
 				Params: cmdutil.ListParams{
 					Resource:        "images",
 					Limit:           opts.limit,
@@ -109,7 +107,7 @@ func newListCmd() *cobra.Command {
 				},
 				Query:   query,
 				Headers: []string{"ID", "REPOSITORY:TAG", "SIZE", "IN USE"},
-				Row: func(img image.Summary) []string {
+				Row: func(img types.ImageSummary) []string {
 					tag := "<none>"
 					if len(img.RepoTags) > 0 {
 						tag = img.RepoTags[0]
@@ -151,13 +149,13 @@ func newGetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			path := types.Image(c.EnvID(), resolved.ID)
+			path := clitypes.Image(c.EnvID(), resolved.ID)
 
 			log.Debugf("Getting image details from: %s", path)
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[image.DetailSummary]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ImageDetailSummary]{
 				Method: http.MethodGet, Path: path, Body: nil, FailureMessage: "failed to get image",
-				Render: func(data image.DetailSummary) error {
+				Render: func(data types.ImageDetailSummary) error {
 					output.Header("Image Details")
 					output.KeyValue("ID", data.ID)
 					if len(data.RepoTags) > 0 {
@@ -223,7 +221,7 @@ func newRemoveCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			path := types.Image(c.EnvID(), resolved.ID)
+			path := clitypes.Image(c.EnvID(), resolved.ID)
 
 			if opts.force {
 				u, parseErr := url.Parse(path)
@@ -242,9 +240,9 @@ func newRemoveCmd() *cobra.Command {
 			if confirmErr != nil || !confirmed {
 				return confirmErr
 			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method: http.MethodDelete, Path: path, FailureMessage: "failed to remove image",
-				Render: func(data base.MessageResponse) error {
+				Render: func(data types.MessageResponse) error {
 					output.Success("%s", data.Message)
 					return nil
 				},
@@ -273,11 +271,11 @@ func newPullCmd() *cobra.Command {
 			c.SetTimeout(30 * time.Minute)
 
 			imageName := args[0]
-			path := types.ImagesPull(c.EnvID())
+			path := clitypes.ImagesPull(c.EnvID())
 
 			log.Debugf("Pulling image from: %s", path)
 
-			requestBody := image.PullOptions{ImageName: imageName}
+			requestBody := types.ImagePullOptions{ImageName: imageName}
 
 			resp, err := c.Post(cmd.Context(), path, requestBody)
 			if err != nil {
@@ -313,7 +311,7 @@ func newPruneCmd() *cobra.Command {
 				return err
 			}
 
-			path := types.ImagesPrune(c.EnvID())
+			path := clitypes.ImagesPrune(c.EnvID())
 
 			log.Debugf("Pruning images from: %s", path)
 
@@ -325,9 +323,9 @@ func newPruneCmd() *cobra.Command {
 			if confirmErr != nil || !confirmed {
 				return confirmErr
 			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[image.PruneReport]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ImagePruneReport]{
 				Method: http.MethodPost, Path: path, Body: requestBody, FailureMessage: "failed to prune images",
-				Render: func(data image.PruneReport) error {
+				Render: func(data types.ImagePruneReport) error {
 					output.Success("Pruned %d images, reclaimed %s", len(data.ImagesDeleted), output.Bytes(data.SpaceReclaimed))
 
 					return nil
@@ -353,13 +351,13 @@ func newCountsCmd() *cobra.Command {
 				return err
 			}
 
-			path := types.ImagesCounts(c.EnvID())
+			path := clitypes.ImagesCounts(c.EnvID())
 
 			log.Debugf("Getting image counts from: %s", path)
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[image.UsageCounts]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ImageUsageCounts]{
 				Method: http.MethodGet, Path: path, Body: nil, FailureMessage: "failed to get image counts",
-				Render: func(data image.UsageCounts) error {
+				Render: func(data types.ImageUsageCounts) error {
 					output.Header("Image Usage Counts")
 					output.KeyValue("In Use", data.Inuse)
 					output.KeyValue("Unused", data.Unused)
@@ -393,38 +391,38 @@ func newUploadCmd() *cobra.Command {
 			output.Info("Uploading image: %s", filePath)
 
 			jsonOutput := cmdutil.JSONOutputEnabled(cmd)
-			sessionID, err := cmdutil.UploadFileInChunks(cmd.Context(), c, upload.KindImage, filePath, !jsonOutput)
+			sessionID, err := cmdutil.UploadFileInChunks(cmd.Context(), c, types.UploadKindImage, filePath, !jsonOutput)
 			if err != nil {
 				return err
 			}
 
-			uploadErr := cmdutil.Run(cmd, c, cmdutil.Spec[image.LoadResult]{
-				Method: http.MethodPost, Path: types.ImagesUpload(c.EnvID()),
-				Body: upload.ConsumeRequest{UploadID: sessionID}, FailureMessage: "failed to upload image",
-				Render: func(image.LoadResult) error {
+			uploadErr := cmdutil.Run(cmd, c, cmdutil.Spec[types.ImageLoadResult]{
+				Method: http.MethodPost, Path: clitypes.ImagesUpload(c.EnvID()),
+				Body: types.UploadConsumeRequest{UploadID: sessionID}, FailureMessage: "failed to upload image",
+				Render: func(types.ImageLoadResult) error {
 					output.Success("Image uploaded successfully")
 					return nil
 				},
 			})
 			if uploadErr != nil {
-				cmdutil.AbortUploadSession(cmd.Context(), c, upload.KindImage, sessionID)
+				cmdutil.AbortUploadSession(cmd.Context(), c, types.UploadKindImage, sessionID)
 			}
 			return uploadErr
 		},
 	}
 }
 
-var ImageRef = cmdutil.ResourceRef[image.DetailSummary, image.Summary]{
+var ImageRef = cmdutil.ResourceRef[types.ImageDetailSummary, types.ImageSummary]{
 	EnvironmentScoped: true,
 	Singular:          "image",
 	Plural:            "images",
 	IDHint:            "the image ID",
 	ListCmd:           "arcane images list",
-	GetPath:           types.Image,
-	ListPath:          types.Images,
+	GetPath:           clitypes.Image,
+	ListPath:          clitypes.Images,
 	SearchCandidates:  searchImageCandidates,
 	Matches:           imageMatches,
-	Label: func(match image.Summary) string {
+	Label: func(match types.ImageSummary) string {
 		label := match.ID
 		switch {
 		case len(match.RepoTags) > 0:
@@ -434,8 +432,8 @@ var ImageRef = cmdutil.ResourceRef[image.DetailSummary, image.Summary]{
 		}
 		return fmt.Sprintf("%s (%s)", label, match.ID)
 	},
-	Promote: func(match image.Summary) *image.DetailSummary {
-		return &image.DetailSummary{
+	Promote: func(match types.ImageSummary) *types.ImageDetailSummary {
+		return &types.ImageDetailSummary{
 			ID:               match.ID,
 			RepoTags:         match.RepoTags,
 			RepoDigests:      match.RepoDigests,
@@ -443,9 +441,9 @@ var ImageRef = cmdutil.ResourceRef[image.DetailSummary, image.Summary]{
 			Size:             match.Size,
 		}
 	},
-	IDOf:         func(match image.Summary) string { return match.ID },
-	IdentifierOf: func(details image.DetailSummary) string { return details.ID },
-	Validate: func(details image.DetailSummary, identifier string) error {
+	IDOf:         func(match types.ImageSummary) string { return match.ID },
+	IdentifierOf: func(details types.ImageDetailSummary) string { return details.ID },
+	Validate: func(details types.ImageDetailSummary, identifier string) error {
 		if details.ID == "" {
 			return fmt.Errorf("image lookup for %q returned empty ID", identifier)
 		}
@@ -453,7 +451,7 @@ var ImageRef = cmdutil.ResourceRef[image.DetailSummary, image.Summary]{
 	},
 }
 
-func searchImageCandidates(ctx context.Context, c *client.Client, identifier string) ([]image.Summary, error) {
+func searchImageCandidates(ctx context.Context, c *client.Client, identifier string) ([]types.ImageSummary, error) {
 	terms := []string{identifier}
 	separator := kit.Ternary(strings.Contains(identifier, "@"), "@", ":")
 	if separator == "@" || !strings.HasPrefix(strings.ToLower(identifier), "sha256:") {
@@ -462,14 +460,14 @@ func searchImageCandidates(ctx context.Context, c *client.Client, identifier str
 		}
 	}
 	for _, term := range kit.Unique(kit.TrimNonEmpty(terms)) {
-		searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Images(c.EnvID()), url.QueryEscape(term), cmdutil.ShowAllLimit)
-		result, err := c.GetJSON[[]image.Summary](ctx, searchPath)
+		searchPath := fmt.Sprintf("%s?search=%s&limit=%d", clitypes.Images(c.EnvID()), url.QueryEscape(term), cmdutil.ShowAllLimit)
+		result, err := c.GetJSON[[]types.ImageSummary](ctx, searchPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to search images: %w", err)
 		}
 
 		identifierLower := strings.ToLower(identifier)
-		matches := make([]image.Summary, 0)
+		matches := make([]types.ImageSummary, 0)
 		for _, item := range result.Data {
 			if imageMatches(item, identifierLower, identifier) {
 				matches = append(matches, item)
@@ -483,7 +481,7 @@ func searchImageCandidates(ctx context.Context, c *client.Client, identifier str
 	return nil, nil
 }
 
-func imageMatches(item image.Summary, identifierLower, original string) bool {
+func imageMatches(item types.ImageSummary, identifierLower, original string) bool {
 	hasSeparator := strings.Contains(original, ":") || strings.Contains(original, "@")
 	idLower := strings.ToLower(item.ID)
 	// Qualified refs match exactly or by registry/namespace suffix, so repo:1 never matches repo:10.

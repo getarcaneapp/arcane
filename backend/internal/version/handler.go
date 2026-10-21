@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/version"
+	"github.com/getarcaneapp/arcane/types/v3"
 )
 
 // VersionHandler handles version information endpoints.
@@ -17,13 +17,13 @@ type GetVersionInput struct {
 }
 
 type GetVersionOutput struct {
-	Body version.Check
+	Body types.VersionCheck
 }
 
 type GetAppVersionInput struct{}
 
 type GetAppVersionOutput struct {
-	Body version.Info
+	Body types.VersionInfo
 }
 
 // GetVersion returns version information with optional update check.

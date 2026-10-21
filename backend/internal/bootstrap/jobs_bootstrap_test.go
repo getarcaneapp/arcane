@@ -6,8 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/features"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx/fxtest"
 
@@ -27,7 +26,7 @@ type settingsSubscriptionStubInternal struct {
 }
 
 func (s *settingsSubscriptionStubInternal) SubscribeSettingsChanges(keys []string, callback func([]libarcane.SettingUpdate)) func() {
-	if slices.Contains(keys, features.VulnerabilityManagementSettingKey) {
+	if slices.Contains(keys, types.FeatureVulnerabilityManagementSettingKey) {
 		s.featureCallbacks = append(s.featureCallbacks, callback)
 	}
 	if slices.Contains(keys, "pollingEnabled") {
@@ -44,7 +43,7 @@ type settingsSubscriptionSchedulerStubInternal struct {
 	jobs        []string
 }
 
-func (s *settingsSubscriptionSchedulerStubInternal) RescheduleJob(_ context.Context, job schedulertypes.Job) error {
+func (s *settingsSubscriptionSchedulerStubInternal) RescheduleJob(_ context.Context, job types.SchedulerJob) error {
 	if job != nil {
 		s.jobs = append(s.jobs, job.Name())
 	}
@@ -139,7 +138,7 @@ func TestFeatureChangeReschedulesScanAndPatchJobs(t *testing.T) {
 	}))
 	require.Len(t, settings.featureCallbacks, 3)
 	for _, callback := range settings.featureCallbacks {
-		callback([]libarcane.SettingUpdate{{Key: features.VulnerabilityManagementSettingKey, Value: "false"}})
+		callback([]libarcane.SettingUpdate{{Key: types.FeatureVulnerabilityManagementSettingKey, Value: "false"}})
 	}
 	require.ElementsMatch(t, []string{scheduler.VulnerabilityScanJobName, scheduler.VulnerabilityRiskJobName, scheduler.AutoPatchJobName}, schedulerStub.jobs)
 	stopCtx, cancel := context.WithTimeout(t.Context(), time.Second)

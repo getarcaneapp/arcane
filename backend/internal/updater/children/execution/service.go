@@ -8,9 +8,7 @@ import (
 	"slices"
 	"time"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	"github.com/getarcaneapp/arcane/types/v2/updater"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/builtin/workflow"
 	kit "go.getarcane.app/kit/pkg"
@@ -33,13 +31,13 @@ type (
 		Roles         *role.RoleService
 		AcquireUpdate func(ctx context.Context, ids []string) (context.Context, func(), error)
 		UpdateBusy    error
-		RunUpdate     func(ctx context.Context, containerID, activityID string) (*updater.Result, error)
+		RunUpdate     func(ctx context.Context, containerID, activityID string) (*types.UpdaterResult, error)
 		// RecordUpdate saves the result on the activity and summarizes it as the run outcome.
-		RecordUpdate     func(ctx context.Context, activityID string, result *updater.Result, runErr error) scheduler.Outcome
-		FreezeContainer  func(ctx context.Context, containerID string) (*updater.FrozenUpdateTarget, error)
-		ConfirmTarget    func(ctx context.Context, target updater.FrozenUpdateTarget) (bool, bool, error)
-		ResumeTarget     func(ctx context.Context, target updater.FrozenUpdateTarget) (updater.FrozenUpdateTarget, bool, error)
-		WithFrozenTarget func(ctx context.Context, target *updater.FrozenUpdateTarget, persist func() error) context.Context
+		RecordUpdate     func(ctx context.Context, activityID string, result *types.UpdaterResult, runErr error) types.SchedulerOutcome
+		FreezeContainer  func(ctx context.Context, containerID string) (*types.FrozenUpdateTarget, error)
+		ConfirmTarget    func(ctx context.Context, target types.FrozenUpdateTarget) (bool, bool, error)
+		ResumeTarget     func(ctx context.Context, target types.FrozenUpdateTarget) (types.FrozenUpdateTarget, bool, error)
+		WithFrozenTarget func(ctx context.Context, target *types.FrozenUpdateTarget, persist func() error) context.Context
 	}
 
 	// Service runs accepted single-container updates as container-update workflows.
@@ -70,7 +68,7 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 		Concurrency: 4,
 		Timeout:     2 * time.Hour,
 		Activity: activitylib.StartRequest{
-			Type:          activitytypes.TypeAutoUpdate,
+			Type:          types.ActivityTypeAutoUpdate,
 			EnvironmentID: "0",
 			Queue:         true,
 			DeferSlot:     true,
@@ -115,8 +113,8 @@ func (s *Service) update(ctx context.Context, t flow.Task) (any, error) {
 	}
 	defer release()
 	activityID := t.ActivityID()
-	failed := func(reason string) scheduler.Outcome {
-		return scheduler.Outcome{Status: scheduler.Failed, Message: reason}
+	failed := func(reason string) types.SchedulerOutcome {
+		return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: reason}
 	}
 	if input.UserID != "" && (!s.deps.Config.AgentMode || input.UserID != "agent" || input.KeyID != "") {
 		permissions, permissionsErr := s.deps.Roles.ResolveExecutionPermissions(ctx, input.UserID, input.KeyID)
@@ -125,9 +123,9 @@ func (s *Service) update(ctx context.Context, t flow.Task) (any, error) {
 		}
 	}
 
-	var target updater.FrozenUpdateTarget
+	var target types.FrozenUpdateTarget
 	previous, _ := jobcontext.Run(ctx)
-	if index := slices.IndexFunc(previous.Outcome.Targets, func(evidence scheduler.TargetOutcome) bool {
+	if index := slices.IndexFunc(previous.Outcome.Targets, func(evidence types.TargetOutcome) bool {
 		return evidence.ID == input.ContainerID && len(evidence.RecoveryData) > 0
 	}); index >= 0 {
 		if decodeErr := json.Unmarshal(previous.Outcome.Targets[index].RecoveryData, &target); decodeErr != nil {
@@ -138,13 +136,13 @@ func (s *Service) update(ctx context.Context, t flow.Task) (any, error) {
 		case confirmErr != nil:
 			return nil, confirmErr
 		case confirmed:
-			return s.deps.RecordUpdate(ctx, activityID, &updater.Result{
+			return s.deps.RecordUpdate(ctx, activityID, &types.UpdaterResult{
 				Updated: 1,
-				Items: []updater.ResourceResult{{
+				Items: []types.UpdaterResourceResult{{
 					ResourceID:    target.ContainerID,
 					ResourceName:  target.ContainerName,
 					ResourceType:  "container",
-					Status:        updater.StatusUpdated,
+					Status:        types.UpdaterStatusUpdated,
 					UpdateApplied: true,
 				}},
 			}, nil), nil
@@ -175,10 +173,10 @@ func (s *Service) update(ctx context.Context, t flow.Task) (any, error) {
 		if marshalErr != nil {
 			return marshalErr
 		}
-		return jobcontext.Progress(ctx, scheduler.TargetOutcome{
+		return jobcontext.Progress(ctx, types.TargetOutcome{
 			ID:           input.ContainerID,
 			ResourceType: "container",
-			Status:       scheduler.Running,
+			Status:       types.RunStatusRunning,
 			RecoveryData: data,
 			ActivityID:   activityID,
 		})
@@ -187,7 +185,7 @@ func (s *Service) update(ctx context.Context, t flow.Task) (any, error) {
 		return nil, recordErr
 	}
 	ctx = s.deps.WithFrozenTarget(ctx, &target, record)
-	result, runErr := func() (out *updater.Result, err error) {
+	result, runErr := func() (out *types.UpdaterResult, err error) {
 		defer utils.RecoverToError(&err, "single container update")
 		return s.deps.RunUpdate(ctx, target.ContainerID, activityID)
 	}()

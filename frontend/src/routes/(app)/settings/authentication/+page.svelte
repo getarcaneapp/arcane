@@ -25,10 +25,11 @@
 	import { oidcMappingService } from '#lib/services/oidc-mapping-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import type { OidcRoleMapping, CreateOidcRoleMapping, UpdateOidcRoleMapping } from '#lib/types/auth.js';
+	import type { OidcRoleMapping, OidcRoleMappingWritable } from '#lib/types/auth.js';
 	import type { Settings } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { createSettingsForm } from '#lib/utils/settings-form.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -79,14 +80,18 @@
 		mappingSheetOpen = true;
 	}
 
-	async function submitMapping(formData: { claimValue: string; roleId: string; environmentId?: string }) {
+	async function submitMapping(formData: Required<Pick<OidcRoleMapping, OidcRoleMappingWritable>>) {
 		mappingSaving = true;
-		const payload: CreateOidcRoleMapping | UpdateOidcRoleMapping = formData;
 
 		if (editingMapping) {
 			const id = editingMapping.id;
 			await handleApiResultWithCallbacks({
-				result: await tryCatch(oidcMappingService.update(id, payload)),
+				result: await tryCatch(
+					oidcMappingService.update(
+						id,
+						changedFields({ ...editingMapping, environmentId: editingMapping.environmentId ?? null }, formData)
+					)
+				),
 				message: m.common_update_failed({ resource: m.resource_oidc_mapping() }),
 				setLoadingState: (v) => (mappingSaving = v),
 				onSuccess: async () => {
@@ -98,7 +103,7 @@
 			});
 		} else {
 			await handleApiResultWithCallbacks({
-				result: await tryCatch(oidcMappingService.create(payload)),
+				result: await tryCatch(oidcMappingService.create({ ...formData, environmentId: formData.environmentId ?? undefined })),
 				message: m.common_create_failed({ resource: m.resource_oidc_mapping() }),
 				setLoadingState: (v) => (mappingSaving = v),
 				onSuccess: async () => {

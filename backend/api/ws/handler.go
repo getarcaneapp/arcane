@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/samber/hot"
 	"go.getarcane.app/streams/agg"
@@ -62,7 +62,7 @@ type WebSocketHandler struct {
 		hostname string
 	}
 	systemStatsSampler struct {
-		latest            concurrency.Snapshot[systemtypes.SystemStats]
+		latest            concurrency.Snapshot[types.SystemStats]
 		lifecycleMu       sync.Mutex
 		clients           int
 		intervals         map[time.Duration]int
@@ -80,7 +80,7 @@ type WebSocketHandler struct {
 	diskUsagePathCache   *hot.HotCache[struct{}, string]
 	projectLogStreamer   func(ctx context.Context, projectID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error
 	containerLogStreamer func(ctx context.Context, containerID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error
-	systemStatsCollector func(ctx context.Context) systemtypes.SystemStats
+	systemStatsCollector func(ctx context.Context) types.SystemStats
 	cpuUsageReader       func(interval time.Duration) (float64, bool)
 }
 
@@ -146,7 +146,7 @@ func (h *WebSocketHandler) acceptWS(c *echo.Context, kind, resourceID string) (*
 		return nil, nil, false
 	}
 	userID, _ := c.Get("userID").(string)
-	info := systemtypes.WebSocketConnectionInfo{
+	info := types.WebSocketConnectionInfo{
 		Kind:       kind,
 		EnvID:      c.Param("id"),
 		ResourceID: resourceID,

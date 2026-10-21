@@ -1,7 +1,7 @@
 import type {
-	ContainerRegistryCreateDto,
+	ContainerRegistryCreate,
 	ContainerRegistryPullUsageResponse,
-	ContainerRegistryUpdateDto,
+	ContainerRegistryUpdate,
 	RegistryRepository,
 	RegistryTag
 } from '#lib/types/docker.js';
@@ -26,11 +26,11 @@ class ContainerRegistryService extends BaseAPIService {
 		return this.handleResponse(this.api.get('/container-registries/pull-usage'));
 	}
 
-	async createRegistry(registry: ContainerRegistryCreateDto): Promise<ContainerRegistry> {
+	async createRegistry(registry: ContainerRegistryCreate): Promise<ContainerRegistry> {
 		return this.handleResponse(this.api.post(`/container-registries`, registry));
 	}
 
-	async updateRegistry(id: string, registry: ContainerRegistryUpdateDto): Promise<ContainerRegistry> {
+	async updateRegistry(id: string, registry: ContainerRegistryUpdate): Promise<ContainerRegistry> {
 		return this.handleResponse(this.api.put(`/container-registries/${id}`, registry));
 	}
 

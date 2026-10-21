@@ -18,7 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 )
 
-func newTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.Client {
+func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	t.Helper()
 
 	httpClient := server.Client()
@@ -62,7 +62,7 @@ func TestPlanRenamePreservesStandaloneVolumeConfiguration(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	migration, err := PlanRename(t.Context(), newTestDockerClientInternal(t, server), "source-data", "renamed-data", volumehelper.ToolsImage(""))
+	migration, err := PlanRename(t.Context(), newTestDockerClient(t, server), "source-data", "renamed-data", volumehelper.ToolsImage(""))
 	require.NoError(t, err)
 
 	planned, ok := migration.(*dockerProjectVolumeRenameMigrationInternal)
@@ -77,7 +77,7 @@ func TestPlanRenamePreservesStandaloneVolumeConfiguration(t *testing.T) {
 	require.Equal(t, map[string]string{"owner": "arcane"}, entry.CreateOptions.Labels)
 }
 
-func TestContainerSummaryMountsVolumeInternal(t *testing.T) {
+func TestContainerSummaryMountsVolume(t *testing.T) {
 	summary := container.Summary{
 		Labels: map[string]string{
 			libarcane.InternalResourceLabel: "true",
@@ -91,6 +91,6 @@ func TestContainerSummaryMountsVolumeInternal(t *testing.T) {
 	internal, valid := kit.ParseBool(summary.Labels[libarcane.InternalResourceLabel])
 	require.True(t, valid)
 	require.True(t, internal)
-	require.True(t, containerSummaryMountsVolumeInternal(summary, "web_data"))
-	require.False(t, containerSummaryMountsVolumeInternal(summary, "nginx_data"))
+	require.True(t, containerSummaryMountsVolume(summary, "web_data"))
+	require.False(t, containerSummaryMountsVolume(summary, "nginx_data"))
 }

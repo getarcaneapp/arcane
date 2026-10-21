@@ -6,13 +6,13 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 // Command is the parent command for user operations
@@ -49,12 +49,12 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[user.User]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.User]{
 				Resource: "users",
-				Endpoint: types.Users(),
+				Endpoint: clitypes.Users(),
 				Params:   cmdutil.ListParams{Resource: "users", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
 				Headers:  []string{"ID", "USERNAME", "DISPLAY NAME", "EMAIL", "ROLE ASSIGNMENTS"},
-				Row: func(usr user.User) []string {
+				Row: func(usr types.User) []string {
 					return []string{
 						usr.ID,
 						usr.Username,
@@ -98,17 +98,17 @@ func newCreateCmd() *cobra.Command {
 				}
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[user.User]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.User]{
 				Method:         http.MethodPost,
-				Path:           types.Users(),
+				Path:           clitypes.Users(),
 				FailureMessage: "failed to create user",
-				Body: user.CreateUser{
+				Body: types.User{
 					Username:    opts.username,
 					Password:    opts.password,
 					DisplayName: kit.Ternary(cmd.Flags().Changed("display-name"), &opts.displayName, nil),
 					Email:       kit.Ternary(cmd.Flags().Changed("email"), &opts.email, nil),
 				},
-				Render: func(data user.User) error {
+				Render: func(data types.User) error {
 					output.Success("User %s created successfully", data.Username)
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Username", data.Username)
@@ -138,11 +138,11 @@ func newGetCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[user.User]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.User]{
 				Method:         http.MethodGet,
-				Path:           types.User(args[0]),
+				Path:           clitypes.User(args[0]),
 				FailureMessage: "failed to get user",
-				Render: func(data user.User) error {
+				Render: func(data types.User) error {
 					output.Header("User Details")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Username", data.Username)
@@ -192,16 +192,27 @@ func newUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[user.User]{
+			body := map[string]any{}
+			for _, field := range []struct {
+				flag  string
+				key   string
+				value any
+			}{
+				{flag: "username", key: "username", value: opts.username},
+				{flag: "display-name", key: "displayName", value: opts.displayName},
+				{flag: "email", key: "email", value: opts.email},
+			} {
+				if cmd.Flags().Changed(field.flag) {
+					body[field.key] = field.value
+				}
+			}
+
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.User]{
 				Method:         http.MethodPut,
-				Path:           types.User(args[0]),
+				Path:           clitypes.User(args[0]),
 				FailureMessage: "failed to update user",
-				Body: user.UpdateUser{
-					Username:    kit.Ternary(cmd.Flags().Changed("username"), &opts.username, nil),
-					DisplayName: kit.Ternary(cmd.Flags().Changed("display-name"), &opts.displayName, nil),
-					Email:       kit.Ternary(cmd.Flags().Changed("email"), &opts.email, nil),
-				},
-				Render: func(user.User) error {
+				Body:           body,
+				Render: func(types.User) error {
 					output.Success("User updated successfully")
 					return nil
 				},
@@ -232,7 +243,7 @@ func newDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete user %s?", args[0]),
-				Path:           types.User(args[0]),
+				Path:           clitypes.User(args[0]),
 				FailureMessage: "failed to delete user",
 				SuccessMessage: "User deleted successfully",
 			})
@@ -242,7 +253,7 @@ func newDeleteCmd() *cobra.Command {
 	return command
 }
 
-func roleAssignmentSummary(assignments []user.RoleAssignmentSummary) string {
+func roleAssignmentSummary(assignments []types.RoleAssignmentSummary) string {
 	type bucket struct {
 		envScoped int
 		hasGlobal bool

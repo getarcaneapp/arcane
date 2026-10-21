@@ -1,5 +1,5 @@
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-import type { NotificationSettings, TestNotificationResponse } from '#lib/types/notifications.js';
+import type { NotificationSettings, NotificationSettingsUpsert, TestNotificationResponse } from '#lib/types/notifications.js';
 
 import BaseAPIService from './api-service';
 
@@ -10,7 +10,7 @@ class NotificationService extends BaseAPIService {
 		return res.data;
 	}
 
-	async updateSettings(provider: string, settings: NotificationSettings): Promise<NotificationSettings> {
+	async updateSettings(provider: string, settings: NotificationSettingsUpsert): Promise<NotificationSettings> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		// The current backend settings endpoint applies the full notification config, not a provider-specific subresource.
 		void provider;

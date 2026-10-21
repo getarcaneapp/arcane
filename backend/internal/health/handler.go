@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 )
 
@@ -14,7 +14,7 @@ type healthHandler struct {
 
 type healthOutput struct {
 	Status int
-	Body   system.HealthResponse
+	Body   types.HealthResponse
 }
 
 type headHealthOutput struct {
@@ -23,7 +23,7 @@ type headHealthOutput struct {
 
 type readyOutput struct {
 	Status int
-	Body   system.ReadinessResponse
+	Body   types.ReadinessResponse
 }
 
 type healthOutputs interface {
@@ -33,10 +33,10 @@ type healthOutputs interface {
 // health reports DOWN once the Francis host has exited; startup stays UP.
 func health[T healthOutputs](h *healthHandler) func(context.Context, *struct{}) (*T, error) {
 	return func(context.Context, *struct{}) (*T, error) {
-		status, body := http.StatusOK, system.HealthResponse{Status: "UP"}
+		status, body := http.StatusOK, types.HealthResponse{Status: "UP"}
 		select {
 		case <-h.service.shutdown:
-			status, body = http.StatusServiceUnavailable, system.HealthResponse{Status: "DOWN"}
+			status, body = http.StatusServiceUnavailable, types.HealthResponse{Status: "DOWN"}
 		default:
 		}
 		var output T

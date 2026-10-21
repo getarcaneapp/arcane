@@ -7,7 +7,7 @@
 	import * as Accordion from '#lib/components/ui/accordion/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { VolumeCreateRequest } from '#lib/types/docker.js';
+	import type { VolumeCreate } from '#lib/types/docker.js';
 	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { parseKeyValuePairs } from '#lib/utils/form-parsers.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
@@ -16,7 +16,7 @@
 
 	type CreateVolumeFormProps = {
 		open: boolean;
-		onSubmit: (data: VolumeCreateRequest, environmentId: string) => void;
+		onSubmit: (data: VolumeCreate, environmentId: string) => void;
 		isLoading: boolean;
 	};
 
@@ -54,13 +54,13 @@
 		const data = form.validate();
 		if (!data) return;
 
-		const driverOpts = parseKeyValuePairs(data.volumeOptText || '');
+		const options = parseKeyValuePairs(data.volumeOptText || '');
 		const labels = parseKeyValuePairs(data.volumeLabels || '');
 
-		const volumeOptions: VolumeCreateRequest = {
+		const volumeOptions: VolumeCreate = {
 			name: data.volumeName.trim(),
 			driver: data.volumeDriver,
-			driverOpts: Object.keys(driverOpts).length ? driverOpts : undefined,
+			options: Object.keys(options).length ? options : undefined,
 			labels: Object.keys(labels).length ? labels : undefined
 		};
 

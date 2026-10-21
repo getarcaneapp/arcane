@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/federated"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
@@ -31,7 +31,7 @@ func RegisterFederatedTokenExchange(g *echo.Group, federatedCredentialService *F
 		}
 
 		form := c.Request().Form
-		resp, err := federatedCredentialService.ExchangeToken(c.Request().Context(), federated.TokenExchangeRequest{
+		resp, err := federatedCredentialService.ExchangeToken(c.Request().Context(), types.TokenExchangeRequest{
 			GrantType:          form.Get("grant_type"),
 			SubjectToken:       form.Get("subject_token"),
 			SubjectTokenType:   form.Get("subject_token_type"),
@@ -40,7 +40,7 @@ func RegisterFederatedTokenExchange(g *echo.Group, federatedCredentialService *F
 			RequestedTokenType: form.Get("requested_token_type"),
 		})
 		if err != nil {
-			return writeFederatedTokenExchangeErrorInternal(c, err)
+			return writeFederatedTokenExchangeError(c, err)
 		}
 		return c.JSON(http.StatusOK, resp)
 	})

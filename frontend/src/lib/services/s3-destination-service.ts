@@ -1,4 +1,4 @@
-import type { CreateS3Destination, S3Destination, UpdateS3Destination } from '#lib/types/s3-destination.js';
+import type { S3Destination, S3DestinationCreate, S3DestinationUpdate } from '#lib/types/s3-destination.js';
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
@@ -15,19 +15,19 @@ class S3DestinationService extends BaseAPIService {
 		return this.handleResponse(this.api.get('/backups/s3/options'));
 	}
 
-	async create(destination: CreateS3Destination): Promise<S3Destination> {
+	async create(destination: S3DestinationCreate): Promise<S3Destination> {
 		return this.handleResponse(this.api.post('/backups/s3', destination));
 	}
 
-	async update(id: string, destination: UpdateS3Destination): Promise<S3Destination> {
+	async update(id: string, destination: S3DestinationUpdate): Promise<S3Destination> {
 		return this.handleResponse(this.api.put(`/backups/s3/${id}`, destination));
 	}
 
-	async test(id: string, destination?: UpdateS3Destination): Promise<void> {
+	async test(id: string, destination?: S3DestinationCreate): Promise<void> {
 		await this.handleResponse(this.api.post(`/backups/s3/${id}/test`, destination));
 	}
 
-	async testConfiguration(destination: CreateS3Destination): Promise<void> {
+	async testConfiguration(destination: S3DestinationCreate): Promise<void> {
 		await this.handleResponse(this.api.post('/backups/s3/test', destination));
 	}
 

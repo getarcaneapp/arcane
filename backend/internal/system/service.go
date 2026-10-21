@@ -11,13 +11,7 @@ import (
 	"sync"
 	"time"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
-	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
-	"github.com/getarcaneapp/arcane/types/v2/dockerinfo"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	"github.com/getarcaneapp/arcane/types/v2/system"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	mobycontainer "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -146,7 +140,7 @@ func (s *SystemService) ReconcileInterruptedBackups(ctx context.Context, protect
 
 // SetBackupScheduler injects the dynamic scheduler and admission gate for
 // per-policy system backup jobs. Agent mode leaves them unset.
-func (s *SystemService) SetBackupScheduler(ctx context.Context, dynamicScheduler scheduler.DynamicScheduler, admissionGate *runs.Admission) error {
+func (s *SystemService) SetBackupScheduler(ctx context.Context, dynamicScheduler types.DynamicScheduler, admissionGate *runs.Admission) error {
 	return s.backup.SetScheduler(ctx, dynamicScheduler, admissionGate)
 }
 
@@ -161,17 +155,17 @@ func (s *SystemService) RegisterBackupJobOnStartup(ctx context.Context) {
 }
 
 // PruneScheduled runs the scheduled prune job.
-func (s *SystemService) PruneScheduled(ctx context.Context, environmentID string, req system.PruneAllRequest) (*system.PruneAllResult, bool, error) {
+func (s *SystemService) PruneScheduled(ctx context.Context, environmentID string, req types.PruneAllRequest) (*types.PruneAllResult, bool, error) {
 	return s.prune.PruneScheduled(ctx, environmentID, req)
 }
 
 // ReconcileScheduledPrune recovers an interrupted scheduled prune.
-func (s *SystemService) ReconcileScheduledPrune(ctx context.Context, previous scheduler.Run) (scheduler.Outcome, error) {
+func (s *SystemService) ReconcileScheduledPrune(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error) {
 	return s.prune.ReconcileScheduledPrune(ctx, previous)
 }
 
 // TriggerUpgradeViaCLI starts the self-upgrade for the updater engine.
-func (s *SystemService) TriggerUpgradeViaCLI(ctx context.Context, user usertypes.Actor, target updater.SelfUpdateTarget) (string, error) {
+func (s *SystemService) TriggerUpgradeViaCLI(ctx context.Context, user types.Actor, target updater.SelfUpdateTarget) (string, error) {
 	return s.upgrade.TriggerUpgradeViaCLI(ctx, user, target)
 }
 
@@ -185,9 +179,9 @@ func (s *SystemService) PruneUpgradeLogs(ctx context.Context, dataDir string, no
 	return s.upgrade.PruneUpgradeLogs(ctx, dataDir, now)
 }
 
-func (s *SystemService) StartAllContainers(ctx context.Context, environmentID string) (*containertypes.ActionResult, error) {
+func (s *SystemService) StartAllContainers(ctx context.Context, environmentID string) (*types.ContainerActionResult, error) {
 	return s.performBatchContainerAction(ctx, environmentID, startMatchingContainersOptions{
-		ActivityType:   activitytypes.TypeContainerStart,
+		ActivityType:   types.ActivityTypeContainerStart,
 		ActionName:     "start",
 		ResourceName:   "All containers",
 		StartMessage:   "Starting all containers",
@@ -197,14 +191,14 @@ func (s *SystemService) StartAllContainers(ctx context.Context, environmentID st
 				!strings.EqualFold(c.Labels[libarcane.InternalResourceLabel], "true")
 		},
 		Action: func(ctx context.Context, id string) error {
-			return s.containerService.StartContainer(ctx, id, usertypes.SystemUser)
+			return s.containerService.StartContainer(ctx, id, types.SystemUser)
 		},
 	})
 }
 
-func (s *SystemService) StartAllStoppedContainers(ctx context.Context, environmentID string) (*containertypes.ActionResult, error) {
+func (s *SystemService) StartAllStoppedContainers(ctx context.Context, environmentID string) (*types.ContainerActionResult, error) {
 	return s.performBatchContainerAction(ctx, environmentID, startMatchingContainersOptions{
-		ActivityType:   activitytypes.TypeContainerStart,
+		ActivityType:   types.ActivityTypeContainerStart,
 		ActionName:     "start",
 		ResourceName:   "Stopped containers",
 		StartMessage:   "Starting stopped containers",
@@ -213,14 +207,14 @@ func (s *SystemService) StartAllStoppedContainers(ctx context.Context, environme
 			return c.State == mobycontainer.StateExited && !strings.EqualFold(c.Labels[libarcane.InternalResourceLabel], "true")
 		},
 		Action: func(ctx context.Context, id string) error {
-			return s.containerService.StartContainer(ctx, id, usertypes.SystemUser)
+			return s.containerService.StartContainer(ctx, id, types.SystemUser)
 		},
 	})
 }
 
-func (s *SystemService) StopAllContainers(ctx context.Context, environmentID string) (*containertypes.ActionResult, error) {
+func (s *SystemService) StopAllContainers(ctx context.Context, environmentID string) (*types.ContainerActionResult, error) {
 	return s.performBatchContainerAction(ctx, environmentID, startMatchingContainersOptions{
-		ActivityType:   activitytypes.TypeContainerStop,
+		ActivityType:   types.ActivityTypeContainerStop,
 		ActionName:     "stop",
 		ResourceName:   "All containers",
 		StartMessage:   "Stopping all containers",
@@ -229,13 +223,13 @@ func (s *SystemService) StopAllContainers(ctx context.Context, environmentID str
 			return !labels.IsArcaneContainer(c.Labels) && !strings.EqualFold(c.Labels[libarcane.InternalResourceLabel], "true")
 		},
 		Action: func(ctx context.Context, id string) error {
-			return s.containerService.StopContainer(ctx, id, usertypes.SystemUser)
+			return s.containerService.StopContainer(ctx, id, types.SystemUser)
 		},
 	})
 }
 
 type startMatchingContainersOptions struct {
-	ActivityType   activitytypes.Type
+	ActivityType   types.ActivityType
 	ActionName     string
 	ResourceName   string
 	StartMessage   string
@@ -244,7 +238,7 @@ type startMatchingContainersOptions struct {
 	Action         func(context.Context, string) error
 }
 
-func (s *SystemService) performBatchContainerAction(ctx context.Context, environmentID string, opts startMatchingContainersOptions) (*containertypes.ActionResult, error) {
+func (s *SystemService) performBatchContainerAction(ctx context.Context, environmentID string, opts startMatchingContainersOptions) (*types.ContainerActionResult, error) {
 	localActivity, err := s.activityService.StartActivity(ctx, activity.StartActivityRequest{
 		EnvironmentID: environmentID,
 		Type:          opts.ActivityType,
@@ -290,7 +284,7 @@ func (s *SystemService) performBatchContainerAction(ctx context.Context, environ
 		_ = g.Wait()
 	}
 
-	result := &containertypes.ActionResult{
+	result := &types.ContainerActionResult{
 		Success:    len(errs) == 0,
 		Started:    kit.Ternary(opts.ActionName == "start", processed, nil),
 		Stopped:    kit.Ternary(opts.ActionName == "start", nil, processed),
@@ -302,7 +296,7 @@ func (s *SystemService) performBatchContainerAction(ctx context.Context, environ
 		_, completeErr := s.activityService.CompleteActivity(
 			utils.ActivityRuntimeContext(ctx, nil),
 			activityID,
-			kit.Ternary(len(errs) > 0, activitytypes.StatusFailed, activitytypes.StatusSuccess),
+			kit.Ternary(len(errs) > 0, types.ActivityStatusFailed, types.ActivityStatusSuccess),
 			kit.Ternary(len(errs) > 0, strings.Join(errs, "; "), opts.SuccessMessage),
 			kit.Ternary(len(errs) > 0, new(strings.Join(errs, "; ")), nil),
 		)
@@ -322,19 +316,19 @@ func (s *SystemService) PingDocker(ctx context.Context) error {
 }
 
 // GetDockerInfo returns Docker daemon version and system information.
-func (s *SystemService) GetDockerInfo(ctx context.Context) (dockerinfo.Info, error) {
+func (s *SystemService) GetDockerInfo(ctx context.Context) (types.DockerInfo, error) {
 	serverVersion, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ServerVersionResult, error) {
 		return cli.ServerVersion(ctx, client.ServerVersionOptions{})
 	})
 	if err != nil {
-		return dockerinfo.Info{}, fmt.Errorf("failed to get Docker version: %w", err)
+		return types.DockerInfo{}, fmt.Errorf("failed to get Docker version: %w", err)
 	}
 
 	infoResult, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.SystemInfoResult, error) {
 		return cli.Info(ctx, client.InfoOptions{})
 	})
 	if err != nil {
-		return dockerinfo.Info{}, err
+		return types.DockerInfo{}, err
 	}
 	info := infoResult.Info
 
@@ -365,7 +359,7 @@ func (s *SystemService) GetDockerInfo(ctx context.Context) (dockerinfo.Info, err
 		}
 	}
 
-	return dockerinfo.Info{
+	return types.DockerInfo{
 		Success:    true,
 		APIVersion: serverVersion.APIVersion,
 		GitCommit:  gitCommit,
@@ -498,7 +492,7 @@ const systemBackupHistoryUnion = "SELECT id, size, created_at, status, trigger, 
 
 // backupStore persists system backup runs and policies for the backup child.
 func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) systembackup.Store {
-	toModel := func(dto *backuptypes.SystemBackupRun) SystemBackupRun {
+	toModel := func(dto *types.SystemBackupRun) SystemBackupRun {
 		return SystemBackupRun{ //exhaustruct:enforce
 			BaseModel: database.BaseModel{
 				ID:        dto.ID,
@@ -519,12 +513,12 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 		}
 	}
 	return systembackup.Store{
-		CreateRun: func(ctx context.Context, dto *backuptypes.SystemBackupRun) error {
+		CreateRun: func(ctx context.Context, dto *types.SystemBackupRun) error {
 			run := toModel(dto)
 			if err := s.db.WithContext(ctx).Create(&run).Error; err != nil {
 				return err
 			}
-			*dto = backuptypes.SystemBackupRun{ //exhaustruct:enforce
+			*dto = types.SystemBackupRun{ //exhaustruct:enforce
 				RemoteAvailable:   dto.RemoteAvailable,
 				ActivityID:        dto.ActivityID,
 				ID:                run.ID,
@@ -542,7 +536,7 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 			}
 			return nil
 		},
-		SaveRun: func(ctx context.Context, dto *backuptypes.SystemBackupRun) error {
+		SaveRun: func(ctx context.Context, dto *types.SystemBackupRun) error {
 			return s.db.WithContext(ctx).Save(new(toModel(dto))).Error
 		},
 		FailRun: func(ctx context.Context, id, message string) error {
@@ -551,7 +545,7 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 		DeleteRun: func(ctx context.Context, id string) error {
 			return s.db.WithContext(ctx).Where("id = ?", id).Delete(&SystemBackupRun{}).Error
 		},
-		Run: func(ctx context.Context, id string) (*backuptypes.SystemBackupRun, error) {
+		Run: func(ctx context.Context, id string) (*types.SystemBackupRun, error) {
 			var run SystemBackupRun
 			if err := s.db.WithContext(ctx).Where("id = ?", id).First(&run).Error; err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -561,7 +555,7 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 			}
 			return new(run.ToDTO()), nil
 		},
-		ListRuns: func(ctx context.Context, params pagination.QueryParams) ([]backuptypes.SystemBackupRun, pagination.Response, error) {
+		ListRuns: func(ctx context.Context, params pagination.QueryParams) ([]types.SystemBackupRun, pagination.Response, error) {
 			var records []SystemBackupRun
 			query := s.db.WithContext(ctx).Model(&SystemBackupRun{})
 			if term := strings.TrimSpace(params.Search); term != "" {
@@ -572,7 +566,7 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 			if err != nil {
 				return nil, pagination.Response{}, err
 			}
-			result := make([]backuptypes.SystemBackupRun, len(records))
+			result := make([]types.SystemBackupRun, len(records))
 			for i := range records {
 				result[i] = records[i].ToDTO()
 			}
@@ -581,18 +575,18 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 		ExpiredRunIDs: func(ctx context.Context, policyID string, keep int) ([]string, error) {
 			return backup.ExpiredRunIDs(ctx, s.db, "system_backup_runs", policyID, keep)
 		},
-		RunsByID: func(ctx context.Context, ids []string) ([]*backuptypes.SystemBackupRun, error) {
+		RunsByID: func(ctx context.Context, ids []string) ([]*types.SystemBackupRun, error) {
 			var records []SystemBackupRun
 			if err := s.db.WithContext(ctx).Where("id IN ?", ids).Find(&records).Error; err != nil {
 				return nil, err
 			}
-			result := make([]*backuptypes.SystemBackupRun, len(records))
+			result := make([]*types.SystemBackupRun, len(records))
 			for i := range records {
 				result[i] = new(records[i].ToDTO())
 			}
 			return result, nil
 		},
-		LatestPolicyRun: func(ctx context.Context, policyID string) (*backuptypes.SystemBackupRun, error) {
+		LatestPolicyRun: func(ctx context.Context, policyID string) (*types.SystemBackupRun, error) {
 			var run SystemBackupRun
 			err := s.db.WithContext(ctx).Where("policy_id = ?", policyID).Order("created_at DESC").First(&run).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -630,18 +624,18 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 			err := s.db.WithContext(ctx).Model(&volume.VolumeBackup{}).Where("status = ?", volume.VolumeBackupStatusRunning).Count(&count).Error
 			return count, err
 		},
-		Policies: func(ctx context.Context) ([]backuptypes.SystemBackupPolicy, error) {
+		Policies: func(ctx context.Context) ([]types.SystemBackupPolicy, error) {
 			var policies []SystemBackupPolicy
 			if err := s.db.WithContext(ctx).Order("created_at ASC").Find(&policies).Error; err != nil {
 				return nil, fmt.Errorf("failed to load system backup policies: %w", err)
 			}
-			result := make([]backuptypes.SystemBackupPolicy, len(policies))
+			result := make([]types.SystemBackupPolicy, len(policies))
 			for i := range policies {
 				result[i] = policies[i].ToDTO()
 			}
 			return result, nil
 		},
-		Policy: func(ctx context.Context, id string) (*backuptypes.SystemBackupPolicy, error) {
+		Policy: func(ctx context.Context, id string) (*types.SystemBackupPolicy, error) {
 			if strings.TrimSpace(id) == "" {
 				return nil, nil
 			}
@@ -657,23 +651,23 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 		},
 		ReconcilePolicies: func(
 			ctx context.Context,
-			updates []backuptypes.UpdateSystemBackupPolicy,
-			build func(context.Context, *backuptypes.SystemBackupPolicy, backuptypes.UpdateSystemBackupPolicy) error,
+			updates []types.UpdateBackupPolicy,
+			build func(context.Context, *types.SystemBackupPolicy, types.UpdateBackupPolicy) error,
 			unregister func(context.Context, string),
-			reschedule func(context.Context, *backuptypes.SystemBackupPolicy),
+			reschedule func(context.Context, *types.SystemBackupPolicy),
 		) error {
 			var existing []SystemBackupPolicy
 			if err := s.db.WithContext(ctx).Order("created_at ASC").Find(&existing).Error; err != nil {
 				return fmt.Errorf("failed to load system backup policies: %w", err)
 			}
-			return backup.PolicyReconciliation[SystemBackupPolicy, backuptypes.UpdateSystemBackupPolicy]{
+			return backup.PolicyReconciliation[SystemBackupPolicy, types.UpdateBackupPolicy]{
 				Domain:   "system",
 				DB:       s.db,
 				Existing: existing,
 				ID:       func(policy *SystemBackupPolicy) string { return policy.ID },
-				UpdateID: func(update backuptypes.UpdateSystemBackupPolicy) string { return update.ID },
+				UpdateID: func(update types.UpdateBackupPolicy) string { return update.ID },
 				New:      func() SystemBackupPolicy { return SystemBackupPolicy{} },
-				Build: func(ctx context.Context, policy *SystemBackupPolicy, update backuptypes.UpdateSystemBackupPolicy) error {
+				Build: func(ctx context.Context, policy *SystemBackupPolicy, update types.UpdateBackupPolicy) error {
 					dto := policy.ToDTO()
 					if buildErr := build(ctx, &dto, update); buildErr != nil {
 						return buildErr
@@ -695,13 +689,13 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 				},
 			}.Run(ctx, updates)
 		},
-		DisablePolicyRemote: func(ctx context.Context, policy *backuptypes.SystemBackupPolicy, field string) (bool, error) {
+		DisablePolicyRemote: func(ctx context.Context, policy *types.SystemBackupPolicy, field string) (bool, error) {
 			return backup.DisableStoredRemote(ctx, s.db, &SystemBackupPolicy{}, policy.ID, policy.S3DestinationID, policy.LocalEnabled, field)
 		},
 		CheckScheduledRemote: func(ctx context.Context, destinationID string) error {
 			return backup.CheckScheduledRemote(ctx, s.db, s3Destinations, "system_backup_runs", destinationID, "arcane-system-recovery")
 		},
-		ListHistory: func(ctx context.Context, params pagination.QueryParams) ([]backuptypes.HistoryEntry, pagination.Response, error) {
+		ListHistory: func(ctx context.Context, params pagination.QueryParams) ([]types.SystemVolumeBackupHistoryEntry, pagination.Response, error) {
 			query := s.db.WithContext(ctx).Table("(?) AS backup_history", s.db.Raw(systemBackupHistoryUnion))
 			if term := strings.TrimSpace(params.Search); term != "" {
 				pattern := "%" + term + "%"
@@ -711,7 +705,7 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 				)
 			}
 			query = pagination.ApplyFilter(query, "type", params.Filters["type"])
-			var history []backuptypes.HistoryEntry
+			var history []types.SystemVolumeBackupHistoryEntry
 			page, err := pagination.PaginateAndSortDB(pagination.QueryParams{
 				SearchQuery: params.SearchQuery,
 				SortParams: pagination.SortParams{

@@ -1,4 +1,5 @@
 import type { JobRun, JobRunStatus, WorkerHealth } from './job';
+import type { UpdateRequest } from './shared';
 import type { TemplateRegistryConfig } from './swarm';
 
 // --- Application settings ---
@@ -187,7 +188,7 @@ export interface AppVersionInformation {
 
 // --- Job schedules ---
 
-export type JobSchedules = {
+export type JobScheduleConfig = {
 	environmentHealthInterval: string;
 	eventCleanupInterval: string;
 	expiredSessionsCleanupInterval: string;
@@ -200,7 +201,7 @@ export type JobSchedules = {
 	autoHealInterval: string;
 };
 
-export type JobSchedulesUpdate = Partial<JobSchedules>;
+export type JobScheduleConfigUpdate = UpdateRequest<JobScheduleConfig, keyof JobScheduleConfig>;
 
 export type JobPrerequisite = {
 	settingKey: string;

@@ -19,11 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/container"
-	"github.com/getarcaneapp/arcane/types/v2/gitops"
-	httpxtypes "github.com/getarcaneapp/arcane/types/v2/httpx"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
-	"github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"go.getarcane.app/kit/pkg"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -67,7 +63,7 @@ type EnvResolver func(ctx context.Context, id string) (string, *string, bool, er
 
 // AuthValidator authenticates a request and returns the caller's permission set and user (nil for non-user callers).
 // Sudo permission sets (internal agent proxies) bypass authorization.
-type AuthValidator func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *usertypes.Actor, bool)
+type AuthValidator func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool)
 
 // EnvironmentMiddleware proxies requests for remote environments to their respective agents.
 type EnvironmentMiddleware struct {
@@ -97,7 +93,7 @@ func NewEnvProxyMiddlewareWithParamAndRegistry(
 	}
 
 	// Traced so direct agents continue the manager's trace.
-	httpClient := httpx.NewHTTPClient(httpxtypes.ClientOptions{
+	httpClient := httpx.NewHTTPClient(types.HTTPClientOptions{
 		TLSHandshakeTimeout:   10 * time.Second,
 		DialTimeout:           proxyDialTimeout,
 		ResponseHeaderTimeout: edge.ProxyResponseHeaderTimeout,
@@ -143,7 +139,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 
 	// SECURITY: Validate authentication BEFORE proxying to remote environments.
 	var perms *authz.PermissionSet
-	var user *usertypes.Actor
+	var user *types.Actor
 	if m.authValidator != nil {
 		var authenticated bool
 		perms, user, authenticated = m.authValidator(ctx, c)
@@ -378,7 +374,7 @@ func (m *EnvironmentMiddleware) proxyPermissionStatus(c *echo.Context, ps *authz
 		return kit.Ternary(errors.Is(err, errProxiedBodyTooLarge), http.StatusRequestEntityTooLarge, http.StatusBadRequest)
 	}
 	// Resource-sorted container lists collect per-container stats, so they also need containers:read.
-	if method == http.MethodGet && len(segments) == 1 && segments[0] == "containers" && container.IsResourceSort(req.URL.Query().Get("sort")) {
+	if method == http.MethodGet && len(segments) == 1 && segments[0] == "containers" && types.IsContainerResourceSort(req.URL.Query().Get("sort")) {
 		required = append(required, authz.PermContainersRead)
 	}
 	for _, operationPermission := range required {
@@ -441,7 +437,7 @@ func proxiedVolumeWorkspacePermissions(request *http.Request) ([]string, error) 
 		if len(manifestJSON) > maxProxiedWorkspaceManifestBytes {
 			return nil, fmt.Errorf("workspace manifest: %w", errProxiedBodyTooLarge)
 		}
-		var manifest volume.WorkspaceUpdateManifest
+		var manifest types.VolumeWorkspaceUpdateManifest
 		if unmarshalErr := json.Unmarshal(manifestJSON, &manifest); unmarshalErr != nil {
 			return nil, fmt.Errorf("decode workspace manifest: %w", unmarshalErr)
 		}
@@ -474,7 +470,7 @@ func proxiedGitOpsSyncPermissions(request *http.Request, method string, segments
 	request.Body = io.NopCloser(bytes.NewReader(body))
 
 	type syncBody struct {
-		gitops.PreDeployConfigRequest
+		types.GitOpsPreDeployConfigRequest
 
 		Mode string `json:"mode"`
 	}
@@ -494,7 +490,7 @@ func proxiedGitOpsSyncPermissions(request *http.Request, method string, segments
 	if slices.ContainsFunc(items, func(item syncBody) bool { return item.HasPreDeployConfig() }) {
 		required = append(required, authz.PermGitOpsLifecycle)
 	}
-	if isCreate && slices.ContainsFunc(items, func(item syncBody) bool { return item.Mode == gitops.SyncModeBackup }) {
+	if isCreate && slices.ContainsFunc(items, func(item syncBody) bool { return item.Mode == types.GitOpsSyncModeBackup }) {
 		required = append(required, authz.PermGitOpsBackup)
 	}
 	return required, nil

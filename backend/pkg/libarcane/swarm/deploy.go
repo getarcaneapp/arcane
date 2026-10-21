@@ -9,8 +9,7 @@ import (
 	"strings"
 
 	composegotypes "github.com/compose-spec/compose-go/v2/types"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
-	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/swarm"
 	dockerclient "github.com/moby/moby/client"
 
@@ -53,12 +52,12 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 		return invalidStackErrorInternal(err)
 	}
 	ns := namespace{name: stackName}
-	resolveMode, err := normalizeResolveImageModeInternal(opts.ResolveImage)
+	resolveMode, err := normalizeResolveImageMode(opts.ResolveImage)
 	if err != nil {
 		return invalidStackErrorInternal(err)
 	}
 
-	project, err := projects.LoadComposeProjectFromContent(ctx, projecttypes.ComposeContentOptions{
+	project, err := projects.LoadComposeProjectFromContent(ctx, types.ComposeContentOptions{
 		ProjectName:     stackName,
 		ComposeContent:  opts.ComposeContent,
 		OverrideContent: opts.OverrideContent,
@@ -73,51 +72,51 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 		project.Name = stackName
 	}
 
-	stackLabels := map[string]string{swarmtypes.StackNamespaceLabel: stackName}
+	stackLabels := map[string]string{types.SwarmStackNamespaceLabel: stackName}
 
-	networkNameByKey, err := ensureSwarmNetworksInternal(ctx, dockerClient, project, ns, stackLabels)
+	networkNameByKey, err := ensureSwarmNetworks(ctx, dockerClient, project, ns, stackLabels)
 	if err != nil {
 		return err
 	}
 
-	if ensureSwarmVolumesErr := ensureSwarmVolumesInternal(ctx, dockerClient, project, ns, stackLabels); ensureSwarmVolumesErr != nil {
+	if ensureSwarmVolumesErr := ensureSwarmVolumes(ctx, dockerClient, project, ns, stackLabels); ensureSwarmVolumesErr != nil {
 		return ensureSwarmVolumesErr
 	}
 
-	configPlans, err := planConfigsInternal(project, ns)
+	configPlans, err := planConfigs(project, ns)
 	if err != nil {
 		return invalidStackErrorInternal(err)
 	}
-	configMetaByKey, err := ensurePlannedFileResourcesInternal(
+	configMetaByKey, err := ensurePlannedFileResources(
 		ctx,
 		configPlans,
 		stackLabels,
-		configFileResourceAdapterInternal(dockerClient),
+		configFileResourceAdapter(dockerClient),
 	)
 	if err != nil {
 		return err
 	}
 
-	secretPlans, err := planSecretsInternal(project, ns)
+	secretPlans, err := planSecrets(project, ns)
 	if err != nil {
 		return invalidStackErrorInternal(err)
 	}
-	secretMetaByKey, err := ensurePlannedFileResourcesInternal(
+	secretMetaByKey, err := ensurePlannedFileResources(
 		ctx,
 		secretPlans,
 		stackLabels,
-		secretFileResourceAdapterInternal(dockerClient),
+		secretFileResourceAdapter(dockerClient),
 	)
 	if err != nil {
 		return err
 	}
 
-	existingServices, err := listStackServicesInternal(ctx, dockerClient, stackName)
+	existingServices, err := listStackServices(ctx, dockerClient, stackName)
 	if err != nil {
 		return err
 	}
 
-	desiredServices, err := reconcileStackServicesInternal(
+	desiredServices, err := reconcileStackServices(
 		ctx,
 		dockerClient,
 		project,
@@ -146,14 +145,14 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 		}
 	}
 
-	if cleanupStackResourcesErr := cleanupStackResourcesInternal(ctx, dockerClient, stackName, configMetaByKey, secretMetaByKey); cleanupStackResourcesErr != nil {
+	if cleanupStackResourcesErr := cleanupStackResources(ctx, dockerClient, stackName, configMetaByKey, secretMetaByKey); cleanupStackResourcesErr != nil {
 		return cleanupStackResourcesErr
 	}
 
 	return nil
 }
 
-func reconcileStackServicesInternal(
+func reconcileStackServices(
 	ctx context.Context,
 	dockerClient *dockerclient.Client,
 	project *composegotypes.Project,
@@ -178,13 +177,13 @@ func reconcileStackServicesInternal(
 		desiredServices[spec.Name] = struct{}{}
 
 		if existing, ok := existingServices[spec.Name]; ok {
-			if updateSwarmServiceErr := updateSwarmServiceInternal(ctx, dockerClient, existing, spec, opts.WithRegistryAuth, opts.RegistryAuthForImage, resolveMode); updateSwarmServiceErr != nil {
+			if updateSwarmServiceErr := updateSwarmService(ctx, dockerClient, existing, spec, opts.WithRegistryAuth, opts.RegistryAuthForImage, resolveMode); updateSwarmServiceErr != nil {
 				return nil, updateSwarmServiceErr
 			}
 			continue
 		}
 
-		if createSwarmServiceErr := createSwarmServiceInternal(ctx, dockerClient, spec, opts.WithRegistryAuth, opts.RegistryAuthForImage, resolveMode); createSwarmServiceErr != nil {
+		if createSwarmServiceErr := createSwarmService(ctx, dockerClient, spec, opts.WithRegistryAuth, opts.RegistryAuthForImage, resolveMode); createSwarmServiceErr != nil {
 			return nil, createSwarmServiceErr
 		}
 	}
@@ -192,8 +191,8 @@ func reconcileStackServicesInternal(
 	return desiredServices, nil
 }
 
-func listStackServicesInternal(ctx context.Context, dockerClient *dockerclient.Client, stackName string) (map[string]swarm.Service, error) {
-	filter := make(dockerclient.Filters).Add("label", fmt.Sprintf("%s=%s", swarmtypes.StackNamespaceLabel, stackName))
+func listStackServices(ctx context.Context, dockerClient *dockerclient.Client, stackName string) (map[string]swarm.Service, error) {
+	filter := make(dockerclient.Filters).Add("label", fmt.Sprintf("%s=%s", types.SwarmStackNamespaceLabel, stackName))
 	servicesResult, err := dockerClient.ServiceList(ctx, dockerclient.ServiceListOptions{Filters: filter})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list swarm services: %w", err)
@@ -207,7 +206,7 @@ func listStackServicesInternal(ctx context.Context, dockerClient *dockerclient.C
 	return byName, nil
 }
 
-func createSwarmServiceInternal(
+func createSwarmService(
 	ctx context.Context,
 	dockerClient *dockerclient.Client,
 	spec swarm.ServiceSpec,
@@ -215,11 +214,11 @@ func createSwarmServiceInternal(
 	registryAuthForImage func(context.Context, string) (string, error),
 	resolveMode string,
 ) error {
-	encodedRegistryAuth, err := resolveRegistryAuthForSpecInternal(ctx, spec, withRegistryAuth, registryAuthForImage)
+	encodedRegistryAuth, err := resolveRegistryAuthForSpec(ctx, spec, withRegistryAuth, registryAuthForImage)
 	if err != nil {
 		return err
 	}
-	queryRegistry := encodedRegistryAuth != "" || shouldQueryRegistryOnCreateInternal(resolveMode)
+	queryRegistry := encodedRegistryAuth != "" || shouldQueryRegistryOnCreate(resolveMode)
 	opts := dockerclient.ServiceCreateOptions{
 		Spec:          spec,
 		QueryRegistry: queryRegistry,
@@ -231,7 +230,7 @@ func createSwarmServiceInternal(
 	return nil
 }
 
-func updateSwarmServiceInternal(
+func updateSwarmService(
 	ctx context.Context,
 	dockerClient *dockerclient.Client,
 	existing swarm.Service,
@@ -240,13 +239,13 @@ func updateSwarmServiceInternal(
 	registryAuthForImage func(context.Context, string) (string, error),
 	resolveMode string,
 ) error {
-	encodedRegistryAuth, err := resolveRegistryAuthForSpecInternal(ctx, spec, withRegistryAuth, registryAuthForImage)
+	encodedRegistryAuth, err := resolveRegistryAuthForSpec(ctx, spec, withRegistryAuth, registryAuthForImage)
 	if err != nil {
 		return err
 	}
-	queryRegistry := encodedRegistryAuth != "" || shouldQueryRegistryOnUpdateInternal(resolveMode, existing, spec)
+	queryRegistry := encodedRegistryAuth != "" || shouldQueryRegistryOnUpdate(resolveMode, existing, spec)
 	if !queryRegistry {
-		preserveExistingResolvedImageInternal(&spec, existing)
+		preserveExistingResolvedImage(&spec, existing)
 	}
 	// Do not force task rescheduling on no-op updates.
 	spec.TaskTemplate.ForceUpdate = existing.Spec.TaskTemplate.ForceUpdate
@@ -276,7 +275,7 @@ func updateSwarmServiceInternal(
 	return nil
 }
 
-func normalizeResolveImageModeInternal(value string) (string, error) {
+func normalizeResolveImageMode(value string) (string, error) {
 	mode := strings.ToLower(strings.TrimSpace(value))
 	if mode == "" {
 		return resolveImageAlways, nil
@@ -289,45 +288,45 @@ func normalizeResolveImageModeInternal(value string) (string, error) {
 	}
 }
 
-func shouldQueryRegistryOnCreateInternal(resolveMode string) bool {
+func shouldQueryRegistryOnCreate(resolveMode string) bool {
 	return resolveMode == resolveImageAlways || resolveMode == resolveImageChanged
 }
 
-func shouldQueryRegistryOnUpdateInternal(resolveMode string, existing swarm.Service, desired swarm.ServiceSpec) bool {
+func shouldQueryRegistryOnUpdate(resolveMode string, existing swarm.Service, desired swarm.ServiceSpec) bool {
 	switch resolveMode {
 	case resolveImageAlways:
 		return true
 	case resolveImageChanged:
-		desiredImage := stripImageDigestInternal(resolveServiceImageInternal(desired))
-		existingImage := stripImageDigestInternal(resolveServiceImageInternal(existing.Spec))
+		desiredImage := stripImageDigest(resolveServiceImage(desired))
+		existingImage := stripImageDigest(resolveServiceImage(existing.Spec))
 		return desiredImage != "" && desiredImage != existingImage
 	default:
 		return false
 	}
 }
 
-func resolveServiceImageInternal(spec swarm.ServiceSpec) string {
+func resolveServiceImage(spec swarm.ServiceSpec) string {
 	if spec.TaskTemplate.ContainerSpec == nil {
 		return ""
 	}
 	return spec.TaskTemplate.ContainerSpec.Image
 }
 
-func preserveExistingResolvedImageInternal(spec *swarm.ServiceSpec, existing swarm.Service) {
+func preserveExistingResolvedImage(spec *swarm.ServiceSpec, existing swarm.Service) {
 	if spec.TaskTemplate.ContainerSpec == nil || existing.Spec.TaskTemplate.ContainerSpec == nil {
 		return
 	}
-	if stripImageDigestInternal(resolveServiceImageInternal(*spec)) == stripImageDigestInternal(resolveServiceImageInternal(existing.Spec)) {
+	if stripImageDigest(resolveServiceImage(*spec)) == stripImageDigest(resolveServiceImage(existing.Spec)) {
 		spec.TaskTemplate.ContainerSpec.Image = existing.Spec.TaskTemplate.ContainerSpec.Image
 	}
 }
 
-func stripImageDigestInternal(image string) string {
+func stripImageDigest(image string) string {
 	image, _, _ = strings.Cut(strings.TrimSpace(image), "@")
 	return image
 }
 
-func resolveRegistryAuthForSpecInternal(
+func resolveRegistryAuthForSpec(
 	ctx context.Context,
 	spec swarm.ServiceSpec,
 	withRegistryAuth bool,
@@ -337,7 +336,7 @@ func resolveRegistryAuthForSpecInternal(
 		return "", nil
 	}
 
-	image := resolveServiceImageInternal(spec)
+	image := resolveServiceImage(spec)
 	if strings.TrimSpace(image) == "" {
 		return "", nil
 	}

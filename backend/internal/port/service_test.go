@@ -11,8 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	porttypes "github.com/getarcaneapp/arcane/types/v2/port"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
@@ -40,7 +39,7 @@ func newPortServiceTestDockerService(t *testing.T, containers []container.Summar
 	}))
 	t.Cleanup(server.Close)
 
-	return docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClientInternal(t, server))
+	return docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server))
 }
 
 func TestPortService_ListPortsPaginated_FlattensPublishedAndExposedPorts(t *testing.T) {
@@ -225,14 +224,14 @@ func TestPortService_ListPortsPaginated_SortsByHostIPDescWithUnpublishedLast(t *
 }
 
 func TestPrimaryContainerName_TrimsDockerPrefix(t *testing.T) {
-	assert.Equal(t, "web", primaryContainerNameInternal([]string{"/web"}, "container-id"))
-	assert.Equal(t, "abcdef123456", primaryContainerNameInternal(nil, "abcdef1234567890"))
+	assert.Equal(t, "web", primaryContainerName([]string{"/web"}, "container-id"))
+	assert.Equal(t, "abcdef123456", primaryContainerName(nil, "abcdef1234567890"))
 }
 
 // Test fixtures shared by this package's tests.
 
-// newTestDockerClientInternal builds a Docker client pointed at a fake Docker HTTP server.
-func newTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.Client {
+// newTestDockerClient builds a Docker client pointed at a fake Docker HTTP server.
+func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	t.Helper()
 
 	httpClient := server.Client()
@@ -267,23 +266,23 @@ func portScopeContext(t *testing.T, target string, bodies map[string]any) (conte
 			}
 			_ = json.NewEncoder(w).Encode(body)
 		}),
-		Resolve: func(_ context.Context, id string) (base.EnvironmentRef, error) {
-			return base.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
 		},
 	}), &queries
 }
 
 func TestAggregatePortsMergesEnvironments(t *testing.T) {
 	bodies := map[string]any{
-		"a": base.Paginated[porttypes.PortMapping]{Success: true, Data: []porttypes.PortMapping{
+		"a": types.Paginated[types.PortMapping]{Success: true, Data: []types.PortMapping{
 			{ID: "a1", ContainerName: "web", HostPort: 8080, ContainerPort: 80, Protocol: "tcp", IsPublished: true},
 			{ID: "a2", ContainerName: "db", HostPort: 5432, ContainerPort: 5432, Protocol: "tcp", IsPublished: true},
-		}, Pagination: base.PaginationResponse{TotalItems: 2, GrandTotalItems: 3}},
-		"b": base.Paginated[porttypes.PortMapping]{Success: true, Data: []porttypes.PortMapping{
+		}, Pagination: types.PaginationResponse{TotalItems: 2, GrandTotalItems: 3}},
+		"b": types.Paginated[types.PortMapping]{Success: true, Data: []types.PortMapping{
 			{ID: "b1", ContainerName: "api", HostPort: 3000, ContainerPort: 3000, Protocol: "tcp", IsPublished: true},
-		}, Pagination: base.PaginationResponse{TotalItems: 1}},
+		}, Pagination: types.PaginationResponse{TotalItems: 1}},
 	}
-	rowLabels := func(items []porttypes.PortMapping) []string {
+	rowLabels := func(items []types.PortMapping) []string {
 		out := make([]string, 0, len(items))
 		for _, item := range items {
 			out = append(out, item.EnvironmentID+"/"+item.ContainerName)

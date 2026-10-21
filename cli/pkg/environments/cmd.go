@@ -10,16 +10,14 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/getarcaneapp/arcane/types/v2/environment"
-	"github.com/getarcaneapp/arcane/types/v2/version"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
-	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 var (
@@ -65,12 +63,12 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[environment.Environment]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.Environment]{
 				Resource: "environments",
-				Endpoint: types.Environments(),
+				Endpoint: clitypes.Environments(),
 				Params:   cmdutil.ListParams{Resource: "environments", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
 				Headers:  []string{"ID", "NAME", "API URL", "STATUS", "ENABLED"},
-				Row: func(env environment.Environment) []string {
+				Row: func(env types.Environment) []string {
 					return []string{
 						env.ID,
 						env.Name,
@@ -106,7 +104,7 @@ func newDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete environment %s?", args[0]),
-				Path:           types.Environment(args[0]),
+				Path:           clitypes.Environment(args[0]),
 				FailureMessage: "failed to delete environment",
 				SuccessMessage: "Environment deleted successfully",
 			})
@@ -128,12 +126,12 @@ func newGetCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[environment.Environment]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Environment]{
 				Method:         http.MethodGet,
-				Path:           types.Environment(args[0]),
+				Path:           clitypes.Environment(args[0]),
 				FailureMessage: "failed to get environment",
 				Body:           nil,
-				Render: func(data environment.Environment) error {
+				Render: func(data types.Environment) error {
 					output.Header("Environment Details")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Name", data.Name)
@@ -159,11 +157,11 @@ func newTestCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[environment.Test]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.EnvironmentTest]{
 				Method:         http.MethodPost,
-				Path:           types.EnvironmentTest(args[0]),
+				Path:           clitypes.EnvironmentTest(args[0]),
 				FailureMessage: "failed to test environment",
-				Render: func(environment.Test) error {
+				Render: func(types.EnvironmentTest) error {
 					output.Success("%s", "Environment connection test successful")
 					return nil
 				},
@@ -193,8 +191,8 @@ func newSwitchCmd() *cobra.Command {
 				return err
 			}
 
-			path := fmt.Sprintf("%s?limit=%d", types.Environments(), cmdutil.ShowAllLimit)
-			result, err := c.GetJSON[[]environment.Environment](cmd.Context(), path)
+			path := fmt.Sprintf("%s?limit=%d", clitypes.Environments(), cmdutil.ShowAllLimit)
+			result, err := c.GetJSON[[]types.Environment](cmd.Context(), path)
 			if err != nil {
 				return fmt.Errorf("failed to list environments: %w", err)
 			}
@@ -263,21 +261,24 @@ func newUpdateCmd() *cobra.Command {
 				return err
 			}
 
+			req := map[string]any{}
+			if cmd.Flags().Changed("name") {
+				req["name"] = opts.name
+			}
+			if cmd.Flags().Changed("api-url") {
+				req["apiUrl"] = opts.apiUrl
+			}
 			// TODO(v3): drop the deprecated flag handling.
-			enabled := cmd.Flags().Changed("enabled") && opts.enabled || cmd.Flags().Changed("disabled") && !opts.disabled
-			req := environment.Update{
-				Name:   kit.Ternary(cmd.Flags().Changed("name"), &opts.name, nil),
-				ApiUrl: kit.Ternary(cmd.Flags().Changed("api-url"), &opts.apiUrl, nil),
-				// TODO(v3): drop the deprecated flag handling.
-				Enabled: kit.Ternary(cmd.Flags().Changed("enabled") || cmd.Flags().Changed("disabled"), &enabled, nil),
+			if cmd.Flags().Changed("enabled") || cmd.Flags().Changed("disabled") {
+				req["enabled"] = cmd.Flags().Changed("enabled") && opts.enabled || cmd.Flags().Changed("disabled") && !opts.disabled
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[environment.Environment]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Environment]{
 				Method:         http.MethodPut,
-				Path:           types.Environment(args[0]),
+				Path:           clitypes.Environment(args[0]),
 				FailureMessage: "failed to update environment",
 				Body:           req,
-				Render: func(data environment.Environment) error {
+				Render: func(data types.Environment) error {
 					output.Success("Environment updated successfully")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Name", data.Name)
@@ -322,22 +323,21 @@ func newCreateCmd() *cobra.Command {
 				return err
 			}
 
-			req := environment.Create{
+			req := types.Environment{
+				Name:        opts.name,
 				ApiUrl:      opts.apiUrl,
-				Name:        kit.Ternary(cmd.Flags().Changed("name"), &opts.name, nil),
-				AccessToken: kit.Ternary(cmd.Flags().Changed("access-token"), &opts.accessToken, nil),
-				UseApiKey:   kit.Ternary(cmd.Flags().Changed("use-api-key"), &opts.useApiKey, nil),
-				IsEdge:      kit.Ternary(cmd.Flags().Changed("edge"), &opts.edge, nil),
-				// TODO(v3): drop the deprecated flag handling.
-				Enabled: kit.Ternary(cmd.Flags().Changed("enabled") || cmd.Flags().Changed("disabled"), new(opts.enabled && !opts.disabled), nil),
+				Enabled:     opts.enabled && !opts.disabled,
+				IsEdge:      opts.edge,
+				AccessToken: opts.accessToken,
+				UseApiKey:   opts.useApiKey,
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[environment.Environment]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Environment]{
 				Method:         http.MethodPost,
-				Path:           types.Environments(),
+				Path:           clitypes.Environments(),
 				FailureMessage: "failed to create environment",
 				Body:           req,
-				Render: func(data environment.Environment) error {
+				Render: func(data types.Environment) error {
 					output.Success("Environment created successfully")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Name", data.Name)
@@ -377,11 +377,11 @@ func newVersionCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[version.Info]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.VersionInfo]{
 				Method:         http.MethodGet,
-				Path:           types.EnvironmentVersion(args[0]),
+				Path:           clitypes.EnvironmentVersion(args[0]),
 				FailureMessage: "failed to get environment version",
-				Render: func(data version.Info) error {
+				Render: func(data types.VersionInfo) error {
 					output.Header("Environment Version")
 					output.KeyValue("Version", data.DisplayVersion)
 					output.KeyValue("Full Version", data.CurrentVersion)
@@ -397,7 +397,7 @@ func newVersionCmd() *cobra.Command {
 	}
 }
 
-func environmentOptions(environments []environment.Environment, currentEnv string) []string {
+func environmentOptions(environments []types.Environment, currentEnv string) []string {
 	options := make([]string, len(environments))
 	for i, env := range environments {
 		displayName := cmp.Or(strings.TrimSpace(env.Name), env.ID)
