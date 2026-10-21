@@ -115,15 +115,34 @@ func NewVersionService(
 	return service
 }
 
-func (s *VersionService) getLatestRelease(_ context.Context) (latestRelease, error) {
-	release, found, err := s.cache.Get(struct{}{})
-	if err != nil {
-		return latestRelease{}, err
+func (s *VersionService) getLatestRelease(ctx context.Context) (latestRelease, error) {
+	type lookup struct {
+		release latestRelease
+		found   bool
+		err     error
 	}
-	if !found {
-		return latestRelease{}, errors.New("latest release cache loader returned no release")
+	result := make(chan lookup, 1)
+	go func() {
+		release, found, err := s.cache.Get(struct{}{})
+		result <- lookup{
+			release: release,
+			found:   found,
+			err:     err,
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return latestRelease{}, fmt.Errorf("wait for latest release: %w", ctx.Err())
+	case res := <-result:
+		if res.err != nil {
+			return latestRelease{}, res.err
+		}
+		if !res.found {
+			return latestRelease{}, errors.New("latest release cache loader returned no release")
+		}
+		return res.release, nil
 	}
-	return release, nil
 }
 
 func (s *VersionService) fetchLatestRelease(ctx context.Context) (latestRelease, error) {

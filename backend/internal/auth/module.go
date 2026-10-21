@@ -107,6 +107,16 @@ func RegisterAuth(
 	}, h.GetCurrentUser)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "get-session-bootstrap",
+		Method:      http.MethodGet,
+		Path:        "/auth/bootstrap",
+		Summary:     "Get session bootstrap",
+		Description: "Get the current user, app version, accessible environments, and permission manifest in one response",
+		Tags:        []string{"Auth"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, h.GetSessionBootstrap)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "refresh-token",
 		Method:      http.MethodPost,
 		Path:        "/auth/refresh",

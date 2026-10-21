@@ -579,7 +579,9 @@ func runBackupList(cmd *cobra.Command, args []string, opts backupListOptions) er
 	if tableErr := output.Table(headers, rows); tableErr != nil {
 		return tableErr
 	}
-	output.Showing(len(result.Data), result.Pagination.TotalItems, "backups")
+	if result.Pagination.TotalItems >= 0 {
+		output.Showing(len(result.Data), result.Pagination.TotalItems, "backups")
+	}
 	for _, warning := range result.Warnings {
 		output.Warning("%s", warning)
 	}

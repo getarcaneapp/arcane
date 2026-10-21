@@ -987,3 +987,98 @@ func validatePermissionSetAgainstCaller(caller *authz.PermissionSet, desired []s
 	}
 	return nil
 }
+
+// BuildPermissionsManifest maps the authz-owned permission catalog into
+// the public API manifest shape used by the frontend role editor.
+func BuildPermissionsManifest() types.PermissionsManifest {
+	catalog := authz.PermissionCatalog()
+	resources := make([]types.PermissionResource, len(catalog))
+	for i, resource := range catalog {
+		actions := make([]types.PermissionAction, len(resource.Actions))
+		for j, action := range resource.Actions {
+			actions[j] = types.PermissionAction{
+				Key:         action.Key,
+				Permission:  action.Permission,
+				Label:       action.Label,
+				Description: action.Description,
+				Requires:    requiredPermissionsForPicker(action.Permission),
+			}
+		}
+		resources[i] = types.PermissionResource{
+			Key:     resource.Key,
+			Label:   resource.Label,
+			Scope:   resource.Scope,
+			Actions: actions,
+		}
+	}
+	return types.PermissionsManifest{
+		Resources:      resources,
+		AccessSurfaces: buildAccessSurfaceManifest(),
+		Presets: []types.PermissionPreset{
+			{
+				Key:         "editor",
+				Label:       "All permissions (non-admin)",
+				Description: "Matches the built-in Editor permission set.",
+				Permissions: authz.BuiltInEditorPermissions(),
+			},
+			{
+				Key:         "global-admin",
+				Label:       "Global Admin",
+				Description: "Select every permission in the manifest.",
+				Permissions: authz.AllPermissions(),
+			},
+		},
+	}
+}
+
+func buildAccessSurfaceManifest() []types.AccessSurface {
+	surfaces := authz.AccessSurfaces()
+	out := make([]types.AccessSurface, len(surfaces))
+	for i, surface := range surfaces {
+		out[i] = types.AccessSurface{
+			ID:            surface.ID,
+			Kind:          surface.Kind,
+			URL:           surface.URL,
+			Label:         surface.Label,
+			AccessMode:    surface.AccessMode,
+			MatchMode:     surface.MatchMode,
+			ScopeMode:     surface.ScopeMode,
+			Permissions:   append([]string(nil), surface.Permissions...),
+			Children:      append([]string(nil), surface.Children...),
+			FallbackOrder: surface.FallbackOrder,
+		}
+	}
+	return out
+}
+
+func requiredPermissionsForPicker(permission string) []string {
+	switch permission {
+	case authz.PermSettingsWrite,
+		authz.PermApiKeysList,
+		authz.PermApiKeysRead,
+		authz.PermApiKeysCreate,
+		authz.PermApiKeysUpdate,
+		authz.PermApiKeysDelete,
+		authz.PermFederatedList,
+		authz.PermFederatedRead,
+		authz.PermFederatedCreate,
+		authz.PermFederatedUpdate,
+		authz.PermFederatedDelete,
+		authz.PermUsersList,
+		authz.PermUsersRead,
+		authz.PermUsersCreate,
+		authz.PermUsersUpdate,
+		authz.PermUsersDelete,
+		authz.PermRolesList,
+		authz.PermRolesRead,
+		authz.PermWebhooksList,
+		authz.PermWebhooksCreate,
+		authz.PermWebhooksUpdate,
+		authz.PermWebhooksDelete,
+		authz.PermNotificationsManage,
+		authz.PermDiagnosticsRead:
+		return []string{authz.PermSettingsRead}
+	default:
+		return nil
+	}
+}

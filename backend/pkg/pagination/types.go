@@ -8,6 +8,7 @@ type Response struct {
 	CurrentPage     int   `json:"currentPage"`
 	ItemsPerPage    int   `json:"itemsPerPage"`
 	GrandTotalItems int64 `json:"grandTotalItems,omitempty"`
+	HasNextPage     bool  `json:"hasNextPage"`
 }
 
 // BuildResponse creates a pagination Response from raw counts.
@@ -44,5 +45,6 @@ func BuildResponse(totalCount, totalAvailable int64, params QueryParams) Respons
 		CurrentPage:     page,
 		ItemsPerPage:    itemsPerPage,
 		GrandTotalItems: totalAvailable,
+		HasNextPage:     limit > 0 && int64(params.Start+limit) < totalCount,
 	}
 }

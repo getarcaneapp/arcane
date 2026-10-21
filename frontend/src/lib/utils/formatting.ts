@@ -1,5 +1,4 @@
 import Convert from 'ansi-to-html';
-import { Temporal } from 'temporal-polyfill';
 import { z } from 'zod/v4';
 
 import { getLocale, setLocale as setParaglideLocale, type Locale } from '#lib/paraglide/runtime.js';
@@ -219,9 +218,7 @@ export function nowInstantString(): string {
 	return Temporal.Now.instant().toString({ smallestUnit: 'millisecond' });
 }
 
-// The polyfill's Temporal.Now.timeZoneId() constructs a fresh Intl.DateTimeFormat
-// on every call, so resolve the local zone once per session.
-const localTimeZoneId = Temporal.Now.timeZoneId();
+const localTimeZoneId = new Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 export function plainDateFromInstant(value: InstantInput, timeZone = localTimeZoneId): Temporal.PlainDate | undefined {
 	return parseInstant(value)?.toZonedDateTimeISO(timeZone).toPlainDate();

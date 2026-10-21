@@ -28,6 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
 )
 
 const (
@@ -50,6 +51,7 @@ type DockerClientService struct {
 	engineClient    *client.Client
 	mu              sync.Mutex
 	eventBus        *bus.DockerEventBus
+	streamConnected *concurrency.Signal[struct{}]
 
 	// Coalesce concurrent full-inventory lists into one Docker response; per-instance
 	// because a WithClient copy talks to a different daemon.
@@ -63,6 +65,7 @@ func NewDockerClientService(_ context.Context, db *database.DB, cfg *config.Conf
 		config:          cfg,
 		settingsService: settingsService,
 		eventBus:        bus.NewDockerEventBus(eventBusOptions...),
+		streamConnected: concurrency.NewSignal[struct{}](),
 	}
 }
 
@@ -75,6 +78,7 @@ func (s *DockerClientService) WithClient(dockerClient *client.Client) *DockerCli
 		settingsService: s.settingsService,
 		Client:          dockerClient,
 		eventBus:        s.eventBus,
+		streamConnected: s.streamConnected,
 	}
 }
 
@@ -217,6 +221,10 @@ func (s *DockerClientService) EventBus() *bus.DockerEventBus {
 	return s.eventBus
 }
 
+func (s *DockerClientService) EventStreamConnected() *concurrency.Signal[struct{}] {
+	return s.streamConnected
+}
+
 func (s *DockerClientService) WatchEvents(ctx context.Context) {
 	eventBackoff := backoff.NewExponentialBackOff()
 	eventBackoff.InitialInterval = 500 * time.Millisecond
@@ -232,6 +240,7 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 				Since: kit.Ternary(lastEventNano == 0, "", fmt.Sprintf("%d.%09d", (lastEventNano+1)/int64(time.Second), (lastEventNano+1)%int64(time.Second))),
 			})
 			streamStart := time.Now()
+			s.streamConnected.Publish(struct{}{})
 			var streamErr error
 		stream:
 			for {
