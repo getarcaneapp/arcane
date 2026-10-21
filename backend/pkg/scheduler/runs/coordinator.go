@@ -572,37 +572,3 @@ func ActiveWorkflow(run types.SchedulerRun, instanceID string) bool {
 }
 
 func (q *Coordinator) Active() bool { return q.enabled.Load() }
-
-// Resolve releases legacy reviewed work without discarding execution evidence.
-// TODO(v3): remove this deprecated mixed-version compatibility contract.
-func (q *Coordinator) Resolve(ctx context.Context, environmentID, jobID, runID, resolvedBy string) (types.SchedulerRun, error) {
-	run, err := q.Get(ctx, environmentID, jobID, runID)
-	if err != nil {
-		return run, err
-	}
-	err = q.UpdateRun(ctx, run, func(current *types.SchedulerRun) error {
-		if current.Status == types.RunStatusCanceled && current.Resolution != nil {
-			run = *current
-			return nil
-		}
-		if current.Status != types.RunStatusNeedsAttention {
-			return errors.New("only runs needing attention can be resolved")
-		}
-		if current.EnvironmentID != "0" && (current.RemoteDeliveryAttempted || current.RemoteAccepted) && !current.RemoteSettled {
-			return errors.New("remote execution must be confirmed and acknowledged before resolution")
-		}
-		now := time.Now().UTC()
-		current.Status = types.RunStatusCanceled
-		current.Resolution = &types.SchedulerRunResolution{ResolvedBy: resolvedBy, ResolvedAt: now, Reason: "resolved_after_review"}
-		current.UpdatedAt = now
-		current.FinishedAt = &now
-		current.NextAttempt = nil
-		current.Owner = ""
-		run = *current
-		return nil
-	})
-	if err == nil {
-		q.signal()
-	}
-	return run, err
-}

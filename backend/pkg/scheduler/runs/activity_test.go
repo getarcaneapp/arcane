@@ -46,7 +46,7 @@ func pendingActivitySync(t *testing.T, q *Coordinator) bool {
 }
 
 func TestActivityFailureNeverReplaysAcceptedExecution(t *testing.T) {
-	q := newResolutionQueue(t)
+	q := newTestCoordinator(t)
 	observer := &activityObserverFake{}
 	observer.unavailable.Store(true)
 	q.SetObserver(observer)

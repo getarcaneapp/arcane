@@ -144,7 +144,7 @@ func (e occurrenceEnvelope) Decode(value any) error {
 }
 
 func TestAlarmIgnoresStaleGeneration(t *testing.T) {
-	q := newResolutionQueue(t)
+	q := newTestCoordinator(t)
 	next := time.Now().UTC().Add(time.Hour)
 	require.NoError(t, q.Checkpoint(t.Context(), "schedule", "0 * * * * *", next))
 	before, err := q.ScheduleState(t.Context(), "schedule")
@@ -168,7 +168,7 @@ func TestDuplicateDispatchAndCanceledDelivery(t *testing.T) {
 			name = "canceled"
 		}
 		t.Run(name, func(t *testing.T) {
-			q := newResolutionQueue(t)
+			q := newTestCoordinator(t)
 			var executed atomic.Int32
 			q.SetExecutor(func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error) {
 				executed.Add(1)
@@ -219,7 +219,7 @@ func TestDuplicateDispatchAndCanceledDelivery(t *testing.T) {
 }
 
 func TestCapacityGroupsReserveHealthSlots(t *testing.T) {
-	q := newResolutionQueue(t)
+	q := newTestCoordinator(t)
 	var ordinary, health atomic.Int32
 	release := make(chan struct{})
 	var once sync.Once
@@ -265,7 +265,7 @@ func TestCapacityGroupsReserveHealthSlots(t *testing.T) {
 }
 
 func TestReconciliationRepairsMissingAlarm(t *testing.T) {
-	q := newResolutionQueue(t)
+	q := newTestCoordinator(t)
 	require.NoError(t, q.Checkpoint(t.Context(), "repair", "0 * * * * *", time.Now().UTC().Add(time.Hour)))
 	q.enabled.Store(true)
 	defer q.enabled.Store(false)
@@ -311,7 +311,7 @@ func TestAdmissionAndCompletionRejectStaleTokens(t *testing.T) {
 	require.True(t, admitted)
 	replacement.Release(t.Context())
 
-	q := newResolutionQueue(t)
+	q := newTestCoordinator(t)
 	run, err := q.Submit(t.Context(), types.SchedulerRequest{JobID: "tokens"})
 	require.NoError(t, err)
 	require.NoError(t, q.UpdateRun(t.Context(), run, func(current *types.SchedulerRun) error {
@@ -366,7 +366,7 @@ func TestAdmissionAcquireWaitsForRelease(t *testing.T) {
 }
 
 func TestLostDispatchAcknowledgementRetainsOneExecution(t *testing.T) {
-	q := newResolutionQueue(t)
+	q := newTestCoordinator(t)
 	entered := make(chan struct{})
 	finish := make(chan struct{})
 	var once sync.Once

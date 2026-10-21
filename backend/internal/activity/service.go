@@ -1303,7 +1303,6 @@ func jobActivity(run types.SchedulerRun, name string) Activity {
 	}
 	message := cmp.Or(run.Outcome.Message, name+": "+string(run.Status))
 	terminal := slices.Contains(terminalActivityStatuses, status)
-	resolvedByUser := run.Resolution != nil && run.Resolution.ResolvedBy != types.SystemUser.Username
 	return Activity{
 		ID:                run.ActivityID,
 		CreatedAt:         run.CreatedAt,
@@ -1319,26 +1318,20 @@ func jobActivity(run types.SchedulerRun, name string) Activity {
 		StartedByUsername: mo.EmptyableToOption(run.RequestedBy).ToPointer(),
 		StartedAt:         run.CreatedAt,
 		Step:              string(run.Status),
-		LatestMessage:     kit.Ternary(resolvedByUser, "Resolved after review", message),
+		LatestMessage:     message,
 		EndedAt:           kit.Ternary(terminal, new(run.UpdatedAt), nil),
 		DurationMs:        kit.Ternary(terminal, new(max(int64(0), run.UpdatedAt.Sub(run.CreatedAt).Milliseconds())), nil),
 		Error:             kit.Ternary(status == types.ActivityStatusFailed, new(message), nil),
-		Metadata: func() database.JSON {
-			metadata := database.JSON{
-				"jobId":            run.JobID,
-				"runId":            run.ID,
-				"environmentId":    run.EnvironmentID,
-				"jobStatus":        string(run.Status),
-				"trigger":          run.Trigger,
-				"attemptCount":     run.AttemptCount,
-				"runUpdatedAt":     run.UpdatedAt.Format(time.RFC3339Nano),
-				"domainActivityId": run.Outcome.ActivityID,
-			}
-			if run.Resolution != nil {
-				metadata["resolution"] = run.Resolution
-			}
-			return metadata
-		}(),
+		Metadata: database.JSON{
+			"jobId":            run.JobID,
+			"runId":            run.ID,
+			"environmentId":    run.EnvironmentID,
+			"jobStatus":        string(run.Status),
+			"trigger":          run.Trigger,
+			"attemptCount":     run.AttemptCount,
+			"runUpdatedAt":     run.UpdatedAt.Format(time.RFC3339Nano),
+			"domainActivityId": run.Outcome.ActivityID,
+		},
 	}
 }
 

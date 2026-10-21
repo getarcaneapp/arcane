@@ -135,20 +135,6 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, envSvc *environment.
 	middleware.RegisterWithPermission(
 		api,
 		huma.Operation{
-			OperationID: "resolve-job-run",
-			Method:      http.MethodPost,
-			Path:        basePath + "/runs/{runId}/resolve",
-			Summary:     "Resolve legacy job run",
-			Description: "Deprecated compatibility endpoint for mixed-version upgrades. Removed in v3.",
-			Deprecated:  true,
-			Security:    handlerutil.DefaultOperationSecurity(),
-		},
-		authz.PermJobsManage,
-		h.ResolveRun,
-	)
-	middleware.RegisterWithPermission(
-		api,
-		huma.Operation{
 			OperationID: "ack-job-run",
 			Method:      http.MethodPost,
 			Path:        basePath + "/runs/{runId}/ack",
