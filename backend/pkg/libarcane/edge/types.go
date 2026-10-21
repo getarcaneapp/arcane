@@ -1,7 +1,6 @@
 package edge
 
 import (
-	"bytes"
 	"context"
 	"net/http"
 	"sync"
@@ -16,69 +15,22 @@ import (
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 )
 
-// activeWSStream tracks an active WebSocket stream on the agent side.
-//
-// Deprecated: legacy edge message protocol; remove in v3.
-type activeWSStream struct {
-	ws     *websocket.Conn
-	conn   TunnelConnection // tunnel connection the stream was opened on
-	cancel context.CancelFunc
-	dataCh chan wsPayload
-	mu     sync.Mutex
-	closed bool
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-type wsPayload struct {
-	messageType int
-	data        []byte
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-type commandRequestTransfer struct {
-	request      *TunnelMessage
-	conn         TunnelConnection
-	body         bytes.Buffer
-	nextSequence int64
-	timerMu      sync.Mutex
-	timer        *time.Timer
-}
-
-type commandStatusError struct {
-	status  int
-	message string
-}
-
 // TunnelClient represents the agent-side tunnel client
 type TunnelClient struct {
 	cfg                    *Config
 	handler                http.Handler
 	reconnectInterval      time.Duration
-	heartbeatInterval      time.Duration
 	registrationTimeout    time.Duration
 	websocketPreferenceTTL time.Duration
 	healthySessionDuration time.Duration
 	managerURL             string
 	managerGRPCAddr        string
-	localPort              string // Port the agent is running on locally
 	conn                   atomic.Pointer[connBox]
-	requestTimeout         time.Duration
-	// Legacy edge message protocol state; remove in v3.
-	activeStreams         sync.Map // map[string]*activeWSStream
-	requestTransfers      sync.Map // map[string]*commandRequestTransfer
-	commandRecorders      sync.Map // map[string]*commandResponseRecorder awaiting credit
-	commandCancels        sync.Map
-	transportPreferenceMu sync.RWMutex
-	preferWebSocketUntil  time.Time
-	grpcFailureStreak     int
-	agentInstanceID       string
-	registration          concurrency.Snapshot[clientRegistration]
-}
-
-type clientRegistration struct {
-	sessionID string
-	// commandCredit is set when the manager grants command output flow-control credit.
-	commandCredit bool
+	transportPreferenceMu  sync.RWMutex
+	preferWebSocketUntil   time.Time
+	grpcFailureStreak      int
+	agentInstanceID        string
+	sessionID              concurrency.Snapshot[string]
 }
 
 // connBox lets the active connection swap atomically on reconnect: an atomic.Value would panic when the
@@ -92,77 +44,11 @@ type tunnelTransports struct {
 	websocket bool
 }
 
-// responseRecorder captures HTTP responses.
-//
-// Deprecated: legacy edge message protocol; remove in v3.
-type responseRecorder struct {
-	headers    http.Header
-	body       bytes.Buffer
-	statusCode int
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-type commandResponseRecorder struct {
-	conn        TunnelConnection
-	headers     http.Header
-	commandID   string
-	commandName string
-	buffer      bytes.Buffer
-	statusCode  int
-	sequence    int64
-	// flushErr keeps the first send failure from Flush, which cannot return it.
-	flushErr error
-	// With manager flow control, sends wait while inFlight would exceed window; credits signal room.
-	ctx         context.Context
-	window      int64
-	inFlight    atomic.Int64
-	credited    chan struct{}
-	mu          sync.Mutex
-	wroteHeader bool
-	streaming   bool
-	closed      bool
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-type streamingResponseRecorder struct {
-	requestID   string
-	conn        TunnelConnection
-	headers     http.Header
-	statusCode  int
-	wroteHeader bool
-	closed      bool
-	mu          sync.Mutex
-}
-
 type pollManagedTunnelSession struct {
 	cancel   context.CancelFunc
 	done     chan error
 	stopping bool
 }
-
-// Deprecated: legacy edge message protocol; remove in v3.
-type CommandRequest struct {
-	ID            string
-	Command       string
-	Method        string
-	Path          string
-	Query         string
-	Headers       map[string]string
-	Body          []byte
-	TimeoutMillis int64
-	// Output, when set, receives the response as it streams in; CommandResult.Body is then nil.
-	Output http.ResponseWriter
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-type CommandResult struct {
-	Status  int
-	Headers map[string]string
-	Body    []byte
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-type CommandClient struct{}
 
 type commandRoute struct {
 	Method      string
@@ -217,24 +103,10 @@ type PollRuntimeRegistry struct {
 	mu     sync.RWMutex
 }
 
-// Deprecated: legacy edge message protocol; remove in v3.
-type grpcResponseState struct {
-	out         http.ResponseWriter
-	outErr      error
-	credit      func(consumed int)
-	status      int
-	respHeaders map[string]string
-	respBody    bytes.Buffer
-	gotResponse bool
-	committed   bool
-}
-
 // AgentTunnel represents an active tunnel connection from an edge agent
 type AgentTunnel struct {
 	EnvironmentID string
 	Conn          TunnelConnection
-	// Deprecated: legacy edge message protocol; remove in v3.
-	Pending       sync.Map // map[string]*PendingRequest
 	ConnectedAt   time.Time
 	LastHeartbeat time.Time
 	SessionID     string
@@ -248,14 +120,7 @@ type AgentTunnel struct {
 	done          chan struct{}
 	closeOnce     sync.Once
 
-	// mux is set when the agent negotiated the multiplexed data plane; it never changes afterwards.
 	mux *muxSession
-
-	// Command credits queue here for a per-tunnel sender, so readers never block on the connection; remove in v3.
-	creditOnce   sync.Once
-	creditMu     sync.Mutex
-	credits      map[string]int64
-	creditSignal chan struct{}
 }
 
 // TunnelRegistry manages active edge agent tunnel connections
@@ -263,8 +128,6 @@ type TunnelRegistry struct {
 	stopped atomic.Bool
 	tunnels *concurrency.StateMap[string, *AgentTunnel]
 }
-
-type internalTunnelRequestContextKey struct{}
 
 // TunnelServer handles incoming edge agent connections on the manager side.
 type TunnelServer struct {
@@ -336,17 +199,13 @@ type Config struct {
 	AgentToken            string
 	Port                  string
 	Listen                string
-	// EdgeMuxDisabled keeps the legacy message protocol; remove in v3 with it.
-	EdgeMuxDisabled bool
 }
 
 // TunnelRuntimeState describes the live, in-memory state of an active edge tunnel.
 type TunnelRuntimeState struct {
-	// DataPlane is EdgeDataPlaneMux or EdgeDataPlaneLegacy.
-	DataPlane string
-	// RoundTripTime is the last keepalive round trip; only multiplexed tunnels measure it.
+	// RoundTripTime is the last keepalive round trip.
 	RoundTripTime *time.Duration
-	// OpenStreams counts open mux streams (including pooled idle ones) or pending legacy requests.
+	// OpenStreams counts open mux streams, including pooled idle ones.
 	OpenStreams   int
 	Transport     string
 	ConnectedAt   *time.Time
@@ -358,36 +217,20 @@ type TunnelRuntimeState struct {
 	State         string
 }
 
-// TunnelMessage represents a transport-agnostic edge tunnel message. Only register and register_response
-// survive the mux data plane; every other type is the legacy edge message protocol and goes in v3.
+// TunnelMessage is the register handshake both peers exchange before switching to the multiplexed data plane.
 type TunnelMessage struct {
-	Headers       map[string]string `json:"headers,omitempty"`         // HTTP headers
-	Event         *TunnelEvent      `json:"event,omitempty"`           // Agent event payload
-	Metadata      map[string]string `json:"metadata,omitempty"`        // Correlation and audit metadata
-	ID            string            `json:"id"`                        // Unique request/stream ID
-	Type          TunnelMessageType `json:"type"`                      // Message type
-	Method        string            `json:"method,omitempty"`          // HTTP method for requests
-	Path          string            `json:"path,omitempty"`            // Request path
-	Query         string            `json:"query,omitempty"`           // Query string
-	AgentToken    string            `json:"agent_token,omitempty"`     // Register request token
-	EnvironmentID string            `json:"environment_id,omitempty"`  // Manager-resolved environment ID
-	Error         string            `json:"error,omitempty"`           // Error field for register response
-	Command       string            `json:"command,omitempty"`         // Typed command name
-	SessionID     string            `json:"session_id,omitempty"`      // Manager-issued session identifier
-	ResumeSession string            `json:"resume_session,omitempty"`  // Previous session being resumed
-	AgentInstance string            `json:"agent_instance,omitempty"`  // Stable agent runtime identity
-	SecurityMode  string            `json:"security_mode,omitempty"`   // token, mtls, etc.
-	Body          []byte            `json:"body,omitempty"`            // Request/response body
-	Capabilities  []string          `json:"capabilities,omitempty"`    // Agent advertised capabilities
-	WSMessageType int               `json:"ws_message_type,omitempty"` // WebSocket message type
-	Status        int               `json:"status,omitempty"`          // HTTP status for responses
-	TimeoutMillis int64             `json:"timeout_millis,omitempty"`  // Command timeout
-	Sequence      int64             `json:"sequence,omitempty"`        // Chunk sequence number
-	Credit        int64             `json:"credit,omitempty"`          // Command output bytes the manager consumed
-	Accepted      bool              `json:"accepted,omitempty"`        // Registration accepted
-	DrainPrevious bool              `json:"drain_previous,omitempty"`  // Replace previous session
-	Streaming     bool              `json:"streaming,omitempty"`       // Response used chunked output
-	EOF           bool              `json:"eof,omitempty"`             // Final chunk indicator
+	ID            string            `json:"id"`
+	Type          TunnelMessageType `json:"type"`
+	AgentToken    string            `json:"agent_token,omitempty"`
+	EnvironmentID string            `json:"environment_id,omitempty"`
+	Error         string            `json:"error,omitempty"`
+	SessionID     string            `json:"session_id,omitempty"`
+	ResumeSession string            `json:"resume_session,omitempty"`
+	AgentInstance string            `json:"agent_instance,omitempty"`
+	SecurityMode  string            `json:"security_mode,omitempty"`
+	Capabilities  []string          `json:"capabilities,omitempty"`
+	Accepted      bool              `json:"accepted,omitempty"`
+	DrainPrevious bool              `json:"drain_previous,omitempty"`
 }
 
 // TunnelEvent is an event payload sent from an agent to the manager.
@@ -402,21 +245,6 @@ type TunnelEvent struct {
 	UserID       string `json:"user_id,omitempty"`
 	Username     string `json:"username,omitempty"`
 	MetadataJSON []byte `json:"metadata_json,omitempty"`
-}
-
-// PendingRequest tracks an in-flight request waiting for response.
-//
-// Deprecated: legacy edge message protocol; remove in v3.
-type PendingRequest struct {
-	ResponseCh chan *TunnelMessage
-	failureCh  chan error
-
-	// mu guards the ordered backlog that absorbs bursts while ResponseCh is full.
-	mu           sync.Mutex
-	backlog      []*TunnelMessage
-	backlogBytes int
-	draining     bool
-	failed       bool
 }
 
 // TunnelConn wraps a WebSocket connection with send/receive helpers.
@@ -434,9 +262,6 @@ type GRPCManagerTunnelConn struct {
 	mu     sync.Mutex
 	closed atomic.Bool
 	muxed  atomic.Bool
-	// parity is set at registration when the agent advertises proto-parity-v1,
-	// enabling native stream_data/stream_end instead of the legacy ws_data re-encode.
-	parity bool
 }
 
 // GRPCAgentTunnelConn wraps the agent-side gRPC tunnel stream.

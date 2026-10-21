@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/hashicorp/yamux"
-	"github.com/samber/mo"
 )
 
 const (
@@ -75,13 +74,10 @@ func (m *muxSession) alive(ctx context.Context, timeout time.Duration) bool {
 	}
 }
 
-// HTTPClient returns the client for a tunnel that negotiated the multiplexed data plane. Requests use
+// HTTPClient returns the client for the tunnel's multiplexed data plane. Requests use
 // MuxAgentBaseURL as their origin and are served by the agent's own router.
-func (t *AgentTunnel) HTTPClient() mo.Option[*http.Client] {
-	if t == nil || t.mux == nil {
-		return mo.None[*http.Client]()
-	}
-	return mo.Some(t.mux.client)
+func (t *AgentTunnel) HTTPClient() *http.Client {
+	return t.mux.client
 }
 
 // serveMuxTunnel runs the manager end of a multiplexed session until the agent disconnects or the tunnel closes.

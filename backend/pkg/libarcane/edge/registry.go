@@ -14,9 +14,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
 )
 
-// NewAgentTunnelWithConn creates a new agent tunnel from a transport-agnostic connection.
+// NewAgentTunnelWithConn creates a new agent tunnel from a transport-agnostic connection. Its mux session
+// exists before registration so callers that find the tunnel mid-handshake wait for it.
 func NewAgentTunnelWithConn(envID string, conn TunnelConnection) *AgentTunnel {
 	now := time.Now()
+	mux := &muxSession{ready: make(chan struct{}), closed: make(chan struct{})}
+	mux.client = newMuxHTTPClient(mux.dial)
 	return &AgentTunnel{
 		EnvironmentID: envID,
 		Conn:          conn,
@@ -24,6 +27,7 @@ func NewAgentTunnelWithConn(envID string, conn TunnelConnection) *AgentTunnel {
 		LastHeartbeat: now,
 		State:         "connected",
 		done:          make(chan struct{}),
+		mux:           mux,
 	}
 }
 
@@ -39,22 +43,14 @@ func (t *AgentTunnel) connected() bool {
 	return t != nil && t.Conn != nil && !t.Conn.IsClosed()
 }
 
-// openStreams counts open mux streams, or pending requests on a legacy tunnel.
+// openStreams counts open mux streams.
 func (t *AgentTunnel) openStreams() int {
-	if t.mux != nil {
-		t.mux.mu.Lock()
-		defer t.mux.mu.Unlock()
-		if t.mux.session == nil {
-			return 0
-		}
-		return t.mux.session.NumStreams()
+	t.mux.mu.Lock()
+	defer t.mux.mu.Unlock()
+	if t.mux.session == nil {
+		return 0
 	}
-	count := 0
-	t.Pending.Range(func(_, _ any) bool {
-		count++
-		return true
-	})
-	return count
+	return t.mux.session.NumStreams()
 }
 
 // GetLastHeartbeat returns the last heartbeat time
@@ -113,9 +109,7 @@ func (t *AgentTunnel) CloseWithReason(reason string) error {
 			close(t.done)
 		}
 	})
-	if t.mux != nil {
-		t.mux.close()
-	}
+	t.mux.close()
 	if t.Conn == nil {
 		return nil
 	}
@@ -204,7 +198,7 @@ func (r *TunnelRegistry) RegisterSession(ctx context.Context, tunnel *AgentTunne
 	if envID == "" {
 		return false, false, "environment ID is required", nil
 	}
-	if existing, ok := r.Get(envID).Get(); ok && existing != tunnel && existing.mux != nil && existing.connected() && !existing.mux.alive(ctx, muxRegistrationPingTimeout) {
+	if existing, ok := r.Get(envID).Get(); ok && existing != tunnel && existing.connected() && !existing.mux.alive(ctx, muxRegistrationPingTimeout) {
 		slog.InfoContext(ctx, "Existing edge tunnel session failed a liveness ping; replacing it", "environmentId", envID)
 		_ = existing.CloseWithReason("edge tunnel liveness ping failed")
 	}
