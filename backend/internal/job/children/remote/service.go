@@ -309,11 +309,6 @@ func (s *Service) Catalog(ctx context.Context, environmentID string) (*types.Job
 			Jobs:        catalog.Jobs,
 			IsAgent:     catalog.IsAgent,
 		}
-		if observed.DurableRuns {
-			if err := s.ReconcileLegacyCatalog(ctx, environmentID, observed.Jobs); err != nil {
-				return nil, err
-			}
-		}
 		raw, err := json.Marshal(observed)
 		if err != nil {
 			return nil, err
@@ -552,42 +547,6 @@ func (s *Service) MutateAgentRun(ctx context.Context, environmentID, jobID, runI
 		RemoteSettled:           run.RemoteSettled,
 		LastConfirmedAt:         run.LastConfirmedAt,
 	}, nil
-}
-
-// ReconcileLegacyCatalog adopts legacy agent-owned runs needing attention.
-// TODO(v3): remove adoption of legacy agent-owned runs.
-func (s *Service) ReconcileLegacyCatalog(ctx context.Context, environmentID string, jobs []types.JobStatus) error {
-	for _, job := range jobs {
-		for _, remote := range []*types.SchedulerRun{job.CurrentRun, job.LastRun} {
-			if kit.FromPtr(remote).Status != types.RunStatusNeedsAttention {
-				continue
-			}
-			if remote.JobID != job.ID || remote.EnvironmentID != "0" {
-				return errors.New("agent returned an inconsistent run identity")
-			}
-			_, err := s.runs.Get(ctx, environmentID, job.ID, remote.ID)
-			if err == nil {
-				continue
-			}
-			if !errors.Is(err, runs.ErrRunNotFound) {
-				return err
-			}
-			_, err = s.runs.Submit(ctx, types.SchedulerRequest{
-				RunID:            remote.ID,
-				JobID:            job.ID,
-				EnvironmentID:    environmentID,
-				Trigger:          "recovery",
-				ObservedAgentRun: remote,
-			})
-			if err != nil {
-				return err
-			}
-		}
-		if err := s.ReconcileLegacyCatalog(ctx, environmentID, job.Children); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // resolveAgentReview settles legacy inactive runs on their owning agent.
