@@ -217,7 +217,7 @@ func newStartCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           clitypes.ContainerStart(c.EnvID(), resolved.ID),
+				Path:           clitypes.ContainerAction(c.EnvID(), resolved.ID, "start"),
 				FailureMessage: "failed to start container",
 				Render: func(types.MessageResponse) error {
 					output.Success("Container %s started successfully", containerDisplayName(resolved))
@@ -247,7 +247,7 @@ func newStopCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           clitypes.ContainerStop(c.EnvID(), resolved.ID),
+				Path:           clitypes.ContainerAction(c.EnvID(), resolved.ID, "stop"),
 				FailureMessage: "failed to stop container",
 				Render: func(types.MessageResponse) error {
 					output.Success("Container %s stopped successfully", containerDisplayName(resolved))
@@ -277,7 +277,7 @@ func newRestartCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           clitypes.ContainerRestart(c.EnvID(), resolved.ID),
+				Path:           clitypes.ContainerAction(c.EnvID(), resolved.ID, "restart"),
 				FailureMessage: "failed to restart container",
 				Render: func(types.MessageResponse) error {
 					output.Success("Container %s restarted successfully", containerDisplayName(resolved))

@@ -93,7 +93,7 @@ func newTestCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           clitypes.ContainerRegistryTest(args[0]),
+				Path:           clitypes.ContainerRegistryAction(args[0], "test"),
 				FailureMessage: "failed to test registry",
 				Render: func(types.MessageResponse) error {
 					output.Success("%s", "Registry connection test successful")
@@ -245,7 +245,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ContainerRegistry]{
-				Method:         http.MethodPut,
+				Method:         http.MethodPatch,
 				Path:           clitypes.ContainerRegistry(args[0]),
 				Body:           req,
 				FailureMessage: "failed to update registry",

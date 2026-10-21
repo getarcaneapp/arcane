@@ -210,7 +210,7 @@ func newTestProviderCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.NotificationTestResponse]{
 				Method:         http.MethodPost,
-				Path:           clitypes.NotificationsTestProvider(c.EnvID(), args[0]),
+				Path:           clitypes.NotificationSettingsProviderAction(c.EnvID(), args[0], "test"),
 				FailureMessage: "failed to test notification provider",
 				Render: func(types.NotificationTestResponse) error {
 					output.Success("%s", fmt.Sprintf("Notification test for %s successful", args[0]))

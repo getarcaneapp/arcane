@@ -73,12 +73,15 @@ type UpdateProjectTagInput struct {
 type DeployProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
+	Action        string `query:"action" required:"true" enum:"up,redeploy,pull" doc:"Deploy action"`
 	Body          *types.ProjectDeployOptions
 }
 
-type DownProjectInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ProjectID     string `path:"projectId" doc:"Project ID"`
+type ProjectActionInput struct {
+	EnvironmentID string   `path:"id" doc:"Environment ID"`
+	ProjectID     string   `path:"projectId" doc:"Project ID"`
+	Action        string   `query:"action" required:"true" enum:"down,restart,archive,unarchive,updateservices" doc:"Project action"`
+	Services      []string `query:"services,explode" doc:"Service names for restart or updateservices; empty targets all services"`
 }
 
 type CreateProjectInput struct {
@@ -91,12 +94,6 @@ type GetProjectInput struct {
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 }
 
-type RedeployProjectInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ProjectID     string `path:"projectId" doc:"Project ID"`
-	Body          *types.ProjectDeployOptions
-}
-
 type DestroyProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
@@ -107,33 +104,6 @@ type UpdateProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 	types.Update[types.Project]
-}
-
-type RestartProjectInput struct {
-	EnvironmentID string   `path:"id" doc:"Environment ID"`
-	ProjectID     string   `path:"projectId" doc:"Project ID"`
-	Services      []string `query:"services" doc:"Service names to restart; empty restarts all services"`
-}
-
-type UpdateProjectServicesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ProjectID     string `path:"projectId" doc:"Project ID"`
-	Body          *types.ProjectUpdateServicesRequest
-}
-
-type ArchiveProjectInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ProjectID     string `path:"projectId" doc:"Project ID"`
-}
-
-type UnarchiveProjectInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ProjectID     string `path:"projectId" doc:"Project ID"`
-}
-
-type PullProjectImagesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ProjectID     string `path:"projectId" doc:"Project ID"`
 }
 
 type BuildProjectInput struct {
@@ -365,40 +335,112 @@ func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProject
 		return nil, err
 	}
 
-	//nolint:contextcheck // the stream body runs on humaCtx.Context(), not the handler ctx
-	return h.streamProjectOperation(input.EnvironmentID, input.ProjectID, user, projectStreamOperationConfig{
-		ActivityType:   types.ActivityTypeProjectDeploy,
-		Step:           "Starting deployment",
-		StartMessage:   "Project deployment started",
-		WriterStep:     "Deploying project",
-		FailureMessage: "Project deployment failed",
-		SuccessMessage: "Project deployment completed",
-		Action: func(opCtx context.Context, _ io.Writer) error {
-			return h.projectService.DeployProject(opCtx, input.ProjectID, *user, input.Body)
+	cfg := map[string]projectStreamOperationConfig{
+		"up": {
+			ActivityType:   types.ActivityTypeProjectDeploy,
+			Step:           "Starting deployment",
+			StartMessage:   "Project deployment started",
+			WriterStep:     "Deploying project",
+			FailureMessage: "Project deployment failed",
+			SuccessMessage: "Project deployment completed",
+			Action: func(opCtx context.Context, _ io.Writer) error {
+				return h.projectService.DeployProject(opCtx, input.ProjectID, *user, input.Body)
+			},
 		},
-	}), nil
+		"redeploy": {
+			ActivityType:   types.ActivityTypeProjectRedeploy,
+			Step:           "Starting redeploy",
+			StartMessage:   "Project redeploy started",
+			WriterStep:     "Redeploying project",
+			FailureMessage: "Project redeploy failed",
+			SuccessMessage: "Project redeploy completed",
+			Action: func(opCtx context.Context, _ io.Writer) error {
+				return h.projectService.RedeployProject(opCtx, input.ProjectID, *user, input.Body)
+			},
+		},
+		"pull": {
+			ActivityType:   types.ActivityTypeProjectPull,
+			Step:           "Pulling project images",
+			StartMessage:   "Project image pull started",
+			WriterStep:     "Pulling project images",
+			FailureMessage: "Project image pull failed",
+			SuccessMessage: "Project image pull completed",
+			Action: func(opCtx context.Context, writer io.Writer) error {
+				return h.projectService.PullProjectImages(opCtx, input.ProjectID, writer, *user, nil)
+			},
+		},
+	}[input.Action]
+
+	//nolint:contextcheck // the stream body runs on humaCtx.Context(), not the handler ctx
+	return h.streamProjectOperation(input.EnvironmentID, input.ProjectID, user, cfg), nil
 }
 
-// DownProject brings down a Docker Compose project.
-func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInput) (*handlerutil.Out[types.MessageResponse], error) {
-	return h.runProjectActivityAction(ctx, input.EnvironmentID, input.ProjectID, projectActivityActionConfig{
-		ActivityType:    types.ActivityTypeProjectDown,
-		Step:            "Stopping project",
-		StartMessage:    "Project stop requested",
-		WriterStep:      "Stopping project",
-		FailureMessage:  "Project stopped",
-		SuccessComplete: "Project stopped",
-		SuccessMessage:  "Project brought down successfully",
-		Action: func(runtimeCtx context.Context, projectID string, user types.Actor) error {
-			return h.projectService.DownProject(runtimeCtx, projectID, user)
+func (h *ProjectHandler) RunProjectAction(ctx context.Context, input *ProjectActionInput) (*handlerutil.Out[types.MessageResponse], error) {
+	switch input.Action {
+	case "archive":
+		return h.archiveProject(ctx, input.ProjectID)
+	case "unarchive":
+		return h.unarchiveProject(ctx, input.ProjectID)
+	}
+
+	cfg := map[string]projectActivityActionConfig{
+		"down": {
+			ActivityType:    types.ActivityTypeProjectDown,
+			Step:            "Stopping project",
+			StartMessage:    "Project stop requested",
+			WriterStep:      "Stopping project",
+			FailureMessage:  "Project stopped",
+			SuccessComplete: "Project stopped",
+			SuccessMessage:  "Project brought down successfully",
+			Action: func(runtimeCtx context.Context, projectID string, user types.Actor) error {
+				return h.projectService.DownProject(runtimeCtx, projectID, user)
+			},
+			Error: func(err error) error {
+				if errors.Is(err, common.ErrProjectArchived) || errors.Is(err, common.ErrProjectEnvUnreadable) {
+					return huma.Error400BadRequest(err.Error())
+				}
+				return huma.NewError(common.ToAPIError(err).HTTPStatus(), "Failed to bring down project: "+err.Error())
+			},
 		},
-		Error: func(err error) error {
-			if errors.Is(err, common.ErrProjectArchived) || errors.Is(err, common.ErrProjectEnvUnreadable) {
-				return huma.Error400BadRequest(err.Error())
-			}
-			return huma.NewError(common.ToAPIError(err).HTTPStatus(), "Failed to bring down project: "+err.Error())
+		"restart": {
+			ActivityType:    types.ActivityTypeProjectRestart,
+			Step:            "Restarting project",
+			StartMessage:    "Project restart requested",
+			WriterStep:      "Restarting project",
+			FailureMessage:  "Project restarted",
+			SuccessComplete: "Project restarted",
+			SuccessMessage:  "Project restarted successfully",
+			Action: func(runtimeCtx context.Context, projectID string, user types.Actor) error {
+				return h.projectService.RestartProject(runtimeCtx, projectID, input.Services, user)
+			},
+			Error: func(err error) error {
+				if errors.Is(err, common.ErrProjectArchived) {
+					return huma.Error400BadRequest(err.Error())
+				}
+				return huma.Error400BadRequest("Failed to restart project: " + err.Error())
+			},
 		},
-	})
+		"updateservices": {
+			ActivityType:    types.ActivityTypeAutoUpdate,
+			Step:            "Updating project services",
+			StartMessage:    "Project services update requested",
+			WriterStep:      "Updating project services",
+			FailureMessage:  "Project services update failed",
+			SuccessComplete: "Project services updated",
+			SuccessMessage:  "Project services updated successfully",
+			Queue:           true,
+			Action: func(runtimeCtx context.Context, projectID string, user types.Actor) error {
+				return h.projectService.UpdateProjectServices(runtimeCtx, projectID, input.Services, user, true)
+			},
+			Error: func(err error) error {
+				if errors.Is(err, common.ErrProjectArchived) {
+					return huma.Error400BadRequest(err.Error())
+				}
+				return huma.Error400BadRequest("Failed to update project: " + err.Error())
+			},
+		},
+	}[input.Action]
+	return h.runProjectActivityAction(ctx, input.EnvironmentID, input.ProjectID, cfg)
 }
 
 // CreateProject creates a new Docker Compose project.
@@ -533,33 +575,6 @@ func (h *ProjectHandler) GetProjectUpdates(ctx context.Context, input *GetProjec
 	})
 }
 
-// RedeployProject redeploys a Docker Compose project.
-// RedeployProject pulls project images and re-deploys, streaming the raw
-// docker CLI output as NDJSON like DeployProject.
-func (h *ProjectHandler) RedeployProject(ctx context.Context, input *RedeployProjectInput) (*huma.StreamResponse, error) {
-	if input.ProjectID == "" {
-		return nil, huma.Error400BadRequest("Project ID is required")
-	}
-
-	user, err := handlerutil.RequireUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	//nolint:contextcheck // the stream body runs on humaCtx.Context(), not the handler ctx
-	return h.streamProjectOperation(input.EnvironmentID, input.ProjectID, user, projectStreamOperationConfig{
-		ActivityType:   types.ActivityTypeProjectRedeploy,
-		Step:           "Starting redeploy",
-		StartMessage:   "Project redeploy started",
-		WriterStep:     "Redeploying project",
-		FailureMessage: "Project redeploy failed",
-		SuccessMessage: "Project redeploy completed",
-		Action: func(opCtx context.Context, _ io.Writer) error {
-			return h.projectService.RedeployProject(opCtx, input.ProjectID, *user, input.Body)
-		},
-	}), nil
-}
-
 // DestroyProject destroys a Docker Compose project.
 func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProjectInput) (*handlerutil.Out[types.MessageResponse], error) {
 	return h.runProjectActivityAction(ctx, input.EnvironmentID, input.ProjectID, projectActivityActionConfig{
@@ -687,51 +702,6 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 	}, nil
 }
 
-// RestartProject restarts the given services in a project (all services when none are specified).
-func (h *ProjectHandler) RestartProject(ctx context.Context, input *RestartProjectInput) (*handlerutil.Out[types.MessageResponse], error) {
-	return h.runProjectActivityAction(ctx, input.EnvironmentID, input.ProjectID, projectActivityActionConfig{
-		ActivityType:    types.ActivityTypeProjectRestart,
-		Step:            "Restarting project",
-		StartMessage:    "Project restart requested",
-		WriterStep:      "Restarting project",
-		FailureMessage:  "Project restarted",
-		SuccessComplete: "Project restarted",
-		SuccessMessage:  "Project restarted successfully",
-		Action: func(runtimeCtx context.Context, projectID string, user types.Actor) error {
-			return h.projectService.RestartProject(runtimeCtx, projectID, input.Services, user)
-		},
-		Error: func(err error) error {
-			if errors.Is(err, common.ErrProjectArchived) {
-				return huma.Error400BadRequest(err.Error())
-			}
-			return huma.Error400BadRequest("Failed to restart project: " + err.Error())
-		},
-	})
-}
-
-// UpdateProjectServices pulls the latest images for the given services and recreates them.
-func (h *ProjectHandler) UpdateProjectServices(ctx context.Context, input *UpdateProjectServicesInput) (*handlerutil.Out[types.MessageResponse], error) {
-	return h.runProjectActivityAction(ctx, input.EnvironmentID, input.ProjectID, projectActivityActionConfig{
-		ActivityType:    types.ActivityTypeAutoUpdate,
-		Step:            "Updating project services",
-		StartMessage:    "Project services update requested",
-		WriterStep:      "Updating project services",
-		FailureMessage:  "Project services update failed",
-		SuccessComplete: "Project services updated",
-		SuccessMessage:  "Project services updated successfully",
-		Queue:           true,
-		Action: func(runtimeCtx context.Context, projectID string, user types.Actor) error {
-			return h.projectService.UpdateProjectServices(runtimeCtx, projectID, kit.FromPtr(input.Body).Services, user, true)
-		},
-		Error: func(err error) error {
-			if errors.Is(err, common.ErrProjectArchived) {
-				return huma.Error400BadRequest(err.Error())
-			}
-			return huma.Error400BadRequest("Failed to update project: " + err.Error())
-		},
-	})
-}
-
 type projectActivityActionConfig struct {
 	ActivityType    types.ActivityType
 	Step            string
@@ -787,8 +757,8 @@ func (h *ProjectHandler) runProjectActivityAction(ctx context.Context, environme
 	return handlerutil.MessageOutput(cfg.SuccessMessage, activityID), nil
 }
 
-func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProjectInput) (*handlerutil.Out[types.MessageResponse], error) {
-	if input.ProjectID == "" {
+func (h *ProjectHandler) archiveProject(ctx context.Context, projectID string) (*handlerutil.Out[types.MessageResponse], error) {
+	if projectID == "" {
 		return nil, huma.Error400BadRequest("Project ID is required")
 	}
 
@@ -797,7 +767,7 @@ func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProje
 		return nil, err
 	}
 
-	if archiveProjectErr := h.projectService.ArchiveProject(ctx, input.ProjectID, *user); archiveProjectErr != nil {
+	if archiveProjectErr := h.projectService.ArchiveProject(ctx, projectID, *user); archiveProjectErr != nil {
 		if errors.Is(archiveProjectErr, common.ErrProjectMustBeStopped) {
 			return nil, huma.Error400BadRequest(archiveProjectErr.Error())
 		}
@@ -807,8 +777,8 @@ func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProje
 	return handlerutil.MessageOutput("Project archived successfully", ""), nil
 }
 
-func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveProjectInput) (*handlerutil.Out[types.MessageResponse], error) {
-	if input.ProjectID == "" {
+func (h *ProjectHandler) unarchiveProject(ctx context.Context, projectID string) (*handlerutil.Out[types.MessageResponse], error) {
+	if projectID == "" {
 		return nil, huma.Error400BadRequest("Project ID is required")
 	}
 
@@ -817,36 +787,11 @@ func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveP
 		return nil, err
 	}
 
-	if unarchiveProjectErr := h.projectService.UnarchiveProject(ctx, input.ProjectID, *user); unarchiveProjectErr != nil {
+	if unarchiveProjectErr := h.projectService.UnarchiveProject(ctx, projectID, *user); unarchiveProjectErr != nil {
 		return nil, huma.NewError(common.ToAPIError(unarchiveProjectErr).HTTPStatus(), "Failed to unarchive project: "+unarchiveProjectErr.Error())
 	}
 
 	return handlerutil.MessageOutput("Project unarchived successfully", ""), nil
-}
-
-// PullProjectImages pulls all images for a project with streaming progress.
-func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProjectImagesInput) (*huma.StreamResponse, error) {
-	if input.ProjectID == "" {
-		return nil, huma.Error400BadRequest("Project ID is required")
-	}
-
-	user, err := handlerutil.RequireUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	//nolint:contextcheck // the stream body runs on humaCtx.Context(), not the handler ctx
-	return h.streamProjectOperation(input.EnvironmentID, input.ProjectID, user, projectStreamOperationConfig{
-		ActivityType:   types.ActivityTypeProjectPull,
-		Step:           "Pulling project images",
-		StartMessage:   "Project image pull started",
-		WriterStep:     "Pulling project images",
-		FailureMessage: "Project image pull failed",
-		SuccessMessage: "Project image pull completed",
-		Action: func(opCtx context.Context, writer io.Writer) error {
-			return h.projectService.PullProjectImages(opCtx, input.ProjectID, writer, *user, nil)
-		},
-	}), nil
 }
 
 // BuildProjectImages builds compose services with build directives.

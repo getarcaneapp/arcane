@@ -57,9 +57,10 @@ type DeleteGitOpsSyncInput struct {
 	SyncID        string `path:"syncId" doc:"Sync ID"`
 }
 
-type PerformSyncInput struct {
+type GitOpsSyncActionInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	SyncID        string `path:"syncId" doc:"Sync ID"`
+	Action        string `query:"action" required:"true" enum:"sync" doc:"Sync action"`
 }
 
 type GetSyncStatusInput struct {
@@ -287,7 +288,7 @@ func (h *GitOpsSyncHandler) DeleteSync(ctx context.Context, input *DeleteGitOpsS
 }
 
 // PerformSync manually triggers a sync operation.
-func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *PerformSyncInput) (*handlerutil.Out[types.GitOpsSyncResult], error) {
+func (h *GitOpsSyncHandler) PerformSync(ctx context.Context, input *GitOpsSyncActionInput) (*handlerutil.Out[types.GitOpsSyncResult], error) {
 	if err := h.requireBackupSyncPermission(ctx, input.EnvironmentID, input.SyncID); err != nil {
 		return nil, err
 	}

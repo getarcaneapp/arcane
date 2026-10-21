@@ -15,7 +15,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-volume-backup-policy",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/volumes/{volumeName}/backup-policy",
+		Path:        "/environments/{id}/volumes/{volumeName}/backups/policy",
 		Summary:     "Get volume backup policies",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -24,7 +24,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-volume-backup-policy",
 		Method:      http.MethodPut,
-		Path:        "/environments/{id}/volumes/{volumeName}/backup-policy",
+		Path:        "/environments/{id}/volumes/{volumeName}/backups/policy",
 		Summary:     "Update volume backup policies",
 		Tags:        []string{"Volume Backup"},
 		Security:    handlerutil.DefaultOperationSecurity(),

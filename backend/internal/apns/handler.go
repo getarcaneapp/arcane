@@ -28,6 +28,11 @@ type DeviceIDInput struct {
 	ID string `path:"id" doc:"Device ID"`
 }
 
+type DeviceActionInput struct {
+	ID     string `path:"id" doc:"Device ID"`
+	Action string `query:"action" required:"true" enum:"test" doc:"Device action"`
+}
+
 func securedApnsOperation(operationID, method, path, summary, description string) huma.Operation {
 	op := handlerutil.Operation(operationID, method, path, summary, description, "Mobile Push")
 	op.Security = handlerutil.DefaultOperationSecurity()
@@ -111,7 +116,7 @@ func (h *ApnsHandler) DeleteDevice(ctx context.Context, input *DeviceIDInput) (*
 	return handlerutil.MessageOutput("Device removed", ""), nil
 }
 
-func (h *ApnsHandler) TestDevice(ctx context.Context, input *DeviceIDInput) (*handlerutil.Out[types.MessageResponse], error) {
+func (h *ApnsHandler) TestDevice(ctx context.Context, input *DeviceActionInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err

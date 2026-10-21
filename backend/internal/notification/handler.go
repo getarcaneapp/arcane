@@ -53,9 +53,10 @@ type DeleteNotificationSettingsInput struct {
 	Provider      string `path:"provider" doc:"Provider"`
 }
 
-type TestNotificationInput struct {
+type NotificationSettingsActionInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Provider      string `path:"provider" doc:"Provider"`
+	Action        string `query:"action" required:"true" enum:"test" doc:"Notification settings action"`
 	Type          string `query:"type" default:"simple"`
 }
 
@@ -170,7 +171,7 @@ func (h *NotificationHandler) DeleteNotificationSettings(ctx context.Context, in
 	return handlerutil.MessageOutput("Settings deleted successfully", ""), nil
 }
 
-func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestNotificationInput) (*handlerutil.Out[types.NotificationTestResponse], error) {
+func (h *NotificationHandler) TestNotification(ctx context.Context, input *NotificationSettingsActionInput) (*handlerutil.Out[types.NotificationTestResponse], error) {
 	if err := h.rejectIfAgentMode(); err != nil {
 		return nil, err
 	}

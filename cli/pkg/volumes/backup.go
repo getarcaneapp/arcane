@@ -310,7 +310,7 @@ and restored instead (no backup ID).`,
 			}
 			spec := cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           clitypes.VolumeBackupRestore(c.EnvID(), resolved.Name, backupID),
+				Path:           clitypes.VolumeBackupAction(c.EnvID(), resolved.Name, backupID, "restore"),
 				FailureMessage: "failed to restore backup",
 				Render: func(types.MessageResponse) error {
 					output.Success("%s", fmt.Sprintf("Restore of volume %s from backup %s initiated", resolved.Name, backupID))
@@ -318,7 +318,7 @@ and restored instead (no backup ID).`,
 				},
 			}
 			if len(opts.restorePaths) > 0 {
-				spec.Path = clitypes.VolumeBackupRestoreFiles(c.EnvID(), resolved.Name, backupID)
+				spec.Path = clitypes.VolumeBackupAction(c.EnvID(), resolved.Name, backupID, "restorefiles")
 				spec.Body = types.BackupRestoreSelection{Paths: opts.restorePaths}
 				spec.FailureMessage = "failed to restore backup files"
 				spec.Render = func(types.MessageResponse) error {
