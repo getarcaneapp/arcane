@@ -42,7 +42,7 @@
 
 	// availableRoleAssignments for the edit form — manual assignments only,
 	// stripped to (roleId, environmentId) tuples. OIDC-sourced assignments must
-	// not round-trip: PUT /users/{id}/role-assignments replaces source='manual'
+	// not round-trip: PUT /users/{id}/roles replaces source='manual'
 	// rows, so resubmitting oidc rows would duplicate them as manual.
 	const editingAssignments = $derived(
 		userToEdit?.roleAssignments
@@ -113,8 +113,8 @@
 
 		if (isEditMode && userId) {
 			const safeUsername = userToEdit?.username || m.common_unknown();
-			// Split: profile fields go to PUT /users/{id}; role assignments
-			// go to PUT /users/{id}/role-assignments (separate endpoint).
+			// Split: profile fields go to PATCH /users/{id}; role assignments
+			// go to PUT /users/{id}/roles (separate endpoint).
 			const { roleAssignments, ...profile } = user;
 
 			// OIDC users submit role assignments only — skip the empty profile PUT.

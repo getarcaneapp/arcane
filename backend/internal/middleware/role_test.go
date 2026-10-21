@@ -270,3 +270,59 @@ func TestRequirePermissionAllowsScopeWhenAnyEnvironmentAllows(t *testing.T) {
 		})
 	}
 }
+
+func TestRequireActionPermission(t *testing.T) {
+	router := echo.New()
+	api := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))
+
+	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
+		ps := authz.NewPermissionSet()
+		ps.AddEnv("env-1", authz.PermContainersStart)
+		next(huma.WithContext(ctx, context.WithValue(ctx.Context(), ContextKeyUserPermissions, ps)))
+	})
+
+	handlerRan := false
+	RegisterWithActionPermissions(api, huma.Operation{
+		OperationID: "container-action",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/containers/{cid}",
+	}, "action", map[string]string{
+		"start": authz.PermContainersStart,
+		"kill":  authz.PermContainersKill,
+	}, func(_ context.Context, _ *struct {
+		ID     string `path:"id"`
+		CID    string `path:"cid"`
+		Action string `query:"action"`
+	},
+	) (*struct{}, error) {
+		handlerRan = true
+		return &struct{}{}, nil
+	})
+
+	tests := []struct {
+		name       string
+		query      string
+		wantStatus int
+		wantRan    bool
+	}{
+		{name: "allowed", query: "?action=start", wantStatus: http.StatusNoContent, wantRan: true},
+		{name: "denied", query: "?action=kill", wantStatus: http.StatusForbidden},
+		{name: "unknown", query: "?action=explode", wantStatus: http.StatusBadRequest},
+		{name: "missing", query: "", wantStatus: http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handlerRan = false
+			req := httptest.NewRequest(http.MethodPost, "/api/environments/env-1/containers/c"+tt.query, http.NoBody)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			require.Equal(t, tt.wantStatus, rec.Code)
+			require.Equal(t, tt.wantRan, handlerRan)
+		})
+	}
+
+	op := api.OpenAPI().Paths["/environments/{id}/containers/{cid}"].Post
+	require.Equal(t, "action", op.Metadata[authz.MetaActionParam])
+	require.NotContains(t, op.Metadata, authz.MetaRequiredPermission)
+}

@@ -45,7 +45,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, envSvc *environment.
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-job-schedules",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/job-schedules",
+		Path:        "/environments/{id}/jobs/schedules",
 		Summary:     "Get job schedules",
 		Description: "Get configured cron schedules for background jobs",
 		Tags:        []string{"JobSchedules"},
@@ -54,8 +54,8 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, envSvc *environment.
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-job-schedules",
-		Method:      http.MethodPut,
-		Path:        "/environments/{id}/job-schedules",
+		Method:      http.MethodPatch,
+		Path:        "/environments/{id}/jobs/schedules",
 		Summary:     "Update job schedules",
 		Description: "Update background job cron schedules and reschedule running jobs",
 		Tags:        []string{"JobSchedules"},
@@ -72,16 +72,19 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, envSvc *environment.
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermJobsManage, h.ListJobs)
 
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID:   "run-job",
+	middleware.RegisterWithActionPermissions(api, huma.Operation{
+		OperationID:   "job-action",
 		DefaultStatus: http.StatusAccepted,
 		Method:        http.MethodPost,
-		Path:          "/environments/{id}/jobs/{jobId}/run",
-		Summary:       "Run a job now",
-		Description:   "Manually trigger a background job to run immediately",
+		Path:          "/environments/{id}/jobs/{jobId}",
+		Summary:       "Run a job action",
+		Description:   "Trigger a background job to run immediately or restart a continuous job worker",
 		Tags:          []string{"JobSchedules"},
 		Security:      handlerutil.DefaultOperationSecurity(),
-	}, authz.PermJobsManage, h.RunJob)
+	}, "action", map[string]string{
+		"run":     authz.PermJobsManage,
+		"restart": authz.PermJobsManage,
+	}, h.RunJobAction)
 
 	basePath := "/environments/{id}/jobs/{jobId}"
 	middleware.RegisterWithPermission(
@@ -108,52 +111,21 @@ func RegisterJobSchedules(api huma.API, jobSvc *JobService, envSvc *environment.
 		authz.PermJobsManage,
 		h.GetRun,
 	)
-	middleware.RegisterWithPermission(
+	middleware.RegisterWithActionPermissions(
 		api,
 		huma.Operation{
-			OperationID: "retry-job-run",
+			OperationID: "job-run-action",
 			Method:      http.MethodPost,
-			Path:        basePath + "/runs/{runId}/retry",
-			Summary:     "Retry job run",
+			Path:        basePath + "/runs/{runId}",
+			Summary:     "Retry, cancel, or acknowledge a job run",
 			Security:    handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermJobsManage,
-		h.RetryRun,
-	)
-	middleware.RegisterWithPermission(
-		api,
-		huma.Operation{
-			OperationID: "cancel-job-run",
-			Method:      http.MethodPost,
-			Path:        basePath + "/runs/{runId}/cancel",
-			Summary:     "Cancel pending job run",
-			Security:    handlerutil.DefaultOperationSecurity(),
+		"action",
+		map[string]string{
+			"retry":  authz.PermJobsManage,
+			"cancel": authz.PermJobsManage,
+			"ack":    authz.PermJobsManage,
 		},
-		authz.PermJobsManage,
-		h.CancelRun,
-	)
-	middleware.RegisterWithPermission(
-		api,
-		huma.Operation{
-			OperationID: "ack-job-run",
-			Method:      http.MethodPost,
-			Path:        basePath + "/runs/{runId}/ack",
-			Summary:     "Acknowledge remote run completion",
-			Security:    handlerutil.DefaultOperationSecurity(),
-		},
-		authz.PermJobsManage,
-		h.AcknowledgeRun,
-	)
-	middleware.RegisterWithPermission(
-		api,
-		huma.Operation{
-			OperationID: "restart-job-worker",
-			Method:      http.MethodPost,
-			Path:        basePath + "/restart",
-			Summary:     "Restart continuous job worker",
-			Security:    handlerutil.DefaultOperationSecurity(),
-		},
-		authz.PermJobsManage,
-		h.RestartWorker,
+		h.RunJobRunAction,
 	)
 }

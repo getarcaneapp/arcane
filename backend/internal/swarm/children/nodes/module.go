@@ -147,35 +147,24 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		authz.PermSwarmNodes,
 		h.DeleteNode,
 	)
-	middleware.RegisterWithPermission(
+	middleware.RegisterWithActionPermissions(
 		api,
 		huma.Operation{
-			OperationID: "promote-swarm-node",
+			OperationID: "swarm-node-action",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/nodes/{nodeId}/promote",
-			Summary:     "Promote swarm node",
+			Path:        "/environments/{id}/swarm/nodes/{nodeId}",
+			Summary:     "Promote or demote swarm node",
 			Tags: []string{
 				"Swarm",
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmNodes,
-		h.PromoteNode,
-	)
-	middleware.RegisterWithPermission(
-		api,
-		huma.Operation{
-			OperationID: "demote-swarm-node",
-			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/nodes/{nodeId}/demote",
-			Summary:     "Demote swarm node",
-			Tags: []string{
-				"Swarm",
-			},
-			Security: handlerutil.DefaultOperationSecurity(),
+		"action",
+		map[string]string{
+			"promote": authz.PermSwarmNodes,
+			"demote":  authz.PermSwarmNodes,
 		},
-		authz.PermSwarmNodes,
-		h.DemoteNode,
+		h.RunNodeAction,
 	)
 	middleware.RegisterWithPermission(
 		api,
@@ -197,7 +186,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "get-swarm-node-identity",
 			Method:      http.MethodGet,
-			Path:        "/swarm/node-identity",
+			Path:        "/swarm/identity",
 			Summary:     "Get local swarm node identity",
 			Tags: []string{
 				"Swarm",
@@ -213,7 +202,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "get-swarm-join-candidates",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/join-candidates",
+			Path:        "/environments/{id}/swarm/join/candidates",
 			Summary:     "List environments available for Easy Join",
 			Tags: []string{
 				"Swarm",
@@ -228,7 +217,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		huma.Operation{
 			OperationID: "join-swarm-environments",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/join-environments",
+			Path:        "/environments/{id}/swarm/join/environments",
 			Summary:     "Join environments to a swarm",
 			Tags: []string{
 				"Swarm",

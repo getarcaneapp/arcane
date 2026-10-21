@@ -52,7 +52,7 @@ type UpdateQuadletInput struct {
 type QuadletActionInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Name          string `path:"name" doc:"Quadlet file name"`
-	Action        string `path:"action" enum:"start,stop,restart" doc:"systemd lifecycle action"`
+	Action        string `query:"action" required:"true" enum:"start,stop,restart" doc:"systemd lifecycle action"`
 }
 
 func (h *Handler) List(ctx context.Context, input *ListQuadletsInput) (*handlerutil.Page[types.QuadletDetail], error) {

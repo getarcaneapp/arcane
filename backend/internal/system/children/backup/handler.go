@@ -53,6 +53,10 @@ type SystemBackupRecoveryKeyOutput struct {
 	Body types.SystemBackupRecoveryKeyStatus
 }
 
+type GenerateSystemBackupRecoveryKeyInput struct {
+	Action string `query:"action" required:"true" enum:"generate" doc:"Recovery key action"`
+}
+
 type GenerateSystemBackupRecoveryKeyOutput struct {
 	Body types.SystemBackupRecoveryKey
 }
@@ -64,8 +68,9 @@ type CreateSystemBackupInput struct {
 type (
 	SystemBackupOutput       struct{ Body types.SystemBackupRun }
 	RestoreSystemBackupInput struct {
-		ID   string `path:"id"`
-		Body types.RestoreSystemBackupRequest
+		ID     string `path:"id"`
+		Action string `query:"action" required:"true" enum:"restore,restorefiles" doc:"Restore action"`
+		Body   types.RestoreSystemBackupFilesRequest
 	}
 )
 
@@ -77,12 +82,6 @@ type BrowseSystemBackupFilesInput struct {
 	Start  int    `query:"start" default:"0" doc:"Start index for the page"`
 	Limit  int    `query:"limit" default:"20" doc:"Requested page size"`
 	Body   types.SystemBackupRecoveryKey
-}
-
-// RestoreSystemBackupFilesInput selects project files to restore from a system backup.
-type RestoreSystemBackupFilesInput struct {
-	ID   string `path:"id"`
-	Body types.RestoreSystemBackupFilesRequest
 }
 
 type UploadSystemBackupInput struct {
@@ -163,7 +162,7 @@ func (h *Handler) UpdatePolicies(ctx context.Context, input *UpdateSystemBackupP
 	return &SystemBackupPoliciesOutput{Body: *policies}, nil
 }
 
-func (h *Handler) GenerateRecoveryKey(_ context.Context, _ *struct{}) (*GenerateSystemBackupRecoveryKeyOutput, error) {
+func (h *Handler) GenerateRecoveryKey(_ context.Context, _ *GenerateSystemBackupRecoveryKeyInput) (*GenerateSystemBackupRecoveryKeyOutput, error) {
 	recoveryKey, err := h.service.GenerateRecoveryKey()
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -226,7 +225,14 @@ func (h *Handler) Create(ctx context.Context, input *CreateSystemBackupInput) (*
 	return &SystemBackupOutput{Body: *run}, nil
 }
 
-func (h *Handler) Restore(ctx context.Context, input *RestoreSystemBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
+func (h *Handler) RestoreAction(ctx context.Context, input *RestoreSystemBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if input.Action == "restorefiles" {
+		return h.restoreFiles(ctx, input)
+	}
+	return h.restore(ctx, input)
+}
+
+func (h *Handler) restore(ctx context.Context, input *RestoreSystemBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -256,8 +262,10 @@ func (h *Handler) BrowseFiles(ctx context.Context, input *BrowseSystemBackupFile
 	}}, nil
 }
 
-// RestoreFiles restores selected project files from a system backup.
-func (h *Handler) RestoreFiles(ctx context.Context, input *RestoreSystemBackupFilesInput) (*handlerutil.Out[types.MessageResponse], error) {
+func (h *Handler) restoreFiles(ctx context.Context, input *RestoreSystemBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if len(input.Body.Paths) == 0 && !input.Body.SelectAll {
+		return nil, huma.Error400BadRequest("restorefiles requires paths or selectAll")
+	}
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err

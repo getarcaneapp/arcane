@@ -75,7 +75,7 @@ func RegisterUsers(api huma.API, userService *UserService, invalidateUserTokenCa
 
 	huma.Register(api, huma.Operation{
 		OperationID: "updateUser",
-		Method:      "PUT",
+		Method:      "PATCH",
 		Path:        "/users/{userId}",
 		Summary:     "Update a user",
 		Description: "Update an existing user's information",

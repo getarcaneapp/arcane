@@ -168,7 +168,7 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 		huma.Operation{
 			OperationID: "get-swarm-unlock-key",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/unlock-key",
+			Path:        "/environments/{id}/swarm/unlock/key",
 			Summary:     "Get swarm unlock key",
 			Tags: []string{
 				"Swarm",
@@ -183,7 +183,7 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 		huma.Operation{
 			OperationID: "get-swarm-join-tokens",
 			Method:      http.MethodGet,
-			Path:        "/environments/{id}/swarm/join-tokens",
+			Path:        "/environments/{id}/swarm/join/tokens",
 			Summary:     "Get swarm join tokens",
 			Tags: []string{
 				"Swarm",
@@ -193,19 +193,22 @@ func RegisterSwarm(api huma.API, h *SwarmHandler) {
 		authz.PermSwarmUnlock,
 		h.GetJoinTokens,
 	)
-	middleware.RegisterWithPermission(
+	middleware.RegisterWithActionPermissions(
 		api,
 		huma.Operation{
-			OperationID: "rotate-swarm-join-tokens",
+			OperationID: "swarm-join-tokens-action",
 			Method:      http.MethodPost,
-			Path:        "/environments/{id}/swarm/join-tokens/rotate",
+			Path:        "/environments/{id}/swarm/join/tokens",
 			Summary:     "Rotate swarm join tokens",
 			Tags: []string{
 				"Swarm",
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
 		},
-		authz.PermSwarmUnlock,
+		"action",
+		map[string]string{
+			"rotate": authz.PermSwarmUnlock,
+		},
 		h.RotateJoinTokens,
 	)
 	middleware.RegisterWithPermission(
