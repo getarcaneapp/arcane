@@ -156,7 +156,8 @@
 			},
 			setLoading: (loading) => (bulkUpdating = loading),
 			onComplete: () => onRefreshData(requestOptions),
-			clearSelection: () => (selectedIds = [])
+			clearSelection: () => (selectedIds = []),
+			sequential: true
 		});
 	}
 
