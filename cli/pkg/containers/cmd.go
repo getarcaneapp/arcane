@@ -486,9 +486,6 @@ func newCreateCmd() *cobra.Command {
 	command.Flags().StringVar(&opts.name, "name", "", "Container name")
 	command.Flags().StringVar(&opts.image, "image", "", "Docker image")
 	command.Flags().StringArrayVarP(&opts.env, "env-var", "e", nil, "Environment variable (KEY=VALUE)")
-	command.Flags().Var(command.Flags().Lookup("env-var").Value, "env", "Environment variable (KEY=VALUE)")
-	// TODO(v3): remove the deprecated --env flag.
-	_ = command.Flags().MarkDeprecated("env", "use --env-var or -e")
 	command.Flags().StringArrayVarP(&opts.port, "port", "p", nil, "Port mapping (HOST:CONTAINER)")
 	command.Flags().StringArrayVarP(&opts.volume, "volume", "v", nil, "Volume mount (SRC:DST)")
 	command.Flags().StringArrayVarP(&opts.label, "label", "l", nil, "Label (KEY=VALUE)")
@@ -565,8 +562,7 @@ func (opts *createOptions) request(cmd *cobra.Command) (types.Container, error) 
 	if cmd.Flags().Changed("image") {
 		req.Image = opts.image
 	}
-	// TODO(v3): drop the deprecated flag handling.
-	if cmd.Flags().Changed("env-var") || cmd.Flags().Changed("env") {
+	if cmd.Flags().Changed("env-var") {
 		req.Env = opts.env
 	}
 	if cmd.Flags().Changed("port") {

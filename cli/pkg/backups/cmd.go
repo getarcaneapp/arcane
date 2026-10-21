@@ -420,24 +420,16 @@ Alternatively, --file replaces all policies from a raw JSON payload.`,
 	cmd.Flags().StringVar(&opts.file, "file", "", "JSON file with the full policies payload (use - for stdin); replaces all policies")
 	cmd.Flags().StringVar(&opts.id, "policy-id", "", "Policy ID to update (defaults to the sole policy)")
 	cmd.Flags().BoolVar(&opts.enabled, "enabled", false, "Enable the policy")
-	cmd.Flags().BoolVar(&opts.disabled, "disabled", false, "Disable the policy")
 	cmd.Flags().StringVar(&opts.schedule, "schedule", "", "Cron schedule for automatic backups")
 	cmd.Flags().IntVar(&opts.retention, "retention", 0, "Number of backups to retain")
 	cmd.Flags().BoolVar(&opts.local, "local", false, "Store backups in the local repository")
 	cmd.Flags().BoolVar(&opts.s3, "s3", false, "Store backups in the S3 destination")
 	cmd.Flags().StringVar(&opts.s3Destination, "s3-destination", "", "S3 destination name or ID (implies --s3)")
-	// TODO(v3): remove the deprecated --disabled flag.
-	_ = cmd.Flags().MarkDeprecated("disabled", "use --enabled=false")
 	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
-		// TODO(v3): drop the deprecated flag handling.
-		if conflictErr := cmdutil.ExclusiveFlags(cmd, "enabled", "disabled"); conflictErr != nil {
-			return conflictErr
-		}
 		if !cmd.Flags().Changed("file") {
 			return nil
 		}
-		// TODO(v3): drop the deprecated flag handling.
-		for _, name := range []string{"policy-id", "enabled", "disabled", "schedule", "retention", "local", "s3", "s3-destination"} {
+		for _, name := range []string{"policy-id", "enabled", "schedule", "retention", "local", "s3", "s3-destination"} {
 			if cmd.Flags().Changed(name) {
 				return fmt.Errorf("--file cannot be combined with --%s", name)
 			}
@@ -585,7 +577,6 @@ type policiesUpdateOptions struct {
 	file          string
 	id            string
 	enabled       bool
-	disabled      bool
 	schedule      string
 	retention     int
 	local         bool
@@ -658,9 +649,8 @@ func (opts policiesUpdateOptions) requestFromFlags(cmd *cobra.Command, c *client
 }
 
 func (opts policiesUpdateOptions) applyFlags(cmd *cobra.Command, c *client.Client, target *types.UpdateBackupPolicy) error {
-	// TODO(v3): drop the deprecated flag handling.
-	if cmd.Flags().Changed("enabled") || cmd.Flags().Changed("disabled") {
-		target.Enabled = opts.enabled && !opts.disabled
+	if cmd.Flags().Changed("enabled") {
+		target.Enabled = opts.enabled
 	}
 	if cmd.Flags().Changed("schedule") {
 		target.Schedule = opts.schedule

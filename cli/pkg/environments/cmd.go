@@ -241,20 +241,15 @@ func newSwitchCmd() *cobra.Command {
 
 func newUpdateCmd() *cobra.Command {
 	var opts struct {
-		name     string
-		apiUrl   string
-		enabled  bool
-		disabled bool
+		name    string
+		apiUrl  string
+		enabled bool
 	}
 	command := &cobra.Command{
 		Use:          "update <id>",
 		Short:        "Update environment",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
-		PreRunE: func(cmd *cobra.Command, _ []string) error {
-			// TODO(v3): drop the deprecated flag handling.
-			return cmdutil.ExclusiveFlags(cmd, "enabled", "disabled")
-		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
@@ -268,9 +263,8 @@ func newUpdateCmd() *cobra.Command {
 			if cmd.Flags().Changed("api-url") {
 				req["apiUrl"] = opts.apiUrl
 			}
-			// TODO(v3): drop the deprecated flag handling.
-			if cmd.Flags().Changed("enabled") || cmd.Flags().Changed("disabled") {
-				req["enabled"] = cmd.Flags().Changed("enabled") && opts.enabled || cmd.Flags().Changed("disabled") && !opts.disabled
+			if cmd.Flags().Changed("enabled") {
+				req["enabled"] = opts.enabled
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Environment]{
@@ -292,9 +286,6 @@ func newUpdateCmd() *cobra.Command {
 	command.Flags().StringVar(&opts.name, "name", "", "Environment name")
 	command.Flags().StringVar(&opts.apiUrl, "api-url", "", "API URL")
 	command.Flags().BoolVar(&opts.enabled, "enabled", false, "Enable environment")
-	command.Flags().BoolVar(&opts.disabled, "disabled", false, "Disable environment")
-	// TODO(v3): remove the deprecated --disabled flag.
-	_ = command.Flags().MarkDeprecated("disabled", "use --enabled=false")
 	return command
 }
 
@@ -305,7 +296,6 @@ func newCreateCmd() *cobra.Command {
 		accessToken string
 		useApiKey   bool
 		edge        bool
-		disabled    bool
 		enabled     bool
 	}
 	command := &cobra.Command{
@@ -313,10 +303,6 @@ func newCreateCmd() *cobra.Command {
 		Short:        "Create environment",
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
-		PreRunE: func(cmd *cobra.Command, _ []string) error {
-			// TODO(v3): drop the deprecated flag handling.
-			return cmdutil.ExclusiveFlags(cmd, "enabled", "disabled")
-		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
@@ -326,7 +312,7 @@ func newCreateCmd() *cobra.Command {
 			req := types.Environment{
 				Name:        opts.name,
 				ApiUrl:      opts.apiUrl,
-				Enabled:     opts.enabled && !opts.disabled,
+				Enabled:     opts.enabled,
 				IsEdge:      opts.edge,
 				AccessToken: opts.accessToken,
 				UseApiKey:   opts.useApiKey,
@@ -358,9 +344,6 @@ func newCreateCmd() *cobra.Command {
 	command.Flags().BoolVar(&opts.useApiKey, "use-api-key", false, "Pair using a generated API key (shown once)")
 	command.Flags().BoolVar(&opts.edge, "edge", false, "Create as an edge environment")
 	command.Flags().BoolVar(&opts.enabled, "enabled", true, "Enable environment")
-	command.Flags().BoolVar(&opts.disabled, "disabled", false, "Create environment in disabled state")
-	// TODO(v3): remove the deprecated --disabled flag.
-	_ = command.Flags().MarkDeprecated("disabled", "use --enabled=false")
 	_ = command.MarkFlagRequired("api-url")
 	return command
 }
