@@ -2,8 +2,11 @@
 package gitops
 
 import (
+	"net/http"
+
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
@@ -35,7 +38,7 @@ func (m *Module) RegisterRoutes(api huma.API) {
 func RegisterGitOpsSyncs(api huma.API, syncService *GitOpsSyncService) {
 	h := &GitOpsSyncHandler{syncService: syncService}
 
-	const basePath = "/environments/{id}/gitops-syncs"
+	const basePath = "/environments/{id}/gitops/syncs"
 	const syncPath = basePath + "/{syncId}"
 
 	handlerutil.RegisterSecured(
@@ -82,7 +85,7 @@ func RegisterGitOpsSyncs(api huma.API, syncService *GitOpsSyncService) {
 		api,
 		handlerutil.Operation(
 			"updateGitOpsSync",
-			"PUT",
+			"PATCH",
 			syncPath,
 			"Update a GitOps sync",
 			"Update an existing GitOps sync configuration",
@@ -104,17 +107,21 @@ func RegisterGitOpsSyncs(api huma.API, syncService *GitOpsSyncService) {
 		authz.PermGitOpsDelete,
 		h.DeleteSync,
 	)
-	handlerutil.RegisterSecured(
+	middleware.RegisterWithActionPermissions(
 		api,
-		handlerutil.Operation(
-			"performGitOpsSync",
-			"POST",
-			syncPath+"/sync",
-			"Perform a GitOps sync",
-			"Manually trigger a sync operation",
-			"GitOps Syncs",
-		),
-		authz.PermGitOpsSync,
+		huma.Operation{
+			OperationID: "gitOpsSyncAction",
+			Method:      http.MethodPost,
+			Path:        syncPath,
+			Summary:     "Perform a GitOps sync",
+			Description: "Manually trigger a sync operation",
+			Tags:        []string{"GitOps Syncs"},
+			Security:    handlerutil.DefaultOperationSecurity(),
+		},
+		"action",
+		map[string]string{
+			"sync": authz.PermGitOpsSync,
+		},
 		h.PerformSync,
 	)
 	handlerutil.RegisterSecured(

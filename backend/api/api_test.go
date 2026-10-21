@@ -34,11 +34,11 @@ func TestWorkspaceRoutesReplaceProjectAndVolumeLegacyRoutes(t *testing.T) {
 		method string
 	}{
 		{path: "/environments/{id}/projects/{projectId}/workspace", method: http.MethodGet},
-		{path: "/environments/{id}/projects/{projectId}/workspace", method: http.MethodPut},
+		{path: "/environments/{id}/projects/{projectId}/workspace", method: http.MethodPatch},
 		{path: "/environments/{id}/projects/{projectId}/workspace/file", method: http.MethodGet},
 		{path: "/environments/{id}/projects/{projectId}/workspace/file/download", method: http.MethodGet},
 		{path: "/environments/{id}/volumes/{volumeName}/workspace", method: http.MethodGet},
-		{path: "/environments/{id}/volumes/{volumeName}/workspace", method: http.MethodPut},
+		{path: "/environments/{id}/volumes/{volumeName}/workspace", method: http.MethodPatch},
 		{path: "/environments/{id}/volumes/{volumeName}/workspace/file", method: http.MethodGet},
 		{path: "/environments/{id}/volumes/{volumeName}/workspace/file/download", method: http.MethodGet},
 		{path: "/environments/{id}/builds/browse", method: http.MethodGet},
@@ -50,8 +50,8 @@ func TestWorkspaceRoutesReplaceProjectAndVolumeLegacyRoutes(t *testing.T) {
 			switch route.method {
 			case http.MethodGet:
 				require.NotNil(t, item.Get)
-			case http.MethodPut:
-				require.NotNil(t, item.Put)
+			case http.MethodPatch:
+				require.NotNil(t, item.Patch)
 			}
 		})
 	}
@@ -232,10 +232,10 @@ func TestSetupAPIForSpec_PublicRoutesOverrideSecurity(t *testing.T) {
 		path   string
 		method string
 	}{
-		{path: "/app-images/logo", method: "GET"},
-		{path: "/app-images/favicon", method: "GET"},
-		{path: "/app-images/profile", method: "GET"},
-		{path: "/app-images/pwa/{filename}", method: "GET"},
+		{path: "/app/images/logo", method: "GET"},
+		{path: "/app/images/favicon", method: "GET"},
+		{path: "/app/images/profile", method: "GET"},
+		{path: "/app/images/pwa/{filename}", method: "GET"},
 		{path: "/auth/login", method: "POST"},
 		{path: "/auth/logout", method: "POST"},
 		{path: "/auth/refresh", method: "POST"},
@@ -250,7 +250,7 @@ func TestSetupAPIForSpec_PublicRoutesOverrideSecurity(t *testing.T) {
 		{path: "/environments/{id}/settings/public", method: "GET"},
 		{path: "/environments/pair", method: "POST"},
 		{path: "/version", method: "GET"},
-		{path: "/app-version", method: "GET"},
+		{path: "/app/version", method: "GET"},
 	}
 
 	for _, testCase := range testCases {
@@ -321,9 +321,9 @@ func TestVariableMaterializationRoutesAreAgentOnly(t *testing.T) {
 
 	managerMatcher := authz.NewPermissionMatcher()
 	managerMatcher.CollectFromHumaAPI(managerAPI)
-	_, found := managerMatcher.Lookup("GET", "/templates/variables").Get()
+	_, found := managerMatcher.Lookup("GET", "/templates/variables", nil).Get()
 	require.False(t, found)
-	_, found = managerMatcher.Lookup("PUT", "/templates/variables").Get()
+	_, found = managerMatcher.Lookup("PUT", "/templates/variables", nil).Get()
 	require.False(t, found)
 
 	router := echo.New()
@@ -347,8 +347,8 @@ func TestEasyJoinRoutesDeclareSwarmJoinPermission(t *testing.T) {
 		path   string
 		method string
 	}{
-		{path: "/environments/{id}/swarm/join-candidates", method: "GET"},
-		{path: "/environments/{id}/swarm/join-environments", method: "POST"},
+		{path: "/environments/{id}/swarm/join/candidates", method: "GET"},
+		{path: "/environments/{id}/swarm/join/environments", method: "POST"},
 	}
 
 	matcher := authz.NewPermissionMatcher()
@@ -368,7 +368,7 @@ func TestEasyJoinRoutesDeclareSwarmJoinPermission(t *testing.T) {
 			require.Equal(t, authz.PermSwarmJoin, operation.Metadata[authz.MetaRequiredPermission])
 
 			suffix := strings.TrimPrefix(tt.path, "/environments/{id}")
-			permission, found := matcher.Lookup(tt.method, suffix).Get()
+			permission, found := matcher.Lookup(tt.method, suffix, nil).Get()
 			require.True(t, found)
 			require.Equal(t, authz.PermSwarmJoin, permission)
 		})
@@ -407,6 +407,9 @@ func TestEnvScopedOperationsDeclarePermission(t *testing.T) {
 				continue
 			}
 			if op.Security != nil && len(op.Security) == 0 {
+				continue
+			}
+			if _, isAction := op.Metadata[authz.MetaActionPermissions].(map[string]string); isAction {
 				continue
 			}
 			permission, ok := op.Metadata[authz.MetaRequiredPermission].(string)

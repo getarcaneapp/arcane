@@ -51,8 +51,9 @@ type DeleteTemplateInput struct {
 	ID string `path:"id" doc:"Template ID"`
 }
 
-type DownloadTemplateInput struct {
-	ID string `path:"id" doc:"Template ID"`
+type TemplateActionInput struct {
+	ID     string `path:"id" doc:"Template ID"`
+	Action string `query:"action" required:"true" enum:"download" doc:"Template action"`
 }
 
 type GetDefaultTemplatesInput struct{}
@@ -244,7 +245,7 @@ func (h *TemplateHandler) DeleteTemplate(ctx context.Context, input *DeleteTempl
 }
 
 // DownloadTemplate downloads a remote template to local storage.
-func (h *TemplateHandler) DownloadTemplate(ctx context.Context, input *DownloadTemplateInput) (*handlerutil.Out[types.Template], error) {
+func (h *TemplateHandler) DownloadTemplate(ctx context.Context, input *TemplateActionInput) (*handlerutil.Out[types.Template], error) {
 	if input.ID == "" {
 		return nil, huma.Error400BadRequest("Template ID is required")
 	}

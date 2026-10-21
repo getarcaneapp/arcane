@@ -27,7 +27,11 @@ class ActivityService extends BaseAPIService {
 
 	async cancelActivity(activityId: string, environmentId?: string): Promise<Activity> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/activities/${encodeURIComponent(activityId)}/cancel`));
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/activities/${encodeURIComponent(activityId)}`, undefined, {
+				params: { action: 'cancel' }
+			})
+		);
 	}
 
 	async clearHistory(environmentId?: string): Promise<ActivityClearHistoryResult> {

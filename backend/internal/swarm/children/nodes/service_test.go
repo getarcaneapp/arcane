@@ -111,7 +111,7 @@ func TestService_FetchSwarmNodeIdentityViaEdge_UsesEnvironmentAccessToken(t *tes
 		if !assert.Equal(t, http.MethodGet, r.Method) {
 			return
 		}
-		if !assert.Equal(t, "/api/swarm/node-identity", r.URL.Path) {
+		if !assert.Equal(t, "/api/swarm/identity", r.URL.Path) {
 			return
 		}
 		if !assert.Equal(t, accessToken, r.Header.Get("X-API-Key")) {

@@ -86,7 +86,7 @@ async function arcaneAPI<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 async function deleteFederatedCredential(id: string): Promise<void> {
-	const response = await fetch(new URL(`/api/federated-credentials/${id}`, baseURL), {
+	const response = await fetch(new URL(`/api/federated/credentials/${id}`, baseURL), {
 		method: 'DELETE',
 		headers: { 'X-API-KEY': apiKey }
 	});
@@ -424,7 +424,7 @@ test.describe('arcane-cli e2e', () => {
 			expect(viewerRole).toBeTruthy();
 
 			const created = await arcaneAPI<PlaywrightFederatedCredentialResponse>(
-				'/api/playwright/create-test-federated-credential',
+				'/api/playwright/federated',
 				{
 					method: 'POST',
 					body: JSON.stringify({
@@ -736,7 +736,7 @@ test.describe('arcane-cli remote environment RBAC', () => {
 	test.afterAll(async () => {
 		if (readonlyKeyId) {
 			try {
-				const response = await adminFetch(`/api/api-keys/${readonlyKeyId}`, { method: 'DELETE' });
+				const response = await adminFetch(`/api/apikeys/${readonlyKeyId}`, { method: 'DELETE' });
 				expect
 					.soft(
 						response.ok || response.status === 404,

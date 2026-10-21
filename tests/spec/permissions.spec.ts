@@ -81,7 +81,7 @@ async function editRoleThroughUI(page: Page, role: TestRole) {
 
 	const responsePromise = page.waitForResponse(
 		(response) =>
-			response.request().method() === 'PUT' &&
+			response.request().method() === 'PATCH' &&
 			new URL(response.url()).pathname === `/api/roles/${role.id}`
 	);
 	await page.getByRole('button', { name: 'Save changes', exact: true }).click();
@@ -208,7 +208,7 @@ async function createRestrictedUserThroughUI(
 	const assignmentsResponsePromise = page.waitForResponse(
 		(response) =>
 			response.request().method() === 'PUT' &&
-			/^\/api\/users\/[^/]+\/role-assignments$/.test(new URL(response.url()).pathname)
+			/^\/api\/users\/[^/]+\/roles$/.test(new URL(response.url()).pathname)
 	);
 	await dialog.getByRole('button', { name: 'Create User', exact: true }).click();
 
@@ -241,7 +241,10 @@ async function editUserThroughUI(page: Page, user: TestUser) {
 
 	let profileUpdateRequests = 0;
 	const countProfileUpdateRequests = (request: Request) => {
-		if (request.method() === 'PUT' && new URL(request.url()).pathname === `/api/users/${user.id}`) {
+		if (
+			request.method() === 'PATCH' &&
+			new URL(request.url()).pathname === `/api/users/${user.id}`
+		) {
 			profileUpdateRequests += 1;
 		}
 	};
@@ -258,7 +261,7 @@ async function editUserThroughUI(page: Page, user: TestUser) {
 	const policyResponsePromise = page.waitForResponse(
 		(response) =>
 			response.status() === 400 &&
-			response.request().method() === 'PUT' &&
+			response.request().method() === 'PATCH' &&
 			new URL(response.url()).pathname === `/api/users/${user.id}`
 	);
 	await dialog.getByRole('button', { name: 'Save Changes', exact: true }).click();
@@ -285,13 +288,13 @@ async function editUserThroughUI(page: Page, user: TestUser) {
 
 	const updateResponsePromise = page.waitForResponse(
 		(response) =>
-			response.request().method() === 'PUT' &&
+			response.request().method() === 'PATCH' &&
 			new URL(response.url()).pathname === `/api/users/${user.id}`
 	);
 	const assignmentsResponsePromise = page.waitForResponse(
 		(response) =>
 			response.request().method() === 'PUT' &&
-			new URL(response.url()).pathname === `/api/users/${user.id}/role-assignments`
+			new URL(response.url()).pathname === `/api/users/${user.id}/roles`
 	);
 	await dialog.getByRole('button', { name: 'Save Changes', exact: true }).click();
 
@@ -341,7 +344,7 @@ async function createEnvironmentAdminViaApi(page: Page, username: string, passwo
 		`Create user ${username}`
 	);
 	await readApiData<unknown[]>(
-		await page.request.put(`/api/users/${user.id}/role-assignments`, {
+		await page.request.put(`/api/users/${user.id}/roles`, {
 			data: { assignments: [{ roleId: 'role_admin', environmentId: '0' }] }
 		}),
 		`Assign the Admin role on the local environment to ${username}`
@@ -363,7 +366,7 @@ async function toggleAutoUpdateThroughUI(
 		(response) =>
 			response.request().method() === 'PUT' &&
 			new URL(response.url()).pathname ===
-				`/api/environments/0/containers/${containerId}/auto-update`
+				`/api/environments/0/containers/${containerId}/autoupdate`
 	);
 	await card.getByRole('switch').click();
 	await readApiData<{ message: string }>(await responsePromise, 'Toggle container auto-update');

@@ -92,7 +92,7 @@ func RegisterOidc(
 	huma.Register(api, huma.Operation{
 		OperationID: "list-oidc-role-mappings",
 		Method:      http.MethodGet,
-		Path:        "/oidc/role-mappings",
+		Path:        "/oidc/mappings",
 		Summary:     "List OIDC group → role mappings",
 		Description: "Returns every mapping. On each OIDC login the user's group claim is matched against ClaimValue and matching rows become source='oidc' role assignments.",
 		Tags:        []string{"OIDC"},
@@ -103,7 +103,7 @@ func RegisterOidc(
 	huma.Register(api, huma.Operation{
 		OperationID: "create-oidc-role-mapping",
 		Method:      http.MethodPost,
-		Path:        "/oidc/role-mappings",
+		Path:        "/oidc/mappings",
 		Summary:     "Create an OIDC role mapping",
 		Tags:        []string{"OIDC"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -112,8 +112,8 @@ func RegisterOidc(
 
 	huma.Register(api, huma.Operation{
 		OperationID: "update-oidc-role-mapping",
-		Method:      http.MethodPut,
-		Path:        "/oidc/role-mappings/{id}",
+		Method:      http.MethodPatch,
+		Path:        "/oidc/mappings/{id}",
 		Summary:     "Update an OIDC role mapping",
 		Tags:        []string{"OIDC"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -123,7 +123,7 @@ func RegisterOidc(
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-oidc-role-mapping",
 		Method:      http.MethodDelete,
-		Path:        "/oidc/role-mappings/{id}",
+		Path:        "/oidc/mappings/{id}",
 		Summary:     "Delete an OIDC role mapping",
 		Tags:        []string{"OIDC"},
 		Security:    handlerutil.DefaultOperationSecurity(),

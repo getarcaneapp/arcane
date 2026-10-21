@@ -33,7 +33,7 @@ class VolumeWorkspaceService extends BaseAPIService {
 	): Promise<VolumeWorkspace> {
 		const envId = await this.resolveEnvironmentId(environmentId);
 		const form = createWorkspaceFormData(manifest, files);
-		return this.handleResponse(this.api.put(`/environments/${envId}/volumes/${volumeName}/workspace`, form));
+		return this.handleResponse(this.api.patch(`/environments/${envId}/volumes/${volumeName}/workspace`, form));
 	}
 
 	async downloadWorkspaceFile(volumeName: string, relativePath: string, environmentId?: string): Promise<void> {

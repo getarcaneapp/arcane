@@ -68,14 +68,17 @@ async function mockRiskOverview(page: Page) {
 async function mockSecurityPageData(page: Page, imageNames: string[]) {
 	await mockRiskOverview(page);
 	await page.route(
-		/\/api\/environments\/[^/]+\/vulnerabilities\/image-options(?:\?.*)?$/,
+		/\/api\/environments\/[^/]+\/vulnerabilities\/images(?:\?.*)?$/,
 		async (route) => {
 			await route.fulfill({ json: { success: true, data: imageNames } });
 		}
 	);
-	await page.route(/\/api\/environments\/[^/]+\/images\/patch-targets(?:\?.*)?$/, async (route) => {
-		await route.fulfill({ json: paginated([]) });
-	});
+	await page.route(
+		/\/api\/environments\/[^/]+\/images\/patches\/targets(?:\?.*)?$/,
+		async (route) => {
+			await route.fulfill({ json: paginated([]) });
+		}
+	);
 }
 
 const EXPORT_FILENAME = 'vulnerabilities-0-2026-09-13T10-00-00Z.csv';
@@ -217,16 +220,16 @@ test.describe('Security Page', () => {
 					: [];
 			await route.fulfill({ json: paginated(rows) });
 		});
+		await page.route(/\/api\/environments\/0\/vulnerabilities\/images(?:\?.*)?$/, async (route) => {
+			await route.fulfill({ json: { success: true, data: [vulnerability.imageName] } });
+		});
 		await page.route(
-			/\/api\/environments\/0\/vulnerabilities\/image-options(?:\?.*)?$/,
+			/\/api\/environments\/0\/images\/patches\/targets(?:\?.*)?$/,
 			async (route) => {
-				await route.fulfill({ json: { success: true, data: [vulnerability.imageName] } });
+				await route.fulfill({ json: paginated([]) });
 			}
 		);
-		await page.route(/\/api\/environments\/0\/images\/patch-targets(?:\?.*)?$/, async (route) => {
-			await route.fulfill({ json: paginated([]) });
-		});
-		await page.route(/\/api\/environments\/0\/vulnerabilities\/ignore$/, async (route) => {
+		await page.route(/\/api\/environments\/0\/vulnerabilities\/ignored$/, async (route) => {
 			ignorePayload = route.request().postDataJSON();
 			ignored = true;
 			await route.fulfill({
@@ -237,7 +240,7 @@ test.describe('Security Page', () => {
 			});
 		});
 		await page.route(
-			/\/api\/environments\/0\/vulnerabilities\/ignore\/ignore-1$/,
+			/\/api\/environments\/0\/vulnerabilities\/ignored\/ignore-1$/,
 			async (route) => {
 				expect(route.request().method()).toBe('DELETE');
 				unignoreRequestCount += 1;
@@ -579,9 +582,12 @@ test.describe('Security Page', () => {
 			}
 		];
 
-		await page.route(/\/api\/environments\/0\/images\/patch-targets(?:\?.*)?$/, async (route) => {
-			await route.fulfill({ json: paginated(targets()) });
-		});
+		await page.route(
+			/\/api\/environments\/0\/images\/patches\/targets(?:\?.*)?$/,
+			async (route) => {
+				await route.fulfill({ json: paginated(targets()) });
+			}
+		);
 		await page.route(/\/api\/environments\/0\/images\/remote-image\/patch$/, async (route) => {
 			patchPayload = route.request().postDataJSON();
 			patchStarted = true;

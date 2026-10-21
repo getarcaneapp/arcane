@@ -378,7 +378,7 @@ func newConnectCmd() *cobra.Command {
 				containerID = dependent.ID
 			}
 
-			req := types.NetworkConnectContainerRequest{
+			req := types.NetworkContainerRequest{
 				ContainerID: containerID,
 				Aliases:     opts.connectAliases,
 				IPv4Address: opts.connectIPv4,
@@ -387,7 +387,7 @@ func newConnectCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           clitypes.NetworkConnect(c.EnvID(), resolved.ID),
+				Path:           clitypes.NetworkAction(c.EnvID(), resolved.ID, "connect"),
 				Body:           req,
 				FailureMessage: "failed to connect container to network",
 				Render: func(types.MessageResponse) error {
@@ -436,14 +436,14 @@ func newDisconnectCmd() *cobra.Command {
 				containerID = dependent.ID
 			}
 
-			req := types.NetworkDisconnectContainerRequest{
+			req := types.NetworkContainerRequest{
 				ContainerID: containerID,
 				Force:       opts.disconnectForce,
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           clitypes.NetworkDisconnect(c.EnvID(), resolved.ID),
+				Path:           clitypes.NetworkAction(c.EnvID(), resolved.ID, "disconnect"),
 				Body:           req,
 				FailureMessage: "failed to disconnect container from network",
 				Render: func(types.MessageResponse) error {

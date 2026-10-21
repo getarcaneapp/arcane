@@ -22,12 +22,16 @@ class SystemService extends BaseAPIService {
 
 	async startAllStoppedContainers() {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.post(`/environments/${envId}/system/containers/start-stopped`));
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/system/containers`, undefined, { params: { action: 'startstopped' } })
+		);
 	}
 
 	async stopAllContainers() {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.post(`/environments/${envId}/system/containers/stop-all`));
+		return this.handleResponse(
+			this.api.post(`/environments/${envId}/system/containers`, undefined, { params: { action: 'stopall' } })
+		);
 	}
 
 	async getDockerInfo(): Promise<DockerInfo> {

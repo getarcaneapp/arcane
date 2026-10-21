@@ -231,7 +231,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.GitOpsSync]{
-				Method:         http.MethodPut,
+				Method:         http.MethodPatch,
 				Path:           clitypes.GitOpsSync(c.EnvID(), resolved.ID),
 				Body:           req,
 				FailureMessage: "failed to update gitops sync",
@@ -357,7 +357,7 @@ func newSyncCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.GitOpsSyncResult]{
 				Method:         http.MethodPost,
-				Path:           clitypes.GitOpsSyncTrigger(c.EnvID(), resolved.ID),
+				Path:           clitypes.GitOpsSyncAction(c.EnvID(), resolved.ID, "sync"),
 				Body:           nil,
 				FailureMessage: "failed to trigger gitops sync",
 				Render: func(data types.GitOpsSyncResult) error {

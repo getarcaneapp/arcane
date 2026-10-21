@@ -20,11 +20,11 @@ class S3DestinationService extends BaseAPIService {
 	}
 
 	async update(id: string, destination: S3DestinationUpdate): Promise<S3Destination> {
-		return this.handleResponse(this.api.put(`/backups/s3/${id}`, destination));
+		return this.handleResponse(this.api.patch(`/backups/s3/${id}`, destination));
 	}
 
 	async test(id: string, destination?: S3DestinationCreate): Promise<void> {
-		await this.handleResponse(this.api.post(`/backups/s3/${id}/test`, destination));
+		await this.handleResponse(this.api.post(`/backups/s3/${id}`, destination, { params: { action: 'test' } }));
 	}
 
 	async testConfiguration(destination: S3DestinationCreate): Promise<void> {

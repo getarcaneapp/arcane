@@ -24,7 +24,7 @@ class UserAPIService extends BaseAPIService {
 	}
 
 	async update(id: string, user: UserUpdate): Promise<User> {
-		return this.handleResponse(this.api.put(`/users/${id}`, user)) as Promise<User>;
+		return this.handleResponse(this.api.patch(`/users/${id}`, user)) as Promise<User>;
 	}
 
 	async delete(id: string): Promise<void> {
@@ -36,11 +36,11 @@ class UserAPIService extends BaseAPIService {
 	}
 
 	async logoutAllOtherSessions(): Promise<void> {
-		return this.handleResponse(this.api.post('/auth/sessions/logout-all')) as Promise<void>;
+		return this.handleResponse(this.api.delete('/auth/sessions')) as Promise<void>;
 	}
 
 	async updateMyProfile(data: ProfileUpdate): Promise<User> {
-		return this.handleResponse(this.api.put('/auth/me/profile', data)) as Promise<User>;
+		return this.handleResponse(this.api.patch('/auth/me/profile', data)) as Promise<User>;
 	}
 
 	async uploadMyAvatar(file: File): Promise<User> {

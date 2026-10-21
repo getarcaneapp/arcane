@@ -190,7 +190,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.GlobalVariableMutationResponse]{
-				Method:         http.MethodPut,
+				Method:         http.MethodPatch,
 				Path:           clitypes.Variable(args[0]),
 				FailureMessage: "failed to update variable",
 				Body:           req,
@@ -251,13 +251,13 @@ func newSyncCmd() *cobra.Command {
 				return err
 			}
 
-			method, path, failureMessage := http.MethodPost, clitypes.VariablesSync(), "failed to sync variables"
+			method, failureMessage := http.MethodPost, "failed to sync variables"
 			if opts.syncStatus {
-				method, path, failureMessage = http.MethodGet, clitypes.VariablesSyncStatus(), "failed to get variable sync status"
+				method, failureMessage = http.MethodGet, "failed to get variable sync status"
 			}
 			return cmdutil.Run(cmd, c, cmdutil.Spec[[]types.EnvironmentSyncStatus]{
 				Method:         method,
-				Path:           path,
+				Path:           clitypes.VariablesSync(),
 				FailureMessage: failureMessage,
 				Render: func(data []types.EnvironmentSyncStatus) error {
 					headers := []string{"ENVIRONMENT ID", "NAME", "STATUS", "LAST SYNCED", "ERROR"}

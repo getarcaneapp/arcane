@@ -154,6 +154,11 @@ type MFASettingsInput struct {
 	StepUpToken string `header:"X-Step-Up-Token"`
 }
 
+type MFARecoveryActionInput struct {
+	StepUpToken string `header:"X-Step-Up-Token"`
+	Action      string `query:"action" required:"true" enum:"regenerate" doc:"Recovery code action"`
+}
+
 type RecoveryCodesResponse struct {
 	Codes []string `json:"codes" doc:"Recovery codes; shown only once"`
 }
@@ -456,7 +461,7 @@ func (h *PasskeyHandler) DisableMFA(ctx context.Context, input *MFASettingsInput
 	return handlerutil.MessageOutput("Passkey MFA disabled", ""), nil
 }
 
-func (h *PasskeyHandler) RegenerateRecoveryCodes(ctx context.Context, input *MFASettingsInput) (*handlerutil.Out[RecoveryCodesResponse], error) {
+func (h *PasskeyHandler) RegenerateRecoveryCodes(ctx context.Context, input *MFARecoveryActionInput) (*handlerutil.Out[RecoveryCodesResponse], error) {
 	userModel, sessionID, err := requireInteractiveSession(ctx)
 	if err != nil {
 		return nil, err
