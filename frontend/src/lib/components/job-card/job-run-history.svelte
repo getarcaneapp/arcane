@@ -182,12 +182,6 @@
 				{@render outcomeActivity(run.activityId, m.jobs_activity_summary(), run.activityEnvironmentId ?? environmentId)}
 				{@render outcomeActivity(run.outcome.activityId)}
 			</div>
-			{#if run.resolution && run.resolution.resolvedBy !== 'System'}
-				<p>
-					{m.jobs_resolution_details({ user: run.resolution.resolvedBy, date: formatDateTimeShort(run.resolution.resolvedAt) })}
-				</p>
-				<p>{m.jobs_resolution_reason()}: {run.resolution.reason}</p>
-			{/if}
 			<h4 class="font-medium">{m.jobs_run_attempts()}: {run.attemptCount}</h4>
 			{#each run.attempts ?? [] as attempt (attempt.number)}
 				<div class="space-y-1 rounded-lg border border-border/60 p-2">
