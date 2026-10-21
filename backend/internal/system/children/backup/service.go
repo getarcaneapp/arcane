@@ -1978,6 +1978,7 @@ func (s *Service) ListBackupHistory(ctx context.Context, params pagination.Query
 		TotalItems:      page.TotalItems,
 		CurrentPage:     page.CurrentPage,
 		ItemsPerPage:    page.ItemsPerPage,
-		GrandTotalItems: page.TotalItems,
+		GrandTotalItems: max(page.TotalItems, 0),
+		HasNextPage:     page.HasNextPage,
 	}, nil
 }

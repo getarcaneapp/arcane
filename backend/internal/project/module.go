@@ -139,9 +139,10 @@ func RegisterProjects(api huma.API, projectService *ProjectService, activityServ
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/projects/{projectId}/deploy",
 		Summary:     "Deploy, redeploy, or pull a project",
-		Description: "Stream a Docker Compose deploy action: up (docker compose up), redeploy (pull + down + up), or pull (pull all project images). The optional deploy options body applies to up and redeploy; pull ignores it.",
-		Tags:        []string{"Projects"},
-		Security:    handlerutil.DefaultOperationSecurity(),
+		Description: "Stream a Docker Compose deploy action: up (docker compose up), redeploy (pull + down + up), or pull (pull all project images). " +
+			"The optional deploy options body applies to up and redeploy; pull ignores it.",
+		Tags:     []string{"Projects"},
+		Security: handlerutil.DefaultOperationSecurity(),
 	}, "action", map[string]string{
 		"up":       authz.PermProjectsDeploy,
 		"redeploy": authz.PermProjectsDeploy,

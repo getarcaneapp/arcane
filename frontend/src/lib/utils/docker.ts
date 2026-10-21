@@ -1,5 +1,3 @@
-import type { Temporal } from 'temporal-polyfill';
-
 import { m } from '#lib/paraglide/messages.js';
 import type { ContainerDetailsDto, ContainerStats, ContainerSummaryDto } from '#lib/types/docker.js';
 import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';

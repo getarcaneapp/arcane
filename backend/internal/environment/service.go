@@ -43,6 +43,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -52,6 +53,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
@@ -891,6 +893,22 @@ func (s *EnvironmentService) GetEnvironmentByIDCached(ctx context.Context, id st
 func (s *EnvironmentService) invalidateEnvironmentCache(id string) {
 	previous := s.environmentGens[maphash.String(environmentCacheSeed, id)%environmentCacheStripes].Add(1) - 1
 	s.environmentCache.Delete(environmentCacheKey{gen: previous, id: id})
+}
+
+func (s *EnvironmentService) ListAccessibleEnvironments(ctx context.Context, ps *authz.PermissionSet, params pagination.QueryParams) (types.Paginated[types.Environment], error) {
+	envs, page, err := s.ListEnvironmentsPaginated(ctx, params, accessibleEnvironmentIDs(ps))
+	if err != nil {
+		return types.Paginated[types.Environment]{}, err
+	}
+	rows := make([]types.Environment, 0, len(envs))
+	for _, env := range envs {
+		rows = append(rows, ApplyEnvironmentRuntimeState(env))
+	}
+	return types.Paginated[types.Environment]{
+		Success:    true,
+		Data:       rows,
+		Pagination: handlerutil.PaginationResponse(page),
+	}, nil
 }
 
 func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, params pagination.QueryParams, accessibleEnvIDs []string) ([]types.Environment, pagination.Response, error) {

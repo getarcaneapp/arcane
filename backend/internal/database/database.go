@@ -32,6 +32,7 @@ import (
 
 type DB struct {
 	*gorm.DB
+	reader *sql.DB
 }
 
 type MigrationOptions struct {
@@ -58,6 +59,7 @@ func SetGormLogger(l logger.Interface) {
 func Initialize(ctx context.Context, databaseURL string, options MigrationOptions) (database *DB, err error) {
 	var dialector gorm.Dialector
 	var dbProvider string
+	var readDSN string
 	switch {
 	case strings.HasPrefix(databaseURL, "file:"):
 		dbProvider = dbProviderSQLite
@@ -84,6 +86,7 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 				break
 			}
 		}
+		readDSN = sqliteReadDSN(connString)
 		dialector = sqlite.Open(connString)
 	case strings.HasPrefix(databaseURL, "postgres"):
 		dbProvider = dbProviderPostgres
@@ -109,6 +112,7 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 			PrepareStmt:                      true,
 			PrepareStmtMaxSize:               preparedStmtMaxSize,
 			PrepareStmtTTL:                   preparedStmtTTL,
+			SkipDefaultTransaction:           true,
 			IgnoreRelationshipsWhenMigrating: true,
 		})
 		if err == nil {
@@ -171,8 +175,8 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 		sqlDB.SetConnMaxLifetime(5 * time.Minute)
 		sqlDB.SetConnMaxIdleTime(3 * time.Minute)
 	} else {
-		sqlDB.SetMaxIdleConns(10)
-		sqlDB.SetMaxOpenConns(10)
+		sqlDB.SetMaxIdleConns(kit.Ternary(readDSN == "", 10, sqliteWriteConns))
+		sqlDB.SetMaxOpenConns(kit.Ternary(readDSN == "", 10, sqliteWriteConns))
 		sqlDB.SetConnMaxLifetime(0)
 		sqlDB.SetConnMaxIdleTime(0)
 	}
@@ -181,7 +185,17 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 		slog.ErrorContext(ctx, "Failed to run migrations", "error", migrationErr)
 		return nil, fmt.Errorf("failed to run migrations: %w", migrationErr)
 	}
-	return db, nil
+	if readDSN == "" {
+		return db, nil
+	}
+	reader, err := attachSQLiteReadPool(gormDB, sqlDB, readDSN)
+	if err != nil {
+		return nil, err
+	}
+	return &DB{
+		DB:     gormDB,
+		reader: reader,
+	}, nil
 }
 
 // latestMigrationVersion selects the latest embedded migration.
@@ -353,6 +367,12 @@ func ParseSQLiteConnectionString(connString string) (string, error) {
 		if !sqliteutil.HasPragma(qs, "synchronous") {
 			qs.Add("_pragma", "synchronous(NORMAL)")
 		}
+		if !sqliteutil.HasPragma(qs, "cache_size") {
+			qs.Add("_pragma", "cache_size(-8000)")
+		}
+		if !sqliteutil.HasPragma(qs, "temp_store") {
+			qs.Add("_pragma", "temp_store(MEMORY)")
+		}
 		if qs.Get("_txlock") == "" {
 			qs.Set("_txlock", "immediate")
 		}
@@ -392,7 +412,10 @@ func (db *DB) Close() error {
 	if err != nil {
 		return err
 	}
-	return sqlDB.Close()
+	if db.reader == nil {
+		return sqlDB.Close()
+	}
+	return errors.Join(db.reader.Close(), sqlDB.Close())
 }
 
 func (db *DB) SQLDB() (*sql.DB, error) {

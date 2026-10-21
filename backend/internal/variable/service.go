@@ -583,30 +583,6 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []types.En
 	return nil
 }
 
-// ImportLegacyLocalEnvFile imports the manager's existing .env.global entries
-// as all-environment readable variables before the first materialization
-// overwrites the file. Runs once, guarded by a KV flag.
-func (s *VariableService) ImportLegacyLocalEnvFile(ctx context.Context) error {
-	flag := globalVariablesImportedKVPrefix + environment.LocalEnvironmentID
-	imported, err := s.kvService.GetBool(ctx, flag, false)
-	if err != nil {
-		return err
-	}
-	if imported {
-		return nil
-	}
-
-	vars, err := s.ReadLocalEnvFile(ctx)
-	if err != nil {
-		return err
-	}
-	if importVariablesErr := s.importVariables(ctx, vars, ""); importVariablesErr != nil {
-		return importVariablesErr
-	}
-
-	return s.kvService.SetBool(ctx, flag, true)
-}
-
 // importRemoteLegacyVarsOnce pulls a remote environment's current
 // variables before the manager's first push and stores any key the manager
 // would not already produce for that environment as an env-scoped variable.

@@ -38,11 +38,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/variable"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
 )
@@ -166,6 +166,8 @@ func applicationOptions(appCtx context.Context, cfg *config.Config, db *database
 			registerJobs,
 			startEdgeTunnelClient,
 			startGlobalVariableSync,
+			startBackgroundStartupTasks,
+			startProjectStatusWatcher,
 		),
 		fx.WithLogger(func() fxevent.Logger {
 			logger := &fxevent.SlogLogger{Logger: slog.Default()}
@@ -197,21 +199,18 @@ type initializeStartupStateParams struct {
 	Config *config.Config
 	DB     *database.DB
 
-	Volume        *volume.VolumeService
-	Settings      *settings.SettingsService
-	Environment   *environment.EnvironmentService
-	GitOpsSync    *gitops.GitOpsSyncService
-	Project       *project.ProjectService
-	Container     *container.ContainerService
-	Image         *image.ImageService
-	Variable      *variable.VariableService
-	Docker        *docker.DockerClientService
-	Swarm         *swarm.SwarmService
-	Role          *role.RoleService
-	Auth          *auth.AuthService
-	User          *user.UserService
-	ApiKey        *apikey.ApiKeyService
-	Vulnerability *vulnerability.VulnerabilityService
+	Volume      *volume.VolumeService
+	Settings    *settings.SettingsService
+	Environment *environment.EnvironmentService
+	GitOpsSync  *gitops.GitOpsSyncService
+	Project     *project.ProjectService
+	Container   *container.ContainerService
+	Image       *image.ImageService
+	Variable    *variable.VariableService
+	Role        *role.RoleService
+	Auth        *auth.AuthService
+	User        *user.UserService
+	ApiKey      *apikey.ApiKeyService
 }
 
 const startupTaskTimeout = 30 * time.Second
@@ -282,8 +281,6 @@ func initializeStartupState(p initializeStartupStateParams) {
 		}
 		cancelTask()
 	}
-	p.Vulnerability.ImportLegacyReportFiles(appCtx)
-	p.Vulnerability.BackfillScanItems(appCtx)
 
 	if !cfg.AgentMode {
 		if err := p.Environment.ReconcileEdgeStatusesOnStartup(appCtx); err != nil {
@@ -291,34 +288,11 @@ func initializeStartupState(p initializeStartupStateParams) {
 		}
 		p.Environment.RegisterMetrics()
 
-		// Global variables are manager-owned: import a legacy local .env.global once, then sync everywhere.
 		p.Environment.SetVariableSyncer(p.Variable)
 		p.Environment.SetUserInvalidator(func(userID string) {
 			p.Role.InvalidateUser(userID)
 			p.Auth.InvalidateUserTokenCache(userID)
 		})
-		if err := p.Variable.ImportLegacyLocalEnvFile(appCtx); err != nil {
-			slog.WarnContext(appCtx, "Failed to import legacy global variables", "error", err)
-		}
-	}
-
-	dockerCtx, cancelDocker := context.WithTimeout(appCtx, startupTaskTimeout)
-	defer cancelDocker()
-	startup.TestDockerConnection(dockerCtx, func(ctx context.Context) error {
-		_, err := p.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
-			version, err := dockerClient.ServerVersion(ctx, client.ServerVersionOptions{})
-			if err != nil {
-				return struct{}{}, err
-			}
-
-			effectiveAPIVersion := cmp.Or(strings.TrimSpace(dockerClient.ClientVersion()), strings.TrimSpace(version.APIVersion))
-			slog.InfoContext(ctx, "Docker API versions detected", "clientApiVersion", dockerClient.ClientVersion(), "serverApiVersion", version.APIVersion, "effectiveApiVersion", effectiveAPIVersion)
-			return struct{}{}, nil
-		})
-		return err
-	})
-	if err := p.Swarm.SyncSwarmEnabledState(dockerCtx); err != nil {
-		slog.WarnContext(appCtx, "Failed to persist swarm enabled state", "error", err)
 	}
 
 	startup.InitializeNonAgentFeatures(appCtx, runtimeCfg,
@@ -403,6 +377,49 @@ func startGlobalVariableSync(appCtx context.Context, lc fx.Lifecycle, cfg *confi
 		go variables.SyncAll(appCtx)
 		return nil
 	}})
+}
+
+func startBackgroundStartupTasks(appCtx context.Context, lc fx.Lifecycle, dockerService *docker.DockerClientService, swarmService *swarm.SwarmService, _ *http.Server) {
+	lc.Append(fx.Hook{OnStart: func(context.Context) error {
+		go func() {
+			dockerCtx, cancelDocker := context.WithTimeout(appCtx, startupTaskTimeout)
+			defer cancelDocker()
+			startup.TestDockerConnection(dockerCtx, func(ctx context.Context) error {
+				_, err := dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
+					version, err := dockerClient.ServerVersion(ctx, client.ServerVersionOptions{})
+					if err != nil {
+						return struct{}{}, err
+					}
+
+					effectiveAPIVersion := cmp.Or(strings.TrimSpace(dockerClient.ClientVersion()), strings.TrimSpace(version.APIVersion))
+					slog.InfoContext(ctx, "Docker API versions detected", "clientApiVersion", dockerClient.ClientVersion(), "serverApiVersion", version.APIVersion, "effectiveApiVersion", effectiveAPIVersion)
+					return struct{}{}, nil
+				})
+				return err
+			})
+			if err := swarmService.SyncSwarmEnabledState(dockerCtx); err != nil {
+				slog.WarnContext(appCtx, "Failed to persist swarm enabled state", "error", err)
+			}
+		}()
+		return nil
+	}})
+}
+
+func startProjectStatusWatcher(appCtx context.Context, lc fx.Lifecycle, projectService *project.ProjectService, _ *http.Server) {
+	var stop func(context.Context) error
+	lc.Append(fx.Hook{
+		OnStart: func(context.Context) error {
+			var err error
+			stop, err = concurrency.StartSupervised(appCtx, "project status watcher", projectService.WatchStatuses)
+			return err
+		},
+		OnStop: func(stopCtx context.Context) error {
+			if stop == nil {
+				return nil
+			}
+			return stop(stopCtx)
+		},
+	})
 }
 
 func registerAppCancelHook(lc fx.Lifecycle, cancelApp context.CancelCauseFunc) {

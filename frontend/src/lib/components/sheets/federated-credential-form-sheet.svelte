@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { Temporal } from 'temporal-polyfill';
 	import { z } from 'zod/v4';
 
 	import FormInput from '#lib/components/form/form-input.svelte';
