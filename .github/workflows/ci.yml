@@ -120,6 +120,31 @@ jobs:
           working-directory: ${{ matrix.module.name }}
           only-new-issues: false
 
+  # The agent also runs on Windows hosts; cross-compiling catches Unix-only code early.
+  go-build-windows:
+    name: Go Build (agent, windows/amd64)
+    runs-on: depot-ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: *go-cache-dependencies
+
+      - name: Build and vet
+        working-directory: backend
+        env:
+          CGO_ENABLED: '0'
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          go build -tags exclude_frontend -o /dev/null ./cmd/main.go
+          go vet -tags exclude_frontend ./...
+
   frontend-linter:
     name: Frontend Linter
     runs-on: depot-ubuntu-latest

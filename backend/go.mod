@@ -341,3 +341,5 @@ require (
 	modernc.org/memory v1.12.1 // indirect
 	tags.cncf.io/container-device-interface v1.1.1 // indirect
 )
+
+replace github.com/project-copacetic/copacetic => github.com/PHB-fra/copacetic v0.0.0-20261017222428-f2b5f471a15d
