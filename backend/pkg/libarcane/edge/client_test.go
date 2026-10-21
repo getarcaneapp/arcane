@@ -1,13 +1,10 @@
 package edge
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
-	"log/slog"
-	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -19,684 +16,14 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/labstack/echo/v5"
-	slogecho "github.com/samber/slog-echo/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 )
-
-func TestTunnelClient_HandleRequest(t *testing.T) {
-	// 1. Setup Local Service (that agent proxies TO)
-	localHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/local/api" {
-			w.Header().Set("X-Local", "true")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("local response"))
-		} else {
-			w.WriteHeader(http.StatusNotFound)
-		}
-	})
-
-	// 2. Setup Mock Manager (that agent connects TO)
-	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := websocket.Accept(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer func() { _ = conn.CloseNow() }()
-
-		_, registerData, _ := conn.Read(r.Context())
-		var registerMsg TunnelMessage
-		_ = json.Unmarshal(registerData, &registerMsg)
-		assert.Equal(t, MessageTypeRegister, registerMsg.Type)
-		registerResp, _ := json.Marshal(&TunnelMessage{
-			Type:      MessageTypeRegisterResponse,
-			Accepted:  true,
-			SessionID: "session-1",
-		})
-		_ = conn.Write(r.Context(), websocket.MessageText, registerResp)
-
-		// Send a request to the agent
-		reqMsg := &TunnelMessage{
-			ID:     "req-1",
-			Type:   MessageTypeRequest,
-			Method: "GET",
-			Path:   "/local/api",
-		}
-		data, _ := json.Marshal(reqMsg)
-		_ = conn.Write(r.Context(), websocket.MessageText, data)
-
-		// Wait for response
-		_, respData, _ := conn.Read(r.Context())
-		var resp TunnelMessage
-		_ = json.Unmarshal(respData, &resp)
-
-		// Validate response from agent
-		assert.Equal(t, "req-1", resp.ID)
-		assert.Equal(t, MessageTypeResponse, resp.Type)
-		assert.Equal(t, http.StatusOK, resp.Status)
-		assert.Equal(t, "true", resp.Headers["X-Local"])
-		assert.Equal(t, "local response", string(resp.Body))
-	}))
-	defer managerServer.Close()
-
-	// 3. Configure and Start Agent Client
-	cfg := &Config{
-		EdgeTransport:         EdgeTransportWebSocket,
-		ManagerApiUrl:         managerServer.URL,
-		AgentToken:            "test-token",
-		EdgeReconnectInterval: 1,
-	}
-
-	client := NewTunnelClient(cfg, localHandler)
-	client.managerURL = "ws" + strings.TrimPrefix(managerServer.URL, "http")
-
-	ctx := t.Context()
-
-	// Run client in background
-	go client.StartWithErrorChan(ctx, nil)
-
-	// Wait for process to finish or timeout
-	time.Sleep(100 * time.Millisecond)
-}
-
-func TestTunnelClient_WebSocketProxy(t *testing.T) {
-	// 1. Setup Local Service with WS
-	localServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := websocket.Accept(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer func() { _ = conn.CloseNow() }()
-
-		for {
-			mt, data, readErr := conn.Read(r.Context())
-			if readErr != nil {
-				return
-			}
-			// Echo
-			_ = conn.Write(r.Context(), mt, append([]byte("local echo: "), data...))
-		}
-	}))
-	defer localServer.Close()
-
-	localPort := strings.Split(localServer.Listener.Addr().String(), ":")[1]
-
-	// 2. Setup Mock Manager
-	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := websocket.Accept(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer func() { _ = conn.CloseNow() }()
-
-		_, registerData, _ := conn.Read(r.Context())
-		var registerMsg TunnelMessage
-		_ = json.Unmarshal(registerData, &registerMsg)
-		assert.Equal(t, MessageTypeRegister, registerMsg.Type)
-		registerResp, _ := json.Marshal(&TunnelMessage{
-			Type:      MessageTypeRegisterResponse,
-			Accepted:  true,
-			SessionID: "session-1",
-		})
-		_ = conn.Write(r.Context(), websocket.MessageText, registerResp)
-
-		// Send WS Start
-		startMsg := &TunnelMessage{
-			ID:   "ws-1",
-			Type: MessageTypeWebSocketStart,
-			Path: "/", // Connect to root of local server
-		}
-		data, _ := json.Marshal(startMsg)
-		_ = conn.Write(r.Context(), websocket.MessageText, data)
-
-		// Send Data
-		dataMsg := &TunnelMessage{
-			ID:            "ws-1",
-			Type:          MessageTypeWebSocketData,
-			Body:          []byte("hello"),
-			WSMessageType: int(websocket.MessageText),
-		}
-		data, _ = json.Marshal(dataMsg)
-		_ = conn.Write(r.Context(), websocket.MessageText, data)
-
-		// Read Echo
-		_, respData, _ := conn.Read(r.Context())
-		var resp TunnelMessage
-		_ = json.Unmarshal(respData, &resp)
-
-		assert.Equal(t, MessageTypeWebSocketData, resp.Type)
-		assert.Equal(t, "local echo: hello", string(resp.Body))
-	}))
-	defer managerServer.Close()
-
-	// 3. Configure Agent
-	cfg := &Config{
-		EdgeTransport: EdgeTransportWebSocket,
-		ManagerApiUrl: managerServer.URL,
-		AgentToken:    "test-token",
-		Port:          localPort, // Tell agent where local service is
-	}
-
-	client := NewTunnelClient(cfg, http.NotFoundHandler()) // Handler ignored for WS
-	client.managerURL = "ws" + strings.TrimPrefix(managerServer.URL, "http")
-
-	ctx := t.Context()
-
-	go client.StartWithErrorChan(ctx, nil)
-	time.Sleep(100 * time.Millisecond)
-}
-
-// TestTunnelClient_WebSocket_ReconnectClosesStreams verifies a reconnect reclaims the previous
-// connection's goroutines, sockets, and activeStreams entries, and races c.conn under -race.
-func TestTunnelClient_WebSocket_ReconnectClosesStreams(t *testing.T) {
-	// Local WS echo server the agent proxies to.
-	localServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := websocket.Accept(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer func() { _ = conn.CloseNow() }()
-		for {
-			mt, data, readErr := conn.Read(r.Context())
-			if readErr != nil {
-				return
-			}
-			_ = conn.Write(r.Context(), mt, append([]byte("local echo: "), data...))
-		}
-	}))
-	defer localServer.Close()
-	localPort := strings.Split(localServer.Listener.Addr().String(), ":")[1]
-
-	var connCount atomic.Int32
-	firstStreamLive := make(chan struct{})
-	closeFirstConn := make(chan struct{})
-	stopManager := make(chan struct{})
-
-	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := websocket.Accept(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer func() { _ = conn.CloseNow() }()
-
-		// Every connection registers first.
-		if _, _, readErr := conn.Read(r.Context()); readErr != nil {
-			return
-		}
-		registerResp, _ := json.Marshal(&TunnelMessage{
-			Type:      MessageTypeRegisterResponse,
-			Accepted:  true,
-			SessionID: "session-1",
-		})
-		_ = conn.Write(r.Context(), websocket.MessageText, registerResp)
-
-		if connCount.Add(1) > 1 {
-			// Post-reconnect connection: stay up so the agent stops reconnecting
-			// and the test can assert a stable, empty stream set.
-			<-stopManager
-			return
-		}
-
-		// First connection: open a stream and prove it is live by round-tripping
-		// data through the local echo server, then force a disconnect.
-		startMsg, _ := json.Marshal(&TunnelMessage{ID: "ws-1", Type: MessageTypeWebSocketStart, Path: "/"})
-		_ = conn.Write(r.Context(), websocket.MessageText, startMsg)
-		dataMsg, _ := json.Marshal(&TunnelMessage{
-			ID:            "ws-1",
-			Type:          MessageTypeWebSocketData,
-			Body:          []byte("hello"),
-			WSMessageType: int(websocket.MessageText),
-		})
-		_ = conn.Write(r.Context(), websocket.MessageText, dataMsg)
-
-		_, respData, err := conn.Read(r.Context())
-		if err != nil {
-			return
-		}
-		var resp TunnelMessage
-		_ = json.Unmarshal(respData, &resp)
-		assert.Equal(t, MessageTypeWebSocketData, resp.Type)
-		assert.Equal(t, "local echo: hello", string(resp.Body))
-
-		close(firstStreamLive)
-		<-closeFirstConn // returning closes the conn, forcing the agent to reconnect
-	}))
-	defer managerServer.Close()
-
-	cfg := &Config{
-		EdgeTransport: EdgeTransportWebSocket,
-		ManagerApiUrl: managerServer.URL,
-		AgentToken:    "test-token",
-		Port:          localPort,
-	}
-	client := NewTunnelClient(cfg, http.NotFoundHandler())
-	client.managerURL = "ws" + strings.TrimPrefix(managerServer.URL, "http")
-	client.reconnectInterval = 50 * time.Millisecond
-
-	countStreams := func() int {
-		n := 0
-		client.activeStreams.Range(func(_, _ any) bool { n++; return true })
-		return n
-	}
-
-	ctx := t.Context()
-	defer close(stopManager)
-	go client.StartWithErrorChan(ctx, nil)
-
-	// The stream is registered while the first connection is live.
-	select {
-	case <-firstStreamLive:
-	case <-time.After(5 * time.Second):
-		require.FailNow(t, "timed out waiting for the first stream to come up")
-	}
-	assert.Equal(t, 1, countStreams(), "expected one active stream during the first connection")
-
-	// Force the disconnect; the reconnect must reclaim the stream.
-	close(closeFirstConn)
-	require.Eventually(t, func() bool {
-		return connCount.Load() >= 2 && countStreams() == 0
-	}, 5*time.Second, 20*time.Millisecond, "stream leaked across reconnect")
-}
-
-func TestTunnelClient_HandleRequest_Errors(t *testing.T) {
-	// Setup Mock Manager
-	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := websocket.Accept(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer func() { _ = conn.CloseNow() }()
-
-		_, registerData, _ := conn.Read(r.Context())
-		var registerMsg TunnelMessage
-		_ = json.Unmarshal(registerData, &registerMsg)
-		assert.Equal(t, MessageTypeRegister, registerMsg.Type)
-		registerResp, _ := json.Marshal(&TunnelMessage{
-			Type:      MessageTypeRegisterResponse,
-			Accepted:  true,
-			SessionID: "session-1",
-		})
-		_ = conn.Write(r.Context(), websocket.MessageText, registerResp)
-
-		// 1. Send request with invalid URL to trigger error
-		reqMsg := &TunnelMessage{
-			ID:     "req-err",
-			Type:   MessageTypeRequest,
-			Method: "GET",
-			Path:   "://invalid-url",
-		}
-		data, _ := json.Marshal(reqMsg)
-		_ = conn.Write(r.Context(), websocket.MessageText, data)
-
-		// Expect error response
-		_, respData, _ := conn.Read(r.Context())
-		var resp TunnelMessage
-		_ = json.Unmarshal(respData, &resp)
-
-		assert.Equal(t, "req-err", resp.ID)
-		assert.Equal(t, 500, resp.Status)
-
-		// 2. Send unknown message type
-		unknownMsg := &TunnelMessage{
-			ID:   "unknown",
-			Type: "unknown_type",
-		}
-		data, _ = json.Marshal(unknownMsg)
-		_ = conn.Write(r.Context(), websocket.MessageText, data)
-	}))
-	defer managerServer.Close()
-
-	cfg := &Config{
-		EdgeTransport: EdgeTransportWebSocket,
-		ManagerApiUrl: managerServer.URL,
-		AgentToken:    "test-token",
-	}
-
-	client := NewTunnelClient(cfg, http.NotFoundHandler())
-	client.managerURL = "ws" + strings.TrimPrefix(managerServer.URL, "http")
-
-	ctx := t.Context()
-
-	go client.StartWithErrorChan(ctx, nil)
-	time.Sleep(100 * time.Millisecond)
-}
-
-func TestTunnelClient_BuildLocalWebSocketURL(t *testing.T) {
-	tests := []struct {
-		name     string
-		listen   string
-		port     string
-		path     string
-		query    string
-		expected string
-	}{
-		{
-			name:     "empty listen uses localhost",
-			listen:   "",
-			port:     "3553",
-			path:     "/api",
-			query:    "",
-			expected: "ws://localhost:3553/api",
-		},
-		{
-			name:     "wildcard ipv4 maps to localhost",
-			listen:   "0.0.0.0",
-			port:     "3553",
-			path:     "/",
-			query:    "",
-			expected: "ws://localhost:3553/",
-		},
-		{
-			name:     "wildcard ipv6 maps to localhost",
-			listen:   "::",
-			port:     "3553",
-			path:     "/",
-			query:    "",
-			expected: "ws://localhost:3553/",
-		},
-		{
-			name:     "explicit ipv4 listen",
-			listen:   "127.0.0.1",
-			port:     "3553",
-			path:     "/",
-			query:    "q=1",
-			expected: "ws://127.0.0.1:3553/?q=1",
-		},
-		{
-			name:     "explicit ipv6 listen",
-			listen:   "2001:db8::1",
-			port:     "3553",
-			path:     "/ws",
-			query:    "",
-			expected: "ws://[2001:db8::1]:3553/ws",
-		},
-		{
-			name:     "listen host and port wildcard maps to localhost",
-			listen:   "0.0.0.0:3553",
-			port:     "3553",
-			path:     "/ws",
-			query:    "",
-			expected: "ws://localhost:3553/ws",
-		},
-		{
-			name:     "listen with port only maps to localhost",
-			listen:   ":3553",
-			port:     "3553",
-			path:     "/ws",
-			query:    "",
-			expected: "ws://localhost:3553/ws",
-		},
-	}
-
-	for _, testCase := range tests {
-		t.Run(testCase.name, func(t *testing.T) {
-			cfg := &Config{
-				Listen: testCase.listen,
-				Port:   testCase.port,
-			}
-			client := NewTunnelClient(cfg, http.NotFoundHandler())
-			msg := &TunnelMessage{
-				Path:  testCase.path,
-				Query: testCase.query,
-			}
-			assert.Equal(t, testCase.expected, client.buildLocalWebSocketURL(msg))
-		})
-	}
-}
-
-func TestTunnelClient_buildLocalWebSocketHeaders(t *testing.T) {
-	client := NewTunnelClient(&Config{
-		AgentToken: "agent-token",
-	}, http.NotFoundHandler())
-
-	headers := client.buildLocalWebSocketHeaders(&TunnelMessage{
-		Headers: map[string]string{
-			"sec-websocket-key":      "abc",
-			"sec-websocket-version":  "13",
-			"Sec-WebSocket-Protocol": "binary",
-			"X-Custom":               "value",
-			"X-API-Key":              "manager-token",
-		},
-	})
-
-	assert.Empty(t, headers.Get("Sec-Websocket-Key"))
-	assert.Empty(t, headers.Get("Sec-Websocket-Version"))
-	assert.Equal(t, "binary", headers.Get("Sec-Websocket-Protocol"))
-	assert.Equal(t, "value", headers.Get("X-Custom"))
-	assert.Equal(t, "agent-token", headers.Get("X-API-Key"))
-	assert.Equal(t, "agent-token", headers.Get("X-Arcane-Agent-Token"))
-}
-
-func TestTunnelClient_buildLocalWebSocketHeaders_FiltersBrowserHeaders(t *testing.T) {
-	client := NewTunnelClient(&Config{
-		AgentToken: "agent-token",
-	}, http.NotFoundHandler())
-
-	headers := client.buildLocalWebSocketHeaders(&TunnelMessage{
-		Headers: map[string]string{
-			// Browser headers that should be stripped
-			"Origin":             "https://docker.example.com",
-			"Cookie":             "session=abc123",
-			"Authorization":      "Bearer browser-jwt",
-			"Referer":            "https://docker.example.com/environments/123",
-			"Sec-Fetch-Dest":     "websocket",
-			"Sec-Fetch-Mode":     "websocket",
-			"Sec-Fetch-Site":     "same-origin",
-			"Sec-Fetch-User":     "?1",
-			"Sec-Ch-Ua":          "\"Chromium\";v=\"130\"",
-			"Sec-Ch-Ua-Mobile":   "?0",
-			"Sec-Ch-Ua-Platform": "\"Linux\"",
-			// Headers that should be preserved
-			"X-Custom":               "value",
-			"Sec-WebSocket-Protocol": "binary",
-			"Accept-Language":        "en-US",
-		},
-	})
-
-	// Browser headers must be stripped
-	assert.Empty(t, headers.Get("Origin"), "Origin should be stripped")
-	assert.Empty(t, headers.Get("Cookie"), "Cookie should be stripped")
-	assert.Empty(t, headers.Get("Authorization"), "Authorization should be stripped")
-	assert.Empty(t, headers.Get("Referer"), "Referer should be stripped")
-	assert.Empty(t, headers.Get("Sec-Fetch-Dest"), "Sec-Fetch-Dest should be stripped")
-	assert.Empty(t, headers.Get("Sec-Fetch-Mode"), "Sec-Fetch-Mode should be stripped")
-	assert.Empty(t, headers.Get("Sec-Fetch-Site"), "Sec-Fetch-Site should be stripped")
-	assert.Empty(t, headers.Get("Sec-Fetch-User"), "Sec-Fetch-User should be stripped")
-	assert.Empty(t, headers.Get("Sec-Ch-Ua"), "Sec-Ch-Ua should be stripped")
-	assert.Empty(t, headers.Get("Sec-Ch-Ua-Mobile"), "Sec-Ch-Ua-Mobile should be stripped")
-	assert.Empty(t, headers.Get("Sec-Ch-Ua-Platform"), "Sec-Ch-Ua-Platform should be stripped")
-
-	// Non-browser headers must be preserved
-	assert.Equal(t, "value", headers.Get("X-Custom"))
-	assert.Equal(t, "binary", headers.Get("Sec-Websocket-Protocol"))
-	assert.Equal(t, "en-US", headers.Get("Accept-Language"))
-
-	// Agent token must override any manager-forwarded auth
-	assert.Equal(t, "agent-token", headers.Get("X-API-Key"))
-	assert.Equal(t, "agent-token", headers.Get("X-Arcane-Agent-Token"))
-}
-
-func TestTunnelClient_DialLocalWebSocket_StripsForwardedBrowserHeaders(t *testing.T) {
-	managerURL := "https://manager.internal.example.com"
-
-	localServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-API-Key") != "agent-token" {
-			http.Error(w, "missing agent auth", http.StatusForbidden)
-			return
-		}
-
-		if origin := r.Header.Get("Origin"); origin != "" {
-			http.Error(w, "unexpected forwarded origin: "+origin, http.StatusForbidden)
-			return
-		}
-
-		if cookie := r.Header.Get("Cookie"); cookie != "" {
-			http.Error(w, "unexpected forwarded cookie", http.StatusForbidden)
-			return
-		}
-
-		if !httputil.ValidateWebSocketOrigin(managerURL)(r) {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
-		if err != nil {
-			return
-		}
-		defer func() { _ = conn.CloseNow() }()
-		if !assert.NoError(t, conn.Write(r.Context(), websocket.MessageText, []byte("ok"))) {
-			return
-		}
-	}))
-	defer localServer.Close()
-
-	parsedURL, err := url.Parse(localServer.URL)
-	require.NoError(t, err)
-
-	client := NewTunnelClient(&Config{
-		AgentToken: "agent-token",
-		Listen:     parsedURL.Hostname(),
-		Port:       parsedURL.Port(),
-	}, http.NotFoundHandler())
-
-	msg := &TunnelMessage{
-		Path: "/",
-		Headers: map[string]string{
-			"Host":              "manager.example.com",
-			"Origin":            "https://public.browser.example.com",
-			"Cookie":            "session=browser-cookie",
-			"Authorization":     "Bearer browser-token",
-			"Sec-Fetch-Mode":    "websocket",
-			"Sec-Fetch-Site":    "same-origin",
-			"Sec-Websocket-Key": "forwarded-handshake-key",
-		},
-	}
-
-	headers := client.buildLocalWebSocketHeaders(msg)
-	assert.Empty(t, headers.Get("Host"))
-	assert.Empty(t, headers.Get("Origin"))
-	assert.Empty(t, headers.Get("Cookie"))
-	assert.Empty(t, headers.Get("Authorization"))
-
-	ws, _, err := websocket.Dial(t.Context(), client.buildLocalWebSocketURL(msg), &websocket.DialOptions{HTTPHeader: headers})
-	require.NoError(t, err)
-	defer func() { _ = ws.CloseNow() }()
-
-	msgType, body, err := ws.Read(t.Context())
-	require.NoError(t, err)
-	assert.Equal(t, websocket.MessageText, msgType)
-	assert.Equal(t, "ok", string(body))
-}
-
-func TestTunnelClient_HandleRequest_GRPCConfigWithWebSocketConnUsesNonStreamingResponse(t *testing.T) {
-	localHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !assert.Equal(t, "/local/api", r.URL.Path) {
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"ok":true}`))
-	})
-
-	client := NewTunnelClient(&Config{
-		EdgeTransport: EdgeTransportGRPC,
-	}, localHandler)
-	conn := &capturingTunnelConnForHandleRequest{}
-	client.conn.Store(&connBox{conn: conn})
-
-	client.handleRequest(t.Context(), conn, &TunnelMessage{
-		ID:     "req-fallback-1",
-		Type:   MessageTypeRequest,
-		Method: http.MethodGet,
-		Path:   "/local/api",
-	})
-
-	require.Len(t, conn.sent, 1)
-	assert.Equal(t, MessageTypeResponse, conn.sent[0].Type)
-	assert.Equal(t, http.StatusOK, conn.sent[0].Status)
-	assert.Equal(t, `{"ok":true}`, string(conn.sent[0].Body))
-}
-
-func TestTunnelClient_HeartbeatLoop_ClosesConnectionOnSendFailure(t *testing.T) {
-	conn := &failingHeartbeatConn{}
-	client := &TunnelClient{
-		heartbeatInterval: 5 * time.Millisecond,
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
-	defer cancel()
-
-	client.heartbeatLoop(ctx, conn)
-	assert.True(t, conn.closeCalled)
-}
-
-type capturingTunnelConnForHandleRequest struct {
-	sent []*TunnelMessage
-}
-
-func (c *capturingTunnelConnForHandleRequest) Send(msg *TunnelMessage) error {
-	cloned := *msg
-	if msg.Headers != nil {
-		cloned.Headers = make(map[string]string, len(msg.Headers))
-		maps.Copy(cloned.Headers, msg.Headers)
-	}
-	if msg.Body != nil {
-		cloned.Body = append([]byte(nil), msg.Body...)
-	}
-	c.sent = append(c.sent, &cloned)
-	return nil
-}
-
-func (c *capturingTunnelConnForHandleRequest) Receive() (*TunnelMessage, error) {
-	return nil, nil
-}
-
-func (c *capturingTunnelConnForHandleRequest) IsExpectedReceiveError(error) bool {
-	return false
-}
-
-func (c *capturingTunnelConnForHandleRequest) Close() error {
-	return nil
-}
-
-func (c *capturingTunnelConnForHandleRequest) IsClosed() bool {
-	return false
-}
-
-func (c *capturingTunnelConnForHandleRequest) Transport() string { return EdgeTransportWebSocket }
-
-type failingHeartbeatConn struct {
-	closeCalled bool
-}
-
-func (f *failingHeartbeatConn) Send(*TunnelMessage) error {
-	return errors.New("send failed")
-}
-
-func (f *failingHeartbeatConn) Receive() (*TunnelMessage, error) {
-	return nil, errors.New("receive not implemented")
-}
-
-func (f *failingHeartbeatConn) IsExpectedReceiveError(error) bool {
-	return false
-}
-
-func (f *failingHeartbeatConn) Close() error {
-	f.closeCalled = true
-	return nil
-}
-
-func (f *failingHeartbeatConn) IsClosed() bool {
-	return false
-}
-
-func (f *failingHeartbeatConn) Transport() string { return EdgeTransportWebSocket }
 
 type stallingTunnelService struct {
 	tunnelpb.UnimplementedTunnelServiceServer
@@ -727,7 +54,7 @@ func (c *blockingRegistrationConn) Receive() (*TunnelMessage, error) {
 	return nil, io.EOF
 }
 
-func (c *blockingRegistrationConn) IsExpectedReceiveError(error) bool { return false }
+func (c *blockingRegistrationConn) muxConn(context.Context) io.ReadWriteCloser { return nil }
 
 func (c *blockingRegistrationConn) Close() error {
 	if c.closeCount.Add(1) == 1 {
@@ -825,61 +152,6 @@ func TestTunnelClient_GRPC_EndToEnd(t *testing.T) {
 		require.NoError(t, clientErr)
 	default:
 	}
-}
-
-func TestTunnelClient_GRPC_ChunkedRequestBodyEndToEnd(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
-
-	envID := "env-e2e-grpc-chunked-body"
-	GetRegistry().Unregister(envID)
-	defer GetRegistry().Unregister(envID)
-
-	tunnelServer := NewTunnelServerWithRegistry(GetRegistry(), func(_ context.Context, token string) (string, error) {
-		if token != "valid-token" {
-			return "", errors.New("invalid token")
-		}
-		return envID, nil
-	}, nil)
-	go tunnelServer.StartCleanupLoop(ctx)
-	defer func() {
-		cancel()
-		tunnelServer.WaitForCleanupDone()
-	}()
-
-	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPath(t, ctx, tunnelServer)
-	defer stopManager()
-
-	wantBody := bytes.Repeat([]byte("arcane-edge-chunk"), 320*1024)
-	localHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil || r.URL.Path != "/api/environments/0/images/upload" || !bytes.Equal(body, wantBody) {
-			http.Error(w, "unexpected request", http.StatusBadRequest)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("uploaded"))
-	})
-
-	client := NewTunnelClient(&Config{
-		EdgeTransport:         EdgeTransportGRPC,
-		ManagerApiUrl:         managerURL,
-		AgentToken:            "valid-token",
-		EdgeReconnectInterval: 1,
-	}, localHandler)
-	go client.StartWithErrorChan(ctx, nil)
-
-	var tunnel *AgentTunnel
-	require.Eventually(t, func() bool {
-		var ok bool
-		tunnel, ok = GetRegistry().Get(envID).Get()
-		return ok && tunnel != nil && !tunnel.Conn.IsClosed()
-	}, 5*time.Second, 20*time.Millisecond)
-	require.Contains(t, tunnel.Capabilities, tunnelCapabilityChunkedRequest)
-
-	localStatus, _, body, err := ProxyRequest(ctx, tunnel, http.MethodPost, "/api/environments/0/images/upload", "", nil, wantBody)
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, localStatus)
-	assert.Equal(t, "uploaded", string(body))
 }
 
 func TestManagerUsesTLS(t *testing.T) {
@@ -1112,164 +384,6 @@ func TestTunnelClient_awaitRegistration_ClosesAttemptConnWhenClientConnChanges(t
 	assert.EqualValues(t, 1, firstConn.closeCount.Load())
 	assert.False(t, secondConn.IsClosed())
 	assert.EqualValues(t, 0, secondConn.closeCount.Load())
-}
-
-func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-
-	envID := "env-e2e-grpc-ws-1"
-	GetRegistry().Unregister(envID)
-	defer GetRegistry().Unregister(envID)
-
-	resolver := func(ctx context.Context, token string) (string, error) {
-		if token != "valid-token" {
-			return "", errors.New("invalid token")
-		}
-		return envID, nil
-	}
-
-	tunnelServer := NewTunnelServerWithRegistry(GetRegistry(), resolver, nil)
-	go tunnelServer.StartCleanupLoop(ctx)
-	defer func() {
-		cancel()
-		tunnelServer.WaitForCleanupDone()
-	}()
-
-	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPath(t, ctx, tunnelServer)
-	defer stopManager()
-
-	headerTokenCh := make(chan string, 1)
-	queryCh := make(chan string, 1)
-	pathCh := make(chan string, 1)
-	receivedMsgCh := make(chan string, 1)
-	upgradeErrCh := make(chan string, 1)
-
-	localWSServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case pathCh <- r.URL.Path:
-		default:
-		}
-		select {
-		case headerTokenCh <- r.Header.Get(HeaderAPIKey):
-		default:
-		}
-		select {
-		case queryCh <- r.URL.RawQuery:
-		default:
-		}
-
-		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
-		if err != nil {
-			select {
-			case upgradeErrCh <- err.Error():
-			default:
-			}
-			return
-		}
-		defer func() { _ = conn.CloseNow() }()
-
-		for {
-			mt, data, readErr := conn.Read(r.Context())
-			if readErr != nil {
-				return
-			}
-			select {
-			case receivedMsgCh <- string(data):
-			default:
-			}
-			if writeErr := conn.Write(r.Context(), mt, append([]byte("local echo: "), data...)); writeErr != nil {
-				return
-			}
-		}
-	}))
-	defer localWSServer.Close()
-
-	localHost, localPort, err := net.SplitHostPort(localWSServer.Listener.Addr().String())
-	require.NoError(t, err)
-	localHost = strings.Trim(localHost, "[]")
-
-	cfg := &Config{
-		EdgeTransport:         EdgeTransportGRPC,
-		ManagerApiUrl:         managerURL,
-		AgentToken:            "valid-token",
-		EdgeReconnectInterval: 1,
-		Listen:                localHost,
-		Port:                  localPort,
-		// This covers the legacy loopback WebSocket path; remove in v3 with it.
-		EdgeMuxDisabled: true,
-	}
-
-	client := NewTunnelClient(cfg, http.NotFoundHandler())
-	errCh := make(chan error, 4)
-	go client.StartWithErrorChan(ctx, errCh)
-
-	require.Eventually(t, func() bool {
-		tunnel, ok := GetRegistry().Get(envID).Get()
-		return ok && tunnel != nil && !tunnel.Conn.IsClosed()
-	}, 5*time.Second, 20*time.Millisecond)
-
-	router := echo.New()
-	router.GET("/proxy-ws", func(c *echo.Context) error {
-		tunnel, ok := GetRegistry().Get(envID).Get()
-		if !ok || tunnel == nil {
-			return c.NoContent(http.StatusServiceUnavailable)
-		}
-		return ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats", func(*http.Request) bool { return true })
-	})
-
-	proxyServer := httptest.NewServer(router)
-	defer proxyServer.Close()
-
-	proxyURL := "ws" + strings.TrimPrefix(proxyServer.URL, "http") + "/proxy-ws?tail=100"
-	proxyConn, _, err := websocket.Dial(ctx, proxyURL, nil)
-	require.NoError(t, err)
-	defer func() { _ = proxyConn.CloseNow() }()
-
-	require.NoError(t, proxyConn.Write(ctx, websocket.MessageText, []byte("hello-grpc-ws")))
-
-	msgType, payload, err := proxyConn.Read(ctx)
-	select {
-	case upgradeErr := <-upgradeErrCh:
-		require.FailNowf(t, "unexpected failure", "local websocket upgrade failed: %s", upgradeErr)
-	default:
-	}
-	require.NoError(t, err)
-	assert.Equal(t, websocket.MessageText, msgType)
-	assert.Equal(t, "local echo: hello-grpc-ws", string(payload))
-
-	select {
-	case got := <-pathCh:
-		assert.Equal(t, "/api/environments/0/ws/system/stats", got)
-	case <-time.After(2 * time.Second):
-		require.FailNow(t, "timeout waiting for forwarded websocket path")
-	}
-
-	select {
-	case got := <-headerTokenCh:
-		assert.Equal(t, "valid-token", got)
-	case <-time.After(2 * time.Second):
-		require.FailNow(t, "timeout waiting for local websocket auth header")
-	}
-
-	select {
-	case got := <-queryCh:
-		assert.Equal(t, "tail=100", got)
-	case <-time.After(2 * time.Second):
-		require.FailNow(t, "timeout waiting for forwarded query")
-	}
-
-	select {
-	case got := <-receivedMsgCh:
-		assert.Equal(t, "hello-grpc-ws", got)
-	case <-time.After(2 * time.Second):
-		require.FailNow(t, "timeout waiting for forwarded websocket payload")
-	}
-
-	select {
-	case clientErr := <-errCh:
-		require.NoError(t, clientErr)
-	default:
-	}
 }
 
 func TestTunnelClient_connectAndServeManagedTunnel_WebSocketConfigFallsBackToWebSocket(t *testing.T) {
@@ -1508,6 +622,7 @@ func startTestWebSocketTunnelManager(t *testing.T, ctx context.Context) (string,
 			Accepted:      true,
 			EnvironmentID: "env-ws-fallback",
 			SessionID:     "session-ws-fallback",
+			Capabilities:  []string{tunnelCapabilityMuxGrant},
 		})
 		if err != nil {
 			return
@@ -1794,6 +909,7 @@ func TestTunnelClient_connectAndServePoll_OpensWebSocketWhenRequired(t *testing.
 				Accepted:      true,
 				EnvironmentID: "env-poll-ws",
 				SessionID:     "session-poll-ws",
+				Capabilities:  []string{tunnelCapabilityMuxGrant},
 			})
 			if err != nil {
 				return
@@ -1955,6 +1071,7 @@ func TestTunnelClient_connectAndServePoll_RetriesAfterTransientPollError(t *test
 				Accepted:      true,
 				EnvironmentID: "env-poll-retry-ws",
 				SessionID:     "session-poll-retry-ws",
+				Capabilities:  []string{tunnelCapabilityMuxGrant},
 			})
 			if err != nil {
 				return
@@ -2115,104 +1232,16 @@ func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
-func TestTunnelClient_InternalRequestSkipsSlogEcho(t *testing.T) {
-	tests := []struct {
-		name string
-		run  func(t *testing.T, client *TunnelClient)
-	}{
-		{
-			name: "legacy response",
-			run: func(t *testing.T, client *TunnelClient) {
-				conn := &capturingTunnelConnForHandleRequest{}
-				client.conn.Store(&connBox{conn: conn})
-
-				client.handleRequest(t.Context(), conn, &TunnelMessage{
-					ID:     "req-legacy",
-					Type:   MessageTypeRequest,
-					Method: http.MethodGet,
-					Path:   "/local/api",
-				})
-
-				require.Len(t, conn.sent, 1)
-				assert.Equal(t, MessageTypeResponse, conn.sent[0].Type)
-				assert.Equal(t, http.StatusOK, conn.sent[0].Status)
-				assert.Equal(t, "local response", string(conn.sent[0].Body))
-			},
-		},
-		{
-			name: "streaming response",
-			run: func(t *testing.T, client *TunnelClient) {
-				conn := &fakeTunnelConn{transport: EdgeTransportGRPC}
-				client.conn.Store(&connBox{conn: conn})
-
-				client.handleRequest(t.Context(), conn, &TunnelMessage{
-					ID:     "req-stream",
-					Type:   MessageTypeRequest,
-					Method: http.MethodGet,
-					Path:   "/local/api",
-				})
-
-				require.Len(t, conn.msgs, 3)
-				assert.Equal(t, MessageTypeResponse, conn.msgs[0].Type)
-				assert.Equal(t, http.StatusOK, conn.msgs[0].Status)
-				assert.Equal(t, MessageTypeStreamData, conn.msgs[1].Type)
-				assert.Equal(t, "local response", string(conn.msgs[1].Body))
-				assert.Equal(t, MessageTypeStreamEnd, conn.msgs[2].Type)
-			},
-		},
-	}
-
-	for _, testCase := range tests {
-		t.Run(testCase.name, func(t *testing.T) {
-			var sawInternalTunnelRequest bool
-			loggerMiddleware := slogecho.New(slog.Default())
-
-			router := echo.New()
-			router.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
-				return func(c *echo.Context) error {
-					if IsInternalTunnelRequest(c.Request().Context()) {
-						sawInternalTunnelRequest = true
-						return next(c)
-					}
-					return loggerMiddleware(next)(c)
-				}
-			})
-			router.GET("/local/api", func(c *echo.Context) error {
-				return c.String(http.StatusOK, "local response")
-			})
-
-			client := NewTunnelClient(&Config{}, router)
-			testCase.run(t, client)
-
-			assert.True(t, sawInternalTunnelRequest)
-		})
-	}
-}
-
 type fakeTunnelConn struct {
 	mu         sync.Mutex
-	msgs       []*TunnelMessage
 	closed     bool
 	sendErr    error
 	receiveErr error
 	transport  string
 }
 
-func (f *fakeTunnelConn) Send(msg *TunnelMessage) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.sendErr != nil {
-		return f.sendErr
-	}
-	copyMsg := *msg
-	if msg.Headers != nil {
-		copyMsg.Headers = maps.Clone(msg.Headers)
-	}
-	if msg.Body != nil {
-		copyMsg.Body = append([]byte(nil), msg.Body...)
-	}
-	f.msgs = append(f.msgs, &copyMsg)
-	return nil
+func (f *fakeTunnelConn) Send(*TunnelMessage) error {
+	return f.sendErr
 }
 
 func (f *fakeTunnelConn) Receive() (*TunnelMessage, error) {
@@ -2222,8 +1251,8 @@ func (f *fakeTunnelConn) Receive() (*TunnelMessage, error) {
 	return nil, f.receiveErr
 }
 
-func (f *fakeTunnelConn) IsExpectedReceiveError(error) bool {
-	return false
+func (f *fakeTunnelConn) muxConn(context.Context) io.ReadWriteCloser {
+	return nil
 }
 
 func (f *fakeTunnelConn) Close() error {
@@ -2260,50 +1289,6 @@ func TestTunnelClient_serveTunnelSession_GRPCSendEOFSurfacesRegistrationError(t 
 	assert.Contains(t, err.Error(), "invalid agent token")
 }
 
-func TestStreamingResponseRecorder_Sequence(t *testing.T) {
-	conn := &fakeTunnelConn{}
-	r := &streamingResponseRecorder{requestID: "req-1", conn: conn, headers: make(http.Header), statusCode: http.StatusOK}
-
-	r.Header().Set("Content-Type", "text/plain")
-
-	n, err := r.Write([]byte("hello"))
-	require.NoError(t, err)
-	assert.Equal(t, 5, n)
-
-	n, err = r.Write([]byte(" world"))
-	require.NoError(t, err)
-	assert.Equal(t, 6, n)
-
-	require.NoError(t, r.Close())
-
-	require.Len(t, conn.msgs, 4)
-	assert.Equal(t, MessageTypeResponse, conn.msgs[0].Type)
-	assert.Equal(t, "req-1", conn.msgs[0].ID)
-	assert.Equal(t, "text/plain", conn.msgs[0].Headers["Content-Type"])
-	assert.Equal(t, "1", conn.msgs[0].Headers["X-Arcane-Tunnel-Stream"])
-
-	assert.Equal(t, MessageTypeStreamData, conn.msgs[1].Type)
-	assert.Equal(t, "hello", string(conn.msgs[1].Body))
-
-	assert.Equal(t, MessageTypeStreamData, conn.msgs[2].Type)
-	assert.Equal(t, " world", string(conn.msgs[2].Body))
-
-	assert.Equal(t, MessageTypeStreamEnd, conn.msgs[3].Type)
-}
-
-func TestStreamingResponseRecorder_WriteHeaderAndClose(t *testing.T) {
-	conn := &fakeTunnelConn{}
-	r := &streamingResponseRecorder{requestID: "req-2", conn: conn, headers: make(http.Header), statusCode: http.StatusOK}
-
-	r.WriteHeader(http.StatusCreated)
-	require.NoError(t, r.Close())
-
-	require.Len(t, conn.msgs, 2)
-	assert.Equal(t, MessageTypeResponse, conn.msgs[0].Type)
-	assert.Equal(t, http.StatusCreated, conn.msgs[0].Status)
-	assert.Equal(t, MessageTypeStreamEnd, conn.msgs[1].Type)
-}
-
 func TestConnectAndServeWebSocket_CancelUnblocksMessageLoop(t *testing.T) {
 	registered := make(chan struct{})
 	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2318,9 +1303,10 @@ func TestConnectAndServeWebSocket_CancelUnblocksMessageLoop(t *testing.T) {
 			return
 		}
 		registerResp, _ := json.Marshal(&TunnelMessage{
-			Type:      MessageTypeRegisterResponse,
-			Accepted:  true,
-			SessionID: "session-cancel",
+			Type:         MessageTypeRegisterResponse,
+			Accepted:     true,
+			SessionID:    "session-cancel",
+			Capabilities: []string{tunnelCapabilityMuxGrant},
 		})
 		_ = conn.Write(r.Context(), websocket.MessageText, registerResp)
 		close(registered)

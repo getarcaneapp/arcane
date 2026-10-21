@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"log/slog"
 	"net"
@@ -22,10 +21,6 @@ const (
 	// tunnelCapabilityMuxGrant switches both peers to mux; only managers that serve mux send it, since older ones echo offers.
 	tunnelCapabilityMuxGrant = "mux-grant-v1"
 
-	// EdgeDataPlaneMux and EdgeDataPlaneLegacy name the negotiated data plane in runtime state.
-	EdgeDataPlaneMux    = "mux"
-	EdgeDataPlaneLegacy = "legacy"
-
 	// MuxAgentBaseURL is the synthetic origin for requests a manager sends through a multiplexed tunnel.
 	MuxAgentBaseURL   = "http://agent.edge.arcane.internal"
 	muxManagerBaseURL = "http://manager.edge.arcane.internal"
@@ -41,13 +36,12 @@ const (
 	ProxyResponseHeaderTimeout = 30 * time.Minute
 )
 
-// errTunnelMuxActive rejects legacy messages once a connection carries a multiplexed session.
-var errTunnelMuxActive = errors.New("edge tunnel connection carries a multiplexed session")
-
-// muxTransport is a tunnel connection that can switch to carrying a multiplexed session.
-type muxTransport interface {
-	muxConn(ctx context.Context) io.ReadWriteCloser
-}
+// errTunnelMuxActive rejects register messages once a connection carries a multiplexed session.
+var (
+	errTunnelMuxActive    = errors.New("edge tunnel connection carries a multiplexed session")
+	errAgentMuxRequired   = errors.New("edge agent does not support the multiplexed data plane; upgrade the agent")
+	errManagerMuxRequired = errors.New("manager did not grant the multiplexed data plane; upgrade the manager")
+)
 
 // newMuxConfig returns the yamux settings both peers use; only the agent sends keepalive pings.
 func newMuxConfig(keepAlive bool) *yamux.Config {

@@ -1,11 +1,9 @@
 <script lang="ts">
 	import { createSubscriber } from 'svelte/reactivity';
 
-	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
 	import {
-		AlertTriangleIcon,
 		ArrowDownIcon,
 		ConnectionIcon,
 		EnvironmentsIcon,
@@ -82,23 +80,13 @@
 		return undefined;
 	});
 
-	let multiplexed = $derived(environment.edgeDataPlane === 'mux');
 	let polling = $derived(Boolean(environment.lastPollAt));
 	let securityLabel = $derived(
 		environment.edgeSecurityMode === 'mtls' ? m.environments_edge_mtls_label() : m.environments_edge_security_token()
 	);
 	let pathCaption = $derived(
-		[
-			transportLabel,
-			environment.connected && (multiplexed ? m.environments_edge_data_plane_mux() : m.environments_edge_data_plane_legacy())
-		]
-			.filter(Boolean)
-			.join(' · ')
+		[transportLabel, environment.connected && m.environments_edge_data_plane_mux()].filter(Boolean).join(' · ')
 	);
-
-	// Command names are dotted (container.list); everything else is a protocol feature such as mux-v1.
-	let features = $derived((environment.edgeCapabilities ?? []).filter((capability) => !capability.includes('.')));
-	let commandCount = $derived((environment.edgeCapabilities ?? []).length - features.length);
 </script>
 
 {#snippet stat(label: string, value: string, hint?: string)}
@@ -225,22 +213,10 @@
 					{#if environment.edgeAgentInstance}
 						{@render detail(m.environments_edge_agent_instance(), environment.edgeAgentInstance, true)}
 					{/if}
-					{@render detail(
-						m.environments_edge_features(),
-						[...features, m.environments_edge_command_count({ count: commandCount })].join(' · ')
-					)}
+					{@render detail(m.environments_edge_features(), (environment.edgeCapabilities ?? []).join(' · '))}
 				</dl>
 			</Collapsible.Content>
 		</Collapsible.Root>
-
-		{#if !multiplexed}
-			<Alert.Root
-				variant="warning-subtle"
-				icon={AlertTriangleIcon}
-				heading={m.environments_edge_legacy_title()}
-				description={m.environments_edge_legacy_description()}
-			/>
-		{/if}
 	{/if}
 
 	{#if !environment.isEdge}

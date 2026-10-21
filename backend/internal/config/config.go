@@ -94,7 +94,6 @@ type Config struct {
 	EdgeAgent             bool   `env:"EDGE_AGENT" default:"false"`
 	EdgeTransport         string `env:"EDGE_TRANSPORT" default:"auto" options:"toLower"`
 	EdgeReconnectInterval int    `env:"EDGE_RECONNECT_INTERVAL" default:"5"` // seconds
-	EdgeMuxDisabled       bool   `env:"EDGE_MUX_DISABLED" default:"false"`   // keeps the legacy edge message protocol; remove in v3
 	EdgeMTLSMode          string `env:"EDGE_MTLS_MODE" default:"disabled" options:"toLower"`
 	EdgeMTLSCAFile        string `env:"EDGE_MTLS_CA_FILE" default:""`
 	EdgeMTLSCertFile      string `env:"EDGE_MTLS_CERT_FILE" default:""`

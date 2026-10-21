@@ -2,6 +2,7 @@ package edge
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,10 +20,10 @@ type controlledCloseTunnelConn struct {
 	closed       chan struct{}
 }
 
-func (c *controlledCloseTunnelConn) Send(*TunnelMessage) error         { return nil }
-func (c *controlledCloseTunnelConn) Receive() (*TunnelMessage, error)  { return nil, nil }
-func (c *controlledCloseTunnelConn) IsExpectedReceiveError(error) bool { return false }
-func (c *controlledCloseTunnelConn) Transport() string                 { return EdgeTransportWebSocket }
+func (c *controlledCloseTunnelConn) Send(*TunnelMessage) error                  { return nil }
+func (c *controlledCloseTunnelConn) Receive() (*TunnelMessage, error)           { return nil, nil }
+func (c *controlledCloseTunnelConn) muxConn(context.Context) io.ReadWriteCloser { return nil }
+func (c *controlledCloseTunnelConn) Transport() string                          { return EdgeTransportWebSocket }
 
 func (c *controlledCloseTunnelConn) IsClosed() bool {
 	select {

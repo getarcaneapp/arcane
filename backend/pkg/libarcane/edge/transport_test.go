@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/coder/websocket/wsjson"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -198,7 +197,7 @@ func setupGRPCBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel, func
 
 	if sendErr := stream.Send(&tunnelpb.AgentMessage{
 		Payload: &tunnelpb.AgentMessage_Register{
-			Register: &tunnelpb.RegisterRequest{AgentToken: "valid-token"},
+			Register: &tunnelpb.RegisterRequest{AgentToken: "valid-token", Capabilities: []string{tunnelCapabilityMux}},
 		},
 	}); sendErr != nil {
 		_ = conn.Close()
@@ -215,30 +214,14 @@ func setupGRPCBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel, func
 	}
 
 	responseBody := make([]byte, payloadSize)
+	agent := &TunnelClient{handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(responseBody)
+	})}
+	agentConn := NewGRPCAgentTunnelConn(stream)
 	agentDone := make(chan struct{})
 	go func() {
 		defer close(agentDone)
-		for {
-			msg, recvErr := stream.Recv()
-			if recvErr != nil {
-				return
-			}
-			req := msg.GetCommandRequest()
-			if req == nil {
-				continue
-			}
-			if sendErr := stream.Send(&tunnelpb.AgentMessage{
-				Payload: &tunnelpb.AgentMessage_CommandComplete{
-					CommandComplete: &tunnelpb.CommandComplete{
-						CommandId: req.GetCommandId(),
-						Status:    http.StatusOK,
-						Body:      responseBody,
-					},
-				},
-			}); sendErr != nil {
-				return
-			}
-		}
+		_ = agent.serveMuxSession(ctx, agentConn.muxConn(ctx))
 	}()
 
 	tunnel := waitForBenchmarkTunnel(b, envID)
@@ -258,35 +241,15 @@ func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel,
 	b.Helper()
 
 	responseBody := make([]byte, payloadSize)
-
+	agent := &TunnelClient{handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(responseBody)
+	})}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-
-		for {
-			var msg TunnelMessage
-			if readErr := wsjson.Read(r.Context(), conn, &msg); readErr != nil {
-				_ = conn.CloseNow()
-				return
-			}
-
-			if msg.Type != MessageTypeCommandRequest {
-				continue
-			}
-
-			resp := TunnelMessage{
-				ID:     msg.ID,
-				Type:   MessageTypeCommandComplete,
-				Status: http.StatusOK,
-				Body:   responseBody,
-			}
-			if writeErr := wsjson.Write(r.Context(), conn, resp); writeErr != nil {
-				_ = conn.CloseNow()
-				return
-			}
-		}
+		_ = agent.serveMuxSession(r.Context(), NewTunnelConn(conn).muxConn(r.Context()))
 	}))
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
@@ -296,26 +259,19 @@ func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel,
 		require.FailNowf(b, "unexpected failure", "failed to dial websocket server: %v", err)
 	}
 
+	ctx, cancel := context.WithCancel(b.Context())
 	tunnel := NewAgentTunnelWithConn("bench-websocket", NewTunnelConn(conn))
-	dispatchDone := make(chan struct{})
+	serveDone := make(chan struct{})
 	go func() {
-		defer close(dispatchDone)
-		for {
-			msg, receiveErr := tunnel.Conn.Receive()
-			if receiveErr != nil {
-				return
-			}
-			if req, ok := tunnel.Pending.Load(msg.ID); ok {
-				pendingReq := req.(*PendingRequest)
-				pendingReq.ResponseCh <- msg
-			}
-		}
+		defer close(serveDone)
+		_ = (&TunnelServer{}).serveMuxTunnel(ctx, tunnel, tunnel.Conn.muxConn(ctx))
 	}()
 
 	return tunnel, func() {
+		cancel()
 		_ = tunnel.CloseWithReason("")
+		<-serveDone
 		server.Close()
-		<-dispatchDone
 	}
 }
 

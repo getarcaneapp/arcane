@@ -153,8 +153,3 @@ linters:
 
   exclusions:
     generated: strict
-    rules:
-      # The legacy edge message protocol uses deprecated tunnel.proto messages until v3 removes both.
-      - path: pkg/libarcane/edge/
-        linters: [staticcheck]
-        text: 'SA1019: .*proto/tunnel/v1'

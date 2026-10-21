@@ -228,7 +228,6 @@ func buildEdgeRuntimeConfig(cfg *config.Config) *edge.Config {
 		AgentToken:            cfg.AgentToken,
 		Port:                  cfg.Port,
 		Listen:                cfg.Listen,
-		EdgeMuxDisabled:       cfg.EdgeMuxDisabled,
 	}
 }
 

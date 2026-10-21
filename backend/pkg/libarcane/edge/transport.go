@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/samber/mo"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 const (
@@ -91,8 +92,9 @@ func GetTunnelRuntimeState(envID string) mo.Option[*TunnelRuntimeState] {
 	// One snapshot under a single read lock keeps the fields consistent and race-free.
 	meta := tunnel.MetadataSnapshot()
 
-	state := &TunnelRuntimeState{
-		DataPlane:     EdgeDataPlaneLegacy,
+	rtt := time.Duration(tunnel.mux.rtt.Load())
+	return mo.Some(&TunnelRuntimeState{
+		RoundTripTime: kit.Ternary(rtt > 0, &rtt, nil),
 		OpenStreams:   tunnel.openStreams(),
 		Transport:     tunnel.Conn.Transport(),
 		ConnectedAt:   new(meta.ConnectedAt),
@@ -102,12 +104,5 @@ func GetTunnelRuntimeState(envID string) mo.Option[*TunnelRuntimeState] {
 		SecurityMode:  meta.SecurityMode,
 		Capabilities:  meta.Capabilities,
 		State:         meta.State,
-	}
-	if tunnel.mux != nil {
-		state.DataPlane = EdgeDataPlaneMux
-		if rtt := time.Duration(tunnel.mux.rtt.Load()); rtt > 0 {
-			state.RoundTripTime = &rtt
-		}
-	}
-	return mo.Some(state)
+	})
 }

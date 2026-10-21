@@ -334,25 +334,6 @@ func (n *commandRouteNode) match(parts []string) *commandRoute {
 	return n.param.match(parts[1:])
 }
 
-// ValidateEdgeCommand reports whether commandName is the allowlisted command for the request.
-//
-// Deprecated: legacy edge message protocol; remove in v3.
-func ValidateEdgeCommand(commandName, method, requestPath string, stream bool) bool {
-	resolved, ok := ResolveEdgeCommandName(method, requestPath, stream).Get()
-	return ok && resolved == strings.TrimSpace(commandName)
-}
-
-// AdvertisedEdgeCommands lists every allowlisted command name once.
-//
-// Deprecated: legacy edge message protocol; remove in v3.
-func AdvertisedEdgeCommands() []string {
-	names := make([]string, len(commandRoutes))
-	for i, route := range commandRoutes {
-		names[i] = route.CommandName
-	}
-	return kit.Unique(names)
-}
-
 // buildCommandRouteIndex builds one path trie per method (or for streams), panicking on duplicate routes.
 func buildCommandRouteIndex(routes []commandRoute) commandRouteIndex {
 	index := make(commandRouteIndex)

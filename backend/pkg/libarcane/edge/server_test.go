@@ -66,6 +66,7 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 		Type:          MessageTypeRegister,
 		AgentToken:    "valid-token",
 		AgentInstance: "agent-connected",
+		Capabilities:  []string{tunnelCapabilityMux},
 	})
 	require.NoError(t, err)
 
@@ -74,6 +75,7 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, MessageTypeRegisterResponse, registerResp.Type)
 	assert.True(t, registerResp.Accepted)
+	assert.Contains(t, registerResp.Capabilities, tunnelCapabilityMuxGrant)
 
 	// Check registry
 	reg := GetRegistry()
@@ -91,76 +93,6 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		require.FailNow(t, "timeout waiting for status callback")
 	}
-
-	// Test Heartbeat
-	heartbeat := &TunnelMessage{
-		ID:   "hb-1",
-		Type: MessageTypeHeartbeat,
-	}
-	err = wsjson.Write(t.Context(), conn, heartbeat)
-	require.NoError(t, err)
-
-	// Should receive Ack
-	var ack TunnelMessage
-	err = wsjson.Read(t.Context(), conn, &ack)
-	require.NoError(t, err)
-	assert.Equal(t, MessageTypeHeartbeatAck, ack.Type)
-	assert.Equal(t, "hb-1", ack.ID)
-
-	// Test Response Delivery
-	// 1. Setup pending request
-	respCh := make(chan *TunnelMessage, 1)
-	tunnel.Pending.Store("req-1", &PendingRequest{ResponseCh: respCh})
-
-	// 2. Send response from agent
-	respMsg := &TunnelMessage{
-		ID:   "req-1",
-		Type: MessageTypeResponse,
-		Body: []byte("response"),
-	}
-	err = wsjson.Write(t.Context(), conn, respMsg)
-	require.NoError(t, err)
-
-	// 3. Verify received on channel
-	select {
-	case received := <-respCh:
-		assert.Equal(t, "req-1", received.ID)
-		assert.Equal(t, []byte("response"), received.Body)
-	case <-time.After(1 * time.Second):
-		require.FailNow(t, "timeout waiting for response")
-	}
-
-	// Test Stream Delivery
-	// 1. Setup pending stream
-	streamCh := make(chan *TunnelMessage, 1)
-	tunnel.Pending.Store("stream-1", &PendingRequest{ResponseCh: streamCh})
-
-	// 2. Send stream data from agent
-	streamMsg := &TunnelMessage{
-		ID:   "stream-1",
-		Type: MessageTypeStreamData,
-		Body: []byte("stream"),
-	}
-	err = wsjson.Write(t.Context(), conn, streamMsg)
-	require.NoError(t, err)
-
-	// 3. Verify received
-	select {
-	case received := <-streamCh:
-		assert.Equal(t, "stream-1", received.ID)
-	case <-time.After(1 * time.Second):
-		require.FailNow(t, "timeout waiting for stream")
-	}
-
-	// Test Ignored/Unknown Messages
-	ignoredMsg := &TunnelMessage{ID: "ignore", Type: MessageTypeRequest} // Request coming FROM agent is ignored/unexpected
-	_ = wsjson.Write(t.Context(), conn, ignoredMsg)
-
-	unknownMsg := &TunnelMessage{ID: "unknown", Type: "unknown_type"}
-	_ = wsjson.Write(t.Context(), conn, unknownMsg)
-
-	// Allow time for processing
-	time.Sleep(100 * time.Millisecond)
 
 	// Clean up; close the client first so the server-side close handshake
 	// does not wait on a peer that is no longer reading.
@@ -199,6 +131,7 @@ func TestTunnelServer_HandleConnect_AcceptsTokenAfterProxyTerminatedMTLS(t *test
 		Type:          MessageTypeRegister,
 		AgentToken:    "valid-token",
 		AgentInstance: "agent-proxy-mtls",
+		Capabilities:  []string{tunnelCapabilityMux},
 	})
 	require.NoError(t, err)
 
@@ -271,7 +204,7 @@ func TestTunnelServer_HandleConnect_PrefersHeaderTokenOverRegisterMessage(t *tes
 	defer func() { _ = conn.CloseNow() }()
 	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
 
-	err = wsjson.Write(t.Context(), conn, &TunnelMessage{Type: MessageTypeRegister, AgentToken: "bad-token"})
+	err = wsjson.Write(t.Context(), conn, &TunnelMessage{Type: MessageTypeRegister, AgentToken: "bad-token", Capabilities: []string{tunnelCapabilityMux}})
 	require.NoError(t, err)
 
 	var registerResp TunnelMessage
@@ -554,66 +487,6 @@ func TestIsExpectedTunnelReceiveError(t *testing.T) {
 	})
 }
 
-func TestTunnelServer_HandleEventCallback(t *testing.T) {
-	called := make(chan struct{}, 1)
-	registry := NewTunnelRegistry()
-	server := NewTunnelServerWithRegistry(registry, nil, nil)
-	server.EventCallback = func(ctx context.Context, environmentID string, event *TunnelEvent) error {
-		assert.Equal(t, "env-edge", environmentID)
-		require.NotNil(t, event)
-		assert.Equal(t, "container.start", event.Type)
-		assert.Equal(t, "Container started", event.Title)
-		select {
-		case called <- struct{}{}:
-		default:
-		}
-		return nil
-	}
-
-	conn := &fakeServerTunnelConn{messages: []*TunnelMessage{{
-		Type: MessageTypeEvent,
-		Event: &TunnelEvent{
-			Type:  "container.start",
-			Title: "Container started",
-		},
-	}}}
-	server.manageConnectedTunnel(t.Context(), "env-edge", conn, &TunnelMessage{Type: MessageTypeRegister}, "token")
-
-	select {
-	case <-called:
-	case <-time.After(2 * time.Second):
-		require.FailNow(t, "timeout waiting for event callback")
-	}
-
-	stopCtx, cancelStop := context.WithTimeout(t.Context(), time.Second)
-	defer cancelStop()
-	require.NoError(t, registry.Stop(stopCtx))
-}
-
-// fakeServerTunnelConn delivers messages in order, then reports EOF.
-type fakeServerTunnelConn struct {
-	messages []*TunnelMessage
-}
-
-func (f *fakeServerTunnelConn) Send(msg *TunnelMessage) error { return nil }
-
-func (f *fakeServerTunnelConn) Receive() (*TunnelMessage, error) {
-	if len(f.messages) == 0 {
-		return nil, io.EOF
-	}
-	msg := f.messages[0]
-	f.messages = f.messages[1:]
-	return msg, nil
-}
-
-func (f *fakeServerTunnelConn) IsExpectedReceiveError(error) bool { return false }
-
-func (f *fakeServerTunnelConn) Close() error { return nil }
-
-func (f *fakeServerTunnelConn) IsClosed() bool { return false }
-
-func (f *fakeServerTunnelConn) Transport() string { return EdgeTransportWebSocket }
-
 type registerResponseOrderConn struct {
 	sendHook func(*TunnelMessage) error
 	recvErr  error
@@ -633,7 +506,17 @@ func (f *registerResponseOrderConn) Receive() (*TunnelMessage, error) {
 	return nil, io.EOF
 }
 
-func (f *registerResponseOrderConn) IsExpectedReceiveError(error) bool { return false }
+func (f *registerResponseOrderConn) muxConn(context.Context) io.ReadWriteCloser {
+	return newMuxConn(
+		func([]byte) error {
+			return nil
+		},
+		func() ([]byte, error) {
+			return nil, f.recvErr
+		},
+		f.Close,
+	)
+}
 
 func (f *registerResponseOrderConn) Close() error { return nil }
 
@@ -655,7 +538,7 @@ func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterRe
 		return nil
 	}
 
-	server.manageConnectedTunnel(t.Context(), envID, conn, &TunnelMessage{Type: MessageTypeRegister}, "token")
+	server.manageConnectedTunnel(t.Context(), envID, conn, &TunnelMessage{Type: MessageTypeRegister, Capabilities: []string{tunnelCapabilityMux}}, "token")
 
 	_, ok := server.registry.Get(envID).Get()
 	assert.False(t, ok)
@@ -669,7 +552,7 @@ func TestTunnelServer_ManageConnectedTunnel_UnregistersAfterConnectionContextCan
 
 	connectionCtx, cancelConnection := context.WithCancel(t.Context())
 	cancelConnection()
-	server.manageConnectedTunnel(connectionCtx, envID, conn, &TunnelMessage{Type: MessageTypeRegister}, "token")
+	server.manageConnectedTunnel(connectionCtx, envID, conn, &TunnelMessage{Type: MessageTypeRegister, Capabilities: []string{tunnelCapabilityMux}}, "token")
 
 	_, ok := registry.Get(envID).Get()
 	require.False(t, ok)
