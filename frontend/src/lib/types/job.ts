@@ -44,7 +44,6 @@ export type JobRun = {
 	attemptCount: number;
 	activityId?: string;
 	activityEnvironmentId?: string;
-	resolution?: { resolvedBy: string; resolvedAt: string; reason: string };
 	outcome: JobOutcome;
 	attempts?: JobAttempt[];
 	remoteAccepted: boolean;
