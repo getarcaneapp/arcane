@@ -150,19 +150,19 @@ func TestListBackupsPaginatedByManagementType(t *testing.T) {
 	}
 	service := &VolumeService{db: &database.DB{DB: gormDB}}
 
-	systemRows, total, err := service.listBackups(t.Context(), "app", pagination.QueryParams{
+	systemRows, page, err := service.listBackups(t.Context(), "app", pagination.QueryParams{
 		Filters: map[string]string{"type": "system"},
 	})
 	require.NoError(t, err)
-	require.EqualValues(t, 1, total)
+	require.EqualValues(t, 1, page.TotalItems)
 	require.Len(t, systemRows, 1)
 	require.Equal(t, types.BackupManagementTypeSystem, systemRows[0].Type)
 
-	volumeRows, total, err := service.listBackups(t.Context(), "app", pagination.QueryParams{
+	volumeRows, page, err := service.listBackups(t.Context(), "app", pagination.QueryParams{
 		Filters: map[string]string{"type": "volume"},
 	})
 	require.NoError(t, err)
-	require.EqualValues(t, 2, total)
+	require.EqualValues(t, 2, page.TotalItems)
 	require.Len(t, volumeRows, 2)
 	for _, entry := range volumeRows {
 		require.Equal(t, types.BackupManagementTypeVolume, entry.Type)

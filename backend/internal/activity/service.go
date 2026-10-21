@@ -1386,7 +1386,7 @@ func (s *ActivityService) ListRemoteActivities(
 	params pagination.QueryParams,
 ) ([]types.Activity, pagination.Response, error) {
 	params = normalizeRemoteActivityParams(params)
-	window := kit.Ternary(params.Limit == -1, -1, params.Start+params.Limit)
+	window := kit.Ternary(params.Limit == -1, -1, params.Start+params.Limit+kit.Ternary(params.SkipCount, 1, 0))
 	activities, localTotal, err := collectActivityWindow(window, func(start, limit int) ([]types.Activity, int64, error) {
 		local := params
 		local.Start, local.Limit = start, limit
@@ -1407,9 +1407,19 @@ func (s *ActivityService) ListRemoteActivities(
 	config := pagination.Config[types.Activity]{SortBindings: []pagination.SortBinding[types.Activity]{{
 		Fn: func(a, b types.Activity) int { return compareActivities(a, b, params) },
 	}}}
+	hasNextPage := params.Limit != -1 && len(activities) > params.Start+params.Limit
 	pageParams := params
 	pageParams.Order = pagination.SortAsc
 	activities = config.OrderAndPaginate(activities, pageParams)
+	if params.SkipCount && params.Limit != -1 {
+		return activities, pagination.Response{
+			TotalPages:   pagination.UnknownTotal,
+			TotalItems:   pagination.UnknownTotal,
+			CurrentPage:  params.Start/params.Limit + 1,
+			ItemsPerPage: params.Limit,
+			HasNextPage:  hasNextPage,
+		}, nil
+	}
 	return activities, pagination.BuildResponse(total, 0, params), nil
 }
 

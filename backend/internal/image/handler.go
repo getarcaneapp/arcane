@@ -111,6 +111,7 @@ type ListImageBuildsInput struct {
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 	Status        string `query:"status" doc:"Filter by status"`
 	Provider      string `query:"provider" doc:"Filter by provider"`
+	IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
 }
 
 type GetImageBuildInput struct {
@@ -435,6 +436,7 @@ func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuil
 	}
 
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params.SkipCount = !input.IncludeTotal
 	if input.Status != "" {
 		params.Filters["status"] = input.Status
 	}

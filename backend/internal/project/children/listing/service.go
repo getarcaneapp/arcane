@@ -212,6 +212,36 @@ func (s *Service) StatusCounts(ctx context.Context, records []types.ProjectRecor
 	}
 }
 
+func LiveStatus(stored string, snapshotErr error, services []types.ProjectRuntimeService) string {
+	switch {
+	case stored == types.ProjectStatusDeploying || stored == types.ProjectStatusRestarting:
+		return stored
+	case snapshotErr != nil:
+		return types.ProjectStatusUnknown
+	case len(services) == 0:
+		return types.ProjectStatusStopped
+	}
+	return ProjectStatus(services)
+}
+
+func (s *Service) ReconcileStatuses(ctx context.Context, records []types.ProjectRecord) (map[string]string, error) {
+	snapshot := s.Snapshot(ctx)
+	if snapshot.Err != nil {
+		return nil, snapshot.Err
+	}
+	changed := make(map[string]string)
+	for _, p := range records {
+		var services []types.ProjectRuntimeService
+		for _, c := range ProjectContainers(p, snapshot.byProject) {
+			services = append(services, types.ProjectRuntimeService{Status: string(c.State)})
+		}
+		if status := LiveStatus(p.Status, nil, services); status != p.Status {
+			changed[p.ID] = status
+		}
+	}
+	return changed, nil
+}
+
 // RelativePath returns projectPath relative to projectsDir, or "" outside it.
 func RelativePath(projectsDir, projectPath string) string {
 	if strings.TrimSpace(projectsDir) == "" || !projects.IsSafeSubdirectory(projectsDir, projectPath) || filepath.Clean(projectPath) == filepath.Clean(projectsDir) {
@@ -234,18 +264,7 @@ func row(projectsDir, catalog string, p types.ProjectRecord, snapshot Snapshot, 
 		StatusReason:    p.StatusReason,
 		GitOpsManagedBy: p.GitOpsManagedBy,
 		ArchivedAt:      p.ArchivedAt,
-		// Status uses the live services, not the possibly stale stored ServiceCount.
-		Status: func() string {
-			switch {
-			case p.Status == types.ProjectStatusDeploying || p.Status == types.ProjectStatusRestarting:
-				return p.Status
-			case snapshot.Err != nil:
-				return types.ProjectStatusUnknown
-			case len(services) == 0:
-				return types.ProjectStatusStopped
-			}
-			return ProjectStatus(services)
-		}(),
+		Status:          LiveStatus(p.Status, snapshot.Err, services),
 		DirName:         mo.PointerToOption(p.DirName).OrEmpty(),
 		Name:            p.Name,
 		RelativePath:    RelativePath(projectsDir, p.Path),

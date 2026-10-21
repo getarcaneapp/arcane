@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { Temporal } from 'temporal-polyfill';
-
 	import { m } from '#lib/paraglide/messages.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 

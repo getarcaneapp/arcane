@@ -3,7 +3,6 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { Temporal } from 'temporal-polyfill';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import UniversalMobileCard from '#lib/components/arcane-table/cards/universal-mobile-card.svelte';

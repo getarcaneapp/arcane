@@ -21,20 +21,27 @@ import (
 	"github.com/samber/hot"
 	"go.getarcane.app/kit/normalization"
 	"go.getarcane.app/kit/pkg"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/jwtclaims"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 )
+
+const sessionBootstrapVersionTimeout = 2 * time.Second
 
 var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
@@ -67,21 +74,23 @@ type verifiedTokenEntry struct {
 }
 
 type AuthService struct {
-	userService       *user.UserService
-	settingsService   *settings.SettingsService
-	eventService      *event.EventService
-	sessionService    *session.SessionService
-	roleService       *role.RoleService
-	signingKeyMu      sync.Mutex
-	signingKey        *mldsa.PrivateKey
-	browserSigningKey []byte
-	refreshExpiry     time.Duration
-	config            *config.Config
-	tokenCache        *hot.HotCache[string, verifiedTokenEntry]
-	cacheGen          atomic.Uint64
-	cacheFillMu       sync.Mutex
-	dummyMu           sync.Mutex
-	dummyHash         string
+	userService        *user.UserService
+	settingsService    *settings.SettingsService
+	eventService       *event.EventService
+	sessionService     *session.SessionService
+	roleService        *role.RoleService
+	environmentService *environment.EnvironmentService
+	versionService     *version.VersionService
+	signingKeyMu       sync.Mutex
+	signingKey         *mldsa.PrivateKey
+	browserSigningKey  []byte
+	refreshExpiry      time.Duration
+	config             *config.Config
+	tokenCache         *hot.HotCache[string, verifiedTokenEntry]
+	cacheGen           atomic.Uint64
+	cacheFillMu        sync.Mutex
+	dummyMu            sync.Mutex
+	dummyHash          string
 }
 
 func (s *AuthService) dummyPasswordHash(ctx context.Context) (string, error) {
@@ -104,21 +113,68 @@ func NewAuthService(
 	eventService *event.EventService,
 	sessionService *session.SessionService,
 	roleService *role.RoleService,
+	environmentService *environment.EnvironmentService,
+	versionService *version.VersionService,
 	cfg *config.Config,
 ) *AuthService {
 	return &AuthService{
-		userService:     userService,
-		settingsService: settingsService,
-		eventService:    eventService,
-		sessionService:  sessionService,
-		roleService:     roleService,
-		refreshExpiry:   cfg.JWTRefreshExpiry,
-		config:          cfg,
+		userService:        userService,
+		settingsService:    settingsService,
+		eventService:       eventService,
+		sessionService:     sessionService,
+		roleService:        roleService,
+		environmentService: environmentService,
+		versionService:     versionService,
+		refreshExpiry:      cfg.JWTRefreshExpiry,
+		config:             cfg,
 		tokenCache: hot.NewHotCache[string, verifiedTokenEntry](hot.LRU, 4096).
 			WithTTL(60 * time.Second).
 			WithJanitor().
 			Build(),
 	}
+}
+
+func (s *AuthService) GetSessionBootstrap(ctx context.Context, userID string, ps *authz.PermissionSet) (*types.SessionBootstrap, error) {
+	var (
+		currentUser  types.User
+		versionInfo  *types.VersionInfo
+		environments types.Paginated[types.Environment]
+	)
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.Go(func() error {
+		userModel, err := s.userService.GetUser(groupCtx, userID)
+		if err != nil {
+			return fmt.Errorf("failed to get user: %w", err)
+		}
+		currentUser, err = s.userService.ToUserResponseDto(groupCtx, *userModel)
+		if err != nil {
+			return fmt.Errorf("failed to map user: %w", err)
+		}
+		return nil
+	})
+	group.Go(func() error {
+		versionCtx, cancel := context.WithTimeout(groupCtx, sessionBootstrapVersionTimeout)
+		defer cancel()
+		versionInfo = s.versionService.GetAppVersionInfo(versionCtx)
+		return nil
+	})
+	group.Go(func() error {
+		var err error
+		environments, err = s.environmentService.ListAccessibleEnvironments(groupCtx, ps, pagination.QueryParams{Limit: -1})
+		if err != nil {
+			return fmt.Errorf("failed to list environments: %w", err)
+		}
+		return nil
+	})
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+	return &types.SessionBootstrap{
+		User:                currentUser,
+		Version:             *versionInfo,
+		Environments:        environments,
+		PermissionsManifest: role.BuildPermissionsManifest(),
+	}, nil
 }
 
 func (s *AuthService) GetOidcConfigurationStatus(ctx context.Context) (*types.OidcStatusInfo, error) {

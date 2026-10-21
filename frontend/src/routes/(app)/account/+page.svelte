@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
-	import { Temporal } from 'temporal-polyfill';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';

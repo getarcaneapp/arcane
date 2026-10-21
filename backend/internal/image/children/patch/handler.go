@@ -42,6 +42,7 @@ type ListImagePatchesInput struct {
 	Start         int    `query:"start" doc:"Start offset"`
 	Limit         int    `query:"limit" doc:"Limit"`
 	Status        string `query:"status" doc:"Filter by patch status"`
+	IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
 }
 
 // PatchImage starts a background patch run for an image.
@@ -103,6 +104,7 @@ func (h *ImagePatchHandler) ListPatchTargets(ctx context.Context, input *ListPat
 // ListImagePatches returns the paginated patch history for the environment.
 func (h *ImagePatchHandler) ListImagePatches(ctx context.Context, input *ListImagePatchesInput) (*handlerutil.Page[types.PatchRecord], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params.SkipCount = !input.IncludeTotal
 	if input.Status != "" {
 		params.Filters["status"] = input.Status
 	}

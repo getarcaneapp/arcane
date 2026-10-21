@@ -1,6 +1,7 @@
 import type { Locale } from '#lib/paraglide/runtime.js';
-import type { ApplicationTheme, IconCatalog } from '#lib/types/settings.js';
-import type { CreateRequest, UpdateRequest } from '#lib/types/shared.js';
+import type { Environment } from '#lib/types/environment.js';
+import type { AppVersionInformation, ApplicationTheme, IconCatalog } from '#lib/types/settings.js';
+import type { CreateRequest, Paginated, UpdateRequest } from '#lib/types/shared.js';
 
 // --- RBAC: roles, permissions, assignments ---
 
@@ -348,3 +349,10 @@ export type FederatedCredentialCreate = CreateRequest<
 >;
 
 export type FederatedCredentialUpdate = UpdateRequest<FederatedCredential, FederatedCredentialWritable>;
+
+export type SessionBootstrap = {
+	user: User;
+	version: Partial<AppVersionInformation>;
+	environments: Paginated<Environment>;
+	permissionsManifest: PermissionsManifest;
+};

@@ -275,7 +275,7 @@
 	const totalItems = $derived(items.pagination?.totalItems ?? 0);
 	const pageSize = $derived(requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? DEFAULT_LIMIT);
 	const canPrev = $derived(currentPage > 1);
-	const canNext = $derived(currentPage < totalPages);
+	const canNext = $derived(totalPages < 0 ? (items.pagination?.hasNextPage ?? false) : currentPage < totalPages);
 
 	onMount(() => {
 		// Initialize prefs first

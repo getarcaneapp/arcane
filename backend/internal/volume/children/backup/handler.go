@@ -42,6 +42,7 @@ type ListBackupsInput struct {
 	Start         int    `query:"start" default:"0" doc:"Start index"`
 	Limit         int    `query:"limit" default:"20" doc:"Limit"`
 	Type          string `query:"type" doc:"Management origin filter"`
+	IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
 }
 
 type ListBackupsOutput struct {
@@ -112,17 +113,16 @@ func (h *Handler) DownloadBackup(ctx context.Context, input *DownloadBackupInput
 
 func (h *Handler) ListBackups(ctx context.Context, input *ListBackupsInput) (*ListBackupsOutput, error) {
 	params := pagination.QueryParams{
-		Search: input.Search,
-		Sort:   input.Sort,
-		Order:  pagination.SortOrder(input.Order),
-		Start:  input.Start,
-		Limit:  input.Limit,
+		Search:    input.Search,
+		Sort:      input.Sort,
+		Order:     pagination.SortOrder(input.Order),
+		Start:     input.Start,
+		Limit:     cmp.Or(input.Limit, 20),
+		SkipCount: !input.IncludeTotal,
 		Filters: map[string]string{
 			"type": input.Type,
 		},
 	}
-
-	params.Limit = cmp.Or(params.Limit, 20)
 
 	backups, paginationResp, err := h.service.List(ctx, input.VolumeName, params)
 	if err != nil {

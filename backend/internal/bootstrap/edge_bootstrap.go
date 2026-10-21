@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
@@ -157,6 +158,11 @@ func createEdgeMTLSIssueEvents(ctx context.Context, eventService *event.EventSer
 // stored connection state, logs an event when the state actually changed, and
 // wakes any open status streams.
 func handleEdgeStatusChange(ctx context.Context, environmentService *environment.EnvironmentService, eventService *event.EventService, envID string, connected bool) {
+	if !connected && edge.GetPollRuntimeRegistry().Get(envID, time.Now()).IsPresent() {
+		environmentService.NotifyRuntimeStateChanged()
+		return
+	}
+
 	envName := envID
 	env, getErr := environmentService.GetEnvironmentByID(ctx, envID)
 	if getErr != nil {

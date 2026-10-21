@@ -28,6 +28,7 @@ export type PaginationResponse = {
 	currentPage: number;
 	itemsPerPage: number;
 	grandTotalItems?: number;
+	hasNextPage?: boolean;
 };
 
 export type Paginated<T, C = unknown> = {

@@ -21,20 +21,22 @@ type Handler struct {
 }
 
 type ListSystemBackupsInput struct {
-	Search string `query:"search"`
-	Sort   string `query:"sort" default:"createdAt"`
-	Order  string `query:"order" default:"desc"`
-	Start  int    `query:"start" default:"0"`
-	Limit  int    `query:"limit" default:"20"`
+	Search       string `query:"search"`
+	Sort         string `query:"sort" default:"createdAt"`
+	Order        string `query:"order" default:"desc"`
+	Start        int    `query:"start" default:"0"`
+	Limit        int    `query:"limit" default:"20"`
+	IncludeTotal bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
 }
 
 type ListBackupHistoryInput struct {
-	Search string `query:"search"`
-	Sort   string `query:"sort" default:"createdAt"`
-	Order  string `query:"order" default:"desc"`
-	Start  int    `query:"start" default:"0"`
-	Limit  int    `query:"limit" default:"20"`
-	Type   string `query:"type"`
+	Search       string `query:"search"`
+	Sort         string `query:"sort" default:"createdAt"`
+	Order        string `query:"order" default:"desc"`
+	Start        int    `query:"start" default:"0"`
+	Limit        int    `query:"limit" default:"20"`
+	Type         string `query:"type"`
+	IncludeTotal bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
 }
 
 type SystemBackupPoliciesOutput struct {
@@ -104,6 +106,7 @@ func NewHandler(service *Service, activityService *activity.ActivityService, app
 
 func (h *Handler) ListHistory(ctx context.Context, input *ListBackupHistoryInput) (*handlerutil.Page[types.SystemVolumeBackupHistoryEntry], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params.SkipCount = !input.IncludeTotal
 	params.Filters["type"] = input.Type
 	history, page, err := h.service.ListBackupHistory(ctx, params)
 	if err != nil {
@@ -120,6 +123,7 @@ func (h *Handler) ListHistory(ctx context.Context, input *ListBackupHistoryInput
 
 func (h *Handler) List(ctx context.Context, input *ListSystemBackupsInput) (*handlerutil.Page[types.SystemBackupRun], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	params.SkipCount = !input.IncludeTotal
 	runs, page, err := h.service.ListBackups(ctx, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())

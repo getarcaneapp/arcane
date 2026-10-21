@@ -104,8 +104,8 @@ func paginateDBAll[M any](query *gorm.DB, result *[]M) (Response, error) {
 	}, nil
 }
 
-// paginateDB applies offset/limit pagination. When skipCount is true the COUNT(*) is elided
-// and TotalItems/TotalPages are returned as UnknownTotal.
+// paginateDB applies offset/limit pagination. When skipCount is true the COUNT(*) is elided,
+// TotalItems/TotalPages are returned as UnknownTotal, and one extra row decides HasNextPage.
 // Count runs before Find so it sees a clean session (Find sets Statement.Dest in GORM v2).
 func paginateDB[M any](offset, pageSize int, query *gorm.DB, result *[]M, skipCount bool) (Response, error) {
 	if offset < 0 {
@@ -127,16 +127,19 @@ func paginateDB[M any](offset, pageSize int, query *gorm.DB, result *[]M, skipCo
 		}
 	}
 
-	if err := query.Offset(offset).Limit(pageSize).Find(result).Error; err != nil {
+	if err := query.Offset(offset).Limit(pageSize + kit.Ternary(skipCount, 1, 0)).Find(result).Error; err != nil {
 		return Response{}, err
 	}
 
 	if skipCount {
+		hasNextPage := len(*result) > pageSize
+		*result = (*result)[:min(len(*result), pageSize)]
 		return Response{
 			TotalPages:   UnknownTotal,
 			TotalItems:   UnknownTotal,
 			CurrentPage:  page,
 			ItemsPerPage: pageSize,
+			HasNextPage:  hasNextPage,
 		}, nil
 	}
 
@@ -150,5 +153,6 @@ func paginateDB[M any](offset, pageSize int, query *gorm.DB, result *[]M, skipCo
 		TotalItems:   totalItems,
 		CurrentPage:  page,
 		ItemsPerPage: pageSize,
+		HasNextPage:  int64(offset+len(*result)) < totalItems,
 	}, nil
 }

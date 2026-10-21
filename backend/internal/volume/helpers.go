@@ -408,15 +408,13 @@ func (s *VolumeService) takeHelperID(volumeName string) string {
 func (s *VolumeService) CleanupOrphanedVolumeHelpers(ctx context.Context) (int, error) {
 	slog.DebugContext(ctx, "volume service: cleanup orphaned volume helper containers")
 
-	containers, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
-	})
+	containers, err := s.dockerService.ListContainers(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list containers for orphan helper cleanup: %w", err)
 	}
 
 	removedCount := 0
-	for _, c := range containers.Items {
+	for _, c := range containers {
 		if !isVolumeHelperContainer(c) {
 			continue
 		}

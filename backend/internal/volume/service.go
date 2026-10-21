@@ -288,7 +288,7 @@ func (s *VolumeService) backupStore() volumebackup.Store {
 }
 
 // listBackups pages one volume's backup history; both or neither management type selected means no type filter.
-func (s *VolumeService) listBackups(ctx context.Context, volumeName string, params pagination.QueryParams) ([]types.VolumeBackup, int64, error) {
+func (s *VolumeService) listBackups(ctx context.Context, volumeName string, params pagination.QueryParams) ([]types.VolumeBackup, pagination.Response, error) {
 	query := s.db.WithContext(ctx).Model(&VolumeBackup{}).Where("volume_name = ?", volumeName)
 	var system, managed bool
 	for value := range strings.SplitSeq(params.Filters["type"], ",") {
@@ -322,11 +322,6 @@ func (s *VolumeService) listBackups(ctx context.Context, volumeName string, para
 		)
 	}
 
-	var totalItems int64
-	if err := query.Count(&totalItems).Error; err != nil {
-		return nil, 0, err
-	}
-
 	sortCol := "created_at"
 	sortOrder := "DESC"
 	if params.Sort != "" {
@@ -353,13 +348,10 @@ func (s *VolumeService) listBackups(ctx context.Context, volumeName string, para
 	}
 	query = query.Order(fmt.Sprintf("%s %s", sortCol, sortOrder))
 
-	if params.Limit > 0 {
-		query = query.Offset(params.Start).Limit(params.Limit)
-	}
-
 	var entries []VolumeBackup
-	if err := query.Find(&entries).Error; err != nil {
-		return nil, 0, err
+	page, err := pagination.PaginateAndSortDB(pagination.QueryParams{Params: params.Params}, query, &entries)
+	if err != nil {
+		return nil, pagination.Response{}, err
 	}
 	records := make([]types.VolumeBackup, 0, len(entries))
 	for i := range entries {
@@ -367,7 +359,7 @@ func (s *VolumeService) listBackups(ctx context.Context, volumeName string, para
 		record.Type = types.BackupManagementTypeForPolicy(record.PolicyID)
 		records = append(records, *record)
 	}
-	return records, totalItems, nil
+	return records, page, nil
 }
 
 func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*types.Volume, error) {

@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { Temporal } from 'temporal-polyfill';
-
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 
 	let { value }: { value: unknown } = $props();

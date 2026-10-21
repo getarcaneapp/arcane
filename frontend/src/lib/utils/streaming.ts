@@ -1,5 +1,3 @@
-import { Temporal } from 'temporal-polyfill';
-
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 /**

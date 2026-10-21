@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { Temporal } from 'temporal-polyfill';
-
 	import { KeyValueCard } from '#lib/components/resource-detail/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';

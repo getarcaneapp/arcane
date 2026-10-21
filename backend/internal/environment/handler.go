@@ -162,45 +162,18 @@ func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEn
 	if !ok {
 		return nil, huma.Error403Forbidden("permission denied")
 	}
-	accessibleEnvIDs := accessibleEnvironmentIDs(ps)
 
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.Type != "" {
 		params.Filters["type"] = input.Type
 	}
 
-	envs, paginationResp, err := h.environmentService.ListEnvironmentsPaginated(ctx, params, accessibleEnvIDs)
+	page, err := h.environmentService.ListAccessibleEnvironments(ctx, ps, params)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to fetch environments")
 	}
-	rows := make([]types.Environment, 0, len(envs))
-	for _, env := range envs {
-		rows = append(rows, ApplyEnvironmentRuntimeState(env))
-	}
 
-	return &handlerutil.Page[types.Environment]{
-		Body: types.Paginated[types.Environment]{
-			Success:    true,
-			Data:       rows,
-			Pagination: handlerutil.PaginationResponse(paginationResp),
-		},
-	}, nil
-}
-
-// accessibleEnvironmentIDs returns nil when the caller may list every environment,
-// otherwise the sorted IDs it holds at least one permission on.
-func accessibleEnvironmentIDs(ps *authz.PermissionSet) []string {
-	switch {
-	case ps == nil:
-		return []string{}
-	case ps.Allows(authz.PermEnvironmentsList, ""):
-		return nil
-	default:
-		// Never nil: callers treat nil as unrestricted, so a user without grants must get an empty list.
-		ids := slices.AppendSeq(make([]string, 0, len(ps.PerEnv)), maps.Keys(ps.PerEnv))
-		slices.Sort(ids)
-		return ids
-	}
+	return &handlerutil.Page[types.Environment]{Body: page}, nil
 }
 
 func (h *EnvironmentHandler) RunStreamProducer(ctx context.Context, ps *authz.PermissionSet, events chan<- types.EnvironmentStreamEvent) {

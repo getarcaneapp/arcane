@@ -32,7 +32,7 @@ export function useBackupActivity(
 				const activities: Activity[] = [];
 				for (const status of ['queued', 'running']) {
 					let page = 1;
-					let totalPages = 1;
+					let hasNextPage = false;
 					do {
 						const result = await activityService.getActivities(
 							{ pagination: { page, limit: 100 }, filters: { status } },
@@ -40,9 +40,9 @@ export function useBackupActivity(
 						);
 						signal.throwIfAborted();
 						activities.push(...result.data);
-						totalPages = result.pagination.totalPages;
+						hasNextPage = result.pagination.hasNextPage ?? false;
 						page++;
-					} while (page <= totalPages);
+					} while (hasNextPage);
 				}
 				return activities.filter(matches).map((activity) => activity.id);
 			},
