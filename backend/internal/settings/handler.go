@@ -12,10 +12,7 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/category"
-	searchtypes "github.com/getarcaneapp/arcane/types/v2/search"
-	"github.com/getarcaneapp/arcane/types/v2/settings"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
 	"go.yaml.in/yaml/v4"
@@ -50,7 +47,7 @@ type GetSettingsInput struct {
 }
 
 type GetSettingsOutput struct {
-	Body []settings.PublicSetting
+	Body []types.PublicSetting
 }
 
 type GetPublicSettingsInput struct {
@@ -58,32 +55,32 @@ type GetPublicSettingsInput struct {
 }
 
 type GetPublicSettingsOutput struct {
-	Body []settings.PublicSetting
+	Body []types.PublicSetting
 }
 
 type UpdateSettingsInput struct {
-	EnvironmentID string          `path:"id" doc:"Environment ID"`
-	Body          settings.Update `doc:"Settings update data"`
+	EnvironmentID string               `path:"id" doc:"Environment ID"`
+	Body          types.SettingsUpdate `doc:"Settings update data"`
 }
 
 type SearchSettingsInput struct {
-	Body searchtypes.Request `doc:"Search query"`
+	Body types.SearchRequest `doc:"Search query"`
 }
 
 type SearchSettingsOutput struct {
-	Body searchtypes.Response
+	Body types.SearchResponse
 }
 
 type GetCategoriesOutput struct {
-	Body []category.Category
+	Body []types.Category
 }
 
-func (h *SettingsHandler) appendRuntimeSettings(settingsDto []settings.PublicSetting, includeAuthenticatedOnly bool) []settings.PublicSetting {
+func (h *SettingsHandler) appendRuntimeSettings(settingsDto []types.PublicSetting, includeAuthenticatedOnly bool) []types.PublicSetting {
 	relay := h.cfg != nil && !h.cfg.AgentMode
 	settingsDto = append(settingsDto,
-		settings.PublicSetting{Key: "frontendTracingEnabled", Value: strconv.FormatBool(relay && telemetry.Endpoint("traces") != ""), Type: "boolean"},
-		settings.PublicSetting{Key: "frontendMetricsEnabled", Value: strconv.FormatBool(relay && telemetry.Endpoint("metrics") != ""), Type: "boolean"},
-		settings.PublicSetting{Key: "frontendLogsEnabled", Value: strconv.FormatBool(relay && telemetry.Endpoint("logs") != ""), Type: "boolean"},
+		types.PublicSetting{Key: "frontendTracingEnabled", Value: strconv.FormatBool(relay && telemetry.Endpoint("traces") != ""), Type: "boolean"},
+		types.PublicSetting{Key: "frontendMetricsEnabled", Value: strconv.FormatBool(relay && telemetry.Endpoint("metrics") != ""), Type: "boolean"},
+		types.PublicSetting{Key: "frontendLogsEnabled", Value: strconv.FormatBool(relay && telemetry.Endpoint("logs") != ""), Type: "boolean"},
 	)
 	if !includeAuthenticatedOnly {
 		return settingsDto
@@ -102,23 +99,23 @@ func (h *SettingsHandler) appendRuntimeSettings(settingsDto []settings.PublicSet
 	projectWorkspaceMaxFileSizeMB := workspace.EffectiveMaxFileSizeMB(cfg.ProjectWorkspaceMaxFileSizeMB)
 	volumeWorkspaceMaxFileSizeMB := workspace.EffectiveMaxFileSizeMB(cfg.VolumeWorkspaceMaxFileSizeMB)
 	settingsDto = append(settingsDto,
-		settings.PublicSetting{Key: "uiConfigDisabled", Value: strconv.FormatBool(cfg.UIConfigurationDisabled), Type: "boolean"},
-		settings.PublicSetting{Key: projectWorkspaceMaxFileSizeSettingKey, Value: strconv.Itoa(projectWorkspaceMaxFileSizeMB), Type: "number"},
-		settings.PublicSetting{Key: volumeWorkspaceMaxFileSizeSettingKey, Value: strconv.Itoa(volumeWorkspaceMaxFileSizeMB), Type: "number"},
-		settings.PublicSetting{
+		types.PublicSetting{Key: "uiConfigDisabled", Value: strconv.FormatBool(cfg.UIConfigurationDisabled), Type: "boolean"},
+		types.PublicSetting{Key: projectWorkspaceMaxFileSizeSettingKey, Value: strconv.Itoa(projectWorkspaceMaxFileSizeMB), Type: "number"},
+		types.PublicSetting{Key: volumeWorkspaceMaxFileSizeSettingKey, Value: strconv.Itoa(volumeWorkspaceMaxFileSizeMB), Type: "number"},
+		types.PublicSetting{
 			Key:   "backupVolumeName",
 			Value: kit.Ternary(strings.TrimSpace(cfg.BackupVolumeName) != "", cfg.BackupVolumeName, "arcane-backups"),
 			Type:  "string",
 		},
-		settings.PublicSetting{Key: "edgeMTLSManagerCAAvailable", Value: strconv.FormatBool(edgeMTLSCAErr == nil), Type: "boolean"},
+		types.PublicSetting{Key: "edgeMTLSManagerCAAvailable", Value: strconv.FormatBool(edgeMTLSCAErr == nil), Type: "boolean"},
 	)
 
 	if h.settingsService != nil {
 		settingsCfg := h.settingsService.GetSettingsConfig()
 		depotConfigured := strings.TrimSpace(settingsCfg.DepotProjectId.Value) != "" && strings.TrimSpace(settingsCfg.DepotToken.Value) != ""
 		settingsDto = append(settingsDto,
-			settings.PublicSetting{Key: "depotConfigured", Value: strconv.FormatBool(depotConfigured), Type: "boolean"},
-			settings.PublicSetting{Key: "enableGravatarEnvForced", Value: strconv.FormatBool(h.settingsService.IsEnvOverrideActive("enableGravatar")), Type: "boolean"},
+			types.PublicSetting{Key: "depotConfigured", Value: strconv.FormatBool(depotConfigured), Type: "boolean"},
+			types.PublicSetting{Key: "enableGravatarEnvForced", Value: strconv.FormatBool(h.settingsService.IsEnvOverrideActive("enableGravatar")), Type: "boolean"},
 		)
 	}
 
@@ -128,7 +125,7 @@ func (h *SettingsHandler) appendRuntimeSettings(settingsDto []settings.PublicSet
 // GetPublicSettings returns public settings for an environment.
 func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPublicSettingsInput) (*GetPublicSettingsOutput, error) {
 	if input.EnvironmentID != "0" {
-		settingsDto, err := h.proxyRemoteJSON.JSON[[]settings.PublicSetting](ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings/public", nil)
+		settingsDto, err := h.proxyRemoteJSON.JSON[[]types.PublicSetting](ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings/public", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -137,7 +134,7 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 
 	settingsList := h.settingsService.ListSettings(SettingVisibilityPublic)
 
-	settingsDto, err := mapping.MapSlice[SettingVariable, settings.PublicSetting](settingsList)
+	settingsDto, err := mapping.MapSlice[SettingVariable, types.PublicSetting](settingsList)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to map settings")
 	}
@@ -152,7 +149,7 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 	visibility := kit.Ternary(isAdmin, SettingVisibilityAll, SettingVisibilityNonAdmin)
 
 	if input.EnvironmentID != "0" {
-		settingsDto, err := h.proxyRemoteJSON.JSON[[]settings.PublicSetting](ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings", nil)
+		settingsDto, err := h.proxyRemoteJSON.JSON[[]types.PublicSetting](ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings", nil)
 		if err != nil {
 			return nil, err
 		}
@@ -163,7 +160,7 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 			}
 			allowedKeys[projectWorkspaceMaxFileSizeSettingKey] = struct{}{}
 			allowedKeys[volumeWorkspaceMaxFileSizeSettingKey] = struct{}{}
-			*settingsDto = slices.DeleteFunc(*settingsDto, func(setting settings.PublicSetting) bool {
+			*settingsDto = slices.DeleteFunc(*settingsDto, func(setting types.PublicSetting) bool {
 				_, ok := allowedKeys[setting.Key]
 				return !ok
 			})
@@ -173,7 +170,7 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 
 	settingsList := h.settingsService.ListSettings(visibility)
 
-	settingsDto, err := mapping.MapSlice[SettingVariable, settings.PublicSetting](settingsList)
+	settingsDto, err := mapping.MapSlice[SettingVariable, types.PublicSetting](settingsList)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to map settings")
 	}
@@ -182,7 +179,7 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 }
 
 // UpdateSettings updates settings for an environment.
-func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSettingsInput) (*handlerutil.Out[[]settings.SettingDto], error) {
+func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSettingsInput) (*handlerutil.Out[[]types.SettingDto], error) {
 	update := input.Body
 	// Only validate changed directories so env-provided values do not block unrelated saves.
 	currentCfg := h.settingsService.GetSettingsConfig()
@@ -228,11 +225,11 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 			update.OidcProviderName != nil || update.OidcProviderLogoUrl != nil || update.OidcGroupsClaim != nil {
 			return nil, huma.Error403Forbidden("Authentication settings can only be updated from the main environment")
 		}
-		apiResp, err := h.proxyRemoteJSON.JSON[base.ApiResponse[[]settings.SettingDto]](ctx, input.EnvironmentID, http.MethodPut, "/api/environments/0/settings", update)
+		apiResp, err := h.proxyRemoteJSON.JSON[types.ApiResponse[[]types.SettingDto]](ctx, input.EnvironmentID, http.MethodPut, "/api/environments/0/settings", update)
 		if err != nil {
 			return nil, err
 		}
-		return &handlerutil.Out[[]settings.SettingDto]{Body: *apiResp}, nil
+		return &handlerutil.Out[[]types.SettingDto]{Body: *apiResp}, nil
 	}
 
 	if projectsDir != "" {
@@ -259,13 +256,13 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
-	settingDtos := make([]settings.SettingDto, 0, len(updatedSettings))
+	settingDtos := make([]types.SettingDto, 0, len(updatedSettings))
 	for _, setting := range updatedSettings {
-		settingDtos = append(settingDtos, settings.SettingDto{Key: setting.Key, Type: "string", Value: setting.Value})
+		settingDtos = append(settingDtos, types.SettingDto{Key: setting.Key, Type: "string", Value: setting.Value})
 	}
 
-	return &handlerutil.Out[[]settings.SettingDto]{
-		Body: base.ApiResponse[[]settings.SettingDto]{Success: true, Data: settingDtos},
+	return &handlerutil.Out[[]types.SettingDto]{
+		Body: types.ApiResponse[[]types.SettingDto]{Success: true, Data: settingDtos},
 	}, nil
 }
 
@@ -279,16 +276,16 @@ func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput
 	if err != nil {
 		return nil, err
 	}
-	results := search.Search(categories.Body, input.Body.Query, searchtypes.SettingsProfile)
+	results := search.Search(categories.Body, input.Body.Query, types.SearchProfileSettings)
 	if results.Results == nil {
-		results.Results = []category.Category{}
+		results.Results = []types.Category{}
 	}
 	return &SearchSettingsOutput{Body: results}, nil
 }
 
 // GetCategories returns the settings categories reachable at any scope.
 func (h *SettingsHandler) GetCategories(ctx context.Context, input *struct{}) (*GetCategoriesOutput, error) {
-	categories := []category.Category{}
+	categories := []types.Category{}
 	ps, _ := middleware.PermissionsFromContext(ctx)
 	if ps == nil {
 		return &GetCategoriesOutput{Body: categories}, nil

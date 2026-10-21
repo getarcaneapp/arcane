@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -79,17 +79,17 @@ func newAdmissionTestService(t *testing.T) (*UpdaterService, *runs.Admission) {
 
 func TestUpdateAdmissionKeys(t *testing.T) {
 	containers := admissionTestSummaries(t)
-	keys := func(ids ...string) []scheduler.AdmissionKey {
-		out := make([]scheduler.AdmissionKey, 0, len(ids))
+	keys := func(ids ...string) []types.SchedulerAdmissionKey {
+		out := make([]types.SchedulerAdmissionKey, 0, len(ids))
 		for _, id := range ids {
-			out = append(out, scheduler.AdmissionKey{Scope: "updater", ID: id})
+			out = append(out, types.SchedulerAdmissionKey{Scope: "updater", ID: id})
 		}
 		return out
 	}
 	tests := []struct {
 		name    string
 		targets []string
-		want    []scheduler.AdmissionKey
+		want    []types.SchedulerAdmissionKey
 	}{
 		{name: "compose project members share the project key", targets: []string{"aaa111"}, want: keys("project:shop")},
 		{name: "separate projects stay separate", targets: []string{"ccc333"}, want: keys("project:blog")},
@@ -119,7 +119,7 @@ func TestUpdateAdmissionKeys(t *testing.T) {
 
 func TestUpdaterService_AcquireUpdateUnrelatedKeyAdmitsImmediately(t *testing.T) {
 	svc, admission := newAdmissionTestService(t)
-	held, admitted, err := admission.TryAcquire(t.Context(), scheduler.AdmissionKey{Scope: "updater", ID: "project:shop"})
+	held, admitted, err := admission.TryAcquire(t.Context(), types.SchedulerAdmissionKey{Scope: "updater", ID: "project:shop"})
 	require.NoError(t, err)
 	require.True(t, admitted)
 	defer held.Release(t.Context())
@@ -135,7 +135,7 @@ func TestUpdaterService_AcquireUpdateUnrelatedKeyAdmitsImmediately(t *testing.T)
 
 func TestUpdaterService_AcquireUpdateWaitsForConflictingKey(t *testing.T) {
 	svc, admission := newAdmissionTestService(t)
-	held, admitted, err := admission.TryAcquire(t.Context(), scheduler.AdmissionKey{Scope: "updater", ID: "container:solo"})
+	held, admitted, err := admission.TryAcquire(t.Context(), types.SchedulerAdmissionKey{Scope: "updater", ID: "container:solo"})
 	require.NoError(t, err)
 	require.True(t, admitted)
 
@@ -166,7 +166,7 @@ func TestUpdaterService_AcquireUpdateWaitsForConflictingKey(t *testing.T) {
 
 func TestUpdaterService_AcquireUpdateFailureReleasesHeldKeys(t *testing.T) {
 	svc, admission := newAdmissionTestService(t)
-	held, admitted, err := admission.TryAcquire(t.Context(), scheduler.AdmissionKey{Scope: "updater", ID: "container:vpn"})
+	held, admitted, err := admission.TryAcquire(t.Context(), types.SchedulerAdmissionKey{Scope: "updater", ID: "container:vpn"})
 	require.NoError(t, err)
 	require.True(t, admitted)
 	defer held.Release(t.Context())
@@ -180,7 +180,7 @@ func TestUpdaterService_AcquireUpdateFailureReleasesHeldKeys(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 
 	for _, id := range []string{"container:indexer", "container:torrent"} {
-		lease, free, tryErr := admission.TryAcquire(t.Context(), scheduler.AdmissionKey{Scope: "updater", ID: id})
+		lease, free, tryErr := admission.TryAcquire(t.Context(), types.SchedulerAdmissionKey{Scope: "updater", ID: id})
 		require.NoError(t, tryErr)
 		require.True(t, free, id)
 		lease.Release(t.Context())

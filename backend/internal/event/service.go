@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/event"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/events"
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/mapping"
@@ -284,16 +284,16 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 	return fmt.Errorf("manager event sync failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
 }
 
-func (s *EventService) ListEventsPaginated(ctx context.Context, params pagination.QueryParams) ([]event.Event, pagination.Response, error) {
+func (s *EventService) ListEventsPaginated(ctx context.Context, params pagination.QueryParams) ([]types.Event, pagination.Response, error) {
 	return paginateEvents(pagination.ApplyFilter(s.db.WithContext(ctx).Model(&Event{}), "environment_id", params.Filters["environmentId"]), params)
 }
 
-func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]event.Event, pagination.Response, error) {
+func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]types.Event, pagination.Response, error) {
 	return paginateEvents(s.db.WithContext(ctx).Model(&Event{}).Where("environment_id = ?", environmentID), params)
 }
 
 // paginateEvents applies the shared search and filters to q, then pages and maps the rows.
-func paginateEvents(q *gorm.DB, params pagination.QueryParams) ([]event.Event, pagination.Response, error) {
+func paginateEvents(q *gorm.DB, params pagination.QueryParams) ([]types.Event, pagination.Response, error) {
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
 		q = q.Where(
@@ -335,7 +335,7 @@ func paginateEvents(q *gorm.DB, params pagination.QueryParams) ([]event.Event, p
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate events: %w", err)
 	}
 
-	eventDtos, mapErr := mapping.MapSlice[Event, event.Event](eventRecords)
+	eventDtos, mapErr := mapping.MapSlice[Event, types.Event](eventRecords)
 	if mapErr != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to map events: %w", mapErr)
 	}
@@ -343,7 +343,7 @@ func paginateEvents(q *gorm.DB, params pagination.QueryParams) ([]event.Event, p
 	return eventDtos, paginationResp, nil
 }
 
-func (s *EventService) GetEventSeverityCounts(ctx context.Context) (event.SeverityCounts, error) {
+func (s *EventService) GetEventSeverityCounts(ctx context.Context) (types.EventSeverityCounts, error) {
 	var rows []struct {
 		Severity string
 		Count    int64
@@ -352,10 +352,10 @@ func (s *EventService) GetEventSeverityCounts(ctx context.Context) (event.Severi
 		Select("severity, COUNT(*) AS count").
 		Group("severity").
 		Scan(&rows).Error; err != nil {
-		return event.SeverityCounts{}, fmt.Errorf("failed to count events by severity: %w", err)
+		return types.EventSeverityCounts{}, fmt.Errorf("failed to count events by severity: %w", err)
 	}
 
-	var counts event.SeverityCounts
+	var counts types.EventSeverityCounts
 	for _, r := range rows {
 		switch EventSeverity(r.Severity) {
 		case EventSeveritySuccess:
@@ -599,7 +599,7 @@ func describeEvent(eventType EventType, resourceType, resourceName string) (stri
 }
 
 // RunStreamProducer signals committed event changes so clients can refresh their current query.
-func (s *EventService) RunStreamProducer(ctx context.Context, streamEvents chan<- event.StreamEvent) {
+func (s *EventService) RunStreamProducer(ctx context.Context, streamEvents chan<- types.EventStreamEvent) {
 	changed := make(chan struct{}, 1)
 	unsubscribe := s.changes.Subscribe(func(struct{}) {
 		// One pending invalidation covers all changes, without blocking event persistence.
@@ -611,7 +611,7 @@ func (s *EventService) RunStreamProducer(ctx context.Context, streamEvents chan<
 	defer unsubscribe()
 
 	// Subscribe first so connecting and reconnecting clients cannot miss a change.
-	if !agg.Send(ctx, streamEvents, event.StreamEvent{Type: "changed", Timestamp: time.Now()}) {
+	if !agg.Send(ctx, streamEvents, types.EventStreamEvent{Type: "changed", Timestamp: time.Now()}) {
 		return
 	}
 	for {
@@ -619,7 +619,7 @@ func (s *EventService) RunStreamProducer(ctx context.Context, streamEvents chan<
 		case <-ctx.Done():
 			return
 		case <-changed:
-			if !agg.Send(ctx, streamEvents, event.StreamEvent{Type: "changed", Timestamp: time.Now()}) {
+			if !agg.Send(ctx, streamEvents, types.EventStreamEvent{Type: "changed", Timestamp: time.Now()}) {
 				return
 			}
 		}

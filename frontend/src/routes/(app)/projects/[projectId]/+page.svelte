@@ -58,7 +58,7 @@
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 	import type { ProjectEditorLayout } from '#lib/types/auth.js';
 	import type { ProjectWorkspaceFileChange, ProjectWorkspaceFileContent } from '#lib/types/project-workspace.js';
-	import type { IncludeFile, Project, ProjectTagColor } from '#lib/types/swarm.js';
+	import type { IncludeFile, Project, ProjectTagColor, ProjectUpdate, ProjectWritable } from '#lib/types/swarm.js';
 	import { cn } from '#lib/utils.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -75,6 +75,7 @@
 	import { capitalizeFirstLetter } from '#lib/utils/formatting.js';
 	import { gitOpsComposeEditUrl, gitOpsFileEditUrl, gitOpsProjectUrl } from '#lib/utils/gitops.js';
 	import { toGitRouteUrl, toSafeHref } from '#lib/utils/navigation.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
 	import { globalVariablesToMap } from '#lib/utils/template-load.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -750,14 +751,15 @@
 		if (!validated) return false;
 
 		const { composeContent, envContent, overrideContent } = validated;
-		const namePayload = isGitOpsManaged ? undefined : effectiveName;
-		// Only send the compose when the editor is dirty: an unchanged echo would
-		// be written to whatever base the retargeted COMPOSE_FILE selects.
-		const composePayload = isGitOpsManaged || !composeHasChanges ? undefined : composeContent;
-		const envPayload = envContent !== serverEnvContent ? envContent : undefined;
-		// Blank override => delete, which the backend treats as a no-op when none
-		// exists, so we can always send it (except for read-only GitOps projects).
-		const overridePayload = isGitOpsManaged ? undefined : overrideContent;
+		const projectUpdate = changedFields<ProjectUpdate, ProjectWritable>(
+			{
+				name: serverName,
+				composeContent: serverComposeContent,
+				envContent: serverEnvContent,
+				overrideContent: serverOverrideContent
+			},
+			isGitOpsManaged ? { envContent } : { name: effectiveName, composeContent, envContent, overrideContent }
+		);
 		const workspaceUpdate = buildWorkspaceMultipartUpdate(
 			projectWorkspaceChanges,
 			{ ...projectWorkspaceContents, ...includeFilesState },
@@ -798,14 +800,7 @@
 						projectWorkspaceStagedUploadedText = {};
 					}
 
-					const updatedProject = await projectService.updateProject(
-						projectId,
-						namePayload,
-						composePayload,
-						envPayload,
-						overridePayload,
-						envId
-					);
+					const updatedProject = await projectService.updateProject(projectId, projectUpdate, envId);
 					rebaseEditorDraft(updatedProject, { preserveProjectWorkspaceContents: true });
 					await syncProjectQueries(updatedProject);
 					toast.success(

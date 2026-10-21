@@ -22,7 +22,7 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/go-units"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -54,7 +54,7 @@ func IsProjectFile(filename string) bool {
 	return base != "" && !strings.HasPrefix(base, ".")
 }
 
-func stripTrailingProjectCounterInternal(name string) string {
+func stripTrailingProjectCounter(name string) string {
 	trimmed := strings.TrimSpace(name)
 	withoutDigits := strings.TrimRight(trimmed, "0123456789")
 	if len(withoutDigits) == len(trimmed) || withoutDigits == "" {
@@ -104,7 +104,7 @@ func DetectComposeFile(ctx context.Context, projectsDir, dir string) (string, er
 
 	dirBase := filepath.Base(filepath.Clean(dir))
 	normalizedDirBase := loader.NormalizeProjectName(dirBase)
-	normalizedTrimmedDirBase := loader.NormalizeProjectName(stripTrailingProjectCounterInternal(dirBase))
+	normalizedTrimmedDirBase := loader.NormalizeProjectName(stripTrailingProjectCounter(dirBase))
 
 	customCandidates := make([]string, 0)
 	dirMatchedCandidates := make([]string, 0)
@@ -169,8 +169,8 @@ func DetectComposeFile(ctx context.Context, projectsDir, dir string) (string, er
 }
 
 // LoadComposeProjectFromContent loads a Compose project from in-memory source content.
-func LoadComposeProjectFromContent(ctx context.Context, opts projecttypes.ComposeContentOptions) (project *composetypes.Project, err error) {
-	defer recoverComposeLoadPanicInternal(ctx, "in-memory compose content", &project, &err)
+func LoadComposeProjectFromContent(ctx context.Context, opts types.ComposeContentOptions) (project *composetypes.Project, err error) {
+	defer recoverComposeLoadPanic(ctx, "in-memory compose content", &project, &err)
 
 	if strings.TrimSpace(opts.ComposeContent) == "" {
 		return nil, errors.New("compose content is required")
@@ -185,7 +185,7 @@ func LoadComposeProjectFromContent(ctx context.Context, opts projecttypes.Compos
 		}
 	}
 
-	envMap := allowedProcessEnvInternal()
+	envMap := allowedProcessEnv()
 	if strings.TrimSpace(opts.EnvContent) != "" {
 		parsedEnv, parseErr := ParseProjectEnvContent(opts.EnvContent, envMap)
 		if parseErr != nil {
@@ -220,14 +220,14 @@ func LoadComposeProjectFromContent(ctx context.Context, opts projecttypes.Compos
 	}
 
 	var rawSources map[string]string
-	if !isNilVolumeSourcePathMapperInternal(opts.PathMapper) {
-		rawSources = harvestRawSourcesInternal(ctx, configDetails, loaderOptions...)
+	if !isNilVolumeSourcePathMapper(opts.PathMapper) {
+		rawSources = harvestRawSources(ctx, configDetails, loaderOptions...)
 	}
 
-	return finishLoadedProjectInternal(ctx, project, workingDir, opts.PathMapper, false, rawSources, nil)
+	return finishLoadedProject(ctx, project, workingDir, opts.PathMapper, false, rawSources, nil)
 }
 
-// wrapTypeCastMappingLenientInternal prepares the interp type-cast mapping for lenient
+// wrapTypeCastMappingLenient prepares the interp type-cast mapping for lenient
 // loading: every existing cast falls back to "0" when it fails (so the lenient
 // placeholder for an undefined variable doesn't abort interpolation), and casts
 // are added for typed struct fields that compose-go would otherwise decode at
@@ -235,27 +235,27 @@ func LoadComposeProjectFromContent(ctx context.Context, opts projecttypes.Compos
 // the added casts, the placeholder string reaches mapstructure and fails to
 // parse — handling it at interp time lets us hand mapstructure a typed value
 // it accepts directly.
-func wrapTypeCastMappingLenientInternal(mapping map[tree.Path]interp.Cast) map[tree.Path]interp.Cast {
+func wrapTypeCastMappingLenient(mapping map[tree.Path]interp.Cast) map[tree.Path]interp.Cast {
 	wrapped := make(map[tree.Path]interp.Cast, len(mapping)+4)
 	for path, original := range mapping {
-		wrapped[path] = wrapCastWithLenientFallbackInternal(original)
+		wrapped[path] = wrapCastWithLenientFallback(original)
 	}
 	addIfAbsent := func(path tree.Path, cast interp.Cast) {
 		if _, exists := wrapped[path]; exists {
 			return
 		}
-		wrapped[path] = wrapCastWithLenientFallbackInternal(cast)
+		wrapped[path] = wrapCastWithLenientFallback(cast)
 	}
 	for _, section := range []string{"limits", "reservations"} {
 		addIfAbsent(tree.NewPath("services", tree.PathMatchAll, "deploy", "resources", section, "cpus"), func(value string) (any, error) {
 			return strconv.ParseFloat(value, 64)
 		})
-		addIfAbsent(tree.NewPath("services", tree.PathMatchAll, "deploy", "resources", section, "memory"), lenientCastSizeInternal)
+		addIfAbsent(tree.NewPath("services", tree.PathMatchAll, "deploy", "resources", section, "memory"), lenientCastSize)
 	}
 	return wrapped
 }
 
-func wrapCastWithLenientFallbackInternal(original interp.Cast) interp.Cast {
+func wrapCastWithLenientFallback(original interp.Cast) interp.Cast {
 	return func(value string) (any, error) {
 		result, err := original(value)
 		if err == nil {
@@ -268,7 +268,7 @@ func wrapCastWithLenientFallbackInternal(original interp.Cast) interp.Cast {
 	}
 }
 
-func lenientCastSizeInternal(value string) (any, error) {
+func lenientCastSize(value string) (any, error) {
 	n, err := strconv.ParseInt(value, 10, 64)
 	if err != nil {
 		b, parseErr := units.RAMInBytes(value)
@@ -307,7 +307,7 @@ func ApplyLenientLoaderOptions(ctx context.Context, opts *loader.Options, compos
 
 	opts.Interpolate = &interp.Options{
 		LookupValue:     opts.Interpolate.LookupValue,
-		TypeCastMapping: wrapTypeCastMappingLenientInternal(opts.Interpolate.TypeCastMapping),
+		TypeCastMapping: wrapTypeCastMappingLenient(opts.Interpolate.TypeCastMapping),
 		Substitute: func(tmpl string, mapping template.Mapping) (string, error) {
 			return template.SubstituteWithOptions(tmpl, mapping,
 				template.WithoutLogging,
@@ -354,11 +354,11 @@ func LoadComposeProject(
 	envOverride EnvMap,
 	configureLoader func(*loader.Options),
 	lenient bool,
-	dependencies *projecttypes.ComposeDependencies,
+	dependencies *types.ComposeDependencies,
 	services []string,
 	prepare PrepareProjectFunc,
 ) (project *composetypes.Project, err error) {
-	defer recoverComposeLoadPanicInternal(ctx, composeFile, &project, &err)
+	defer recoverComposeLoadPanic(ctx, composeFile, &project, &err)
 
 	workdir := filepath.Dir(composeFile)
 
@@ -459,30 +459,30 @@ func LoadComposeProject(
 		return nil, fmt.Errorf("load compose project: %w", err)
 	}
 
-	recordComposeDependenciesInternal(project, dependencies)
+	recordComposeDependencies(project, dependencies)
 
 	for _, configFile := range cfg.ConfigFiles {
 		project.ComposeFiles = append(project.ComposeFiles, configFile.Filename)
 	}
 
 	var rawSources map[string]string
-	if !isNilVolumeSourcePathMapperInternal(pathMapper) {
-		rawSources = harvestRawSourcesInternal(ctx, cfg, loaderOptions...)
+	if !isNilVolumeSourcePathMapper(pathMapper) {
+		rawSources = harvestRawSources(ctx, cfg, loaderOptions...)
 	}
 
-	project, err = finishLoadedProjectInternal(ctx, project, workdir, pathMapper, true, rawSources, prepare)
+	project, err = finishLoadedProject(ctx, project, workdir, pathMapper, true, rawSources, prepare)
 	if err != nil {
 		return nil, err
 	}
 
-	injectServiceConfigurationInternal(project, injectionVars)
+	injectServiceConfiguration(project, injectionVars)
 	return project, nil
 }
 
-func finishLoadedProjectInternal(ctx context.Context,
+func finishLoadedProject(ctx context.Context,
 	project *composetypes.Project,
 	workingDir string,
-	pathMapper projecttypes.VolumeSourcePathMapper,
+	pathMapper types.VolumeSourcePathMapper,
 	translateFileResources bool,
 	rawSources map[string]string,
 	prepare PrepareProjectFunc) (*composetypes.Project,
@@ -502,7 +502,7 @@ func finishLoadedProjectInternal(ctx context.Context,
 		}
 	}
 
-	if !isNilVolumeSourcePathMapperInternal(pathMapper) {
+	if !isNilVolumeSourcePathMapper(pathMapper) {
 		if err := pathMapper.TranslateVolumeSources(project, translateFileResources); err != nil {
 			return nil, fmt.Errorf("failed to translate paths for docker host: %w", err)
 		}
@@ -512,7 +512,7 @@ func finishLoadedProjectInternal(ctx context.Context,
 	return project, nil
 }
 
-// harvestRawSourcesInternal re-parses the same Compose input with path
+// harvestRawSources re-parses the same Compose input with path
 // resolution disabled, so the raw still-relative paths survive for
 // RemapEscapedRelativeSources. The resolved project on its own cannot tell a
 // relative path that escaped the projects mount from an intentionally absolute
@@ -523,7 +523,7 @@ func finishLoadedProjectInternal(ctx context.Context,
 // env_file paths are left relative here and would otherwise be read against the
 // process working directory; label_file is read regardless, which is one of the
 // reasons this cannot be fatal.
-func harvestRawSourcesInternal(ctx context.Context, cfg composetypes.ConfigDetails, loaderOptions ...func(*loader.Options)) (rawSources map[string]string) {
+func harvestRawSources(ctx context.Context, cfg composetypes.ConfigDetails, loaderOptions ...func(*loader.Options)) (rawSources map[string]string) {
 	defer func() {
 		if panicErr := utils.PanicToError(recover()); panicErr != nil {
 			slog.DebugContext(ctx, "panic while harvesting raw compose paths", "error", panicErr)
@@ -554,7 +554,7 @@ func harvestRawSourcesInternal(ctx context.Context, cfg composetypes.ConfigDetai
 	}
 
 	for name, volume := range project.Volumes {
-		if device, ok := bindVolumeDeviceInternal(volume); ok {
+		if device, ok := bindVolumeDevice(volume); ok {
 			rawSources["volume_device:"+name] = device
 		}
 	}
@@ -570,7 +570,7 @@ func harvestRawSourcesInternal(ctx context.Context, cfg composetypes.ConfigDetai
 	return rawSources
 }
 
-func isNilVolumeSourcePathMapperInternal(pathMapper projecttypes.VolumeSourcePathMapper) bool {
+func isNilVolumeSourcePathMapper(pathMapper types.VolumeSourcePathMapper) bool {
 	if pathMapper == nil {
 		return true
 	}
@@ -580,7 +580,7 @@ func isNilVolumeSourcePathMapperInternal(pathMapper projecttypes.VolumeSourcePat
 }
 
 //nolint:gocritic // Pointer output updates the caller's named error result after recovery.
-func recoverComposeLoadPanicInternal(ctx context.Context,
+func recoverComposeLoadPanic(ctx context.Context,
 	source string,
 	project **composetypes.Project,
 	err *error,
@@ -596,7 +596,7 @@ func recoverComposeLoadPanicInternal(ctx context.Context,
 	}
 }
 
-func applyCustomLabelsInternal(projectName, serviceName, workingDirectory string, composeFiles []string) composetypes.Labels {
+func applyCustomLabels(projectName, serviceName, workingDirectory string, composeFiles []string) composetypes.Labels {
 	return composetypes.Labels{
 		api.ProjectLabel:     projectName,
 		api.ServiceLabel:     serviceName,
@@ -607,9 +607,9 @@ func applyCustomLabelsInternal(projectName, serviceName, workingDirectory string
 	}
 }
 
-func injectServiceConfigurationInternal(project *composetypes.Project, injectionVars EnvMap) {
+func injectServiceConfiguration(project *composetypes.Project, injectionVars EnvMap) {
 	for i, s := range project.Services {
-		s.CustomLabels = applyCustomLabelsInternal(project.Name, s.Name, project.WorkingDir, project.ComposeFiles)
+		s.CustomLabels = applyCustomLabels(project.Name, s.Name, project.WorkingDir, project.ComposeFiles)
 
 		// Initialize environment if nil
 		if s.Environment == nil {
@@ -650,7 +650,7 @@ func ResolveRelativeProjectPaths(project *composetypes.Project, workdir string) 
 		for i := range service.Volumes {
 			v := &service.Volumes[i]
 			if v.Type == composetypes.VolumeTypeBind {
-				if resolved, ok := resolvePathRelativeInternal(workdir, v.Source).Get(); ok {
+				if resolved, ok := resolvePathRelative(workdir, v.Source).Get(); ok {
 					v.Source = resolved
 					modified = true
 				}
@@ -662,28 +662,28 @@ func ResolveRelativeProjectPaths(project *composetypes.Project, workdir string) 
 	}
 
 	for name, secret := range project.Secrets {
-		if resolved, ok := resolvePathRelativeInternal(workdir, secret.File).Get(); ok {
+		if resolved, ok := resolvePathRelative(workdir, secret.File).Get(); ok {
 			secret.File = resolved
 			project.Secrets[name] = secret
 		}
 	}
 
 	for name, config := range project.Configs {
-		if resolved, ok := resolvePathRelativeInternal(workdir, config.File).Get(); ok {
+		if resolved, ok := resolvePathRelative(workdir, config.File).Get(); ok {
 			config.File = resolved
 			project.Configs[name] = config
 		}
 	}
 }
 
-func resolvePathRelativeInternal(workdir, candidate string) mo.Option[string] {
+func resolvePathRelative(workdir, candidate string) mo.Option[string] {
 	if candidate == "" || filepath.IsAbs(candidate) || workdir == "" {
 		return mo.None[string]()
 	}
 	return mo.Some(filepath.Clean(filepath.Join(workdir, candidate)))
 }
 
-func recordComposeDependenciesInternal(project *composetypes.Project, dependencies *projecttypes.ComposeDependencies) {
+func recordComposeDependencies(project *composetypes.Project, dependencies *types.ComposeDependencies) {
 	if dependencies != nil {
 		for name, service := range project.Services {
 			for _, envFile := range service.EnvFiles {

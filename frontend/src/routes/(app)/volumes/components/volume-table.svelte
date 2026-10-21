@@ -22,7 +22,7 @@
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { VolumeSizeInfo, VolumeSummaryDto } from '#lib/types/docker.js';
+	import type { VolumeSizeInfo, Volume } from '#lib/types/docker.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks, extractApiErrorMessage } from '#lib/utils/api.js';
@@ -48,7 +48,7 @@
 
 	import RenameVolumeDialog from './rename-volume-dialog.svelte';
 
-	type VolumeRow = EnvironmentRow<VolumeSummaryDto>;
+	type VolumeRow = EnvironmentRow<Volume>;
 
 	let {
 		volumes = $bindable(),

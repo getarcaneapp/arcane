@@ -6,13 +6,13 @@ import (
 	"net/url"
 	"strconv"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 )
 
-func (c *Client) AutoUpdate(ctx context.Context, opts podmantypes.AutoUpdateOptions) (podmantypes.AutoUpdateResult, error) {
+func (c *Client) AutoUpdate(ctx context.Context, opts types.PodmanAutoUpdateOptions) (types.PodmanAutoUpdateResult, error) {
 	query, err := filtersQuery(url.Values{"dryRun": {strconv.FormatBool(opts.DryRun)}}, opts.Filters)
 	if err != nil {
-		return podmantypes.AutoUpdateResult{}, err
+		return types.PodmanAutoUpdateResult{}, err
 	}
 	if opts.Rollback != nil {
 		query.Set("rollback", strconv.FormatBool(*opts.Rollback))
@@ -24,13 +24,13 @@ func (c *Client) AutoUpdate(ctx context.Context, opts podmantypes.AutoUpdateOpti
 		query.Set("authfile", opts.Authfile)
 	}
 
-	out, err := c.doJSON[podmantypes.AutoUpdateResult](ctx, request{
+	out, err := c.doJSON[types.PodmanAutoUpdateResult](ctx, request{
 		method: http.MethodPost,
 		path:   "/autoupdate",
 		query:  query,
 	})
-	return podmantypes.AutoUpdateResult{
-		Mode:    podmantypes.AutoUpdateModeREST,
+	return types.PodmanAutoUpdateResult{
+		Mode:    types.PodmanAutoUpdateModeREST,
 		Reports: out.Reports,
 		Errors:  out.Errors,
 	}, err

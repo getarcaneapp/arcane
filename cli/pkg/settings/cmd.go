@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/getarcaneapp/arcane/types/v2/settings"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 // Command is the parent command for settings operations
@@ -35,7 +35,7 @@ func newListCmd() *cobra.Command {
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSettingsList(cmd, settingsListConfig{
-				endpoint:       types.Settings,
+				endpoint:       clitypes.Settings,
 				failureMessage: "failed to get settings",
 				totalLabel:     "settings",
 			})
@@ -63,17 +63,17 @@ func newUpdateCmd() *cobra.Command {
 				return fmt.Errorf("failed to read file %s: %w", opts.file, err)
 			}
 
-			var req settings.Update
+			var req types.SettingsUpdate
 			if unmarshalErr := json.Unmarshal(data, &req); unmarshalErr != nil {
 				return fmt.Errorf("failed to parse settings file: %w", unmarshalErr)
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[[]settings.SettingDto]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[[]types.SettingDto]{
 				Method:         http.MethodPut,
-				Path:           types.Settings(c.EnvID()),
+				Path:           clitypes.Settings(c.EnvID()),
 				Body:           req,
 				FailureMessage: "failed to update settings",
-				Render: func([]settings.SettingDto) error {
+				Render: func([]types.SettingDto) error {
 					output.Success("Settings updated successfully")
 					return nil
 				},
@@ -94,7 +94,7 @@ func newPublicCmd() *cobra.Command {
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runSettingsList(cmd, settingsListConfig{
-				endpoint:       types.SettingsPublic,
+				endpoint:       clitypes.SettingsPublic,
 				failureMessage: "failed to get public settings",
 				totalLabel:     "public settings",
 			})
@@ -114,7 +114,7 @@ func runSettingsList(cmd *cobra.Command, cfg settingsListConfig) error {
 		return err
 	}
 
-	result, err := c.DoJSON[[]settings.PublicSetting](cmd.Context(), http.MethodGet, cfg.endpoint(c.EnvID()), nil)
+	result, err := c.DoJSON[[]types.PublicSetting](cmd.Context(), http.MethodGet, cfg.endpoint(c.EnvID()), nil)
 	if err != nil {
 		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
 	}

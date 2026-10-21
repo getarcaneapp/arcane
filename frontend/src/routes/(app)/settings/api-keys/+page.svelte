@@ -10,7 +10,7 @@
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { apiKeyService } from '#lib/services/api-key-service.js';
-	import type { ApiKey, ApiKeyCreated, CreateApiKey } from '#lib/types/auth.js';
+	import type { ApiKey, ApiKeyCreated, ApiKeyPermissionGrant, ApiKeyUpdate, PersonalApiKeyCreate } from '#lib/types/auth.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -58,22 +58,18 @@
 		});
 	}
 
-	async function handleApiKeySubmit({
-		apiKey,
-		isEditMode,
-		apiKeyId
-	}: {
-		apiKey: Omit<CreateApiKey, 'permissions'> & Partial<Pick<CreateApiKey, 'permissions'>>;
-		isEditMode: boolean;
-		apiKeyId?: string;
-	}) {
-		const loading = isEditMode ? 'editing' : 'creating';
+	async function handleApiKeySubmit(
+		submission:
+			| { isEditMode: true; apiKeyId: string; apiKey: ApiKeyUpdate }
+			| { isEditMode: false; apiKey: PersonalApiKeyCreate & { permissions?: ApiKeyPermissionGrant[] } }
+	) {
+		const loading = submission.isEditMode ? 'editing' : 'creating';
 		isLoading[loading] = true;
-		const safeName = apiKey.name?.trim() || 'Unknown';
+		const safeName = submission.apiKey.name?.trim() || apiKeyToEdit?.name || 'Unknown';
 
-		if (isEditMode && apiKeyId) {
+		if (submission.isEditMode) {
 			await handleApiResultWithCallbacks({
-				result: await tryCatch(apiKeyService.update(apiKeyId, apiKey)),
+				result: await tryCatch(apiKeyService.update(submission.apiKeyId, submission.apiKey)),
 				message: m.api_key_update_failed({ name: safeName }),
 				setLoadingState: (value) => (isLoading[loading] = value),
 				onSuccess: async () => {
@@ -85,7 +81,7 @@
 			});
 		} else {
 			await handleApiResultWithCallbacks({
-				result: await tryCatch(apiKeyService.create({ ...apiKey, permissions: apiKey.permissions ?? [] })),
+				result: await tryCatch(apiKeyService.create({ ...submission.apiKey, permissions: submission.apiKey.permissions ?? [] })),
 				message: m.api_key_create_failed({ name: safeName }),
 				setLoadingState: (value) => (isLoading[loading] = value),
 				onSuccess: async (createdKey) => {

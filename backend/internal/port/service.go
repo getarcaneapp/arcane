@@ -7,9 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/container"
-	porttypes "github.com/getarcaneapp/arcane/types/v2/port"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/docker"
 	"go.getarcane.app/kit/pkg"
 
@@ -27,19 +25,19 @@ func NewPortService(dockerService *dockerInternal.DockerClientService) *PortServ
 	return &PortService{dockerService: dockerService}
 }
 
-func (s *PortService) ListPortsPaginated(ctx context.Context, params pagination.QueryParams) ([]porttypes.PortMapping, pagination.Response, error) {
+func (s *PortService) ListPortsPaginated(ctx context.Context, params pagination.QueryParams) ([]types.PortMapping, pagination.Response, error) {
 	containers, err := s.dockerService.ListContainers(ctx)
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to list containers: %w", err)
 	}
 
-	items := make([]porttypes.PortMapping, 0)
+	items := make([]types.PortMapping, 0)
 	for _, rawContainer := range containers {
-		summary := container.NewSummary(rawContainer)
-		containerName := primaryContainerNameInternal(summary.Names, summary.ID)
+		summary := types.NewContainerSummary(rawContainer)
+		containerName := primaryContainerName(summary.Names, summary.ID)
 		for _, port := range summary.Ports {
-			items = append(items, porttypes.PortMapping{
-				ID:            buildPortMappingIDInternal(summary.ID, port),
+			items = append(items, types.PortMapping{
+				ID:            buildPortMappingID(summary.ID, port),
 				ContainerID:   summary.ID,
 				ContainerName: containerName,
 				HostIP:        port.IP,
@@ -55,16 +53,16 @@ func (s *PortService) ListPortsPaginated(ctx context.Context, params pagination.
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params), nil
 }
 
-func (s *PortService) AggregatePorts(ctx context.Context, params pagination.QueryParams) (base.Paginated[porttypes.PortMapping], error) {
-	collection, err := httpx.CollectEnvironments[base.Paginated[porttypes.PortMapping]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+func (s *PortService) AggregatePorts(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.PortMapping], error) {
+	collection, err := httpx.CollectEnvironments[types.Paginated[types.PortMapping]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
 	if err != nil {
-		return base.Paginated[porttypes.PortMapping]{}, err
+		return types.Paginated[types.PortMapping]{}, err
 	}
 
-	pages := make([]pagination.EnvironmentPage[porttypes.PortMapping], 0, len(collection.Results))
+	pages := make([]pagination.EnvironmentPage[types.PortMapping], 0, len(collection.Results))
 	for _, result := range collection.Results {
 		page := result.Value.Pagination
-		pages = append(pages, pagination.EnvironmentPage[porttypes.PortMapping]{
+		pages = append(pages, pagination.EnvironmentPage[types.PortMapping]{
 			Environment:    result.Environment,
 			Items:          result.Value.Data,
 			TotalAvailable: kit.Ternary(page.GrandTotalItems != 0, page.GrandTotalItems, page.TotalItems),
@@ -72,7 +70,7 @@ func (s *PortService) AggregatePorts(ctx context.Context, params pagination.Quer
 	}
 	data, resp := pagination.MergeEnvironmentPages(s.buildPortPaginationConfig(), pages, params)
 
-	return base.Paginated[porttypes.PortMapping]{
+	return types.Paginated[types.PortMapping]{
 		Success:            true,
 		Data:               data,
 		Pagination:         handlerutil.PaginationResponse(resp),
@@ -80,31 +78,31 @@ func (s *PortService) AggregatePorts(ctx context.Context, params pagination.Quer
 	}, nil
 }
 
-func (s *PortService) buildPortPaginationConfig() pagination.Config[porttypes.PortMapping] {
-	return pagination.Config[porttypes.PortMapping]{
-		SearchAccessors: []pagination.SearchAccessor[porttypes.PortMapping]{
-			func(item porttypes.PortMapping) (string, error) { return item.ContainerName, nil },
-			func(item porttypes.PortMapping) (string, error) { return item.HostIP, nil },
-			func(item porttypes.PortMapping) (string, error) { return strconv.Itoa(item.HostPort), nil },
-			func(item porttypes.PortMapping) (string, error) { return strconv.Itoa(item.ContainerPort), nil },
-			func(item porttypes.PortMapping) (string, error) { return item.Protocol, nil },
+func (s *PortService) buildPortPaginationConfig() pagination.Config[types.PortMapping] {
+	return pagination.Config[types.PortMapping]{
+		SearchAccessors: []pagination.SearchAccessor[types.PortMapping]{
+			func(item types.PortMapping) (string, error) { return item.ContainerName, nil },
+			func(item types.PortMapping) (string, error) { return item.HostIP, nil },
+			func(item types.PortMapping) (string, error) { return strconv.Itoa(item.HostPort), nil },
+			func(item types.PortMapping) (string, error) { return strconv.Itoa(item.ContainerPort), nil },
+			func(item types.PortMapping) (string, error) { return item.Protocol, nil },
 		},
 		SortBindings: s.buildPortSortBindings(),
 	}
 }
 
-func (s *PortService) buildPortSortBindings() []pagination.SortBinding[porttypes.PortMapping] {
-	return []pagination.SortBinding[porttypes.PortMapping]{
+func (s *PortService) buildPortSortBindings() []pagination.SortBinding[types.PortMapping] {
+	return []pagination.SortBinding[types.PortMapping]{
 		{
 			Key: "hostPort",
-			Fn: func(a, b porttypes.PortMapping) int {
-				if cmp := compareOptionalIntInternal(a.HostPort, b.HostPort, a.ContainerName, b.ContainerName); cmp != 0 {
+			Fn: func(a, b types.PortMapping) int {
+				if cmp := compareOptionalInt(a.HostPort, b.HostPort, a.ContainerName, b.ContainerName); cmp != 0 {
 					return cmp
 				}
 				return strings.Compare(a.ID, b.ID)
 			},
-			DescFn: func(a, b porttypes.PortMapping) int {
-				if cmp := compareOptionalIntDescInternal(a.HostPort, b.HostPort, a.ContainerName, b.ContainerName); cmp != 0 {
+			DescFn: func(a, b types.PortMapping) int {
+				if cmp := compareOptionalIntDesc(a.HostPort, b.HostPort, a.ContainerName, b.ContainerName); cmp != 0 {
 					return cmp
 				}
 				return strings.Compare(a.ID, b.ID)
@@ -112,7 +110,7 @@ func (s *PortService) buildPortSortBindings() []pagination.SortBinding[porttypes
 		},
 		{
 			Key: "containerPort",
-			Fn: func(a, b porttypes.PortMapping) int {
+			Fn: func(a, b types.PortMapping) int {
 				if a.ContainerPort != b.ContainerPort {
 					return kit.Ternary(a.ContainerPort < b.ContainerPort, -1, 1)
 				}
@@ -121,7 +119,7 @@ func (s *PortService) buildPortSortBindings() []pagination.SortBinding[porttypes
 		},
 		{
 			Key: "protocol",
-			Fn: func(a, b porttypes.PortMapping) int {
+			Fn: func(a, b types.PortMapping) int {
 				if cmp := strings.Compare(a.Protocol, b.Protocol); cmp != 0 {
 					return cmp
 				}
@@ -130,22 +128,22 @@ func (s *PortService) buildPortSortBindings() []pagination.SortBinding[porttypes
 		},
 		{
 			Key: "containerName",
-			Fn: func(a, b porttypes.PortMapping) int {
+			Fn: func(a, b types.PortMapping) int {
 				return strings.Compare(a.ContainerName, b.ContainerName)
 			},
 		},
 		{
 			Key: "hostIp",
-			Fn: func(a, b porttypes.PortMapping) int {
-				return compareOptionalStringInternal(a.HostIP, b.HostIP, a.ContainerName, b.ContainerName)
+			Fn: func(a, b types.PortMapping) int {
+				return compareOptionalString(a.HostIP, b.HostIP, a.ContainerName, b.ContainerName)
 			},
-			DescFn: func(a, b porttypes.PortMapping) int {
-				return compareOptionalStringDescInternal(a.HostIP, b.HostIP, a.ContainerName, b.ContainerName)
+			DescFn: func(a, b types.PortMapping) int {
+				return compareOptionalStringDesc(a.HostIP, b.HostIP, a.ContainerName, b.ContainerName)
 			},
 		},
 		{
 			Key: "isPublished",
-			Fn: func(a, b porttypes.PortMapping) int {
+			Fn: func(a, b types.PortMapping) int {
 				if a.IsPublished != b.IsPublished {
 					return kit.Ternary(a.IsPublished, -1, 1)
 				}
@@ -155,7 +153,7 @@ func (s *PortService) buildPortSortBindings() []pagination.SortBinding[porttypes
 	}
 }
 
-func primaryContainerNameInternal(names []string, id string) string {
+func primaryContainerName(names []string, id string) string {
 	if len(names) > 0 && names[0] != "" {
 		return docker.ContainerNameFromNames(names)
 	}
@@ -165,11 +163,11 @@ func primaryContainerNameInternal(names []string, id string) string {
 	return id
 }
 
-func buildPortMappingIDInternal(containerID string, port container.Port) string {
+func buildPortMappingID(containerID string, port types.ContainerPort) string {
 	return fmt.Sprintf("%s:%s:%d:%d:%s", containerID, port.IP, port.PublicPort, port.PrivatePort, port.Type)
 }
 
-func compareOptionalIntInternal(a, b int, fallbackA, fallbackB string) int {
+func compareOptionalInt(a, b int, fallbackA, fallbackB string) int {
 	switch {
 	case a == 0 && b == 0:
 		return strings.Compare(fallbackA, fallbackB)
@@ -186,7 +184,7 @@ func compareOptionalIntInternal(a, b int, fallbackA, fallbackB string) int {
 	}
 }
 
-func compareOptionalIntDescInternal(a, b int, fallbackA, fallbackB string) int {
+func compareOptionalIntDesc(a, b int, fallbackA, fallbackB string) int {
 	switch {
 	case a == 0 && b == 0:
 		return strings.Compare(fallbackA, fallbackB)
@@ -203,7 +201,7 @@ func compareOptionalIntDescInternal(a, b int, fallbackA, fallbackB string) int {
 	}
 }
 
-func compareOptionalStringInternal(a, b, fallbackA, fallbackB string) int {
+func compareOptionalString(a, b, fallbackA, fallbackB string) int {
 	switch {
 	case a == "" && b == "":
 		return strings.Compare(fallbackA, fallbackB)
@@ -219,7 +217,7 @@ func compareOptionalStringInternal(a, b, fallbackA, fallbackB string) int {
 	}
 }
 
-func compareOptionalStringDescInternal(a, b, fallbackA, fallbackB string) int {
+func compareOptionalStringDesc(a, b, fallbackA, fallbackB string) int {
 	switch {
 	case a == "" && b == "":
 		return strings.Compare(fallbackA, fallbackB)

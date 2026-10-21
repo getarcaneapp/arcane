@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"testing"
 
-	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/assert"
@@ -19,10 +19,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 )
 
-func TestIsProjectVolumeCopyNoSpaceErrorInternal(t *testing.T) {
-	require.True(t, isProjectVolumeCopyNoSpaceErrorInternal(syscall.ENOSPC))
-	require.True(t, isProjectVolumeCopyNoSpaceErrorInternal(errors.New("write target volume archive: no space left on device")))
-	require.False(t, isProjectVolumeCopyNoSpaceErrorInternal(errors.New("permission denied")))
+func TestIsProjectVolumeCopyNoSpaceError(t *testing.T) {
+	require.True(t, isProjectVolumeCopyNoSpaceError(syscall.ENOSPC))
+	require.True(t, isProjectVolumeCopyNoSpaceError(errors.New("write target volume archive: no space left on device")))
+	require.False(t, isProjectVolumeCopyNoSpaceError(errors.New("permission denied")))
 }
 
 func TestEnsureProjectRenameTargetVolumeAbsentInternal_ReturnsConflictWhenTargetExists(t *testing.T) {
@@ -40,11 +40,11 @@ func TestEnsureProjectRenameTargetVolumeAbsentInternal_ReturnsConflictWhenTarget
 	}))
 	t.Cleanup(server.Close)
 
-	dockerClient := newTestDockerClientInternal(t, server)
+	dockerClient := newTestDockerClient(t, server)
 
 	err := EnsureRenameTargetAbsent(t.Context(), dockerClient, "web_data")
 
-	var conflictErr *volumetypes.ProjectVolumeRenameConflictError
+	var conflictErr *types.ProjectVolumeRenameConflictError
 	require.ErrorAs(t, err, &conflictErr)
 	require.Equal(t, "web_data", conflictErr.VolumeName)
 }
@@ -69,11 +69,11 @@ func TestEnsureProjectRenameSourceVolumeDetachedInternal_ReturnsConflictWhenCont
 	}))
 	t.Cleanup(server.Close)
 
-	dockerClient := newTestDockerClientInternal(t, server)
+	dockerClient := newTestDockerClient(t, server)
 
 	err := EnsureRenameSourceDetached(t.Context(), dockerClient, "nginx_data")
 
-	var inUseErr *volumetypes.ProjectVolumeRenameInUseError
+	var inUseErr *types.ProjectVolumeRenameInUseError
 	require.ErrorAs(t, err, &inUseErr)
 	require.Equal(t, "nginx_data", inUseErr.VolumeName)
 	require.Equal(t, []string{"stopped-container"}, inUseErr.ContainerIDs)
@@ -118,7 +118,7 @@ func TestGetProjectVolumeCopyRuntimeInternal_UsesArcaneAgentLabel(t *testing.T) 
 	}))
 	t.Cleanup(server.Close)
 
-	copyRuntime, err := getProjectVolumeCopyRuntimeInternal(t.Context(), newTestDockerClientInternal(t, server), volumehelper.ToolsImage(""))
+	copyRuntime, err := getProjectVolumeCopyRuntime(t.Context(), newTestDockerClient(t, server), volumehelper.ToolsImage(""))
 
 	require.NoError(t, err)
 	require.Equal(t, "arcane-agent:local", copyRuntime.Image)
@@ -146,11 +146,11 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenS
 	t.Cleanup(server.Close)
 
 	migration := &dockerProjectVolumeRenameMigrationInternal{
-		dockerClient: newTestDockerClientInternal(t, server),
-		createdNew: []volumetypes.RenameEntry{
+		dockerClient: newTestDockerClient(t, server),
+		createdNew: []types.VolumeRenameEntry{
 			{OldName: "nginx_data", NewName: "web_data"},
 		},
-		removedOld: []volumetypes.RenameEntry{
+		removedOld: []types.VolumeRenameEntry{
 			{
 				OldName: "nginx_data",
 				NewName: "web_data",
@@ -161,7 +161,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenS
 	err := migration.Rollback(t.Context())
 
 	require.Error(t, err)
-	var preserved *volumetypes.TargetPreservedDuringRollbackError
+	var preserved *types.TargetPreservedDuringRollbackError
 	require.ErrorAs(t, err, &preserved)
 	require.False(t, targetRemoved.Load(), "target volume may be the only complete copy and must stay when source restore fails")
 	require.Len(t, migration.createdNew, 1)
@@ -203,12 +203,12 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackCleansSafeTargetsWhe
 	t.Cleanup(server.Close)
 
 	migration := &dockerProjectVolumeRenameMigrationInternal{
-		dockerClient: newTestDockerClientInternal(t, server),
-		createdNew: []volumetypes.RenameEntry{
+		dockerClient: newTestDockerClient(t, server),
+		createdNew: []types.VolumeRenameEntry{
 			{OldName: "nginx_data", NewName: "web_data"},
 			{OldName: "nginx_cache", NewName: "web_cache"},
 		},
-		removedOld: []volumetypes.RenameEntry{
+		removedOld: []types.VolumeRenameEntry{
 			{
 				OldName: "nginx_data",
 				NewName: "web_data",
@@ -219,11 +219,11 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackCleansSafeTargetsWhe
 	err := migration.Rollback(t.Context())
 
 	require.Error(t, err)
-	var preserved *volumetypes.TargetPreservedDuringRollbackError
+	var preserved *types.TargetPreservedDuringRollbackError
 	require.ErrorAs(t, err, &preserved)
 	require.False(t, preservedTargetRemoved.Load(), "target volume may be the only complete copy and must stay when source restore fails")
 	require.True(t, safeTargetRemoved.Load(), "targets without removed sources should still be cleaned up")
-	require.Equal(t, []volumetypes.RenameEntry{{OldName: "nginx_data", NewName: "web_data"}}, migration.createdNew)
+	require.Equal(t, []types.VolumeRenameEntry{{OldName: "nginx_data", NewName: "web_data"}}, migration.createdNew)
 }
 
 func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenSourceInspectFails(t *testing.T) {
@@ -257,8 +257,8 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenS
 	t.Cleanup(server.Close)
 
 	migration := &dockerProjectVolumeRenameMigrationInternal{
-		dockerClient: newTestDockerClientInternal(t, server),
-		createdNew: []volumetypes.RenameEntry{
+		dockerClient: newTestDockerClient(t, server),
+		createdNew: []types.VolumeRenameEntry{
 			{OldName: "nginx_data", NewName: "web_data"},
 			{OldName: "nginx_cache", NewName: "web_cache"},
 		},
@@ -267,11 +267,11 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenS
 	err := migration.Rollback(t.Context())
 
 	require.Error(t, err)
-	var preserved *volumetypes.TargetPreservedDuringRollbackError
+	var preserved *types.TargetPreservedDuringRollbackError
 	require.ErrorAs(t, err, &preserved)
 	require.False(t, preservedTargetRemoved.Load(), "target volume must not be deleted when source inspection is uncertain")
 	require.True(t, safeTargetRemoved.Load(), "targets without rollback uncertainty should still be cleaned up")
-	require.Equal(t, []volumetypes.RenameEntry{{OldName: "nginx_data", NewName: "web_data"}}, migration.createdNew)
+	require.Equal(t, []types.VolumeRenameEntry{{OldName: "nginx_data", NewName: "web_data"}}, migration.createdNew)
 }
 
 func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenTargetInspectFails(t *testing.T) {
@@ -307,8 +307,8 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenT
 	t.Cleanup(server.Close)
 
 	migration := &dockerProjectVolumeRenameMigrationInternal{
-		dockerClient: newTestDockerClientInternal(t, server),
-		createdNew: []volumetypes.RenameEntry{
+		dockerClient: newTestDockerClient(t, server),
+		createdNew: []types.VolumeRenameEntry{
 			{OldName: "nginx_data", NewName: "web_data"},
 			{OldName: "nginx_cache", NewName: "web_cache"},
 		},
@@ -317,11 +317,11 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenT
 	err := migration.Rollback(t.Context())
 
 	require.Error(t, err)
-	var preserved *volumetypes.TargetPreservedDuringRollbackError
+	var preserved *types.TargetPreservedDuringRollbackError
 	require.ErrorAs(t, err, &preserved)
 	require.False(t, preservedTargetRemoved.Load(), "target volume must not be deleted when target inspection is uncertain")
 	require.True(t, safeTargetRemoved.Load(), "targets without rollback uncertainty should still be cleaned up")
-	require.Equal(t, []volumetypes.RenameEntry{{OldName: "nginx_data", NewName: "web_data"}}, migration.createdNew)
+	require.Equal(t, []types.VolumeRenameEntry{{OldName: "nginx_data", NewName: "web_data"}}, migration.createdNew)
 }
 
 func TestDockerProjectVolumeRenameMigrationInternal_RollbackRemovesTargetsWhenSourcesRemain(t *testing.T) {
@@ -351,8 +351,8 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackRemovesTargetsWhenSo
 	t.Cleanup(server.Close)
 
 	migration := &dockerProjectVolumeRenameMigrationInternal{
-		dockerClient: newTestDockerClientInternal(t, server),
-		createdNew: []volumetypes.RenameEntry{
+		dockerClient: newTestDockerClient(t, server),
+		createdNew: []types.VolumeRenameEntry{
 			{
 				OldName: "nginx_data",
 				NewName: "web_data",
@@ -382,11 +382,11 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesRemovedOldT
 	t.Cleanup(server.Close)
 
 	migration := &dockerProjectVolumeRenameMigrationInternal{
-		dockerClient: newTestDockerClientInternal(t, server),
-		createdNew: []volumetypes.RenameEntry{
+		dockerClient: newTestDockerClient(t, server),
+		createdNew: []types.VolumeRenameEntry{
 			{NewName: "web_data"},
 		},
-		removedOld: []volumetypes.RenameEntry{
+		removedOld: []types.VolumeRenameEntry{
 			{
 				OldName: "nginx_data",
 				NewName: "web_data",
@@ -397,11 +397,11 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesRemovedOldT
 	err := migration.Rollback(t.Context())
 
 	require.Error(t, err)
-	var preserved *volumetypes.TargetPreservedDuringRollbackError
+	var preserved *types.TargetPreservedDuringRollbackError
 	require.ErrorAs(t, err, &preserved)
 	require.False(t, targetRemoved.Load(), "rollback must not delete target volumes after source cleanup has started")
-	require.Equal(t, []volumetypes.RenameEntry{{OldName: "nginx_data", NewName: "web_data"}}, migration.removedOld)
-	require.Equal(t, []volumetypes.RenameEntry{{NewName: "web_data"}}, migration.createdNew)
+	require.Equal(t, []types.VolumeRenameEntry{{OldName: "nginx_data", NewName: "web_data"}}, migration.removedOld)
+	require.Equal(t, []types.VolumeRenameEntry{{NewName: "web_data"}}, migration.createdNew)
 }
 
 func TestDockerProjectVolumeRenameMigrationInternal_RollbackAfterPartialCommitCleansSafeTargets(t *testing.T) {
@@ -450,33 +450,33 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackAfterPartialCommitCl
 	}))
 	t.Cleanup(server.Close)
 
-	entries := []volumetypes.RenameEntry{
+	entries := []types.VolumeRenameEntry{
 		{OldName: "nginx_data", NewName: "web_data"},
 		{OldName: "nginx_cache", NewName: "web_cache"},
 	}
 	migration := &dockerProjectVolumeRenameMigrationInternal{
-		dockerClient: newTestDockerClientInternal(t, server),
+		dockerClient: newTestDockerClient(t, server),
 		entries:      entries,
-		createdNew:   append([]volumetypes.RenameEntry(nil), entries...),
+		createdNew:   append([]types.VolumeRenameEntry(nil), entries...),
 	}
 
 	err := migration.Commit(t.Context())
 
-	var cleanupErr *volumetypes.SourceCleanupError
+	var cleanupErr *types.SourceCleanupError
 	require.ErrorAs(t, err, &cleanupErr)
 	require.Equal(t, "nginx_cache", cleanupErr.SourceVolume)
 	require.True(t, firstSourceRemoved.Load())
 	require.Positive(t, secondSourceRemoveAttempts.Load())
-	require.Equal(t, []volumetypes.RenameEntry{entries[0]}, migration.removedOld)
+	require.Equal(t, []types.VolumeRenameEntry{entries[0]}, migration.removedOld)
 
 	err = migration.Rollback(t.Context())
 
 	require.Error(t, err)
-	var preserved *volumetypes.TargetPreservedDuringRollbackError
+	var preserved *types.TargetPreservedDuringRollbackError
 	require.ErrorAs(t, err, &preserved)
 	require.False(t, preservedTargetRemoved.Load(), "target volume may be the only complete copy and must stay when source cleanup has started")
 	require.True(t, safeTargetRemoved.Load(), "targets whose source volumes remain should still be cleaned up")
-	require.Equal(t, []volumetypes.RenameEntry{entries[0]}, migration.createdNew)
+	require.Equal(t, []types.VolumeRenameEntry{entries[0]}, migration.createdNew)
 }
 
 func TestDockerProjectVolumeRenameMigrationInternal_CommitPreflightsAllTargetsBeforeRemovingSources(t *testing.T) {
@@ -510,8 +510,8 @@ func TestDockerProjectVolumeRenameMigrationInternal_CommitPreflightsAllTargetsBe
 	t.Cleanup(server.Close)
 
 	migration := &dockerProjectVolumeRenameMigrationInternal{
-		dockerClient: newTestDockerClientInternal(t, server),
-		entries: []volumetypes.RenameEntry{
+		dockerClient: newTestDockerClient(t, server),
+		entries: []types.VolumeRenameEntry{
 			{
 				Key:     "data",
 				OldName: "nginx_data",
@@ -527,7 +527,7 @@ func TestDockerProjectVolumeRenameMigrationInternal_CommitPreflightsAllTargetsBe
 
 	err := migration.Commit(t.Context())
 
-	var missingTarget *volumetypes.TargetMissingWithSourceError
+	var missingTarget *types.TargetMissingWithSourceError
 	require.ErrorAs(t, err, &missingTarget)
 	require.Equal(t, "nginx_cache", missingTarget.SourceVolume)
 	require.Equal(t, "web_cache", missingTarget.TargetVolume)

@@ -1,5 +1,14 @@
 import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
-import type { TemplateRegistry, Template, RemoteRegistry, TemplateContentData } from '#lib/types/swarm.js';
+import type {
+	TemplateRegistry,
+	TemplateRegistryCreate,
+	TemplateRegistryUpdate,
+	Template,
+	TemplateCreate,
+	TemplateUpdate,
+	RemoteRegistry,
+	TemplateContentData
+} from '#lib/types/swarm.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService from './api-service';
@@ -56,20 +65,12 @@ class TemplateService extends BaseAPIService {
 		return Array.isArray(out) ? out : [];
 	}
 
-	async addRegistry(registry: { name: string; url: string; description?: string; enabled: boolean }): Promise<TemplateRegistry> {
+	async addRegistry(registry: TemplateRegistryCreate): Promise<TemplateRegistry> {
 		const response = await this.api.post('/templates/registries', registry);
 		return response.data?.data ?? response.data;
 	}
 
-	async updateRegistry(
-		id: string,
-		registry: {
-			name: string;
-			url: string;
-			description?: string;
-			enabled: boolean;
-		}
-	): Promise<void> {
+	async updateRegistry(id: string, registry: TemplateRegistryUpdate): Promise<void> {
 		await this.api.put(`/templates/registries/${id}`, registry);
 	}
 
@@ -86,21 +87,8 @@ class TemplateService extends BaseAPIService {
 		await this.api.delete(`/templates/registries/${id}`);
 	}
 
-	async updateTemplate(
-		id: string,
-		template: {
-			name: string;
-			description?: string;
-			content: string;
-			envContent?: string;
-		}
-	): Promise<Template> {
-		const response = await this.api.put(`/templates/${encodeURIComponent(id)}`, {
-			name: template.name,
-			description: template.description || '',
-			content: template.content,
-			envContent: template.envContent || ''
-		});
+	async updateTemplate(id: string, template: TemplateUpdate): Promise<Template> {
+		const response = await this.api.put(`/templates/${encodeURIComponent(id)}`, template);
 		return response.data?.data;
 	}
 
@@ -108,18 +96,8 @@ class TemplateService extends BaseAPIService {
 		await this.api.delete(`/templates/${encodeURIComponent(id)}`);
 	}
 
-	async createTemplate(template: {
-		name: string;
-		description?: string;
-		content: string;
-		envContent?: string;
-	}): Promise<Template> {
-		const response = await this.api.post('/templates', {
-			name: template.name,
-			description: template.description || '',
-			content: template.content,
-			envContent: template.envContent || ''
-		});
+	async createTemplate(template: TemplateCreate): Promise<Template> {
+		const response = await this.api.post('/templates', template);
 		return response.data?.data;
 	}
 }

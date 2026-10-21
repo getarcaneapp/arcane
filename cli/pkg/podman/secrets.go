@@ -8,12 +8,12 @@ import (
 	"os"
 	"slices"
 
-	"github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	internaltypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 func newSecretsCmd() *cobra.Command {
@@ -50,9 +50,9 @@ func newSecretListCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[podman.Secret]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.PodmanSecret]{
 				Resource: "secrets",
-				Endpoint: types.PodmanSecrets(c.EnvID()),
+				Endpoint: internaltypes.PodmanSecrets(c.EnvID()),
 				Params: cmdutil.ListParams{
 					Resource:        "secrets",
 					Limit:           opts.limit,
@@ -61,7 +61,7 @@ func newSecretListCmd() *cobra.Command {
 					All:             opts.all,
 				},
 				Headers: []string{"ID", "NAME", "DRIVER", "CREATED"},
-				Row: func(secret podman.Secret) []string {
+				Row: func(secret types.PodmanSecret) []string {
 					return []string{
 						secret.ID[:min(len(secret.ID), 12)],
 						secret.Spec.Name,
@@ -93,11 +93,11 @@ func newSecretInspectCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[podman.Secret]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.PodmanSecret]{
 				Method:         http.MethodGet,
-				Path:           types.PodmanSecret(c.EnvID(), args[0]),
+				Path:           internaltypes.PodmanSecret(c.EnvID(), args[0]),
 				FailureMessage: "failed to inspect Podman secret",
-				Render: func(data podman.Secret) error {
+				Render: func(data types.PodmanSecret) error {
 					output.Header("Secret Details")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Name", data.Spec.Name)
@@ -145,17 +145,17 @@ func newSecretCreateCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[podman.SecretCreateResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.PodmanSecretCreateResponse]{
 				Method: http.MethodPost,
-				Path:   types.PodmanSecrets(c.EnvID()),
-				Body: podman.SecretCreateRequest{
+				Path:   internaltypes.PodmanSecrets(c.EnvID()),
+				Body: types.PodmanSecretCreateRequest{
 					Name:   args[0],
 					Data:   data,
 					Driver: opts.driver,
 					Labels: opts.labels,
 				},
 				FailureMessage: "failed to create Podman secret",
-				Render: func(created podman.SecretCreateResponse) error {
+				Render: func(created types.PodmanSecretCreateResponse) error {
 					output.Success("Secret %s created successfully", args[0])
 					output.KeyValue("ID", cmp.Or(created.ID, "-"))
 					return nil
@@ -201,16 +201,16 @@ func newSecretUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[podman.Secret]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.PodmanSecret]{
 				Method: http.MethodPut,
-				Path:   types.PodmanSecret(c.EnvID(), args[0]),
-				Body: podman.SecretUpdateRequest{
+				Path:   internaltypes.PodmanSecret(c.EnvID(), args[0]),
+				Body: types.PodmanSecretUpdateRequest{
 					Data:   data,
 					Driver: opts.driver,
 					Labels: opts.labels,
 				},
 				FailureMessage: "failed to update Podman secret",
-				Render: func(updated podman.Secret) error {
+				Render: func(updated types.PodmanSecret) error {
 					output.Success("Secret %s updated successfully", args[0])
 					output.KeyValue("ID", cmp.Or(updated.ID, "-"))
 					return nil
@@ -244,7 +244,7 @@ func newSecretDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete secret %s?", args[0]),
-				Path:           types.PodmanSecret(c.EnvID(), args[0]),
+				Path:           internaltypes.PodmanSecret(c.EnvID(), args[0]),
 				FailureMessage: "failed to delete Podman secret",
 				SuccessMessage: fmt.Sprintf("Secret %s deleted successfully", args[0]),
 			})

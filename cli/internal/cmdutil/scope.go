@@ -12,14 +12,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/settings"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 const (
@@ -35,7 +34,7 @@ type mergedScopeKey struct{}
 
 type mergedScope struct {
 	names    map[string]string
-	failures []base.EnvironmentFailure
+	failures []types.EnvironmentFailure
 }
 
 type environmentResult struct {
@@ -156,7 +155,7 @@ func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 		if clientErr != nil {
 			return clientErr
 		}
-		publicSettings, settingsErr := c.DoJSON[[]settings.PublicSetting](cmd.Context(), http.MethodGet, types.SettingsPublic("0"), nil)
+		publicSettings, settingsErr := c.DoJSON[[]types.PublicSetting](cmd.Context(), http.MethodGet, clitypes.SettingsPublic("0"), nil)
 		if settingsErr != nil {
 			return fmt.Errorf("failed to read the environment limit: %w", settingsErr)
 		}
@@ -174,8 +173,8 @@ func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 			ids = append(ids, env.ID)
 			continue
 		}
-		merged.failures = append(merged.failures, base.EnvironmentFailure{
-			Environment: base.EnvironmentRef{ID: env.ID, Name: merged.names[env.ID]},
+		merged.failures = append(merged.failures, types.EnvironmentFailure{
+			Environment: types.EnvironmentRef{ID: env.ID, Name: merged.names[env.ID]},
 			Message:     fmt.Sprintf("not included: more than %d environments are shown at once", limit),
 		})
 	}

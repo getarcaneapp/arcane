@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
@@ -47,14 +47,14 @@ type DiagnosticsService struct {
 	environments *environment.EnvironmentService
 
 	leakMu     sync.Mutex
-	leakReport system.GoroutineLeakReport
+	leakReport types.GoroutineLeakReport
 }
 
 func NewDiagnosticsService(actors *francis.Runtime, coordinator *runs.Coordinator, environments *environment.EnvironmentService) *DiagnosticsService {
 	return &DiagnosticsService{startedAt: time.Now(), actors: actors, coordinator: coordinator, environments: environments}
 }
 
-func (s *DiagnosticsService) Collect() (system.RuntimeInfo, system.MemoryInfo, system.GCInfo) {
+func (s *DiagnosticsService) Collect() (types.RuntimeInfo, types.MemoryInfo, types.GCInfo) {
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 
@@ -65,9 +65,9 @@ func (s *DiagnosticsService) Collect() (system.RuntimeInfo, system.MemoryInfo, s
 	leakScannedAt := s.leakReport.ScannedAt
 	s.leakMu.Unlock()
 
-	rt := system.RuntimeInfo{
+	rt := types.RuntimeInfo{
 		Goroutines:       runtime.NumGoroutine(),
-		LeakedGoroutines: leakedGoroutineCountInternal(),
+		LeakedGoroutines: leakedGoroutineCount(),
 		LeakScannedAt:    leakScannedAt,
 		GOMAXPROCS:       runtime.GOMAXPROCS(0),
 		NumCPU:           runtime.NumCPU(),
@@ -78,7 +78,7 @@ func (s *DiagnosticsService) Collect() (system.RuntimeInfo, system.MemoryInfo, s
 		UptimeSeconds:    int64(time.Since(s.startedAt).Seconds()),
 	}
 
-	mi := system.MemoryInfo{
+	mi := types.MemoryInfo{
 		Alloc:         mem.Alloc,
 		TotalAlloc:    mem.TotalAlloc,
 		Sys:           mem.Sys,
@@ -108,7 +108,7 @@ func (s *DiagnosticsService) Collect() (system.RuntimeInfo, system.MemoryInfo, s
 		recent[i] = p.Nanoseconds()
 	}
 
-	gi := system.GCInfo{
+	gi := types.GCInfo{
 		LastGC:         gc.LastGC,
 		NumGC:          gc.NumGC,
 		PauseTotalNs:   gc.PauseTotal.Nanoseconds(),
@@ -120,7 +120,7 @@ func (s *DiagnosticsService) Collect() (system.RuntimeInfo, system.MemoryInfo, s
 
 // ScanGoroutineLeaks runs a leak-detection GC and returns the leaked-goroutine
 // pprof text (debug=1). debug=2 would dump every goroutine, not only leaks.
-func (s *DiagnosticsService) ScanGoroutineLeaks() (system.GoroutineLeakReport, error) {
+func (s *DiagnosticsService) ScanGoroutineLeaks() (types.GoroutineLeakReport, error) {
 	s.leakMu.Lock()
 	defer s.leakMu.Unlock()
 	if time.Since(s.leakReport.ScannedAt) < leakScanCacheTTL {
@@ -129,15 +129,15 @@ func (s *DiagnosticsService) ScanGoroutineLeaks() (system.GoroutineLeakReport, e
 
 	p := pprof.Lookup(goroutineLeakProfileName)
 	if p == nil {
-		return system.GoroutineLeakReport{}, errors.New("goroutineleak profile is not available")
+		return types.GoroutineLeakReport{}, errors.New("goroutineleak profile is not available")
 	}
 
 	var buf bytes.Buffer
 	if err := p.WriteTo(&buf, 1); err != nil {
-		return system.GoroutineLeakReport{}, fmt.Errorf("write goroutineleak profile: %w", err)
+		return types.GoroutineLeakReport{}, fmt.Errorf("write goroutineleak profile: %w", err)
 	}
 
-	s.leakReport = system.GoroutineLeakReport{
+	s.leakReport = types.GoroutineLeakReport{
 		Count:     p.Count(),
 		Profile:   buf.String(),
 		ScannedAt: time.Now().UTC(),
@@ -147,18 +147,18 @@ func (s *DiagnosticsService) ScanGoroutineLeaks() (system.GoroutineLeakReport, e
 
 // Goroutines groups the live goroutines by identical stack, largest group first.
 // Records that differ only by pprof labels share a stack and merge into one group.
-func (s *DiagnosticsService) Goroutines() (system.GoroutineProfile, error) {
+func (s *DiagnosticsService) Goroutines() (types.GoroutineProfile, error) {
 	var buf bytes.Buffer
 	if err := pprof.Lookup("goroutine").WriteTo(&buf, 1); err != nil {
-		return system.GoroutineProfile{}, fmt.Errorf("write goroutine profile: %w", err)
+		return types.GoroutineProfile{}, fmt.Errorf("write goroutine profile: %w", err)
 	}
 
-	profile := system.GoroutineProfile{Groups: []system.GoroutineGroup{}, CapturedAt: time.Now().UTC()}
+	profile := types.GoroutineProfile{Groups: []types.GoroutineGroup{}, CapturedAt: time.Now().UTC()}
 	index := map[string]int{}
 	// debug=1 text holds "N @ pcs" records of "#\tpc\tfunc+off\tfile:line" frames, separated by blank lines.
 	// A tabwriter aligns the columns, so a run of tabs is one separator.
 	for record := range strings.SplitSeq(buf.String(), "\n\n") {
-		group := system.GoroutineGroup{Frames: []system.GoroutineFrame{}}
+		group := types.GoroutineGroup{Frames: []types.GoroutineFrame{}}
 		for line := range strings.Lines(record) {
 			fields := strings.FieldsFunc(line, func(r rune) bool { return r == '\t' || r == '\n' })
 			if len(fields) == 0 {
@@ -172,7 +172,7 @@ func (s *DiagnosticsService) Goroutines() (system.GoroutineProfile, error) {
 				sep := strings.LastIndexByte(fields[3], ':')
 				lineNo, err := strconv.Atoi(fields[3][sep+1:])
 				hasLine := sep >= 0 && err == nil
-				group.Frames = append(group.Frames, system.GoroutineFrame{
+				group.Frames = append(group.Frames, types.GoroutineFrame{
 					Function: function,
 					File:     kit.Ternary(hasLine, fields[3][:max(sep, 0)], fields[3]),
 					Line:     kit.Ternary(hasLine, lineNo, 0),
@@ -193,7 +193,7 @@ func (s *DiagnosticsService) Goroutines() (system.GoroutineProfile, error) {
 		index[key] = len(profile.Groups)
 		profile.Groups = append(profile.Groups, group)
 	}
-	slices.SortStableFunc(profile.Groups, func(a, b system.GoroutineGroup) int { return cmp.Compare(b.Count, a.Count) })
+	slices.SortStableFunc(profile.Groups, func(a, b types.GoroutineGroup) int { return cmp.Compare(b.Count, a.Count) })
 	return profile, nil
 }
 
@@ -234,9 +234,9 @@ func (s *DiagnosticsService) Profile(ctx context.Context, name string, seconds, 
 	return buf.Bytes(), ctx.Err()
 }
 
-// leakedGoroutineCountInternal returns the last-known leak count without
+// leakedGoroutineCount returns the last-known leak count without
 // triggering a leak-detection GC.
-func leakedGoroutineCountInternal() int {
+func leakedGoroutineCount() int {
 	p := pprof.Lookup(goroutineLeakProfileName)
 	if p == nil {
 		return 0
@@ -245,8 +245,8 @@ func leakedGoroutineCountInternal() int {
 }
 
 // CollectActors reports this process's Francis host, actor types, and run queue.
-func (s *DiagnosticsService) CollectActors(ctx context.Context) (system.ActorDiagnostics, error) {
-	d := system.ActorDiagnostics{EnvironmentID: environment.LocalEnvironmentID, Runs: map[string]int{}, CheckedAt: time.Now().UTC()}
+func (s *DiagnosticsService) CollectActors(ctx context.Context) (types.ActorDiagnostics, error) {
+	d := types.ActorDiagnostics{EnvironmentID: environment.LocalEnvironmentID, Runs: map[string]int{}, CheckedAt: time.Now().UTC()}
 	select {
 	case <-s.actors.Ready():
 		d.Ready = true
@@ -264,7 +264,7 @@ func (s *DiagnosticsService) CollectActors(ctx context.Context) (system.ActorDia
 		return d, fmt.Errorf("list actor hosts: %w", err)
 	}
 	for _, host := range hosts {
-		d.Hosts = append(d.Hosts, system.ActorHostInfo{HostID: host.HostID, Address: host.Address, LastHealthCheck: time.Time(host.LastHealthCheck)})
+		d.Hosts = append(d.Hosts, types.ActorHostInfo{HostID: host.HostID, Address: host.Address, LastHealthCheck: time.Time(host.LastHealthCheck)})
 	}
 
 	// Records names coordinator actors, so load it before resolving instance names.
@@ -278,12 +278,12 @@ func (s *DiagnosticsService) CollectActors(ctx context.Context) (system.ActorDia
 		}
 	}
 
-	d.ActorTypes, err = s.collectActorTypesInternal(db)
+	d.ActorTypes, err = s.collectActorTypes(db)
 	return d, err
 }
 
-// collectActorTypesInternal reports counts, recent instances, and dead jobs per registered actor type.
-func (s *DiagnosticsService) collectActorTypesInternal(db *gorm.DB) ([]system.ActorTypeInfo, error) {
+// collectActorTypes reports counts, recent instances, and dead jobs per registered actor type.
+func (s *DiagnosticsService) collectActorTypes(db *gorm.DB) ([]types.ActorTypeInfo, error) {
 	var actorTypes []actorTypeModel
 	err := db.Table(francis.TablePrefix + "_host_actor_types").
 		Select("actor_type, MAX(actor_concurrency_limit) AS concurrency_limit").
@@ -307,16 +307,16 @@ func (s *DiagnosticsService) collectActorTypesInternal(db *gorm.DB) ([]system.Ac
 		return nil, fmt.Errorf("collect actor activity: %w", err)
 	}
 
-	out := make([]system.ActorTypeInfo, len(actorTypes))
-	byType := make(map[string]*system.ActorTypeInfo, len(actorTypes))
+	out := make([]types.ActorTypeInfo, len(actorTypes))
+	byType := make(map[string]*types.ActorTypeInfo, len(actorTypes))
 	for i, actorType := range actorTypes {
-		out[i] = system.ActorTypeInfo{ActorType: actorType.ActorType, ConcurrencyLimit: actorType.ConcurrencyLimit, Instances: []system.ActorInstance{}, RecentFailures: []system.ActorJobFailure{}}
+		out[i] = types.ActorTypeInfo{ActorType: actorType.ActorType, ConcurrencyLimit: actorType.ConcurrencyLimit, Instances: []types.ActorInstance{}, RecentFailures: []types.ActorJobFailure{}}
 		byType[actorType.ActorType] = &out[i]
 	}
-	addCountsInternal(byType, active, func(info *system.ActorTypeInfo, row actorCountModel) { info.ActiveActors = row.Count })
-	addCountsInternal(byType, states, func(info *system.ActorTypeInfo, row actorCountModel) { info.StoredStates = row.Count })
-	addCountsInternal(byType, leased, func(info *system.ActorTypeInfo, row actorCountModel) { info.LeasedAlarms = row.Count })
-	addCountsInternal(byType, alarms, func(info *system.ActorTypeInfo, row actorCountModel) {
+	addCounts(byType, active, func(info *types.ActorTypeInfo, row actorCountModel) { info.ActiveActors = row.Count })
+	addCounts(byType, states, func(info *types.ActorTypeInfo, row actorCountModel) { info.StoredStates = row.Count })
+	addCounts(byType, leased, func(info *types.ActorTypeInfo, row actorCountModel) { info.LeasedAlarms = row.Count })
+	addCounts(byType, alarms, func(info *types.ActorTypeInfo, row actorCountModel) {
 		if row.Kind == "job" {
 			info.PendingJobs += row.Count
 		} else {
@@ -326,7 +326,7 @@ func (s *DiagnosticsService) collectActorTypesInternal(db *gorm.DB) ([]system.Ac
 			info.NextAlarmAt = due
 		}
 	})
-	addCountsInternal(byType, terminal, func(info *system.ActorTypeInfo, row actorCountModel) {
+	addCounts(byType, terminal, func(info *types.ActorTypeInfo, row actorCountModel) {
 		switch row.Kind {
 		case "dead":
 			info.DeadJobs += row.Count
@@ -336,12 +336,12 @@ func (s *DiagnosticsService) collectActorTypesInternal(db *gorm.DB) ([]system.Ac
 	})
 	for _, row := range instances {
 		if info := byType[row.ActorType]; info != nil && len(info.Instances) < maxActorDetailRowsInternal {
-			info.Instances = append(info.Instances, system.ActorInstance{ActorID: row.ActorID, Name: s.actors.ActorName(row.ActorID), HostID: row.HostID, ActivatedAt: time.Time(row.Activation)})
+			info.Instances = append(info.Instances, types.ActorInstance{ActorID: row.ActorID, Name: s.actors.ActorName(row.ActorID), HostID: row.HostID, ActivatedAt: time.Time(row.Activation)})
 		}
 	}
 	for _, row := range failures {
 		if info := byType[row.ActorType]; info != nil && len(info.RecentFailures) < maxActorDetailRowsInternal {
-			info.RecentFailures = append(info.RecentFailures, system.ActorJobFailure{
+			info.RecentFailures = append(info.RecentFailures, types.ActorJobFailure{
 				JobID: row.JobID, ActorID: row.ActorID, Name: s.actors.ActorName(row.ActorID), Method: row.JobMethod,
 				Attempts: row.Attempts, LastError: kit.FromPtr(row.LastError), FailedAt: time.Time(row.EndedAt),
 			})
@@ -350,8 +350,8 @@ func (s *DiagnosticsService) collectActorTypesInternal(db *gorm.DB) ([]system.Ac
 	return out, nil
 }
 
-// addCountsInternal applies grouped rows to their registered actor type.
-func addCountsInternal(byType map[string]*system.ActorTypeInfo, rows []actorCountModel, apply func(*system.ActorTypeInfo, actorCountModel)) {
+// addCounts applies grouped rows to their registered actor type.
+func addCounts(byType map[string]*types.ActorTypeInfo, rows []actorCountModel, apply func(*types.ActorTypeInfo, actorCountModel)) {
 	for _, row := range rows {
 		if info := byType[row.ActorType]; info != nil {
 			apply(info, row)
@@ -360,7 +360,7 @@ func addCountsInternal(byType map[string]*system.ActorTypeInfo, rows []actorCoun
 }
 
 // CollectAllActors gathers actor diagnostics from the local and every active remote environment.
-func (s *DiagnosticsService) CollectAllActors(ctx context.Context) []system.ActorDiagnostics {
+func (s *DiagnosticsService) CollectAllActors(ctx context.Context) []types.ActorDiagnostics {
 	local, err := s.CollectActors(ctx)
 	if err != nil {
 		local.Error = err.Error()
@@ -373,14 +373,14 @@ func (s *DiagnosticsService) CollectAllActors(ctx context.Context) []system.Acto
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to list environments for actor diagnostics", "error", err)
 	}
-	out := make([]system.ActorDiagnostics, len(remotes)+1)
+	out := make([]types.ActorDiagnostics, len(remotes)+1)
 	out[0] = local
 	var wg sync.WaitGroup
 	for i, env := range remotes {
 		wg.Go(func() {
-			var d system.ActorDiagnostics
+			var d types.ActorDiagnostics
 			if proxyErr := s.environments.ProxyJSONRequestForEnvironment(ctx, env, http.MethodGet, "/api/environments/0/diagnostics/actors", nil, &d); proxyErr != nil {
-				d = system.ActorDiagnostics{Error: proxyErr.Error(), CheckedAt: time.Now().UTC()}
+				d = types.ActorDiagnostics{Error: proxyErr.Error(), CheckedAt: time.Now().UTC()}
 			}
 			d.EnvironmentID, d.EnvironmentName = env.ID, env.Name
 			out[i+1] = d

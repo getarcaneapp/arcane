@@ -11,13 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/activity"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 // Command is the parent command for background activity operations.
@@ -37,8 +37,8 @@ func newListCmd() *cobra.Command {
 		limit        int
 		start        int
 		all          bool
-		status       activity.Status
-		activityType activity.Type
+		status       types.ActivityStatus
+		activityType types.ActivityType
 		resourceType string
 	}
 	cmd := &cobra.Command{
@@ -64,13 +64,13 @@ func newListCmd() *cobra.Command {
 				query.Set("resourceType", opts.resourceType)
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[activity.Activity]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.Activity]{
 				Resource: "activities",
-				Endpoint: types.Activities(c.EnvID()),
+				Endpoint: clitypes.Activities(c.EnvID()),
 				Params:   cmdutil.ListParams{Resource: "activities", Limit: opts.limit, FallbackDefault: 50, Start: opts.start, All: opts.all},
 				Query:    query,
 				Headers:  []string{"ID", "TYPE", "STATUS", "RESOURCE", "STARTED", "PROGRESS", "MESSAGE"},
-				Row: func(item activity.Activity) []string {
+				Row: func(item types.Activity) []string {
 					resource := resourceLabel(item)
 					progress := "-"
 					if item.Progress != nil {
@@ -94,15 +94,15 @@ func newListCmd() *cobra.Command {
 	cmd.Flags().IntVar(&opts.start, "start", 0, cmdutil.StartFlagUsage)
 	cmd.Flags().BoolVarP(&opts.all, "all", "a", false, cmdutil.AllFlagUsage)
 	cmdutil.EnumVarP(cmd, cmd.Flags(), &opts.status, "status", "", "", "Filter by status",
-		activity.StatusQueued, activity.StatusRunning, activity.StatusSuccess, activity.StatusFailed, activity.StatusCancelled)
+		types.ActivityStatusQueued, types.ActivityStatusRunning, types.ActivityStatusSuccess, types.ActivityStatusFailed, types.ActivityStatusCancelled)
 	cmdutil.EnumVarP(cmd, cmd.Flags(), &opts.activityType, "type", "", "", "Filter by activity type",
-		activity.TypeJobRun, activity.TypeImagePull, activity.TypeImageBuild, activity.TypeImageUpdateCheck,
-		activity.TypeProjectPull, activity.TypeProjectBuild, activity.TypeProjectDeploy, activity.TypeProjectRedeploy,
-		activity.TypeProjectDown, activity.TypeProjectRestart, activity.TypeProjectDestroy, activity.TypeContainerStart,
-		activity.TypeContainerStop, activity.TypeContainerRestart, activity.TypeContainerRedeploy, activity.TypeContainerEdit,
-		activity.TypeContainerDelete, activity.TypeContainerKill, activity.TypeContainerPause, activity.TypeContainerUnpause,
-		activity.TypeVulnerabilityScan, activity.TypeImagePatch, activity.TypeAutoUpdate, activity.TypeSystemPrune,
-		activity.TypeResourceAction)
+		types.ActivityTypeJobRun, types.ActivityTypeImagePull, types.ActivityTypeImageBuild, types.ActivityTypeImageUpdateCheck,
+		types.ActivityTypeProjectPull, types.ActivityTypeProjectBuild, types.ActivityTypeProjectDeploy, types.ActivityTypeProjectRedeploy,
+		types.ActivityTypeProjectDown, types.ActivityTypeProjectRestart, types.ActivityTypeProjectDestroy, types.ActivityTypeContainerStart,
+		types.ActivityTypeContainerStop, types.ActivityTypeContainerRestart, types.ActivityTypeContainerRedeploy, types.ActivityTypeContainerEdit,
+		types.ActivityTypeContainerDelete, types.ActivityTypeContainerKill, types.ActivityTypeContainerPause, types.ActivityTypeContainerUnpause,
+		types.ActivityTypeVulnerabilityScan, types.ActivityTypeImagePatch, types.ActivityTypeAutoUpdate, types.ActivityTypeSystemPrune,
+		types.ActivityTypeResourceAction)
 	cmd.Flags().StringVar(&opts.resourceType, "resource-type", "", "Filter by resource type")
 	return cmd
 }
@@ -123,14 +123,14 @@ func newGetCmd() *cobra.Command {
 			}
 
 			path := cmdutil.AppendQuery(
-				types.Activity(c.EnvID(), args[0]),
+				clitypes.Activity(c.EnvID(), args[0]),
 				url.Values{"limit": []string{strconv.Itoa(opts.messages)}},
 			)
-			return cmdutil.Run(cmd, c, cmdutil.Spec[activity.Detail]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ActivityDetail]{
 				Method:         http.MethodGet,
 				Path:           path,
 				FailureMessage: "failed to get activity",
-				Render: func(data activity.Detail) error {
+				Render: func(data types.ActivityDetail) error {
 					item := data.Activity
 					output.Header("Activity Details")
 					output.KeyValue("ID", item.ID)
@@ -196,11 +196,11 @@ func newCancelCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[activity.Activity]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Activity]{
 				Method:         http.MethodPost,
-				Path:           types.ActivityCancel(c.EnvID(), args[0]),
+				Path:           clitypes.ActivityCancel(c.EnvID(), args[0]),
 				FailureMessage: "failed to cancel activity",
-				Render: func(data activity.Activity) error {
+				Render: func(data types.Activity) error {
 					output.Success("Cancellation requested for activity %s (status: %s)", data.ID, data.Status)
 					return nil
 				},
@@ -232,11 +232,11 @@ func newClearCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[activity.ClearHistoryResult]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ActivityClearHistoryResult]{
 				Method:         http.MethodDelete,
-				Path:           types.ActivitiesHistory(c.EnvID()),
+				Path:           clitypes.ActivitiesHistory(c.EnvID()),
 				FailureMessage: "failed to clear activity history",
-				Render: func(data activity.ClearHistoryResult) error {
+				Render: func(data types.ActivityClearHistoryResult) error {
 					output.Success("Cleared %d finished activities", data.Deleted)
 					return nil
 				},
@@ -248,20 +248,20 @@ func newClearCmd() *cobra.Command {
 	return cmd
 }
 
-var activityRef = cmdutil.ResourceRef[activity.Detail, activity.Activity]{
+var activityRef = cmdutil.ResourceRef[types.ActivityDetail, types.Activity]{
 	EnvironmentScoped: true,
 	Singular:          "activity", Plural: "activities",
 	IDHint: "the identifier", ListCmd: "arcane-cli activities list",
-	GetPath: types.Activity, ListPath: types.Activities,
-	Matches: func(item activity.Activity, lower, original string) bool {
+	GetPath: clitypes.Activity, ListPath: clitypes.Activities,
+	Matches: func(item types.Activity, lower, original string) bool {
 		return strings.EqualFold(item.ID, original)
 	},
-	IdentifierOf: func(item activity.Detail) string { return item.Activity.ID },
-	Label:        func(item activity.Activity) string { return item.ID },
-	Promote:      func(item activity.Activity) *activity.Detail { return &activity.Detail{Activity: item} },
+	IdentifierOf: func(item types.ActivityDetail) string { return item.Activity.ID },
+	Label:        func(item types.Activity) string { return item.ID },
+	Promote:      func(item types.Activity) *types.ActivityDetail { return &types.ActivityDetail{Activity: item} },
 }
 
-func resourceLabel(item activity.Activity) string {
+func resourceLabel(item types.Activity) string {
 	resource := cmp.Or(kit.FromPtr(item.ResourceName), kit.FromPtr(item.ResourceID))
 	resourceType := kit.FromPtr(item.ResourceType)
 	switch {

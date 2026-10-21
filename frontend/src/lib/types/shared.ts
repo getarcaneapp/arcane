@@ -36,6 +36,10 @@ export type Paginated<T, C = unknown> = {
 	counts?: C;
 };
 
+export type CreateRequest<T, W extends keyof T, R extends W = never> = Pick<T, R> & Partial<Pick<T, Exclude<W, R>>>;
+
+export type UpdateRequest<T, W extends keyof T> = Partial<Pick<T, W>>;
+
 // --- Events ---
 
 export interface Event {

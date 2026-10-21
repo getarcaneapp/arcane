@@ -9,9 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
@@ -19,24 +17,24 @@ import (
 
 // ApplyStatuses merges durable runs for one environment into jobs. The local
 // environment also gains dynamic children and scheduler worker health.
-func ApplyStatuses(ctx context.Context, coordinator *runs.Coordinator, controller scheduler.JobController, environmentID string, jobs []jobschedule.JobStatus) ([]jobschedule.JobStatus, error) {
+func ApplyStatuses(ctx context.Context, coordinator *runs.Coordinator, controller types.JobController, environmentID string, jobs []types.JobStatus) ([]types.JobStatus, error) {
 	records, err := coordinator.Records(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load durable job status: %w", err)
 	}
-	runsByJob := make(map[string][]scheduler.Run)
+	runsByJob := make(map[string][]types.SchedulerRun)
 	for _, record := range records {
 		if record.EnvironmentID == environmentID {
 			runsByJob[record.JobID] = append(runsByJob[record.JobID], record.Runs...)
 		}
 	}
-	jobScheduler, hasScheduler := controller.(scheduler.JobScheduler)
+	jobScheduler, hasScheduler := controller.(types.JobScheduler)
 	jobs, dynamicChildren := appendDynamicJobStatuses(ctx, controller, environmentID, jobs)
 
-	statuses := make([]jobschedule.JobStatus, 0, len(jobs))
+	statuses := make([]types.JobStatus, 0, len(jobs))
 	for _, job := range jobs {
 		status := ApplyRunStatus(job, runsByJob[job.ID])
-		workerHealth, nextRun := func() (*scheduler.WorkerHealth, *time.Time) {
+		workerHealth, nextRun := func() (*types.SchedulerWorkerHealth, *time.Time) {
 			if environmentID != "0" || !hasScheduler {
 				return status.WorkerHealth, status.NextRun
 			}
@@ -47,11 +45,11 @@ func ApplyStatuses(ctx context.Context, coordinator *runs.Coordinator, controlle
 			if !found {
 				return status.WorkerHealth, status.NextRun
 			}
-			if conditional, ok := registered.(scheduler.ConditionalJob); ok && !conditional.ShouldSchedule(ctx) {
+			if conditional, ok := registered.(types.ConditionalJob); ok && !conditional.ShouldSchedule(ctx) {
 				return status.WorkerHealth, status.NextRun
 			}
 			if state, stateFound := jobScheduler.GetJobRuntimeState(status.ID); !stateFound || !state.Scheduled {
-				return &scheduler.WorkerHealth{
+				return &types.SchedulerWorkerHealth{
 					Status:    "needs_attention",
 					LastError: "Job has no installed schedule",
 					UpdatedAt: time.Now().UTC(),
@@ -59,11 +57,11 @@ func ApplyStatuses(ctx context.Context, coordinator *runs.Coordinator, controlle
 			}
 			return status.WorkerHealth, status.NextRun
 		}()
-		var children []jobschedule.JobStatus
+		var children []types.JobStatus
 		for _, child := range slices.Concat(status.Children, dynamicChildren[status.ID]) {
 			children = append(children, ApplyRunStatus(child, runsByJob[child.ID]))
 		}
-		statuses = append(statuses, jobschedule.JobStatus{ //exhaustruct:enforce
+		statuses = append(statuses, types.JobStatus{ //exhaustruct:enforce
 			CurrentRun:     status.CurrentRun,
 			LastRun:        status.LastRun,
 			LastSuccess:    status.LastSuccess,
@@ -87,7 +85,7 @@ func ApplyStatuses(ctx context.Context, coordinator *runs.Coordinator, controlle
 	return statuses, nil
 }
 
-func runExecutionTime(run scheduler.Run) time.Time {
+func runExecutionTime(run types.SchedulerRun) time.Time {
 	startedAt := run.CreatedAt
 	if run.StartedAt != nil && run.StartedAt.After(startedAt) {
 		startedAt = *run.StartedAt
@@ -103,13 +101,13 @@ func runExecutionTime(run scheduler.Run) time.Time {
 	return startedAt
 }
 
-func ProjectRunOutcome(run scheduler.Run) scheduler.Run {
+func ProjectRunOutcome(run types.SchedulerRun) types.SchedulerRun {
 	// Delivery reconciliation must not hide a failure already reported by the agent.
-	agentFailure := kit.FromPtr(run.RemoteOutcome).Status == scheduler.NeedsAttention && !run.RemoteRetryRequested
-	failed := agentFailure || run.Status == scheduler.Failed || run.Status == scheduler.NeedsAttention ||
-		(run.Status == scheduler.Canceled && kit.FromPtr(run.Resolution).ResolvedBy == user.SystemUser.Username)
+	agentFailure := kit.FromPtr(run.RemoteOutcome).Status == types.RunStatusNeedsAttention && !run.RemoteRetryRequested
+	failed := agentFailure || run.Status == types.RunStatusFailed || run.Status == types.RunStatusNeedsAttention ||
+		(run.Status == types.RunStatusCanceled && kit.FromPtr(run.Resolution).ResolvedBy == types.SystemUser.Username)
 	outcome := kit.Ternary(agentFailure, kit.FromPtr(run.RemoteOutcome), run.Outcome)
-	return scheduler.Run{ //exhaustruct:enforce
+	return types.SchedulerRun{ //exhaustruct:enforce
 		ActivityEnvironmentID: run.ActivityEnvironmentID,
 		ActivityID:            run.ActivityID,
 		Resolution:            run.Resolution,
@@ -119,7 +117,7 @@ func ProjectRunOutcome(run scheduler.Run) scheduler.Run {
 		EnvironmentID:         run.EnvironmentID,
 		Trigger:               run.Trigger,
 		RequestedBy:           run.RequestedBy,
-		Status:                kit.Ternary(failed, scheduler.Failed, run.Status),
+		Status:                kit.Ternary(failed, types.RunStatusFailed, run.Status),
 		CreatedAt:             run.CreatedAt,
 		UpdatedAt:             run.UpdatedAt,
 		StartedAt:             run.StartedAt,
@@ -127,8 +125,8 @@ func ProjectRunOutcome(run scheduler.Run) scheduler.Run {
 		NextAttempt:           run.NextAttempt,
 		AttemptCount:          run.AttemptCount,
 		Owner:                 run.Owner,
-		Outcome: scheduler.Outcome{ //exhaustruct:enforce
-			Status:     kit.Ternary(failed, scheduler.Failed, outcome.Status),
+		Outcome: types.SchedulerOutcome{ //exhaustruct:enforce
+			Status:     kit.Ternary(failed, types.RunStatusFailed, outcome.Status),
 			Message:    outcome.Message,
 			ActivityID: outcome.ActivityID,
 			Targets:    outcome.Targets,
@@ -146,9 +144,9 @@ func ProjectRunOutcome(run scheduler.Run) scheduler.Run {
 	}
 }
 
-func ApplyRunStatus(status jobschedule.JobStatus, jobRuns []scheduler.Run) jobschedule.JobStatus {
-	latest := make(map[string]scheduler.Run, len(jobRuns)+2)
-	for _, run := range []*scheduler.Run{status.CurrentRun, status.LastRun} {
+func ApplyRunStatus(status types.JobStatus, jobRuns []types.SchedulerRun) types.JobStatus {
+	latest := make(map[string]types.SchedulerRun, len(jobRuns)+2)
+	for _, run := range []*types.SchedulerRun{status.CurrentRun, status.LastRun} {
 		if run != nil {
 			if previous, found := latest[run.ID]; !found || !run.UpdatedAt.Before(previous.UpdatedAt) {
 				latest[run.ID] = *run
@@ -160,19 +158,19 @@ func ApplyRunStatus(status jobschedule.JobStatus, jobRuns []scheduler.Run) jobsc
 			latest[run.ID] = run
 		}
 	}
-	priority := func(runStatus scheduler.RunStatus) int {
+	priority := func(runStatus types.RunStatus) int {
 		switch runStatus {
-		case scheduler.Running:
+		case types.RunStatusRunning:
 			return 0
-		case scheduler.Queued, scheduler.Waiting, scheduler.Retrying:
+		case types.RunStatusQueued, types.RunStatusWaiting, types.RunStatusRetrying:
 			return 1
-		case scheduler.NeedsAttention, scheduler.Succeeded, scheduler.Partial, scheduler.Skipped, scheduler.Failed, scheduler.Canceled:
+		case types.RunStatusNeedsAttention, types.RunStatusSucceeded, types.RunStatusPartial, types.RunStatusSkipped, types.RunStatusFailed, types.RunStatusCanceled:
 			return 2
 		default:
 			return 2
 		}
 	}
-	preferCurrent := func(candidate, current scheduler.Run) bool {
+	preferCurrent := func(candidate, current types.SchedulerRun) bool {
 		switch {
 		case candidate.ID == current.ID:
 			return candidate.UpdatedAt.After(current.UpdatedAt)
@@ -184,12 +182,12 @@ func ApplyRunStatus(status jobschedule.JobStatus, jobRuns []scheduler.Run) jobsc
 			return candidate.CreatedAt.After(current.CreatedAt)
 		}
 	}
-	var currentRun, lastRun *scheduler.Run
+	var currentRun, lastRun *types.SchedulerRun
 	lastSuccess := status.LastSuccess
 	for _, latestRun := range latest {
 		run := ProjectRunOutcome(latestRun)
 		switch {
-		case !run.Status.Terminal() && run.Status != scheduler.NeedsAttention:
+		case !run.Status.Terminal() && run.Status != types.RunStatusNeedsAttention:
 			if currentRun == nil || preferCurrent(run, *currentRun) {
 				currentRun = new(run)
 			}
@@ -197,7 +195,7 @@ func ApplyRunStatus(status jobschedule.JobStatus, jobRuns []scheduler.Run) jobsc
 			(runExecutionTime(run).Equal(runExecutionTime(*lastRun)) && run.ID > lastRun.ID):
 			lastRun = new(run)
 		}
-		if run.Status == scheduler.Succeeded {
+		if run.Status == types.RunStatusSucceeded {
 			succeededAt := kit.Ternary(run.FinishedAt != nil, kit.FromPtr(run.FinishedAt), runExecutionTime(run))
 			if lastSuccess == nil || succeededAt.After(*lastSuccess) {
 				lastSuccess = new(succeededAt)
@@ -205,12 +203,12 @@ func ApplyRunStatus(status jobschedule.JobStatus, jobRuns []scheduler.Run) jobsc
 		}
 	}
 	errorRun := kit.Ternary(lastRun != nil && (currentRun == nil || runExecutionTime(*lastRun).After(runExecutionTime(*currentRun))), lastRun, currentRun)
-	return jobschedule.JobStatus{ //exhaustruct:enforce
+	return types.JobStatus{ //exhaustruct:enforce
 		CurrentRun:  currentRun,
 		LastRun:     lastRun,
 		LastSuccess: lastSuccess,
 		LastError: kit.Ternary(
-			slices.Contains([]scheduler.RunStatus{scheduler.Failed, scheduler.Partial, scheduler.NeedsAttention, scheduler.Retrying}, kit.FromPtr(errorRun).Status),
+			slices.Contains([]types.RunStatus{types.RunStatusFailed, types.RunStatusPartial, types.RunStatusNeedsAttention, types.RunStatusRetrying}, kit.FromPtr(errorRun).Status),
 			kit.FromPtr(errorRun).Outcome.Message,
 			"",
 		),
@@ -233,22 +231,22 @@ func ApplyRunStatus(status jobschedule.JobStatus, jobRuns []scheduler.Run) jobsc
 
 func appendDynamicJobStatuses(
 	ctx context.Context,
-	controller scheduler.JobController,
+	controller types.JobController,
 	environmentID string,
-	jobs []jobschedule.JobStatus,
-) ([]jobschedule.JobStatus, map[string][]jobschedule.JobStatus) {
-	jobScheduler, hasScheduler := controller.(scheduler.JobScheduler)
+	jobs []types.JobStatus,
+) ([]types.JobStatus, map[string][]types.JobStatus) {
+	jobScheduler, hasScheduler := controller.(types.JobScheduler)
 	if environmentID != "0" || !hasScheduler {
 		return jobs, nil
 	}
 	registered := jobScheduler.ListRegisteredJobs()
-	slices.SortFunc(registered, func(left, right scheduler.Job) int {
+	slices.SortFunc(registered, func(left, right types.SchedulerJob) int {
 		return strings.Compare(left.Name(), right.Name())
 	})
-	dynamicChildren := make(map[string][]jobschedule.JobStatus)
+	dynamicChildren := make(map[string][]types.JobStatus)
 	for _, registeredJob := range registered {
 		parentID, _, dynamic := strings.Cut(registeredJob.Name(), ":")
-		parentIndex := slices.IndexFunc(jobs, func(job jobschedule.JobStatus) bool { return job.ID == parentID })
+		parentIndex := slices.IndexFunc(jobs, func(job types.JobStatus) bool { return job.ID == parentID })
 		if !dynamic || parentID == "environment-health" {
 			if registeredJob.Name() == "environment-health:0" && parentIndex >= 0 {
 				jobs[parentIndex] = dynamicJobStatus(ctx, jobScheduler, registeredJob, jobs[parentIndex].Name, "monitoring", true)
@@ -272,16 +270,16 @@ func appendDynamicJobStatuses(
 		}
 		if parentIndex < 0 {
 			parentIndex = len(jobs)
-			jobs = append(jobs, jobschedule.JobStatus{
+			jobs = append(jobs, types.JobStatus{
 				ID:            parentID,
 				Name:          parentID,
 				Category:      category,
 				Enabled:       true,
 				ManagerOnly:   managerOnly,
-				Prerequisites: []jobschedule.JobPrerequisite{},
+				Prerequisites: []types.JobPrerequisite{},
 			})
 		}
-		duplicate := slices.ContainsFunc(jobs[parentIndex].Children, func(child jobschedule.JobStatus) bool {
+		duplicate := slices.ContainsFunc(jobs[parentIndex].Children, func(child types.JobStatus) bool {
 			return child.ID == registeredJob.Name()
 		})
 		if !duplicate {
@@ -291,20 +289,20 @@ func appendDynamicJobStatuses(
 	return jobs, dynamicChildren
 }
 
-func dynamicJobStatus(ctx context.Context, jobScheduler scheduler.JobScheduler, job scheduler.Job, name, category string, managerOnly bool) jobschedule.JobStatus {
+func dynamicJobStatus(ctx context.Context, jobScheduler types.JobScheduler, job types.SchedulerJob, name, category string, managerOnly bool) types.JobStatus {
 	state, scheduled := jobScheduler.GetJobRuntimeState(job.Name())
-	return jobschedule.JobStatus{
+	return types.JobStatus{
 		ID:       job.Name(),
 		Name:     name,
 		Category: category,
 		Schedule: kit.Ternary(scheduled, state.Schedule, job.Schedule(ctx)),
 		NextRun:  state.NextRun,
 		Enabled: func() bool {
-			conditional, ok := job.(scheduler.ConditionalJob)
+			conditional, ok := job.(types.ConditionalJob)
 			return !ok || conditional.ShouldSchedule(ctx)
 		}(),
 		ManagerOnly:    managerOnly,
 		CanRunManually: true,
-		Prerequisites:  []jobschedule.JobPrerequisite{},
+		Prerequisites:  []types.JobPrerequisite{},
 	}
 }

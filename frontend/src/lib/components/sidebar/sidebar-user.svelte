@@ -44,7 +44,7 @@
 									{#if user?.avatarUrl}
 										<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
 									{:else if settingsStore.current?.enableGravatar}
-										{#await getGravatarUrl(user?.email)}
+										{#await getGravatarUrl(user?.email ?? undefined)}
 											<!-- Loading gravatar, show fallback -->
 										{:then url}
 											<Avatar.Image src={url} alt={displayLabel} />
@@ -86,7 +86,7 @@
 									{#if user?.avatarUrl}
 										<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
 									{:else if settingsStore.current?.enableGravatar}
-										{#await getGravatarUrl(user?.email)}
+										{#await getGravatarUrl(user?.email ?? undefined)}
 											<!-- Loading gravatar, show fallback -->
 										{:then url}
 											<Avatar.Image src={url} alt={displayLabel} />

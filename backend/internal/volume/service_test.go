@@ -18,16 +18,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/user"
-	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/acfs"
-	"go.getarcane.app/acfs/types"
+	acfstypes "go.getarcane.app/acfs/types"
 	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
@@ -95,20 +92,20 @@ func TestEnrichVolumesWithUsageData(t *testing.T) {
 func TestIsInternalVolume(t *testing.T) {
 	svc := &VolumeService{backupVolumeName: "arcane-backups"}
 
-	require.True(t, svc.isInternalVolume(volumetypes.Volume{Name: "arcane-backups"}))
-	require.False(t, svc.isInternalVolume(volumetypes.Volume{Name: "user-volume"}))
+	require.True(t, svc.isInternalVolume(types.Volume{Name: "arcane-backups"}))
+	require.False(t, svc.isInternalVolume(types.Volume{Name: "user-volume"}))
 }
 
 func TestRenameVolumeRejectsInvalidAndProtectedNames(t *testing.T) {
 	service := &VolumeService{backupVolumeName: "arcane-backups"}
 
-	_, err := service.RenameVolume(t.Context(), "data", "data", user.Actor{})
+	_, err := service.RenameVolume(t.Context(), "data", "data", types.Actor{})
 	require.ErrorIs(t, err, common.ErrVolumeRenameInvalid)
 
-	_, err = service.RenameVolume(t.Context(), "arcane-backups", "renamed-backups", user.Actor{})
+	_, err = service.RenameVolume(t.Context(), "arcane-backups", "renamed-backups", types.Actor{})
 	require.ErrorIs(t, err, common.ErrVolumeRenameProtected)
 
-	_, err = service.RenameVolume(t.Context(), "data", "arcane-backups", user.Actor{})
+	_, err = service.RenameVolume(t.Context(), "data", "arcane-backups", types.Actor{})
 	require.ErrorIs(t, err, common.ErrVolumeRenameProtected)
 }
 
@@ -145,9 +142,9 @@ func TestListBackupsPaginatedByManagementType(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&VolumeBackup{}))
 	for _, entry := range []*VolumeBackup{
-		{VolumeName: "app", Status: VolumeBackupStatusSucceeded, Destination: volumetypes.BackupDestinationLocal, PolicyID: backup.SystemVolumePolicyPrefix + "abc"},
-		{VolumeName: "app", Status: VolumeBackupStatusSucceeded, Destination: volumetypes.BackupDestinationLocal, PolicyID: "per-volume"},
-		{VolumeName: "app", Status: VolumeBackupStatusSucceeded, Destination: volumetypes.BackupDestinationLocal},
+		{VolumeName: "app", Status: VolumeBackupStatusSucceeded, Destination: types.VolumeBackupDestinationLocal, PolicyID: types.SystemVolumePolicyPrefix + "abc"},
+		{VolumeName: "app", Status: VolumeBackupStatusSucceeded, Destination: types.VolumeBackupDestinationLocal, PolicyID: "per-volume"},
+		{VolumeName: "app", Status: VolumeBackupStatusSucceeded, Destination: types.VolumeBackupDestinationLocal},
 	} {
 		require.NoError(t, gormDB.Create(entry).Error)
 	}
@@ -159,7 +156,7 @@ func TestListBackupsPaginatedByManagementType(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 1, total)
 	require.Len(t, systemRows, 1)
-	require.Equal(t, backup.ManagementTypeSystem, systemRows[0].Type)
+	require.Equal(t, types.BackupManagementTypeSystem, systemRows[0].Type)
 
 	volumeRows, total, err := service.listBackups(t.Context(), "app", pagination.QueryParams{
 		Filters: map[string]string{"type": "volume"},
@@ -168,7 +165,7 @@ func TestListBackupsPaginatedByManagementType(t *testing.T) {
 	require.EqualValues(t, 2, total)
 	require.Len(t, volumeRows, 2)
 	for _, entry := range volumeRows {
-		require.Equal(t, backup.ManagementTypeVolume, entry.Type)
+		require.Equal(t, types.BackupManagementTypeVolume, entry.Type)
 	}
 }
 
@@ -330,7 +327,7 @@ func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
 
 	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newVolumeWorkspaceTestDockerClient(t, server))
 	service := NewVolumeService(nil, dockerService, nil, nil, nil, nil, nil, nil, nil, nil)
-	service.helperByVolume["workspace-volume"] = &volumeHelper{id: "helper", lastUsedAt: time.Now(), protocol: types.ProtocolVersion}
+	service.helperByVolume["workspace-volume"] = &volumeHelper{id: "helper", lastUsedAt: time.Now(), protocol: acfstypes.ProtocolVersion}
 	reader, size, err := service.workspace.DownloadVolumeWorkspaceFile(t.Context(), "workspace-volume", "file.txt")
 	require.NoError(t, err)
 	require.EqualValues(t, 7, size)
@@ -397,14 +394,14 @@ func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
 	dockerClient := newVolumeWorkspaceTestDockerClient(t, server)
 	service := NewVolumeService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient), nil, nil, nil, nil, nil, nil, nil, nil)
 	uploadIndex := 0
-	workspace, err := service.workspace.UpdateVolumeWorkspace(t.Context(), "workspace-volume", volumetypes.WorkspaceUpdateManifest{
+	workspace, err := service.workspace.UpdateVolumeWorkspace(t.Context(), "workspace-volume", types.VolumeWorkspaceUpdateManifest{
 		FileTreeRevision: "stale",
-		FileChanges: []volumetypes.WorkspaceFileChange{{
-			Operation:    volumetypes.FileOpCreateFile,
+		FileChanges: []types.VolumeWorkspaceFileChange{{
+			Operation:    types.FileOpCreateFile,
 			RelativePath: "new.txt",
 			UploadIndex:  &uploadIndex,
 		}},
-	}, map[int][]byte{0: []byte("new content")}, user.Actor{})
+	}, map[int][]byte{0: []byte("new content")}, types.Actor{})
 
 	require.Nil(t, workspace)
 	require.ErrorIs(t, err, common.ErrVolumeWorkspaceConflict)
@@ -431,7 +428,7 @@ func TestVolumeBackup_ListResolvesDestinationName(t *testing.T) {
 		VolumeName:      "app-data",
 		Status:          VolumeBackupStatusSucceeded,
 		Trigger:         VolumeBackupTriggerManual,
-		Destination:     volumetypes.BackupDestinationLocalS3,
+		Destination:     types.VolumeBackupDestinationLocalS3,
 		S3DestinationID: destination.ID,
 	}).Error)
 
@@ -439,7 +436,7 @@ func TestVolumeBackup_ListResolvesDestinationName(t *testing.T) {
 	backups, _, err := service.backup.List(t.Context(), "app-data", pagination.QueryParams{})
 	require.NoError(t, err)
 	require.Len(t, backups, 1)
-	require.Equal(t, volumetypes.BackupDestinationLocalS3, backups[0].Destination)
+	require.Equal(t, types.VolumeBackupDestinationLocalS3, backups[0].Destination)
 	require.Equal(t, "Offsite", backups[0].S3DestinationName)
 }
 
@@ -476,23 +473,23 @@ func volumeScopeContext(t *testing.T, target string, bodies map[string]any) (con
 			}
 			_ = json.NewEncoder(w).Encode(body)
 		}),
-		Resolve: func(_ context.Context, id string) (base.EnvironmentRef, error) {
-			return base.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
 		},
 	}), &queries
 }
 
 func TestAggregateVolumesMergesEnvironments(t *testing.T) {
 	bodies := map[string]any{
-		"a": base.PaginatedWithCounts[volumetypes.Volume, VolumeUsageCountsData]{Success: true, Data: []volumetypes.Volume{
+		"a": types.PaginatedWithCounts[types.Volume, VolumeUsageCountsData]{Success: true, Data: []types.Volume{
 			{Name: "data", Size: 30, InUse: true},
 			{Name: "logs", Size: 5},
-		}, Counts: VolumeUsageCountsData{Inuse: 1, Unused: 1, Total: 2}, Pagination: base.PaginationResponse{TotalItems: 2, GrandTotalItems: 3}},
-		"b": base.PaginatedWithCounts[volumetypes.Volume, VolumeUsageCountsData]{Success: true, Data: []volumetypes.Volume{
+		}, Counts: VolumeUsageCountsData{Inuse: 1, Unused: 1, Total: 2}, Pagination: types.PaginationResponse{TotalItems: 2, GrandTotalItems: 3}},
+		"b": types.PaginatedWithCounts[types.Volume, VolumeUsageCountsData]{Success: true, Data: []types.Volume{
 			{Name: "cache", Size: 10},
-		}, Counts: VolumeUsageCountsData{Unused: 1, Total: 1}, Pagination: base.PaginationResponse{TotalItems: 1}},
+		}, Counts: VolumeUsageCountsData{Unused: 1, Total: 1}, Pagination: types.PaginationResponse{TotalItems: 1}},
 	}
-	rowLabels := func(items []volumetypes.Volume) []string {
+	rowLabels := func(items []types.Volume) []string {
 		out := make([]string, 0, len(items))
 		for _, item := range items {
 			out = append(out, item.EnvironmentID+"/"+item.Name)
@@ -513,7 +510,7 @@ func TestAggregateVolumesMergesEnvironments(t *testing.T) {
 		require.Equal(t, int64(4), body.Pagination.GrandTotalItems)
 		require.Equal(t, int64(2), body.Pagination.TotalPages)
 		require.Equal(t, VolumeUsageCountsData{Inuse: 1, Unused: 2, Total: 3}, body.Counts)
-		require.Equal(t, []base.EnvironmentFailure{{Environment: base.EnvironmentRef{ID: "c", Name: "c"}, Message: "environment offline"}}, body.FailedEnvironments)
+		require.Equal(t, []types.EnvironmentFailure{{Environment: types.EnvironmentRef{ID: "c", Name: "c"}, Message: "environment offline"}}, body.FailedEnvironments)
 		for _, id := range []string{"a", "b"} {
 			stored, ok := queries.Load(id)
 			require.True(t, ok)
@@ -549,8 +546,8 @@ func TestAggregateVolumesMergesEnvironments(t *testing.T) {
 
 func TestAggregateVolumeSizesKeepsEnvironmentRows(t *testing.T) {
 	ctx, _ := volumeScopeContext(t, "/api/environments/a,b,c/volumes/sizes", map[string]any{
-		"a": base.ApiResponse[[]VolumeSizeInfo]{Success: true, Data: []VolumeSizeInfo{{Name: "data", Size: 30, RefCount: 1}, {Name: "logs", Size: 5}}},
-		"b": base.ApiResponse[[]VolumeSizeInfo]{Success: true, Data: []VolumeSizeInfo{{Name: "data", Size: 7}}},
+		"a": types.ApiResponse[[]VolumeSizeInfo]{Success: true, Data: []VolumeSizeInfo{{Name: "data", Size: 30, RefCount: 1}, {Name: "logs", Size: 5}}},
+		"b": types.ApiResponse[[]VolumeSizeInfo]{Success: true, Data: []VolumeSizeInfo{{Name: "data", Size: 7}}},
 	})
 
 	body, err := (&VolumeService{}).AggregateVolumeSizes(ctx)
@@ -558,9 +555,9 @@ func TestAggregateVolumeSizesKeepsEnvironmentRows(t *testing.T) {
 
 	require.True(t, body.Success)
 	require.Equal(t, []VolumeSizeInfo{
-		{EnvironmentTag: base.EnvironmentTag{EnvironmentID: "a", EnvironmentName: "Env a"}, Name: "data", Size: 30, RefCount: 1},
-		{EnvironmentTag: base.EnvironmentTag{EnvironmentID: "a", EnvironmentName: "Env a"}, Name: "logs", Size: 5},
-		{EnvironmentTag: base.EnvironmentTag{EnvironmentID: "b", EnvironmentName: "Env b"}, Name: "data", Size: 7},
+		{EnvironmentTag: types.EnvironmentTag{EnvironmentID: "a", EnvironmentName: "Env a"}, Name: "data", Size: 30, RefCount: 1},
+		{EnvironmentTag: types.EnvironmentTag{EnvironmentID: "a", EnvironmentName: "Env a"}, Name: "logs", Size: 5},
+		{EnvironmentTag: types.EnvironmentTag{EnvironmentID: "b", EnvironmentName: "Env b"}, Name: "data", Size: 7},
 	}, body.Data)
 	require.Len(t, body.FailedEnvironments, 1)
 	require.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)

@@ -3,16 +3,16 @@ package userctx
 import (
 	"context"
 
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 )
 
 // CurrentUserFromContext retrieves the actor for an authenticated request.
-func CurrentUserFromContext(ctx context.Context) (*user.Actor, bool) {
-	value := ctx.Value(user.CurrentUserContextKey{})
-	if actor, ok := value.(*user.Actor); ok {
+func CurrentUserFromContext(ctx context.Context) (*types.Actor, bool) {
+	value := ctx.Value(types.CurrentUserContextKey{})
+	if actor, ok := value.(*types.Actor); ok {
 		return actor, true
 	}
-	provider, ok := value.(user.ActorProvider)
+	provider, ok := value.(types.ActorProvider)
 	if !ok {
 		return nil, false
 	}

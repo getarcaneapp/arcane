@@ -16,9 +16,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/compose-spec/compose-go/v2/types"
-	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
-	"github.com/getarcaneapp/arcane/types/v2/project"
+	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"go.getarcane.app/docker"
 	"go.getarcane.app/kit/pkg"
@@ -73,13 +72,13 @@ func RuntimeProjectName(fallback string, runtimeContainers []container.Summary) 
 // including services that have no container yet.
 func (s *Service) ComposeServices(
 	ctx context.Context,
-	composeProject *types.Project,
+	composeProject *composetypes.Project,
 	runtimeContainers []container.Summary,
 	meta projects.ArcaneComposeMetadata,
 	catalog string,
-) ([]project.RuntimeService, error) {
+) ([]types.ProjectRuntimeService, error) {
 	runtimeName := RuntimeProjectName(composeProject.Name, runtimeContainers)
-	containers, err := projects.ComposePs(ctx, s.dockerService.DockerHost(), &types.Project{Name: runtimeName}, nil, true)
+	containers, err := projects.ComposePs(ctx, s.dockerService.DockerHost(), &composetypes.Project{Name: runtimeName}, nil, true)
 	if err != nil {
 		slog.ErrorContext(ctx, "compose ps error", "projectName", runtimeName, "error", err)
 		return nil, fmt.Errorf("failed to get compose services status: %w", err)
@@ -93,14 +92,14 @@ func (s *Service) ComposeServices(
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 
 	have := map[string]bool{}
-	var services []project.RuntimeService
+	var services []types.ProjectRuntimeService
 	for _, c := range containers {
 		resolvedIcon := iconcatalog.Resolve(catalog, cmp.Or(
 			projects.FindArcaneIconSet(c.Labels),
 			meta.ServiceIconSets[c.Service],
 			meta.ProjectIcon,
 		))
-		services = append(services, project.RuntimeService{
+		services = append(services, types.ProjectRuntimeService{
 			Name:          c.Service,
 			Image:         c.Image,
 			Status:        string(c.State),
@@ -110,7 +109,7 @@ func (s *Service) ComposeServices(
 			Health:        kit.Ternary(c.Health != "", new(string(c.Health)), nil),
 			IconLightURL:  resolvedIcon.IconLightURL,
 			IconDarkURL:   resolvedIcon.IconDarkURL,
-			ServiceConfig: func() *types.ServiceConfig {
+			ServiceConfig: func() *composetypes.ServiceConfig {
 				if cfg, ok := composeProject.Services[c.Service]; ok {
 					return &cfg
 				}
@@ -129,7 +128,7 @@ func (s *Service) ComposeServices(
 				meta.ServiceIconSets[svc.Name],
 				meta.ProjectIcon,
 			))
-			services = append(services, project.RuntimeService{
+			services = append(services, types.ProjectRuntimeService{
 				Name:          svc.Name,
 				Image:         svc.Image,
 				Status:        "stopped",
@@ -146,7 +145,7 @@ func (s *Service) ComposeServices(
 
 // IncludeFiles lists the files a compose file includes, expanding ${VAR}
 // references from the project environment.
-func (s *Service) IncludeFiles(ctx context.Context, composeFile string) []project.IncludeFile {
+func (s *Service) IncludeFiles(ctx context.Context, composeFile string) []types.ProjectIncludeFile {
 	if strings.TrimSpace(composeFile) == "" {
 		return nil
 	}
@@ -161,9 +160,9 @@ func (s *Service) IncludeFiles(ctx context.Context, composeFile string) []projec
 		slog.WarnContext(ctx, "Failed to parse includes", "error", parseErr, "path", composeFile)
 		return nil
 	}
-	var includeFiles []project.IncludeFile
+	var includeFiles []types.ProjectIncludeFile
 	for _, inc := range includes {
-		includeFiles = append(includeFiles, project.IncludeFile{
+		includeFiles = append(includeFiles, types.ProjectIncludeFile{
 			Path:         inc.Path,
 			RelativePath: inc.RelativePath,
 		})
@@ -172,7 +171,7 @@ func (s *Service) IncludeFiles(ctx context.Context, composeFile string) []projec
 }
 
 // ContainerUpdateInfo returns update checks scoped to the projects' running containers.
-func (s *Service) ContainerUpdateInfo(ctx context.Context, services []project.RuntimeService) map[string]*imagetypes.UpdateInfo {
+func (s *Service) ContainerUpdateInfo(ctx context.Context, services []types.ProjectRuntimeService) map[string]*types.ImageUpdateInfo {
 	var containers []container.Summary
 	for _, service := range services {
 		if service.ContainerID != "" {
@@ -259,8 +258,8 @@ func Logs(ctx context.Context, projectName string, logsChan chan<- string, follo
 	return nil
 }
 
-func MergeProjectContainerUpdateInfo(base map[string]*imagetypes.UpdateInfo, services []project.RuntimeService, scoped map[string]*imagetypes.UpdateInfo) map[string]*imagetypes.UpdateInfo {
-	result := make(map[string]*imagetypes.UpdateInfo, len(base))
+func MergeProjectContainerUpdateInfo(base map[string]*types.ImageUpdateInfo, services []types.ProjectRuntimeService, scoped map[string]*types.ImageUpdateInfo) map[string]*types.ImageUpdateInfo {
+	result := make(map[string]*types.ImageUpdateInfo, len(base))
 	maps.Copy(result, base)
 	// Shared image results are dropped for references used only by services that opted out of update checks.
 	monitored := make(map[string]bool)
@@ -287,7 +286,7 @@ func MergeProjectContainerUpdateInfo(base map[string]*imagetypes.UpdateInfo, ser
 			continue
 		}
 		previous := kit.Ternary(seen[imageRef], result[imageRef], info)
-		result[imageRef] = &imagetypes.UpdateInfo{ //exhaustruct:enforce
+		result[imageRef] = &types.ImageUpdateInfo{ //exhaustruct:enforce
 			CheckTime: kit.Ternary(previous.CheckTime.After(info.CheckTime), previous.CheckTime, info.CheckTime),
 			UpdateType: kit.Ternary(
 				previous.LatestVersion != info.LatestVersion || previous.LatestDigest != info.LatestDigest || previous.UpdateType != info.UpdateType,
@@ -320,12 +319,12 @@ func MergeProjectContainerUpdateInfo(base map[string]*imagetypes.UpdateInfo, ser
 }
 
 // ConfiguredRuntimeServiceUpdateInfo binds runtime checks to the current Compose source, since labels may predate an edit.
-func ConfiguredRuntimeServiceUpdateInfo(services []types.ServiceConfig, runtime []project.RuntimeService, scoped map[string]*imagetypes.UpdateInfo) map[string]*imagetypes.UpdateInfo {
-	configs := make(map[string]types.ServiceConfig, len(services))
+func ConfiguredRuntimeServiceUpdateInfo(services []composetypes.ServiceConfig, runtime []types.ProjectRuntimeService, scoped map[string]*types.ImageUpdateInfo) map[string]*types.ImageUpdateInfo {
+	configs := make(map[string]composetypes.ServiceConfig, len(services))
 	for _, service := range services {
 		configs[service.Name] = service
 	}
-	grouped := make(map[string][]project.RuntimeService)
+	grouped := make(map[string][]types.ProjectRuntimeService)
 	for _, service := range runtime {
 		config, ok := configs[cmp.Or(service.Name, docker.ComposeServiceLabel(service.ContainerLabels))]
 		if !ok || scoped[service.ContainerID] == nil {
@@ -334,27 +333,27 @@ func ConfiguredRuntimeServiceUpdateInfo(services []types.ServiceConfig, runtime 
 		if imageref.UpdatePolicyKey(config.Image, config.Labels) != imageref.UpdatePolicyKey(service.Image, service.ContainerLabels) {
 			continue
 		}
-		grouped[config.Name] = append(grouped[config.Name], project.RuntimeService{
+		grouped[config.Name] = append(grouped[config.Name], types.ProjectRuntimeService{
 			ContainerLabels: service.ContainerLabels,
 			Image:           config.Image,
 			ContainerID:     service.ContainerID,
 		})
 	}
-	result := make(map[string]*imagetypes.UpdateInfo, len(grouped))
+	result := make(map[string]*types.ImageUpdateInfo, len(grouped))
 	for name, replicas := range grouped {
 		result[name] = MergeProjectContainerUpdateInfo(nil, replicas, scoped)[strings.TrimSpace(configs[name].Image)]
 	}
 	return result
 }
 
-func ExcludeHiddenRuntimeServices(details []project.Details) ([][]project.RuntimeService, map[string]map[string]bool, map[string]map[string]bool) {
-	visibleByIndex := make([][]project.RuntimeService, len(details))
+func ExcludeHiddenRuntimeServices(details []types.Project) ([][]types.ProjectRuntimeService, map[string]map[string]bool, map[string]map[string]bool) {
+	visibleByIndex := make([][]types.ProjectRuntimeService, len(details))
 	hiddenServicesByProjectID := make(map[string]map[string]bool)
 	hiddenRefsByProjectID := make(map[string]map[string]bool)
 	for i := range details {
 		hiddenServices := make(map[string]bool)
 		hiddenRefs := make(map[string]bool)
-		visibleServices := make([]project.RuntimeService, 0, len(details[i].RuntimeServices))
+		visibleServices := make([]types.ProjectRuntimeService, 0, len(details[i].RuntimeServices))
 		for _, service := range details[i].RuntimeServices {
 			if hidden, _ := kit.ParseBool(service.ContainerLabels[libarcane.HiddenResourceLabel]); hidden {
 				hiddenServices[service.Name] = true

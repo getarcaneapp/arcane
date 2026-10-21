@@ -8,30 +8,30 @@ import (
 	"net/url"
 	"strings"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 )
 
-func (c *Client) SecretList(ctx context.Context, filters map[string][]string) ([]podmantypes.Secret, error) {
+func (c *Client) SecretList(ctx context.Context, filters map[string][]string) ([]types.PodmanSecret, error) {
 	query, err := filtersQuery(url.Values{}, filters)
 	if err != nil {
 		return nil, err
 	}
 
-	return c.doJSON[[]podmantypes.Secret](ctx, request{
+	return c.doJSON[[]types.PodmanSecret](ctx, request{
 		method: http.MethodGet,
 		path:   "/secrets/json",
 		query:  query,
 	})
 }
 
-func (c *Client) SecretInspect(ctx context.Context, nameOrID string) (podmantypes.Secret, error) {
-	return c.doJSON[podmantypes.Secret](ctx, request{
+func (c *Client) SecretInspect(ctx context.Context, nameOrID string) (types.PodmanSecret, error) {
+	return c.doJSON[types.PodmanSecret](ctx, request{
 		method: http.MethodGet,
 		path:   "/secrets/" + url.PathEscape(nameOrID) + "/json",
 	})
 }
 
-func (c *Client) SecretCreate(ctx context.Context, req podmantypes.SecretCreateRequest, replace bool) (string, error) {
+func (c *Client) SecretCreate(ctx context.Context, req types.PodmanSecretCreateRequest, replace bool) (string, error) {
 	query := url.Values{"name": {req.Name}}
 	if replace {
 		query.Set("replace", "true")
@@ -53,7 +53,7 @@ func (c *Client) SecretCreate(ctx context.Context, req podmantypes.SecretCreateR
 		query.Set(key, string(encoded))
 	}
 
-	out, err := c.doJSON[podmantypes.SecretCreateResponse](ctx, request{
+	out, err := c.doJSON[types.PodmanSecretCreateResponse](ctx, request{
 		method:      http.MethodPost,
 		path:        "/secrets/create",
 		query:       query,

@@ -5,13 +5,13 @@ import (
 	"bytes"
 	"fmt"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 )
 
-func buildTar(files []podmantypes.QuadletFile) (*bytes.Buffer, error) {
+func buildTar(files []types.QuadletFile) (*bytes.Buffer, error) {
 	buf := &bytes.Buffer{}
 	writer := tar.NewWriter(buf)
 	seen := make(map[string]struct{}, len(files))

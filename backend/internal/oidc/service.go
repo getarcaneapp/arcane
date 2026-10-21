@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	authtypes "github.com/getarcaneapp/arcane/types/v2/auth"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/hot"
 	"go.getarcane.app/kit/pkg"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -300,7 +300,7 @@ func (s *OidcService) discoverProvider(ctx context.Context, key oidcProviderKey)
 	return provider, nil
 }
 
-func (s *OidcService) HandleCallback(ctx context.Context, code, state, storedState, origin, mobileRedirectURI string) (_ *authtypes.OidcUserInfo, _ *authtypes.OidcTokenResponse, err error) {
+func (s *OidcService) HandleCallback(ctx context.Context, code, state, storedState, origin, mobileRedirectURI string) (_ *types.OidcUserInfo, _ *types.OidcTokenResponse, err error) {
 	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "oidc.callback")
 	defer func() { tracing.End(span, err) }()
 	slog.DebugContext(ctx, "HandleCallback: processing callback", "codePresent", code != "", "statePresent", state != "")
@@ -417,7 +417,7 @@ func (s *OidcService) verifyIDToken(ctx context.Context, provider *oidc.Provider
 
 func (s *OidcService) buildUserInfo(
 	ctx context.Context, provider *oidc.Provider, cfg *settings.OidcConfig, token *oauth2.Token, idToken *oidc.IDToken, rawIDToken string,
-) (*authtypes.OidcUserInfo, *authtypes.OidcTokenResponse, error) {
+) (*types.OidcUserInfo, *types.OidcTokenResponse, error) {
 	var claims map[string]any
 	if idToken != nil {
 		if claimsErr := idToken.Claims(&claims); claimsErr != nil {
@@ -490,7 +490,7 @@ func (s *OidcService) buildUserInfo(
 		return nil, nil, errors.New("missing required 'sub' claim in user info")
 	}
 
-	userInfoDto := authtypes.OidcUserInfo{
+	userInfoDto := types.OidcUserInfo{
 		Subject:           subject,
 		Name:              jwtclaims.GetStringClaim(claims, "name"),
 		Email:             jwtclaims.GetStringClaim(claims, "email"),
@@ -504,7 +504,7 @@ func (s *OidcService) buildUserInfo(
 		Extra:             claims,
 	}
 
-	tokenResp := &authtypes.OidcTokenResponse{
+	tokenResp := &types.OidcTokenResponse{
 		AccessToken:  token.AccessToken,
 		TokenType:    cmp.Or(token.TokenType, "Bearer"),
 		RefreshToken: token.RefreshToken,
@@ -540,7 +540,7 @@ func postForm(ctx context.Context, client *http.Client, endpoint string, values 
 }
 
 // InitiateDeviceAuth initiates the OIDC device authorization flow.
-func (s *OidcService) InitiateDeviceAuth(ctx context.Context) (_ *authtypes.OidcDeviceAuthResponse, err error) {
+func (s *OidcService) InitiateDeviceAuth(ctx context.Context) (_ *types.OidcDeviceAuthResponse, err error) {
 	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "oidc.device_authorize")
 	defer func() { tracing.End(span, err) }()
 
@@ -607,7 +607,7 @@ func (s *OidcService) InitiateDeviceAuth(ctx context.Context) (_ *authtypes.Oidc
 		return nil, errors.New("invalid expires_in in response")
 	}
 
-	response := &authtypes.OidcDeviceAuthResponse{
+	response := &types.OidcDeviceAuthResponse{
 		DeviceCode:              deviceCode,
 		UserCode:                userCode,
 		VerificationUri:         verificationUri,
@@ -621,7 +621,7 @@ func (s *OidcService) InitiateDeviceAuth(ctx context.Context) (_ *authtypes.Oidc
 }
 
 // ExchangeDeviceToken exchanges a device code for tokens.
-func (s *OidcService) ExchangeDeviceToken(ctx context.Context, deviceCode string) (_ *authtypes.OidcUserInfo, _ *authtypes.OidcTokenResponse, err error) {
+func (s *OidcService) ExchangeDeviceToken(ctx context.Context, deviceCode string) (_ *types.OidcUserInfo, _ *types.OidcTokenResponse, err error) {
 	ctx, span := otel.Tracer(tracing.InstrumentationName).Start(ctx, "oidc.device_token")
 	defer func() {
 		// Pending and slow_down are normal polling outcomes, not failures.

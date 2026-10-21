@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
@@ -34,21 +34,21 @@ func (j *ExpiredSessionsCleanupJob) Schedule(ctx context.Context) string {
 	return schedule.Or(ctx, j.settingsService.GetStringSetting(ctx, "expiredSessionsCleanupInterval", "0 0 0 * * *"), "0 0 0 * * *", ExpiredSessionsCleanupJobName)
 }
 
-func (j *ExpiredSessionsCleanupJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
+func (j *ExpiredSessionsCleanupJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 	slog.InfoContext(ctx, "Running expired sessions cleanup job", "jobName", ExpiredSessionsCleanupJobName)
 
 	revokedRetention := 7 * 24 * time.Hour
 	deleted, err := j.sessionService.DeleteExpiredSessions(ctx, revokedRetention)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to delete expired user sessions", "jobName", ExpiredSessionsCleanupJobName, "revokedRetention", revokedRetention.String(), "error", err)
-		return schedulertypes.Outcome{}, err
+		return types.SchedulerOutcome{}, err
 	}
 
 	slog.InfoContext(ctx, "Expired sessions cleanup job completed successfully",
 		"jobName", ExpiredSessionsCleanupJobName,
 		"revokedRetention", revokedRetention.String(),
 		"deleted", deleted)
-	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
+	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 }
 
 func (j *ExpiredSessionsCleanupJob) Reschedule(ctx context.Context) error {

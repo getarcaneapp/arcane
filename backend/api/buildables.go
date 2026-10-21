@@ -6,9 +6,7 @@ import (
 	"errors"
 	"net/http"
 
-	authtypes "github.com/getarcaneapp/arcane/types/v2/auth"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"go.getarcane.app/kit/pkg/mapping"
 
@@ -29,15 +27,15 @@ func registerAutoLoginRoutes(apiGroup *echo.Group, authService *auth.AuthService
 
 	authGroup.GET("/auto-login-config", func(c *echo.Context) error {
 		if authService == nil {
-			return c.JSON(http.StatusInternalServerError, base.ErrorResponse{Error: "service not available"})
+			return c.JSON(http.StatusInternalServerError, types.ErrorResponse{Error: "service not available"})
 		}
 
 		config, err := authService.GetAutoLoginConfig(c.Request().Context())
 		if err != nil {
-			return c.JSON(http.StatusInternalServerError, base.ErrorResponse{Error: "failed to get auto-login config"})
+			return c.JSON(http.StatusInternalServerError, types.ErrorResponse{Error: "failed to get auto-login config"})
 		}
 
-		return c.JSON(http.StatusOK, base.ApiResponse[authtypes.AutoLoginConfig]{
+		return c.JSON(http.StatusOK, types.ApiResponse[types.AutoLoginConfig]{
 			Success: true,
 			Data:    *config,
 		})
@@ -45,43 +43,43 @@ func registerAutoLoginRoutes(apiGroup *echo.Group, authService *auth.AuthService
 
 	authGroup.POST("/auto-login", func(c *echo.Context) error {
 		if authService == nil {
-			return c.JSON(http.StatusInternalServerError, base.ErrorResponse{Error: "service not available"})
+			return c.JSON(http.StatusInternalServerError, types.ErrorResponse{Error: "service not available"})
 		}
 
 		autoLoginConfig, err := authService.GetAutoLoginConfig(c.Request().Context())
 		if err != nil {
-			return c.JSON(http.StatusInternalServerError, base.ErrorResponse{Error: "failed to get auto-login config"})
+			return c.JSON(http.StatusInternalServerError, types.ErrorResponse{Error: "failed to get auto-login config"})
 		}
 
 		if !autoLoginConfig.Enabled {
-			return c.JSON(http.StatusBadRequest, base.ErrorResponse{Error: "auto-login is not enabled"})
+			return c.JSON(http.StatusBadRequest, types.ErrorResponse{Error: "auto-login is not enabled"})
 		}
 
 		password := authService.GetAutoLoginPassword()
 		if password == "" {
-			return c.JSON(http.StatusInternalServerError, base.ErrorResponse{Error: "auto-login password not configured"})
+			return c.JSON(http.StatusInternalServerError, types.ErrorResponse{Error: "auto-login password not configured"})
 		}
 
-		userModel, tokenPair, err := authService.Login(c.Request().Context(), autoLoginConfig.Username, password, authtypes.SessionMeta{
+		userModel, tokenPair, err := authService.Login(c.Request().Context(), autoLoginConfig.Username, password, types.SessionMeta{
 			UserAgent: c.Request().UserAgent(),
 			IPAddress: c.RealIP(),
 		})
 		if err != nil {
 			switch {
 			case errors.Is(err, auth.ErrInvalidCredentials):
-				return c.JSON(http.StatusUnauthorized, base.ErrorResponse{Error: "Invalid username or password"})
+				return c.JSON(http.StatusUnauthorized, types.ErrorResponse{Error: "Invalid username or password"})
 			case errors.Is(err, auth.ErrLocalAuthDisabled):
-				return c.JSON(http.StatusBadRequest, base.ErrorResponse{Error: "Local authentication is disabled"})
+				return c.JSON(http.StatusBadRequest, types.ErrorResponse{Error: "Local authentication is disabled"})
 			case errors.Is(err, auth.ErrMFARequired):
-				return c.JSON(http.StatusForbidden, base.ErrorResponse{Error: "passkey MFA is required; auto-login cannot bypass MFA"})
+				return c.JSON(http.StatusForbidden, types.ErrorResponse{Error: "passkey MFA is required; auto-login cannot bypass MFA"})
 			default:
-				return c.JSON(http.StatusInternalServerError, base.ErrorResponse{Error: "Authentication failed"})
+				return c.JSON(http.StatusInternalServerError, types.ErrorResponse{Error: "Authentication failed"})
 			}
 		}
 
-		var userResp user.User
+		var userResp types.User
 		if mapErr := mapping.MapStruct(userModel, &userResp); mapErr != nil {
-			return c.JSON(http.StatusInternalServerError, base.ErrorResponse{Error: "Failed to map user"})
+			return c.JSON(http.StatusInternalServerError, types.ErrorResponse{Error: "Failed to map user"})
 		}
 
 		expiresAt := tokenPair.ExpiresAt
@@ -89,10 +87,10 @@ func registerAutoLoginRoutes(apiGroup *echo.Group, authService *auth.AuthService
 		for _, tokenCookie := range tokenPair.CookieHeaders(cookie.SecureCookieFromRequest(c.Request())) {
 			c.Response().Header().Add("Set-Cookie", tokenCookie)
 		}
-		return c.JSON(http.StatusOK, base.ApiResponse[authtypes.AuthenticationResponse]{
+		return c.JSON(http.StatusOK, types.ApiResponse[types.AuthenticationResponse]{
 			Success: true,
-			Data: authtypes.AuthenticationResponse{
-				Status:       authtypes.AuthenticationStatusAuthenticated,
+			Data: types.AuthenticationResponse{
+				Status:       types.AuthenticationStatusAuthenticated,
 				Token:        tokenPair.AccessToken,
 				RefreshToken: tokenPair.RefreshToken,
 				ExpiresAt:    new(expiresAt),

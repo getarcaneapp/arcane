@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"go.getarcane.app/docker"
 	kit "go.getarcane.app/kit/pkg"
@@ -23,12 +23,12 @@ import (
 
 type updateLeases struct {
 	mu     sync.Mutex
-	keys   []scheduler.AdmissionKey
-	leases map[scheduler.AdmissionKey]*runs.Lease
-	retain map[scheduler.AdmissionKey]<-chan struct{}
+	keys   []types.SchedulerAdmissionKey
+	leases map[types.SchedulerAdmissionKey]*runs.Lease
+	retain map[types.SchedulerAdmissionKey]<-chan struct{}
 }
 
-func updateAdmissionKeys(containers []container.Summary) func(targetIDs []string) []scheduler.AdmissionKey {
+func updateAdmissionKeys(containers []container.Summary) func(targetIDs []string) []types.SchedulerAdmissionKey {
 	identity := func(summary container.Summary) string {
 		if project := strings.ToLower(strings.TrimSpace(docker.ComposeProjectLabel(summary.Labels))); project != "" {
 			return "project:" + project
@@ -92,7 +92,7 @@ func updateAdmissionKeys(containers []container.Summary) func(targetIDs []string
 		}
 	}
 
-	return func(targetIDs []string) []scheduler.AdmissionKey {
+	return func(targetIDs []string) []types.SchedulerAdmissionKey {
 		targetRoots := map[string]bool{}
 		for _, id := range kit.TrimNonEmpty(targetIDs) {
 			if project, isProject := strings.CutPrefix(id, "compose:"); isProject {
@@ -107,10 +107,10 @@ func updateAdmissionKeys(containers []container.Summary) func(targetIDs []string
 			targetRoots[root("container:"+strings.TrimPrefix(id, "/"))] = true
 		}
 		identities := slices.Sorted(maps.Keys(parent))
-		keys := make([]scheduler.AdmissionKey, 0, len(identities))
+		keys := make([]types.SchedulerAdmissionKey, 0, len(identities))
 		for _, id := range identities {
 			if targetRoots[root(id)] {
-				keys = append(keys, scheduler.AdmissionKey{Scope: "updater", ID: id})
+				keys = append(keys, types.SchedulerAdmissionKey{Scope: "updater", ID: id})
 			}
 		}
 		return keys
@@ -128,17 +128,17 @@ func (s *UpdaterService) acquireUpdate(ctx context.Context, containerIDs []strin
 	return s.admitUpdate(ctx, updateAdmissionKeys(containers)(containerIDs), wait)
 }
 
-func (s *UpdaterService) admitUpdate(ctx context.Context, keys []scheduler.AdmissionKey, wait bool) (context.Context, func(), error) {
+func (s *UpdaterService) admitUpdate(ctx context.Context, keys []types.SchedulerAdmissionKey, wait bool) (context.Context, func(), error) {
 	owner, nested := ctx.Value(updateAdmissionKey{}).(*updateLeases)
 	if !nested {
 		owner = &updateLeases{
-			leases: map[scheduler.AdmissionKey]*runs.Lease{},
-			retain: map[scheduler.AdmissionKey]<-chan struct{}{},
+			leases: map[types.SchedulerAdmissionKey]*runs.Lease{},
+			retain: map[types.SchedulerAdmissionKey]<-chan struct{}{},
 		}
 	}
 	owner.mu.Lock()
 	defer owner.mu.Unlock()
-	keys = slices.DeleteFunc(slices.Clone(keys), func(key scheduler.AdmissionKey) bool {
+	keys = slices.DeleteFunc(slices.Clone(keys), func(key types.SchedulerAdmissionKey) bool {
 		return owner.leases[key] != nil
 	})
 	waitCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultActivitySlotWait)

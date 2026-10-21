@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -212,56 +212,56 @@ func TestResolveSelfUpgradeTargetImage(t *testing.T) {
 	tests := []struct {
 		name         string
 		currentImage string
-		info         *versiontypes.Info
+		info         *types.VersionInfo
 		want         string
 		wantErr      string
 	}{
 		{
 			name:         "agent pinned to an older release moves to the newest",
 			currentImage: "ghcr.io/getarcaneapp/arcane-agent:v2.8.0",
-			info:         &versiontypes.Info{NewestVersion: "v2.9.0"},
+			info:         &types.VersionInfo{NewestVersion: "v2.9.0"},
 			want:         "ghcr.io/getarcaneapp/arcane-agent:v2.9.0",
 		},
 		{
 			name:         "already-current exact version keeps its reference",
 			currentImage: "ghcr.io/getarcaneapp/arcane:v2.9.0",
-			info:         &versiontypes.Info{NewestVersion: "v2.9.0"},
+			info:         &types.VersionInfo{NewestVersion: "v2.9.0"},
 			want:         "ghcr.io/getarcaneapp/arcane:v2.9.0",
 		},
 		{
 			name:         "older newest release refuses a downgrade",
 			currentImage: "ghcr.io/getarcaneapp/arcane:v2.9.0",
-			info:         &versiontypes.Info{NewestVersion: "v2.8.0"},
+			info:         &types.VersionInfo{NewestVersion: "v2.8.0"},
 			wantErr:      "downgrade",
 		},
 		{
 			name:         "unresolved newest release aborts an exact-version upgrade",
 			currentImage: "ghcr.io/getarcaneapp/arcane:v2.8.0",
-			info:         &versiontypes.Info{},
+			info:         &types.VersionInfo{},
 			wantErr:      "could not be resolved",
 		},
 		{
 			name:         "latest channel keeps its reference",
 			currentImage: "ghcr.io/getarcaneapp/arcane:latest",
-			info:         &versiontypes.Info{NewestVersion: "v2.9.0"},
+			info:         &types.VersionInfo{NewestVersion: "v2.9.0"},
 			want:         "ghcr.io/getarcaneapp/arcane:latest",
 		},
 		{
 			name:         "minor channel keeps its reference",
 			currentImage: "ghcr.io/getarcaneapp/arcane:v2.9",
-			info:         &versiontypes.Info{NewestVersion: "v2.9.1"},
+			info:         &types.VersionInfo{NewestVersion: "v2.9.1"},
 			want:         "ghcr.io/getarcaneapp/arcane:v2.9",
 		},
 		{
 			name:         "digest pin moves to the resolved newest digest",
 			currentImage: "ghcr.io/getarcaneapp/arcane@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-			info:         &versiontypes.Info{NewestDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
+			info:         &types.VersionInfo{NewestDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},
 			want:         "ghcr.io/getarcaneapp/arcane@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		},
 		{
 			name:         "digest pin without a resolved newest digest fails",
 			currentImage: "ghcr.io/getarcaneapp/arcane@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-			info:         &versiontypes.Info{},
+			info:         &types.VersionInfo{},
 			wantErr:      "digest-pinned",
 		},
 	}
@@ -615,22 +615,22 @@ func TestUpdateAllStageChangesPersist(t *testing.T) {
 func TestAgentAlreadyOnTarget(t *testing.T) {
 	tests := []struct {
 		name string
-		info versiontypes.Info
+		info types.VersionInfo
 		want bool
 	}{
 		{
 			name: "on newest version",
-			info: versiontypes.Info{CurrentVersion: "1.2.3", NewestVersion: "v1.2.3"},
+			info: types.VersionInfo{CurrentVersion: "1.2.3", NewestVersion: "v1.2.3"},
 			want: true,
 		},
 		{
 			name: "update available",
-			info: versiontypes.Info{CurrentVersion: "1.2.3", NewestVersion: "v1.3.0", UpdateAvailable: true},
+			info: types.VersionInfo{CurrentVersion: "1.2.3", NewestVersion: "v1.3.0", UpdateAvailable: true},
 			want: false,
 		},
 		{
 			name: "on newest digest",
-			info: versiontypes.Info{CurrentDigest: "sha256:abc", NewestDigest: "sha256:abc"},
+			info: types.VersionInfo{CurrentDigest: "sha256:abc", NewestDigest: "sha256:abc"},
 			want: true,
 		},
 		{
@@ -638,7 +638,7 @@ func TestAgentAlreadyOnTarget(t *testing.T) {
 			// update, but the differing digest means the pull really will replace the
 			// image, so this must not be treated as already current.
 			name: "same version, rebuilt digest",
-			info: versiontypes.Info{
+			info: types.VersionInfo{
 				CurrentVersion: "1.2.3",
 				NewestVersion:  "v1.2.3",
 				CurrentDigest:  "sha256:old",
@@ -650,7 +650,7 @@ func TestAgentAlreadyOnTarget(t *testing.T) {
 			// Only one digest resolved, so a rebuild cannot be ruled out: the matching
 			// version tag must not be enough on its own.
 			name: "same version, remote digest unresolved",
-			info: versiontypes.Info{
+			info: types.VersionInfo{
 				CurrentVersion: "1.2.3",
 				NewestVersion:  "v1.2.3",
 				CurrentDigest:  "sha256:running",
@@ -659,7 +659,7 @@ func TestAgentAlreadyOnTarget(t *testing.T) {
 		},
 		{
 			name: "inconclusive check resolves nothing",
-			info: versiontypes.Info{CurrentVersion: "1.2.3"},
+			info: types.VersionInfo{CurrentVersion: "1.2.3"},
 			want: false,
 		},
 	}
