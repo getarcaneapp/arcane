@@ -18,15 +18,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/volume"
-	"github.com/getarcaneapp/arcane/types/v2/workspace"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 func newWorkspaceCmd() *cobra.Command {
@@ -47,7 +45,7 @@ func newWorkspaceCmd() *cobra.Command {
 				return err
 			}
 
-			result, err := c.GetJSON[workspace.Workspace](cmd.Context(), types.VolumeWorkspace(c.EnvID(), resolved.Name))
+			result, err := c.GetJSON[types.Workspace](cmd.Context(), clitypes.VolumeWorkspace(c.EnvID(), resolved.Name))
 			if err != nil {
 				return fmt.Errorf("failed to get volume workspace: %w", err)
 			}
@@ -123,14 +121,14 @@ func newWorkspaceCatCmd() *cobra.Command {
 			}
 
 			filePath := cmdutil.AppendQuery(
-				types.VolumeWorkspaceFile(c.EnvID(), resolved.Name),
+				clitypes.VolumeWorkspaceFile(c.EnvID(), resolved.Name),
 				url.Values{"relativePath": []string{args[1]}},
 			)
-			return cmdutil.Run(cmd, c, cmdutil.Spec[workspace.FileContent]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.WorkspaceFileContent]{
 				Method:         http.MethodGet,
 				Path:           filePath,
 				FailureMessage: "failed to get workspace file",
-				Render: func(data workspace.FileContent) error {
+				Render: func(data types.WorkspaceFileContent) error {
 					if data.Content == "" && data.ReadOnlyReason != "" {
 						return fmt.Errorf("file %s has no printable content (%s); use `arcane volumes workspace download` instead", args[1], data.ReadOnlyReason)
 					}
@@ -164,7 +162,7 @@ func newWorkspaceDownloadCmd() *cobra.Command {
 			c.SetTimeout(30 * time.Minute)
 
 			downloadPath := cmdutil.AppendQuery(
-				types.VolumeWorkspaceFileDownload(c.EnvID(), resolved.Name),
+				clitypes.VolumeWorkspaceFileDownload(c.EnvID(), resolved.Name),
 				url.Values{"relativePath": []string{args[1]}},
 			)
 			resp, err := c.Get(cmd.Context(), downloadPath)
@@ -248,22 +246,22 @@ func newWorkspacePutCmd() *cobra.Command {
 				return confirmationErr
 			}
 
-			current, err := c.GetJSON[workspace.Workspace](cmd.Context(), types.VolumeWorkspace(c.EnvID(), resolved.Name))
+			current, err := c.GetJSON[types.Workspace](cmd.Context(), clitypes.VolumeWorkspace(c.EnvID(), resolved.Name))
 			if err != nil {
 				return fmt.Errorf("failed to get volume workspace: %w", err)
 			}
 
-			operation := volume.FileOpCreateFile
-			if slices.ContainsFunc(current.Data.Files, func(entry workspace.FileEntry) bool {
+			operation := types.FileOpCreateFile
+			if slices.ContainsFunc(current.Data.Files, func(entry types.WorkspaceFileEntry) bool {
 				return entry.RelativePath == relativePath && !entry.IsDirectory
 			}) {
-				operation = volume.FileOpUpdateFile
+				operation = types.FileOpUpdateFile
 			}
 
 			uploadIndex := 0
-			manifest := volume.WorkspaceUpdateManifest{
+			manifest := types.VolumeWorkspaceUpdateManifest{
 				FileTreeRevision: current.Data.FileTreeRevision,
-				FileChanges: []volume.WorkspaceFileChange{{
+				FileChanges: []types.VolumeWorkspaceFileChange{{
 					Operation:    operation,
 					RelativePath: relativePath,
 					UploadIndex:  &uploadIndex,
@@ -290,7 +288,7 @@ func newWorkspacePutCmd() *cobra.Command {
 				return fmt.Errorf("failed to finalize workspace upload: %w", closeErr)
 			}
 
-			resp, err := c.RequestRaw(cmd.Context(), http.MethodPut, types.VolumeWorkspace(c.EnvID(), resolved.Name), &requestBody, map[string]string{"Content-Type": writer.FormDataContentType()})
+			resp, err := c.RequestRaw(cmd.Context(), http.MethodPut, clitypes.VolumeWorkspace(c.EnvID(), resolved.Name), &requestBody, map[string]string{"Content-Type": writer.FormDataContentType()})
 			if err != nil {
 				return fmt.Errorf("failed to update volume workspace: %w", err)
 			}
@@ -299,7 +297,7 @@ func newWorkspacePutCmd() *cobra.Command {
 			if readErr != nil {
 				return fmt.Errorf("failed to update volume workspace: %w", readErr)
 			}
-			var result base.ApiResponse[jsontext.Value]
+			var result types.ApiResponse[jsontext.Value]
 			if decodeErr := json.Unmarshal(responseBody, &result); decodeErr != nil {
 				return fmt.Errorf("failed to parse response: %w", decodeErr)
 			}

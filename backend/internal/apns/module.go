@@ -35,7 +35,7 @@ func RegisterApns(api huma.API, service *ApnsService) {
 
 	huma.Register(
 		api,
-		securedApnsOperationInternal(
+		securedApnsOperation(
 			"get-apns-status",
 			http.MethodGet,
 			"/apns/status",
@@ -46,7 +46,7 @@ func RegisterApns(api huma.API, service *ApnsService) {
 	)
 	huma.Register(
 		api,
-		securedApnsOperationInternal(
+		securedApnsOperation(
 			"create-apns-pairing-token",
 			http.MethodPost,
 			"/apns/pairing-token",
@@ -55,8 +55,8 @@ func RegisterApns(api huma.API, service *ApnsService) {
 		),
 		h.PairingToken,
 	)
-	huma.Register(api, securedApnsOperationInternal("register-apns-device", http.MethodPost, "/apns/devices", "Register a mobile device", ""), h.RegisterDevice)
-	huma.Register(api, securedApnsOperationInternal("update-apns-device", http.MethodPatch, "/apns/devices/{id}", "Update a mobile device", ""), h.UpdateDevice)
-	huma.Register(api, securedApnsOperationInternal("delete-apns-device", http.MethodDelete, "/apns/devices/{id}", "Remove a mobile device", ""), h.DeleteDevice)
-	huma.Register(api, securedApnsOperationInternal("test-apns-device", http.MethodPost, "/apns/devices/{id}/test", "Send a test push", ""), h.TestDevice)
+	huma.Register(api, securedApnsOperation("register-apns-device", http.MethodPost, "/apns/devices", "Register a mobile device", ""), h.RegisterDevice)
+	huma.Register(api, securedApnsOperation("update-apns-device", http.MethodPatch, "/apns/devices/{id}", "Update a mobile device", ""), h.UpdateDevice)
+	huma.Register(api, securedApnsOperation("delete-apns-device", http.MethodDelete, "/apns/devices/{id}", "Remove a mobile device", ""), h.DeleteDevice)
+	huma.Register(api, securedApnsOperation("test-apns-device", http.MethodPost, "/apns/devices/{id}/test", "Send a test push", ""), h.TestDevice)
 }

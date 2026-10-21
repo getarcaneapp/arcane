@@ -6,7 +6,7 @@
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { OidcRoleMapping, Role } from '#lib/types/auth.js';
+	import type { OidcRoleMapping, OidcRoleMappingWritable, Role } from '#lib/types/auth.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import {
 		buildGlobalEnvironmentOptions,
@@ -21,7 +21,7 @@
 		roles: Role[];
 		environments: Environment[];
 		isLoading: boolean;
-		onSubmit: (data: { claimValue: string; roleId: string; environmentId?: string }) => void;
+		onSubmit: (data: Required<Pick<OidcRoleMapping, OidcRoleMappingWritable>>) => void;
 	};
 
 	let { open = $bindable(false), mappingToEdit, roles, environments, isLoading, onSubmit }: Props = $props();
@@ -52,7 +52,7 @@
 		onSubmit({
 			claimValue: data.claimValue,
 			roleId: data.roleId,
-			environmentId: data.environmentId === GLOBAL_ENVIRONMENT_OPTION_ID ? undefined : data.environmentId
+			environmentId: data.environmentId === GLOBAL_ENVIRONMENT_OPTION_ID ? null : data.environmentId
 		});
 	}
 

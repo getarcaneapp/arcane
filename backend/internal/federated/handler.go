@@ -6,8 +6,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/federated"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -34,7 +33,7 @@ type ListFederatedCredentialsInput struct {
 }
 
 type CreateFederatedCredentialInput struct {
-	Body federated.CreateFederatedCredential
+	types.Create[types.FederatedCredential]
 }
 
 type GetFederatedCredentialInput struct {
@@ -42,22 +41,22 @@ type GetFederatedCredentialInput struct {
 }
 
 type UpdateFederatedCredentialInput struct {
-	ID   string `path:"id" doc:"Federated credential ID"`
-	Body federated.UpdateFederatedCredential
+	ID string `path:"id" doc:"Federated credential ID"`
+	types.Update[types.FederatedCredential]
 }
 
 type DeleteFederatedCredentialInput struct {
 	ID string `path:"id" doc:"Federated credential ID"`
 }
 
-func (h *FederatedCredentialHandler) ListFederatedCredentials(ctx context.Context, input *ListFederatedCredentialsInput) (*handlerutil.Page[federated.FederatedCredential], error) {
+func (h *FederatedCredentialHandler) ListFederatedCredentials(ctx context.Context, input *ListFederatedCredentialsInput) (*handlerutil.Page[types.FederatedCredential], error) {
 	credentials, paginationResp, err := h.federatedCredentialService.List(ctx, handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search))
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list federated credentials")
 	}
 
-	return &handlerutil.Page[federated.FederatedCredential]{
-		Body: base.Paginated[federated.FederatedCredential]{
+	return &handlerutil.Page[types.FederatedCredential]{
+		Body: types.Paginated[types.FederatedCredential]{
 			Success:    true,
 			Data:       credentials,
 			Pagination: handlerutil.PaginationResponse(paginationResp),
@@ -65,7 +64,7 @@ func (h *FederatedCredentialHandler) ListFederatedCredentials(ctx context.Contex
 	}, nil
 }
 
-func (h *FederatedCredentialHandler) CreateFederatedCredential(ctx context.Context, input *CreateFederatedCredentialInput) (*handlerutil.Out[federated.FederatedCredential], error) {
+func (h *FederatedCredentialHandler) CreateFederatedCredential(ctx context.Context, input *CreateFederatedCredentialInput) (*handlerutil.Out[types.FederatedCredential], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -73,59 +72,64 @@ func (h *FederatedCredentialHandler) CreateFederatedCredential(ctx context.Conte
 
 	credential, err := h.federatedCredentialService.Create(ctx, user.ID, input.Body)
 	if err != nil {
-		return nil, federatedCredentialManagementErrorInternal(err)
+		return nil, federatedCredentialManagementError(err)
 	}
 
-	return &handlerutil.Out[federated.FederatedCredential]{
-		Body: base.ApiResponse[federated.FederatedCredential]{
+	return &handlerutil.Out[types.FederatedCredential]{
+		Body: types.ApiResponse[types.FederatedCredential]{
 			Success: true,
 			Data:    *credential,
 		},
 	}, nil
 }
 
-func (h *FederatedCredentialHandler) GetFederatedCredential(ctx context.Context, input *GetFederatedCredentialInput) (*handlerutil.Out[federated.FederatedCredential], error) {
+func (h *FederatedCredentialHandler) GetFederatedCredential(ctx context.Context, input *GetFederatedCredentialInput) (*handlerutil.Out[types.FederatedCredential], error) {
 	credential, err := h.federatedCredentialService.Get(ctx, input.ID)
 	if err != nil {
-		return nil, federatedCredentialManagementErrorInternal(err)
+		return nil, federatedCredentialManagementError(err)
 	}
 
-	return &handlerutil.Out[federated.FederatedCredential]{
-		Body: base.ApiResponse[federated.FederatedCredential]{
+	return &handlerutil.Out[types.FederatedCredential]{
+		Body: types.ApiResponse[types.FederatedCredential]{
 			Success: true,
 			Data:    *credential,
 		},
 	}, nil
 }
 
-func (h *FederatedCredentialHandler) UpdateFederatedCredential(ctx context.Context, input *UpdateFederatedCredentialInput) (*handlerutil.Out[federated.FederatedCredential], error) {
+func (h *FederatedCredentialHandler) UpdateFederatedCredential(ctx context.Context, input *UpdateFederatedCredentialInput) (*handlerutil.Out[types.FederatedCredential], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	credential, err := h.federatedCredentialService.Update(ctx, user.ID, input.ID, input.Body)
+	submitted, err := input.SubmittedFields()
 	if err != nil {
-		return nil, federatedCredentialManagementErrorInternal(err)
+		return nil, huma.Error400BadRequest("invalid request body")
 	}
 
-	return &handlerutil.Out[federated.FederatedCredential]{
-		Body: base.ApiResponse[federated.FederatedCredential]{
+	credential, err := h.federatedCredentialService.Update(ctx, user.ID, input.ID, input.Body, submitted)
+	if err != nil {
+		return nil, federatedCredentialManagementError(err)
+	}
+
+	return &handlerutil.Out[types.FederatedCredential]{
+		Body: types.ApiResponse[types.FederatedCredential]{
 			Success: true,
 			Data:    *credential,
 		},
 	}, nil
 }
 
-func (h *FederatedCredentialHandler) DeleteFederatedCredential(ctx context.Context, input *DeleteFederatedCredentialInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *FederatedCredentialHandler) DeleteFederatedCredential(ctx context.Context, input *DeleteFederatedCredentialInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if err := h.federatedCredentialService.Delete(ctx, input.ID); err != nil {
-		return nil, federatedCredentialManagementErrorInternal(err)
+		return nil, federatedCredentialManagementError(err)
 	}
 
 	return handlerutil.MessageOutput("Federated credential deleted successfully", ""), nil
 }
 
-func writeFederatedTokenExchangeErrorInternal(c *echo.Context, err error) error {
+func writeFederatedTokenExchangeError(c *echo.Context, err error) error {
 	var code string
 	description := "token exchange rejected"
 
@@ -148,7 +152,7 @@ func writeFederatedTokenExchangeErrorInternal(c *echo.Context, err error) error 
 	})
 }
 
-func federatedCredentialManagementErrorInternal(err error) error {
+func federatedCredentialManagementError(err error) error {
 	switch {
 	case errors.Is(err, common.ErrFederatedCredentialNotFound):
 		return huma.Error404NotFound("federated credential not found")

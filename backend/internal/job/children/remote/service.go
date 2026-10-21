@@ -13,10 +13,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
-	"github.com/getarcaneapp/arcane/types/v2/meta"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
@@ -42,13 +39,13 @@ func New(coordinator *runs.Coordinator, store *kv.KVService, environments *envir
 }
 
 // Deliver drives one manager-owned run through the remote delivery protocol.
-func (s *Service) Deliver(ctx context.Context, run scheduler.Run) (scheduler.Outcome, error) {
+func (s *Service) Deliver(ctx context.Context, run types.SchedulerRun) (types.SchedulerOutcome, error) {
 	env, err := s.environments.GetEnvironmentByID(ctx, run.EnvironmentID)
 	if err != nil {
-		return scheduler.Outcome{Status: scheduler.Failed}, err
+		return types.SchedulerOutcome{Status: types.RunStatusFailed}, err
 	}
 	if !env.Enabled {
-		return scheduler.Outcome{Status: scheduler.Failed, Message: "Environment is disabled"}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: "Environment is disabled"}, nil
 	}
 	basePath := "/api/environments/0/jobs/" + url.PathEscape(run.JobID)
 	runPath := basePath + "/runs/" + url.PathEscape(run.ID)
@@ -56,28 +53,28 @@ func (s *Service) Deliver(ctx context.Context, run scheduler.Run) (scheduler.Out
 	if !run.RemoteRetryRequested && run.RemoteAccepted && kit.FromPtr(run.RemoteOutcome).Status.Terminal() {
 		return s.acknowledgeRemote(ctx, run, runPath, *run.RemoteOutcome)
 	}
-	var catalog jobschedule.JobListResponse
+	var catalog types.JobListResponse
 	if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, run.EnvironmentID, http.MethodGet, "/api/environments/0/jobs", nil, &catalog); proxyJSONRequestErr != nil {
 		return remoteFailure(proxyJSONRequestErr)
 	}
 	if !catalog.DurableRuns {
-		return scheduler.Outcome{Status: scheduler.Failed, Message: "Upgrade required: agent does not support durable job runs"}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: "Upgrade required: agent does not support durable job runs"}, nil
 	}
-	var remoteRun scheduler.Run
+	var remoteRun types.SchedulerRun
 	if err = s.environments.ProxyJSONRequest(ctx, run.EnvironmentID, http.MethodGet, runPath, nil, &remoteRun); err != nil {
 		var status *remenv.StatusError
 		if !errors.As(err, &status) || status.StatusCode != http.StatusNotFound {
 			return remoteFailure(err)
 		}
 		if run.RemoteAccepted {
-			return scheduler.Outcome{Status: scheduler.Failed, Message: "Agent no longer has the delivery receipt; verify the operation before retrying"}, nil
+			return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: "Agent no longer has the delivery receipt; verify the operation before retrying"}, nil
 		}
 		if !remoteJobEligible(catalog.Jobs, run.JobID) {
-			return scheduler.Outcome{Status: scheduler.Canceled, Message: "Remote job is disabled or no longer eligible"}, nil
+			return types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Remote job is disabled or no longer eligible"}, nil
 		}
 		// A confirmed 404 permits another delivery of the same deduplicated ID.
-		if updateRunErr := s.runs.UpdateRun(ctx, run, func(current *scheduler.Run) error {
-			*current = scheduler.Run{ //exhaustruct:enforce
+		if updateRunErr := s.runs.UpdateRun(ctx, run, func(current *types.SchedulerRun) error {
+			*current = types.SchedulerRun{ //exhaustruct:enforce
 				ActivityEnvironmentID:   current.ActivityEnvironmentID,
 				ActivityID:              current.ActivityID,
 				Resolution:              current.Resolution,
@@ -114,29 +111,29 @@ func (s *Service) Deliver(ctx context.Context, run scheduler.Run) (scheduler.Out
 		if marshalErr != nil {
 			return remoteFailure(marshalErr)
 		}
-		var accepted jobschedule.JobRunResponse
+		var accepted types.JobRunResponse
 		if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, run.EnvironmentID, http.MethodPost, basePath+"/run", body, &accepted); proxyJSONRequestErr != nil {
 			return remoteFailure(proxyJSONRequestErr)
 		}
 		if accepted.RunID != run.ID {
 			return remoteFailure(errors.New("Agent returned an inconsistent delivery receipt")) //nolint:staticcheck // Preserve the existing error message.
 		}
-		remoteRun = scheduler.Run{
+		remoteRun = types.SchedulerRun{
 			ID:      run.ID,
 			JobID:   run.JobID,
 			Status:  accepted.Status,
-			Outcome: scheduler.Outcome{Status: accepted.Status},
+			Outcome: types.SchedulerOutcome{Status: accepted.Status},
 		}
 	}
 	if remoteRun.ID != run.ID || remoteRun.JobID != run.JobID {
-		return scheduler.Outcome{Status: scheduler.Failed, Message: "Agent returned an inconsistent run identity"}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: "Agent returned an inconsistent run identity"}, nil
 	}
-	if run.RemoteRetryRequested && (remoteRun.Status.Terminal() || remoteRun.Status == scheduler.NeedsAttention) && remoteRun.AttemptCount <= run.RemoteAttemptCount {
+	if run.RemoteRetryRequested && (remoteRun.Status.Terminal() || remoteRun.Status == types.RunStatusNeedsAttention) && remoteRun.AttemptCount <= run.RemoteAttemptCount {
 		if run.RemoteRetryAttempted {
-			return scheduler.Outcome{Status: scheduler.Failed, Message: "Remote retry acknowledgement was lost; inspect the agent before retrying again"}, nil
+			return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: "Remote retry acknowledgement was lost; inspect the agent before retrying again"}, nil
 		}
-		if updateRunErr := s.runs.UpdateRun(ctx, run, func(current *scheduler.Run) error {
-			*current = scheduler.Run{ //exhaustruct:enforce
+		if updateRunErr := s.runs.UpdateRun(ctx, run, func(current *types.SchedulerRun) error {
+			*current = types.SchedulerRun{ //exhaustruct:enforce
 				ActivityEnvironmentID:   current.ActivityEnvironmentID,
 				ActivityID:              current.ActivityID,
 				Resolution:              current.Resolution,
@@ -169,7 +166,7 @@ func (s *Service) Deliver(ctx context.Context, run scheduler.Run) (scheduler.Out
 		}); updateRunErr != nil {
 			return remoteFailure(updateRunErr)
 		}
-		var retried scheduler.Run
+		var retried types.SchedulerRun
 		if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, run.EnvironmentID, http.MethodPost, runPath+"/retry", nil, &retried); proxyJSONRequestErr != nil {
 			return remoteFailure(proxyJSONRequestErr)
 		}
@@ -182,12 +179,12 @@ func (s *Service) Deliver(ctx context.Context, run scheduler.Run) (scheduler.Out
 }
 
 // Confirm records the agent-reported state of a delivered run.
-func (s *Service) Confirm(ctx context.Context, run, remoteRun scheduler.Run, runPath string) (scheduler.Outcome, error) {
-	if remoteRun.Status == scheduler.NeedsAttention || (remoteRun.Status == scheduler.Canceled && kit.FromPtr(remoteRun.Resolution).ResolvedBy == user.SystemUser.Username) {
-		settled, err := s.resolveAgentReview(ctx, run.EnvironmentID, run.JobID, run.ID, user.SystemUser.Username)
+func (s *Service) Confirm(ctx context.Context, run, remoteRun types.SchedulerRun, runPath string) (types.SchedulerOutcome, error) {
+	if remoteRun.Status == types.RunStatusNeedsAttention || (remoteRun.Status == types.RunStatusCanceled && kit.FromPtr(remoteRun.Resolution).ResolvedBy == types.SystemUser.Username) {
+		settled, err := s.resolveAgentReview(ctx, run.EnvironmentID, run.JobID, run.ID, types.SystemUser.Username)
 		if err != nil {
-			return scheduler.Outcome{
-				Status:     scheduler.Waiting,
+			return types.SchedulerOutcome{
+				Status:     types.RunStatusWaiting,
 				Message:    "Waiting for the agent to acknowledge the failed run",
 				Targets:    remoteRun.Outcome.Targets,
 				ActivityID: remoteRun.Outcome.ActivityID,
@@ -195,15 +192,15 @@ func (s *Service) Confirm(ctx context.Context, run, remoteRun scheduler.Run, run
 		}
 		remoteRun = settled
 	}
-	outcome := scheduler.Outcome{
-		Status:     kit.Ternary(remoteRun.Status == scheduler.Canceled && kit.FromPtr(remoteRun.Resolution).ResolvedBy == user.SystemUser.Username, scheduler.Failed, remoteRun.Status),
+	outcome := types.SchedulerOutcome{
+		Status:     kit.Ternary(remoteRun.Status == types.RunStatusCanceled && kit.FromPtr(remoteRun.Resolution).ResolvedBy == types.SystemUser.Username, types.RunStatusFailed, remoteRun.Status),
 		Message:    remoteRun.Outcome.Message,
 		ActivityID: remoteRun.Outcome.ActivityID,
 		Targets:    remoteRun.Outcome.Targets,
 		Steps:      remoteRun.Outcome.Steps,
 	}
-	if err := s.runs.UpdateRun(ctx, run, func(current *scheduler.Run) error {
-		*current = scheduler.Run{ //exhaustruct:enforce
+	if err := s.runs.UpdateRun(ctx, run, func(current *types.SchedulerRun) error {
+		*current = types.SchedulerRun{ //exhaustruct:enforce
 			ActivityEnvironmentID:   current.ActivityEnvironmentID,
 			ActivityID:              current.ActivityID,
 			Resolution:              remoteRun.Resolution,
@@ -234,7 +231,7 @@ func (s *Service) Confirm(ctx context.Context, run, remoteRun scheduler.Run, run
 		}
 		return nil
 	}); err != nil {
-		return scheduler.Outcome{Status: scheduler.Retrying}, err
+		return types.SchedulerOutcome{Status: types.RunStatusRetrying}, err
 	}
 	if outcome.Status.Terminal() {
 		if remoteRun.RemoteSettled {
@@ -242,30 +239,30 @@ func (s *Service) Confirm(ctx context.Context, run, remoteRun scheduler.Run, run
 		}
 		return s.acknowledgeRemote(ctx, run, runPath, outcome)
 	}
-	return scheduler.Outcome{
-		Status:     scheduler.Waiting,
+	return types.SchedulerOutcome{
+		Status:     types.RunStatusWaiting,
 		Message:    "Waiting for the agent to complete this run",
 		Targets:    outcome.Targets,
 		ActivityID: outcome.ActivityID,
 	}, nil
 }
 
-func (s *Service) acknowledgeRemote(ctx context.Context, run scheduler.Run, path string, outcome scheduler.Outcome) (scheduler.Outcome, error) {
-	var response scheduler.Run
+func (s *Service) acknowledgeRemote(ctx context.Context, run types.SchedulerRun, path string, outcome types.SchedulerOutcome) (types.SchedulerOutcome, error) {
+	var response types.SchedulerRun
 	if err := s.environments.ProxyJSONRequest(ctx, run.EnvironmentID, http.MethodPost, path+"/ack", nil, &response); err != nil {
-		return scheduler.Outcome{
-			Status:     scheduler.Waiting,
+		return types.SchedulerOutcome{
+			Status:     types.RunStatusWaiting,
 			Message:    "Remote operation completed; waiting for delivery acknowledgement",
 			Targets:    outcome.Targets,
 			ActivityID: outcome.ActivityID,
 		}, err
 	}
-	status := kit.Ternary(response.Status == scheduler.Canceled && kit.FromPtr(response.Resolution).ResolvedBy == user.SystemUser.Username, scheduler.Failed, response.Status)
+	status := kit.Ternary(response.Status == types.RunStatusCanceled && kit.FromPtr(response.Resolution).ResolvedBy == types.SystemUser.Username, types.RunStatusFailed, response.Status)
 	if response.ID != run.ID || response.JobID != run.JobID || response.EnvironmentID != "0" || status != outcome.Status || !response.RemoteSettled {
-		return scheduler.Outcome{Status: scheduler.Waiting, Message: "Remote operation completed; acknowledgement not confirmed"}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusWaiting, Message: "Remote operation completed; acknowledgement not confirmed"}, nil
 	}
-	if err := s.runs.UpdateRun(ctx, run, func(current *scheduler.Run) error {
-		*current = scheduler.Run{ //exhaustruct:enforce
+	if err := s.runs.UpdateRun(ctx, run, func(current *types.SchedulerRun) error {
+		*current = types.SchedulerRun{ //exhaustruct:enforce
 			ActivityEnvironmentID:   current.ActivityEnvironmentID,
 			ActivityID:              current.ActivityID,
 			Resolution:              current.Resolution,
@@ -296,21 +293,21 @@ func (s *Service) acknowledgeRemote(ctx context.Context, run scheduler.Run, path
 		}
 		return nil
 	}); err != nil {
-		return scheduler.Outcome{Status: scheduler.Retrying}, err
+		return types.SchedulerOutcome{Status: types.RunStatusRetrying}, err
 	}
 	return outcome, nil
 }
 
 // Catalog retains the last observed agent catalog while its environment is offline.
-func (s *Service) Catalog(ctx context.Context, environmentID string) (*jobschedule.JobListResponse, error) {
+func (s *Service) Catalog(ctx context.Context, environmentID string) (*types.JobListResponse, error) {
 	if _, err := s.environments.GetEnvironmentByID(ctx, environmentID); err != nil {
 		return nil, err
 	}
 	key := "jobs-catalog/" + kit.SHA256Hex(environmentID)
-	var catalog jobschedule.JobListResponse
+	var catalog types.JobListResponse
 	remoteErr := s.environments.ProxyJSONRequest(ctx, environmentID, http.MethodGet, "/api/environments/0/jobs", nil, &catalog)
 	if remoteErr == nil {
-		observed := jobschedule.JobListResponse{ //exhaustruct:enforce
+		observed := types.JobListResponse{ //exhaustruct:enforce
 			DurableRuns: catalog.DurableRuns,
 			ObservedAt:  time.Now().UTC(),
 			Offline:     false,
@@ -345,12 +342,12 @@ func (s *Service) Catalog(ctx context.Context, environmentID string) (*jobschedu
 		}
 	}
 	jobs := catalog.Jobs
-	for _, metadata := range meta.GetAllJobMetadata() {
+	for _, metadata := range types.GetAllJobMetadata() {
 		if !found && !metadata.ManagerOnly {
-			jobs = append(jobs, metadata.ToJobStatus("", nil, metadata.CanRunManually, []jobschedule.JobPrerequisite{}))
+			jobs = append(jobs, metadata.ToJobStatus("", nil, metadata.CanRunManually, []types.JobPrerequisite{}))
 		}
 	}
-	return &jobschedule.JobListResponse{ //exhaustruct:enforce
+	return &types.JobListResponse{ //exhaustruct:enforce
 		DurableRuns: catalog.DurableRuns,
 		ObservedAt:  catalog.ObservedAt,
 		Offline:     true,
@@ -361,29 +358,29 @@ func (s *Service) Catalog(ctx context.Context, environmentID string) (*jobschedu
 
 // RetryRun queues one explicit retry of an authorized manager-owned run while
 // retaining the agent's target progress.
-func (s *Service) RetryRun(ctx context.Context, run scheduler.Run) (scheduler.Run, error) {
-	if kit.FromPtr(run.Resolution).ResolvedBy == user.SystemUser.Username {
-		var remote scheduler.Run
+func (s *Service) RetryRun(ctx context.Context, run types.SchedulerRun) (types.SchedulerRun, error) {
+	if kit.FromPtr(run.Resolution).ResolvedBy == types.SystemUser.Username {
+		var remote types.SchedulerRun
 		path := "/api/environments/0/jobs/" + url.PathEscape(run.JobID) + "/runs/" + url.PathEscape(run.ID)
 		if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, run.EnvironmentID, http.MethodGet, path, nil, &remote); proxyJSONRequestErr != nil {
 			return run, proxyJSONRequestErr
 		}
-		if remote.ID != run.ID || remote.JobID != run.JobID || remote.EnvironmentID != "0" || remote.Status != scheduler.Failed {
+		if remote.ID != run.ID || remote.JobID != run.JobID || remote.EnvironmentID != "0" || remote.Status != types.RunStatusFailed {
 			return run, errors.New("upgrade the agent before retrying a legacy settled run")
 		}
 	}
-	err := s.runs.UpdateRun(ctx, run, func(current *scheduler.Run) error {
-		if current.Status != scheduler.Failed && current.Status != scheduler.Partial && current.Status != scheduler.NeedsAttention {
+	err := s.runs.UpdateRun(ctx, run, func(current *types.SchedulerRun) error {
+		if current.Status != types.RunStatusFailed && current.Status != types.RunStatusPartial && current.Status != types.RunStatusNeedsAttention {
 			return errors.New("run is not eligible for retry")
 		}
 		if !current.RemoteAccepted && current.RemoteDeliveryAttempted {
 			return errors.New("remote delivery is uncertain; inspect the agent before submitting new work")
 		}
 		remoteStatus := kit.FromPtr(current.RemoteOutcome).Status
-		if current.RemoteAccepted && !remoteStatus.Terminal() && remoteStatus != scheduler.NeedsAttention {
+		if current.RemoteAccepted && !remoteStatus.Terminal() && remoteStatus != types.RunStatusNeedsAttention {
 			return errors.New("remote outcome must be confirmed before retry")
 		}
-		*current = scheduler.Run{ //exhaustruct:enforce
+		*current = types.SchedulerRun{ //exhaustruct:enforce
 			ActivityEnvironmentID:   current.ActivityEnvironmentID,
 			ActivityID:              current.ActivityID,
 			Resolution:              current.Resolution,
@@ -393,7 +390,7 @@ func (s *Service) RetryRun(ctx context.Context, run scheduler.Run) (scheduler.Ru
 			EnvironmentID:           current.EnvironmentID,
 			Trigger:                 current.Trigger,
 			RequestedBy:             current.RequestedBy,
-			Status:                  scheduler.Queued,
+			Status:                  types.RunStatusQueued,
 			CreatedAt:               current.CreatedAt,
 			UpdatedAt:               time.Now().UTC(),
 			StartedAt:               current.StartedAt,
@@ -419,7 +416,7 @@ func (s *Service) RetryRun(ctx context.Context, run scheduler.Run) (scheduler.Ru
 }
 
 // Runs merges agent history with requests accepted by this manager.
-func (s *Service) Runs(ctx context.Context, environmentID, jobID string) ([]scheduler.Run, error) {
+func (s *Service) Runs(ctx context.Context, environmentID, jobID string) ([]types.SchedulerRun, error) {
 	if _, err := s.environments.GetEnvironmentByID(ctx, environmentID); err != nil {
 		return nil, err
 	}
@@ -427,10 +424,10 @@ func (s *Service) Runs(ctx context.Context, environmentID, jobID string) ([]sche
 	if err != nil {
 		return nil, err
 	}
-	merged := make(map[string]scheduler.Run)
+	merged := make(map[string]types.SchedulerRun)
 	for page := 1; ; page++ {
 		path := "/api/environments/0/jobs/" + url.PathEscape(jobID) + "/runs?page=" + strconv.Itoa(page) + "&limit=100"
-		var response scheduler.RunList
+		var response types.SchedulerRunList
 		if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, environmentID, http.MethodGet, path, nil, &response); proxyJSONRequestErr != nil {
 			var status *remenv.StatusError
 			if errors.As(proxyJSONRequestErr, &status) && (status.StatusCode == http.StatusForbidden || status.StatusCode == http.StatusUnauthorized) {
@@ -441,7 +438,7 @@ func (s *Service) Runs(ctx context.Context, environmentID, jobID string) ([]sche
 		}
 		previous := len(merged)
 		for _, run := range response.Runs {
-			merged[run.ID] = scheduler.Run{ //exhaustruct:enforce
+			merged[run.ID] = types.SchedulerRun{ //exhaustruct:enforce
 				ActivityEnvironmentID:   kit.Ternary(run.ActivityID != "", environmentID, run.ActivityEnvironmentID),
 				ActivityID:              run.ActivityID,
 				Resolution:              run.Resolution,
@@ -487,16 +484,16 @@ func (s *Service) Runs(ctx context.Context, environmentID, jobID string) ([]sche
 }
 
 // AgentRun queries agent-owned history for a run the manager never accepted.
-func (s *Service) AgentRun(ctx context.Context, environmentID, jobID, runID string) (scheduler.Run, error) {
-	var run scheduler.Run
+func (s *Service) AgentRun(ctx context.Context, environmentID, jobID, runID string) (types.SchedulerRun, error) {
+	var run types.SchedulerRun
 	path := "/api/environments/0/jobs/" + url.PathEscape(jobID) + "/runs/" + url.PathEscape(runID)
 	if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, environmentID, http.MethodGet, path, nil, &run); proxyJSONRequestErr != nil {
-		return scheduler.Run{}, proxyJSONRequestErr
+		return types.SchedulerRun{}, proxyJSONRequestErr
 	}
 	if run.ID != runID || run.JobID != jobID {
-		return scheduler.Run{}, errors.New("agent returned an inconsistent run identity")
+		return types.SchedulerRun{}, errors.New("agent returned an inconsistent run identity")
 	}
-	return scheduler.Run{ //exhaustruct:enforce
+	return types.SchedulerRun{ //exhaustruct:enforce
 		ActivityEnvironmentID:   kit.Ternary(run.ActivityID != "", environmentID, run.ActivityEnvironmentID),
 		ActivityID:              run.ActivityID,
 		Resolution:              run.Resolution,
@@ -528,24 +525,24 @@ func (s *Service) AgentRun(ctx context.Context, environmentID, jobID, runID stri
 }
 
 // MutateAgentRun forwards an explicit operator action to an agent-owned run.
-func (s *Service) MutateAgentRun(ctx context.Context, environmentID, jobID, runID, action string) (scheduler.Run, error) {
+func (s *Service) MutateAgentRun(ctx context.Context, environmentID, jobID, runID, action string) (types.SchedulerRun, error) {
 	targetEnvironment, err := s.environments.GetEnvironmentByID(ctx, environmentID)
 	if err != nil {
-		return scheduler.Run{}, err
+		return types.SchedulerRun{}, err
 	}
 	if !targetEnvironment.Enabled {
-		return scheduler.Run{}, errors.New("environment is disabled")
+		return types.SchedulerRun{}, errors.New("environment is disabled")
 	}
 	path := "/api/environments/0/jobs/" + url.PathEscape(jobID) + "/runs/" + url.PathEscape(runID) + "/" + action
-	var run scheduler.Run
+	var run types.SchedulerRun
 	// This is an explicit operator action. Never replay a lost mutation response.
 	if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, environmentID, http.MethodPost, path, nil, &run); proxyJSONRequestErr != nil {
-		return scheduler.Run{}, proxyJSONRequestErr
+		return types.SchedulerRun{}, proxyJSONRequestErr
 	}
 	if run.ID != runID || run.JobID != jobID {
-		return scheduler.Run{}, errors.New("agent returned an inconsistent run identity")
+		return types.SchedulerRun{}, errors.New("agent returned an inconsistent run identity")
 	}
-	return scheduler.Run{ //exhaustruct:enforce
+	return types.SchedulerRun{ //exhaustruct:enforce
 		ActivityEnvironmentID:   kit.Ternary(run.ActivityID != "", environmentID, run.ActivityEnvironmentID),
 		ActivityID:              run.ActivityID,
 		Resolution:              run.Resolution,
@@ -578,10 +575,10 @@ func (s *Service) MutateAgentRun(ctx context.Context, environmentID, jobID, runI
 
 // ReconcileLegacyCatalog adopts legacy agent-owned runs needing attention.
 // TODO(v3): remove adoption of legacy agent-owned runs.
-func (s *Service) ReconcileLegacyCatalog(ctx context.Context, environmentID string, jobs []jobschedule.JobStatus) error {
+func (s *Service) ReconcileLegacyCatalog(ctx context.Context, environmentID string, jobs []types.JobStatus) error {
 	for _, job := range jobs {
-		for _, remote := range []*scheduler.Run{job.CurrentRun, job.LastRun} {
-			if kit.FromPtr(remote).Status != scheduler.NeedsAttention {
+		for _, remote := range []*types.SchedulerRun{job.CurrentRun, job.LastRun} {
+			if kit.FromPtr(remote).Status != types.RunStatusNeedsAttention {
 				continue
 			}
 			if remote.JobID != job.ID || remote.EnvironmentID != "0" {
@@ -594,7 +591,7 @@ func (s *Service) ReconcileLegacyCatalog(ctx context.Context, environmentID stri
 			if !errors.Is(err, runs.ErrRunNotFound) {
 				return err
 			}
-			_, err = s.runs.Submit(ctx, scheduler.Request{
+			_, err = s.runs.Submit(ctx, types.SchedulerRequest{
 				RunID:            remote.ID,
 				JobID:            job.ID,
 				EnvironmentID:    environmentID,
@@ -613,16 +610,16 @@ func (s *Service) ReconcileLegacyCatalog(ctx context.Context, environmentID stri
 }
 
 // ResolveRun settles a remote run that needs operator review.
-func (s *Service) ResolveRun(ctx context.Context, environmentID, jobID, runID, actor string) (scheduler.Run, error) {
+func (s *Service) ResolveRun(ctx context.Context, environmentID, jobID, runID, actor string) (types.SchedulerRun, error) {
 	local, localErr := s.runs.Get(ctx, environmentID, jobID, runID)
 	if localErr != nil && !errors.Is(localErr, runs.ErrRunNotFound) {
-		return scheduler.Run{}, localErr
+		return types.SchedulerRun{}, localErr
 	}
 	if localErr == nil {
-		if local.Status == scheduler.Canceled && local.Resolution != nil {
+		if local.Status == types.RunStatusCanceled && local.Resolution != nil {
 			return local, nil
 		}
-		if local.Status != scheduler.NeedsAttention {
+		if local.Status != types.RunStatusNeedsAttention {
 			return local, errors.New("only runs needing attention can be resolved")
 		}
 		if !local.RemoteDeliveryAttempted && !local.RemoteAccepted {
@@ -631,10 +628,10 @@ func (s *Service) ResolveRun(ctx context.Context, environmentID, jobID, runID, a
 	}
 	acknowledged, err := s.resolveAgentReview(ctx, environmentID, jobID, runID, actor)
 	if err != nil {
-		return scheduler.Run{}, err
+		return types.SchedulerRun{}, err
 	}
 	if localErr != nil {
-		return scheduler.Run{ //exhaustruct:enforce
+		return types.SchedulerRun{ //exhaustruct:enforce
 			ActivityEnvironmentID:   kit.Ternary(acknowledged.ActivityID != "", environmentID, acknowledged.ActivityEnvironmentID),
 			ActivityID:              acknowledged.ActivityID,
 			Resolution:              acknowledged.Resolution,
@@ -664,11 +661,11 @@ func (s *Service) ResolveRun(ctx context.Context, environmentID, jobID, runID, a
 			LastConfirmedAt:         acknowledged.LastConfirmedAt,
 		}, nil
 	}
-	if updateRunErr := s.runs.UpdateRun(ctx, local, func(current *scheduler.Run) error {
-		if current.Status != scheduler.NeedsAttention {
+	if updateRunErr := s.runs.UpdateRun(ctx, local, func(current *types.SchedulerRun) error {
+		if current.Status != types.RunStatusNeedsAttention {
 			return runs.ErrRunConflict
 		}
-		*current = scheduler.Run{ //exhaustruct:enforce
+		*current = types.SchedulerRun{ //exhaustruct:enforce
 			ActivityEnvironmentID:   current.ActivityEnvironmentID,
 			ActivityID:              current.ActivityID,
 			Resolution:              current.Resolution,
@@ -689,7 +686,7 @@ func (s *Service) ResolveRun(ctx context.Context, environmentID, jobID, runID, a
 			Outcome:                 current.Outcome,
 			Attempts:                current.Attempts,
 			RemoteDeliveryAttempted: current.RemoteDeliveryAttempted,
-			RemoteOutcome: &scheduler.Outcome{
+			RemoteOutcome: &types.SchedulerOutcome{
 				Status:     acknowledged.Status,
 				Message:    acknowledged.Outcome.Message,
 				ActivityID: acknowledged.Outcome.ActivityID,
@@ -705,57 +702,57 @@ func (s *Service) ResolveRun(ctx context.Context, environmentID, jobID, runID, a
 		}
 		return nil
 	}); updateRunErr != nil {
-		return scheduler.Run{}, updateRunErr
+		return types.SchedulerRun{}, updateRunErr
 	}
 	return s.runs.Resolve(ctx, environmentID, jobID, runID, acknowledged.Resolution.ResolvedBy)
 }
 
 // resolveAgentReview settles legacy inactive runs on their owning agent.
 // TODO(v3): remove the legacy resolution protocol.
-func (s *Service) resolveAgentReview(ctx context.Context, environmentID, jobID, runID, actor string) (scheduler.Run, error) {
+func (s *Service) resolveAgentReview(ctx context.Context, environmentID, jobID, runID, actor string) (types.SchedulerRun, error) {
 	env, err := s.environments.GetEnvironmentByID(ctx, environmentID)
 	if err != nil {
-		return scheduler.Run{}, err
+		return types.SchedulerRun{}, err
 	}
 	if !env.Enabled {
-		return scheduler.Run{}, errors.New("environment is disabled")
+		return types.SchedulerRun{}, errors.New("environment is disabled")
 	}
 	path := "/api/environments/0/jobs/" + url.PathEscape(jobID) + "/runs/" + url.PathEscape(runID)
-	var remote scheduler.Run
+	var remote types.SchedulerRun
 	// Read the owner on every request, including retries after a lost response.
 	if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, environmentID, http.MethodGet, path, nil, &remote); proxyJSONRequestErr != nil {
-		return scheduler.Run{}, proxyJSONRequestErr
+		return types.SchedulerRun{}, proxyJSONRequestErr
 	}
 	if remote.ID != runID || remote.JobID != jobID || remote.EnvironmentID != "0" {
-		return scheduler.Run{}, errors.New("agent returned an inconsistent run identity")
+		return types.SchedulerRun{}, errors.New("agent returned an inconsistent run identity")
 	}
-	if remote.Status == scheduler.NeedsAttention {
+	if remote.Status == types.RunStatusNeedsAttention {
 		body, marshalErr := json.Marshal(map[string]string{"resolvedBy": actor})
 		if marshalErr != nil {
-			return scheduler.Run{}, marshalErr
+			return types.SchedulerRun{}, marshalErr
 		}
 		if resolveRemoteJobErr := s.environments.ProxyJSONRequest(ctx, environmentID, http.MethodPost, path+"/resolve", body, &remote); resolveRemoteJobErr != nil {
-			return scheduler.Run{}, resolveRemoteJobErr
+			return types.SchedulerRun{}, resolveRemoteJobErr
 		}
-	} else if actor != user.SystemUser.Username && (remote.Status != scheduler.Canceled || remote.Resolution == nil) {
-		return scheduler.Run{}, errors.New("agent run must need attention before review resolution")
+	} else if actor != types.SystemUser.Username && (remote.Status != types.RunStatusCanceled || remote.Resolution == nil) {
+		return types.SchedulerRun{}, errors.New("agent run must need attention before review resolution")
 	}
 	if remote.ID != runID || remote.JobID != jobID || remote.EnvironmentID != "0" || !remote.Status.Terminal() ||
-		(actor != user.SystemUser.Username && (remote.Status != scheduler.Canceled || remote.Resolution == nil)) {
-		return scheduler.Run{}, errors.New("agent resolution was not confirmed")
+		(actor != types.SystemUser.Username && (remote.Status != types.RunStatusCanceled || remote.Resolution == nil)) {
+		return types.SchedulerRun{}, errors.New("agent resolution was not confirmed")
 	}
-	var acknowledged scheduler.Run
+	var acknowledged types.SchedulerRun
 	if acknowledgeRemoteResolutionErr := s.environments.ProxyJSONRequest(ctx, environmentID, http.MethodPost, path+"/ack", nil, &acknowledged); acknowledgeRemoteResolutionErr != nil {
-		return scheduler.Run{}, acknowledgeRemoteResolutionErr
+		return types.SchedulerRun{}, acknowledgeRemoteResolutionErr
 	}
 	if acknowledged.ID != runID || acknowledged.JobID != jobID || acknowledged.EnvironmentID != "0" || acknowledged.Status != remote.Status || !acknowledged.RemoteSettled ||
 		(remote.Resolution != nil && (acknowledged.Resolution == nil || acknowledged.Resolution.ResolvedBy != remote.Resolution.ResolvedBy)) {
-		return scheduler.Run{}, errors.New("agent resolution acknowledgement was not confirmed")
+		return types.SchedulerRun{}, errors.New("agent resolution acknowledgement was not confirmed")
 	}
 	return acknowledged, nil
 }
 
-func remoteJobEligible(jobs []jobschedule.JobStatus, id string) bool {
+func remoteJobEligible(jobs []types.JobStatus, id string) bool {
 	for _, job := range jobs {
 		if job.ID != id {
 			if remoteJobEligible(job.Children, id) {
@@ -764,17 +761,17 @@ func remoteJobEligible(jobs []jobschedule.JobStatus, id string) bool {
 			continue
 		}
 		return job.Enabled && job.CanRunManually && !job.ManagerOnly &&
-			!slices.ContainsFunc(job.Prerequisites, func(prerequisite jobschedule.JobPrerequisite) bool { return !prerequisite.IsMet })
+			!slices.ContainsFunc(job.Prerequisites, func(prerequisite types.JobPrerequisite) bool { return !prerequisite.IsMet })
 	}
 	return false
 }
 
-func remoteFailure(err error) (scheduler.Outcome, error) {
+func remoteFailure(err error) (types.SchedulerOutcome, error) {
 	var status *remenv.StatusError
 	rejected := errors.As(err, &status) && status.StatusCode >= 400 && status.StatusCode < 500 &&
 		status.StatusCode != http.StatusRequestTimeout && status.StatusCode != http.StatusTooManyRequests
 	if rejected {
-		return scheduler.Outcome{Status: scheduler.Failed, Message: "Remote agent rejected the request; check configuration and permissions"}, err
+		return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: "Remote agent rejected the request; check configuration and permissions"}, err
 	}
-	return scheduler.Outcome{Status: scheduler.Waiting, Message: "Waiting for environment"}, err
+	return types.SchedulerOutcome{Status: types.RunStatusWaiting, Message: "Waiting for environment"}, err
 }

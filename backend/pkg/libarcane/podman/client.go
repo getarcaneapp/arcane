@@ -12,7 +12,7 @@ import (
 	"net/url"
 	"strings"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/mod/semver"
 
@@ -28,7 +28,7 @@ type Client struct {
 
 type Runtime struct {
 	Client   *Client
-	Version  podmantypes.Version
+	Version  types.PodmanVersion
 	Rootless bool
 	Systemd  Systemd
 }
@@ -36,7 +36,7 @@ type Runtime struct {
 type Features struct {
 	QuadletsSupported    bool
 	QuadletAppsSupported bool
-	AutoUpdateMode       podmantypes.AutoUpdateMode
+	AutoUpdateMode       types.PodmanAutoUpdateMode
 }
 
 type request struct {
@@ -91,33 +91,33 @@ func DetectFeatures(version string, systemdAvailable bool) Features {
 	return Features{
 		QuadletsSupported:    semver.Compare(v, "v5.8.0") >= 0,
 		QuadletAppsSupported: semver.Compare(v, "v6.1.0") >= 0,
-		AutoUpdateMode: func() podmantypes.AutoUpdateMode {
+		AutoUpdateMode: func() types.PodmanAutoUpdateMode {
 			switch {
 			case semver.Compare(v, "v6.2.0") >= 0:
-				return podmantypes.AutoUpdateModeREST
+				return types.PodmanAutoUpdateModeREST
 			case systemdAvailable:
-				return podmantypes.AutoUpdateModeSystemd
+				return types.PodmanAutoUpdateModeSystemd
 			default:
-				return podmantypes.AutoUpdateModeUnavailable
+				return types.PodmanAutoUpdateModeUnavailable
 			}
 		}(),
 	}
 }
 
-func (c *Client) Version(ctx context.Context) (podmantypes.Version, error) {
-	return c.doJSON[podmantypes.Version](ctx, request{method: http.MethodGet, path: "/version"})
+func (c *Client) Version(ctx context.Context) (types.PodmanVersion, error) {
+	return c.doJSON[types.PodmanVersion](ctx, request{method: http.MethodGet, path: "/version"})
 }
 
-func (c *Client) Info(ctx context.Context) (podmantypes.Info, error) {
-	return c.doJSON[podmantypes.Info](ctx, request{method: http.MethodGet, path: "/info"})
+func (c *Client) Info(ctx context.Context) (types.PodmanInfo, error) {
+	return c.doJSON[types.PodmanInfo](ctx, request{method: http.MethodGet, path: "/info"})
 }
 
 type containerResponse struct {
-	podmantypes.Container
+	types.PodmanContainer
 	Ports []PodPortMapping `json:"Ports"`
 }
 
-func (c *Client) ContainerList(ctx context.Context, labels, pods []string) ([]podmantypes.Container, error) {
+func (c *Client) ContainerList(ctx context.Context, labels, pods []string) ([]types.PodmanContainer, error) {
 	query, err := filtersQuery(url.Values{"all": {"true"}}, map[string][]string{
 		"label": labels,
 		"pod":   pods,
@@ -135,13 +135,13 @@ func (c *Client) ContainerList(ctx context.Context, labels, pods []string) ([]po
 		return nil, err
 	}
 
-	containers := make([]podmantypes.Container, 0, len(raw))
+	containers := make([]types.PodmanContainer, 0, len(raw))
 	for _, item := range raw {
-		ports := make([]podmantypes.PodPortMapping, 0, len(item.Ports))
+		ports := make([]types.PodPortMapping, 0, len(item.Ports))
 		for _, port := range item.Ports {
-			ports = append(ports, podmantypes.PodPortMapping(port))
+			ports = append(ports, types.PodPortMapping(port))
 		}
-		containers = append(containers, podmantypes.Container{
+		containers = append(containers, types.PodmanContainer{
 			ID:        item.ID,
 			Names:     item.Names,
 			Image:     item.Image,

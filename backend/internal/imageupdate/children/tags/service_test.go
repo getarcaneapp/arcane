@@ -3,27 +3,27 @@ package tags
 import (
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/updater"
 )
 
 func TestContainerAggregationPreservesImageResult(t *testing.T) {
-	original := &imageupdate.Response{
+	original := &types.ImageUpdateResponse{
 		HasUpdate:      false,
 		UpdateType:     string(updater.UpdateTypeDigest),
 		CurrentVersion: "3.20.0",
 		LatestVersion:  "3.20.0",
 	}
-	results := map[string]*imageupdate.Response{"alpine:3.20.0": original}
-	scoped := &imageupdate.Response{
+	results := map[string]*types.ImageUpdateResponse{"alpine:3.20.0": original}
+	scoped := &types.ImageUpdateResponse{
 		ImageRef:       "docker.io/library/alpine:3.20.0",
 		HasUpdate:      true,
 		UpdateType:     string(updater.UpdateTypeTag),
 		CurrentVersion: "3.20.0",
 		LatestVersion:  "3.20.1",
 	}
-	attached := AttachContainerUpdates(results, map[string]*imageupdate.Response{"tagged": scoped})["alpine:3.20.0"]
+	attached := AttachContainerUpdates(results, map[string]*types.ImageUpdateResponse{"tagged": scoped})["alpine:3.20.0"]
 	require.True(t, attached.HasUpdate)
 	require.Equal(t, string(updater.UpdateTypeTag), attached.UpdateType)
 	require.Equal(t, "3.20.1", attached.LatestVersion)

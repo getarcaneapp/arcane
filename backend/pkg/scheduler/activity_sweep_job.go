@@ -4,7 +4,7 @@ import (
 	"context"
 	"log/slog"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 )
@@ -32,14 +32,14 @@ func (j *ActivitySweepJob) Schedule(_ context.Context) string {
 	return "0 */5 * * * *"
 }
 
-func (j *ActivitySweepJob) Run(ctx context.Context) (schedulertypes.Outcome, error) {
+func (j *ActivitySweepJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 	swept, err := j.activityService.FailAbandonedActivities(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "activity sweep failed", "jobName", ActivitySweepJobName, "swept", swept, "error", err)
-		return schedulertypes.Outcome{}, err
+		return types.SchedulerOutcome{}, err
 	}
 	if swept > 0 {
 		slog.InfoContext(ctx, "marked abandoned activities as failed", "jobName", ActivitySweepJobName, "count", swept)
 	}
-	return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
+	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 }

@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/upload"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
@@ -64,7 +64,7 @@ func RegisterUploads(api huma.API, service *UploadService) {
 		Description:  "Upload one chunk of an upload session; re-sending a chunk is idempotent",
 		Tags:         []string{"Uploads"},
 		Security:     handlerutil.DefaultOperationSecurity(),
-		MaxBodyBytes: upload.MaxChunkSize,
+		MaxBodyBytes: types.UploadMaxChunkSize,
 	}, h.UploadChunk)
 
 	huma.Register(api, huma.Operation{

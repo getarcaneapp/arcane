@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -59,12 +59,12 @@ func TestDetectFeatures(t *testing.T) {
 			name:             "podman 4 with systemd",
 			version:          "4.9.4",
 			systemdAvailable: true,
-			want:             Features{AutoUpdateMode: podmantypes.AutoUpdateModeSystemd},
+			want:             Features{AutoUpdateMode: types.PodmanAutoUpdateModeSystemd},
 		},
 		{
 			name:    "podman 5.7 without systemd",
 			version: "5.7.1",
-			want:    Features{AutoUpdateMode: podmantypes.AutoUpdateModeUnavailable},
+			want:    Features{AutoUpdateMode: types.PodmanAutoUpdateModeUnavailable},
 		},
 		{
 			name:             "podman 5.8",
@@ -72,7 +72,7 @@ func TestDetectFeatures(t *testing.T) {
 			systemdAvailable: true,
 			want: Features{
 				QuadletsSupported: true,
-				AutoUpdateMode:    podmantypes.AutoUpdateModeSystemd,
+				AutoUpdateMode:    types.PodmanAutoUpdateModeSystemd,
 			},
 		},
 		{
@@ -81,7 +81,7 @@ func TestDetectFeatures(t *testing.T) {
 			want: Features{
 				QuadletsSupported:    true,
 				QuadletAppsSupported: true,
-				AutoUpdateMode:       podmantypes.AutoUpdateModeUnavailable,
+				AutoUpdateMode:       types.PodmanAutoUpdateModeUnavailable,
 			},
 		},
 		{
@@ -90,14 +90,14 @@ func TestDetectFeatures(t *testing.T) {
 			want: Features{
 				QuadletsSupported:    true,
 				QuadletAppsSupported: true,
-				AutoUpdateMode:       podmantypes.AutoUpdateModeREST,
+				AutoUpdateMode:       types.PodmanAutoUpdateModeREST,
 			},
 		},
 		{
 			name:             "invalid version",
 			version:          "unknown",
 			systemdAvailable: true,
-			want:             Features{AutoUpdateMode: podmantypes.AutoUpdateModeSystemd},
+			want:             Features{AutoUpdateMode: types.PodmanAutoUpdateModeSystemd},
 		},
 	}
 
@@ -144,12 +144,12 @@ func TestClientContainerList(t *testing.T) {
 			`"Ports":[{"host_ip":"127.0.0.1","container_port":80,"host_port":8080,"range":1,"protocol":"tcp"}]}]`))
 	})
 
-	containers, err := client.ContainerList(t.Context(), []string{podmantypes.SystemdUnitLabel + "=web.service"}, nil)
+	containers, err := client.ContainerList(t.Context(), []string{types.PodmanSystemdUnitLabel + "=web.service"}, nil)
 	require.NoError(t, err)
 	require.Len(t, containers, 1)
 	assert.Equal(t, "abc", containers[0].ID)
-	assert.Equal(t, "web.service", containers[0].Labels[podmantypes.SystemdUnitLabel])
-	assert.Equal(t, []podmantypes.PodPortMapping{
+	assert.Equal(t, "web.service", containers[0].Labels[types.PodmanSystemdUnitLabel])
+	assert.Equal(t, []types.PodPortMapping{
 		{
 			ContainerPort: 80,
 			HostPort:      8080,

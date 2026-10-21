@@ -8,7 +8,7 @@ import (
 	"time"
 	"uuid"
 
-	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/actor"
 	kit "go.getarcane.app/kit/pkg"
 
@@ -21,7 +21,7 @@ type Admission struct {
 	service *actor.Service
 	epoch   string
 	mu      sync.Mutex
-	pending map[string]map[string]st.AdmissionCommand
+	pending map[string]map[string]types.SchedulerAdmissionCommand
 }
 type Lease struct {
 	admission *Admission
@@ -35,7 +35,7 @@ type admissionActor struct {
 }
 
 func NewAdmission(service *actor.Service, epoch string) *Admission {
-	return &Admission{service: service, epoch: epoch, pending: make(map[string]map[string]st.AdmissionCommand)}
+	return &Admission{service: service, epoch: epoch, pending: make(map[string]map[string]types.SchedulerAdmissionCommand)}
 }
 
 func (a *Admission) Register(runtime *francis.Runtime) error {
@@ -44,7 +44,7 @@ func (a *Admission) Register(runtime *francis.Runtime) error {
 	})
 }
 
-func (a *Admission) TryAcquire(ctx context.Context, key st.AdmissionKey) (*Lease, bool, error) {
+func (a *Admission) TryAcquire(ctx context.Context, key types.SchedulerAdmissionKey) (*Lease, bool, error) {
 	id := kit.SHA256Hex(key.Scope + "\x00" + key.ID)
 	token := uuid.New().String()
 	if err := ctx.Err(); err != nil {
@@ -56,14 +56,14 @@ func (a *Admission) TryAcquire(ctx context.Context, key st.AdmissionKey) (*Lease
 	// Finish admission after submission so cancellation cannot orphan a lease.
 	invokeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
-	envelope, err := a.service.Invoke(invokeCtx, admissionType, id, "acquire", st.AdmissionCommand{Epoch: a.epoch, Token: token})
+	envelope, err := a.service.Invoke(invokeCtx, admissionType, id, "acquire", types.SchedulerAdmissionCommand{Epoch: a.epoch, Token: token})
 	if err != nil {
-		a.release(ctx, id, st.AdmissionCommand{Epoch: a.epoch, Token: token})
+		a.release(ctx, id, types.SchedulerAdmissionCommand{Epoch: a.epoch, Token: token})
 		return nil, false, err
 	}
 	var acquired bool
 	if decodeErr := envelope.Decode(&acquired); decodeErr != nil {
-		a.release(ctx, id, st.AdmissionCommand{Epoch: a.epoch, Token: token})
+		a.release(ctx, id, types.SchedulerAdmissionCommand{Epoch: a.epoch, Token: token})
 		return nil, false, decodeErr
 	}
 	if !acquired {
@@ -72,7 +72,7 @@ func (a *Admission) TryAcquire(ctx context.Context, key st.AdmissionKey) (*Lease
 	return &Lease{admission: a, id: id, token: token}, true, nil
 }
 
-func (a *Admission) Acquire(ctx context.Context, key st.AdmissionKey) (*Lease, error) {
+func (a *Admission) Acquire(ctx context.Context, key types.SchedulerAdmissionKey) (*Lease, error) {
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -93,14 +93,14 @@ func (l *Lease) Release(ctx context.Context) {
 		return
 	}
 	l.once.Do(func() {
-		l.admission.release(ctx, l.id, st.AdmissionCommand{Epoch: l.admission.epoch, Token: l.token})
+		l.admission.release(ctx, l.id, types.SchedulerAdmissionCommand{Epoch: l.admission.epoch, Token: l.token})
 	})
 }
 
-func (a *Admission) release(ctx context.Context, id string, command st.AdmissionCommand) {
+func (a *Admission) release(ctx context.Context, id string, command types.SchedulerAdmissionCommand) {
 	a.mu.Lock()
 	if a.pending[id] == nil {
-		a.pending[id] = make(map[string]st.AdmissionCommand)
+		a.pending[id] = make(map[string]types.SchedulerAdmissionCommand)
 	}
 	a.pending[id][command.Token] = command
 	a.mu.Unlock()
@@ -113,7 +113,7 @@ func (a *Admission) release(ctx context.Context, id string, command st.Admission
 
 func (a *Admission) retryReleases(ctx context.Context, id string) error {
 	a.mu.Lock()
-	pending := make([]st.AdmissionCommand, 0, len(a.pending[id]))
+	pending := make([]types.SchedulerAdmissionCommand, 0, len(a.pending[id]))
 	for _, command := range a.pending[id] {
 		pending = append(pending, command)
 	}
@@ -133,12 +133,12 @@ func (a *Admission) retryReleases(ctx context.Context, id string) error {
 }
 
 func (a *admissionActor) Invoke(ctx context.Context, method string, data actor.Envelope) (any, error) {
-	var state st.AdmissionState
+	var state types.SchedulerAdmissionState
 	err := a.service.GetState(ctx, admissionType, a.id, &state)
 	if err != nil && !errors.Is(err, actor.ErrStateNotFound) {
 		return nil, err
 	}
-	var command st.AdmissionCommand
+	var command types.SchedulerAdmissionCommand
 	if decodeErr := data.Decode(&command); decodeErr != nil {
 		return nil, decodeErr
 	}
@@ -147,7 +147,7 @@ func (a *admissionActor) Invoke(ctx context.Context, method string, data actor.E
 		if state.Epoch == command.Epoch && state.Token != "" {
 			return false, nil
 		}
-		state = st.AdmissionState{Epoch: command.Epoch, Token: command.Token, AcquiredAt: time.Now().UTC()}
+		state = types.SchedulerAdmissionState{Epoch: command.Epoch, Token: command.Token, AcquiredAt: time.Now().UTC()}
 	case "release":
 		if state.Epoch != command.Epoch || state.Token != command.Token {
 			return false, nil

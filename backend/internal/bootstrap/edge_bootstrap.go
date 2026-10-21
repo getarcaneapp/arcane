@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	kit "go.getarcane.app/kit/pkg"
 	"go.uber.org/fx"
@@ -46,7 +46,7 @@ func registerEdgeTunnelRoutes(
 	}
 
 	eventCallback := func(ctx context.Context, envID string, evt *edge.TunnelEvent) error {
-		return handleEdgeEventInternal(ctx, envID, evt, eventService, notificationService)
+		return handleEdgeEvent(ctx, envID, evt, eventService, notificationService)
 	}
 
 	server := edge.NewTunnelServerWithRegistry(registry, resolver, statusCallback)
@@ -92,7 +92,7 @@ func registerEdgeTunnelRoutes(
 			EnvironmentID: &envIDCopy,
 			Metadata:      database.JSON{"remoteAddr": remoteAddr, "reenrollment": reenrolled},
 		})
-		createEdgeMTLSIssueEventsInternal(ctx, eventService, envIDCopy, envNameCopy, remoteAddr, certIssued, caGenerated, reenrolled)
+		createEdgeMTLSIssueEvents(ctx, eventService, envIDCopy, envNameCopy, remoteAddr, certIssued, caGenerated, reenrolled)
 	}
 	var stopCleanup func(context.Context) error
 	lifecycle.Append(fx.Hook{
@@ -126,7 +126,7 @@ func registerEdgeTunnelRoutes(
 	return server
 }
 
-func createEdgeMTLSIssueEventsInternal(ctx context.Context, eventService *event.EventService, envID, envName, remoteAddr string, certIssued, caGenerated, reenrolled bool) {
+func createEdgeMTLSIssueEvents(ctx context.Context, eventService *event.EventService, envID, envName, remoteAddr string, certIssued, caGenerated, reenrolled bool) {
 	if eventService == nil {
 		return
 	}
@@ -224,7 +224,7 @@ func createEdgeConnectionEvent(ctx context.Context, eventService *event.EventSer
 	return nil
 }
 
-func handleEdgeEventInternal(ctx context.Context, envID string, evt *edge.TunnelEvent, eventService *event.EventService, notificationService *notification.NotificationService) error {
+func handleEdgeEvent(ctx context.Context, envID string, evt *edge.TunnelEvent, eventService *event.EventService, notificationService *notification.NotificationService) error {
 	if evt == nil {
 		return errors.New("event payload is required")
 	}
@@ -233,7 +233,7 @@ func handleEdgeEventInternal(ctx context.Context, envID string, evt *edge.Tunnel
 		if notificationService == nil {
 			return errors.New("notification service is not available for edge dispatch")
 		}
-		var payload notificationdto.DispatchRequest
+		var payload types.NotificationDispatchRequest
 		if err := json.Unmarshal(evt.MetadataJSON, &payload); err != nil {
 			return fmt.Errorf("failed to decode edge notification dispatch payload: %w", err)
 		}

@@ -12,8 +12,9 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { volumeService } from '#lib/services/volume-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { VolumeCreateRequest, VolumeUsageCounts } from '#lib/types/docker.js';
+	import type { VolumeCreate, VolumeUsageCounts } from '#lib/types/docker.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { fetchAcrossEnvironments, hasShownPermission } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 
@@ -49,7 +50,7 @@
 
 	const createVolumeMutation = createMutation(() => ({
 		mutationKey: ['volumes', 'create', pageState.envId],
-		mutationFn: ({ options, requestedEnvId }: { options: VolumeCreateRequest; requestedEnvId: string }) =>
+		mutationFn: ({ options, requestedEnvId }: { options: VolumeCreate; requestedEnvId: string }) =>
 			volumeService.createVolume(options, requestedEnvId),
 		onSuccess: async (data, options) => {
 			const name = options.options.name?.trim() || m.common_unknown();
@@ -62,9 +63,11 @@
 				pageState.isCreateDialogOpen = false;
 			}
 		},
-		onError: (_error, options) => {
+		onError: (error, options) => {
 			const name = options.options.name?.trim() || m.common_unknown();
-			toast.error(m.common_create_failed({ resource: `${m.resource_volume()} "${name}"` }));
+			toast.error(m.common_create_failed({ resource: `${m.resource_volume()} "${name}"` }), {
+				description: extractApiErrorMessage(error)
+			});
 		}
 	}));
 
@@ -73,7 +76,7 @@
 		pageState.isCreateDialogOpen = false;
 	});
 
-	async function handleCreate(options: VolumeCreateRequest, environmentId: string) {
+	async function handleCreate(options: VolumeCreate, environmentId: string) {
 		await createVolumeMutation.mutateAsync({ options, requestedEnvId: environmentId });
 	}
 

@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"strings"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 )
 
-func (c *Client) KubePlay(ctx context.Context, req podmantypes.KubePlayRequest) (podmantypes.KubePlayReport, error) {
+func (c *Client) KubePlay(ctx context.Context, req types.KubePlayRequest) (types.KubePlayReport, error) {
 	query := url.Values{
 		"replace": {strconv.FormatBool(req.Replace)},
 		"network": req.Networks,
@@ -19,7 +19,7 @@ func (c *Client) KubePlay(ctx context.Context, req podmantypes.KubePlayRequest) 
 		query.Set("start", strconv.FormatBool(*req.Start))
 	}
 
-	return c.doJSON[podmantypes.KubePlayReport](ctx, request{
+	return c.doJSON[types.KubePlayReport](ctx, request{
 		method:      http.MethodPost,
 		path:        "/play/kube",
 		query:       query,
@@ -28,8 +28,8 @@ func (c *Client) KubePlay(ctx context.Context, req podmantypes.KubePlayRequest) 
 	})
 }
 
-func (c *Client) KubeDown(ctx context.Context, req podmantypes.KubeDownRequest) (podmantypes.KubeDownReport, error) {
-	return c.doJSON[podmantypes.KubeDownReport](ctx, request{
+func (c *Client) KubeDown(ctx context.Context, req types.KubeDownRequest) (types.KubeDownReport, error) {
+	return c.doJSON[types.KubeDownReport](ctx, request{
 		method:      http.MethodDelete,
 		path:        "/play/kube",
 		query:       url.Values{"force": {strconv.FormatBool(req.Force)}},
@@ -38,7 +38,7 @@ func (c *Client) KubeDown(ctx context.Context, req podmantypes.KubeDownRequest) 
 	})
 }
 
-func (c *Client) KubeGenerate(ctx context.Context, req podmantypes.KubeGenerateRequest) (string, error) {
+func (c *Client) KubeGenerate(ctx context.Context, req types.KubeGenerateRequest) (string, error) {
 	query := url.Values{
 		"names":   req.Names,
 		"service": {strconv.FormatBool(req.Service)},

@@ -3,14 +3,14 @@
 	import { ShieldAlertIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { CreateRole, PermissionsManifest, Role, UpdateRole } from '#lib/types/auth.js';
+	import type { PermissionsManifest, Role, RoleWritable } from '#lib/types/auth.js';
 
 	type Props = {
 		title: string;
 		role: Role | null;
 		manifest: PermissionsManifest;
 		isLoading?: boolean;
-		onSubmit: (payload: CreateRole | UpdateRole) => void | Promise<void>;
+		onSubmit: (payload: Pick<Role, RoleWritable>) => void | Promise<void>;
 		onClone?: () => void | Promise<void>;
 	};
 

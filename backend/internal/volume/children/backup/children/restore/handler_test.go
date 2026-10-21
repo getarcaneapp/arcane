@@ -6,8 +6,7 @@ import (
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
-	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -17,12 +16,12 @@ import (
 func TestUploadAndRestoreReturnsNotFoundForUnknownSession(t *testing.T) {
 	h := &Handler{service: &Service{}, uploadService: upload.NewUploadService(nil)}
 
-	ctx := context.WithValue(t.Context(), user.CurrentUserContextKey{}, &user.Actor{ID: "u-1"})
+	ctx := context.WithValue(t.Context(), types.CurrentUserContextKey{}, &types.Actor{ID: "u-1"})
 
 	_, err := h.UploadAndRestore(ctx, &UploadAndRestoreInput{
 		EnvironmentID: "0",
 		VolumeName:    "vol-1",
-		Body:          uploadtypes.ConsumeRequest{UploadID: "missing"},
+		Body:          types.UploadConsumeRequest{UploadID: "missing"},
 	})
 
 	require.Error(t, err)

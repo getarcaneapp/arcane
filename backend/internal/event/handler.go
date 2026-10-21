@@ -4,8 +4,7 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/event"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
@@ -44,7 +43,7 @@ type DeleteEventInput struct {
 }
 
 // ListEvents returns a paginated list of events.
-func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (*handlerutil.Page[event.Event], error) {
+func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (*handlerutil.Page[types.Event], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	if input.Severity != "" {
@@ -59,8 +58,8 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 		return nil, huma.Error500InternalServerError("Failed to list events: " + err.Error())
 	}
 
-	return &handlerutil.Page[event.Event]{
-		Body: base.Paginated[event.Event]{
+	return &handlerutil.Page[types.Event]{
+		Body: types.Paginated[types.Event]{
 			Success:    true,
 			Data:       events,
 			Pagination: handlerutil.PaginationResponse(paginationResp),
@@ -69,14 +68,14 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 }
 
 // GetEventStats returns global event counts grouped by severity.
-func (h *EventHandler) GetEventStats(ctx context.Context, _ *GetEventStatsInput) (*handlerutil.Out[event.SeverityCounts], error) {
+func (h *EventHandler) GetEventStats(ctx context.Context, _ *GetEventStatsInput) (*handlerutil.Out[types.EventSeverityCounts], error) {
 	counts, err := h.eventService.GetEventSeverityCounts(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to load event statistics: " + err.Error())
 	}
 
-	return &handlerutil.Out[event.SeverityCounts]{
-		Body: base.ApiResponse[event.SeverityCounts]{
+	return &handlerutil.Out[types.EventSeverityCounts]{
+		Body: types.ApiResponse[types.EventSeverityCounts]{
 			Success: true,
 			Data:    counts,
 		},
@@ -84,7 +83,7 @@ func (h *EventHandler) GetEventStats(ctx context.Context, _ *GetEventStatsInput)
 }
 
 // GetEventsByEnvironment returns events for a specific environment.
-func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEventsByEnvironmentInput) (*handlerutil.Page[event.Event], error) {
+func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEventsByEnvironmentInput) (*handlerutil.Page[types.Event], error) {
 	if input.EnvironmentID == "" {
 		return nil, huma.Error400BadRequest("Environment ID is required")
 	}
@@ -103,8 +102,8 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 		return nil, huma.Error500InternalServerError("Failed to list events: " + err.Error())
 	}
 
-	return &handlerutil.Page[event.Event]{
-		Body: base.Paginated[event.Event]{
+	return &handlerutil.Page[types.Event]{
+		Body: types.Paginated[types.Event]{
 			Success:    true,
 			Data:       events,
 			Pagination: handlerutil.PaginationResponse(paginationResp),
@@ -113,7 +112,7 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 }
 
 // DeleteEvent deletes an event.
-func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput) (*handlerutil.Out[types.MessageResponse], error) {
 	if input.EventID == "" {
 		return nil, huma.Error400BadRequest("Event ID is required")
 	}

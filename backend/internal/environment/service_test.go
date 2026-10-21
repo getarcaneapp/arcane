@@ -16,11 +16,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
-	"github.com/getarcaneapp/arcane/types/v2/environment"
-	"github.com/getarcaneapp/arcane/types/v2/gitops"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,7 +44,7 @@ import (
 )
 
 type environmentTestScheduler struct {
-	submitted []scheduler.Request
+	submitted []types.SchedulerRequest
 	added     []string
 	removed   []string
 }
@@ -99,7 +95,7 @@ func (testGlobalVariableEnvironmentRow) TableName() string { return "global_vari
 func TestEnvironmentService_OverlappingHealthCheckIsSkipped(t *testing.T) {
 	gate := newAdmissionGateForEnvironmentTest(t)
 
-	key := scheduler.AdmissionKey{Scope: environmentHealthAdmissionScope, ID: "environment-id"}
+	key := types.SchedulerAdmissionKey{Scope: environmentHealthAdmissionScope, ID: "environment-id"}
 	lease, admitted, err := gate.TryAcquire(t.Context(), key)
 	require.NoError(t, err)
 	require.True(t, admitted)
@@ -108,11 +104,11 @@ func TestEnvironmentService_OverlappingHealthCheckIsSkipped(t *testing.T) {
 	require.NoError(t, service.SetScheduler(t.Context(), &environmentTestScheduler{}, gate))
 	outcome, runErr := service.runHealthCheck(t.Context(), "environment-id")
 	require.NoError(t, runErr)
-	require.Equal(t, scheduler.Skipped, outcome.Status)
+	require.Equal(t, types.RunStatusSkipped, outcome.Status)
 	lease.Release(t.Context())
 }
 
-func (s *environmentTestScheduler) AddJob(_ context.Context, job scheduler.Job) error {
+func (s *environmentTestScheduler) AddJob(_ context.Context, job types.SchedulerJob) error {
 	s.added = append(s.added, job.Name())
 	return nil
 }
@@ -433,7 +429,7 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SyncsEligibleRemo
 			return
 		}
 
-		var syncReq containerregistry.SyncRequest
+		var syncReq types.ContainerRegistrySyncRequest
 		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq)) {
 			return
 		}
@@ -463,7 +459,7 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SyncsEligibleRemo
 			return
 		}
 
-		var syncReq containerregistry.SyncRequest
+		var syncReq types.ContainerRegistrySyncRequest
 		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq)) {
 			return
 		}
@@ -502,7 +498,7 @@ func TestEnvironmentService_SyncRegistriesToEnvironment_IncludesECRFields(t *tes
 			return
 		}
 
-		var syncReq containerregistry.SyncRequest
+		var syncReq types.ContainerRegistrySyncRequest
 		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq)) {
 			return
 		}
@@ -579,7 +575,7 @@ func TestEnvironmentService_SyncS3DestinationsToEnvironment(t *testing.T) {
 			return
 		}
 
-		var syncReq backup.S3DestinationSyncRequest
+		var syncReq types.S3DestinationSyncRequest
 		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq)) {
 			return
 		}
@@ -637,7 +633,7 @@ func TestEnvironmentService_SyncRepositoriesToEnvironment_UsesAgentHeaders(t *te
 			return
 		}
 
-		var syncReq gitops.RepositorySyncRequest
+		var syncReq types.GitRepositorySyncRequest
 		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq)) {
 			return
 		}
@@ -1473,7 +1469,7 @@ func TestEnvironmentService_ListEnvironmentsPaginated_FiltersByRuntimeType(t *te
 	}
 }
 
-func environmentIDs(environments []environment.Environment) []string {
+func environmentIDs(environments []types.Environment) []string {
 	ids := make([]string, 0, len(environments))
 	for _, env := range environments {
 		ids = append(ids, env.ID)
@@ -1617,13 +1613,13 @@ func TestEnvironmentService_ExecuteRemoteRequest_RejectsInvalidEnvironmentURL(t 
 	require.Contains(t, err.Error(), "invalid environment API URL")
 }
 
-func (s *environmentTestScheduler) Submit(_ context.Context, request scheduler.Request) (scheduler.Run, error) {
+func (s *environmentTestScheduler) Submit(_ context.Context, request types.SchedulerRequest) (types.SchedulerRun, error) {
 	s.submitted = append(s.submitted, request)
-	return scheduler.Run{
+	return types.SchedulerRun{
 		ID:            request.RunID,
 		JobID:         request.JobID,
 		EnvironmentID: request.EnvironmentID,
-		Status:        scheduler.Queued,
+		Status:        types.RunStatusQueued,
 	}, nil
 }
 
@@ -1709,7 +1705,7 @@ func TestSyncRepositoriesPreservesEmptyCredentials(t *testing.T) {
 		AuthType: "none",
 	}).Error)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var payload gitops.RepositorySyncRequest
+		var payload types.GitRepositorySyncRequest
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Error(err)
 			w.WriteHeader(http.StatusBadRequest)

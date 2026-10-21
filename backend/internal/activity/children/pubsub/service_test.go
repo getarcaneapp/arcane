@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/activity"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +19,7 @@ func TestSubscribeMarksMissedEventsWhenBufferFull(t *testing.T) {
 	// handler resends a snapshot.
 	total := cap(events) + subscriberMessageQueueLimit + 50
 	for range total {
-		service.publish("0", activity.StreamEvent{Type: "message"})
+		service.publish("0", types.ActivityStreamEvent{Type: "message"})
 	}
 	require.True(t, missedEvents())
 	require.False(t, missedEvents())
@@ -34,10 +34,10 @@ func TestSubscriberCoalescesProgressEvents(t *testing.T) {
 	const updates = 500
 	for i := 1; i <= updates; i++ {
 		progress := i * 100 / updates
-		service.PublishActivity(activity.Activity{
+		service.PublishActivity(types.Activity{
 			ID:            "act-1",
 			EnvironmentID: "0",
-			Status:        activity.StatusRunning,
+			Status:        types.ActivityStatusRunning,
 			Progress:      &progress,
 		})
 	}
@@ -69,14 +69,14 @@ func TestSubscriberCoalescesProgressEvents(t *testing.T) {
 func TestDropsStaleSnapshotAfterTerminalPublish(t *testing.T) {
 	service := NewService()
 
-	stale := activity.Activity{
+	stale := types.Activity{
 		ID:            "act-1",
 		EnvironmentID: "0",
-		Type:          activity.TypeImagePull,
-		Status:        activity.StatusRunning,
+		Type:          types.ActivityTypeImagePull,
+		Status:        types.ActivityStatusRunning,
 	}
 	completed := stale
-	completed.Status = activity.StatusSuccess
+	completed.Status = types.ActivityStatusSuccess
 
 	events, _, unsubscribe := service.Subscribe("0")
 	defer unsubscribe()
@@ -85,7 +85,7 @@ func TestDropsStaleSnapshotAfterTerminalPublish(t *testing.T) {
 	select {
 	case event := <-events:
 		require.Equal(t, "activity", event.Type)
-		require.Equal(t, activity.StatusSuccess, event.Activity.Status)
+		require.Equal(t, types.ActivityStatusSuccess, event.Activity.Status)
 	case <-time.After(5 * time.Second):
 		require.FailNow(t, "terminal snapshot was not published")
 	}

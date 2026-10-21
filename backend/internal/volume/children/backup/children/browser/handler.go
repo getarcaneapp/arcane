@@ -5,8 +5,7 @@ import (
 	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
@@ -55,7 +54,7 @@ func (h *Handler) BackupHasPath(ctx context.Context, input *BackupHasPathInput) 
 	}
 
 	return &handlerutil.Out[BackupHasPathResponse]{
-		Body: base.ApiResponse[BackupHasPathResponse]{
+		Body: types.ApiResponse[BackupHasPathResponse]{
 			Success: true,
 			Data:    BackupHasPathResponse{Exists: exists},
 		},
@@ -69,14 +68,14 @@ func (h *Handler) ListBackupFiles(ctx context.Context, input *ListBackupFilesInp
 	}
 
 	return &handlerutil.Out[[]string]{
-		Body: base.ApiResponse[[]string]{
+		Body: types.ApiResponse[[]string]{
 			Success: true,
 			Data:    files,
 		},
 	}, nil
 }
 
-func (h *Handler) BrowseBackupFiles(ctx context.Context, input *BrowseBackupFilesInput) (*handlerutil.Page[backup.BackupFileEntry], error) {
+func (h *Handler) BrowseBackupFiles(ctx context.Context, input *BrowseBackupFilesInput) (*handlerutil.Page[types.BackupFileEntry], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, "", "", input.Search)
 	items, page, err := h.service.BrowseBackupFiles(ctx, input.BackupID, input.Path, params)
 	if errors.Is(err, common.ErrBadRequest) {
@@ -85,7 +84,7 @@ func (h *Handler) BrowseBackupFiles(ctx context.Context, input *BrowseBackupFile
 	if err != nil {
 		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
-	return &handlerutil.Page[backup.BackupFileEntry]{Body: base.Paginated[backup.BackupFileEntry]{
+	return &handlerutil.Page[types.BackupFileEntry]{Body: types.Paginated[types.BackupFileEntry]{
 		Success: true, Data: items, Pagination: handlerutil.PaginationResponse(page),
 	}}, nil
 }

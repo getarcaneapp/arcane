@@ -10,8 +10,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/user"
-	"github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -29,7 +28,7 @@ func newTestEnvironmentMiddleware() *EnvironmentMiddleware {
 			_ = ctx
 			return "edge://oracle-1", nil, true, nil
 		},
-		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *user.Actor, bool) {
+		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
 			_ = ctx
 			_ = c
 			return authz.SudoPermissionSet(), nil, true
@@ -252,7 +251,7 @@ func TestEnvironmentMiddleware_LocalEnvironmentSkipsProxyPermissionCheck(t *test
 		localID:   "0",
 		paramName: "id",
 		matcher:   matcher,
-		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *user.Actor, bool) {
+		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
 			_ = ctx
 			_ = c
 			return authz.NewPermissionSet(), nil, true
@@ -349,9 +348,9 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 					_, _ = ctx, id
 					return backend.URL, nil, true, nil
 				},
-				authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *user.Actor, bool) {
+				authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
 					_, _ = ctx, c
-					u := &user.Actor{}
+					u := &types.Actor{}
 					u.ID = tt.userID
 					u.Username = tt.userName
 					u.Preferences.IconCatalog = tt.catalog
@@ -495,7 +494,7 @@ func TestProxyPermissionDeniedAllowsPublicRoute(t *testing.T) {
 		"expected an explicitly public route to be allowed for any authenticated caller")
 }
 
-func newProxyVolumeWorkspaceContext(t *testing.T, changes []volume.WorkspaceFileChange, fileFirst ...bool) (*echo.Context, []byte) {
+func newProxyVolumeWorkspaceContext(t *testing.T, changes []types.VolumeWorkspaceFileChange, fileFirst ...bool) (*echo.Context, []byte) {
 	t.Helper()
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -507,7 +506,7 @@ func newProxyVolumeWorkspaceContext(t *testing.T, changes []volume.WorkspaceFile
 	}
 	manifestPart, err := writer.CreateFormField("manifest")
 	require.NoError(t, err)
-	manifestJSON, err := json.Marshal(volume.WorkspaceUpdateManifest{FileTreeRevision: "revision", FileChanges: changes})
+	manifestJSON, err := json.Marshal(types.VolumeWorkspaceUpdateManifest{FileTreeRevision: "revision", FileChanges: changes})
 	require.NoError(t, err)
 	_, err = manifestPart.Write(manifestJSON)
 	require.NoError(t, err)
@@ -525,7 +524,7 @@ func TestProxyPermissionDeniedChecksVolumeWorkspaceManifestPermissions(t *testin
 	matcher := authz.NewPermissionMatcher()
 	matcher.Add(http.MethodPut, "/volumes/{volumeName}/workspace", authz.PermVolumesRead)
 	m := newProxyAuthzMiddleware(matcher)
-	changes := []volume.WorkspaceFileChange{{Operation: volume.FileOpRename}}
+	changes := []types.VolumeWorkspaceFileChange{{Operation: types.FileOpRename}}
 
 	readOnly := authz.NewPermissionSet()
 	readOnly.AddEnv(proxyTestEnvID, authz.PermVolumesRead)

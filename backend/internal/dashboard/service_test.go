@@ -11,9 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/dashboard"
-	"github.com/getarcaneapp/arcane/types/v2/user"
-	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockerimage "github.com/moby/moby/api/types/image"
@@ -242,15 +240,15 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 	require.Equal(t, 1, snapshot.ImageUsageCounts.Unused)
 	require.Equal(t, 3, snapshot.ImageUsageCounts.Total)
 	require.EqualValues(t, 525, snapshot.ImageUsageCounts.TotalSize)
-	require.Equal(t, dashboard.SnapshotSettings{}, snapshot.Settings)
+	require.Equal(t, types.DashboardSnapshotSettings{}, snapshot.Settings)
 
 	require.NotNil(t, snapshot.VolumeUsageCounts)
-	require.Equal(t, volumetypes.UsageCounts{Inuse: 1, Unused: 1, Total: 2}, *snapshot.VolumeUsageCounts)
+	require.Equal(t, types.VolumeUsageCounts{Inuse: 1, Unused: 1, Total: 2}, *snapshot.VolumeUsageCounts)
 
-	require.ElementsMatch(t, []dashboard.ActionItem{
-		{Kind: dashboard.ActionItemKindStoppedContainers, Count: 1, Severity: dashboard.ActionItemSeverityWarning},
-		{Kind: dashboard.ActionItemKindImageUpdates, Count: 3, Severity: dashboard.ActionItemSeverityWarning},
-		{Kind: dashboard.ActionItemKindExpiringKeys, Count: 1, Severity: dashboard.ActionItemSeverityWarning},
+	require.ElementsMatch(t, []types.DashboardActionItem{
+		{Kind: types.DashboardActionItemKindStoppedContainers, Count: 1, Severity: types.DashboardActionItemSeverityWarning},
+		{Kind: types.DashboardActionItemKindImageUpdates, Count: 3, Severity: types.DashboardActionItemSeverityWarning},
+		{Kind: types.DashboardActionItemKindExpiringKeys, Count: 1, Severity: types.DashboardActionItemSeverityWarning},
 	}, snapshot.ActionItems.Items, "the excluded stopped container, the moving-tag container, and the project each count once")
 }
 
@@ -422,8 +420,8 @@ func TestDashboardService_GetSnapshot_CachesFullSnapshotsPerIconCatalog(t *testi
 
 	// A user preferring another catalog must not be served the default-catalog
 	// snapshot from the cache.
-	dashboardIconsUser := &user.Actor{Preferences: user.Preferences{IconCatalog: new("dashboard-icons")}}
-	userCtx := context.WithValue(t.Context(), user.CurrentUserContextKey{}, dashboardIconsUser)
+	dashboardIconsUser := &types.Actor{Preferences: types.UserPreferences{IconCatalog: new("dashboard-icons")}}
+	userCtx := context.WithValue(t.Context(), types.CurrentUserContextKey{}, dashboardIconsUser)
 	userSnapshot, err := svc.GetSnapshot(userCtx, DashboardActionItemsOptions{}, true)
 	require.NoError(t, err)
 	require.NotSame(t, defaultSnapshot, userSnapshot)

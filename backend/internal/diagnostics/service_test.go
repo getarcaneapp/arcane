@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -72,7 +72,7 @@ func TestDiagnosticsServiceScanGoroutineLeaksReturnsCachedReport(t *testing.T) {
 }
 
 func TestDiagnosticsServiceScanGoroutineLeaksDetectsLeak(t *testing.T) {
-	leakUnbufferedChannelInternal()
+	leakUnbufferedChannel()
 
 	deadline := time.Now().Add(5 * time.Second)
 	var reportCount int
@@ -82,7 +82,7 @@ func TestDiagnosticsServiceScanGoroutineLeaksDetectsLeak(t *testing.T) {
 		require.NoError(t, err)
 		reportCount = report.Count
 		reportProfile = report.Profile
-		if report.Count >= 1 && strings.Contains(report.Profile, "blockForeverOnDroppedChannelInternal") {
+		if report.Count >= 1 && strings.Contains(report.Profile, "blockForeverOnDroppedChannel") {
 			return
 		}
 		if time.Now().After(deadline) {
@@ -95,17 +95,17 @@ func TestDiagnosticsServiceScanGoroutineLeaksDetectsLeak(t *testing.T) {
 		reportCount, reportProfile)
 }
 
-// leakUnbufferedChannelInternal starts a goroutine blocked on a channel that
+// leakUnbufferedChannel starts a goroutine blocked on a channel that
 // becomes unreachable, which the runtime classifies as a leak.
-func leakUnbufferedChannelInternal() {
-	go blockForeverOnDroppedChannelInternal()
+func leakUnbufferedChannel() {
+	go blockForeverOnDroppedChannel()
 	for range 10 {
 		runtime.Gosched()
 	}
 }
 
 //go:noinline
-func blockForeverOnDroppedChannelInternal() {
+func blockForeverOnDroppedChannel() {
 	<-make(chan struct{})
 }
 
@@ -123,7 +123,7 @@ func TestDiagnosticsServiceGoroutines(t *testing.T) {
 	require.EventuallyWithT(t, func(c *assert.CollectT) {
 		profile, err := s.Goroutines()
 		require.NoError(c, err)
-		assert.True(c, slices.IsSortedFunc(profile.Groups, func(a, b system.GoroutineGroup) int { return b.Count - a.Count }))
+		assert.True(c, slices.IsSortedFunc(profile.Groups, func(a, b types.GoroutineGroup) int { return b.Count - a.Count }))
 		assert.Equal(c, profile.Total, func() int {
 			total := 0
 			for _, g := range profile.Groups {
@@ -132,7 +132,7 @@ func TestDiagnosticsServiceGoroutines(t *testing.T) {
 			return total
 		}())
 		// The label is the outermost frame, the started func; the blocking closure and pprof.Do sit inside it.
-		i := slices.IndexFunc(profile.Groups, func(g system.GoroutineGroup) bool {
+		i := slices.IndexFunc(profile.Groups, func(g types.GoroutineGroup) bool {
 			return strings.HasSuffix(g.Label, "TestDiagnosticsServiceGoroutines.func1")
 		})
 		require.GreaterOrEqual(c, i, 0)
@@ -140,6 +140,6 @@ func TestDiagnosticsServiceGoroutines(t *testing.T) {
 		assert.Equal(c, 3, group.Count)
 		require.Len(c, group.Frames, 3)
 		assert.Equal(c, "runtime/pprof.Do", group.Frames[1].Function)
-		assert.False(c, slices.ContainsFunc(group.Frames, func(f system.GoroutineFrame) bool { return f.File == "" || f.Line <= 0 }))
+		assert.False(c, slices.ContainsFunc(group.Frames, func(f types.GoroutineFrame) bool { return f.File == "" || f.Line <= 0 }))
 	}, 5*time.Second, 20*time.Millisecond)
 }

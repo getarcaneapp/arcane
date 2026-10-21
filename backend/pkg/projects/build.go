@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/builds/pkg/contextsource"
 	buildtypes "go.getarcane.app/builds/types"
 	kit "go.getarcane.app/kit/pkg"
@@ -144,7 +144,7 @@ func SanitizeImageComponent(value string) string {
 	}, value)
 }
 
-func resolveEffectiveBuildProviderInternal(override, defaultProvider string) string {
+func resolveEffectiveBuildProvider(override, defaultProvider string) string {
 	provider := strings.ToLower(strings.TrimSpace(override))
 	if provider != "" {
 		return provider
@@ -161,14 +161,14 @@ func PrepareServiceBuildRequest(
 	project *composetypes.Project,
 	serviceName string,
 	svc composetypes.ServiceConfig,
-	options projecttypes.BuildOptions,
+	options types.ProjectBuildOptions,
 	defaultProvider string,
 ) (buildtypes.BuildRequest, composetypes.ServiceConfig, bool, error) {
 	if project == nil || svc.Build == nil {
 		return buildtypes.BuildRequest{}, svc, false, errors.New("compose project and service build configuration are required")
 	}
 	imageName, updatedSvc, updated := EnsureServiceImage(projectID, project.Name, serviceName, svc)
-	effectiveProvider := resolveEffectiveBuildProviderInternal(options.Provider, defaultProvider)
+	effectiveProvider := resolveEffectiveBuildProvider(options.Provider, defaultProvider)
 
 	if updated && effectiveProvider == "depot" {
 		return buildtypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s must define an image when using depot build provider", serviceName)

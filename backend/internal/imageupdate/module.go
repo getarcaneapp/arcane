@@ -8,7 +8,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/image"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -21,11 +21,11 @@ import (
 
 type Module struct {
 	service                  *ImageUpdateService
-	getUpdateInfoByImageRefs func(context.Context, []string) (map[string]*image.UpdateInfo, error)
+	getUpdateInfoByImageRefs func(context.Context, []string) (map[string]*types.ImageUpdateInfo, error)
 }
 
 // New wires image update routes and registers the arcane.image.updates gauges once.
-func New(service *ImageUpdateService, getUpdateInfo func(context.Context, []string) (map[string]*image.UpdateInfo, error)) *Module {
+func New(service *ImageUpdateService, getUpdateInfo func(context.Context, []string) (map[string]*types.ImageUpdateInfo, error)) *Module {
 	if service != nil {
 		meter := otel.Meter(tracing.InstrumentationName)
 		updates, updatesErr := meter.Int64ObservableGauge("arcane.image.updates",
@@ -72,7 +72,7 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 func RegisterImageUpdates(
 	api huma.API,
 	imageUpdateSvc *ImageUpdateService,
-	getUpdateInfoByImageRefs func(context.Context, []string) (map[string]*image.UpdateInfo, error),
+	getUpdateInfoByImageRefs func(context.Context, []string) (map[string]*types.ImageUpdateInfo, error),
 	appCtx handlerutil.ActivityAppContext,
 ) {
 	h := &ImageUpdateHandler{

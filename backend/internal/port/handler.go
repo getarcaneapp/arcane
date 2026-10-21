@@ -4,8 +4,7 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/port"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
@@ -24,7 +23,7 @@ type ListPortsInput struct {
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 }
 
-func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*handlerutil.Page[port.PortMapping], error) {
+func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*handlerutil.Page[types.PortMapping], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
@@ -32,7 +31,7 @@ func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*ha
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to list ports: " + err.Error())
 		}
-		return &handlerutil.Page[port.PortMapping]{Body: body}, nil
+		return &handlerutil.Page[types.PortMapping]{Body: body}, nil
 	}
 
 	items, paginationResp, err := h.portService.ListPortsPaginated(ctx, params)
@@ -40,8 +39,8 @@ func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*ha
 		return nil, huma.Error500InternalServerError("failed to list ports: " + err.Error())
 	}
 
-	return &handlerutil.Page[port.PortMapping]{
-		Body: base.Paginated[port.PortMapping]{
+	return &handlerutil.Page[types.PortMapping]{
+		Body: types.Paginated[types.PortMapping]{
 			Success:    true,
 			Data:       items,
 			Pagination: handlerutil.PaginationResponse(paginationResp),

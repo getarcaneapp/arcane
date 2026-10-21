@@ -2,6 +2,7 @@ package gitops
 
 import (
 	"errors"
+	"slices"
 	"strings"
 
 	"go.getarcane.app/kit/pkg"
@@ -28,4 +29,17 @@ func validateSyncLimits(maxFiles *int, maxTotalSize, maxBinarySize *int64) error
 		return errors.New("maxSyncBinarySize must be non-negative")
 	}
 	return nil
+}
+
+func hasPreDeployConfig(submitted map[string]bool) bool {
+	return slices.ContainsFunc([]string{
+		"preDeployScriptPath",
+		"preDeployRunnerImage",
+		"preDeployEnv",
+		"preDeployExtraMounts",
+		"preDeployTimeoutSec",
+		"preDeployNetworkMode",
+	}, func(field string) bool {
+		return submitted[field]
+	})
 }

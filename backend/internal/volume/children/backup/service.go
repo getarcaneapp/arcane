@@ -15,11 +15,7 @@ import (
 	"time"
 	"uuid"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
-	"github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/builtin/workflow"
 	"github.com/moby/moby/api/types/container"
@@ -52,14 +48,14 @@ import (
 
 // Store persists volume backup records for this feature.
 type Store struct {
-	Create            func(ctx context.Context, entry *volume.Backup) error
-	Save              func(ctx context.Context, entry *volume.Backup) error
+	Create            func(ctx context.Context, entry *types.VolumeBackup) error
+	Save              func(ctx context.Context, entry *types.VolumeBackup) error
 	Fail              func(ctx context.Context, backupID, message string) error
 	Delete            func(ctx context.Context, backupID string) error
-	Run               func(ctx context.Context, backupID string) (*volume.Backup, error)
-	Runs              func(ctx context.Context, backupIDs []string) ([]*volume.Backup, error)
-	Latest            func(ctx context.Context, policyID string) (*volume.Backup, error)
-	List              func(ctx context.Context, volumeName string, params pagination.QueryParams) ([]volume.Backup, int64, error)
+	Run               func(ctx context.Context, backupID string) (*types.VolumeBackup, error)
+	Runs              func(ctx context.Context, backupIDs []string) ([]*types.VolumeBackup, error)
+	Latest            func(ctx context.Context, policyID string) (*types.VolumeBackup, error)
+	List              func(ctx context.Context, volumeName string, params pagination.QueryParams) ([]types.VolumeBackup, int64, error)
 	RemoteSnapshotIDs func(ctx context.Context, destinationID string) ([]string, error)
 	CountLocal        func(ctx context.Context) (int64, error)
 }
@@ -76,8 +72,8 @@ type Dependencies struct {
 	RecoveryKeys     *backup.RecoveryKeyStore
 	Locks            *utils.KeyedMutex
 	AlreadyRunning   error
-	StopContainer    func(ctx context.Context, containerID string, user usertypes.Actor) error
-	StartContainer   func(ctx context.Context, containerID string, user usertypes.Actor) error
+	StopContainer    func(ctx context.Context, containerID string, user types.Actor) error
+	StartContainer   func(ctx context.Context, containerID string, user types.Actor) error
 	HelperImage      func(ctx context.Context) (string, error)
 	AcquireHelper    func(ctx context.Context, volumeName string) (string, func(), error)
 	Exec             func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
@@ -110,7 +106,7 @@ type backupPlan struct {
 type manualBackupInput struct {
 	Checkpoint backupPlan            `json:"checkpoint"`
 	VolumeName string                `json:"volumeName"`
-	Requester  backuptypes.Requester `json:"requester"`
+	Requester  types.BackupRequester `json:"requester"`
 }
 
 // lockHeld marks a context whose caller already holds the volume's workspace lock.
@@ -128,7 +124,7 @@ type remoteRepositoryKey struct {
 
 func NewService(deps Dependencies) *Service {
 	s := &Service{deps: deps}
-	repository := func(ctx context.Context, dockerClient *client.Client, entry *volume.Backup) (backup.Repository, string, error) {
+	repository := func(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup) (backup.Repository, string, error) {
 		if entry.LocalSnapshotID != "" {
 			local, err := s.localRusticRepository(ctx, dockerClient, true)
 			return local, entry.LocalSnapshotID, err
@@ -144,15 +140,15 @@ func NewService(deps Dependencies) *Service {
 		S3Destinations: deps.S3Destinations,
 		Settings:       deps.Settings,
 		AlreadyRunning: deps.AlreadyRunning,
-		LatestRun: func(ctx context.Context, policyID string) (*volume.BackupEntry, error) {
+		LatestRun: func(ctx context.Context, policyID string) (*types.VolumeBackupEntry, error) {
 			entry, err := s.deps.Store.Latest(ctx, policyID)
 			if err != nil || entry == nil {
 				return nil, err
 			}
 			return new(entry.Entry()), nil
 		},
-		CreateBackup: func(ctx context.Context, volumeName, policyID string) (*volume.Backup, error) {
-			return s.CreateBackup(ctx, volumeName, usertypes.SystemUser, backuptypes.VolumeBackupTriggerScheduled, volume.CreateBackupRequest{PolicyID: policyID})
+		CreateBackup: func(ctx context.Context, volumeName, policyID string) (*types.VolumeBackup, error) {
+			return s.CreateBackup(ctx, volumeName, types.SystemUser, types.VolumeBackupTriggerScheduled, types.CreateVolumeBackupRequest{PolicyID: policyID})
 		},
 		Reconcile: s.ReconcileBackup,
 	})
@@ -180,10 +176,10 @@ func NewService(deps Dependencies) *Service {
 		StopContainers:  s.stopRunningContainersForBackup,
 		StartContainers: s.startContainersAfterBackup,
 		// The safety backup runs under the restore's workspace lock, so executeBackup must not take it again.
-		SafetyBackup: func(ctx context.Context, volumeName string, user usertypes.Actor) (string, error) {
+		SafetyBackup: func(ctx context.Context, volumeName string, user types.Actor) (string, error) {
 			ctx = context.WithValue(ctx, lockHeldKey{}, lockHeld{service: s, volumeName: volumeName})
-			request := volume.CreateBackupRequest{Destination: volume.BackupDestinationLocal}
-			entry, err := s.CreateBackup(ctx, volumeName, user, backuptypes.VolumeBackupTriggerSafety, request)
+			request := types.CreateVolumeBackupRequest{Destination: types.VolumeBackupDestinationLocal}
+			entry, err := s.CreateBackup(ctx, volumeName, user, types.VolumeBackupTriggerSafety, request)
 			if err != nil {
 				return "", err
 			}
@@ -209,7 +205,7 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 		Fingerprint: "8bcb88f11ff66a2b5825101d5bd5f9914f9b76bc56e5d131a82499b819bf9c4a",
 		Concurrency: 4,
 		Timeout:     24 * time.Hour,
-		Activity:    activitylib.StartRequest{Type: activitytypes.TypeResourceAction},
+		Activity:    activitylib.StartRequest{Type: types.ActivityTypeResourceAction},
 		Labels:      map[string]string{"backup": "Creating backup"},
 		Steps:       []workflow.StepSpec{workflow.Step("backup", engine.Handler(s.runManualBackup), workflow.WithMaxAttempts(1))},
 	})
@@ -221,7 +217,7 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine) error {
 
 // SetScheduler injects the dynamic scheduler and admission gate for per-policy
 // backup jobs. Agent mode passes them too: agents run their own volume backups.
-func (s *Service) SetScheduler(ctx context.Context, dynamicScheduler scheduler.DynamicScheduler, admissionGate *runs.Admission) error {
+func (s *Service) SetScheduler(ctx context.Context, dynamicScheduler types.DynamicScheduler, admissionGate *runs.Admission) error {
 	return s.policies.SetScheduler(ctx, dynamicScheduler, admissionGate)
 }
 
@@ -245,14 +241,14 @@ func (s *Service) RenamePolicies(tx *gorm.DB, oldName, newName string) error {
 }
 
 // backupEntry converts a backup row to its API entry for policy last runs and accepted manual starts.
-func (s *Service) List(ctx context.Context, volumeName string, params pagination.QueryParams) ([]volume.Backup, pagination.Response, error) {
+func (s *Service) List(ctx context.Context, volumeName string, params pagination.QueryParams) ([]types.VolumeBackup, pagination.Response, error) {
 	slog.DebugContext(ctx, "volume service: list backups paginated", "volume", volumeName, "search", params.Search, "sort", params.Sort,
 		"order", params.Order, "start", params.Start, "limit", params.Limit)
 	backups, totalItems, err := s.deps.Store.List(ctx, volumeName, params)
 	if err != nil {
 		return nil, pagination.Response{}, err
 	}
-	if slices.ContainsFunc(backups, func(entry volume.Backup) bool { return strings.TrimSpace(entry.S3DestinationID) != "" }) {
+	if slices.ContainsFunc(backups, func(entry types.VolumeBackup) bool { return strings.TrimSpace(entry.S3DestinationID) != "" }) {
 		destinations := s.deps.S3Destinations.DestinationsByID(ctx)
 		for i := range backups {
 			backups[i].S3DestinationName = destinations[backups[i].S3DestinationID].Name
@@ -271,13 +267,13 @@ func (s *Service) List(ctx context.Context, volumeName string, params pagination
 	return backups, pagination.BuildResponse(totalItems, totalItems, params), nil
 }
 
-func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger string, request volume.CreateBackupRequest, policy *policies.VolumeBackupPolicy) (backupPlan, error) {
+func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger string, request types.CreateVolumeBackupRequest, policy *policies.VolumeBackupPolicy) (backupPlan, error) {
 	destination := request.Destination
-	validDestinations := []volume.BackupDestination{volume.BackupDestinationLocal, volume.BackupDestinationS3, volume.BackupDestinationLocalS3}
+	validDestinations := []types.VolumeBackupDestination{types.VolumeBackupDestinationLocal, types.VolumeBackupDestinationS3, types.VolumeBackupDestinationLocalS3}
 	if destination != "" && !slices.Contains(validDestinations, destination) {
 		return backupPlan{}, errors.New("invalid volume backup destination")
 	}
-	if trigger != backuptypes.VolumeBackupTriggerSafety && policy == nil {
+	if trigger != types.VolumeBackupTriggerSafety && policy == nil {
 		var err error
 		if policy, err = s.policies.Policy(ctx, volumeName, request.PolicyID); err != nil {
 			return backupPlan{}, err
@@ -290,11 +286,11 @@ func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger str
 	if policy != nil {
 		plan.LocalEnabled, plan.S3Enabled, plan.S3DestinationID = policy.LocalEnabled, policy.S3Enabled, policy.S3DestinationID
 	}
-	if trigger == backuptypes.VolumeBackupTriggerSafety {
+	if trigger == types.VolumeBackupTriggerSafety {
 		plan.LocalEnabled, plan.S3Enabled = true, false
 	} else if destination != "" {
-		plan.LocalEnabled = destination != volume.BackupDestinationS3
-		plan.S3Enabled = destination != volume.BackupDestinationLocal
+		plan.LocalEnabled = destination != types.VolumeBackupDestinationS3
+		plan.S3Enabled = destination != types.VolumeBackupDestinationLocal
 	}
 	if !plan.LocalEnabled && !plan.S3Enabled {
 		return backupPlan{}, errors.New("select at least one volume backup destination")
@@ -315,8 +311,8 @@ func (s *Service) resolveBackupPlan(ctx context.Context, volumeName, trigger str
 	return plan, nil
 }
 
-func (s *Service) CreateBackup(ctx context.Context, volumeName string, user usertypes.Actor, trigger string, request volume.CreateBackupRequest) (*volume.Backup, error) {
-	trigger = cmp.Or(trigger, backuptypes.VolumeBackupTriggerManual)
+func (s *Service) CreateBackup(ctx context.Context, volumeName string, user types.Actor, trigger string, request types.CreateVolumeBackupRequest) (*types.VolumeBackup, error) {
+	trigger = cmp.Or(trigger, types.VolumeBackupTriggerManual)
 	plan, err := s.resolveBackupPlan(ctx, volumeName, trigger, request, nil)
 	if err != nil {
 		return nil, err
@@ -330,11 +326,11 @@ func (s *Service) CreateBackup(ctx context.Context, volumeName string, user user
 }
 
 // CreateSystemManagedBackup runs the existing volume backup workflow with a transient centralized policy.
-func (s *Service) CreateSystemManagedBackup(ctx context.Context, volumeName string, user usertypes.Actor, trigger, policyID string, policy backuptypes.UpdateBackupPolicy) (*volume.Backup, error) {
-	if !strings.HasPrefix(policyID, backuptypes.SystemVolumePolicyPrefix) {
+func (s *Service) CreateSystemManagedBackup(ctx context.Context, volumeName string, user types.Actor, trigger, policyID string, policy types.UpdateBackupPolicy) (*types.VolumeBackup, error) {
+	if !strings.HasPrefix(policyID, types.SystemVolumePolicyPrefix) {
 		return nil, errors.New("invalid system-managed volume backup policy id")
 	}
-	trigger = cmp.Or(trigger, backuptypes.VolumeBackupTriggerManual)
+	trigger = cmp.Or(trigger, types.VolumeBackupTriggerManual)
 	transient := &policies.VolumeBackupPolicy{
 		ID:              policyID,
 		VolumeName:      volumeName,
@@ -346,7 +342,7 @@ func (s *Service) CreateSystemManagedBackup(ctx context.Context, volumeName stri
 		S3Enabled:       policy.S3Enabled,
 		S3DestinationID: policy.S3DestinationID,
 	}
-	plan, err := s.resolveBackupPlan(ctx, volumeName, trigger, volume.CreateBackupRequest{}, transient)
+	plan, err := s.resolveBackupPlan(ctx, volumeName, trigger, types.CreateVolumeBackupRequest{}, transient)
 	if err != nil {
 		return nil, err
 	}
@@ -359,22 +355,22 @@ func (s *Service) CreateSystemManagedBackup(ctx context.Context, volumeName stri
 }
 
 // prepareBackup admits the run, persists its row, and records plan (now carrying the row ID) as the checkpoint.
-func (s *Service) prepareBackup(ctx context.Context, volumeName, trigger, policyID string, plan *backupPlan) (*volume.Backup, *runs.Lease, error) {
+func (s *Service) prepareBackup(ctx context.Context, volumeName, trigger, policyID string, plan *backupPlan) (*types.VolumeBackup, *runs.Lease, error) {
 	lease, err := s.acquireVolumeRun(ctx, volumeName)
 	if err != nil {
 		return nil, nil, err
 	}
-	entry := &volume.Backup{
+	entry := &types.VolumeBackup{
 		ID:              fmt.Sprintf("%s-%d-%s", volumeName, time.Now().UnixNano(), uuid.New().String()[:8]),
 		VolumeName:      volumeName,
 		CreatedAt:       time.Now(),
-		Status:          backuptypes.VolumeBackupStatusRunning,
+		Status:          types.VolumeBackupStatusRunning,
 		Trigger:         trigger,
 		Destination:     backupDestination(plan.LocalEnabled, plan.S3Enabled),
-		Format:          volume.BackupFormatRustic,
+		Format:          types.VolumeBackupFormatRustic,
 		S3DestinationID: plan.S3DestinationID,
 		PolicyID:        policyID,
-		Type:            backuptypes.ManagementTypeForPolicy(policyID),
+		Type:            types.BackupManagementTypeForPolicy(policyID),
 	}
 	if createBackupErr := s.deps.Store.Create(ctx, entry); createBackupErr != nil {
 		lease.Release(ctx)
@@ -383,7 +379,7 @@ func (s *Service) prepareBackup(ctx context.Context, volumeName, trigger, policy
 	plan.BackupID = entry.ID
 	checkpoint, err := json.Marshal(*plan)
 	if err == nil {
-		err = jobcontext.Progress(ctx, scheduler.TargetOutcome{ResourceType: "volume_backup", ID: volumeName, Status: scheduler.Running, RecoveryData: checkpoint})
+		err = jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: "volume_backup", ID: volumeName, Status: types.RunStatusRunning, RecoveryData: checkpoint})
 	}
 	if err != nil {
 		lease.Release(ctx)
@@ -392,7 +388,7 @@ func (s *Service) prepareBackup(ctx context.Context, volumeName, trigger, policy
 	return entry, lease, nil
 }
 
-func (s *Service) completeBackup(ctx context.Context, entry *volume.Backup, err error) error {
+func (s *Service) completeBackup(ctx context.Context, entry *types.VolumeBackup, err error) error {
 	// A workflow task stopped by shutdown, a plain cancel, is handed back, so its row stays running for the resumed
 	// task to finish; a user cancel, a workflow that ended or timed out, or work outside a workflow records the failure.
 	if _, resumable := jobcontext.Run(ctx); resumable && errors.Is(context.Cause(ctx), context.Canceled) {
@@ -402,20 +398,20 @@ func (s *Service) completeBackup(ctx context.Context, entry *volume.Backup, err 
 		err = ctx.Err()
 	}
 	if err != nil {
-		entry.Status, entry.Error = backuptypes.VolumeBackupStatusFailed, err.Error()
+		entry.Status, entry.Error = types.VolumeBackupStatusFailed, err.Error()
 	} else {
-		entry.Status, entry.Error = backuptypes.VolumeBackupStatusSucceeded, ""
+		entry.Status, entry.Error = types.VolumeBackupStatusSucceeded, ""
 	}
 	if saveErr := s.deps.Store.Save(context.WithoutCancel(ctx), entry); saveErr != nil {
 		return errors.Join(err, fmt.Errorf("failed to save volume backup result: %w", saveErr))
 	}
 	if err == nil {
-		err = jobcontext.Progress(ctx, scheduler.TargetOutcome{ResourceType: "volume_backup", ID: entry.VolumeName, Status: scheduler.Succeeded})
+		err = jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: "volume_backup", ID: entry.VolumeName, Status: types.RunStatusSucceeded})
 	}
 	return err
 }
 
-func (s *Service) executeBackup(ctx context.Context, entry *volume.Backup, user usertypes.Actor, plan backupPlan) (err error) {
+func (s *Service) executeBackup(ctx context.Context, entry *types.VolumeBackup, user types.Actor, plan backupPlan) (err error) {
 	defer utils.RecoverToError(&err, "volume backup")
 	volumeName := entry.VolumeName
 	if held, _ := ctx.Value(lockHeldKey{}).(lockHeld); held.service != s || held.volumeName != volumeName {
@@ -452,10 +448,10 @@ func (s *Service) executeBackup(ctx context.Context, entry *volume.Backup, user 
 	}
 	// Retention failures must not fail the run: the status save would mark the
 	// succeeded backup failed and hide it from ExpiredRunIDs forever.
-	if entry.Trigger != backuptypes.VolumeBackupTriggerSafety && plan.Policy != nil && plan.Policy.RetentionCount > 0 {
+	if entry.Trigger != types.VolumeBackupTriggerSafety && plan.Policy != nil && plan.Policy.RetentionCount > 0 {
 		expired, retentionErr := backup.ExpiredRunIDs(ctx, s.deps.DB, "volume_backups", plan.Policy.ID, plan.Policy.RetentionCount)
 		if retentionErr == nil && len(expired) > 0 {
-			var expiredEntries []*volume.Backup
+			var expiredEntries []*types.VolumeBackup
 			if expiredEntries, retentionErr = s.deps.Store.Runs(ctx, expired); retentionErr == nil {
 				retentionErr = s.deleteRusticBackups(ctx, expiredEntries, nil, plan.S3Enabled)
 			}
@@ -470,7 +466,7 @@ func (s *Service) executeBackup(ctx context.Context, entry *volume.Backup, user 
 }
 
 // createSnapshots writes the plan's missing snapshots; S3 replicates the local snapshot when both are enabled.
-func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Client, entry *volume.Backup, plan backupPlan) error {
+func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup, plan backupPlan) error {
 	source := mount.Mount{Type: mount.TypeVolume, Source: entry.VolumeName, Target: "/volume", ReadOnly: true}
 	input := backup.RootSnapshotInput(source, backup.RunSnapshotTag(entry.ID))
 	if plan.LocalEnabled && entry.LocalSnapshotID == "" {
@@ -482,7 +478,7 @@ func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Clie
 		if err != nil {
 			return err
 		}
-		if progressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{ResourceType: "backup_destination", ID: entry.ID + ":local", Status: scheduler.Running}); progressErr != nil {
+		if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: "backup_destination", ID: entry.ID + ":local", Status: types.RunStatusRunning}); progressErr != nil {
 			return progressErr
 		}
 		snapshot, err := s.deps.Engine.CreateSnapshot(ctx, dockerClient, repository, password, entry.VolumeName, input)
@@ -493,7 +489,7 @@ func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Clie
 		if saveErr := s.deps.Store.Save(ctx, entry); saveErr != nil {
 			return saveErr
 		}
-		succeeded := scheduler.TargetOutcome{ResourceType: "backup_destination", ID: entry.ID + ":local", Status: scheduler.Succeeded, Message: snapshot.ID}
+		succeeded := types.TargetOutcome{ResourceType: "backup_destination", ID: entry.ID + ":local", Status: types.RunStatusSucceeded, Message: snapshot.ID}
 		if progressErr := jobcontext.Progress(ctx, succeeded); progressErr != nil {
 			return progressErr
 		}
@@ -509,7 +505,7 @@ func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Clie
 	if err != nil {
 		return err
 	}
-	if progressErr := jobcontext.Progress(ctx, scheduler.TargetOutcome{ResourceType: "backup_destination", ID: entry.ID + ":remote", Status: scheduler.Running}); progressErr != nil {
+	if progressErr := jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: "backup_destination", ID: entry.ID + ":remote", Status: types.RunStatusRunning}); progressErr != nil {
 		return progressErr
 	}
 	var snapshot backup.Snapshot
@@ -529,10 +525,10 @@ func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Clie
 	if saveErr := s.deps.Store.Save(ctx, entry); saveErr != nil {
 		return saveErr
 	}
-	return jobcontext.Progress(ctx, scheduler.TargetOutcome{ResourceType: "backup_destination", ID: entry.ID + ":remote", Status: scheduler.Succeeded, Message: snapshot.ID})
+	return jobcontext.Progress(ctx, types.TargetOutcome{ResourceType: "backup_destination", ID: entry.ID + ":remote", Status: types.RunStatusSucceeded, Message: snapshot.ID})
 }
 
-func (s *Service) UploadBackup(ctx context.Context, backupID, s3DestinationID string) (*volume.Backup, error) {
+func (s *Service) UploadBackup(ctx context.Context, backupID, s3DestinationID string) (*types.VolumeBackup, error) {
 	entry, err := s.deps.Store.Run(ctx, backupID)
 	if err != nil {
 		return nil, err
@@ -546,7 +542,7 @@ func (s *Service) UploadBackup(ctx context.Context, backupID, s3DestinationID st
 	if entry, err = s.deps.Store.Run(ctx, backupID); err != nil {
 		return nil, err
 	}
-	if entry.Status != backuptypes.VolumeBackupStatusSucceeded || entry.LocalSnapshotID == "" {
+	if entry.Status != types.VolumeBackupStatusSucceeded || entry.LocalSnapshotID == "" {
 		return nil, errors.New("only successful local volume backups can be uploaded")
 	}
 	if entry.RemoteSnapshotID != "" {
@@ -575,14 +571,14 @@ func (s *Service) UploadBackup(ctx context.Context, backupID, s3DestinationID st
 	if err != nil {
 		return nil, fmt.Errorf("failed to upload Rustic snapshot to S3: %w", err)
 	}
-	entry.RemoteSnapshotID, entry.S3DestinationID, entry.Destination = snapshot.ID, s3DestinationID, volume.BackupDestinationLocalS3
+	entry.RemoteSnapshotID, entry.S3DestinationID, entry.Destination = snapshot.ID, s3DestinationID, types.VolumeBackupDestinationLocalS3
 	if saveUploadedBackupErr := s.deps.Store.Save(ctx, entry); saveUploadedBackupErr != nil {
 		return nil, fmt.Errorf("failed to save uploaded volume backup: %w", saveUploadedBackupErr)
 	}
 	return entry, nil
 }
 
-func (s *Service) DeleteBackup(ctx context.Context, backupID string, user *usertypes.Actor) error {
+func (s *Service) DeleteBackup(ctx context.Context, backupID string, user *types.Actor) error {
 	entry, err := s.deps.Store.Run(ctx, backupID)
 	if err != nil {
 		return err
@@ -597,8 +593,8 @@ func (s *Service) DeleteBackup(ctx context.Context, backupID string, user *usert
 	if entry, err = s.deps.Store.Run(ctx, backupID); err != nil {
 		return err
 	}
-	if entry.Format != volume.BackupFormatArchive {
-		return s.deleteRusticBackups(ctx, []*volume.Backup{entry}, user, true)
+	if entry.Format != types.VolumeBackupFormatArchive {
+		return s.deleteRusticBackups(ctx, []*types.VolumeBackup{entry}, user, true)
 	}
 	// Delete the row first: a failed file removal then only leaves an orphan file.
 	if deleteErr := s.deps.Store.Delete(ctx, backupID); deleteErr != nil {
@@ -621,13 +617,13 @@ func (s *Service) DeleteBackup(ctx context.Context, backupID string, user *usert
 }
 
 // deleteRusticBackups forgets snapshots grouped by repository so each repository is pruned once.
-func (s *Service) deleteRusticBackups(ctx context.Context, entries []*volume.Backup, user *usertypes.Actor, includeRemote bool) error {
+func (s *Service) deleteRusticBackups(ctx context.Context, entries []*types.VolumeBackup, user *types.Actor, includeRemote bool) error {
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return err
 	}
 	var localSnapshotIDs []string
-	remoteGroups := make(map[remoteRepositoryKey][]*volume.Backup)
+	remoteGroups := make(map[remoteRepositoryKey][]*types.VolumeBackup)
 	for _, entry := range entries {
 		if entry.LocalSnapshotID != "" {
 			localSnapshotIDs = append(localSnapshotIDs, entry.LocalSnapshotID)
@@ -657,7 +653,7 @@ func (s *Service) deleteRusticBackups(ctx context.Context, entries []*volume.Bac
 			snapshotIDs[index] = entry.RemoteSnapshotID
 		}
 		repository, repoErr := s.remoteRusticRepository(ctx, key.destinationID, key.instanceID)
-		var observation backuptypes.RepositoryObservation
+		var observation types.BackupRepositoryObservation
 		if repoErr == nil {
 			observation, repoErr = backup.CheckRemoteRepository(ctx, s.deps.S3Destinations, key.destinationID, path.Join(backup.VolumeRoot, key.instanceID))
 		}
@@ -724,12 +720,12 @@ func (s *Service) forgetSnapshots(ctx context.Context, dockerClient *client.Clie
 
 // DownloadBackup streams a backup as a tar.gz archive: legacy archives stream their stored
 // file, and local Rustic snapshots are restored into a scratch volume and packaged on the fly.
-func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *usertypes.Actor) (io.ReadCloser, int64, error) {
+func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *types.Actor) (io.ReadCloser, int64, error) {
 	entry, err := s.deps.Store.Run(ctx, backupID)
 	if err != nil {
 		return nil, 0, err
 	}
-	if entry.Format != volume.BackupFormatArchive && entry.LocalSnapshotID == "" {
+	if entry.Format != types.VolumeBackupFormatArchive && entry.LocalSnapshotID == "" {
 		return nil, 0, errors.New("only local volume backups can be downloaded")
 	}
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
@@ -738,7 +734,7 @@ func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *use
 	}
 	var containerID, archivePath string
 	var cleanup func()
-	if entry.Format == volume.BackupFormatArchive {
+	if entry.Format == types.VolumeBackupFormatArchive {
 		filename, filenameErr := backupArchiveFilename(backupID)
 		if filenameErr != nil {
 			return nil, 0, filenameErr
@@ -891,7 +887,7 @@ func (s *Service) DiscoverRemoteBackups(ctx context.Context, destinationID strin
 }
 
 // discoveredVolumeBackup maps a snapshot to a backup record via its volume label; unlabeled and system snapshots map to nil.
-func discoveredVolumeBackup(destinationID, root string, snapshot backup.DiscoveredSnapshot) *volume.Backup {
+func discoveredVolumeBackup(destinationID, root string, snapshot backup.DiscoveredSnapshot) *types.VolumeBackup {
 	volumeName := strings.TrimSpace(snapshot.Label)
 	if volumeName == "" || volumeName == systemRecoverySnapshotLabel {
 		return nil
@@ -900,11 +896,11 @@ func discoveredVolumeBackup(destinationID, root string, snapshot backup.Discover
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
 	}
-	return &volume.Backup{
+	return &types.VolumeBackup{
 		ID:         fmt.Sprintf("remote-%s-%s-%s", destinationID, root, snapshot.ID),
 		VolumeName: volumeName, Size: snapshot.Summary.TotalBytesProcessed, CreatedAt: createdAt,
-		Status: backuptypes.VolumeBackupStatusSucceeded, Trigger: backuptypes.VolumeBackupTriggerManual,
-		Destination: volume.BackupDestinationS3, Format: volume.BackupFormatRustic,
+		Status: types.VolumeBackupStatusSucceeded, Trigger: types.VolumeBackupTriggerManual,
+		Destination: types.VolumeBackupDestinationS3, Format: types.VolumeBackupFormatRustic,
 		RemoteSnapshotID: snapshot.ID, S3DestinationID: destinationID, RemoteInstanceID: root,
 	}
 }
@@ -947,18 +943,18 @@ func (s *Service) MigrateRepositoryPasswords(ctx context.Context, previousKey, n
 }
 
 // StartBackup persists a running backup and submits its workflow.
-func (s *Service) StartBackup(ctx context.Context, environmentID, volumeName string, user usertypes.Actor, request volume.CreateBackupRequest) (volume.BackupEntry, error) {
-	plan, err := s.resolveBackupPlan(ctx, volumeName, backuptypes.VolumeBackupTriggerManual, request, nil)
+func (s *Service) StartBackup(ctx context.Context, environmentID, volumeName string, user types.Actor, request types.CreateVolumeBackupRequest) (types.VolumeBackupEntry, error) {
+	plan, err := s.resolveBackupPlan(ctx, volumeName, types.VolumeBackupTriggerManual, request, nil)
 	if err != nil {
-		return volume.BackupEntry{}, err
+		return types.VolumeBackupEntry{}, err
 	}
 	requester := backup.NewRequester(ctx, user, environmentID, authz.PermVolumesBackup)
 	if authorizeErr := s.deps.Engine.Authorize(ctx, requester); authorizeErr != nil {
-		return volume.BackupEntry{}, authorizeErr
+		return types.VolumeBackupEntry{}, authorizeErr
 	}
-	entry, lease, err := s.prepareBackup(ctx, volumeName, backuptypes.VolumeBackupTriggerManual, request.PolicyID, &plan)
+	entry, lease, err := s.prepareBackup(ctx, volumeName, types.VolumeBackupTriggerManual, request.PolicyID, &plan)
 	if err != nil {
-		return volume.BackupEntry{}, err
+		return types.VolumeBackupEntry{}, err
 	}
 	release := s.deps.Engine.Hold(backup.VolumeAdmissionScope, volumeName, entry.ID, lease)
 	input := manualBackupInput{Checkpoint: plan, VolumeName: volumeName, Requester: requester}
@@ -969,7 +965,7 @@ func (s *Service) StartBackup(ctx context.Context, environmentID, volumeName str
 	}, backup.AcceptedTarget(entry.ID))
 	if err != nil {
 		release(ctx)
-		return volume.BackupEntry{}, s.completeBackup(ctx, entry, err)
+		return types.VolumeBackupEntry{}, s.completeBackup(ctx, entry, err)
 	}
 	// A backup canceled before its task runs never takes the parked lease.
 	go func() {
@@ -999,22 +995,22 @@ func (s *Service) WatchAcceptedBackups(ctx context.Context) error {
 // before the task started.
 func (s *Service) watchBackup(ctx context.Context, backupID, instanceID string) {
 	outcome, err := s.flow.Wait(ctx, s.backupWorkflow, instanceID)
-	if err != nil || outcome.Status == scheduler.Succeeded {
+	if err != nil || outcome.Status == types.RunStatusSucceeded {
 		return
 	}
-	if current, loadErr := s.deps.Store.Run(ctx, backupID); loadErr == nil && current.Status == backuptypes.VolumeBackupStatusRunning {
+	if current, loadErr := s.deps.Store.Run(ctx, backupID); loadErr == nil && current.Status == types.VolumeBackupStatusRunning {
 		if failErr := s.deps.Store.Fail(ctx, backupID, cmp.Or(outcome.Message, "Backup did not run")); failErr != nil {
 			slog.WarnContext(ctx, "Failed to close a volume backup whose workflow ended early", "backupId", backupID, "error", failErr)
 		}
 	}
 }
 
-func (s *Service) ReconcileBackup(ctx context.Context, previous scheduler.Run, volumeName string) (scheduler.Outcome, error) {
+func (s *Service) ReconcileBackup(ctx context.Context, previous types.SchedulerRun, volumeName string) (types.SchedulerOutcome, error) {
 	outcome := jobcontext.ConfirmedTarget(previous, volumeName)
-	if outcome.Status == scheduler.Succeeded {
+	if outcome.Status == types.RunStatusSucceeded {
 		return outcome, nil
 	}
-	index := slices.IndexFunc(previous.Outcome.Targets, func(target scheduler.TargetOutcome) bool {
+	index := slices.IndexFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
 		return target.ID == volumeName && len(target.RecoveryData) > 0
 	})
 	if index < 0 {
@@ -1031,13 +1027,13 @@ func (s *Service) ReconcileBackup(ctx context.Context, previous scheduler.Run, v
 	}
 	// Only an interrupted backup is still running; a failed one was settled by its attempt, even if its volume
 	// was renamed since, and the caller starts a new backup under the current name.
-	if entry.Status == backuptypes.VolumeBackupStatusFailed {
+	if entry.Status == types.VolumeBackupStatusFailed {
 		return outcome, backup.ErrBackupSettled
 	}
 	if entry.VolumeName != volumeName {
 		return outcome, gorm.ErrRecordNotFound
 	}
-	if entry.Status != backuptypes.VolumeBackupStatusSucceeded {
+	if entry.Status != types.VolumeBackupStatusSucceeded {
 		// Resuming would copy data its stopped containers may since have changed, so the row fails and the
 		// caller starts a new backup that stops them again.
 		if checkpoint.Policy != nil && checkpoint.Policy.StopContainers {
@@ -1060,15 +1056,15 @@ func (s *Service) ReconcileBackup(ctx context.Context, previous scheduler.Run, v
 			return outcome, resumeErr
 		}
 	}
-	target.Status = scheduler.Succeeded
+	target.Status = types.RunStatusSucceeded
 	if progressErr := jobcontext.Progress(ctx, target); progressErr != nil {
 		return outcome, progressErr
 	}
-	return scheduler.Outcome{Status: scheduler.Succeeded, Targets: []scheduler.TargetOutcome{target}}, nil
+	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Targets: []types.TargetOutcome{target}}, nil
 }
 
 // resumeBackup adopts snapshots an interrupted run already wrote, then finishes the backup.
-func (s *Service) resumeBackup(ctx context.Context, previous scheduler.Run, entry *volume.Backup, checkpoint backupPlan) error {
+func (s *Service) resumeBackup(ctx context.Context, previous types.SchedulerRun, entry *types.VolumeBackup, checkpoint backupPlan) error {
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return err
@@ -1092,7 +1088,7 @@ func (s *Service) resumeBackup(ctx context.Context, previous scheduler.Run, entr
 		return err
 	}
 	attempted := func(destination string) bool {
-		return slices.ContainsFunc(previous.Outcome.Targets, func(target scheduler.TargetOutcome) bool { return target.ID == entry.ID+":"+destination })
+		return slices.ContainsFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool { return target.ID == entry.ID+":"+destination })
 	}
 	if checkpoint.LocalEnabled && (entry.LocalSnapshotID != "" || attempted("local")) {
 		snapshot, found, findErr := s.deps.Engine.FindRunSnapshot(ctx, dockerClient, local, password, entry.ID, entry.LocalSnapshotID)
@@ -1122,7 +1118,7 @@ func (s *Service) resumeBackup(ctx context.Context, previous scheduler.Run, entr
 	if saveErr := s.deps.Store.Save(ctx, entry); saveErr != nil {
 		return saveErr
 	}
-	return s.completeBackup(ctx, entry, s.executeBackup(ctx, entry, usertypes.SystemUser, checkpoint))
+	return s.completeBackup(ctx, entry, s.executeBackup(ctx, entry, types.SystemUser, checkpoint))
 }
 
 // runManualBackup is the volume-backup step. A delivery that finds the checkpoint it recorded
@@ -1138,7 +1134,7 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 		}
 	}()
 	previous, _ := jobcontext.Run(ctx)
-	resuming := slices.ContainsFunc(previous.Outcome.Targets, func(target scheduler.TargetOutcome) bool {
+	resuming := slices.ContainsFunc(previous.Outcome.Targets, func(target types.TargetOutcome) bool {
 		return target.ID == input.VolumeName && len(target.RecoveryData) > 0
 	})
 	if !resuming {
@@ -1154,7 +1150,7 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 	if authorizeErr := s.deps.Engine.Authorize(ctx, input.Requester); authorizeErr != nil {
 		return nil, authorizeErr
 	}
-	succeeded := scheduler.Outcome{Status: scheduler.Succeeded, Message: "Volume backup created successfully"}
+	succeeded := types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Volume backup created successfully"}
 	if resuming {
 		outcome, reconcileErr := s.ReconcileBackup(ctx, previous, input.VolumeName)
 		// A settled row already records why it failed, so the run reports that rather than the sentinel.
@@ -1166,7 +1162,7 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 		if reconcileErr != nil {
 			return nil, reconcileErr
 		}
-		if outcome.Status != scheduler.Succeeded {
+		if outcome.Status != types.RunStatusSucceeded {
 			return nil, errors.New(outcome.Message)
 		}
 		return succeeded, nil
@@ -1175,7 +1171,7 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 	if err != nil {
 		return nil, err
 	}
-	requestedBy := usertypes.SystemUser
+	requestedBy := types.SystemUser
 	if input.Requester.UserID != "" && input.Requester.UserID != "agent" {
 		var localUser userdomain.User
 		if loadUserErr := s.deps.DB.WithContext(ctx).Where("id = ?", input.Requester.UserID).First(&localUser).Error; loadUserErr != nil {
@@ -1187,7 +1183,7 @@ func (s *Service) runManualBackup(ctx context.Context, t flow.Task) (_ any, err 
 	if err != nil {
 		return nil, err
 	}
-	target := scheduler.TargetOutcome{ResourceType: "volume_backup", ID: input.VolumeName, Status: scheduler.Running, RecoveryData: checkpoint, ActivityID: t.ActivityID()}
+	target := types.TargetOutcome{ResourceType: "volume_backup", ID: input.VolumeName, Status: types.RunStatusRunning, RecoveryData: checkpoint, ActivityID: t.ActivityID()}
 	if progressErr := jobcontext.Progress(ctx, target); progressErr != nil {
 		return nil, progressErr
 	}

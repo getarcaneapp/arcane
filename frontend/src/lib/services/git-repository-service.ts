@@ -1,6 +1,6 @@
 import type {
-	GitRepositoryCreateDto,
-	GitRepositoryUpdateDto,
+	GitRepositoryCreate,
+	GitRepositoryUpdate,
 	GitRepository,
 	GitRepositoryTestResponse,
 	BranchesResponse,
@@ -22,11 +22,11 @@ class GitRepositoryService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/customize/git-repositories/${id}`));
 	}
 
-	async createRepository(repository: GitRepositoryCreateDto): Promise<GitRepository> {
+	async createRepository(repository: GitRepositoryCreate): Promise<GitRepository> {
 		return this.handleResponse(this.api.post(`/customize/git-repositories`, repository));
 	}
 
-	async updateRepository(id: string, repository: GitRepositoryUpdateDto): Promise<GitRepository> {
+	async updateRepository(id: string, repository: GitRepositoryUpdate): Promise<GitRepository> {
 		return this.handleResponse(this.api.put(`/customize/git-repositories/${id}`, repository));
 	}
 

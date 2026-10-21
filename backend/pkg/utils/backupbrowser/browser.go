@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -52,15 +52,15 @@ func ListScope(requestedPath string, params pagination.QueryParams) (listPath st
 
 // BuildEntries converts archive or Rustic path output into a synthesized tree.
 // Paths are returned relative to the supplied logical root.
-func BuildEntries(paths []string, browsePath string, recursive bool) []backuptypes.BackupFileEntry {
+func BuildEntries(paths []string, browsePath string, recursive bool) []types.BackupFileEntry {
 	root, err := NormalizePath(browsePath, true)
 	if err != nil {
 		return nil
 	}
-	entries := make(map[string]backuptypes.BackupFileEntry)
+	entries := make(map[string]types.BackupFileEntry)
 	for _, raw := range paths {
 		directory := strings.HasSuffix(strings.TrimSpace(raw), "/")
-		candidate, ok := normalizeListedPathInternal(raw)
+		candidate, ok := normalizeListedPath(raw)
 		if !ok {
 			continue
 		}
@@ -76,25 +76,25 @@ func BuildEntries(paths []string, browsePath string, recursive bool) []backuptyp
 			continue
 		}
 		if !recursive && len(segments) > 1 {
-			addEntryInternal(entries, path.Join(root, segments[0]), true)
+			addEntry(entries, path.Join(root, segments[0]), true)
 			continue
 		}
 		if recursive {
 			for index := 1; index < len(segments); index++ {
-				addEntryInternal(entries, path.Join(root, path.Join(segments[:index]...)), true)
+				addEntry(entries, path.Join(root, path.Join(segments[:index]...)), true)
 			}
 		}
-		addEntryInternal(entries, candidate, directory)
+		addEntry(entries, candidate, directory)
 	}
-	result := make([]backuptypes.BackupFileEntry, 0, len(entries))
+	result := make([]types.BackupFileEntry, 0, len(entries))
 	for _, entry := range entries {
 		result = append(result, entry)
 	}
-	slices.SortStableFunc(result, compareEntriesInternal)
+	slices.SortStableFunc(result, compareEntries)
 	return result
 }
 
-func compareEntriesInternal(left, right backuptypes.BackupFileEntry) int {
+func compareEntries(left, right types.BackupFileEntry) int {
 	if left.IsDirectory != right.IsDirectory {
 		return kit.Ternary(left.IsDirectory, -1, 1)
 	}
@@ -108,13 +108,13 @@ func compareEntriesInternal(left, right backuptypes.BackupFileEntry) int {
 }
 
 // Browse searches, orders, and paginates backup entries using the standard pagination contract.
-func Browse(entries []backuptypes.BackupFileEntry, params pagination.QueryParams) ([]backuptypes.BackupFileEntry, pagination.Response) {
-	config := pagination.Config[backuptypes.BackupFileEntry]{
-		SearchAccessors: []pagination.SearchAccessor[backuptypes.BackupFileEntry]{
-			func(entry backuptypes.BackupFileEntry) (string, error) { return entry.Path, nil },
+func Browse(entries []types.BackupFileEntry, params pagination.QueryParams) ([]types.BackupFileEntry, pagination.Response) {
+	config := pagination.Config[types.BackupFileEntry]{
+		SearchAccessors: []pagination.SearchAccessor[types.BackupFileEntry]{
+			func(entry types.BackupFileEntry) (string, error) { return entry.Path, nil },
 		},
-		SortBindings: []pagination.SortBinding[backuptypes.BackupFileEntry]{
-			{Key: "path", Fn: compareEntriesInternal},
+		SortBindings: []pagination.SortBinding[types.BackupFileEntry]{
+			{Key: "path", Fn: compareEntries},
 		},
 	}
 	result := config.SearchOrderAndPaginate(entries, params)
@@ -123,24 +123,24 @@ func Browse(entries []backuptypes.BackupFileEntry, params pagination.QueryParams
 
 // NormalizeSelection validates explicit selections against eligible entries,
 // deduplicates them, and removes descendants covered by selected directories.
-func NormalizeSelection(selection backuptypes.RestoreSelection, eligible []backuptypes.BackupFileEntry) ([]backuptypes.BackupFileEntry, error) {
+func NormalizeSelection(selection types.BackupRestoreSelection, eligible []types.BackupFileEntry) ([]types.BackupFileEntry, error) {
 	if selection.SelectAll && len(selection.Paths) > 0 {
 		return nil, errors.New("selectAll cannot be combined with explicit paths")
 	}
 	if !selection.SelectAll && len(selection.Paths) == 0 {
 		return nil, errors.New("paths are required")
 	}
-	candidates, err := selectionCandidatesInternal(selection, eligible)
+	candidates, err := selectionCandidates(selection, eligible)
 	if err != nil {
 		return nil, err
 	}
-	return collapseSelectionCandidatesInternal(candidates), nil
+	return collapseSelectionCandidates(candidates), nil
 }
 
-func selectionCandidatesInternal(selection backuptypes.RestoreSelection, eligible []backuptypes.BackupFileEntry) ([]backuptypes.BackupFileEntry, error) {
+func selectionCandidates(selection types.BackupRestoreSelection, eligible []types.BackupFileEntry) ([]types.BackupFileEntry, error) {
 	if selection.SelectAll {
 		query := strings.ToLower(strings.TrimSpace(selection.Search))
-		candidates := make([]backuptypes.BackupFileEntry, 0, len(eligible))
+		candidates := make([]types.BackupFileEntry, 0, len(eligible))
 		for _, entry := range eligible {
 			if query == "" || strings.Contains(strings.ToLower(entry.Path), query) {
 				candidates = append(candidates, entry)
@@ -151,15 +151,15 @@ func selectionCandidatesInternal(selection backuptypes.RestoreSelection, eligibl
 		}
 		return candidates, nil
 	}
-	return explicitSelectionCandidatesInternal(selection.Paths, eligible)
+	return explicitSelectionCandidates(selection.Paths, eligible)
 }
 
-func explicitSelectionCandidatesInternal(requestedPaths []string, eligible []backuptypes.BackupFileEntry) ([]backuptypes.BackupFileEntry, error) {
-	byPath := make(map[string]backuptypes.BackupFileEntry, len(eligible))
+func explicitSelectionCandidates(requestedPaths []string, eligible []types.BackupFileEntry) ([]types.BackupFileEntry, error) {
+	byPath := make(map[string]types.BackupFileEntry, len(eligible))
 	for _, entry := range eligible {
 		byPath[entry.Path] = entry
 	}
-	candidates := make([]backuptypes.BackupFileEntry, 0, len(requestedPaths))
+	candidates := make([]types.BackupFileEntry, 0, len(requestedPaths))
 	seen := make(map[string]struct{}, len(requestedPaths))
 	for _, requested := range requestedPaths {
 		expectsDirectory := strings.HasSuffix(strings.TrimSpace(strings.ReplaceAll(requested, `\`, "/")), "/")
@@ -183,7 +183,7 @@ func explicitSelectionCandidatesInternal(requestedPaths []string, eligible []bac
 	return candidates, nil
 }
 
-func collapseSelectionCandidatesInternal(candidates []backuptypes.BackupFileEntry) []backuptypes.BackupFileEntry {
+func collapseSelectionCandidates(candidates []types.BackupFileEntry) []types.BackupFileEntry {
 	sort.SliceStable(candidates, func(i, j int) bool {
 		leftDepth := strings.Count(candidates[i].Path, "/")
 		rightDepth := strings.Count(candidates[j].Path, "/")
@@ -197,7 +197,7 @@ func collapseSelectionCandidatesInternal(candidates []backuptypes.BackupFileEntr
 		}
 		return candidates[i].Path < candidates[j].Path
 	})
-	result := make([]backuptypes.BackupFileEntry, 0, len(candidates))
+	result := make([]types.BackupFileEntry, 0, len(candidates))
 	selectedDirectories := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
 		covered := false
@@ -218,7 +218,7 @@ func collapseSelectionCandidatesInternal(candidates []backuptypes.BackupFileEntr
 	return result
 }
 
-func normalizeListedPathInternal(raw string) (string, bool) {
+func normalizeListedPath(raw string) (string, bool) {
 	trimmed := strings.TrimSpace(strings.ReplaceAll(raw, `\`, "/"))
 	cleaned, err := NormalizePath(strings.TrimPrefix(strings.TrimSuffix(trimmed, "/"), "/"), false)
 	if err != nil {
@@ -227,7 +227,7 @@ func normalizeListedPathInternal(raw string) (string, bool) {
 	return cleaned, true
 }
 
-func addEntryInternal(entries map[string]backuptypes.BackupFileEntry, entryPath string, directory bool) {
+func addEntry(entries map[string]types.BackupFileEntry, entryPath string, directory bool) {
 	if entryPath == "" || entryPath == "." {
 		return
 	}
@@ -235,7 +235,7 @@ func addEntryInternal(entries map[string]backuptypes.BackupFileEntry, entryPath 
 	if exists && (current.IsDirectory || !directory) {
 		return
 	}
-	entries[entryPath] = backuptypes.BackupFileEntry{
+	entries[entryPath] = types.BackupFileEntry{
 		Path:        entryPath,
 		Name:        path.Base(entryPath),
 		IsDirectory: directory,

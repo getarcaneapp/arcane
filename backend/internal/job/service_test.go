@@ -11,10 +11,7 @@ import (
 	"time"
 	"uuid"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,8 +34,8 @@ import (
 )
 
 type fakeJobScheduler struct {
-	jobs               map[string]scheduler.Job
-	runtimeStates      map[string]scheduler.JobRuntimeState
+	jobs               map[string]types.SchedulerJob
+	runtimeStates      map[string]types.JobRuntimeState
 	rescheduled        []string
 	rescheduleContexts []context.Context
 	rescheduleErr      error
@@ -177,7 +174,7 @@ func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
 
 	nextRun := time.Date(2026, time.July, 10, 8, 0, 0, 0, time.UTC)
 	fakeScheduler := newFakeJobScheduler("auto-update")
-	fakeScheduler.runtimeStates["auto-update"] = scheduler.JobRuntimeState{
+	fakeScheduler.runtimeStates["auto-update"] = types.JobRuntimeState{
 		Schedule:  "0 0 8 * * *",
 		NextRun:   &nextRun,
 		Scheduled: true,
@@ -193,30 +190,30 @@ func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
 	require.Equal(t, nextRun, *autoUpdateJob.NextRun)
 
 	now := time.Now().UTC()
-	failed := scheduler.Run{
+	failed := types.SchedulerRun{
 		ID:            "failed",
 		EnvironmentID: "0",
-		Status:        scheduler.Failed,
+		Status:        types.RunStatusFailed,
 		CreatedAt:     now.Add(-time.Hour),
 		UpdatedAt:     now,
-		Outcome:       scheduler.Outcome{Status: scheduler.Failed, Message: "clone failed"},
+		Outcome:       types.SchedulerOutcome{Status: types.RunStatusFailed, Message: "clone failed"},
 	}
-	succeeded := scheduler.Run{
+	succeeded := types.SchedulerRun{
 		ID:            "succeeded",
 		EnvironmentID: "0",
-		Status:        scheduler.Succeeded,
+		Status:        types.RunStatusSucceeded,
 		CreatedAt:     now.Add(-time.Minute),
 		UpdatedAt:     now.Add(-time.Minute),
 		FinishedAt:    new(now.Add(-time.Minute)),
 	}
-	for _, history := range [][]scheduler.Run{{failed, succeeded}, {succeeded, failed}} {
-		status := runtime.ApplyRunStatus(jobschedule.JobStatus{LastRun: new(failed), LastError: failed.Outcome.Message}, history)
+	for _, history := range [][]types.SchedulerRun{{failed, succeeded}, {succeeded, failed}} {
+		status := runtime.ApplyRunStatus(types.JobStatus{LastRun: new(failed), LastError: failed.Outcome.Message}, history)
 		require.Equal(t, succeeded.ID, status.LastRun.ID)
 		require.Empty(t, status.LastError)
 		require.Equal(t, "clone failed", history[0].Outcome.Message+history[1].Outcome.Message)
 	}
 	// An acknowledgement updates an old failure's revision, not its execution time.
-	acknowledged := scheduler.Run{
+	acknowledged := types.SchedulerRun{
 		ID:            failed.ID,
 		EnvironmentID: failed.EnvironmentID,
 		Status:        failed.Status,
@@ -224,11 +221,11 @@ func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
 		UpdatedAt:     now.Add(time.Hour),
 		Outcome:       failed.Outcome,
 	}
-	status := runtime.ApplyRunStatus(jobschedule.JobStatus{LastRun: new(succeeded)}, []scheduler.Run{acknowledged})
+	status := runtime.ApplyRunStatus(types.JobStatus{LastRun: new(succeeded)}, []types.SchedulerRun{acknowledged})
 	require.Equal(t, succeeded.ID, status.LastRun.ID)
 	require.Empty(t, status.LastError)
 	// A real retry of the older run becomes the latest execution.
-	retried := scheduler.Run{
+	retried := types.SchedulerRun{
 		ID:            acknowledged.ID,
 		EnvironmentID: acknowledged.EnvironmentID,
 		Status:        acknowledged.Status,
@@ -236,18 +233,18 @@ func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
 		UpdatedAt:     acknowledged.UpdatedAt,
 		StartedAt:     new(now.Add(time.Second)),
 		Outcome:       acknowledged.Outcome,
-		Attempts:      []scheduler.Attempt{{Number: 2, StartedAt: now.Add(time.Second)}},
+		Attempts:      []types.SchedulerAttempt{{Number: 2, StartedAt: now.Add(time.Second)}},
 	}
-	status = runtime.ApplyRunStatus(status, []scheduler.Run{retried})
+	status = runtime.ApplyRunStatus(status, []types.SchedulerRun{retried})
 	require.Equal(t, retried.ID, status.LastRun.ID)
 	require.Equal(t, "clone failed", status.LastError)
 	// Merge the same run's terminal revision before choosing an active run.
 	status = runtime.ApplyRunStatus(
-		jobschedule.JobStatus{
-			CurrentRun: &scheduler.Run{
+		types.JobStatus{
+			CurrentRun: &types.SchedulerRun{
 				ID:            succeeded.ID,
 				EnvironmentID: succeeded.EnvironmentID,
-				Status:        scheduler.Running,
+				Status:        types.RunStatusRunning,
 				CreatedAt:     succeeded.CreatedAt,
 				UpdatedAt:     succeeded.UpdatedAt,
 				FinishedAt:    succeeded.FinishedAt,
@@ -256,7 +253,7 @@ func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
 			LastSuccess: status.LastSuccess,
 			LastError:   status.LastError,
 		},
-		[]scheduler.Run{{
+		[]types.SchedulerRun{{
 			ID:            succeeded.ID,
 			EnvironmentID: succeeded.EnvironmentID,
 			Status:        succeeded.Status,
@@ -266,25 +263,25 @@ func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
 		}},
 	)
 	require.Nil(t, status.CurrentRun)
-	running := scheduler.Run{
+	running := types.SchedulerRun{
 		ID:            retried.ID,
 		EnvironmentID: retried.EnvironmentID,
-		Status:        scheduler.Running,
+		Status:        types.RunStatusRunning,
 		CreatedAt:     retried.CreatedAt,
 		UpdatedAt:     now.Add(2 * time.Hour),
 		StartedAt:     retried.StartedAt,
 		Outcome:       retried.Outcome,
 		Attempts:      retried.Attempts,
 	}
-	status = runtime.ApplyRunStatus(status, []scheduler.Run{running})
+	status = runtime.ApplyRunStatus(status, []types.SchedulerRun{running})
 	require.Equal(t, running.ID, status.CurrentRun.ID)
 	require.Empty(t, status.LastError)
 
 	// A later manual failure stays visible while older work waits to retry.
-	retrying := scheduler.Run{
+	retrying := types.SchedulerRun{
 		ID:            running.ID,
 		EnvironmentID: running.EnvironmentID,
-		Status:        scheduler.Retrying,
+		Status:        types.RunStatusRetrying,
 		CreatedAt:     running.CreatedAt,
 		UpdatedAt:     running.UpdatedAt,
 		StartedAt:     running.StartedAt,
@@ -292,15 +289,15 @@ func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
 		Outcome:       running.Outcome,
 		Attempts:      running.Attempts,
 	}
-	manualFailure := scheduler.Run{
+	manualFailure := types.SchedulerRun{
 		ID:            "manual-failure",
 		EnvironmentID: running.EnvironmentID,
-		Status:        scheduler.Failed,
+		Status:        types.RunStatusFailed,
 		CreatedAt:     now.Add(time.Minute),
 		UpdatedAt:     running.UpdatedAt,
-		Outcome:       scheduler.Outcome{Status: running.Outcome.Status, Message: "latest manual failure"},
+		Outcome:       types.SchedulerOutcome{Status: running.Outcome.Status, Message: "latest manual failure"},
 	}
-	laterSuccess := scheduler.Run{
+	laterSuccess := types.SchedulerRun{
 		ID:            succeeded.ID,
 		EnvironmentID: succeeded.EnvironmentID,
 		Status:        succeeded.Status,
@@ -308,25 +305,25 @@ func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
 		UpdatedAt:     now.Add(2 * time.Second),
 		FinishedAt:    succeeded.FinishedAt,
 	}
-	for _, history := range [][]scheduler.Run{{retrying, manualFailure}, {manualFailure, retrying}} {
-		status = runtime.ApplyRunStatus(jobschedule.JobStatus{}, history)
+	for _, history := range [][]types.SchedulerRun{{retrying, manualFailure}, {manualFailure, retrying}} {
+		status = runtime.ApplyRunStatus(types.JobStatus{}, history)
 		require.Equal(t, retrying.ID, status.CurrentRun.ID)
 		require.Equal(t, manualFailure.ID, status.LastRun.ID)
 		require.Equal(t, manualFailure.Outcome.Message, status.LastError)
-		status = runtime.ApplyRunStatus(status, []scheduler.Run{laterSuccess})
+		status = runtime.ApplyRunStatus(status, []types.SchedulerRun{laterSuccess})
 		require.Empty(t, status.LastError)
 	}
 
 	cloneErr := errors.New("failed to clone repository: network is unreachable")
-	outcome, runErr := classifyOutcome("gitops-sync:project", scheduler.Outcome{}, cloneErr)
+	outcome, runErr := classifyOutcome("gitops-sync:project", types.SchedulerOutcome{}, cloneErr)
 	require.ErrorIs(t, runErr, cloneErr)
-	require.Equal(t, scheduler.Failed, outcome.Status)
-	outcome, runErr = classifyOutcome("environment-health:0", scheduler.Outcome{}, context.DeadlineExceeded)
+	require.Equal(t, types.RunStatusFailed, outcome.Status)
+	outcome, runErr = classifyOutcome("environment-health:0", types.SchedulerOutcome{}, context.DeadlineExceeded)
 	require.ErrorIs(t, runErr, context.DeadlineExceeded)
-	require.Equal(t, scheduler.Retrying, outcome.Status)
-	outcome, runErr = classifyOutcome("auto-update", scheduler.Outcome{Status: scheduler.Partial}, cloneErr)
+	require.Equal(t, types.RunStatusRetrying, outcome.Status)
+	outcome, runErr = classifyOutcome("auto-update", types.SchedulerOutcome{Status: types.RunStatusPartial}, cloneErr)
 	require.ErrorIs(t, runErr, cloneErr)
-	require.Equal(t, scheduler.Partial, outcome.Status)
+	require.Equal(t, types.RunStatusPartial, outcome.Status)
 }
 
 func TestJobService_ListJobs_ImageUpdateWatcherIsContinuousAndRespectsEnabled(t *testing.T) {
@@ -362,9 +359,9 @@ func TestJobService_UpdateJobSchedules_ReschedulesChangedJob(t *testing.T) {
 	fakeScheduler := newFakeJobScheduler("auto-update")
 	jobSvc.SetScheduler(ctx, fakeScheduler)
 
-	_, err = jobSvc.UpdateJobSchedules(ctx, jobschedule.Update{
-		AutoUpdateInterval: new("0 */10 * * * *"),
-	})
+	_, err = jobSvc.UpdateJobSchedules(ctx, types.JobScheduleConfig{
+		AutoUpdateInterval: "0 */10 * * * *",
+	}, map[string]bool{"autoUpdateInterval": true})
 	require.NoError(t, err)
 
 	require.Equal(t, []string{"auto-update"}, fakeScheduler.rescheduled)
@@ -381,9 +378,9 @@ func TestJobService_UpdateJobSchedules_DeprecatedPollingIntervalDoesNotReschedul
 	fakeScheduler := newFakeJobScheduler("auto-update")
 	jobSvc.SetScheduler(ctx, fakeScheduler)
 
-	updated, err := jobSvc.UpdateJobSchedules(ctx, jobschedule.Update{
-		PollingInterval: new("0 */10 * * * *"),
-	})
+	updated, err := jobSvc.UpdateJobSchedules(ctx, types.JobScheduleConfig{
+		PollingInterval: "0 */10 * * * *",
+	}, map[string]bool{"pollingInterval": true})
 	require.NoError(t, err)
 	require.Equal(t, "0 */10 * * * *", updated.PollingInterval)
 	require.Empty(t, fakeScheduler.rescheduled)
@@ -404,9 +401,9 @@ func TestJobService_UpdateJobSchedules_UsesLifecycleContextForReschedule(t *test
 	fakeScheduler := newFakeJobScheduler("auto-update")
 	jobSvc.SetScheduler(lifecycleCtx, fakeScheduler)
 
-	_, err = jobSvc.UpdateJobSchedules(requestCtx, jobschedule.Update{
-		AutoUpdateInterval: new("0 */10 * * * *"),
-	})
+	_, err = jobSvc.UpdateJobSchedules(requestCtx, types.JobScheduleConfig{
+		AutoUpdateInterval: "0 */10 * * * *",
+	}, map[string]bool{"autoUpdateInterval": true})
 	require.NoError(t, err)
 
 	cancelRequest()
@@ -429,9 +426,9 @@ func TestJobService_UpdateJobSchedules_RejectsInvalidCronWithoutChangingSetting(
 	fakeScheduler := newFakeJobScheduler()
 	jobSvc.SetScheduler(ctx, fakeScheduler)
 
-	_, err = jobSvc.UpdateJobSchedules(ctx, jobschedule.Update{
-		PollingInterval: new("not a cron expression"),
-	})
+	_, err = jobSvc.UpdateJobSchedules(ctx, types.JobScheduleConfig{
+		PollingInterval: "not a cron expression",
+	}, map[string]bool{"pollingInterval": true})
 	require.ErrorContains(t, err, "invalid cron expression for pollingInterval")
 	require.Equal(t, "0 0 * * * *", settingsSvc.GetStringSetting(ctx, "pollingInterval", ""))
 	require.Empty(t, fakeScheduler.rescheduled)
@@ -445,9 +442,9 @@ func TestJobService_UpdateJobSchedules_UnchangedScheduleDoesNotReschedule(t *tes
 	require.NoError(t, err)
 
 	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{})
-	updated, err := jobSvc.UpdateJobSchedules(ctx, jobschedule.Update{
-		PollingInterval: new("0 0 * * * *"),
-	})
+	updated, err := jobSvc.UpdateJobSchedules(ctx, types.JobScheduleConfig{
+		PollingInterval: "0 0 * * * *",
+	}, map[string]bool{"pollingInterval": true})
 	require.NoError(t, err)
 	require.Equal(t, "0 0 * * * *", updated.PollingInterval)
 }
@@ -463,15 +460,15 @@ func TestJobService_UpdateJobSchedules_RestoresPreviousScheduleWhenRescheduleFai
 
 	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{})
 	fakeScheduler := &fakeJobScheduler{
-		jobs:          map[string]scheduler.Job{"auto-update": fakeJob{name: "auto-update"}},
-		runtimeStates: map[string]scheduler.JobRuntimeState{},
+		jobs:          map[string]types.SchedulerJob{"auto-update": fakeJob{name: "auto-update"}},
+		runtimeStates: map[string]types.JobRuntimeState{},
 		rescheduleErr: errors.New("scheduler unavailable"),
 	}
 	jobSvc.SetScheduler(ctx, fakeScheduler)
 
-	_, err = jobSvc.UpdateJobSchedules(ctx, jobschedule.Update{
-		AutoUpdateInterval: new("0 0 8 * * *"),
-	})
+	_, err = jobSvc.UpdateJobSchedules(ctx, types.JobScheduleConfig{
+		AutoUpdateInterval: "0 0 8 * * *",
+	}, map[string]bool{"autoUpdateInterval": true})
 	require.ErrorContains(t, err, "scheduler unavailable")
 	require.Equal(t, "0 0 0 * * *", settingsSvc.GetStringSetting(ctx, "autoUpdateInterval", ""))
 
@@ -491,9 +488,9 @@ func TestJobService_UpdateJobSchedules_SkipsManagerOnlyJobsInAgentMode(t *testin
 	fakeScheduler := newFakeJobScheduler("environment-health")
 	jobSvc.SetScheduler(ctx, fakeScheduler)
 
-	_, err = jobSvc.UpdateJobSchedules(ctx, jobschedule.Update{
-		EnvironmentHealthInterval: new("0 */5 * * * *"),
-	})
+	_, err = jobSvc.UpdateJobSchedules(ctx, types.JobScheduleConfig{
+		EnvironmentHealthInterval: "0 */5 * * * *",
+	}, map[string]bool{"environmentHealthInterval": true})
 	require.NoError(t, err)
 
 	require.Empty(t, fakeScheduler.rescheduled)
@@ -515,9 +512,9 @@ func TestJobService_UpdateJobSchedules_DelegatesEnvironmentHealthReschedule(t *t
 		rescheduled++
 	}
 
-	_, err = jobSvc.UpdateJobSchedules(ctx, jobschedule.Update{
-		EnvironmentHealthInterval: new("0 */5 * * * *"),
-	})
+	_, err = jobSvc.UpdateJobSchedules(ctx, types.JobScheduleConfig{
+		EnvironmentHealthInterval: "0 */5 * * * *",
+	}, map[string]bool{"environmentHealthInterval": true})
 	require.NoError(t, err)
 	require.Equal(t, 1, rescheduled)
 	require.Empty(t, fakeScheduler.rescheduled)
@@ -539,21 +536,21 @@ func TestJobService_Submit_PersistsImageUpdateWatcherRun(t *testing.T) {
 		Permissions: database.StringSlice{authz.PermJobsManage},
 	}).Error)
 	require.NoError(t, db.Create(&role.UserRoleAssignment{UserID: "operator", RoleID: "jobs-manager"}).Error)
-	run, err := jobSvc.Submit(ctx, scheduler.Request{
+	run, err := jobSvc.Submit(ctx, types.SchedulerRequest{
 		JobID:         "image-polling",
 		EnvironmentID: "0",
 		Trigger:       "manual",
 		RequestedBy:   "operator",
 	})
 	require.NoError(t, err)
-	require.Equal(t, scheduler.Queued, run.Status)
+	require.Equal(t, types.RunStatusQueued, run.Status)
 	persisted, err := jobSvc.runs.Get(ctx, "0", "image-polling", run.ID)
 	require.NoError(t, err)
 	require.Equal(t, run.ID, persisted.ID)
 	require.Empty(t, fakeScheduler.busWatcherRuns)
 }
 
-func findJobStatusByID(t *testing.T, jobs []jobschedule.JobStatus, id string) jobschedule.JobStatus {
+func findJobStatusByID(t *testing.T, jobs []types.JobStatus, id string) types.JobStatus {
 	t.Helper()
 
 	for _, job := range jobs {
@@ -562,39 +559,39 @@ func findJobStatusByID(t *testing.T, jobs []jobschedule.JobStatus, id string) jo
 		}
 	}
 	require.FailNowf(t, "unexpected failure", "job %q not found", id)
-	return jobschedule.JobStatus{}
+	return types.JobStatus{}
 }
 
 func newFakeJobScheduler(jobIDs ...string) *fakeJobScheduler {
-	jobs := make(map[string]scheduler.Job, len(jobIDs))
+	jobs := make(map[string]types.SchedulerJob, len(jobIDs))
 	for _, jobID := range jobIDs {
 		jobs[jobID] = fakeJob{name: jobID}
 	}
 
 	return &fakeJobScheduler{
 		jobs:          jobs,
-		runtimeStates: make(map[string]scheduler.JobRuntimeState),
+		runtimeStates: make(map[string]types.JobRuntimeState),
 	}
 }
 
-func (s *fakeJobScheduler) GetJob(jobID string) (scheduler.Job, bool) {
+func (s *fakeJobScheduler) GetJob(jobID string) (types.SchedulerJob, bool) {
 	job, ok := s.jobs[jobID]
 	return job, ok
 }
 
-func (s *fakeJobScheduler) GetJobRuntimeState(jobID string) (scheduler.JobRuntimeState, bool) {
+func (s *fakeJobScheduler) GetJobRuntimeState(jobID string) (types.JobRuntimeState, bool) {
 	state, ok := s.runtimeStates[jobID]
 	return state, ok
 }
 
-func (s *fakeJobScheduler) RescheduleJob(ctx context.Context, job scheduler.Job) error {
+func (s *fakeJobScheduler) RescheduleJob(ctx context.Context, job types.SchedulerJob) error {
 	s.rescheduled = append(s.rescheduled, job.Name())
 	s.rescheduleContexts = append(s.rescheduleContexts, ctx)
 	if s.rescheduleErr != nil {
 		return s.rescheduleErr
 	}
 
-	s.runtimeStates[job.Name()] = scheduler.JobRuntimeState{
+	s.runtimeStates[job.Name()] = types.JobRuntimeState{
 		Schedule:  job.Schedule(ctx),
 		Scheduled: true,
 	}
@@ -615,8 +612,8 @@ func (j fakeJob) Schedule(context.Context) string {
 	return "0 0 0 * * *"
 }
 
-func (j fakeJob) Run(context.Context) (scheduler.Outcome, error) {
-	return scheduler.Outcome{Status: scheduler.Succeeded}, nil
+func (j fakeJob) Run(context.Context) (types.SchedulerOutcome, error) {
+	return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 }
 
 func newJobActivityTestService(t *testing.T) (*JobService, *activity.ActivityService, *database.DB) {
@@ -644,7 +641,7 @@ func newJobActivityTestService(t *testing.T) (*JobService, *activity.ActivitySer
 func TestJobActivityLifecycle(t *testing.T) {
 	svc, activities, db := newJobActivityTestService(t)
 	ctx := t.Context()
-	run, err := svc.runs.Submit(ctx, scheduler.Request{
+	run, err := svc.runs.Submit(ctx, types.SchedulerRequest{
 		JobID:   "auto-update",
 		RunID:   "b6d679c2-bdf5-4af1-985f-49c468983ba0",
 		Trigger: "scheduled",
@@ -654,7 +651,7 @@ func TestJobActivityLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, uuid.Nil(), activityID)
 	require.Equal(t, "0", run.ActivityEnvironmentID)
-	check := func(status activitytypes.Status, precise scheduler.RunStatus) {
+	check := func(status types.ActivityStatus, precise types.RunStatus) {
 		t.Helper()
 		detail, detailErr := activities.GetActivityDetail(ctx, "0", run.ActivityID, 10)
 		require.NoError(t, detailErr)
@@ -662,17 +659,17 @@ func TestJobActivityLifecycle(t *testing.T) {
 		require.Equal(t, string(precise), detail.Activity.Metadata["jobStatus"])
 		require.Equal(t, run.ID, *detail.Activity.BatchID)
 	}
-	check(activitytypes.StatusQueued, scheduler.Queued)
-	duplicate, err := svc.runs.Submit(ctx, scheduler.Request{
+	check(types.ActivityStatusQueued, types.RunStatusQueued)
+	duplicate, err := svc.runs.Submit(ctx, types.SchedulerRequest{
 		JobID:   run.JobID,
 		RunID:   run.ID,
 		Trigger: "scheduled",
 	})
 	require.NoError(t, err)
 	require.Equal(t, run.ActivityID, duplicate.ActivityID)
-	for _, status := range []scheduler.RunStatus{scheduler.Running, scheduler.Waiting, scheduler.Failed} {
-		require.NoError(t, svc.runs.UpdateRun(ctx, run, func(current *scheduler.Run) error {
-			*current = scheduler.Run{ //exhaustruct:enforce
+	for _, status := range []types.RunStatus{types.RunStatusRunning, types.RunStatusWaiting, types.RunStatusFailed} {
+		require.NoError(t, svc.runs.UpdateRun(ctx, run, func(current *types.SchedulerRun) error {
+			*current = types.SchedulerRun{ //exhaustruct:enforce
 				ActivityEnvironmentID: current.ActivityEnvironmentID,
 				ActivityID:            current.ActivityID,
 				Resolution:            current.Resolution,
@@ -690,7 +687,7 @@ func TestJobActivityLifecycle(t *testing.T) {
 				NextAttempt:           current.NextAttempt,
 				AttemptCount:          current.AttemptCount,
 				Owner:                 current.Owner,
-				Outcome: scheduler.Outcome{ //exhaustruct:enforce
+				Outcome: types.SchedulerOutcome{ //exhaustruct:enforce
 					Status:     status,
 					Message:    "operation detail",
 					ActivityID: "",
@@ -710,15 +707,15 @@ func TestJobActivityLifecycle(t *testing.T) {
 			return nil
 		}))
 	}
-	check(activitytypes.StatusFailed, scheduler.Failed)
+	check(types.ActivityStatusFailed, types.RunStatusFailed)
 	failedDetail, err := activities.GetActivityDetail(ctx, "0", run.ActivityID, 10)
 	require.NoError(t, err)
 	require.NotNil(t, failedDetail.Activity.Error)
 	require.Equal(t, "operation detail", *failedDetail.Activity.Error)
-	later, err := svc.runs.Submit(ctx, scheduler.Request{JobID: run.JobID, Trigger: "scheduled"})
+	later, err := svc.runs.Submit(ctx, types.SchedulerRequest{JobID: run.JobID, Trigger: "scheduled"})
 	require.NoError(t, err)
-	require.NoError(t, svc.runs.UpdateRun(ctx, later, func(current *scheduler.Run) error {
-		*current = scheduler.Run{ //exhaustruct:enforce
+	require.NoError(t, svc.runs.UpdateRun(ctx, later, func(current *types.SchedulerRun) error {
+		*current = types.SchedulerRun{ //exhaustruct:enforce
 			ActivityEnvironmentID:   current.ActivityEnvironmentID,
 			ActivityID:              current.ActivityID,
 			Resolution:              current.Resolution,
@@ -728,7 +725,7 @@ func TestJobActivityLifecycle(t *testing.T) {
 			EnvironmentID:           current.EnvironmentID,
 			Trigger:                 current.Trigger,
 			RequestedBy:             current.RequestedBy,
-			Status:                  scheduler.Succeeded,
+			Status:                  types.RunStatusSucceeded,
 			CreatedAt:               current.CreatedAt,
 			UpdatedAt:               time.Now().UTC(),
 			StartedAt:               current.StartedAt,
@@ -751,16 +748,16 @@ func TestJobActivityLifecycle(t *testing.T) {
 	}))
 	failedDetail, err = activities.GetActivityDetail(ctx, "0", run.ActivityID, 10)
 	require.NoError(t, err)
-	require.Equal(t, activitytypes.StatusFailed, failedDetail.Activity.Status)
+	require.Equal(t, types.ActivityStatusFailed, failedDetail.Activity.Status)
 	require.Equal(t, "operation detail", *failedDetail.Activity.Error)
 	_, err = svc.runs.Retry(ctx, "0", run.JobID, run.ID)
 	require.NoError(t, err)
-	check(activitytypes.StatusQueued, scheduler.Queued)
+	check(types.ActivityStatusQueued, types.RunStatusQueued)
 	_, err = activities.CancelActivity(ctx, "0", run.ActivityID, "operator")
 	require.ErrorIs(t, err, activity.ErrActivityNotCancelable)
-	check(activitytypes.StatusQueued, scheduler.Queued)
-	require.NoError(t, svc.runs.UpdateRun(ctx, run, func(current *scheduler.Run) error {
-		*current = scheduler.Run{ //exhaustruct:enforce
+	check(types.ActivityStatusQueued, types.RunStatusQueued)
+	require.NoError(t, svc.runs.UpdateRun(ctx, run, func(current *types.SchedulerRun) error {
+		*current = types.SchedulerRun{ //exhaustruct:enforce
 			ActivityEnvironmentID:   current.ActivityEnvironmentID,
 			ActivityID:              current.ActivityID,
 			Resolution:              current.Resolution,
@@ -770,7 +767,7 @@ func TestJobActivityLifecycle(t *testing.T) {
 			EnvironmentID:           current.EnvironmentID,
 			Trigger:                 current.Trigger,
 			RequestedBy:             current.RequestedBy,
-			Status:                  scheduler.NeedsAttention,
+			Status:                  types.RunStatusNeedsAttention,
 			CreatedAt:               current.CreatedAt,
 			UpdatedAt:               time.Now().UTC(),
 			StartedAt:               current.StartedAt,
@@ -793,7 +790,7 @@ func TestJobActivityLifecycle(t *testing.T) {
 	}))
 	_, err = svc.runs.Resolve(ctx, "0", run.JobID, run.ID, "operator")
 	require.NoError(t, err)
-	check(activitytypes.StatusCancelled, scheduler.Canceled)
+	check(types.ActivityStatusCancelled, types.RunStatusCanceled)
 	var count int64
 	require.NoError(t, db.Model(&activity.Activity{}).Count(&count).Error)
 	require.Equal(t, int64(2), count)
@@ -867,7 +864,7 @@ func TestJobActivityVisibilityAndGrouping(t *testing.T) {
 		},
 	} {
 		t.Run(test.job+"/"+test.trigger+"/"+test.environment, func(t *testing.T) {
-			run, err := svc.runs.Submit(t.Context(), scheduler.Request{
+			run, err := svc.runs.Submit(t.Context(), types.SchedulerRequest{
 				JobID:         test.job,
 				Trigger:       test.trigger,
 				EnvironmentID: test.environment,
@@ -880,7 +877,7 @@ func TestJobActivityVisibilityAndGrouping(t *testing.T) {
 				require.NoError(t, getActivityDetailErr)
 				require.Equal(t, test.environment, detail.Activity.Metadata["environmentId"])
 			}
-			child, err := activities.StartActivity(svc.runs.ExecutionContext(t.Context(), run, ""), activity.StartActivityRequest{Type: activitytypes.TypeImagePull})
+			child, err := activities.StartActivity(svc.runs.ExecutionContext(t.Context(), run, ""), activity.StartActivityRequest{Type: types.ActivityTypeImagePull})
 			require.NoError(t, err)
 			require.Equal(t, run.ID, *child.BatchID)
 		})
@@ -891,11 +888,11 @@ func TestJobActivityRestartRepairsFailedProjection(t *testing.T) {
 	svc, activities, db := newJobActivityTestService(t)
 	ctx := t.Context()
 	require.NoError(t, db.Migrator().DropTable(&activity.ActivityMessage{}, &activity.Activity{}))
-	run, err := svc.runs.Submit(ctx, scheduler.Request{JobID: "auto-update", Trigger: "scheduled"})
+	run, err := svc.runs.Submit(ctx, types.SchedulerRequest{JobID: "auto-update", Trigger: "scheduled"})
 	require.NoError(t, err, "activity failure must not reject accepted work")
 	require.NotEmpty(t, run.ActivityID)
-	require.NoError(t, svc.runs.UpdateRun(ctx, run, func(current *scheduler.Run) error {
-		*current = scheduler.Run{ //exhaustruct:enforce
+	require.NoError(t, svc.runs.UpdateRun(ctx, run, func(current *types.SchedulerRun) error {
+		*current = types.SchedulerRun{ //exhaustruct:enforce
 			ActivityEnvironmentID: current.ActivityEnvironmentID,
 			ActivityID:            current.ActivityID,
 			Resolution:            current.Resolution,
@@ -905,7 +902,7 @@ func TestJobActivityRestartRepairsFailedProjection(t *testing.T) {
 			EnvironmentID:         current.EnvironmentID,
 			Trigger:               current.Trigger,
 			RequestedBy:           current.RequestedBy,
-			Status:                scheduler.NeedsAttention,
+			Status:                types.RunStatusNeedsAttention,
 			CreatedAt:             current.CreatedAt,
 			UpdatedAt:             time.Now().UTC(),
 			StartedAt:             current.StartedAt,
@@ -913,7 +910,7 @@ func TestJobActivityRestartRepairsFailedProjection(t *testing.T) {
 			NextAttempt:           current.NextAttempt,
 			AttemptCount:          current.AttemptCount,
 			Owner:                 current.Owner,
-			Outcome: scheduler.Outcome{ //exhaustruct:enforce
+			Outcome: types.SchedulerOutcome{ //exhaustruct:enforce
 				Status:     "",
 				Message:    "interrupted before applying updates",
 				ActivityID: "",
@@ -951,16 +948,16 @@ func TestJobActivityRestartRepairsFailedProjection(t *testing.T) {
 	})
 	require.Eventually(t, func() bool {
 		detail, getErr := activities.GetActivityDetail(ctx, "0", run.ActivityID, 10)
-		return getErr == nil && detail.Activity.Status == activitytypes.StatusFailed
+		return getErr == nil && detail.Activity.Status == types.ActivityStatusFailed
 	}, 5*time.Second, 10*time.Millisecond)
 	detail, err := activities.GetActivityDetail(ctx, "0", run.ActivityID, 10)
 	require.NoError(t, err)
-	require.Equal(t, activitytypes.StatusFailed, detail.Activity.Status)
+	require.Equal(t, types.ActivityStatusFailed, detail.Activity.Status)
 	require.Contains(t, detail.Activity.LatestMessage, "interrupted")
 	persisted, err := restarted.runs.Get(ctx, "0", run.JobID, run.ID)
 	require.NoError(t, err)
 	require.Zero(t, persisted.AttemptCount, "repair must not execute interrupted work")
-	require.Equal(t, scheduler.Failed, persisted.Status)
+	require.Equal(t, types.RunStatusFailed, persisted.Status)
 	require.Equal(t, "interrupted before applying updates", persisted.Outcome.Message)
 	require.NotNil(t, persisted.FinishedAt)
 	require.Equal(t, run.ActivityID, persisted.ActivityID)
@@ -972,14 +969,14 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 			db := setupSettingsTestDB(t)
 			require.NoError(t, db.AutoMigrate(&environment.Environment{}))
 			q := newJobCoordinatorForTest(t, db)
-			local, err := q.Submit(t.Context(), scheduler.Request{
+			local, err := q.Submit(t.Context(), types.SchedulerRequest{
 				JobID:         "auto-update",
 				EnvironmentID: "remote",
 				Trigger:       "scheduled",
 			})
 			require.NoError(t, err)
-			require.NoError(t, q.UpdateRun(t.Context(), local, func(run *scheduler.Run) error {
-				*run = scheduler.Run{ //exhaustruct:enforce
+			require.NoError(t, q.UpdateRun(t.Context(), local, func(run *types.SchedulerRun) error {
+				*run = types.SchedulerRun{ //exhaustruct:enforce
 					ActivityEnvironmentID: run.ActivityEnvironmentID,
 					ActivityID:            run.ActivityID,
 					Resolution:            run.Resolution,
@@ -989,7 +986,7 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 					EnvironmentID:         run.EnvironmentID,
 					Trigger:               run.Trigger,
 					RequestedBy:           run.RequestedBy,
-					Status:                kit.Ternary(automatic, scheduler.Running, scheduler.NeedsAttention),
+					Status:                kit.Ternary(automatic, types.RunStatusRunning, types.RunStatusNeedsAttention),
 					CreatedAt:             run.CreatedAt,
 					UpdatedAt:             run.UpdatedAt,
 					StartedAt:             run.StartedAt,
@@ -997,8 +994,8 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 					NextAttempt:           run.NextAttempt,
 					AttemptCount:          run.AttemptCount,
 					Owner:                 run.Owner,
-					Outcome: scheduler.Outcome{ //exhaustruct:enforce
-						Status:     scheduler.NeedsAttention,
+					Outcome: types.SchedulerOutcome{ //exhaustruct:enforce
+						Status:     types.RunStatusNeedsAttention,
 						Message:    "original failure",
 						ActivityID: "",
 						Targets:    nil,
@@ -1016,17 +1013,17 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 				}
 				return nil
 			}))
-			agentRun := scheduler.Run{
+			agentRun := types.SchedulerRun{
 				ID:            local.ID,
 				JobID:         local.JobID,
 				EnvironmentID: "0",
-				Status:        scheduler.Running,
-				Outcome: scheduler.Outcome{
-					Status:  scheduler.NeedsAttention,
+				Status:        types.RunStatusRunning,
+				Outcome: types.SchedulerOutcome{
+					Status:  types.RunStatusNeedsAttention,
 					Message: "original failure",
-					Targets: []scheduler.TargetOutcome{{
+					Targets: []types.TargetOutcome{{
 						ID:     "completed",
-						Status: scheduler.Succeeded,
+						Status: types.RunStatusSucceeded,
 					}},
 				},
 			}
@@ -1034,7 +1031,7 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch {
 				case r.Method == http.MethodGet && r.URL.Query().Has("page"):
-					raw, marshalErr := json.Marshal(scheduler.RunList{Runs: []scheduler.Run{agentRun}, Total: 1})
+					raw, marshalErr := json.Marshal(types.SchedulerRunList{Runs: []types.SchedulerRun{agentRun}, Total: 1})
 					assert.NoError(t, marshalErr)
 					w.Header().Set("Content-Type", "application/json")
 					_, writeErr := w.Write(raw)
@@ -1047,10 +1044,10 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 						ResolvedBy string `json:"resolvedBy"`
 					}
 					assert.NoError(t, json.UnmarshalRead(r.Body, &body))
-					agentRun = scheduler.Run{ //exhaustruct:enforce
+					agentRun = types.SchedulerRun{ //exhaustruct:enforce
 						ActivityEnvironmentID: agentRun.ActivityEnvironmentID,
 						ActivityID:            agentRun.ActivityID,
-						Resolution: &scheduler.RunResolution{
+						Resolution: &types.SchedulerRunResolution{
 							ResolvedBy: body.ResolvedBy,
 							ResolvedAt: time.Now().UTC(),
 							Reason:     "resolved_after_review",
@@ -1061,7 +1058,7 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 						EnvironmentID:           agentRun.EnvironmentID,
 						Trigger:                 agentRun.Trigger,
 						RequestedBy:             agentRun.RequestedBy,
-						Status:                  scheduler.Canceled,
+						Status:                  types.RunStatusCanceled,
 						CreatedAt:               agentRun.CreatedAt,
 						UpdatedAt:               agentRun.UpdatedAt,
 						StartedAt:               agentRun.StartedAt,
@@ -1084,7 +1081,7 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 					return
 				case strings.HasSuffix(r.URL.Path, "/ack"):
 					acknowledgements++
-					agentRun = scheduler.Run{ //exhaustruct:enforce
+					agentRun = types.SchedulerRun{ //exhaustruct:enforce
 						ActivityEnvironmentID:   agentRun.ActivityEnvironmentID,
 						ActivityID:              agentRun.ActivityID,
 						Resolution:              agentRun.Resolution,
@@ -1154,10 +1151,10 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 			} else {
 				outcome, confirmErr := svc.remote.Confirm(ctx, local, agentRun, path)
 				require.NoError(t, confirmErr)
-				require.Equal(t, scheduler.Waiting, outcome.Status)
+				require.Equal(t, types.RunStatusWaiting, outcome.Status)
 			}
 			require.Zero(t, mutations)
-			agentRun = scheduler.Run{ //exhaustruct:enforce
+			agentRun = types.SchedulerRun{ //exhaustruct:enforce
 				ActivityEnvironmentID:   agentRun.ActivityEnvironmentID,
 				ActivityID:              agentRun.ActivityID,
 				Resolution:              agentRun.Resolution,
@@ -1167,7 +1164,7 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 				EnvironmentID:           agentRun.EnvironmentID,
 				Trigger:                 agentRun.Trigger,
 				RequestedBy:             agentRun.RequestedBy,
-				Status:                  scheduler.NeedsAttention,
+				Status:                  types.RunStatusNeedsAttention,
 				CreatedAt:               agentRun.CreatedAt,
 				UpdatedAt:               agentRun.UpdatedAt,
 				StartedAt:               agentRun.StartedAt,
@@ -1191,31 +1188,31 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 				require.Error(t, err)
 				unchanged, getErr := q.Get(t.Context(), "remote", local.JobID, local.ID)
 				require.NoError(t, getErr)
-				require.Equal(t, scheduler.NeedsAttention, unchanged.Status)
+				require.Equal(t, types.RunStatusNeedsAttention, unchanged.Status)
 				resolved, resolveErr := svc.ResolveRun(ctx, "remote", local.JobID, local.ID, "operator")
 				require.NoError(t, resolveErr)
-				require.Equal(t, scheduler.Canceled, resolved.Status)
+				require.Equal(t, types.RunStatusCanceled, resolved.Status)
 				require.True(t, resolved.RemoteSettled)
 				require.Equal(t, "original failure", resolved.Outcome.Message)
 			} else {
 				outcome, confirmErr := svc.remote.Confirm(ctx, local, agentRun, path)
 				require.Error(t, confirmErr)
-				require.Equal(t, scheduler.Waiting, outcome.Status)
+				require.Equal(t, types.RunStatusWaiting, outcome.Status)
 				outcome, confirmErr = svc.remote.Confirm(ctx, local, agentRun, path)
 				require.Error(t, confirmErr)
-				require.Equal(t, scheduler.Waiting, outcome.Status)
+				require.Equal(t, types.RunStatusWaiting, outcome.Status)
 				outcome, confirmErr = svc.remote.Confirm(ctx, local, agentRun, path)
 				require.NoError(t, confirmErr)
-				require.Equal(t, scheduler.Failed, outcome.Status)
+				require.Equal(t, types.RunStatusFailed, outcome.Status)
 				require.Equal(t, "original failure", outcome.Message)
-				require.Equal(t, scheduler.Succeeded, outcome.Targets[0].Status)
+				require.Equal(t, types.RunStatusSucceeded, outcome.Targets[0].Status)
 				stored, getErr := q.Get(t.Context(), "remote", local.JobID, local.ID)
 				require.NoError(t, getErr)
 				require.True(t, stored.RemoteSettled)
-				require.Equal(t, scheduler.Failed, stored.RemoteOutcome.Status)
-				require.Equal(t, user.SystemUser.Username, stored.Resolution.ResolvedBy)
-				require.NoError(t, q.UpdateRun(ctx, stored, func(current *scheduler.Run) error {
-					*current = scheduler.Run{ //exhaustruct:enforce
+				require.Equal(t, types.RunStatusFailed, stored.RemoteOutcome.Status)
+				require.Equal(t, types.SystemUser.Username, stored.Resolution.ResolvedBy)
+				require.NoError(t, q.UpdateRun(ctx, stored, func(current *types.SchedulerRun) error {
+					*current = types.SchedulerRun{ //exhaustruct:enforce
 						ActivityEnvironmentID:   current.ActivityEnvironmentID,
 						ActivityID:              current.ActivityID,
 						Resolution:              current.Resolution,
@@ -1225,7 +1222,7 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 						EnvironmentID:           current.EnvironmentID,
 						Trigger:                 current.Trigger,
 						RequestedBy:             current.RequestedBy,
-						Status:                  scheduler.Failed,
+						Status:                  types.RunStatusFailed,
 						CreatedAt:               current.CreatedAt,
 						UpdatedAt:               current.UpdatedAt,
 						StartedAt:               current.StartedAt,
@@ -1248,7 +1245,7 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 				}))
 				_, retryErr := svc.RetryRun(ctx, "remote", local.JobID, local.ID)
 				require.ErrorContains(t, retryErr, "upgrade the agent")
-				agentRun = scheduler.Run{ //exhaustruct:enforce
+				agentRun = types.SchedulerRun{ //exhaustruct:enforce
 					ActivityEnvironmentID:   agentRun.ActivityEnvironmentID,
 					ActivityID:              agentRun.ActivityID,
 					Resolution:              agentRun.Resolution,
@@ -1258,7 +1255,7 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 					EnvironmentID:           agentRun.EnvironmentID,
 					Trigger:                 agentRun.Trigger,
 					RequestedBy:             agentRun.RequestedBy,
-					Status:                  scheduler.Failed,
+					Status:                  types.RunStatusFailed,
 					CreatedAt:               agentRun.CreatedAt,
 					UpdatedAt:               agentRun.UpdatedAt,
 					StartedAt:               agentRun.StartedAt,
@@ -1279,12 +1276,12 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 				}
 				retried, retryErr := svc.RetryRun(ctx, "remote", local.JobID, local.ID)
 				require.NoError(t, retryErr)
-				require.Equal(t, scheduler.Queued, retried.Status)
+				require.Equal(t, types.RunStatusQueued, retried.Status)
 				require.Equal(t, local.ID, retried.ID)
 
 				// Adopt agent-owned history without coalescing its explicit identity.
 				createdAt := time.Now().UTC().Add(-time.Hour)
-				agentOwned := scheduler.Run{ //exhaustruct:enforce
+				agentOwned := types.SchedulerRun{ //exhaustruct:enforce
 					ActivityEnvironmentID:   agentRun.ActivityEnvironmentID,
 					ActivityID:              "agent-summary",
 					Resolution:              agentRun.Resolution,
@@ -1294,7 +1291,7 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 					EnvironmentID:           agentRun.EnvironmentID,
 					Trigger:                 agentRun.Trigger,
 					RequestedBy:             agentRun.RequestedBy,
-					Status:                  scheduler.NeedsAttention,
+					Status:                  types.RunStatusNeedsAttention,
 					CreatedAt:               createdAt,
 					UpdatedAt:               agentRun.UpdatedAt,
 					StartedAt:               agentRun.StartedAt,
@@ -1313,7 +1310,7 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 					RemoteSettled:           false,
 					LastConfirmedAt:         agentRun.LastConfirmedAt,
 				}
-				catalog := []jobschedule.JobStatus{{ID: "updates", Children: []jobschedule.JobStatus{{ID: agentOwned.JobID, LastRun: &agentOwned}}}}
+				catalog := []types.JobStatus{{ID: "updates", Children: []types.JobStatus{{ID: agentOwned.JobID, LastRun: &agentOwned}}}}
 				require.NoError(t, svc.remote.ReconcileLegacyCatalog(ctx, "remote", catalog))
 				require.NoError(t, svc.remote.ReconcileLegacyCatalog(ctx, "remote", catalog))
 				adopted, getErr := q.Get(ctx, "remote", agentOwned.JobID, agentOwned.ID)
@@ -1321,20 +1318,20 @@ func TestResolveRemoteRunConfirmsOwnerAfterLostResponse(t *testing.T) {
 				require.True(t, adopted.RemoteAccepted)
 				require.True(t, adopted.RemoteDeliveryAttempted)
 				require.Equal(t, agentOwned.CreatedAt, adopted.CreatedAt)
-				require.Equal(t, scheduler.Queued, adopted.Status)
+				require.Equal(t, types.RunStatusQueued, adopted.Status)
 				require.Equal(t, agentOwned.FinishedAt, adopted.FinishedAt)
 				require.Equal(t, agentOwned.ActivityID, adopted.ActivityID)
 				require.Equal(t, "remote", adopted.ActivityEnvironmentID)
-				status := runtime.ApplyRunStatus(jobschedule.JobStatus{LastRun: &agentOwned}, []scheduler.Run{adopted})
+				status := runtime.ApplyRunStatus(types.JobStatus{LastRun: &agentOwned}, []types.SchedulerRun{adopted})
 				require.Nil(t, status.CurrentRun)
-				require.Equal(t, scheduler.Failed, status.LastRun.Status)
+				require.Equal(t, types.RunStatusFailed, status.LastRun.Status)
 				require.Equal(t, "original failure", status.LastError)
 				agentRun = agentOwned
 				merged, listErr := svc.ListRuns(ctx, "remote", agentOwned.JobID, 1, 20)
 				require.NoError(t, listErr)
 				detail, detailErr := svc.GetRun(ctx, "remote", agentOwned.JobID, agentOwned.ID)
 				require.NoError(t, detailErr)
-				require.Equal(t, scheduler.Failed, detail.Status)
+				require.Equal(t, types.RunStatusFailed, detail.Status)
 				require.Equal(t, "original failure", detail.Outcome.Message)
 				require.Equal(t, agentOwned.ActivityID, detail.ActivityID)
 				require.Equal(t, "remote", detail.ActivityEnvironmentID)
@@ -1353,10 +1350,10 @@ func TestResolveRunChecksCurrentOperatorPermission(t *testing.T) {
 	settingsService, err := newSettingsServiceForTest(t, t.Context(), db)
 	require.NoError(t, err)
 	svc := newJobServiceForTest(t, db, settingsService, &config.Config{})
-	run, err := svc.runs.Submit(t.Context(), scheduler.Request{JobID: "auto-update", Trigger: "scheduled"})
+	run, err := svc.runs.Submit(t.Context(), types.SchedulerRequest{JobID: "auto-update", Trigger: "scheduled"})
 	require.NoError(t, err)
-	require.NoError(t, svc.runs.UpdateRun(t.Context(), run, func(current *scheduler.Run) error {
-		*current = scheduler.Run{ //exhaustruct:enforce
+	require.NoError(t, svc.runs.UpdateRun(t.Context(), run, func(current *types.SchedulerRun) error {
+		*current = types.SchedulerRun{ //exhaustruct:enforce
 			ActivityEnvironmentID: current.ActivityEnvironmentID,
 			ActivityID:            current.ActivityID,
 			Resolution:            current.Resolution,
@@ -1366,7 +1363,7 @@ func TestResolveRunChecksCurrentOperatorPermission(t *testing.T) {
 			EnvironmentID:         current.EnvironmentID,
 			Trigger:               current.Trigger,
 			RequestedBy:           current.RequestedBy,
-			Status:                scheduler.NeedsAttention,
+			Status:                types.RunStatusNeedsAttention,
 			CreatedAt:             current.CreatedAt,
 			UpdatedAt:             current.UpdatedAt,
 			StartedAt:             current.StartedAt,
@@ -1374,8 +1371,8 @@ func TestResolveRunChecksCurrentOperatorPermission(t *testing.T) {
 			NextAttempt:           current.NextAttempt,
 			AttemptCount:          current.AttemptCount,
 			Owner:                 current.Owner,
-			Outcome: scheduler.Outcome{ //exhaustruct:enforce
-				Status:     scheduler.NeedsAttention,
+			Outcome: types.SchedulerOutcome{ //exhaustruct:enforce
+				Status:     types.RunStatusNeedsAttention,
 				Message:    "interrupted",
 				ActivityID: "",
 				Targets:    nil,
@@ -1403,7 +1400,7 @@ func TestResolveRunChecksCurrentOperatorPermission(t *testing.T) {
 	require.ErrorContains(t, err, "identity")
 	resolved, err := svc.ResolveRun(authorized, "0", "auto-update", run.ID, "operator")
 	require.NoError(t, err)
-	require.Equal(t, scheduler.Canceled, resolved.Status)
+	require.Equal(t, types.RunStatusCanceled, resolved.Status)
 	require.Equal(t, "interrupted", resolved.Outcome.Message)
 	require.Equal(t, "operator", resolved.Resolution.ResolvedBy)
 }

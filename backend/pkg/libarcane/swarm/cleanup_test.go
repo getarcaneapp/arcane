@@ -6,7 +6,7 @@ import (
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
-	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
+	"github.com/getarcaneapp/arcane/types/v3"
 	dockerclient "github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 )
@@ -21,7 +21,7 @@ func TestCleanupStaleManagedResourcesMatchesCurrentAndLegacyLabels(t *testing.T)
 		List: func(_ context.Context, filters dockerclient.Filters) ([]staleManagedResourceInternal, error) {
 			listCalls++
 			labels := filters["label"]
-			require.True(t, labels[swarmtypes.StackNamespaceLabel+"=stack"])
+			require.True(t, labels[types.SwarmStackNamespaceLabel+"=stack"])
 
 			switch {
 			case labels[resourceTypeLabel+"=config"]:
@@ -45,7 +45,7 @@ func TestCleanupStaleManagedResourcesMatchesCurrentAndLegacyLabels(t *testing.T)
 		},
 	}
 
-	err := cleanupStaleManagedResourcesInternal(
+	err := cleanupStaleManagedResources(
 		t.Context(),
 		"stack",
 		map[string]struct{}{"desired": {}},
@@ -75,12 +75,12 @@ func TestCleanupStaleManagedResourcesFailsWhenResourceStaysInUse(t *testing.T) {
 		},
 	}
 
-	err := cleanupStaleManagedResourcesInternal(t.Context(), "stack", map[string]struct{}{}, adapter, false, false)
+	err := cleanupStaleManagedResources(t.Context(), "stack", map[string]struct{}{}, adapter, false, false)
 	require.Error(t, err)
 	require.Equal(t, staleSwarmResourceRemoveAttemptsInternal, removeCalls)
 
 	removeCalls = 0
-	err = cleanupStaleManagedResourcesInternal(t.Context(), "stack", map[string]struct{}{}, adapter, false, true)
+	err = cleanupStaleManagedResources(t.Context(), "stack", map[string]struct{}{}, adapter, false, true)
 	require.NoError(t, err)
 	require.Equal(t, 1, removeCalls)
 }

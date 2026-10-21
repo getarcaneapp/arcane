@@ -4,7 +4,7 @@ import (
 	"cmp"
 	"context"
 
-	"github.com/getarcaneapp/arcane/types/v2/activity"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
@@ -17,11 +17,11 @@ func scopeJobActivityVisibility(ctx context.Context, query *gorm.DB, environment
 	if !present || permissions.Allows(permission, environmentID) {
 		return query
 	}
-	return query.Where("type <> ?", activity.TypeJobRun)
+	return query.Where("type <> ?", types.ActivityTypeJobRun)
 }
 
-func canReadJobActivity(ctx context.Context, item activity.Activity) bool {
-	if item.Type != activity.TypeJobRun {
+func canReadJobActivity(ctx context.Context, item types.Activity) bool {
+	if item.Type != types.ActivityTypeJobRun {
 		return true
 	}
 	metadataEnvironmentID, _ := item.Metadata["environmentId"].(string)
@@ -33,7 +33,7 @@ func canReadJobActivity(ctx context.Context, item activity.Activity) bool {
 	return permissions.Allows(authz.PermActivitiesRead, environmentID)
 }
 
-func (h *ActivityHandler) canReadActivityStreamEvent(ctx context.Context, event activity.StreamEvent) bool {
+func (h *ActivityHandler) canReadActivityStreamEvent(ctx context.Context, event types.ActivityStreamEvent) bool {
 	if event.Activity != nil {
 		return canReadJobActivity(ctx, *event.Activity)
 	}
@@ -43,7 +43,7 @@ func (h *ActivityHandler) canReadActivityStreamEvent(ctx context.Context, event 
 	// Only job activities are scoped by target environment. Events that carry a
 	// type hint for any other activity type need no database reread; job
 	// metadata is mutable, so job events are still checked against the row.
-	if event.ActivityType != "" && event.ActivityType != activity.TypeJobRun {
+	if event.ActivityType != "" && event.ActivityType != types.ActivityTypeJobRun {
 		return true
 	}
 	var model Activity
@@ -51,5 +51,5 @@ func (h *ActivityHandler) canReadActivityStreamEvent(ctx context.Context, event 
 	if err := h.activityService.db.WithContext(ctx).Select("type", "environment_id", "metadata").Where("id = ? AND environment_id = ?", event.ActivityID, "0").First(&model).Error; err != nil {
 		return false
 	}
-	return canReadJobActivity(ctx, activity.Activity{Type: model.Type, EnvironmentID: model.EnvironmentID, Metadata: model.Metadata})
+	return canReadJobActivity(ctx, types.Activity{Type: model.Type, EnvironmentID: model.EnvironmentID, Metadata: model.Metadata})
 }

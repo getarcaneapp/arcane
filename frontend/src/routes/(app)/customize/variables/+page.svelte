@@ -7,21 +7,16 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { variableService } from '#lib/services/variable-service.js';
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
-	import type {
-		GlobalVariable,
-		GlobalVariableCreateDto,
-		GlobalVariableUpdateDto,
-		VariableEnvSyncResult
-	} from '#lib/types/variable.js';
+	import type { GlobalVariable, GlobalVariableCreate, GlobalVariableUpdate, VariableEnvSyncResult } from '#lib/types/variable.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import VariableTable from './components/variable-table.svelte';
 
 	type VariableFormPayload =
-		| { mode: 'create'; variable: GlobalVariableCreateDto }
-		| { mode: 'edit'; id: string; variable: GlobalVariableUpdateDto }
-		| { mode: 'bulk'; variables: GlobalVariableCreateDto[] };
+		| { mode: 'create'; variable: GlobalVariableCreate }
+		| { mode: 'edit'; id: string; variable: GlobalVariableUpdate }
+		| { mode: 'bulk'; variables: GlobalVariableCreate[] };
 
 	let { data } = $props();
 
