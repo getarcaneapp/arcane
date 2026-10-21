@@ -4949,7 +4949,6 @@ func TestProjectService_ListProjects_FiltersByExactName(t *testing.T) {
 		testRegistryCredentials,
 	)
 
-	// Sorting by status pages in memory, so both pagination paths are covered.
 	for _, sort := range []string{"name", "status"} {
 		items, page, listErr := svc.ListProjects(ctx, pagination.QueryParams{
 			Filters: map[string]string{"name": "demo"},

@@ -1,4 +1,5 @@
 import 'unplugin-icons/types/svelte';
+import 'temporal-polyfill/types/global';
 
 declare global {
 	namespace App {

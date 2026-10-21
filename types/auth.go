@@ -340,3 +340,10 @@ type OidcDeviceTokenRequest struct {
 	// Required: true
 	DeviceCode string `json:"deviceCode"`
 }
+
+type SessionBootstrap struct {
+	User                User                   `json:"user" doc:"Authenticated user"`
+	Version             VersionInfo            `json:"version" doc:"Application version information"`
+	Environments        Paginated[Environment] `json:"environments" doc:"Environments the user can access"`
+	PermissionsManifest PermissionsManifest    `json:"permissionsManifest" doc:"Permission manifest used by navigation gates"`
+}

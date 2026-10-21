@@ -105,7 +105,7 @@ func TestNewHumaMiddleware_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToke
 	sessionSvc := session.NewSessionService(db)
 
 	signingKey := newTestSigningKey()
-	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, &config.Config{JWTRefreshExpiry: 24 * time.Hour}).WithSigningKey(signingKey)
+	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, nil, nil, &config.Config{JWTRefreshExpiry: 24 * time.Hour}).WithSigningKey(signingKey)
 	bearerToken := mintHumaMiddlewareTestToken(t, userSvc, sessionSvc, signingKey, "u-loopback")
 
 	ps := authz.NewPermissionSet()
@@ -269,7 +269,7 @@ func TestNewHumaMiddleware_OpportunisticAuthOnPublicRoute(t *testing.T) {
 
 	signingKey := newTestSigningKey()
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
-	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, cfg).WithSigningKey(signingKey)
+	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, nil, nil, cfg).WithSigningKey(signingKey)
 
 	_, err := userSvc.CreateUser(t.Context(), &user.User{
 		ID:       "u-logout",
@@ -357,7 +357,7 @@ func TestNewHumaMiddleware_VersionMismatchIsRecoverable(t *testing.T) {
 	signingKey := newTestSigningKey()
 	browserSigningKey := bytes.Repeat([]byte{0x24}, browserSessionSigningKeySize)
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
-	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, cfg).WithSigningKey(signingKey)
+	authSvc := NewAuthService(userSvc, nil, nil, sessionSvc, nil, nil, nil, cfg).WithSigningKey(signingKey)
 	authSvc.browserSigningKey = browserSigningKey
 
 	_, err := userSvc.CreateUser(t.Context(), &user.User{

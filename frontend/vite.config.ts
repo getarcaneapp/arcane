@@ -44,7 +44,8 @@ export default defineConfig(({ command }) => ({
 			preprocess: vitePreprocess(),
 			adapter: adapter({
 				pages: process.env['BUILD_PATH'] ?? '../backend/frontend/dist',
-				fallback: 'index.html'
+				fallback: 'index.html',
+				precompress: true
 			})
 		}),
 		paraglideVitePlugin({
