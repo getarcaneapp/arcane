@@ -474,7 +474,6 @@ func (s *JobService) ReconcileStartupActivities(ctx context.Context, extraProtec
 // deduplicates admission within the same job and environment.
 func (s *JobService) Submit(ctx context.Context, request types.SchedulerRequest) (types.SchedulerRun, error) {
 	request = types.SchedulerRequest{ //exhaustruct:enforce
-		ObservedAgentRun: request.ObservedAgentRun,
 		RunID:            request.RunID,
 		JobID:            request.JobID,
 		EnvironmentID:    cmp.Or(request.EnvironmentID, "0"),
