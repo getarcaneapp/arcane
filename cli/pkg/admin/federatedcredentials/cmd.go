@@ -96,7 +96,7 @@ func newCreateCmd() *cobra.Command {
 	var opts struct {
 		name         string
 		description  string
-		disabled     bool
+		enabled      bool
 		issuerURL    string
 		audiences    []string
 		subjectClaim string
@@ -134,9 +134,8 @@ func newCreateCmd() *cobra.Command {
 				Path:           clitypes.FederatedCredentials(),
 				FailureMessage: "failed to create federated credential",
 				Body: types.FederatedCredential{
-					Name: opts.name,
-					// TODO(v3): drop the deprecated flag handling.
-					Enabled:         !opts.disabled,
+					Name:            opts.name,
+					Enabled:         opts.enabled,
 					IssuerURL:       opts.issuerURL,
 					Audiences:       opts.audiences,
 					SubjectClaim:    opts.subjectClaim,
@@ -158,7 +157,7 @@ func newCreateCmd() *cobra.Command {
 	}
 	command.Flags().StringVar(&opts.name, "name", "", "Display name (required)")
 	command.Flags().StringVar(&opts.description, "description", "", "Description")
-	command.Flags().BoolVar(&opts.disabled, "disabled", false, "Create the trust rule in disabled state")
+	command.Flags().BoolVar(&opts.enabled, "enabled", true, "Enable the trust rule")
 	command.Flags().StringVar(&opts.issuerURL, "issuer-url", "", "Trusted external OIDC issuer URL (required)")
 	command.Flags().StringArrayVar(&opts.audiences, "audience", nil, "Allowed external token audience (repeatable, required)")
 	command.Flags().StringVar(&opts.subjectClaim, "subject-claim", "", "Claim path to match against (defaults to sub)")
@@ -182,7 +181,6 @@ func newUpdateCmd() *cobra.Command {
 		name         string
 		description  string
 		enabled      bool
-		disabled     bool
 		issuerURL    string
 		audiences    []string
 		subjectClaim string
@@ -198,10 +196,6 @@ func newUpdateCmd() *cobra.Command {
 		Short:        "Update a federated credential",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
-		PreRunE: func(cmd *cobra.Command, _ []string) error {
-			// TODO(v3): drop the deprecated flag handling.
-			return cmdutil.ExclusiveFlags(cmd, "enabled", "disabled")
-		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
@@ -225,12 +219,7 @@ func newUpdateCmd() *cobra.Command {
 			}{
 				{changed: cmd.Flags().Changed("name"), key: "name", value: opts.name},
 				{changed: cmd.Flags().Changed("description"), key: "description", value: opts.description},
-				// TODO(v3): drop the deprecated flag handling.
-				{
-					changed: cmd.Flags().Changed("enabled") || cmd.Flags().Changed("disabled"),
-					key:     "enabled",
-					value:   opts.enabled && !opts.disabled,
-				},
+				{changed: cmd.Flags().Changed("enabled"), key: "enabled", value: opts.enabled},
 				{changed: cmd.Flags().Changed("issuer-url"), key: "issuerUrl", value: opts.issuerURL},
 				{changed: cmd.Flags().Changed("audience"), key: "audiences", value: opts.audiences},
 				{changed: cmd.Flags().Changed("subject-claim"), key: "subjectClaim", value: opts.subjectClaim},
@@ -262,9 +251,6 @@ func newUpdateCmd() *cobra.Command {
 	command.Flags().StringVar(&opts.name, "name", "", "New display name")
 	command.Flags().StringVar(&opts.description, "description", "", "New description")
 	command.Flags().BoolVar(&opts.enabled, "enabled", false, "Enable the trust rule")
-	command.Flags().BoolVar(&opts.disabled, "disabled", false, "Disable the trust rule")
-	// TODO(v3): remove the deprecated --disabled flag.
-	_ = command.Flags().MarkDeprecated("disabled", "use --enabled=false")
 	command.Flags().StringVar(&opts.issuerURL, "issuer-url", "", "New issuer URL")
 	command.Flags().StringArrayVar(&opts.audiences, "audience", nil, "Replace allowed audiences (repeatable)")
 	command.Flags().StringVar(&opts.subjectClaim, "subject-claim", "", "New claim path to match against")
