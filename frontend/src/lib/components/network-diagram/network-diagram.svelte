@@ -94,50 +94,22 @@
 	const canvasTheme = $derived(
 		isDarkMode
 			? {
-					flowBackground: '#0b1220',
 					edgeLabel: '#cbd5e1',
-					edgeLabelBackground: 'rgba(15, 23, 42, 0.92)',
 					edgeStroke: 'rgba(148, 163, 184, 0.42)',
 					backgroundDots: 'rgba(148, 163, 184, 0.22)',
 					minimapBackground: 'rgba(15, 23, 42, 0.92)',
 					minimapMask: 'rgba(15, 23, 42, 0.45)',
 					minimapMaskStroke: 'rgba(148, 163, 184, 0.34)',
-					shellBackground:
-						'radial-gradient(circle at top left, rgba(14, 165, 233, 0.14), transparent 28%), radial-gradient(circle at top right, rgba(124, 58, 237, 0.16), transparent 24%), linear-gradient(180deg, rgba(12, 18, 32, 0.96), rgba(8, 12, 24, 0.98))',
-					shellBorder: 'color-mix(in srgb, var(--border) 82%, transparent)',
-					shellShadow: '0 24px 72px rgba(2, 6, 23, 0.5)',
-					nodeShadow: '0 18px 52px rgba(2, 6, 23, 0.42)',
-					nodeHoverShadow: '0 28px 64px rgba(2, 6, 23, 0.54)',
-					nodeSelectedShadow: '0 0 0 3px rgba(56, 189, 248, 0.22)',
-					controlsBackground: 'rgba(15, 23, 42, 0.92)',
-					controlsForeground: 'rgb(226, 232, 240)',
-					controlsBorder: 'rgba(148, 163, 184, 0.18)',
-					controlsShadow: '0 14px 32px rgba(2, 6, 23, 0.36)',
-					minimapBorder: 'rgba(148, 163, 184, 0.18)',
-					minimapShadow: '0 14px 32px rgba(2, 6, 23, 0.36)'
+					nodeShadow: '0 18px 52px rgba(2, 6, 23, 0.42)'
 				}
 			: {
-					flowBackground: '#f8fafc',
 					edgeLabel: '#475569',
-					edgeLabelBackground: 'rgba(255, 255, 255, 0.96)',
 					edgeStroke: 'rgba(71, 85, 105, 0.55)',
 					backgroundDots: 'rgba(100, 116, 139, 0.18)',
 					minimapBackground: 'rgba(248, 250, 252, 0.95)',
 					minimapMask: 'rgba(15, 23, 42, 0.12)',
 					minimapMaskStroke: 'rgba(15, 23, 42, 0.28)',
-					shellBackground:
-						'radial-gradient(circle at top left, rgba(125, 211, 252, 0.18), transparent 28%), radial-gradient(circle at top right, rgba(196, 181, 253, 0.2), transparent 24%), linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(255, 255, 255, 0.98))',
-					shellBorder: 'color-mix(in srgb, var(--border) 72%, transparent)',
-					shellShadow: '0 20px 60px rgba(15, 23, 42, 0.08)',
-					nodeShadow: '0 16px 40px rgba(15, 23, 42, 0.08)',
-					nodeHoverShadow: '0 24px 56px rgba(15, 23, 42, 0.12)',
-					nodeSelectedShadow: '0 0 0 3px rgba(56, 189, 248, 0.2)',
-					controlsBackground: 'rgba(255, 255, 255, 0.96)',
-					controlsForeground: 'rgb(51, 65, 85)',
-					controlsBorder: 'rgba(148, 163, 184, 0.24)',
-					controlsShadow: '0 12px 28px rgba(15, 23, 42, 0.12)',
-					minimapBorder: 'rgba(148, 163, 184, 0.24)',
-					minimapShadow: '0 12px 28px rgba(15, 23, 42, 0.12)'
+					nodeShadow: '0 16px 40px rgba(15, 23, 42, 0.08)'
 				}
 	);
 
@@ -514,22 +486,7 @@
 			<p class="text-base font-medium text-foreground">{m.networks_topology_empty()}</p>
 		</div>
 	{:else if browser && isReady}
-		<div
-			class="network-diagram-shell overflow-hidden rounded-3xl border"
-			style:--diagram-shell-background={canvasTheme.shellBackground}
-			style:--diagram-shell-border={canvasTheme.shellBorder}
-			style:--diagram-shell-shadow={canvasTheme.shellShadow}
-			style:--diagram-node-hover-shadow={canvasTheme.nodeHoverShadow}
-			style:--diagram-node-selected-shadow={canvasTheme.nodeSelectedShadow}
-			style:--diagram-controls-background={canvasTheme.controlsBackground}
-			style:--diagram-controls-foreground={canvasTheme.controlsForeground}
-			style:--diagram-controls-border={canvasTheme.controlsBorder}
-			style:--diagram-controls-shadow={canvasTheme.controlsShadow}
-			style:--diagram-flow-background={canvasTheme.flowBackground}
-			style:--diagram-edge-label-background={canvasTheme.edgeLabelBackground}
-			style:--diagram-minimap-border={canvasTheme.minimapBorder}
-			style:--diagram-minimap-shadow={canvasTheme.minimapShadow}
-		>
+		<div class="network-diagram-shell overflow-hidden rounded-3xl border">
 			<SvelteFlow
 				nodes={diagramNodes}
 				edges={diagramEdges}
@@ -563,11 +520,46 @@
 
 <style>
 	.network-diagram-shell {
+		--diagram-shell-background:
+			radial-gradient(circle at top left, rgba(125, 211, 252, 0.18), transparent 28%),
+			radial-gradient(circle at top right, rgba(196, 181, 253, 0.2), transparent 24%),
+			linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(255, 255, 255, 0.98));
+		--diagram-shell-border: color-mix(in srgb, var(--border) 72%, transparent);
+		--diagram-shell-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+		--diagram-node-hover-shadow: 0 24px 56px rgba(15, 23, 42, 0.12);
+		--diagram-node-selected-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+		--diagram-controls-background: rgba(255, 255, 255, 0.96);
+		--diagram-controls-foreground: rgb(51, 65, 85);
+		--diagram-controls-border: rgba(148, 163, 184, 0.24);
+		--diagram-controls-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+		--diagram-flow-background: #f8fafc;
+		--diagram-edge-label-background: rgba(255, 255, 255, 0.96);
+		--diagram-minimap-border: rgba(148, 163, 184, 0.24);
+		--diagram-minimap-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
 		height: calc(100dvh - 12.5rem);
 		min-height: 36rem;
 		background: var(--diagram-shell-background);
 		border-color: var(--diagram-shell-border);
 		box-shadow: var(--diagram-shell-shadow);
+	}
+
+	:global(.dark) .network-diagram-shell {
+		--diagram-shell-background:
+			radial-gradient(circle at top left, rgba(14, 165, 233, 0.14), transparent 28%),
+			radial-gradient(circle at top right, rgba(124, 58, 237, 0.16), transparent 24%),
+			linear-gradient(180deg, rgba(12, 18, 32, 0.96), rgba(8, 12, 24, 0.98));
+		--diagram-shell-border: color-mix(in srgb, var(--border) 82%, transparent);
+		--diagram-shell-shadow: 0 24px 72px rgba(2, 6, 23, 0.5);
+		--diagram-node-hover-shadow: 0 28px 64px rgba(2, 6, 23, 0.54);
+		--diagram-node-selected-shadow: 0 0 0 3px rgba(56, 189, 248, 0.22);
+		--diagram-controls-background: rgba(15, 23, 42, 0.92);
+		--diagram-controls-foreground: rgb(226, 232, 240);
+		--diagram-controls-border: rgba(148, 163, 184, 0.18);
+		--diagram-controls-shadow: 0 14px 32px rgba(2, 6, 23, 0.36);
+		--diagram-flow-background: #0b1220;
+		--diagram-edge-label-background: rgba(15, 23, 42, 0.92);
+		--diagram-minimap-border: rgba(148, 163, 184, 0.18);
+		--diagram-minimap-shadow: 0 14px 32px rgba(2, 6, 23, 0.36);
 	}
 
 	:global(.network-diagram-flow .svelte-flow__renderer) {

@@ -19,10 +19,76 @@ services:
       timeout: 5s
       retries: 15
 
+  docker-socket-proxy:
+    image: wollomatic/socket-proxy:1.13.1
+    user: '0:0'
+    command:
+      - '-listenip=0.0.0.0'
+      - '-allowfrom=arcane,arcane-upgrader'
+      - '-allowhealthcheck'
+      - '-allowGET=(/v[\d.]+)?/_ping'
+      - '-allowGET=(/v[\d.]+)?/version'
+      - '-allowGET=(/v[\d.]+)?/info'
+      - '-allowGET=(/v[\d.]+)?/events'
+      - '-allowGET=(/v[\d.]+)?/system/df'
+      - '-allowGET=(/v[\d.]+)?/containers(/.*)?'
+      - '-allowGET=(/v[\d.]+)?/exec(/.*)?'
+      - '-allowGET=(/v[\d.]+)?/images(/.*)?'
+      - '-allowGET=(/v[\d.]+)?/distribution/.+/json'
+      - '-allowGET=(/v[\d.]+)?/networks(/.*)?'
+      - '-allowGET=(/v[\d.]+)?/volumes(/.*)?'
+      - '-allowGET=(/v[\d.]+)?/swarm(/.*)?'
+      - '-allowGET=(/v[\d.]+)?/services(/.*)?'
+      - '-allowGET=(/v[\d.]+)?/nodes(/.*)?'
+      - '-allowGET=(/v[\d.]+)?/tasks(/.*)?'
+      - '-allowGET=(/v[\d.]+)?/secrets(/.*)?'
+      - '-allowGET=(/v[\d.]+)?/configs(/.*)?'
+      - '-allowHEAD=(/v[\d.]+)?/_ping'
+      - '-allowHEAD=(/v[\d.]+)?/containers(/.*)?'
+      - '-allowPOST=(/v[\d.]+)?/auth'
+      - '-allowPOST=(/v[\d.]+)?/build(/.*)?'
+      - '-allowPOST=(/v[\d.]+)?/session'
+      - '-allowPOST=(/v[\d.]+)?/grpc'
+      - '-allowPOST=(/v[\d.]+)?/commit'
+      - '-allowPOST=(/v[\d.]+)?/containers(/.*)?'
+      - '-allowPOST=(/v[\d.]+)?/exec(/.*)?'
+      - '-allowPOST=(/v[\d.]+)?/images(/.*)?'
+      - '-allowPOST=(/v[\d.]+)?/networks(/.*)?'
+      - '-allowPOST=(/v[\d.]+)?/volumes(/.*)?'
+      - '-allowPOST=(/v[\d.]+)?/swarm(/.*)?'
+      - '-allowPOST=(/v[\d.]+)?/services(/.*)?'
+      - '-allowPOST=(/v[\d.]+)?/nodes(/.*)?'
+      - '-allowPOST=(/v[\d.]+)?/secrets(/.*)?'
+      - '-allowPOST=(/v[\d.]+)?/configs(/.*)?'
+      - '-allowPUT=(/v[\d.]+)?/containers(/.*)?'
+      - '-allowDELETE=(/v[\d.]+)?/containers(/.*)?'
+      - '-allowDELETE=(/v[\d.]+)?/images(/.*)?'
+      - '-allowDELETE=(/v[\d.]+)?/networks(/.*)?'
+      - '-allowDELETE=(/v[\d.]+)?/volumes(/.*)?'
+      - '-allowDELETE=(/v[\d.]+)?/services(/.*)?'
+      - '-allowDELETE=(/v[\d.]+)?/nodes(/.*)?'
+      - '-allowDELETE=(/v[\d.]+)?/secrets(/.*)?'
+      - '-allowDELETE=(/v[\d.]+)?/configs(/.*)?'
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD', './healthcheck']
+      interval: 2s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
   arcane:
     image: arcane:playwright-tests
     ports:
       - '3000:3552'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     environment:
       - ENVIRONMENT=testing
       - APP_ENV=test
@@ -33,11 +99,13 @@ services:
       - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
       - TRUSTED_PROXIES=172.16.0.0/12,192.168.0.0/16
       - ADMIN_STATIC_API_KEY=${E2E_ADMIN_STATIC_API_KEY:-}
+      - DOCKER_HOST=tcp://docker-socket-proxy:2375
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - arcane_data:/app/data
       - ./projects:/app/data/projects
     depends_on:
+      docker-socket-proxy:
+        condition: service_healthy
       minio:
         condition: service_healthy
     build:

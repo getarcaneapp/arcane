@@ -7,28 +7,30 @@ services:
       - EVENTS=1
       - PING=1
       - VERSION=1
-      # Security critical
-      - AUTH=0
-      - SECRETS=0
       - POST=1
-      # Not always needed
-      - BUILD=0
-      - COMMIT=0
-      - CONFIGS=0
+      # Required by Arcane
+      - AUTH=1
+      - BUILD=1
+      - COMMIT=1
       - CONTAINERS=1
       - DISTRIBUTION=1
       - EXEC=1
+      - GRPC=1
       - IMAGES=1
       - INFO=1
       - NETWORKS=1
-      - NODES=0
-      - PLUGINS=0
-      - SERVICES=0
-      - SESSION=0
-      - SWARM=0
-      - SYSTEM=0
-      - TASKS=0
+      - SESSION=1
+      - SYSTEM=1
       - VOLUMES=1
+      # Swarm management: set to 1 when the host is a Swarm manager
+      - CONFIGS=0
+      - NODES=0
+      - SECRETS=0
+      - SERVICES=0
+      - SWARM=0
+      - TASKS=0
+      # Not used by Arcane
+      - PLUGINS=0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro # Read-only access to host socket
     networks:

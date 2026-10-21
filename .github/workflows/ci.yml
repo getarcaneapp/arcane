@@ -173,10 +173,6 @@ jobs:
             compose_file: setup/compose-postgres.yaml
             port: 3001
             playwright_projects: --project=chromium
-          - name: proxy
-            compose_file: setup/compose-proxy.yaml
-            port: 3002
-            playwright_projects: --project=chromium
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -226,7 +222,7 @@ jobs:
           retention-days: 15
 
   cli-e2e-tests:
-    name: CLI E2E Tests (proxy)
+    name: CLI E2E Tests
     if: ${{ github.head_ref != 'l10n_crowdin' }}
     runs-on: depot-ubuntu-24.04-4
     timeout-minutes: 20
@@ -260,11 +256,11 @@ jobs:
       - name: Install Playwright test dependencies
         run: vp -C tests install
 
-      - name: Run CLI E2E tests against socket proxy
+      - name: Run CLI E2E tests
         run: vp -C tests exec playwright test --project=cli
         env:
-          COMPOSE_FILE: setup/compose-proxy.yaml
-          BASE_URL: http://localhost:3002
+          COMPOSE_FILE: setup/compose.yaml
+          BASE_URL: http://localhost:3000
           PLAYWRIGHT_DOCKER_BROWSER: '0'
           E2E_ADMIN_STATIC_API_KEY: ${{ secrets.E2E_ADMIN_STATIC_API_KEY }}
 
@@ -272,7 +268,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: playwright-report-proxy-cli
+          name: playwright-report-cli
           path: |
             tests/.report
             !tests/.report/auth/**
