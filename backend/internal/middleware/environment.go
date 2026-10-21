@@ -197,29 +197,19 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	}
 
 	proxyPath := path.Join(apiEnvironmentsPrefix, m.localID) + suffix
-	isWebSocket := httpx.IsWebSocketUpgradeRequest(req)
 	client := m.httpClient
 	if tunnel != nil {
 		slog.DebugContext(ctx, "Routing request through edge tunnel", "environmentId", envID, "path", req.URL.Path)
-		muxClient, isMux := tunnel.HTTPClient().Get()
-		if !isMux {
-			// Legacy edge message protocol; remove in v3.
-			edge.SetAgentToken(req, accessToken)
-			if isWebSocket {
-				return edge.ProxyWebSocketRequest(c, tunnel, proxyPath, m.checkOrigin) //nolint:staticcheck // legacy edge protocol; remove in v3
-			}
-			return edge.ProxyHTTPRequest(c, tunnel, proxyPath) //nolint:staticcheck // legacy edge protocol; remove in v3
-		}
 		// A multiplexed tunnel carries plain HTTP, so it shares the direct-agent path below.
 		apiURL = edge.MuxAgentBaseURL
-		client = muxClient
+		client = tunnel.HTTPClient()
 	}
 
 	target := strings.TrimRight(apiURL, "/") + proxyPath
 	if req.URL.RawQuery != "" {
 		target += "?" + req.URL.RawQuery
 	}
-	if isWebSocket {
+	if httpx.IsWebSocketUpgradeRequest(req) {
 		if proxyErr := ws.ProxyHTTP(c.Response(), req, edge.HTTPToWebSocketURL(target), edge.BuildWebSocketHeaders(c, accessToken), m.checkOrigin, client); proxyErr != nil {
 			slog.ErrorContext(ctx, "websocket proxy failed", "err", proxyErr)
 		}

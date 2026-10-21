@@ -24,8 +24,7 @@ func newWebSocketAgentTunnel(envID string, conn *websocket.Conn) *AgentTunnel {
 func TestTunnelMessage_MarshalJSON(t *testing.T) {
 	msg := &TunnelMessage{
 		ID:   "test-id",
-		Type: MessageTypeRequest,
-		Body: nil,
+		Type: MessageTypeRegister,
 	}
 
 	data, err := json.Marshal(msg)
@@ -34,7 +33,7 @@ func TestTunnelMessage_MarshalJSON(t *testing.T) {
 	// Check that fields are present
 	strData := string(data)
 	assert.Contains(t, strData, `"id":"test-id"`)
-	assert.Contains(t, strData, `"type":"request"`)
+	assert.Contains(t, strData, `"type":"register"`)
 }
 
 func TestTunnelConn(t *testing.T) {
@@ -70,9 +69,9 @@ func TestTunnelConn(t *testing.T) {
 
 	// Test Send and Receive
 	msg := &TunnelMessage{
-		ID:   "test-id",
-		Type: MessageTypeRequest,
-		Body: []byte("test-body"),
+		ID:         "test-id",
+		Type:       MessageTypeRegister,
+		AgentToken: "test-token",
 	}
 
 	err = tunnelConn.Send(msg)
@@ -82,7 +81,7 @@ func TestTunnelConn(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, msg.ID, received.ID)
 	assert.Equal(t, msg.Type, received.Type)
-	assert.Equal(t, msg.Body, received.Body)
+	assert.Equal(t, msg.AgentToken, received.AgentToken)
 
 	// Test IsClosed
 	assert.False(t, tunnelConn.IsClosed())

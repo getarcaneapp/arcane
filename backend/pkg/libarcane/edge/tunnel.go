@@ -32,47 +32,6 @@ const (
 	MessageTypeRegister TunnelMessageType = "register"
 	// MessageTypeRegisterResponse is sent by manager after register validation.
 	MessageTypeRegisterResponse TunnelMessageType = "register_response"
-
-	// The remaining types are the legacy edge message protocol; remove in v3.
-
-	// MessageTypeRequest is sent from manager to agent to initiate a request.
-	MessageTypeRequest TunnelMessageType = "request"
-	// MessageTypeResponse is sent from agent to manager with the response.
-	MessageTypeResponse TunnelMessageType = "response"
-	// MessageTypeHeartbeat is sent by agents to keep the connection alive.
-	MessageTypeHeartbeat TunnelMessageType = "heartbeat"
-	// MessageTypeHeartbeatAck is sent by manager to acknowledge a heartbeat.
-	MessageTypeHeartbeatAck TunnelMessageType = "heartbeat_ack"
-	// MessageTypeStreamData is sent for streaming responses (logs, stats).
-	MessageTypeStreamData TunnelMessageType = "stream_data"
-	// MessageTypeStreamEnd indicates end of a stream.
-	MessageTypeStreamEnd TunnelMessageType = "stream_end"
-	// MessageTypeWebSocketStart starts a WebSocket stream for logs/stats.
-	MessageTypeWebSocketStart TunnelMessageType = "ws_start"
-	// MessageTypeWebSocketData is a WebSocket message in either direction.
-	MessageTypeWebSocketData TunnelMessageType = "ws_data"
-	// MessageTypeWebSocketClose closes a WebSocket stream.
-	MessageTypeWebSocketClose TunnelMessageType = "ws_close"
-	// MessageTypeEvent carries an event emitted by an agent to the manager.
-	MessageTypeEvent TunnelMessageType = "event"
-	// MessageTypeCommandRequest sends a typed edge command from manager to agent.
-	MessageTypeCommandRequest TunnelMessageType = "command_request"
-	// MessageTypeCommandAck acknowledges a command was accepted by the agent.
-	MessageTypeCommandAck TunnelMessageType = "command_ack"
-	// MessageTypeCommandOutput carries chunked command output from agent to manager.
-	MessageTypeCommandOutput TunnelMessageType = "command_output"
-	// MessageTypeCommandComplete indicates final command completion.
-	MessageTypeCommandComplete TunnelMessageType = "command_complete"
-	// MessageTypeFileChunk carries chunked request or response payload data.
-	MessageTypeFileChunk TunnelMessageType = "file_chunk"
-	// MessageTypeStreamOpen opens a command-backed stream.
-	MessageTypeStreamOpen TunnelMessageType = "stream_open"
-	// MessageTypeStreamClose closes a command-backed stream.
-	MessageTypeStreamClose TunnelMessageType = "stream_close"
-	// MessageTypeCancelRequest requests cancellation of an in-flight command.
-	MessageTypeCancelRequest TunnelMessageType = "cancel_request"
-	// MessageTypeCommandCredit returns flow-control credit for consumed command output.
-	MessageTypeCommandCredit TunnelMessageType = "command_credit"
 )
 
 var (
@@ -87,10 +46,10 @@ var (
 type TunnelConnection interface {
 	Send(msg *TunnelMessage) error
 	Receive() (*TunnelMessage, error)
-	IsExpectedReceiveError(err error) bool
 	Close() error
 	IsClosed() bool
 	Transport() string
+	muxConn(ctx context.Context) io.ReadWriteCloser
 }
 
 // NewTunnelConn creates a new WebSocket tunnel connection wrapper.
@@ -99,7 +58,7 @@ func NewTunnelConn(conn *websocket.Conn) *TunnelConn {
 	return &TunnelConn{conn: conn}
 }
 
-// Send sends a legacy tunnel message over the WebSocket connection.
+// Send sends a register message over the WebSocket connection.
 func (t *TunnelConn) Send(msg *TunnelMessage) error {
 	if t.muxed.Load() {
 		return errTunnelMuxActive
@@ -112,7 +71,7 @@ func (t *TunnelConn) Send(msg *TunnelMessage) error {
 	return t.write(context.Background(), websocket.MessageText, data, DefaultWriteTimeout)
 }
 
-// Receive receives a legacy tunnel message from the WebSocket connection.
+// Receive receives a register message from the WebSocket connection.
 func (t *TunnelConn) Receive() (*TunnelMessage, error) {
 	_, data, err := t.read(context.Background()) //nolint:forbidigo // Tunnel connection owns timed I/O independent of individual HTTP requests.
 	if err != nil {
@@ -171,11 +130,6 @@ func (t *TunnelConn) read(ctx context.Context) (websocket.MessageType, []byte, e
 	return messageType, data, err
 }
 
-// IsExpectedReceiveError returns true for normal WebSocket close/teardown errors.
-func (t *TunnelConn) IsExpectedReceiveError(err error) bool {
-	return isExpectedReceiveError(err)
-}
-
 // Close closes the WebSocket tunnel connection, sending a close frame on the
 // first call so the peer observes a normal closure instead of 1006.
 func (t *TunnelConn) Close() error {
@@ -232,12 +186,12 @@ func NewGRPCManagerTunnelConn(stream grpcManagerStream) *GRPCManagerTunnelConn {
 	}
 }
 
-// Send sends a legacy manager->agent tunnel message over gRPC.
+// Send sends a manager->agent register message over gRPC.
 func (t *GRPCManagerTunnelConn) Send(msg *TunnelMessage) error {
 	if t.muxed.Load() {
 		return errTunnelMuxActive
 	}
-	protoMsg, err := tunnelMessageToManagerProto(msg, t.parity)
+	protoMsg, err := tunnelMessageToManagerProto(msg)
 	if err != nil {
 		return err
 	}
@@ -280,11 +234,6 @@ func (t *GRPCManagerTunnelConn) Receive() (*TunnelMessage, error) {
 	return receiveGRPC(t.stream.Context(), t.stream.Recv, agentProtoToTunnelMessage, &t.closed)
 }
 
-// IsExpectedReceiveError returns true for expected gRPC stream shutdown errors.
-func (t *GRPCManagerTunnelConn) IsExpectedReceiveError(err error) bool {
-	return isExpectedReceiveError(err)
-}
-
 // Close marks the stream closed on manager side.
 func (t *GRPCManagerTunnelConn) Close() error {
 	t.closed.Store(true)
@@ -314,7 +263,7 @@ func NewGRPCAgentTunnelConn(stream grpcAgentStream, cancelFns ...context.CancelF
 	return &GRPCAgentTunnelConn{stream: stream, cancel: cancel}
 }
 
-// Send sends a legacy agent->manager tunnel message over gRPC.
+// Send sends an agent->manager register message over gRPC.
 func (t *GRPCAgentTunnelConn) Send(msg *TunnelMessage) error {
 	if t.muxed.Load() {
 		return errTunnelMuxActive
@@ -360,11 +309,6 @@ func (t *GRPCAgentTunnelConn) Receive() (*TunnelMessage, error) {
 		return nil, ErrTunnelConnectionClosed
 	}
 	return receiveGRPC(t.stream.Context(), t.stream.Recv, managerProtoToTunnelMessage, &t.closed)
-}
-
-// IsExpectedReceiveError returns true for expected gRPC stream shutdown errors.
-func (t *GRPCAgentTunnelConn) IsExpectedReceiveError(err error) bool {
-	return isExpectedReceiveError(err)
 }
 
 // Close half-closes the send stream before cancelling, so the manager sees a
@@ -458,7 +402,7 @@ func receiveGRPC[P any](ctx context.Context, recv func() (P, error), decode func
 	}
 }
 
-// receiveMuxData returns the next MuxData payload, skipping any legacy message still in flight.
+// receiveMuxData returns the next MuxData payload, skipping any other payload still in flight.
 // A gRPC stream is dead after any Recv error.
 func receiveMuxData[P interface{ GetMuxData() *tunnelpb.MuxData }](recv func() (P, error), closed *atomic.Bool) ([]byte, error) {
 	for {

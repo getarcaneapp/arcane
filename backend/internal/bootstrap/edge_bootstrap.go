@@ -121,7 +121,6 @@ func registerEdgeTunnelRoutes(
 		"pollEnabled", true,
 		"grpcEnabled", !cfg.AgentMode,
 		"websocketEnabled", true,
-		"muxEnabled", !cfg.EdgeMuxDisabled,
 	)
 	return server
 }
