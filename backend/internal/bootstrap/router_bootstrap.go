@@ -195,13 +195,9 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		WithTraceID:   true,
 		WithSpanID:    true,
 	})
-	// Internal edge tunnel requests are never logged.
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		logged := requestLogger(next)
 		return func(c *echo.Context) error {
-			if edge.IsInternalTunnelRequest(c.Request().Context()) {
-				return next(c)
-			}
 			if c.Request().Body == nil {
 				c.Request().Body = http.NoBody
 			}
