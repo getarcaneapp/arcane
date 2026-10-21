@@ -178,18 +178,6 @@ func (s *Service) Deliver(ctx context.Context, run types.SchedulerRun) (types.Sc
 
 // Confirm records the agent-reported state of a delivered run.
 func (s *Service) Confirm(ctx context.Context, run, remoteRun types.SchedulerRun, runPath string) (types.SchedulerOutcome, error) {
-	if remoteRun.Status == types.RunStatusNeedsAttention {
-		settled, err := s.resolveAgentReview(ctx, run.EnvironmentID, run.JobID, run.ID, types.SystemUser.Username)
-		if err != nil {
-			return types.SchedulerOutcome{
-				Status:     types.RunStatusWaiting,
-				Message:    "Waiting for the agent to acknowledge the failed run",
-				Targets:    remoteRun.Outcome.Targets,
-				ActivityID: remoteRun.Outcome.ActivityID,
-			}, err
-		}
-		remoteRun = settled
-	}
 	outcome := types.SchedulerOutcome{
 		Status:     remoteRun.Status,
 		Message:    remoteRun.Outcome.Message,
@@ -547,47 +535,6 @@ func (s *Service) MutateAgentRun(ctx context.Context, environmentID, jobID, runI
 		RemoteSettled:           run.RemoteSettled,
 		LastConfirmedAt:         run.LastConfirmedAt,
 	}, nil
-}
-
-// resolveAgentReview settles legacy inactive runs on their owning agent.
-// TODO(v3): remove the legacy resolution protocol.
-func (s *Service) resolveAgentReview(ctx context.Context, environmentID, jobID, runID, actor string) (types.SchedulerRun, error) {
-	env, err := s.environments.GetEnvironmentByID(ctx, environmentID)
-	if err != nil {
-		return types.SchedulerRun{}, err
-	}
-	if !env.Enabled {
-		return types.SchedulerRun{}, errors.New("environment is disabled")
-	}
-	path := "/api/environments/0/jobs/" + url.PathEscape(jobID) + "/runs/" + url.PathEscape(runID)
-	var remote types.SchedulerRun
-	// Read the owner on every request, including retries after a lost response.
-	if proxyJSONRequestErr := s.environments.ProxyJSONRequest(ctx, environmentID, http.MethodGet, path, nil, &remote); proxyJSONRequestErr != nil {
-		return types.SchedulerRun{}, proxyJSONRequestErr
-	}
-	if remote.ID != runID || remote.JobID != jobID || remote.EnvironmentID != "0" {
-		return types.SchedulerRun{}, errors.New("agent returned an inconsistent run identity")
-	}
-	if remote.Status == types.RunStatusNeedsAttention {
-		body, marshalErr := json.Marshal(map[string]string{"resolvedBy": actor})
-		if marshalErr != nil {
-			return types.SchedulerRun{}, marshalErr
-		}
-		if resolveRemoteJobErr := s.environments.ProxyJSONRequest(ctx, environmentID, http.MethodPost, path+"/resolve", body, &remote); resolveRemoteJobErr != nil {
-			return types.SchedulerRun{}, resolveRemoteJobErr
-		}
-	}
-	if remote.ID != runID || remote.JobID != jobID || remote.EnvironmentID != "0" || !remote.Status.Terminal() {
-		return types.SchedulerRun{}, errors.New("agent resolution was not confirmed")
-	}
-	var acknowledged types.SchedulerRun
-	if acknowledgeRemoteResolutionErr := s.environments.ProxyJSONRequest(ctx, environmentID, http.MethodPost, path+"/ack", nil, &acknowledged); acknowledgeRemoteResolutionErr != nil {
-		return types.SchedulerRun{}, acknowledgeRemoteResolutionErr
-	}
-	if acknowledged.ID != runID || acknowledged.JobID != jobID || acknowledged.EnvironmentID != "0" || acknowledged.Status != remote.Status || !acknowledged.RemoteSettled {
-		return types.SchedulerRun{}, errors.New("agent resolution acknowledgement was not confirmed")
-	}
-	return acknowledged, nil
 }
 
 func remoteJobEligible(jobs []types.JobStatus, id string) bool {
