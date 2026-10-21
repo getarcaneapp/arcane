@@ -140,7 +140,7 @@ func newContainersStartCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ContainerActionResult]{
 				Method:         http.MethodPost,
-				Path:           kit.Ternary(opts.startStoppedOnlyFlag, clitypes.SystemStartStopped(c.EnvID()), clitypes.SystemContainersStartAll(c.EnvID())),
+				Path:           clitypes.SystemContainersAction(c.EnvID(), kit.Ternary(opts.startStoppedOnlyFlag, "startstopped", "startall")),
 				FailureMessage: "failed to start containers",
 				Render: func(types.ContainerActionResult) error {
 					output.Success("%s", kit.Ternary(opts.startStoppedOnlyFlag, "Started all stopped containers", "Started all containers"))
@@ -168,7 +168,7 @@ func newContainersStopCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.ContainerActionResult]{
 				Method:         http.MethodPost,
-				Path:           clitypes.SystemContainersStopAll(c.EnvID()),
+				Path:           clitypes.SystemContainersAction(c.EnvID(), "stopall"),
 				FailureMessage: "failed to stop all containers",
 				Render:         func(types.ContainerActionResult) error { output.Success("%s", "Stopped all containers"); return nil },
 			})

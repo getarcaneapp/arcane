@@ -826,7 +826,7 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 	} else {
 		s.setUpdateStage(ctx, job, result, EnvironmentUpdateStageChecking)
 		versionCtx, cancel := context.WithTimeout(ctx, updateAllAgentRequestTimeout)
-		checkErr := s.environments.ProxyJSONRequest(versionCtx, remote.ID, http.MethodGet, "/api/app-version", nil, &info)
+		checkErr := s.environments.ProxyJSONRequest(versionCtx, remote.ID, http.MethodGet, "/api/app/version", nil, &info)
 		cancel()
 		if checkErr != nil {
 			settle(updateAllAgentFailureStatus(checkErr), checkErr.Error())
@@ -904,7 +904,7 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 		}
 		pollCtx, pollCancel := context.WithTimeout(ctx, updateAllAgentRequestTimeout)
 		var current types.VersionInfo
-		pollErr := s.environments.ProxyJSONRequest(pollCtx, remote.ID, http.MethodGet, "/api/app-version", nil, &current)
+		pollErr := s.environments.ProxyJSONRequest(pollCtx, remote.ID, http.MethodGet, "/api/app/version", nil, &current)
 		pollCancel()
 		if pollErr != nil {
 			stage(EnvironmentUpdateStageReconnecting)

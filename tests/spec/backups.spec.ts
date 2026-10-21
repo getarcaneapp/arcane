@@ -62,7 +62,7 @@ test.describe('Workspace restore', () => {
 				})
 			});
 		});
-		await page.route(/\/api\/auth\/auto-login-config$/, async (route) => {
+		await page.route(/\/api\/auth\/autologin$/, async (route) => {
 			await route.fulfill({ json: response({ enabled: false }) });
 		});
 		await page.route(/\/api\/environments(?:\?.*)?$/, async (route) => {
@@ -93,10 +93,10 @@ test.describe('Workspace restore', () => {
 				})
 			});
 		});
-		await page.route(/\/api\/roles\/available-permissions$/, async (route) => {
+		await page.route(/\/api\/roles\/permissions$/, async (route) => {
 			await route.fulfill({ status: 503, json: { message: 'not needed for global admin' } });
 		});
-		await page.route(/\/api\/app-version$/, async (route) => {
+		await page.route(/\/api\/app\/version$/, async (route) => {
 			await route.fulfill({
 				json: { currentVersion: 'e2e', displayVersion: 'e2e', enabledFeatures: [] }
 			});
@@ -133,7 +133,7 @@ test.describe('Workspace restore', () => {
 			});
 		});
 		await page.route(
-			new RegExp(`/api/environments/0/volumes/${encodedVolume}/backup-policy$`),
+			new RegExp(`/api/environments/0/volumes/${encodedVolume}/backups/policy$`),
 			async (route) => {
 				await route.fulfill({ json: response({ policies: [], s3Available: false }) });
 			}
@@ -238,7 +238,7 @@ test.describe('Workspace restore', () => {
 		);
 		await page.route(
 			new RegExp(
-				`/api/environments/0/volumes/${encodedVolume}/backups/${BACKUP_ID}/restore-files$`
+				`/api/environments/0/volumes/${encodedVolume}/backups/${BACKUP_ID}\\?action=restorefiles$`
 			),
 			async (route) => {
 				state.restoreBodies.push(route.request().postDataJSON() as Record<string, unknown>);
@@ -252,7 +252,9 @@ test.describe('Workspace restore', () => {
 			}
 		);
 		await page.route(
-			new RegExp(`/api/environments/0/volumes/${encodedVolume}/backups/${BACKUP_ID}/restore$`),
+			new RegExp(
+				`/api/environments/0/volumes/${encodedVolume}/backups/${BACKUP_ID}\\?action=restore$`
+			),
 			async (route) => {
 				state.fullRestoreRequests += 1;
 				state.content = state.restoredContent;
@@ -437,7 +439,7 @@ test.describe('Workspace restore', () => {
 			}
 		);
 		await page.route(
-			new RegExp(`/api/backups/${SYSTEM_BACKUP_ID}/restore-files$`),
+			new RegExp(`/api/backups/${SYSTEM_BACKUP_ID}\\?action=restorefiles$`),
 			async (route) => {
 				await restore(route.request().postDataJSON() as Record<string, unknown>, route);
 			}
@@ -782,7 +784,7 @@ test.describe('Workspace restore', () => {
 			const restoreBodies: Array<Record<string, unknown>> = [];
 			await page.route(
 				new RegExp(
-					`/api/environments/0/volumes/${VOLUME_NAME}/backups/${BACKUP_ID}/restore-files$`
+					`/api/environments/0/volumes/${VOLUME_NAME}/backups/${BACKUP_ID}\\?action=restorefiles$`
 				),
 				async (route) => {
 					restoreBodies.push(route.request().postDataJSON() as Record<string, unknown>);
@@ -996,7 +998,7 @@ test.describe('S3 storage', () => {
 		operation: 'create_file' | 'update_file' = 'create_file'
 	) {
 		const fileTreeRevision = await getVolumeWorkspaceRevision(page, volumeName);
-		const response = await page.request.put(
+		const response = await page.request.patch(
 			`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/workspace`,
 			{
 				multipart: {
@@ -1184,7 +1186,7 @@ test.describe('S3 storage', () => {
 				expect(destination.secretConfigured).toBe(true);
 
 				// Uploads, downloads, and deletes a probe object in the bucket.
-				const test = await page.request.post(`/api/backups/s3/${destination.id}/test`);
+				const test = await page.request.post(`/api/backups/s3/${destination.id}?action=test`);
 				expect(test.status(), await test.text()).toBe(200);
 			} finally {
 				await deleteDestinationViaApi(page, destination.id);
@@ -1194,7 +1196,7 @@ test.describe('S3 storage', () => {
 		test('refuses the stored secret once connection settings change', async ({ page }) => {
 			const destination = await createDestinationViaApi(page);
 			try {
-				const withoutSecret = await page.request.put(`/api/backups/s3/${destination.id}`, {
+				const withoutSecret = await page.request.patch(`/api/backups/s3/${destination.id}`, {
 					data: destinationPayload({
 						name: destination.name,
 						bucket: 'someone-elses-bucket',
@@ -1205,7 +1207,7 @@ test.describe('S3 storage', () => {
 				expect(await withoutSecret.text()).toContain('re-enter the secret access key');
 
 				// The same edit is accepted once the secret is supplied again.
-				const withSecret = await page.request.put(`/api/backups/s3/${destination.id}`, {
+				const withSecret = await page.request.patch(`/api/backups/s3/${destination.id}`, {
 					data: destinationPayload({ name: destination.name, prefix: `e2e/${Date.now()}-moved` })
 				});
 				expect(withSecret.status(), await withSecret.text()).toBe(200);
@@ -1252,7 +1254,7 @@ test.describe('S3 storage', () => {
 				expect(await readVolumeFile(page, volumeName, '/payload.txt')).toBe(replacementContent);
 
 				const restore = await page.request.post(
-					`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/backups/${created.id}/restore`,
+					`/api/environments/0/volumes/${encodeURIComponent(volumeName)}/backups/${created.id}?action=restore`,
 					{ data: {}, timeout: 180000 }
 				);
 				expect(restore.status(), await restore.text()).toBe(200);

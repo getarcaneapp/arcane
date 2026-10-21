@@ -161,7 +161,7 @@ async function checkHealth(environmentId: string = '0'): Promise<HealthCheckResu
  */
 async function getVersionInfo(environmentId: string = '0'): Promise<AppVersionInformation> {
 	if (environmentId === '0') {
-		const res = await apiClient.get<AppVersionInformation>('/app-version', { timeout: 5000 });
+		const res = await apiClient.get<AppVersionInformation>('/app/version', { timeout: 5000 });
 		return res.data;
 	}
 

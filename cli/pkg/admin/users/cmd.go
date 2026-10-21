@@ -208,7 +208,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.User]{
-				Method:         http.MethodPut,
+				Method:         http.MethodPatch,
 				Path:           clitypes.User(args[0]),
 				FailureMessage: "failed to update user",
 				Body:           body,

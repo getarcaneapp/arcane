@@ -667,7 +667,7 @@ func newUpdateCmd() *cobra.Command {
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Template]{
-				Method:         http.MethodPut,
+				Method:         http.MethodPatch,
 				Path:           clitypes.Template(args[0]),
 				Body:           req,
 				FailureMessage: "failed to update template",
@@ -700,7 +700,7 @@ func newDownloadCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			result, err := c.PostJSON[jsontext.Value](cmd.Context(), clitypes.TemplateDownload(args[0]), nil)
+			result, err := c.PostJSON[jsontext.Value](cmd.Context(), clitypes.TemplateAction(args[0], "download"), nil)
 			if err != nil {
 				return fmt.Errorf("failed to download template: %w", err)
 			}
@@ -829,7 +829,7 @@ func newRegistriesUpdateCmd() *cobra.Command {
 
 			// The handler answers with a plain message, not the updated registry.
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
-				Method:         http.MethodPut,
+				Method:         http.MethodPatch,
 				Path:           clitypes.TemplateRegistry(args[0]),
 				Body:           req,
 				FailureMessage: "failed to update registry",

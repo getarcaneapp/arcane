@@ -55,7 +55,7 @@ async function login(page: Page, username: string, password: string, expectedPat
 async function waitForProfileUpdate(page: Page, action: () => Promise<void>) {
 	const responsePromise = page.waitForResponse(
 		(response) =>
-			response.request().method() === 'PUT' &&
+			response.request().method() === 'PATCH' &&
 			new URL(response.url()).pathname === '/api/auth/me/profile'
 	);
 	await action();
@@ -91,7 +91,7 @@ test('manages an isolated account, preferences, credentials, and sessions', asyn
 			`Create account user ${username}`
 		);
 		await readApiData<unknown[]>(
-			await page.request.put(`/api/users/${user.id}/role-assignments`, {
+			await page.request.put(`/api/users/${user.id}/roles`, {
 				data: { assignments: [{ roleId: 'role_viewer' }] }
 			}),
 			`Assign Viewer role to ${username}`
@@ -168,7 +168,7 @@ test('manages an isolated account, preferences, credentials, and sessions', asyn
 			const keyCreateResponsePromise = accountPage.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname === '/api/auth/me/api-keys'
+					new URL(response.url()).pathname === '/api/auth/me/apikeys'
 			);
 			await keyDialog.getByRole('button', { name: 'Create API Key', exact: true }).click();
 			const createdKey = await readApiData<PersonalApiKey>(
@@ -185,7 +185,7 @@ test('manages an isolated account, preferences, credentials, and sessions', asyn
 			const keyDeleteResponsePromise = accountPage.waitForResponse(
 				(response) =>
 					response.request().method() === 'DELETE' &&
-					new URL(response.url()).pathname === `/api/auth/me/api-keys/${createdKey.id}`
+					new URL(response.url()).pathname === `/api/auth/me/apikeys/${createdKey.id}`
 			);
 			await accountPage
 				.getByRole('dialog')
@@ -284,8 +284,8 @@ test('manages an isolated account, preferences, credentials, and sessions', asyn
 			await accountPage.getByRole('tab', { name: 'Account', exact: true }).click();
 			const logoutOtherResponsePromise = accountPage.waitForResponse(
 				(response) =>
-					response.request().method() === 'POST' &&
-					new URL(response.url()).pathname === '/api/auth/sessions/logout-all'
+					response.request().method() === 'DELETE' &&
+					new URL(response.url()).pathname === '/api/auth/sessions'
 			);
 			await accountPage
 				.getByRole('button', { name: 'Sign out other sessions', exact: true })
@@ -350,7 +350,7 @@ test('registers, renames, authenticates with, and removes a passkey with MFA', a
 			`Create passkey user ${username}`
 		);
 		await readApiData<unknown[]>(
-			await page.request.put(`/api/users/${user.id}/role-assignments`, {
+			await page.request.put(`/api/users/${user.id}/roles`, {
 				data: { assignments: [{ roleId: 'role_viewer' }] }
 			}),
 			`Assign Viewer role to ${username}`
@@ -410,7 +410,7 @@ test('registers, renames, authenticates with, and removes a passkey with MFA', a
 				.fill(password);
 			const renameResponsePromise = passkeyPage.waitForResponse(
 				(response) =>
-					response.request().method() === 'PUT' &&
+					response.request().method() === 'PATCH' &&
 					new URL(response.url()).pathname === `/api/auth/me/passkeys/${registered.id}`
 			);
 			await stepUpDialog

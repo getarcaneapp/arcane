@@ -40,6 +40,6 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		handlerutil.Operation("delete-podman-quadlet", http.MethodDelete, quadletsPath+"/{name}", "Remove quadlet", "", quadletsTag),
 		authz.PermPodmanQuadlets, h.Delete)
 	handlerutil.RegisterSecured(api,
-		handlerutil.Operation("podman-quadlet-action", http.MethodPost, quadletsPath+"/{name}/{action}", "Run quadlet lifecycle action", "Start, stop, or restart the quadlet's systemd unit", quadletsTag),
+		handlerutil.Operation("podman-quadlet-action", http.MethodPost, quadletsPath+"/{name}", "Run quadlet lifecycle action", "Start, stop, or restart the quadlet's systemd unit", quadletsTag),
 		authz.PermPodmanQuadletsLifecycle, h.Action)
 }

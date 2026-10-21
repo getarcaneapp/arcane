@@ -744,7 +744,7 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 	var versionInfo types.VersionInfo
 	if env.ID == LocalEnvironmentID {
 		versionInfo = *h.localVersion(reqCtx)
-	} else if proxyErr := h.environmentService.ProxyJSONRequestForEnvironment(reqCtx, *env, http.MethodGet, "/api/app-version", nil, &versionInfo); proxyErr != nil {
+	} else if proxyErr := h.environmentService.ProxyJSONRequestForEnvironment(reqCtx, *env, http.MethodGet, "/api/app/version", nil, &versionInfo); proxyErr != nil {
 		return nil, handlerutil.TranslateRemoteProxyError(proxyErr)
 	}
 

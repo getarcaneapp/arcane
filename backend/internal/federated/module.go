@@ -55,7 +55,7 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 	huma.Register(api, huma.Operation{
 		OperationID: "list-federated-credentials",
 		Method:      http.MethodGet,
-		Path:        "/federated-credentials",
+		Path:        "/federated/credentials",
 		Summary:     "List federated credentials",
 		Description: "Get a paginated list of workload identity federation trust rules",
 		Tags:        []string{"Federated Credentials"},
@@ -66,7 +66,7 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 	huma.Register(api, huma.Operation{
 		OperationID: "create-federated-credential",
 		Method:      http.MethodPost,
-		Path:        "/federated-credentials",
+		Path:        "/federated/credentials",
 		Summary:     "Create a federated credential",
 		Description: "Create a workload identity federation trust rule",
 		Tags:        []string{"Federated Credentials"},
@@ -77,7 +77,7 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 	huma.Register(api, huma.Operation{
 		OperationID: "get-federated-credential",
 		Method:      http.MethodGet,
-		Path:        "/federated-credentials/{id}",
+		Path:        "/federated/credentials/{id}",
 		Summary:     "Get a federated credential",
 		Description: "Get details of a workload identity federation trust rule",
 		Tags:        []string{"Federated Credentials"},
@@ -87,8 +87,8 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 
 	huma.Register(api, huma.Operation{
 		OperationID: "update-federated-credential",
-		Method:      http.MethodPut,
-		Path:        "/federated-credentials/{id}",
+		Method:      http.MethodPatch,
+		Path:        "/federated/credentials/{id}",
 		Summary:     "Update a federated credential",
 		Description: "Update a workload identity federation trust rule",
 		Tags:        []string{"Federated Credentials"},
@@ -99,7 +99,7 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-federated-credential",
 		Method:      http.MethodDelete,
-		Path:        "/federated-credentials/{id}",
+		Path:        "/federated/credentials/{id}",
 		Summary:     "Delete a federated credential",
 		Description: "Delete a workload identity federation trust rule and its service user",
 		Tags:        []string{"Federated Credentials"},

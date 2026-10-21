@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/labstack/echo/v5"
+	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -31,6 +32,23 @@ func RegisterWithPermission[I, O any](api huma.API, op huma.Operation, perm stri
 	}
 	op.Metadata[authz.MetaRequiredPermission] = perm
 	op.Middlewares = append(op.Middlewares, RequirePermission(api, perm)...)
+	huma.Register(api, op, handler)
+}
+
+// RegisterWithActionPermissions registers a Huma operation whose required
+// permission depends on the value of the param query parameter. perms maps each
+// accepted value to its permission. The same map is enforced locally by
+// RequireActionPermission and recorded in the operation's OpenAPI metadata
+// (authz.MetaActionParam, authz.MetaActionPermissions), so the remote
+// environment proxy looks up the identical permission per action before
+// forwarding to an agent.
+func RegisterWithActionPermissions[I, O any](api huma.API, op huma.Operation, param string, perms map[string]string, handler func(context.Context, *I) (*O, error)) {
+	if op.Metadata == nil {
+		op.Metadata = map[string]any{}
+	}
+	op.Metadata[authz.MetaActionParam] = param
+	op.Metadata[authz.MetaActionPermissions] = perms
+	op.Middlewares = append(op.Middlewares, RequireActionPermission(api, param, perms)...)
 	huma.Register(api, op, handler)
 }
 
@@ -67,15 +85,7 @@ func RequireEchoPermission(perm string) echo.MiddlewareFunc {
 func RequirePermission(api huma.API, perm string) huma.Middlewares {
 	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
 		ps, _ := PermissionsFromContext(ctx.Context())
-		envID := ""
-		if authz.IsEnvScoped(perm) {
-			envID = authz.EnvIDFromPath(ctx.URL().Path)
-		}
-		allowed := ps.Allows(perm, envID)
-		if scope, scoped := httpx.EnvironmentScopeFromContext(ctx.Context()); scoped && authz.IsEnvScoped(perm) {
-			allowed = slices.ContainsFunc(scope.IDs, func(id string) bool { return ps.Allows(perm, id) })
-		}
-		if !allowed {
+		if !permissionAllowedInternal(ctx, ps, perm) {
 			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: "+perm); err != nil {
 				slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
 			}
@@ -83,6 +93,39 @@ func RequirePermission(api huma.API, perm string) huma.Middlewares {
 		}
 		next(ctx)
 	}}
+}
+
+// RequireActionPermission returns middleware that selects the required
+// permission from perms using the value of the param query parameter. A missing
+// or unknown value is rejected with 400, and a caller lacking the selected
+// permission is rejected with 403.
+func RequireActionPermission(api huma.API, param string, perms map[string]string) huma.Middlewares {
+	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+		perm, ok := perms[ctx.Query(param)]
+		if !ok {
+			if err := huma.WriteErr(api, ctx, http.StatusBadRequest, "invalid "+param+": "+ctx.Query(param)); err != nil {
+				slog.WarnContext(ctx.Context(), "failed to write 400 response", "error", err)
+			}
+			return
+		}
+		ps, _ := PermissionsFromContext(ctx.Context())
+		if !permissionAllowedInternal(ctx, ps, perm) {
+			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: "+perm); err != nil {
+				slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
+			}
+			return
+		}
+		next(ctx)
+	}}
+}
+
+func permissionAllowedInternal(ctx huma.Context, ps *authz.PermissionSet, perm string) bool {
+	if scope, scoped := httpx.EnvironmentScopeFromContext(ctx.Context()); scoped && authz.IsEnvScoped(perm) {
+		return slices.ContainsFunc(scope.IDs, func(id string) bool {
+			return ps.Allows(perm, id)
+		})
+	}
+	return ps.Allows(perm, kit.Ternary(authz.IsEnvScoped(perm), authz.EnvIDFromPath(ctx.URL().Path), ""))
 }
 
 // RequireGlobalAdmin returns a per-operation Huma middleware that rejects any

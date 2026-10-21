@@ -65,9 +65,10 @@ type ListSwarmServiceTasksInput struct {
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 }
 
-type RollbackSwarmServiceInput struct {
+type SwarmServiceActionInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ServiceID     string `path:"serviceId" doc:"Service ID"`
+	Action        string `query:"action" required:"true" enum:"rollback" doc:"Service action"`
 }
 
 type ScaleSwarmServiceInput struct {
@@ -227,7 +228,7 @@ func (h *Handler) ListServiceTasks(ctx context.Context, input *ListSwarmServiceT
 // Returns a successful response containing any warnings reported by Docker.
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the rollback cannot be performed.
-func (h *Handler) RollbackService(ctx context.Context, input *RollbackSwarmServiceInput) (*handlerutil.Out[types.SwarmServiceUpdateResponse], error) {
+func (h *Handler) RollbackService(ctx context.Context, input *SwarmServiceActionInput) (*handlerutil.Out[types.SwarmServiceUpdateResponse], error) {
 	resp, err := h.service.RollbackService(ctx, input.ServiceID)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to update swarm service: "+err.Error())

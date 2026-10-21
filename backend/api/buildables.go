@@ -25,7 +25,7 @@ func SetupBuildablesRoutes(apiGroup *echo.Group, authService *auth.AuthService) 
 func registerAutoLoginRoutes(apiGroup *echo.Group, authService *auth.AuthService) {
 	authGroup := apiGroup.Group("/auth")
 
-	authGroup.GET("/auto-login-config", func(c *echo.Context) error {
+	authGroup.GET("/autologin", func(c *echo.Context) error {
 		if authService == nil {
 			return c.JSON(http.StatusInternalServerError, types.ErrorResponse{Error: "service not available"})
 		}
@@ -41,7 +41,7 @@ func registerAutoLoginRoutes(apiGroup *echo.Group, authService *auth.AuthService
 		})
 	})
 
-	authGroup.POST("/auto-login", func(c *echo.Context) error {
+	authGroup.POST("/autologin", func(c *echo.Context) error {
 		if authService == nil {
 			return c.JSON(http.StatusInternalServerError, types.ErrorResponse{Error: "service not available"})
 		}
