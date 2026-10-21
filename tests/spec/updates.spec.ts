@@ -899,12 +899,17 @@ test.describe('Arcane upgrades', () => {
 			await registerTokenSeeding(page);
 
 			let refreshCalls = 0;
+			let releaseRefresh!: () => void;
+			const refreshReleased = new Promise<void>((resolve) => {
+				releaseRefresh = resolve;
+			});
 			await page.route(/\/api\/auth\/refresh$/, async (route) => {
 				refreshCalls++;
 				if (refreshCalls === 1) {
 					await route.abort('connectionfailed');
 					return;
 				}
+				await refreshReleased;
 				await route.fulfill({
 					status: 200,
 					headers: {
@@ -933,15 +938,24 @@ test.describe('Arcane upgrades', () => {
 				});
 			});
 
-			await page.goto('/environments');
-			await openAndConfirmUpdateAll(page);
+			try {
+				await page.goto('/environments');
+				await openAndConfirmUpdateAll(page);
 
-			await expect.poll(() => refreshCalls, { timeout: 10_000 }).toBe(1);
-			await expect
-				.poll(() => page.evaluate((key: string) => localStorage.getItem(key), TOKEN_EXPIRY_KEY))
-				.not.toBeNull();
-			await expect.poll(() => currentReloadCount(page), { timeout: 15_000 }).toBe(2);
-			expect(refreshCalls).toBe(2);
+				await expect.poll(() => refreshCalls, { timeout: 15_000 }).toBe(2);
+				expect(
+					await page.evaluate((key: string) => localStorage.getItem(key), TOKEN_EXPIRY_KEY)
+				).not.toBeNull();
+				expect(currentReloadCount(page)).toBe(1);
+				await expect(page).toHaveURL('/environments');
+				releaseRefresh();
+
+				await expect.poll(() => currentReloadCount(page), { timeout: 15_000 }).toBe(2);
+				expect(refreshCalls).toBe(2);
+				await expect(page).toHaveURL('/environments');
+			} finally {
+				releaseRefresh();
+			}
 		});
 
 		test('a rejected refresh during an upgrade redirects to login instead of polling', async ({
