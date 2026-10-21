@@ -12,22 +12,11 @@ service TunnelService {
 
 // Messages sent from the agent to the manager.
 message AgentMessage {
-  // Every payload except register and mux_data is the legacy edge message protocol; remove in v3.
+  reserved 1 to 6, 8 to 14;
+  reserved "http_response", "heartbeat_ping", "ws_data", "ws_close", "stream_data", "stream_end", "event", "command_ack", "command_output", "command_complete", "file_chunk", "stream_close", "cancel_request";
+
   oneof payload {
-    HttpResponse http_response = 1 [deprecated = true];
-    HeartbeatPing heartbeat_ping = 2 [deprecated = true];
-    WebSocketData ws_data = 3 [deprecated = true];
-    WebSocketClose ws_close = 4 [deprecated = true];
-    StreamData stream_data = 5 [deprecated = true];
-    StreamEnd stream_end = 6 [deprecated = true];
     RegisterRequest register = 7;
-    EventLog event = 8 [deprecated = true];
-    CommandAck command_ack = 9 [deprecated = true];
-    CommandOutput command_output = 10 [deprecated = true];
-    CommandComplete command_complete = 11 [deprecated = true];
-    FileChunk file_chunk = 12 [deprecated = true];
-    StreamClose stream_close = 13 [deprecated = true];
-    CancelRequest cancel_request = 14 [deprecated = true];
     // Raw multiplexed session bytes, sent only after the manager grants mux-grant-v1.
     MuxData mux_data = 15;
   }
@@ -35,22 +24,11 @@ message AgentMessage {
 
 // Messages sent from the manager to the agent.
 message ManagerMessage {
-  // Every payload except register_response and mux_data is the legacy edge message protocol; remove in v3.
+  reserved 1 to 5, 7 to 14;
+  reserved "http_request", "heartbeat_pong", "ws_start", "ws_data", "ws_close", "command_request", "stream_open", "stream_close", "cancel_request", "file_chunk", "stream_data", "stream_end", "command_credit";
+
   oneof payload {
-    HttpRequest http_request = 1 [deprecated = true];
-    HeartbeatPong heartbeat_pong = 2 [deprecated = true];
-    WebSocketStart ws_start = 3 [deprecated = true];
-    WebSocketData ws_data = 4 [deprecated = true];
-    WebSocketClose ws_close = 5 [deprecated = true];
     RegisterResponse register_response = 6;
-    CommandRequest command_request = 7 [deprecated = true];
-    StreamOpen stream_open = 8 [deprecated = true];
-    StreamClose stream_close = 9 [deprecated = true];
-    CancelRequest cancel_request = 10 [deprecated = true];
-    FileChunk file_chunk = 11 [deprecated = true];
-    StreamData stream_data = 12 [deprecated = true];
-    StreamEnd stream_end = 13 [deprecated = true];
-    CommandCredit command_credit = 14 [deprecated = true];
     // Raw multiplexed session bytes, sent only after the manager grants mux-grant-v1.
     MuxData mux_data = 15;
   }
@@ -74,196 +52,6 @@ message RegisterResponse {
   repeated string capabilities = 6;
   bool drain_previous = 7;
   string id = 8;
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-message CommandRequest {
-  option deprecated = true;
-
-  string command_id = 1;
-  string command_name = 2;
-  string method = 3;
-  string path = 4;
-  string query = 5;
-  map<string, string> headers = 6;
-  bytes body = 7;
-  int64 timeout_millis = 8;
-  string session_id = 9;
-  string agent_instance_id = 10;
-  map<string, string> metadata = 11;
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-message CommandAck {
-  option deprecated = true;
-
-  string command_id = 1;
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-message CommandOutput {
-  option deprecated = true;
-
-  string command_id = 1;
-  bytes data = 2;
-  int64 sequence = 3;
-  // Set on the first chunk so the manager can stream the response before
-  // command_complete arrives. Older managers ignore these fields.
-  int32 status = 4;
-  map<string, string> headers = 5;
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-message CommandComplete {
-  option deprecated = true;
-
-  string command_id = 1;
-  int32 status = 2;
-  map<string, string> headers = 3;
-  bytes body = 4;
-  string error = 5;
-  bool streaming = 6;
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-message FileChunk {
-  option deprecated = true;
-
-  string transfer_id = 1;
-  bytes data = 2;
-  int64 sequence = 3;
-  bool eof = 4;
-  map<string, string> metadata = 5;
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-message StreamOpen {
-  option deprecated = true;
-
-  string stream_id = 1;
-  string command_name = 2;
-  string path = 3;
-  string query = 4;
-  map<string, string> headers = 5;
-  string session_id = 6;
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-message StreamClose {
-  option deprecated = true;
-
-  string stream_id = 1;
-  string error = 2;
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-message CancelRequest {
-  option deprecated = true;
-
-  string command_id = 1;
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-message CommandCredit {
-  option deprecated = true;
-
-  string command_id = 1;
-  int64 bytes = 2;
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-message HttpRequest {
-  option deprecated = true;
-
-  string request_id = 1;
-  string method = 2;
-  string path = 3;
-  string query = 4;
-  map<string, string> headers = 5;
-  bytes body = 6;
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-message HttpResponse {
-  option deprecated = true;
-
-  string request_id = 1;
-  int32 status = 2;
-  map<string, string> headers = 3;
-  bytes body = 4;
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-message StreamData {
-  option deprecated = true;
-
-  string request_id = 1;
-  bytes data = 2;
-  int32 message_type = 3;
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-message StreamEnd {
-  option deprecated = true;
-
-  string request_id = 1;
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-message HeartbeatPing {
-  option deprecated = true;
-
-  string id = 1;
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-message HeartbeatPong {
-  option deprecated = true;
-
-  string id = 1;
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-message WebSocketStart {
-  option deprecated = true;
-
-  string stream_id = 1;
-  string path = 2;
-  string query = 3;
-  map<string, string> headers = 4;
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-message WebSocketData {
-  option deprecated = true;
-
-  string stream_id = 1;
-  bytes data = 2;
-  int32 message_type = 3;
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-message WebSocketClose {
-  option deprecated = true;
-
-  string stream_id = 1;
-}
-
-// Deprecated: legacy edge message protocol; remove in v3.
-message EventLog {
-  option deprecated = true;
-
-  string type = 1;
-  string severity = 2;
-  string title = 3;
-  string description = 4;
-  string resource_type = 5;
-  string resource_id = 6;
-  string resource_name = 7;
-  string user_id = 8;
-  string username = 9;
-  bytes metadata_json = 10;
-  string id = 11;
 }
 
 // MuxData carries an opaque slice of the multiplexed session byte stream.

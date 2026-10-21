@@ -117,16 +117,10 @@ type Environment struct {
 	// Required: false
 	EdgeAgentInstance *string `json:"edgeAgentInstance,omitempty" readOnly:"true"`
 
-	// EdgeCapabilities lists the commands advertised by the connected edge agent.
+	// EdgeCapabilities lists the protocol features advertised by the connected edge agent.
 	//
 	// Required: false
 	EdgeCapabilities []string `json:"edgeCapabilities,omitempty" readOnly:"true"`
-
-	// EdgeDataPlane is how requests share the live tunnel: "mux" runs them as parallel streams,
-	// "legacy" uses the older single-stream message protocol.
-	//
-	// Required: false
-	EdgeDataPlane *string `json:"edgeDataPlane,omitempty" readOnly:"true"`
 
 	// EdgeRoundTripMs is the last keepalive round trip of a multiplexed tunnel, in milliseconds.
 	//
