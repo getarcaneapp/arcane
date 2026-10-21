@@ -17,10 +17,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/compose-spec/compose-go/v2/types"
-	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
-	"github.com/getarcaneapp/arcane/types/v2/project"
-	"github.com/getarcaneapp/arcane/types/v2/volume"
+	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.getarcane.app/acfs"
@@ -45,18 +43,18 @@ type Service struct {
 	kv              *kv.KVService
 	dockerService   *docker.DockerClientService
 	registryService *registry.ContainerRegistryService
-	credentials     func(ctx context.Context) ([]containerregistry.Credential, error)
+	credentials     func(ctx context.Context) ([]types.ContainerRegistryCredential, error)
 	projectState    func(ctx context.Context, projectID string) (name, path string, found bool, err error)
-	restoreState    func(ctx context.Context, journal *project.RenameJournal) error
+	restoreState    func(ctx context.Context, journal *types.ProjectRenameJournal) error
 }
 
 func New(
 	kvService *kv.KVService,
 	dockerService *docker.DockerClientService,
 	registryService *registry.ContainerRegistryService,
-	credentials func(ctx context.Context) ([]containerregistry.Credential, error),
+	credentials func(ctx context.Context) ([]types.ContainerRegistryCredential, error),
 	projectState func(ctx context.Context, projectID string) (name, path string, found bool, err error),
-	restoreState func(ctx context.Context, journal *project.RenameJournal) error,
+	restoreState func(ctx context.Context, journal *types.ProjectRenameJournal) error,
 ) *Service {
 	return &Service{
 		kv:              kvService,
@@ -86,14 +84,14 @@ func (s *Service) SyncState(ctx context.Context) SyncState {
 		SkipDiscoveredPaths: make(map[string]struct{}),
 		ProtectSeenPaths:    make(map[string]struct{}),
 	}
-	entries, err := s.kv.ListByPrefix(ctx, project.RenameJournalKeyPrefix)
+	entries, err := s.kv.ListByPrefix(ctx, types.ProjectRenameJournalKeyPrefix)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to list project rename journals during filesystem sync", "error", err)
 		return state
 	}
 
 	for _, entry := range entries {
-		var journal project.RenameJournal
+		var journal types.ProjectRenameJournal
 		if unmarshalErr := json.Unmarshal([]byte(entry.Value), &journal); unmarshalErr != nil {
 			slog.WarnContext(ctx, "failed to decode project rename journal during filesystem sync", "key", entry.Key, "error", unmarshalErr)
 			continue
@@ -114,7 +112,7 @@ func (s *Service) SyncState(ctx context.Context) SyncState {
 
 // Prepare builds the journal for renaming a project, or nil when the name
 // does not change.
-func (s *Service) Prepare(projectID, oldName, oldPath string, oldDirName, name *string, projectsDirectory string, migration volume.Migration) *project.RenameJournal {
+func (s *Service) Prepare(projectID, oldName, oldPath string, oldDirName, name *string, projectsDirectory string, migration types.VolumeMigration) *types.ProjectRenameJournal {
 	newName := strings.TrimSpace(kit.FromPtr(name))
 	if newName == "" || oldName == newName {
 		return nil
@@ -125,7 +123,7 @@ func (s *Service) Prepare(projectID, oldName, oldPath string, oldDirName, name *
 		return nil
 	}
 
-	return &project.RenameJournal{
+	return &types.ProjectRenameJournal{
 		ProjectID:  projectID,
 		OldName:    oldName,
 		NewName:    newName,
@@ -133,9 +131,9 @@ func (s *Service) Prepare(projectID, oldName, oldPath string, oldDirName, name *
 		NewPath:    filepath.Clean(filepath.Join(projectsDirectory, newDirName)),
 		OldDirName: mo.PointerToOption(oldDirName).ToPointer(),
 		NewDirName: newDirName,
-		Phase:      project.RenameJournalPhaseStarted,
-		Volumes: func() []volume.JournalVolume {
-			if source, ok := migration.(volume.JournalSource); ok {
+		Phase:      types.ProjectRenameJournalPhaseStarted,
+		Volumes: func() []types.VolumeJournalVolume {
+			if source, ok := migration.(types.VolumeJournalSource); ok {
 				return source.JournalVolumes()
 			}
 			return nil
@@ -144,11 +142,11 @@ func (s *Service) Prepare(projectID, oldName, oldPath string, oldDirName, name *
 }
 
 // WriteJournal stores the journal at the given phase.
-func (s *Service) WriteJournal(ctx context.Context, journal *project.RenameJournal, phase string) error {
+func (s *Service) WriteJournal(ctx context.Context, journal *types.ProjectRenameJournal, phase string) error {
 	if journal == nil {
 		return nil
 	}
-	*journal = project.RenameJournal{ //exhaustruct:enforce
+	*journal = types.ProjectRenameJournal{ //exhaustruct:enforce
 		ProjectID:  journal.ProjectID,
 		OldName:    journal.OldName,
 		NewName:    journal.NewName,
@@ -166,7 +164,7 @@ func (s *Service) WriteJournal(ctx context.Context, journal *project.RenameJourn
 		return fmt.Errorf("marshal project rename journal: %w", err)
 	}
 
-	if setErr := s.kv.Set(ctx, project.RenameJournalKeyPrefix+journal.ProjectID, string(payload)); setErr != nil {
+	if setErr := s.kv.Set(ctx, types.ProjectRenameJournalKeyPrefix+journal.ProjectID, string(payload)); setErr != nil {
 		return fmt.Errorf("write project rename journal: %w", setErr)
 	}
 	return nil
@@ -176,19 +174,19 @@ func (s *Service) clearRollbackCleanup(ctx context.Context, projectID string) er
 	if strings.TrimSpace(projectID) == "" {
 		return nil
 	}
-	return s.kv.Delete(ctx, project.RenameRollbackCleanupKeyPrefix+projectID)
+	return s.kv.Delete(ctx, types.ProjectRenameRollbackCleanupKeyPrefix+projectID)
 }
 
 // RecoverAll replays every pending rename journal and rollback cleanup.
 func (s *Service) RecoverAll(ctx context.Context) error {
-	entries, err := s.kv.ListByPrefix(ctx, project.RenameJournalKeyPrefix)
+	entries, err := s.kv.ListByPrefix(ctx, types.ProjectRenameJournalKeyPrefix)
 	if err != nil {
 		return err
 	}
 
 	var recoverErr error
 	for _, entry := range entries {
-		var journal project.RenameJournal
+		var journal types.ProjectRenameJournal
 		if unmarshalErr := json.Unmarshal([]byte(entry.Value), &journal); unmarshalErr != nil {
 			recoverErr = errors.Join(recoverErr, fmt.Errorf("decode project rename journal %s: %w", entry.Key, unmarshalErr))
 			continue
@@ -211,12 +209,12 @@ func (s *Service) RecoverAll(ctx context.Context) error {
 		}
 	}
 
-	cleanups, err := s.kv.ListByPrefix(ctx, project.RenameRollbackCleanupKeyPrefix)
+	cleanups, err := s.kv.ListByPrefix(ctx, types.ProjectRenameRollbackCleanupKeyPrefix)
 	if err != nil {
 		return errors.Join(recoverErr, err)
 	}
 	for _, entry := range cleanups {
-		var cleanup project.RenameRollbackCleanup
+		var cleanup types.ProjectRenameRollbackCleanup
 		if unmarshalErr := json.Unmarshal([]byte(entry.Value), &cleanup); unmarshalErr != nil {
 			recoverErr = errors.Join(recoverErr, fmt.Errorf("decode project rename rollback cleanup %s: %w", entry.Key, unmarshalErr))
 			continue
@@ -254,12 +252,12 @@ func (s *Service) RecoverProject(ctx context.Context, projectID string) error {
 		return nil
 	}
 
-	raw, ok, err := s.kv.Get(ctx, project.RenameJournalKeyPrefix+projectID)
+	raw, ok, err := s.kv.Get(ctx, types.ProjectRenameJournalKeyPrefix+projectID)
 	if err != nil || !ok {
 		return err
 	}
 
-	var journal project.RenameJournal
+	var journal types.ProjectRenameJournal
 	if unmarshalErr := json.Unmarshal([]byte(raw), &journal); unmarshalErr != nil {
 		return fmt.Errorf("decode project rename journal: %w", unmarshalErr)
 	}
@@ -310,8 +308,8 @@ func (s *Service) RollbackFailedUpdate(
 }
 
 // Operations exposes journal persistence to the shared rename engine.
-func (s *Service) Operations() project.RenameRecoveryOperations {
-	return project.RenameRecoveryOperations{
+func (s *Service) Operations() types.ProjectRenameRecoveryOperations {
+	return types.ProjectRenameRecoveryOperations{
 		Docker: func(ctx context.Context, dockerRequired bool) (*client.Client, error) {
 			if !dockerRequired {
 				return nil, nil
@@ -327,14 +325,14 @@ func (s *Service) Operations() project.RenameRecoveryOperations {
 			if strings.TrimSpace(projectID) == "" {
 				return nil
 			}
-			return s.kv.Delete(ctx, project.RenameJournalKeyPrefix+projectID)
+			return s.kv.Delete(ctx, types.ProjectRenameJournalKeyPrefix+projectID)
 		},
 		ClearRollbackCleanup: s.clearRollbackCleanup,
-		WriteRollbackCleanup: func(ctx context.Context, journal *project.RenameJournal) error {
+		WriteRollbackCleanup: func(ctx context.Context, journal *types.ProjectRenameJournal) error {
 			if strings.TrimSpace(kit.FromPtr(journal).ProjectID) == "" || len(journal.Volumes) == 0 {
 				return nil
 			}
-			payload, err := json.Marshal(project.RenameRollbackCleanup{
+			payload, err := json.Marshal(types.ProjectRenameRollbackCleanup{
 				ProjectID: journal.ProjectID,
 				OldName:   journal.OldName,
 				OldPath:   filepath.Clean(journal.OldPath),
@@ -346,7 +344,7 @@ func (s *Service) Operations() project.RenameRecoveryOperations {
 			if err != nil {
 				return fmt.Errorf("marshal project rename rollback cleanup: %w", err)
 			}
-			if setErr := s.kv.Set(ctx, project.RenameRollbackCleanupKeyPrefix+journal.ProjectID, string(payload)); setErr != nil {
+			if setErr := s.kv.Set(ctx, types.ProjectRenameRollbackCleanupKeyPrefix+journal.ProjectID, string(payload)); setErr != nil {
 				return fmt.Errorf("write project rename rollback cleanup: %w", setErr)
 			}
 			return nil
@@ -407,7 +405,7 @@ func validateImageUpdateSource(node *yaml.Node) error {
 	return nil
 }
 
-func PrepareProjectServiceImages(source []byte, effective *types.Project, changes map[string]updatertypes.ServiceImageChange) ([]byte, []string, error) {
+func PrepareProjectServiceImages(source []byte, effective *composetypes.Project, changes map[string]updatertypes.ServiceImageChange) ([]byte, []string, error) {
 	var document yaml.Node
 	decoder := yaml.NewDecoder(bytes.NewReader(source))
 	if err := decoder.Decode(&document); err != nil {
@@ -533,7 +531,7 @@ func EnsureProjectEnvReadable(ctx context.Context, projectsDirectory, projectPat
 
 // ImageChanges discovers newer image tags allowed by each service's update
 // policy. GitOps-managed projects cannot have their source edited.
-func (s *Service) ImageChanges(ctx context.Context, effective *types.Project, servicesToUpdate []string, gitOpsManaged bool) (map[string]updatertypes.ServiceImageChange, error) {
+func (s *Service) ImageChanges(ctx context.Context, effective *composetypes.Project, servicesToUpdate []string, gitOpsManaged bool) (map[string]updatertypes.ServiceImageChange, error) {
 	policy := updater.DefaultLabelPolicy()
 	selected := projects.NormalizeBuildSelections(servicesToUpdate)
 	changes := make(map[string]updatertypes.ServiceImageChange)
@@ -592,7 +590,7 @@ func (s *Service) ImageChanges(ctx context.Context, effective *types.Project, se
 
 // ApplyImageChanges rewrites the image fields of the single authoritative
 // Compose file and returns the services whose images changed.
-func (s *Service) ApplyImageChanges(ctx context.Context, projectPath string, effective *types.Project, changes map[string]updatertypes.ServiceImageChange) ([]string, error) {
+func (s *Service) ApplyImageChanges(ctx context.Context, projectPath string, effective *composetypes.Project, changes map[string]updatertypes.ServiceImageChange) ([]string, error) {
 	if len(effective.ComposeFiles) != 1 {
 		return nil, errors.New("tag updates require one authoritative Compose file; multi-file selections and overrides must be updated manually")
 	}

@@ -11,7 +11,7 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/consts"
 	"github.com/compose-spec/compose-go/v2/dotenv"
-	"github.com/getarcaneapp/arcane/types/v2/env"
+	"github.com/getarcaneapp/arcane/types/v3"
 )
 
 // BuildValidationEnvironment resolves the env a compose file is validated
@@ -34,7 +34,7 @@ func BuildValidationEnvironment(ctx context.Context, projectsDirectory, projectP
 
 	// Mirror LoadEnvironment's COMPOSE_DISABLE_ENV_FILE / COMPOSE_ENV_FILES
 	// handling so the validation env matches the runtime env exactly.
-	if !parseComposeBoolInternal(fullEnvMap, consts.ComposeDisableDefaultEnvFile) {
+	if !parseComposeBool(fullEnvMap, consts.ComposeDisableDefaultEnvFile) {
 		if effectiveEnvContent != nil {
 			projectEnv, parseValidationEnvContentErr := ParseValidationEnvContent(*effectiveEnvContent, fullEnvMap)
 			if parseValidationEnvContentErr != nil {
@@ -50,7 +50,7 @@ func BuildValidationEnvironment(ctx context.Context, projectsDirectory, projectP
 		}
 	}
 
-	mergeComposeEnvFilesInternal(ctx, projectPath, fullEnvMap, ParseValidationEnvFile, nil)
+	mergeComposeEnvFiles(ctx, projectPath, fullEnvMap, ParseValidationEnvFile, nil)
 
 	return fullEnvMap, nil
 }
@@ -97,12 +97,12 @@ func ParseValidationEnvContent(content string, contextEnv EnvMap) (EnvMap, error
 }
 
 // ParseEnvContent parses environment variables from .env file content
-func ParseEnvContent(content string) []env.Variable {
+func ParseEnvContent(content string) []types.EnvVariable {
 	if content == "" {
-		return []env.Variable{}
+		return []types.EnvVariable{}
 	}
 
-	var vars []env.Variable
+	var vars []types.EnvVariable
 	scanner := bufio.NewScanner(strings.NewReader(content))
 
 	for scanner.Scan() {
@@ -137,7 +137,7 @@ func ParseEnvContent(content string) []env.Variable {
 		}
 
 		if key != "" {
-			vars = append(vars, env.Variable{
+			vars = append(vars, types.EnvVariable{
 				Key:   key,
 				Value: value,
 			})

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/image"
@@ -397,7 +397,7 @@ func TestCountImageUsage_UsesContainerImageIDs(t *testing.T) {
 func TestCountImageUsage_NoImages(t *testing.T) {
 	counts := CountImageUsage(nil, []container.Summary{{ImageID: "sha256:image-a"}})
 
-	assert.Equal(t, imagetypes.UsageCounts{}, counts)
+	assert.Equal(t, types.ImageUsageCounts{}, counts)
 }
 
 func newDockerClientServiceForTest(t *testing.T, host string) *DockerClientService {

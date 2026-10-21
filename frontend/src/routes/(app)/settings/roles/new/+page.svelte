@@ -4,7 +4,7 @@
 
 	import { m } from '#lib/paraglide/messages.js';
 	import { roleService } from '#lib/services/role-service.js';
-	import type { CreateRole } from '#lib/types/auth.js';
+	import type { RoleCreate } from '#lib/types/auth.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -14,7 +14,7 @@
 
 	let isLoading = $state(false);
 
-	async function handleSubmit(payload: CreateRole) {
+	async function handleSubmit(payload: RoleCreate) {
 		isLoading = true;
 		const safeName = payload.name?.trim() || m.common_unknown();
 		await handleApiResultWithCallbacks({

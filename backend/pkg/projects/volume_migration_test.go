@@ -7,13 +7,13 @@ import (
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
-	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestBuildProjectRenamedVolumeConfigInternal(t *testing.T) {
+func TestBuildProjectRenamedVolumeConfig(t *testing.T) {
 	source := composetypes.VolumeConfig{
 		Name:   "nginx_data",
 		Driver: "local",
@@ -26,7 +26,7 @@ func TestBuildProjectRenamedVolumeConfigInternal(t *testing.T) {
 		},
 	}
 
-	got := buildProjectRenamedVolumeConfigInternal(source, "data", "web_data", "web")
+	got := buildProjectRenamedVolumeConfig(source, "data", "web_data", "web")
 
 	require.Equal(t, "web_data", got.Name)
 	require.Equal(t, "local", got.Driver)
@@ -57,7 +57,7 @@ func TestRenamedVolumeCreateOptionsInternal_UsesPendingComposeDriverOptions(t *t
 		},
 	}
 
-	options, err := renamedVolumeCreateOptionsInternal(entry.NewConfig, entry.OldVolume.Labels)
+	options, err := renamedVolumeCreateOptions(entry.NewConfig, entry.OldVolume.Labels)
 	require.NoError(t, err)
 	require.Equal(t, "web_data", options.Name)
 	require.Equal(t, "new-driver", options.Driver)
@@ -68,7 +68,7 @@ func TestRenamedVolumeCreateOptionsInternal_UsesPendingComposeDriverOptions(t *t
 	require.NotEmpty(t, options.Labels[api.ConfigHashLabel])
 }
 
-func TestComposeVolumeKeysWithExplicitNameInternal(t *testing.T) {
+func TestComposeVolumeKeysWithExplicitName(t *testing.T) {
 	projectPath := t.TempDir()
 	rootCompose := filepath.Join(projectPath, "compose.yaml")
 	includeCompose := filepath.Join(projectPath, "included.yaml")
@@ -115,7 +115,7 @@ volumes:
     driver: local
 `), 0o644))
 
-	explicit, err := composeVolumeKeysWithExplicitNameInternal([]string{rootCompose, includeCompose})
+	explicit, err := composeVolumeKeysWithExplicitName([]string{rootCompose, includeCompose})
 	require.NoError(t, err)
 
 	assert.Contains(t, explicit, "fixed")
@@ -132,11 +132,11 @@ volumes:
 	assert.NotContains(t, explicit, "included_implicit")
 }
 
-func TestProjectRenameJournalTargetsCopiedInternal(t *testing.T) {
-	require.False(t, renameJournalTargetsCopiedInternal(projecttypes.RenameJournalPhaseStarted))
-	require.False(t, renameJournalTargetsCopiedInternal(projecttypes.RenameJournalPhaseProjectStateRolledBack))
-	require.True(t, renameJournalTargetsCopiedInternal(projecttypes.RenameJournalPhaseSourceCleanupPending))
-	require.True(t, renameJournalTargetsCopiedInternal(projecttypes.RenameJournalPhaseTargetsCopied))
-	require.True(t, renameJournalTargetsCopiedInternal(projecttypes.RenameJournalPhaseOldVolumesRemoved))
-	require.True(t, renameJournalTargetsCopiedInternal(projecttypes.RenameJournalPhaseProjectStateCommitted))
+func TestProjectRenameJournalTargetsCopied(t *testing.T) {
+	require.False(t, renameJournalTargetsCopied(types.ProjectRenameJournalPhaseStarted))
+	require.False(t, renameJournalTargetsCopied(types.ProjectRenameJournalPhaseProjectStateRolledBack))
+	require.True(t, renameJournalTargetsCopied(types.ProjectRenameJournalPhaseSourceCleanupPending))
+	require.True(t, renameJournalTargetsCopied(types.ProjectRenameJournalPhaseTargetsCopied))
+	require.True(t, renameJournalTargetsCopied(types.ProjectRenameJournalPhaseOldVolumesRemoved))
+	require.True(t, renameJournalTargetsCopied(types.ProjectRenameJournalPhaseProjectStateCommitted))
 }

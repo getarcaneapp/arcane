@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/getarcaneapp/arcane/types/v2/version"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 // Command displays CLI and server versions.
@@ -30,10 +30,10 @@ func Command() *cobra.Command {
 			}
 
 			c, err := cmdutil.ClientFromCommand(cmd)
-			var result version.Info
+			var result types.VersionInfo
 			if err == nil {
-				logger.GetLogger().Debug("Fetching server version", "endpoint", types.AppVersionEndpoint)
-				result, err = c.DoJSON[version.Info](cmd.Context(), http.MethodGet, types.AppVersionEndpoint, nil)
+				logger.GetLogger().Debug("Fetching server version", "endpoint", clitypes.AppVersionEndpoint)
+				result, err = c.DoJSON[types.VersionInfo](cmd.Context(), http.MethodGet, clitypes.AppVersionEndpoint, nil)
 			}
 			if err != nil {
 				if cmd.Context().Err() != nil {

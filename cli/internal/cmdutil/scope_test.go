@@ -10,19 +10,19 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 func TestRunScopedMerged(t *testing.T) {
 	type row struct {
-		base.EnvironmentTag
+		types.EnvironmentTag
 
 		Name string `json:"name"`
 	}
@@ -63,11 +63,11 @@ func TestRunScopedMerged(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var requests []string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == types.Environments() {
+				if r.URL.Path == clitypes.Environments() {
 					_, _ = fmt.Fprintf(w, `{"success":true,"data":%s}`, tt.environments)
 					return
 				}
-				if r.URL.Path == types.SettingsPublic("0") {
+				if r.URL.Path == clitypes.SettingsPublic("0") {
 					_, _ = fmt.Fprintf(w, `[{"key":"allEnvironmentsLimit","type":"number","value":%q}]`, cmp.Or(tt.limit, "64"))
 					return
 				}
@@ -96,7 +96,7 @@ func TestRunScopedMerged(t *testing.T) {
 				c, err := ClientFromCommand(command)
 				require.NoError(t, err)
 				return RunList(command, c, ListSpec[row]{
-					Resource: "rows", Endpoint: types.Environment(c.EnvID()) + "/rows", Headers: []string{"NAME"},
+					Resource: "rows", Endpoint: clitypes.Environment(c.EnvID()) + "/rows", Headers: []string{"NAME"},
 					Row: func(item row) []string { return []string{item.Name} },
 				})
 			})

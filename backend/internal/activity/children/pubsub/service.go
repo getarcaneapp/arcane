@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/activity"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 )
 
@@ -48,7 +48,7 @@ type Service struct {
 // subscriberMessageQueueLimit with drop-oldest on overflow.
 type subscriber struct {
 	environmentID string
-	ch            chan activity.StreamEvent
+	ch            chan types.ActivityStreamEvent
 	done          chan struct{}
 	wake          chan struct{}
 
@@ -60,7 +60,7 @@ type subscriber struct {
 }
 
 type pendingStreamEvent struct {
-	event activity.StreamEvent
+	event types.ActivityStreamEvent
 }
 
 // NewService returns an empty subscriber registry.
@@ -71,11 +71,11 @@ func NewService() *Service {
 	}
 }
 
-func isCoalescable(event activity.StreamEvent) bool {
+func isCoalescable(event types.ActivityStreamEvent) bool {
 	return event.Type == "activity" && event.ActivityID != ""
 }
 
-func (sub *subscriber) enqueue(event activity.StreamEvent) {
+func (sub *subscriber) enqueue(event types.ActivityStreamEvent) {
 	sub.mu.Lock()
 	if isCoalescable(event) {
 		if pending, ok := sub.pendingActivity[event.ActivityID]; ok {
@@ -117,12 +117,12 @@ func (sub *subscriber) dropOldestMessageLocked() {
 	}
 }
 
-func (sub *subscriber) next() mo.Option[activity.StreamEvent] {
+func (sub *subscriber) next() mo.Option[types.ActivityStreamEvent] {
 	sub.mu.Lock()
 	defer sub.mu.Unlock()
 
 	if len(sub.queue) == 0 {
-		return mo.None[activity.StreamEvent]()
+		return mo.None[types.ActivityStreamEvent]()
 	}
 	entry := sub.queue[0]
 	sub.queue = sub.queue[1:]
@@ -158,8 +158,8 @@ func (sub *subscriber) pump() {
 }
 
 // Subscribe returns the event channel for environmentID, a drop-check, and an unsubscribe func.
-func (s *Service) Subscribe(environmentID string) (<-chan activity.StreamEvent, func() bool, func()) {
-	ch := make(chan activity.StreamEvent, 64)
+func (s *Service) Subscribe(environmentID string) (<-chan types.ActivityStreamEvent, func() bool, func()) {
+	ch := make(chan types.ActivityStreamEvent, 64)
 	sub := &subscriber{
 		environmentID:   cmp.Or(strings.TrimSpace(environmentID), "0"),
 		ch:              ch,
@@ -209,11 +209,11 @@ func (s *Service) Subscribe(environmentID string) (<-chan activity.StreamEvent, 
 
 // PublishActivity streams an activity snapshot unless a terminal snapshot for
 // the same activity was already published.
-func (s *Service) PublishActivity(item activity.Activity) {
+func (s *Service) PublishActivity(item types.Activity) {
 	if !s.admit(item) {
 		return
 	}
-	s.publish(item.EnvironmentID, activity.StreamEvent{
+	s.publish(item.EnvironmentID, types.ActivityStreamEvent{
 		Type:       "activity",
 		ActivityID: item.ID,
 		Activity:   &item,
@@ -222,8 +222,8 @@ func (s *Service) PublishActivity(item activity.Activity) {
 }
 
 // PublishMessage delivers one activity message to every subscriber of environmentID.
-func (s *Service) PublishMessage(environmentID string, activityType activity.Type, message activity.Message) {
-	s.publish(environmentID, activity.StreamEvent{
+func (s *Service) PublishMessage(environmentID string, activityType types.ActivityType, message types.ActivityMessage) {
+	s.publish(environmentID, types.ActivityStreamEvent{
 		Type:         "message",
 		ActivityID:   message.ActivityID,
 		ActivityType: activityType,
@@ -248,10 +248,10 @@ func (s *Service) Reopen(activityID string) {
 // non-terminal snapshot must be dropped, not delivered. Activities never leave
 // a terminal status, so once a terminal snapshot is published, any later
 // non-terminal snapshot for that ID is stale by construction.
-func (s *Service) admit(item activity.Activity) bool {
+func (s *Service) admit(item types.Activity) bool {
 	s.terminalPublishedMu.Lock()
 	defer s.terminalPublishedMu.Unlock()
-	if !slices.Contains([]activity.Status{activity.StatusSuccess, activity.StatusFailed, activity.StatusCancelled}, item.Status) {
+	if !slices.Contains([]types.ActivityStatus{types.ActivityStatusSuccess, types.ActivityStatusFailed, types.ActivityStatusCancelled}, item.Status) {
 		_, sealed := s.terminalPublished[item.ID]
 		return !sealed
 	}
@@ -265,7 +265,7 @@ func (s *Service) admit(item activity.Activity) bool {
 	return true
 }
 
-func (s *Service) publish(environmentID string, event activity.StreamEvent) {
+func (s *Service) publish(environmentID string, event types.ActivityStreamEvent) {
 	s.subscribersMu.RLock()
 	subs := make([]*subscriber, 0, len(s.subscribers))
 	for _, sub := range s.subscribers {

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/distribution/reference"
-	"github.com/getarcaneapp/arcane/types/v2/version"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
 	"github.com/samber/mo"
@@ -61,7 +61,7 @@ type VersionService struct {
 	dockerService            *docker.DockerClientService
 	imageUpdateService       *imageupdate.ImageUpdateService
 	settingsService          *settings.SettingsService
-	streamHub                *agg.Hub[version.StreamEvent]
+	streamHub                *agg.Hub[types.VersionStreamEvent]
 	currentImage             *hot.HotCache[struct{}, currentImageInfo]
 }
 
@@ -86,7 +86,7 @@ func NewVersionService(
 		dockerService:            dockerService,
 		imageUpdateService:       imageUpdateService,
 		settingsService:          settingsService,
-		streamHub:                agg.NewHub[version.StreamEvent](),
+		streamHub:                agg.NewHub[types.VersionStreamEvent](),
 		currentImage:             hot.NewHotCache[struct{}, currentImageInfo](hot.LRU, 1).Build(),
 	}
 	loader := func(cacheFailure bool) func(_ []struct{}) (map[struct{}]latestRelease, error) {
@@ -212,7 +212,7 @@ func (s *VersionService) ReleaseURL(localVersion string) string {
 	return "https://github.com/getarcaneapp/arcane/releases/tag/" + kit.EnsurePrefix(localVersion, "v")
 }
 
-func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersion string) (*version.Check, error) {
+func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersion string) (*types.VersionCheck, error) {
 	if currentVersion == "" {
 		currentVersion = s.version
 	}
@@ -227,7 +227,7 @@ func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersi
 	// Skip when latest is semver-older than current (e.g. a prerelease build
 	// asking the stable release feed) — a downgrade is not a newest version.
 	newest := kit.Ternary(err == nil && latest != "" && !s.IsNewer(cur, latest), latest, "")
-	return &version.Check{
+	return &types.VersionCheck{
 		CurrentVersion:  cur,
 		NewestVersion:   newest,
 		UpdateAvailable: newest != "" && s.IsNewer(newest, cur),
@@ -298,7 +298,7 @@ func (s *VersionService) updateCheckImageRef(currentImageRef string) string {
 }
 
 // GetAppVersionInfo returns application version information including display version
-func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
+func (s *VersionService) GetAppVersionInfo(ctx context.Context) *types.VersionInfo {
 	isSemver := semver.IsValid(kit.EnsurePrefix(s.version, "v"))
 	ver := s.normalizeVersion(s.version)
 	// Semver versions (including prereleases like 2.4.0-next.1) display as v<version>.
@@ -307,9 +307,9 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 	currentTag, currentDigest, currentImageRef, currentImageID := s.detectCurrentImageInfo(ctx)
 
 	// Update fields stay empty when update checks are disabled.
-	update := func() version.Info {
+	update := func() types.VersionInfo {
 		if s.disabled {
-			return version.Info{}
+			return types.VersionInfo{}
 		}
 		checkImageRef := s.updateCheckImageRef(currentImageRef)
 		digestUpdateAvailable, latestDigest := s.storedOrDigestBasedUpdate(ctx, currentImageID, currentTag, currentDigest, currentImageRef, checkImageRef)
@@ -317,7 +317,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 		switch {
 		case isSemver && s.isNextBuild(currentTag):
 			nextVersion := s.resolveNextVersion(ctx, checkImageRef, currentTag, latestDigest)
-			return version.Info{
+			return types.VersionInfo{
 				NewestDigest:    latestDigest,
 				NewestVersion:   kit.Ternary(nextVersion != "" && semver.Compare(nextVersion, ver) >= 0, nextVersion, ""),
 				UpdateAvailable: digestUpdateAvailable || (nextVersion != "" && s.IsNewer(nextVersion, ver)),
@@ -326,9 +326,9 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 			// Never surface a release older than the running version as the target.
 			rel, err := s.getLatestRelease(ctx)
 			if err != nil || rel.TagName == "" || s.IsNewer(ver, rel.TagName) {
-				return version.Info{NewestDigest: latestDigest}
+				return types.VersionInfo{NewestDigest: latestDigest}
 			}
-			return version.Info{
+			return types.VersionInfo{
 				NewestDigest:    latestDigest,
 				NewestVersion:   rel.TagName,
 				UpdateAvailable: s.IsNewer(rel.TagName, ver),
@@ -342,9 +342,9 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 		// the latest tagged release even when the running build is digest-tracking.
 		rel, err := s.getLatestRelease(ctx)
 		if err != nil || rel.TagName == "" {
-			return version.Info{NewestDigest: latestDigest, UpdateAvailable: digestUpdateAvailable}
+			return types.VersionInfo{NewestDigest: latestDigest, UpdateAvailable: digestUpdateAvailable}
 		}
-		return version.Info{
+		return types.VersionInfo{
 			NewestDigest:    latestDigest,
 			UpdateAvailable: digestUpdateAvailable,
 			ReleaseURL:      s.ReleaseURL(rel.TagName),
@@ -353,7 +353,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 		}
 	}()
 
-	return &version.Info{
+	return &types.VersionInfo{
 		CurrentVersion:   ver,
 		CurrentTag:       currentTag,
 		CurrentDigest:    currentDigest,
@@ -489,10 +489,10 @@ func (s *VersionService) detectCurrentImageInfo(ctx context.Context) (tag, diges
 }
 
 // RunStreamProducer shares one version poll loop across every connected client and emits a snapshot whenever it changes.
-func (s *VersionService) RunStreamProducer(ctx context.Context, events chan<- version.StreamEvent) {
+func (s *VersionService) RunStreamProducer(ctx context.Context, events chan<- types.VersionStreamEvent) {
 	s.streamHub.Subscribe(ctx, "local",
-		func(runCtx context.Context, publish func(version.StreamEvent)) {
-			var last *version.Info
+		func(runCtx context.Context, publish func(types.VersionStreamEvent)) {
+			var last *types.VersionInfo
 			poll := func() {
 				info := s.GetAppVersionInfo(runCtx)
 				if runCtx.Err() != nil {
@@ -511,7 +511,7 @@ func (s *VersionService) RunStreamProducer(ctx context.Context, events chan<- ve
 					}
 				}
 				last = info
-				publish(version.StreamEvent{Type: "snapshot", Info: info, Timestamp: time.Now()})
+				publish(types.VersionStreamEvent{Type: "snapshot", Info: info, Timestamp: time.Now()})
 			}
 
 			poll()
@@ -528,7 +528,7 @@ func (s *VersionService) RunStreamProducer(ctx context.Context, events chan<- ve
 				}
 			}
 		},
-		func(event version.StreamEvent) bool {
+		func(event types.VersionStreamEvent) bool {
 			return agg.Send(ctx, events, event)
 		})
 }

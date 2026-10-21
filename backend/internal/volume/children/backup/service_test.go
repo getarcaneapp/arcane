@@ -9,11 +9,7 @@ import (
 	"testing"
 	"time"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
-	"github.com/getarcaneapp/arcane/types/v2/user"
-	"github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	kit "go.getarcane.app/kit/pkg"
@@ -38,10 +34,10 @@ func applyVolumeBackupMigrations(t *testing.T, gormDB *gorm.DB) {
 }
 
 type volumeBackupPolicyScheduler struct {
-	jobs map[string]scheduler.Job
+	jobs map[string]types.SchedulerJob
 }
 
-func (s *volumeBackupPolicyScheduler) AddJob(_ context.Context, job scheduler.Job) error {
+func (s *volumeBackupPolicyScheduler) AddJob(_ context.Context, job types.SchedulerJob) error {
 	s.jobs[job.Name()] = job
 	return nil
 }
@@ -55,8 +51,8 @@ func (s *volumeBackupPolicyScheduler) HasJob(name string) bool {
 	return ok
 }
 
-func (s *volumeBackupPolicyScheduler) Submit(_ context.Context, request scheduler.Request) (scheduler.Run, error) {
-	return scheduler.Run{ID: request.RunID, JobID: request.JobID, EnvironmentID: request.EnvironmentID, Status: scheduler.Queued}, nil
+func (s *volumeBackupPolicyScheduler) Submit(_ context.Context, request types.SchedulerRequest) (types.SchedulerRun, error) {
+	return types.SchedulerRun{ID: request.RunID, JobID: request.JobID, EnvironmentID: request.EnvironmentID, Status: types.RunStatusQueued}, nil
 }
 
 func TestVolumeBackupPolicy_RetentionCountsFailedRunsSeparately(t *testing.T) {
@@ -67,19 +63,19 @@ func TestVolumeBackupPolicy_RetentionCountsFailedRunsSeparately(t *testing.T) {
 	policyID := "policy-1"
 	require.NoError(t, gormDB.Exec(
 		"INSERT INTO volume_backups (id, volume_name, size, created_at, policy_id, status, local_snapshot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		"succeeded-run", "app-data", 0, time.Now().Add(-time.Hour), policyID, backuptypes.VolumeBackupStatusSucceeded, "snapshot-1",
+		"succeeded-run", "app-data", 0, time.Now().Add(-time.Hour), policyID, types.VolumeBackupStatusSucceeded, "snapshot-1",
 	).Error)
 	require.NoError(t, gormDB.Exec(
 		"INSERT INTO volume_backups (id, volume_name, size, created_at, policy_id, status) VALUES (?, ?, ?, ?, ?, ?)",
-		"failed-run", "app-data", 0, time.Now(), policyID, backuptypes.VolumeBackupStatusFailed,
+		"failed-run", "app-data", 0, time.Now(), policyID, types.VolumeBackupStatusFailed,
 	).Error)
 	require.NoError(t, gormDB.Exec(
 		"INSERT INTO volume_backups (id, volume_name, size, created_at, policy_id, status, local_snapshot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		"failed-snap-new", "app-data", 0, time.Now().Add(-2*time.Hour), policyID, backuptypes.VolumeBackupStatusFailed, "snapshot-2",
+		"failed-snap-new", "app-data", 0, time.Now().Add(-2*time.Hour), policyID, types.VolumeBackupStatusFailed, "snapshot-2",
 	).Error)
 	require.NoError(t, gormDB.Exec(
 		"INSERT INTO volume_backups (id, volume_name, size, created_at, policy_id, status, local_snapshot_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		"failed-snap-old", "app-data", 0, time.Now().Add(-3*time.Hour), policyID, backuptypes.VolumeBackupStatusFailed, "snapshot-3",
+		"failed-snap-old", "app-data", 0, time.Now().Add(-3*time.Hour), policyID, types.VolumeBackupStatusFailed, "snapshot-3",
 	).Error)
 
 	expired, err := backup.ExpiredRunIDs(t.Context(), &database.DB{DB: gormDB}, "volume_backups", policyID, 1)
@@ -109,7 +105,7 @@ func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 	require.NoError(t, service.RegisterWorkflows(harness.Engine))
 	harness.Start(t)
 	flowtest.AssertDefinitions(t, harness)
-	jobScheduler := &volumeBackupPolicyScheduler{jobs: make(map[string]scheduler.Job)}
+	jobScheduler := &volumeBackupPolicyScheduler{jobs: make(map[string]types.SchedulerJob)}
 	require.NoError(t, service.SetScheduler(t.Context(), jobScheduler, gate))
 	service.RegisterJobsOnStartup(t.Context())
 	job, registered := jobScheduler.jobs["volume-backup:"+policy.ID]
@@ -122,11 +118,11 @@ func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
 
 	outcome, scheduledBackupErr := job.Run(t.Context())
 	require.NoError(t, scheduledBackupErr)
-	require.Equal(t, scheduler.Skipped, outcome.Status)
+	require.Equal(t, types.RunStatusSkipped, outcome.Status)
 
 	var backupActivity activity.Activity
 	require.NoError(t, gormDB.Where("resource_type = ?", "volume_backup").First(&backupActivity).Error)
-	require.Equal(t, activitytypes.StatusSuccess, backupActivity.Status)
+	require.Equal(t, types.ActivityStatusSuccess, backupActivity.Status)
 	require.Equal(t, "scheduled_volume_backup", backupActivity.Metadata["action"])
 	require.Equal(t, policy.Schedule, backupActivity.Metadata["schedule"])
 }
@@ -138,16 +134,16 @@ func TestVolumeBackup_ValidationErrors(t *testing.T) {
 	service := NewService(Dependencies{DB: &database.DB{DB: gormDB}})
 	ctx := t.Context()
 
-	_, err = service.policies.UpdateBackupPolicies(ctx, "app-data", []volume.UpdateBackupPolicy{{Schedule: "not a cron", LocalEnabled: true}})
+	_, err = service.policies.UpdateBackupPolicies(ctx, "app-data", []types.UpdateBackupPolicy{{Schedule: "not a cron", LocalEnabled: true}})
 	require.ErrorContains(t, err, "invalid volume backup schedule")
 
-	_, err = service.policies.UpdateBackupPolicies(ctx, "app-data", []volume.UpdateBackupPolicy{{Schedule: "0 0 2 * * *", RetentionCount: 7}})
+	_, err = service.policies.UpdateBackupPolicies(ctx, "app-data", []types.UpdateBackupPolicy{{Schedule: "0 0 2 * * *", RetentionCount: 7}})
 	require.ErrorContains(t, err, "select at least one volume backup destination")
 
-	_, err = service.StartBackup(ctx, "0", "app-data", user.Actor{}, volume.CreateBackupRequest{Destination: volume.BackupDestination("invalid")})
+	_, err = service.StartBackup(ctx, "0", "app-data", types.Actor{}, types.CreateVolumeBackupRequest{Destination: types.VolumeBackupDestination("invalid")})
 	require.EqualError(t, err, "invalid volume backup destination")
 
-	_, err = service.StartBackup(ctx, "0", "app-data", user.Actor{}, volume.CreateBackupRequest{Destination: volume.BackupDestinationS3})
+	_, err = service.StartBackup(ctx, "0", "app-data", types.Actor{}, types.CreateVolumeBackupRequest{Destination: types.VolumeBackupDestinationS3})
 	require.EqualError(t, err, "select an S3 destination for the volume backup")
 }
 
@@ -182,10 +178,10 @@ func TestDiscoveredVolumeBackupMapping(t *testing.T) {
 	require.NotNil(t, entry)
 	require.Equal(t, "app-data", entry.VolumeName)
 	require.Equal(t, "remote-destination-1-instance-a-abc123", entry.ID)
-	require.Equal(t, backuptypes.VolumeBackupStatusSucceeded, entry.Status)
-	require.Equal(t, backuptypes.VolumeBackupTriggerManual, entry.Trigger)
-	require.Equal(t, volume.BackupDestinationS3, entry.Destination)
-	require.Equal(t, volume.BackupFormatRustic, entry.Format)
+	require.Equal(t, types.VolumeBackupStatusSucceeded, entry.Status)
+	require.Equal(t, types.VolumeBackupTriggerManual, entry.Trigger)
+	require.Equal(t, types.VolumeBackupDestinationS3, entry.Destination)
+	require.Equal(t, types.VolumeBackupFormatRustic, entry.Format)
 	require.Equal(t, "instance-a", entry.RemoteInstanceID)
 	require.Equal(t, "destination-1", entry.S3DestinationID)
 	require.Equal(t, int64(2048), entry.Size)

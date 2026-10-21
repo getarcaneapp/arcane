@@ -8,8 +8,7 @@ import (
 	"strings"
 
 	"github.com/docker/go-units"
-	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
-	"github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/kit/pkg"
 )
 
@@ -66,7 +65,7 @@ func formatNotificationCode(format MessageFormat, value string) string {
 	}
 }
 
-func BuildImageUpdateNotificationMessage(format MessageFormat, environmentName, imageRef string, updateInfo *imageupdate.Response) string {
+func BuildImageUpdateNotificationMessage(format MessageFormat, environmentName, imageRef string, updateInfo *types.ImageUpdateResponse) string {
 	var message strings.Builder
 
 	if format == MessageFormatNtfyMarkdown {
@@ -155,7 +154,7 @@ func BuildContainerUpdateNotificationMessage(format MessageFormat, environmentNa
 	return message.String()
 }
 
-func BuildBatchImageUpdateNotificationMessage(format MessageFormat, environmentName string, updates map[string]*imageupdate.Response) string {
+func BuildBatchImageUpdateNotificationMessage(format MessageFormat, environmentName string, updates map[string]*types.ImageUpdateResponse) string {
 	imageRefs := slices.Sorted(maps.Keys(updates))
 	var message strings.Builder
 
@@ -338,7 +337,7 @@ func BuildVulnerabilitySummaryNotificationMessage(format MessageFormat, environm
 	return message.String()
 }
 
-func BuildPruneReportNotificationMessage(format MessageFormat, environmentName string, result *system.PruneAllResult) string {
+func BuildPruneReportNotificationMessage(format MessageFormat, environmentName string, result *types.PruneAllResult) string {
 	var message strings.Builder
 
 	if format == MessageFormatNtfyMarkdown {

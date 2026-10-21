@@ -3,15 +3,15 @@ package backupbrowser
 import (
 	"testing"
 
-	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 )
 
-func TestBuildEntriesSynthesizesAndSortsDirectoriesInternal(t *testing.T) {
+func TestBuildEntriesSynthesizesAndSortsDirectories(t *testing.T) {
 	entries := BuildEntries([]string{"z.txt", "alpha/nested/file.txt", "Beta/", "a.txt"}, "", false)
-	require.Equal(t, []backuptypes.BackupFileEntry{
+	require.Equal(t, []types.BackupFileEntry{
 		{Path: "alpha", Name: "alpha", IsDirectory: true},
 		{Path: "Beta", Name: "Beta", IsDirectory: true},
 		{Path: "a.txt", Name: "a.txt"},
@@ -19,17 +19,17 @@ func TestBuildEntriesSynthesizesAndSortsDirectoriesInternal(t *testing.T) {
 	}, entries)
 }
 
-func TestBuildEntriesNestedBrowseInternal(t *testing.T) {
+func TestBuildEntriesNestedBrowse(t *testing.T) {
 	entries := BuildEntries([]string{"folder/nested/", "folder/file.txt"}, "folder", false)
-	require.Equal(t, []backuptypes.BackupFileEntry{
+	require.Equal(t, []types.BackupFileEntry{
 		{Path: "folder/nested", Name: "nested", IsDirectory: true},
 		{Path: "folder/file.txt", Name: "file.txt"},
 	}, entries)
 }
 
-func TestBrowseWalkReachesEveryEntryInternal(t *testing.T) {
+func TestBrowseWalkReachesEveryEntry(t *testing.T) {
 	entries := BuildEntries([]string{"d/", "a.txt", "b.txt", "c.txt", "d/e.txt"}, "", true)
-	var walked []backuptypes.BackupFileEntry
+	var walked []types.BackupFileEntry
 	start := 0
 	for {
 		items, page := Browse(entries, pagination.QueryParams{Start: start, Limit: 2})
@@ -42,8 +42,8 @@ func TestBrowseWalkReachesEveryEntryInternal(t *testing.T) {
 	require.Equal(t, entries, walked)
 }
 
-func TestBrowseSearchOrderingAndPaginationInternal(t *testing.T) {
-	entries := []backuptypes.BackupFileEntry{
+func TestBrowseSearchOrderingAndPagination(t *testing.T) {
+	entries := []types.BackupFileEntry{
 		{Path: "zeta/file.txt", Name: "file.txt"},
 		{Path: "Alpha", Name: "Alpha", IsDirectory: true},
 		{Path: "alpha/Second.txt", Name: "Second.txt"},
@@ -54,7 +54,7 @@ func TestBrowseSearchOrderingAndPaginationInternal(t *testing.T) {
 		Start:  1, Limit: 1,
 	}
 	items, page := Browse(entries, params)
-	require.Equal(t, []backuptypes.BackupFileEntry{{Path: "alpha/first.txt", Name: "first.txt"}}, items)
+	require.Equal(t, []types.BackupFileEntry{{Path: "alpha/first.txt", Name: "first.txt"}}, items)
 	require.Equal(t, int64(3), page.TotalItems)
 	require.Equal(t, int64(4), page.GrandTotalItems)
 	require.Equal(t, 2, page.CurrentPage)
@@ -65,27 +65,27 @@ func TestBrowseSearchOrderingAndPaginationInternal(t *testing.T) {
 	require.Equal(t, int64(4), page.TotalItems)
 }
 
-func TestNormalizeSelectionInternal(t *testing.T) {
+func TestNormalizeSelection(t *testing.T) {
 	eligible := BuildEntries([]string{"folder/a.txt", "folder/nested/b.txt", "other.txt"}, "", true)
-	selected, err := NormalizeSelection(backuptypes.RestoreSelection{Paths: []string{"folder/nested/b.txt", "folder", "folder/a.txt", "folder"}}, eligible)
+	selected, err := NormalizeSelection(types.BackupRestoreSelection{Paths: []string{"folder/nested/b.txt", "folder", "folder/a.txt", "folder"}}, eligible)
 	require.NoError(t, err)
-	require.Equal(t, []backuptypes.BackupFileEntry{{Path: "folder", Name: "folder", IsDirectory: true}}, selected)
+	require.Equal(t, []types.BackupFileEntry{{Path: "folder", Name: "folder", IsDirectory: true}}, selected)
 
-	_, err = NormalizeSelection(backuptypes.RestoreSelection{Paths: []string{"../arcane.db"}}, eligible)
+	_, err = NormalizeSelection(types.BackupRestoreSelection{Paths: []string{"../arcane.db"}}, eligible)
 	require.ErrorContains(t, err, "restore root")
-	_, err = NormalizeSelection(backuptypes.RestoreSelection{Paths: []string{"missing"}}, eligible)
+	_, err = NormalizeSelection(types.BackupRestoreSelection{Paths: []string{"missing"}}, eligible)
 	require.ErrorContains(t, err, "does not exist")
-	_, err = NormalizeSelection(backuptypes.RestoreSelection{Paths: []string{"other.txt/"}}, eligible)
+	_, err = NormalizeSelection(types.BackupRestoreSelection{Paths: []string{"other.txt/"}}, eligible)
 	require.ErrorContains(t, err, "not a folder")
-	_, err = NormalizeSelection(backuptypes.RestoreSelection{Paths: []string{"other.txt"}, SelectAll: true}, eligible)
+	_, err = NormalizeSelection(types.BackupRestoreSelection{Paths: []string{"other.txt"}, SelectAll: true}, eligible)
 	require.ErrorContains(t, err, "cannot be combined")
-	_, err = NormalizeSelection(backuptypes.RestoreSelection{}, eligible)
+	_, err = NormalizeSelection(types.BackupRestoreSelection{}, eligible)
 	require.ErrorContains(t, err, "paths are required")
 }
 
-func TestNormalizeSearchSelectionCoversDescendantsInternal(t *testing.T) {
+func TestNormalizeSearchSelectionCoversDescendants(t *testing.T) {
 	eligible := BuildEntries([]string{"match/a.txt", "match/nested/b.txt", "other.txt"}, "", true)
-	selected, err := NormalizeSelection(backuptypes.RestoreSelection{SelectAll: true, Search: "match"}, eligible)
+	selected, err := NormalizeSelection(types.BackupRestoreSelection{SelectAll: true, Search: "match"}, eligible)
 	require.NoError(t, err)
-	require.Equal(t, []backuptypes.BackupFileEntry{{Path: "match", Name: "match", IsDirectory: true}}, selected)
+	require.Equal(t, []types.BackupFileEntry{{Path: "match", Name: "match", IsDirectory: true}}, selected)
 }

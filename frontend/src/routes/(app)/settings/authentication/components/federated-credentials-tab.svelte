@@ -9,7 +9,7 @@
 	import { Snippet } from '#lib/components/ui/snippet/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { federatedCredentialService } from '#lib/services/federated-credential-service.js';
-	import type { CreateFederatedCredential, FederatedCredential, Role } from '#lib/types/auth.js';
+	import type { FederatedCredential, FederatedCredentialCreate, FederatedCredentialUpdate, Role } from '#lib/types/auth.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -64,21 +64,17 @@
 		});
 	}
 
-	async function handleFederatedCredentialSubmit({
-		credential,
-		isEditMode,
-		credentialId
-	}: {
-		credential: CreateFederatedCredential;
-		isEditMode: boolean;
-		credentialId?: string;
-	}) {
-		const loading = isEditMode ? 'editing' : 'creating';
+	async function handleFederatedCredentialSubmit(
+		submission:
+			| { isEditMode: true; credentialId: string; credential: FederatedCredentialUpdate }
+			| { isEditMode: false; credential: FederatedCredentialCreate }
+	) {
+		const loading = submission.isEditMode ? 'editing' : 'creating';
 		isLoading[loading] = true;
 
-		const safeName = credential.name?.trim() || m.common_unknown();
-		if (isEditMode && credentialId) {
-			const result = await tryCatch(federatedCredentialService.update(credentialId, credential));
+		const safeName = submission.credential.name?.trim() || credentialToEdit?.name || m.common_unknown();
+		if (submission.isEditMode) {
+			const result = await tryCatch(federatedCredentialService.update(submission.credentialId, submission.credential));
 			await handleApiResultWithCallbacks({
 				result,
 				message: m.federated_credential_update_failed({ name: safeName }),
@@ -91,7 +87,7 @@
 				}
 			});
 		} else {
-			const result = await tryCatch(federatedCredentialService.create(credential));
+			const result = await tryCatch(federatedCredentialService.create(submission.credential));
 			await handleApiResultWithCallbacks({
 				result,
 				message: m.federated_credential_create_failed({ name: safeName }),

@@ -1,3 +1,5 @@
+import type { CreateRequest, UpdateRequest } from './shared';
+
 export type S3Destination = {
 	id: string;
 	name: string;
@@ -5,6 +7,7 @@ export type S3Destination = {
 	bucket: string;
 	region: string;
 	accessKeyId: string;
+	secretAccessKey?: string;
 	prefix?: string;
 	useSsl: boolean;
 	forcePathStyle: boolean;
@@ -13,16 +16,17 @@ export type S3Destination = {
 	updatedAt?: string;
 };
 
-export type CreateS3Destination = {
-	name: string;
-	endpoint: string;
-	bucket: string;
-	region: string;
-	accessKeyId: string;
-	secretAccessKey: string;
-	prefix: string;
-	useSsl: boolean;
-	forcePathStyle: boolean;
-};
+export type S3DestinationWritable =
+	| 'name'
+	| 'endpoint'
+	| 'bucket'
+	| 'region'
+	| 'accessKeyId'
+	| 'secretAccessKey'
+	| 'prefix'
+	| 'useSsl'
+	| 'forcePathStyle';
 
-export type UpdateS3Destination = CreateS3Destination;
+export type S3DestinationCreate = CreateRequest<S3Destination, S3DestinationWritable, 'name' | 'bucket' | 'accessKeyId'>;
+
+export type S3DestinationUpdate = UpdateRequest<S3Destination, S3DestinationWritable>;

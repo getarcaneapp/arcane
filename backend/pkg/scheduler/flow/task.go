@@ -12,7 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/builtin/workflow"
 
@@ -132,8 +132,8 @@ func (e *Engine) taskContext(ctx context.Context, binding Binding) (context.Cont
 	if !runs.ActiveWorkflow(run, binding.RootID) {
 		// A run waiting for its next attempt reattaches to this instance, so the instance's tasks wait with it.
 		attempt := run
-		attempt.Status = scheduler.Running
-		if (run.Status == scheduler.Queued || run.Status == scheduler.Waiting || run.Status == scheduler.Retrying) && runs.ActiveWorkflow(attempt, binding.RootID) {
+		attempt.Status = types.RunStatusRunning
+		if (run.Status == types.RunStatusQueued || run.Status == types.RunStatusWaiting || run.Status == types.RunStatusRetrying) && runs.ActiveWorkflow(attempt, binding.RootID) {
 			return nil, actor.ErrJobRejected
 		}
 		return nil, fmt.Errorf("%w: run %s no longer follows instance %s", actor.ErrJobPermanentFailure, binding.RunID, binding.RootID)
@@ -158,14 +158,14 @@ func (e *Engine) standaloneContext(ctx context.Context, binding Binding) (contex
 		return nil, actor.ErrJobRejected
 	}
 	service := e.runtime.Service()
-	run := scheduler.Run{ID: binding.RootID, EnvironmentID: cmp.Or(binding.EnvironmentID, "0"), Status: scheduler.Running}
+	run := types.SchedulerRun{ID: binding.RootID, EnvironmentID: cmp.Or(binding.EnvironmentID, "0"), Status: types.RunStatusRunning}
 	if err := service.GetState(ctx, evidenceActorType, binding.RootID, &run.Outcome.Targets); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
 		return nil, common.Classify(common.ErrUnavailable, fmt.Errorf("load instance %s progress: %w", binding.RootID, err))
 	}
 	ctx = utils.WithActivityBatchID(ctx, binding.RootID)
-	return jobcontext.WithExecution(ctx, run, func(target scheduler.TargetOutcome) error {
+	return jobcontext.WithExecution(ctx, run, func(target types.TargetOutcome) error {
 		defer e.evidence.Lock(binding.RootID)()
-		var targets []scheduler.TargetOutcome
+		var targets []types.TargetOutcome
 		if err := service.GetState(ctx, evidenceActorType, binding.RootID, &targets); err != nil && !errors.Is(err, actor.ErrStateNotFound) {
 			return err
 		}

@@ -11,11 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
-	"github.com/getarcaneapp/arcane/types/v2/dashboard"
-	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
-	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
-	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
@@ -74,7 +70,7 @@ type DashboardService struct {
 }
 
 type dashboardSnapshotCacheEntry struct {
-	snapshot *dashboard.Snapshot
+	snapshot *types.DashboardSnapshot
 	builtAt  time.Time
 }
 
@@ -112,7 +108,7 @@ func NewDashboardService(
 
 // GetSnapshot returns a short-TTL cached snapshot shared by all consumers; it must not be mutated.
 // includeTables builds the first-page tables; stream subscribers pass false and read only counters.
-func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardActionItemsOptions, includeTables bool) (*dashboard.Snapshot, error) {
+func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardActionItemsOptions, includeTables bool) (*types.DashboardSnapshot, error) {
 	// Trimmed snapshots skip icon resolution, so every consumer shares one entry.
 	catalog := iconcatalog.DefaultCatalog
 	if includeTables {
@@ -147,14 +143,14 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 	if err != nil {
 		return nil, err
 	}
-	snapshot, ok := result.(*dashboard.Snapshot)
+	snapshot, ok := result.(*types.DashboardSnapshot)
 	if !ok {
 		return nil, errors.New("dashboard snapshot cache returned unexpected type")
 	}
 	return snapshot, nil
 }
 
-func (s *DashboardService) buildSnapshot(ctx context.Context, options DashboardActionItemsOptions, includeTables bool) (*dashboard.Snapshot, error) {
+func (s *DashboardService) buildSnapshot(ctx context.Context, options DashboardActionItemsOptions, includeTables bool) (*types.DashboardSnapshot, error) {
 	if s.dockerService == nil {
 		return nil, errors.New("docker service not available")
 	}
@@ -169,7 +165,7 @@ func (s *DashboardService) buildSnapshot(ctx context.Context, options DashboardA
 	filteredContainers := container.FilterExcludedContainers(dockerContainers, false, false)
 	imageConsumers := container.FilterExcludedContainers(dockerContainers, false, true)
 
-	containerCounts := containertypes.StatusCounts{TotalContainers: len(filteredContainers)}
+	containerCounts := types.ContainerStatusCounts{TotalContainers: len(filteredContainers)}
 	for _, c := range filteredContainers {
 		if c.State == "running" {
 			containerCounts.RunningContainers++
@@ -178,10 +174,10 @@ func (s *DashboardService) buildSnapshot(ctx context.Context, options DashboardA
 		}
 	}
 
-	var containerPage []containertypes.Summary
-	var imagePage []imagetypes.Summary
+	var containerPage []types.ContainerSummary
+	var imagePage []types.ImageSummary
 	if includeTables {
-		containerItems := make([]containertypes.Summary, 0, len(filteredContainers))
+		containerItems := make([]types.ContainerSummary, 0, len(filteredContainers))
 		currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 		if s.containerService != nil {
 			containerItems = s.containerService.BuildSummaries(ctx, filteredContainers, nil, currentContainerID, currentContainerErr)
@@ -191,7 +187,7 @@ func (s *DashboardService) buildSnapshot(ctx context.Context, options DashboardA
 				excluded = docker.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""))
 			}
 			for _, container := range filteredContainers {
-				summary := containertypes.NewSummary(container)
+				summary := types.NewContainerSummary(container)
 				summary.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
 				summary.AutoUpdateEnabled = !labels.IsUpdateDisabled(container.Labels) && !docker.ContainerNameExcluded(container.Names, excluded)
 				containerItems = append(containerItems, summary)
@@ -229,7 +225,7 @@ func (s *DashboardService) buildSnapshot(ctx context.Context, options DashboardA
 	imageUsageCounts := dockerInternal.CountImageUsage(dockerImages, imageConsumers)
 
 	// Unfiltered containers keep volumes mounted only by internal containers in use, matching the volumes page.
-	var volumeUsageCounts *volumetypes.UsageCounts
+	var volumeUsageCounts *types.VolumeUsageCounts
 	if s.volumeService != nil && dockerSnapshot.Volumes != nil {
 		counts := s.volumeService.CountUsageFromSnapshot(dockerSnapshot.Volumes.Items, dockerContainers)
 		volumeUsageCounts = &counts
@@ -240,27 +236,27 @@ func (s *DashboardService) buildSnapshot(ctx context.Context, options DashboardA
 		return nil, err
 	}
 
-	var versionInfo *versiontypes.Info
+	var versionInfo *types.VersionInfo
 	if s.versionService != nil {
 		versionInfo = s.versionService.GetAppVersionInfo(ctx)
 	}
 
 	preloadParams := pagination.QueryParams{Params: pagination.Params{Limit: dashboardSnapshotPreloadLimit}}
 
-	return &dashboard.Snapshot{
-		Containers: dashboard.SnapshotContainers{
+	return &types.DashboardSnapshot{
+		Containers: types.DashboardSnapshotContainers{
 			Data:       containerPage,
 			Counts:     containerCounts,
 			Pagination: handlerutil.PaginationResponse(pagination.BuildResponse(int64(len(filteredContainers)), int64(len(filteredContainers)), preloadParams)),
 		},
-		Images: dashboard.SnapshotImages{
+		Images: types.DashboardSnapshotImages{
 			Data:       imagePage,
 			Pagination: handlerutil.PaginationResponse(pagination.BuildResponse(int64(len(dockerImages)), int64(len(dockerImages)), preloadParams)),
 		},
 		ImageUsageCounts:  imageUsageCounts,
 		VolumeUsageCounts: volumeUsageCounts,
 		ActionItems:       *actionItems,
-		Settings:          dashboard.SnapshotSettings{},
+		Settings:          types.DashboardSnapshotSettings{},
 		VersionInfo:       versionInfo,
 		PodCount:          s.podmanService.PodCount(ctx).ToPointer(),
 	}, nil
@@ -268,9 +264,14 @@ func (s *DashboardService) buildSnapshot(ctx context.Context, options DashboardA
 
 // buildActionItems derives the dashboard's action badges; allContainers is the raw snapshot
 // list, reused so the update count need not re-list containers.
-func (s *DashboardService) buildActionItems(ctx context.Context, options DashboardActionItemsOptions, stoppedContainers int, allContainers []dockercontainer.Summary) (*dashboard.ActionItems, error) {
+func (s *DashboardService) buildActionItems(
+	ctx context.Context,
+	options DashboardActionItemsOptions,
+	stoppedContainers int,
+	allContainers []dockercontainer.Summary,
+) (*types.DashboardActionItems, error) {
 	if options.DebugAllGood {
-		return &dashboard.ActionItems{Items: []dashboard.ActionItem{}}, nil
+		return &types.DashboardActionItems{Items: []types.DashboardActionItem{}}, nil
 	}
 
 	var (
@@ -341,19 +342,19 @@ func (s *DashboardService) buildActionItems(ctx context.Context, options Dashboa
 		return nil, err
 	}
 
-	candidates := []dashboard.ActionItem{
-		{Kind: dashboard.ActionItemKindStoppedContainers, Count: stoppedContainers, Severity: dashboard.ActionItemSeverityWarning},
-		{Kind: dashboard.ActionItemKindImageUpdates, Count: pendingResourceUpdates, Severity: dashboard.ActionItemSeverityWarning},
-		{Kind: dashboard.ActionItemKindActionableVulnerabilities, Count: actionableVulnerabilities, Severity: dashboard.ActionItemSeverityCritical},
-		{Kind: dashboard.ActionItemKindExpiringKeys, Count: expiringAPIKeys, Severity: dashboard.ActionItemSeverityWarning},
+	candidates := []types.DashboardActionItem{
+		{Kind: types.DashboardActionItemKindStoppedContainers, Count: stoppedContainers, Severity: types.DashboardActionItemSeverityWarning},
+		{Kind: types.DashboardActionItemKindImageUpdates, Count: pendingResourceUpdates, Severity: types.DashboardActionItemSeverityWarning},
+		{Kind: types.DashboardActionItemKindActionableVulnerabilities, Count: actionableVulnerabilities, Severity: types.DashboardActionItemSeverityCritical},
+		{Kind: types.DashboardActionItemKindExpiringKeys, Count: expiringAPIKeys, Severity: types.DashboardActionItemSeverityWarning},
 	}
-	items := make([]dashboard.ActionItem, 0, len(candidates))
+	items := make([]types.DashboardActionItem, 0, len(candidates))
 	for _, item := range candidates {
 		if item.Count > 0 {
 			items = append(items, item)
 		}
 	}
-	return &dashboard.ActionItems{Items: items}, nil
+	return &types.DashboardActionItems{Items: items}, nil
 }
 
 // getPendingContainerUpdatesCount counts standalone containers whose stored check reports an

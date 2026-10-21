@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
 	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
@@ -20,13 +20,13 @@ var (
 )
 
 type watcherRegistrationInternal struct {
-	watcher st.BusWatcher
+	watcher types.BusWatcher
 	done    chan struct{}
 }
 type jobSchedulerInternal struct {
 	mu          sync.RWMutex
-	jobsByID    map[string]st.Job
-	watchers    map[string]st.BusWatcher
+	jobsByID    map[string]types.SchedulerJob
+	watchers    map[string]types.BusWatcher
 	allWatchers map[string]watcherRegistrationInternal
 	supervisors map[string]*watcherSupervisorInternal
 	context     context.Context
@@ -37,7 +37,7 @@ type jobSchedulerInternal struct {
 	started     bool
 }
 
-func NewJobScheduler(ctx context.Context, coordinator *runs.Coordinator, location *time.Location) (st.JobScheduler, error) {
+func NewJobScheduler(ctx context.Context, coordinator *runs.Coordinator, location *time.Location) (types.JobScheduler, error) {
 	if ctx == nil || coordinator == nil {
 		return nil, errors.New("scheduler dependencies unavailable")
 	}
@@ -50,15 +50,15 @@ func NewJobScheduler(ctx context.Context, coordinator *runs.Coordinator, locatio
 			cancel:      cancel,
 			location:    location,
 			coordinator: coordinator,
-			jobsByID:    map[string]st.Job{},
-			watchers:    map[string]st.BusWatcher{},
+			jobsByID:    map[string]types.SchedulerJob{},
+			watchers:    map[string]types.BusWatcher{},
 			allWatchers: map[string]watcherRegistrationInternal{},
 			supervisors: map[string]*watcherSupervisorInternal{},
 		},
 		nil
 }
 
-func (js *jobSchedulerInternal) RegisterJob(job st.Job) error {
+func (js *jobSchedulerInternal) RegisterJob(job types.SchedulerJob) error {
 	if job == nil {
 		return errors.New("scheduler job unavailable")
 	}
@@ -71,7 +71,7 @@ func (js *jobSchedulerInternal) RegisterJob(job st.Job) error {
 	return nil
 }
 
-func (js *jobSchedulerInternal) RegisterBusWatcher(watcher st.BusWatcher, manual bool) error {
+func (js *jobSchedulerInternal) RegisterBusWatcher(watcher types.BusWatcher, manual bool) error {
 	js.mu.Lock()
 	defer js.mu.Unlock()
 	if js.stopping {
@@ -80,7 +80,7 @@ func (js *jobSchedulerInternal) RegisterBusWatcher(watcher st.BusWatcher, manual
 	if _, found := js.allWatchers[watcher.Name()]; found {
 		return errors.New("watcher already registered")
 	}
-	supervisor := newWatcherSupervisorInternal(watcher)
+	supervisor := newWatcherSupervisor(watcher)
 	done := make(chan struct{})
 	js.supervisors[watcher.Name()] = supervisor
 	js.allWatchers[watcher.Name()] = watcherRegistrationInternal{watcher: watcher, done: done}
@@ -89,7 +89,7 @@ func (js *jobSchedulerInternal) RegisterBusWatcher(watcher st.BusWatcher, manual
 	}
 	go func() {
 		defer close(done)
-		if err := supervisor.runInternal(js.context); err != nil && js.context.Err() == nil {
+		if err := supervisor.run(js.context); err != nil && js.context.Err() == nil {
 			slog.ErrorContext(js.context, "Watcher stopped", "name", watcher.Name(), "error", err)
 		}
 	}()
@@ -106,22 +106,22 @@ func (js *jobSchedulerInternal) RunBusWatcherNow(ctx context.Context, id string)
 	return watcher.RunNow(ctx)
 }
 
-func (js *jobSchedulerInternal) GetJob(id string) (st.Job, bool) {
+func (js *jobSchedulerInternal) GetJob(id string) (types.SchedulerJob, bool) {
 	js.mu.RLock()
 	defer js.mu.RUnlock()
 	job, ok := js.jobsByID[id]
 	return job, ok
 }
 func (js *jobSchedulerInternal) HasJob(id string) bool { _, ok := js.GetJob(id); return ok }
-func (js *jobSchedulerInternal) GetJobRuntimeState(id string) (st.JobRuntimeState, bool) {
+func (js *jobSchedulerInternal) GetJobRuntimeState(id string) (types.JobRuntimeState, bool) {
 	if !js.HasJob(id) {
-		return st.JobRuntimeState{}, false
+		return types.JobRuntimeState{}, false
 	}
 	record, err := js.coordinator.ScheduleState(js.context, id)
 	if err != nil {
-		return st.JobRuntimeState{}, true
+		return types.JobRuntimeState{}, true
 	}
-	state := st.JobRuntimeState{Schedule: record.Schedule, Scheduled: !record.NextRun.IsZero()}
+	state := types.JobRuntimeState{Schedule: record.Schedule, Scheduled: !record.NextRun.IsZero()}
 	if state.Scheduled {
 		state.NextRun = new(record.NextRun)
 	}
@@ -152,18 +152,18 @@ func (js *jobSchedulerInternal) StartScheduler(ctx context.Context) error {
 	}
 	var schedulingErr error
 	for _, job := range js.ListRegisteredJobs() {
-		if installErr := js.installInternal(ctx, job); installErr != nil {
+		if installErr := js.install(ctx, job); installErr != nil {
 			schedulingErr = errors.Join(schedulingErr, fmt.Errorf("%s: %w", "schedule "+job.Name(), installErr))
 		}
 	}
 	return schedulingErr
 }
 
-func (js *jobSchedulerInternal) installInternal(ctx context.Context, job st.Job) error {
+func (js *jobSchedulerInternal) install(ctx context.Context, job types.SchedulerJob) error {
 	next := time.Time{}
 	schedule := job.Schedule(ctx)
 	should := true
-	if conditional, ok := job.(st.ConditionalJob); ok {
+	if conditional, ok := job.(types.ConditionalJob); ok {
 		should = conditional.ShouldSchedule(ctx)
 	}
 	if should {
@@ -179,7 +179,7 @@ func (js *jobSchedulerInternal) installInternal(ctx context.Context, job st.Job)
 	return js.coordinator.Checkpoint(ctx, job.Name(), schedule, next)
 }
 
-func (js *jobSchedulerInternal) AddJob(ctx context.Context, job st.Job) error {
+func (js *jobSchedulerInternal) AddJob(ctx context.Context, job types.SchedulerJob) error {
 	if err := js.RegisterJob(job); err != nil {
 		return err
 	}
@@ -189,10 +189,10 @@ func (js *jobSchedulerInternal) AddJob(ctx context.Context, job st.Job) error {
 	if !started {
 		return nil
 	}
-	return js.installInternal(ctx, job)
+	return js.install(ctx, job)
 }
 
-func (js *jobSchedulerInternal) RescheduleJob(ctx context.Context, job st.Job) error {
+func (js *jobSchedulerInternal) RescheduleJob(ctx context.Context, job types.SchedulerJob) error {
 	return js.AddJob(ctx, job)
 }
 
@@ -224,7 +224,7 @@ func (js *jobSchedulerInternal) Stop(ctx context.Context) error {
 		case <-ctx.Done():
 			return errors.Join(err, ctx.Err())
 		}
-		if stop, ok := w.watcher.(st.StoppableBusWatcher); ok {
+		if stop, ok := w.watcher.(types.StoppableBusWatcher); ok {
 			err = errors.Join(err, stop.Stop(ctx))
 		}
 	}

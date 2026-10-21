@@ -1,4 +1,4 @@
-import type { CreateEnvironmentDTO, DeploymentSnippets, Environment, UpdateEnvironmentDTO } from '#lib/types/environment.js';
+import type { DeploymentSnippets, Environment, EnvironmentCreate, EnvironmentUpdate } from '#lib/types/environment.js';
 import type { AppVersionInformation } from '#lib/types/settings.js';
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
@@ -6,7 +6,7 @@ import { transformPaginationParams } from '#lib/utils/tables.js';
 import BaseAPIService from './api-service';
 
 class EnvironmentManagementService extends BaseAPIService {
-	async create(dto: CreateEnvironmentDTO): Promise<Environment> {
+	async create(dto: EnvironmentCreate): Promise<Environment> {
 		const res = await this.api.post('/environments', dto);
 		return res.data.data as Environment;
 	}
@@ -22,7 +22,7 @@ class EnvironmentManagementService extends BaseAPIService {
 		return res.data.data as Environment;
 	}
 
-	async update(environmentId: string, dto: UpdateEnvironmentDTO): Promise<Environment> {
+	async update(environmentId: string, dto: EnvironmentUpdate): Promise<Environment> {
 		const res = await this.api.put(`/environments/${environmentId}`, dto);
 		return res.data.data as Environment;
 	}

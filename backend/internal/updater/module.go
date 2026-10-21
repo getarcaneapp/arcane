@@ -7,9 +7,7 @@ import (
 	"reflect"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/updater"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -86,8 +84,8 @@ func RegisterUpdater(api huma.API, updaterService *UpdaterService, appCtx handle
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermImageUpdatesRead, h.GetUpdaterHistory)
 
-	acceptedSchema := huma.SchemaFromType(api.OpenAPI().Components.Schemas, reflect.TypeFor[base.ApiResponse[activity.Activity]]())
-	completedSchema := huma.SchemaFromType(api.OpenAPI().Components.Schemas, reflect.TypeFor[base.ApiResponse[*updater.Result]]())
+	acceptedSchema := huma.SchemaFromType(api.OpenAPI().Components.Schemas, reflect.TypeFor[types.ApiResponse[types.Activity]]())
+	completedSchema := huma.SchemaFromType(api.OpenAPI().Components.Schemas, reflect.TypeFor[types.ApiResponse[*types.UpdaterResult]]())
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-container",
 		Method:      http.MethodPost,

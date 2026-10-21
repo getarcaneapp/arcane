@@ -15,9 +15,7 @@ import (
 	"time"
 
 	"github.com/distribution/reference"
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/pkg/authconfig"
 	"github.com/moby/moby/api/types/container"
@@ -993,13 +991,13 @@ func TestImageUpdateService_CheckImagesCompletesActivityAfterRequestContextCance
 	ctx, cancel := context.WithCancel(t.Context())
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := svc.CheckImages(ctx, imageupdate.CheckRequest{ImageRefs: []string{"nginx:latest"}}, nil)
+		_, err := svc.CheckImages(ctx, types.ImageUpdateCheckRequest{ImageRefs: []string{"nginx:latest"}}, nil)
 		errCh <- err
 	}()
 
 	var localActivity activity.Activity
 	require.Eventually(t, func() bool {
-		return db.Where("type = ?", activitytypes.TypeImageUpdateCheck).First(&localActivity).Error == nil
+		return db.Where("type = ?", types.ActivityTypeImageUpdateCheck).First(&localActivity).Error == nil
 	}, 5*time.Second, 10*time.Millisecond)
 
 	cancel()
@@ -1019,7 +1017,7 @@ func TestImageUpdateService_CheckImagesCompletesActivityAfterRequestContextCance
 		if err := db.First(&localActivity, "id = ?", localActivity.ID).Error; err != nil {
 			return false
 		}
-		return localActivity.Status == activitytypes.StatusFailed
+		return localActivity.Status == types.ActivityStatusFailed
 	}, 15*time.Second, 10*time.Millisecond)
 	assert.NotNil(t, localActivity.EndedAt)
 }
@@ -1071,9 +1069,9 @@ func TestImageUpdateService_CheckImagesRetriesStalledRegistryCheck(t *testing.T)
 
 	var localActivity activity.Activity
 	require.Eventually(t, func() bool {
-		return db.Where("type = ?", activitytypes.TypeImageUpdateCheck).First(&localActivity).Error == nil && localActivity.EndedAt != nil
+		return db.Where("type = ?", types.ActivityTypeImageUpdateCheck).First(&localActivity).Error == nil && localActivity.EndedAt != nil
 	}, 5*time.Second, 10*time.Millisecond)
-	require.Equal(t, activitytypes.StatusFailed, localActivity.Status)
+	require.Equal(t, types.ActivityStatusFailed, localActivity.Status)
 	require.NotNil(t, localActivity.DurationMs)
 	require.Contains(t, localActivity.LatestMessage, "1 checked, 1 errors")
 }
@@ -1113,9 +1111,9 @@ func TestImageUpdateService_CheckImagesPanicFailsOnlyThatImage(t *testing.T) {
 
 	var localActivity activity.Activity
 	require.Eventually(t, func() bool {
-		return db.Where("type = ?", activitytypes.TypeImageUpdateCheck).First(&localActivity).Error == nil && localActivity.EndedAt != nil
+		return db.Where("type = ?", types.ActivityTypeImageUpdateCheck).First(&localActivity).Error == nil && localActivity.EndedAt != nil
 	}, 5*time.Second, 10*time.Millisecond)
-	require.Equal(t, activitytypes.StatusFailed, localActivity.Status)
+	require.Equal(t, types.ActivityStatusFailed, localActivity.Status)
 	require.Contains(t, localActivity.LatestMessage, "1 errors")
 }
 
@@ -1277,7 +1275,7 @@ func TestImageUpdateService_SaveUpdateResultWithSnapshot_PersistsRegistryOnlySuc
 	imageRef := serverURL.Host + "/library/nginx:alpine"
 
 	svc := NewImageUpdateService(db, nil, nil, &docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)}, nil, notification.NewNotificationService(db, nil, nil, nil, nil), nil)
-	result := &imageupdate.Response{
+	result := &types.ImageUpdateResponse{
 		HasUpdate:      true,
 		UpdateType:     "digest",
 		CurrentVersion: "alpine",
@@ -1461,7 +1459,7 @@ func TestImageUpdateService_NotificationSentLogic(t *testing.T) {
 	tag := "latest"
 
 	t.Run("new record starts with notification_sent=false", func(t *testing.T) {
-		result := &imageupdate.Response{
+		result := &types.ImageUpdateResponse{
 			HasUpdate:      true,
 			UpdateType:     "digest",
 			CurrentVersion: "1.0",
@@ -1499,7 +1497,7 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 	tests := []struct {
 		name             string
 		existingRecord   *ImageUpdateRecord
-		newResult        *imageupdate.Response
+		newResult        *types.ImageUpdateResponse
 		expectNotifReset bool
 		reason           string
 	}{
@@ -1515,7 +1513,7 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 				LatestDigest:     new("sha256:old"),
 				NotificationSent: true,
 			},
-			newResult: &imageupdate.Response{
+			newResult: &types.ImageUpdateResponse{
 				HasUpdate:      true,
 				UpdateType:     "digest",
 				CurrentVersion: "7.0",
@@ -1538,7 +1536,7 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 				LatestVersion:    new("7.0.1"),
 				NotificationSent: true,
 			},
-			newResult: &imageupdate.Response{
+			newResult: &types.ImageUpdateResponse{
 				HasUpdate:      true,
 				UpdateType:     "tag",
 				CurrentVersion: "7.0",
@@ -1560,7 +1558,7 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 				CurrentVersion:   "7.0",
 				NotificationSent: true,
 			},
-			newResult: &imageupdate.Response{
+			newResult: &types.ImageUpdateResponse{
 				HasUpdate:      true,
 				UpdateType:     "digest",
 				CurrentVersion: "7.0",
@@ -1583,7 +1581,7 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 				LatestVersion:    new("7.0.1"),
 				NotificationSent: true,
 			},
-			newResult: &imageupdate.Response{
+			newResult: &types.ImageUpdateResponse{
 				HasUpdate:      true,
 				UpdateType:     "digest",
 				CurrentVersion: "7.0",
@@ -1669,7 +1667,7 @@ func TestImageUpdateService_RateLimitErrorPreservesPreviousResult(t *testing.T) 
 			}
 			require.NoError(t, db.Create(existing).Error)
 
-			result := &imageupdate.Response{
+			result := &types.ImageUpdateResponse{
 				Error:     tt.resultError,
 				CheckTime: time.Now(),
 			}
@@ -1698,7 +1696,7 @@ func TestSavePreparedUpdateResult_TracksLatestSeenAt(t *testing.T) {
 	firstSeen := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	save := func(checkTime time.Time, hasUpdate bool, latestDigest, checkErr string) ImageUpdateRecord {
 		t.Helper()
-		require.NoError(t, savePreparedUpdateResultWithTx(db.DB, imageID, repo, tag, &imageupdate.Response{
+		require.NoError(t, savePreparedUpdateResultWithTx(db.DB, imageID, repo, tag, &types.ImageUpdateResponse{
 			HasUpdate:     hasUpdate,
 			UpdateType:    UpdateTypeDigest,
 			CurrentDigest: "sha256:current",
@@ -2790,7 +2788,7 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 	require.NoError(t, db.Order("container_id").Find(&records).Error)
 	require.False(t, records[0].HasUpdate)
 	require.True(t, records[1].HasUpdate)
-	limited := &imageupdate.Response{UpdateType: UpdateTypeTag, Error: "registry status: 429", CheckTime: time.Now().UTC()}
+	limited := &types.ImageUpdateResponse{UpdateType: UpdateTypeTag, Error: "registry status: 429", CheckTime: time.Now().UTC()}
 	current := container.Summary{ID: "two", Image: imageRef, ImageID: imageID, Labels: values["two"]}
 	require.NoError(t, svc.saveContainerTagResult(t.Context(), current, limited))
 	var retained ImageUpdateRecord
@@ -3128,7 +3126,7 @@ func TestImageUpdateService_RunImageCheckExhaustedRateLimitKeepsPreviousResult(t
 	if svc.engine == nil {
 		startCheckWorkflow(t, svc)
 	}
-	outcome, err := svc.RunImageCheck(t.Context(), imageupdate.CheckRequest{ImageRefs: []string{imageRef}})
+	outcome, err := svc.RunImageCheck(t.Context(), types.ImageUpdateCheckRequest{ImageRefs: []string{imageRef}})
 	require.NoError(t, err)
 	require.Len(t, outcome.Targets, 1)
 	require.Contains(t, outcome.Targets[0].Message, "toomanyrequests")
@@ -3154,13 +3152,13 @@ func TestImageUpdateService_RunImageCheckReportsPartialFailure(t *testing.T) {
 	harness := startCheckWorkflow(t, svc)
 	flowtest.AssertDefinitions(t, harness)
 
-	request := imageupdate.CheckRequest{ImageRefs: []string{okRef, deniedRef}}
+	request := types.ImageUpdateCheckRequest{ImageRefs: []string{okRef, deniedRef}}
 	outcome, err := svc.RunImageCheck(t.Context(), request)
 	require.NoError(t, err)
-	require.Equal(t, scheduler.Partial, outcome.Status)
+	require.Equal(t, types.RunStatusPartial, outcome.Status)
 	require.Len(t, outcome.Targets, 1)
 	assert.Equal(t, deniedRef, outcome.Targets[0].ID)
-	assert.Equal(t, scheduler.Failed, outcome.Targets[0].Status)
+	assert.Equal(t, types.RunStatusFailed, outcome.Targets[0].Status)
 	require.Len(t, outcome.Steps, 5)
 
 	results, err := svc.CheckImages(t.Context(), request, nil)
@@ -3185,12 +3183,12 @@ func startCheckWorkflow(t *testing.T, svc *ImageUpdateService) *flowtest.Harness
 }
 
 // checkImages runs refs through the image-check workflow.
-func checkImages(t *testing.T, ctx context.Context, svc *ImageUpdateService, imageRefs ...string) (imageupdate.BatchResponse, error) {
+func checkImages(t *testing.T, ctx context.Context, svc *ImageUpdateService, imageRefs ...string) (types.ImageUpdateBatchResponse, error) {
 	t.Helper()
 	if svc.engine == nil {
 		startCheckWorkflow(t, svc)
 	}
-	return svc.CheckImages(ctx, imageupdate.CheckRequest{ImageRefs: imageRefs}, nil)
+	return svc.CheckImages(ctx, types.ImageUpdateCheckRequest{ImageRefs: imageRefs}, nil)
 }
 
 // newWorkflowCheckService serves one local image per repository named in
@@ -3240,26 +3238,26 @@ func shortenImageCheckRetryBackoff(t *testing.T) {
 	t.Cleanup(func() { imageCheckRetryBackoff, imageCheckRetryBackoffMax = initial, maximum })
 }
 
-func (noopActivities) StartActivity(_ context.Context, req activitylib.StartRequest) (*activitytypes.Activity, error) {
-	return &activitytypes.Activity{ID: req.ID}, nil
+func (noopActivities) StartActivity(_ context.Context, req activitylib.StartRequest) (*types.Activity, error) {
+	return &types.Activity{ID: req.ID}, nil
 }
 
-func (noopActivities) CompleteActivity(_ context.Context, activityID string, status activitytypes.Status, _ string, _ *string, _ ...string) (*activitytypes.Activity, error) {
-	return &activitytypes.Activity{ID: activityID, Status: status}, nil
+func (noopActivities) CompleteActivity(_ context.Context, activityID string, status types.ActivityStatus, _ string, _ *string, _ ...string) (*types.Activity, error) {
+	return &types.Activity{ID: activityID, Status: status}, nil
 }
 
-func (noopActivities) AppendMessage(context.Context, string, activitylib.AppendMessageRequest) (*activitytypes.Message, error) {
-	return &activitytypes.Message{}, nil
+func (noopActivities) AppendMessage(context.Context, string, activitylib.AppendMessageRequest) (*types.ActivityMessage, error) {
+	return &types.ActivityMessage{}, nil
 }
 
-func (noopActivities) AppendMessages(context.Context, string, []activitylib.AppendMessageRequest) ([]activitytypes.Message, error) {
+func (noopActivities) AppendMessages(context.Context, string, []activitylib.AppendMessageRequest) ([]types.ActivityMessage, error) {
 	return nil, nil
 }
 
 func (noopActivities) Track(ctx context.Context, _ string) context.Context { return ctx }
 
-func (noopActivities) UpdateActivity(_ context.Context, activityID string, _ activitylib.UpdateRequest) (*activitytypes.Activity, error) {
-	return &activitytypes.Activity{ID: activityID}, nil
+func (noopActivities) UpdateActivity(_ context.Context, activityID string, _ activitylib.UpdateRequest) (*types.Activity, error) {
+	return &types.Activity{ID: activityID}, nil
 }
 
 func (noopActivities) AwaitActivitySlotBounded(context.Context, string, string) error {

@@ -7,7 +7,7 @@
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { AlertTriangleIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { VolumeSummaryDto } from '#lib/types/docker.js';
+	import type { Volume } from '#lib/types/docker.js';
 	import { getManagedByLabel } from '#lib/utils/docker.js';
 
 	let {
@@ -17,7 +17,7 @@
 		onSubmit
 	}: {
 		open: boolean;
-		volume: VolumeSummaryDto | null;
+		volume: Volume | null;
 		isLoading: boolean;
 		onSubmit: (newName: string) => void;
 	} = $props();

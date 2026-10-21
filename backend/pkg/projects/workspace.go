@@ -17,8 +17,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/project"
-	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/acfs"
 	kit "go.getarcane.app/kit/pkg"
 
@@ -54,7 +53,7 @@ func ReadProjectWorkspace(
 	skipDirectories, composeFileName string,
 	maxEntries int,
 	maxFileSizeBytes int64,
-) ([]workspacetypes.FileEntry, string, bool, error) {
+) ([]types.WorkspaceFileEntry, string, bool, error) {
 	if maxDepth == ProjectWorkspaceUseScanDepth {
 		maxDepth = config.LoadProjectWorkspaceConfig().ProjectWorkspaceMaxDepth
 	}
@@ -89,7 +88,7 @@ func ReadProjectWorkspace(
 		maxFileSizeBytes: maxFileSizeBytes,
 		protected:        ProtectedProjectPaths(projectAbs, composeFileName),
 		skipDirs:         projectScanSkipDirectorySetInternal(skipDirectories),
-		files:            []workspacetypes.FileEntry{},
+		files:            []types.WorkspaceFileEntry{},
 		revisionHash:     sha256.New(),
 	}
 
@@ -97,7 +96,7 @@ func ReadProjectWorkspace(
 		return nil, "", false, walkErr
 	}
 
-	slices.SortFunc(walker.files, func(a, b workspacetypes.FileEntry) int {
+	slices.SortFunc(walker.files, func(a, b types.WorkspaceFileEntry) int {
 		if a.IsDirectory != b.IsDirectory {
 			return kit.Ternary(a.IsDirectory, -1, 1)
 		}
@@ -115,7 +114,7 @@ type projectWorkspaceTreeWalkerInternal struct {
 	maxFileSizeBytes int64
 	protected        map[string]bool
 	skipDirs         map[string]bool
-	files            []workspacetypes.FileEntry
+	files            []types.WorkspaceFileEntry
 	revisionHash     hash.Hash
 	entryCount       int
 	truncated        bool
@@ -214,7 +213,7 @@ func (w *projectWorkspaceTreeWalkerInternal) visit(rel string, entry fs.DirEntry
 	if entry.IsDir() {
 		size = 0
 	}
-	workspaceEntry := workspacetypes.FileEntry{
+	workspaceEntry := types.WorkspaceFileEntry{
 		Path:         filepath.Join(w.projectAbs, filepath.FromSlash(rel)),
 		RelativePath: rel,
 		Name:         entry.Name(),
@@ -228,27 +227,27 @@ func (w *projectWorkspaceTreeWalkerInternal) visit(rel string, entry fs.DirEntry
 	case "dir":
 		workspaceEntry.Editable = true
 	case "symlink":
-		workspaceEntry.ReadOnlyReason = workspacetypes.FileReadOnlySymlink
+		workspaceEntry.ReadOnlyReason = types.FileReadOnlySymlink
 		if target, readlinkErr := os.Readlink(workspaceEntry.Path); readlinkErr == nil {
 			workspaceEntry.LinkTarget = target
 		}
 	case "special":
-		workspaceEntry.ReadOnlyReason = workspacetypes.FileReadOnlySpecial
+		workspaceEntry.ReadOnlyReason = types.FileReadOnlySpecial
 	case "file":
-		workspaceEntry.Editable, workspaceEntry.ReadOnlyReason = classifyProjectWorkspaceFileInternal(workspaceEntry.Path, size, w.maxFileSizeBytes)
+		workspaceEntry.Editable, workspaceEntry.ReadOnlyReason = classifyProjectWorkspaceFile(workspaceEntry.Path, size, w.maxFileSizeBytes)
 	}
 	w.files = append(w.files, workspaceEntry)
 
 	return entry.IsDir(), nil
 }
 
-func classifyProjectWorkspaceFileInternal(filePath string, size, maxFileSizeBytes int64) (bool, string) {
+func classifyProjectWorkspaceFile(filePath string, size, maxFileSizeBytes int64) (bool, string) {
 	if size > maxFileSizeBytes {
-		return false, workspacetypes.FileReadOnlyTooLarge
+		return false, types.FileReadOnlyTooLarge
 	}
 	content, err := os.ReadFile(filePath)
 	if err != nil || !bytes.Equal(bytes.ToValidUTF8(content, []byte{}), content) || bytes.IndexByte(content, 0) >= 0 {
-		return false, workspacetypes.FileReadOnlyBinary
+		return false, types.FileReadOnlyBinary
 	}
 	return true, ""
 }
@@ -258,7 +257,7 @@ func classifyProjectWorkspaceFileInternal(filePath string, size, maxFileSizeByte
 // atomicity — ProjectService.UpdateProjectWorkspace wraps every save in
 // BackupProjectUpdateScope / RestoreProjectUpdateBackup, and project creation
 // removes a new directory or restores the scoped backup of a reused one.
-func ApplyProjectWorkspaceChanges(ctx context.Context, projectPath string, changes []project.WorkspaceFileChange, uploads map[int][]byte, opts ProjectWorkspaceApplyOptions) error {
+func ApplyProjectWorkspaceChanges(ctx context.Context, projectPath string, changes []types.WorkspaceFileChange, uploads map[int][]byte, opts ProjectWorkspaceApplyOptions) error {
 	if opts.MaxFileSizeBytes <= 0 {
 		opts.MaxFileSizeBytes = workspacepkg.MaxFileSizeBytes(workspacepkg.DefaultMaxFileSizeMB)
 	}
@@ -266,7 +265,7 @@ func ApplyProjectWorkspaceChanges(ctx context.Context, projectPath string, chang
 	for _, change := range changes {
 		uploadReferences = append(uploadReferences, workspacepkg.UploadReference{Operation: change.Operation, UploadIndex: change.UploadIndex, BaselineIndex: change.BaselineIndex})
 	}
-	if err := workspacepkg.ValidateUploadIndices(uploadReferences, len(uploads), project.FileOpCreateFile, project.FileOpUpdateFile); err != nil {
+	if err := workspacepkg.ValidateUploadIndices(uploadReferences, len(uploads), types.FileOpCreateFile, types.FileOpUpdateFile); err != nil {
 		return err
 	}
 	if len(changes) == 0 {
@@ -293,7 +292,7 @@ func ApplyProjectWorkspaceChanges(ctx context.Context, projectPath string, chang
 		// Recomputed per change: an earlier change may have removed a directory
 		// that shadowed a protected name.
 		protected := ProtectedProjectPaths(projectPath, opts.ComposeFileName)
-		if applyWorkspaceFileChangeErr := applyWorkspaceFileChangeInternal(root, protected, change, uploads, opts.MaxFileSizeBytes); applyWorkspaceFileChangeErr != nil {
+		if applyWorkspaceFileChangeErr := applyWorkspaceFileChange(root, protected, change, uploads, opts.MaxFileSizeBytes); applyWorkspaceFileChangeErr != nil {
 			return applyWorkspaceFileChangeErr
 		}
 	}
@@ -332,46 +331,46 @@ func ProtectedProjectFilePaths(composeFileName string) map[string]bool {
 	return protected
 }
 
-func applyWorkspaceFileChangeInternal(root *os.Root, protected map[string]bool, change project.WorkspaceFileChange, uploads map[int][]byte, maxFileSizeBytes int64) error {
+func applyWorkspaceFileChange(root *os.Root, protected map[string]bool, change types.WorkspaceFileChange, uploads map[int][]byte, maxFileSizeBytes int64) error {
 	rel, err := kit.NormalizeRelativePath(change.RelativePath)
 	if err != nil {
 		return fmt.Errorf("invalid project workspace path: %w", err)
 	}
 
 	switch change.Operation {
-	case project.FileOpCreateFile:
-		return createProjectWorkspaceFileInternal(root, protected, rel, uploads[*change.UploadIndex], maxFileSizeBytes)
-	case project.FileOpCreateFolder:
-		return createProjectWorkspaceFolderInternal(root, protected, rel)
-	case project.FileOpUpdateFile:
+	case types.FileOpCreateFile:
+		return createProjectWorkspaceFile(root, protected, rel, uploads[*change.UploadIndex], maxFileSizeBytes)
+	case types.FileOpCreateFolder:
+		return createProjectWorkspaceFolder(root, protected, rel)
+	case types.FileOpUpdateFile:
 		var baseline []byte
 		if change.BaselineIndex != nil {
 			baseline = uploads[*change.BaselineIndex]
 		}
-		return updateProjectWorkspaceFileInternal(root, protected, rel, uploads[*change.UploadIndex], baseline, change.BaselineIndex != nil, maxFileSizeBytes)
-	case project.FileOpRename:
+		return updateProjectWorkspaceFile(root, protected, rel, uploads[*change.UploadIndex], baseline, change.BaselineIndex != nil, maxFileSizeBytes)
+	case types.FileOpRename:
 		newName, validateFileNameErr := kit.ValidateFileName(change.NewName)
 		if validateFileNameErr != nil {
 			return fmt.Errorf("invalid project workspace file name: %w", validateFileNameErr)
 		}
-		return renameProjectWorkspacePathInternal(root, protected, rel, newName)
-	case project.FileOpMove:
-		return moveProjectWorkspacePathInternal(root, protected, rel, change.NewParentPath)
-	case project.FileOpDelete:
-		return deleteProjectWorkspacePathInternal(root, protected, rel, change.Recursive)
+		return renameProjectWorkspacePath(root, protected, rel, newName)
+	case types.FileOpMove:
+		return moveProjectWorkspacePath(root, protected, rel, change.NewParentPath)
+	case types.FileOpDelete:
+		return deleteProjectWorkspacePath(root, protected, rel, change.Recursive)
 	default:
 		return fmt.Errorf("unsupported project workspace operation %q", change.Operation)
 	}
 }
 
-func createProjectWorkspaceFileInternal(root *os.Root, protected map[string]bool, rel string, content []byte, maxFileSizeBytes int64) error {
-	if err := ensureWritableProjectRelPathInternal(protected, rel); err != nil {
+func createProjectWorkspaceFile(root *os.Root, protected map[string]bool, rel string, content []byte, maxFileSizeBytes int64) error {
+	if err := ensureWritableProjectRelPath(protected, rel); err != nil {
 		return err
 	}
 	if err := workspacepkg.ValidateContentSize(content, maxFileSizeBytes); err != nil {
 		return err
 	}
-	if err := ensureProjectPathHasNoSymlinkInternal(root, path.Dir(rel)); err != nil {
+	if err := ensureProjectPathHasNoSymlink(root, path.Dir(rel)); err != nil {
 		return err
 	}
 
@@ -398,11 +397,11 @@ func createProjectWorkspaceFileInternal(root *os.Root, protected map[string]bool
 	return nil
 }
 
-func createProjectWorkspaceFolderInternal(root *os.Root, protected map[string]bool, rel string) error {
-	if err := ensureWritableProjectRelPathInternal(protected, rel); err != nil {
+func createProjectWorkspaceFolder(root *os.Root, protected map[string]bool, rel string) error {
+	if err := ensureWritableProjectRelPath(protected, rel); err != nil {
 		return err
 	}
-	if err := ensureProjectPathHasNoSymlinkInternal(root, rel); err != nil {
+	if err := ensureProjectPathHasNoSymlink(root, rel); err != nil {
 		return err
 	}
 
@@ -417,14 +416,14 @@ func createProjectWorkspaceFolderInternal(root *os.Root, protected map[string]bo
 	return nil
 }
 
-func updateProjectWorkspaceFileInternal(root *os.Root, protected map[string]bool, rel string, content, baseline []byte, baselineSet bool, maxFileSizeBytes int64) error {
-	if err := ensureWritableProjectRelPathInternal(protected, rel); err != nil {
+func updateProjectWorkspaceFile(root *os.Root, protected map[string]bool, rel string, content, baseline []byte, baselineSet bool, maxFileSizeBytes int64) error {
+	if err := ensureWritableProjectRelPath(protected, rel); err != nil {
 		return err
 	}
 	if err := workspacepkg.ValidateContentSize(content, maxFileSizeBytes); err != nil {
 		return err
 	}
-	if err := ensureProjectPathHasNoSymlinkInternal(root, rel); err != nil {
+	if err := ensureProjectPathHasNoSymlink(root, rel); err != nil {
 		return err
 	}
 
@@ -450,7 +449,7 @@ func updateProjectWorkspaceFileInternal(root *os.Root, protected map[string]bool
 	// comparison targets the right path. The read is capped just past the
 	// baseline length: a longer on-disk file differs by definition.
 	if baselineSet {
-		current, readProjectWorkspaceFileLimitedErr := readProjectWorkspaceFileLimitedInternal(root, rel, int64(len(baseline))+1)
+		current, readProjectWorkspaceFileLimitedErr := readProjectWorkspaceFileLimited(root, rel, int64(len(baseline))+1)
 		if readProjectWorkspaceFileLimitedErr != nil {
 			return fmt.Errorf("read project workspace file: %w", readProjectWorkspaceFileLimitedErr)
 		}
@@ -465,7 +464,7 @@ func updateProjectWorkspaceFileInternal(root *os.Root, protected map[string]bool
 	return nil
 }
 
-func readProjectWorkspaceFileLimitedInternal(root *os.Root, rel string, maxBytes int64) ([]byte, error) {
+func readProjectWorkspaceFileLimited(root *os.Root, rel string, maxBytes int64) ([]byte, error) {
 	f, err := root.Open(rel)
 	if err != nil {
 		return nil, err
@@ -474,11 +473,11 @@ func readProjectWorkspaceFileLimitedInternal(root *os.Root, rel string, maxBytes
 	return io.ReadAll(io.LimitReader(f, maxBytes))
 }
 
-func renameProjectWorkspacePathInternal(root *os.Root, protected map[string]bool, rel, newName string) error {
-	if err := ensureWritableProjectRelPathInternal(protected, rel); err != nil {
+func renameProjectWorkspacePath(root *os.Root, protected map[string]bool, rel, newName string) error {
+	if err := ensureWritableProjectRelPath(protected, rel); err != nil {
 		return err
 	}
-	if err := ensureProjectPathHasNoSymlinkInternal(root, rel); err != nil {
+	if err := ensureProjectPathHasNoSymlink(root, rel); err != nil {
 		return err
 	}
 
@@ -494,10 +493,10 @@ func renameProjectWorkspacePathInternal(root *os.Root, protected map[string]bool
 	}
 
 	targetRel := path.Join(path.Dir(rel), newName)
-	if ensureWritableProjectRelPathErr := ensureWritableProjectRelPathInternal(protected, targetRel); ensureWritableProjectRelPathErr != nil {
+	if ensureWritableProjectRelPathErr := ensureWritableProjectRelPath(protected, targetRel); ensureWritableProjectRelPathErr != nil {
 		return ensureWritableProjectRelPathErr
 	}
-	if ensureProjectPathHasNoSymlinkErr := ensureProjectPathHasNoSymlinkInternal(root, path.Dir(targetRel)); ensureProjectPathHasNoSymlinkErr != nil {
+	if ensureProjectPathHasNoSymlinkErr := ensureProjectPathHasNoSymlink(root, path.Dir(targetRel)); ensureProjectPathHasNoSymlinkErr != nil {
 		return ensureProjectPathHasNoSymlinkErr
 	}
 	if _, lstatErr := root.Lstat(targetRel); lstatErr == nil {
@@ -521,11 +520,11 @@ func NormalizeProjectParentPath(input string) (string, error) {
 	return kit.NormalizeRelativePath(input)
 }
 
-func moveProjectWorkspacePathInternal(root *os.Root, protected map[string]bool, rel, newParentPath string) error {
-	if err := ensureWritableProjectRelPathInternal(protected, rel); err != nil {
+func moveProjectWorkspacePath(root *os.Root, protected map[string]bool, rel, newParentPath string) error {
+	if err := ensureWritableProjectRelPath(protected, rel); err != nil {
 		return err
 	}
-	if err := ensureProjectPathHasNoSymlinkInternal(root, rel); err != nil {
+	if err := ensureProjectPathHasNoSymlink(root, rel); err != nil {
 		return err
 	}
 
@@ -534,7 +533,7 @@ func moveProjectWorkspacePathInternal(root *os.Root, protected map[string]bool, 
 		return fmt.Errorf("invalid project workspace parent path: %w", err)
 	}
 	if parentRel != "" {
-		if ensureWritableProjectRelPathErr := ensureWritableProjectRelPathInternal(protected, parentRel); ensureWritableProjectRelPathErr != nil {
+		if ensureWritableProjectRelPathErr := ensureWritableProjectRelPath(protected, parentRel); ensureWritableProjectRelPathErr != nil {
 			return ensureWritableProjectRelPathErr
 		}
 	}
@@ -553,7 +552,7 @@ func moveProjectWorkspacePathInternal(root *os.Root, protected map[string]bool, 
 		return errors.New("folder cannot be moved into itself or a descendant")
 	}
 
-	if validateProjectMoveParentErr := validateProjectMoveParentInternal(root, parentRel); validateProjectMoveParentErr != nil {
+	if validateProjectMoveParentErr := validateProjectMoveParent(root, parentRel); validateProjectMoveParentErr != nil {
 		return validateProjectMoveParentErr
 	}
 
@@ -564,10 +563,10 @@ func moveProjectWorkspacePathInternal(root *os.Root, protected map[string]bool, 
 	if targetRel == rel {
 		return errors.New("project workspace path is already in the destination folder")
 	}
-	if ensureWritableProjectRelPathErr2 := ensureWritableProjectRelPathInternal(protected, targetRel); ensureWritableProjectRelPathErr2 != nil {
+	if ensureWritableProjectRelPathErr2 := ensureWritableProjectRelPath(protected, targetRel); ensureWritableProjectRelPathErr2 != nil {
 		return ensureWritableProjectRelPathErr2
 	}
-	if ensureProjectPathHasNoSymlinkErr := ensureProjectPathHasNoSymlinkInternal(root, path.Dir(targetRel)); ensureProjectPathHasNoSymlinkErr != nil {
+	if ensureProjectPathHasNoSymlinkErr := ensureProjectPathHasNoSymlink(root, path.Dir(targetRel)); ensureProjectPathHasNoSymlinkErr != nil {
 		return ensureProjectPathHasNoSymlinkErr
 	}
 	if _, lstatErr := root.Lstat(targetRel); lstatErr == nil {
@@ -582,11 +581,11 @@ func moveProjectWorkspacePathInternal(root *os.Root, protected map[string]bool, 
 	return nil
 }
 
-func validateProjectMoveParentInternal(root *os.Root, parentRel string) error {
+func validateProjectMoveParent(root *os.Root, parentRel string) error {
 	if parentRel == "" {
 		return nil
 	}
-	if err := ensureProjectPathHasNoSymlinkInternal(root, parentRel); err != nil {
+	if err := ensureProjectPathHasNoSymlink(root, parentRel); err != nil {
 		return err
 	}
 
@@ -606,11 +605,11 @@ func validateProjectMoveParentInternal(root *os.Root, parentRel string) error {
 	return nil
 }
 
-func deleteProjectWorkspacePathInternal(root *os.Root, protected map[string]bool, rel string, recursive bool) error {
-	if err := ensureWritableProjectRelPathInternal(protected, rel); err != nil {
+func deleteProjectWorkspacePath(root *os.Root, protected map[string]bool, rel string, recursive bool) error {
+	if err := ensureWritableProjectRelPath(protected, rel); err != nil {
 		return err
 	}
-	if err := ensureProjectPathHasNoSymlinkInternal(root, rel); err != nil {
+	if err := ensureProjectPathHasNoSymlink(root, rel); err != nil {
 		return err
 	}
 
@@ -625,7 +624,7 @@ func deleteProjectWorkspacePathInternal(root *os.Root, protected map[string]bool
 		return fmt.Errorf("symlink paths are not supported: %w", ErrProjectWorkspaceSymlinkPath)
 	}
 	if info.IsDir() && !recursive {
-		empty, isDirectoryEmptyErr := isDirectoryEmptyInternal(root, rel)
+		empty, isDirectoryEmptyErr := isDirectoryEmpty(root, rel)
 		if isDirectoryEmptyErr != nil {
 			return isDirectoryEmptyErr
 		}
@@ -646,7 +645,7 @@ func deleteProjectWorkspacePathInternal(root *os.Root, protected map[string]bool
 	return nil
 }
 
-func ensureProjectPathHasNoSymlinkInternal(root *os.Root, rel string) error {
+func ensureProjectPathHasNoSymlink(root *os.Root, rel string) error {
 	cleaned := path.Clean(rel)
 	if cleaned == "." || cleaned == "" {
 		return nil
@@ -674,7 +673,7 @@ func ensureProjectPathHasNoSymlinkInternal(root *os.Root, rel string) error {
 	return nil
 }
 
-func ensureWritableProjectRelPathInternal(protected map[string]bool, rel string) error {
+func ensureWritableProjectRelPath(protected map[string]bool, rel string) error {
 	if rel == "." || rel == "" {
 		return errors.New("project workspace root cannot be modified")
 	}
@@ -685,7 +684,7 @@ func ensureWritableProjectRelPathInternal(protected map[string]bool, rel string)
 	return nil
 }
 
-func isDirectoryEmptyInternal(root *os.Root, rel string) (bool, error) {
+func isDirectoryEmpty(root *os.Root, rel string) (bool, error) {
 	f, err := root.Open(rel)
 	if err != nil {
 		return false, fmt.Errorf("open folder: %w", err)

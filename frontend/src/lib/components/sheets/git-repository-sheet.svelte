@@ -9,7 +9,8 @@
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { GitRepository, GitRepositoryCreateDto, GitRepositoryUpdateDto } from '#lib/types/automation.js';
+	import type { GitRepository, GitRepositoryCreate, GitRepositoryUpdate } from '#lib/types/automation.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
 	type GitRepositoryFormProps = {
@@ -18,7 +19,7 @@
 		clearSshKey?: boolean;
 		clearSigningKey?: boolean;
 		repositoryToEdit: GitRepository | null;
-		onSubmit: (detail: { repository: GitRepositoryCreateDto | GitRepositoryUpdateDto; isEditMode: boolean }) => void;
+		onSubmit: (detail: { repository: GitRepositoryCreate | GitRepositoryUpdate; isEditMode: boolean }) => void;
 		isLoading: boolean;
 	};
 
@@ -113,33 +114,40 @@
 		if (inputs.sshKey) inputs.sshKey.error = null;
 	}
 
+	function repositoryFields(
+		values: z.infer<typeof formSchema>,
+		authType: string,
+		sshHostKeyVerification: string
+	): GitRepositoryCreate {
+		return {
+			name: values.name,
+			url: values.url,
+			authType,
+			username: authType === 'http' ? values.username : undefined,
+			sshHostKeyVerification: authType === 'ssh' ? sshHostKeyVerification : undefined,
+			commitAuthorName: values.commitAuthorName?.trim() ?? '',
+			commitAuthorEmail: values.commitAuthorEmail?.trim() ?? '',
+			description: values.description,
+			enabled: values.enabled
+		};
+	}
+
 	function handleSubmit() {
 		const data = form.validate();
 		if (tokenNeedsAttention && inputs.token) inputs.token.error = m.git_repository_token_url_change();
 		if (sshKeyNeedsAttention && inputs.sshKey) inputs.sshKey.error = m.git_repository_ssh_key_url_change();
 		if (!data || tokenNeedsAttention || sshKeyNeedsAttention) return;
 
-		const payload: GitRepositoryCreateDto | GitRepositoryUpdateDto = {
-			name: data.name,
-			url: data.url,
-			authType: selectedAuthType.value,
-			description: data.description,
-			enabled: data.enabled
-		};
-
-		if (selectedAuthType.value === 'http') {
-			if (data.username) payload.username = data.username;
-		} else if (selectedAuthType.value === 'ssh') {
-			payload.sshHostKeyVerification = selectedSshHostKeyVerification.value;
-		}
+		const fields = repositoryFields(data, selectedAuthType.value, selectedSshHostKeyVerification.value);
+		const payload: GitRepositoryCreate | GitRepositoryUpdate = isEditMode
+			? changedFields(repositoryFields(formData, formData.authType, formData.sshHostKeyVerification), fields)
+			: fields;
 
 		if (hasToken && clearToken) payload.token = '';
 		else if ((selectedAuthType.value === 'http' || hasToken) && data.token) payload.token = data.token;
 		if (hasSshKey && clearSshKey) payload.sshKey = '';
 		else if ((selectedAuthType.value === 'ssh' || hasSshKey) && data.sshKey) payload.sshKey = data.sshKey;
 
-		payload.commitAuthorName = data.commitAuthorName?.trim() ?? '';
-		payload.commitAuthorEmail = data.commitAuthorEmail?.trim() ?? '';
 		if (hasSigningKey && clearSigningKey) payload.signingKey = '';
 		else {
 			if (data.signingKey) payload.signingKey = data.signingKey;

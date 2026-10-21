@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/upload"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/acfs"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -53,15 +53,15 @@ func NewUploadService(settingsService *settings.SettingsService) *UploadService 
 	}
 }
 
-func validFilenameForKindInternal(kind, filename string) bool {
+func validFilenameForKind(kind, filename string) bool {
 	lower := strings.ToLower(filename)
 	switch kind {
-	case upload.KindImage:
+	case types.UploadKindImage:
 		return strings.HasSuffix(lower, ".tar") || strings.HasSuffix(lower, ".tar.gz") ||
 			strings.HasSuffix(lower, ".tgz") || strings.HasSuffix(lower, ".tar.xz")
-	case upload.KindVolumeBackup:
+	case types.UploadKindVolumeBackup:
 		return strings.HasSuffix(lower, ".tar.gz") || strings.HasSuffix(lower, ".tgz")
-	case upload.KindBuildWorkspace:
+	case types.UploadKindBuildWorkspace:
 		return true
 	}
 	return false
@@ -69,26 +69,26 @@ func validFilenameForKindInternal(kind, filename string) bool {
 
 // CreateSession validates the request against the kind's filename and size
 // rules and stages a new empty session on disk.
-func (s *UploadService) CreateSession(ctx context.Context, kind string, request upload.CreateSessionRequest) (*upload.Session, error) {
+func (s *UploadService) CreateSession(ctx context.Context, kind string, request types.CreateUploadSessionRequest) (*types.UploadSession, error) {
 	filename := path.Base(strings.ReplaceAll(request.Filename, "\\", "/"))
 	if filename == "" || filename == "." || filename == "/" {
 		return nil, fmt.Errorf("%w: a filename is required", common.ErrUploadSessionInvalid)
 	}
-	if !validFilenameForKindInternal(kind, filename) {
+	if !validFilenameForKind(kind, filename) {
 		return nil, fmt.Errorf("%w: file type not allowed for %s uploads", common.ErrUploadSessionInvalid, kind)
 	}
 	if request.Size <= 0 {
 		return nil, fmt.Errorf("%w: size must be positive", common.ErrUploadSessionInvalid)
 	}
-	if kind == upload.KindImage {
+	if kind == types.UploadKindImage {
 		maxSizeMB := s.settingsService.GetIntSetting(ctx, "maxImageUploadSize", 500)
 		if maxSizeBytes := int64(maxSizeMB) * 1024 * 1024; request.Size > maxSizeBytes {
 			return nil, fmt.Errorf("%w: file size exceeds maximum allowed size of %d MB", common.ErrUploadSessionInvalid, maxSizeMB)
 		}
 	}
-	chunkSize := cmp.Or(request.ChunkSize, upload.DefaultChunkSize)
-	if chunkSize < upload.MinChunkSize || chunkSize > upload.MaxChunkSize {
-		return nil, fmt.Errorf("%w: chunk size must be between %d and %d bytes", common.ErrUploadSessionInvalid, upload.MinChunkSize, upload.MaxChunkSize)
+	chunkSize := cmp.Or(request.ChunkSize, types.UploadDefaultChunkSize)
+	if chunkSize < types.UploadMinChunkSize || chunkSize > types.UploadMaxChunkSize {
+		return nil, fmt.Errorf("%w: chunk size must be between %d and %d bytes", common.ErrUploadSessionInvalid, types.UploadMinChunkSize, types.UploadMaxChunkSize)
 	}
 
 	if err := os.MkdirAll(s.root, 0o700); err != nil {
@@ -98,7 +98,7 @@ func (s *UploadService) CreateSession(ctx context.Context, kind string, request 
 	if err != nil {
 		return nil, fmt.Errorf("create upload session directory: %w", err)
 	}
-	session := &upload.Session{
+	session := &types.UploadSession{
 		ID:             path.Base(sessionDir),
 		Kind:           kind,
 		Filename:       filename,
@@ -112,22 +112,22 @@ func (s *UploadService) CreateSession(ctx context.Context, kind string, request 
 		_ = acfs.RemoveAll(ctx, s.root, sessionDir)
 		return nil, fmt.Errorf("create upload session data file: %w", writeErr)
 	}
-	if writeMetaErr := s.writeMetaInternal(ctx, session); writeMetaErr != nil {
+	if writeMetaErr := s.writeMeta(ctx, session); writeMetaErr != nil {
 		_ = acfs.RemoveAll(ctx, s.root, sessionDir)
 		return nil, writeMetaErr
 	}
 	return session, nil
 }
 
-func (s *UploadService) sessionPathInternal(uploadID, filename string) (string, error) {
+func (s *UploadService) sessionPath(uploadID, filename string) (string, error) {
 	if !uploadIDPattern.MatchString(uploadID) {
 		return "", fmt.Errorf("%w: invalid upload ID", common.ErrUploadSessionNotFound)
 	}
 	return path.Join("/", uploadID, filename), nil
 }
 
-func (s *UploadService) loadMetaInternal(ctx context.Context, kind, uploadID string) (*upload.Session, error) {
-	metaPath, err := s.sessionPathInternal(uploadID, sessionMetaFilename)
+func (s *UploadService) loadMeta(ctx context.Context, kind, uploadID string) (*types.UploadSession, error) {
+	metaPath, err := s.sessionPath(uploadID, sessionMetaFilename)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func (s *UploadService) loadMetaInternal(ctx context.Context, kind, uploadID str
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", common.ErrUploadSessionNotFound, uploadID)
 	}
-	var session upload.Session
+	var session types.UploadSession
 	if unmarshalErr := json.Unmarshal(payload, &session); unmarshalErr != nil {
 		return nil, fmt.Errorf("%w: corrupt session metadata", common.ErrUploadSessionNotFound)
 	}
@@ -146,7 +146,7 @@ func (s *UploadService) loadMetaInternal(ctx context.Context, kind, uploadID str
 	return &session, nil
 }
 
-func (s *UploadService) writeMetaInternal(ctx context.Context, session *upload.Session) error {
+func (s *UploadService) writeMeta(ctx context.Context, session *types.UploadSession) error {
 	session.Complete = len(session.ReceivedChunks) == session.TotalChunks
 	payload, err := json.Marshal(session)
 	if err != nil {
@@ -160,10 +160,10 @@ func (s *UploadService) writeMetaInternal(ctx context.Context, session *upload.S
 
 // WriteChunk stores one chunk at its final offset and records it as received.
 // Re-sending an already-received chunk is an idempotent overwrite.
-func (s *UploadService) WriteChunk(ctx context.Context, kind, uploadID string, index int, data []byte) (*upload.Session, error) {
+func (s *UploadService) WriteChunk(ctx context.Context, kind, uploadID string, index int, data []byte) (*types.UploadSession, error) {
 	defer s.locks.Lock(uploadID)()
 
-	session, err := s.loadMetaInternal(ctx, kind, uploadID)
+	session, err := s.loadMeta(ctx, kind, uploadID)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +178,7 @@ func (s *UploadService) WriteChunk(ctx context.Context, kind, uploadID string, i
 		return nil, fmt.Errorf("%w: chunk %d is %d bytes, expected %d", common.ErrUploadChunkInvalid, index, len(data), expected)
 	}
 
-	dataPath, err := s.sessionPathInternal(uploadID, sessionDataFilename)
+	dataPath, err := s.sessionPath(uploadID, sessionDataFilename)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +187,7 @@ func (s *UploadService) WriteChunk(ctx context.Context, kind, uploadID string, i
 	}
 	if position, found := slices.BinarySearch(session.ReceivedChunks, index); !found {
 		session.ReceivedChunks = slices.Insert(session.ReceivedChunks, position, index)
-		if writeMetaErr := s.writeMetaInternal(ctx, session); writeMetaErr != nil {
+		if writeMetaErr := s.writeMeta(ctx, session); writeMetaErr != nil {
 			return nil, writeMetaErr
 		}
 	}
@@ -196,16 +196,16 @@ func (s *UploadService) WriteChunk(ctx context.Context, kind, uploadID string, i
 
 // GetSession reports the session state, including which chunks have been
 // received so clients can resume.
-func (s *UploadService) GetSession(ctx context.Context, kind, uploadID string) (*upload.Session, error) {
+func (s *UploadService) GetSession(ctx context.Context, kind, uploadID string) (*types.UploadSession, error) {
 	defer s.locks.RLock(uploadID)()
-	return s.loadMetaInternal(ctx, kind, uploadID)
+	return s.loadMeta(ctx, kind, uploadID)
 }
 
 // DeleteSession aborts a session and discards its received chunks.
 func (s *UploadService) DeleteSession(ctx context.Context, kind, uploadID string) error {
 	defer s.locks.Lock(uploadID)()
 
-	if _, err := s.loadMetaInternal(ctx, kind, uploadID); err != nil {
+	if _, err := s.loadMeta(ctx, kind, uploadID); err != nil {
 		return err
 	}
 	if err := acfs.RemoveAll(ctx, s.root, path.Join("/", uploadID)); err != nil {
@@ -217,8 +217,8 @@ func (s *UploadService) DeleteSession(ctx context.Context, kind, uploadID string
 // IngestSession creates a session already containing the complete file. It
 // backs the deprecated single-request multipart compatibility path, applying
 // the same per-kind validation as chunked sessions.
-func (s *UploadService) IngestSession(ctx context.Context, kind, filename string, size int64, source io.Reader) (*upload.Session, error) {
-	session, err := s.CreateSession(ctx, kind, upload.CreateSessionRequest{Filename: filename, Size: size})
+func (s *UploadService) IngestSession(ctx context.Context, kind, filename string, size int64, source io.Reader) (*types.UploadSession, error) {
+	session, err := s.CreateSession(ctx, kind, types.CreateUploadSessionRequest{Filename: filename, Size: size})
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +229,7 @@ func (s *UploadService) IngestSession(ctx context.Context, kind, filename string
 	for index := range session.TotalChunks {
 		session.ReceivedChunks = append(session.ReceivedChunks, index)
 	}
-	if writeMetaErr := s.writeMetaInternal(ctx, session); writeMetaErr != nil {
+	if writeMetaErr := s.writeMeta(ctx, session); writeMetaErr != nil {
 		_ = acfs.RemoveAll(ctx, s.root, path.Join("/", session.ID))
 		return nil, writeMetaErr
 	}
@@ -241,17 +241,17 @@ func (s *UploadService) IngestSession(ctx context.Context, kind, filename string
 // session lock before returning, so a session can be consumed at most once
 // even by concurrent requests; the returned cleanup closes the file and
 // deletes the remaining session data.
-func (s *UploadService) Consume(ctx context.Context, kind, uploadID string) (io.ReadSeekCloser, *upload.Session, func(), error) {
+func (s *UploadService) Consume(ctx context.Context, kind, uploadID string) (io.ReadSeekCloser, *types.UploadSession, func(), error) {
 	defer s.locks.Lock(uploadID)()
 
-	session, err := s.loadMetaInternal(ctx, kind, uploadID)
+	session, err := s.loadMeta(ctx, kind, uploadID)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	if !session.Complete {
 		return nil, nil, nil, fmt.Errorf("%w: %d of %d chunks received", common.ErrUploadSessionIncomplete, len(session.ReceivedChunks), session.TotalChunks)
 	}
-	dataPath, err := s.sessionPathInternal(uploadID, sessionDataFilename)
+	dataPath, err := s.sessionPath(uploadID, sessionDataFilename)
 	if err != nil {
 		return nil, nil, nil, err
 	}

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,8 +29,8 @@ func aggregateContext(t *testing.T, handler http.Handler, ids ...string) context
 		IDs:     ids,
 		Request: request,
 		Handler: handler,
-		Resolve: func(_ context.Context, id string) (base.EnvironmentRef, error) {
-			return base.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
 		},
 	})
 }
@@ -65,7 +65,7 @@ func TestCollectEnvironmentsDispatchesEachEnvironmentInScopeOrder(t *testing.T) 
 	require.Empty(t, collection.Failures)
 	require.Len(t, collection.Results, 3)
 	for i, id := range []string{"b", "a", "c"} {
-		require.Equal(t, base.EnvironmentRef{ID: id, Name: "Env " + id}, collection.Results[i].Environment)
+		require.Equal(t, types.EnvironmentRef{ID: id, Name: "Env " + id}, collection.Results[i].Environment)
 		require.Equal(t, id, collection.Results[i].Value.ID)
 	}
 
@@ -105,12 +105,12 @@ func TestCollectEnvironmentsMapsFailures(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, collection.Results, 1)
-	require.Equal(t, []base.EnvironmentFailure{
-		{Environment: base.EnvironmentRef{ID: "huma", Name: "huma"}, Message: "invalid sort"},
-		{Environment: base.EnvironmentRef{ID: "api", Name: "api"}, Message: "docker unavailable"},
-		{Environment: base.EnvironmentRef{ID: "proxy", Name: "proxy"}, Message: "Edge agent is not connected"},
-		{Environment: base.EnvironmentRef{ID: "forbidden", Name: "forbidden"}, Message: "denied"},
-		{Environment: base.EnvironmentRef{ID: "empty", Name: "empty"}, Message: "Service Unavailable"},
+	require.Equal(t, []types.EnvironmentFailure{
+		{Environment: types.EnvironmentRef{ID: "huma", Name: "huma"}, Message: "invalid sort"},
+		{Environment: types.EnvironmentRef{ID: "api", Name: "api"}, Message: "docker unavailable"},
+		{Environment: types.EnvironmentRef{ID: "proxy", Name: "proxy"}, Message: "Edge agent is not connected"},
+		{Environment: types.EnvironmentRef{ID: "forbidden", Name: "forbidden"}, Message: "denied"},
+		{Environment: types.EnvironmentRef{ID: "empty", Name: "empty"}, Message: "Service Unavailable"},
 	}, collection.Failures)
 }
 
@@ -125,7 +125,7 @@ func TestCollectEnvironmentsReturnsFailuresWhenEveryEnvironmentFails(t *testing.
 	require.NotNil(t, collection.Results)
 	require.Empty(t, collection.Results)
 	require.Len(t, collection.Failures, 2)
-	require.Equal(t, base.EnvironmentRef{ID: "a", Name: "a"}, collection.Failures[0].Environment)
+	require.Equal(t, types.EnvironmentRef{ID: "a", Name: "a"}, collection.Failures[0].Environment)
 }
 
 func TestCollectEnvironmentsRejectsOversizedAndEncodedResponses(t *testing.T) {

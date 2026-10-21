@@ -20,7 +20,7 @@ import (
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/types/v2/vulnerability"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
@@ -506,7 +506,7 @@ func ReadOutputFromContainerFile(ctx context.Context, dockerClient *client.Clien
 		}
 	}()
 
-	rawOutput, err := extractFileFromContainerArchiveInternal(archiveReader)
+	rawOutput, err := extractFileFromContainerArchive(archiveReader)
 	if err != nil {
 		return nil, fmt.Errorf("extract trivy output file: %w", err)
 	}
@@ -550,7 +550,7 @@ func CleanupOutputFileInContainer(ctx context.Context, dockerClient *client.Clie
 	}
 }
 
-func extractFileFromContainerArchiveInternal(archiveReader io.Reader) ([]byte, error) {
+func extractFileFromContainerArchive(archiveReader io.Reader) ([]byte, error) {
 	if archiveReader == nil {
 		return nil, errors.New("container archive reader is nil")
 	}
@@ -584,7 +584,7 @@ func extractFileFromContainerArchiveInternal(archiveReader io.Reader) ([]byte, e
 	return nil, errors.New("container archive did not include a file")
 }
 
-func DecodeReportFromFile(file *os.File) (*vulnerability.TrivyReport, error) {
+func DecodeReportFromFile(file *os.File) (*types.TrivyReport, error) {
 	if file == nil {
 		return nil, errors.New("trivy output file is nil")
 	}
@@ -601,13 +601,13 @@ func DecodeReportFromFile(file *os.File) (*vulnerability.TrivyReport, error) {
 	return DecodeReportFromBytes(rawOutput)
 }
 
-func DecodeReportFromBytes(rawOutput []byte) (*vulnerability.TrivyReport, error) {
+func DecodeReportFromBytes(rawOutput []byte) (*types.TrivyReport, error) {
 	trimmedOutput := bytes.TrimSpace(rawOutput)
 	if len(trimmedOutput) == 0 {
 		return nil, io.EOF
 	}
 
-	report, strictErr := decodeSingleReportInternal(trimmedOutput)
+	report, strictErr := decodeSingleReport(trimmedOutput)
 	if strictErr == nil {
 		return report, nil
 	}
@@ -615,14 +615,14 @@ func DecodeReportFromBytes(rawOutput []byte) (*vulnerability.TrivyReport, error)
 	// Trivy output can occasionally include non-JSON log lines or additional JSON
 	// objects around the report depending on Docker variant / stream behavior.
 	// Extract top-level JSON objects and return the first valid Trivy report.
-	jsonCandidates := extractTopLevelJSONObjectCandidatesInternal(trimmedOutput)
+	jsonCandidates := extractTopLevelJSONObjectCandidates(trimmedOutput)
 	if len(jsonCandidates) == 0 {
 		return nil, strictErr
 	}
 
 	lastErr := strictErr
 	for _, candidate := range jsonCandidates {
-		localReport, err := decodeSingleReportInternal(candidate)
+		localReport, err := decodeSingleReport(candidate)
 		if err == nil {
 			return localReport, nil
 		}
@@ -632,26 +632,26 @@ func DecodeReportFromBytes(rawOutput []byte) (*vulnerability.TrivyReport, error)
 	return nil, lastErr
 }
 
-func decodeSingleReportInternal(rawOutput []byte) (*vulnerability.TrivyReport, error) {
+func decodeSingleReport(rawOutput []byte) (*types.TrivyReport, error) {
 	decoder := jsontext.NewDecoder(bytes.NewReader(rawOutput))
 
-	var report vulnerability.TrivyReport
+	var report types.TrivyReport
 	if err := json.UnmarshalDecode(decoder, &report); err != nil {
 		return nil, err
 	}
 
-	if !isLikelyReportInternal(&report) {
+	if !isLikelyReport(&report) {
 		return nil, errors.New("decoded JSON object is not a trivy report")
 	}
 
-	if hasTrailingNonWhitespaceInternal(rawOutput, decoder.InputOffset()) {
+	if hasTrailingNonWhitespace(rawOutput, decoder.InputOffset()) {
 		return nil, errors.New("trivy output contains trailing data")
 	}
 
 	return &report, nil
 }
 
-func hasTrailingNonWhitespaceInternal(rawOutput []byte, offset int64) bool {
+func hasTrailingNonWhitespace(rawOutput []byte, offset int64) bool {
 	if offset < 0 {
 		return len(bytes.TrimSpace(rawOutput)) > 0
 	}
@@ -663,7 +663,7 @@ func hasTrailingNonWhitespaceInternal(rawOutput []byte, offset int64) bool {
 	return len(bytes.TrimSpace(rawOutput[offset:])) > 0
 }
 
-func isLikelyReportInternal(report *vulnerability.TrivyReport) bool {
+func isLikelyReport(report *types.TrivyReport) bool {
 	if report == nil {
 		return false
 	}
@@ -674,7 +674,7 @@ func isLikelyReportInternal(report *vulnerability.TrivyReport) bool {
 		len(report.Results) > 0
 }
 
-func extractTopLevelJSONObjectCandidatesInternal(rawOutput []byte) [][]byte {
+func extractTopLevelJSONObjectCandidates(rawOutput []byte) [][]byte {
 	if len(rawOutput) == 0 {
 		return nil
 	}

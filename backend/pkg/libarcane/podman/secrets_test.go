@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -47,7 +47,7 @@ func TestClientSecrets(t *testing.T) {
 	assert.Equal(t, "db-pass", secrets[0].Spec.Name)
 	assert.Equal(t, "file", secrets[0].Spec.Driver.Name)
 
-	id, err := client.SecretCreate(t.Context(), podmantypes.SecretCreateRequest{
+	id, err := client.SecretCreate(t.Context(), types.PodmanSecretCreateRequest{
 		Name:   "db-pass",
 		Data:   "hunter2",
 		Driver: "file",
@@ -62,7 +62,7 @@ func TestClientSecrets(t *testing.T) {
 	assert.Equal(t, map[string]string{"path": "/s"}, secret.Spec.Driver.Options)
 	assert.Equal(t, map[string]string{"app": "db"}, secret.Spec.Labels)
 
-	replacedID, err := client.SecretCreate(t.Context(), podmantypes.SecretCreateRequest{
+	replacedID, err := client.SecretCreate(t.Context(), types.PodmanSecretCreateRequest{
 		Name: "db-pass",
 		Data: "rotated",
 	}, true)

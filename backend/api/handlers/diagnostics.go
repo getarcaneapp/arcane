@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
@@ -24,7 +24,7 @@ type GetEnvironmentActorDiagnosticsInput struct {
 }
 
 type GetEnvironmentActorDiagnosticsOutput struct {
-	Body system.ActorDiagnostics
+	Body types.ActorDiagnostics
 }
 
 type GetEnvironmentGoroutineDiagnosticsInput struct {
@@ -32,7 +32,7 @@ type GetEnvironmentGoroutineDiagnosticsInput struct {
 }
 
 type GetEnvironmentGoroutineDiagnosticsOutput struct {
-	Body system.GoroutineProfile
+	Body types.GoroutineProfile
 }
 
 // RegisterDiagnostics registers the Huma diagnostics REST endpoints.

@@ -8,13 +8,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/updater"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 // Command is the parent command for updater operations
@@ -41,11 +41,11 @@ func newStatusCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[updater.Status]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.UpdaterStatus]{
 				Method:         http.MethodGet,
-				Path:           types.UpdaterStatus(c.EnvID()),
+				Path:           clitypes.UpdaterStatus(c.EnvID()),
 				FailureMessage: "failed to get updater status",
-				Render: func(data updater.Status) error {
+				Render: func(data types.UpdaterStatus) error {
 					output.Header("Updater Status")
 					output.KeyValue("Updating Containers", strconv.Itoa(data.UpdatingContainers))
 					output.KeyValue("Updating Projects", strconv.Itoa(data.UpdatingProjects))
@@ -71,7 +71,7 @@ func newRunCmd() *cobra.Command {
 			// Updater run can take a long time as it pulls images and restarts containers
 			c.SetTimeout(30 * time.Minute)
 
-			result, err := c.PostJSON[updater.Result](cmd.Context(), types.UpdaterRun(c.EnvID()), nil)
+			result, err := c.PostJSON[types.UpdaterResult](cmd.Context(), clitypes.UpdaterRun(c.EnvID()), nil)
 			if err != nil {
 				return fmt.Errorf("failed to run updater: %w", err)
 			}
@@ -112,16 +112,16 @@ func newHistoryCmd() *cobra.Command {
 				return err
 			}
 
-			path := types.UpdaterHistory(c.EnvID())
+			path := clitypes.UpdaterHistory(c.EnvID())
 			if cmd.Flags().Changed("limit") {
 				path = cmdutil.AppendQuery(path, url.Values{"limit": []string{strconv.Itoa(opts.limit)}})
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[[]updater.AutoUpdateRecord]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[[]types.AutoUpdateRecord]{
 				Method:         http.MethodGet,
 				Path:           path,
 				FailureMessage: "failed to get updater history",
-				Render: func(data []updater.AutoUpdateRecord) error {
+				Render: func(data []types.AutoUpdateRecord) error {
 					headers := []string{"RESOURCE", "TYPE", "STATUS", "APPLIED", "STARTED"}
 					rows := make([][]string, len(data))
 					for i, h := range data {

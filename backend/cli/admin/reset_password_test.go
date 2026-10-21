@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/auth"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -18,7 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 )
 
-func newResetPasswordTestDBInternal(t *testing.T) *database.DB {
+func newResetPasswordTestDB(t *testing.T) *database.DB {
 	t.Helper()
 
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -37,7 +37,7 @@ func newResetPasswordTestDBInternal(t *testing.T) *database.DB {
 	return db
 }
 
-func createGlobalAdminInternal(t *testing.T, db *database.DB) (*user.User, *user.UserService) {
+func createGlobalAdmin(t *testing.T, db *database.DB) (*user.User, *user.UserService) {
 	t.Helper()
 	ctx := t.Context()
 	roleService := role.NewRoleService(db)
@@ -60,13 +60,13 @@ func createGlobalAdminInternal(t *testing.T, db *database.DB) (*user.User, *user
 }
 
 func TestResetPasswordInternalResetsPasswordAndRevokesSessions(t *testing.T) {
-	db := newResetPasswordTestDBInternal(t)
+	db := newResetPasswordTestDB(t)
 	ctx := t.Context()
-	adminUser, userService := createGlobalAdminInternal(t, db)
+	adminUser, userService := createGlobalAdmin(t, db)
 	sessionService := session.NewSessionService(db)
-	firstSession, _, err := sessionService.CreateSession(ctx, adminUser.ID, time.Now().Add(time.Hour), auth.SessionMeta{})
+	firstSession, _, err := sessionService.CreateSession(ctx, adminUser.ID, time.Now().Add(time.Hour), types.SessionMeta{})
 	require.NoError(t, err)
-	secondSession, _, err := sessionService.CreateSession(ctx, adminUser.ID, time.Now().Add(time.Hour), auth.SessionMeta{})
+	secondSession, _, err := sessionService.CreateSession(ctx, adminUser.ID, time.Now().Add(time.Hour), types.SessionMeta{})
 	require.NoError(t, err)
 
 	require.NoError(t, resetPasswordInternal(ctx, db, "arcane", "new-password", validation.PasswordPolicyBasic))
@@ -86,11 +86,11 @@ func TestResetPasswordInternalResetsPasswordAndRevokesSessions(t *testing.T) {
 }
 
 func TestResetPasswordInternalRollsBackWhenSessionRevocationFails(t *testing.T) {
-	db := newResetPasswordTestDBInternal(t)
+	db := newResetPasswordTestDB(t)
 	ctx := t.Context()
-	adminUser, userService := createGlobalAdminInternal(t, db)
+	adminUser, userService := createGlobalAdmin(t, db)
 	sessionService := session.NewSessionService(db)
-	localSession, _, err := sessionService.CreateSession(ctx, adminUser.ID, time.Now().Add(time.Hour), auth.SessionMeta{})
+	localSession, _, err := sessionService.CreateSession(ctx, adminUser.ID, time.Now().Add(time.Hour), types.SessionMeta{})
 	require.NoError(t, err)
 	require.NoError(t, db.Exec(`
 		CREATE TRIGGER fail_user_session_revocation
@@ -115,9 +115,9 @@ func TestResetPasswordInternalRollsBackWhenSessionRevocationFails(t *testing.T) 
 }
 
 func TestResetPasswordInternalRejectsNonAdmin(t *testing.T) {
-	db := newResetPasswordTestDBInternal(t)
+	db := newResetPasswordTestDB(t)
 	ctx := t.Context()
-	_, userService := createGlobalAdminInternal(t, db)
+	_, userService := createGlobalAdmin(t, db)
 	passwordHash, err := userService.HashPassword(t.Context(), "old-password")
 	require.NoError(t, err)
 	nonAdmin, err := userService.CreateUser(ctx, &user.User{
@@ -138,12 +138,12 @@ func TestResetPasswordInternalRejectsNonAdmin(t *testing.T) {
 	require.True(t, unchangedUser.RequiresPasswordChange)
 }
 
-func TestEnsurePasswordResetEnabledInternal(t *testing.T) {
+func TestEnsurePasswordResetEnabled(t *testing.T) {
 	require.ErrorContains(t, ensurePasswordResetEnabledInternal(&config.Config{}), "ALLOW_CLI_PASSWORD_RESET=true")
 	require.NoError(t, ensurePasswordResetEnabledInternal(&config.Config{AllowCLIPasswordReset: true}))
 }
 
-func TestValidatePasswordPairInternal(t *testing.T) {
+func TestValidatePasswordPair(t *testing.T) {
 	require.ErrorContains(t, validatePasswordPairInternal("short", "short", validation.PasswordPolicyBasic), "at least 8")
 	require.ErrorContains(t, validatePasswordPairInternal("new-password", "different", validation.PasswordPolicyBasic), "do not match")
 	require.NoError(t, validatePasswordPairInternal("new-password", "new-password", validation.PasswordPolicyBasic))

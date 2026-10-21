@@ -3,7 +3,7 @@ package scheduler
 import (
 	"context"
 
-	"github.com/getarcaneapp/arcane/types/v2/features"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
@@ -27,7 +27,7 @@ func NewAutoPatchJob(engine *flow.Engine, imageService *image.ImageService, sett
 			return scheduleutil.Or(ctx, settingsService.GetStringSetting(ctx, "imageAutoPatchInterval", autoPatchDefaultCron), autoPatchDefaultCron, AutoPatchJobName)
 		},
 		ShouldRunFn: func(ctx context.Context) bool {
-			return settingsService.IsFeatureEnabled(ctx, features.VulnerabilityManagement) && settingsService.GetBoolSetting(ctx, "imageAutoPatchEnabled", false)
+			return settingsService.IsFeatureEnabled(ctx, types.FeatureVulnerabilityManagement) && settingsService.GetBoolSetting(ctx, "imageAutoPatchEnabled", false)
 		},
 	}
 }

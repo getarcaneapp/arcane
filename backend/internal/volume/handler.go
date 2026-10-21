@@ -10,9 +10,7 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 
@@ -57,7 +55,7 @@ type ListVolumesInput struct {
 }
 
 type ListVolumesOutput struct {
-	Body base.PaginatedWithCounts[volume.Volume, VolumeUsageCountsData]
+	Body types.PaginatedWithCounts[types.Volume, VolumeUsageCountsData]
 }
 
 type GetVolumeInput struct {
@@ -66,14 +64,14 @@ type GetVolumeInput struct {
 }
 
 type CreateVolumeInput struct {
-	EnvironmentID string        `path:"id" doc:"Environment ID"`
-	Body          volume.Create `doc:"Volume creation data"`
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	types.Create[types.Volume]
 }
 
 type RenameVolumeInput struct {
-	EnvironmentID string        `path:"id" doc:"Environment ID"`
-	VolumeName    string        `path:"volumeName" doc:"Current volume name"`
-	Body          volume.Rename `doc:"Volume rename data"`
+	EnvironmentID string             `path:"id" doc:"Environment ID"`
+	VolumeName    string             `path:"volumeName" doc:"Current volume name"`
+	Body          types.VolumeRename `doc:"Volume rename data"`
 }
 
 type RemoveVolumeInput struct {
@@ -116,7 +114,7 @@ type GetVolumeSizesInput struct {
 
 // VolumeSizeInfo represents size information for a single volume.
 type VolumeSizeInfo struct {
-	base.EnvironmentTag
+	types.EnvironmentTag
 
 	Name     string `json:"name"`
 	Size     int64  `json:"size"`
@@ -146,11 +144,11 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 	}
 
 	if volumes == nil {
-		volumes = []volume.Volume{}
+		volumes = []types.Volume{}
 	}
 
 	return &ListVolumesOutput{
-		Body: base.PaginatedWithCounts[volume.Volume, VolumeUsageCountsData]{
+		Body: types.PaginatedWithCounts[types.Volume, VolumeUsageCountsData]{
 			Success: true,
 			Data:    volumes,
 			Counts: VolumeUsageCountsData{
@@ -164,14 +162,14 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 }
 
 // GetVolume returns a volume by name.
-func (h *VolumeHandler) GetVolume(ctx context.Context, input *GetVolumeInput) (*handlerutil.Out[*volume.Volume], error) {
+func (h *VolumeHandler) GetVolume(ctx context.Context, input *GetVolumeInput) (*handlerutil.Out[*types.Volume], error) {
 	vol, err := h.volumeService.GetVolumeByName(ctx, input.VolumeName)
 	if err != nil {
 		return nil, huma.Error404NotFound("Volume not found: " + err.Error())
 	}
 
-	return &handlerutil.Out[*volume.Volume]{
-		Body: base.ApiResponse[*volume.Volume]{
+	return &handlerutil.Out[*types.Volume]{
+		Body: types.ApiResponse[*types.Volume]{
 			Success: true,
 			Data:    vol,
 		},
@@ -179,7 +177,7 @@ func (h *VolumeHandler) GetVolume(ctx context.Context, input *GetVolumeInput) (*
 }
 
 // CreateVolume creates a new Docker volume.
-func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInput) (*handlerutil.Out[*volume.Volume], error) {
+func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInput) (*handlerutil.Out[*types.Volume], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -189,14 +187,14 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 		Name:       input.Body.Name,
 		Driver:     input.Body.Driver,
 		Labels:     input.Body.Labels,
-		DriverOpts: input.Body.DriverOpts,
+		DriverOpts: input.Body.Options,
 	}
 
-	var response *volume.Volume
+	var response *types.Volume
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           activitytypes.TypeResourceAction,
+		Type:           types.ActivityTypeResourceAction,
 		ResourceType:   "volume",
 		ResourceID:     input.Body.Name,
 		ResourceName:   input.Body.Name,
@@ -214,12 +212,13 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 		return createErr
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to create volume: " + err.Error())
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 	response.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
-	return &handlerutil.Out[*volume.Volume]{
-		Body: base.ApiResponse[*volume.Volume]{
+	return &handlerutil.Out[*types.Volume]{
+		Body: types.ApiResponse[*types.Volume]{
 			Success: true,
 			Data:    response,
 		},
@@ -227,17 +226,17 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 }
 
 // RenameVolume renames an unused Docker volume.
-func (h *VolumeHandler) RenameVolume(ctx context.Context, input *RenameVolumeInput) (*handlerutil.Out[*volume.Volume], error) {
+func (h *VolumeHandler) RenameVolume(ctx context.Context, input *RenameVolumeInput) (*handlerutil.Out[*types.Volume], error) {
 	if input.EnvironmentID != "0" {
 		if h.environmentService == nil {
 			return nil, huma.Error500InternalServerError("environment service not available")
 		}
 		remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/rename", url.PathEscape(input.VolumeName))
-		response, err := handlerutil.RemoteJSONProxy(h.environmentService.ProxyJSONRequest).JSON[base.ApiResponse[*volume.Volume]](ctx, input.EnvironmentID, http.MethodPost, remotePath, input.Body)
+		response, err := handlerutil.RemoteJSONProxy(h.environmentService.ProxyJSONRequest).JSON[types.ApiResponse[*types.Volume]](ctx, input.EnvironmentID, http.MethodPost, remotePath, input.Body)
 		if err != nil {
 			return nil, err
 		}
-		return &handlerutil.Out[*volume.Volume]{Body: *response}, nil
+		return &handlerutil.Out[*types.Volume]{Body: *response}, nil
 	}
 
 	user, err := handlerutil.RequireUser(ctx)
@@ -245,11 +244,11 @@ func (h *VolumeHandler) RenameVolume(ctx context.Context, input *RenameVolumeInp
 		return nil, err
 	}
 
-	var response *volume.Volume
+	var response *types.Volume
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           activitytypes.TypeResourceAction,
+		Type:           types.ActivityTypeResourceAction,
 		ResourceType:   "volume",
 		ResourceID:     input.VolumeName,
 		ResourceName:   input.VolumeName,
@@ -268,9 +267,9 @@ func (h *VolumeHandler) RenameVolume(ctx context.Context, input *RenameVolumeInp
 		return renameErr
 	})
 	if err != nil {
-		var conflictErr *volume.ProjectVolumeRenameConflictError
-		var inUseErr *volume.ProjectVolumeRenameInUseError
-		var spaceErr *volume.ProjectVolumeRenameInsufficientSpaceError
+		var conflictErr *types.ProjectVolumeRenameConflictError
+		var inUseErr *types.ProjectVolumeRenameInUseError
+		var spaceErr *types.ProjectVolumeRenameInsufficientSpaceError
 		switch {
 		case errors.Is(err, common.ErrBadRequest):
 			return nil, huma.Error400BadRequest(err.Error())
@@ -286,11 +285,11 @@ func (h *VolumeHandler) RenameVolume(ctx context.Context, input *RenameVolumeInp
 	}
 	response.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
-	return &handlerutil.Out[*volume.Volume]{Body: base.ApiResponse[*volume.Volume]{Success: true, Data: response}}, nil
+	return &handlerutil.Out[*types.Volume]{Body: types.ApiResponse[*types.Volume]{Success: true, Data: response}}, nil
 }
 
 // RemoveVolume removes a Docker volume.
-func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -299,7 +298,7 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           activitytypes.TypeResourceAction,
+		Type:           types.ActivityTypeResourceAction,
 		ResourceType:   "volume",
 		ResourceID:     input.VolumeName,
 		ResourceName:   input.VolumeName,
@@ -323,11 +322,11 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 
 // PruneVolumes removes all unused Docker volumes.
 func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInput) (*handlerutil.Out[VolumePruneReportData], error) {
-	var report *volume.PruneReport
+	var report *types.VolumePruneReport
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           activitytypes.TypeResourceAction,
+		Type:           types.ActivityTypeResourceAction,
 		ResourceType:   "volume",
 		Step:           "Pruning unused volumes",
 		Message:        "Pruning unused volumes",
@@ -343,7 +342,7 @@ func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInp
 	}
 
 	return &handlerutil.Out[VolumePruneReportData]{
-		Body: base.ApiResponse[VolumePruneReportData]{
+		Body: types.ApiResponse[VolumePruneReportData]{
 			Success: true,
 			Data: VolumePruneReportData{
 				VolumesDeleted: report.VolumesDeleted,
@@ -362,7 +361,7 @@ func (h *VolumeHandler) GetVolumeUsage(ctx context.Context, input *GetVolumeUsag
 	}
 
 	return &handlerutil.Out[VolumeUsageResponse]{
-		Body: base.ApiResponse[VolumeUsageResponse]{
+		Body: types.ApiResponse[VolumeUsageResponse]{
 			Success: true,
 			Data: VolumeUsageResponse{
 				InUse:      inUse,
@@ -380,7 +379,7 @@ func (h *VolumeHandler) GetVolumeUsageCounts(ctx context.Context, input *GetVolu
 	}
 
 	return &handlerutil.Out[VolumeUsageCountsData]{
-		Body: base.ApiResponse[VolumeUsageCountsData]{
+		Body: types.ApiResponse[VolumeUsageCountsData]{
 			Success: true,
 			Data: VolumeUsageCountsData{
 				Inuse:  counts.Inuse,
@@ -417,7 +416,7 @@ func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *GetVolumeSize
 	}
 
 	return &handlerutil.Out[[]VolumeSizeInfo]{
-		Body: base.ApiResponse[[]VolumeSizeInfo]{
+		Body: types.ApiResponse[[]VolumeSizeInfo]{
 			Success: true,
 			Data:    result,
 		},

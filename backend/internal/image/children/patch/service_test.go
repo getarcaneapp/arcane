@@ -13,10 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/features"
-	"github.com/getarcaneapp/arcane/types/v2/imagepatch"
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
@@ -132,7 +129,7 @@ func patchFeatureSettings(t *testing.T) (*settings.SettingsService, *database.DB
 
 func TestVulnerabilityFeatureBlocksReportPatchesOnly(t *testing.T) {
 	settingsSvc, db := patchFeatureSettings(t)
-	require.NoError(t, settingsSvc.SetBoolSetting(t.Context(), features.VulnerabilityManagementSettingKey, false))
+	require.NoError(t, settingsSvc.SetBoolSetting(t.Context(), types.FeatureVulnerabilityManagementSettingKey, false))
 	svc := NewService(
 		db,
 		docker.NewDockerClientService(t.Context(), nil, &config.Config{DockerHost: "unix:///nonexistent-arcane-feature-test.sock"}, nil),
@@ -141,14 +138,14 @@ func TestVulnerabilityFeatureBlocksReportPatchesOnly(t *testing.T) {
 		nil,
 		nil,
 	)
-	_, err := svc.PatchImage(t.Context(), "0", "test-image", imagepatch.PatchOptions{ScanID: "test-image"}, user.Actor{})
+	_, err := svc.PatchImage(t.Context(), "0", "test-image", types.PatchOptions{ScanID: "test-image"}, types.Actor{})
 	require.ErrorIs(t, err, common.ErrFeatureDisabled)
 	_, _, err = svc.ListPatchTargets(t.Context(), "0", pagination.QueryParams{})
 	require.ErrorIs(t, err, common.ErrFeatureDisabled)
 	_, err = svc.Targets(t.Context(), "0")
 	require.ErrorIs(t, err, common.ErrFeatureDisabled)
 	// Standalone patching still reaches Docker; this test deliberately has no daemon.
-	_, err = svc.PatchImage(t.Context(), "0", "test-image", imagepatch.PatchOptions{}, user.Actor{})
+	_, err = svc.PatchImage(t.Context(), "0", "test-image", types.PatchOptions{}, types.Actor{})
 	require.Error(t, err)
 	require.NotErrorIs(t, err, common.ErrFeatureDisabled)
 	require.Contains(t, err.Error(), "failed to connect to Docker")
@@ -160,17 +157,17 @@ func TestQueuedReportPatchStopsWhenFeatureDisabled(t *testing.T) {
 	record := &ImagePatchRecord{
 		EnvironmentID:   "0",
 		OriginalImageID: "test-image",
-		Mode:            string(imagepatch.PatchModeReport),
-		Status:          string(imagepatch.PatchStatusPatching),
+		Mode:            string(types.PatchModeReport),
+		Status:          string(types.PatchStatusPatching),
 	}
 	require.NoError(t, db.Create(record).Error)
 	svc.patchSlot <- struct{}{}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		_ = svc.runPatch(t.Context(), record, imagepatch.PatchOptions{ScanID: "test-image"}, nil, "", "")
+		_ = svc.runPatch(t.Context(), record, types.PatchOptions{ScanID: "test-image"}, nil, "", "")
 	}()
-	require.NoError(t, settingsSvc.SetBoolSetting(t.Context(), features.VulnerabilityManagementSettingKey, false))
+	require.NoError(t, settingsSvc.SetBoolSetting(t.Context(), types.FeatureVulnerabilityManagementSettingKey, false))
 	// The active patch owns its slot until it finishes normally.
 	require.Len(t, svc.patchSlot, 1)
 	<-svc.patchSlot
@@ -181,15 +178,15 @@ func TestQueuedReportPatchStopsWhenFeatureDisabled(t *testing.T) {
 	}
 	var stored ImagePatchRecord
 	require.NoError(t, db.First(&stored, "id = ?", record.ID).Error)
-	require.Equal(t, string(imagepatch.PatchStatusFailed), stored.Status)
+	require.Equal(t, string(types.PatchStatusFailed), stored.Status)
 	require.NotNil(t, stored.Error)
-	require.Contains(t, *stored.Error, string(features.VulnerabilityManagement))
+	require.Contains(t, *stored.Error, string(types.FeatureVulnerabilityManagement))
 	require.Empty(t, svc.patchSlot)
 }
 
 func TestDisabledFeatureSkipsPatchVerificationScan(t *testing.T) {
 	settingsSvc, _ := patchFeatureSettings(t)
-	require.NoError(t, settingsSvc.SetBoolSetting(t.Context(), features.VulnerabilityManagementSettingKey, false))
+	require.NoError(t, settingsSvc.SetBoolSetting(t.Context(), types.FeatureVulnerabilityManagementSettingKey, false))
 	var inspected atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		inspected.Add(1)
@@ -217,10 +214,10 @@ func TestDisabledFeatureSkipsPatchVerificationScan(t *testing.T) {
 
 func TestAggregatePatchTargetsMergesEnvironments(t *testing.T) {
 	scanned := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
-	bodies := map[string]base.Paginated[imagepatch.PatchTarget]{
+	bodies := map[string]types.Paginated[types.PatchTarget]{
 		"a": {
 			Success: true,
-			Data: []imagepatch.PatchTarget{
+			Data: []types.PatchTarget{
 				{
 					ImageID:      "sha256:a1",
 					ImageRef:     "nginx:1",
@@ -234,11 +231,11 @@ func TestAggregatePatchTargetsMergesEnvironments(t *testing.T) {
 					ScanTime:     scanned,
 				},
 			},
-			Pagination: base.PaginationResponse{TotalItems: 2, GrandTotalItems: 4},
+			Pagination: types.PaginationResponse{TotalItems: 2, GrandTotalItems: 4},
 		},
 		"b": {
 			Success: true,
-			Data: []imagepatch.PatchTarget{
+			Data: []types.PatchTarget{
 				{
 					ImageID:      "sha256:b1",
 					ImageRef:     "alpine:3",
@@ -246,7 +243,7 @@ func TestAggregatePatchTargetsMergesEnvironments(t *testing.T) {
 					ScanTime:     scanned.Add(time.Hour),
 				},
 			},
-			Pagination: base.PaginationResponse{TotalItems: 1},
+			Pagination: types.PaginationResponse{TotalItems: 1},
 		},
 	}
 	var queries sync.Map
@@ -269,11 +266,11 @@ func TestAggregatePatchTargetsMergesEnvironments(t *testing.T) {
 			}
 			_, _ = w.Write(payload)
 		}),
-		Resolve: func(_ context.Context, id string) (base.EnvironmentRef, error) {
-			return base.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
 		},
 	})
-	rowLabels := func(items []imagepatch.PatchTarget) []string {
+	rowLabels := func(items []types.PatchTarget) []string {
 		out := make([]string, 0, len(items))
 		for _, item := range items {
 			out = append(out, item.EnvironmentID+"/"+item.ImageRef)
@@ -281,7 +278,7 @@ func TestAggregatePatchTargetsMergesEnvironments(t *testing.T) {
 		return out
 	}
 	svc := NewService(nil, nil, nil, nil, nil, nil)
-	merge := func(sort string, order pagination.SortOrder, start, limit int) base.Paginated[imagepatch.PatchTarget] {
+	merge := func(sort string, order pagination.SortOrder, start, limit int) types.Paginated[types.PatchTarget] {
 		body, err := svc.AggregatePatchTargets(ctx, pagination.QueryParams{
 			SortParams: pagination.SortParams{Sort: sort, Order: order},
 			Params:     pagination.Params{Start: start, Limit: limit},
@@ -316,11 +313,11 @@ func TestRecoverInterruptedPatchesFailsLeftoverPatchingRecords(t *testing.T) {
 	for _, record := range []ImagePatchRecord{
 		{
 			BaseModel: database.BaseModel{ID: "stuck"},
-			Status:    string(imagepatch.PatchStatusPatching),
+			Status:    string(types.PatchStatusPatching),
 		},
 		{
 			BaseModel: database.BaseModel{ID: "done"},
-			Status:    string(imagepatch.PatchStatusCompleted),
+			Status:    string(types.PatchStatusCompleted),
 		},
 	} {
 		require.NoError(t, db.Create(&record).Error)
@@ -331,8 +328,8 @@ func TestRecoverInterruptedPatchesFailsLeftoverPatchingRecords(t *testing.T) {
 	var stuck, done ImagePatchRecord
 	require.NoError(t, db.First(&stuck, "id = ?", "stuck").Error)
 	require.NoError(t, db.First(&done, "id = ?", "done").Error)
-	assert.Equal(t, string(imagepatch.PatchStatusFailed), stuck.Status)
+	assert.Equal(t, string(types.PatchStatusFailed), stuck.Status)
 	assert.Equal(t, errPatchInterrupted.Error(), kit.FromPtr(stuck.Error))
-	assert.Equal(t, string(imagepatch.PatchStatusCompleted), done.Status)
+	assert.Equal(t, string(types.PatchStatusCompleted), done.Status)
 	assert.Nil(t, done.Error)
 }

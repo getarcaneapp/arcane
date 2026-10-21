@@ -23,7 +23,7 @@
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import type { SwarmNodeAgentDeployment, SwarmNodeSummary } from '#lib/types/swarm.js';
+	import type { SwarmNodeAgentDeployment, SwarmNode } from '#lib/types/swarm.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { capitalizeFirstLetter } from '#lib/utils/formatting.js';
@@ -37,7 +37,7 @@
 		nodes = $bindable(),
 		requestOptions = $bindable()
 	}: {
-		nodes: Paginated<SwarmNodeSummary>;
+		nodes: Paginated<SwarmNode>;
 		requestOptions: SearchPaginationSortRequest;
 	} = $props();
 
@@ -45,12 +45,12 @@
 	const canManageNodes = $derived(hasPermission('swarm:nodes', currentEnvId));
 	let isLoading = $state(false);
 	let isAgentDialogOpen = $state(false);
-	let selectedNode = $state<SwarmNodeSummary | null>(null);
+	let selectedNode = $state<SwarmNode | null>(null);
 	let agentDeploymentError = $state('');
 	let agentDeployment = $state<SwarmNodeAgentDeployment | null>(null);
 	let isAgentDeploymentLoading = $state(false);
 	let isAddLabelDialogOpen = $state(false);
-	let nodeToLabel = $state<SwarmNodeSummary | null>(null);
+	let nodeToLabel = $state<SwarmNode | null>(null);
 
 	function statusVariant(state: string): 'green' | 'red' | 'amber' | 'gray' {
 		if (state === 'ready') return 'green';
@@ -77,7 +77,7 @@
 		return nodes;
 	}
 
-	async function loadAgentDeployment(node: SwarmNodeSummary, rotate = false) {
+	async function loadAgentDeployment(node: SwarmNode, rotate = false) {
 		if (isAgentDeploymentLoading) return;
 
 		isAgentDeploymentLoading = true;
@@ -102,7 +102,7 @@
 		}
 	}
 
-	function openAgentDialog(node: SwarmNodeSummary) {
+	function openAgentDialog(node: SwarmNode) {
 		selectedNode = node;
 		agentDeployment = null;
 		agentDeploymentError = '';
@@ -214,7 +214,7 @@
 		});
 	}
 
-	function inspectNodeTasks(node: SwarmNodeSummary) {
+	function inspectNodeTasks(node: SwarmNode) {
 		goto(`/swarm/tasks?nodeId=${encodeURIComponent(node.id)}&search=${encodeURIComponent(node.hostname)}`);
 	}
 
@@ -231,7 +231,7 @@
 		});
 	}
 
-	async function setAvailability(node: SwarmNodeSummary, availability: 'active' | 'pause' | 'drain') {
+	async function setAvailability(node: SwarmNode, availability: 'active' | 'pause' | 'drain') {
 		await mutateNode(
 			() => swarmService.updateNode(node.id, { availability }),
 			m.common_update_success({ resource: m.swarm_node() }),
@@ -239,7 +239,7 @@
 		);
 	}
 
-	async function promoteNode(node: SwarmNodeSummary) {
+	async function promoteNode(node: SwarmNode) {
 		await mutateNode(
 			() => swarmService.promoteNode(node.id),
 			m.swarm_node_promote_success({ name: node.hostname }),
@@ -247,7 +247,7 @@
 		);
 	}
 
-	async function demoteNode(node: SwarmNodeSummary) {
+	async function demoteNode(node: SwarmNode) {
 		await mutateNode(
 			() => swarmService.demoteNode(node.id),
 			m.swarm_node_demote_success({ name: node.hostname }),
@@ -255,7 +255,7 @@
 		);
 	}
 
-	function removeNode(node: SwarmNodeSummary) {
+	function removeNode(node: SwarmNode) {
 		openConfirmDialog({
 			title: m.common_delete_title({ resource: m.swarm_node() }),
 			message: m.common_delete_confirm({ resource: m.swarm_node() }),
@@ -273,7 +273,7 @@
 		});
 	}
 
-	function openAddLabelDialog(node: SwarmNodeSummary) {
+	function openAddLabelDialog(node: SwarmNode) {
 		nodeToLabel = node;
 		isAddLabelDialogOpen = true;
 	}
@@ -288,7 +288,7 @@
 		);
 	}
 
-	function removeLabel(node: SwarmNodeSummary, key: string) {
+	function removeLabel(node: SwarmNode, key: string) {
 		openConfirmDialog({
 			title: m.common_remove_title({ resource: `label "${key}"` }),
 			message: m.common_remove_confirm({ resource: `label "${key}"` }),
@@ -322,7 +322,7 @@
 			cell: AgentCell
 		},
 		{ accessorKey: 'engineVersion', title: m.swarm_engine_version(), sortable: true }
-	] satisfies ColumnSpec<SwarmNodeSummary>[];
+	] satisfies ColumnSpec<SwarmNode>[];
 
 	const mobileFields = [
 		{ id: 'role', label: m.common_role(), defaultVisible: true },
@@ -349,12 +349,12 @@
 {/snippet}
 
 {#snippet AgentCell({ value }: { value: unknown })}
-	<Badge variant={getSwarmNodeAgentVariant(String(value ?? 'none') as SwarmNodeSummary['agent']['state'])} minWidth="20"
-		>{getSwarmNodeAgentLabel(String(value ?? 'none') as SwarmNodeSummary['agent']['state'])}</Badge
+	<Badge variant={getSwarmNodeAgentVariant(String(value ?? 'none') as SwarmNode['agent']['state'])} minWidth="20"
+		>{getSwarmNodeAgentLabel(String(value ?? 'none') as SwarmNode['agent']['state'])}</Badge
 	>
 {/snippet}
 
-{#snippet LabelsCell({ item }: { item: SwarmNodeSummary })}
+{#snippet LabelsCell({ item }: { item: SwarmNode })}
 	<div class="flex flex-wrap items-center gap-1.5">
 		{#each Object.entries(item.systemLabels ?? {}) as [key, value] (key)}
 			<div class="group relative overflow-hidden rounded-lg">
@@ -397,7 +397,7 @@
 	item,
 	mobileFieldVisibility
 }: {
-	item: SwarmNodeSummary;
+	item: SwarmNode;
 	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
@@ -406,12 +406,12 @@
 			component: UsersIcon,
 			variant: item.role === 'manager' ? 'purple' : 'blue'
 		})}
-		title={(item: SwarmNodeSummary) => item.hostname}
-		subtitle={(item: SwarmNodeSummary) => ((mobileFieldVisibility['engineVersion'] ?? false) ? (item.engineVersion ?? '') : null)}
+		title={(item: SwarmNode) => item.hostname}
+		subtitle={(item: SwarmNode) => ((mobileFieldVisibility['engineVersion'] ?? false) ? (item.engineVersion ?? '') : null)}
 		badges={[
-			(item: SwarmNodeSummary) =>
+			(item: SwarmNode) =>
 				(mobileFieldVisibility['status'] ?? true) ? { variant: statusVariant(item.status), text: item.status } : null,
-			(item: SwarmNodeSummary) =>
+			(item: SwarmNode) =>
 				(mobileFieldVisibility['agent'] ?? true)
 					? {
 							variant: getSwarmNodeAgentVariant(item.agent?.state),
@@ -422,21 +422,21 @@
 		fields={[
 			{
 				label: m.common_role(),
-				getValue: (item: SwarmNodeSummary) => capitalizeFirstLetter(item.role),
+				getValue: (item: SwarmNode) => capitalizeFirstLetter(item.role),
 				icon: EnvironmentsIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['role'] ?? true
 			},
 			{
 				label: m.swarm_availability(),
-				getValue: (item: SwarmNodeSummary) => capitalizeFirstLetter(item.availability),
+				getValue: (item: SwarmNode) => capitalizeFirstLetter(item.availability),
 				icon: EnvironmentsIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['availability'] ?? true
 			},
 			{
 				label: m.common_labels(),
-				getValue: (item: SwarmNodeSummary) =>
+				getValue: (item: SwarmNode) =>
 					`${Object.keys(item.labels ?? {}).length + Object.keys(item.systemLabels ?? {}).length} labels`,
 				icon: TagIcon,
 				iconVariant: 'gray' as const,
@@ -444,7 +444,7 @@
 			},
 			{
 				label: m.agent(),
-				getValue: (item: SwarmNodeSummary) => getSwarmNodeAgentLabel(item.agent?.state),
+				getValue: (item: SwarmNode) => getSwarmNodeAgentLabel(item.agent?.state),
 				icon: EdgeConnectionIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['agent'] ?? true
@@ -454,7 +454,7 @@
 	/>
 {/snippet}
 
-{#snippet RowActions({ item }: { item: SwarmNodeSummary })}
+{#snippet RowActions({ item }: { item: SwarmNode })}
 	<RowActionsMenu triggerClass="relative size-8 p-0" iconClass="">
 		<DropdownMenu.Item onclick={() => inspectNodeTasks(item)}>
 			<InspectIcon class="size-4" />

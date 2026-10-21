@@ -6,16 +6,16 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/getarcaneapp/arcane/types/v2/auth"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v2/buildables"
 )
 
 // GetAutoLoginConfig returns the auto-login configuration for the frontend.
 // The password is never returned. Auto-login is disabled if local auth is disabled.
-func (s *AuthService) GetAutoLoginConfig(ctx context.Context) (*auth.AutoLoginConfig, error) {
+func (s *AuthService) GetAutoLoginConfig(ctx context.Context) (*types.AutoLoginConfig, error) {
 	if !buildables.HasBuildFeature("autologin") {
-		return &auth.AutoLoginConfig{
+		return &types.AutoLoginConfig{
 			Enabled:  false,
 			Username: "",
 		}, nil
@@ -24,7 +24,7 @@ func (s *AuthService) GetAutoLoginConfig(ctx context.Context) (*auth.AutoLoginCo
 	localEnabled, err := s.IsLocalAuthEnabled(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to check local auth status for auto-login", "error", err)
-		return &auth.AutoLoginConfig{
+		return &types.AutoLoginConfig{
 			Enabled:  false,
 			Username: "",
 		}, nil
@@ -32,13 +32,13 @@ func (s *AuthService) GetAutoLoginConfig(ctx context.Context) (*auth.AutoLoginCo
 
 	if !localEnabled {
 		slog.DebugContext(ctx, "Auto-login disabled because local auth is disabled")
-		return &auth.AutoLoginConfig{
+		return &types.AutoLoginConfig{
 			Enabled:  false,
 			Username: "",
 		}, nil
 	}
 
-	return &auth.AutoLoginConfig{
+	return &types.AutoLoginConfig{
 		Enabled:  true,
 		Username: s.config.AutoLoginUsername,
 	}, nil

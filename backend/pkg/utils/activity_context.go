@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+	"github.com/getarcaneapp/arcane/types/v3"
 )
 
 type appLifecycleContextKey struct{}
@@ -18,7 +18,7 @@ type (
 
 // WithUpdateInitiator carries manager-authenticated attribution through an
 // agent request without changing the authenticated agent identity.
-func WithUpdateInitiator(ctx context.Context, initiator activitytypes.StartedBy) context.Context {
+func WithUpdateInitiator(ctx context.Context, initiator types.ActivityStartedBy) context.Context {
 	initiator.UserID = strings.TrimSpace(initiator.UserID)
 	initiator.Username = strings.TrimSpace(initiator.Username)
 	if initiator.UserID == "" || initiator.Username == "" {
@@ -28,8 +28,8 @@ func WithUpdateInitiator(ctx context.Context, initiator activitytypes.StartedBy)
 }
 
 // UpdateInitiatorFromContext returns trusted proxied update attribution.
-func UpdateInitiatorFromContext(ctx context.Context) (activitytypes.StartedBy, bool) {
-	initiator, ok := ctx.Value(updateInitiatorContextKeyInternal{}).(activitytypes.StartedBy)
+func UpdateInitiatorFromContext(ctx context.Context) (types.ActivityStartedBy, bool) {
+	initiator, ok := ctx.Value(updateInitiatorContextKeyInternal{}).(types.ActivityStartedBy)
 	return initiator, ok
 }
 

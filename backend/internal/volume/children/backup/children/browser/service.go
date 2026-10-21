@@ -6,8 +6,7 @@ import (
 	"path"
 	"strings"
 
-	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
-	"github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/client"
 	"go.getarcane.app/kit/pkg"
 
@@ -22,8 +21,8 @@ import (
 type Dependencies struct {
 	Docker          *docker.DockerClientService
 	Engine          *backup.Engine
-	Run             func(ctx context.Context, backupID string) (*volume.Backup, error)
-	Repository      func(ctx context.Context, dockerClient *client.Client, entry *volume.Backup) (backup.Repository, string, error)
+	Run             func(ctx context.Context, backupID string) (*types.VolumeBackup, error)
+	Repository      func(ctx context.Context, dockerClient *client.Client, entry *types.VolumeBackup) (backup.Repository, string, error)
 	Password        func(ctx context.Context, dockerClient *client.Client, repositories ...backup.Repository) (string, error)
 	SanitizePath    func(input string) (string, error)
 	ArchiveFilename func(backupID string) (string, error)
@@ -45,8 +44,8 @@ func (s *Service) ListBackupFiles(ctx context.Context, backupID string) ([]strin
 	if err != nil {
 		return nil, err
 	}
-	if entry.Format == volume.BackupFormatArchive {
-		return s.listArchiveBackupFilesInternal(ctx, backupID)
+	if entry.Format == types.VolumeBackupFormatArchive {
+		return s.listArchiveBackupFiles(ctx, backupID)
 	}
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
@@ -64,7 +63,7 @@ func (s *Service) ListBackupFiles(ctx context.Context, backupID string) ([]strin
 }
 
 // BrowseBackupFiles returns one lazy-loaded page from a volume backup tree.
-func (s *Service) BrowseBackupFiles(ctx context.Context, backupID, requestedPath string, params pagination.QueryParams) ([]backuptypes.BackupFileEntry, pagination.Response, error) {
+func (s *Service) BrowseBackupFiles(ctx context.Context, backupID, requestedPath string, params pagination.QueryParams) ([]types.BackupFileEntry, pagination.Response, error) {
 	listPath, recursive, err := backupbrowser.ListScope(requestedPath, params)
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("%w: %w", common.ErrInvalidBackupSelection, err)
@@ -73,7 +72,7 @@ func (s *Service) BrowseBackupFiles(ctx context.Context, backupID, requestedPath
 	if err != nil {
 		return nil, pagination.Response{}, err
 	}
-	entries, err := s.backupFileEntriesInternal(ctx, entry, listPath, recursive)
+	entries, err := s.backupFileEntries(ctx, entry, listPath, recursive)
 	if err != nil {
 		return nil, pagination.Response{}, err
 	}
@@ -81,8 +80,8 @@ func (s *Service) BrowseBackupFiles(ctx context.Context, backupID, requestedPath
 	return items, page, nil
 }
 
-func (s *Service) backupFileEntriesInternal(ctx context.Context, entry *volume.Backup, browsePath string, recursive bool) ([]backuptypes.BackupFileEntry, error) {
-	if entry.Format == volume.BackupFormatArchive {
+func (s *Service) backupFileEntries(ctx context.Context, entry *types.VolumeBackup, browsePath string, recursive bool) ([]types.BackupFileEntry, error) {
+	if entry.Format == types.VolumeBackupFormatArchive {
 		paths, err := s.ArchivePaths(ctx, entry.ID)
 		if err != nil {
 			return nil, err
@@ -125,7 +124,7 @@ func (s *Service) BackupHasPath(ctx context.Context, backupID, filePath string) 
 	return false, nil
 }
 
-func (s *Service) listArchiveBackupFilesInternal(ctx context.Context, backupID string) ([]string, error) {
+func (s *Service) listArchiveBackupFiles(ctx context.Context, backupID string) ([]string, error) {
 	paths, err := s.ArchivePaths(ctx, backupID)
 	if err != nil {
 		return nil, err

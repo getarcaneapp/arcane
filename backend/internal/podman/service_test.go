@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/docker/compat"
@@ -20,12 +20,12 @@ import (
 )
 
 type fakeSystemd struct {
-	availability podmantypes.SystemdAvailability
-	statuses     []podmantypes.UnitStatus
+	availability types.PodmanSystemdAvailability
+	statuses     []types.PodmanUnitStatus
 	calls        []string
 }
 
-func (f *fakeSystemd) Availability(context.Context) podmantypes.SystemdAvailability {
+func (f *fakeSystemd) Availability(context.Context) types.PodmanSystemdAvailability {
 	return f.availability
 }
 
@@ -44,12 +44,12 @@ func (f *fakeSystemd) Restart(_ context.Context, unit string) error {
 	return nil
 }
 
-func (f *fakeSystemd) UnitStatus(_ context.Context, unit string) (podmantypes.UnitStatus, error) {
+func (f *fakeSystemd) UnitStatus(_ context.Context, unit string) (types.PodmanUnitStatus, error) {
 	status := f.statuses[0]
 	if len(f.statuses) > 1 {
 		f.statuses = f.statuses[1:]
 	}
-	return podmantypes.UnitStatus{
+	return types.PodmanUnitStatus{
 		Name:        unit,
 		LoadState:   status.LoadState,
 		ActiveState: status.ActiveState,
@@ -106,11 +106,11 @@ func newTestService(t *testing.T, host *testHost) *Service {
 func TestServiceStatusOnDocker(t *testing.T) {
 	svc := newTestService(t, &testHost{engine: "docker"})
 
-	assert.Equal(t, podmantypes.Status{AutoUpdateMode: podmantypes.AutoUpdateModeUnavailable}, svc.Status(t.Context()))
+	assert.Equal(t, types.PodmanStatus{AutoUpdateMode: types.PodmanAutoUpdateModeUnavailable}, svc.Status(t.Context()))
 
 	_, err := svc.Info(t.Context())
 	require.ErrorIs(t, err, common.ErrPodmanNotDetected)
-	_, err = svc.AutoUpdate(t.Context(), podmantypes.AutoUpdateOptions{})
+	_, err = svc.AutoUpdate(t.Context(), types.PodmanAutoUpdateOptions{})
 	require.ErrorIs(t, err, common.ErrPodmanNotDetected)
 	_, err = svc.pods.List(t.Context())
 	require.ErrorIs(t, err, common.ErrPodmanNotDetected)
@@ -133,36 +133,36 @@ func TestServiceStatusOnPodman(t *testing.T) {
 	tests := []struct {
 		name    string
 		version string
-		systemd podmantypes.SystemdAvailability
-		want    podmantypes.Status
+		systemd types.PodmanSystemdAvailability
+		want    types.PodmanStatus
 	}{
 		{
 			name:    "podman 6.1 with user bus",
 			version: "6.1.0",
-			systemd: podmantypes.SystemdAvailability{Available: true, Scope: podmantypes.SystemdScopeUser},
-			want: podmantypes.Status{
+			systemd: types.PodmanSystemdAvailability{Available: true, Scope: types.PodmanSystemdScopeUser},
+			want: types.PodmanStatus{
 				Detected:             true,
 				Version:              "6.1.0",
 				APIVersion:           "6.1.0",
 				Rootless:             true,
 				QuadletsSupported:    true,
 				QuadletAppsSupported: true,
-				AutoUpdateMode:       podmantypes.AutoUpdateModeSystemd,
+				AutoUpdateMode:       types.PodmanAutoUpdateModeSystemd,
 				SystemdAvailable:     true,
-				SystemdScope:         podmantypes.SystemdScopeUser,
+				SystemdScope:         types.PodmanSystemdScopeUser,
 			},
 		},
 		{
 			name:    "podman 5.4 without bus",
 			version: "5.4.2",
-			systemd: podmantypes.SystemdAvailability{Scope: podmantypes.SystemdScopeUser, Reason: "DBUS_SESSION_BUS_ADDRESS is not set"},
-			want: podmantypes.Status{
+			systemd: types.PodmanSystemdAvailability{Scope: types.PodmanSystemdScopeUser, Reason: "DBUS_SESSION_BUS_ADDRESS is not set"},
+			want: types.PodmanStatus{
 				Detected:       true,
 				Version:        "5.4.2",
 				APIVersion:     "5.4.2",
 				Rootless:       true,
-				AutoUpdateMode: podmantypes.AutoUpdateModeUnavailable,
-				SystemdScope:   podmantypes.SystemdScopeUser,
+				AutoUpdateMode: types.PodmanAutoUpdateModeUnavailable,
+				SystemdScope:   types.PodmanSystemdScopeUser,
 				SystemdReason:  "DBUS_SESSION_BUS_ADDRESS is not set",
 			},
 		},
@@ -195,8 +195,8 @@ func TestServiceQuadletsRequirePodman58(t *testing.T) {
 
 func TestServiceAutoUpdateSystemdMode(t *testing.T) {
 	systemd := &fakeSystemd{
-		availability: podmantypes.SystemdAvailability{Available: true, Scope: podmantypes.SystemdScopeSystem},
-		statuses: []podmantypes.UnitStatus{
+		availability: types.PodmanSystemdAvailability{Available: true, Scope: types.PodmanSystemdScopeSystem},
+		statuses: []types.PodmanUnitStatus{
 			{
 				LoadState:   "loaded",
 				ActiveState: "inactive",
@@ -211,14 +211,14 @@ func TestServiceAutoUpdateSystemdMode(t *testing.T) {
 	}
 	svc := newTestService(t, host)
 
-	_, err := svc.AutoUpdate(t.Context(), podmantypes.AutoUpdateOptions{DryRun: true})
+	_, err := svc.AutoUpdate(t.Context(), types.PodmanAutoUpdateOptions{DryRun: true})
 	require.ErrorIs(t, err, common.ErrBadRequest)
 	assert.Empty(t, systemd.calls)
 
-	result, err := svc.AutoUpdate(t.Context(), podmantypes.AutoUpdateOptions{})
+	result, err := svc.AutoUpdate(t.Context(), types.PodmanAutoUpdateOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"start podman-auto-update.service"}, systemd.calls)
-	assert.Equal(t, podmantypes.AutoUpdateModeSystemd, result.Mode)
+	assert.Equal(t, types.PodmanAutoUpdateModeSystemd, result.Mode)
 	assert.Empty(t, result.Errors)
 	require.NotNil(t, result.Unit)
 	assert.Equal(t, "inactive", result.Unit.ActiveState)
@@ -227,8 +227,8 @@ func TestServiceAutoUpdateSystemdMode(t *testing.T) {
 
 func TestServiceAutoUpdateSystemdFailureReported(t *testing.T) {
 	systemd := &fakeSystemd{
-		availability: podmantypes.SystemdAvailability{Available: true},
-		statuses: []podmantypes.UnitStatus{
+		availability: types.PodmanSystemdAvailability{Available: true},
+		statuses: []types.PodmanUnitStatus{
 			{ActiveState: "failed", SubState: "failed"},
 		},
 	}
@@ -238,7 +238,7 @@ func TestServiceAutoUpdateSystemdFailureReported(t *testing.T) {
 		systemd: systemd,
 	})
 
-	result, err := svc.AutoUpdate(t.Context(), podmantypes.AutoUpdateOptions{})
+	result, err := svc.AutoUpdate(t.Context(), types.PodmanAutoUpdateOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"podman-auto-update.service failed: failed"}, result.Errors)
 }
@@ -261,16 +261,16 @@ func TestServiceAutoUpdateRESTModeNotifiesUpdatedContainers(t *testing.T) {
 	}
 	svc := newTestService(t, host)
 
-	result, err := svc.AutoUpdate(t.Context(), podmantypes.AutoUpdateOptions{})
+	result, err := svc.AutoUpdate(t.Context(), types.PodmanAutoUpdateOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, "dryRun=false", gotQuery)
-	assert.Equal(t, podmantypes.AutoUpdateModeREST, result.Mode)
+	assert.Equal(t, types.PodmanAutoUpdateModeREST, result.Mode)
 	require.Len(t, result.Reports, 2)
 	assert.Equal(t, [][]notifications.ContainerUpdateBatchEntry{{
 		{ContainerName: "web", ImageRef: "docker.io/library/nginx:latest"},
 	}}, host.notified)
 
-	_, err = svc.AutoUpdate(t.Context(), podmantypes.AutoUpdateOptions{DryRun: true})
+	_, err = svc.AutoUpdate(t.Context(), types.PodmanAutoUpdateOptions{DryRun: true})
 	require.NoError(t, err)
 	assert.Equal(t, "dryRun=true", gotQuery)
 	assert.Len(t, host.notified, 1)
@@ -280,16 +280,16 @@ func TestServiceAutoUpdateUnavailable(t *testing.T) {
 	svc := newTestService(t, &testHost{
 		engine:  "podman",
 		version: "5.8.0",
-		systemd: &fakeSystemd{availability: podmantypes.SystemdAvailability{Reason: "bus not mounted"}},
+		systemd: &fakeSystemd{availability: types.PodmanSystemdAvailability{Reason: "bus not mounted"}},
 	})
 
-	_, err := svc.AutoUpdate(t.Context(), podmantypes.AutoUpdateOptions{})
+	_, err := svc.AutoUpdate(t.Context(), types.PodmanAutoUpdateOptions{})
 	require.ErrorIs(t, err, common.ErrConflict)
 	require.ErrorContains(t, err, "bus not mounted")
 }
 
 func TestServiceContainerUnitAction(t *testing.T) {
-	systemd := &fakeSystemd{availability: podmantypes.SystemdAvailability{Available: true}}
+	systemd := &fakeSystemd{availability: types.PodmanSystemdAvailability{Available: true}}
 	svc := newTestService(t, &testHost{
 		engine:  "podman",
 		version: "6.1.0",
@@ -339,7 +339,7 @@ func TestServiceContainerUnitActionFallsBackWithoutQuadletSupport(t *testing.T) 
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			systemd := &fakeSystemd{availability: podmantypes.SystemdAvailability{Available: tt.available}}
+			systemd := &fakeSystemd{availability: types.PodmanSystemdAvailability{Available: tt.available}}
 			svc := newTestService(t, &testHost{
 				engine:  "podman",
 				version: tt.version,
@@ -387,7 +387,7 @@ func TestServiceGuardQuadletManaged(t *testing.T) {
 				},
 			})
 
-			err := svc.GuardQuadletManaged(t.Context(), map[string]string{podmantypes.SystemdUnitLabel: tt.unit})
+			err := svc.GuardQuadletManaged(t.Context(), map[string]string{types.PodmanSystemdUnitLabel: tt.unit})
 			if tt.wantErr {
 				require.ErrorIs(t, err, common.ErrContainerQuadletManaged)
 				return

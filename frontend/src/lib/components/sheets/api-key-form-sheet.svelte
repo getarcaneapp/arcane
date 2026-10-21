@@ -7,9 +7,10 @@
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import * as m from '#lib/paraglide/messages.js';
-	import type { ApiKey } from '#lib/types/auth.js';
+	import type { ApiKey, ApiKeyUpdate, PersonalApiKeyCreate } from '#lib/types/auth.js';
 	import type { PermissionsManifest, ApiKeyPermissionGrant } from '#lib/types/auth.js';
 	import { plainDateFromInstant, plainDateToInstantString } from '#lib/utils/formatting.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { normalizePermissionSelection } from '#lib/utils/permissions.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
@@ -19,16 +20,11 @@
 		mode?: 'admin' | 'personal';
 		manifest?: PermissionsManifest;
 		availablePermissions?: ApiKeyPermissionGrant[];
-		onSubmit: (data: {
-			apiKey: {
-				name: string;
-				description?: string;
-				expiresAt?: string;
-				permissions?: ApiKeyPermissionGrant[];
-			};
-			isEditMode: boolean;
-			apiKeyId?: string;
-		}) => void;
+		onSubmit: (
+			data:
+				| { isEditMode: true; apiKeyId: string; apiKey: ApiKeyUpdate }
+				| { isEditMode: false; apiKey: PersonalApiKeyCreate & { permissions?: ApiKeyPermissionGrant[] } }
+		) => void;
 		isLoading: boolean;
 	};
 
@@ -82,16 +78,41 @@
 		const data = form.validate();
 		if (!data) return;
 
-		const apiKeyData = {
-			name: data.name,
-			description: data.description || undefined,
-			expiresAt: data.expiresAt ? plainDateToInstantString(data.expiresAt) : undefined,
-			// v1: persist all picks as global grants (environmentId undefined).
-			// env-scoped picking is a follow-up. Personal keys carry no grants.
-			...(hidePermissions ? {} : { permissions: data.permissions.map((p) => ({ permission: p })) })
-		};
+		// v1: persist all picks as global grants (environmentId undefined).
+		// env-scoped picking is a follow-up. Personal keys carry no grants.
+		const permissions = data.permissions.map((p) => ({ permission: p }));
 
-		onSubmit({ apiKey: apiKeyData, isEditMode, apiKeyId: apiKeyToEdit?.id });
+		if (!apiKeyToEdit) {
+			onSubmit({
+				isEditMode: false,
+				apiKey: {
+					name: data.name,
+					description: data.description || undefined,
+					expiresAt: data.expiresAt ? plainDateToInstantString(data.expiresAt) : undefined,
+					...(hidePermissions ? {} : { permissions })
+				}
+			});
+			return;
+		}
+
+		const originalExpiry = plainDateFromInstant(apiKeyToEdit.expiresAt);
+		onSubmit({
+			isEditMode: true,
+			apiKeyId: apiKeyToEdit.id,
+			apiKey: changedFields(
+				{
+					...apiKeyToEdit,
+					description: apiKeyToEdit.description || null,
+					expiresAt: originalExpiry ? plainDateToInstantString(originalExpiry) : null
+				},
+				{
+					name: data.name,
+					description: data.description || null,
+					expiresAt: data.expiresAt ? plainDateToInstantString(data.expiresAt) : null,
+					permissions: hidePermissions ? apiKeyToEdit.permissions : permissions
+				}
+			)
+		});
 	}
 
 	function handleOpenChange(newOpenState: boolean) {

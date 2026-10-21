@@ -6,7 +6,7 @@ import (
 	"io"
 	"testing"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -31,7 +31,7 @@ func readTar(t *testing.T, r io.Reader) map[string]string {
 }
 
 func TestBuildTar(t *testing.T) {
-	archive, err := buildTar([]podmantypes.QuadletFile{
+	archive, err := buildTar([]types.QuadletFile{
 		{Name: "web.kube", Content: "[Kube]\nYaml=web.yaml\n"},
 		{Name: "web.yaml", Content: "apiVersion: v1\nkind: Pod\n"},
 	})
@@ -46,13 +46,13 @@ func TestBuildTar(t *testing.T) {
 func TestBuildTarRejectsInvalidNames(t *testing.T) {
 	tests := []struct {
 		name  string
-		files []podmantypes.QuadletFile
+		files []types.QuadletFile
 	}{
-		{name: "empty", files: []podmantypes.QuadletFile{{Name: ""}}},
-		{name: "parent", files: []podmantypes.QuadletFile{{Name: ".."}}},
-		{name: "nested path", files: []podmantypes.QuadletFile{{Name: "../web.container"}}},
-		{name: "absolute path", files: []podmantypes.QuadletFile{{Name: "/etc/web.container"}}},
-		{name: "duplicate", files: []podmantypes.QuadletFile{{Name: "web.container"}, {Name: "web.container"}}},
+		{name: "empty", files: []types.QuadletFile{{Name: ""}}},
+		{name: "parent", files: []types.QuadletFile{{Name: ".."}}},
+		{name: "nested path", files: []types.QuadletFile{{Name: "../web.container"}}},
+		{name: "absolute path", files: []types.QuadletFile{{Name: "/etc/web.container"}}},
+		{name: "duplicate", files: []types.QuadletFile{{Name: "web.container"}, {Name: "web.container"}}},
 	}
 
 	for _, tt := range tests {

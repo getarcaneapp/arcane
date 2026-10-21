@@ -4,15 +4,14 @@ package oidcmappings
 import (
 	"fmt"
 	"net/http"
-	"slices"
 
-	"github.com/getarcaneapp/arcane/types/v2/role"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
 )
 
 // Command is the parent command for OIDC role mapping operations.
@@ -44,11 +43,11 @@ func newListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[[]role.OidcRoleMapping]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[[]types.OidcRoleMapping]{
 				Method:         http.MethodGet,
-				Path:           types.OidcRoleMappings(),
+				Path:           clitypes.OidcRoleMappings(),
 				FailureMessage: "failed to list OIDC mappings",
-				Render: func(data []role.OidcRoleMapping) error {
+				Render: func(data []types.OidcRoleMapping) error {
 					if len(data) == 0 {
 						output.Info("No OIDC role mappings configured")
 						return nil
@@ -87,16 +86,16 @@ func newCreateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[role.OidcRoleMapping]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.OidcRoleMapping]{
 				Method:         http.MethodPost,
-				Path:           types.OidcRoleMappings(),
+				Path:           clitypes.OidcRoleMappings(),
 				FailureMessage: "failed to create OIDC mapping",
-				Body: role.CreateOidcRoleMapping{
+				Body: types.OidcRoleMapping{
 					ClaimValue:    opts.claim,
 					RoleID:        opts.roleID,
 					EnvironmentID: kit.Ternary(cmd.Flags().Changed("environment") && opts.environment != "", new(opts.environment), nil),
 				},
-				Render: func(data role.OidcRoleMapping) error {
+				Render: func(data types.OidcRoleMapping) error {
 					output.Success("OIDC mapping created")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Claim value", data.ClaimValue)
@@ -136,31 +135,27 @@ func newUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			// The PUT contract requires every field — fetch current and overlay.
-			mappings, err := c.GetJSON[[]role.OidcRoleMapping](cmd.Context(), types.OidcRoleMappings())
-			if err != nil {
-				return fmt.Errorf("failed to load current mapping: %w", err)
+			body := map[string]any{}
+			for _, field := range []struct {
+				flag  string
+				key   string
+				value any
+			}{
+				{flag: "claim", key: "claimValue", value: opts.claim},
+				{flag: "role", key: "roleId", value: opts.roleID},
+				{flag: "environment", key: "environmentId", value: kit.Ternary[any](opts.environment == "", nil, opts.environment)},
+			} {
+				if cmd.Flags().Changed(field.flag) {
+					body[field.key] = field.value
+				}
 			}
-			index := slices.IndexFunc(mappings.Data, func(mapping role.OidcRoleMapping) bool { return mapping.ID == args[0] })
-			if index < 0 {
-				return fmt.Errorf("OIDC mapping %q not found", args[0])
-			}
-			current := mappings.Data[index]
 
-			environmentID := current.EnvironmentID
-			if cmd.Flags().Changed("environment") {
-				environmentID = kit.Ternary(opts.environment == "", nil, new(opts.environment))
-			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[role.OidcRoleMapping]{
-				Method: http.MethodPut,
-				Path:   types.OidcRoleMapping(args[0]),
-				Body: role.UpdateOidcRoleMapping{
-					ClaimValue:    kit.Ternary(cmd.Flags().Changed("claim"), opts.claim, current.ClaimValue),
-					RoleID:        kit.Ternary(cmd.Flags().Changed("role"), opts.roleID, current.RoleID),
-					EnvironmentID: environmentID,
-				},
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.OidcRoleMapping]{
+				Method:         http.MethodPut,
+				Path:           clitypes.OidcRoleMapping(args[0]),
+				Body:           body,
 				FailureMessage: "failed to update OIDC mapping",
-				Render: func(role.OidcRoleMapping) error {
+				Render: func(types.OidcRoleMapping) error {
 					output.Success("OIDC mapping updated")
 					return nil
 				},
@@ -191,7 +186,7 @@ func newDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Delete OIDC mapping %s?", args[0]),
-				Path:           types.OidcRoleMapping(args[0]),
+				Path:           clitypes.OidcRoleMapping(args[0]),
 				FailureMessage: "failed to delete OIDC mapping",
 				SuccessMessage: "OIDC mapping deleted",
 			})

@@ -13,8 +13,7 @@ import (
 	"time"
 	"uuid"
 
-	st "github.com/getarcaneapp/arcane/types/v2/scheduler"
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/italypaleale/francis/actor"
 	"go.getarcane.app/kit/pkg"
 
@@ -24,7 +23,7 @@ import (
 
 const queuePrefix = "jobs."
 
-func (q *Coordinator) mutate(ctx context.Context, environmentID, jobID string, change func(*st.QueueRecord) error) error {
+func (q *Coordinator) mutate(ctx context.Context, environmentID, jobID string, change func(*types.SchedulerQueueRecord) error) error {
 	id := kit.SHA256Hex(environmentID + "\x00" + jobID)
 	q.runtime.NameActor(id, jobID+"@"+environmentID)
 	for attempt := range 20 {
@@ -38,7 +37,7 @@ func (q *Coordinator) mutate(ctx context.Context, environmentID, jobID string, c
 			case <-timer.C:
 			}
 		}
-		var state st.CoordinatorState
+		var state types.SchedulerCoordinatorState
 		err := q.service.GetState(ctx, coordinatorType, id, &state)
 		if err != nil && !errors.Is(err, actor.ErrStateNotFound) {
 			return err
@@ -61,7 +60,7 @@ func (q *Coordinator) mutate(ctx context.Context, environmentID, jobID string, c
 	return common.Classify(common.ErrUnavailable, errors.New("job coordinator state is busy; retry mutation"))
 }
 
-func (q *Coordinator) prepareMutation(state *st.CoordinatorState, environmentID, jobID string, change func(*st.QueueRecord) error) error {
+func (q *Coordinator) prepareMutation(state *types.SchedulerCoordinatorState, environmentID, jobID string, change func(*types.SchedulerQueueRecord) error) error {
 	normalizeRecordTimes(&state.Record)
 	previousRuns := slices.Clone(state.Record.Runs)
 	previous, versions, err := snapshotRuns(state.Record)
@@ -69,7 +68,7 @@ func (q *Coordinator) prepareMutation(state *st.CoordinatorState, environmentID,
 		return err
 	}
 	if state.Record.JobID == "" {
-		state.Record = st.QueueRecord{JobID: jobID, EnvironmentID: environmentID}
+		state.Record = types.SchedulerQueueRecord{JobID: jobID, EnvironmentID: environmentID}
 	}
 	if changeErr := change(&state.Record); changeErr != nil {
 		return changeErr
@@ -92,7 +91,7 @@ func (q *Coordinator) prepareMutation(state *st.CoordinatorState, environmentID,
 	return nil
 }
 
-func snapshotRuns(record st.QueueRecord) (map[string][]byte, map[string]time.Time, error) {
+func snapshotRuns(record types.SchedulerQueueRecord) (map[string][]byte, map[string]time.Time, error) {
 	encoded := make(map[string][]byte, len(record.Runs)+len(record.Receipts))
 	versions := make(map[string]time.Time, len(record.Runs)+len(record.Receipts))
 	for _, run := range append(slices.Clone(record.Runs), receiptRuns(record.Receipts)...) {
@@ -106,8 +105,8 @@ func snapshotRuns(record st.QueueRecord) (map[string][]byte, map[string]time.Tim
 	return encoded, versions, nil
 }
 
-func preserveUnsyncedRuns(state *st.CoordinatorState, previous []st.Run) {
-	retained := make(map[string]st.Run, len(state.Record.Runs))
+func preserveUnsyncedRuns(state *types.SchedulerCoordinatorState, previous []types.SchedulerRun) {
+	retained := make(map[string]types.SchedulerRun, len(state.Record.Runs))
 	for _, run := range state.Record.Runs {
 		retained[run.ID] = run
 	}
@@ -131,7 +130,7 @@ func preserveUnsyncedRuns(state *st.CoordinatorState, previous []st.Run) {
 		return
 	}
 	// Keep history chronological when pending activity updates prevent pruning.
-	runs := make([]st.Run, 0, len(retained))
+	runs := make([]types.SchedulerRun, 0, len(retained))
 	for _, run := range previous {
 		if current, exists := retained[run.ID]; exists {
 			runs = append(runs, current)
@@ -146,7 +145,7 @@ func preserveUnsyncedRuns(state *st.CoordinatorState, previous []st.Run) {
 	state.Record.Runs = runs
 }
 
-func pruneDispatches(state *st.CoordinatorState) {
+func pruneDispatches(state *types.SchedulerCoordinatorState) {
 	attempts := make(map[string]int, len(state.Record.Runs))
 	for _, run := range state.Record.Runs {
 		attempts[run.ID] = run.AttemptCount
@@ -159,20 +158,20 @@ func pruneDispatches(state *st.CoordinatorState) {
 	}
 }
 
-func (q *Coordinator) Records(ctx context.Context) ([]st.QueueRecord, error) {
+func (q *Coordinator) Records(ctx context.Context) ([]types.SchedulerQueueRecord, error) {
 	states, err := q.states(ctx)
 	if err != nil {
 		return nil, err
 	}
-	records := make([]st.QueueRecord, 0, len(states))
+	records := make([]types.SchedulerQueueRecord, 0, len(states))
 	for _, state := range states {
 		records = append(records, state.Record)
 	}
 	return records, nil
 }
 
-func (q *Coordinator) states(ctx context.Context) ([]st.CoordinatorState, error) {
-	states := []st.CoordinatorState{}
+func (q *Coordinator) states(ctx context.Context) ([]types.SchedulerCoordinatorState, error) {
+	states := []types.SchedulerCoordinatorState{}
 	cursor := ""
 	for {
 		page, err := q.service.ListStates(ctx, coordinatorType, &actor.ListStatesOpts{IncludeData: true, After: cursor, Limit: 100})
@@ -180,7 +179,7 @@ func (q *Coordinator) states(ctx context.Context) ([]st.CoordinatorState, error)
 			return nil, fmt.Errorf("list job coordinator states: %w", err)
 		}
 		for _, entry := range page.States {
-			var state st.CoordinatorState
+			var state types.SchedulerCoordinatorState
 			if decodeErr := entry.Data.Decode(&state); decodeErr != nil {
 				return nil, fmt.Errorf("decode job coordinator %q: %w", entry.ActorID, decodeErr)
 			}
@@ -197,14 +196,14 @@ func (q *Coordinator) states(ctx context.Context) ([]st.CoordinatorState, error)
 
 // Get retrieves a run by environment, job, and run ID, including compacted
 // idempotency receipts. It returns ErrRunNotFound when no matching record exists.
-func (q *Coordinator) Get(ctx context.Context, environmentID, jobID, runID string) (st.Run, error) {
-	var state st.CoordinatorState
+func (q *Coordinator) Get(ctx context.Context, environmentID, jobID, runID string) (types.SchedulerRun, error) {
+	var state types.SchedulerCoordinatorState
 	err := q.service.GetState(ctx, coordinatorType, kit.SHA256Hex(environmentID+"\x00"+jobID), &state)
 	if errors.Is(err, actor.ErrStateNotFound) {
-		return st.Run{}, ErrRunNotFound
+		return types.SchedulerRun{}, ErrRunNotFound
 	}
 	if err != nil {
-		return st.Run{}, err
+		return types.SchedulerRun{}, err
 	}
 	normalizeRecordTimes(&state.Record)
 	record := state.Record
@@ -218,17 +217,17 @@ func (q *Coordinator) Get(ctx context.Context, environmentID, jobID, runID strin
 		q.associateActivity(&run)
 		return run, nil
 	}
-	return st.Run{}, ErrRunNotFound
+	return types.SchedulerRun{}, ErrRunNotFound
 }
 
 // List returns retained run history newest first, excluding compacted receipts.
 // An empty job ID includes every job in the environment; pages are one-based.
-func (q *Coordinator) List(ctx context.Context, environmentID, jobID string, page, limit int) (st.RunList, error) {
+func (q *Coordinator) List(ctx context.Context, environmentID, jobID string, page, limit int) (types.SchedulerRunList, error) {
 	records, err := q.Records(ctx)
 	if err != nil {
-		return st.RunList{}, err
+		return types.SchedulerRunList{}, err
 	}
-	runs := []st.Run{}
+	runs := []types.SchedulerRun{}
 	for _, record := range records {
 		if record.EnvironmentID == environmentID && (jobID == "" || record.JobID == jobID) {
 			runs = append(runs, record.Runs...)
@@ -242,21 +241,21 @@ func (q *Coordinator) List(ctx context.Context, environmentID, jobID string, pag
 		start = min(len(runs), (page-1)*limit)
 	}
 	end := min(len(runs), start+limit)
-	return st.RunList{Runs: runs[start:end], Total: len(runs), Page: page, Limit: limit}, nil
+	return types.SchedulerRunList{Runs: runs[start:end], Total: len(runs), Page: page, Limit: limit}, nil
 }
 
 // UpdateRun atomically changes a persisted run or terminal receipt using compare
 // and swap. The callback may run more than once and must not perform external side effects.
-func (q *Coordinator) UpdateRun(ctx context.Context, run st.Run, change func(*st.Run) error) error {
+func (q *Coordinator) UpdateRun(ctx context.Context, run types.SchedulerRun, change func(*types.SchedulerRun) error) error {
 	wake := false
-	err := q.mutate(ctx, run.EnvironmentID, run.JobID, func(record *st.QueueRecord) error {
+	err := q.mutate(ctx, run.EnvironmentID, run.JobID, func(record *types.SchedulerQueueRecord) error {
 		for index := range record.Runs {
 			if record.Runs[index].ID == run.ID {
 				previous := record.Runs[index].Status
 				if err := change(&record.Runs[index]); err != nil {
 					return err
 				}
-				wake = previous != st.Queued && record.Runs[index].Status == st.Queued
+				wake = previous != types.RunStatusQueued && record.Runs[index].Status == types.RunStatusQueued
 				return nil
 			}
 		}
@@ -281,12 +280,12 @@ func (q *Coordinator) UpdateRun(ctx context.Context, run st.Run, change func(*st
 	return err
 }
 
-func (q *Coordinator) prune(ctx context.Context, states []st.CoordinatorState) error {
+func (q *Coordinator) prune(ctx context.Context, states []types.SchedulerCoordinatorState) error {
 	now := time.Now().UTC()
 	for _, state := range states {
-		record := st.QueueRecord{Runs: slices.Clone(state.Record.Runs), Receipts: maps.Clone(state.Record.Receipts)}
+		record := types.SchedulerQueueRecord{Runs: slices.Clone(state.Record.Runs), Receipts: maps.Clone(state.Record.Receipts)}
 		if pruneRuns(&record, now) {
-			if mutateErr := q.mutate(ctx, state.Record.EnvironmentID, state.Record.JobID, func(current *st.QueueRecord) error {
+			if mutateErr := q.mutate(ctx, state.Record.EnvironmentID, state.Record.JobID, func(current *types.SchedulerQueueRecord) error {
 				pruneRuns(current, now)
 				return nil
 			}); mutateErr != nil {
@@ -303,7 +302,7 @@ func (q *Coordinator) prune(ctx context.Context, states []st.CoordinatorState) e
 	return nil
 }
 
-func pruneRuns(record *st.QueueRecord, now time.Time) bool {
+func pruneRuns(record *types.SchedulerQueueRecord, now time.Time) bool {
 	changed := false
 	terminal := 0
 	for index, run := range slices.Backward(record.Runs) {
@@ -316,7 +315,7 @@ func pruneRuns(record *st.QueueRecord, now time.Time) bool {
 		}
 		if separateTrigger(run.Trigger) {
 			if record.Receipts == nil {
-				record.Receipts = make(map[string]st.Run)
+				record.Receipts = make(map[string]types.SchedulerRun)
 			}
 			run.Attempts = nil
 			run.Outcome.Targets = nil
@@ -341,13 +340,13 @@ func New(store *kv.KVService, service *actor.Service, location *time.Location) *
 	return &Coordinator{store: store, service: service, location: location, owner: uuid.New().String(), checkpointed: make(map[string]bool), wake: make(chan struct{}, 1), done: make(chan struct{})}
 }
 
-func (q *Coordinator) SetExecutor(execute, reconcile func(context.Context, st.Run) (st.Outcome, error)) {
+func (q *Coordinator) SetExecutor(execute, reconcile func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error)) {
 	q.execute = execute
 	q.reconcile = reconcile
 }
 
-func (q *Coordinator) ScheduleState(ctx context.Context, jobID string) (st.QueueRecord, error) {
-	var state st.CoordinatorState
+func (q *Coordinator) ScheduleState(ctx context.Context, jobID string) (types.SchedulerQueueRecord, error) {
+	var state types.SchedulerCoordinatorState
 	err := q.service.GetState(ctx, coordinatorType, kit.SHA256Hex("0\x00"+jobID), &state)
 	normalizeRecordTimes(&state.Record)
 	return state.Record, err
@@ -355,15 +354,15 @@ func (q *Coordinator) ScheduleState(ctx context.Context, jobID string) (st.Queue
 
 func (q *Coordinator) Activate() { q.enabled.Store(true); q.signal() }
 
-func receiptRuns(receipts map[string]st.Run) []st.Run {
-	runs := make([]st.Run, 0, len(receipts))
+func receiptRuns(receipts map[string]types.SchedulerRun) []types.SchedulerRun {
+	runs := make([]types.SchedulerRun, 0, len(receipts))
 	for _, run := range receipts {
 		runs = append(runs, run)
 	}
 	return runs
 }
 
-func markChangedActivity(state *st.CoordinatorState, run *st.Run, previous map[string][]byte, previousUpdated map[string]time.Time) error {
+func markChangedActivity(state *types.SchedulerCoordinatorState, run *types.SchedulerRun, previous map[string][]byte, previousUpdated map[string]time.Time) error {
 	normalizeRunTimes(run)
 	if run.ActivityID == "" {
 		return nil
@@ -385,7 +384,7 @@ func markChangedActivity(state *st.CoordinatorState, run *st.Run, previous map[s
 	return nil
 }
 
-func markActivitySync(state *st.CoordinatorState, run st.Run) {
+func markActivitySync(state *types.SchedulerCoordinatorState, run types.SchedulerRun) {
 	if run.ActivityID == "" {
 		return
 	}
@@ -395,7 +394,7 @@ func markActivitySync(state *st.CoordinatorState, run st.Run) {
 	state.PendingActivitySync[run.ID] = run.UpdatedAt
 }
 
-func normalizeRecordTimes(record *st.QueueRecord) {
+func normalizeRecordTimes(record *types.SchedulerQueueRecord) {
 	record.LastEnqueuedAt = record.LastEnqueuedAt.UTC()
 	record.NextRun = record.NextRun.UTC()
 	for i := range record.Runs {
@@ -407,7 +406,7 @@ func normalizeRecordTimes(record *st.QueueRecord) {
 	}
 }
 
-func normalizeRunTimes(run *st.Run) {
+func normalizeRunTimes(run *types.SchedulerRun) {
 	run.CreatedAt = run.CreatedAt.UTC()
 	run.UpdatedAt = run.UpdatedAt.UTC()
 	normalizeTimePointer(run.StartedAt)
@@ -423,19 +422,19 @@ func normalizeRunTimes(run *st.Run) {
 	}
 }
 
-func normalizeLegacyRun(run *st.Run) bool {
-	automaticResolution := run.Status == st.Canceled && run.Resolution != nil && run.Resolution.ResolvedBy == user.SystemUser.Username
-	if run.Status != st.NeedsAttention && !automaticResolution {
+func normalizeLegacyRun(run *types.SchedulerRun) bool {
+	automaticResolution := run.Status == types.RunStatusCanceled && run.Resolution != nil && run.Resolution.ResolvedBy == types.SystemUser.Username
+	if run.Status != types.RunStatusNeedsAttention && !automaticResolution {
 		return false
 	}
 	run.Owner = ""
 	run.NextAttempt = nil
 	if run.EnvironmentID != "0" && (run.RemoteDeliveryAttempted || run.RemoteAccepted) && !run.RemoteSettled {
-		run.Status = st.Waiting
+		run.Status = types.RunStatusWaiting
 		run.FinishedAt = nil
 	} else {
-		run.Status = st.Failed
-		run.Outcome.Status = st.Failed
+		run.Status = types.RunStatusFailed
+		run.Outcome.Status = types.RunStatusFailed
 		if run.FinishedAt == nil {
 			run.FinishedAt = new(run.UpdatedAt)
 		}

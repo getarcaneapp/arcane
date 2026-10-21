@@ -9,9 +9,7 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 	kit "go.getarcane.app/kit/pkg"
 
@@ -46,22 +44,22 @@ type ListBackupsInput struct {
 }
 
 type ListBackupsOutput struct {
-	Body base.PaginatedWithWarnings[volume.Backup]
+	Body types.PaginatedWithWarnings[types.VolumeBackup]
 }
 
 type CreateBackupInput struct {
-	EnvironmentID string                      `path:"id" doc:"Environment ID"`
-	VolumeName    string                      `path:"volumeName" doc:"Volume name"`
-	Body          *volume.CreateBackupRequest `json:"body,omitempty"`
+	EnvironmentID string                           `path:"id" doc:"Environment ID"`
+	VolumeName    string                           `path:"volumeName" doc:"Volume name"`
+	Body          *types.CreateVolumeBackupRequest `json:"body,omitempty"`
 }
 
 type DiscoverVolumeBackupsInput struct {
-	EnvironmentID string                        `path:"id" doc:"Environment ID"`
-	Body          volume.DiscoverBackupsRequest `doc:"Destination to scan"`
+	EnvironmentID string                             `path:"id" doc:"Environment ID"`
+	Body          types.DiscoverVolumeBackupsRequest `doc:"Destination to scan"`
 }
 
 type DiscoverVolumeBackupsOutput struct {
-	Body base.ApiResponse[volume.DiscoverBackupsResponse]
+	Body types.ApiResponse[types.DiscoverVolumeBackupsResponse]
 }
 
 type DeleteBackupInput struct {
@@ -77,7 +75,7 @@ type DownloadBackupInput struct {
 type UploadBackupInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	BackupID      string `path:"backupId" doc:"Backup ID"`
-	Body          volume.UploadBackupRequest
+	Body          types.UploadVolumeBackupRequest
 }
 
 func NewHandler(
@@ -133,7 +131,7 @@ func (h *Handler) ListBackups(ctx context.Context, input *ListBackupsInput) (*Li
 	warning := h.service.backupMountWarning(ctx)
 
 	return &ListBackupsOutput{
-		Body: base.PaginatedWithWarnings[volume.Backup]{
+		Body: types.PaginatedWithWarnings[types.VolumeBackup]{
 			Success:    true,
 			Data:       backups,
 			Pagination: handlerutil.PaginationResponse(paginationResp),
@@ -142,7 +140,7 @@ func (h *Handler) ListBackups(ctx context.Context, input *ListBackupsInput) (*Li
 	}, nil
 }
 
-func (h *Handler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*handlerutil.Out[volume.BackupEntry], error) {
+func (h *Handler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*handlerutil.Out[types.VolumeBackupEntry], error) {
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
@@ -154,17 +152,17 @@ func (h *Handler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &handlerutil.Out[volume.BackupEntry]{
-		Body: base.ApiResponse[volume.BackupEntry]{Success: true, Data: entry},
+	return &handlerutil.Out[types.VolumeBackupEntry]{
+		Body: types.ApiResponse[types.VolumeBackupEntry]{Success: true, Data: entry},
 	}, nil
 }
 
-func (h *Handler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*handlerutil.Out[base.MessageResponse], error) {
+func (h *Handler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*handlerutil.Out[types.MessageResponse], error) {
 	user, _ := userctx.CurrentUserFromContext(ctx)
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           activitytypes.TypeResourceAction,
+		Type:           types.ActivityTypeResourceAction,
 		ResourceType:   "volume_backup",
 		ResourceID:     input.BackupID,
 		ResourceName:   input.BackupID,
@@ -200,20 +198,20 @@ func (h *Handler) DiscoverBackups(ctx context.Context, input *DiscoverVolumeBack
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	return &DiscoverVolumeBackupsOutput{
-		Body: base.ApiResponse[volume.DiscoverBackupsResponse]{
+		Body: types.ApiResponse[types.DiscoverVolumeBackupsResponse]{
 			Success: true,
-			Data:    volume.DiscoverBackupsResponse{Count: created, Errors: failures},
+			Data:    types.DiscoverVolumeBackupsResponse{Count: created, Errors: failures},
 		},
 	}, nil
 }
 
-func (h *Handler) UploadBackup(ctx context.Context, input *UploadBackupInput) (*handlerutil.Out[*volume.Backup], error) {
+func (h *Handler) UploadBackup(ctx context.Context, input *UploadBackupInput) (*handlerutil.Out[*types.VolumeBackup], error) {
 	user, _ := userctx.CurrentUserFromContext(ctx)
-	var uploaded *volume.Backup
+	var uploaded *types.VolumeBackup
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
-		Type:           activitytypes.TypeResourceAction,
+		Type:           types.ActivityTypeResourceAction,
 		ResourceType:   "volume_backup",
 		ResourceID:     input.BackupID,
 		ResourceName:   input.BackupID,
@@ -238,5 +236,5 @@ func (h *Handler) UploadBackup(ctx context.Context, input *UploadBackupInput) (*
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	uploaded.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
-	return &handlerutil.Out[*volume.Backup]{Body: base.ApiResponse[*volume.Backup]{Success: true, Data: uploaded}}, nil
+	return &handlerutil.Out[*types.VolumeBackup]{Body: types.ApiResponse[*types.VolumeBackup]{Success: true, Data: uploaded}}, nil
 }

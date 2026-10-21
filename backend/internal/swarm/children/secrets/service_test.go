@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
@@ -57,7 +57,7 @@ func TestService_UpdateSecret_ReplacesLabelsOnly(t *testing.T) {
 	svc := NewService(&docker.DockerClientService{Client: cli}, func(context.Context) error {
 		return nil
 	})
-	updated, err := svc.UpdateSecret(t.Context(), "secret-1", swarmtypes.SecretUpdateRequest{
+	updated, err := svc.UpdateSecret(t.Context(), "secret-1", types.SwarmSecretUpdateRequest{
 		Version: 4,
 		Labels:  map[string]string{"tier": "db"},
 	})
