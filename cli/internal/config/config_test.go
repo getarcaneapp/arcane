@@ -519,26 +519,26 @@ func TestBackupFileRotatesExistingBak(t *testing.T) {
 
 func TestAuthTokens(t *testing.T) {
 	path := setTempConfigPath(t)
-	require.NoError(t, os.WriteFile(path, []byte("server_url: https://a.test\njwt_token: legacy_jwt\nrefresh_token: legacy_refresh\n"), 0o600))
+	require.NoError(t, os.WriteFile(path, []byte("server_url: https://a.test\n"), 0o600))
 
-	legacy, err := Load()
+	session, err := Load()
 	require.NoError(t, err)
-	require.Equal(t, "legacy_jwt", legacy.JWTToken)
+	session.JWTToken, session.RefreshToken = "a_jwt", "a_refresh"
+	require.NoError(t, SaveTokens(t.Context(), session))
 
-	legacy.DefaultEnvironment = "1"
-	require.NoError(t, Save(t.Context(), legacy))
-	loadedLegacy, err := Load()
+	session.DefaultEnvironment = "1"
+	require.NoError(t, Save(t.Context(), session))
+	loadedSession, err := Load()
 	require.NoError(t, err)
-	require.Equal(t, "legacy_jwt", loadedLegacy.JWTToken)
-	require.Equal(t, "legacy_refresh", loadedLegacy.RefreshToken)
+	require.Equal(t, "a_jwt", loadedSession.JWTToken)
+	require.Equal(t, "a_refresh", loadedSession.RefreshToken)
 
-	require.NoError(t, SaveTokens(t.Context(), legacy))
-	require.NoError(t, SwitchServer(t.Context(), legacy, "https://b.test/"))
-	require.Empty(t, legacy.JWTToken)
-	require.NoError(t, Save(t.Context(), legacy))
+	require.NoError(t, SwitchServer(t.Context(), session, "https://b.test/"))
+	require.Empty(t, session.JWTToken)
+	require.NoError(t, Save(t.Context(), session))
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
-	require.NotContains(t, string(raw), "legacy_")
+	require.NotContains(t, string(raw), "a_jwt")
 
 	authPath, err := AuthPath()
 	require.NoError(t, err)
@@ -546,11 +546,11 @@ func TestAuthTokens(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 
-	legacy.JWTToken, legacy.RefreshToken = "b_jwt", "b_refresh"
-	require.NoError(t, SaveTokens(t.Context(), legacy))
-	require.NoError(t, SwitchServer(t.Context(), legacy, "https://a.test"))
-	require.Equal(t, "legacy_jwt", legacy.JWTToken)
-	require.Equal(t, "legacy_refresh", legacy.RefreshToken)
+	session.JWTToken, session.RefreshToken = "b_jwt", "b_refresh"
+	require.NoError(t, SaveTokens(t.Context(), session))
+	require.NoError(t, SwitchServer(t.Context(), session, "https://a.test"))
+	require.Equal(t, "a_jwt", session.JWTToken)
+	require.Equal(t, "a_refresh", session.RefreshToken)
 
 	apiKeyConfig := &types.Config{ServerURL: "https://a.test", APIKey: "arc_key"}
 	require.NoError(t, Save(t.Context(), apiKeyConfig))
@@ -563,8 +563,8 @@ func TestAuthTokens(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, auth, 2)
 
-	stale := legacy.Clone()
-	refreshed := legacy.Clone()
+	stale := session.Clone()
+	refreshed := session.Clone()
 	refreshed.JWTToken, refreshed.RefreshToken = "refreshed_jwt", "refreshed_refresh"
 	require.NoError(t, SaveTokens(t.Context(), refreshed))
 	waitingPath := path + ".waiting"

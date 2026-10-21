@@ -127,17 +127,11 @@ func Load() (*types.Config, error) {
 	// API key configs ignore saved sessions so they keep authenticating as the key.
 	if cfg.APIKey == "" {
 		auth, authErr := loadAuth()
-		tokens, saved := auth[authKey(cfg.ServerURL)]
-		switch {
-		case authErr != nil:
+		if authErr != nil {
 			output.Warning("Ignoring saved sessions: %v", authErr)
-		case saved:
-			cfg.JWTToken, cfg.RefreshToken = tokens.AccessToken, tokens.RefreshToken
-		case cfg.JWTToken != "" || cfg.RefreshToken != "":
-			// TODO(v3): remove the jwt_token and refresh_token config fallback.
-			output.Warning("jwt_token and refresh_token in %s are deprecated and stop working in v3. "+
-				"Run `arcane-cli auth refresh` to move the session to ~/.arcanecli/auth.json.", path)
 		}
+		tokens := auth[authKey(cfg.ServerURL)]
+		cfg.JWTToken, cfg.RefreshToken = tokens.AccessToken, tokens.RefreshToken
 	}
 	normalized := cfg.Clone()
 	if normalized.Pagination.Resources == nil {
@@ -172,23 +166,6 @@ func Save(ctx context.Context, c *types.Config) error {
 		}
 	}
 
-	cfg.JWTToken, cfg.RefreshToken = "", ""
-	// Preserve existing legacy credentials on settings saves; explicit token saves remove them.
-	if c != nil && c.APIKey == "" && (c.JWTToken != "" || c.RefreshToken != "") {
-		data, readErr := os.ReadFile(path)
-		if readErr != nil && !os.IsNotExist(readErr) {
-			return fmt.Errorf("failed to read config file: %w", readErr)
-		}
-		if readErr == nil {
-			legacy := DefaultConfig()
-			if parseErr := yaml.Unmarshal(data, legacy); parseErr != nil {
-				return fmt.Errorf("failed to parse config file: %w", parseErr)
-			}
-			if authKey(legacy.ServerURL) == authKey(cfg.ServerURL) {
-				cfg.JWTToken, cfg.RefreshToken = legacy.JWTToken, legacy.RefreshToken
-			}
-		}
-	}
 	if writeErr := writeConfig(path, cfg, false); writeErr != nil {
 		return writeErr
 	}
@@ -400,9 +377,7 @@ func SaveTokens(ctx context.Context, cfg *types.Config) (err error) {
 			}
 		}
 	}
-	settings := cfg.Clone()
-	settings.JWTToken, settings.RefreshToken = "", ""
-	return Save(ctx, settings)
+	return Save(ctx, cfg)
 }
 
 // BackupFile moves the active config to .bak, returning moved=false when no config exists.
