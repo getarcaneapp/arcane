@@ -16,13 +16,13 @@ import (
 	"go.getarcane.app/docker/compat"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman/children/kube"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman/children/pods"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman/children/quadlets"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman/children/secrets"
-	libpodman "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/podman"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/kube"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/pods"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/quadlets"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/secrets"
+	libpodman "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
 )
 
 const (

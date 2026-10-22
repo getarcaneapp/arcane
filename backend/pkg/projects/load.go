@@ -25,8 +25,8 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 // ProjectFileCandidates enumerates known project files: base compose names,

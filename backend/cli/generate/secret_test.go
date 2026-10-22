@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	cligenerate "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
+	cligenerate "github.com/getarcaneapp/arcane/cli/v3/pkg/generate"
 	"github.com/stretchr/testify/require"
 )
 
@@ -60,21 +60,21 @@ func TestSecretDefaultBase64(t *testing.T) {
 	// find the ENCRYPTION_KEY= line and ensure it is valid base64
 	var encVal string
 	for line := range strings.SplitSeq(out, "\n") {
-		if after, ok := strings.CutPrefix(line, "ENCRYPTION_KEY="); ok {
+		if after, ok := strings.CutPrefix(line, "ARCANE_ENCRYPTION_KEY="); ok {
 			encVal = after
 		}
 	}
 
 	require.NotEmpty(t, encVal,
-		"missing ENCRYPTION_KEY in output: %q", out)
+		"missing ARCANE_ENCRYPTION_KEY in output: %q", out)
 	require.NotContains(t, out, "JWT_SECRET",
 		"JWT_SECRET is no longer emitted, got: %q", out)
 
 	if b, decodeStringErr := base64.StdEncoding.DecodeString(encVal); decodeStringErr != nil {
-		require.FailNowf(t, "unexpected failure", "ENCRYPTION_KEY is not valid base64: %v (value=%q)", decodeStringErr, encVal)
+		require.FailNowf(t, "unexpected failure", "ARCANE_ENCRYPTION_KEY is not valid base64: %v (value=%q)", decodeStringErr, encVal)
 	} else if len(b) != 32 {
 		require.Len(t, b, 32,
-			"ENCRYPTION_KEY decoded length != 32 bytes: %d", len(b))
+			"ARCANE_ENCRYPTION_KEY decoded length != 32 bytes: %d", len(b))
 	}
 }
 
@@ -107,7 +107,7 @@ func TestSecretAllFormatContainsSections(t *testing.T) {
 	// verify the hex value decodes to 32 bytes
 	var hexEnc string
 	for line := range strings.SplitSeq(out, "\n") {
-		if after, ok := strings.CutPrefix(line, "ENCRYPTION_KEY="); ok {
+		if after, ok := strings.CutPrefix(line, "ARCANE_ENCRYPTION_KEY="); ok {
 			v := after
 			// prefer hex if line length looks like hex (64 chars)
 			if len(v) >= 64 {
@@ -123,9 +123,9 @@ func TestSecretAllFormatContainsSections(t *testing.T) {
 		"JWT_SECRET is no longer emitted, got: %q", out)
 
 	if b, decodeStringErr := hex.DecodeString(strings.TrimSpace(hexEnc)); decodeStringErr != nil {
-		require.FailNowf(t, "unexpected failure", "ENCRYPTION_KEY hex decode failed: %v", decodeStringErr)
+		require.FailNowf(t, "unexpected failure", "ARCANE_ENCRYPTION_KEY hex decode failed: %v", decodeStringErr)
 	} else if len(b) != 32 {
 		require.Len(t, b, 32,
-			"ENCRYPTION_KEY hex decoded length != 32: %d", len(b))
+			"ARCANE_ENCRYPTION_KEY hex decoded length != 32: %d", len(b))
 	}
 }

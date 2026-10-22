@@ -25,7 +25,7 @@
 	let dialogOpen = $state(false);
 	let destinationSession = $state(0);
 	let saving = $state(false);
-	const isReadOnly = $derived.by(() => settingsStore.current?.uiConfigDisabled);
+	const isReadOnly = $derived(settingsStore.readOnly);
 
 	function openCreate() {
 		selected = null;

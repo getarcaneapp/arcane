@@ -7,8 +7,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
 )
 
 const (
@@ -53,7 +53,7 @@ func (j *PruningVolumeHelperJob) Run(ctx context.Context) (types.SchedulerOutcom
 
 	minutes := defaultVolumeHelperIdleTimeoutMinutes
 	if j.settingsService != nil {
-		minutes = j.settingsService.GetIntSetting(ctx, volumeHelperIdleTimeoutSetting, defaultVolumeHelperIdleTimeoutMinutes)
+		minutes = j.settingsService.GetIntSetting(ctx, volumeHelperIdleTimeoutSetting)
 	}
 	if minutes <= 0 {
 		// 0 (or negative) disables idle pruning.

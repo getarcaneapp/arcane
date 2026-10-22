@@ -18,9 +18,9 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
 const (
@@ -79,8 +79,8 @@ func (j *AnalyticsJob) Schedule(_ context.Context) string {
 }
 
 func (j *AnalyticsJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
-	if j.cfg.AnalyticsDisabled {
-		slog.DebugContext(ctx, "analytics disabled; skipping heartbeat", "analyticsDisabled", j.cfg.AnalyticsDisabled)
+	if !j.settingsService.GetBoolSetting(ctx, "analyticsEnabled") {
+		slog.DebugContext(ctx, "analytics disabled; skipping heartbeat")
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
 	if j.cfg.Environment.IsTestEnvironment() {
@@ -97,7 +97,7 @@ func (j *AnalyticsJob) Run(ctx context.Context) (types.SchedulerOutcome, error) 
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
 
-	instanceID := j.settingsService.GetStringSetting(ctx, "instanceId", "")
+	instanceID := j.settingsService.GetStringSetting(ctx, "instanceId")
 
 	payload := struct {
 		Version    string `json:"version"`

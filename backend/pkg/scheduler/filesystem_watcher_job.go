@@ -8,18 +8,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/template"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/fswatch"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/template"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/fswatch"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
 type FilesystemWatcherJob struct {
 	projectService   *project.ProjectService
 	templateService  *template.TemplateService
 	settingsService  *settings.SettingsService
-	projectScanDepth int
 	lifecycleCtx     context.Context
 	projectsWatcher  *fswatch.Watcher
 	templatesWatcher *fswatch.Watcher
@@ -34,15 +33,13 @@ func NewFilesystemWatcherJob(
 	projectService *project.ProjectService,
 	templateService *template.TemplateService,
 	settingsService *settings.SettingsService,
-	projectScanDepth int,
 ) (*FilesystemWatcherJob, error) {
 	return &FilesystemWatcherJob{
-		projectService:   projectService,
-		templateService:  templateService,
-		settingsService:  settingsService,
-		projectScanDepth: projectScanDepth,
-		lifecycleCtx:     ctx,
-		restart:          make(chan struct{}, 1),
+		projectService:  projectService,
+		templateService: templateService,
+		settingsService: settingsService,
+		lifecycleCtx:    ctx,
+		restart:         make(chan struct{}, 1),
 	}, nil
 }
 
@@ -197,7 +194,7 @@ func (j *FilesystemWatcherJob) startProjectsWatcher(ctx context.Context) (*fswat
 	}
 	j.logRecursiveProjectsWatchLimitWarningInternal(ctx, projectsDirectory)
 
-	watcher, err := fswatch.NewWatcher(projectsDirectory, j.projectWatcherOptionsInternal(localSettings.FollowProjectSymlinks.IsTrue()))
+	watcher, err := fswatch.NewWatcher(projectsDirectory, j.projectWatcherOptions(localSettings.FollowProjectSymlinks.IsTrue(), localSettings.ProjectScanMaxDepth.AsInt()))
 	if err != nil {
 		return nil, err
 	}
@@ -220,11 +217,11 @@ func (j *FilesystemWatcherJob) logRecursiveProjectsWatchLimitWarningInternal(ctx
 		"sysctl", "fs.inotify.max_user_watches")
 }
 
-func (j *FilesystemWatcherJob) projectWatcherOptionsInternal(followProjectSymlinks bool) fswatch.WatcherOptions {
+func (j *FilesystemWatcherJob) projectWatcherOptions(followProjectSymlinks bool, maxDepth int) fswatch.WatcherOptions {
 	return fswatch.WatcherOptions{
 		Debounce:          500 * time.Millisecond,
 		OnChangePaths:     j.handleProjectFilePathsChangedInternal,
-		MaxDepth:          j.projectScanDepth,
+		MaxDepth:          maxDepth,
 		FollowSymlinkDirs: followProjectSymlinks,
 	}
 }

@@ -320,13 +320,11 @@ function defaultRunArgs(name: string, dataDir: string) {
 		'-p',
 		'0:3552',
 		'-e',
-		'ENVIRONMENT=testing',
+		'ARCANE_ENVIRONMENT=testing',
 		'-e',
-		'APP_URL=http://localhost:3552',
+		'ARCANE_APP_URL=http://localhost:3552',
 		'-e',
-		'ENCRYPTION_KEY=3JDIgolks2tJ9ymm1AdqzlYMWu0DUWyt',
-		'-e',
-		'JWT_SECRET=your-super-secret-jwt-key-change-this-in-production',
+		'ARCANE_ENCRYPTION_KEY=3JDIgolks2tJ9ymm1AdqzlYMWu0DUWyt',
 		'-v',
 		`${dataDir}:/app/data`
 	];

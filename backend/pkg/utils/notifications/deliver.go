@@ -8,7 +8,7 @@ import (
 	"net/mail"
 	"regexp"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 )
 
 // Content is the provider-independent description of one notification: the

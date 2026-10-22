@@ -14,7 +14,7 @@ import (
 	"github.com/samber/mo"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
 )
 
 type Service struct {

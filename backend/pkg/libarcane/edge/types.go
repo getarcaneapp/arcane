@@ -11,8 +11,8 @@ import (
 	"github.com/hashicorp/yamux"
 	"google.golang.org/grpc"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
 // TunnelClient represents the agent-side tunnel client

@@ -11,7 +11,6 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { AlertTriangleIcon, ResetIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { settingsService } from '#lib/services/settings-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import {
 		environmentColor,
@@ -55,10 +54,9 @@
 		environmentLimitError = null;
 		if (parsed === environmentLimit) return;
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(settingsService.updateSettings({ allEnvironmentsLimit: parsed })),
+			result: await tryCatch(settingsStore.save({ allEnvironmentsLimit: parsed })),
 			message: m.common_update_failed({ resource: m.settings() }),
-			onSuccess: (updated) => {
-				settingsStore.set(updated);
+			onSuccess: () => {
 				toast.success(m.common_update_success({ resource: m.settings() }));
 			}
 		});

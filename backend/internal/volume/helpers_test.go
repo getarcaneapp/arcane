@@ -12,9 +12,9 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
 )
 
 func newVolumeServiceTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
@@ -73,7 +73,7 @@ func TestCreateTempContainerReusesWritableHelper(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	service := &VolumeService{
-		dockerService:  docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newVolumeServiceTestDockerClient(t, server)),
+		dockerService:  (&docker.DockerClientService{}).WithClient(newVolumeServiceTestDockerClient(t, server)),
 		helperByVolume: make(map[string]*volumeHelper),
 	}
 

@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 )
 
 type tableContextKey struct{}

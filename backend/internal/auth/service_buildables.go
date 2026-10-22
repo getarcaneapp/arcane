@@ -8,7 +8,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v2/buildables"
+	"github.com/getarcaneapp/arcane/backend/v3/buildables"
 )
 
 // GetAutoLoginConfig returns the auto-login configuration for the frontend.

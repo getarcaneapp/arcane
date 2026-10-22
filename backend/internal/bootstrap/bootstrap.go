@@ -22,51 +22,60 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/di"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/variable"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/startup"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config/schema"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/di"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/variable"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/startup"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
 func Bootstrap(ctx context.Context) error {
 	if err := gotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("load .env: %w", err)
 	}
-	cfg := config.Load()
-	cfg.DockerHost = startup.ResolveDockerHost(cfg.DockerHost, os.Stat)
-	runtimeIdentityCfg := &startup.RuntimeIdentityConfig{
+	if err := schema.CheckLegacyEnv(ctx); err != nil {
+		return err
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load configuration: %w", err)
+	}
+	settingsEnv, err := settings.LoadEnv()
+	if err != nil {
+		return fmt.Errorf("load settings environment: %w", err)
+	}
+	if err = startup.ApplyRequestedRuntimeIdentity(ctx, &startup.RuntimeIdentityConfig{
 		PUID:              cfg.PUID,
 		PGID:              cfg.PGID,
-		DockerHost:        cfg.DockerHost,
+		DockerHost:        startup.ResolveDockerHost(settingsEnv.ValueOrDefault("dockerHost"), os.Stat),
 		DockerConfig:      cfg.DockerConfig,
 		DatabaseURL:       cfg.DatabaseURL,
-		ProjectsDirectory: cfg.ProjectsDirectory,
-	}
-	if err := startup.ApplyRequestedRuntimeIdentity(ctx, runtimeIdentityCfg); err != nil {
+		ProjectsDirectory: settingsEnv.ValueOrDefault("projectsDirectory"),
+		InContainer:       cfg.InContainer,
+	}); err != nil {
 		return fmt.Errorf("apply runtime identity: %w", err)
 	}
-	cfg.DockerConfig = runtimeIdentityCfg.DockerConfig
 
 	SetupSlogLogger(cfg, nil)
 	database.SetGormLogger(BuildGormLogger(cfg))
@@ -89,6 +98,16 @@ func Bootstrap(ctx context.Context) error {
 			slog.ErrorContext(ctx, "Error closing database", "error", closeErr)
 		}
 	}()
+
+	encryptionKey, err := settings.ResolveEncryptionKey(appCtx, db, cfg)
+	if err != nil {
+		return fmt.Errorf("resolve encryption key: %w", err)
+	}
+	crypto.InitEncryption(&crypto.Config{
+		EncryptionKey: encryptionKey,
+		Environment:   string(cfg.Environment),
+		AgentMode:     cfg.AgentMode,
+	})
 
 	// Telemetry identifies this installation by its persisted instance ID, so it starts once the
 	// database is open but before Docker clients and services. Exporter errors go to the console-only logger.
@@ -115,7 +134,7 @@ func Bootstrap(ctx context.Context) error {
 		slog.InfoContext(ctx, "OpenTelemetry export enabled", "traces", providers.tracerProvider != nil, "metrics", providers.meterProvider != nil, "logs", providers.loggerProvider != nil)
 	}
 
-	app := fx.New(applicationOptions(appCtx, cfg, db, cancelApp))
+	app := fx.New(applicationOptions(appCtx, cfg, settingsEnv, db, encryptionKey, cancelApp))
 
 	startCtx, cancelStart := context.WithTimeout(ctx, app.StartTimeout())
 	defer cancelStart()
@@ -146,9 +165,15 @@ func Bootstrap(ctx context.Context) error {
 	return runErr
 }
 
-func applicationOptions(appCtx context.Context, cfg *config.Config, db *database.DB, cancelApp context.CancelCauseFunc) fx.Option {
+func applicationOptions(appCtx context.Context, cfg *config.Config, settingsEnv settings.Env, db *database.DB, encryptionKey string, cancelApp context.CancelCauseFunc) fx.Option {
 	return fx.Options(
-		fx.Supply(cfg, db, cancelApp),
+		fx.Supply(
+			cfg,
+			settingsEnv,
+			db,
+			cancelApp,
+			fx.Annotated{Name: "encryptionKey", Target: encryptionKey},
+		),
 		fx.Provide(
 			func() context.Context { return appCtx },
 			func(settingsService *settings.SettingsService) *http.Client {
@@ -179,19 +204,6 @@ func applicationOptions(appCtx context.Context, cfg *config.Config, db *database
 		fx.StartTimeout(5*time.Minute),
 		fx.StopTimeout(7*time.Second),
 	)
-}
-
-// isWeakProductionEncryptionKey reports whether a production ENCRYPTION_KEY is an
-// unprefixed passphrase shorter than 32 characters.
-func isWeakProductionEncryptionKey(encryptionKey, localEnvironment string, agentMode bool) bool {
-	if localEnvironment != "production" || agentMode {
-		return false
-	}
-	key := strings.TrimSpace(encryptionKey)
-	if key == "" || strings.HasPrefix(key, "hex:") || strings.HasPrefix(key, "base64:") {
-		return false
-	}
-	return len(strings.TrimPrefix(key, "raw:")) < 32
 }
 
 type initializeStartupStateParams struct {
@@ -225,49 +237,17 @@ func initializeStartupState(p initializeStartupStateParams) {
 	startup.CleanupOrphanedVolumeHelpers(helperCtx, p.Volume.CleanupOrphanedVolumeHelpers)
 	cancelHelpers()
 
-	runtimeCfg := &startup.RuntimeConfig{
-		AgentMode:         cfg.AgentMode,
-		AgentToken:        cfg.AgentToken,
-		Environment:       string(cfg.Environment),
-		EncryptionKey:     cfg.EncryptionKey,
-		AutoLoginUsername: cfg.AutoLoginUsername,
-		AdminStaticAPIKey: cfg.AdminStaticAPIKey,
-	}
-
-	for _, envName := range cfg.DeprecatedEnvVarsSet() {
-		slog.WarnContext(appCtx, "Deprecated environment variable is set and no longer used; remove it from your environment", "env", envName)
-	}
-
-	startup.LoadAgentToken(appCtx, runtimeCfg, p.Settings.GetStringSetting)
-	startup.EnsureEncryptionKey(appCtx, runtimeCfg, p.Settings.EnsureEncryptionKey)
-	cfg.AgentToken = runtimeCfg.AgentToken
-	cfg.EncryptionKey = runtimeCfg.EncryptionKey
-
-	if isWeakProductionEncryptionKey(cfg.EncryptionKey, string(cfg.Environment), cfg.AgentMode) {
-		panic("ENCRYPTION_KEY passphrase must be at least 32 characters in production (or use a hex:/base64: encoded 32-byte key)")
-	}
-
-	crypto.InitEncryption(&crypto.Config{
-		EncryptionKey: cfg.EncryptionKey,
-		Environment:   string(cfg.Environment),
-		AgentMode:     cfg.AgentMode,
-	})
-	if reloadErr := p.Settings.LoadDatabaseSettings(appCtx); reloadErr != nil {
-		slog.WarnContext(appCtx, "Failed to reload settings after initializing encryption", "error", reloadErr)
-	}
-	startup.InitializeDefaultSettings(appCtx, runtimeCfg, p.Settings)
-
 	// Startup repairs are best-effort: log each failure and continue.
 	for _, task := range []struct {
 		name string
 		run  func(context.Context) error
 	}{
-		{name: "normalize projects directory", run: func(ctx context.Context) error {
-			return p.Settings.NormalizeProjectsDirectory(ctx, cfg.ProjectsDirectory)
-		}},
+		{name: "normalize projects directory", run: p.Settings.NormalizeProjectsDirectory},
 		{name: "normalize builds directory", run: p.Settings.NormalizeBuildsDirectory},
 		{name: "encrypt stored sensitive settings", run: p.Settings.EncryptStoredSensitiveSettings},
-		{name: "ensure local environment", run: func(ctx context.Context) error { return p.Environment.EnsureLocalEnvironment(ctx, cfg.AppUrl) }},
+		{name: "ensure local environment", run: func(ctx context.Context) error {
+			return p.Environment.EnsureLocalEnvironment(ctx, cmp.Or(cfg.AppUrl, "http://localhost:"+cfg.Port))
+		}},
 		{name: "clean up orphaned GitOps syncs", run: p.GitOpsSync.CleanupOrphanedSyncsOnStartup},
 		{name: "clean up leaked GitOps scratch directories", run: p.GitOpsSync.CleanupLeakedScratchDirsOnStartup},
 		{name: "clean up leaked git clone directories", run: p.GitOpsSync.CleanupLeakedCloneDirsOnStartup},
@@ -297,7 +277,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 		})
 	}
 
-	startup.InitializeNonAgentFeatures(appCtx, runtimeCfg,
+	startup.InitializeNonAgentFeatures(appCtx, cfg.AgentMode,
 		p.Role.EnsureBuiltInRoles,
 		func(ctx context.Context) error {
 			// Backfill legacy users.roles first so CreateDefaultAdmin's zero-global-admin gate sees them;
@@ -308,10 +288,10 @@ func initializeStartupState(p initializeStartupStateParams) {
 			return p.User.CreateDefaultAdmin(ctx)
 		},
 		func(ctx context.Context) error {
-			return p.ApiKey.ReconcileDefaultAdminAPIKey(ctx, runtimeCfg.AdminStaticAPIKey)
+			return p.ApiKey.ReconcileDefaultAdminAPIKey(ctx, cfg.AdminStaticAPIKey)
 		},
 		func(ctx context.Context) error {
-			startup.InitializeAutoLogin(ctx, runtimeCfg)
+			startup.InitializeAutoLogin(ctx, cfg.AutoLoginUsername)
 			return nil
 		},
 	)
@@ -328,7 +308,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 		slog.WarnContext(appCtx, "Failed to backfill API key permissions", "error", err)
 	}
 	if err := p.Role.ReconcileEnvOidcMappings(appCtx, cfg.OidcRoleMappings); err != nil {
-		slog.ErrorContext(appCtx, "Failed to reconcile OIDC_ROLE_MAPPINGS", "error", err)
+		slog.ErrorContext(appCtx, "Failed to reconcile ARCANE_OIDC_ROLE_MAPPINGS", "error", err)
 	}
 	if !cfg.AgentMode {
 		if err := p.Role.AssertGlobalAdminExists(appCtx, p.DB.WithContext(appCtx)); err != nil {
@@ -337,8 +317,8 @@ func initializeStartupState(p initializeStartupStateParams) {
 	}
 
 	// Only edge agents auto-pair; direct agents are passive and the manager dials them.
-	if cfg.AgentMode && cfg.EdgeAgent && cfg.AgentToken != "" && cfg.ManagerApiUrl != "" {
-		if err := handleAgentBootstrapPairing(appCtx, cfg); err != nil {
+	if agentToken := p.Settings.AgentToken(appCtx); cfg.AgentMode && cfg.EdgeAgent && agentToken != "" && cfg.ManagerApiUrl != "" {
+		if err := handleAgentBootstrapPairing(appCtx, cfg, agentToken); err != nil {
 			slog.WarnContext(appCtx, "Failed to auto-pair agent with manager", "error", err)
 		}
 	} else if cfg.AgentMode && !cfg.EdgeAgent {
@@ -346,14 +326,15 @@ func initializeStartupState(p initializeStartupStateParams) {
 	}
 }
 
-func startEdgeTunnelClient(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config, router *echo.Echo, _ *http.Server) {
+func startEdgeTunnelClient(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config, settingsService *settings.SettingsService, router *echo.Echo, _ *http.Server) {
 	var stop func(context.Context) error
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			if !cfg.EdgeAgent || cfg.ManagerApiUrl == "" || cfg.AgentToken == "" {
+			agentToken := settingsService.AgentToken(appCtx)
+			if !cfg.EdgeAgent || cfg.ManagerApiUrl == "" || agentToken == "" {
 				return nil
 			}
-			tunnelStop, err := edge.StartTunnelClient(appCtx, buildEdgeRuntimeConfig(cfg), router)
+			tunnelStop, err := edge.StartTunnelClient(appCtx, buildEdgeRuntimeConfig(cfg, agentToken), router)
 			if err != nil {
 				slog.ErrorContext(appCtx, "Failed to start edge tunnel client", "error", err)
 				return nil
@@ -442,7 +423,7 @@ func registerAppCancelHook(lc fx.Lifecycle, cancelApp context.CancelCauseFunc) {
 	})
 }
 
-func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config) error {
+func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, agentToken string) error {
 	slog.InfoContext(ctx, "Agent mode detected with token, attempting auto-pairing", "managerUrl", cfg.ManagerApiUrl)
 
 	pairURL := strings.TrimRight(httpx.ManagerBaseURL(cfg.ManagerApiUrl), "/") + "/api/environments/pair"
@@ -455,9 +436,9 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config) error 
 		return fmt.Errorf("failed to create pairing request: %w", err)
 	}
 
-	req.Header.Set("X-Api-Key", cfg.AgentToken)
+	req.Header.Set("X-Api-Key", agentToken)
 
-	httpClient, err := edge.NewManagerHTTPClient(buildEdgeRuntimeConfig(cfg), 10*time.Second)
+	httpClient, err := edge.NewManagerHTTPClient(buildEdgeRuntimeConfig(cfg, agentToken), 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to configure edge pairing client: %w", err)
 	}

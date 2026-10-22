@@ -8,14 +8,14 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system/children/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system/children/prune"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system/children/upgrade"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/system/children/backup"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/system/children/prune"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/system/children/upgrade"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
 // Module wires the system domain and mounts its routes.

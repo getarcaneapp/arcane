@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/getarcaneapp/arcane/backend/v2/cli"
+	"github.com/getarcaneapp/arcane/backend/v3/cli"
 )
 
 //	@title		Arcane API

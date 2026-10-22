@@ -14,9 +14,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/docker/compat"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	libpodman "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/podman"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	libpodman "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
 )
 
 type fakeSystemd struct {

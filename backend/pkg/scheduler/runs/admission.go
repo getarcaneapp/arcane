@@ -12,7 +12,7 @@ import (
 	"github.com/italypaleale/francis/actor"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
 )
 
 const admissionType = "resource-admission"

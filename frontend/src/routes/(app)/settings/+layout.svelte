@@ -21,7 +21,7 @@
 	let currentPageName = $derived(page.url.pathname.split('/').pop() || 'settings');
 
 	const isMobile = new IsMobile();
-	const isReadOnly = $derived.by(() => settingsStore.current?.uiConfigDisabled);
+	const isReadOnly = $derived(settingsStore.readOnly);
 	let pageTitle = $derived.by(() => {
 		switch (currentPageName) {
 			case 'jobs':

@@ -19,7 +19,7 @@ import (
 	"go.getarcane.app/docker"
 	"go.yaml.in/yaml/v4"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumes"
 )
 
 func PlanVolumeMigration(ctx context.Context, dockerClient *client.Client, composeProject *composetypes.Project, oldComposeName, newComposeName, toolsImage string) (types.VolumeMigration, error) {

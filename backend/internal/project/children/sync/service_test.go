@@ -11,7 +11,7 @@ import (
 
 func TestPersistGitSyncEnvFiles_UsesPreparedState(t *testing.T) {
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	dirName := "git-sync-prepared-state"
 	projectPath := filepath.Join(projectsDir, dirName)

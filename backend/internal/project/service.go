@@ -39,39 +39,39 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/deployment"
-	projectdetails "github.com/getarcaneapp/arcane/backend/v2/internal/project/children/details"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/lifecycle"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/listing"
-	projectstatus "github.com/getarcaneapp/arcane/backend/v2/internal/project/children/status"
-	projectsync "github.com/getarcaneapp/arcane/backend/v2/internal/project/children/sync"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/tags"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/update"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/workspace"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/userctx"
-	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/deployment"
+	projectdetails "github.com/getarcaneapp/arcane/backend/v3/internal/project/children/details"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/lifecycle"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/listing"
+	projectstatus "github.com/getarcaneapp/arcane/backend/v3/internal/project/children/status"
+	projectsync "github.com/getarcaneapp/arcane/backend/v3/internal/project/children/sync"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/tags"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/update"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/workspace"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/dbutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/iconcatalog"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
+	workspacepkg "github.com/getarcaneapp/arcane/backend/v3/pkg/workspace"
 )
 
 const (
@@ -234,7 +234,7 @@ func (s *ProjectService) ValidateComposeDirectory(ctx context.Context, projectNa
 		filepath.Join(projectPath, composeFileName),
 		projects.NormalizeProjectName(projectName),
 		projectsDirectory,
-		s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false),
+		s.settingsService.GetBoolSetting(ctx, "autoInjectEnv"),
 		s.projectPathMapper(ctx),
 		nil,
 		nil,
@@ -292,7 +292,7 @@ func (s *ProjectService) newProjectMetadataEnv(ctx context.Context, projectsList
 	}
 	env := &projectMetadataEnv{
 		projectsDirectory:  projectsDirectory,
-		autoInjectEnv:      s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false),
+		autoInjectEnv:      s.settingsService.GetBoolSetting(ctx, "autoInjectEnv"),
 		settings:           s.settingsService.GetSettingsOrDefaults(ctx),
 		gitOpsComposePaths: make(map[string]string),
 		pathMapper:         sync.OnceValue(func() *projects.PathMapper { return s.projectPathMapper(ctx) }),
@@ -351,7 +351,7 @@ func NewProjectService(
 		imageService:       imageService,
 		dockerService:      dockerService,
 		lifecycleService:   lifecycleService,
-		workspace:          workspace.New(cfg),
+		workspace:          workspace.New(settingsService),
 		details:            projectdetails.New(db, dockerService, imageService, settingsService),
 		listing: listing.New(
 			func(ctx context.Context) ([]container.Summary, error) { return s.details.ComposeContainers(ctx) },
@@ -455,7 +455,7 @@ func (s *ProjectService) ResolveRegistryCredentials(ctx context.Context) ([]type
 }
 
 func (s *ProjectService) GetProjectsDirectory(ctx context.Context) (string, error) {
-	projectsDir, err := projects.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
+	projectsDir, err := projects.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory"))
 	if err != nil {
 		return "", err
 	}
@@ -644,7 +644,7 @@ func (s *ProjectService) EnsureProjectPathUnderRoot(ctx context.Context, proj *P
 func (s *ProjectService) projectPathMapper(ctx context.Context) *projects.PathMapper {
 	return projects.NewPathMapperForConfiguredDirectory(
 		ctx,
-		s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"),
+		s.settingsService.GetStringSetting(ctx, "projectsDirectory"),
 		"/app/data/projects",
 		func() *client.Client {
 			dockerClient, _ := s.dockerService.GetClient(ctx)
@@ -876,7 +876,7 @@ func NewLifecycleService(
 // runPreDeploy runs the sync's pre-deploy hook, if configured and enabled. Any
 // failure aborts the deploy; every run records its last-run state on the sync.
 func (s *LifecycleService) runPreDeploy(ctx context.Context, project *Project, actor types.Actor) error {
-	if gitOpsSyncID(project) == "" || !s.settingsService.GetBoolSetting(ctx, "lifecycleEnabled", false) {
+	if gitOpsSyncID(project) == "" || !s.settingsService.GetBoolSetting(ctx, "lifecycleEnabled") {
 		return nil
 	}
 
@@ -893,7 +893,7 @@ func (s *LifecycleService) runPreDeploy(ctx context.Context, project *Project, a
 
 	runnerImage := cmp.Or(
 		strings.TrimSpace(kit.FromPtr(syncRecord.PreDeployRunnerImage)),
-		strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "lifecycleDefaultRunnerImage", "alpine:latest")),
+		strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "lifecycleDefaultRunnerImage")),
 	)
 	if runnerImage == "" {
 		return fmt.Errorf("pre-deploy script %q is configured but no runner image is set on the GitOps sync or lifecycleDefaultRunnerImage setting", *syncRecord.PreDeployScriptPath)
@@ -913,7 +913,7 @@ func (s *LifecycleService) runPreDeploy(ctx context.Context, project *Project, a
 		return fmt.Errorf("invalid lifecycle extra mounts config: %w", err)
 	}
 
-	maxTimeoutSec := s.settingsService.GetIntSetting(ctx, "lifecycleMaxTimeoutSec", types.LifecycleDefaultMaxTimeoutSec)
+	maxTimeoutSec := s.settingsService.GetIntSetting(ctx, "lifecycleMaxTimeoutSec")
 	timeout := time.Duration(kit.Ternary(
 		maxTimeoutSec > 0,
 		min(kit.Ternary(syncRecord.PreDeployTimeoutSec > 0, syncRecord.PreDeployTimeoutSec, types.LifecycleDefaultTimeoutSec), maxTimeoutSec),
@@ -1120,7 +1120,7 @@ func (s *ProjectService) updateProjectServices(ctx context.Context, projectID st
 	}
 	progressWriter, _ := ctx.Value(dockertypes.ProgressWriterKey{}).(io.Writer)
 	if updateServicesErr := s.composeCoordinator.UpdateServices(ctx, types.ComposeServiceUpdate{
-		Project: compProj, Services: servicesToUpdate, Dependents: dependents, StoppedDependents: stoppedDependents,
+		Project: compProj, DockerHost: s.dockerService.DockerHost(), Services: servicesToUpdate, Dependents: dependents, StoppedDependents: stoppedDependents,
 		Images: s.deployment.ImageOperations(&user, credentials), Progress: progressWriter,
 		AuthConfigs: authConfigs, WaitTimeout: timeouts.GetDuration(s.settingsService.GetSettingsConfig().DeployWaitTimeout.AsInt(), timeouts.DefaultDeployWait),
 		RestoreBeforeMutation: func(ctx context.Context) {
@@ -1270,8 +1270,8 @@ func (s *ProjectService) deployProject(ctx context.Context, projectID string, us
 	}
 	progressWriter, _ := ctx.Value(dockertypes.ProgressWriterKey{}).(io.Writer)
 	projectModel, err := s.composeCoordinator.Deploy(ctx, types.ComposeDeployment{
-		ProjectID: projectID, ProjectPath: projectFromDb.Path, Options: options,
-		DefaultPullPolicy: s.settingsService.GetStringSetting(ctx, "defaultDeployPullPolicy", "missing"),
+		ProjectID: projectID, ProjectPath: projectFromDb.Path, DockerHost: s.dockerService.DockerHost(), Options: options,
+		DefaultPullPolicy: s.settingsService.GetStringSetting(ctx, "defaultDeployPullPolicy"),
 		GitOpsManaged:     gitOpsSyncID(projectFromDb) != "",
 		WaitTimeout:       timeouts.GetDuration(s.settingsService.GetSettingsConfig().DeployWaitTimeout.AsInt(), timeouts.DefaultDeployWait),
 		AuthConfigs:       authConfigs,
@@ -1347,7 +1347,7 @@ func (s *ProjectService) downProject(ctx context.Context, projectFromDb *Project
 
 	defer s.eventService.BeginComposeSuppressionWindow(proj.Name)()
 
-	if composeDownErr := projects.ComposeDown(ctx, proj, false); composeDownErr != nil {
+	if composeDownErr := projects.ComposeDown(ctx, s.dockerService.DockerHost(), proj, false); composeDownErr != nil {
 		_ = s.updateProjectStatus(context.WithoutCancel(ctx), projectID, projectFromDb.Status)
 		return fmt.Errorf("failed to bring down project: %w", composeDownErr)
 	}
@@ -1470,10 +1470,10 @@ func (s *ProjectService) CreateProject(
 	}
 
 	if applyProjectWorkspaceChangesErr := projects.ApplyProjectWorkspaceChanges(ctx, projectPath, manifest.FileChanges, uploads, projects.ProjectWorkspaceApplyOptions{
-		MaxDepth:         s.config.ProjectWorkspaceMaxDepth,
-		MaxEntries:       s.config.ProjectWorkspaceMaxEntries,
-		MaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(s.config.ProjectWorkspaceMaxFileSizeMB),
-		SkipDirectories:  s.config.ProjectScanSkipDirs,
+		MaxDepth:         s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxDepth"),
+		MaxEntries:       s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxEntries"),
+		MaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")),
+		SkipDirectories:  s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
 		ComposeFileName:  projects.DefaultComposeFileName,
 	}); applyProjectWorkspaceChangesErr != nil {
 		return nil, rollback(workspace.WrapProjectWorkspaceError(applyProjectWorkspaceChangesErr))
@@ -1503,7 +1503,7 @@ func (s *ProjectService) CreateProject(
 		ctx,
 		filepath.Join(projectPath, projects.DefaultComposeFileName),
 		projectsDirectory,
-		s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false),
+		s.settingsService.GetBoolSetting(ctx, "autoInjectEnv"),
 	)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to read Compose project tags during creation", "projectName", name, "error", err)
@@ -1586,7 +1586,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		switch {
 		case lerr == nil:
 			defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
-			if derr := projects.ComposeDown(ctx, compProj, true); derr != nil && !missing(derr) {
+			if derr := projects.ComposeDown(ctx, s.dockerService.DockerHost(), compProj, true); derr != nil && !missing(derr) {
 				return fmt.Errorf("failed to remove project volumes: %w", derr)
 			}
 		case !missing(lerr):
@@ -1751,7 +1751,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 
 	defer s.eventService.BeginComposeSuppressionWindow(compProj.Name)()
 
-	if composeRestartErr := projects.ComposeRestart(ctx, compProj, services); composeRestartErr != nil {
+	if composeRestartErr := projects.ComposeRestart(ctx, s.dockerService.DockerHost(), compProj, services); composeRestartErr != nil {
 		s.restoreRuntimeProjectStatus(ctx, projectID)
 		return fmt.Errorf("failed to restart project: %w", composeRestartErr)
 	}
@@ -2669,14 +2669,15 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 	s.syncMu.Lock()
 	defer s.syncMu.Unlock()
 
-	followProjectSymlinks := s.settingsService.GetBoolSetting(ctx, "followProjectSymlinks", false)
+	followProjectSymlinks := s.settingsService.GetBoolSetting(ctx, "followProjectSymlinks")
+	scanMaxDepth := s.settingsService.GetIntSetting(ctx, "projectScanMaxDepth")
 	projectsDir, err := s.GetProjectsDirectory(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "unable to prepare projects directory", "error", err)
 		return nil
 	}
 
-	discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(ctx, projectsDir, followProjectSymlinks, s.config.ProjectScanMaxDepth)
+	discoveredProjects, discoveryErr := projects.DiscoverProjectDirectories(ctx, projectsDir, followProjectSymlinks, scanMaxDepth, s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"))
 	if discoveryErr != nil {
 		if os.IsNotExist(discoveryErr) {
 			return nil
@@ -2729,7 +2730,7 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 		}
 		candidates++
 		// Projects beyond a lowered scan depth are no longer discovered; root-level and outside paths use the disk checks.
-		if rel := listing.RelativePath(projectsDir, p.Path); s.config.ProjectScanMaxDepth > 0 && rel != "" && strings.Count(rel, "/") >= s.config.ProjectScanMaxDepth {
+		if rel := listing.RelativePath(projectsDir, p.Path); scanMaxDepth > 0 && rel != "" && strings.Count(rel, "/") >= scanMaxDepth {
 			pendingDeletions = append(pendingDeletions, projectCleanupDecision{project: p, reason: "removed project: directory is beyond the configured scan depth"})
 			continue
 		}
@@ -2881,7 +2882,7 @@ func (s *ProjectService) reconcileComposeTagsForProject(ctx context.Context, pro
 	if err != nil {
 		return err
 	}
-	meta, err := projects.ParseArcaneComposeMetadata(ctx, composeFile, projectsDirectory, s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false))
+	meta, err := projects.ParseArcaneComposeMetadata(ctx, composeFile, projectsDirectory, s.settingsService.GetBoolSetting(ctx, "autoInjectEnv"))
 	if err != nil {
 		return err
 	}
@@ -3534,7 +3535,7 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 		slog.WarnContext(ctx, "failed to list containers for project log stream", "projectId", projectID, "error", listErr)
 	}
 	matched := listing.ProjectContainers(projectRecord(*proj), listing.GroupComposeContainersByProject(containers))
-	return projectdetails.Logs(ctx, projectdetails.RuntimeProjectName(proj.Name, matched), logsChan, follow, tail, since, timestamps)
+	return projectdetails.Logs(ctx, s.dockerService.DockerHost(), projectdetails.RuntimeProjectName(proj.Name, matched), logsChan, follow, tail, since, timestamps)
 }
 
 func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (types.ProjectStatusCounts, error) {

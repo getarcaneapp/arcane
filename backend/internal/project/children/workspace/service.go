@@ -19,20 +19,20 @@ import (
 	acfstypes "go.getarcane.app/acfs/types"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	acfsutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/acfs"
-	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	acfsutils "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/acfs"
+	workspacepkg "github.com/getarcaneapp/arcane/backend/v3/pkg/workspace"
 )
 
 // Service reads and edits a project directory as a bounded workspace.
 type Service struct {
-	config *config.Config
+	settingsService *settings.SettingsService
 }
 
-func New(cfg *config.Config) *Service {
-	return &Service{config: cfg}
+func New(settingsService *settings.SettingsService) *Service {
+	return &Service{settingsService: settingsService}
 }
 
 // Read lists the workspace files, marking GitOps-owned paths read-only.
@@ -40,11 +40,11 @@ func (s *Service) Read(ctx context.Context, projectPath, composeFileName string,
 	files, revision, truncated, err := projects.ReadProjectWorkspace(
 		ctx,
 		projectPath,
-		s.config.ProjectWorkspaceMaxDepth,
-		s.config.ProjectScanSkipDirs,
+		s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxDepth"),
+		s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
 		composeFileName,
-		s.config.ProjectWorkspaceMaxEntries,
-		workspacepkg.MaxFileSizeBytes(s.config.ProjectWorkspaceMaxFileSizeMB),
+		s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxEntries"),
+		workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("read project workspace: %w", err)
@@ -100,10 +100,11 @@ func (s *Service) File(ctx context.Context, projectPath, composeFileName, relati
 	if !acfsutils.IsRegular(entry) {
 		return response(types.FileReadOnlySpecial, "", ""), nil
 	}
-	if entry.Size > workspacepkg.MaxFileSizeBytes(s.config.ProjectWorkspaceMaxFileSizeMB) {
+	maxFileSizeBytes := workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb"))
+	if entry.Size > maxFileSizeBytes {
 		return response(types.FileReadOnlyTooLarge, "", ""), nil
 	}
-	reader, _, err := acfs.OpenRead(ctx, projectPath, "/"+rel, workspacepkg.MaxFileSizeBytes(s.config.ProjectWorkspaceMaxFileSizeMB))
+	reader, _, err := acfs.OpenRead(ctx, projectPath, "/"+rel, maxFileSizeBytes)
 	if err != nil {
 		return nil, classifyACFSError(err, "read project workspace file")
 	}
@@ -158,10 +159,10 @@ func (s *Service) Apply(
 
 	if applyErr := projects.ApplyProjectWorkspaceChanges(ctx, projectPath, manifest.FileChanges, uploads, projects.ProjectWorkspaceApplyOptions{
 		ExpectedRevision: strings.TrimSpace(manifest.FileTreeRevision),
-		MaxDepth:         s.config.ProjectWorkspaceMaxDepth,
-		MaxEntries:       s.config.ProjectWorkspaceMaxEntries,
-		MaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(s.config.ProjectWorkspaceMaxFileSizeMB),
-		SkipDirectories:  s.config.ProjectScanSkipDirs,
+		MaxDepth:         s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxDepth"),
+		MaxEntries:       s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxEntries"),
+		MaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")),
+		SkipDirectories:  s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
 		ComposeFileName:  composeFileName,
 	}); applyErr != nil {
 		if restoreErr := projects.RestoreProjectUpdateBackup(ctx, projectPath, backup); restoreErr != nil {

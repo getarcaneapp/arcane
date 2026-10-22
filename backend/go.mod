@@ -1,10 +1,10 @@
-module github.com/getarcaneapp/arcane/backend/v2
+module github.com/getarcaneapp/arcane/backend/v3
 
 go 1.27.3
 
 replace (
 	github.com/docker/buildx => github.com/docker/buildx v0.32.1
-	github.com/getarcaneapp/arcane/cli/v2 => ../cli
+	github.com/getarcaneapp/arcane/cli/v3 => ../cli
 	github.com/getarcaneapp/arcane/types/v3 => ../types
 )
 
@@ -29,7 +29,7 @@ require (
 	github.com/docker/compose/v5 v5.6.1
 	github.com/docker/go-units v0.5.0
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/getarcaneapp/arcane/cli/v2 v2.14.0
+	github.com/getarcaneapp/arcane/cli/v3 v3.0.0
 	github.com/getarcaneapp/arcane/types/v3 v3.0.0
 	github.com/go-git/go-billy/v5 v5.9.2
 	github.com/go-git/go-git/v5 v5.19.3

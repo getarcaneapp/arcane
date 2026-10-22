@@ -16,12 +16,10 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { apnsService } from '#lib/services/apns-service.js';
 	import { notificationService } from '#lib/services/notification-service.js';
-	import { settingsService } from '#lib/services/settings-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { ApnsDevice } from '#lib/types/apns.js';
 	import { type NotificationProviderKey, NOTIFICATION_PROVIDER_KEYS } from '#lib/types/notifications.js';
 	import type { SettingsFormState } from '#lib/types/settings-form.js';
-	import type { Settings } from '#lib/types/settings.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';
@@ -64,7 +62,7 @@
 		{ value: 'mobile', label: m.notifications_mobile_push_tab() }
 	];
 
-	const isReadOnly = $derived.by(() => settingsStore.current?.uiConfigDisabled);
+	const isReadOnly = $derived(settingsStore.readOnly);
 	const canToggleMobilePush = $derived(hasPermission('settings:write'));
 	const mobilePushEnabled = $derived(settingsStore.current?.apnsEnabled === true);
 	let savingMobilePush = $state(false);
@@ -164,12 +162,11 @@
 
 	async function handleMobilePushToggle(enabled: boolean) {
 		savingMobilePush = true;
-		await handleApiResultWithCallbacks<Settings>({
-			result: await tryCatch(settingsService.updateSettings({ apnsEnabled: enabled })),
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(settingsStore.save({ apnsEnabled: enabled })),
 			message: m.common_update_failed({ resource: m.settings() }),
 			setLoadingState: (value) => (savingMobilePush = value),
-			onSuccess: async (updated) => {
-				settingsStore.set(updated);
+			onSuccess: async () => {
 				if (enabled) {
 					await loadMobileDevices();
 				} else {
@@ -292,6 +289,7 @@
 							description={m.notifications_mobile_push_description()}
 							warningText={m.notifications_mobile_push_external_warning()}
 							layout="switch"
+							lock={settingsStore.lock('apnsEnabled')}
 						>
 							<Switch
 								id="apnsEnabled"

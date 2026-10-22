@@ -8,18 +8,17 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
 func TestValidateMobileRedirectURI(t *testing.T) {
 	ctx := t.Context()
-	s := &OidcService{
-		config: &config.Config{
-			OidcMobileRedirectUris: "arcane-mobile://oidc-callback, arcane-mobile://oauth",
-		},
-	}
+	settingsService, err := newSettingsServiceForTest(t, ctx, setupSettingsTestDB(t))
+	require.NoError(t, err)
+	require.NoError(t, settingsService.UpdateSetting(ctx, "oidcMobileRedirectUris", "arcane-mobile://oidc-callback, arcane-mobile://oauth"))
+	s := &OidcService{settingsService: settingsService}
 
 	cases := []struct {
 		name    string
@@ -36,21 +35,20 @@ func TestValidateMobileRedirectURI(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := s.ValidateMobileRedirectURI(ctx, tc.uri)
+			validateErr := s.ValidateMobileRedirectURI(ctx, tc.uri)
 
-			require.Equal(t, tc.wantErr, err != nil,
-				"ValidateMobileRedirectURI(%q): wantErr=%v got err=%v", tc.uri, tc.wantErr, err)
+			require.Equal(t, tc.wantErr, validateErr != nil,
+				"ValidateMobileRedirectURI(%q): wantErr=%v got err=%v", tc.uri, tc.wantErr, validateErr)
 		})
 	}
 }
 
 func TestGetMobileRedirectAllowlistTrimsWhitespace(t *testing.T) {
 	ctx := t.Context()
-	s := &OidcService{
-		config: &config.Config{
-			OidcMobileRedirectUris: "  arcane-mobile://a  ,arcane-mobile://b ,, arcane-mobile://c",
-		},
-	}
+	settingsService, err := newSettingsServiceForTest(t, ctx, setupSettingsTestDB(t))
+	require.NoError(t, err)
+	require.NoError(t, settingsService.UpdateSetting(ctx, "oidcMobileRedirectUris", "  arcane-mobile://a  ,arcane-mobile://b ,, arcane-mobile://c"))
+	s := &OidcService{settingsService: settingsService}
 
 	got := s.GetMobileRedirectAllowlist(ctx)
 	want := []string{"arcane-mobile://a", "arcane-mobile://b", "arcane-mobile://c"}
@@ -78,23 +76,12 @@ func TestGetMobileRedirectAllowlistUsesSettings(t *testing.T) {
 			"UpdateSetting: %v", updateSettingErr)
 	}
 
-	s := &OidcService{
-		settingsService: settingsService,
-		config: &config.Config{
-			OidcMobileRedirectUris: "arcane-mobile://config-callback",
-		},
-	}
+	s := &OidcService{settingsService: settingsService}
 	{
 
 		validateMobileRedirectURIErr := s.ValidateMobileRedirectURI(ctx, "arcane-mobile://db-callback")
 		require.NoError(t, validateMobileRedirectURIErr,
 			"ValidateMobileRedirectURI db value: %v", validateMobileRedirectURIErr)
-	}
-	{
-
-		validateMobileRedirectURIErr2 := s.ValidateMobileRedirectURI(ctx, "arcane-mobile://config-callback")
-		require.Error(t, validateMobileRedirectURIErr2,
-			"ValidateMobileRedirectURI config fallback should fail when DB setting is configured")
 	}
 }
 
@@ -110,7 +97,7 @@ func setupSettingsTestDB(t *testing.T) *database.DB {
 
 func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	svc, err := settings.NewSettingsService(ctx, db, &config.Config{})
+	svc, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}
