@@ -155,12 +155,12 @@ test.describe('Token refresh behaviour', () => {
 		expect(tokenCookies[0]?.value.length).toBeLessThan(1024);
 	});
 
-	test('version mismatch 401 on /auth/me during page load is silently recovered', async ({
+	test('version mismatch 401 on /auth/bootstrap during page load is silently recovered', async ({
 		page
 	}) => {
 		await registerTokenSeeding(page);
 		const refreshCallCount = await mockRefreshSuccess(page);
-		await injectVersionMismatchUntilRefresh(page, /\/api\/auth\/me(?:\?.*)?$/);
+		await injectVersionMismatchUntilRefresh(page, /\/api\/auth\/bootstrap(?:\?.*)?$/);
 
 		await page.goto('/dashboard');
 		await page.waitForLoadState('load');
@@ -200,8 +200,8 @@ test.describe('Token refresh behaviour', () => {
 		});
 
 		await injectExpired401Always(page, /\/api\/environments\/[^/]+\/containers(?:\/.*)?$/);
-		// Keep /auth/me unauthenticated too so the login page does not immediately bounce back.
-		await injectExpired401Always(page, /\/api\/auth\/me$/);
+		// Keep /auth/bootstrap unauthenticated too so the login page does not immediately bounce back.
+		await injectExpired401Always(page, /\/api\/auth\/bootstrap(?:\?.*)?$/);
 
 		await page.goto('/containers');
 		await expect.poll(() => refreshCalled).toBe(true);

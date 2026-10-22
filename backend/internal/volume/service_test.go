@@ -29,9 +29,11 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
@@ -391,8 +393,17 @@ func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
+	gormDB, err := gorm.Open(sqlite.Open("file:volume-workspace-stale-revision?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&settings.SettingVariable{}))
+	settingsService, err := settings.NewSettingsService(t.Context(), &database.DB{DB: gormDB}, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context())))
+	})
+
 	dockerClient := newVolumeWorkspaceTestDockerClient(t, server)
-	service := NewVolumeService(nil, (&docker.DockerClientService{}).WithClient(dockerClient), nil, nil, nil, nil, nil, nil, nil, nil)
+	service := NewVolumeService(nil, (&docker.DockerClientService{}).WithClient(dockerClient), nil, settingsService, nil, nil, nil, nil, nil, nil)
 	uploadIndex := 0
 	workspace, err := service.workspace.UpdateVolumeWorkspace(t.Context(), "workspace-volume", types.VolumeWorkspaceUpdateManifest{
 		FileTreeRevision: "stale",
