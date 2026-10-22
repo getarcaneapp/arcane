@@ -35,7 +35,7 @@
 			style:--environment-color={color}
 		>
 			<Icon class="size-3.5 shrink-0" />
-			<span class="truncate">{environmentName(environmentId)}</span>
+			<span class="whitespace-nowrap">{environmentName(environmentId)}</span>
 		</span>
 	{/if}
 {/if}
