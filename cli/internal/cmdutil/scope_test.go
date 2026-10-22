@@ -68,7 +68,7 @@ func TestRunScopedMerged(t *testing.T) {
 					return
 				}
 				if r.URL.Path == clitypes.SettingsPublic("0") {
-					_, _ = fmt.Fprintf(w, `[{"key":"allEnvironmentsLimit","type":"number","value":%q}]`, cmp.Or(tt.limit, "64"))
+					_, _ = fmt.Fprintf(w, `{"settings":[{"key":"allEnvironmentsLimit","type":"number","value":%q}]}`, cmp.Or(tt.limit, "64"))
 					return
 				}
 				requests = append(requests, r.URL.Path)
