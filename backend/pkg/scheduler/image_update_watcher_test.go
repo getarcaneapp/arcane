@@ -170,7 +170,7 @@ func (b *lockedBufferInternal) Write(p []byte) (int, error) {
 func (b *lockedBufferInternal) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.String()
+	return b.Buffer.String()
 }
 
 func newImageUpdateWatcherForTest(t *testing.T,

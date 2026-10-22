@@ -113,6 +113,14 @@ function getPathname(url: string): string {
 	return url.replace(/^[a-z]+:\/\/[^/]+/i, '').split(/[?#]/)[0] || '/';
 }
 
+function isProjectDeployAction(url: string, action: 'up' | 'redeploy'): boolean {
+	const parsed = new URL(url, 'http://localhost');
+	return (
+		/\/api\/environments\/[^/]+\/projects\/[^/]+\/deploy$/.test(parsed.pathname) &&
+		parsed.searchParams.get('action') === action
+	);
+}
+
 function getProjectIdFromPageUrl(url: string): string {
 	return url.split('/projects/')[1]?.split(/[?#]/)[0] ?? '';
 }
@@ -257,8 +265,7 @@ async function createExitedMarkerProject(page: Page, projectName: string) {
 
 	const deployResponsePromise = page.waitForResponse(
 		(response) =>
-			response.request().method() === 'POST' &&
-			/\/api\/environments\/[^/]+\/projects\/[^/]+\/up$/.test(getPathname(response.url()))
+			response.request().method() === 'POST' && isProjectDeployAction(response.url(), 'up')
 	);
 	await page
 		.getByRole('button', { name: 'Up', exact: true })
@@ -650,8 +657,7 @@ test.describe('New Compose Project Page', () => {
 				.first();
 			const deployResponsePromise = page.waitForResponse(
 				(response) =>
-					response.request().method() === 'POST' &&
-					/\/api\/environments\/[^/]+\/projects\/[^/]+\/up$/.test(getPathname(response.url()))
+					response.request().method() === 'POST' && isProjectDeployAction(response.url(), 'up')
 			);
 			await deployButton.click();
 
@@ -741,7 +747,7 @@ test.describe('New Compose Project Page', () => {
 			// Set up request listener right before clicking to minimize timeout window
 			const deployRequestPromise = page.waitForRequest((request) => {
 				if (request.method() !== 'POST') return false;
-				return /\/api\/environments\/[^/]+\/projects\/[^/]+\/up$/.test(getPathname(request.url()));
+				return isProjectDeployAction(request.url(), 'up');
 			});
 
 			await page.getByRole('button', { name: 'Up', exact: true }).click();
@@ -829,9 +835,7 @@ test.describe('New Compose Project Page', () => {
 			// Set up request listener right before confirming to minimize timeout window
 			const redeployRequestPromise = page.waitForRequest((request) => {
 				if (request.method() !== 'POST') return false;
-				return /\/api\/environments\/[^/]+\/projects\/[^/]+\/redeploy$/.test(
-					getPathname(request.url())
-				);
+				return isProjectDeployAction(request.url(), 'redeploy');
 			});
 
 			await page.getByRole('button', { name: 'Redeploy', exact: true }).click();
@@ -873,7 +877,6 @@ test.describe('New Compose Project Page', () => {
 		const redeployReleased = new Promise<void>((resolve) => {
 			releaseRedeploy = resolve;
 		});
-		const redeployPathPattern = /\/api\/environments\/[^/]+\/projects\/[^/]+\/redeploy$/;
 
 		try {
 			await createProjectViaUI(page, projectName);
@@ -881,7 +884,7 @@ test.describe('New Compose Project Page', () => {
 			await page.waitForLoadState('load');
 
 			await page.route(
-				(url) => redeployPathPattern.test(url.pathname),
+				(url) => isProjectDeployAction(url.href, 'redeploy'),
 				async (route) => {
 					if (route.request().method() !== 'POST') {
 						await route.continue();
@@ -920,8 +923,7 @@ test.describe('New Compose Project Page', () => {
 			});
 			await expect(redeployMenuItem).toBeVisible();
 			const redeployRequestPromise = page.waitForRequest(
-				(request) =>
-					request.method() === 'POST' && redeployPathPattern.test(getPathname(request.url()))
+				(request) => request.method() === 'POST' && isProjectDeployAction(request.url(), 'redeploy')
 			);
 			await redeployMenuItem.click();
 			await redeployRequestPromise;

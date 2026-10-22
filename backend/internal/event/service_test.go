@@ -226,9 +226,15 @@ func TestEventService_CreateEvent_ForwardsToManagerAPIInAgentMode(t *testing.T) 
 		AgentToken:    "test-agent-token",
 		ManagerApiUrl: server.URL,
 	}
-	svc := NewEventService(db, cfg, nil, server.Client())
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
+	settingsService, err := settings.NewSettingsService(ctx, db, cfg, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx)))
+	})
+	svc := NewEventService(db, cfg, settingsService, server.Client())
 
-	_, err := svc.CreateEvent(ctx, CreateEventRequest{
+	_, err = svc.CreateEvent(ctx, CreateEventRequest{
 		Type:          EventTypeContainerStart,
 		Severity:      EventSeverityInfo,
 		Title:         "Container started: web",
