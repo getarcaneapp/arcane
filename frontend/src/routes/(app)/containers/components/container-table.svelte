@@ -709,7 +709,9 @@
 {#snippet StateCell({ item }: { item: ContainerRow })}
 	{@const status = actionStatus[rowKey(item)]}
 	<div class="flex items-center gap-2">
-		{#if status}
+		{#if status === 'updating'}
+			<Badge variant="primary" minWidth="20" beam>{getActionStatusMessage(status)}</Badge>
+		{:else if status}
 			<div class="flex items-center gap-1.5">
 				<Spinner class="size-3.5" />
 				<span class="text-xs font-medium text-muted-foreground">

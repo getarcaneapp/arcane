@@ -573,3 +573,39 @@ input:autofill:active {
 @utility transition-stroke-dashoffset {
 	transition-property: stroke-dashoffset;
 }
+
+@property --border-beam-angle {
+	syntax: '<angle>';
+	initial-value: -45deg;
+	inherits: false;
+}
+
+@keyframes border-beam-spin {
+	to {
+		--border-beam-angle: 315deg;
+	}
+}
+
+@utility border-beam {
+	padding: 1px;
+	background: conic-gradient(
+		from var(--border-beam-angle),
+		transparent 0deg,
+		var(--border-beam-color, var(--primary)) 50deg,
+		transparent 100deg,
+		transparent 180deg,
+		color-mix(in oklab, var(--border-beam-color, var(--primary)) 60%, transparent) 230deg,
+		transparent 280deg
+	);
+	mask:
+		linear-gradient(#000 0 0) content-box exclude,
+		linear-gradient(#000 0 0);
+}
+
+@utility animate-border-beam {
+	animation: border-beam-spin 6s linear infinite;
+
+	@media (prefers-reduced-motion: reduce) {
+		animation: none;
+	}
+}
