@@ -275,7 +275,7 @@ dockers_v2:
       - '{{ if index .Env "BUILD_BETA" }}getarcaneapp/manager{{ end }}'
     tags:
       - '{{ if index .Env "BUILD_NEXT" }}next{{ end }}'
-      - '{{ if index .Env "BUILD_BETA" }}v{{ .Major }}-beta{{ end }}'
+      - '{{ if index .Env "BUILD_BETA" }}v{{ index (split .Version ".") 0 }}-beta{{ end }}'
       - 'v{{ .Version }}'
       - '{{ if not (or (index .Env "BUILD_NEXT") (index .Env "BUILD_BETA")) }}v{{ .Major }}.{{ .Minor }}{{ end }}'
       - '{{ if not (or (index .Env "BUILD_NEXT") (index .Env "BUILD_BETA")) }}v{{ .Major }}{{ end }}'
@@ -307,7 +307,7 @@ dockers_v2:
       - '{{ if index .Env "BUILD_BETA" }}getarcaneapp/agent{{ end }}'
     tags:
       - '{{ if index .Env "BUILD_NEXT" }}next{{ end }}'
-      - '{{ if index .Env "BUILD_BETA" }}v{{ .Major }}-beta{{ end }}'
+      - '{{ if index .Env "BUILD_BETA" }}v{{ index (split .Version ".") 0 }}-beta{{ end }}'
       - 'v{{ .Version }}'
       - '{{ if not (or (index .Env "BUILD_NEXT") (index .Env "BUILD_BETA")) }}v{{ .Major }}.{{ .Minor }}{{ end }}'
       - '{{ if not (or (index .Env "BUILD_NEXT") (index .Env "BUILD_BETA")) }}v{{ .Major }}{{ end }}'
