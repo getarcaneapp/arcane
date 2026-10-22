@@ -724,7 +724,8 @@ test.describe('Lifecycle', () => {
 			const connectResponsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					/\/api\/environments\/0\/networks\/[^/]+\/connect$/.test(new URL(response.url()).pathname)
+					/\/api\/environments\/0\/networks\/[^/]+$/.test(new URL(response.url()).pathname) &&
+					new URL(response.url()).searchParams.get('action') === 'connect'
 			);
 			await connectSection.getByRole('button', { name: 'Connect', exact: true }).click();
 			expect((await connectResponsePromise).ok()).toBe(true);
@@ -743,9 +744,8 @@ test.describe('Lifecycle', () => {
 			const disconnectResponsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
-					/\/api\/environments\/0\/networks\/[^/]+\/disconnect$/.test(
-						new URL(response.url()).pathname
-					)
+					/\/api\/environments\/0\/networks\/[^/]+$/.test(new URL(response.url()).pathname) &&
+					new URL(response.url()).searchParams.get('action') === 'disconnect'
 			);
 			await page
 				.getByRole('dialog')

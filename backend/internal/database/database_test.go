@@ -714,8 +714,8 @@ func TestInitialize_RecordsGooseVersionOnFreshSQLite(t *testing.T) {
 		t.Run(phase+" pool enforces foreign keys", func(t *testing.T) {
 			sqlDB, poolErr := db.SQLDB()
 			require.NoError(t, poolErr)
-			connections := make([]*stdsql.Conn, 0, 3)
-			for range 3 {
+			connections := make([]*stdsql.Conn, 0, sqliteWriteConns)
+			for range sqliteWriteConns {
 				conn, connErr := sqlDB.Conn(ctx)
 				require.NoError(t, connErr)
 				connections = append(connections, conn)

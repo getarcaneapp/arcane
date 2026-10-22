@@ -25,7 +25,7 @@ func TestBuildSignalURL(t *testing.T) {
 				Recipients: []string{"+0987654321"},
 			},
 			check: func(url string) bool {
-				return assert.Contains(t, url, "signal://admin:secret@signal.example.com:8080")
+				return assert.Contains(t, url, "signal://admin:secret@signal.example.com:8080/+1234567890/+0987654321")
 			},
 		},
 		{
@@ -38,8 +38,21 @@ func TestBuildSignalURL(t *testing.T) {
 				Recipients: []string{"+0987654321"},
 			},
 			check: func(url string) bool {
-				return assert.Contains(t, url, "signal://signal.example.com:8080") &&
+				return assert.Contains(t, url, "signal://signal.example.com:8080/+1234567890/+0987654321") &&
 					assert.Contains(t, url, "token=auth-token-123")
+			},
+		},
+		{
+			name: "multiple recipients",
+			config: SignalConfig{
+				Host:       "signal.example.com",
+				Port:       8080,
+				Token:      "token123",
+				Source:     "+1111111111",
+				Recipients: []string{"+2222222222", "+3333333333", "+4444444444"},
+			},
+			check: func(url string) bool {
+				return assert.Contains(t, url, "/+1111111111/+2222222222/+3333333333/+4444444444")
 			},
 		},
 		{
@@ -67,7 +80,7 @@ func TestBuildSignalURL(t *testing.T) {
 				Recipients: []string{"+0987654321"},
 			},
 			check: func(url string) bool {
-				return assert.Contains(t, url, "signal://user:pass@signal-api.local:9443")
+				return assert.Contains(t, url, "signal://user:pass@signal-api.local:9443/+1234567890/+0987654321")
 			},
 		},
 		{
@@ -173,6 +186,22 @@ func TestBuildSignalURL_AuthenticationMethods(t *testing.T) {
 			assert.Contains(t, gotURL, tt.wantAuth)
 		})
 	}
+}
+
+func TestBuildSignalURL_PhoneNumberEncoding(t *testing.T) {
+	config := SignalConfig{
+		Host:       "signal.example.com",
+		Port:       8080,
+		Token:      "token",
+		Source:     "+1 (555) 123-4567", // Phone with special chars
+		Recipients: []string{"+1 (555) 987-6543"},
+	}
+
+	gotURL, err := BuildSignalURL(config)
+	require.NoError(t, err)
+
+	// Phone numbers should be in the URL path
+	assert.Contains(t, gotURL, "/+1%20%28555%29%20123-4567/+1%20%28555%29%20987-6543")
 }
 
 func TestSendSignal_Validation(t *testing.T) {

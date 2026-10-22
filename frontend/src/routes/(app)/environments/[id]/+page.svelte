@@ -62,6 +62,7 @@
 	import {
 		environmentFormSchema,
 		environmentUpdateSchema,
+		requireTrivyServerUrl,
 		type EnvironmentFormValues
 	} from './components/environment-form-schema';
 	import EnvironmentStatusSummary from './components/environment-status-summary.svelte';
@@ -306,18 +307,20 @@
 			) as Partial<Settings>)
 	);
 	const formSchema = $derived(
-		environmentFormSchema.pick(
-			Object.fromEntries(
-				Object.keys(environmentFormSchema.shape)
-					.filter(
-						(key) =>
-							key in environmentUpdateSchema.shape ||
-							key in snapshotValues ||
-							featureDefinitions.some((feature) => feature.settingKey === key)
-					)
-					.map((key) => [key, true] as const)
-			) as Partial<Record<keyof typeof environmentFormSchema.shape, true>>
-		)
+		environmentFormSchema
+			.pick(
+				Object.fromEntries(
+					Object.keys(environmentFormSchema.shape)
+						.filter(
+							(key) =>
+								key in environmentUpdateSchema.shape ||
+								key in snapshotValues ||
+								featureDefinitions.some((feature) => feature.settingKey === key)
+						)
+						.map((key) => [key, true] as const)
+				) as Partial<Record<keyof typeof environmentFormSchema.shape, true>>
+			)
+			.superRefine(requireTrivyServerUrl)
 	);
 	const settingFormKeys = $derived(
 		(Object.keys(formSchema.shape) as (keyof EnvironmentFormValues)[]).filter((key) => !(key in environmentUpdateSchema.shape))

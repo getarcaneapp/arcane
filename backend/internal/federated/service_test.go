@@ -83,7 +83,7 @@ func newFederatedTestIssuer(t *testing.T) *federatedTestIssuer {
 		}
 	})
 
-	issuer.server = httptest.NewServer(mux)
+	issuer.server = httptest.NewTLSServer(mux)
 	issuer.IssuerURL = issuer.server.URL
 	t.Cleanup(issuer.server.Close)
 

@@ -993,7 +993,7 @@ test.describe('Arcane upgrades', () => {
 					body: JSON.stringify({ message: 'Invalid or expired refresh token' })
 				});
 			});
-			await page.route('**/api/auth/me', async (route) => {
+			await page.route(/\/api\/auth\/(?:me|bootstrap)(?:\?.*)?$/, async (route) => {
 				if (!updateStarted) {
 					await route.continue();
 					return;
@@ -1046,7 +1046,7 @@ test.describe('Arcane upgrades', () => {
 				});
 			});
 
-			await page.route('**/api/auth/me', async (route) => {
+			await page.route(/\/api\/auth\/(?:me|bootstrap)(?:\?.*)?$/, async (route) => {
 				if (!updateStarted) {
 					await route.continue();
 					return;

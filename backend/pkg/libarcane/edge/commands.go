@@ -45,6 +45,8 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/images/build", CommandName: "image.build.start"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/images/builds", CommandName: "image.build.list"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/images/builds/{buildId}", CommandName: "image.build.inspect"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/images/patches", CommandName: "image.patch.list"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/images/patches/targets", CommandName: "image.patch.targets"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/images/prune", CommandName: "image.prune"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/images/upload", CommandName: "image.upload"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/images/{imageId}/history", CommandName: "image.history"},

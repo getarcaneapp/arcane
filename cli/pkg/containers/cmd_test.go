@@ -244,7 +244,7 @@ func TestContainersListTextShowsShowingSummary(t *testing.T) {
 				case strings.HasSuffix(r.URL.Path, "/jobs"):
 					_, _ = w.Write([]byte(`{"jobs":[{"id":"same-id","name":"nginx"}],"isAgent":false,"durableRuns":true}`))
 				case strings.HasSuffix(r.URL.Path, "/settings"):
-					_, _ = w.Write([]byte(`[{"key":"nginx","value":"dark","type":"string"}]`))
+					_, _ = w.Write([]byte(`{"settings":[{"key":"nginx","value":"dark","type":"string"}]}`))
 				default:
 					_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"same-id","names":["/nginx"],"image":"nginx:latest","state":"running","status":"Up 1 hour"}],"pagination":{"totalItems":26}}`))
 				}
@@ -420,7 +420,7 @@ func TestContainersListJSONContract(t *testing.T) {
 				case strings.HasSuffix(r.URL.Path, "/jobs"):
 					_, _ = w.Write([]byte(`{"jobs":[],"isAgent":false,"durableRuns":true}`))
 				case strings.HasSuffix(r.URL.Path, "/settings"):
-					_, _ = w.Write([]byte(`[{"key":"theme","value":"dark","type":"string"}]`))
+					_, _ = w.Write([]byte(`{"settings":[{"key":"theme","value":"dark","type":"string"}]}`))
 				default:
 					_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"same-id","names":["/nginx"]}],"pagination":{"totalItems":1},"counts":{"running":1},"groups":["preserved"]}`))
 				}

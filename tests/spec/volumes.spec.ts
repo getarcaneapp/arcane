@@ -564,21 +564,30 @@ test.describe('Volumes shift-select', () => {
 			isEdge: false
 		};
 		const environments = [localEnvironment, remoteEnvironment];
+		const environmentList = {
+			success: true,
+			data: environments,
+			pagination: {
+				totalPages: 1,
+				totalItems: 2,
+				currentPage: 1,
+				itemsPerPage: 20,
+				grandTotalItems: 2
+			}
+		};
 		await page.context().route(/\/api\/environments(?:\?.*)?$/, async (route) => {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',
-				body: JSON.stringify({
-					success: true,
-					data: environments,
-					pagination: {
-						totalPages: 1,
-						totalItems: 2,
-						currentPage: 1,
-						itemsPerPage: 20,
-						grandTotalItems: 2
-					}
-				})
+				body: JSON.stringify(environmentList)
+			});
+		});
+		await page.context().route(/\/api\/auth\/bootstrap(?:\?.*)?$/, async (route) => {
+			const response = await route.fetch();
+			const body = await response.json();
+			await route.fulfill({
+				response,
+				json: { ...body, data: { ...body.data, environments: environmentList } }
 			});
 		});
 		await page.context().route(/\/api\/stream(?:\?.*)?$/, async (route) => {

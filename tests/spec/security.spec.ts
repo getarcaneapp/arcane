@@ -478,6 +478,17 @@ test.describe('Security Page', () => {
 		await page.route(/\/api\/environments(?:\?.*)?$/, async (route) => {
 			await route.fulfill({ json: paginated([localEnvironment, remoteEnvironment]) });
 		});
+		await page.route(/\/api\/auth\/bootstrap(?:\?.*)?$/, async (route) => {
+			const response = await route.fetch();
+			const body = await response.json();
+			await route.fulfill({
+				response,
+				json: {
+					...body,
+					data: { ...body.data, environments: paginated([localEnvironment, remoteEnvironment]) }
+				}
+			});
+		});
 		await page.route(/\/api\/stream(?:\?.*)?$/, async (route) => {
 			const channels =
 				new URL(route.request().url()).searchParams.get('channels')?.split(',') ?? [];

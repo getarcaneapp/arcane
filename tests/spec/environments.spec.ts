@@ -717,6 +717,20 @@ test.describe('Switching', () => {
 				body: JSON.stringify(paginated([localEnvironment, remoteEnvironment]))
 			});
 		});
+		await page.context().route(/\/api\/auth\/bootstrap(?:\?.*)?$/, async (route) => {
+			const response = await route.fetch();
+			const body = await response.json();
+			await route.fulfill({
+				response,
+				json: {
+					...body,
+					data: {
+						...body.data,
+						environments: paginated([localEnvironment, remoteEnvironment])
+					}
+				}
+			});
+		});
 		await page.context().route(/\/api\/stream(?:\?.*)?$/, async (route) => {
 			const channels =
 				new URL(route.request().url()).searchParams.get('channels')?.split(',') ?? [];

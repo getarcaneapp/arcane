@@ -157,7 +157,7 @@ func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	t.Helper()
 
 	cli, err := client.New(
-		client.WithHost(server.URL),
+		client.WithHost(dockerHostFromProjectRuntimeServerURL(t, server.URL)),
 		client.WithAPIVersion("1.41"),
 		client.WithHTTPClient(server.Client()),
 	)
@@ -1418,7 +1418,19 @@ func TestProjectService_UpdateProjectServicesForcesRecreate(t *testing.T) {
 		return errors.New("compose up failed after assertion")
 	}
 
-	svc := NewProjectService(db, settingsService, eventService, imageService, dockerService, testBuildBuilder{}, nil, nil, loadTestConfig(t), kv.NewKVService(db), testRegistryCredentials)
+	svc := NewProjectService(
+		db,
+		settingsService,
+		eventService,
+		imageService,
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, runtimeServer)),
+		testBuildBuilder{},
+		nil,
+		nil,
+		loadTestConfig(t),
+		kv.NewKVService(db),
+		testRegistryCredentials,
+	)
 	err = svc.UpdateProjectServices(ctx, projectRecord.ID, []string{"app"}, types.SystemUser, true)
 	require.Error(t, err)
 	assert.True(t, eventService.ShouldSuppressDaemonEvent("container", "replacement", "app", "compose-update-force"), "failed updates retain correlation through rollback grace")
@@ -5463,7 +5475,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RespectsConfiguredScanMaxDept
 	createComposeProjectDir(t, projectsRoot, filepath.Join("group", "project2"))
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
-	t.Setenv("PROJECT_SCAN_MAX_DEPTH", "1")
+	require.NoError(t, settingsService.SetIntSetting(ctx, "projectScanMaxDepth", 1))
 
 	svc := NewProjectService(
 		db,
@@ -5766,7 +5778,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedS
 
 	// Lowering the scan depth must prune the nested project from the database on
 	// the next sync, even though its compose file still exists on disk.
-	t.Setenv("PROJECT_SCAN_MAX_DEPTH", "1")
+	require.NoError(t, settingsService.SetIntSetting(ctx, "projectScanMaxDepth", 1))
 	depthLimitedSvc := NewProjectService(
 		db,
 		settingsService,

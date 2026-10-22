@@ -3,7 +3,6 @@ package patch
 import (
 	"context"
 	"encoding/json/v2"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -71,13 +70,10 @@ func TestResolvePatchedRef(t *testing.T) {
 
 func TestListPatchTargets_ExcludesUntaggedImages(t *testing.T) {
 	ctx := t.Context()
-	dsn := fmt.Sprintf("file:image-patch-test-%d?mode=memory&cache=shared", time.Now().UnixNano())
-	gdb, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, gdb.AutoMigrate(&vulnerability.VulnerabilityScanRecord{}, &vulnerability.VulnerabilityReportRecord{}, &ImagePatchRecord{}))
-	db := &database.DB{DB: gdb}
+	settingsSvc, db := patchFeatureSettings(t)
+	require.NoError(t, settingsSvc.UpdateSettings(ctx, types.SettingsUpdate{"dockerHost": "unix:///nonexistent-arcane-test.sock"}))
 
-	svc := NewService(db, &docker.DockerClientService{}, nil, nil, nil, nil)
+	svc := NewService(db, docker.NewDockerClientService(ctx, nil, settingsSvc), settingsSvc, nil, nil, nil)
 
 	records := []vulnerability.VulnerabilityScanRecord{
 		{

@@ -104,7 +104,10 @@ async function preserveLocalEnvironmentSelection(page: Page) {
 	});
 }
 
-async function mockEnvironmentList(page: Page, environments: MockEnvironment[]) {
+async function mockSession(
+	page: Page,
+	{ environments, resolveUser }: { environments: MockEnvironment[]; resolveUser?: () => MockUser }
+) {
 	await page.context().route(/\/api\/environments(?:\?.*)?$/, async (route) => {
 		await route.fulfill({
 			status: 200,
@@ -112,9 +115,24 @@ async function mockEnvironmentList(page: Page, environments: MockEnvironment[]) 
 			body: JSON.stringify(paginated(environments))
 		});
 	});
-}
 
-async function mockCurrentUser(page: Page, resolveUser: () => MockUser) {
+	await page.context().route(/\/api\/auth\/bootstrap(?:\?.*)?$/, async (route) => {
+		const response = await route.fetch();
+		const body = await response.json();
+		await route.fulfill({
+			response,
+			json: {
+				...body,
+				data: {
+					...body.data,
+					user: resolveUser?.() ?? body.data.user,
+					environments: paginated(environments)
+				}
+			}
+		});
+	});
+
+	if (!resolveUser) return;
 	await page.context().route(/\/api\/auth\/me$/, async (route) => {
 		await route.fulfill({
 			status: 200,
@@ -325,8 +343,10 @@ test.describe('Activity Center', () => {
 		const statsSockets: string[] = [];
 
 		await preserveLocalEnvironmentSelection(page);
-		await mockCurrentUser(page, () => scopedUser);
-		await mockEnvironmentList(page, [localEnvironment, onlineRemoteEnvironment]);
+		await mockSession(page, {
+			environments: [localEnvironment, onlineRemoteEnvironment],
+			resolveUser: () => scopedUser
+		});
 		await mockActivityReads(
 			page,
 			{
@@ -366,13 +386,14 @@ test.describe('Activity Center', () => {
 		const streamChannels: string[][] = [];
 
 		await preserveLocalEnvironmentSelection(page);
-		await mockCurrentUser(page, () =>
-			user('dashboard-only-user', {
-				global: [],
-				'0': ['dashboard:read']
-			})
-		);
-		await mockEnvironmentList(page, [localEnvironment]);
+		await mockSession(page, {
+			environments: [localEnvironment],
+			resolveUser: () =>
+				user('dashboard-only-user', {
+					global: [],
+					'0': ['dashboard:read']
+				})
+		});
 		page.on('request', (request) => {
 			const url = new URL(request.url());
 			if (url.pathname === '/api/stream') {
@@ -403,8 +424,10 @@ test.describe('Activity Center', () => {
 		});
 
 		await preserveLocalEnvironmentSelection(page);
-		await mockCurrentUser(page, () => user('snapshot-generation-user', { global: ['*'] }));
-		await mockEnvironmentList(page, [localEnvironment]);
+		await mockSession(page, {
+			environments: [localEnvironment],
+			resolveUser: () => user('snapshot-generation-user', { global: ['*'] })
+		});
 		await page.context().route(/\/api\/stream(?:\?.*)?$/, async (route) => {
 			await route.fulfill({ status: 503, contentType: 'application/json', body: '{}' });
 		});
@@ -449,8 +472,10 @@ test.describe('Activity Center', () => {
 		const permissions = { global: ['*'] };
 
 		await preserveLocalEnvironmentSelection(page);
-		await mockCurrentUser(page, () => user(activeUserId, permissions));
-		await mockEnvironmentList(page, [localEnvironment]);
+		await mockSession(page, {
+			environments: [localEnvironment],
+			resolveUser: () => user(activeUserId, permissions)
+		});
 		await page.context().route(/\/api\/stream(?:\?.*)?$/, async (route) => {
 			const channels =
 				new URL(route.request().url()).searchParams.get('channels')?.split(',') ?? [];
@@ -519,7 +544,7 @@ test.describe('Activity Center', () => {
 
 	test('shows activity from every configured environment', async ({ page }) => {
 		await preserveLocalEnvironmentSelection(page);
-		await mockEnvironmentList(page, [localEnvironment, remoteEnvironment]);
+		await mockSession(page, { environments: [localEnvironment, remoteEnvironment] });
 		await mockActivityReads(page, {
 			'0': [activity('local-activity', '0', 'Local', 'local-network', 5)],
 			'remote-activity-test': [
@@ -543,7 +568,7 @@ test.describe('Activity Center', () => {
 
 	test('keeps reachable activity visible when a configured environment fails', async ({ page }) => {
 		await preserveLocalEnvironmentSelection(page);
-		await mockEnvironmentList(page, [localEnvironment, remoteEnvironment]);
+		await mockSession(page, { environments: [localEnvironment, remoteEnvironment] });
 		await mockActivityReads(
 			page,
 			{
@@ -577,7 +602,7 @@ test.describe('Activity Center', () => {
 		page
 	}) => {
 		await preserveLocalEnvironmentSelection(page);
-		await mockEnvironmentList(page, [localEnvironment, remoteEnvironment]);
+		await mockSession(page, { environments: [localEnvironment, remoteEnvironment] });
 		await mockActivityReads(page, {
 			'0': [activity('local-activity', '0', 'Local', 'local-network', 5)],
 			'remote-activity-test': [

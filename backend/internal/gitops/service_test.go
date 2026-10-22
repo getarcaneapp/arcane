@@ -1608,6 +1608,7 @@ func TestGitOpsBackup_ReconcileInterruptedBackupsOnStartup(t *testing.T) {
 func TestGitOpsBackup_DeletingProjectRemovesBackupSync(t *testing.T) {
 	env := setupGitOpsBackupTestService(t)
 	syncRecord := env.createBackup(t, types.GitOpsSync{})
+	require.NoError(t, os.Remove(filepath.Join(env.projectPath, "compose.yaml")))
 
 	require.NoError(t, env.service.projectService.DestroyProject(t.Context(), env.project.ID, true, false, types.SystemUser))
 

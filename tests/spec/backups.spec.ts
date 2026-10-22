@@ -49,32 +49,39 @@ test.describe('Workspace restore', () => {
 	}
 
 	async function mockAppShell(page: Page) {
+		const user = {
+			id: 'backup-picker-admin',
+			username: 'arcane',
+			roleAssignments: [],
+			permissionsByEnv: { global: ['*'] },
+			isGlobalAdmin: true,
+			createdAt: new Date().toISOString()
+		};
+		const environments = {
+			success: true,
+			data: [
+				{ id: '0', name: 'Local', apiUrl: '', status: 'online', enabled: true, isEdge: false }
+			],
+			pagination: { currentPage: 1, totalPages: 1, totalItems: 1, itemsPerPage: 1000 }
+		};
+		const version = { currentVersion: 'e2e', displayVersion: 'e2e', enabledFeatures: [] };
 		await page.addInitScript(() => localStorage.removeItem('selectedEnvironmentId'));
-		await page.route(/\/api\/auth\/me$/, async (route) => {
+		await page.route(/\/api\/auth\/bootstrap(?:\?.*)?$/, async (route) => {
+			const bootstrap = await route.fetch();
+			const body = await bootstrap.json();
 			await route.fulfill({
-				json: response({
-					id: 'backup-picker-admin',
-					username: 'arcane',
-					roleAssignments: [],
-					permissionsByEnv: { global: ['*'] },
-					isGlobalAdmin: true,
-					createdAt: new Date().toISOString()
-				})
+				response: bootstrap,
+				json: { ...body, data: { ...body.data, user, environments, version } }
 			});
+		});
+		await page.route(/\/api\/auth\/me$/, async (route) => {
+			await route.fulfill({ json: response(user) });
 		});
 		await page.route(/\/api\/auth\/autologin$/, async (route) => {
 			await route.fulfill({ json: response({ enabled: false }) });
 		});
 		await page.route(/\/api\/environments(?:\?.*)?$/, async (route) => {
-			await route.fulfill({
-				json: {
-					success: true,
-					data: [
-						{ id: '0', name: 'Local', apiUrl: '', status: 'online', enabled: true, isEdge: false }
-					],
-					pagination: { currentPage: 1, totalPages: 1, totalItems: 1, itemsPerPage: 1000 }
-				}
-			});
+			await route.fulfill({ json: environments });
 		});
 		await page.route(/\/api\/environments\/0\/settings$/, async (route) => {
 			await route.fulfill({ json: { settings: [], runtime: {}, readOnly: false } });
@@ -95,9 +102,7 @@ test.describe('Workspace restore', () => {
 			await route.fulfill({ status: 503, json: { message: 'not needed for global admin' } });
 		});
 		await page.route(/\/api\/app\/version$/, async (route) => {
-			await route.fulfill({
-				json: { currentVersion: 'e2e', displayVersion: 'e2e', enabledFeatures: [] }
-			});
+			await route.fulfill({ json: version });
 		});
 		await page.route(/\/api\/stream(?:\?.*)?$/, async (route) => {
 			await route.fulfill({ contentType: 'text/event-stream', body: '' });

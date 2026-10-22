@@ -189,6 +189,23 @@ func TestConfigureHTTPProtocols(t *testing.T) {
 	})
 }
 
+func newTestSettingsModule(t *testing.T, cfg *config.Config) *settings.Module {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	settingsService, err := settings.NewSettingsService(t.Context(), &database.DB{DB: db}, cfg, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context())))
+	})
+	return settings.New(settingsService, nil, nil, cfg)
+}
+
 func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 	cfg := &config.Config{
 		AgentMode:   true,
@@ -204,6 +221,7 @@ func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 			Swarm:     swarm.New(&swarm.SwarmService{}, nil, nil, nil),
 			System:    system.New(&system.SystemService{}, nil, nil),
 			Health:    health.New(&health.Service{}),
+			Settings:  newTestSettingsModule(t, cfg),
 		},
 		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
 		TunnelRegistry: edge.NewTunnelRegistry(),

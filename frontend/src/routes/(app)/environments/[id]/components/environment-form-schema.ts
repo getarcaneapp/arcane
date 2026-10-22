@@ -13,77 +13,80 @@ export const environmentUpdateSchema = z.object({
 		.transform((value) => value || undefined)
 });
 
-export const environmentFormSchema = environmentUpdateSchema
-	.extend({
-		accessToken: z.string(),
-		pollingEnabled: z.boolean(),
-		imageEventWatcherEnabled: z.boolean(),
-		autoUpdate: z.boolean(),
-		autoInjectEnv: z.boolean(),
-		followProjectSymlinks: z.boolean(),
-		defaultDeployPullPolicy: z.enum(['missing', 'always', 'never']),
-		defaultShell: z.string(),
-		projectsDirectory: z.string(),
-		templatesDirectory: z.string(),
-		swarmStackSourcesDirectory: z.string(),
-		diskUsagePath: z.string(),
-		maxImageUploadSize: z.coerce.number(),
-		gitSyncMaxFiles: z.coerce.number().int().nonnegative(),
-		gitSyncMaxTotalSizeMb: z.coerce.number().int().nonnegative(),
-		gitSyncMaxBinarySizeMb: z.coerce.number().int().nonnegative(),
-		baseServerUrl: z.string(),
-		scheduledPruneEnabled: z.boolean(),
-		pruneContainerMode: z.enum(['none', 'stopped', 'olderThan']),
-		pruneContainerUntil: z.string(),
-		pruneImageMode: z.enum(['none', 'dangling', 'all', 'olderThan']),
-		pruneImageUntil: z.string(),
-		pruneVolumeMode: z.enum(['none', 'anonymous', 'all']),
-		pruneNetworkMode: z.enum(['none', 'unused', 'olderThan']),
-		pruneNetworkUntil: z.string(),
-		pruneBuildCacheMode: z.enum(['none', 'unused', 'all', 'olderThan']),
-		pruneBuildCacheUntil: z.string(),
-		featureVulnerabilityManagementEnabled: z.boolean(),
-		featureSwarmEnabled: z.boolean(),
-		vulnerabilityScanEnabled: z.boolean(),
-		toolsImageRegistry: z.enum(['ghcr.io', 'docker.io']),
-		updateCheckRegistry: z.enum(['auto', 'ghcr.io', 'docker.io', 'public.ecr.aws']),
-		trivyDbRegistry: z.enum(['ghcr.io', 'docker.io']),
-		trivyNetwork: z.string(),
-		trivySecurityOpts: z.string(),
-		trivyPrivileged: z.boolean(),
-		trivyResourceLimitsEnabled: z.boolean(),
-		trivyCpuLimit: z.coerce.number().nonnegative(),
-		trivyMemoryLimitMb: z.coerce.number().int().nonnegative(),
-		trivyConcurrentScanContainers: z.coerce.number().int().min(1, m.security_trivy_concurrent_scan_containers_min()),
-		trivyServerEnabled: z.boolean(),
-		trivyServerUrl: z.string(),
-		trivyServerToken: z.string(),
-		trivyIgnoreUnfixed: z.boolean(),
-		vulnerabilityThreatIntelEnabled: z.boolean(),
-		trivyConfig: z.string(),
-		trivyIgnore: z.string(),
-		imagePatchSuffix: z.string(),
-		imagePatchTimeoutSec: z.coerce.number().int().min(1),
-		imagePatchAllPlatforms: z.boolean(),
-		imageAutoPatchEnabled: z.boolean(),
-		lifecycleEnabled: z.boolean(),
-		lifecycleDefaultRunnerImage: z.string(),
-		lifecycleMaxTimeoutSec: z.coerce.number().int().nonnegative(),
-		autoUpdateDelay: z.coerce.number().int().min(0).max(8760),
-		autoUpdateExcludedContainers: z.string().optional(),
-		autoHealEnabled: z.boolean(),
-		autoHealExcludedContainers: z.string(),
-		autoHealMaxRestarts: z.coerce.number().int().min(1),
-		autoHealRestartWindow: z.coerce.number().int().min(1)
-	})
-	.superRefine((data, ctx) => {
-		if (data.trivyServerEnabled && !data.trivyServerUrl.trim()) {
-			ctx.addIssue({
-				code: 'custom',
-				message: m.security_trivy_server_url_required(),
-				path: ['trivyServerUrl']
-			});
-		}
-	});
+export const environmentFormSchema = environmentUpdateSchema.extend({
+	accessToken: z.string(),
+	pollingEnabled: z.boolean(),
+	imageEventWatcherEnabled: z.boolean(),
+	autoUpdate: z.boolean(),
+	autoInjectEnv: z.boolean(),
+	followProjectSymlinks: z.boolean(),
+	defaultDeployPullPolicy: z.enum(['missing', 'always', 'never']),
+	defaultShell: z.string(),
+	projectsDirectory: z.string(),
+	templatesDirectory: z.string(),
+	swarmStackSourcesDirectory: z.string(),
+	diskUsagePath: z.string(),
+	maxImageUploadSize: z.coerce.number(),
+	gitSyncMaxFiles: z.coerce.number().int().nonnegative(),
+	gitSyncMaxTotalSizeMb: z.coerce.number().int().nonnegative(),
+	gitSyncMaxBinarySizeMb: z.coerce.number().int().nonnegative(),
+	baseServerUrl: z.string(),
+	scheduledPruneEnabled: z.boolean(),
+	pruneContainerMode: z.enum(['none', 'stopped', 'olderThan']),
+	pruneContainerUntil: z.string(),
+	pruneImageMode: z.enum(['none', 'dangling', 'all', 'olderThan']),
+	pruneImageUntil: z.string(),
+	pruneVolumeMode: z.enum(['none', 'anonymous', 'all']),
+	pruneNetworkMode: z.enum(['none', 'unused', 'olderThan']),
+	pruneNetworkUntil: z.string(),
+	pruneBuildCacheMode: z.enum(['none', 'unused', 'all', 'olderThan']),
+	pruneBuildCacheUntil: z.string(),
+	featureVulnerabilityManagementEnabled: z.boolean(),
+	featureSwarmEnabled: z.boolean(),
+	vulnerabilityScanEnabled: z.boolean(),
+	toolsImageRegistry: z.enum(['ghcr.io', 'docker.io']),
+	updateCheckRegistry: z.enum(['auto', 'ghcr.io', 'docker.io', 'public.ecr.aws']),
+	trivyDbRegistry: z.enum(['ghcr.io', 'docker.io']),
+	trivyNetwork: z.string(),
+	trivySecurityOpts: z.string(),
+	trivyPrivileged: z.boolean(),
+	trivyResourceLimitsEnabled: z.boolean(),
+	trivyCpuLimit: z.coerce.number().nonnegative(),
+	trivyMemoryLimitMb: z.coerce.number().int().nonnegative(),
+	trivyConcurrentScanContainers: z.coerce.number().int().min(1, m.security_trivy_concurrent_scan_containers_min()),
+	trivyServerEnabled: z.boolean(),
+	trivyServerUrl: z.string(),
+	trivyServerToken: z.string(),
+	trivyIgnoreUnfixed: z.boolean(),
+	vulnerabilityThreatIntelEnabled: z.boolean(),
+	trivyConfig: z.string(),
+	trivyIgnore: z.string(),
+	imagePatchSuffix: z.string(),
+	imagePatchTimeoutSec: z.coerce.number().int().min(1),
+	imagePatchAllPlatforms: z.boolean(),
+	imageAutoPatchEnabled: z.boolean(),
+	lifecycleEnabled: z.boolean(),
+	lifecycleDefaultRunnerImage: z.string(),
+	lifecycleMaxTimeoutSec: z.coerce.number().int().nonnegative(),
+	autoUpdateDelay: z.coerce.number().int().min(0).max(8760),
+	autoUpdateExcludedContainers: z.string().optional(),
+	autoHealEnabled: z.boolean(),
+	autoHealExcludedContainers: z.string(),
+	autoHealMaxRestarts: z.coerce.number().int().min(1),
+	autoHealRestartWindow: z.coerce.number().int().min(1)
+});
+
+export function requireTrivyServerUrl(
+	data: { trivyServerEnabled?: boolean; trivyServerUrl?: string },
+	ctx: z.RefinementCtx
+): void {
+	if (data.trivyServerEnabled && !data.trivyServerUrl?.trim()) {
+		ctx.addIssue({
+			code: 'custom',
+			message: m.security_trivy_server_url_required(),
+			path: ['trivyServerUrl']
+		});
+	}
+}
 
 export type EnvironmentFormValues = z.infer<typeof environmentFormSchema>;
