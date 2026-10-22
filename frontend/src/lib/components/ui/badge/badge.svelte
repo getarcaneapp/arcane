@@ -81,6 +81,7 @@
 		minWidth = 'none',
 		hoverEffect = 'lift',
 		mono = false,
+		beam = false,
 		children,
 		...restProps
 	}: WithElementRef<HTMLAnchorAttributes> & {
@@ -90,6 +91,7 @@
 		hoverEffect?: BadgeHoverEffect;
 		/** Monospace text for code-like values. */
 		mono?: boolean;
+		beam?: boolean;
 	} = $props();
 	void cn;
 </script>
@@ -99,8 +101,12 @@
 	bind:this={ref}
 	data-slot="badge"
 	{href}
-	class={cn(badgeVariants({ variant, size, minWidth, hoverEffect, mono }), className)}
+	class={cn(badgeVariants({ variant, size, minWidth, hoverEffect, mono }), beam && 'relative overflow-visible', className)}
 	{...restProps}
 >
+	{#if beam}
+		<span aria-hidden="true" class="pointer-events-none absolute -inset-px animate-border-beam rounded-inherit border-beam"
+		></span>
+	{/if}
 	{@render children?.()}
 </svelte:element>
