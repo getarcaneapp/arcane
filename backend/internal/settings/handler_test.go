@@ -111,13 +111,13 @@ func TestSettingsHandlerRemoteWorkspaceSettingsVisibility(t *testing.T) {
 	permissions := authz.NewPermissionSet()
 	permissions.AddEnv("env-remote", authz.PermSettingsRead)
 	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, permissions)
-	output, err := handler.GetSettings(ctx, &GetSettingsInput{EnvironmentID: "env-remote"})
+	output, err := handler.GetSettings(ctx, &types.EnvironmentInput{EnvironmentID: "env-remote"})
 	require.NoError(t, err)
 	require.Equal(t, []types.SettingState{remoteSnapshot.Settings[0]}, output.Body.Settings)
 	require.Equal(t, remoteSnapshot.Runtime, output.Body.Runtime)
 
 	adminCtx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
-	output, err = handler.GetSettings(adminCtx, &GetSettingsInput{EnvironmentID: "env-remote"})
+	output, err = handler.GetSettings(adminCtx, &types.EnvironmentInput{EnvironmentID: "env-remote"})
 	require.NoError(t, err)
 	require.Equal(t, remoteSnapshot, output.Body)
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -34,6 +35,7 @@ import (
 type Service struct {
 	db              *database.DB
 	client          *remenv.Client
+	streamClient    *http.Client
 	settingsService *settings.SettingsService
 	syncGate        *utils.SyncGate
 	syncLocks       utils.KeyedMutex
@@ -87,6 +89,7 @@ func New(db *database.DB, httpClient *http.Client, settingsService *settings.Set
 				}, nil
 			},
 		}),
+		streamClient:    &http.Client{Transport: kit.FromPtr(httpClient).Transport},
 		settingsService: settingsService,
 		syncGate:        syncGate,
 	}
@@ -154,6 +157,33 @@ func (s *Service) Execute(
 		return nil, fmt.Errorf("failed to send request to environment %s: %w", target.name, err)
 	}
 
+	return resp, nil
+}
+
+func (s *Service) Stream(ctx context.Context, target *Target, path string) (*http.Response, error) {
+	baseURL, httpClient := target.targetURL, s.streamClient
+	if target.isEdge {
+		tunnel, ok := edge.RequestTunnelAndWait(ctx, target.id, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()).Get()
+		if !ok {
+			return nil, &remenv.TransportError{Err: remenv.ErrEnvironmentUnavailable}
+		}
+		baseURL, httpClient = edge.MuxAgentBaseURL, tunnel.HTTPClient()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+path, http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("create stream request: %w", err)
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	remenv.ApplyAgentTokenHeaders(req.Header, target.accessToken)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, &remenv.TransportError{Err: err}
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		_ = resp.Body.Close()
+		return nil, &remenv.StatusError{StatusCode: resp.StatusCode, Body: body}
+	}
 	return resp, nil
 }
 

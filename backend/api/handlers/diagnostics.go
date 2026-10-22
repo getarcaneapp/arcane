@@ -19,16 +19,8 @@ type DiagnosticsHandler struct {
 	diag *diagnostics.DiagnosticsService
 }
 
-type GetEnvironmentActorDiagnosticsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 type GetEnvironmentActorDiagnosticsOutput struct {
 	Body types.ActorDiagnostics
-}
-
-type GetEnvironmentGoroutineDiagnosticsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
 type GetEnvironmentGoroutineDiagnosticsOutput struct {
@@ -60,7 +52,7 @@ func RegisterDiagnostics(api huma.API, diag *diagnostics.DiagnosticsService) {
 	}, authz.PermDiagnosticsRead, h.GetEnvironmentGoroutineDiagnostics)
 }
 
-func (h *DiagnosticsHandler) GetEnvironmentActorDiagnostics(ctx context.Context, _ *GetEnvironmentActorDiagnosticsInput) (*GetEnvironmentActorDiagnosticsOutput, error) {
+func (h *DiagnosticsHandler) GetEnvironmentActorDiagnostics(ctx context.Context, _ *types.EnvironmentInput) (*GetEnvironmentActorDiagnosticsOutput, error) {
 	d, err := h.diag.CollectActors(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to collect actor diagnostics: " + err.Error())
@@ -68,7 +60,7 @@ func (h *DiagnosticsHandler) GetEnvironmentActorDiagnostics(ctx context.Context,
 	return &GetEnvironmentActorDiagnosticsOutput{Body: d}, nil
 }
 
-func (h *DiagnosticsHandler) GetEnvironmentGoroutineDiagnostics(_ context.Context, _ *GetEnvironmentGoroutineDiagnosticsInput) (*GetEnvironmentGoroutineDiagnosticsOutput, error) {
+func (h *DiagnosticsHandler) GetEnvironmentGoroutineDiagnostics(_ context.Context, _ *types.EnvironmentInput) (*GetEnvironmentGoroutineDiagnosticsOutput, error) {
 	profile, err := h.diag.Goroutines()
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to collect goroutine diagnostics: " + err.Error())

@@ -151,9 +151,7 @@ let tokenRefreshHandler: (() => Promise<string | null>) | null = null;
 // True while a manager self-update or fleet "Update All" runs; its version-mismatch 401s
 // are recoverable and must not bounce the user to /login.
 let upgradeInProgress = false;
-// A confirmed manager restart still needs document recovery after polling ends.
-let upgradeReloadPending = false;
-let upgradeReloadStarted = false;
+let reloadForNewBuildStarted = false;
 let unauthorizedRedirectStarted = false;
 const skipAuthPaths = [
 	'/auth/login',
@@ -186,6 +184,17 @@ export function isAuthPagePath(pathname: string): boolean {
 
 type UnauthorizedAction = 'none' | 'redirect' | 'reload' | 'retry';
 
+function reloadDocumentOnce() {
+	if (reloadForNewBuildStarted) return;
+	reloadForNewBuildStarted = true;
+	window.location.reload();
+}
+
+async function reloadForNewBuildInternal() {
+	await tokenRefreshHandler?.();
+	reloadDocumentOnce();
+}
+
 export async function handleUnauthorizedResponseInternal(
 	requestPath: string,
 	retry = false,
@@ -213,12 +222,11 @@ export async function handleUnauthorizedResponseInternal(
 
 	const operationResult = await tryCatch(
 		(async () => {
-			await tokenRefreshHandler();
-			if (!isVersionMismatch || (!upgradeInProgress && !upgradeReloadPending)) return 'retry';
-			if (!upgradeReloadStarted) {
-				upgradeReloadStarted = true;
-				window.location.reload();
+			if (!isVersionMismatch || !upgradeInProgress) {
+				await tokenRefreshHandler();
+				return 'retry';
 			}
+			await reloadForNewBuildInternal();
 			return 'reload';
 		})()
 	);
@@ -405,10 +413,12 @@ abstract class BaseAPIService {
 	// Toggled by the update flows (Update All / local update center) so an in-progress
 	// self-update restart is treated as a recoverable reconnect, not a logout.
 	static setUpgradeInProgress(value: boolean) {
-		if (!upgradeReloadPending && (!value || !upgradeInProgress)) {
-			upgradeReloadStarted = false;
-		}
 		upgradeInProgress = value;
+	}
+
+	static async reloadForNewBuild() {
+		const result = await tryCatch(reloadForNewBuildInternal());
+		if (result.error !== null) reloadDocumentOnce();
 	}
 
 	/** Cancels the current session's work and blocks protected requests until beginSession. */
@@ -420,10 +430,6 @@ abstract class BaseAPIService {
 		if (sessionController.signal.aborted) {
 			sessionController = new AbortController();
 		}
-	}
-
-	static confirmUpgradeRestart() {
-		upgradeReloadPending = true;
 	}
 
 	protected async handleResponse<T>(promise: Promise<APIResponse>): Promise<T> {
