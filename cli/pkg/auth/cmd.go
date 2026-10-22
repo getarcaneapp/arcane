@@ -14,11 +14,11 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/config"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
 // Command is the parent command for authentication operations
@@ -302,8 +302,6 @@ func newOidcStatusCmd() *cobra.Command {
 			}
 
 			output.Header("OIDC Status")
-			output.KeyValue("Environment Forced", strconv.FormatBool(result.EnvForced))
-			output.KeyValue("Environment Configured", strconv.FormatBool(result.EnvConfigured))
 			output.KeyValue("Merge Accounts", strconv.FormatBool(result.MergeAccounts))
 			return nil
 		},

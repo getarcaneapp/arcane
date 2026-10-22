@@ -11,16 +11,16 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/job"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
 )
 
 func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
@@ -62,7 +62,7 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	var persisted settings.SettingVariable
 	require.NoError(t, db.WithContext(ctx).First(&persisted, "key = ?", "pollingInterval").Error)
 	require.Equal(t, requestedSchedule, persisted.Value)
-	require.Equal(t, requestedSchedule, settingsService.GetStringSetting(ctx, "pollingInterval", ""))
+	require.Equal(t, requestedSchedule, settingsService.GetStringSetting(ctx, "pollingInterval"))
 
 	_, ok = jobScheduler.GetJobRuntimeState("image-polling")
 	require.False(t, ok)
@@ -107,7 +107,7 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	_, ok = restartScheduler.GetJobRuntimeState("image-polling")
 	require.False(t, ok)
 	require.Empty(t, restartScheduler.ListRegisteredJobs())
-	require.Equal(t, requestedSchedule, restartSettingsService.GetStringSetting(ctx, "pollingInterval", ""))
+	require.Equal(t, requestedSchedule, restartSettingsService.GetStringSetting(ctx, "pollingInterval"))
 
 	restartedJobs, err := restartJobService.ListJobs(ctx)
 	require.NoError(t, err)
@@ -139,7 +139,6 @@ func openJobScheduleTestDatabase(t *testing.T, ctx context.Context, databasePath
 	db := &database.DB{DB: gormDB}
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsService.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsService.LoadDatabaseSettings(ctx))
 
 	return db, settingsService

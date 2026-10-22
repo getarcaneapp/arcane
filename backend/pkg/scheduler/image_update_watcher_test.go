@@ -16,8 +16,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/streams/bus"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
 )
 
 type imageUpdateScannerFakeInternal struct {
@@ -83,14 +83,14 @@ func (s *imageUpdateScannerFakeInternal) peakActive() int {
 	return s.maxActive
 }
 
-type pollingSettingReaderFakeInternal struct {
+type pollingSettingReaderFake struct {
 	mu                  sync.RWMutex
 	enabled             bool
 	eventWatcherEnabled bool
 	schedule            string
 }
 
-func (s *pollingSettingReaderFakeInternal) GetBoolSetting(_ context.Context, key string, fallback bool) bool {
+func (s *pollingSettingReaderFake) GetBoolSetting(_ context.Context, key string) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	switch key {
@@ -99,20 +99,17 @@ func (s *pollingSettingReaderFakeInternal) GetBoolSetting(_ context.Context, key
 	case "imageEventWatcherEnabled":
 		return s.eventWatcherEnabled
 	default:
-		return fallback
+		return false
 	}
 }
 
-func (s *pollingSettingReaderFakeInternal) GetStringSetting(_ context.Context, _, defaultValue string) string {
+func (s *pollingSettingReaderFake) GetStringSetting(_ context.Context, _ string) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	if s.schedule == "" {
-		return defaultValue
-	}
 	return s.schedule
 }
 
-func (s *pollingSettingReaderFakeInternal) setEnabled(enabled bool) {
+func (s *pollingSettingReaderFake) setEnabled(enabled bool) {
 	s.mu.Lock()
 	s.enabled = enabled
 	s.mu.Unlock()
@@ -178,7 +175,7 @@ func (b *lockedBufferInternal) String() string {
 
 func newImageUpdateWatcherForTest(t *testing.T,
 	scanner imageUpdateScannerInternal,
-	settings pollingSettingReaderInternal,
+	settings pollingSettingReader,
 	eventBus *bus.DockerEventBus,
 	backfiller projectImageRefsBackfillerInternal,
 ) *ImageUpdateWatcher {
@@ -225,7 +222,7 @@ func startImageUpdateWatcherForTest(t *testing.T, watcher *ImageUpdateWatcher) {
 
 func TestImageUpdateWatcher_StartScansAtStartupAndCoalescesAllImageEvents(t *testing.T) {
 	scanner := &imageUpdateScannerFakeInternal{}
-	settings := &pollingSettingReaderFakeInternal{enabled: true, eventWatcherEnabled: true}
+	settings := &pollingSettingReaderFake{enabled: true, eventWatcherEnabled: true}
 	eventBus := bus.NewDockerEventBus()
 	watcher := newImageUpdateWatcherForTest(t, scanner, settings, eventBus, nil)
 	startImageUpdateWatcherForTest(t, watcher)
@@ -257,7 +254,7 @@ func TestImageUpdateWatcher_StartScansAtStartupAndCoalescesAllImageEvents(t *tes
 
 func TestImageUpdateWatcher_EventTriggersAreOptIn(t *testing.T) {
 	scanner := &imageUpdateScannerFakeInternal{}
-	settings := &pollingSettingReaderFakeInternal{enabled: true}
+	settings := &pollingSettingReaderFake{enabled: true}
 	eventBus := bus.NewDockerEventBus()
 	watcher := newImageUpdateWatcherForTest(t, scanner, settings, eventBus, nil)
 	startImageUpdateWatcherForTest(t, watcher)
@@ -290,7 +287,7 @@ func TestImageUpdateWatcher_EventDuringScanQueuesOneSerializedFollowUp(t *testin
 		startedCh: make(chan int, 4),
 		releaseCh: releaseCh,
 	}
-	settings := &pollingSettingReaderFakeInternal{enabled: true, eventWatcherEnabled: true}
+	settings := &pollingSettingReaderFake{enabled: true, eventWatcherEnabled: true}
 	eventBus := bus.NewDockerEventBus()
 	watcher := newImageUpdateWatcherForTest(t, scanner, settings, eventBus, nil)
 	startImageUpdateWatcherForTest(t, watcher)
@@ -309,7 +306,7 @@ func TestImageUpdateWatcher_EventDuringScanQueuesOneSerializedFollowUp(t *testin
 
 func TestImageUpdateWatcher_DisabledTriggersAreSkippedUntilEnabled(t *testing.T) {
 	scanner := &imageUpdateScannerFakeInternal{}
-	settings := &pollingSettingReaderFakeInternal{enabled: false}
+	settings := &pollingSettingReaderFake{enabled: false}
 	eventBus := bus.NewDockerEventBus()
 	watcher := newImageUpdateWatcherForTest(t, scanner, settings, eventBus, nil)
 	startImageUpdateWatcherForTest(t, watcher)
@@ -328,7 +325,7 @@ func TestImageUpdateWatcher_DisabledTriggersAreSkippedUntilEnabled(t *testing.T)
 
 func TestImageUpdateWatcher_ScanErrorDoesNotStopFutureEvents(t *testing.T) {
 	scanner := &imageUpdateScannerFakeInternal{errors: []error{errors.New("registry unavailable")}}
-	settings := &pollingSettingReaderFakeInternal{enabled: true, eventWatcherEnabled: true}
+	settings := &pollingSettingReaderFake{enabled: true, eventWatcherEnabled: true}
 	eventBus := bus.NewDockerEventBus()
 	watcher := newImageUpdateWatcherForTest(t, scanner, settings, eventBus, nil)
 	startImageUpdateWatcherForTest(t, watcher)
@@ -344,7 +341,7 @@ func TestImageUpdateWatcher_RunNowReturnsInProgressErrorDuringActiveScan(t *test
 		startedCh: make(chan int, 1),
 		releaseCh: releaseCh,
 	}
-	settings := &pollingSettingReaderFakeInternal{enabled: true}
+	settings := &pollingSettingReaderFake{enabled: true}
 	watcher := newImageUpdateWatcherForTest(t, scanner, settings, bus.NewDockerEventBus(), nil)
 	startImageUpdateWatcherForTest(t, watcher)
 	require.Equal(t, 1, <-scanner.startedCh)
@@ -362,7 +359,7 @@ func TestImageUpdateWatcher_RunNowReturnsInProgressErrorDuringActiveScan(t *test
 
 func TestImageUpdateWatcher_RunNowReturnsCompletedResult(t *testing.T) {
 	scanner := &imageUpdateScannerFakeInternal{}
-	settings := &pollingSettingReaderFakeInternal{enabled: true}
+	settings := &pollingSettingReaderFake{enabled: true}
 	watcher := newImageUpdateWatcherForTest(t, scanner, settings, bus.NewDockerEventBus(), nil)
 	startImageUpdateWatcherForTest(t, watcher)
 
@@ -377,7 +374,7 @@ func TestImageUpdateWatcher_RunNowReturnsCompletedResult(t *testing.T) {
 
 func TestImageUpdateWatcher_RunNowReturnsContainedScanPanic(t *testing.T) {
 	scanner := &imageUpdateScannerFakeInternal{panics: []bool{false, true}}
-	settings := &pollingSettingReaderFakeInternal{enabled: true}
+	settings := &pollingSettingReaderFake{enabled: true}
 	watcher := newImageUpdateWatcherForTest(t, scanner, settings, bus.NewDockerEventBus(), nil)
 	startImageUpdateWatcherForTest(t, watcher)
 	// Wait for durable startup admission and the startup scan itself to finish,
@@ -398,7 +395,7 @@ func TestImageUpdateWatcher_TriggeredScanRetriesAfterManualScanFinishes(t *testi
 		startedCh: make(chan int, 4),
 		releaseCh: releaseCh,
 	}
-	settings := &pollingSettingReaderFakeInternal{enabled: true, eventWatcherEnabled: true}
+	settings := &pollingSettingReaderFake{enabled: true, eventWatcherEnabled: true}
 	eventBus := bus.NewDockerEventBus()
 	watcher := newImageUpdateWatcherForTest(t, scanner, settings, eventBus, nil)
 	startImageUpdateWatcherForTest(t, watcher)
@@ -458,7 +455,7 @@ func TestImageUpdateWatcher_BackfillGatesFirstScanAndCoalescesEventBurst(t *test
 		},
 	}
 	scanner := &imageUpdateScannerFakeInternal{}
-	settings := &pollingSettingReaderFakeInternal{enabled: true, eventWatcherEnabled: true}
+	settings := &pollingSettingReaderFake{enabled: true, eventWatcherEnabled: true}
 	eventBus := bus.NewDockerEventBus()
 	watcher := newImageUpdateWatcherForTest(t, scanner, settings, eventBus, backfiller)
 	startImageUpdateWatcherForTest(t, watcher)
@@ -492,7 +489,7 @@ func TestImageUpdateWatcher_BackfillRetriesContainedPanic(t *testing.T) {
 		},
 	}
 	scanner := &imageUpdateScannerFakeInternal{}
-	settings := &pollingSettingReaderFakeInternal{enabled: true}
+	settings := &pollingSettingReaderFake{enabled: true}
 	watcher := newImageUpdateWatcherForTest(t, scanner, settings, bus.NewDockerEventBus(), backfiller)
 	startImageUpdateWatcherForTest(t, watcher)
 
@@ -518,7 +515,7 @@ func TestImageUpdateWatcher_BackfillFailureRetriesBeforeScanning(t *testing.T) {
 		},
 	}
 	scanner := &imageUpdateScannerFakeInternal{}
-	settings := &pollingSettingReaderFakeInternal{enabled: true}
+	settings := &pollingSettingReaderFake{enabled: true}
 	watcher := newImageUpdateWatcherForTest(t, scanner, settings, bus.NewDockerEventBus(), backfiller)
 	startImageUpdateWatcherForTest(t, watcher)
 
@@ -544,7 +541,7 @@ func TestImageUpdateWatcher_CancellationStopsBackfillWithoutScanning(t *testing.
 		},
 	}
 	scanner := &imageUpdateScannerFakeInternal{}
-	settings := &pollingSettingReaderFakeInternal{enabled: true}
+	settings := &pollingSettingReaderFake{enabled: true}
 	watcher := newImageUpdateWatcherForTest(t, scanner, settings, bus.NewDockerEventBus(), backfiller)
 	ctx, cancel := context.WithCancel(t.Context())
 	errCh := make(chan error, 1)
@@ -563,7 +560,7 @@ func TestImageUpdateWatcher_CancellationStopsBackfillWithoutScanning(t *testing.
 
 func TestImageUpdateWatcher_ScheduledPollTriggersScanWithoutEvents(t *testing.T) {
 	scanner := &imageUpdateScannerFakeInternal{}
-	settings := &pollingSettingReaderFakeInternal{enabled: true, schedule: "* * * * * *"}
+	settings := &pollingSettingReaderFake{enabled: true, schedule: "* * * * * *"}
 	watcher := newImageUpdateWatcherForTest(t, scanner, settings, bus.NewDockerEventBus(), nil)
 	jobScheduler, err := NewJobScheduler(t.Context(), watcher.coordinator, time.UTC)
 	require.NoError(t, err)
@@ -597,7 +594,7 @@ func TestImageUpdateWatcher_ScheduledPollTriggersScanWithoutEvents(t *testing.T)
 
 func TestImageUpdateWatcher_ClosedEventSubscriptionKeepsWatcherRunning(t *testing.T) {
 	scanner := &imageUpdateScannerFakeInternal{}
-	settings := &pollingSettingReaderFakeInternal{enabled: true}
+	settings := &pollingSettingReaderFake{enabled: true}
 	eventBus := bus.NewDockerEventBus()
 	watcher := newImageUpdateWatcherForTest(t, scanner, settings, eventBus, nil)
 	startImageUpdateWatcherForTest(t, watcher)
@@ -612,7 +609,7 @@ func TestImageUpdateWatcher_ClosedEventSubscriptionKeepsWatcherRunning(t *testin
 
 func TestImageUpdateWatcher_SupervisorRestartsAfterCancellation(t *testing.T) {
 	scanner := &imageUpdateScannerFakeInternal{}
-	watcher := newImageUpdateWatcherForTest(t, scanner, &pollingSettingReaderFakeInternal{enabled: true}, bus.NewDockerEventBus(), nil)
+	watcher := newImageUpdateWatcherForTest(t, scanner, &pollingSettingReaderFake{enabled: true}, bus.NewDockerEventBus(), nil)
 	supervisor := newWatcherSupervisor(watcher)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -630,7 +627,7 @@ func TestImageUpdateWatcher_SupervisorRestartsAfterCancellation(t *testing.T) {
 
 func TestImageUpdateWatcher_RunNowWaitsForMetadataReadiness(t *testing.T) {
 	scanner := &imageUpdateScannerFakeInternal{}
-	settings := &pollingSettingReaderFakeInternal{enabled: true}
+	settings := &pollingSettingReaderFake{enabled: true}
 	watcher := newImageUpdateWatcherForTest(t, scanner, settings, bus.NewDockerEventBus(), nil)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)

@@ -10,7 +10,7 @@ import (
 	"go.getarcane.app/docker"
 	"go.getarcane.app/streams/bus"
 
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 )
 
 const (

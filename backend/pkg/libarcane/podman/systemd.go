@@ -14,7 +14,7 @@ import (
 	godbus "github.com/godbus/dbus/v5"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 )
 
 const defaultSystemBusAddress = "unix:path=/run/dbus/system_bus_socket"

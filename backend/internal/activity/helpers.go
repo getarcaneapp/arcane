@@ -7,8 +7,8 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 )
 
 // Job summaries live in their target environment's environment_id column.

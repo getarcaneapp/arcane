@@ -15,8 +15,8 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/api/ws"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 )
 
 // logLevels maps LOG_LEVEL values to slog levels; unknown values map to the zero value, slog.LevelInfo.

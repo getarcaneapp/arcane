@@ -596,7 +596,11 @@ test.describe('Volumes shift-select', () => {
 		await page
 			.context()
 			.route(/\/api\/environments\/remote-shift-test\/settings$/, async (route) => {
-				await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({ settings: [], runtime: {}, readOnly: false })
+				});
 			});
 		const remoteVolumes = Array.from({ length: 8 }, (_, index) => mockVolume(index + 101));
 		await page.addInitScript(() => {

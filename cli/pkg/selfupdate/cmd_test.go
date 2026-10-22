@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/selfupdate"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/selfupdate"
 )
 
 func TestFindChecksumMatchesNextDistPath(t *testing.T) {

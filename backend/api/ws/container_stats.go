@@ -13,7 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 
-	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
+	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
 )
 
 // ============================================================================

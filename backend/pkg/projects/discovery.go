@@ -15,7 +15,7 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	"go.yaml.in/yaml/v4"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 )
 
 type DiscoveredProjectDir struct {
@@ -74,7 +74,7 @@ func IsProjectDirectoryPath(path string, followSymlinks bool) (bool, error) {
 	return resolvedInfo.IsDir(), nil
 }
 
-func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks bool, maxDepth int) ([]DiscoveredProjectDir, error) {
+func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks bool, maxDepth int, skipDirectories string) ([]DiscoveredProjectDir, error) {
 	root = filepath.Clean(root)
 
 	isDir, err := IsProjectDirectoryPath(root, followSymlinks)
@@ -86,7 +86,7 @@ func DiscoverProjectDirectories(ctx context.Context, root string, followSymlinks
 	ancestors := make(map[string]struct{})
 
 	if err == nil {
-		err = walkProjectDirectoriesInternal(ctx, root, root, true, 0, maxDepth, followSymlinks, projectScanSkipDirectorySetInternal(""), ancestors, &discovered)
+		err = walkProjectDirectoriesInternal(ctx, root, root, true, 0, maxDepth, followSymlinks, projectScanSkipDirectorySetInternal(skipDirectories), ancestors, &discovered)
 	}
 	if err != nil {
 		// The process runs as the PUID/PGID runtime user (default 65532) even

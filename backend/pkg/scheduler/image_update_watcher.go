@@ -13,15 +13,15 @@ import (
 	"github.com/moby/moby/api/types/events"
 	"go.getarcane.app/streams/bus"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 const (
@@ -34,9 +34,9 @@ type imageUpdateScannerInternal interface {
 	RunImageCheck(ctx context.Context, request types.ImageUpdateCheckRequest) (types.SchedulerOutcome, error)
 }
 
-type pollingSettingReaderInternal interface {
-	GetBoolSetting(ctx context.Context, key string, fallback bool) bool
-	GetStringSetting(ctx context.Context, key, defaultValue string) string
+type pollingSettingReader interface {
+	GetBoolSetting(ctx context.Context, key string) bool
+	GetStringSetting(ctx context.Context, key string) string
 }
 
 type dockerEventBusProviderInternal interface {
@@ -50,7 +50,7 @@ type projectImageRefsBackfillerInternal interface {
 // ImageUpdateWatcher debounces Docker events and admits durable image scans.
 type ImageUpdateWatcher struct {
 	imageUpdateService     imageUpdateScannerInternal
-	settingsService        pollingSettingReaderInternal
+	settingsService        pollingSettingReader
 	dockerService          dockerEventBusProviderInternal
 	projectService         projectImageRefsBackfillerInternal
 	dispatchMu             sync.RWMutex
@@ -158,7 +158,7 @@ func (w *ImageUpdateWatcher) runEventLoop(runCtx context.Context) error {
 			w.metadataReadyOnce.Do(func() { close(w.metadataReady) })
 			w.Trigger()
 		case <-w.trigger:
-			if ready && !submitting && w.settingsService.GetBoolSetting(runCtx, "pollingEnabled", true) {
+			if ready && !submitting && w.settingsService.GetBoolSetting(runCtx, "pollingEnabled") {
 				timer.Reset(w.debounce)
 			}
 		case <-timer.C:
@@ -186,7 +186,7 @@ func (w *ImageUpdateWatcher) runEventLoop(runCtx context.Context) error {
 				w.eventDegraded.Store(true)
 				continue
 			}
-			if w.settingsService.GetBoolSetting(runCtx, "imageEventWatcherEnabled", false) {
+			if w.settingsService.GetBoolSetting(runCtx, "imageEventWatcherEnabled") {
 				w.Trigger()
 			}
 		}
@@ -346,7 +346,7 @@ func (w *ImageUpdateWatcher) executeScan(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if !w.settingsService.GetBoolSetting(ctx, "pollingEnabled", true) {
+	if !w.settingsService.GetBoolSetting(ctx, "pollingEnabled") {
 		slog.DebugContext(ctx, "image update watcher disabled; skipping image scan")
 		return nil
 	}
@@ -381,10 +381,10 @@ func (w *ImageUpdateWatcher) refreshSchedule(ctx context.Context) error {
 	if coordinator == nil {
 		return errors.New("durable job coordinator unavailable")
 	}
-	if !w.settingsService.GetBoolSetting(ctx, "pollingEnabled", true) {
+	if !w.settingsService.GetBoolSetting(ctx, "pollingEnabled") {
 		return coordinator.Checkpoint(ctx, w.Name(), "", time.Time{})
 	}
-	spec := w.settingsService.GetStringSetting(ctx, "pollingInterval", imageUpdateWatcherDefaultSchedule)
+	spec := w.settingsService.GetStringSetting(ctx, "pollingInterval")
 	schedule, err := cronScheduleParser.Parse(spec)
 	if err != nil {
 		slog.WarnContext(ctx, "invalid pollingInterval cron expression; using default schedule", "pollingInterval", spec, "error", err)

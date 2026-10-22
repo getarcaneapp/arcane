@@ -16,10 +16,10 @@ import (
 	"go.uber.org/fx"
 	"google.golang.org/grpc"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
 var serverOptions = fx.Options(
@@ -169,9 +169,9 @@ func prepareServerTLS(ctx context.Context, cfg *config.Config) (bool, string, st
 	useTLS := cfg.TLSEnabled
 	tlsCertFile := strings.TrimSpace(cfg.TLSCertFile)
 	tlsKeyFile := strings.TrimSpace(cfg.TLSKeyFile)
-	edgeCfg := buildEdgeRuntimeConfig(cfg)
+	edgeCfg := buildEdgeRuntimeConfig(cfg, "")
 	if useTLS && (tlsCertFile == "" || tlsKeyFile == "") {
-		return false, "", "", nil, errors.New("TLS_ENABLED requires both TLS_CERT_FILE and TLS_KEY_FILE")
+		return false, "", "", nil, errors.New("ARCANE_TLS_ENABLED requires both ARCANE_TLS_CERT_FILE and ARCANE_TLS_KEY_FILE")
 	}
 
 	if cfg.AgentMode {
@@ -212,7 +212,7 @@ func configureHTTPProtocols(useTLS bool, handler http.Handler) (http.Handler, *h
 	return handler, &protocols
 }
 
-func buildEdgeRuntimeConfig(cfg *config.Config) *edge.Config {
+func buildEdgeRuntimeConfig(cfg *config.Config, agentToken string) *edge.Config {
 	return &edge.Config{
 		EdgeAgent:             cfg.EdgeAgent,
 		EdgeTransport:         cfg.EdgeTransport,
@@ -225,7 +225,7 @@ func buildEdgeRuntimeConfig(cfg *config.Config) *edge.Config {
 		EdgeMTLSAssetsDir:     cfg.EdgeMTLSAssetsDir,
 		AppURL:                cfg.GetAppURL(),
 		ManagerApiUrl:         cfg.ManagerApiUrl,
-		AgentToken:            cfg.AgentToken,
+		AgentToken:            agentToken,
 		Port:                  cfg.Port,
 		Listen:                cfg.Listen,
 	}

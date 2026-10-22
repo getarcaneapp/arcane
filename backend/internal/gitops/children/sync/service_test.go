@@ -17,23 +17,23 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	projectpkg "github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	projectpkg "github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/gitutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
-var testDockerService = &dockerInternal.DockerClientService{Client: func() *client.Client {
+var testDockerService = (&dockerInternal.DockerClientService{}).WithClient(func() *client.Client {
 	cli, _ := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
 	return cli
-}()}
+}())
 
 func setupSyncTestService(t *testing.T) (*Service, *database.DB, string) {
 	t.Helper()
@@ -47,15 +47,17 @@ func setupSyncTestService(t *testing.T) (*Service, *database.DB, string) {
 	require.NoError(t, db.AutoMigrate(&projectpkg.Project{}, &projectpkg.GitOpsSync{}, &settings.SettingVariable{}, &imageupdate.ImageUpdateRecord{}, &event.Event{}))
 	arcaneDB := &database.DB{DB: db}
 
-	settingsService, err := settings.NewSettingsService(ctx, arcaneDB, &config.Config{})
+	settingsService, err := settings.NewSettingsService(ctx, arcaneDB, &config.Config{}, settings.Env{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 
 	projectsDir := t.TempDir()
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(arcaneDB, config.Load(), nil)
-	projectService := projectpkg.NewProjectService(arcaneDB, settingsService, eventService, nil, testDockerService, nil, nil, nil, config.Load(), nil, nil)
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	eventService := event.NewEventService(arcaneDB, cfg, nil, nil)
+	projectService := projectpkg.NewProjectService(arcaneDB, settingsService, eventService, nil, testDockerService, nil, nil, nil, cfg, nil, nil)
 
 	limits := func(_ context.Context, sync *projectpkg.GitOpsSync) (int, int64, int64) {
 		return sync.MaxSyncFiles, sync.MaxSyncTotalSize, sync.MaxSyncBinarySize

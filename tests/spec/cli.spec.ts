@@ -162,14 +162,26 @@ const readOnlyJsonCommands: JsonReadOnlyCommand[] = [
 		name: 'settings list',
 		args: ['settings', 'list', '--json'],
 		expectation: (value) => {
-			expect(value).toEqual(expect.any(Array));
+			expect(value).toEqual(
+				expect.objectContaining({
+					settings: expect.any(Array),
+					runtime: expect.any(Object),
+					readOnly: expect.any(Boolean)
+				})
+			);
 		}
 	},
 	{
 		name: 'settings public',
 		args: ['settings', 'public', '--json'],
 		expectation: (value) => {
-			expect(value).toEqual(expect.any(Array));
+			expect(value).toEqual(
+				expect.objectContaining({
+					settings: expect.any(Array),
+					runtime: expect.any(Object),
+					readOnly: expect.any(Boolean)
+				})
+			);
 		}
 	},
 	{

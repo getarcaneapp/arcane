@@ -19,17 +19,17 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/version"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 )
 
 func setupAuthServiceTestDB(t *testing.T) *database.DB {
@@ -57,7 +57,9 @@ func setupAuthServiceTestDB(t *testing.T) *database.DB {
 
 func newSettingsServiceForAuthTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	svc, err := settings.NewSettingsService(ctx, db, &config.Config{})
+	settingsEnv, err := settings.LoadEnv()
+	require.NoError(t, err)
+	svc, err := settings.NewSettingsService(ctx, db, &config.Config{}, settingsEnv)
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}
@@ -745,64 +747,27 @@ func TestRefreshToken_RejectsNonHMACAlg(t *testing.T) {
 
 func TestGetOidcConfigurationStatus(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
-	// Disabled
 	s := newTestAuthService()
-	s.config = &config.Config{}
 	settingsSvc, err := newSettingsServiceForAuthTest(t, t.Context(), db)
 	require.NoError(t, err)
 	s.settingsService = settingsSvc
 
 	status, err := s.GetOidcConfigurationStatus(t.Context())
+	require.NoError(t, err)
+	assert.False(t, status.MergeAccounts)
+	assert.Empty(t, status.ProviderName)
+	assert.Empty(t, status.ProviderLogoUrl)
 
-	require.NoError(t, err,
-		"GetOidcConfigurationStatus error: %v", err)
-
-	assert.False(t, status.EnvForced || status.EnvConfigured,
-		"expected disabled, got forced=%v configured=%v", status.EnvForced, status.EnvConfigured)
-
-	// MergeAccounts will be false since GetSettings will fail
-
-	assert.False(t, status.MergeAccounts,
-		"expected mergeAccounts=false, got true")
-
-	// Explicit env override to false should still be treated as forced
-	t.Setenv("OIDC_ENABLED", "false")
+	t.Setenv("ARCANE_OIDC_PROVIDER_NAME", "Env Provider")
+	t.Setenv("ARCANE_OIDC_PROVIDER_LOGO_URL", "https://example.com/logo.png")
 	settingsSvc, err = newSettingsServiceForAuthTest(t, t.Context(), db)
 	require.NoError(t, err)
 	s.settingsService = settingsSvc
-	s.config.OidcEnabled = false
+
 	status, err = s.GetOidcConfigurationStatus(t.Context())
-
-	require.NoError(t, err,
-		"GetOidcConfigurationStatus error: %v", err)
-
-	assert.False(t, !status.EnvForced || status.EnvConfigured,
-		"expected forced=false-override and not configured, got forced=%v configured=%v", status.EnvForced, status.EnvConfigured)
-
-	// Enabled but missing fields
-	t.Setenv("OIDC_ENABLED", "true")
-	settingsSvc, err = newSettingsServiceForAuthTest(t, t.Context(), db)
 	require.NoError(t, err)
-	s.settingsService = settingsSvc
-	s.config.OidcEnabled = true
-	status, err = s.GetOidcConfigurationStatus(t.Context())
-
-	require.NoError(t, err,
-		"GetOidcConfigurationStatus error: %v", err)
-
-	assert.False(t, !status.EnvForced || status.EnvConfigured,
-		"expected enabled but not configured, got forced=%v configured=%v", status.EnvForced, status.EnvConfigured)
-
-	// Enabled and configured
-	s.config.OidcClientID = "client-id"
-	s.config.OidcIssuerURL = "https://example.com"
-	status, err = s.GetOidcConfigurationStatus(t.Context())
-
-	require.NoError(t, err,
-		"GetOidcConfigurationStatus error: %v", err)
-
-	assert.False(t, !status.EnvForced || !status.EnvConfigured,
-		"expected enabled and configured, got forced=%v configured=%v", status.EnvForced, status.EnvConfigured)
+	assert.Equal(t, "Env Provider", status.ProviderName)
+	assert.Equal(t, "https://example.com/logo.png", status.ProviderLogoUrl)
 }
 
 func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_CreatesNewUser(t *testing.T) {
@@ -811,7 +776,6 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_Creat
 
 	settingsSvc, err := newSettingsServiceForAuthTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))
 
 	userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
@@ -878,7 +842,6 @@ func TestFindOrCreateOidcUser_MergeEnabled_WithExistingUser(t *testing.T) {
 
 			settingsSvc, err := newSettingsServiceForAuthTest(t, ctx, db)
 			require.NoError(t, err)
-			require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 			require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))
 
 			userSvc := user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB)
@@ -1035,10 +998,13 @@ func TestGetSessionBootstrap(t *testing.T) {
 				{ID: "env-a", Name: "A", Enabled: true},
 				{ID: "env-b", Name: "B", Enabled: true},
 			}).Error)
+			versionSettings, err := newSettingsServiceForAuthTest(t, t.Context(), db)
+			require.NoError(t, err)
+			require.NoError(t, versionSettings.SetBoolSetting(t.Context(), "updateCheckEnabled", false))
 			s := &AuthService{
 				userService:        userSvc,
 				environmentService: environment.NewEnvironmentService(db, http.DefaultClient, nil, nil, nil, nil),
-				versionService:     version.NewVersionService(nil, true, "1.2.3", "revision", nil, nil, nil, nil),
+				versionService:     version.NewVersionService(nil, "1.2.3", "revision", nil, nil, nil, versionSettings),
 			}
 
 			bootstrap, err := s.GetSessionBootstrap(t.Context(), "u-bootstrap", tt.ps)
@@ -1058,13 +1024,16 @@ func TestGetSessionBootstrap(t *testing.T) {
 
 	t.Run("unknown user fails", func(t *testing.T) {
 		db := setupAuthServiceTestDB(t)
+		versionSettings, err := newSettingsServiceForAuthTest(t, t.Context(), db)
+		require.NoError(t, err)
+		require.NoError(t, versionSettings.SetBoolSetting(t.Context(), "updateCheckEnabled", false))
 		s := &AuthService{
 			userService:        user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB),
 			environmentService: environment.NewEnvironmentService(db, http.DefaultClient, nil, nil, nil, nil),
-			versionService:     version.NewVersionService(nil, true, "1.2.3", "revision", nil, nil, nil, nil),
+			versionService:     version.NewVersionService(nil, "1.2.3", "revision", nil, nil, nil, versionSettings),
 		}
 
-		_, err := s.GetSessionBootstrap(t.Context(), "missing", nil)
+		_, err = s.GetSessionBootstrap(t.Context(), "missing", nil)
 
 		require.Error(t, err)
 	})

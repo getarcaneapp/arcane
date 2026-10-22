@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 )
 
 const maxErrorBodyBytes = 4096

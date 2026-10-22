@@ -36,25 +36,25 @@ import (
 	updatertypes "go.getarcane.app/updater/types"
 	"golang.org/x/mod/semver"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/version"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 var (
@@ -100,6 +100,7 @@ type Service struct {
 	settingsService   *settings.SettingsService
 	projectService    *project.ProjectService
 	registryService   *registry.ContainerRegistryService
+	keepUpgrader      bool
 	// resolveRuntimeOptions determines how the upgrader container reaches the Docker daemon.
 	resolveRuntimeOptions func(
 		ctx context.Context,
@@ -159,6 +160,7 @@ func NewService(
 		isRunningInDocker func() bool,
 		selectReachableNetwork func(context.Context, *container.InspectResponse, string) string,
 	) ([]string, []mount.Mount, container.NetworkMode, error),
+	keepUpgrader bool,
 ) *Service {
 	return &Service{
 		db:                    db,
@@ -169,6 +171,7 @@ func NewService(
 		projectService:        projectService,
 		registryService:       registryService,
 		resolveRuntimeOptions: resolveRuntimeOptions,
+		keepUpgrader:          keepUpgrader,
 	}
 }
 
@@ -449,8 +452,7 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 		mounts = append(mounts, *appDataMount)
 	}
 
-	keepUpgraderContainer, _ := kit.ParseBool(os.Getenv("ARCANE_UPGRADE_KEEP_CONTAINER"))
-	if keepUpgraderContainer {
+	if s.keepUpgrader {
 		slog.InfoContext(ctx, "Keeping upgrader container after exit (ARCANE_UPGRADE_KEEP_CONTAINER=true)")
 	}
 
@@ -484,7 +486,7 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 				},
 			},
 			HostConfig: &container.HostConfig{
-				AutoRemove:  !keepUpgraderContainer,
+				AutoRemove:  !s.keepUpgrader,
 				Mounts:      mounts,
 				NetworkMode: networkMode,
 				SecurityOpt: securityOpt,
@@ -1319,7 +1321,7 @@ func (s *Service) finalizeUpdateAllJob(ctx context.Context, job *EnvironmentUpda
 
 // PruneUpgradeLogs removes expired upgrade logs from this instance's data directory.
 func (s *Service) PruneUpgradeLogs(ctx context.Context, dataDir string, now time.Time) (int, error) {
-	retentionDays := s.settingsService.GetIntSetting(ctx, "upgradeLogRetentionDays", 3)
+	retentionDays := s.settingsService.GetIntSetting(ctx, "upgradeLogRetentionDays")
 	if retentionDays == 0 {
 		return 0, nil
 	}

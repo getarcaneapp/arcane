@@ -248,8 +248,8 @@ Determine global admin status through `PermissionSet.IsGlobalAdmin()` or the use
 ## Runtime modes and jobs
 
 - Manager mode serves the UI and manages environments.
-- Direct agent mode uses `AGENT_MODE=true` and accepts manager connections.
-- Edge agent mode uses `EDGE_AGENT=true` with `MANAGER_API_URL` and dials the manager.
+- Direct agent mode uses `ARCANE_AGENT_MODE=true` and accepts manager connections.
+- Edge agent mode uses `ARCANE_EDGE_AGENT=true` with `ARCANE_MANAGER_API_URL` and dials the manager.
 
 Background jobs implement the scheduler job contract. Wire them through `internal/di` and register them in `internal/bootstrap/jobs_bootstrap.go`.
 

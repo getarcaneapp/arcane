@@ -13,8 +13,8 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 func networkScopeContext(t *testing.T, target string, bodies map[string]any) (context.Context, *sync.Map) {

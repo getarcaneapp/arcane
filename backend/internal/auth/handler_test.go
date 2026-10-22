@@ -19,16 +19,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/cookie"
 )
 
 type secureInput struct{}
@@ -447,10 +447,18 @@ func TestNewHumaMiddleware_AgentAuthAppliesForwardedIconCatalog(t *testing.T) {
 	}
 
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
-	api.UseMiddleware(NewHumaMiddleware(api, &AuthService{}, nil, nil, nil, &config.Config{
+	agentCfg := &config.Config{
 		AgentMode:  true,
 		AgentToken: agentToken,
-	}))
+	}
+	settingsEnv, err := settings.LoadEnv()
+	require.NoError(t, err)
+	settingsService, err := settings.NewSettingsService(t.Context(), setupAuthServiceTestDB(t), agentCfg, settingsEnv)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context())))
+	})
+	api.UseMiddleware(NewHumaMiddleware(api, &AuthService{settingsService: settingsService}, nil, nil, nil, agentCfg))
 
 	huma.Register(api, huma.Operation{
 		OperationID: "secure-agent-icon-catalog",

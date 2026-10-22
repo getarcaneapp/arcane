@@ -15,7 +15,7 @@ import (
 	buildtypes "go.getarcane.app/builds/types"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
 // ResolveBuildContext resolves a service build context against workingDir.

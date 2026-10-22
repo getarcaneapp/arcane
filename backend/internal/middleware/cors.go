@@ -10,7 +10,7 @@ import (
 	"github.com/labstack/echo/v5/middleware"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 )
 
 type CORSMiddleware struct {
@@ -77,7 +77,7 @@ func deriveAllowedOriginsInternal(cfg *config.Config, custom []string) []string 
 			if u, err := url.Parse(appURL); err == nil {
 				origins = append(origins, u.Scheme+"://"+u.Host)
 			} else {
-				slog.WarnContext(ctx, "Failed to parse APP_URL for CORS origins", "url", appURL, "error", err)
+				slog.WarnContext(ctx, "Failed to parse ARCANE_APP_URL for CORS origins", "url", appURL, "error", err)
 			}
 		}
 	}

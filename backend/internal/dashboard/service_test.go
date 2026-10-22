@@ -26,26 +26,26 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
-	libpodman "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/podman"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/podman"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
+	libpodman "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
-var testDockerService = &docker.DockerClientService{Client: func() *client.Client {
+var testDockerService = (&docker.DockerClientService{}).WithClient(func() *client.Client {
 	cli, _ := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
 	return cli
-}()}
+}())
 
 func setupDashboardServiceTestDB(t *testing.T) (*database.DB, *settings.SettingsService) {
 	t.Helper()
@@ -55,7 +55,9 @@ func setupDashboardServiceTestDB(t *testing.T) (*database.DB, *settings.Settings
 	require.NoError(t, db.AutoMigrate(&apikey.ApiKey{}, &environment.Environment{}, &imageupdate.ImageUpdateRecord{}, &project.Project{}, &settings.SettingVariable{}))
 
 	databaseDB := &database.DB{DB: db}
-	settingsSvc, err := settings.NewSettingsService(t.Context(), databaseDB, &config.Config{})
+	settingsEnv, err := settings.LoadEnv()
+	require.NoError(t, err)
+	settingsSvc, err := settings.NewSettingsService(t.Context(), databaseDB, &config.Config{}, settingsEnv)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsSvc.Stop(context.WithoutCancel(t.Context()))) })
 
@@ -112,7 +114,7 @@ func newDashboardTestDockerService(
 		_ = dockerClient.Close()
 	})
 
-	return docker.NewDockerClientService(t.Context(), nil, nil, settingsSvc).WithClient(dockerClient)
+	return docker.NewDockerClientService(t.Context(), nil, settingsSvc).WithClient(dockerClient)
 }
 
 func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
@@ -191,7 +193,7 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 
 	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images, volumes)
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 	require.NoError(t, settingsSvc.SetStringSetting(t.Context(), "projectsDirectory", projectsDir))
 	require.NoError(t, settingsSvc.SetStringSetting(t.Context(), "autoUpdateExcludedContainers", "stopped-app"))
 	projectPath := filepath.Join(projectsDir, "project-with-update")
@@ -205,8 +207,10 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 		Path:    projectPath,
 		Status:  project.ProjectStatusStopped,
 	}).Error)
-	imageSvc := image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil)
-	projectSvc := project.NewProjectService(db, settingsSvc, nil, imageSvc, testDockerService, nil, nil, nil, config.Load(), nil, nil)
+	imageSvc := image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil)
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	projectSvc := project.NewProjectService(db, settingsSvc, nil, imageSvc, testDockerService, nil, nil, nil, cfg, nil, nil)
 	svc := NewDashboardService(
 		db,
 		dockerSvc,
@@ -457,7 +461,7 @@ func TestPendingContainerCountUsesScopedTagRecords(t *testing.T) {
 		},
 	}
 	require.NoError(t, db.Create(&records).Error)
-	service := &DashboardService{db: db, imageService: image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil)}
+	service := &DashboardService{db: db, imageService: image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil)}
 	containers := []dockercontainer.Summary{
 		{ID: "first", Image: "app:1.2.3", ImageID: "shared", Labels: map[string]string{labels.LabelUpdateStrategy: "auto"}},
 		{ID: "unchecked", Image: "app:1.2.3", ImageID: "shared", Labels: map[string]string{labels.LabelUpdateStrategy: "auto"}},

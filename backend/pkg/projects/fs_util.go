@@ -18,9 +18,8 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	"go.yaml.in/yaml/v4"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 func ResolveConfiguredContainerDirectory(configuredPath, defaultPath string) string {
@@ -161,10 +160,6 @@ func GetTemplatesDirectory(ctx context.Context, templatesDir string) (string, er
 }
 
 func projectScanSkipDirectorySetInternal(skipDirectories string) map[string]bool {
-	if strings.TrimSpace(skipDirectories) == "" {
-		skipDirectories = config.LoadProjectWorkspaceConfig().ProjectScanSkipDirs
-	}
-
 	dirs := map[string]bool{}
 	for dir := range strings.SplitSeq(skipDirectories, ",") {
 		dir = strings.TrimSpace(dir)
