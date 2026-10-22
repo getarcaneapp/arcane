@@ -5,9 +5,9 @@ set working-directory := '..'
 list:
     @{{ just_executable() }} --justfile {{ justfile() }} --list release
 
-# Compute the next image version from unreleased commits; pass github-output to export it
+# Compute the next image version from unreleased commits; pass github-output to export it and a channel (next, beta)
 [script('bash')]
-version mode="":
+version mode="" channel="next":
     set -euo pipefail
 
     CLIFF_CMD=""
@@ -67,10 +67,10 @@ version mode="":
     fi
 
     ESCAPED_BASE="${NEXT_BASE//./\\.}"
-    MAX_N=$(grep -E "^v${ESCAPED_BASE}-next\.[0-9]+$" <<<"$TAGS" | sed -E 's/.*-next\.//' | sort -n | tail -n1 || true)
+    MAX_N=$(grep -E "^v${ESCAPED_BASE}-{{ channel }}\.[0-9]+$" <<<"$TAGS" | sed -E 's/.*-{{ channel }}\.//' | sort -n | tail -n1 || true)
     COUNTER=$(( ${MAX_N:-0} + 1 ))
 
-    VERSION="${NEXT_BASE}-next.${COUNTER}"
+    VERSION="${NEXT_BASE}-{{ channel }}.${COUNTER}"
     IMAGE_TAG="v${VERSION}"
 
     echo "previous_tag=${PREVIOUS_TAG}"

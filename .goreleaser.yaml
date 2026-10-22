@@ -100,6 +100,7 @@ builds:
     mod_timestamp: '{{ .CommitTimestamp }}'
 
   - id: arcane-cli
+    skip: '{{ if index .Env "BUILD_BETA" }}true{{ end }}'
     main: .
     dir: cli
     binary: arcane-cli
@@ -271,12 +272,14 @@ dockers_v2:
     dockerfile: docker/Dockerfile-static
     images:
       - ghcr.io/getarcaneapp/manager
+      - '{{ if index .Env "BUILD_BETA" }}getarcaneapp/manager{{ end }}'
     tags:
       - '{{ if index .Env "BUILD_NEXT" }}next{{ end }}'
+      - '{{ if index .Env "BUILD_BETA" }}v{{ .Major }}-beta{{ end }}'
       - 'v{{ .Version }}'
-      - '{{ if not (index .Env "BUILD_NEXT") }}v{{ .Major }}.{{ .Minor }}{{ end }}'
-      - '{{ if not (index .Env "BUILD_NEXT") }}v{{ .Major }}{{ end }}'
-      - '{{ if not (index .Env "BUILD_NEXT") }}latest{{ end }}'
+      - '{{ if not (or (index .Env "BUILD_NEXT") (index .Env "BUILD_BETA")) }}v{{ .Major }}.{{ .Minor }}{{ end }}'
+      - '{{ if not (or (index .Env "BUILD_NEXT") (index .Env "BUILD_BETA")) }}v{{ .Major }}{{ end }}'
+      - '{{ if not (or (index .Env "BUILD_NEXT") (index .Env "BUILD_BETA")) }}latest{{ end }}'
     platforms:
       - linux/amd64
       - linux/arm64
@@ -301,12 +304,14 @@ dockers_v2:
     dockerfile: docker/Dockerfile-agent-static
     images:
       - ghcr.io/getarcaneapp/agent
+      - '{{ if index .Env "BUILD_BETA" }}getarcaneapp/agent{{ end }}'
     tags:
       - '{{ if index .Env "BUILD_NEXT" }}next{{ end }}'
+      - '{{ if index .Env "BUILD_BETA" }}v{{ .Major }}-beta{{ end }}'
       - 'v{{ .Version }}'
-      - '{{ if not (index .Env "BUILD_NEXT") }}v{{ .Major }}.{{ .Minor }}{{ end }}'
-      - '{{ if not (index .Env "BUILD_NEXT") }}v{{ .Major }}{{ end }}'
-      - '{{ if not (index .Env "BUILD_NEXT") }}latest{{ end }}'
+      - '{{ if not (or (index .Env "BUILD_NEXT") (index .Env "BUILD_BETA")) }}v{{ .Major }}.{{ .Minor }}{{ end }}'
+      - '{{ if not (or (index .Env "BUILD_NEXT") (index .Env "BUILD_BETA")) }}v{{ .Major }}{{ end }}'
+      - '{{ if not (or (index .Env "BUILD_NEXT") (index .Env "BUILD_BETA")) }}latest{{ end }}'
     platforms:
       - linux/amd64
       - linux/arm64
