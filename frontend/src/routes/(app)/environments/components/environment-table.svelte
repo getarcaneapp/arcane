@@ -34,7 +34,6 @@
 	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker.js';
 	import { capitalizeFirstLetter } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
-	import { applyEnvironmentUpgrade } from '#lib/utils/update-actions.js';
 
 	import EasyJoinDialog from '../../swarm/cluster/components/easy-join-dialog.svelte';
 	import EnvironmentUpgradeMenuItem from './environment-upgrade-menu-item.svelte';
@@ -55,7 +54,6 @@
 	} = $props();
 
 	let isLoading = $state({ removing: false, testing: false, upgrading: false, toggling: false });
-	let upgradingEnvironmentId = $state<string | null>(null);
 	let showUpgradeDialog = $state(false);
 	let selectedEnvironmentForUpgrade = $state<Environment | null>(null);
 	let selectedVersionInfoForUpgrade = $state<AppVersionInformation | null>(null);
@@ -146,15 +144,6 @@
 		selectedEnvironmentForUpgrade = environment;
 		selectedVersionInfoForUpgrade = versionInfo;
 		showUpgradeDialog = true;
-	}
-
-	async function handleConfirmUpgrade() {
-		if (!selectedEnvironmentForUpgrade) return;
-
-		const envId = selectedEnvironmentForUpgrade.id;
-		upgradingEnvironmentId = envId;
-
-		return applyEnvironmentUpgrade(envId, () => m.upgrade_failed({ error: m.common_unknown() }));
 	}
 
 	async function handleToggleEnabled(environment: Environment) {
@@ -398,7 +387,7 @@
 				environment={item}
 				isOnline={isEnvironmentOnline(item)}
 				disabled={isLoading.upgrading}
-				isUpgradingThis={upgradingEnvironmentId === item.id}
+				isUpgradingThis={isLoading.upgrading && selectedEnvironmentForUpgrade?.id === item.id}
 				onSelect={handleUpgradeSelected}
 			/>
 
@@ -441,14 +430,11 @@
 />
 
 <UpdateCenterDialog
-	bind:open={
-		() => showUpgradeDialog,
-		(open) => {
-			showUpgradeDialog = open;
-			if (!open) upgradingEnvironmentId = null;
-		}
-	}
-	onConfirm={handleConfirmUpgrade}
+	bind:open={showUpgradeDialog}
+	onFinished={async () => {
+		environments = await environmentManagementService.getEnvironments(requestOptions);
+		await environmentStore.initialize(environments.data);
+	}}
 	versionInformation={selectedVersionInfoForUpgrade ?? undefined}
 	canInstall={canInstallUpdates}
 	environmentName={selectedEnvironmentForUpgrade?.name}

@@ -6,6 +6,10 @@ import (
 	"encoding/json/v2"
 )
 
+type EnvironmentInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
 type EnvironmentRef struct {
 	ID   string `json:"id" doc:"Environment ID"`
 	Name string `json:"name" doc:"Environment display name"`

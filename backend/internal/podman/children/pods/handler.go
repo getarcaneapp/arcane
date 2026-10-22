@@ -54,10 +54,6 @@ type DeletePodInput struct {
 	Force         bool   `query:"force" doc:"Stop and remove running containers"`
 }
 
-type PrunePodsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 type PodTopInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	PodID         string `path:"podId" doc:"Pod name or ID"`
@@ -130,7 +126,7 @@ func (h *Handler) Delete(ctx context.Context, input *DeletePodInput) (*handlerut
 	return handlerutil.MessageOutput("Pod removed", ""), nil
 }
 
-func (h *Handler) Prune(ctx context.Context, input *PrunePodsInput) (*handlerutil.Out[[]types.PodPruneReport], error) {
+func (h *Handler) Prune(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]types.PodPruneReport], error) {
 	reports, err := h.service.Prune(ctx)
 	if err != nil {
 		apiErr := common.ToAPIError(err)

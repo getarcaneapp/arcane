@@ -22,10 +22,6 @@ type NotificationHandler struct {
 	config              *config.Config
 }
 
-type GetAllNotificationSettingsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 type GetAllNotificationSettingsOutput struct {
 	Body []types.NotificationSettings
 }
@@ -82,7 +78,7 @@ func (h *NotificationHandler) rejectIfAgentMode() error {
 	return nil
 }
 
-func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, input *GetAllNotificationSettingsInput) (*GetAllNotificationSettingsOutput, error) {
+func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, input *types.EnvironmentInput) (*GetAllNotificationSettingsOutput, error) {
 	if err := h.rejectIfAgentMode(); err != nil {
 		return nil, err
 	}

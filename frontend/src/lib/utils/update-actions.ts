@@ -3,12 +3,10 @@ import { toast } from 'svelte-sonner';
 import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 import { m } from '#lib/paraglide/messages.js';
 import BaseAPIService from '#lib/services/api-service.js';
-import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
 import { imageService } from '#lib/services/image-service.js';
 import { userService } from '#lib/services/user-service.js';
 import type { AutoUpdateResourceType, AutoUpdateResult } from '#lib/types/automation.js';
 import { activityToastOptions } from '#lib/utils/activity-toast.js';
-import { toastUpgradeError } from '#lib/utils/api.js';
 import { acrossEnvironmentsNote, actionEnvironments, settleAcrossEnvironments } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -160,22 +158,4 @@ export function summarizeUpdateCheckResult(result: { errorMessage?: string }) {
 	const firstError = result.errorMessage?.trim();
 	if (firstError) toast.error(firstError || m.containers_check_updates_failed());
 	else toast.success(m.images_update_check_completed());
-}
-
-export async function applyEnvironmentUpgrade(
-	environmentId: string,
-	failureMessage: () => string,
-	onRefresh?: () => Promise<unknown> | unknown,
-	useResponseMessage = false
-) {
-	try {
-		const result = await systemUpgradeService.triggerUpgrade(environmentId);
-		if (!result.success) throw new Error(result.error || (useResponseMessage && result.message) || failureMessage());
-		toast.success(m.upgrade_success());
-		await onRefresh?.();
-		return { upToDate: result.upToDate };
-	} catch (error) {
-		toastUpgradeError(error, m.upgrade_failed);
-		throw error;
-	}
 }

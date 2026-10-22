@@ -611,8 +611,7 @@ type UpgradeCheckResult struct {
 	Message    string `json:"message"`
 }
 
-// EnvironmentUpdateResult reports an environment's outcome within an update job.
-type EnvironmentUpdateResult struct {
+type UpgradeJobResult struct {
 	EnvironmentID   string     `json:"environmentId"`
 	EnvironmentName string     `json:"environmentName"`
 	Status          string     `json:"status"`
@@ -621,23 +620,45 @@ type EnvironmentUpdateResult struct {
 	ToVersion       string     `json:"toVersion,omitempty"`
 	Stage           string     `json:"stage,omitempty"`
 	StageStartedAt  *time.Time `json:"stageStartedAt,omitempty"`
+	Percent         int        `json:"percent"`
+	Logs            []string   `json:"logs,omitempty"`
 	Error           string     `json:"error,omitempty"`
 }
 
-// EnvironmentUpdateJob reports a persisted fleet-wide update job.
-type EnvironmentUpdateJob struct {
-	ID                    string                    `json:"id"`
-	CreatedAt             time.Time                 `json:"createdAt" sortable:"true"`
-	UpdatedAt             *time.Time                `json:"updatedAt,omitempty"`
-	Status                string                    `json:"status"`
-	UserID                string                    `json:"userId"`
-	Username              string                    `json:"username"`
-	ManagerVersionAtStart string                    `json:"managerVersionAtStart"`
-	ManagerDigestAtStart  string                    `json:"managerDigestAtStart"`
-	ManagerTargetVersion  string                    `json:"managerTargetVersion"`
-	Results               []EnvironmentUpdateResult `json:"results,omitempty"`
-	Error                 *string                   `json:"error,omitempty"`
-	CompletedAt           *time.Time                `json:"completedAt,omitempty"`
+type UpgradeJob struct {
+	ID                    string             `json:"id"`
+	CreatedAt             time.Time          `json:"createdAt" sortable:"true"`
+	UpdatedAt             *time.Time         `json:"updatedAt,omitempty"`
+	Status                string             `json:"status"`
+	UserID                string             `json:"userId"`
+	Username              string             `json:"username"`
+	ManagerVersionAtStart string             `json:"managerVersionAtStart"`
+	ManagerDigestAtStart  string             `json:"managerDigestAtStart"`
+	ManagerTargetVersion  string             `json:"managerTargetVersion"`
+	Results               []UpgradeJobResult `json:"results,omitempty"`
+	Error                 *string            `json:"error,omitempty"`
+	CompletedAt           *time.Time         `json:"completedAt,omitempty"`
+}
+
+type StartUpgradeJobRequest struct {
+	EnvironmentIDs []string `json:"environmentIds,omitempty" doc:"Environments to upgrade; empty upgrades every enabled environment"`
+}
+
+const (
+	UpgradeProgressEventStage    = "stage"
+	UpgradeProgressEventProgress = "progress"
+	UpgradeProgressEventLog      = "log"
+	UpgradeProgressEventDone     = "done"
+)
+
+type UpgradeProgressEvent struct {
+	Type        string    `json:"type" enum:"stage,progress,log,done"`
+	Percent     int       `json:"percent"`
+	Message     string    `json:"message,omitempty"`
+	FromVersion string    `json:"fromVersion,omitempty"`
+	ToVersion   string    `json:"toVersion,omitempty"`
+	At          time.Time `json:"at"`
+	Replay      bool      `json:"replay,omitempty"`
 }
 
 // WebSocket connection kind constants.

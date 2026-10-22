@@ -25,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/version"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow/flowtest"
 )
@@ -179,10 +180,10 @@ func TestService_AtomicOperations(t *testing.T) {
 	require.True(t, s.upgrading.Load())
 }
 
-// TestUpdateAllAgentFailureStatus verifies that a reachable-but-failed agent (e.g.
+// TestUpgradeJobAgentFailureStatus verifies that a reachable-but-failed agent (e.g.
 // a poll-mode environment whose tunnel round-trip timed out) is reported as a real
 // failure rather than mislabeled "offline — skipped".
-func TestUpdateAllAgentFailureStatus(t *testing.T) {
+func TestUpgradeJobAgentFailureStatus(t *testing.T) {
 	// Mirrors the real wrapping: executeRemoteRequest -> TransportError ->
 	// "tunnel request failed" -> context.DeadlineExceeded.
 	tunnelTimeout := fmt.Errorf("failed to send request to environment oracle-cloud: %w",
@@ -191,17 +192,17 @@ func TestUpdateAllAgentFailureStatus(t *testing.T) {
 	tests := []struct {
 		name string
 		err  error
-		want EnvironmentUpdateResultStatus
+		want UpgradeResultStatus
 	}{
-		{"tunnel request timed out", tunnelTimeout, EnvironmentUpdateResultStatusFailed},
-		{"request canceled mid-flight", fmt.Errorf("tunnel request failed: %w", context.Canceled), EnvironmentUpdateResultStatusFailed},
-		{"non-success status from agent", &remenv.StatusError{StatusCode: 502}, EnvironmentUpdateResultStatusFailed},
-		{"agent never connected", &remenv.TransportError{Err: errors.New("edge agent is not connected")}, EnvironmentUpdateResultStatusSkippedOffline},
+		{"tunnel request timed out", tunnelTimeout, UpgradeResultStatusFailed},
+		{"request canceled mid-flight", fmt.Errorf("tunnel request failed: %w", context.Canceled), UpgradeResultStatusFailed},
+		{"non-success status from agent", &remenv.StatusError{StatusCode: 502}, UpgradeResultStatusFailed},
+		{"agent never connected", &remenv.TransportError{Err: errors.New("edge agent is not connected")}, UpgradeResultStatusSkippedOffline},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, updateAllAgentFailureStatus(tt.err))
+			require.Equal(t, tt.want, upgradeJobAgentFailureStatus(tt.err))
 		})
 	}
 }
@@ -373,11 +374,11 @@ func TestResolveSelfUpgradeTargetImage(t *testing.T) {
 	}
 }
 
-func TestUpdateAllResolveResumeAction(t *testing.T) {
+func TestUpgradeJobResolveResumeAction(t *testing.T) {
 	now := time.Now()
 
-	newJob := func(createdAt time.Time, versionAtStart, digestAtStart string) *EnvironmentUpdateJob {
-		job := &EnvironmentUpdateJob{
+	newJob := func(createdAt time.Time, versionAtStart, digestAtStart string) *UpgradeJob {
+		job := &UpgradeJob{
 			ManagerVersionAtStart: versionAtStart,
 			ManagerDigestAtStart:  digestAtStart,
 		}
@@ -387,7 +388,7 @@ func TestUpdateAllResolveResumeAction(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		job            *EnvironmentUpdateJob
+		job            *UpgradeJob
 		currentVersion string
 		currentDigest  string
 		wantStale      bool
@@ -423,7 +424,7 @@ func TestUpdateAllResolveResumeAction(t *testing.T) {
 		},
 		{
 			name: "unchanged but already on target means force-update succeeded",
-			job: func() *EnvironmentUpdateJob {
+			job: func() *UpgradeJob {
 				job := newJob(now.Add(-5*time.Minute), "1.0.0", "sha256:a")
 				job.ManagerTargetVersion = "v1.0.0"
 				return job
@@ -448,10 +449,10 @@ func TestUpdateAllResolveResumeAction(t *testing.T) {
 }
 
 func TestUpsertPendingResult(t *testing.T) {
-	job := &EnvironmentUpdateJob{
-		Results: EnvironmentUpdateResults{
-			{EnvironmentID: "0", EnvironmentName: "Local", Status: EnvironmentUpdateResultStatusUpdated},
-			{EnvironmentID: "abc", EnvironmentName: "palladium", Status: EnvironmentUpdateResultStatusPending},
+	job := &UpgradeJob{
+		Results: UpgradeJobResults{
+			{EnvironmentID: "0", EnvironmentName: "Local", Status: UpgradeResultStatusUpdated},
+			{EnvironmentID: "abc", EnvironmentName: "palladium", Status: UpgradeResultStatusPending},
 		},
 	}
 	{
@@ -480,133 +481,133 @@ func TestUpsertPendingResult(t *testing.T) {
 	require.False(t, got.EnvironmentID != "xyz" || got.EnvironmentName != "oracle-cloud",
 		"appended row = %+v, want id=xyz name=oracle-cloud", got)
 
-	require.Equal(t, EnvironmentUpdateResultStatusPending, got.Status,
+	require.Equal(t, UpgradeResultStatusPending, got.Status,
 		"appended row status = %q, want pending", got.Status)
 }
 
-func TestUpdateAllFailedJobMarksUpdatingResultsFailed(t *testing.T) {
+func TestUpgradeJobFailedJobMarksUnfinishedResultsFailed(t *testing.T) {
 	ctx := t.Context()
 	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 
 	db := &database.DB{DB: gormDB}
-	require.NoError(t, db.AutoMigrate(&EnvironmentUpdateJob{}, &event.Event{}))
+	require.NoError(t, db.AutoMigrate(&UpgradeJob{}, &event.Event{}))
 
 	svc := NewService(db, nil, nil, event.NewEventService(db, nil, nil, nil), nil, nil, nil, nil, false)
-	job := &EnvironmentUpdateJob{
-		Status:   EnvironmentUpdateJobStatusRunning,
+	job := &UpgradeJob{
+		Status:   UpgradeJobStatusRunning,
 		UserID:   "user-1",
 		Username: "arcane",
-		Results: EnvironmentUpdateResults{
-			{EnvironmentID: "0", EnvironmentName: "Local", Status: EnvironmentUpdateResultStatusUpdated},
-			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: EnvironmentUpdateResultStatusUpdating},
-			{EnvironmentID: "remote-2", EnvironmentName: "oracle-cloud", Status: EnvironmentUpdateResultStatusPending},
-			{EnvironmentID: "remote-3", EnvironmentName: "parquetide", Status: EnvironmentUpdateResultStatusFailed, Error: "already failed"},
+		Results: UpgradeJobResults{
+			{EnvironmentID: "0", EnvironmentName: "Local", Status: UpgradeResultStatusUpdated},
+			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: UpgradeResultStatusUpdating},
+			{EnvironmentID: "remote-2", EnvironmentName: "oracle-cloud", Status: UpgradeResultStatusPending},
+			{EnvironmentID: "remote-3", EnvironmentName: "parquetide", Status: UpgradeResultStatusFailed, Error: "already failed"},
 		},
 	}
 	require.NoError(t, db.WithContext(ctx).Create(job).Error)
 
 	reason := "interrupted by manager restart"
-	svc.markUpdateAllFailed(ctx, job, reason)
+	svc.markUpgradeJobFailed(ctx, job, reason)
 
-	var got EnvironmentUpdateJob
+	var got UpgradeJob
 	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
-	require.Equal(t, EnvironmentUpdateJobStatusFailed, got.Status)
+	require.Equal(t, UpgradeJobStatusFailed, got.Status)
 	require.NotNil(t, got.Error)
 	require.Equal(t, reason, *got.Error)
 	require.NotNil(t, got.CompletedAt)
 	require.Len(t, got.Results, 4)
 
-	require.Equal(t, EnvironmentUpdateResultStatusUpdated, got.Results[0].Status)
+	require.Equal(t, UpgradeResultStatusUpdated, got.Results[0].Status)
 	require.Empty(t, got.Results[0].Error)
 
-	require.Equal(t, EnvironmentUpdateResultStatusFailed, got.Results[1].Status)
+	require.Equal(t, UpgradeResultStatusFailed, got.Results[1].Status)
 	require.Equal(t, reason, got.Results[1].Error)
 
-	require.Equal(t, EnvironmentUpdateResultStatusPending, got.Results[2].Status)
-	require.Empty(t, got.Results[2].Error)
+	require.Equal(t, UpgradeResultStatusFailed, got.Results[2].Status)
+	require.Equal(t, reason, got.Results[2].Error)
 
-	require.Equal(t, EnvironmentUpdateResultStatusFailed, got.Results[3].Status)
+	require.Equal(t, UpgradeResultStatusFailed, got.Results[3].Status)
 	require.Equal(t, "already failed", got.Results[3].Error)
 }
 
 // An up-to-date manager never restarts: its upgrader pulls, finds the image already
 // running and skips the recreate. The pending_restart job must then be finalized in
 // place, because no next boot is coming to do it.
-func TestUpdateAllFinalizesUpToDateManagerWithoutRestart(t *testing.T) {
+func TestUpgradeJobFinalizesUpToDateManagerWithoutRestart(t *testing.T) {
 	ctx := t.Context()
 	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 
 	db := &database.DB{DB: gormDB}
-	require.NoError(t, db.AutoMigrate(&EnvironmentUpdateJob{}, &event.Event{}))
+	require.NoError(t, db.AutoMigrate(&UpgradeJob{}, &event.Event{}))
 
 	svc := NewService(db, nil, nil, event.NewEventService(db, nil, nil, nil), nil, nil, nil, nil, false)
-	job := &EnvironmentUpdateJob{
-		Status:                EnvironmentUpdateJobStatusPendingRestart,
+	job := &UpgradeJob{
+		Status:                UpgradeJobStatusPendingRestart,
 		UserID:                "user-1",
 		Username:              "arcane",
 		ManagerVersionAtStart: "v1.0.0",
-		Results: EnvironmentUpdateResults{
+		Results: UpgradeJobResults{
 			{
-				EnvironmentID: "0", EnvironmentName: "Local", Status: EnvironmentUpdateResultStatusUpdating, FromVersion: "v1.0.0",
-				Stage: EnvironmentUpdateStageReconnecting, StageStartedAt: new(time.Now()),
+				EnvironmentID: "0", EnvironmentName: "Local", Status: UpgradeResultStatusUpdating, FromVersion: "v1.0.0",
+				Stage: UpgradeStageReconnecting, StageStartedAt: new(time.Now()),
 			},
-			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: EnvironmentUpdateResultStatusUpToDate},
+			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: UpgradeResultStatusUpToDate},
 		},
 	}
 	require.NoError(t, db.WithContext(ctx).Create(job).Error)
 
-	svc.finalizeUpdateAllJob(ctx, job, EnvironmentUpdateResultStatusUpToDate, "v1.0.0")
+	svc.finalizeUpgradeJob(ctx, job, UpgradeResultStatusUpToDate, "v1.0.0")
 
-	var got EnvironmentUpdateJob
+	var got UpgradeJob
 	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
 
 	// Nothing is left waiting on a restart that will never happen.
-	require.Equal(t, EnvironmentUpdateJobStatusCompleted, got.Status)
+	require.Equal(t, UpgradeJobStatusCompleted, got.Status)
 	require.NotNil(t, got.CompletedAt)
 	require.Nil(t, got.Error)
 
 	require.Equal(t, "0", got.Results[0].EnvironmentID)
-	require.Equal(t, EnvironmentUpdateResultStatusUpToDate, got.Results[0].Status)
+	require.Equal(t, UpgradeResultStatusUpToDate, got.Results[0].Status)
 	require.Equal(t, "v1.0.0", got.Results[0].ToVersion)
 	require.Empty(t, got.Results[0].Error)
-	require.Equal(t, EnvironmentUpdateResultStatusUpToDate, got.Results[1].Status)
+	require.Equal(t, UpgradeResultStatusUpToDate, got.Results[1].Status)
 	require.Empty(t, got.Results[0].Stage)
 	require.Nil(t, got.Results[0].StageStartedAt)
 }
 
 // Each stage change is persisted immediately so the status endpoint shows live
 // progress; re-entering the current stage must not restart its clock.
-func TestUpdateAllStageChangesPersist(t *testing.T) {
+func TestUpgradeJobStageChangesPersist(t *testing.T) {
 	ctx := t.Context()
 	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 
 	db := &database.DB{DB: gormDB}
-	require.NoError(t, db.AutoMigrate(&EnvironmentUpdateJob{}))
+	require.NoError(t, db.AutoMigrate(&UpgradeJob{}))
 
 	svc := NewService(db, nil, nil, nil, nil, nil, nil, nil, false)
-	job := &EnvironmentUpdateJob{
-		Status: EnvironmentUpdateJobStatusRunning,
-		Results: EnvironmentUpdateResults{
-			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: EnvironmentUpdateResultStatusUpdating},
+	job := &UpgradeJob{
+		Status: UpgradeJobStatusRunning,
+		Results: UpgradeJobResults{
+			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: UpgradeResultStatusUpdating},
 		},
 	}
 	require.NoError(t, db.WithContext(ctx).Create(job).Error)
 
-	svc.setUpdateStage(ctx, job, &job.Results[0], EnvironmentUpdateStageChecking)
+	svc.setUpdateStage(ctx, job, &job.Results[0], UpgradeStageChecking)
 	started := job.Results[0].StageStartedAt
 	require.NotNil(t, started)
 	require.WithinDuration(t, time.Now(), *started, time.Second)
 
-	svc.setUpdateStage(ctx, job, &job.Results[0], EnvironmentUpdateStageChecking)
+	svc.setUpdateStage(ctx, job, &job.Results[0], UpgradeStageChecking)
 	require.Same(t, started, job.Results[0].StageStartedAt)
 
-	svc.setUpdateStage(ctx, job, &job.Results[0], EnvironmentUpdateStageStarting)
-	var got EnvironmentUpdateJob
+	svc.setUpdateStage(ctx, job, &job.Results[0], UpgradeStageStarting)
+	var got UpgradeJob
 	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
-	require.Equal(t, EnvironmentUpdateStageStarting, got.Results[0].Stage)
+	require.Equal(t, UpgradeStageStarting, got.Results[0].Stage)
 	require.NotNil(t, got.Results[0].StageStartedAt)
 	require.NotSame(t, started, job.Results[0].StageStartedAt)
 }
@@ -676,13 +677,13 @@ func TestAgentAlreadyOnTarget(t *testing.T) {
 // With the manager-last ordering, a resumed pending_restart job means the agents
 // phase already ran before the restart: resume must finalize the manager's own row
 // and complete the job, NOT re-run the agents phase.
-func TestResumeUpdateAllFinalizesManagerWithoutRerunningAgents(t *testing.T) {
+func TestResumeUpgradeJobFinalizesManagerWithoutRerunningAgents(t *testing.T) {
 	ctx := t.Context()
 	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 
 	db := &database.DB{DB: gormDB}
-	require.NoError(t, db.AutoMigrate(&EnvironmentUpdateJob{}, &event.Event{}, &settings.SettingVariable{}))
+	require.NoError(t, db.AutoMigrate(&UpgradeJob{}, &event.Event{}, &settings.SettingVariable{}))
 	versionSettings, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, versionSettings.Stop(context.WithoutCancel(t.Context()))) })
@@ -698,35 +699,189 @@ func TestResumeUpdateAllFinalizesManagerWithoutRerunningAgents(t *testing.T) {
 	harness.Start(t)
 	flowtest.AssertDefinitions(t, harness)
 
-	job := &EnvironmentUpdateJob{
-		Status:                EnvironmentUpdateJobStatusPendingRestart,
+	job := &UpgradeJob{
+		Status:                UpgradeJobStatusPendingRestart,
 		UserID:                "user-1",
 		Username:              "arcane",
 		ManagerVersionAtStart: "v1.0.0-old",
-		Results: EnvironmentUpdateResults{
-			{EnvironmentID: "0", EnvironmentName: "Local", Status: EnvironmentUpdateResultStatusUpdating},
-			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: EnvironmentUpdateResultStatusUpdated},
-			{EnvironmentID: "remote-2", EnvironmentName: "oracle-cloud", Status: EnvironmentUpdateResultStatusSkippedOffline},
+		Results: UpgradeJobResults{
+			{EnvironmentID: "0", EnvironmentName: "Local", Status: UpgradeResultStatusUpdating},
+			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: UpgradeResultStatusUpdated},
+			{EnvironmentID: "remote-2", EnvironmentName: "oracle-cloud", Status: UpgradeResultStatusSkippedOffline},
 		},
 	}
 	require.NoError(t, db.WithContext(ctx).Create(job).Error)
 
-	svc.ResumeUpdateAllOnStartup(ctx)
+	svc.ResumeUpgradeJobOnStartup(ctx)
 
-	var got EnvironmentUpdateJob
+	var got UpgradeJob
 	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
 
 	// Job is finalized in-process (no re-run, not left running/pending).
-	require.Equal(t, EnvironmentUpdateJobStatusCompleted, got.Status)
+	require.Equal(t, UpgradeJobStatusCompleted, got.Status)
 	require.NotNil(t, got.CompletedAt)
 	require.Len(t, got.Results, 3)
 
 	// Manager row transitioned updating -> updated (version changed across the restart).
 	require.Equal(t, "0", got.Results[0].EnvironmentID)
-	require.Equal(t, EnvironmentUpdateResultStatusUpdated, got.Results[0].Status)
+	require.Equal(t, UpgradeResultStatusUpdated, got.Results[0].Status)
 	require.NotEmpty(t, got.Results[0].ToVersion)
 
 	// Remote rows are untouched — proving the agents phase was NOT re-run on resume.
-	require.Equal(t, EnvironmentUpdateResultStatusUpdated, got.Results[1].Status)
-	require.Equal(t, EnvironmentUpdateResultStatusSkippedOffline, got.Results[2].Status)
+	require.Equal(t, UpgradeResultStatusUpdated, got.Results[1].Status)
+	require.Equal(t, UpgradeResultStatusSkippedOffline, got.Results[2].Status)
+}
+
+func TestSeedUpgradeResults(t *testing.T) {
+	manager := UpgradeJobResult{EnvironmentID: "0", EnvironmentName: "Local", Status: UpgradeResultStatusPending}
+	remotes := []remoteAgent{{ID: "a", Name: "palladium"}, {ID: "b", Name: "oracle-cloud"}}
+	ids := func(results UpgradeJobResults) []string {
+		out := make([]string, len(results))
+		for i, r := range results {
+			out[i] = r.EnvironmentID
+		}
+		return out
+	}
+
+	tests := []struct {
+		name      string
+		requested []string
+		want      []string
+		wantErr   bool
+	}{
+		{name: "empty selects every environment", requested: nil, want: []string{"0", "a", "b"}},
+		{name: "single remote", requested: []string{"b"}, want: []string{"b"}},
+		{name: "manager only", requested: []string{"0"}, want: []string{"0"}},
+		{name: "unknown environment", requested: []string{"a", "missing"}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := seedUpgradeResults(tt.requested, manager, remotes)
+			if tt.wantErr {
+				require.ErrorIs(t, err, common.ErrValidation)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, ids(got))
+			require.Equal(t, UpgradeResultStatusPending, got[len(got)-1].Status)
+		})
+	}
+}
+
+func TestStreamProgressServesRetainedRunBeforeLogReplay(t *testing.T) {
+	svc := NewService(nil, nil, nil, nil, nil, nil, nil, nil, false)
+	svc.progress.start("v1.0.0", "v1.1.0")
+	svc.progress.emit(types.UpgradeProgressEventLog, 10, "Pulling fs layer")
+	svc.progress.finish("pull upgrader image: denied")
+
+	var got []types.UpgradeProgressEvent
+	svc.StreamProgress(t.Context(), func(event types.UpgradeProgressEvent) bool {
+		got = append(got, event)
+		return true
+	})
+	require.Len(t, got, 2)
+	require.Equal(t, "Pulling fs layer", got[0].Message)
+	require.Equal(t, types.UpgradeProgressEventDone, got[1].Type)
+	require.Equal(t, "pull upgrader image: denied", got[1].Message)
+}
+
+func TestFollowUpgraderKeepsFeedActiveWhenLogsFail(t *testing.T) {
+	svc := NewService(nil, testDockerService, nil, nil, nil, nil, nil, nil, false)
+	svc.progress.start("v1.0.0", "v1.1.0")
+	_, live, _, unsubscribe := svc.progress.subscribe()
+	defer unsubscribe()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go svc.followUpgrader(ctx, "missing-upgrader")
+
+	select {
+	case update := <-live:
+		require.Equal(t, types.UpgradeProgressEventLog, update.Type)
+		require.Contains(t, update.Message, "logs are unavailable")
+	case <-time.After(5 * time.Second):
+		t.Fatal("expected a logs-unavailable event")
+	}
+	select {
+	case update := <-live:
+		t.Fatalf("feed must stay active until the upgrader exit is settled, got %+v", update)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	cancel()
+	select {
+	case update := <-live:
+		require.Equal(t, types.UpgradeProgressEventDone, update.Type)
+		require.NotEmpty(t, update.Message)
+	case <-time.After(5 * time.Second):
+		t.Fatal("expected the feed to finish once the follow ended")
+	}
+}
+
+func TestProgressSinkReplaysWithoutDuplicatingLogs(t *testing.T) {
+	ctx := t.Context()
+	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	db := &database.DB{DB: gormDB}
+	require.NoError(t, db.AutoMigrate(&UpgradeJob{}))
+
+	svc := NewService(db, nil, nil, nil, nil, nil, nil, nil, false)
+	job := &UpgradeJob{
+		Status: UpgradeJobStatusRunning,
+		Results: UpgradeJobResults{
+			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: UpgradeResultStatusUpdating, Logs: []string{"checked"}},
+		},
+	}
+	require.NoError(t, db.WithContext(ctx).Create(job).Error)
+
+	logEvent := func(message string, replay bool) types.UpgradeProgressEvent {
+		return types.UpgradeProgressEvent{
+			Type:    types.UpgradeProgressEventLog,
+			Message: message,
+			Replay:  replay,
+		}
+	}
+	sink := &progressSink{service: svc, job: job, index: 0}
+	sink.apply(ctx, logEvent("pulling", true))
+	sink.apply(ctx, logEvent("live", false))
+	sink.replaying = false
+	for _, message := range []string{"pulling", "live", "restarted"} {
+		sink.apply(ctx, logEvent(message, true))
+	}
+	require.Equal(t, []string{"checked", "pulling", "live", "restarted"}, job.Results[0].Logs)
+
+	replace := &progressSink{service: svc, job: job, index: 0, baseSet: true}
+	replace.apply(ctx, logEvent("from file", true))
+	require.Equal(t, []string{"from file"}, job.Results[0].Logs)
+}
+
+func TestManagerOnlyUpgradeJobReachesManagerStep(t *testing.T) {
+	ctx := t.Context()
+	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	db := &database.DB{DB: gormDB}
+	require.NoError(t, db.AutoMigrate(&UpgradeJob{}))
+
+	svc := NewService(db, nil, nil, nil, nil, nil, nil, nil, false)
+	harness := flowtest.New(t, nil)
+	require.NoError(t, svc.RegisterWorkflows(harness.Engine, nil, nil))
+	harness.Start(t)
+	flowtest.AssertDefinitions(t, harness)
+
+	job := &UpgradeJob{
+		Status: UpgradeJobStatusCompleted,
+		Results: UpgradeJobResults{
+			{EnvironmentID: "0", EnvironmentName: "Local", Status: UpgradeResultStatusUpdated},
+		},
+	}
+	require.NoError(t, db.WithContext(ctx).Create(job).Error)
+
+	instanceID, err := svc.flow.Submit(ctx, svc.upgradeJobWorkflow, upgradeJobInput{JobID: job.ID}, activity.StartRequest{})
+	require.NoError(t, err)
+	waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	outcome, err := svc.flow.Wait(waitCtx, svc.upgradeJobWorkflow, instanceID)
+	require.NoError(t, err)
+	require.Equal(t, types.RunStatusSucceeded, outcome.Status)
+	require.Equal(t, "Upgrade job finished; completed", outcome.Message)
 }

@@ -40,10 +40,6 @@ type GetUpdateInfoByRefsInput struct {
 	ImageRefs     string `query:"imageRefs" doc:"Comma-separated image references"`
 }
 
-type GetUpdateSummaryInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 func (h *ImageUpdateHandler) CheckImageUpdate(ctx context.Context, input *CheckImageUpdateInput) (*handlerutil.Out[types.ImageUpdateResponse], error) {
 	if input.ImageRef == "" {
 		return nil, huma.Error400BadRequest("imageRef query parameter is required")
@@ -128,7 +124,7 @@ func (h *ImageUpdateHandler) GetUpdateInfoByRefs(ctx context.Context, input *Get
 	}, nil
 }
 
-func (h *ImageUpdateHandler) GetUpdateSummary(ctx context.Context, input *GetUpdateSummaryInput) (*handlerutil.Out[types.ImageUpdateSummary], error) {
+func (h *ImageUpdateHandler) GetUpdateSummary(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.ImageUpdateSummary], error) {
 	summary, err := h.imageUpdateService.GetUpdateSummary(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get update summary: " + err.Error())
