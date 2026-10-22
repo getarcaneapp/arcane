@@ -203,7 +203,7 @@ func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	return cli
 }
 
-func TestVersionService_IsNextBuild(t *testing.T) {
+func TestVersionService_IsChannelBuild(t *testing.T) {
 	tests := []struct {
 		name       string
 		version    string
@@ -214,11 +214,13 @@ func TestVersionService_IsNextBuild(t *testing.T) {
 		{"stable version on next tag", "2.7.0", "next", true},
 		{"stable version on latest tag", "2.7.0", "latest", false},
 		{"stable version on version tag", "2.7.0", "v2.7.0", false},
+		{"beta prerelease version", "3.0.0-beta.2", "v3.0.0-beta.2", true},
+		{"beta version on rolling beta tag", "3.0.0-beta.2", "v3-beta", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := NewVersionService(nil, tt.version, "rev", nil, nil, nil, newVersionSettingsService(t, false))
-			assert.Equal(t, tt.want, svc.isNextBuild(tt.currentTag))
+			assert.Equal(t, tt.want, svc.isChannelBuild(tt.currentTag))
 		})
 	}
 }
