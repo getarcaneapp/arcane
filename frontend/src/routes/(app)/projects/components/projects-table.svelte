@@ -346,7 +346,9 @@
 
 {#snippet StatusCell({ item }: { item: ProjectRow })}
 	{@const statusTooltip = getStatusTooltip(item)}
-	{#if statusTooltip}
+	{#if actionStatus[rowKey(item)] === 'redeploying'}
+		<Badge variant="primary" minWidth="20" beam>{m.common_action_redeploying()}</Badge>
+	{:else if statusTooltip}
 		<ArcaneTooltip.Root>
 			<ArcaneTooltip.Trigger>
 				<span class="inline-flex items-center gap-1.5">
