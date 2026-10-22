@@ -77,7 +77,7 @@ test.describe('Workspace restore', () => {
 			});
 		});
 		await page.route(/\/api\/environments\/0\/settings$/, async (route) => {
-			await route.fulfill({ json: {} });
+			await route.fulfill({ json: { settings: [], runtime: {}, readOnly: false } });
 		});
 		await page.route(/\/api\/environments\/0\/swarm\/status$/, async (route) => {
 			await route.fulfill({ json: response({ enabled: false }) });
@@ -85,8 +85,6 @@ test.describe('Workspace restore', () => {
 		await page.route(/\/api\/oidc\/status$/, async (route) => {
 			await route.fulfill({
 				json: response({
-					envForced: false,
-					envConfigured: false,
 					mergeAccounts: false,
 					providerName: '',
 					providerLogoUrl: ''

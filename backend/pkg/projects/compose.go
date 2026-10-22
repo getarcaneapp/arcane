@@ -1,12 +1,10 @@
 package projects
 
 import (
-	"cmp"
 	"context"
 	"io"
 	"log/slog"
 	"maps"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -134,12 +132,9 @@ type plainComposeClientEntryInternal struct {
 
 var plainComposeClient atomic.Pointer[plainComposeClientEntryInternal]
 
-// plainComposeClientInternal returns the shared read-only compose client for
-// dockerHost; empty resolves the host from the process environment.
 func plainComposeClientInternal(dockerHost string) (*Client, error) {
-	host := cmp.Or(dockerHost, os.Getenv("DOCKER_HOST"))
 	current := plainComposeClient.Load()
-	if current != nil && current.host == host {
+	if current != nil && current.host == dockerHost {
 		return current.client, nil
 	}
 
@@ -149,7 +144,7 @@ func plainComposeClientInternal(dockerHost string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !plainComposeClient.CompareAndSwap(current, &plainComposeClientEntryInternal{host: host, client: c}) {
+	if !plainComposeClient.CompareAndSwap(current, &plainComposeClientEntryInternal{host: dockerHost, client: c}) {
 		_ = c.Close()
 		return plainComposeClientInternal(dockerHost)
 	}

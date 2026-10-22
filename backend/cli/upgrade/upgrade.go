@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,9 +22,10 @@ import (
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater/labels"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config/schema"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
 var (
@@ -332,12 +334,10 @@ func isAgentContainer(inspect container.InspectResponse) bool {
 		}
 	}
 	// Legacy agent detection: AGENT_MODE=true in env
-	for _, env := range inspect.Config.Env {
-		if strings.EqualFold(env, "AGENT_MODE=true") {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(inspect.Config.Env, func(env string) bool {
+		name, value, _ := strings.Cut(env, "=")
+		return (name == "AGENT_MODE" || name == "ARCANE_AGENT_MODE") && strings.EqualFold(value, "true")
+	})
 }
 
 // shouldSkipContainer determines if a container should be skipped during search
@@ -484,9 +484,7 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	config := *oldContainer.Config
 	config.Image = newImage
 	config.Labels = normalizeRecreatedArcaneLabelsInternal(config.Labels)
-	if len(environment) > 0 {
-		config.Env = applyRecoveredEnvironmentInternal(config.Env, environment)
-	}
+	config.Env = applyRecoveredEnvironment(config.Env, environment)
 
 	config.Labels = refreshRecreatedContainerLabelsInternal(ctx, dockerClient, config.Labels, oldContainer.Image, cmp.Or(expectedImageID, newImage))
 
@@ -641,14 +639,32 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	return nil
 }
 
-func applyRecoveredEnvironmentInternal(current []string, recovered map[string]string) []string {
+func applyRecoveredEnvironment(current []string, recovered map[string]string) []string {
+	renamed := schema.RenamedEnv()
+	present := make(map[string]struct{}, len(current))
+	for _, entry := range current {
+		name, _, _ := strings.Cut(entry, "=")
+		present[name] = struct{}{}
+	}
 	seen := make(map[string]struct{}, len(recovered))
 	updated := make([]string, 0, len(current)+len(recovered))
 	for _, entry := range current {
-		name, _, found := strings.Cut(entry, "=")
+		name, value, found := strings.Cut(entry, "=")
 		if !found {
 			updated = append(updated, entry)
 			continue
+		}
+		for _, suffix := range []string{"", "__FILE", "_FILE"} {
+			base, ok := strings.CutSuffix(name, suffix)
+			target, legacy := renamed[base]
+			if !ok || !legacy {
+				continue
+			}
+			if _, exists := present[target+suffix]; !exists {
+				name = target + suffix
+				entry = name + "=" + value
+			}
+			break
 		}
 		if baseName, ok := strings.CutSuffix(name, "__FILE"); ok {
 			if _, localOk := recovered[baseName]; localOk {

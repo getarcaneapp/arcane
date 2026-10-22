@@ -8,8 +8,8 @@ import (
 	"github.com/docker/go-units"
 	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/podman"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
 )
 
 func namespace(value string) *podman.PodNamespace {

@@ -11,17 +11,17 @@ import (
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
-	backupengine "github.com/getarcaneapp/arcane/backend/v2/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow/flowtest"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
+	backupengine "github.com/getarcaneapp/arcane/backend/v3/internal/backup"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow/flowtest"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
 )
 
 func TestHistoryDestinationDecoration(t *testing.T) {
@@ -31,7 +31,7 @@ func TestHistoryDestinationDecoration(t *testing.T) {
 	destination := s3.S3Destination{Name: "Offsite", Bucket: "backups"}
 	require.NoError(t, db.Create(&destination).Error)
 	store := &database.DB{DB: db}
-	settingsService, err := settings.NewSettingsService(t.Context(), store, &config.Config{})
+	settingsService, err := settings.NewSettingsService(t.Context(), store, &config.Config{}, settings.Env{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	service := NewService(Dependencies{
@@ -65,27 +65,46 @@ func TestBackupWorkflowDefinitions(t *testing.T) {
 
 func TestRecoveryEnvironmentIncludesRuntimeSecrets(t *testing.T) {
 	cfg := &config.Config{
-		JWTSecret:         "jwt-secret",
 		EncryptionKey:     "encryption-secret",
 		AdminStaticAPIKey: "admin-key",
-		OidcClientSecret:  "oidc-secret",
 		FilePerm:          0o640,
 	}
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
-	settingsService, err := settings.NewSettingsService(t.Context(), &database.DB{DB: db}, &config.Config{})
+	settingsService, err := settings.NewSettingsService(t.Context(), &database.DB{DB: db}, &config.Config{}, settings.Env{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	environment := NewService(Dependencies{
 		Config:   cfg,
 		Settings: settingsService,
 	}).recoveryEnvironment(t.Context())
-	require.Equal(t, "jwt-secret", environment["JWT_SECRET"])
-	require.Equal(t, "encryption-secret", environment["ENCRYPTION_KEY"])
-	require.Equal(t, "admin-key", environment["ADMIN_STATIC_API_KEY"])
-	require.Equal(t, "oidc-secret", environment["OIDC_CLIENT_SECRET"])
-	require.Equal(t, "0640", environment["FILE_PERM"])
+	require.Equal(t, "encryption-secret", environment["ARCANE_ENCRYPTION_KEY"])
+	require.Equal(t, "admin-key", environment["ARCANE_ADMIN_STATIC_API_KEY"])
+	require.Equal(t, "0640", environment["ARCANE_FILE_PERM"])
+}
+
+func TestRecoveryEnvironmentIncludesEnvSourcedSettings(t *testing.T) {
+	settingsEnv := settings.Env{
+		"oidcClientSecret":  "oidc-secret",
+		"dockerHost":        "tcp://docker:2375",
+		"projectsDirectory": "/srv/projects",
+	}
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
+	settingsService, err := settings.NewSettingsService(t.Context(), &database.DB{DB: db}, &config.Config{}, settingsEnv)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	environment := NewService(Dependencies{
+		Config:      &config.Config{},
+		Settings:    settingsService,
+		SettingsEnv: settingsEnv,
+	}).recoveryEnvironment(t.Context())
+	require.Equal(t, "oidc-secret", environment["ARCANE_OIDC_CLIENT_SECRET"])
+	require.Equal(t, "tcp://docker:2375", environment["DOCKER_HOST"])
+	require.Equal(t, "/srv/projects", environment["ARCANE_PROJECTS_DIRECTORY"])
+	require.NotContains(t, environment, "PROJECTS_DIRECTORY")
 }
 
 func TestSetRecoveryKeyKeepsCurrentKeyWhenRekeyFails(t *testing.T) {
@@ -105,7 +124,7 @@ func TestSetRecoveryKeyKeepsCurrentKeyWhenRekeyFails(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, engine.Stop(context.WithoutCancel(t.Context()))) })
 	dockerClient, err := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
 	require.NoError(t, err)
-	dockerService := &docker.DockerClientService{Client: dockerClient}
+	dockerService := (&docker.DockerClientService{}).WithClient(dockerClient)
 	service := NewService(Dependencies{
 		Store: Store{
 			CountRuns:                 func(context.Context) (int64, error) { return 1, nil },

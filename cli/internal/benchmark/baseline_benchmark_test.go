@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
-	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
+	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
 func BenchmarkClientListMediumPayload(b *testing.B) {

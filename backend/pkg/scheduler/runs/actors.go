@@ -18,8 +18,8 @@ import (
 	"github.com/robfig/cron/v3"
 	kit "go.getarcane.app/kit/pkg"
 
-	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
+	scheduleutil "github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
 )
 
 const (

@@ -13,43 +13,41 @@ frontend:
 backend:
     cd backend && air
 
-# Local edge agent against a running manager (requires AGENT_TOKEN)
+# Local edge agent against a running manager (requires ARCANE_AGENT_TOKEN)
 [script('bash')]
 agent:
     set -euo pipefail
 
-    if [ -z "${AGENT_TOKEN:-}" ]; then
-        echo "AGENT_TOKEN is required. Run: AGENT_TOKEN=<edge-environment-token> just dev agent"
+    if [ -z "${ARCANE_AGENT_TOKEN:-}" ]; then
+        echo "ARCANE_AGENT_TOKEN is required. Run: ARCANE_AGENT_TOKEN=<edge-environment-token> just dev agent"
         exit 1
     fi
 
-    port="${PORT:-3553}"
-    app_url="${APP_URL:-http://localhost:${port}}"
-    manager_api_url="${MANAGER_API_URL:-https://localhost:3552}"
-    edge_mtls_assets_dir="${EDGE_MTLS_ASSETS_DIR:-./.tmp/edge-test-agent/edge-mtls-agent}"
-    edge_mtls_ca_file="${EDGE_MTLS_CA_FILE:-./backend/local-manager.crt}"
-    database_url="${DATABASE_URL:-file:./.tmp/edge-test-agent/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_txlock=immediate}"
-    projects_directory="${PROJECTS_DIRECTORY:-./.tmp/edge-test-agent/projects}"
-    git_work_dir="${GIT_WORK_DIR:-./.tmp/edge-test-agent/git}"
-    jwt_secret="${JWT_SECRET:-local-edge-test-jwt-secret-please-change}"
-    encryption_key="${ENCRYPTION_KEY:-local-edge-test-encryption-key-32}"
+    port="${ARCANE_PORT:-3553}"
+    app_url="${ARCANE_APP_URL:-http://localhost:${port}}"
+    manager_api_url="${ARCANE_MANAGER_API_URL:-https://localhost:3552}"
+    edge_mtls_assets_dir="${ARCANE_EDGE_MTLS_ASSETS_DIR:-./.tmp/edge-test-agent/edge-mtls-agent}"
+    edge_mtls_ca_file="${ARCANE_EDGE_MTLS_CA_FILE:-./backend/local-manager.crt}"
+    database_url="${ARCANE_DATABASE_URL:-file:./.tmp/edge-test-agent/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_txlock=immediate}"
+    projects_directory="${ARCANE_PROJECTS_DIRECTORY:-./.tmp/edge-test-agent/projects}"
+    git_work_dir="${ARCANE_GIT_WORK_DIR:-./.tmp/edge-test-agent/git}"
+    encryption_key="${ARCANE_ENCRYPTION_KEY:-local-edge-test-encryption-key-32}"
 
     mkdir -p "${projects_directory}" "${git_work_dir}" "${edge_mtls_assets_dir}"
 
-    PORT="${port}" \
-    APP_URL="${app_url}" \
-    EDGE_AGENT=true \
-    EDGE_TRANSPORT=poll \
-    EDGE_MTLS_MODE=required \
-    EDGE_MTLS_ASSETS_DIR="${edge_mtls_assets_dir}" \
-    EDGE_MTLS_CA_FILE="${edge_mtls_ca_file}" \
-    AGENT_TOKEN="${AGENT_TOKEN}" \
-    MANAGER_API_URL="${manager_api_url}" \
-    DATABASE_URL="${database_url}" \
-    PROJECTS_DIRECTORY="${projects_directory}" \
-    GIT_WORK_DIR="${git_work_dir}" \
-    JWT_SECRET="${jwt_secret}" \
-    ENCRYPTION_KEY="${encryption_key}" \
+    ARCANE_PORT="${port}" \
+    ARCANE_APP_URL="${app_url}" \
+    ARCANE_EDGE_AGENT=true \
+    ARCANE_EDGE_TRANSPORT=poll \
+    ARCANE_EDGE_MTLS_MODE=required \
+    ARCANE_EDGE_MTLS_ASSETS_DIR="${edge_mtls_assets_dir}" \
+    ARCANE_EDGE_MTLS_CA_FILE="${edge_mtls_ca_file}" \
+    ARCANE_AGENT_TOKEN="${ARCANE_AGENT_TOKEN}" \
+    ARCANE_MANAGER_API_URL="${manager_api_url}" \
+    ARCANE_DATABASE_URL="${database_url}" \
+    ARCANE_PROJECTS_DIRECTORY="${projects_directory}" \
+    ARCANE_GIT_WORK_DIR="${git_work_dir}" \
+    ARCANE_ENCRYPTION_KEY="${encryption_key}" \
     go run ./backend/cmd
 
 # Backend and frontend together

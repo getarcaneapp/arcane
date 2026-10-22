@@ -11,7 +11,6 @@
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { roleService } from '#lib/services/role-service.js';
-	import { settingsService } from '#lib/services/settings-service.js';
 	import { userService } from '#lib/services/user-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
@@ -194,9 +193,7 @@
 	}
 
 	// Avatar policy: server-wide settings that belong with user management.
-	const isReadOnly = $derived(Boolean(settingsStore.current?.uiConfigDisabled));
 	const gravatarEnabled = $derived(Boolean(settingsStore.current?.enableGravatar));
-	const gravatarEnvForced = $derived(Boolean(settingsStore.current?.enableGravatarEnvForced));
 	const avatarMaxUploadSizeMb = $derived(
 		Number(settingsStore.current?.avatarMaxUploadSizeMb) > 0 ? Number(settingsStore.current?.avatarMaxUploadSizeMb) : 2
 	);
@@ -204,18 +201,13 @@
 	let avatarSizeError = $state<string | null>(null);
 
 	async function saveAvatarSettings(patch: Partial<Settings>) {
-		const operationResult = await tryCatch(
-			(async () => {
-				const updated = await settingsService.updateSettings(patch);
-				settingsStore.set(updated);
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(settingsStore.save(patch)),
+			message: m.common_update_failed({ resource: m.settings() }),
+			onSuccess: () => {
 				toast.success(m.common_update_success({ resource: m.settings() }));
-			})()
-		);
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
-
-			toast.error(error instanceof Error ? error.message : m.common_update_failed({ resource: m.settings() }));
-		}
+			}
+		});
 	}
 
 	function handleAvatarSizeCommit() {
@@ -255,13 +247,12 @@
 				for="enableGravatar"
 				label={m.general_enable_gravatar_label()}
 				description={m.general_enable_gravatar_description()}
-				helpText={gravatarEnvForced ? m.general_enable_gravatar_env_override() : undefined}
 				layout="switch"
+				lock={settingsStore.lock('enableGravatar')}
 			>
 				<Switch
 					id="enableGravatar"
 					checked={gravatarEnabled}
-					disabled={isReadOnly || gravatarEnvForced}
 					onCheckedChange={(checked) => void saveAvatarSettings({ enableGravatar: checked })}
 				/>
 			</SettingsRow>
@@ -271,6 +262,7 @@
 				description={m.general_avatar_upload_size_description()}
 				helpText={m.general_avatar_upload_size_help()}
 				error={avatarSizeError}
+				lock={settingsStore.lock('avatarMaxUploadSizeMb')}
 			>
 				<Input
 					id="avatarMaxUploadSizeMb"
@@ -279,7 +271,6 @@
 					max="50"
 					bind:value={avatarSizeInput}
 					placeholder="2"
-					disabled={isReadOnly}
 					aria-invalid={Boolean(avatarSizeError)}
 					onblur={handleAvatarSizeCommit}
 				/>

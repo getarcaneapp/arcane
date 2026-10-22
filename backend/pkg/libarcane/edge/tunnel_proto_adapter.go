@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"slices"
 
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
 // errUnknownTunnelPayload marks a proto payload this peer cannot decode, such as a oneof case

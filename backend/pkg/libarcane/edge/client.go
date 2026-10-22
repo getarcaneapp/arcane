@@ -17,8 +17,8 @@ import (
 	"github.com/coder/websocket"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 const (
@@ -79,10 +79,10 @@ func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error)
 		defer close(errCh)
 	}
 	if configured := strings.ToLower(strings.TrimSpace(c.cfg.EdgeTransport)); configured != "" && NormalizeEdgeTransport(configured) != configured {
-		slog.WarnContext(ctx, "Unknown EDGE_TRANSPORT value; using the default transport", "configured", c.cfg.EdgeTransport, "transport", NormalizeEdgeTransport(configured))
+		slog.WarnContext(ctx, "Unknown ARCANE_EDGE_TRANSPORT value; using the default transport", "configured", c.cfg.EdgeTransport, "transport", NormalizeEdgeTransport(configured))
 	}
 	if parsed, err := url.Parse(httpx.ManagerBaseURL(c.cfg.ManagerApiUrl)); err == nil && strings.Trim(parsed.Path, "/") != "" && c.managerGRPCAddr != "" {
-		slog.WarnContext(ctx, "MANAGER_API_URL has a path prefix that gRPC cannot route; gRPC edge tunnel transport is unavailable", "pathPrefix", parsed.Path)
+		slog.WarnContext(ctx, "ARCANE_MANAGER_API_URL has a path prefix that gRPC cannot route; gRPC edge tunnel transport is unavailable", "pathPrefix", parsed.Path)
 		c.managerGRPCAddr = ""
 	}
 	// Log only the endpoints this agent will dial.
@@ -353,22 +353,22 @@ func StartTunnelClient(ctx context.Context, cfg *Config, handler http.Handler) (
 		return nil, errors.New("edge tunnel disabled")
 	}
 	if UseGRPCEdgeTransport(cfg) && httpx.ManagerGRPCAddr(cfg.ManagerApiUrl) == "" {
-		return nil, errors.New("MANAGER_API_URL with a valid host is required for gRPC transport")
+		return nil, errors.New("ARCANE_MANAGER_API_URL with a valid host is required for gRPC transport")
 	}
 	if UseWebSocketEdgeTransport(cfg) && strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl)) == "" {
-		return nil, errors.New("MANAGER_API_URL is required for websocket transport")
+		return nil, errors.New("ARCANE_MANAGER_API_URL is required for websocket transport")
 	}
 	if UsePollEdgeTransport(cfg) && strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl)) == "" {
-		return nil, errors.New("MANAGER_API_URL is required for poll transport")
+		return nil, errors.New("ARCANE_MANAGER_API_URL is required for poll transport")
 	}
 	if cfg.AgentToken == "" {
-		return nil, errors.New("AGENT_TOKEN is required")
+		return nil, errors.New("ARCANE_AGENT_TOKEN is required")
 	}
 	if parsed, err := url.Parse(httpx.ManagerBaseURL(cfg.ManagerApiUrl)); NormalizeEdgeTransport(cfg.EdgeTransport) == EdgeTransportGRPC && err == nil && strings.Trim(parsed.Path, "/") != "" {
-		return nil, errors.New("gRPC transport cannot use a MANAGER_API_URL with a path prefix; use EDGE_TRANSPORT=websocket or auto")
+		return nil, errors.New("gRPC transport cannot use an ARCANE_MANAGER_API_URL with a path prefix; use ARCANE_EDGE_TRANSPORT=websocket or auto")
 	}
 	if NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) != EdgeMTLSModeDisabled && !managerUsesTLS(cfg) {
-		return nil, errors.New("EDGE_MTLS_MODE requires MANAGER_API_URL to use https")
+		return nil, errors.New("ARCANE_EDGE_MTLS_MODE requires ARCANE_MANAGER_API_URL to use https")
 	}
 
 	client := NewTunnelClient(cfg, handler)

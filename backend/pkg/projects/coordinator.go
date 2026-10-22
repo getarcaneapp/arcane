@@ -18,7 +18,7 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 )
 
-type composeCoordinatorInternal struct {
+type composeCoordinator struct {
 	commands types.ComposeCommands
 }
 
@@ -33,11 +33,11 @@ func NewCoordinator(commands types.ComposeCommands) types.ComposeCoordinator {
 	if commands.Create == nil {
 		commands.Create = ComposeCreate
 	}
-	return &composeCoordinatorInternal{commands: commands}
+	return &composeCoordinator{commands: commands}
 }
 
 // Deploy runs hooks before loading, prepares images, then reconciles the project.
-func (c *composeCoordinatorInternal) Deploy(ctx context.Context, request types.ComposeDeployment) (_ *composetypes.Project, err error) {
+func (c *composeCoordinator) Deploy(ctx context.Context, request types.ComposeDeployment) (_ *composetypes.Project, err error) {
 	defer func() {
 		if err != nil && request.Recover != nil {
 			request.Recover(context.WithoutCancel(ctx))
@@ -71,7 +71,7 @@ func (c *composeCoordinatorInternal) Deploy(ctx context.Context, request types.C
 	}
 	removeOrphans := ResolveRemoveOrphans(request.GitOpsManaged, request.Options)
 	slog.InfoContext(ctx, "starting compose up with health check support", "projectId", request.ProjectID, "projectName", model.Name, "services", len(model.Services), "removeOrphans", removeOrphans)
-	if upErr := c.commands.Up(ctx, model, nil, removeOrphans, forceRecreate, recreateVolumes, request.AuthConfigs, request.WaitTimeout); upErr != nil {
+	if upErr := c.commands.Up(ctx, request.DockerHost, model, nil, removeOrphans, forceRecreate, recreateVolumes, request.AuthConfigs, request.WaitTimeout); upErr != nil {
 		slog.ErrorContext(ctx, "compose up failed", "projectName", model.Name, "projectId", request.ProjectID, "error", upErr)
 		if errors.Is(upErr, context.DeadlineExceeded) || strings.Contains(upErr.Error(), "application not healthy after") {
 			return nil,
@@ -91,7 +91,7 @@ func ResolveRemoveOrphans(gitOpsManaged bool, options *types.ProjectDeployOption
 }
 
 // UpdateServices validates scope before pulling or stopping any service.
-func (c *composeCoordinatorInternal) UpdateServices(ctx context.Context, request types.ComposeServiceUpdate) error {
+func (c *composeCoordinator) UpdateServices(ctx context.Context, request types.ComposeServiceUpdate) error {
 	scope := slices.Concat(request.Services, request.Dependents)
 	selected, err := SelectServices(request.Project, slices.Concat(scope, request.StoppedDependents))
 	if err != nil {
@@ -106,10 +106,10 @@ func (c *composeCoordinatorInternal) UpdateServices(ctx context.Context, request
 		}
 		return fmt.Errorf("pull updated service images: %w", pullServicesErr)
 	}
-	if stopErr := c.commands.Stop(ctx, selected, scope); stopErr != nil {
+	if stopErr := c.commands.Stop(ctx, request.DockerHost, selected, scope); stopErr != nil {
 		slog.WarnContext(ctx, "compose stop failed, continuing", "error", stopErr)
 	}
-	if upErr := c.commands.Up(ctx, selected, scope, false, true, false, request.AuthConfigs, request.WaitTimeout); upErr != nil {
+	if upErr := c.commands.Up(ctx, request.DockerHost, selected, scope, false, true, false, request.AuthConfigs, request.WaitTimeout); upErr != nil {
 		if request.Recover != nil {
 			request.Recover(context.WithoutCancel(ctx))
 		}
@@ -118,7 +118,7 @@ func (c *composeCoordinatorInternal) UpdateServices(ctx context.Context, request
 	// Stopped dependents are recreated after the up so they resolve the new
 	// provider containers, and are left stopped.
 	if len(request.StoppedDependents) > 0 {
-		if createErr := c.commands.Create(ctx, selected, request.StoppedDependents, request.AuthConfigs); createErr != nil {
+		if createErr := c.commands.Create(ctx, request.DockerHost, selected, request.StoppedDependents, request.AuthConfigs); createErr != nil {
 			if request.Recover != nil {
 				request.Recover(context.WithoutCancel(ctx))
 			}
@@ -194,7 +194,7 @@ func NamespaceDependents(model *composetypes.Project, services []string) []strin
 }
 
 // PullServices pulls each selected registry image once through the application image service.
-func (c *composeCoordinatorInternal) PullServices(ctx context.Context, model *composetypes.Project, services []string, operations types.ComposeImageOperations, progress io.Writer) error {
+func (c *composeCoordinator) PullServices(ctx context.Context, model *composetypes.Project, services []string, operations types.ComposeImageOperations, progress io.Writer) error {
 	for _, imageRef := range SelectedImageRefs(model, services) {
 		if err := operations.Pull(ctx, imageRef, progress); err != nil {
 			return err
@@ -203,7 +203,7 @@ func (c *composeCoordinatorInternal) PullServices(ctx context.Context, model *co
 	return nil
 }
 
-func (c *composeCoordinatorInternal) imageRefreshDue(ctx context.Context, imageRef string, window time.Duration, operations types.ComposeImageOperations) bool {
+func (c *composeCoordinator) imageRefreshDue(ctx context.Context, imageRef string, window time.Duration, operations types.ComposeImageOperations) bool {
 	lastTagged, err := operations.LastTagged(ctx, imageRef)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to resolve image last-tag time; treating refresh as due", "image", imageRef, "error", err)
@@ -212,7 +212,7 @@ func (c *composeCoordinatorInternal) imageRefreshDue(ctx context.Context, imageR
 	return lastTagged.IsZero() || time.Now().After(lastTagged.Add(window))
 }
 
-func (c *composeCoordinatorInternal) EnsureImagesPresent(ctx context.Context, model *composetypes.Project, progressWriter io.Writer, operations types.ComposeImageOperations) error {
+func (c *composeCoordinator) EnsureImagesPresent(ctx context.Context, model *composetypes.Project, progressWriter io.Writer, operations types.ComposeImageOperations) error {
 	for img, step := range BuildImagePullPlan(model) {
 		exists, ierr := operations.Exists(ctx, img)
 		if ierr != nil && step.Mode != ImagePullModeAlways {
@@ -249,7 +249,7 @@ func (c *composeCoordinatorInternal) EnsureImagesPresent(ctx context.Context, mo
 	return nil
 }
 
-func (c *composeCoordinatorInternal) PrepareImagesForDeploy(
+func (c *composeCoordinator) PrepareImagesForDeploy(
 	ctx context.Context,
 	projectID string,
 	project *composetypes.Project,
@@ -311,7 +311,7 @@ func (c *composeCoordinatorInternal) PrepareImagesForDeploy(
 	return nil
 }
 
-func (c *composeCoordinatorInternal) ensureDeployServiceImageReady(
+func (c *composeCoordinator) ensureDeployServiceImageReady(
 	ctx context.Context,
 	projectID string,
 	project *composetypes.Project,
@@ -363,7 +363,7 @@ func (c *composeCoordinatorInternal) ensureDeployServiceImageReady(
 	return fmt.Errorf("failed to pull image %s: %w", imageName, err)
 }
 
-func (c *composeCoordinatorInternal) buildServiceImageForDeploy(
+func (c *composeCoordinator) buildServiceImageForDeploy(
 	ctx context.Context,
 	projectID string,
 	project *composetypes.Project,
@@ -391,7 +391,7 @@ func (c *composeCoordinatorInternal) buildServiceImageForDeploy(
 	return nil
 }
 
-func (c *composeCoordinatorInternal) BuildServices(ctx context.Context,
+func (c *composeCoordinator) BuildServices(ctx context.Context,
 	projectID string,
 	project *composetypes.Project,
 	options types.ProjectBuildOptions,

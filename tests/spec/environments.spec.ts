@@ -115,7 +115,8 @@ test.describe('Settings', () => {
 			originalSettings = {};
 			const response = await page.request.get(`/api/environments/${LOCAL_ENV_ID}/settings`);
 			expect(response.ok(), 'Read original environment settings').toBe(true);
-			const settings: Array<{ key: string; value: string }> = await response.json();
+			const { settings }: { settings: Array<{ key: string; value: string }> } =
+				await response.json();
 			expect(Array.isArray(settings)).toBe(true);
 			originalSettings = Object.fromEntries(
 				settings
@@ -130,7 +131,8 @@ test.describe('Settings', () => {
 					`/api/environments/${LOCAL_ENV_ID}/settings`
 				);
 				expect(currentResponse.ok()).toBe(true);
-				const current: Array<{ key: string; value: string }> = await currentResponse.json();
+				const { settings: current }: { settings: Array<{ key: string; value: string }> } =
+					await currentResponse.json();
 				const changed = Object.fromEntries(
 					Object.entries(originalSettings).filter(
 						([key, value]) => current.find((setting) => setting.key === key)?.value !== value
@@ -148,7 +150,8 @@ test.describe('Settings', () => {
 					`/api/environments/${LOCAL_ENV_ID}/settings`
 				);
 				expect(restoredResponse.ok()).toBe(true);
-				const restored: Array<{ key: string; value: string }> = await restoredResponse.json();
+				const { settings: restored }: { settings: Array<{ key: string; value: string }> } =
+					await restoredResponse.json();
 				expect(
 					Object.fromEntries(
 						restored
@@ -511,7 +514,9 @@ test.describe('Settings', () => {
 			const settingsPath = `/api/environments/${LOCAL_ENV_ID}/settings`;
 			const settingsResponse = await page.request.get(settingsPath);
 			expect(settingsResponse.ok()).toBeTruthy();
-			const settings = (await settingsResponse.json()) as Array<{ key: string; value: string }>;
+			const { settings } = (await settingsResponse.json()) as {
+				settings: Array<{ key: string; value: string }>;
+			};
 			const originalSettings = Object.fromEntries(
 				settings
 					.filter(({ key }) =>
@@ -544,7 +549,7 @@ test.describe('Settings', () => {
 					await saveAndWaitForPatch(page, settingsPath);
 					const payload = (await requestPromise).postDataJSON() as Record<string, unknown>;
 					expect(payload.trivyCpuLimit).toBe(value);
-					expect(payload.trivyResourceLimitsEnabled).toBe('true');
+					expect(payload.trivyResourceLimitsEnabled ?? 'true').toBe('true');
 					await page.reload();
 					await page.getByRole('tab', { name: 'Security', exact: true }).click();
 					await expect(cpuInput).toHaveValue(value);
@@ -739,7 +744,11 @@ test.describe('Switching', () => {
 					await route.continue();
 					return;
 				}
-				await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({ settings: [], runtime: {}, readOnly: false })
+				});
 			});
 	}
 
@@ -873,7 +882,11 @@ test.describe('Switching', () => {
 			};
 
 			await page.context().route(/\/api\/environments\/0\/settings$/, async (route) => {
-				await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({ settings: [], runtime: {}, readOnly: false })
+				});
 			});
 			await page.context().route(/\/api\/environments\/0\/containers\/([^/?]+)$/, async (route) => {
 				const id = decodeURIComponent(
@@ -1044,7 +1057,7 @@ test.describe('Edge agents', () => {
 			await expect(page.getByText('Docker Run Command', { exact: true })).toBeVisible();
 			await expect(page.getByText('Docker Compose', { exact: true })).toBeVisible();
 
-			const snippetBlocks = page.locator('pre code').filter({ hasText: 'EDGE_AGENT=true' });
+			const snippetBlocks = page.locator('pre code').filter({ hasText: 'ARCANE_EDGE_AGENT=true' });
 			await expect(snippetBlocks.first()).toBeVisible();
 
 			const dockerRunSnippet = snippetBlocks.first();

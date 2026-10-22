@@ -33,22 +33,22 @@ import (
 	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container/children/stats"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	imagedomain "github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	libpodman "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/podman"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/container/children/stats"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	imagedomain "github.com/getarcaneapp/arcane/backend/v3/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/podman"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	libpodman "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 type resourceStatsServer struct {
@@ -145,7 +145,7 @@ func TestPaginateContainerProjectGroupsSelectsRequestedPage(t *testing.T) {
 
 func TestContainerSummaryIconsAppliedAfterGrouping(t *testing.T) {
 	db := setupProjectTestDB(t)
-	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{})
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
 	require.NoError(t, err)
 	service := NewContainerService(nil, nil, nil, settingsService, project.NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, nil, nil, nil), nil, nil)
 	dockerContainers := []container.Summary{
@@ -321,8 +321,8 @@ func TestContainerServiceCommitContainerCallsDockerAPI(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	svc := NewContainerService(
-		event.NewEventService(db, nil, nil),
-		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)),
+		event.NewEventService(db, nil, nil, nil),
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		nil,
 		nil,
 		nil,
@@ -370,8 +370,8 @@ func TestContainerServiceCommitContainerOmitsReferenceWhenRepositoryEmpty(t *tes
 	t.Cleanup(server.Close)
 
 	svc := NewContainerService(
-		event.NewEventService(db, nil, nil),
-		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)),
+		event.NewEventService(db, nil, nil, nil),
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		nil,
 		nil,
 		nil,
@@ -645,8 +645,8 @@ func TestContainerServiceResizeExec(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	svc := NewContainerService(
-		event.NewEventService(db, nil, nil),
-		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)),
+		event.NewEventService(db, nil, nil, nil),
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		nil,
 		nil,
 		nil,
@@ -662,7 +662,7 @@ func TestContainerServiceResizeExec(t *testing.T) {
 
 func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 	db := setupProjectTestDB(t)
-	events := event.NewEventService(db, nil, nil)
+	events := event.NewEventService(db, nil, nil, nil)
 	observed := make(chan string, 8)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := dockerTestPath(r.URL.Path)
@@ -697,7 +697,7 @@ func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	kvService := kv.NewKVService(db)
-	svc := NewContainerService(events, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
+	svc := NewContainerService(events, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
 	info := container.InspectResponse{
 		ID:         "old-id",
 		Name:       "/web",
@@ -776,7 +776,7 @@ func TestRecreateContainerRollsBackAfterRequestCancellation(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	kvService := kv.NewKVService(db)
-	svc := NewContainerService(event.NewEventService(db, nil, nil), docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
+	svc := NewContainerService(event.NewEventService(db, nil, nil, nil), (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
 	info := container.InspectResponse{
 		ID:         "old-id",
 		Name:       "/web",
@@ -891,7 +891,7 @@ func TestRecoverInterruptedRedeploys(t *testing.T) {
 				w.WriteHeader(http.StatusNoContent)
 			}))
 			t.Cleanup(server.Close)
-			svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
+			svc := NewContainerService(nil, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
 
 			require.NoError(t, svc.RecoverInterruptedRedeploys(t.Context()))
 
@@ -906,7 +906,7 @@ func TestRecoverInterruptedRedeploys(t *testing.T) {
 }
 
 func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
-	settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{})
+	settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{}, settings.Env{})
 	require.NoError(t, err)
 	service := NewContainerService(nil, nil, nil, settingsService, nil, nil, nil)
 	strategyLabel := "com.getarcaneapp.arcane.updater.strategy"
@@ -1018,9 +1018,9 @@ func TestContainerServiceGetContainerProcesses(t *testing.T) {
 				}
 			}))
 			t.Cleanup(server.Close)
-			settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{})
+			settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{}, settings.Env{})
 			require.NoError(t, err)
-			svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, settingsService, nil, nil, nil)
+			svc := NewContainerService(nil, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, settingsService, nil, nil, nil)
 
 			processes, err := svc.GetContainerProcesses(t.Context(), "container-1")
 			wantArgs := []string{strings.Join(containerProcessesPsArgs[0], " ")}
@@ -1046,9 +1046,9 @@ func TestContainerServiceGetContainerProcessesPropagatesContext(t *testing.T) {
 		close(requestDone)
 	}))
 	t.Cleanup(server.Close)
-	settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{})
+	settingsService, err := settings.NewSettingsService(t.Context(), setupProjectTestDB(t), &config.Config{}, settings.Env{})
 	require.NoError(t, err)
-	svc := NewContainerService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, settingsService, nil, nil, nil)
+	svc := NewContainerService(nil, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, settingsService, nil, nil, nil)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
@@ -1187,13 +1187,13 @@ func newResourceSortService(t *testing.T, fixture *resourceStatsServer) *Contain
 	t.Cleanup(server.Close)
 
 	db := setupProjectTestDB(t)
-	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{})
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
 	require.NoError(t, err)
-	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server))
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	return NewContainerService(
 		nil,
 		dockerService,
-		imagedomain.NewImageService(db, dockerService, nil, nil, nil, nil, settingsService, nil),
+		imagedomain.NewImageService(db, dockerService, nil, nil, nil, nil, settingsService, nil, nil),
 		settingsService,
 		nil,
 		nil,
@@ -1536,8 +1536,8 @@ func newLogsTestService(t *testing.T, tty bool, logsBody []byte, gotQuery *url.V
 	t.Cleanup(server.Close)
 
 	return NewContainerService(
-		event.NewEventService(setupProjectTestDB(t), nil, nil),
-		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)),
+		event.NewEventService(setupProjectTestDB(t), nil, nil, nil),
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		nil,
 		nil,
 		nil,
@@ -1794,8 +1794,8 @@ func newQuadletTestContainerService(t *testing.T) (*ContainerService, *quadletTe
 
 	systemd := &quadletTestSystemd{}
 	svc := NewContainerService(
-		event.NewEventService(setupProjectTestDB(t), nil, nil),
-		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, dockerServer)),
+		event.NewEventService(setupProjectTestDB(t), nil, nil, nil),
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, dockerServer)),
 		nil,
 		nil,
 		nil,

@@ -7,9 +7,9 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
 )
 
 const ExpiredSessionsCleanupJobName = "expired-sessions-cleanup"
@@ -31,7 +31,7 @@ func (j *ExpiredSessionsCleanupJob) Name() string {
 }
 
 func (j *ExpiredSessionsCleanupJob) Schedule(ctx context.Context) string {
-	return schedule.Or(ctx, j.settingsService.GetStringSetting(ctx, "expiredSessionsCleanupInterval", "0 0 0 * * *"), "0 0 0 * * *", ExpiredSessionsCleanupJobName)
+	return schedule.Or(ctx, j.settingsService.GetStringSetting(ctx, "expiredSessionsCleanupInterval"), "0 0 0 * * *", ExpiredSessionsCleanupJobName)
 }
 
 func (j *ExpiredSessionsCleanupJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {

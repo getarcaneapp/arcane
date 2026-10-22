@@ -17,8 +17,8 @@ import (
 	"go.getarcane.app/docker"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 // defaultComposeTimeout is applied to compose operations that have been
@@ -40,11 +40,11 @@ func detachFromHTTPContextInternal(parent context.Context, timeout time.Duration
 	return context.WithTimeout(ctx, timeout)
 }
 
-func ComposeRestart(ctx context.Context, proj *composetypes.Project, services []string) error {
+func ComposeRestart(ctx context.Context, dockerHost string, proj *composetypes.Project, services []string) error {
 	restartCtx, cancel := detachFromHTTPContextInternal(ctx, defaultComposeTimeout)
 	defer cancel()
 
-	c, err := NewClient(restartCtx, "", nil, nil)
+	c, err := NewClient(restartCtx, dockerHost, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -53,14 +53,14 @@ func ComposeRestart(ctx context.Context, proj *composetypes.Project, services []
 	return c.svc.Restart(restartCtx, proj.Name, api.RestartOptions{Project: proj, Services: services})
 }
 
-func ComposeStop(ctx context.Context, proj *composetypes.Project, services []string) error {
+func ComposeStop(ctx context.Context, dockerHost string, proj *composetypes.Project, services []string) error {
 	if len(services) == 0 {
 		return nil
 	}
 	stopCtx, cancel := detachFromHTTPContextInternal(ctx, defaultComposeTimeout)
 	defer cancel()
 
-	c, err := NewClient(stopCtx, "", nil, nil)
+	c, err := NewClient(stopCtx, dockerHost, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -70,6 +70,7 @@ func ComposeStop(ctx context.Context, proj *composetypes.Project, services []str
 }
 
 func ComposeUp(ctx context.Context,
+	dockerHost string,
 	proj *composetypes.Project,
 	services []string,
 	removeOrphans,
@@ -113,7 +114,7 @@ func ComposeUp(ctx context.Context,
 		clientOptions = append(clientOptions, withComposeServiceOptionsInternal(compose.WithMaxConcurrency(envOpts.ParallelLimit)))
 	}
 
-	c, err := NewClient(composeCtx, "", authConfigs, prompt, clientOptions...)
+	c, err := NewClient(composeCtx, dockerHost, authConfigs, prompt, clientOptions...)
 	if err != nil {
 		return err
 	}
@@ -127,7 +128,7 @@ func ComposeUp(ctx context.Context,
 // ComposeCreate force-recreates services without starting them, so a stopped
 // container picks up config changes (a recreated namespace provider, for one)
 // and stays stopped.
-func ComposeCreate(ctx context.Context, proj *composetypes.Project, services []string, authConfigs map[string]registry.AuthConfig) error {
+func ComposeCreate(ctx context.Context, dockerHost string, proj *composetypes.Project, services []string, authConfigs map[string]registry.AuthConfig) error {
 	selected, err := SelectServices(proj, services)
 	if err != nil {
 		return err
@@ -135,7 +136,7 @@ func ComposeCreate(ctx context.Context, proj *composetypes.Project, services []s
 	createCtx, cancel := detachFromHTTPContextInternal(ctx, defaultComposeTimeout)
 	defer cancel()
 
-	c, err := NewClient(createCtx, "", authConfigs, nil)
+	c, err := NewClient(createCtx, dockerHost, authConfigs, nil)
 	if err != nil {
 		return err
 	}
@@ -202,11 +203,11 @@ func ComposeGenerate(ctx context.Context, dockerHost, projectName string, contai
 	return string(content), err
 }
 
-func ComposeDown(ctx context.Context, proj *composetypes.Project, removeVolumes bool) error {
+func ComposeDown(ctx context.Context, dockerHost string, proj *composetypes.Project, removeVolumes bool) error {
 	downCtx, cancel := detachFromHTTPContextInternal(ctx, defaultComposeTimeout)
 	defer cancel()
 
-	c, err := NewClient(downCtx, "", nil, nil)
+	c, err := NewClient(downCtx, dockerHost, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -219,8 +220,8 @@ func ComposeDown(ctx context.Context, proj *composetypes.Project, removeVolumes 
 // one-shot client for this call is built with the log-parity wrapper so
 // non-TTY containers keep their stderr metadata; deploy, attach, and other
 // compose operations use plain clients.
-func ComposeLogs(ctx context.Context, projectName string, out io.Writer, follow bool, tail, since string, timestamps bool) error {
-	c, err := NewClient(ctx, "", nil, nil, streamDemuxedLogsInternal)
+func ComposeLogs(ctx context.Context, dockerHost, projectName string, out io.Writer, follow bool, tail, since string, timestamps bool) error {
+	c, err := NewClient(ctx, dockerHost, nil, nil, streamDemuxedLogsInternal)
 	if err != nil {
 		return err
 	}

@@ -144,7 +144,7 @@
 					})
 				);
 				const names = new Map(
-					values.map(({ environment, value }) => [environment.id, value.backupVolumeName || 'arcane-backups'])
+					values.map(({ environment, value }) => [environment.id, value.runtime.backupVolumeName || 'arcane-backups'])
 				);
 				return { names, failures };
 			},
@@ -154,7 +154,7 @@
 	});
 	const isBackupVolumeName = (name: string, environmentId = environmentStore.selected?.id) => {
 		if (environmentId === environmentStore.selected?.id) {
-			return name === (settingsStore.current?.backupVolumeName || 'arcane-backups');
+			return name === (settingsStore.runtime.backupVolumeName || 'arcane-backups');
 		}
 		// Until another environment's backup volume name is known, none of its volumes can be removed or renamed.
 		const configured = backupVolumeNamesQuery.data?.names.get(environmentId ?? '');

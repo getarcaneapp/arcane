@@ -22,17 +22,17 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/oidcjwk"
 )
 
 type federatedTestIssuer struct {
@@ -145,7 +145,7 @@ func setupFederatedCredentialService(t *testing.T, issuer *federatedTestIssuer) 
 	sessionSvc := session.NewSessionService(db)
 	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	eventSvc := event.NewEventService(db, &config.Config{}, nil)
+	eventSvc := event.NewEventService(db, &config.Config{}, nil, nil)
 	signingKey, err := mldsa.GenerateKey(mldsa.MLDSA87())
 	require.NoError(t, err)
 	authSvc := auth.NewAuthService(userSvc, settingsSvc, eventSvc, sessionSvc, roleSvc, nil, nil, &config.Config{
@@ -380,7 +380,7 @@ func TestFederatedCredentialServiceCreateRejectsBareWildcardGlob(t *testing.T) {
 
 func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	svc, err := settings.NewSettingsService(ctx, db, &config.Config{})
+	svc, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}

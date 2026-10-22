@@ -7,9 +7,8 @@ WORKDIR /app
 
 COPY ${TARGETPLATFORM}/arcane ./arcane
 
-ENV ENVIRONMENT=production
-ENV GIN_MODE=release
-ENV PORT=3552
+ENV ARCANE_ENVIRONMENT=production
+ENV ARCANE_PORT=3552
 
 # The container starts as "root", but arcane drops to the requetsed PUID and PGID after the runtime is initialized 
 USER 0:0

@@ -36,33 +36,33 @@ import (
 	updatertypes "go.getarcane.app/updater/types"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow/flowtest"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/notification"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow/flowtest"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
 )
 
-var testDockerService = &docker.DockerClientService{Client: func() *client.Client {
+var testDockerService = (&docker.DockerClientService{}).WithClient(func() *client.Client {
 	cli, _ := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
 	return cli
-}()}
+}())
 
 type fakeDockerClientProvider struct {
 	client any
@@ -245,10 +245,10 @@ func TestUpdaterService_ApplyPendingNoRecords(t *testing.T) {
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&notification.NotificationSettings{}))
-	settingsService, err := settings.NewSettingsService(ctx, db, &config.Config{})
+	settingsService, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
-	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
+	notif := notification.NewNotificationService(db, nil, nil, nil, nil, nil)
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
 	admission := runs.NewAdmission(harness.Runtime.Service(), t.Name())
 	require.NoError(t, admission.Register(harness.Runtime))
@@ -259,7 +259,7 @@ func TestUpdaterService_ApplyPendingNoRecords(t *testing.T) {
 		project.NewProjectService(db, nil, nil, nil, testDockerService, nil, nil, nil, nil, nil, nil),
 		imageupdate.NewImageUpdateService(db, nil, nil, newEmptyContainerListDockerService(t), nil, notif, nil),
 		nil,
-		event.NewEventService(db, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
 		nil,
 		notif,
 		nil,
@@ -447,7 +447,7 @@ func TestUpdaterService_StatusTracking(t *testing.T) {
 func TestUpdaterService_DockerClientAdapter(t *testing.T) {
 	ctx := t.Context()
 	t.Run("active engine updates correlate before the stop event is recorded", func(t *testing.T) {
-		events := event.NewEventService(nil, nil, nil)
+		events := event.NewEventService(nil, nil, nil, nil)
 		svc, err := NewUpdaterService(nil, nil, nil, nil, nil, nil, events, nil, nil, nil, nil, nil, nil, nil)
 		require.NoError(t, err)
 		end := svc.engine.BeginContainerUpdate("updating-container")
@@ -461,7 +461,7 @@ func TestUpdaterService_DockerClientAdapter(t *testing.T) {
 	t.Run("delegates to configured docker service", func(t *testing.T) {
 		server := newImagePullServerWithObserver(t, nil, nil)
 		wantClient := newTestDockerClient(t, server)
-		dockerSvc := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(wantClient)
+		dockerSvc := (&docker.DockerClientService{}).WithClient(wantClient)
 		svc, svcErr := NewUpdaterService(nil, nil, dockerSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 		require.NoError(t, svcErr)
 
@@ -478,19 +478,20 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 	t.Run("delegates to Arcane image puller", func(t *testing.T) {
 		db := setupProjectTestDB(t)
 		require.NoError(t, db.AutoMigrate(&registry.ContainerRegistry{}))
-		settingsService, err := settings.NewSettingsService(ctx, db, &config.Config{})
+		settingsService, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
 		server := newImagePullServerWithObserver(t, nil, nil)
-		dockerSvc := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server))
+		dockerSvc := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 		imageSvc := image.NewImageService(
 			db,
 			dockerSvc,
 			nil,
 			imageupdate.NewImageUpdateService(db, settingsService, nil, dockerSvc, nil, nil, nil),
 			nil,
-			event.NewEventService(db, nil, nil),
+			event.NewEventService(db, nil, nil, nil),
 			settingsService,
+			nil,
 			nil,
 		)
 		projectSvc := project.NewProjectService(db, nil, nil, nil, testDockerService, nil, nil, nil, nil, nil, nil)
@@ -521,10 +522,10 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 				gotAuth = authHeader
 			}
 		})
-		settingsService, err := settings.NewSettingsService(ctx, db, &config.Config{})
+		settingsService, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
-		dockerSvc := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server))
+		dockerSvc := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 		registrySvc := registry.NewContainerRegistryService(db, nil, kv.NewKVService(db), nil)
 		imageSvc := image.NewImageService(
 			db,
@@ -532,8 +533,9 @@ func TestUpdaterService_PullImageAdapter(t *testing.T) {
 			registrySvc,
 			imageupdate.NewImageUpdateService(db, nil, registrySvc, dockerSvc, nil, nil, nil),
 			nil,
-			event.NewEventService(db, nil, nil),
+			event.NewEventService(db, nil, nil, nil),
 			settingsService,
+			nil,
 			nil,
 		)
 		envSvc := environment.NewEnvironmentService(db, nil, nil, nil, nil, nil)
@@ -584,7 +586,7 @@ func TestUpdaterService_PendingImageUpdatesAdapter(t *testing.T) {
 		CheckTime:  checkTime,
 	}).Error)
 	require.NoError(t, db.AutoMigrate(&notification.NotificationSettings{}))
-	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
+	notif := notification.NewNotificationService(db, nil, nil, nil, nil, nil)
 	imageUpdates := imageupdate.NewImageUpdateService(db, nil, nil, newEmptyContainerListDockerService(t), nil, notif, nil)
 	svc, svcErr := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil, nil, nil, nil)
 	require.NoError(t, svcErr)
@@ -621,7 +623,7 @@ func newEmptyContainerListDockerService(t *testing.T) *docker.DockerClientServic
 		http.NotFound(w, r)
 	}))
 	t.Cleanup(server.Close)
-	return &docker.DockerClientService{Client: newTestDockerClient(t, server)}
+	return (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 }
 
 // PendingImageUpdates must not hand records to the engine when the flush could
@@ -630,12 +632,12 @@ func newEmptyContainerListDockerService(t *testing.T) *docker.DockerClientServic
 func TestUpdaterService_PendingImageUpdatesAbortsWhenNotificationEligibilityUnresolved(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}, &notification.NotificationSettings{}))
-	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
+	notif := notification.NewNotificationService(db, nil, nil, nil, nil, nil)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	t.Cleanup(server.Close)
-	imageUpdates := imageupdate.NewImageUpdateService(db, nil, nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server)), nil, notif, nil)
+	imageUpdates := imageupdate.NewImageUpdateService(db, nil, nil, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, notif, nil)
 	svc, err := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{
@@ -678,7 +680,7 @@ func TestUpdaterService_PendingImageUpdatesFlushesPendingNotifications(t *testin
 		},
 	}).Error)
 
-	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
+	notif := notification.NewNotificationService(db, nil, nil, nil, nil, nil)
 	imageUpdates := imageupdate.NewImageUpdateService(db, nil, nil, newEmptyContainerListDockerService(t), nil, notif, nil)
 	svc, svcErr := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil, nil, nil, nil)
 	require.NoError(t, svcErr)
@@ -709,7 +711,7 @@ func TestUpdaterService_PendingImageUpdatesNoProvidersLeavesUnnotified(t *testin
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}, &notification.NotificationSettings{}))
 
-	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
+	notif := notification.NewNotificationService(db, nil, nil, nil, nil, nil)
 	imageUpdates := imageupdate.NewImageUpdateService(db, nil, nil, newEmptyContainerListDockerService(t), nil, notif, nil)
 	svc, svcErr := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil, nil, nil, nil)
 	require.NoError(t, svcErr)
@@ -1147,7 +1149,7 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjects(t *
 		nil,
 		imageupdate.NewImageUpdateService(db, nil, nil, newEmptyContainerListDockerService(t), nil, nil, nil),
 		nil,
-		event.NewEventService(db, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
 		nil,
 		nil,
 		nil,
@@ -1300,7 +1302,7 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgrade(
 		nil,
 		imageupdate.NewImageUpdateService(db, nil, nil, newEmptyContainerListDockerService(t), nil, nil, nil),
 		nil,
-		event.NewEventService(db, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
 		nil,
 		nil,
 		mockUpgrade,
@@ -1593,9 +1595,9 @@ func TestUpdaterService_ScopedPendingRecordsIsolation(t *testing.T) {
 		},
 	}
 	server := newUpdaterApplyPendingDockerServer(t, containers, nil, nil, nil)
-	dockerSvc := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server))
+	dockerSvc := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	require.NoError(t, db.AutoMigrate(&notification.NotificationSettings{}))
-	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
+	notif := notification.NewNotificationService(db, nil, nil, nil, nil, nil)
 	imageUpdates := imageupdate.NewImageUpdateService(db, nil, nil, dockerSvc, nil, notif, nil)
 	svc, err := NewUpdaterService(db, nil, dockerSvc, nil, imageUpdates, nil, nil, nil, notif, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
@@ -1673,7 +1675,7 @@ func TestUpdaterService_SharedDigestRecordClearing(t *testing.T) {
 				},
 			}
 			server := newUpdaterApplyPendingDockerServer(t, containers, nil, nil, map[string]dockertypesimage.InspectResponse{imageRef: {ID: "new-image"}})
-			dockerSvc := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server))
+			dockerSvc := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 			svc, err := NewUpdaterService(db, nil, dockerSvc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 			require.NoError(t, err)
 			require.NoError(t, svc.ClearImageUpdateRecord(t.Context(), updater.ImageUpdateRecord{
@@ -1806,7 +1808,7 @@ func TestSingleUpdatePersistsSuccessfulActivity(t *testing.T) {
 	defer server.Close()
 	activityService := activity.NewActivityService(db, nil)
 	dockerSvc := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
-	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{})
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	harness := flowtest.New(t, activityService)
@@ -1819,7 +1821,7 @@ func TestSingleUpdatePersistsSuccessfulActivity(t *testing.T) {
 		nil,
 		nil,
 		nil,
-		event.NewEventService(db, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
 		nil,
 		nil,
 		nil,
@@ -1882,7 +1884,7 @@ func TestUpdaterService_AutoUpdateDeferral(t *testing.T) {
 			HasUpdate:  true,
 		},
 	}).Error)
-	settingsService, err := settings.NewSettingsService(ctx, db, &config.Config{})
+	settingsService, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
 	require.NoError(t, settingsService.SetIntSetting(ctx, "autoUpdateDelay", 24))

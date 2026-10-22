@@ -26,12 +26,12 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/oauth2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/jwtclaims"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/jwtclaims"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/oidcjwk"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
 type OidcService struct {
@@ -168,14 +168,7 @@ func configAttributes(cfg *settings.OidcConfig) []attribute.KeyValue {
 
 // GetMobileRedirectAllowlist returns the configured list of acceptable mobile OAuth redirect URIs.
 func (s *OidcService) GetMobileRedirectAllowlist(ctx context.Context) []string {
-	raw := ""
-	if s.config != nil {
-		raw = s.config.OidcMobileRedirectUris
-	}
-	if s.settingsService != nil {
-		raw = s.settingsService.GetStringSetting(ctx, "oidcMobileRedirectUris", raw)
-	}
-	return kit.TrimNonEmpty(strings.Split(raw, ","))
+	return kit.TrimNonEmpty(strings.Split(s.settingsService.GetStringSetting(ctx, "oidcMobileRedirectUris"), ","))
 }
 
 // ValidateMobileRedirectURI requires an exact allowlist match; partial matches would allow open redirects.

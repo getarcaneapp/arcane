@@ -14,7 +14,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"golang.org/x/time/rate"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 )
 
 // RegisterRoutes adds an unauthenticated relay route per enabled signal; disabled

@@ -3,36 +3,35 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 func TestConfig_LoadPermissions(t *testing.T) {
 	// Save original env and global perms
-	origFilePerm := os.Getenv("FILE_PERM")
-	origDirPerm := os.Getenv("DIR_PERM")
+	origFilePerm := os.Getenv("ARCANE_FILE_PERM")
+	origDirPerm := os.Getenv("ARCANE_DIR_PERM")
 	origPkgFilePerm := utils.FilePerm
 	origPkgDirPerm := utils.DirPerm
 
 	defer func() {
-		restoreEnv("FILE_PERM", origFilePerm)
-		restoreEnv("DIR_PERM", origDirPerm)
+		restoreEnv("ARCANE_FILE_PERM", origFilePerm)
+		restoreEnv("ARCANE_DIR_PERM", origDirPerm)
 		utils.FilePerm = origPkgFilePerm
 		utils.DirPerm = origPkgDirPerm
 	}()
 
 	t.Run("Default permissions", func(t *testing.T) {
-		unsetEnv(t, "FILE_PERM")
-		unsetEnv(t, "DIR_PERM")
+		unsetEnv(t, "ARCANE_FILE_PERM")
+		unsetEnv(t, "ARCANE_DIR_PERM")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.Equal(t, os.FileMode(0o644), cfg.FilePerm)
 		assert.Equal(t, os.FileMode(0o755), cfg.DirPerm)
 		assert.Equal(t, os.FileMode(0o644), utils.FilePerm)
@@ -40,10 +39,10 @@ func TestConfig_LoadPermissions(t *testing.T) {
 	})
 
 	t.Run("Custom permissions", func(t *testing.T) {
-		setEnv(t, "FILE_PERM", "0664")
-		setEnv(t, "DIR_PERM", "0775")
+		setEnv(t, "ARCANE_FILE_PERM", "0664")
+		setEnv(t, "ARCANE_DIR_PERM", "0775")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.Equal(t, os.FileMode(0o664), cfg.FilePerm)
 		assert.Equal(t, os.FileMode(0o775), cfg.DirPerm)
 		assert.Equal(t, os.FileMode(0o664), utils.FilePerm)
@@ -51,10 +50,10 @@ func TestConfig_LoadPermissions(t *testing.T) {
 	})
 
 	t.Run("Restrictive permissions", func(t *testing.T) {
-		setEnv(t, "FILE_PERM", "0600")
-		setEnv(t, "DIR_PERM", "0700")
+		setEnv(t, "ARCANE_FILE_PERM", "0600")
+		setEnv(t, "ARCANE_DIR_PERM", "0700")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.Equal(t, os.FileMode(0o600), cfg.FilePerm)
 		assert.Equal(t, os.FileMode(0o700), cfg.DirPerm)
 		assert.Equal(t, os.FileMode(0o600), utils.FilePerm)
@@ -62,77 +61,28 @@ func TestConfig_LoadPermissions(t *testing.T) {
 	})
 }
 
-func TestConfig_LoadWorkspaceLimits(t *testing.T) {
-	t.Run("defaults", func(t *testing.T) {
-		cfg := Load()
-		require.Equal(t, 20, cfg.ProjectWorkspaceMaxDepth)
-		require.Equal(t, 2000, cfg.ProjectWorkspaceMaxEntries)
-		require.Equal(t, 10, cfg.ProjectWorkspaceMaxFileSizeMB)
-		require.Equal(t, 50, cfg.VolumeWorkspaceMaxDepth)
-		require.Equal(t, 10000, cfg.VolumeWorkspaceMaxEntries)
-		require.Equal(t, 10, cfg.VolumeWorkspaceMaxFileSizeMB)
-	})
-
-	t.Run("positive overrides", func(t *testing.T) {
-		t.Setenv("PROJECT_WORKSPACE_MAX_DEPTH", "25")
-		t.Setenv("PROJECT_WORKSPACE_MAX_ENTRIES", "2500")
-		t.Setenv("PROJECT_WORKSPACE_MAX_FILE_SIZE_MB", "12")
-		t.Setenv("VOLUME_WORKSPACE_MAX_DEPTH", "75")
-		t.Setenv("VOLUME_WORKSPACE_MAX_ENTRIES", "20000")
-		t.Setenv("VOLUME_WORKSPACE_MAX_FILE_SIZE_MB", "18")
-
-		cfg := Load()
-		require.Equal(t, 25, cfg.ProjectWorkspaceMaxDepth)
-		require.Equal(t, 2500, cfg.ProjectWorkspaceMaxEntries)
-		require.Equal(t, 12, cfg.ProjectWorkspaceMaxFileSizeMB)
-		require.Equal(t, 75, cfg.VolumeWorkspaceMaxDepth)
-		require.Equal(t, 20000, cfg.VolumeWorkspaceMaxEntries)
-		require.Equal(t, 18, cfg.VolumeWorkspaceMaxFileSizeMB)
-	})
-
-	for _, value := range []string{"0", "-1", "not-a-number"} {
-		t.Run("invalid values fall back "+value, func(t *testing.T) {
-			t.Setenv("PROJECT_WORKSPACE_MAX_FILE_SIZE_MB", value)
-			t.Setenv("VOLUME_WORKSPACE_MAX_FILE_SIZE_MB", value)
-			cfg := Load()
-			require.Equal(t, 10, cfg.ProjectWorkspaceMaxFileSizeMB)
-			require.Equal(t, 10, cfg.VolumeWorkspaceMaxFileSizeMB)
-		})
-	}
-
-	t.Run("old names are not aliases", func(t *testing.T) {
-		t.Setenv("PROJECT_FILE_TREE_MAX_DEPTH", "99")
-		t.Setenv("VOLUME_FILE_TREE_MAX_DEPTH", "99")
-		t.Setenv("VOLUME_FILE_TREE_MAX_ENTRIES", "99")
-		cfg := Load()
-		require.Equal(t, 20, cfg.ProjectWorkspaceMaxDepth)
-		require.Equal(t, 50, cfg.VolumeWorkspaceMaxDepth)
-		require.Equal(t, 10000, cfg.VolumeWorkspaceMaxEntries)
-	})
-}
-
 func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 	// Save original env vars
-	origEncryptionKey := os.Getenv("ENCRYPTION_KEY")
-	origEncryptionKeyFile := os.Getenv("ENCRYPTION_KEY_FILE")
-	origEncryptionKeyDoubleFile := os.Getenv("ENCRYPTION_KEY__FILE")
-	origJWTSecret := os.Getenv("JWT_SECRET")
-	origJWTSecretFile := os.Getenv("JWT_SECRET_FILE")
-	origJWTSecretDoubleFile := os.Getenv("JWT_SECRET__FILE")
-	origDefaultAPIKey := os.Getenv("ADMIN_STATIC_API_KEY")
-	origDefaultAPIKeyFile := os.Getenv("ADMIN_STATIC_API_KEY_FILE")
-	origDefaultAPIKeyDoubleFile := os.Getenv("ADMIN_STATIC_API_KEY__FILE")
+	origEncryptionKey := os.Getenv("ARCANE_ENCRYPTION_KEY")
+	origEncryptionKeyFile := os.Getenv("ARCANE_ENCRYPTION_KEY_FILE")
+	origEncryptionKeyDoubleFile := os.Getenv("ARCANE_ENCRYPTION_KEY__FILE")
+	origJWTSecret := os.Getenv("ARCANE_AGENT_TOKEN")
+	origJWTSecretFile := os.Getenv("ARCANE_AGENT_TOKEN_FILE")
+	origJWTSecretDoubleFile := os.Getenv("ARCANE_AGENT_TOKEN__FILE")
+	origDefaultAPIKey := os.Getenv("ARCANE_ADMIN_STATIC_API_KEY")
+	origDefaultAPIKeyFile := os.Getenv("ARCANE_ADMIN_STATIC_API_KEY_FILE")
+	origDefaultAPIKeyDoubleFile := os.Getenv("ARCANE_ADMIN_STATIC_API_KEY__FILE")
 
 	defer func() {
-		restoreEnv("ENCRYPTION_KEY", origEncryptionKey)
-		restoreEnv("ENCRYPTION_KEY_FILE", origEncryptionKeyFile)
-		restoreEnv("ENCRYPTION_KEY__FILE", origEncryptionKeyDoubleFile)
-		restoreEnv("JWT_SECRET", origJWTSecret)
-		restoreEnv("JWT_SECRET_FILE", origJWTSecretFile)
-		restoreEnv("JWT_SECRET__FILE", origJWTSecretDoubleFile)
-		restoreEnv("ADMIN_STATIC_API_KEY", origDefaultAPIKey)
-		restoreEnv("ADMIN_STATIC_API_KEY_FILE", origDefaultAPIKeyFile)
-		restoreEnv("ADMIN_STATIC_API_KEY__FILE", origDefaultAPIKeyDoubleFile)
+		restoreEnv("ARCANE_ENCRYPTION_KEY", origEncryptionKey)
+		restoreEnv("ARCANE_ENCRYPTION_KEY_FILE", origEncryptionKeyFile)
+		restoreEnv("ARCANE_ENCRYPTION_KEY__FILE", origEncryptionKeyDoubleFile)
+		restoreEnv("ARCANE_AGENT_TOKEN", origJWTSecret)
+		restoreEnv("ARCANE_AGENT_TOKEN_FILE", origJWTSecretFile)
+		restoreEnv("ARCANE_AGENT_TOKEN__FILE", origJWTSecretDoubleFile)
+		restoreEnv("ARCANE_ADMIN_STATIC_API_KEY", origDefaultAPIKey)
+		restoreEnv("ARCANE_ADMIN_STATIC_API_KEY_FILE", origDefaultAPIKeyFile)
+		restoreEnv("ARCANE_ADMIN_STATIC_API_KEY__FILE", origDefaultAPIKeyDoubleFile)
 	}()
 
 	t.Run("Load sensitive field from _FILE env var", func(t *testing.T) {
@@ -144,21 +94,21 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 		require.NoError(t, err)
 
 		// Clear direct env var and set _FILE variant
-		unsetEnv(t, "ENCRYPTION_KEY")
-		unsetEnv(t, "ENCRYPTION_KEY__FILE")
-		setEnv(t, "ENCRYPTION_KEY_FILE", secretFile)
+		unsetEnv(t, "ARCANE_ENCRYPTION_KEY")
+		unsetEnv(t, "ARCANE_ENCRYPTION_KEY__FILE")
+		setEnv(t, "ARCANE_ENCRYPTION_KEY_FILE", secretFile)
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.Equal(t, secretValue, cfg.EncryptionKey)
 	})
 
 	t.Run("Falls back to default when _FILE points to non-existent file", func(t *testing.T) {
-		unsetEnv(t, "ENCRYPTION_KEY")
-		setEnv(t, "ENCRYPTION_KEY_FILE", "/nonexistent/path/to/secret")
-		unsetEnv(t, "ENCRYPTION_KEY__FILE")
+		unsetEnv(t, "ARCANE_ENCRYPTION_KEY")
+		setEnv(t, "ARCANE_ENCRYPTION_KEY_FILE", "/nonexistent/path/to/secret")
+		unsetEnv(t, "ARCANE_ENCRYPTION_KEY__FILE")
 
-		cfg := Load()
-		assert.Equal(t, "arcane-dev-key-32-characters!!!", cfg.EncryptionKey)
+		cfg := mustLoad(t)
+		assert.Empty(t, cfg.EncryptionKey)
 	})
 
 	t.Run("Load sensitive field from __FILE env var (double underscore)", func(t *testing.T) {
@@ -170,31 +120,31 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 		require.NoError(t, err)
 
 		// Clear direct env var and set __FILE variant
-		unsetEnv(t, "JWT_SECRET")
-		unsetEnv(t, "JWT_SECRET_FILE")
-		setEnv(t, "JWT_SECRET__FILE", secretFile)
+		unsetEnv(t, "ARCANE_AGENT_TOKEN")
+		unsetEnv(t, "ARCANE_AGENT_TOKEN_FILE")
+		setEnv(t, "ARCANE_AGENT_TOKEN__FILE", secretFile)
 
-		cfg := Load()
-		assert.Equal(t, testJWTValue, cfg.JWTSecret) // Should be trimmed
+		cfg := mustLoad(t)
+		assert.Equal(t, testJWTValue, cfg.AgentToken) // Should be trimmed
 	})
 
 	t.Run("Direct env var is used when no _FILE variant exists", func(t *testing.T) {
 		directValue := "direct-encryption-key-value-32chars!!"
-		setEnv(t, "ENCRYPTION_KEY", directValue)
-		unsetEnv(t, "ENCRYPTION_KEY_FILE")
-		unsetEnv(t, "ENCRYPTION_KEY__FILE")
+		setEnv(t, "ARCANE_ENCRYPTION_KEY", directValue)
+		unsetEnv(t, "ARCANE_ENCRYPTION_KEY_FILE")
+		unsetEnv(t, "ARCANE_ENCRYPTION_KEY__FILE")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.Equal(t, directValue, cfg.EncryptionKey)
 	})
 
 	t.Run("Default admin API key supports direct env var", func(t *testing.T) {
 		directValue := "arc_directbootstrapkey1234567890"
-		setEnv(t, "ADMIN_STATIC_API_KEY", directValue)
-		unsetEnv(t, "ADMIN_STATIC_API_KEY_FILE")
-		unsetEnv(t, "ADMIN_STATIC_API_KEY__FILE")
+		setEnv(t, "ARCANE_ADMIN_STATIC_API_KEY", directValue)
+		unsetEnv(t, "ARCANE_ADMIN_STATIC_API_KEY_FILE")
+		unsetEnv(t, "ARCANE_ADMIN_STATIC_API_KEY__FILE")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.Equal(t, directValue, cfg.AdminStaticAPIKey)
 	})
 
@@ -207,11 +157,11 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 		require.NoError(t, err)
 
 		// Set both direct and _FILE variants
-		setEnv(t, "ENCRYPTION_KEY", "direct-value-should-be-ignored!!!")
-		unsetEnv(t, "ENCRYPTION_KEY__FILE")
-		setEnv(t, "ENCRYPTION_KEY_FILE", secretFile)
+		setEnv(t, "ARCANE_ENCRYPTION_KEY", "direct-value-should-be-ignored!!!")
+		unsetEnv(t, "ARCANE_ENCRYPTION_KEY__FILE")
+		setEnv(t, "ARCANE_ENCRYPTION_KEY_FILE", secretFile)
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.Equal(t, fileValue, cfg.EncryptionKey)
 	})
 
@@ -222,11 +172,11 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 		err := os.WriteFile(secretFile, []byte(secretValue), 0o600)
 		require.NoError(t, err)
 
-		unsetEnv(t, "ADMIN_STATIC_API_KEY")
-		unsetEnv(t, "ADMIN_STATIC_API_KEY__FILE")
-		setEnv(t, "ADMIN_STATIC_API_KEY_FILE", secretFile)
+		unsetEnv(t, "ARCANE_ADMIN_STATIC_API_KEY")
+		unsetEnv(t, "ARCANE_ADMIN_STATIC_API_KEY__FILE")
+		setEnv(t, "ARCANE_ADMIN_STATIC_API_KEY_FILE", secretFile)
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.Equal(t, secretValue, cfg.AdminStaticAPIKey)
 	})
 
@@ -243,12 +193,12 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 		err = os.WriteFile(doubleFile, []byte("double-underscore-value-32chars!!"), 0o600)
 		require.NoError(t, err)
 
-		unsetEnv(t, "JWT_SECRET")
-		setEnv(t, "JWT_SECRET_FILE", singleFile)
-		setEnv(t, "JWT_SECRET__FILE", doubleFile)
+		unsetEnv(t, "ARCANE_AGENT_TOKEN")
+		setEnv(t, "ARCANE_AGENT_TOKEN_FILE", singleFile)
+		setEnv(t, "ARCANE_AGENT_TOKEN__FILE", doubleFile)
 
-		cfg := Load()
-		assert.Equal(t, "double-underscore-value-32chars!!", cfg.JWTSecret)
+		cfg := mustLoad(t)
+		assert.Equal(t, "double-underscore-value-32chars!!", cfg.AgentToken)
 	})
 
 	t.Run("Default admin API key __FILE takes precedence over _FILE", func(t *testing.T) {
@@ -262,11 +212,11 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 		err = os.WriteFile(doubleFile, []byte("arc_doublebootstrapkey1234567890\n"), 0o600)
 		require.NoError(t, err)
 
-		unsetEnv(t, "ADMIN_STATIC_API_KEY")
-		setEnv(t, "ADMIN_STATIC_API_KEY_FILE", singleFile)
-		setEnv(t, "ADMIN_STATIC_API_KEY__FILE", doubleFile)
+		unsetEnv(t, "ARCANE_ADMIN_STATIC_API_KEY")
+		setEnv(t, "ARCANE_ADMIN_STATIC_API_KEY_FILE", singleFile)
+		setEnv(t, "ARCANE_ADMIN_STATIC_API_KEY__FILE", doubleFile)
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.Equal(t, "arc_doublebootstrapkey1234567890", cfg.AdminStaticAPIKey)
 	})
 
@@ -277,100 +227,100 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 		err := os.WriteFile(portFile, []byte("9999"), 0o600)
 		require.NoError(t, err)
 
-		// PORT is not marked with options:"file", so _FILE should not work
-		unsetEnv(t, "PORT")
-		setEnv(t, "PORT_FILE", portFile)
+		// ARCANE_PORT is not marked with options:"file", so _FILE should not work
+		unsetEnv(t, "ARCANE_PORT")
+		setEnv(t, "ARCANE_PORT_FILE", portFile)
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.Equal(t, "3552", cfg.Port) // Should use default, not file content
 	})
 }
 
 func TestConfig_OptionsToLower(t *testing.T) {
-	origLogLevel := os.Getenv("LOG_LEVEL")
-	origEdgeTransport := os.Getenv("EDGE_TRANSPORT")
-	origEdgeMTLSMode := os.Getenv("EDGE_MTLS_MODE")
-	defer restoreEnv("LOG_LEVEL", origLogLevel)
-	defer restoreEnv("EDGE_TRANSPORT", origEdgeTransport)
-	defer restoreEnv("EDGE_MTLS_MODE", origEdgeMTLSMode)
+	origLogLevel := os.Getenv("ARCANE_LOG_LEVEL")
+	origEdgeTransport := os.Getenv("ARCANE_EDGE_TRANSPORT")
+	origEdgeMTLSMode := os.Getenv("ARCANE_EDGE_MTLS_MODE")
+	defer restoreEnv("ARCANE_LOG_LEVEL", origLogLevel)
+	defer restoreEnv("ARCANE_EDGE_TRANSPORT", origEdgeTransport)
+	defer restoreEnv("ARCANE_EDGE_MTLS_MODE", origEdgeMTLSMode)
 
 	t.Run("LogLevel is converted to lowercase", func(t *testing.T) {
-		setEnv(t, "LOG_LEVEL", "DEBUG")
+		setEnv(t, "ARCANE_LOG_LEVEL", "DEBUG")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.Equal(t, "debug", cfg.LogLevel)
 	})
 
 	t.Run("LogLevel mixed case is converted to lowercase", func(t *testing.T) {
-		setEnv(t, "LOG_LEVEL", "WaRn")
+		setEnv(t, "ARCANE_LOG_LEVEL", "WaRn")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.Equal(t, "warn", cfg.LogLevel)
 	})
 
 	t.Run("EdgeTransport is converted to lowercase", func(t *testing.T) {
-		setEnv(t, "EDGE_TRANSPORT", "GRPC")
+		setEnv(t, "ARCANE_EDGE_TRANSPORT", "GRPC")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.Equal(t, "grpc", cfg.EdgeTransport)
 	})
 
 	t.Run("EdgeTransport defaults to auto", func(t *testing.T) {
-		unsetEnv(t, "EDGE_TRANSPORT")
+		unsetEnv(t, "ARCANE_EDGE_TRANSPORT")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.Equal(t, "auto", cfg.EdgeTransport)
 	})
 
 	t.Run("EdgeMTLSMode is converted to lowercase", func(t *testing.T) {
-		setEnv(t, "EDGE_MTLS_MODE", "REQUIRED")
+		setEnv(t, "ARCANE_EDGE_MTLS_MODE", "REQUIRED")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.Equal(t, "required", cfg.EdgeMTLSMode)
 	})
 
 	t.Run("EdgeMTLSMode defaults to disabled", func(t *testing.T) {
-		unsetEnv(t, "EDGE_MTLS_MODE")
+		unsetEnv(t, "ARCANE_EDGE_MTLS_MODE")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.Equal(t, "disabled", cfg.EdgeMTLSMode)
 	})
 }
 
 func TestConfig_AllowDowngrade(t *testing.T) {
-	origAllowDowngrade := os.Getenv("ALLOW_DOWNGRADE")
-	defer restoreEnv("ALLOW_DOWNGRADE", origAllowDowngrade)
+	origAllowDowngrade := os.Getenv("ARCANE_ALLOW_DOWNGRADE")
+	defer restoreEnv("ARCANE_ALLOW_DOWNGRADE", origAllowDowngrade)
 
 	t.Run("defaults to false", func(t *testing.T) {
-		unsetEnv(t, "ALLOW_DOWNGRADE")
+		unsetEnv(t, "ARCANE_ALLOW_DOWNGRADE")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.False(t, cfg.AllowDowngrade)
 	})
 
 	t.Run("loads explicit true from env", func(t *testing.T) {
-		setEnv(t, "ALLOW_DOWNGRADE", "true")
+		setEnv(t, "ARCANE_ALLOW_DOWNGRADE", "true")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.True(t, cfg.AllowDowngrade)
 	})
 }
 
 func TestConfig_AllowCLIPasswordReset(t *testing.T) {
-	origAllowCLIPasswordReset := os.Getenv("ALLOW_CLI_PASSWORD_RESET")
-	defer restoreEnv("ALLOW_CLI_PASSWORD_RESET", origAllowCLIPasswordReset)
+	origAllowCLIPasswordReset := os.Getenv("ARCANE_ALLOW_CLI_PASSWORD_RESET")
+	defer restoreEnv("ARCANE_ALLOW_CLI_PASSWORD_RESET", origAllowCLIPasswordReset)
 
 	t.Run("defaults to false", func(t *testing.T) {
-		unsetEnv(t, "ALLOW_CLI_PASSWORD_RESET")
+		unsetEnv(t, "ARCANE_ALLOW_CLI_PASSWORD_RESET")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.False(t, cfg.AllowCLIPasswordReset)
 	})
 
 	t.Run("loads explicit true from env", func(t *testing.T) {
-		setEnv(t, "ALLOW_CLI_PASSWORD_RESET", "TRUE")
+		setEnv(t, "ARCANE_ALLOW_CLI_PASSWORD_RESET", "TRUE")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.True(t, cfg.AllowCLIPasswordReset)
 	})
 }
@@ -420,30 +370,30 @@ func TestConfig_ListenAddr(t *testing.T) {
 }
 
 func TestConfig_TLSSettings(t *testing.T) {
-	origTLSEnabled := os.Getenv("TLS_ENABLED")
-	origTLSCertFile := os.Getenv("TLS_CERT_FILE")
-	origTLSKeyFile := os.Getenv("TLS_KEY_FILE")
-	defer restoreEnv("TLS_ENABLED", origTLSEnabled)
-	defer restoreEnv("TLS_CERT_FILE", origTLSCertFile)
-	defer restoreEnv("TLS_KEY_FILE", origTLSKeyFile)
+	origTLSEnabled := os.Getenv("ARCANE_TLS_ENABLED")
+	origTLSCertFile := os.Getenv("ARCANE_TLS_CERT_FILE")
+	origTLSKeyFile := os.Getenv("ARCANE_TLS_KEY_FILE")
+	defer restoreEnv("ARCANE_TLS_ENABLED", origTLSEnabled)
+	defer restoreEnv("ARCANE_TLS_CERT_FILE", origTLSCertFile)
+	defer restoreEnv("ARCANE_TLS_KEY_FILE", origTLSKeyFile)
 
 	t.Run("defaults to tls disabled", func(t *testing.T) {
-		unsetEnv(t, "TLS_ENABLED")
-		unsetEnv(t, "TLS_CERT_FILE")
-		unsetEnv(t, "TLS_KEY_FILE")
+		unsetEnv(t, "ARCANE_TLS_ENABLED")
+		unsetEnv(t, "ARCANE_TLS_CERT_FILE")
+		unsetEnv(t, "ARCANE_TLS_KEY_FILE")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.False(t, cfg.TLSEnabled)
 		assert.Empty(t, cfg.TLSCertFile)
 		assert.Empty(t, cfg.TLSKeyFile)
 	})
 
 	t.Run("loads tls settings from env", func(t *testing.T) {
-		setEnv(t, "TLS_ENABLED", "true")
-		setEnv(t, "TLS_CERT_FILE", "/etc/ssl/certs/fullchain.pem")
-		setEnv(t, "TLS_KEY_FILE", "/etc/ssl/private/privkey.pem")
+		setEnv(t, "ARCANE_TLS_ENABLED", "true")
+		setEnv(t, "ARCANE_TLS_CERT_FILE", "/etc/ssl/certs/fullchain.pem")
+		setEnv(t, "ARCANE_TLS_KEY_FILE", "/etc/ssl/private/privkey.pem")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.True(t, cfg.TLSEnabled)
 		assert.Equal(t, "/etc/ssl/certs/fullchain.pem", cfg.TLSCertFile)
 		assert.Equal(t, "/etc/ssl/private/privkey.pem", cfg.TLSKeyFile)
@@ -511,66 +461,69 @@ func TestConfig_GetManagerBaseURL(t *testing.T) {
 }
 
 func TestConfig_JWTRefreshExpiry(t *testing.T) {
-	origJWTRefreshExpiry := os.Getenv("JWT_REFRESH_EXPIRY")
-	defer restoreEnv("JWT_REFRESH_EXPIRY", origJWTRefreshExpiry)
+	origJWTRefreshExpiry := os.Getenv("ARCANE_JWT_REFRESH_EXPIRY")
+	defer restoreEnv("ARCANE_JWT_REFRESH_EXPIRY", origJWTRefreshExpiry)
 
 	t.Run("defaults to 7 days when not set", func(t *testing.T) {
-		unsetEnv(t, "JWT_REFRESH_EXPIRY")
+		unsetEnv(t, "ARCANE_JWT_REFRESH_EXPIRY")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.Equal(t, 7*24*time.Hour, cfg.JWTRefreshExpiry)
 	})
 
 	t.Run("parses custom duration from env var", func(t *testing.T) {
-		setEnv(t, "JWT_REFRESH_EXPIRY", "48h")
+		setEnv(t, "ARCANE_JWT_REFRESH_EXPIRY", "48h")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.Equal(t, 48*time.Hour, cfg.JWTRefreshExpiry)
 	})
 
 	t.Run("supports compound duration format", func(t *testing.T) {
-		setEnv(t, "JWT_REFRESH_EXPIRY", "24h30m")
+		setEnv(t, "ARCANE_JWT_REFRESH_EXPIRY", "24h30m")
 
-		cfg := Load()
+		cfg := mustLoad(t)
 		assert.Equal(t, 24*time.Hour+30*time.Minute, cfg.JWTRefreshExpiry)
 	})
 
-	t.Run("falls back to default on invalid duration", func(t *testing.T) {
-		setEnv(t, "JWT_REFRESH_EXPIRY", "notaduration")
+	for _, value := range []string{"notaduration", "0s", "-1h"} {
+		t.Run("rejects "+value, func(t *testing.T) {
+			setEnv(t, "ARCANE_JWT_REFRESH_EXPIRY", value)
 
-		cfg := Load()
-		assert.Equal(t, 168*time.Hour, cfg.JWTRefreshExpiry)
-	})
-
-	t.Run("falls back to default on zero duration", func(t *testing.T) {
-		setEnv(t, "JWT_REFRESH_EXPIRY", "0s")
-
-		cfg := Load()
-		assert.Equal(t, 168*time.Hour, cfg.JWTRefreshExpiry)
-	})
-
-	t.Run("falls back to default on negative duration", func(t *testing.T) {
-		setEnv(t, "JWT_REFRESH_EXPIRY", "-1h")
-
-		cfg := Load()
-		assert.Equal(t, 168*time.Hour, cfg.JWTRefreshExpiry)
-	})
+			_, err := Load()
+			require.ErrorContains(t, err, "ARCANE_JWT_REFRESH_EXPIRY")
+		})
+	}
 }
 
-func TestSetFieldValue_DurationUsesFieldTagDefault(t *testing.T) {
-	type durationConfig struct {
-		SessionTimeout time.Duration `env:"SESSION_TIMEOUT" default:"2h"`
+func TestConfig_LoadJoinsParseErrors(t *testing.T) {
+	t.Setenv("ARCANE_TLS_ENABLED", "maybe")
+	t.Setenv("ARCANE_EDGE_RECONNECT_INTERVAL", "soon")
+	t.Setenv("ARCANE_FILE_PERM", "rw-r--r--")
+	t.Setenv("ARCANE_JWT_REFRESH_EXPIRY", "forever")
+
+	cfg, err := Load()
+	require.Error(t, err)
+	assert.Nil(t, cfg)
+	for _, envName := range []string{"ARCANE_TLS_ENABLED", "ARCANE_EDGE_RECONNECT_INTERVAL", "ARCANE_FILE_PERM", "ARCANE_JWT_REFRESH_EXPIRY"} {
+		assert.ErrorContains(t, err, envName)
 	}
+}
 
-	cfg := &durationConfig{}
-	v := reflect.ValueOf(cfg).Elem()
-	field := v.FieldByName("SessionTimeout")
-	fieldType, ok := v.Type().FieldByName("SessionTimeout")
-	require.True(t, ok)
+func TestConfig_LoadRejectsWeakProductionEncryptionKey(t *testing.T) {
+	t.Setenv("ARCANE_ENVIRONMENT", "production")
+	t.Setenv("ARCANE_ENCRYPTION_KEY", "short")
 
-	setFieldValue(field, fieldType, "invalid-duration")
+	_, err := Load()
+	require.ErrorContains(t, err, "ARCANE_ENCRYPTION_KEY")
 
-	assert.Equal(t, 2*time.Hour, cfg.SessionTimeout)
+	t.Setenv("ARCANE_ENCRYPTION_KEY", "hex:abc")
+	_, err = Load()
+	require.NoError(t, err)
+
+	t.Setenv("ARCANE_ENCRYPTION_KEY", "short")
+	t.Setenv("ARCANE_ENVIRONMENT", "development")
+	_, err = Load()
+	require.NoError(t, err)
 }
 
 func TestConfig_ApplyProxyDefaults(t *testing.T) {
@@ -606,26 +559,33 @@ func TestConfig_ApplyProxyDefaults(t *testing.T) {
 }
 
 func TestConfig_TrustedProxies(t *testing.T) {
-	orig := os.Getenv("TRUSTED_PROXIES")
-	defer restoreEnv("TRUSTED_PROXIES", orig)
+	orig := os.Getenv("ARCANE_TRUSTED_PROXIES")
+	defer restoreEnv("ARCANE_TRUSTED_PROXIES", orig)
 
 	t.Run("Default empty", func(t *testing.T) {
-		unsetEnv(t, "TRUSTED_PROXIES")
-		cfg := Load()
+		unsetEnv(t, "ARCANE_TRUSTED_PROXIES")
+		cfg := mustLoad(t)
 		assert.Empty(t, cfg.TrustedProxies)
 	})
 
 	t.Run("Single CIDR", func(t *testing.T) {
-		setEnv(t, "TRUSTED_PROXIES", "10.0.0.0/8")
-		cfg := Load()
+		setEnv(t, "ARCANE_TRUSTED_PROXIES", "10.0.0.0/8")
+		cfg := mustLoad(t)
 		assert.Equal(t, "10.0.0.0/8", cfg.TrustedProxies)
 	})
 
 	t.Run("Multiple CIDRs", func(t *testing.T) {
-		setEnv(t, "TRUSTED_PROXIES", "10.0.0.0/8,192.168.0.0/16,172.16.0.0/12")
-		cfg := Load()
+		setEnv(t, "ARCANE_TRUSTED_PROXIES", "10.0.0.0/8,192.168.0.0/16,172.16.0.0/12")
+		cfg := mustLoad(t)
 		assert.Equal(t, "10.0.0.0/8,192.168.0.0/16,172.16.0.0/12", cfg.TrustedProxies)
 	})
+}
+
+func mustLoad(t *testing.T) *Config {
+	t.Helper()
+	cfg, err := Load()
+	require.NoError(t, err)
+	return cfg
 }
 
 func restoreEnv(key, value string) {

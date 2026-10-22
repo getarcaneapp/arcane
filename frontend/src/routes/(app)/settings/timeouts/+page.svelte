@@ -12,7 +12,7 @@
 
 	let { data } = $props();
 
-	const isReadOnly = $derived.by(() => settingsStore.current?.uiConfigDisabled);
+	const isReadOnly = $derived(settingsStore.readOnly);
 
 	const formSchema = z.object({
 		dockerApiTimeout: z.coerce.number().int().min(1).max(3600),
@@ -66,6 +66,7 @@
 					description={m.docker_api_timeout_description()}
 					helpText={m.timeouts_seconds_help({ range: '1-3600' })}
 					error={formInputs.dockerApiTimeout.error}
+					lock={settingsStore.lock('dockerApiTimeout')}
 				>
 					<Input
 						id="docker-api-timeout"
@@ -81,6 +82,7 @@
 					description={m.docker_image_pull_timeout_description()}
 					helpText={m.timeouts_seconds_help({ range: '30-7200' })}
 					error={formInputs.dockerImagePullTimeout.error}
+					lock={settingsStore.lock('dockerImagePullTimeout')}
 				>
 					<Input
 						id="docker-image-pull-timeout"
@@ -96,6 +98,7 @@
 					description={m.deploy_wait_timeout_description()}
 					helpText={m.timeouts_seconds_help({ range: '30-14400' })}
 					error={formInputs.deployWaitTimeout.error}
+					lock={settingsStore.lock('deployWaitTimeout')}
 				>
 					<Input
 						id="deploy-wait-timeout"
@@ -111,6 +114,7 @@
 					description={m.trivy_scan_timeout_description()}
 					helpText={m.timeouts_seconds_help({ range: '60-14400' })}
 					error={formInputs.trivyScanTimeout.error}
+					lock={settingsStore.lock('trivyScanTimeout')}
 				>
 					<Input
 						id="trivy-scan-timeout"
@@ -128,6 +132,7 @@
 					description={m.git_operation_timeout_description()}
 					helpText={m.timeouts_seconds_help({ range: '30-3600' })}
 					error={formInputs.gitOperationTimeout.error}
+					lock={settingsStore.lock('gitOperationTimeout')}
 				>
 					<Input
 						id="git-operation-timeout"
@@ -145,6 +150,7 @@
 					description={m.http_client_timeout_description()}
 					helpText={m.timeouts_seconds_help({ range: '5-300' })}
 					error={formInputs.httpClientTimeout.error}
+					lock={settingsStore.lock('httpClientTimeout')}
 				>
 					<Input
 						id="http-client-timeout"
@@ -160,6 +166,7 @@
 					description={m.registry_timeout_description()}
 					helpText={m.timeouts_seconds_help({ range: '5-300' })}
 					error={formInputs.registryTimeout.error}
+					lock={settingsStore.lock('registryTimeout')}
 				>
 					<Input
 						id="registry-timeout"
@@ -175,6 +182,7 @@
 					description={m.registry_tag_timeout_description()}
 					helpText={m.timeouts_seconds_help({ range: '5-3600' })}
 					error={formInputs.registryTagTimeout.error}
+					lock={settingsStore.lock('registryTagTimeout')}
 				>
 					<Input
 						id="registry-tag-timeout"
@@ -190,6 +198,7 @@
 					description={m.proxy_request_timeout_description()}
 					helpText={m.timeouts_seconds_help({ range: '10-600' })}
 					error={formInputs.proxyRequestTimeout.error}
+					lock={settingsStore.lock('proxyRequestTimeout')}
 				>
 					<Input
 						id="proxy-request-timeout"

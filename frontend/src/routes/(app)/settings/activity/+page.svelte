@@ -12,7 +12,7 @@
 
 	let { data } = $props();
 
-	const isReadOnly = $derived.by(() => settingsStore.current?.uiConfigDisabled);
+	const isReadOnly = $derived(settingsStore.readOnly);
 
 	const formSchema = z.object({
 		activityHistoryRetentionDays: z.coerce.number().int().min(0).max(3650),
@@ -56,6 +56,7 @@
 					description={m.activity_history_retention_days_description()}
 					helpText={m.activity_history_retention_days_help()}
 					error={formInputs.activityHistoryRetentionDays.error}
+					lock={settingsStore.lock('activityHistoryRetentionDays')}
 				>
 					<Input
 						id="activity-history-retention-days"
@@ -71,6 +72,7 @@
 					description={m.activity_history_max_entries_description()}
 					helpText={m.activity_history_max_entries_help()}
 					error={formInputs.activityHistoryMaxEntries.error}
+					lock={settingsStore.lock('activityHistoryMaxEntries')}
 				>
 					<Input
 						id="activity-history-max-entries"
@@ -86,6 +88,7 @@
 					description={m.activity_max_concurrent_description()}
 					helpText={m.activity_max_concurrent_help()}
 					error={formInputs.maxConcurrentActivities.error}
+					lock={settingsStore.lock('maxConcurrentActivities')}
 				>
 					<Input
 						id="activity-max-concurrent"
@@ -103,6 +106,7 @@
 					description={m.upgrade_log_retention_days_description()}
 					helpText={m.upgrade_log_retention_days_help()}
 					error={formInputs.upgradeLogRetentionDays.error}
+					lock={settingsStore.lock('upgradeLogRetentionDays')}
 				>
 					<Input
 						id="upgrade-log-retention-days"

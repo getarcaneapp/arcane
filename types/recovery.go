@@ -7,7 +7,7 @@ import (
 )
 
 // RecoveryManifestFormatVersion is the manifest format new system backups write.
-const RecoveryManifestFormatVersion = 2
+const RecoveryManifestFormatVersion = 3
 
 // RecoveryManifest is the recovery manifest stored inside every system backup.
 // Version 2 records where Arcane data and projects live in the snapshot.

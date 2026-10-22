@@ -13,7 +13,7 @@ import (
 	"go.getarcane.app/updater/pkg/utils/tagpolicy"
 	"go.getarcane.app/updater/refs"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/registryauth"
 )
 
 const (

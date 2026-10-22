@@ -8,14 +8,13 @@
 	import { CodeIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { settingsService } from '#lib/services/settings-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { createSettingsForm } from '#lib/utils/settings-form.js';
 
 	let { data } = $props();
 
 	const currentSettings = $derived(settingsStore.current || data.settings!);
-	const isReadOnly = $derived.by(() => settingsStore.current?.uiConfigDisabled);
+	const isReadOnly = $derived(settingsStore.readOnly);
 
 	const formSchema = z.object({
 		buildProvider: z.enum(['local', 'depot']).default('local'),
@@ -29,7 +28,10 @@
 	const getFormDefaults = () => {
 		const settings = settingsStore.current || data.settings!;
 		let buildProvider = settings.buildProvider;
-		if (!settings.depotConfigured && !((settings.depotProjectId ?? '').trim() && (settings.depotToken ?? '').trim())) {
+		if (
+			!settingsStore.runtime.depotConfigured &&
+			!((settings.depotProjectId ?? '').trim() && (settings.depotToken ?? '').trim())
+		) {
 			buildProvider = 'local';
 		}
 		return {
@@ -47,13 +49,12 @@
 		currentSettings: getFormDefaults(),
 		getCurrentSettings: getFormDefaults,
 		onSave: async (payload) => {
-			const updated = { ...payload } as Record<string, unknown>;
-			if (!depotCredentialsPresent) updated['buildProvider'] = 'local';
-			if (!updated['depotToken']) {
-				delete updated['depotToken'];
-			}
-			if (!supportsBuildHistoryRetention) delete updated['buildHistoryRetentionDays'];
-			await settingsService.updateSettings(updated);
+			await settingsStore.save({
+				...payload,
+				buildProvider: depotCredentialsPresent ? payload.buildProvider : 'local',
+				depotToken: payload.depotToken || undefined,
+				buildHistoryRetentionDays: supportsBuildHistoryRetention ? payload.buildHistoryRetentionDays : undefined
+			});
 		},
 		onSuccess: () => {
 			formInputs.depotToken.value = '';
@@ -68,7 +69,7 @@
 	const supportsBuildHistoryRetention = $derived(currentSettings.buildHistoryRetentionDays !== undefined);
 	const existingDepotProjectId = $derived((currentSettings.depotProjectId ?? '').trim());
 	const existingDepotToken = $derived((currentSettings.depotToken ?? '').trim());
-	const depotConfigured = $derived(Boolean(currentSettings.depotConfigured));
+	const depotConfigured = $derived(Boolean(settingsStore.runtime.depotConfigured));
 
 	const depotCredentialsPresent = $derived.by(() => {
 		const projectId = (formInputs.depotProjectId.value ?? '').trim() || existingDepotProjectId;
@@ -107,6 +108,7 @@
 					description={m.build_settings_directory_description()}
 					helpText={m.build_settings_directory_help()}
 					error={formInputs.buildsDirectory.error}
+					lock={settingsStore.lock('buildsDirectory')}
 				>
 					<Input
 						id="builds-directory"
@@ -123,6 +125,7 @@
 					label={m.build_settings_default_provider_label()}
 					description={m.build_settings_default_provider_description()}
 					error={formInputs.buildProvider.error}
+					lock={settingsStore.lock('buildProvider')}
 					helpText={!depotCredentialsPresent && !depotConfigured ? m.build_settings_depot_enable_hint() : undefined}
 				>
 					<SelectWithLabel
@@ -146,6 +149,7 @@
 					description={m.build_settings_timeout_description()}
 					helpText={m.build_settings_timeout_help()}
 					error={formInputs.buildTimeout.error}
+					lock={settingsStore.lock('buildTimeout')}
 				>
 					<Input
 						id="build-timeout"
@@ -162,6 +166,7 @@
 						description={m.build_history_retention_days_description()}
 						helpText={m.build_history_retention_days_help()}
 						error={formInputs.buildHistoryRetentionDays.error}
+						lock={settingsStore.lock('buildHistoryRetentionDays')}
 					>
 						<Input
 							id="build-history-retention-days"
@@ -180,6 +185,7 @@
 					label={m.build_settings_depot_project_id_label()}
 					description={m.build_settings_depot_project_id_description()}
 					error={formInputs.depotProjectId.error}
+					lock={settingsStore.lock('depotProjectId')}
 				>
 					<Input
 						id="depot-project-id"
@@ -200,6 +206,7 @@
 					description={m.build_settings_depot_token_description()}
 					helpText={m.build_settings_depot_token_help()}
 					error={formInputs.depotToken.error}
+					lock={settingsStore.lock('depotToken')}
 				>
 					<Input
 						id="depot-token"

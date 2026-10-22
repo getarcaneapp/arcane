@@ -25,27 +25,26 @@ import (
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	containerdomain "github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	volumebackup "github.com/getarcaneapp/arcane/backend/v2/internal/volume/children/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume/children/workspace"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	containerdomain "github.com/getarcaneapp/arcane/backend/v3/internal/container"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	volumebackup "github.com/getarcaneapp/arcane/backend/v3/internal/volume/children/backup"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/volume/children/workspace"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumes"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 type VolumeService struct {
@@ -69,7 +68,10 @@ type VolumeService struct {
 
 var ErrVolumeBackupAlreadyRunning = errors.New("a backup is already running for this volume")
 
-const internalVolumePruneFilterValue = libarcane.InternalResourceLabel + "=true"
+const (
+	internalVolumePruneFilterValue = libarcane.InternalResourceLabel + "=true"
+	legacyDefaultEncryptionKey     = "arcane-dev-key-32-characters!!!"
+)
 
 func NewVolumeService(
 	db *database.DB,
@@ -85,15 +87,9 @@ func NewVolumeService(
 ) *VolumeService {
 	backupVolumeName := ""
 	encryptionKey := ""
-	workspaceMaxDepth := 50
-	workspaceMaxEntries := 10000
-	workspaceMaxFileSizeMB := workspacepkg.DefaultMaxFileSizeMB
 	if cfg != nil {
 		backupVolumeName = cfg.BackupVolumeName
-		encryptionKey = cfg.EncryptionKey
-		workspaceMaxDepth = cfg.VolumeWorkspaceMaxDepth
-		workspaceMaxEntries = cfg.VolumeWorkspaceMaxEntries
-		workspaceMaxFileSizeMB = cfg.VolumeWorkspaceMaxFileSizeMB
+		encryptionKey = cmp.Or(cfg.EncryptionKey, legacyDefaultEncryptionKey)
 	}
 	if strings.TrimSpace(backupVolumeName) == "" {
 		backupVolumeName = "arcane-backups"
@@ -139,9 +135,7 @@ func NewVolumeService(
 		BackupStorageMount:    service.backup.StorageMount,
 		ArchiveFileTarget:     service.backup.ArchiveFileTarget,
 		RestoreArchiveMembers: service.backup.RestoreArchiveMembers,
-		MaxDepth:              workspaceMaxDepth,
-		MaxEntries:            workspaceMaxEntries,
-		MaxFileSizeBytes:      workspacepkg.MaxFileSizeBytes(workspaceMaxFileSizeMB),
+		Settings:              settingsService,
 	})
 	return service
 }
