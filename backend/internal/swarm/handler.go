@@ -35,14 +35,6 @@ type ListSwarmTasksInput struct {
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 }
 
-type GetSwarmInfoInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type GetSwarmStatusInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 type InitSwarmInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          types.SwarmInitRequest
@@ -61,14 +53,6 @@ type LeaveSwarmInput struct {
 type UnlockSwarmInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          types.SwarmUnlockRequest
-}
-
-type GetSwarmUnlockKeyInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type GetSwarmJoinTokensInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
 type SwarmJoinTokensActionInput struct {
@@ -119,7 +103,7 @@ func (h *SwarmHandler) ListTasks(ctx context.Context, input *ListSwarmTasksInput
 //
 // Returns the current swarm information when swarm mode is available.
 // Returns a mapped HTTP error when swarm inspection fails.
-func (h *SwarmHandler) GetSwarmStatus(ctx context.Context, input *GetSwarmStatusInput) (*handlerutil.Out[types.SwarmRuntimeStatus], error) {
+func (h *SwarmHandler) GetSwarmStatus(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.SwarmRuntimeStatus], error) {
 	enabled, err := h.swarmService.IsEnabled(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to read swarm status")
@@ -143,7 +127,7 @@ func (h *SwarmHandler) GetSwarmStatus(ctx context.Context, input *GetSwarmStatus
 //
 // Returns the current swarm information when swarm mode is available.
 // Returns a mapped HTTP error when swarm inspection fails.
-func (h *SwarmHandler) GetSwarmInfo(ctx context.Context, input *GetSwarmInfoInput) (*handlerutil.Out[types.SwarmInfo], error) {
+func (h *SwarmHandler) GetSwarmInfo(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.SwarmInfo], error) {
 	info, err := h.swarmService.GetSwarmInfo(ctx)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to inspect swarm: "+err.Error())
@@ -253,7 +237,7 @@ func (h *SwarmHandler) UnlockSwarm(ctx context.Context, input *UnlockSwarmInput)
 //
 // Returns the current manager unlock key.
 // Returns a mapped HTTP error when the unlock key cannot be retrieved.
-func (h *SwarmHandler) GetUnlockKey(ctx context.Context, input *GetSwarmUnlockKeyInput) (*handlerutil.Out[types.SwarmUnlockKeyResponse], error) {
+func (h *SwarmHandler) GetUnlockKey(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.SwarmUnlockKeyResponse], error) {
 	resp, err := h.swarmService.GetSwarmUnlockKey(ctx)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to get swarm unlock key")
@@ -272,7 +256,7 @@ func (h *SwarmHandler) GetUnlockKey(ctx context.Context, input *GetSwarmUnlockKe
 //
 // Returns the current worker and manager join tokens.
 // Returns a mapped HTTP error when token lookup fails.
-func (h *SwarmHandler) GetJoinTokens(ctx context.Context, input *GetSwarmJoinTokensInput) (*handlerutil.Out[types.SwarmJoinTokensResponse], error) {
+func (h *SwarmHandler) GetJoinTokens(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.SwarmJoinTokensResponse], error) {
 	resp, err := h.swarmService.GetSwarmJoinTokens(ctx)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to get swarm join tokens")

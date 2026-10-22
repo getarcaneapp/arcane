@@ -9,7 +9,6 @@
 	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
-	import { applyEnvironmentUpgrade } from '#lib/utils/update-actions.js';
 
 	// open/upgrading have no $bindable fallback: they bind to per-environment
 	// record entries that start out undefined, and binding undefined to a
@@ -93,10 +92,6 @@
 
 		return m.upgrade_now();
 	});
-
-	async function handleConfirmUpgradeInternal() {
-		return applyEnvironmentUpgrade(environment.id, () => m.common_unknown(), onRefreshRequested, true);
-	}
 </script>
 
 {#if shouldShowUpgrade && render !== 'dialog'}
@@ -119,6 +114,6 @@
 		canInstall={shouldShowUpgrade}
 		environmentName={isLocalEnvironment ? undefined : environment.name}
 		environmentId={environment.id}
-		onConfirm={handleConfirmUpgradeInternal}
+		onFinished={onRefreshRequested}
 	/>
 {/if}

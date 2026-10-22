@@ -13,6 +13,7 @@ const (
 	StreamChannelActivities   = "activities"
 	StreamChannelEvents       = "events"
 	StreamChannelVersion      = "version"
+	StreamChannelUpgrade      = "arcane-upgrade"
 )
 
 // StreamEvent is the JSON data of one message in the multiplexed SSE stream.
@@ -53,6 +54,8 @@ type StreamEvent struct {
 	//
 	// Required: false
 	Version *VersionStreamEvent `json:"version,omitempty"`
+
+	Upgrade *UpgradeJob `json:"upgrade,omitempty"`
 
 	// Timestamp is when the envelope was produced.
 	//

@@ -9,6 +9,7 @@ type StreamEnvelope = {
 	environment?: unknown;
 	eventLog?: unknown;
 	version?: unknown;
+	upgrade?: unknown;
 };
 
 type ChannelSubscriber = {
@@ -34,7 +35,13 @@ function createClientStreamInternal() {
 			}
 		},
 		onEvent: (envelope) => {
-			const payload = envelope.dashboard ?? envelope.activity ?? envelope.environment ?? envelope.eventLog ?? envelope.version;
+			const payload =
+				envelope.dashboard ??
+				envelope.activity ??
+				envelope.environment ??
+				envelope.eventLog ??
+				envelope.version ??
+				envelope.upgrade;
 			if (!envelope.channel || payload === undefined) {
 				return;
 			}

@@ -80,10 +80,6 @@ type RemoveVolumeInput struct {
 	Force         bool   `query:"force" doc:"Force removal"`
 }
 
-type PruneVolumesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 // VolumePruneReportData represents the result of a volume prune operation.
 // This is a local type to avoid schema naming conflicts with image.PruneReport.
 type VolumePruneReportData struct {
@@ -106,10 +102,6 @@ type VolumeUsageResponse struct {
 type GetVolumeUsageCountsInput struct {
 	EnvironmentID   string `path:"id" doc:"Environment ID"`
 	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal volumes"`
-}
-
-type GetVolumeSizesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
 // VolumeSizeInfo represents size information for a single volume.
@@ -321,7 +313,7 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 }
 
 // PruneVolumes removes all unused Docker volumes.
-func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInput) (*handlerutil.Out[VolumePruneReportData], error) {
+func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[VolumePruneReportData], error) {
 	var report *types.VolumePruneReport
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
@@ -392,7 +384,7 @@ func (h *VolumeHandler) GetVolumeUsageCounts(ctx context.Context, input *GetVolu
 
 // GetVolumeSizes returns disk usage sizes for all volumes.
 // This is a slow operation as it requires calculating disk usage.
-func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *GetVolumeSizesInput) (*handlerutil.Out[[]VolumeSizeInfo], error) {
+func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]VolumeSizeInfo], error) {
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
 		body, err := h.volumeService.AggregateVolumeSizes(ctx)
 		if err != nil {

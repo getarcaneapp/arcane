@@ -130,10 +130,6 @@ type PruneImagesInput struct {
 	}
 }
 
-type GetImageUsageCountsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 type UploadImageInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          types.UploadConsumeRequest
@@ -536,7 +532,7 @@ func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput)
 }
 
 // GetImageUsageCounts returns counts of images by usage status.
-func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageUsageCountsInput) (*handlerutil.Out[types.ImageUsageCounts], error) {
+func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.ImageUsageCounts], error) {
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
 		body, err := h.imageService.AggregateImageCounts(ctx)
 		if err != nil {

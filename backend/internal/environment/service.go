@@ -1626,6 +1626,15 @@ func (s *EnvironmentService) ExecuteRemoteRequest(ctx context.Context, envID, me
 	return s.proxy.Execute(ctx, target, method, path, body)
 }
 
+func (s *EnvironmentService) OpenRemoteStream(ctx context.Context, envID, path string) (*http.Response, error) {
+	target, err := s.resolveRemoteEnvironmentTarget(ctx, envID)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.proxy.Stream(ctx, target, path)
+}
+
 func (s *EnvironmentService) ProxyJSONRequest(ctx context.Context, envID, method, path string, body []byte, out any) error {
 	proxyCtx, cancel := s.proxy.Context(ctx)
 	defer cancel()
