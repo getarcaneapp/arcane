@@ -92,7 +92,7 @@
 	let restoreFilesSearch = $state('');
 	let restoreFilesLoaded = $state(false);
 	let restoringFiles = $state(false);
-	const isReadOnly = $derived.by(() => settingsStore.current?.uiConfigDisabled);
+	const isReadOnly = $derived(settingsStore.readOnly);
 	const canManageRecoveryKey = $derived(hasPermission('system-backups:recovery-key'));
 	const destinationOptions = $derived(backupDestinationOptions(data.destinations.length > 0));
 	const s3Options = $derived(s3DestinationOptions(data.destinations));

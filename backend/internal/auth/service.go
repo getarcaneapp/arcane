@@ -23,22 +23,22 @@ import (
 	"go.getarcane.app/kit/pkg"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/jwtclaims"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/version"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/cookie"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/jwtclaims"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
 )
 
 const sessionBootstrapVersionTimeout = 2 * time.Second
@@ -177,42 +177,13 @@ func (s *AuthService) GetSessionBootstrap(ctx context.Context, userID string, ps
 	}, nil
 }
 
-func (s *AuthService) GetOidcConfigurationStatus(ctx context.Context) (*types.OidcStatusInfo, error) {
-	oidcEnvForced := s.settingsService != nil && s.settingsService.IsEnvOverrideActive("oidcEnabled")
-
-	mergeAccounts := false
-	providerName := ""
-	providerLogoUrl := ""
-	if s.settingsService != nil {
-		func() {
-			defer func() {
-				// In tests, a zero-valued settings.SettingsService may panic; treat as merge disabled
-				_ = recover()
-			}()
-			if localSettings, err := s.settingsService.GetSettings(ctx); err == nil {
-				mergeAccounts = localSettings.OidcMergeAccounts.IsTrue()
-				providerName = localSettings.OidcProviderName.Value
-				providerLogoUrl = localSettings.OidcProviderLogoUrl.Value
-			}
-		}()
-	}
-
-	status := &types.OidcStatusInfo{
-		EnvForced:       oidcEnvForced,
-		MergeAccounts:   mergeAccounts,
-		ProviderName:    providerName,
-		ProviderLogoUrl: providerLogoUrl,
-	}
-	if oidcEnvForced {
-		status.EnvConfigured = s.config.OidcClientID != "" && s.config.OidcIssuerURL != ""
-		if status.ProviderName == "" {
-			status.ProviderName = s.config.OidcProviderName
-		}
-		if status.ProviderLogoUrl == "" {
-			status.ProviderLogoUrl = s.config.OidcProviderLogoUrl
-		}
-	}
-	return status, nil
+func (s *AuthService) GetOidcConfigurationStatus(_ context.Context) (*types.OidcStatusInfo, error) {
+	localSettings := s.settingsService.GetSettingsConfig()
+	return &types.OidcStatusInfo{
+		MergeAccounts:   localSettings.OidcMergeAccounts.IsTrue(),
+		ProviderName:    localSettings.OidcProviderName.Value,
+		ProviderLogoUrl: localSettings.OidcProviderLogoUrl.Value,
+	}, nil
 }
 
 func (s *AuthService) GetSessionTimeout(ctx context.Context) (int, error) {
@@ -932,7 +903,7 @@ func (s *AuthService) passwordPolicy(ctx context.Context) string {
 	if s.settingsService == nil {
 		return validation.PasswordPolicyStrong
 	}
-	return s.settingsService.GetStringSetting(ctx, "authPasswordPolicy", validation.PasswordPolicyStrong)
+	return s.settingsService.GetStringSetting(ctx, "authPasswordPolicy")
 }
 
 // InvalidateUserTokenCache purges all cached token verifications for a user.

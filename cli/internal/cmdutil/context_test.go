@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/runtime"
 )
 
 type confirmationInput struct {

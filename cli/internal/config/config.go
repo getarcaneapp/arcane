@@ -17,8 +17,8 @@ import (
 	"go.getarcane.app/acfs/atomic"
 	"go.yaml.in/yaml/v4"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
 // Version and build information - set via ldflags at build time

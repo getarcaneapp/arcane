@@ -19,19 +19,21 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
-	systemlib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/system"
-	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/diagnostics"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	systemlib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/system"
+	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
 var (
@@ -75,7 +77,7 @@ type WebSocketHandler struct {
 	containerStatsHubs sync.Map
 	containersStatsHub *agg.Hub[containersStatsResult]
 	cgroupCache        *cgroup.Cache
-	gpuMonitor         *systemlib.GPUMonitor
+	gpuMonitor         atomic.Pointer[systemlib.GPUMonitor]
 
 	diskUsagePathCache   *hot.HotCache[struct{}, string]
 	projectLogStreamer   func(ctx context.Context, projectID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error
@@ -93,6 +95,7 @@ func NewWebSocketHandler(
 	systemService *system.SystemService,
 	diagnosticsService *diagnostics.DiagnosticsService,
 	authMiddleware *auth.AuthMiddleware,
+	settingsService *settings.SettingsService,
 	cfg *config.Config,
 ) {
 	ctx, cancel := context.WithCancel(context.WithoutCancel(appCtx))
@@ -106,12 +109,18 @@ func NewWebSocketHandler(
 		logStreams:         make(map[string]*wsLogStream),
 		containersStatsHub: agg.NewHub[containersStatsResult](),
 		cgroupCache:        cgroup.NewCache(cgroupCacheTTL),
-		gpuMonitor:         systemlib.NewGPUMonitor(cfg.GPUMonitoringEnabled, cfg.GPUType),
 		diskUsagePathCache: hot.NewHotCache[struct{}, string](hot.LRU, 1).
 			WithTTL(5 * time.Minute).
 			Build(),
 		checkWSOrigin: httpx.ValidateWebSocketOrigin(cfg.GetAppURL()),
 	}
+	newGPUMonitor := func() *systemlib.GPUMonitor {
+		return systemlib.NewGPUMonitor(settingsService.GetBoolSetting(ctx, "gpuMonitoringEnabled"), settingsService.GetStringSetting(ctx, "gpuType"))
+	}
+	handler.gpuMonitor.Store(newGPUMonitor())
+	context.AfterFunc(ctx, settingsService.SubscribeSettingsChanges([]string{"gpuMonitoringEnabled", "gpuType"}, func([]libarcane.SettingUpdate) {
+		handler.gpuMonitor.Store(newGPUMonitor())
+	}))
 	// Send the close frames before cancelling hubs, whose teardown closes connections without a handshake.
 	context.AfterFunc(appCtx, func() {
 		var wg sync.WaitGroup

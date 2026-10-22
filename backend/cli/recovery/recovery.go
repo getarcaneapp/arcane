@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,14 +24,16 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/getarcaneapp/arcane/backend/v2/cli/upgrade"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
-	rusticruntime "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/rustic"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
+	"github.com/getarcaneapp/arcane/backend/v3/cli/upgrade"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config/schema"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
+	rusticruntime "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/rustic"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
 )
 
 const rusticImage = rusticruntime.DefaultImage
@@ -102,7 +105,7 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 			readErr = json.Unmarshal(rollbackManifest, &rollback)
 		}
 		if readErr == nil {
-			readErr = francis.ClearRestoredHosts(context.WithoutCancel(ctx), rollback.Environment["DATABASE_URL"])
+			readErr = francis.ClearRestoredHosts(context.WithoutCancel(ctx), schema.ManifestEnvironment(rollback)["ARCANE_DATABASE_URL"])
 		}
 		if readErr != nil {
 			return errors.Join(runStagesErr, fmt.Errorf("clear restored actor ownership; Arcane was left stopped: %w", readErr))
@@ -124,19 +127,15 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("decode restored recovery manifest: %w", unmarshalErr2)
 	}
 	_ = os.Remove("/app/data/.arcane-recovery.json")
-	if (manifest.FormatVersion != 1 && manifest.FormatVersion != types.RecoveryManifestFormatVersion) || len(manifest.Environment) == 0 {
+	if !slices.Contains([]int{1, 2, types.RecoveryManifestFormatVersion}, manifest.FormatVersion) || len(manifest.Environment) == 0 {
 		restart()
 		return errors.New("unsupported or incomplete Arcane recovery manifest")
 	}
+	manifest.Environment = schema.ManifestEnvironment(manifest)
 	// Projects were restored into the current directory, so the recovered
 	// configuration must keep pointing there rather than at the backup-time path.
-	manifest.Environment["PROJECTS_DIRECTORY"] = cmp.Or(request.ProjectsSetting, manifest.Environment["PROJECTS_DIRECTORY"])
-	crypto.InitEncryption(&crypto.Config{
-		EncryptionKey: manifest.Environment["ENCRYPTION_KEY"],
-		Environment:   manifest.Environment["ENVIRONMENT"],
-		AgentMode:     manifest.Environment["AGENT_MODE"] == "true",
-	})
-	if finalizeRestoredBackupErr := finalizeRestoredBackup(ctx, manifest.Environment["DATABASE_URL"], manifest.BackupID, manifest.ActivityID, request); finalizeRestoredBackupErr != nil {
+	manifest.Environment[settings.EnvName("projectsDirectory", "")] = cmp.Or(request.ProjectsSetting, manifest.Environment[settings.EnvName("projectsDirectory", "")])
+	if finalizeRestoredBackupErr := finalizeRestoredBackup(ctx, manifest.Environment, manifest.BackupID, manifest.ActivityID, request); finalizeRestoredBackupErr != nil {
 		return fmt.Errorf("finalize restored system backup: %w", finalizeRestoredBackupErr)
 	}
 	if upgradeContainerErr := upgrade.UpgradeContainer(ctx, dockerClient, inspect.Container, request.ContainerImage, "", manifest.Environment); upgradeContainerErr != nil {
@@ -145,7 +144,8 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func finalizeRestoredBackup(ctx context.Context, databaseURL, manifestBackupID, manifestActivityID string, request types.RecoveryRestoreRequest) error {
+func finalizeRestoredBackup(ctx context.Context, environment map[string]string, manifestBackupID, manifestActivityID string, request types.RecoveryRestoreRequest) error {
+	databaseURL := environment["ARCANE_DATABASE_URL"]
 	if !strings.HasPrefix(databaseURL, "file:") {
 		return errors.New("restored Arcane database is not SQLite")
 	}
@@ -163,6 +163,19 @@ func finalizeRestoredBackup(ctx context.Context, databaseURL, manifestBackupID, 
 		}
 	}()
 	db = db.WithContext(ctx)
+	encryptionKey, err := settings.ResolveEncryptionKey(ctx, &database.DB{DB: db}, &config.Config{
+		EncryptionKey: environment["ARCANE_ENCRYPTION_KEY"],
+		Environment:   config.AppEnvironment(environment["ARCANE_ENVIRONMENT"]),
+		AgentMode:     environment["ARCANE_AGENT_MODE"] == "true",
+	})
+	if err != nil {
+		return err
+	}
+	crypto.InitEncryption(&crypto.Config{
+		EncryptionKey: encryptionKey,
+		Environment:   environment["ARCANE_ENVIRONMENT"],
+		AgentMode:     environment["ARCANE_AGENT_MODE"] == "true",
+	})
 	if finalizeRestoredRunErr := finalizeRestoredRun(db, manifestBackupID, request); finalizeRestoredRunErr != nil {
 		return finalizeRestoredRunErr
 	}

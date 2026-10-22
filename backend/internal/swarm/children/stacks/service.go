@@ -22,13 +22,13 @@ import (
 	acfstypes "go.getarcane.app/acfs/types"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	libswarm "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/swarm"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	libswarm "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/swarm"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 const (
@@ -173,7 +173,7 @@ func (s *Service) DeployStack(ctx context.Context, environmentID string, req typ
 
 	pm := projects.NewPathMapperForConfiguredDirectory(
 		ctx,
-		s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory", defaultSwarmStackSourceRootDir),
+		s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory"),
 		defaultSwarmStackSourceRootDir,
 		dockerClient,
 	)
@@ -567,7 +567,7 @@ func (s *Service) RenderStackConfig(ctx context.Context, environmentID string, r
 	}
 	pm := projects.NewPathMapperForConfiguredDirectory(
 		ctx,
-		s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory", defaultSwarmStackSourceRootDir),
+		s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory"),
 		defaultSwarmStackSourceRootDir,
 		dockerClient,
 	)
@@ -796,7 +796,7 @@ func (s *Service) resolveSwarmStackSourceEnvironmentDir(ctx context.Context, env
 
 	configuredRootDir := defaultSwarmStackSourceRootDir
 	if s.settingsService != nil {
-		configuredRootDir = s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory", defaultSwarmStackSourceRootDir)
+		configuredRootDir = s.settingsService.GetStringSetting(ctx, "swarmStackSourcesDirectory")
 	}
 	rootDir := projects.ResolveConfiguredContainerDirectory(configuredRootDir, defaultSwarmStackSourceRootDir)
 

@@ -15,9 +15,9 @@ import (
 	"github.com/spf13/cobra"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
 // Command is the parent command for background activity operations.

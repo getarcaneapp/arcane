@@ -8,7 +8,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - arcane-data:/app/data
     environment:
-      - ENCRYPTION_KEY=replace_me_with_a_random_32_char_value
+      - ARCANE_ENCRYPTION_KEY=replace_me_with_a_random_32_char_value
       - TZ=UTC
       - OTEL_TRACES_EXPORTER=otlp
       - OTEL_METRICS_EXPORTER=otlp

@@ -22,16 +22,16 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/network"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 // Service runs manual and scheduled prunes, serializing them per environment.

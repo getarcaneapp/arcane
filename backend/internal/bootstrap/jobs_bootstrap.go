@@ -14,19 +14,19 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"go.uber.org/fx"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apns"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/job"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 )
 
 func newJobScheduler(
@@ -433,7 +433,7 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 		}
 	})
 
-	subscribe([]string{"projectsDirectory", "followProjectSymlinks"}, func(_ []libarcane.SettingUpdate) {
+	subscribe([]string{"projectsDirectory", "followProjectSymlinks", "projectScanMaxDepth"}, func(_ []libarcane.SettingUpdate) {
 		if err := params.FilesystemWatcher.RestartProjectsWatcher(params.LifecycleCtx); err != nil {
 			slog.WarnContext(params.LifecycleCtx, "Failed to restart projects filesystem watcher", "error", err)
 			params.FilesystemWatcher.RequestRestart()
@@ -519,7 +519,7 @@ func setupTimeoutSettingsSubscription(params settingsSubscriptionsParams, subscr
 			}
 		}
 	}()
-	subscribe(libarcane.TimeoutSettingKeys(), func(updates []libarcane.SettingUpdate) {
+	subscribe(settings.PropagatedKeys(), func(updates []libarcane.SettingUpdate) {
 		worker.mu.Lock()
 		defer worker.mu.Unlock()
 		if worker.closed {
@@ -551,15 +551,41 @@ func syncTimeoutSettingsToAgents(ctx context.Context, localEnvironment timeoutSe
 		return
 	}
 
-	body, err := json.Marshal(settingsMap)
-	if err != nil {
-		slog.WarnContext(ctx, "Failed to marshal timeout settings for sync", "error", err)
-		return
-	}
-
 	slog.InfoContext(ctx, "Syncing environment settings to remote environments", "count", len(envs), "keys", slices.Sorted(maps.Keys(settingsMap)))
 
 	for _, env := range envs {
+		snapshotBody, statusCode, proxyRequestErr := localEnvironment.ProxyRequest(ctx, env.ID, http.MethodGet, "/api/environments/0/settings", nil)
+		if proxyRequestErr != nil {
+			slog.WarnContext(ctx, "Failed to read environment settings for timeout sync", "environmentId", env.ID, "environmentName", env.Name, "error", proxyRequestErr)
+			continue
+		}
+		if statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
+			slog.WarnContext(ctx, "Environment returned non-OK status for settings read", "environmentId", env.ID, "environmentName", env.Name, "statusCode", statusCode, "response", string(snapshotBody))
+			continue
+		}
+		var snapshot types.SettingsSnapshot
+		if decodeErr := json.Unmarshal(snapshotBody, &snapshot); decodeErr != nil || snapshot.Settings == nil {
+			slog.ErrorContext(ctx, "agent version mismatch: environment did not return a settings snapshot; skipping settings sync",
+				"environmentId", env.ID, "environmentName", env.Name, "error", decodeErr)
+			continue
+		}
+
+		update := maps.Clone(settingsMap)
+		for _, setting := range snapshot.Settings {
+			if setting.Locked {
+				delete(update, setting.Key)
+			}
+		}
+		if len(update) == 0 {
+			slog.DebugContext(ctx, "All synced settings are locked on environment", "environmentId", env.ID, "environmentName", env.Name)
+			continue
+		}
+
+		body, marshalErr := json.Marshal(types.SettingsUpdate(update))
+		if marshalErr != nil {
+			slog.WarnContext(ctx, "Failed to marshal timeout settings for sync", "environmentId", env.ID, "error", marshalErr)
+			continue
+		}
 		responseBody, statusCode, proxyRequestErr := localEnvironment.ProxyRequest(ctx, env.ID, http.MethodPatch, "/api/environments/0/settings", body)
 		if proxyRequestErr != nil {
 			slog.WarnContext(ctx, "Failed to sync timeout settings to environment", "environmentId", env.ID, "environmentName", env.Name, "error", proxyRequestErr)

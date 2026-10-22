@@ -144,15 +144,15 @@ body:
     attributes:
       value: |
         > [!IMPORTANT]
-        > **Required step:** Set `LOG_LEVEL=debug` in your environment (e.g. in your `.env` file or Docker Compose environment section), restart Arcane, reproduce the issue, and then provide the resulting logs below. Reports without debug logs may be closed.
+        > **Required step:** Set `ARCANE_LOG_LEVEL=debug` in your environment (e.g. in your `.env` file or Docker Compose environment section), restart Arcane, reproduce the issue, and then provide the resulting logs below. Reports without debug logs may be closed.
 
   - type: textarea
     id: logs
     attributes:
       label: Debug Logs
-      description: Logs captured with LOG_LEVEL=debug after reproducing the issue (required)
+      description: Logs captured with ARCANE_LOG_LEVEL=debug after reproducing the issue (required)
       placeholder: |
-        1. Set LOG_LEVEL=debug in your .env file or Docker Compose environment
+        1. Set ARCANE_LOG_LEVEL=debug in your .env file or Docker Compose environment
         2. Restart Arcane
         3. Reproduce the issue
         4. Paste the logs here...
@@ -189,8 +189,7 @@ body:
         Paste your .env file content here...
 
         Please remove any sensitive information like:
-        - ENCRYPTION_KEY
-        - JWT_SECRET
+        - ARCANE_ENCRYPTION_KEY
         - OIDC client secrets
         - Database passwords
         - API keys

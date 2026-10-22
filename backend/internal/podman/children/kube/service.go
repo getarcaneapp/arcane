@@ -5,7 +5,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/podman"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
 )
 
 type Service struct {

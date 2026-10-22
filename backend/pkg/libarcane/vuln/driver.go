@@ -28,7 +28,7 @@ import (
 	"go.getarcane.app/docker"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
 )
 
 const (

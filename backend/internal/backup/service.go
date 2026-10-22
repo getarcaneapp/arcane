@@ -31,16 +31,16 @@ import (
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/rustic"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
-	s3util "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/s3"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/rustic"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
+	s3util "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/s3"
 )
 
 const (

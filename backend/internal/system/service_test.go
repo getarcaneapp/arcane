@@ -19,18 +19,18 @@ import (
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow/flowtest"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow/flowtest"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
 )
 
 func TestResolveSystemUpgraderRuntimeOptions_TCPDockerHost(t *testing.T) {
@@ -138,12 +138,13 @@ func TestListBackupHistoryClassifiesAndFiltersOrigins(t *testing.T) {
 		Format: volume.VolumeBackupFormatRustic,
 	}).Error)
 	db := &database.DB{DB: gormDB}
-	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{})
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	service := NewSystemService(
 		db, nil, nil, nil, nil, nil, settingsService, nil, nil, nil, nil, nil, nil,
 		s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }), nil, nil, &config.Config{},
+		nil,
 	)
 
 	systemRows, page, err := service.backup.ListBackupHistory(t.Context(), pagination.QueryParams{
@@ -218,14 +219,14 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 	db := &database.DB{DB: gormDB}
 	recoveryKeys := backup.NewRecoveryKeyStore(db)
 	s3Destinations := s3.NewS3DestinationService(db, func(context.Context, string) error { return nil })
-	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{})
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
 	gate := newSystemBackupAdmissionGateForTest(t)
-	dockerService := &docker.DockerClientService{Client: func() *client.Client {
+	dockerService := (&docker.DockerClientService{}).WithClient(func() *client.Client {
 		cli, _ := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
 		return cli
-	}()}
+	}())
 	service := NewSystemService(
 		db,
 		dockerService,
@@ -244,6 +245,7 @@ func TestSystemBackupPoliciesRegisterIndependentJobs(t *testing.T) {
 		recoveryKeys,
 		nil,
 		&config.Config{DatabaseURL: "file:system-backup-schedules-test.db"},
+		nil,
 	)
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
 	require.NoError(t, service.backup.RegisterWorkflows(harness.Engine))
@@ -322,6 +324,7 @@ func TestSystemBackupPolicyRequiresConfiguredRecoveryKeyWhenEnabled(t *testing.T
 		db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 		s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }),
 		backup.NewRecoveryKeyStore(db), nil, &config.Config{DatabaseURL: "file:system-backup-key-required-test.db"},
+		nil,
 	)
 
 	_, err = service.backup.UpdatePolicies(t.Context(), []types.UpdateBackupPolicy{{

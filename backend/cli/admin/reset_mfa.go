@@ -10,23 +10,25 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config/schema"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/passkey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
 )
 
 var resetMFAUsername string
 
 var resetMFACmd = &cobra.Command{
-	Use:          "reset-mfa",
-	Short:        "Reset passkey MFA for a user",
-	Long:         "Disable passkey MFA, remove recovery codes, cancel pending MFA transactions, and revoke the user's sessions. This command must be explicitly enabled with ALLOW_CLI_MFA_RESET=true.",
+	Use:   "reset-mfa",
+	Short: "Reset passkey MFA for a user",
+	Long: "Disable passkey MFA, remove recovery codes, cancel pending MFA transactions, and revoke the user's sessions. " +
+		"This command must be explicitly enabled with ARCANE_ALLOW_CLI_MFA_RESET=true.",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
-	RunE:         runResetMFACommandInternal,
+	RunE:         runResetMFACommand,
 }
 
 func init() {
@@ -34,18 +36,24 @@ func init() {
 	AdminCmd.AddCommand(resetMFACmd)
 }
 
-func runResetMFACommandInternal(cmd *cobra.Command, _ []string) error {
-	cfg := config.Load()
-	if err := ensureMFAResetEnabledInternal(cfg); err != nil {
+func runResetMFACommand(cmd *cobra.Command, _ []string) error {
+	if err := schema.CheckLegacyEnv(cmd.Context()); err != nil {
 		return err
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	if enabledErr := ensureMFAResetEnabledInternal(cfg); enabledErr != nil {
+		return enabledErr
 	}
 
 	username := strings.TrimSpace(resetMFAUsername)
 	if username == "" {
 		return errors.New("username cannot be empty")
 	}
-	if err := confirmMFAResetInternal(cmd.InOrStdin(), cmd.OutOrStdout(), username); err != nil {
-		return err
+	if confirmErr := confirmMFAResetInternal(cmd.InOrStdin(), cmd.OutOrStdout(), username); confirmErr != nil {
+		return confirmErr
 	}
 
 	db, err := database.Initialize(cmd.Context(), cfg.DatabaseURL, database.MigrationOptions{AllowDowngrade: cfg.AllowDowngrade})
@@ -83,7 +91,7 @@ func ensureMFAResetEnabledInternal(cfg *config.Config) error {
 		return errors.New("MFA reset config is nil")
 	}
 	if !cfg.AllowCLIMFAReset {
-		return errors.New("CLI MFA reset is disabled; set ALLOW_CLI_MFA_RESET=true to enable it")
+		return errors.New("CLI MFA reset is disabled; set ARCANE_ALLOW_CLI_MFA_RESET=true to enable it")
 	}
 	return nil
 }

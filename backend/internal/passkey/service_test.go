@@ -10,10 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	userdomain "github.com/getarcaneapp/arcane/backend/v2/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
+	userdomain "github.com/getarcaneapp/arcane/backend/v3/internal/user"
 )
 
 func newPasskeyServiceTestDB(t *testing.T) *database.DB {

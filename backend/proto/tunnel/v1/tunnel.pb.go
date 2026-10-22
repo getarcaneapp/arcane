@@ -440,7 +440,7 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\aMuxData\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data2R\n" +
 	"\rTunnelService\x12A\n" +
-	"\aConnect\x12\x17.tunnel.v1.AgentMessage\x1a\x19.tunnel.v1.ManagerMessage(\x010\x01BDZBgithub.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1;tunnelpbb\x06proto3"
+	"\aConnect\x12\x17.tunnel.v1.AgentMessage\x1a\x19.tunnel.v1.ManagerMessage(\x010\x01BDZBgithub.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1;tunnelpbb\x06proto3"
 
 var (
 	file_tunnel_v1_tunnel_proto_rawDescOnce sync.Once

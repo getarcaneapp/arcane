@@ -19,8 +19,8 @@ import (
 	"go.getarcane.app/acfs"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	acfsutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/acfs"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	acfsutils "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/acfs"
 )
 
 const defaultBuildsDirectory = "/builds"

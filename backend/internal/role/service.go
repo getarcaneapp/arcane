@@ -21,12 +21,12 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/dbutil"
 )
 
 const (
@@ -810,7 +810,7 @@ func (s *RoleService) UpdateOidcMapping(ctx context.Context, id, claimValue, rol
 			return fmt.Errorf("failed to load mapping: %w", err)
 		}
 		if existing.Source == OidcMappingSourceEnv {
-			return common.Classify(common.ErrOidcMappingEnvManaged, errors.New("OIDC role mapping is managed by OIDC_ROLE_MAPPINGS and cannot be edited at runtime"))
+			return common.Classify(common.ErrOidcMappingEnvManaged, errors.New("OIDC role mapping is managed by ARCANE_OIDC_ROLE_MAPPINGS and cannot be edited at runtime"))
 		}
 		if err := validateAssignmentsExist(tx, []UserRoleAssignment{{RoleID: roleID, EnvironmentID: environmentID}}); err != nil {
 			return err
@@ -840,7 +840,7 @@ func (s *RoleService) DeleteOidcMapping(ctx context.Context, id string) error {
 			return fmt.Errorf("failed to load mapping: %w", err)
 		}
 		if existing.Source == OidcMappingSourceEnv {
-			return common.Classify(common.ErrOidcMappingEnvManaged, errors.New("OIDC role mapping is managed by OIDC_ROLE_MAPPINGS and cannot be edited at runtime"))
+			return common.Classify(common.ErrOidcMappingEnvManaged, errors.New("OIDC role mapping is managed by ARCANE_OIDC_ROLE_MAPPINGS and cannot be edited at runtime"))
 		}
 		if err := tx.Delete(&OidcRoleMapping{}, "id = ?", id).Error; err != nil {
 			return fmt.Errorf("failed to delete mapping: %w", err)
@@ -858,14 +858,14 @@ func (s *RoleService) ReconcileEnvOidcMappings(ctx context.Context, rawSpec stri
 	}
 	var specs []types.OidcRoleMappingSpec
 	if err := json.Unmarshal([]byte(rawSpec), &specs); err != nil {
-		return fmt.Errorf("invalid OIDC_ROLE_MAPPINGS JSON: %w", err)
+		return fmt.Errorf("invalid ARCANE_OIDC_ROLE_MAPPINGS JSON: %w", err)
 	}
 	for i, sp := range specs {
 		if strings.TrimSpace(sp.ClaimValue) == "" {
-			return fmt.Errorf("OIDC_ROLE_MAPPINGS[%d]: claimValue is required", i)
+			return fmt.Errorf("ARCANE_OIDC_ROLE_MAPPINGS[%d]: claimValue is required", i)
 		}
 		if strings.TrimSpace(sp.RoleID) == "" {
-			return fmt.Errorf("OIDC_ROLE_MAPPINGS[%d]: roleId is required", i)
+			return fmt.Errorf("ARCANE_OIDC_ROLE_MAPPINGS[%d]: roleId is required", i)
 		}
 	}
 
@@ -877,11 +877,11 @@ func (s *RoleService) ReconcileEnvOidcMappings(ctx context.Context, rawSpec stri
 		}
 		var existingIDs []string
 		if err := tx.Model(&Role{}).Where("id IN ?", roleIDs).Pluck("id", &existingIDs).Error; err != nil {
-			return fmt.Errorf("OIDC_ROLE_MAPPINGS: failed to verify roles: %w", err)
+			return fmt.Errorf("ARCANE_OIDC_ROLE_MAPPINGS: failed to verify roles: %w", err)
 		}
 		for i, sp := range specs {
 			if !slices.Contains(existingIDs, sp.RoleID) {
-				return fmt.Errorf("OIDC_ROLE_MAPPINGS[%d]: role %q does not exist", i, sp.RoleID)
+				return fmt.Errorf("ARCANE_OIDC_ROLE_MAPPINGS[%d]: role %q does not exist", i, sp.RoleID)
 			}
 		}
 
@@ -889,7 +889,7 @@ func (s *RoleService) ReconcileEnvOidcMappings(ctx context.Context, rawSpec stri
 			return fmt.Errorf("failed to clear env-managed mappings: %w", err)
 		}
 		if len(specs) == 0 {
-			slog.InfoContext(ctx, "OIDC_ROLE_MAPPINGS reconciled (empty)", "envManagedCount", 0)
+			slog.InfoContext(ctx, "ARCANE_OIDC_ROLE_MAPPINGS reconciled (empty)", "envManagedCount", 0)
 			return nil
 		}
 		rows := make([]OidcRoleMapping, len(specs))
@@ -904,7 +904,7 @@ func (s *RoleService) ReconcileEnvOidcMappings(ctx context.Context, rawSpec stri
 		if err := tx.Create(&rows).Error; err != nil {
 			return fmt.Errorf("failed to insert env-managed mappings: %w", err)
 		}
-		slog.InfoContext(ctx, "OIDC_ROLE_MAPPINGS reconciled", "envManagedCount", len(rows))
+		slog.InfoContext(ctx, "ARCANE_OIDC_ROLE_MAPPINGS reconciled", "envManagedCount", len(rows))
 		return nil
 	})
 }

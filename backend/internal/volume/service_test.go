@@ -28,12 +28,12 @@ import (
 	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 func TestEnrichVolumesWithUsageData(t *testing.T) {
@@ -245,7 +245,7 @@ func TestVolumeWorkspaceReadsWaitForMutationLock(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newVolumeWorkspaceTestDockerClient(t, server))
+			dockerService := (&docker.DockerClientService{}).WithClient(newVolumeWorkspaceTestDockerClient(t, server))
 			service := NewVolumeService(nil, dockerService, nil, nil, nil, nil, nil, nil, nil, nil)
 			unlockMutation := service.workspaceLocks.Lock("workspace-volume")
 			readStarted := make(chan struct{})
@@ -325,7 +325,7 @@ func TestDownloadVolumeWorkspaceFileHoldsReadLockUntilClosed(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newVolumeWorkspaceTestDockerClient(t, server))
+	dockerService := (&docker.DockerClientService{}).WithClient(newVolumeWorkspaceTestDockerClient(t, server))
 	service := NewVolumeService(nil, dockerService, nil, nil, nil, nil, nil, nil, nil, nil)
 	service.helperByVolume["workspace-volume"] = &volumeHelper{id: "helper", lastUsedAt: time.Now(), protocol: acfstypes.ProtocolVersion}
 	reader, size, err := service.workspace.DownloadVolumeWorkspaceFile(t.Context(), "workspace-volume", "file.txt")
@@ -392,7 +392,7 @@ func TestUpdateVolumeWorkspaceRejectsStaleRevisionBeforeStaging(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	dockerClient := newVolumeWorkspaceTestDockerClient(t, server)
-	service := NewVolumeService(nil, docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient), nil, nil, nil, nil, nil, nil, nil, nil)
+	service := NewVolumeService(nil, (&docker.DockerClientService{}).WithClient(dockerClient), nil, nil, nil, nil, nil, nil, nil, nil)
 	uploadIndex := 0
 	workspace, err := service.workspace.UpdateVolumeWorkspace(t.Context(), "workspace-volume", types.VolumeWorkspaceUpdateManifest{
 		FileTreeRevision: "stale",

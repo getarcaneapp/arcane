@@ -19,16 +19,16 @@ import (
 	"go.getarcane.app/sys/cgroup"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/notification"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	scheduleutil "github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 const (
@@ -99,15 +99,15 @@ func (j *AutoHealJob) Name() string {
 }
 
 func (j *AutoHealJob) ShouldSchedule(ctx context.Context) bool {
-	return j.settingsService.GetBoolSetting(ctx, "autoHealEnabled", false)
+	return j.settingsService.GetBoolSetting(ctx, "autoHealEnabled")
 }
 
 func (j *AutoHealJob) Schedule(ctx context.Context) string {
-	return scheduleutil.Or(ctx, j.settingsService.GetStringSetting(ctx, "autoHealInterval", autoHealDefaultSchedule), autoHealDefaultSchedule, "auto-heal")
+	return scheduleutil.Or(ctx, j.settingsService.GetStringSetting(ctx, "autoHealInterval"), autoHealDefaultSchedule, "auto-heal")
 }
 
 func (j *AutoHealJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
-	enabled := j.settingsService.GetBoolSetting(ctx, "autoHealEnabled", false)
+	enabled := j.settingsService.GetBoolSetting(ctx, "autoHealEnabled")
 	if !enabled {
 		slog.DebugContext(ctx, "auto-heal disabled; skipping run")
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
@@ -138,8 +138,8 @@ func (j *AutoHealJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
 	containers := containerList
 
 	excludedContainers := j.parseExcludedContainers(ctx)
-	maxRestarts := j.settingsService.GetIntSetting(ctx, "autoHealMaxRestarts", 5)
-	restartWindowMinutes := j.settingsService.GetIntSetting(ctx, "autoHealRestartWindow", 30)
+	maxRestarts := j.settingsService.GetIntSetting(ctx, "autoHealMaxRestarts")
+	restartWindowMinutes := j.settingsService.GetIntSetting(ctx, "autoHealRestartWindow")
 	restartWindow := time.Duration(restartWindowMinutes) * time.Minute
 
 	selfID := j.selfContainerID(ctx)
@@ -437,7 +437,7 @@ func (j *AutoHealJob) pruneTimestamps(timestamps []time.Time, cutoff time.Time) 
 }
 
 func (j *AutoHealJob) parseExcludedContainers(ctx context.Context) map[string]struct{} {
-	raw := j.settingsService.GetStringSetting(ctx, "autoHealExcludedContainers", "")
+	raw := j.settingsService.GetStringSetting(ctx, "autoHealExcludedContainers")
 	excluded := make(map[string]struct{})
 	if raw == "" {
 		return excluded

@@ -3,7 +3,9 @@ import { z } from 'zod/v4';
 
 import { UseSettingsForm } from '#lib/hooks/use-settings-form.svelte.js';
 import { m } from '#lib/paraglide/messages.js';
+import { APIError } from '#lib/services/api-service.js';
 import type { Settings } from '#lib/types/settings.js';
+import { extractApiErrorMessage } from '#lib/utils/api.js';
 import { createForm } from '#lib/utils/settings.svelte.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -13,11 +15,6 @@ export interface SettingsFormConfig<T extends z.ZodType<SettingsPayload>> {
 	schema: T;
 	currentSettings: z.infer<T>;
 	getCurrentSettings?: () => z.infer<T>;
-	/**
-	 * Custom save handler. If provided, this will be called instead of the default
-	 * settingsService.updateSettings(). Useful for environment-specific settings
-	 * or other custom save logic.
-	 */
 	onSave?: (data: z.infer<T>) => Promise<void>;
 	onSuccess?: () => void;
 	onReset?: () => void;
@@ -64,9 +61,12 @@ export function createSettingsForm<T extends z.ZodType<SettingsPayload>>(config:
 			);
 			if (operationResult.error !== null) {
 				const error = operationResult.error;
-				console.error('Failed to save settings:', error);
-				const message = error instanceof Error ? error.message : errorMessage;
-				toast.error(message);
+				const description = extractApiErrorMessage(error);
+				const field: unknown = error instanceof APIError ? error.response?.data?.details?.field : undefined;
+				if (typeof field === 'string' && Object.hasOwn(formInputs, field)) {
+					formInputs[field as keyof typeof formInputs].error = description;
+				}
+				toast.error(errorMessage, { description });
 			}
 		} finally {
 			settingsForm.setLoading(false);

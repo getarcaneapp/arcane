@@ -36,21 +36,21 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/vuln"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/logging"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/vulnerability"
+	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/vuln"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/logging"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
 // scheduledPatchUser is the actor recorded for scheduled patches and their verification scans.
@@ -94,17 +94,6 @@ func NewService(
 	// Copa logs through the global logrus logger; route it into slog so its
 	// output follows Arcane's log format.
 	logging.InstallLogrusBridge()
-
-	// Copa resolves the daemon for BuildKit dialing, manifest discovery, and
-	// image loading from DOCKER_HOST; without it, its docker connhelper falls
-	// back to shelling out to the docker CLI, which Arcane deployments lack.
-	if os.Getenv("DOCKER_HOST") == "" {
-		if host := strings.TrimSpace(dockerService.DockerHost()); host != "" {
-			if err := os.Setenv("DOCKER_HOST", host); err != nil {
-				slog.WarnContext(context.Background(), "failed to set DOCKER_HOST for image patching", "error", err) //nolint:forbidigo // Service construction has no request context.
-			}
-		}
-	}
 
 	return &Service{
 		db:                   db,
@@ -311,6 +300,10 @@ func (s *Service) runPatch(ctx context.Context, record *ImagePatchRecord, opts t
 		if err := s.settingsService.RequireFeature(ctx, types.FeatureVulnerabilityManagement); err != nil {
 			return fail(err, 0)
 		}
+	}
+
+	if err := os.Setenv("DOCKER_HOST", s.dockerService.DockerHost()); err != nil {
+		return fail(fmt.Errorf("failed to set DOCKER_HOST for image patching: %w", err), 0)
 	}
 
 	// Copa consumes the scan report as a file; materialize the stored report

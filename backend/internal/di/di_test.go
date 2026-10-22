@@ -17,52 +17,52 @@ import (
 	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/appimages"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/dashboard"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/federated"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/oidc"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/port"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/search"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/template"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/variable"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/appimages"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/build"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/dashboard"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/diagnostics"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/federated"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/job"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/network"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/notification"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/oidc"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/podman"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/port"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	s3domain "github.com/getarcaneapp/arcane/backend/v3/internal/s3"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/search"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/template"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/updater"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/variable"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/version"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/vulnerability"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/webhook"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/oidcjwk"
 )
 
 type graphParams struct {
@@ -133,8 +133,10 @@ func TestOptionsValidate(t *testing.T) {
 		fx.Supply(
 			cancel,
 			&config.Config{},
+			settings.Env{},
 			(*database.DB)(nil),
 			&http.Client{},
+			fx.Annotated{Name: "encryptionKey", Target: "test-encryption-key"},
 		),
 		fx.Provide(func() context.Context { return t.Context() }),
 		ActorOptions,
@@ -185,12 +187,14 @@ func TestDockerEventLifecycle(t *testing.T) {
 			require.NoError(t, err)
 			sqlDB.SetMaxOpenConns(1)
 			t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
-			require.NoError(t, db.AutoMigrate(&event.Event{}))
+			require.NoError(t, db.AutoMigrate(&event.Event{}, &settings.SettingVariable{}))
 			databaseDB := &database.DB{DB: db}
-			cfg := &config.Config{DockerHost: server.URL, AgentMode: mode != "manager", EdgeAgent: mode == "edge"}
+			cfg := &config.Config{AgentMode: mode != "manager", EdgeAgent: mode == "edge"}
+			settingsService, err := settings.NewSettingsService(t.Context(), databaseDB, cfg, settings.Env{"dockerHost": server.URL})
+			require.NoError(t, err)
 			lifecycle := fxtest.NewLifecycle(t)
-			eventService := event.NewEventService(databaseDB, cfg, nil)
-			provideDockerClientService(t.Context(), lifecycle, databaseDB, cfg, nil, eventService)
+			eventService := event.NewEventService(databaseDB, cfg, nil, nil)
+			provideDockerClientService(t.Context(), lifecycle, databaseDB, settingsService, eventService)
 			t.Cleanup(func() {
 				ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 3*time.Second)
 				defer cancel()

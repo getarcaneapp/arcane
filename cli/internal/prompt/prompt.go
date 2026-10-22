@@ -9,7 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/term"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 )
 
 // IsInteractive reports whether stdin is a terminal.

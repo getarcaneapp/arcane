@@ -99,8 +99,9 @@ func TestLoadRuntimeIdentityRequest(t *testing.T) {
 func TestRunningInContainer(t *testing.T) {
 	t.Run("explicit arcane env enables container mode", func(t *testing.T) {
 		inContainer := runningInContainer(
-			func(key string) string {
-				return kit.Ternary(key == "ARCANE_IN_CONTAINER", "true", "")
+			true,
+			func(string) string {
+				return ""
 			},
 			func(string) (os.FileInfo, error) {
 				return nil, os.ErrNotExist
@@ -112,6 +113,7 @@ func TestRunningInContainer(t *testing.T) {
 
 	t.Run("container env enables container mode", func(t *testing.T) {
 		inContainer := runningInContainer(
+			false,
 			func(key string) string {
 				return kit.Ternary(key == "container", "podman", "")
 			},
@@ -125,6 +127,7 @@ func TestRunningInContainer(t *testing.T) {
 
 	t.Run("container marker file enables container mode", func(t *testing.T) {
 		inContainer := runningInContainer(
+			false,
 			func(string) string { return "" },
 			func(path string) (os.FileInfo, error) {
 				return nil, kit.Ternary(path == "/run/.containerenv", nil, os.ErrNotExist)
@@ -136,6 +139,7 @@ func TestRunningInContainer(t *testing.T) {
 
 	t.Run("no signal disables container mode", func(t *testing.T) {
 		inContainer := runningInContainer(
+			false,
 			func(string) string { return "" },
 			func(string) (os.FileInfo, error) {
 				return nil, os.ErrNotExist

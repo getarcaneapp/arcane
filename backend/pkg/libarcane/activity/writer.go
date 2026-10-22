@@ -16,7 +16,7 @@ import (
 	"github.com/samber/mo"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 )
 
 type Writer struct {

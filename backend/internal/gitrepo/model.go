@@ -1,6 +1,6 @@
 package gitrepo
 
-import "github.com/getarcaneapp/arcane/backend/v2/internal/database"
+import "github.com/getarcaneapp/arcane/backend/v3/internal/database"
 
 type GitRepository struct {
 	database.BaseModel

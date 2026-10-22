@@ -25,13 +25,13 @@ import (
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/gitutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 func TestBuildService_ResolveBuildRequest_PassesThroughLocalContext(t *testing.T) {
@@ -309,7 +309,7 @@ func TestBuildService_BuildImage_FailureRecordsHistoryAndEvent(t *testing.T) {
 	buildErr := errors.New("BuildKit could not load the image with the docker exporter")
 	svc := &BuildService{
 		db:           db,
-		eventService: event.NewEventService(db, nil, nil),
+		eventService: event.NewEventService(db, nil, nil, nil),
 		builder: testBuildRecorder{
 			err: buildErr,
 		},
@@ -361,7 +361,7 @@ func TestBuildService_BuildImage_FailureExporterErrorsAppearInOutputHistoryAndEv
 
 	svc := &BuildService{
 		db:           db,
-		eventService: event.NewEventService(db, nil, nil),
+		eventService: event.NewEventService(db, nil, nil, nil),
 		builder: testBuildRecorder{
 			err: buildErr,
 			onProgress: func(_ buildtypes.BuildRequest, w io.Writer) {

@@ -21,7 +21,7 @@ import { versionStore } from '#lib/stores/version.store.svelte.js';
 import type { PermissionsManifest, SessionBootstrap, User } from '#lib/types/auth.js';
 import type { Environment } from '#lib/types/environment.js';
 import type { PodmanStatus } from '#lib/types/podman.js';
-import type { AppVersionInformation, Settings } from '#lib/types/settings.js';
+import type { AppVersionInformation, ResolvedSettings } from '#lib/types/settings.js';
 import { extractApiErrorStatus, isAuthRejectionError } from '#lib/utils/api.js';
 import { getAuthRedirectPath, shownEnvironmentForRoute, userHasPermission } from '#lib/utils/auth.js';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
@@ -68,7 +68,7 @@ const slowPodmanStatuses = new Map<string, PodmanStatus>();
 // Query results last pushed into the stores, so a cached repeat never overwrites newer local or streamed state.
 let appliedUser: User | undefined;
 let appliedEnvironments: Environment[] | undefined;
-let appliedSettings: Settings | undefined;
+let appliedSettings: ResolvedSettings | undefined;
 let appliedVersion: AppVersionInformation | undefined;
 let seededBootstrap: SessionBootstrap | undefined;
 
@@ -346,9 +346,9 @@ async function loadRoot({ url, depends }: Parameters<LayoutLoad>[0], releaseSele
 
 	const telemetry = setTelemetry(
 		{
-			traces: settings?.frontendTracingEnabled ?? false,
-			metrics: settings?.frontendMetricsEnabled ?? false,
-			logs: settings?.frontendLogsEnabled ?? false
+			traces: settings?.runtime.frontendTracingEnabled ?? false,
+			metrics: settings?.runtime.frontendMetricsEnabled ?? false,
+			logs: settings?.runtime.frontendLogsEnabled ?? false
 		},
 		versionInformation.currentVersion
 	);
@@ -375,7 +375,7 @@ async function loadRoot({ url, depends }: Parameters<LayoutLoad>[0], releaseSele
 	return {
 		// The store holds local account edits made since the cached user was fetched.
 		user: user && userStore.current,
-		settings,
+		settings: settings?.values ?? null,
 		permissionsManifest,
 		permissionsManifestLoadFailed,
 		versionInformation,

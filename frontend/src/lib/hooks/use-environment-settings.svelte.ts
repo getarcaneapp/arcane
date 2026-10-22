@@ -14,7 +14,7 @@ export function useEnvironmentSettings(environmentId: () => string) {
 	}));
 	return {
 		get current() {
-			return environmentId() === environmentStore.selected?.id ? settingsStore.current : query.data;
+			return environmentId() === environmentStore.selected?.id ? settingsStore.resolved : query.data;
 		}
 	};
 }

@@ -26,20 +26,21 @@ import (
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/notification/children/templates"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apns"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/notification/children/templates"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
 )
 
 var notificationCredentialFieldsByProvider = map[notifications.NotificationProvider][]string{
@@ -102,6 +103,7 @@ var notificationsSent = func() metric.Int64Counter {
 type NotificationService struct {
 	db             *database.DB
 	config         *config.Config
+	settings       *settings.SettingsService
 	environmentSvc *environment.EnvironmentService
 	eventSvc       *event.EventService
 	apnsSvc        *apns.ApnsService
@@ -123,10 +125,18 @@ func logManagerDispatchNotification(ctx context.Context, target NotificationTarg
 	)
 }
 
-func NewNotificationService(db *database.DB, cfg *config.Config, environmentSvc *environment.EnvironmentService, eventSvc *event.EventService, apnsSvc *apns.ApnsService) *NotificationService {
+func NewNotificationService(
+	db *database.DB,
+	cfg *config.Config,
+	settingsService *settings.SettingsService,
+	environmentSvc *environment.EnvironmentService,
+	eventSvc *event.EventService,
+	apnsSvc *apns.ApnsService,
+) *NotificationService {
 	return &NotificationService{
 		db:             db,
 		config:         cfg,
+		settings:       settingsService,
 		environmentSvc: environmentSvc,
 		eventSvc:       eventSvc,
 		apnsSvc:        apnsSvc,
@@ -178,9 +188,10 @@ func (s *NotificationService) dispatchNotificationToManager(ctx context.Context,
 	}
 
 	// Tunnel-connected edge agents often lack MANAGER_API_URL/AGENT_TOKEN, so they dispatch over the tunnel (#3002).
-	if s.config == nil || strings.TrimSpace(httpx.ManagerBaseURL(s.config.ManagerApiUrl)) == "" || strings.TrimSpace(s.config.AgentToken) == "" {
+	agentToken := strings.TrimSpace(s.settings.AgentToken(ctx))
+	if strings.TrimSpace(httpx.ManagerBaseURL(s.config.ManagerApiUrl)) == "" || agentToken == "" {
 		if publishViaTunnelErr := publishViaTunnel(); publishViaTunnelErr != nil {
-			return types.NotificationDispatchResponse{}, fmt.Errorf("notification dispatch needs either MANAGER_API_URL + AGENT_TOKEN or a connected edge tunnel: %w", publishViaTunnelErr)
+			return types.NotificationDispatchResponse{}, fmt.Errorf("notification dispatch needs either ARCANE_MANAGER_API_URL + ARCANE_AGENT_TOKEN or a connected edge tunnel: %w", publishViaTunnelErr)
 		}
 		return types.NotificationDispatchResponse{Message: "notification dispatched via edge tunnel", Delivered: 1}, nil
 	}
@@ -191,7 +202,7 @@ func (s *NotificationService) dispatchNotificationToManager(ctx context.Context,
 		return types.NotificationDispatchResponse{}, fmt.Errorf("failed to create notification dispatch request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(middleware.HeaderApiKey, s.config.AgentToken)
+	req.Header.Set(middleware.HeaderApiKey, agentToken)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
@@ -333,11 +344,11 @@ func (s *NotificationService) deliverForTarget(ctx context.Context, target Notif
 }
 
 func (s *NotificationService) GetAllSettings(ctx context.Context) ([]NotificationSettings, error) {
-	var settings []NotificationSettings
-	if err := s.db.WithContext(ctx).Find(&settings).Error; err != nil {
+	var notificationSettings []NotificationSettings
+	if err := s.db.WithContext(ctx).Find(&notificationSettings).Error; err != nil {
 		return nil, fmt.Errorf("failed to get notification settings: %w", err)
 	}
-	return settings, nil
+	return notificationSettings, nil
 }
 
 func (s *NotificationService) GetSettingsByProvider(ctx context.Context, provider notifications.NotificationProvider) (*NotificationSettings, error) {
@@ -561,13 +572,13 @@ func (s *NotificationService) notifyEnabledProviders(
 	metadata database.JSON,
 	content notifications.Content,
 ) (int, error) {
-	settings, err := s.GetAllSettings(ctx)
+	notificationSettings, err := s.GetAllSettings(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get notification settings: %w", err)
 	}
 
-	eligible := make([]NotificationSettings, 0, len(settings))
-	for _, setting := range settings {
+	eligible := make([]NotificationSettings, 0, len(notificationSettings))
+	for _, setting := range notificationSettings {
 		if setting.Enabled && s.isEventEnabled(setting.Config, eventType) {
 			eligible = append(eligible, setting)
 		}

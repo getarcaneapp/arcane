@@ -11,7 +11,7 @@ import (
 	"github.com/italypaleale/francis/components/standalone"
 	"github.com/italypaleale/francis/host/local"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
 )
 
 // New constructs a host whose factories can be registered before Start.

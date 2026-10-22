@@ -21,11 +21,11 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/runstate"
-	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/config"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/logger"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/runstate"
+	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
 const (

@@ -4,7 +4,7 @@
 	import ActionButtonGroup from '#lib/components/action-button-group/action-button-group.svelte';
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { UiConfigDisabledTag } from '#lib/components/badges/index.js';
+	import { SettingLock } from '#lib/components/badges/index.js';
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import StatCard from '#lib/components/stat-card.svelte';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
@@ -91,7 +91,7 @@
 				{/if}
 
 				{#if showReadOnlyTag}
-					<UiConfigDisabledTag />
+					<SettingLock />
 				{/if}
 
 				{#if pageType === 'form' && formState?.saveFunction && !showReadOnlyTag && !isMobile.current}

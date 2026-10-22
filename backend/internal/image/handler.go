@@ -18,18 +18,18 @@ import (
 	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/build"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/build"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/upload"
+	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 // ImageHandler provides Huma-based image management endpoints.
@@ -171,7 +171,7 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 			Success:            true,
 			Data:               images,
 			Pagination:         handlerutil.PaginationResponse(paginationResp),
-			MaxImageUploadSize: h.settingsService.GetIntSetting(ctx, "maxImageUploadSize", 500),
+			MaxImageUploadSize: h.settingsService.GetIntSetting(ctx, "maxImageUploadSize"),
 		},
 	}, nil
 }
@@ -574,7 +574,7 @@ func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput)
 	}
 	defer cleanup()
 
-	result, err := h.imageService.LoadImageFromReader(ctx, file, session.Filename, *user, int64(h.settingsService.GetIntSetting(ctx, "maxImageUploadSize", 500))*1024*1024)
+	result, err := h.imageService.LoadImageFromReader(ctx, file, session.Filename, *user, int64(h.settingsService.GetIntSetting(ctx, "maxImageUploadSize"))*1024*1024)
 	if err != nil {
 		if errors.Is(err, common.ErrBadRequest) {
 			return nil, huma.Error413RequestEntityTooLarge("Failed to load image: " + err.Error())

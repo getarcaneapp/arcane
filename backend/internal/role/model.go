@@ -1,6 +1,6 @@
 package role
 
-import "github.com/getarcaneapp/arcane/backend/v2/internal/database"
+import "github.com/getarcaneapp/arcane/backend/v3/internal/database"
 
 // Role is a named permission set. Built-in roles (Admin, Editor, Deployer,
 // Viewer) are seeded by migration 054 and cannot be edited or deleted.

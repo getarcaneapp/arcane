@@ -10,8 +10,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	scheduleutil "github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
 )
 
 var (

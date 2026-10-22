@@ -15,10 +15,10 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
-	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/prompt"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/runtime"
+	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
 const (
@@ -155,11 +155,11 @@ func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 		if clientErr != nil {
 			return clientErr
 		}
-		publicSettings, settingsErr := c.DoJSON[[]types.PublicSetting](cmd.Context(), http.MethodGet, clitypes.SettingsPublic("0"), nil)
+		publicSettings, settingsErr := c.DoJSON[types.SettingsSnapshot](cmd.Context(), http.MethodGet, clitypes.SettingsPublic("0"), nil)
 		if settingsErr != nil {
 			return fmt.Errorf("failed to read the environment limit: %w", settingsErr)
 		}
-		for _, setting := range publicSettings {
+		for _, setting := range publicSettings.Settings {
 			if parsed, parseErr := strconv.Atoi(setting.Value); setting.Key == "allEnvironmentsLimit" && parseErr == nil && parsed > 0 {
 				limit = parsed
 			}

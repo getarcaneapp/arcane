@@ -24,15 +24,15 @@ import (
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater/labels"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/iconcatalog"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
 // Service reads project runtime state, include files and update checks.
@@ -205,7 +205,7 @@ func (s *Service) ServiceUpdateRecords(ctx context.Context, projectIDs []string)
 }
 
 // Logs streams Compose logs for the project line by line.
-func Logs(ctx context.Context, projectName string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
+func Logs(ctx context.Context, dockerHost, projectName string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	pr, pw := io.Pipe()
@@ -244,7 +244,7 @@ func Logs(ctx context.Context, projectName string, logsChan chan<- string, follo
 
 	// Writer goroutine: compose logs -> pipe
 	go func() {
-		composeLogsErr := projects.ComposeLogs(ctx, projects.NormalizeProjectName(projectName), pw, follow, tail, since, timestamps)
+		composeLogsErr := projects.ComposeLogs(ctx, dockerHost, projects.NormalizeProjectName(projectName), pw, follow, tail, since, timestamps)
 		_ = pw.Close()
 		done <- composeLogsErr
 	}()

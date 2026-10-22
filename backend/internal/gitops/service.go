@@ -26,24 +26,24 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops/children/backup"
-	gitopssync "github.com/getarcaneapp/arcane/backend/v2/internal/gitops/children/sync"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
-	projectpkg "github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops/children/backup"
+	gitopssync "github.com/getarcaneapp/arcane/backend/v3/internal/gitops/children/sync"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
+	projectpkg "github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/gitutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/entityjobs"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
 var syncRuns = func() metric.Int64Counter {
@@ -132,7 +132,7 @@ func (s *GitOpsSyncService) validateLifecycleConfig(ctx context.Context, current
 		return nil
 	}
 	// The kill switch only blocks edits to lifecycle fields, not unrelated edits to a sync that already has a hook.
-	if lifecycleFieldSet && !s.settingsService.GetBoolSetting(ctx, "lifecycleEnabled", false) {
+	if lifecycleFieldSet && !s.settingsService.GetBoolSetting(ctx, "lifecycleEnabled") {
 		return invalid("preDeployScriptPath", "Pre-deploy lifecycle hooks are disabled. An admin must enable lifecycleEnabled in settings before they can be configured.")
 	}
 
@@ -148,14 +148,14 @@ func (s *GitOpsSyncService) validateLifecycleConfig(ctx context.Context, current
 		return invalid("preDeployScriptPath", "Script path must be relative to the project directory.")
 	case cleanedScript == ".." || strings.HasPrefix(cleanedScript, "../"):
 		return invalid("preDeployScriptPath", "Script path must not escape the project directory.")
-	case strings.TrimSpace(kit.FromPtr(cmp.Or(in.runnerImage, currentRunner))) == "" && strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "lifecycleDefaultRunnerImage", "")) == "":
+	case strings.TrimSpace(kit.FromPtr(cmp.Or(in.runnerImage, currentRunner))) == "" && strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "lifecycleDefaultRunnerImage")) == "":
 		return invalid("preDeployRunnerImage", "Runner image is required when a script path is set.")
 	case !kit.FromPtr(cmp.Or(in.syncDirectory, &currentSyncDirectory)):
 		return invalid("preDeployScriptPath", "Pre-deploy script requires \"Sync entire directory\" so the script is included in the synced files.")
 	}
 
 	if in.timeoutSec != nil {
-		maxTimeoutSec := s.settingsService.GetIntSetting(ctx, "lifecycleMaxTimeoutSec", types.LifecycleDefaultMaxTimeoutSec)
+		maxTimeoutSec := s.settingsService.GetIntSetting(ctx, "lifecycleMaxTimeoutSec")
 		if *in.timeoutSec < 1 {
 			return invalid("preDeployTimeoutSec", "Timeout must be at least 1 second.")
 		}
@@ -330,9 +330,13 @@ func (s *GitOpsSyncService) getEffectiveSyncLimits(ctx context.Context, syncReco
 	if syncRecord == nil {
 		return maxFiles, maxTotalSize, maxBinarySize
 	}
-	return kit.Ternary(s.settingsService.IsEnvOverrideActive("gitSyncMaxFiles"), maxFiles, syncRecord.MaxSyncFiles),
-		kit.Ternary(s.settingsService.IsEnvOverrideActive("gitSyncMaxTotalSizeMb"), maxTotalSize, syncRecord.MaxSyncTotalSize),
-		kit.Ternary(s.settingsService.IsEnvOverrideActive("gitSyncMaxBinarySizeMb"), maxBinarySize, syncRecord.MaxSyncBinarySize)
+	envPinned := func(key string) bool {
+		_, reason := s.settingsService.IsLocked(key)
+		return reason == settings.LockReasonEnv
+	}
+	return kit.Ternary(envPinned("gitSyncMaxFiles"), maxFiles, syncRecord.MaxSyncFiles),
+		kit.Ternary(envPinned("gitSyncMaxTotalSizeMb"), maxTotalSize, syncRecord.MaxSyncTotalSize),
+		kit.Ternary(envPinned("gitSyncMaxBinarySizeMb"), maxBinarySize, syncRecord.MaxSyncBinarySize)
 }
 
 func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]types.GitOpsSync, pagination.Response, types.GitOpsSyncCounts, error) {

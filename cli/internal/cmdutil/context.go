@@ -6,10 +6,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/prompt"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/runtime"
 )
 
 // ClientFromCommand returns a configured authenticated client for the command.

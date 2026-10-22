@@ -20,27 +20,28 @@ import (
 	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/api"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/health"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
+	"github.com/getarcaneapp/arcane/backend/v3/api"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/health"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/job"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
 type blockingBusWatcher struct {
@@ -467,7 +468,9 @@ func TestApplicationOptionsValidate(t *testing.T) {
 	err := fx.ValidateApp(applicationOptions(
 		appCtx,
 		&config.Config{},
+		settings.Env{},
 		(*database.DB)(nil),
+		"test-encryption-key",
 		cancelApp,
 	))
 	require.NoError(t, err)
@@ -513,11 +516,4 @@ func TestPrepareServerTLS_AllowsExternalMTLSTermination(t *testing.T) {
 	require.FileExists(t, edgeCfg.EdgeMTLSCAFile)
 	require.FileExists(t, assetsDir+"/ca.crt")
 	require.FileExists(t, assetsDir+"/ca.key")
-}
-
-func TestIsWeakProductionEncryptionKey(t *testing.T) {
-	assert.True(t, isWeakProductionEncryptionKey("short", "production", false))
-	assert.False(t, isWeakProductionEncryptionKey("test-encryption-key-for-edge-mtls-32bytes-min", "production", false))
-	assert.False(t, isWeakProductionEncryptionKey("hex:abc", "production", false))
-	assert.False(t, isWeakProductionEncryptionKey("short", "development", false))
 }

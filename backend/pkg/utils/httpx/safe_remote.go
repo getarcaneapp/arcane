@@ -14,7 +14,7 @@ import (
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 )
 
 type LookupIPFunc func(ctx context.Context, host string) ([]net.IP, error)

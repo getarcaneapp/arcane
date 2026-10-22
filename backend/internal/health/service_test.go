@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 )
 
 func newReadyTestService(t *testing.T, shutdown <-chan struct{}) (*Service, *database.DB) {
@@ -40,7 +40,7 @@ func newReadyTestService(t *testing.T, shutdown <-chan struct{}) (*Service, *dat
 
 	return &Service{
 		db:       db,
-		docker:   docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient),
+		docker:   (&docker.DockerClientService{}).WithClient(dockerClient),
 		shutdown: shutdown,
 	}, db
 }

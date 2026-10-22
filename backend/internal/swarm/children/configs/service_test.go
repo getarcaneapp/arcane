@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 )
 
 func TestService_UpdateConfig_KeepsDataAndReplacesLabels(t *testing.T) {
@@ -54,7 +54,7 @@ func TestService_UpdateConfig_KeepsDataAndReplacesLabels(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = cli.Close() })
 
-	svc := NewService(&docker.DockerClientService{Client: cli}, func(context.Context) error {
+	svc := NewService((&docker.DockerClientService{}).WithClient(cli), func(context.Context) error {
 		return nil
 	})
 	updated, err := svc.UpdateConfig(t.Context(), "config-1", types.SwarmConfigUpdateRequest{

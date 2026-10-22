@@ -24,9 +24,9 @@ import (
 	"github.com/stretchr/testify/require"
 	acfstypes "go.getarcane.app/acfs/types"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
 )
 
 func newVolumeWorkspaceTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
@@ -57,7 +57,7 @@ func TestValidateVolumeHelperSupport(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newVolumeWorkspaceTestDockerClient(t, server))
+	dockerService := (&docker.DockerClientService{}).WithClient(newVolumeWorkspaceTestDockerClient(t, server))
 	service := NewService(Dependencies{Docker: dockerService})
 
 	require.NoError(t, service.validateVolumeHelperSupport(t.Context(), "workspace-volume"))
@@ -262,7 +262,7 @@ func TestStageVolumeWorkspaceChangesClearsAndCopiesContentsInOneArchive(t *testi
 
 	dockerClient := newVolumeWorkspaceTestDockerClient(t, server)
 	service := NewService(Dependencies{
-		Docker: docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient),
+		Docker: (&docker.DockerClientService{}).WithClient(dockerClient),
 		Exec: func(_ context.Context, containerID, _ string, cmd []string) (string, string, error) {
 			require.Equal(t, "helper", containerID)
 			execCommands = append(execCommands, cmd)
@@ -358,7 +358,7 @@ func TestVolumeWorkspaceWritesUseRuntimeIdentity(t *testing.T) {
 	applyResponse, err := json.Marshal(acfstypes.ApplyResponse{Version: acfstypes.ProtocolVersion, Applied: 1})
 	require.NoError(t, err)
 	service := NewService(Dependencies{
-		Docker: docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient),
+		Docker: (&docker.DockerClientService{}).WithClient(dockerClient),
 		Exec: func(_ context.Context, _, execUser string, cmd []string) (string, string, error) {
 			execRequests = append(execRequests, execRequest{user: execUser, cmd: cmd})
 			return string(applyResponse), "", nil
@@ -413,7 +413,7 @@ func TestCreateVolumeWorkspaceMutationContainerUsesDedicatedBackupHelper(t *test
 	dockerClient := newVolumeWorkspaceTestDockerClient(t, server)
 	acquireCalls := 0
 	service := NewService(Dependencies{
-		Docker: docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient),
+		Docker: (&docker.DockerClientService{}).WithClient(dockerClient),
 		AcquireHelper: func(context.Context, string) (string, func(), error) {
 			acquireCalls++
 			return "cached-helper", func() {}, nil

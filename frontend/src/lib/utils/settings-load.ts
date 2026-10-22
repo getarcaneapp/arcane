@@ -23,7 +23,7 @@ export async function loadMergedSettingsPage(parent: ParentWithQueryClient, erro
 				queryKey: queryKeys.settings.byEnvironment(envId),
 				queryFn: () => settingsService.getSettingsForEnvironmentMerged(envId)
 			});
-			return { settings };
+			return { settings: settings.values };
 		})()
 	);
 	if (operationResult.error !== null) {

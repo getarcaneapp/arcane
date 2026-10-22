@@ -19,7 +19,7 @@
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ImageBuildRecord } from '#lib/types/docker.js';
-	import type { Settings } from '#lib/types/settings.js';
+	import type { ResolvedSettings } from '#lib/types/settings.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { isDepotBuildAvailable } from '#lib/utils/build-provider.js';
@@ -50,7 +50,8 @@
 		queryKey: queryKeys.settings.byEnvironment(environmentId),
 		queryFn: () => settingsService.getReadableSettings(environmentId)
 	});
-	const buildsRootOf = (settings: Settings | undefined) => (settings?.buildsDirectory ?? '/builds').trim() || '/builds';
+	const buildsRootOf = (settings: ResolvedSettings | undefined) =>
+		(settings?.values.buildsDirectory ?? '/builds').trim() || '/builds';
 	let pickedEnvironmentId = $state('');
 	const buildEnvironmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'images:build'));
 	const queryClient = useQueryClient();

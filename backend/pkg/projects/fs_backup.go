@@ -15,7 +15,7 @@ import (
 	"go.getarcane.app/acfs/atomic"
 	acfstypes "go.getarcane.app/acfs/types"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 // ProjectUpdateBackupScope describes exactly what a project update can mutate,

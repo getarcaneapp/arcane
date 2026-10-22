@@ -33,28 +33,28 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system/children/backup/children/snapshots"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system/children/backup/children/volumes"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/backupbrowser"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/system/children/backup/children/snapshots"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/system/children/backup/children/volumes"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/entityjobs"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/backupbrowser"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
 const (
@@ -118,6 +118,7 @@ type Dependencies struct {
 	Activity              *activity.ActivityService
 	Settings              *settings.SettingsService
 	Config                *config.Config
+	SettingsEnv           settings.Env
 	RecoveryKeys          *backup.RecoveryKeyStore
 	ResolveRuntimeOptions RuntimeOptionsResolver
 }
@@ -133,6 +134,7 @@ type Service struct {
 	activityService       *activity.ActivityService
 	settingsService       *settings.SettingsService
 	config                *config.Config
+	settingsEnv           settings.Env
 	recoveryKeys          *backup.RecoveryKeyStore
 	resolveRuntimeOptions RuntimeOptionsResolver
 	jobs                  *entityjobs.Registry
@@ -181,6 +183,7 @@ func NewService(deps Dependencies) *Service {
 		activityService:       deps.Activity,
 		settingsService:       deps.Settings,
 		config:                deps.Config,
+		settingsEnv:           deps.SettingsEnv,
 		recoveryKeys:          deps.RecoveryKeys,
 		resolveRuntimeOptions: deps.ResolveRuntimeOptions,
 		jobs:                  jobs,
@@ -248,8 +251,9 @@ func (s *Service) recoveryEnvironment(ctx context.Context) map[string]string {
 		}
 	}
 	visit(reflect.ValueOf(s.config))
+	maps.Copy(result, s.settingsEnv.Variables())
 	if value := s.projectsSetting(ctx); value != "" {
-		result["PROJECTS_DIRECTORY"] = value
+		result[settings.EnvName("projectsDirectory", "")] = value
 	}
 	return result
 }
@@ -1565,7 +1569,7 @@ func (s *Service) applyRetention(ctx context.Context, policyID string, keep int,
 
 // projectsSetting returns the effective projectsDirectory setting.
 func (s *Service) projectsSetting(ctx context.Context) string {
-	return s.settingsService.GetStringSetting(ctx, "projectsDirectory", s.config.ProjectsDirectory)
+	return s.settingsService.GetStringSetting(ctx, "projectsDirectory")
 }
 
 // StartBackup prepares a manual backup, then submits its workflow.

@@ -10,8 +10,8 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
 // ContainerRegistryHandler handles container registry management endpoints.

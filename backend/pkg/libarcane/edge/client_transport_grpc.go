@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
 // tunnelConnectPath is the manager route for both the WebSocket and gRPC tunnel, so reverse proxies need one rule.

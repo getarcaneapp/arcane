@@ -88,40 +88,17 @@ function upsertSettingEntry(
 	settings.push({ key, value });
 }
 
-function injectDepotSettings(payload: unknown): unknown {
-	if (Array.isArray(payload)) {
-		const settings = payload.map((entry) => ({ ...(entry as { key: string; value: unknown }) }));
-		upsertSettingEntry(settings, 'depotProjectId', 'e2e-depot-project');
-		upsertSettingEntry(settings, 'depotToken', 'e2e-depot-token');
-		upsertSettingEntry(settings, 'depotConfigured', 'true');
-		return settings;
-	}
+type SettingsSnapshot = {
+	settings: Array<{ key: string; value: unknown }>;
+	runtime: Record<string, unknown>;
+	readOnly: boolean;
+};
 
-	if (payload && typeof payload === 'object') {
-		const maybeSettingsObject = payload as Record<string, unknown>;
-		if (Array.isArray(maybeSettingsObject.settings)) {
-			const settings = maybeSettingsObject.settings.map((entry) => ({
-				...(entry as { key: string; value: unknown })
-			}));
-			upsertSettingEntry(settings, 'depotProjectId', 'e2e-depot-project');
-			upsertSettingEntry(settings, 'depotToken', 'e2e-depot-token');
-			upsertSettingEntry(settings, 'depotConfigured', 'true');
-			return { ...maybeSettingsObject, settings };
-		}
-
-		return {
-			...maybeSettingsObject,
-			depotProjectId: 'e2e-depot-project',
-			depotToken: 'e2e-depot-token',
-			depotConfigured: true
-		};
-	}
-
-	return {
-		depotProjectId: 'e2e-depot-project',
-		depotToken: 'e2e-depot-token',
-		depotConfigured: true
-	};
+function injectDepotSettings(payload: SettingsSnapshot): SettingsSnapshot {
+	const settings = payload.settings.map((entry) => ({ ...entry }));
+	upsertSettingEntry(settings, 'depotProjectId', 'e2e-depot-project');
+	upsertSettingEntry(settings, 'depotToken', 'e2e-depot-token');
+	return { ...payload, settings, runtime: { ...payload.runtime, depotConfigured: true } };
 }
 
 async function mockDepotConfiguredSettings(page: Page) {
@@ -133,7 +110,7 @@ async function mockDepotConfiguredSettings(page: Page) {
 
 		const upstream = await route.fetch();
 		expect(upstream.ok(), `Fetch settings: ${upstream.status()}`).toBe(true);
-		const original = await upstream.json();
+		const original = (await upstream.json()) as SettingsSnapshot;
 		const patched = injectDepotSettings(original);
 
 		await route.fulfill({

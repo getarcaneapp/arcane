@@ -21,14 +21,14 @@ import (
 	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/vulnerability"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 func TestResolvePatchedRef(t *testing.T) {
@@ -77,7 +77,7 @@ func TestListPatchTargets_ExcludesUntaggedImages(t *testing.T) {
 	require.NoError(t, gdb.AutoMigrate(&vulnerability.VulnerabilityScanRecord{}, &vulnerability.VulnerabilityReportRecord{}, &ImagePatchRecord{}))
 	db := &database.DB{DB: gdb}
 
-	svc := NewService(db, docker.NewDockerClientService(ctx, nil, &config.Config{DockerHost: "unix:///nonexistent-arcane-test.sock"}, nil), nil, nil, nil, nil)
+	svc := NewService(db, &docker.DockerClientService{}, nil, nil, nil, nil)
 
 	records := []vulnerability.VulnerabilityScanRecord{
 		{
@@ -119,7 +119,7 @@ func patchFeatureSettings(t *testing.T) (*settings.SettingsService, *database.DB
 	require.NoError(t, err)
 	require.NoError(t, gdb.AutoMigrate(&settings.SettingVariable{}, &vulnerability.VulnerabilityScanRecord{}, &vulnerability.VulnerabilityReportRecord{}, &ImagePatchRecord{}))
 	db := &database.DB{DB: gdb}
-	svc, err := settings.NewSettingsService(t.Context(), db, &config.Config{})
+	svc, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}
@@ -130,9 +130,10 @@ func patchFeatureSettings(t *testing.T) (*settings.SettingsService, *database.DB
 func TestVulnerabilityFeatureBlocksReportPatchesOnly(t *testing.T) {
 	settingsSvc, db := patchFeatureSettings(t)
 	require.NoError(t, settingsSvc.SetBoolSetting(t.Context(), types.FeatureVulnerabilityManagementSettingKey, false))
+	require.NoError(t, settingsSvc.UpdateSettings(t.Context(), types.SettingsUpdate{"dockerHost": "unix:///nonexistent-arcane-feature-test.sock"}))
 	svc := NewService(
 		db,
-		docker.NewDockerClientService(t.Context(), nil, &config.Config{DockerHost: "unix:///nonexistent-arcane-feature-test.sock"}, nil),
+		docker.NewDockerClientService(t.Context(), nil, settingsSvc),
 		settingsSvc,
 		nil,
 		nil,
@@ -199,7 +200,7 @@ func TestDisabledFeatureSkipsPatchVerificationScan(t *testing.T) {
 	defer func() { assert.NoError(t, dockerClient.Close()) }()
 	svc := NewService(
 		nil,
-		&docker.DockerClientService{Client: dockerClient},
+		(&docker.DockerClientService{}).WithClient(dockerClient),
 		settingsSvc,
 		nil,
 		nil,

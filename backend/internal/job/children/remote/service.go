@@ -16,10 +16,10 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 )
 
 // Service talks to agents through the environment proxy and persists delivery

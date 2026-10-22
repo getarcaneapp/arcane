@@ -179,16 +179,6 @@ type OidcTokenResponse struct {
 
 // OidcStatusInfo represents the status of OIDC configuration and usage.
 type OidcStatusInfo struct {
-	// EnvForced indicates if OIDC is forced via environment configuration.
-	//
-	// Required: true
-	EnvForced bool `json:"envForced"`
-
-	// EnvConfigured indicates if OIDC is configured via environment variables.
-	//
-	// Required: true
-	EnvConfigured bool `json:"envConfigured"`
-
 	// MergeAccounts indicates if accounts should be merged when using OIDC.
 	//
 	// Required: true

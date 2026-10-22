@@ -207,3 +207,25 @@ func TestRefreshRecreatedContainerLabelsInternalPreservesOverridesWhenPreviousIn
 		"com.docker.compose.image":         "sha256:new-image",
 	}, got)
 }
+
+func TestApplyRecoveredEnvironmentRenamesLegacyKeys(t *testing.T) {
+	result := applyRecoveredEnvironment([]string{
+		"PORT=4000",
+		"ENCRYPTION_KEY_FILE=/run/secrets/key",
+		"AGENT_TOKEN__FILE=/run/secrets/agent",
+		"TLS_CERT_FILE=/certs/tls.crt",
+		"LOG_LEVEL=debug",
+		"ARCANE_LOG_LEVEL=info",
+		"PUID=1000",
+	}, nil)
+
+	require.ElementsMatch(t, []string{
+		"ARCANE_PORT=4000",
+		"ARCANE_ENCRYPTION_KEY_FILE=/run/secrets/key",
+		"ARCANE_AGENT_TOKEN__FILE=/run/secrets/agent",
+		"ARCANE_TLS_CERT_FILE=/certs/tls.crt",
+		"LOG_LEVEL=debug",
+		"ARCANE_LOG_LEVEL=info",
+		"PUID=1000",
+	}, result)
+}

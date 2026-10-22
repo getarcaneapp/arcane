@@ -457,7 +457,9 @@ test.describe('Lifecycle', () => {
 		}
 		const settingsResponse = await page.request.get('/api/environments/0/settings');
 		expect(settingsResponse.ok(), 'Read back experimental feature setting').toBe(true);
-		const settings = (await settingsResponse.json()) as Array<{ key: string; value: string }>;
+		const { settings } = (await settingsResponse.json()) as {
+			settings: Array<{ key: string; value: string }>;
+		};
 		expect(settings).toContainEqual(
 			expect.objectContaining({ key: 'experimentalFeaturesEnabled', value: enabled })
 		);
@@ -1026,7 +1028,9 @@ test.describe('Lifecycle', () => {
 		if (!settingsResponse.ok()) {
 			throw new Error(`Get settings failed with ${settingsResponse.status()}`);
 		}
-		const settings = (await settingsResponse.json()) as Array<{ key: string; value: string }>;
+		const { settings } = (await settingsResponse.json()) as {
+			settings: Array<{ key: string; value: string }>;
+		};
 		const experimentalSetting = settings.find(
 			(setting) => setting.key === 'experimentalFeaturesEnabled'
 		);

@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
 func TestTunnelMessageToAgentProto_Register(t *testing.T) {

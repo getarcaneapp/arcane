@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
 )
 
 // actorHostModel is a read-only view of a registered Francis host.

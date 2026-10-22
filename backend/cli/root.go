@@ -5,15 +5,15 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/generate"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg/signals"
 
-	"github.com/getarcaneapp/arcane/backend/v2/cli/admin"
-	"github.com/getarcaneapp/arcane/backend/v2/cli/recovery"
-	"github.com/getarcaneapp/arcane/backend/v2/cli/upgrade"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/bootstrap"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/cli/admin"
+	"github.com/getarcaneapp/arcane/backend/v3/cli/recovery"
+	"github.com/getarcaneapp/arcane/backend/v3/cli/upgrade"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/bootstrap"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 )
 
 var rootCmd = &cobra.Command{

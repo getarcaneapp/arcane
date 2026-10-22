@@ -15,8 +15,8 @@ import (
 	"github.com/samber/mo"
 	"go.getarcane.app/acfs"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 // ReadFolderComposeTemplate stays on os.* for its reads: template folders are

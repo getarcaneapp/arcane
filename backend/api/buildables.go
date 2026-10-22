@@ -10,9 +10,9 @@ import (
 	"github.com/labstack/echo/v5"
 	"go.getarcane.app/kit/pkg/mapping"
 
-	"github.com/getarcaneapp/arcane/backend/v2/buildables"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
+	"github.com/getarcaneapp/arcane/backend/v3/buildables"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/cookie"
 )
 
 // SetupBuildablesRoutes registers buildable feature routes based on EnabledFeatures.

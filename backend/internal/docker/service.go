@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -23,12 +24,13 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/startup"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
 )
 
 const (
@@ -43,9 +45,10 @@ type DockerClientService struct {
 	*client.Client
 
 	db              *database.DB
-	config          *config.Config
 	settingsService *settings.SettingsService
 	clientVersion   string
+	clientHost      string
+	boundHost       string
 	clientLastProbe time.Time
 	engine          compat.EngineCompatibilityInfo
 	engineClient    *client.Client
@@ -59,14 +62,17 @@ type DockerClientService struct {
 	containerListFlight singleflight.Group
 }
 
-func NewDockerClientService(_ context.Context, db *database.DB, cfg *config.Config, settingsService *settings.SettingsService, eventBusOptions ...bus.Option) *DockerClientService {
-	return &DockerClientService{
+func NewDockerClientService(ctx context.Context, db *database.DB, settingsService *settings.SettingsService, eventBusOptions ...bus.Option) *DockerClientService {
+	service := &DockerClientService{
 		db:              db,
-		config:          cfg,
 		settingsService: settingsService,
 		eventBus:        bus.NewDockerEventBus(eventBusOptions...),
 		streamConnected: concurrency.NewSignal[struct{}](),
 	}
+	context.AfterFunc(ctx, settingsService.SubscribeSettingsChanges([]string{"dockerHost"}, func([]libarcane.SettingUpdate) {
+		service.Close()
+	}))
+	return service
 }
 
 // WithClient returns a copy of the service bound to an already-connected Docker
@@ -74,9 +80,9 @@ func NewDockerClientService(_ context.Context, db *database.DB, cfg *config.Conf
 func (s *DockerClientService) WithClient(dockerClient *client.Client) *DockerClientService {
 	return &DockerClientService{
 		db:              s.db,
-		config:          s.config,
 		settingsService: s.settingsService,
 		Client:          dockerClient,
+		boundHost:       dockerClient.DaemonHost(),
 		eventBus:        s.eventBus,
 		streamConnected: s.streamConnected,
 	}
@@ -114,7 +120,8 @@ func (s *DockerClientService) GetClient(ctx context.Context) (*client.Client, er
 // RefreshClient probes the Docker daemon and recreates the cached client when
 // the daemon's effective API version changed.
 func (s *DockerClientService) RefreshClient(ctx context.Context) error {
-	probeClient, err := client.New(client.WithHost(s.config.DockerHost))
+	host := s.DockerHost()
+	probeClient, err := client.New(client.WithHost(host))
 	if err != nil {
 		return fmt.Errorf("failed to refresh Docker client: failed to create Docker probe client: %w", err)
 	}
@@ -133,20 +140,25 @@ func (s *DockerClientService) RefreshClient(ctx context.Context) error {
 	}
 
 	s.mu.Lock()
-	if s.Client != nil && apiVersion == s.clientVersion {
+	if s.Client != nil && apiVersion == s.clientVersion && host == s.clientHost {
 		s.clientLastProbe = time.Now()
 		s.mu.Unlock()
 		return nil
 	}
 	s.mu.Unlock()
 
-	cli, err := client.New(client.WithHost(s.config.DockerHost), client.WithAPIVersion(apiVersion))
+	cli, err := client.New(client.WithHost(host), client.WithAPIVersion(apiVersion))
 	if err != nil {
 		return fmt.Errorf("failed to refresh Docker client: failed to configure Docker client API version %s: %w", apiVersion, err)
 	}
 
 	s.mu.Lock()
-	if s.Client != nil && apiVersion == s.clientVersion {
+	if host != s.DockerHost() {
+		s.mu.Unlock()
+		closeDockerClient(ctx, cli, "stale host after settings change")
+		return s.RefreshClient(ctx)
+	}
+	if s.Client != nil && apiVersion == s.clientVersion && host == s.clientHost {
 		s.clientLastProbe = time.Now()
 		s.mu.Unlock()
 		closeDockerClient(ctx, cli, "unused after concurrent refresh")
@@ -156,6 +168,7 @@ func (s *DockerClientService) RefreshClient(ctx context.Context) error {
 	oldClient := s.Client
 	s.Client = cli
 	s.clientVersion = apiVersion
+	s.clientHost = host
 	s.clientLastProbe = time.Now()
 	s.engineClient = nil
 	s.mu.Unlock()
@@ -195,10 +208,10 @@ func (s *DockerClientService) Engine(ctx context.Context) (compat.EngineCompatib
 
 // DockerHost returns the configured DOCKER_HOST value.
 func (s *DockerClientService) DockerHost() string {
-	if s == nil || s.config == nil {
-		return ""
+	if s.boundHost != "" {
+		return s.boundHost
 	}
-	return s.config.DockerHost
+	return startup.ResolveDockerHost(s.settingsService.GetSettingsConfig().DockerHost.Value, os.Stat)
 }
 
 // Close closes the cached Docker client.

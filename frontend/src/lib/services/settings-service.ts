@@ -1,153 +1,118 @@
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
-import type { Settings, OidcStatusInfo } from '#lib/types/settings.js';
-import { isLocalSetting, extractLocalSettings, extractEnvironmentSettings } from '#lib/utils/settings.svelte.js';
+import type {
+	OidcStatusInfo,
+	ResolvedSettings,
+	SettingKey,
+	SettingState,
+	Settings,
+	SettingsSnapshot
+} from '#lib/types/settings.js';
 
 import BaseAPIService from './api-service';
 
-type KeyValuePair = { key: string; value: string };
+export function parseSettingValue(type: string, value: string): string | number | boolean {
+	switch (type) {
+		case 'boolean':
+			return value === 'true';
+		case 'integer':
+		case 'number':
+			return Number(value);
+		default:
+			return value;
+	}
+}
 
 class SettingsService extends BaseAPIService {
-	async getSettings(): Promise<Settings> {
-		// Wait for environment store to be initialized before fetching settings
+	async getSettings(): Promise<ResolvedSettings> {
 		await environmentStore.ready;
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.getSettingsForEnvironmentMerged(envId);
 	}
 
-	async getSettingsForEnvironmentMerged(environmentId: string): Promise<Settings> {
-		// If we're on environment 0, just get all settings normally
-		if (environmentId === '0') {
-			const res = await this.api.get(`/environments/0/settings`);
-			return this.normalize(res.data);
-		}
-
-		// For remote environments, merge:
-		// - UI settings from environment 0 (main instance)
-		// - Environment-specific settings from current environment
-		const [mainSettings, envSettings] = await Promise.all([
-			this.api.get(
-				userStore.hasPermission('settings:read', '0') ? '/environments/0/settings' : '/environments/0/settings/public'
-			),
-			this.api.get(`/environments/${environmentId}/settings`)
+	async getSettingsForEnvironmentMerged(environmentId: string): Promise<ResolvedSettings> {
+		if (environmentId === '0') return this.getSettingsForEnvironment('0');
+		const [main, environment] = await Promise.all([
+			userStore.hasPermission('settings:read', '0')
+				? this.getSettingsForEnvironment('0')
+				: this.getPublicSettingsForEnvironment('0'),
+			this.getSettingsForEnvironment(environmentId)
 		]);
-
-		const mainNormalized = this.normalize(mainSettings.data);
-		const envNormalized = this.normalize(envSettings.data);
-
-		// Extract UI settings from main, environment settings from current env
-		const uiSettings = extractLocalSettings(mainNormalized);
-		const operationalSettings = extractEnvironmentSettings(envNormalized);
-
-		// Merge them
-		return { ...operationalSettings, ...uiSettings } as Settings;
+		return this.merge(main, environment);
 	}
 
-	async getSettingsForEnvironment(environmentId: string): Promise<Settings> {
-		// When viewing a specific environment's settings page, show all its settings
-		const res = await this.api.get(`/environments/${environmentId}/settings`);
+	async getSettingsForEnvironment(environmentId: string): Promise<ResolvedSettings> {
+		const res = await this.api.get<SettingsSnapshot>(`/environments/${environmentId}/settings`);
 		return this.normalize(res.data);
 	}
 
-	async getPublicSettingsForEnvironment(environmentId: string, signal?: AbortSignal): Promise<Settings> {
-		const res = await this.api.get(`/environments/${environmentId}/settings/public`, { signal });
+	async getPublicSettingsForEnvironment(environmentId: string, signal?: AbortSignal): Promise<ResolvedSettings> {
+		const res = await this.api.get<SettingsSnapshot>(`/environments/${environmentId}/settings/public`, { signal });
 		return this.normalize(res.data);
 	}
 
-	async getPublicSettings(environmentId = '0'): Promise<Settings> {
+	async getPublicSettings(environmentId = '0'): Promise<ResolvedSettings> {
 		if (environmentId === '0') return this.getPublicSettingsForEnvironment('0');
-		const [mainSettings, environmentSettings] = await Promise.all([
+		const [main, environment] = await Promise.all([
 			this.getPublicSettingsForEnvironment('0'),
 			this.getPublicSettingsForEnvironment(environmentId)
 		]);
-		return { ...extractEnvironmentSettings(environmentSettings), ...extractLocalSettings(mainSettings) } as Settings;
+		return this.merge(main, environment);
 	}
 
-	/** The environment's merged settings, or only its public settings without `settings:read`. */
-	async getReadableSettings(environmentId: string): Promise<Settings> {
+	async getReadableSettings(environmentId: string): Promise<ResolvedSettings> {
 		if (!userStore.hasPermission('settings:read', environmentId)) return this.getPublicSettings(environmentId);
 		return this.getSettingsForEnvironmentMerged(environmentId);
 	}
 
-	async updateSettings(settings: Partial<Settings>) {
-		// Wait for environment store to be initialized before updating settings
-		await environmentStore.ready;
-		const envId = await environmentStore.getCurrentEnvironmentId();
-
-		return this.updateSettingsForEnvironment(envId, settings);
-	}
-
-	async updateSettingsForEnvironment(envId: string, settings: Partial<Settings>) {
-		const uiSettings: Record<string, any> = {};
-		const envSettings: Record<string, any> = {};
-
-		// Separate UI settings from environment settings
-		for (const key in settings) {
-			if (isLocalSetting(key)) {
-				uiSettings[key] = settings[key as keyof Settings];
-			} else {
-				envSettings[key] = settings[key as keyof Settings];
-			}
+	async updateSettingsForEnvironment(
+		environmentId: string,
+		base: ResolvedSettings,
+		changes: Partial<Settings>
+	): Promise<ResolvedSettings> {
+		const patches: Record<SettingState['scope'], Record<string, string>> = { manager: {}, environment: {} };
+		for (const [key, value] of Object.entries(changes)) {
+			const meta = base.meta[key as SettingKey];
+			if (!meta || meta.locked || value === undefined || String(value) === meta.value) continue;
+			patches[meta.scope][key] = String(value);
 		}
-
-		// Update UI settings on environment 0 (main instance)
-		if (Object.keys(uiSettings).length > 0) {
-			const payload: Record<string, string> = {};
-			for (const key in uiSettings) {
-				const v = uiSettings[key];
-				payload[key] = typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v);
-			}
-			await this.api.patch('/environments/0/settings', payload);
-		}
-
-		// Update environment settings on target environment
-		if (Object.keys(envSettings).length > 0) {
-			const payload: Record<string, string> = {};
-			for (const key in envSettings) {
-				const v = envSettings[key];
-				payload[key] = typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v);
-			}
-			await this.api.patch(`/environments/${envId}/settings`, payload);
-		}
-
-		// Reload and return merged settings
-		return this.getReadableSettings(envId);
+		const hasManagerChanges = Object.keys(patches.manager).length > 0;
+		const hasEnvironmentChanges = Object.keys(patches.environment).length > 0;
+		if (!hasManagerChanges && !hasEnvironmentChanges) return base;
+		if (hasManagerChanges) await this.api.patch('/environments/0/settings', patches.manager);
+		if (hasEnvironmentChanges) await this.api.patch(`/environments/${environmentId}/settings`, patches.environment);
+		return this.getReadableSettings(environmentId);
 	}
 
 	async getOidcStatus(): Promise<OidcStatusInfo> {
 		return this.handleResponse(this.api.get('/oidc/status'));
 	}
 
-	private normalize(data: any): Settings {
-		if (data && !Array.isArray(data) && !Array.isArray(data?.settings)) {
-			return data as Settings;
-		}
-
-		let list: KeyValuePair[] = [];
-		if (Array.isArray(data)) list = data;
-		else if (Array.isArray(data?.settings)) list = data.settings;
-
-		const settings: Record<string, unknown> = {};
-		list.forEach(({ key, value }) => {
-			settings[key] = this.parseValue(key, value);
+	private merge(main: ResolvedSettings, environment: ResolvedSettings): ResolvedSettings {
+		const scoped = (source: ResolvedSettings, scope: SettingState['scope']) =>
+			Object.values(source.meta).filter((meta) => meta.scope === scope);
+		return this.normalize({
+			settings: [...scoped(environment, 'environment'), ...scoped(main, 'manager')],
+			runtime: {
+				...environment.runtime,
+				frontendTracingEnabled: main.runtime.frontendTracingEnabled,
+				frontendMetricsEnabled: main.runtime.frontendMetricsEnabled,
+				frontendLogsEnabled: main.runtime.frontendLogsEnabled,
+				edgeMTLSManagerCAAvailable: main.runtime.edgeMTLSManagerCAAvailable
+			},
+			readOnly: main.readOnly || environment.readOnly
 		});
-		return settings as Settings;
 	}
 
-	private parseValue(key: string, value: string) {
-		if (key === 'registryCredentials' || key === 'templateRegistries') {
-			try {
-				return JSON.parse(value);
-			} catch {
-				return [];
-			}
-		}
-		if (value === 'true') return true;
-		if (value === 'false') return false;
-		if (key === 'projectWorkspaceMaxFileSizeMb' || key === 'volumeWorkspaceMaxFileSizeMb' || key === 'upgradeLogRetentionDays') {
-			return Number(value);
-		}
-		return value;
+	private normalize(snapshot: SettingsSnapshot): ResolvedSettings {
+		return {
+			values: Object.fromEntries(
+				snapshot.settings.map((meta) => [meta.key, parseSettingValue(meta.type, meta.value)])
+			) as Settings,
+			meta: Object.fromEntries(snapshot.settings.map((meta) => [meta.key, meta])),
+			runtime: snapshot.runtime,
+			readOnly: snapshot.readOnly
+		};
 	}
 }
 

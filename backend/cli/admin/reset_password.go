@@ -13,14 +13,15 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/term"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config/schema"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
 )
 
 const defaultAdminUsername = "arcane"
@@ -37,10 +38,10 @@ var AdminCmd = &cobra.Command{
 var resetPasswordCmd = &cobra.Command{
 	Use:          "reset-password",
 	Short:        "Reset the password for a global administrator",
-	Long:         "Reset the password for a global administrator. This command must be explicitly enabled with ALLOW_CLI_PASSWORD_RESET=true.",
+	Long:         "Reset the password for a global administrator. This command must be explicitly enabled with ARCANE_ALLOW_CLI_PASSWORD_RESET=true.",
 	Args:         cobra.NoArgs,
 	SilenceUsage: true,
-	RunE:         runResetPasswordCommandInternal,
+	RunE:         runResetPasswordCommand,
 }
 
 func init() {
@@ -48,10 +49,16 @@ func init() {
 	AdminCmd.AddCommand(resetPasswordCmd)
 }
 
-func runResetPasswordCommandInternal(cmd *cobra.Command, _ []string) error {
-	cfg := config.Load()
-	if err := ensurePasswordResetEnabledInternal(cfg); err != nil {
+func runResetPasswordCommand(cmd *cobra.Command, _ []string) error {
+	if err := schema.CheckLegacyEnv(cmd.Context()); err != nil {
 		return err
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	if enabledErr := ensurePasswordResetEnabledInternal(cfg); enabledErr != nil {
+		return enabledErr
 	}
 
 	username := strings.TrimSpace(resetPasswordUsername)
@@ -93,7 +100,7 @@ func ensurePasswordResetEnabledInternal(cfg *config.Config) error {
 		return errors.New("password reset config is nil")
 	}
 	if !cfg.AllowCLIPasswordReset {
-		return errors.New("CLI password reset is disabled; set ALLOW_CLI_PASSWORD_RESET=true to enable it")
+		return errors.New("CLI password reset is disabled; set ARCANE_ALLOW_CLI_PASSWORD_RESET=true to enable it")
 	}
 	return nil
 }

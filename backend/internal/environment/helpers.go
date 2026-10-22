@@ -10,7 +10,7 @@ import (
 	"github.com/samber/hot"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 )
 
 // edgeTokenCache maps agent tokens to environment IDs; the reverse index drops

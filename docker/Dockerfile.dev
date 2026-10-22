@@ -38,9 +38,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/* && \
     go install github.com/air-verse/air@latest
 
-ENV GIN_MODE=debug \
-    PORT=3552 \
-    ENVIRONMENT=development \
+ENV ARCANE_PORT=3552 \
+    ARCANE_ENVIRONMENT=development \
     ARCANE_IN_CONTAINER=true \
     GOCACHE=/root/.cache/go-build \
     GOMODCACHE=/go/pkg/mod

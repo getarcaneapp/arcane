@@ -62,7 +62,7 @@ func New(databaseURL, encryptionKey, instanceID, port string, options ...local.H
 	}
 	portNumber, err := strconv.Atoi(port)
 	if err != nil || portNumber < 1 || portNumber > 65535 {
-		return nil, errors.New("ACTOR_PORT must be between 1 and 65535")
+		return nil, errors.New("ARCANE_ACTOR_PORT must be between 1 and 65535")
 	}
 	storeURL, err := StoreURL(databaseURL)
 	if err != nil {

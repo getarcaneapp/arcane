@@ -9,17 +9,17 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/passkey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/cookie"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 // OidcHandler handles OIDC authentication endpoints, plus OIDC group → role
@@ -137,11 +137,7 @@ func (h *OidcHandler) GetOidcConfig(ctx context.Context, input *GetOidcConfigInp
 		return nil, huma.Error500InternalServerError("Failed to get OIDC configuration")
 	}
 
-	appUrl := ""
-	if h.config != nil {
-		appUrl = h.config.AppUrl
-	}
-	origin := httpx.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, appUrl)
+	origin := httpx.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, h.config.GetAppURL())
 
 	return &GetOidcConfigOutput{
 		Body: types.OidcConfigResponse{
@@ -167,11 +163,7 @@ func (h *OidcHandler) GetOidcAuthUrl(ctx context.Context, input *GetOidcAuthUrlI
 		return nil, huma.Error400BadRequest("OIDC authentication is disabled")
 	}
 
-	appUrl := ""
-	if h.config != nil {
-		appUrl = h.config.AppUrl
-	}
-	origin := httpx.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, appUrl)
+	origin := httpx.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, h.config.GetAppURL())
 
 	mobileRedirectURI := input.Body.MobileRedirectUri
 	if mobileRedirectURI != "" {
@@ -206,11 +198,7 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 		return nil, huma.Error400BadRequest("Missing or invalid OIDC state cookie")
 	}
 
-	appUrl := ""
-	if h.config != nil {
-		appUrl = h.config.AppUrl
-	}
-	origin := httpx.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, appUrl)
+	origin := httpx.GetClientBaseURL(input.Origin, input.XForwardedHost, input.XForwardedProto, input.Host, h.config.GetAppURL())
 
 	mobileRedirectURI := input.Body.MobileRedirectUri
 	if mobileRedirectURI != "" {

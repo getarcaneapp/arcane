@@ -83,7 +83,7 @@
 	const currentEnvId = $derived(data.envId);
 	// A volume opened from another environment follows that environment's settings.
 	const environmentSettings = useEnvironmentSettings(() => currentEnvId);
-	const volumeSettings = $derived(environmentSettings.current);
+	const volumeSettings = $derived(environmentSettings.current?.runtime);
 	// Until the backup volume name is known, the volume cannot be removed.
 	const backupVolumeName = $derived(volumeSettings ? volumeSettings.backupVolumeName || 'arcane-backups' : undefined);
 	const isBackupVolume = $derived(!backupVolumeName || volume?.name === backupVolumeName);
@@ -92,7 +92,7 @@
 	const canReadVolume = $derived(hasPermission('volumes:read', currentEnvId));
 	const canUploadVolume = $derived(hasPermission('volumes:upload', currentEnvId));
 	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
-	const volumeWorkspaceMaxFileSizeMb = $derived(volumeSettings?.volumeWorkspaceMaxFileSizeMb ?? 10);
+	const volumeWorkspaceMaxFileSizeMb = $derived(environmentSettings.current?.values.volumeWorkspaceMaxFileSizeMb ?? 10);
 
 	let isLoading = $state({ remove: false, save: false });
 	const createdDate = $derived(volume?.createdAt ? formatDateTimeShort(volume.createdAt) : m.common_unknown());

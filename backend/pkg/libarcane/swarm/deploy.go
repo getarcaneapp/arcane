@@ -13,7 +13,7 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	dockerclient "github.com/moby/moby/client"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
 // StackDeployOptions controls how a swarm stack is deployed.

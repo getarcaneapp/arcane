@@ -11,7 +11,7 @@ import (
 
 	"github.com/hashicorp/yamux"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 // serveMuxSession serves manager requests over a multiplexed session with the agent's own router until the session ends.

@@ -16,12 +16,12 @@ import (
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume/children/backup/children/policies"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow/flowtest"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/volume/children/backup/children/policies"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow/flowtest"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 )
 
 func applyVolumeBackupMigrations(t *testing.T, gormDB *gorm.DB) {

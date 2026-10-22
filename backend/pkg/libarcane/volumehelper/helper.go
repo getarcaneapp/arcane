@@ -17,7 +17,7 @@ import (
 	"go.getarcane.app/docker/compat"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 )
 
 // RuntimeImage describes the Arcane runtime image that can run internal helper

@@ -114,7 +114,7 @@ linters:
       alias:
         - pkg: go.getarcane.app/docker
           alias: docker
-        - pkg: github.com/getarcaneapp/arcane/backend/v2/internal/docker
+        - pkg: github.com/getarcaneapp/arcane/backend/v3/internal/docker
           alias: dockerInternal
 
     lll:

@@ -6,11 +6,11 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
-	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/notification"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
+	scheduleutil "github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
 )
 
 const ScheduledPruneJobName = "scheduled-prune"
@@ -34,15 +34,15 @@ func (j *ScheduledPruneJob) Name() string {
 }
 
 func (j *ScheduledPruneJob) ShouldSchedule(ctx context.Context) bool {
-	return j.settingsService.GetBoolSetting(ctx, "scheduledPruneEnabled", false)
+	return j.settingsService.GetBoolSetting(ctx, "scheduledPruneEnabled")
 }
 
 func (j *ScheduledPruneJob) Schedule(ctx context.Context) string {
-	return scheduleutil.Or(ctx, j.settingsService.GetStringSetting(ctx, "scheduledPruneInterval", "0 0 0 * * *"), "0 0 0 * * *", "scheduled-prune")
+	return scheduleutil.Or(ctx, j.settingsService.GetStringSetting(ctx, "scheduledPruneInterval"), "0 0 0 * * *", "scheduled-prune")
 }
 
 func (j *ScheduledPruneJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {
-	enabled := j.settingsService.GetBoolSetting(ctx, "scheduledPruneEnabled", false)
+	enabled := j.settingsService.GetBoolSetting(ctx, "scheduledPruneEnabled")
 	if !enabled {
 		slog.DebugContext(ctx, "scheduled prune disabled; skipping run")
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
@@ -126,31 +126,31 @@ func hasScheduledPruneTargets(req types.PruneAllRequest) bool {
 }
 
 func buildScheduledContainerPruneOptions(ctx context.Context, settingsService *settings.SettingsService) *types.PruneContainersOptions {
-	mode := settingsService.GetStringSetting(ctx, "pruneContainerMode", "stopped")
+	mode := settingsService.GetStringSetting(ctx, "pruneContainerMode")
 	if mode == "" || mode == string(types.PruneContainerModeNone) {
 		return nil
 	}
 
 	return &types.PruneContainersOptions{
 		Mode:  types.PruneContainerMode(mode),
-		Until: settingsService.GetStringSetting(ctx, "pruneContainerUntil", ""),
+		Until: settingsService.GetStringSetting(ctx, "pruneContainerUntil"),
 	}
 }
 
 func buildScheduledImagePruneOptions(ctx context.Context, settingsService *settings.SettingsService) *types.PruneImagesOptions {
-	mode := settingsService.GetStringSetting(ctx, "pruneImageMode", "dangling")
+	mode := settingsService.GetStringSetting(ctx, "pruneImageMode")
 	if mode == "" || mode == string(types.PruneImageModeNone) {
 		return nil
 	}
 
 	return &types.PruneImagesOptions{
 		Mode:  types.PruneImageMode(mode),
-		Until: settingsService.GetStringSetting(ctx, "pruneImageUntil", ""),
+		Until: settingsService.GetStringSetting(ctx, "pruneImageUntil"),
 	}
 }
 
 func buildScheduledVolumePruneOptions(ctx context.Context, settingsService *settings.SettingsService) *types.PruneVolumesOptions {
-	mode := settingsService.GetStringSetting(ctx, "pruneVolumeMode", "none")
+	mode := settingsService.GetStringSetting(ctx, "pruneVolumeMode")
 	if mode == "" || mode == string(types.PruneVolumeModeNone) {
 		return nil
 	}
@@ -158,26 +158,26 @@ func buildScheduledVolumePruneOptions(ctx context.Context, settingsService *sett
 }
 
 func buildScheduledNetworkPruneOptions(ctx context.Context, settingsService *settings.SettingsService) *types.PruneNetworksOptions {
-	mode := settingsService.GetStringSetting(ctx, "pruneNetworkMode", "unused")
+	mode := settingsService.GetStringSetting(ctx, "pruneNetworkMode")
 	if mode == "" || mode == string(types.PruneNetworkModeNone) {
 		return nil
 	}
 
 	return &types.PruneNetworksOptions{
 		Mode:  types.PruneNetworkMode(mode),
-		Until: settingsService.GetStringSetting(ctx, "pruneNetworkUntil", ""),
+		Until: settingsService.GetStringSetting(ctx, "pruneNetworkUntil"),
 	}
 }
 
 func buildScheduledBuildCachePruneOptions(ctx context.Context, settingsService *settings.SettingsService) *types.PruneBuildCacheOptions {
-	mode := settingsService.GetStringSetting(ctx, "pruneBuildCacheMode", "none")
+	mode := settingsService.GetStringSetting(ctx, "pruneBuildCacheMode")
 	if mode == "" || mode == string(types.PruneBuildCacheModeNone) {
 		return nil
 	}
 
 	return &types.PruneBuildCacheOptions{
 		Mode:  types.PruneBuildCacheMode(mode),
-		Until: settingsService.GetStringSetting(ctx, "pruneBuildCacheUntil", ""),
+		Until: settingsService.GetStringSetting(ctx, "pruneBuildCacheUntil"),
 	}
 }
 

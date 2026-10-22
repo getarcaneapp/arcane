@@ -10,8 +10,8 @@ import (
 	"github.com/labstack/echo/v5"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 func NewEnvironmentScopeMiddleware(resolve httpx.EnvironmentResolver, matcher *authz.PermissionMatcher, limit func(context.Context) int) echo.MiddlewareFunc {

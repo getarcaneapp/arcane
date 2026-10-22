@@ -23,19 +23,19 @@ import (
 	"github.com/samber/mo"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	userdomain "github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	userdomain "github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/cookie"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
 )
 
 type AuthHandler struct {
@@ -342,7 +342,7 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	if !strings.EqualFold(kit.FromPtr(email), kit.FromPtr(userModel.Email)) && h.settingsService.GetBoolSetting(ctx, "oidcMergeAccounts", false) {
+	if !strings.EqualFold(kit.FromPtr(email), kit.FromPtr(userModel.Email)) && h.settingsService.GetBoolSetting(ctx, "oidcMergeAccounts") {
 		return nil, huma.Error403Forbidden("email cannot be changed while OIDC account merging is enabled")
 	}
 
@@ -435,7 +435,7 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 	const defaultAvatarMaxUploadSizeMb = 2
 	maxSizeMb := defaultAvatarMaxUploadSizeMb
 	if h.settingsService != nil {
-		maxSizeMb = h.settingsService.GetIntSetting(ctx, "avatarMaxUploadSizeMb", defaultAvatarMaxUploadSizeMb)
+		maxSizeMb = h.settingsService.GetIntSetting(ctx, "avatarMaxUploadSizeMb")
 		maxSizeMb = kit.Ternary(maxSizeMb <= 0, defaultAvatarMaxUploadSizeMb, maxSizeMb)
 	}
 	maxSizeBytes := int64(maxSizeMb) * 1024 * 1024
@@ -692,7 +692,7 @@ func NewHumaMiddleware(
 			return
 		}
 
-		if newCtx, ok := tryAgentAuth(ctx, cfg); ok {
+		if newCtx, ok := tryAgentAuth(ctx, cfg, authService.settingsService); ok {
 			next(newCtx)
 			return
 		}
@@ -737,15 +737,16 @@ func NewHumaMiddleware(
 
 // tryAgentAuth authenticates an agent-mode request presenting the
 // agent token as a bootstrap pairing, agent token, or API key header.
-func tryAgentAuth(ctx huma.Context, cfg *config.Config) (huma.Context, bool) {
-	if cfg == nil || !cfg.AgentMode {
+func tryAgentAuth(ctx huma.Context, cfg *config.Config, settingsService *settings.SettingsService) (huma.Context, bool) {
+	if !cfg.AgentMode {
 		return ctx, false
 	}
+	agentToken := settingsService.AgentToken(ctx.Context())
 	bootstrapPairing := strings.HasPrefix(ctx.URL().Path, middleware.AgentPairingPrefix) &&
-		AgentTokenMatches(ctx.Header(middleware.HeaderAgentBootstrap), cfg.AgentToken)
+		AgentTokenMatches(ctx.Header(middleware.HeaderAgentBootstrap), agentToken)
 	if !bootstrapPairing &&
-		!AgentTokenMatches(ctx.Header(middleware.HeaderAgentToken), cfg.AgentToken) &&
-		!AgentTokenMatches(ctx.Header(middleware.HeaderApiKey), cfg.AgentToken) {
+		!AgentTokenMatches(ctx.Header(middleware.HeaderAgentToken), agentToken) &&
+		!AgentTokenMatches(ctx.Header(middleware.HeaderApiKey), agentToken) {
 		return ctx, false
 	}
 	authenticatedUser := createAgentSudoUser()
@@ -960,7 +961,7 @@ func (m *AuthMiddleware) Add() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			reqCtx := c.Request().Context()
-			if m.cfg != nil && m.cfg.AgentMode {
+			if m.cfg.AgentMode {
 				return m.agentAuth(reqCtx, c, next)
 			}
 			return m.managerAuth(reqCtx, c, next)
@@ -974,20 +975,21 @@ func (m *AuthMiddleware) agentAuth(ctx context.Context, c *echo.Context, next ec
 	}
 
 	req := c.Request()
+	agentToken := m.authService.settingsService.AgentToken(ctx)
 	if strings.HasPrefix(req.URL.Path, middleware.AgentPairingPrefix) &&
-		AgentTokenMatches(req.Header.Get(middleware.HeaderAgentBootstrap), m.cfg.AgentToken) {
+		AgentTokenMatches(req.Header.Get(middleware.HeaderAgentBootstrap), agentToken) {
 		slog.InfoContext(ctx, "Agent auth: bootstrap pairing accepted", "path", req.URL.Path, "method", req.Method)
 		agentSudo(c)
 		return next(c)
 	}
 
-	if AgentTokenMatches(req.Header.Get(middleware.HeaderAgentToken), m.cfg.AgentToken) {
+	if AgentTokenMatches(req.Header.Get(middleware.HeaderAgentToken), agentToken) {
 		agentSudo(c)
 		return next(c)
 	}
 
 	// Check for API key as agent token
-	if AgentTokenMatches(req.Header.Get(middleware.HeaderApiKey), m.cfg.AgentToken) {
+	if AgentTokenMatches(req.Header.Get(middleware.HeaderApiKey), agentToken) {
 		agentSudo(c)
 		return next(c)
 	}
@@ -997,7 +999,7 @@ func (m *AuthMiddleware) agentAuth(ctx context.Context, c *echo.Context, next ec
 		"path", req.URL.Path,
 		"method", req.Method,
 		"hasAgentTokenHdr", req.Header.Get(middleware.HeaderAgentToken) != "",
-		"agentTokenConfigSet", m.cfg.AgentToken != "",
+		"agentTokenConfigSet", agentToken != "",
 	)
 	return c.JSON(http.StatusForbidden, common.APIError{
 		Code:    "FORBIDDEN",

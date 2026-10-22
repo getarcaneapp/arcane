@@ -21,9 +21,9 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
 )
 
 func TestLegacyImportSurvivesRestartAndDeduplicates(t *testing.T) {

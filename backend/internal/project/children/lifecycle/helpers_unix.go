@@ -9,7 +9,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
 func describeLifecyclePathAccess(projectPath, resolvedScriptPath string) string {

@@ -20,9 +20,9 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/acfs"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 const (
@@ -81,7 +81,7 @@ func (s *UploadService) CreateSession(ctx context.Context, kind string, request 
 		return nil, fmt.Errorf("%w: size must be positive", common.ErrUploadSessionInvalid)
 	}
 	if kind == types.UploadKindImage {
-		maxSizeMB := s.settingsService.GetIntSetting(ctx, "maxImageUploadSize", 500)
+		maxSizeMB := s.settingsService.GetIntSetting(ctx, "maxImageUploadSize")
 		if maxSizeBytes := int64(maxSizeMB) * 1024 * 1024; request.Size > maxSizeBytes {
 			return nil, fmt.Errorf("%w: file size exceeds maximum allowed size of %d MB", common.ErrUploadSessionInvalid, maxSizeMB)
 		}

@@ -9,15 +9,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/fswatch"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/fswatch"
 )
 
 func TestFilesystemWatcherJob_ProjectWatcherOptions_UsesConfiguredMaxDepth(t *testing.T) {
-	job := &FilesystemWatcherJob{
-		projectScanDepth: 1,
-	}
+	job := &FilesystemWatcherJob{}
 
-	opts := job.projectWatcherOptionsInternal(true)
+	opts := job.projectWatcherOptions(true, 1)
 
 	assert.Equal(t, 1, opts.MaxDepth)
 	assert.True(t, opts.FollowSymlinkDirs)
@@ -28,7 +26,7 @@ func TestFilesystemWatcherJob_ConcurrentProjectRestartsAreSerialized(t *testing.
 	require.NoError(t, settingsService.SetStringSetting(t.Context(), "projectsDirectory", t.TempDir()))
 	require.NoError(t, settingsService.SetStringSetting(t.Context(), "templatesDirectory", t.TempDir()))
 
-	job, err := NewFilesystemWatcherJob(t.Context(), nil, nil, settingsService, 2)
+	job, err := NewFilesystemWatcherJob(t.Context(), nil, nil, settingsService)
 	require.NoError(t, err)
 
 	restartErrors := make(chan error, 2)
@@ -65,7 +63,7 @@ func TestFilesystemWatcherJob_RequestRestartRearmsSupervisor(t *testing.T) {
 	require.NoError(t, settingsService.SetStringSetting(t.Context(), "projectsDirectory", t.TempDir()))
 	require.NoError(t, settingsService.SetStringSetting(t.Context(), "templatesDirectory", t.TempDir()))
 
-	job, err := NewFilesystemWatcherJob(t.Context(), nil, nil, settingsService, 2)
+	job, err := NewFilesystemWatcherJob(t.Context(), nil, nil, settingsService)
 	require.NoError(t, err)
 
 	superviseCtx, cancelSupervise := context.WithCancel(t.Context())

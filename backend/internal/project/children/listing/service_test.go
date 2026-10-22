@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/updater/labels"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/iconcatalog"
 )
 
 func TestCalculateProjectStatus(t *testing.T) {

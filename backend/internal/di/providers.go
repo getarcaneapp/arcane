@@ -14,43 +14,43 @@ import (
 	"go.getarcane.app/streams/bus"
 	"go.uber.org/fx"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	s3domain "github.com/getarcaneapp/arcane/backend/v2/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/template"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/updater"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/network"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/notification"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	s3domain "github.com/getarcaneapp/arcane/backend/v3/internal/s3"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/template"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/updater"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/version"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/vulnerability"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/oidcjwk"
 )
 
 func provideBackupEngine(lc fx.Lifecycle, admission *runs.Admission, imageService *image.ImageService, roles *role.RoleService, cfg *config.Config) *backup.Engine {
@@ -84,13 +84,14 @@ func provideActorRuntime(
 	settingsService *settings.SettingsService,
 	lc fx.Lifecycle,
 	cancelApp context.CancelCauseFunc,
+	encryptionKey string,
 ) (*francis.Runtime, error) {
 	runtime, err := francis.New(cfg.DatabaseURL, "", "", cfg.ActorPort)
 	if err != nil {
 		return nil, err
 	}
 	lc.Append(fx.Hook{OnStart: func(ctx context.Context) error {
-		if configureIdentityErr := runtime.ConfigureIdentity(cfg.EncryptionKey, settingsService.GetSettingsConfig().InstanceID.Value); configureIdentityErr != nil {
+		if configureIdentityErr := runtime.ConfigureIdentity(encryptionKey, settingsService.GetSettingsConfig().InstanceID.Value); configureIdentityErr != nil {
 			return configureIdentityErr
 		}
 		return runtime.Start(ctx, appCtx, func(err error) {
@@ -144,11 +145,10 @@ func provideDockerClientService(
 	ctx context.Context,
 	lc fx.Lifecycle,
 	db *database.DB,
-	cfg *config.Config,
 	localSettings *settings.SettingsService,
 	eventService *event.EventService,
 ) *docker.DockerClientService {
-	service := docker.NewDockerClientService(ctx, db, cfg, localSettings, bus.WithDroppedEventCallback(func(message events.Message) {
+	service := docker.NewDockerClientService(ctx, db, localSettings, bus.WithDroppedEventCallback(func(message events.Message) {
 		// Overflow is recovered synchronously, applying backpressure instead of losing log entries.
 		eventService.RecordDockerEvent(ctx, message)
 	}))
@@ -242,8 +242,9 @@ func provideImageService(
 	settingsService *settings.SettingsService,
 	activityService *activity.ActivityService,
 	engine *flow.Engine,
+	cfg *config.Config,
 ) (*image.ImageService, error) {
-	service := image.NewImageService(db, dockerService, registryService, imageUpdateService, vulnerabilityService, eventService, settingsService, activityService)
+	service := image.NewImageService(db, dockerService, registryService, imageUpdateService, vulnerabilityService, eventService, settingsService, activityService, cfg)
 	if err := service.RegisterWorkflows(engine); err != nil {
 		return nil, err
 	}
@@ -322,12 +323,11 @@ func provideFilesystemWatcherJob(
 	localProject *project.ProjectService,
 	localTemplate *template.TemplateService,
 	localSettings *settings.SettingsService,
-	cfg *config.Config,
 ) (
 	*scheduler.FilesystemWatcherJob,
 	error,
 ) {
-	job, err := scheduler.NewFilesystemWatcherJob(ctx, localProject, localTemplate, localSettings, cfg.ProjectScanMaxDepth)
+	job, err := scheduler.NewFilesystemWatcherJob(ctx, localProject, localTemplate, localSettings)
 	if err != nil {
 		return nil, err
 	}
@@ -416,6 +416,7 @@ func provideSystemService(
 	recoveryKeys *backup.RecoveryKeyStore,
 	actors *francis.Runtime,
 	cfg *config.Config,
+	settingsEnv settings.Env,
 	environments *environment.EnvironmentService,
 	engine *flow.Engine,
 	roles *role.RoleService,
@@ -423,6 +424,7 @@ func provideSystemService(
 	service := system.NewSystemService(
 		db, dockerService, containerService, imageUpdateService, volumeService, networkService, settingsService, activityService,
 		versionService, eventService, projectService, registryService, backupEngine, s3Destinations, recoveryKeys, actors, cfg,
+		settingsEnv,
 	)
 	if err := service.RegisterWorkflows(engine, environments, roles); err != nil {
 		return nil, err

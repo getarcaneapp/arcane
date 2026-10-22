@@ -518,8 +518,8 @@
 					const settings =
 						currentEnvId && currentEnvId !== environmentStore.selected?.id
 							? await settingsService.getReadableSettings(currentEnvId)
-							: settingsStore.current;
-					const configuredProvider = (settings?.buildProvider as 'local' | 'depot') ?? 'local';
+							: settingsStore.resolved;
+					const configuredProvider = (settings?.values.buildProvider as 'local' | 'depot') ?? 'local';
 					const buildProvider = configuredProvider === 'depot' && isDepotBuildAvailable(settings) ? 'depot' : 'local';
 					await projectService.buildProjectImages(
 						id,

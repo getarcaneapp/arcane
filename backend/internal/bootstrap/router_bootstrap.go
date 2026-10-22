@@ -17,22 +17,22 @@ import (
 	"github.com/samber/slog-echo/v2"
 	"go.uber.org/fx"
 
-	"github.com/getarcaneapp/arcane/backend/v2/api"
-	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
-	"github.com/getarcaneapp/arcane/backend/v2/frontend"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/federated"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/telemetry"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/api"
+	"github.com/getarcaneapp/arcane/backend/v3/api/ws"
+	"github.com/getarcaneapp/arcane/backend/v3/frontend"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/federated"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/telemetry"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/cookie"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 var (
@@ -151,14 +151,14 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		}
 		_, ipnet, err := net.ParseCIDR(cidr)
 		if err != nil {
-			slog.WarnContext(ctx, "invalid TRUSTED_PROXIES CIDR, ignoring", "cidr", cidr, "error", err)
+			slog.WarnContext(ctx, "invalid ARCANE_TRUSTED_PROXIES CIDR, ignoring", "cidr", cidr, "error", err)
 			continue
 		}
 		trustedProxyNets = append(trustedProxyNets, ipnet)
 		trustOpts = append(trustOpts, echo.TrustIPRange(ipnet))
 	}
 	if cfg.TrustedProxies != "" && len(trustedProxyNets) == 0 {
-		slog.WarnContext(ctx, "TRUSTED_PROXIES set but no valid CIDRs found; falling back to direct IP extraction")
+		slog.WarnContext(ctx, "ARCANE_TRUSTED_PROXIES set but no valid CIDRs found; falling back to direct IP extraction")
 	}
 	if len(trustedProxyNets) == 0 {
 		e.IPExtractor = echo.ExtractIPDirect()
@@ -291,7 +291,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		}
 		return types.EnvironmentRef{ID: id, Name: environment.DisplayName(id, env.Name)}, nil
 	}, permissionMatcher, func(ctx context.Context) int {
-		return deps.Settings.Service().GetIntSetting(ctx, "allEnvironmentsLimit", 64)
+		return deps.Settings.Service().GetIntSetting(ctx, "allEnvironmentsLimit")
 	}))
 	apiGroup.Use(envProxyMiddleware)
 
@@ -307,7 +307,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	}
 
 	// Remaining echo handlers (WebSocket/streaming)
-	ws.NewWebSocketHandler(ctx, apiGroup, deps.Project.Service(), deps.Container.Service(), deps.Swarm.Service(), deps.System.Service(), deps.Diagnostics, authMiddleware, cfg)
+	ws.NewWebSocketHandler(ctx, apiGroup, deps.Project.Service(), deps.Container.Service(), deps.Swarm.Service(), deps.System.Service(), deps.Diagnostics, authMiddleware, deps.Settings.Service(), cfg)
 
 	// Managers accept agent connections on the edge tunnel endpoint.
 	var tunnelServer *edge.TunnelServer

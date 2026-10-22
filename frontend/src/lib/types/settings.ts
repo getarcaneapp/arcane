@@ -1,6 +1,5 @@
 import type { JobRun, JobRunStatus, WorkerHealth } from './job';
 import type { UpdateRequest } from './shared';
-import type { TemplateRegistryConfig } from './swarm';
 
 // --- Application settings ---
 
@@ -63,29 +62,22 @@ export type Settings = {
 	autoHealMaxRestarts?: number;
 	autoHealRestartWindow?: number;
 	volumeHelperIdleTimeout?: number;
-	projectWorkspaceMaxFileSizeMb?: number;
-	volumeWorkspaceMaxFileSizeMb?: number;
 	maxImageUploadSize: number;
 	gitSyncMaxFiles: number;
 	gitSyncMaxTotalSizeMb: number;
 	gitSyncMaxBinarySizeMb: number;
+	projectWorkspaceMaxFileSizeMb?: number;
+	volumeWorkspaceMaxFileSizeMb?: number;
 	baseServerUrl: string;
 	enableGravatar: boolean;
-	enableGravatarEnvForced?: boolean;
 	experimentalFeaturesEnabled: boolean;
 	developmentBrandingEnabled: boolean;
 	apnsEnabled?: boolean;
 	avatarMaxUploadSizeMb: number;
 	allEnvironmentsLimit: number;
-	uiConfigDisabled: boolean;
 	defaultShell: string;
 	dockerHost: string;
 	autoInjectEnv: boolean;
-	backupVolumeName?: string;
-	edgeMTLSManagerCAAvailable?: boolean;
-	frontendTracingEnabled?: boolean;
-	frontendMetricsEnabled?: boolean;
-	frontendLogsEnabled?: boolean;
 
 	authLocalEnabled: boolean;
 	authSessionTimeout: number;
@@ -143,21 +135,46 @@ export type Settings = {
 	buildHistoryRetentionDays?: number;
 	depotProjectId: string;
 	depotToken?: string;
-	depotConfigured?: boolean;
-
-	registryCredentials: RegistryCredential[];
-	templateRegistries: TemplateRegistryConfig[];
 };
 
-export interface RegistryCredential {
-	url: string;
-	username: string;
-	password: string;
+export type SettingKey = keyof Settings;
+
+export interface SettingState {
+	key: string;
+	value: string;
+	type: string;
+	default: string;
+	source: 'default' | 'db' | 'env';
+	locked: boolean;
+	lockReason?: 'env' | 'readOnly';
+	sensitive: boolean;
+	scope: 'manager' | 'environment';
+	envName: string;
+}
+
+export interface SettingsRuntime {
+	frontendTracingEnabled?: boolean;
+	frontendMetricsEnabled?: boolean;
+	frontendLogsEnabled?: boolean;
+	backupVolumeName?: string;
+	edgeMTLSManagerCAAvailable?: boolean;
+	depotConfigured?: boolean;
+}
+
+export interface SettingsSnapshot {
+	settings: SettingState[];
+	runtime: SettingsRuntime;
+	readOnly: boolean;
+}
+
+export interface ResolvedSettings {
+	values: Settings;
+	meta: Partial<Record<SettingKey, SettingState>>;
+	runtime: SettingsRuntime;
+	readOnly: boolean;
 }
 
 export interface OidcStatusInfo {
-	envForced: boolean;
-	envConfigured: boolean;
 	mergeAccounts: boolean;
 	providerName: string;
 	providerLogoUrl: string;

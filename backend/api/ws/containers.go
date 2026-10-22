@@ -13,8 +13,8 @@ import (
 	"github.com/labstack/echo/v5"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
+	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
 )
 
 const (

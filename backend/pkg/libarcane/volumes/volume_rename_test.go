@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
 )
 
 func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {

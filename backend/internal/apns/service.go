@@ -26,15 +26,15 @@ import (
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
 )
 
 const (
@@ -83,7 +83,7 @@ func NewApnsService(
 }
 
 func (s *ApnsService) Enabled(ctx context.Context) bool {
-	return s.config != nil && !s.config.AgentMode && s.settings.GetBoolSetting(ctx, "apnsEnabled", false)
+	return s.config != nil && !s.config.AgentMode && s.settings.GetBoolSetting(ctx, "apnsEnabled")
 }
 
 type relaySigner struct {
@@ -93,7 +93,7 @@ type relaySigner struct {
 }
 
 func (s *ApnsService) signer(ctx context.Context) (*relaySigner, error) {
-	stored := s.settings.GetStringSetting(ctx, "apnsSigningKey", "")
+	stored := s.settings.GetStringSetting(ctx, "apnsSigningKey")
 	algorithm := strings.ToLower(s.config.ApnsKeyAlgorithm)
 	var seed []byte
 	if stored != "" {
@@ -178,7 +178,7 @@ func (s *ApnsService) EnsureChannel(ctx context.Context) (string, error) {
 	}
 	s.channelMu.Lock()
 	defer s.channelMu.Unlock()
-	if channelID := s.settings.GetStringSetting(ctx, "apnsChannelId", ""); channelID != "" {
+	if channelID := s.settings.GetStringSetting(ctx, "apnsChannelId"); channelID != "" {
 		return channelID, nil
 	}
 	signer, err := s.signer(ctx)
@@ -232,7 +232,7 @@ func (s *ApnsService) ApplyEnabledUpdates(ctx context.Context, updates []libarca
 func (s *ApnsService) RevokeChannel(ctx context.Context) error {
 	s.channelMu.Lock()
 	defer s.channelMu.Unlock()
-	channelID := s.settings.GetStringSetting(ctx, "apnsChannelId", "")
+	channelID := s.settings.GetStringSetting(ctx, "apnsChannelId")
 	if channelID != "" {
 		signer, err := s.signer(ctx)
 		if err != nil {
@@ -307,7 +307,7 @@ func deviceDTO(d Device) types.ApnsDevice {
 func (s *ApnsService) Status(ctx context.Context, userID string) (types.ApnsStatus, error) {
 	status := types.ApnsStatus{Enabled: s.Enabled(ctx), RelayURL: s.config.ApnsRelayUrl, Devices: []types.ApnsDevice{}}
 	if status.Enabled {
-		status.ChannelID = s.settings.GetStringSetting(ctx, "apnsChannelId", "")
+		status.ChannelID = s.settings.GetStringSetting(ctx, "apnsChannelId")
 	}
 	var devices []Device
 	if err := s.db.WithContext(ctx).Where("user_id = ?", userID).Order("created_at ASC").Find(&devices).Error; err != nil {

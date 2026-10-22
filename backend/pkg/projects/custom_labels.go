@@ -20,9 +20,9 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	updaterlabels "go.getarcane.app/updater/labels"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/iconcatalog"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
 const (

@@ -13,7 +13,7 @@ import (
 	"go.getarcane.app/acfs"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 func TestWriteFilesPermissions(t *testing.T) {

@@ -145,7 +145,7 @@
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
 	// A project from another environment follows that environment's upload limit.
 	const projectSettings = useEnvironmentSettings(() => envId);
-	const projectWorkspaceMaxFileSizeMb = $derived(projectSettings.current?.projectWorkspaceMaxFileSizeMb ?? 10);
+	const projectWorkspaceMaxFileSizeMb = $derived(projectSettings.current?.values.projectWorkspaceMaxFileSizeMb ?? 10);
 
 	const projectDetailQuery = createQuery(() => ({
 		queryKey: queryKeys.projects.detail(envId, projectId),

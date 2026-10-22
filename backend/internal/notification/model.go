@@ -3,8 +3,8 @@ package notification
 import (
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
 )
 
 type NotificationSettings struct {

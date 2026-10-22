@@ -16,7 +16,7 @@ import (
 	"github.com/samber/mo"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 )
 
 // HostMount is one container→host mount (bind or named volume) from Arcane's own

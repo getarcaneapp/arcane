@@ -16,7 +16,7 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/mod/semver"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 )
 
 const apiPrefix = "/v4.0.0/libpod"

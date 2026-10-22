@@ -17,7 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
 func PersistEffectiveEnvContent(ctx context.Context, projectPath, projectsDirectory, envContent string) error {

@@ -13,18 +13,18 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/job/children/runtime"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	userdomain "github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/job/children/runtime"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	userdomain "github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
 )
 
 type fakeJobScheduler struct {
@@ -55,7 +55,7 @@ func setupSettingsTestDB(t *testing.T) *database.DB {
 
 func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	service, err := settings.NewSettingsService(ctx, db, &config.Config{})
+	service, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
 	if err == nil {
 		t.Cleanup(func() {
 			stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
@@ -413,7 +413,6 @@ func TestJobService_UpdateJobSchedules_RejectsInvalidCronWithoutChangingSetting(
 
 	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.LoadDatabaseSettings(ctx))
 
 	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{})
@@ -424,7 +423,7 @@ func TestJobService_UpdateJobSchedules_RejectsInvalidCronWithoutChangingSetting(
 		PollingInterval: "not a cron expression",
 	}, map[string]bool{"pollingInterval": true})
 	require.ErrorContains(t, err, "invalid cron expression for pollingInterval")
-	require.Equal(t, "0 0 * * * *", settingsSvc.GetStringSetting(ctx, "pollingInterval", ""))
+	require.Equal(t, "0 0 * * * *", settingsSvc.GetStringSetting(ctx, "pollingInterval"))
 	require.Empty(t, fakeScheduler.rescheduled)
 }
 
@@ -449,7 +448,6 @@ func TestJobService_UpdateJobSchedules_RestoresPreviousScheduleWhenRescheduleFai
 
 	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.LoadDatabaseSettings(ctx))
 
 	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{})
@@ -464,7 +462,7 @@ func TestJobService_UpdateJobSchedules_RestoresPreviousScheduleWhenRescheduleFai
 		AutoUpdateInterval: "0 0 8 * * *",
 	}, map[string]bool{"autoUpdateInterval": true})
 	require.ErrorContains(t, err, "scheduler unavailable")
-	require.Equal(t, "0 0 0 * * *", settingsSvc.GetStringSetting(ctx, "autoUpdateInterval", ""))
+	require.Equal(t, "0 0 0 * * *", settingsSvc.GetStringSetting(ctx, "autoUpdateInterval"))
 
 	var persisted settings.SettingVariable
 	require.NoError(t, db.WithContext(ctx).First(&persisted, "key = ?", "autoUpdateInterval").Error)

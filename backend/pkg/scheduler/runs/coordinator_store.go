@@ -17,8 +17,8 @@ import (
 	"github.com/italypaleale/francis/actor"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
 )
 
 const queuePrefix = "jobs."

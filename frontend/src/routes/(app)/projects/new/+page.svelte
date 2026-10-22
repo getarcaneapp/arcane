@@ -78,7 +78,7 @@
 	const sourceContainerIds = $derived(data.sourceContainerIds ?? []);
 	// Files are uploaded to the destination, so its limit applies.
 	const destinationSettings = useEnvironmentSettings(() => currentEnvId);
-	const projectWorkspaceMaxFileSizeMb = $derived(destinationSettings.current?.projectWorkspaceMaxFileSizeMb ?? 10);
+	const projectWorkspaceMaxFileSizeMb = $derived(destinationSettings.current?.values.projectWorkspaceMaxFileSizeMb ?? 10);
 
 	let ui = $state({
 		saving: false,

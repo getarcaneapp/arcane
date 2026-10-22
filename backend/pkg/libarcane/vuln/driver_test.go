@@ -15,7 +15,7 @@ import (
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
 )
 
 func TestDecodeTrivyReportFromFileInternal_LargePayload(t *testing.T) {

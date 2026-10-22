@@ -1,9 +1,11 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
+	import { SettingLock } from '#lib/components/badges/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { AlertTriangleIcon } from '#lib/icons/index.js';
+	import type { SettingState } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
 
 	// One setting: label and description on the left, the control on the right.
@@ -19,6 +21,7 @@
 		for?: string;
 		layout?: 'default' | 'switch' | 'wide';
 		labelExtra?: Snippet;
+		lock?: SettingState;
 		/** Extra content under the row (e.g. fields revealed by a switch), indented. */
 		expanded?: Snippet;
 		contentClass?: string;
@@ -35,6 +38,7 @@
 		for: htmlFor,
 		layout = 'default',
 		labelExtra,
+		lock,
 		expanded,
 		contentClass,
 		class: className,
@@ -68,7 +72,12 @@
 		)}
 	>
 		<div class="min-w-0">
-			<Label for={htmlFor}>{label}</Label>
+			<div class="flex flex-wrap items-center gap-2">
+				<Label for={htmlFor}>{label}</Label>
+				{#if lock?.locked}
+					<SettingLock {lock} />
+				{/if}
+			</div>
 			{#if description}
 				<p class="mt-0.5 text-xs text-muted-foreground">{description}</p>
 			{/if}
@@ -80,7 +89,9 @@
 			{/if}
 		</div>
 		<div class={cn('min-w-0', layout === 'switch' && 'flex justify-end', contentClass)}>
-			{@render children()}
+			<fieldset disabled={lock?.locked} class="contents">
+				{@render children()}
+			</fieldset>
 			{#if layout !== 'switch'}
 				{@render notes()}
 			{/if}

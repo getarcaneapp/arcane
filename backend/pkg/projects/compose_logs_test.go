@@ -81,10 +81,10 @@ func TestComposeLogsMarksStderrWithoutChangingComposeOptions(t *testing.T) {
 	}))
 	defer server.Close()
 
-	t.Setenv("DOCKER_HOST", "tcp://"+strings.TrimPrefix(server.URL, "http://"))
+	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:1")
 
 	out := &bytes.Buffer{}
-	err := ComposeLogs(t.Context(), composeLogsTestProjectInternal, out, false, "all", "", true)
+	err := ComposeLogs(t.Context(), "tcp://"+strings.TrimPrefix(server.URL, "http://"), composeLogsTestProjectInternal, out, false, "all", "", true)
 	require.NoError(t, err)
 
 	body := out.String()

@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
 func TestGRPCTunnel_MetadataAuthFallback(t *testing.T) {

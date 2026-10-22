@@ -502,7 +502,23 @@ test.describe('Security Page', () => {
 			/\/api\/environments\/remote-export-test\/settings(?:\/public)?$/,
 			async (route) => {
 				await route.fulfill({
-					json: [{ key: 'featureVulnerabilityManagementEnabled', value: 'true' }]
+					json: {
+						settings: [
+							{
+								key: 'featureVulnerabilityManagementEnabled',
+								value: 'true',
+								type: 'boolean',
+								default: 'true',
+								source: 'db',
+								locked: false,
+								sensitive: false,
+								scope: 'environment',
+								envName: 'ARCANE_FEATURE_VULNERABILITY_MANAGEMENT_ENABLED'
+							}
+						],
+						runtime: {},
+						readOnly: false
+					}
 				});
 			}
 		);
@@ -644,7 +660,23 @@ test.describe('Disabled vulnerability management', () => {
 	test.beforeEach(async ({ page }) => {
 		await page.route(/\/api\/environments\/[^/]+\/settings\/public$/, async (route) => {
 			await route.fulfill({
-				json: [{ key: 'featureVulnerabilityManagementEnabled', value: 'false' }]
+				json: {
+					settings: [
+						{
+							key: 'featureVulnerabilityManagementEnabled',
+							value: 'false',
+							type: 'boolean',
+							default: 'true',
+							source: 'db',
+							locked: false,
+							sensitive: false,
+							scope: 'environment',
+							envName: 'ARCANE_FEATURE_VULNERABILITY_MANAGEMENT_ENABLED'
+						}
+					],
+					runtime: {},
+					readOnly: false
+				}
 			});
 		});
 	});

@@ -7,8 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/buildables"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/buildables"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 )
 
 func enableAutoLoginFeature(t *testing.T) {
@@ -27,7 +27,6 @@ func TestGetAutoLoginConfig_Enabled(t *testing.T) {
 
 	settingsSvc, err := newSettingsServiceForAuthTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "authLocalEnabled", true))
 
 	s := newTestAuthService()
@@ -53,7 +52,6 @@ func TestGetAutoLoginConfig_DisabledWhenLocalAuthDisabled(t *testing.T) {
 
 	settingsSvc, err := newSettingsServiceForAuthTest(t, ctx, db)
 	require.NoError(t, err)
-	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "authLocalEnabled", false))
 
 	s := newTestAuthService()

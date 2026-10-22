@@ -6,7 +6,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
+	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
 )
 
 // Job runs a workflow as a scheduler job. The coordinator's single flight per

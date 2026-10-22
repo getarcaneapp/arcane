@@ -14,7 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 )
 
 // NormalizePath validates and normalizes a path relative to a backup root.

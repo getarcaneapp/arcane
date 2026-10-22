@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 func TestDetachFromHTTPContextInternal(t *testing.T) {
@@ -93,10 +93,10 @@ func TestDetachFromHTTPContextInternal(t *testing.T) {
 func TestComposeStopSkipsWhenNoServicesSpecified(t *testing.T) {
 	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:9")
 
-	err := ComposeStop(t.Context(), &composetypes.Project{Name: "test"}, nil)
+	err := ComposeStop(t.Context(), "", &composetypes.Project{Name: "test"}, nil)
 	require.NoError(t, err)
 
-	err = ComposeStop(t.Context(), &composetypes.Project{Name: "test"}, []string{})
+	err = ComposeStop(t.Context(), "", &composetypes.Project{Name: "test"}, []string{})
 	require.NoError(t, err)
 }
 

@@ -5,7 +5,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 )
 
 // proxiedWSRoute couples a proxied WebSocket route (relative to the

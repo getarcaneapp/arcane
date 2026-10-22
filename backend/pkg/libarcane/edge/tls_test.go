@@ -21,13 +21,13 @@ import (
 	"testing"
 	"time"
 
-	certgen "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
+	certgen "github.com/getarcaneapp/arcane/cli/v3/pkg/generate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	kit "go.getarcane.app/kit/pkg"
 	libcrypto "go.getarcane.app/sys/crypto"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 func TestMain(m *testing.M) {
@@ -159,7 +159,7 @@ func TestEnsureAgentMTLSAssets_RejectsPlainHTTPEnrollment(t *testing.T) {
 
 	err := EnsureAgentMTLSAssets(t.Context(), cfg)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "MANAGER_API_URL to use https for certificate enrollment")
+	require.Contains(t, err.Error(), "ARCANE_MANAGER_API_URL to use https for certificate enrollment")
 
 	cfg.EdgeMTLSCertFile = filepath.Join(t.TempDir(), "agent.crt")
 	cfg.EdgeMTLSKeyFile = filepath.Join(t.TempDir(), "agent.key")

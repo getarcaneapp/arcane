@@ -15,10 +15,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
 func setupAnalyticsStateServices(t *testing.T) (*database.DB, *settings.SettingsService, *kv.KVService) {
@@ -116,8 +116,8 @@ func TestAnalyticsJob_Run_SkipsWhenDisabled(t *testing.T) {
 	server, bodyCh, _ := newHeartbeatServer(t)
 	defer server.Close()
 
-	cfg := &config.Config{AnalyticsDisabled: true, Environment: config.AppEnvironmentProduction}
-	job := NewAnalyticsJob(settingsService, kvService, server.Client(), cfg)
+	require.NoError(t, settingsService.SetBoolSetting(ctx, "analyticsEnabled", false))
+	job := NewAnalyticsJob(settingsService, kvService, server.Client(), &config.Config{Environment: config.AppEnvironmentProduction})
 	job.heartbeatURL = server.URL
 
 	if _, err := job.Run(ctx); !assert.NoError(t, err) {

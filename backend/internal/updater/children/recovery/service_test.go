@@ -19,8 +19,8 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/updater"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/jobcontext"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
 )
 
 // unresolvedDigests fails every registry digest lookup.
@@ -38,7 +38,7 @@ func newTestService(t *testing.T, server *httptest.Server, pending func(context.
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = dockerClient.Close() })
 	return NewService(
-		docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient),
+		(&docker.DockerClientService{}).WithClient(dockerClient),
 		unresolvedDigests{},
 		pending,
 		func(context.Context) string { return "" },

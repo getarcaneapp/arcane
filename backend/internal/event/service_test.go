@@ -22,11 +22,12 @@ import (
 	"go.getarcane.app/streams/bus"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event/children/correlation"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event/children/correlation"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 )
 
 func setupEventServiceTestDB(t *testing.T) *database.DB {
@@ -88,7 +89,7 @@ func TestCreateEventRequestJSONOmitempty(t *testing.T) {
 func TestEventService_LogEventsPersistOptionalPointers(t *testing.T) {
 	ctx := t.Context()
 	db := setupEventServiceTestDB(t)
-	svc := NewEventService(db, nil, nil)
+	svc := NewEventService(db, nil, nil, nil)
 
 	metadata := database.JSON{"source": "test"}
 	err := svc.LogContainerEvent(ctx, EventTypeContainerStart, "container-1", "web", "user-1", "arcane", "0", metadata)
@@ -162,7 +163,7 @@ func TestCloneEventMetadata(t *testing.T) {
 func TestEventService_LogErrorEvent_DoesNotMutateInputMetadata(t *testing.T) {
 	ctx := t.Context()
 	db := setupEventServiceTestDB(t)
-	svc := NewEventService(db, nil, nil)
+	svc := NewEventService(db, nil, nil, nil)
 
 	metadata := database.JSON{"phase": "pull"}
 	svc.LogErrorEvent(
@@ -225,7 +226,7 @@ func TestEventService_CreateEvent_ForwardsToManagerAPIInAgentMode(t *testing.T) 
 		AgentToken:    "test-agent-token",
 		ManagerApiUrl: server.URL,
 	}
-	svc := NewEventService(db, cfg, server.Client())
+	svc := NewEventService(db, cfg, nil, server.Client())
 
 	_, err := svc.CreateEvent(ctx, CreateEventRequest{
 		Type:          EventTypeContainerStart,
@@ -253,7 +254,7 @@ func TestEventService_CreateEvent_ForwardsToManagerAPIInAgentMode(t *testing.T) 
 func TestEventService_CreateEvent_NormalizesActor(t *testing.T) {
 	ctx := t.Context()
 	db := setupEventServiceTestDB(t)
-	svc := NewEventService(db, nil, nil)
+	svc := NewEventService(db, nil, nil, nil)
 
 	t.Run("falls back to system when actor is missing", func(t *testing.T) {
 		evt, err := svc.CreateEvent(ctx, CreateEventRequest{
@@ -300,7 +301,7 @@ func TestEventService_CreateEvent_NormalizesActor(t *testing.T) {
 func TestEventService_GetEventSeverityCounts(t *testing.T) {
 	ctx := t.Context()
 	db := setupEventServiceTestDB(t)
-	svc := NewEventService(db, nil, nil)
+	svc := NewEventService(db, nil, nil, nil)
 
 	seed := []EventSeverity{
 		EventSeverityInfo,
@@ -325,7 +326,7 @@ func TestEventService_GetEventSeverityCounts(t *testing.T) {
 func TestEventService_ListEventsPaginated_TypeCategoryFilter(t *testing.T) {
 	ctx := t.Context()
 	db := setupEventServiceTestDB(t)
-	svc := NewEventService(db, nil, nil)
+	svc := NewEventService(db, nil, nil, nil)
 
 	for _, eventType := range []EventType{
 		EventTypeContainerStart,
@@ -358,7 +359,7 @@ func TestIngestAgentEventAuthenticatedEnvironment(t *testing.T) {
 	for _, supplied := range []string{"0", "unrelated-environment", ""} {
 		t.Run("payload environment "+supplied, func(t *testing.T) {
 			db := setupEventServiceTestDB(t)
-			svc := NewEventService(db, nil, nil)
+			svc := NewEventService(db, nil, nil, nil)
 			req, ok := mapDaemonEvent(events.Message{
 				Type:   events.ContainerEventType,
 				Action: events.ActionStart,
@@ -399,7 +400,7 @@ func TestIngestAgentEventRejectsLocalEnvironment(t *testing.T) {
 	for _, environmentID := range []string{"", " ", "0", " 0 "} {
 		t.Run("environment "+environmentID, func(t *testing.T) {
 			db := setupEventServiceTestDB(t)
-			svc := NewEventService(db, nil, nil)
+			svc := NewEventService(db, nil, nil, nil)
 			recorded, err := svc.IngestAgentEvent(t.Context(), environmentID, CreateEventRequest{Type: EventTypeContainerStart, Title: "start", EnvironmentID: new("remote-environment")})
 			require.Error(t, err)
 			require.Nil(t, recorded)
@@ -422,7 +423,18 @@ func TestDaemonEventForwardingPreservesMetadata(t *testing.T) {
 	}))
 	defer server.Close()
 	db := setupEventServiceTestDB(t)
-	svc := NewEventService(db, &config.Config{AgentMode: true, AgentToken: "agent-token", ManagerApiUrl: server.URL}, server.Client())
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
+	cfg := &config.Config{
+		AgentMode:     true,
+		AgentToken:    "agent-token",
+		ManagerApiUrl: server.URL,
+	}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, cfg, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context())))
+	})
+	svc := NewEventService(db, cfg, settingsService, server.Client())
 	message := events.Message{
 		Type:     events.ContainerEventType,
 		Action:   events.ActionDie,
@@ -458,7 +470,7 @@ func TestDaemonEventForwardingPreservesMetadata(t *testing.T) {
 
 func TestEventStreamPublishesCommittedMutations(t *testing.T) {
 	db := setupEventServiceTestDB(t)
-	service := NewEventService(db, nil, nil)
+	service := NewEventService(db, nil, nil, nil)
 	changes := 0
 	var persistedCounts []int64
 	unsubscribe := service.changes.Subscribe(func(struct{}) {
@@ -493,7 +505,7 @@ func TestEventStreamPublishesCommittedMutations(t *testing.T) {
 
 func TestEventStreamProducerCoalescesAndCancels(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		service := NewEventService(nil, nil, nil)
+		service := NewEventService(nil, nil, nil, nil)
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		output := make(chan types.EventStreamEvent)
@@ -528,7 +540,7 @@ func TestEventStreamProducerCoalescesAndCancels(t *testing.T) {
 
 func TestEventStreamProducerBroadcasts(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		service := NewEventService(nil, nil, nil)
+		service := NewEventService(nil, nil, nil, nil)
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		first := make(chan types.EventStreamEvent, 1)
@@ -711,7 +723,7 @@ func TestMapDaemonEvent(t *testing.T) {
 
 func TestDaemonEventsPersistEveryOccurrence(t *testing.T) {
 	db := setupEventServiceTestDB(t)
-	svc := NewEventService(db, nil, nil)
+	svc := NewEventService(db, nil, nil, nil)
 	die := events.Message{Type: events.ContainerEventType, Action: events.ActionDie, Actor: events.Actor{ID: "web", Attributes: map[string]string{"exitCode": "0"}}}
 	stop := die
 	stop.Action = events.ActionStop
@@ -735,7 +747,7 @@ func TestDaemonSuppressionAndFailureAllowLaterObservations(t *testing.T) {
 		name := kit.Ternary(failure, "persistence failure", "suppression")
 		t.Run(name, func(t *testing.T) {
 			db := setupEventServiceTestDB(t)
-			svc := NewEventService(db, nil, nil)
+			svc := NewEventService(db, nil, nil, nil)
 			now := time.Now()
 			svc.correlation = correlation.NewService(func() time.Time { return now })
 			msg := events.Message{Type: events.ContainerEventType, Action: events.ActionStart, TimeNano: 123, Actor: events.Actor{ID: "web"}}
@@ -771,7 +783,7 @@ func TestDockerEventSubscriptionsReadyAndStop(t *testing.T) {
 				require.NoError(t, err)
 				defer func() { assert.NoError(t, sqlDB.Close()) }()
 				sqlDB.SetMaxOpenConns(1)
-				svc := NewEventService(db, nil, nil)
+				svc := NewEventService(db, nil, nil, nil)
 				var recovered, published atomic.Int64
 				stopChanges := svc.changes.Subscribe(func(struct{}) { published.Add(1) })
 				defer stopChanges()
@@ -834,7 +846,7 @@ func TestDaemonEventWriterBatchesAndFlushesOnStop(t *testing.T) {
 		require.NoError(t, err)
 		defer func() { assert.NoError(t, sqlDB.Close()) }()
 		sqlDB.SetMaxOpenConns(1)
-		svc := NewEventService(db, nil, nil)
+		svc := NewEventService(db, nil, nil, nil)
 		defer func() { assert.NoError(t, svc.Stop(t.Context())) }()
 		var published atomic.Int64
 		stopChanges := svc.changes.Subscribe(func(struct{}) { published.Add(1) })
@@ -896,7 +908,7 @@ func TestCreateEventCorrelationEligibility(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := setupEventServiceTestDB(t)
-			svc := NewEventService(db, nil, nil)
+			svc := NewEventService(db, nil, nil, nil)
 			_, err := svc.CreateEvent(
 				t.Context(),
 				CreateEventRequest{

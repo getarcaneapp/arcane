@@ -28,15 +28,15 @@ import (
 	"syscall"
 	"time"
 
-	certgen "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
+	certgen "github.com/getarcaneapp/arcane/cli/v3/pkg/generate"
 	"go.getarcane.app/acfs"
 	"go.getarcane.app/acfs/atomic"
 	kit "go.getarcane.app/kit/pkg"
 	libcrypto "go.getarcane.app/sys/crypto"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 const (
@@ -338,10 +338,10 @@ func EnsureAgentMTLSAssets(ctx context.Context, cfg *Config) error {
 func enrollAgentMTLSAssets(ctx context.Context, cfg *Config, assetsDir, certPath, keyPath string) error {
 	managerBaseURL := strings.TrimRight(strings.TrimSpace(httpx.ManagerBaseURL(cfg.ManagerApiUrl)), "/")
 	if managerBaseURL == "" {
-		return errors.New("MANAGER_API_URL is required to enroll edge mTLS assets")
+		return errors.New("ARCANE_MANAGER_API_URL is required to enroll edge mTLS assets")
 	}
 	if !managerUsesTLS(cfg) {
-		return errors.New("EDGE_MTLS_MODE requires MANAGER_API_URL to use https for certificate enrollment")
+		return errors.New("ARCANE_EDGE_MTLS_MODE requires ARCANE_MANAGER_API_URL to use https for certificate enrollment")
 	}
 
 	httpClient, clientErr := NewManagerHTTPClient(&Config{
@@ -448,7 +448,7 @@ func ValidateAgentMTLSConfig(cfg *Config) error {
 		return nil
 	}
 	if !managerUsesTLS(cfg) {
-		return errors.New("EDGE_MTLS_MODE requires MANAGER_API_URL to use https")
+		return errors.New("ARCANE_EDGE_MTLS_MODE requires ARCANE_MANAGER_API_URL to use https")
 	}
 	_, err := buildManagerClientTLSConfig(cfg)
 	return err

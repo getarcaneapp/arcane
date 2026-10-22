@@ -26,8 +26,8 @@ import (
 	"gorm.io/gorm/logger"
 	"gorm.io/plugin/opentelemetry/metrics"
 
-	sqliteutil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/sqlite"
-	"github.com/getarcaneapp/arcane/backend/v2/resources"
+	sqliteutil "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/sqlite"
+	"github.com/getarcaneapp/arcane/backend/v3/resources"
 )
 
 type DB struct {
@@ -249,7 +249,7 @@ func migrateDatabase(ctx context.Context, db *sql.DB, dbProvider string, options
 		if !options.AllowDowngrade {
 			return fmt.Errorf(
 				"database schema version %d is newer than this Arcane binary supports (target %d for %s); downgrade "+
-					"requires ALLOW_DOWNGRADE=true and a database backup before startup",
+					"requires ARCANE_ALLOW_DOWNGRADE=true and a database backup before startup",
 				currentVersion,
 				requiredVersion,
 				dbProvider,
@@ -287,7 +287,7 @@ func migrateDatabase(ctx context.Context, db *sql.DB, dbProvider string, options
 		if len(missingVersions) > 0 {
 			return fmt.Errorf("cannot downgrade database from version %d to %d for %s: embedded Goose migrations are missing for "+
 				"applied version(s) %v, so the rollback SQL is unavailable in this Arcane binary; "+
-				"ALLOW_DOWNGRADE=true is not sufficient, restore the database from a backup taken before the newer "+
+				"ARCANE_ALLOW_DOWNGRADE=true is not sufficient, restore the database from a backup taken before the newer "+
 				"schema was applied",
 				currentVersion,
 				requiredVersion,

@@ -26,18 +26,18 @@ import (
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow/flowtest"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow/flowtest"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
 var imageDockerAPIVersionPrefix = regexp.MustCompile(`^/v\d+\.\d+`)
@@ -217,7 +217,7 @@ func TestImageService_GetImageDetail_EnrichesPinnedReferences(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, &docker.DockerClientService{Client: newTestDockerClient(t, server)}, nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil)
+	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil, nil), nil, nil, nil)
 
 	detail, err := imageSvc.GetImageDetail(t.Context(), pinnedID)
 	require.NoError(t, err)
@@ -250,7 +250,7 @@ func TestImageService_GetImageDetail_ContainerFailureDoesNotBreakInspection(t *t
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, &docker.DockerClientService{Client: newTestDockerClient(t, server)}, nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil)
+	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil, nil), nil, nil, nil)
 
 	detail, err := imageSvc.GetImageDetail(t.Context(), testID)
 	require.NoError(t, err)
@@ -260,7 +260,7 @@ func TestImageService_GetImageDetail_ContainerFailureDoesNotBreakInspection(t *t
 }
 
 func TestImagePaginationConfig_SearchesPinnedReferences(t *testing.T) {
-	localConfig := NewImageService(nil, nil, nil, nil, nil, nil, nil, nil).getImagePaginationConfig()
+	localConfig := NewImageService(nil, nil, nil, nil, nil, nil, nil, nil, nil).getImagePaginationConfig()
 
 	item := types.ImageSummary{
 		ID:               "sha256:syncthing",
@@ -287,7 +287,7 @@ func TestImageService_GetUpdateInfoByImageRefs_MatchesCanonicalAndFamiliarRepos(
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}))
 
-	svc := NewImageService(&database.DB{DB: db}, nil, nil, nil, nil, nil, nil, nil)
+	svc := NewImageService(&database.DB{DB: db}, nil, nil, nil, nil, nil, nil, nil, nil)
 	now := time.Now().UTC()
 
 	records := []imageupdate.ImageUpdateRecord{
@@ -343,7 +343,7 @@ func setupImageServiceAuthTest(t *testing.T) (*ImageService, *database.DB) {
 	})
 
 	dbWrap := &database.DB{DB: db}
-	return NewImageService(nil, nil, registry.NewContainerRegistryService(dbWrap, nil, kv.NewKVService(dbWrap), nil), nil, nil, nil, nil, nil), dbWrap
+	return NewImageService(nil, nil, registry.NewContainerRegistryService(dbWrap, nil, kv.NewKVService(dbWrap), nil), nil, nil, nil, nil, nil, nil), dbWrap
 }
 
 func createTestPullRegistry(t *testing.T, db *database.DB, localUrl, username, token string) {
@@ -417,7 +417,7 @@ func TestGetPullOptionsWithAuth_ExternalCredentialsOverrideDBRegistry(t *testing
 
 func TestImageServicePullImageRetriesAnonymouslyAfterAuthRejected(t *testing.T) {
 	db := setupImageProjectTestDB(t)
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	var authHeaders []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "/images/create") {
@@ -435,8 +435,8 @@ func TestImageServicePullImageRetriesAnonymouslyAfterAuthRejected(t *testing.T) 
 	}))
 	t.Cleanup(server.Close)
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
-	imageSvc := NewImageService(db, dockerService, nil, nil, nil, eventService, nil, nil)
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
+	imageSvc := NewImageService(db, dockerService, nil, nil, nil, eventService, nil, nil, nil)
 
 	err := imageSvc.PullImage(t.Context(), "registry.example.com/team/app:latest", io.Discard, types.SystemUser, []types.ContainerRegistryCredential{
 		{
@@ -454,7 +454,7 @@ func TestImageServicePullImageRetriesAnonymouslyAfterAuthRejected(t *testing.T) 
 
 func TestImageServiceTagImageCallsDockerAPI(t *testing.T) {
 	db := setupImageProjectTestDB(t)
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	var gotRepo, gotTag string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || imageDockerTestPath(r.URL.Path) != "/images/source:latest/tag" {
@@ -468,7 +468,7 @@ func TestImageServiceTagImageCallsDockerAPI(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, &docker.DockerClientService{Client: newTestDockerClient(t, server)}, nil, nil, nil, eventService, nil, nil)
+	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, eventService, nil, nil, nil)
 
 	err := imageSvc.TagImage(t.Context(), "source:latest", types.ImageTagRequest{Repository: "registry.example.com/team/app", Tag: "v2"}, types.SystemUser)
 	require.NoError(t, err)
@@ -494,7 +494,7 @@ func TestImageServiceGetImageHistoryCallsDockerAPI(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, &docker.DockerClientService{Client: newTestDockerClient(t, server)}, nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil)
+	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil, nil), nil, nil, nil)
 
 	history, err := imageSvc.GetImageHistory(t.Context(), "source:latest")
 	require.NoError(t, err)
@@ -504,7 +504,7 @@ func TestImageServiceGetImageHistoryCallsDockerAPI(t *testing.T) {
 }
 
 func TestImageServiceSearchImagesRequiresTerm(t *testing.T) {
-	imageSvc := NewImageService(nil, &docker.DockerClientService{}, nil, nil, nil, nil, nil, nil)
+	imageSvc := NewImageService(nil, &docker.DockerClientService{}, nil, nil, nil, nil, nil, nil, nil)
 
 	_, err := imageSvc.SearchImages(t.Context(), " ")
 	require.Error(t, err)
@@ -526,7 +526,7 @@ func TestImageServiceExportImageReturnsTarStream(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, &docker.DockerClientService{Client: newTestDockerClient(t, server)}, nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil)
+	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil, nil), nil, nil, nil)
 
 	reader, err := imageSvc.ExportImage(t.Context(), "source:latest")
 	require.NoError(t, err)
@@ -556,7 +556,7 @@ func TestImageServiceSearchImagesCallsDockerAPI(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, &docker.DockerClientService{Client: newTestDockerClient(t, server)}, nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil)
+	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil, nil), nil, nil, nil)
 
 	results, err := imageSvc.SearchImages(t.Context(), "nginx")
 	require.NoError(t, err)
@@ -614,7 +614,7 @@ func TestImageServiceContainerTagUpdatesStayScoped(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}))
-	svc := NewImageService(&database.DB{DB: db}, nil, nil, nil, nil, nil, nil, nil)
+	svc := NewImageService(&database.DB{DB: db}, nil, nil, nil, nil, nil, nil, nil, nil)
 	now := time.Now().UTC()
 	firstLabels := map[string]string{
 		"com.getarcaneapp.arcane.updater.strategy":   "tag",
@@ -811,7 +811,7 @@ func TestImageServiceContainerTagUpdatesStayScoped(t *testing.T) {
 
 func TestPatchWorkflowDefinitions(t *testing.T) {
 	harness := flowtest.New(t, nil)
-	require.NoError(t, NewImageService(nil, nil, nil, nil, nil, nil, nil, nil).RegisterWorkflows(harness.Engine))
+	require.NoError(t, NewImageService(nil, nil, nil, nil, nil, nil, nil, nil, nil).RegisterWorkflows(harness.Engine))
 	harness.Start(t)
 	flowtest.AssertDefinitions(t, harness)
 }
@@ -878,7 +878,7 @@ func TestAggregateImagesMergesEnvironments(t *testing.T) {
 		}
 		return out
 	}
-	svc := NewImageService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc := NewImageService(nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	t.Run("sorts by repo across environments and pages", func(t *testing.T) {
 		ctx, queries := imageScopeContext(t, "/api/environments/a,b,c/images?start=0&limit=2&sort=repo&order=asc", bodies)
@@ -948,7 +948,7 @@ func TestAggregateImageCountsSumsEnvironments(t *testing.T) {
 		},
 	})
 
-	body, err := NewImageService(nil, nil, nil, nil, nil, nil, nil, nil).AggregateImageCounts(ctx)
+	body, err := NewImageService(nil, nil, nil, nil, nil, nil, nil, nil, nil).AggregateImageCounts(ctx)
 	require.NoError(t, err)
 
 	assert.True(t, body.Success)

@@ -26,12 +26,12 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	userdomain "github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/resources"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
+	userdomain "github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/resources"
 )
 
 const (
@@ -151,9 +151,9 @@ func NewPasskeyService(db *database.DB, cfg *config.Config) *PasskeyService {
 	parsedURL, err := url.Parse(strings.TrimSpace(cfg.GetAppURL()))
 	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
 		if err != nil {
-			s.initErr = fmt.Errorf("invalid APP_URL for WebAuthn: %w", err)
+			s.initErr = fmt.Errorf("invalid ARCANE_APP_URL for WebAuthn: %w", err)
 		} else {
-			s.initErr = errors.New("invalid APP_URL for WebAuthn")
+			s.initErr = errors.New("invalid ARCANE_APP_URL for WebAuthn")
 		}
 		return s
 	}
@@ -161,7 +161,7 @@ func NewPasskeyService(db *database.DB, cfg *config.Config) *PasskeyService {
 	origin := parsedURL.Scheme + "://" + parsedURL.Host
 	s.rpID = parsedURL.Hostname()
 	if s.rpID == "" {
-		s.initErr = errors.New("APP_URL has no WebAuthn relying-party host")
+		s.initErr = errors.New("ARCANE_APP_URL has no WebAuthn relying-party host")
 		return s
 	}
 

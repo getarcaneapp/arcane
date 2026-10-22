@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.getarcane.app/acfs/atomic"
 
-	"github.com/getarcaneapp/arcane/backend/v2/api"
+	"github.com/getarcaneapp/arcane/backend/v3/api"
 )
 
 var openapiCmd = &cobra.Command{

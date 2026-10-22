@@ -10,6 +10,7 @@
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { simpleRefresh } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -112,7 +113,7 @@
 					}
 				]
 			: []),
-		...(canCreateEnvironment && data.settings?.edgeMTLSManagerCAAvailable
+		...(canCreateEnvironment && settingsStore.runtime.edgeMTLSManagerCAAvailable
 			? [
 					{
 						id: 'download-edge-ca',

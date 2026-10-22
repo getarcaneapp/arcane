@@ -1,4 +1,4 @@
-module github.com/getarcaneapp/arcane/cli/v2
+module github.com/getarcaneapp/arcane/cli/v3
 
 go 1.27.3
 

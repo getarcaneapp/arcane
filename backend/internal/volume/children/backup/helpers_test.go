@@ -17,12 +17,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	containerdomain "github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	containerdomain "github.com/getarcaneapp/arcane/backend/v3/internal/container"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/podman"
 )
 
 func TestResolveBackupStorageMountFromMounts(t *testing.T) {
@@ -179,8 +179,8 @@ func setupVolumeBackupLifecycleTest(t *testing.T, handler http.Handler) *Service
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&event.Event{}))
 	db := &database.DB{DB: gormDB}
-	dockerService := docker.NewDockerClientService(t.Context(), db, &config.Config{}, nil).WithClient(dockerClient)
-	eventService := event.NewEventService(db, &config.Config{}, nil)
+	dockerService := (&docker.DockerClientService{}).WithClient(dockerClient)
+	eventService := event.NewEventService(db, &config.Config{}, nil, nil)
 	containerService := containerdomain.NewContainerService(eventService, dockerService, nil, nil, nil, nil, podman.NewService(podman.Config{Engine: dockerService.Engine}))
 	return NewService(Dependencies{
 		Docker:         dockerService,

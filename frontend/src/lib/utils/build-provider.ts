@@ -1,11 +1,7 @@
-type DepotSettings = {
-	depotConfigured?: boolean;
-	depotProjectId?: unknown;
-	depotToken?: unknown;
-};
+import type { ResolvedSettings } from '#lib/types/settings.js';
 
-export function isDepotBuildAvailable(settings: DepotSettings | null | undefined): boolean {
-	const projectId = String(settings?.depotProjectId ?? '').trim();
-	const token = String(settings?.depotToken ?? '').trim();
-	return Boolean(settings?.depotConfigured) || (Boolean(projectId) && Boolean(token));
+export function isDepotBuildAvailable(settings: ResolvedSettings | null | undefined): boolean {
+	const projectId = (settings?.values.depotProjectId ?? '').trim();
+	const token = (settings?.values.depotToken ?? '').trim();
+	return Boolean(settings?.runtime.depotConfigured) || (Boolean(projectId) && Boolean(token));
 }

@@ -178,16 +178,16 @@
 			refetchOnMount: 'always'
 		};
 	});
-	const lifecycleEnabled = $derived(settingsQuery.data?.lifecycleEnabled ?? false);
-	const lifecycleDefaultRunnerImage = $derived(settingsQuery.data?.lifecycleDefaultRunnerImage?.trim() || 'alpine:latest');
+	const lifecycleEnabled = $derived(settingsQuery.data?.values.lifecycleEnabled ?? false);
+	const lifecycleDefaultRunnerImage = $derived(settingsQuery.data?.values.lifecycleDefaultRunnerImage?.trim() || 'alpine:latest');
 
 	const formData = $derived.by(() => {
 		// New drafts use the first settings response; later refreshes preserve edits.
 		if (!untrack(() => isEditMode)) settingsQuery.isFetchedAfterMount;
 		return untrack(() => {
-			let maxSyncFiles = settingsQuery.data?.gitSyncMaxFiles ?? 0;
-			let maxSyncTotalSizeMb = settingsQuery.data?.gitSyncMaxTotalSizeMb ?? 0;
-			let maxSyncBinarySizeMb = settingsQuery.data?.gitSyncMaxBinarySizeMb ?? 0;
+			let maxSyncFiles = settingsQuery.data?.values.gitSyncMaxFiles ?? 0;
+			let maxSyncTotalSizeMb = settingsQuery.data?.values.gitSyncMaxTotalSizeMb ?? 0;
+			let maxSyncBinarySizeMb = settingsQuery.data?.values.gitSyncMaxBinarySizeMb ?? 0;
 			let preDeployRunnerImage = lifecycleDefaultRunnerImage;
 			if (syncToEdit) {
 				maxSyncFiles = syncToEdit.maxSyncFiles ?? 0;

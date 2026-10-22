@@ -11,7 +11,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
 )
 
 // NewAgentTunnelWithConn creates a new agent tunnel from a transport-agnostic connection. Its mux session
