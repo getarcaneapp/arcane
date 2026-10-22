@@ -252,11 +252,13 @@ func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersi
 	}, err
 }
 
-// isNextBuild reports whether this build tracks the next channel: a
-// -next. prerelease version, or a container running the rolling next image tag.
-func (s *VersionService) isNextBuild(currentTag string) bool {
+// isChannelBuild reports whether this build tracks a rolling prerelease channel: a
+// -next. or -beta. version, or a container running the next or vN-beta image tag.
+func (s *VersionService) isChannelBuild(currentTag string) bool {
 	return strings.Contains(strings.ToLower(strings.TrimSpace(s.version)), "-next.") ||
-		strings.TrimSpace(currentTag) == "next"
+		strings.Contains(strings.ToLower(strings.TrimSpace(s.version)), "-beta.") ||
+		strings.TrimSpace(currentTag) == "next" ||
+		strings.HasSuffix(strings.TrimSpace(currentTag), "-beta")
 }
 
 // resolveNextVersion returns the normalized version label of the image
@@ -332,7 +334,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *types.VersionIn
 		digestUpdateAvailable, latestDigest := s.storedOrDigestBasedUpdate(ctx, current, checkImageRef)
 
 		switch {
-		case isSemver && s.isNextBuild(current.Tag):
+		case isSemver && s.isChannelBuild(current.Tag):
 			nextVersion := s.resolveNextVersion(ctx, checkImageRef, current.Tag, latestDigest)
 			return types.VersionInfo{
 				NewestDigest:    latestDigest,
