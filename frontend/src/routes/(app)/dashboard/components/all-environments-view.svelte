@@ -26,6 +26,7 @@
 		LayoutListIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS, type Permission } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { apiKeyService } from '#lib/services/api-key-service.js';
 	import { containerService } from '#lib/services/container-service.js';
@@ -149,15 +150,15 @@
 		}
 
 		return environmentStore.available.filter(
-			(environment) => environment.enabled && hasPermission('dashboard:read', environment.id)
+			(environment) => environment.enabled && hasPermission(PERMISSIONS.DASHBOARD_READ, environment.id)
 		);
 	});
 
 	function canPruneInEnvironment(envId: string): boolean {
-		return hasAnyPermission(['images:prune', 'volumes:prune', 'networks:prune'], envId);
+		return hasAnyPermission([PERMISSIONS.IMAGES_PRUNE, PERMISSIONS.VOLUMES_PRUNE, PERMISSIONS.NETWORKS_PRUNE], envId);
 	}
 	function canUpgradeEnvironment(envId: string): boolean {
-		return hasPermission('environments:update', envId);
+		return hasPermission(PERMISSIONS.ENVIRONMENTS_UPDATE, envId);
 	}
 
 	function createEmptyLiveStatsState(): EnvironmentLiveStatsState {
@@ -171,7 +172,7 @@
 	}
 
 	function canLoadLiveStats(environment: Environment): boolean {
-		return shouldLoadEnvironment(environment) && hasPermission('system:read', environment.id);
+		return shouldLoadEnvironment(environment) && hasPermission(PERMISSIONS.SYSTEM_READ, environment.id);
 	}
 
 	function clearLiveStatsDeadline(liveStatsState: EnvironmentLiveStatsState) {
@@ -281,7 +282,7 @@
 
 	function openEngineInfo(item: DashboardEnvironmentOverview) {
 		const environmentId = item.environment.id;
-		const podCount = hasPermission('podman:read', environmentId) ? item.podCount : undefined;
+		const podCount = hasPermission(PERMISSIONS.PODMAN_READ, environmentId) ? item.podCount : undefined;
 		engineInfoError = null;
 		engineInfoOpen = true;
 		engineInfoEngine = podCount === undefined ? 'docker' : 'podman';
@@ -324,7 +325,7 @@
 			)
 	);
 
-	function loadableEnvironments(permission: string): EnvironmentRef[] {
+	function loadableEnvironments(permission: Permission): EnvironmentRef[] {
 		return readableEnvironments(permission).filter((environment) => loadableEnvironmentIds.has(environment.id));
 	}
 
@@ -341,7 +342,7 @@
 	}
 
 	const containersQuery = createQuery(() => {
-		const environments = loadableEnvironments('containers:list');
+		const environments = loadableEnvironments(PERMISSIONS.CONTAINERS_LIST);
 		return {
 			queryKey: dashboardQueryKey('containers', environments),
 			queryFn: () =>
@@ -355,7 +356,7 @@
 	});
 
 	const projectsQuery = createQuery(() => {
-		const environments = loadableEnvironments('projects:list');
+		const environments = loadableEnvironments(PERMISSIONS.PROJECTS_LIST);
 		return {
 			queryKey: dashboardQueryKey('projects', environments),
 			queryFn: () =>
@@ -369,7 +370,7 @@
 	});
 
 	const imagesQuery = createQuery(() => {
-		const environments = loadableEnvironments('images:list');
+		const environments = loadableEnvironments(PERMISSIONS.IMAGES_LIST);
 		return {
 			queryKey: dashboardQueryKey('images', environments),
 			queryFn: () =>
@@ -383,7 +384,7 @@
 	});
 
 	const volumesQuery = createQuery(() => {
-		const environments = loadableEnvironments('volumes:list');
+		const environments = loadableEnvironments(PERMISSIONS.VOLUMES_LIST);
 		return {
 			queryKey: dashboardQueryKey('volumes', environments),
 			queryFn: () =>
@@ -397,7 +398,7 @@
 	});
 
 	const vulnerabilitiesQuery = createQuery(() => {
-		const environments = loadableEnvironments('vulnerabilities:read').filter((environment) =>
+		const environments = loadableEnvironments(PERMISSIONS.VULNERABILITIES_READ).filter((environment) =>
 			featureStore.isEnabled('vulnerabilityManagement', environment.id)
 		);
 		return {
@@ -413,7 +414,7 @@
 	});
 
 	const podmanQuery = createQuery(() => {
-		const environments = loadableEnvironments('podman:read');
+		const environments = loadableEnvironments(PERMISSIONS.PODMAN_READ);
 		return {
 			queryKey: dashboardQueryKey('podman', environments),
 			queryFn: () =>
@@ -427,7 +428,7 @@
 	});
 
 	const versionsQuery = createQuery(() => {
-		const environments = loadableEnvironments('environments:read');
+		const environments = loadableEnvironments(PERMISSIONS.ENVIRONMENTS_READ);
 		return {
 			queryKey: dashboardQueryKey('environments', environments),
 			queryFn: () =>
@@ -443,7 +444,7 @@
 	const apiKeysQuery = createQuery(() => ({
 		queryKey: queryKeys.apiKeys.list(ALL_API_KEYS),
 		queryFn: () => apiKeyService.getApiKeys(ALL_API_KEYS),
-		enabled: userStore.hasPermission('apikeys:list')
+		enabled: userStore.hasPermission(PERMISSIONS.APIKEYS_LIST)
 	}));
 
 	const environmentQueries = [
@@ -582,7 +583,7 @@
 		if (!shouldLoadEnvironment(environment)) {
 			return 'live';
 		}
-		if (!hasPermission('system:read', environment.id)) {
+		if (!hasPermission(PERMISSIONS.SYSTEM_READ, environment.id)) {
 			return 'denied';
 		}
 		const liveStatsState = getLiveStatsState(environment.id);

@@ -20,6 +20,7 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { ContainersIcon, UpdateIcon, EyeOffIcon, EyeOnIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import type { ContainersPaginatedResponse, ContainerListRequestOptions } from '#lib/services/container-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
@@ -223,7 +224,7 @@
 
 	function handleBulkUpdate(ids: string[]) {
 		const updateScope = scope;
-		const tracksActivities = environmentStore.shown.every((env) => hasPermission('activities:read', env.id));
+		const tracksActivities = environmentStore.shown.every((env) => hasPermission(PERMISSIONS.ACTIVITIES_READ, env.id));
 		bulkConfirmAndRun({
 			ids,
 			title: m.updates_bulk_update_confirm_title({ count: ids.length }),
@@ -236,7 +237,7 @@
 				failure: () => m.containers_bulk_update_accept_failed()
 			},
 			acceptanceOnly: true,
-			activityLink: hasShownPermission('activities:read'),
+			activityLink: hasShownPermission(PERMISSIONS.ACTIVITIES_READ),
 			onItemSuccess: (_id, activity) => {
 				if (updateTableMounted) updateActivities.accept(activity);
 			},
@@ -247,7 +248,7 @@
 	}
 
 	const bulkActions = $derived<BulkAction[]>(
-		hasShownPermission('containers:autoupdate')
+		hasShownPermission(PERMISSIONS.CONTAINERS_AUTOUPDATE)
 			? [
 					{
 						id: 'update',
@@ -295,7 +296,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ContainerUpdateRow })}
-	<IfPermitted perm="containers:autoupdate" envId={item.environmentId}>
+	<IfPermitted perm={PERMISSIONS.CONTAINERS_AUTOUPDATE} envId={item.environmentId}>
 		<RowActionsMenu>
 			<DropdownMenu.Item onclick={() => handleUpdateContainer(item.container)} disabled={!!updatingContainerIds[rowKey(item)]}>
 				{#if updatingContainerIds[rowKey(item)]}

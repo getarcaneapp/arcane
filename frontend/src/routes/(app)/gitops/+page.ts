@@ -1,3 +1,4 @@
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -12,7 +13,7 @@ import type { PageLoad } from './$types';
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
 	await environmentStore.ready;
-	const environments = readableEnvironments('gitops:list');
+	const environments = readableEnvironments(PERMISSIONS.GITOPS_LIST);
 	const scope = environmentStore.shownKey;
 
 	const syncRequestOptions = resolveInitialTableRequest('arcane-gitops-syncs-table', {

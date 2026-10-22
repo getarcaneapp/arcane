@@ -1,22 +1,22 @@
-import type { OidcRoleMapping, OidcRoleMappingCreate, OidcRoleMappingUpdate } from '#lib/types/auth.js';
+import type { OidcGroupMapping, OidcGroupMappingSpec } from '#lib/types/auth.js';
 
 import BaseAPIService from './api-service';
 
 class OidcMappingAPIService extends BaseAPIService {
-	async list(): Promise<OidcRoleMapping[]> {
-		return this.handleResponse(this.api.get('/oidc/mappings')) as Promise<OidcRoleMapping[]>;
+	async list(): Promise<OidcGroupMapping[]> {
+		return this.handleResponse(this.api.get('/oidc/mappings'));
 	}
 
-	async create(mapping: OidcRoleMappingCreate): Promise<OidcRoleMapping> {
-		return this.handleResponse(this.api.post('/oidc/mappings', mapping)) as Promise<OidcRoleMapping>;
+	async create(mapping: OidcGroupMappingSpec): Promise<OidcGroupMapping> {
+		return this.handleResponse(this.api.post('/oidc/mappings', mapping));
 	}
 
-	async update(id: string, mapping: OidcRoleMappingUpdate): Promise<OidcRoleMapping> {
-		return this.handleResponse(this.api.patch(`/oidc/mappings/${id}`, mapping)) as Promise<OidcRoleMapping>;
+	async update(id: string, mapping: OidcGroupMappingSpec): Promise<OidcGroupMapping> {
+		return this.handleResponse(this.api.patch(`/oidc/mappings/${id}`, mapping));
 	}
 
 	async delete(id: string): Promise<void> {
-		return this.handleResponse(this.api.delete(`/oidc/mappings/${id}`)) as Promise<void>;
+		return this.handleResponse(this.api.delete(`/oidc/mappings/${id}`));
 	}
 }
 

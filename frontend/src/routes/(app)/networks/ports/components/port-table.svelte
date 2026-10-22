@@ -8,6 +8,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { ContainersIcon, ConnectionIcon, GlobeIcon, HashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { portService, type PortsPaginatedResponse } from '#lib/services/port-service.js';
 	import type { PortMappingDto } from '#lib/types/docker.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -59,7 +60,7 @@
 			await onRefreshData(options);
 			return;
 		}
-		return await fetchAcrossEnvironments(readableEnvironments('containers:list'), options, (id, request, config) =>
+		return await fetchAcrossEnvironments(readableEnvironments(PERMISSIONS.CONTAINERS_LIST), options, (id, request, config) =>
 			portService.getPortsForEnvironment(id, request, config)
 		);
 	}

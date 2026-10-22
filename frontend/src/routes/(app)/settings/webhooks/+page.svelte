@@ -10,6 +10,7 @@
 	import { GlobeIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { webhookService } from '#lib/services/webhook-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -37,7 +38,7 @@
 	}
 
 	const webhooksQuery = createQuery(() => {
-		const environments = readableEnvironments('webhooks:list');
+		const environments = readableEnvironments(PERMISSIONS.WEBHOOKS_LIST);
 		const options = requestOptions;
 		return {
 			queryKey: queryKeys.webhooks.list(environmentStore.shownKey, options),

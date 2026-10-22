@@ -12,6 +12,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { ApiKeyIcon, TrashIcon, EditIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { apiKeyService } from '#lib/services/api-key-service.js';
 	import type { ApiKey } from '#lib/types/auth.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -227,7 +228,7 @@
 			? m.api_key_bootstrap_description()
 			: null}
 	<RowActionsMenu>
-		<IfPermitted perm="apikeys:update">
+		<IfPermitted perm={PERMISSIONS.APIKEYS_UPDATE}>
 			{#if lockedReason}
 				<ArcaneTooltip.Root>
 					<ArcaneTooltip.Trigger class="w-full" disabledChild>
@@ -247,7 +248,7 @@
 		</IfPermitted>
 		<DropdownMenu.Separator />
 
-		<IfPermitted perm="apikeys:delete">
+		<IfPermitted perm={PERMISSIONS.APIKEYS_DELETE}>
 			{#if lockedReason}
 				<ArcaneTooltip.Root>
 					<ArcaneTooltip.Trigger class="w-full" disabledChild>

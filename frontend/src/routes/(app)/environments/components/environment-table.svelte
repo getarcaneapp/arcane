@@ -23,6 +23,7 @@
 		ConnectionIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
@@ -62,7 +63,7 @@
 	let easyJoinTarget = $state<Environment | null>(null);
 	const easyJoinCandidates = useEasyJoinCandidates();
 
-	const canInstallUpdates = $derived(hasPermission('environments:update', GLOBAL_SCOPE));
+	const canInstallUpdates = $derived(hasPermission(PERMISSIONS.ENVIRONMENTS_UPDATE, GLOBAL_SCOPE));
 
 	const environmentTypeFilters: FilterOption[] = [
 		{ value: 'agent', label: m.environments_agent_label(), icon: EnvironmentsIcon },

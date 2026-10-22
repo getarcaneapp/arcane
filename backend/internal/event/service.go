@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
@@ -31,6 +32,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event/children/correlation"
@@ -319,15 +321,16 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 }
 
 func (s *EventService) ListEventsPaginated(ctx context.Context, params pagination.QueryParams) ([]types.Event, pagination.Response, error) {
-	return paginateEvents(pagination.ApplyFilter(s.db.WithContext(ctx).Model(&Event{}), "environment_id", params.Filters["environmentId"]), params)
+	return paginateEvents(filterEvents(ctx, pagination.ApplyFilter(s.db.WithContext(ctx).Model(&Event{}), "environment_id", params.Filters["environmentId"]), params), params)
 }
 
 func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]types.Event, pagination.Response, error) {
-	return paginateEvents(s.db.WithContext(ctx).Model(&Event{}).Where("environment_id = ?", environmentID), params)
+	return paginateEvents(filterEvents(ctx, s.db.WithContext(ctx).Model(&Event{}).Where("environment_id = ?", environmentID), params), params)
 }
 
-// paginateEvents applies the shared search and filters to q, then pages and maps the rows.
-func paginateEvents(q *gorm.DB, params pagination.QueryParams) ([]types.Event, pagination.Response, error) {
+// filterEvents applies audit visibility plus the shared search and filters to q.
+func filterEvents(ctx context.Context, q *gorm.DB, params pagination.QueryParams) *gorm.DB {
+	q = scopeAuditEvents(ctx, q)
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
 		q = q.Where(
@@ -361,8 +364,19 @@ func paginateEvents(q *gorm.DB, params pagination.QueryParams) ([]types.Event, p
 
 	q = pagination.ApplyFilter(q, "severity", params.Filters["severity"])
 	q = pagination.ApplyFilter(q, "resource_type", params.Filters["resourceType"])
-	q = pagination.ApplyFilter(q, "username", params.Filters["username"])
+	return pagination.ApplyFilter(q, "username", params.Filters["username"])
+}
 
+// scopeAuditEvents hides audit events from callers without audit read access.
+func scopeAuditEvents(ctx context.Context, q *gorm.DB) *gorm.DB {
+	if ps, _ := authz.PermissionsFromContext(ctx); ps.Allows(authz.PermAuditRead, "") {
+		return q
+	}
+	return q.Where("audit = ?", false)
+}
+
+// paginateEvents pages the filtered query and maps the rows.
+func paginateEvents(q *gorm.DB, params pagination.QueryParams) ([]types.Event, pagination.Response, error) {
 	var eventRecords []Event
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &eventRecords)
 	if err != nil {
@@ -377,12 +391,43 @@ func paginateEvents(q *gorm.DB, params pagination.QueryParams) ([]types.Event, p
 	return eventDtos, paginationResp, nil
 }
 
+// ExportEvents streams every visible event matching the filters, oldest first, as CSV or NDJSON.
+func (s *EventService) ExportEvents(ctx context.Context, params pagination.QueryParams, format string, w io.Writer) error {
+	if format != types.EventExportFormatCSV && format != types.EventExportFormatNDJSON {
+		return common.Classify(common.ErrValidation, fmt.Errorf("unsupported event export format %q", format))
+	}
+	q := pagination.ApplyFilter(s.db.WithContext(ctx).Model(&Event{}), "environment_id", params.Filters["environmentId"])
+	rows, err := filterEvents(ctx, q, params).Order("timestamp, id").Rows()
+	if err != nil {
+		return fmt.Errorf("failed to query events: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	writer := csv.NewWriter(w)
+	if format == types.EventExportFormatCSV {
+		if writeErr := writer.Write(eventCSVHeader); writeErr != nil {
+			return writeErr
+		}
+	}
+	for rows.Next() {
+		var row Event
+		if scanErr := s.db.ScanRows(rows, &row); scanErr != nil {
+			return fmt.Errorf("failed to read event: %w", scanErr)
+		}
+		if writeErr := writeEventExportRow(w, writer, format, row); writeErr != nil {
+			return writeErr
+		}
+	}
+	writer.Flush()
+	return errors.Join(rows.Err(), writer.Error())
+}
+
 func (s *EventService) GetEventSeverityCounts(ctx context.Context) (types.EventSeverityCounts, error) {
 	var rows []struct {
 		Severity string
 		Count    int64
 	}
-	if err := s.db.WithContext(ctx).Model(&Event{}).
+	if err := scopeAuditEvents(ctx, s.db.WithContext(ctx).Model(&Event{})).
 		Select("severity, COUNT(*) AS count").
 		Group("severity").
 		Scan(&rows).Error; err != nil {
@@ -409,16 +454,24 @@ func (s *EventService) GetEventSeverityCounts(ctx context.Context) (types.EventS
 	return counts, nil
 }
 
+// DeleteEvent deletes an ordinary event; audit events only expire through audit retention.
 func (s *EventService) DeleteEvent(ctx context.Context, eventID string) error {
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Delete(&Event{}, "id = ?", eventID)
+		result := tx.Where("audit = ?", false).Delete(&Event{}, "id = ?", eventID)
 		if result.Error != nil {
 			return fmt.Errorf("failed to delete event: %w", result.Error)
 		}
-		if result.RowsAffected == 0 {
-			return errors.New("event not found")
+		if result.RowsAffected > 0 {
+			return nil
 		}
-		return nil
+		var audits int64
+		if countErr := scopeAuditEvents(ctx, tx.Model(&Event{})).Where("id = ? AND audit = ?", eventID, true).Count(&audits).Error; countErr != nil {
+			return fmt.Errorf("failed to look up event: %w", countErr)
+		}
+		if audits > 0 {
+			return common.ErrAuditEventDelete
+		}
+		return common.Classify(common.ErrNotFound, errors.New("event not found"))
 	})
 	if err == nil {
 		s.PublishChange("0", "event")
@@ -426,11 +479,12 @@ func (s *EventService) DeleteEvent(ctx context.Context, eventID string) error {
 	return err
 }
 
+// DeleteOldEvents removes ordinary events older than the cutoff; audit events follow PruneAuditEvents.
 func (s *EventService) DeleteOldEvents(ctx context.Context, olderThan time.Duration) error {
 	cutoff := time.Now().Add(-olderThan)
 	var deleted int64
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Where("timestamp < ?", cutoff).Delete(&Event{})
+		result := tx.Where("timestamp < ? AND audit = ?", cutoff, false).Delete(&Event{})
 		if result.Error != nil {
 			return fmt.Errorf("failed to delete old events: %w", result.Error)
 		}
@@ -441,6 +495,15 @@ func (s *EventService) DeleteOldEvents(ctx context.Context, olderThan time.Durat
 		s.PublishChange("0", "event")
 	}
 	return err
+}
+
+// PruneAuditEvents removes audit events recorded before olderThan.
+func (s *EventService) PruneAuditEvents(ctx context.Context, olderThan time.Time) (int64, error) {
+	result := s.db.WithContext(ctx).Where("audit = ? AND timestamp < ?", true, olderThan).Delete(&Event{})
+	if result.Error != nil {
+		return 0, fmt.Errorf("failed to prune audit events: %w", result.Error)
+	}
+	return result.RowsAffected, nil
 }
 
 func (s *EventService) LogContainerEvent(ctx context.Context, eventType EventType, containerID, containerName, userID, username, environmentID string, metadata database.JSON) error {

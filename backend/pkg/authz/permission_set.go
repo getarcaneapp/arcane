@@ -28,18 +28,18 @@ func (ps *PermissionSet) Allows(perm, envID string) bool {
 	if ps.Sudo {
 		return true
 	}
+	if _, ok := ps.Global[PermAll]; ok {
+		return true
+	}
 	if _, ok := ps.Global[perm]; ok {
 		return true
 	}
 	if envID == "" {
 		return false
 	}
-	if env, ok := ps.PerEnv[envID]; ok {
-		if _, localOk := env[perm]; localOk {
-			return true
-		}
-	}
-	return false
+	_, all := ps.PerEnv[envID][PermAll]
+	_, ok := ps.PerEnv[envID][perm]
+	return all || ok
 }
 
 // AllowsAny reports whether the caller may perform perm in at least one
@@ -76,23 +76,15 @@ func (ps *PermissionSet) AccessibleEnvironmentIDs() []string {
 	}
 }
 
-// IsGlobalAdmin reports whether the caller holds enough global permissions to
-// be considered an administrator. True for sudo callers and for callers whose
-// Global set contains every defined permission. Used by the backward-compat
-// IsAdminFromContext helper and by last-admin guards.
+// IsGlobalAdmin reports whether the caller is an administrator: sudo callers
+// and callers holding the PermAll wildcard at global scope. Used by last-admin
+// guards and admin-only checks.
 func (ps *PermissionSet) IsGlobalAdmin() bool {
 	if ps == nil {
 		return false
 	}
-	if ps.Sudo {
-		return true
-	}
-	for _, permission := range AllPermissions() {
-		if _, ok := ps.Global[permission]; !ok {
-			return false
-		}
-	}
-	return true
+	_, all := ps.Global[PermAll]
+	return ps.Sudo || all
 }
 
 // SudoPermissionSet returns a PermissionSet that allows every action. Used for
@@ -152,6 +144,25 @@ func (ps *PermissionSet) AddEnv(envID string, perms ...string) {
 	for _, p := range perms {
 		env[p] = struct{}{}
 	}
+}
+
+// PermissionsForEnv returns the sorted permissions the caller holds in envID,
+// including global grants.
+func (ps *PermissionSet) PermissionsForEnv(envID string) []string {
+	if ps == nil {
+		return nil
+	}
+	if ps.Sudo {
+		return []string{PermAll}
+	}
+	set := maps.Clone(ps.Global)
+	if set == nil {
+		set = make(map[string]struct{})
+	}
+	if envID != "" {
+		maps.Copy(set, ps.PerEnv[envID])
+	}
+	return slices.Sorted(maps.Keys(set))
 }
 
 // EnvIDFromPath extracts the environment ID from a Huma operation path of the

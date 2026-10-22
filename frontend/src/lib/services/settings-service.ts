@@ -1,3 +1,4 @@
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 import type {
 	OidcStatusInfo,
@@ -26,7 +27,7 @@ class SettingsService extends BaseAPIService {
 	async getSettingsForEnvironmentMerged(environmentId: string): Promise<ResolvedSettings> {
 		if (environmentId === '0') return this.getSettingsForEnvironment('0');
 		const [main, environment] = await Promise.all([
-			userStore.hasPermission('settings:read', '0')
+			userStore.hasPermission(PERMISSIONS.SETTINGS_READ, '0')
 				? this.getSettingsForEnvironment('0')
 				: this.getPublicSettingsForEnvironment('0'),
 			this.getSettingsForEnvironment(environmentId)
@@ -54,7 +55,7 @@ class SettingsService extends BaseAPIService {
 	}
 
 	async getReadableSettings(environmentId: string): Promise<ResolvedSettings> {
-		if (!userStore.hasPermission('settings:read', environmentId)) return this.getPublicSettings(environmentId);
+		if (!userStore.hasPermission(PERMISSIONS.SETTINGS_READ, environmentId)) return this.getPublicSettings(environmentId);
 		return this.getSettingsForEnvironmentMerged(environmentId);
 	}
 

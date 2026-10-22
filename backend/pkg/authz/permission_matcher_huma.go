@@ -22,6 +22,8 @@ const (
 
 	MetaActionPermissions = "arcane:actionPermissions"
 
+	MetaAuthenticatedOnly = "arcane:authenticatedOnly"
+
 	envPathPrefixInternal = "/environments/{id}"
 )
 

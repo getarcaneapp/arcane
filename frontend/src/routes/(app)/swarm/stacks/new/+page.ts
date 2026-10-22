@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 
 import { loadSwarmEnvironments } from '#lib/components/swarm/swarm-environments.js';
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { swarmService } from '#lib/services/swarm-service.js';
 import { templateService } from '#lib/services/template-service.js';
 import { variableService } from '#lib/services/variable-service.js';
@@ -22,8 +23,8 @@ export const load: PageLoad = async ({ url }) => {
 		envId = await resolveDetailEnvironmentId(url);
 		environments = [{ id: envId, name: environmentName(envId) }];
 	} else {
-		environments = (await loadSwarmEnvironments('swarm:stacks')).managers;
-		envId = destinationEnvironmentId(url.searchParams.get('env') ?? '', 'swarm:stacks', environments);
+		environments = (await loadSwarmEnvironments(PERMISSIONS.SWARM_STACKS)).managers;
+		envId = destinationEnvironmentId(url.searchParams.get('env') ?? '', PERMISSIONS.SWARM_STACKS, environments);
 	}
 
 	const sourceStackPromise = sourceStackName

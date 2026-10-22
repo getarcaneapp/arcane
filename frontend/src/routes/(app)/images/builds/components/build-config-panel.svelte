@@ -5,6 +5,7 @@
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
 	import { ArrowDownIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { preventDefault } from '#lib/utils/settings.svelte.js';
 
 	import type { BuildFormInputs, SelectOption } from './build-form.types';
@@ -40,7 +41,7 @@
 <div class="space-y-7 p-8">
 	<form onsubmit={preventDefault(() => onSubmit?.())} class="space-y-7">
 		<div class="space-y-4">
-			<EnvironmentDestinationSelect bind:value={environmentId} permission="images:build" variant="field" />
+			<EnvironmentDestinationSelect bind:value={environmentId} permission={PERMISSIONS.IMAGES_BUILD} variant="field" />
 			{#if isPushMode}
 				<SelectWithLabel
 					id="build-push-registry"

@@ -1,14 +1,19 @@
 <script lang="ts">
 	import { z } from 'zod/v4';
 
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import PermissionPicker from '#lib/components/role-editor/permission-picker.svelte';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import { CloseIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ApiKey, ApiKeyUpdate, PersonalApiKeyCreate } from '#lib/types/auth.js';
 	import type { PermissionsManifest, ApiKeyPermissionGrant } from '#lib/types/auth.js';
 	import { plainDateFromInstant, plainDateToInstantString } from '#lib/utils/formatting.js';
+	import { buildGlobalEnvironmentOptions, GLOBAL_ENVIRONMENT_OPTION_ID } from '#lib/utils/options.js';
 	import { changedFields } from '#lib/utils/payload.js';
 	import { normalizePermissionSelection } from '#lib/utils/permissions.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
@@ -49,23 +54,47 @@
 			name: z.string().min(1, m.common_field_required({ field: m.common_name() })),
 			description: z.string().optional(),
 			expiresAt: z.instanceof(Temporal.PlainDate).optional(),
-			permissions: hidePermissions
-				? z.array(z.string()).default([])
-				: z.array(z.string()).min(1, m.pick_at_least_one_permission())
+			grants: z
+				.array(z.object({ environmentId: z.string(), permissions: z.array(z.string()) }))
+				.refine((rows) => hidePermissions || rows.some((row) => row.permissions.length > 0), m.pick_at_least_one_permission())
 		})
 	);
+
+	const envOptions = $derived(buildGlobalEnvironmentOptions(environmentStore.available, m.global_org_wide()));
+
+	function initialGrantRows(): { environmentId: string; permissions: string[] }[] {
+		if (hidePermissions || !manifest) return [];
+		const byEnv = new Map<string, string[]>([[GLOBAL_ENVIRONMENT_OPTION_ID, []]]);
+		for (const grant of availablePermissions) {
+			const key = grant.environmentId ?? GLOBAL_ENVIRONMENT_OPTION_ID;
+			byEnv.set(key, [...(byEnv.get(key) ?? []), grant.permission]);
+		}
+		return [...byEnv.entries()].map(([environmentId, permissions]) => ({
+			environmentId,
+			permissions: normalizePermissionSelection(manifest, permissions)
+		}));
+	}
+
+	function envLabel(environmentId: string): string {
+		return envOptions.find((option) => option.id === environmentId)?.name ?? environmentId;
+	}
+
+	function addGrantRow() {
+		const used = new Set(inputs.grants.value.map((row) => row.environmentId));
+		const next = envOptions.find((option) => !used.has(option.id));
+		if (!next) return;
+		inputs.grants.value = [...inputs.grants.value, { environmentId: next.id, permissions: [] }];
+	}
+
+	function dropGrantRow(position: number) {
+		inputs.grants.value = inputs.grants.value.filter((_, i) => i !== position);
+	}
 
 	let formData = $derived({
 		name: apiKeyToEdit?.name || '',
 		description: apiKeyToEdit?.description || '',
 		expiresAt: plainDateFromInstant(apiKeyToEdit?.expiresAt),
-		permissions:
-			hidePermissions || !manifest
-				? []
-				: normalizePermissionSelection(
-						manifest,
-						availablePermissions.map((p) => p.permission)
-					)
+		grants: initialGrantRows()
 	});
 
 	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
@@ -77,9 +106,12 @@
 		const data = form.validate();
 		if (!data) return;
 
-		// v1: persist all picks as global grants (environmentId undefined).
-		// env-scoped picking is a follow-up. Personal keys carry no grants.
-		const permissions = data.permissions.map((p) => ({ permission: p }));
+		const permissions: ApiKeyPermissionGrant[] = data.grants.flatMap((row) =>
+			row.permissions.map((permission) => ({
+				permission,
+				environmentId: row.environmentId === GLOBAL_ENVIRONMENT_OPTION_ID ? undefined : row.environmentId
+			}))
+		);
 
 		if (!apiKeyToEdit) {
 			onSubmit({
@@ -140,7 +172,7 @@
 				? m.api_key_bootstrap_description()
 				: m.api_key_edit_description({ name: apiKeyToEdit?.name ?? m.common_unknown() })
 		: m.api_key_create_description()}
-	contentClass="sm:max-w-125"
+	contentClass="sm:max-w-160"
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
@@ -174,12 +206,60 @@
 				{#if hidePermissions}
 					<p class="text-sm text-muted-foreground">{m.api_key_personal_inherits_description()}</p>
 				{:else if manifest}
-					<div>
-						<label for="permissions" class="text-sm font-medium">{m.permissions()}</label>
-						<p class="mb-3 text-xs text-muted-foreground">{m.api_key_permissions_description()}</p>
-						<PermissionPicker {manifest} bind:selected={inputs.permissions.value} showSearch />
-						{#if inputs.permissions.error}
-							<p class="mt-1 text-xs text-destructive">{inputs.permissions.error}</p>
+					<div class="space-y-3">
+						<div>
+							<span class="text-sm font-medium">{m.permissions()}</span>
+							<p class="text-xs text-muted-foreground">{m.api_key_grants_description()}</p>
+						</div>
+						{#each inputs.grants.value as row, position (row)}
+							{@const used = new Set(inputs.grants.value.map((entry) => entry.environmentId))}
+							<div class="space-y-3 rounded-md border p-3">
+								<div class="flex items-center gap-2">
+									<Select.Root type="single" bind:value={row.environmentId}>
+										<Select.Trigger class="w-full" aria-label={m.resource_environment_cap()}>
+											<span class="min-w-0 truncate">{envLabel(row.environmentId)}</span>
+										</Select.Trigger>
+										<Select.Content>
+											{#each envOptions as option (option.id)}
+												<Select.Item
+													value={option.id}
+													label={option.name}
+													disabled={option.id !== row.environmentId && used.has(option.id)}
+												>
+													{option.name}
+												</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
+									<ArcaneButton
+										action="base"
+										tone="ghost"
+										size="icon"
+										icon={CloseIcon}
+										showLabel={false}
+										customLabel={m.common_remove()}
+										disabled={inputs.grants.value.length === 1}
+										onclick={() => dropGrantRow(position)}
+									/>
+								</div>
+								<PermissionPicker
+									{manifest}
+									bind:selected={row.permissions}
+									scope={row.environmentId === GLOBAL_ENVIRONMENT_OPTION_ID ? 'global' : 'env'}
+									showSearch
+								/>
+							</div>
+						{/each}
+						<ArcaneButton
+							action="base"
+							tone="outline"
+							size="sm"
+							onclick={addGrantRow}
+							disabled={inputs.grants.value.length >= envOptions.length}
+							customLabel={m.api_key_grants_add()}
+						/>
+						{#if inputs.grants.error}
+							<p class="mt-1 text-xs text-destructive">{inputs.grants.error}</p>
 						{/if}
 					</div>
 				{/if}

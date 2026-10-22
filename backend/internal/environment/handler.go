@@ -157,7 +157,7 @@ func NewHandler(
 
 // ListEnvironments returns a paginated list of environments.
 func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEnvironmentsInput) (*handlerutil.Page[types.Environment], error) {
-	ps, ok := middleware.PermissionsFromContext(ctx)
+	ps, ok := authz.PermissionsFromContext(ctx)
 	if !ok {
 		return nil, huma.Error403Forbidden("permission denied")
 	}

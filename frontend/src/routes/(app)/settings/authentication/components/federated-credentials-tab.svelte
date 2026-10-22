@@ -8,6 +8,7 @@
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { Snippet } from '#lib/components/ui/snippet/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { federatedCredentialService } from '#lib/services/federated-credential-service.js';
 	import type { FederatedCredential, FederatedCredentialCreate, FederatedCredentialUpdate, Role } from '#lib/types/auth.js';
 	import type { Environment } from '#lib/types/environment.js';
@@ -116,14 +117,14 @@ steps:
 	}
 </script>
 
-<IfPermitted perm="federated:list">
+<IfPermitted perm={PERMISSIONS.FEDERATED_LIST}>
 	<div class="space-y-4">
 		<div class="flex items-start justify-between gap-4">
 			<div class="px-1">
 				<h3 class="text-sm font-semibold">{m.federated_credential_page_title()}</h3>
 				<p class="text-xs text-muted-foreground">{m.federated_credential_page_description()}</p>
 			</div>
-			<IfPermitted adminOnly>
+			<IfPermitted perm={PERMISSIONS.FEDERATED_CREATE}>
 				<ArcaneButton
 					action="create"
 					size="sm"

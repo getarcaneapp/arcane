@@ -55,11 +55,14 @@ export interface Event {
 	userId?: string;
 	username?: string;
 	environmentId?: string;
+	audit: boolean;
 	metadata?: Record<string, any>;
 	timestamp: string;
 	createdAt: string;
 	updatedAt?: string;
 }
+
+export type EventExportFormat = 'csv' | 'ndjson';
 
 export interface EventSeverityCounts {
 	total: number;

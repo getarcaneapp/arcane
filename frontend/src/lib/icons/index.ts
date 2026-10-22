@@ -20,6 +20,7 @@ export { default as DockerBrandIcon } from 'virtual:icons/cib/docker';
 export { default as SecurityIcon } from 'virtual:icons/ic/round-security';
 export { default as ApiKeyIcon } from 'virtual:icons/hugeicons/lock-key';
 export { default as UsersIcon } from 'virtual:icons/material-symbols/person-text';
+export { default as GroupsIcon } from 'virtual:icons/material-symbols/groups-outline';
 export { default as NotificationsIcon } from 'virtual:icons/ic/round-notifications-active';
 export { default as InfoIcon } from 'virtual:icons/pepicons-pop/info-circle';
 export { default as CpuIcon } from 'virtual:icons/solar/cpu-outline';

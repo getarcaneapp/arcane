@@ -28,6 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/group"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
@@ -78,7 +79,7 @@ type AuthService struct {
 	settingsService    *settings.SettingsService
 	eventService       *event.EventService
 	sessionService     *session.SessionService
-	roleService        *role.RoleService
+	groupService       *group.GroupService
 	environmentService *environment.EnvironmentService
 	versionService     *version.VersionService
 	signingKeyMu       sync.Mutex
@@ -112,7 +113,7 @@ func NewAuthService(
 	settingsService *settings.SettingsService,
 	eventService *event.EventService,
 	sessionService *session.SessionService,
-	roleService *role.RoleService,
+	groupService *group.GroupService,
 	environmentService *environment.EnvironmentService,
 	versionService *version.VersionService,
 	cfg *config.Config,
@@ -122,7 +123,7 @@ func NewAuthService(
 		settingsService:    settingsService,
 		eventService:       eventService,
 		sessionService:     sessionService,
-		roleService:        roleService,
+		groupService:       groupService,
 		environmentService: environmentService,
 		versionService:     versionService,
 		refreshExpiry:      cfg.JWTRefreshExpiry,
@@ -140,8 +141,8 @@ func (s *AuthService) GetSessionBootstrap(ctx context.Context, userID string, ps
 		versionInfo  *types.VersionInfo
 		environments types.Paginated[types.Environment]
 	)
-	group, groupCtx := errgroup.WithContext(ctx)
-	group.Go(func() error {
+	bootstrapGroup, groupCtx := errgroup.WithContext(ctx)
+	bootstrapGroup.Go(func() error {
 		userModel, err := s.userService.GetUser(groupCtx, userID)
 		if err != nil {
 			return fmt.Errorf("failed to get user: %w", err)
@@ -152,13 +153,13 @@ func (s *AuthService) GetSessionBootstrap(ctx context.Context, userID string, ps
 		}
 		return nil
 	})
-	group.Go(func() error {
+	bootstrapGroup.Go(func() error {
 		versionCtx, cancel := context.WithTimeout(groupCtx, sessionBootstrapVersionTimeout)
 		defer cancel()
 		versionInfo = s.versionService.GetAppVersionInfo(versionCtx)
 		return nil
 	})
-	group.Go(func() error {
+	bootstrapGroup.Go(func() error {
 		var err error
 		environments, err = s.environmentService.ListAccessibleEnvironments(groupCtx, ps, pagination.QueryParams{Limit: -1})
 		if err != nil {
@@ -166,7 +167,7 @@ func (s *AuthService) GetSessionBootstrap(ctx context.Context, userID string, ps
 		}
 		return nil
 	})
-	if err := group.Wait(); err != nil {
+	if err := bootstrapGroup.Wait(); err != nil {
 		return nil, err
 	}
 	return &types.SessionBootstrap{
@@ -460,8 +461,8 @@ func (s *AuthService) findOrCreateOidcUser(ctx context.Context, userInfo types.O
 				if mergeErr != nil {
 					return nil, false, mergeErr
 				}
-				if syncErr := s.syncOidcRoleAssignments(ctx, merged, userInfo, tokenResp); syncErr != nil {
-					return nil, false, fmt.Errorf("failed to sync OIDC role assignments on user merge: %w", syncErr)
+				if syncErr := s.syncOidcGroups(ctx, merged, userInfo, tokenResp); syncErr != nil {
+					return nil, false, fmt.Errorf("failed to sync OIDC groups on user merge: %w", syncErr)
 				}
 				return merged, false, nil
 			}
@@ -526,8 +527,8 @@ func (s *AuthService) createOidcUser(ctx context.Context, userInfo types.OidcUse
 	if createErr != nil {
 		return nil, createErr
 	}
-	if syncOidcRoleAssignmentsErr := s.syncOidcRoleAssignments(ctx, localUser, userInfo, tokenResp); syncOidcRoleAssignmentsErr != nil {
-		return nil, fmt.Errorf("failed to sync OIDC role assignments on user create: %w", syncOidcRoleAssignmentsErr)
+	if syncOidcGroupsErr := s.syncOidcGroups(ctx, localUser, userInfo, tokenResp); syncOidcGroupsErr != nil {
+		return nil, fmt.Errorf("failed to sync OIDC groups on user create: %w", syncOidcGroupsErr)
 	}
 	return localUser, nil
 }
@@ -582,57 +583,14 @@ func (s *AuthService) updateOidcUser(ctx context.Context, localUser *user.User, 
 	if err != nil {
 		return nil, err
 	}
-	if syncErr := s.syncOidcRoleAssignments(ctx, updated, userInfo, tokenResp); syncErr != nil {
-		return nil, fmt.Errorf("failed to sync OIDC role assignments on user update: %w", syncErr)
+	if syncErr := s.syncOidcGroups(ctx, updated, userInfo, tokenResp); syncErr != nil {
+		return nil, fmt.Errorf("failed to sync OIDC groups on user update: %w", syncErr)
 	}
 	return updated, nil
 }
 
-// syncOidcRoleAssignments rebuilds the user's `source='oidc'` role assignments
-// based on the OIDC group claim and the configured OidcRoleMapping rows.
-// Manual assignments are untouched.
-func (s *AuthService) syncOidcRoleAssignments(ctx context.Context, localUser *user.User, userInfo types.OidcUserInfo, tokenResp *types.OidcTokenResponse) error {
-	if s.roleService == nil || localUser == nil {
-		return nil
-	}
-
-	groups := s.extractOidcGroups(ctx, userInfo, tokenResp)
-	mappings, err := s.roleService.ListOidcMappings(ctx)
-	if err != nil {
-		return fmt.Errorf("list oidc mappings: %w", err)
-	}
-
-	groupSet := make(map[string]struct{}, len(groups))
-	for _, g := range groups {
-		groupSet[g] = struct{}{}
-	}
-
-	var desired []role.UserRoleAssignment
-	seen := make(map[string]struct{}) // dedup by roleID|envID
-	for _, m := range mappings {
-		if _, ok := groupSet[m.ClaimValue]; !ok {
-			continue
-		}
-		key := m.RoleID + "|"
-		if m.EnvironmentID != nil {
-			key += *m.EnvironmentID
-		}
-		if _, dup := seen[key]; dup {
-			continue
-		}
-		seen[key] = struct{}{}
-		desired = append(desired, role.UserRoleAssignment{
-			RoleID:        m.RoleID,
-			EnvironmentID: m.EnvironmentID,
-		})
-	}
-
-	err = s.roleService.ReplaceUserAssignments(ctx, localUser.ID, role.RoleAssignmentSourceOidc, desired)
-	if errors.Is(err, common.ErrNoGlobalAdminRemains) {
-		slog.WarnContext(ctx, "OIDC role sync would remove the last global admin; keeping existing assignments", "userId", localUser.ID)
-		return nil
-	}
-	return err
+func (s *AuthService) syncOidcGroups(ctx context.Context, localUser *user.User, userInfo types.OidcUserInfo, tokenResp *types.OidcTokenResponse) error {
+	return s.groupService.SyncOidcMemberships(ctx, localUser.ID, s.extractOidcGroups(ctx, userInfo, tokenResp))
 }
 
 // extractOidcGroups reads the user's group memberships from the OIDC userinfo

@@ -1,5 +1,6 @@
 import type { QueryClient } from '@tanstack/svelte-query';
 
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { templateService } from '#lib/services/template-service.js';
 import { variableService } from '#lib/services/variable-service.js';
@@ -64,9 +65,9 @@ export async function loadTemplateAuthoringData(parent: ParentWithQueryClient) {
 	const { queryClient, user } = await parent();
 	const client = queryClient as QueryClientLike;
 	const permissions: TemplateAuthoringPermissions = {
-		canReadTemplates: userHasPermission(user, 'templates:read'),
-		canListTemplates: userHasPermission(user, 'templates:list'),
-		canReadVariables: userHasPermission(user, 'variables:read')
+		canReadTemplates: userHasPermission(user, PERMISSIONS.TEMPLATES_READ),
+		canListTemplates: userHasPermission(user, PERMISSIONS.TEMPLATES_LIST),
+		canReadVariables: userHasPermission(user, PERMISSIONS.VARIABLES_READ)
 	};
 	const loadErrors: TemplateAuthoringLoadError[] = [];
 

@@ -7,6 +7,7 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import type { ImportGitOpsSyncRequest } from '#lib/types/automation.js';
 
 	type GitOpsImportFormProps = {
@@ -78,7 +79,7 @@
 >
 	{#snippet children()}
 		<div class="grid gap-y-3 py-4">
-			<EnvironmentDestinationSelect bind:value={environmentId} permission="gitops:create" variant="field" />
+			<EnvironmentDestinationSelect bind:value={environmentId} permission={PERMISSIONS.GITOPS_CREATE} variant="field" />
 			<div class="space-y-1.5">
 				<Label for="json-file">{m.git_sync_import_upload_label()}</Label>
 				<input

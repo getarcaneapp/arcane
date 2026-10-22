@@ -11,6 +11,7 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { NetworksIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { networkService } from '#lib/services/network-service.js';
 	import type { ContainerDetailsDto } from '#lib/types/docker.js';
@@ -29,8 +30,8 @@
 	const queryClient = useQueryClient();
 	const envId = $derived(environmentId);
 	const customHostname = $derived(getCustomHostname(container));
-	const canConnect = $derived(hasPermission('networks:connect', envId));
-	const canDisconnect = $derived(hasPermission('networks:disconnect', envId));
+	const canConnect = $derived(hasPermission(PERMISSIONS.NETWORKS_CONNECT, envId));
+	const canDisconnect = $derived(hasPermission(PERMISSIONS.NETWORKS_DISCONNECT, envId));
 
 	let connectNetwork = $state('');
 	let connectAliases = $state('');

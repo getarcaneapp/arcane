@@ -7,7 +7,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 )
 
@@ -49,7 +48,7 @@ func (h *CustomizeHandler) Search(ctx context.Context, input *SearchCustomizeInp
 		return nil, huma.Error400BadRequest("Query parameter is required")
 	}
 
-	ps, _ := middleware.PermissionsFromContext(ctx)
+	ps, _ := authz.PermissionsFromContext(ctx)
 	results := Search(h.customizeSearchService.GetCustomizeCategories(), input.Body.Query, types.SearchProfileCustomize)
 	results.Results = filterCustomizeCategories(ps, results.Results)
 	results.Count = len(results.Results)
@@ -61,7 +60,7 @@ func (h *CustomizeHandler) Search(ctx context.Context, input *SearchCustomizeInp
 
 // GetCategories returns all available customization categories.
 func (h *CustomizeHandler) GetCategories(ctx context.Context, input *GetCustomizeCategoriesInput) (*GetCustomizeCategoriesOutput, error) {
-	ps, _ := middleware.PermissionsFromContext(ctx)
+	ps, _ := authz.PermissionsFromContext(ctx)
 	categories := filterCustomizeCategories(ps, h.customizeSearchService.GetCustomizeCategories())
 
 	return &GetCustomizeCategoriesOutput{

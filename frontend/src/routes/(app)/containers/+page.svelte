@@ -5,6 +5,7 @@
 	import { BoxIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import type { ContainerListRequestOptions } from '#lib/services/container-service.js';
@@ -49,7 +50,7 @@
 
 	const containersQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = readableEnvironments('containers:list');
+		const environments = readableEnvironments(PERMISSIONS.CONTAINERS_LIST);
 		const options = buildRequestOptions();
 		return {
 			queryKey: queryKeys.containers.list(queryScope, options),
@@ -72,7 +73,7 @@
 	const isRefreshing = $derived(containersQuery.isFetching && !containersQuery.isPending);
 
 	async function refreshContainers(options: ContainerListRequestOptions = buildRequestOptions(), requestedScope = scope) {
-		const environments = readableEnvironments('containers:list');
+		const environments = readableEnvironments(PERMISSIONS.CONTAINERS_LIST);
 		return queryClient.fetchQuery({
 			queryKey: queryKeys.containers.list(requestedScope, options),
 			queryFn: () =>
@@ -105,8 +106,8 @@
 
 	const containerStatusCounts = $derived(resourcesReady ? (containers.counts ?? countsFallback) : countsFallback);
 
-	const canCreateContainers = $derived(hasShownPermission('containers:create'));
-	const canAutoUpdate = $derived(hasShownPermission('containers:autoupdate'));
+	const canCreateContainers = $derived(hasShownPermission(PERMISSIONS.CONTAINERS_CREATE));
+	const canAutoUpdate = $derived(hasShownPermission(PERMISSIONS.CONTAINERS_AUTOUPDATE));
 
 	const actionButtons: ActionButton[] = $derived(
 		[

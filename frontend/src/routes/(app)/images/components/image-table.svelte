@@ -31,6 +31,7 @@
 		TagIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { imageService, type ImagesPaginatedResponse } from '#lib/services/image-service.js';
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -88,27 +89,27 @@
 	// this the deriveds would cache pre-hydration falses forever.
 	const canDeleteImage = $derived.by(() => {
 		userStore.current;
-		return hasShownPermission('images:delete');
+		return hasShownPermission(PERMISSIONS.IMAGES_DELETE);
 	});
 	const canPullImage = $derived.by(() => {
 		userStore.current;
-		return hasShownPermission('images:pull');
+		return hasShownPermission(PERMISSIONS.IMAGES_PULL);
 	});
 	const canScanImage = $derived.by(() => {
 		userStore.current;
-		return vulnerabilityManagementEnabled && hasShownPermission('vulnerabilities:scan');
+		return vulnerabilityManagementEnabled && hasShownPermission(PERMISSIONS.VULNERABILITIES_SCAN);
 	});
 	const canTagImage = $derived.by(() => {
 		userStore.current;
-		return hasShownPermission('images:tag');
+		return hasShownPermission(PERMISSIONS.IMAGES_TAG);
 	});
 	const canPatchImage = $derived.by(() => {
 		userStore.current;
-		return hasShownPermission('images:patch');
+		return hasShownPermission(PERMISSIONS.IMAGES_PATCH);
 	});
 	const canReadImage = $derived.by(() => {
 		userStore.current;
-		return hasShownPermission('images:read');
+		return hasShownPermission(PERMISSIONS.IMAGES_READ);
 	});
 
 	let tagDialogImage = $state<ImageRow | null>(null);
@@ -120,7 +121,7 @@
 			await onRefreshData(options);
 			return;
 		}
-		images = await fetchAcrossEnvironments(readableEnvironments('images:list'), options, (id, request, config) =>
+		images = await fetchAcrossEnvironments(readableEnvironments(PERMISSIONS.IMAGES_LIST), options, (id, request, config) =>
 			imageService.getImagesForEnvironment(id, request, config)
 		);
 	}
@@ -622,14 +623,14 @@
 			<DropdownMenu.Separator />
 		{/if}
 
-		{#if canTagImage && hasPermission('images:tag', envId)}
+		{#if canTagImage && hasPermission(PERMISSIONS.IMAGES_TAG, envId)}
 			<DropdownMenu.Item onclick={() => (tagDialogImage = item)}>
 				<TagIcon class="size-4" />
 				{m.images_tag_image()}
 			</DropdownMenu.Item>
 		{/if}
 
-		{#if canReadImage && hasPermission('images:read', envId)}
+		{#if canReadImage && hasPermission(PERMISSIONS.IMAGES_READ, envId)}
 			<DropdownMenu.Item onclick={() => handleExportImage(item.id, envId)}>
 				<DownloadIcon class="size-4" />
 				{m.images_export()}
@@ -639,21 +640,21 @@
 		{@const usableTags = item.repoTags?.filter((tag) => tag !== '<none>:<none>') ?? []}
 		<!-- Prefer a real tag: a digest name kept beside it would pull the old pinned image. -->
 		{@const usableTag = usableTags.find((tag) => !tag.includes('@')) ?? usableTags[0]}
-		{#if canPullImage && hasPermission('images:pull', envId)}
+		{#if canPullImage && hasPermission(PERMISSIONS.IMAGES_PULL, envId)}
 			<DropdownMenu.Item onclick={() => handleInlineImagePull(usableTag || '', envId)} disabled={!usableTag}>
 				<DownloadIcon class="size-4" />
 				{m.pull()}
 			</DropdownMenu.Item>
 		{/if}
 
-		{#if canScanImage && featureStore.isEnabled('vulnerabilityManagement', envId) && hasPermission('vulnerabilities:scan', envId)}
+		{#if canScanImage && featureStore.isEnabled('vulnerabilityManagement', envId) && hasPermission(PERMISSIONS.VULNERABILITIES_SCAN, envId)}
 			<DropdownMenu.Item onclick={() => handleInlineVulnerabilityScan(item)}>
 				<ScanIcon class="size-4" />
 				{m.vuln_scan()}
 			</DropdownMenu.Item>
 		{/if}
 
-		{#if canPatchImage && hasPermission('images:patch', envId)}
+		{#if canPatchImage && hasPermission(PERMISSIONS.IMAGES_PATCH, envId)}
 			{@const imageIsLocal = !item.repoDigests || item.repoDigests.length === 0}
 			<DropdownMenu.Item onclick={() => handleInlineImagePatch(item.id, envId)} disabled={imageIsLocal || !usableTag}>
 				<ShieldCheckIcon class="size-4" />
@@ -666,7 +667,7 @@
 			</DropdownMenu.Item>
 		{/if}
 
-		{#if canDeleteImage && hasPermission('images:delete', envId)}
+		{#if canDeleteImage && hasPermission(PERMISSIONS.IMAGES_DELETE, envId)}
 			<DropdownMenu.Separator />
 
 			<DropdownMenu.Item variant="destructive" onclick={() => deleteImage(item.id, envId)} disabled={isLoading.removing}>

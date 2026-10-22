@@ -2,6 +2,7 @@ import { toast } from 'svelte-sonner';
 
 import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 import { m } from '#lib/paraglide/messages.js';
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { containerService } from '#lib/services/container-service.js';
 import { activityStore } from '#lib/stores/activity.store.svelte.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -173,7 +174,7 @@ export function confirmAndUpdateContainer({
 					message: m.containers_update_accept_failed({ name: containerName }),
 					setLoadingState: (value) => setLoading?.(value),
 					async onSuccess(activity) {
-						const canReadActivity = hasPermission('activities:read', environmentId);
+						const canReadActivity = hasPermission(PERMISSIONS.ACTIVITIES_READ, environmentId);
 						if (canReadActivity) activityStore.acceptActivity(activity);
 						toast.info(
 							m.containers_update_accepted({ name: containerName }),

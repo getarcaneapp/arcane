@@ -52,7 +52,8 @@ test.describe('Workspace restore', () => {
 		const user = {
 			id: 'backup-picker-admin',
 			username: 'arcane',
-			roleAssignments: [],
+			bindings: [],
+			groups: [],
 			permissionsByEnv: { global: ['*'] },
 			isGlobalAdmin: true,
 			createdAt: new Date().toISOString()

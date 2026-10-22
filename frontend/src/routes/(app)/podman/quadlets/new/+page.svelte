@@ -11,6 +11,7 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { ArrowLeftIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService } from '#lib/services/podman-service.js';
 	import { PODMAN_QUADLET_TYPES, type PodmanQuadletType } from '#lib/types/podman.js';
@@ -42,9 +43,9 @@
 
 	const podmanEnvironments = $derived(shownPodmanEnvironments(data.podmanStatuses));
 	const quadletEnvironments = $derived(shownPodmanEnvironments(data.podmanStatuses, (status) => status.quadletsSupported));
-	const installEnvironments = $derived(quadletEnvironments.filter((env) => hasPermission('podman:quadlets', env.id)));
+	const installEnvironments = $derived(quadletEnvironments.filter((env) => hasPermission(PERMISSIONS.PODMAN_QUADLETS, env.id)));
 	let picked = $state('');
-	const environmentId = $derived(destinationEnvironmentId(picked, 'podman:quadlets', installEnvironments));
+	const environmentId = $derived(destinationEnvironmentId(picked, PERMISSIONS.PODMAN_QUADLETS, installEnvironments));
 	const status = $derived(data.podmanStatuses[environmentId]);
 	const appsSupported = $derived(status?.quadletAppsSupported === true);
 
@@ -142,7 +143,7 @@
 				<div class="flex items-center gap-2">
 					<EnvironmentDestinationSelect
 						bind:value={() => environmentId, (value) => (picked = value)}
-						permission="podman:quadlets"
+						permission={PERMISSIONS.PODMAN_QUADLETS}
 						environments={installEnvironments}
 					/>
 					{#if installEnvironments.length > 0}

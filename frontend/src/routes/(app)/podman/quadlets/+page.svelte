@@ -6,6 +6,7 @@
 	import { AlertTriangleIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService } from '#lib/services/podman-service.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -23,7 +24,7 @@
 
 	const pageState = new ResourceListPageState(untrack(() => data.requestOptions));
 	const quadletEnvironments = $derived(shownPodmanEnvironments(data.podmanStatuses, (status) => status.quadletsSupported));
-	const canInstall = $derived(quadletEnvironments.some((env) => hasPermission('podman:quadlets', env.id)));
+	const canInstall = $derived(quadletEnvironments.some((env) => hasPermission(PERMISSIONS.PODMAN_QUADLETS, env.id)));
 
 	const quadletsQuery = createQuery(() => {
 		const queryScope = pageState.scope;

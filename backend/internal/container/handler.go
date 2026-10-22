@@ -20,7 +20,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/container/children/stats"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
@@ -157,7 +156,7 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 		return &ListContainersOutput{Body: body}, nil
 	}
 
-	if ps, _ := middleware.PermissionsFromContext(ctx); stats.ContainerResourceSortPermissionDenied(ps, input.EnvironmentID, input.Sort) {
+	if ps, _ := authz.PermissionsFromContext(ctx); stats.ContainerResourceSortPermissionDenied(ps, input.EnvironmentID, input.Sort) {
 		return nil, huma.Error403Forbidden("permission denied: " + authz.PermContainersRead)
 	}
 

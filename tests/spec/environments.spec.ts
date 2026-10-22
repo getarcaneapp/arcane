@@ -1,5 +1,6 @@
 import { waitForDialogReady } from '../utils/playwright.util';
 import { removeCreatedEnvironments, readApiData } from '../utils/fetch.util';
+import { patchSessionBootstrap, withEnvironments } from '../utils/session.util';
 import {
 	test,
 	expect,
@@ -629,6 +630,9 @@ test.describe('Environment filter', () => {
 		await page.addInitScript(() => {
 			localStorage.removeItem('arcane-container-table');
 		});
+		await patchSessionBootstrap(page.context(), (bootstrap) =>
+			withEnvironments(bootstrap, [localEnvironment, remoteEnvironment])
+		);
 		await page.context().route(/\/api\/environments(?:\?.*)?$/, async (route) => {
 			await route.fulfill({
 				status: 200,

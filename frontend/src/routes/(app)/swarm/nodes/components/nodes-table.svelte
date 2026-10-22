@@ -21,6 +21,7 @@
 		TagIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { swarmService, type SwarmNodesPaginatedResponse } from '#lib/services/swarm-service.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { SwarmNodeAgentDeployment, SwarmNode } from '#lib/types/swarm.js';
@@ -48,7 +49,7 @@
 	type NodePage = EnvironmentPage<SwarmNodesPaginatedResponse>;
 
 	function canManageNode(node: NodeRow): boolean {
-		return hasPermission('swarm:nodes', node.environmentId);
+		return hasPermission(PERMISSIONS.SWARM_NODES, node.environmentId);
 	}
 
 	let isLoading = $state(false);

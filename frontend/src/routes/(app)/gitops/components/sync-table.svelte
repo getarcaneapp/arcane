@@ -28,6 +28,7 @@
 		AlertTriangleIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import type { GitOpsSync, GitOpsSyncCounts } from '#lib/types/automation.js';
 	import type { FilterMap, Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -58,10 +59,10 @@
 		onEditSync: (sync: GitOpsSync) => void;
 	} = $props();
 
-	const canDelete = (sync: SyncRow) => hasPermission('gitops:delete', sync.environmentId);
-	const canBackup = (sync: SyncRow) => hasPermission('gitops:backup', sync.environmentId);
-	const canRunBackup = (sync: SyncRow) => canBackup(sync) && hasPermission('gitops:sync', sync.environmentId);
-	const canEditBackup = (sync: SyncRow) => canBackup(sync) && hasPermission('gitops:update', sync.environmentId);
+	const canDelete = (sync: SyncRow) => hasPermission(PERMISSIONS.GITOPS_DELETE, sync.environmentId);
+	const canBackup = (sync: SyncRow) => hasPermission(PERMISSIONS.GITOPS_BACKUP, sync.environmentId);
+	const canRunBackup = (sync: SyncRow) => canBackup(sync) && hasPermission(PERMISSIONS.GITOPS_SYNC, sync.environmentId);
+	const canEditBackup = (sync: SyncRow) => canBackup(sync) && hasPermission(PERMISSIONS.GITOPS_UPDATE, sync.environmentId);
 
 	let isLoading = $state({
 		removing: false,

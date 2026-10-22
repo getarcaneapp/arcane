@@ -6,84 +6,33 @@
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { ShieldAlertIcon, TrashIcon, EditIcon } from '#lib/icons/index.js';
+	import { EditIcon, TrashIcon, UsersIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { oidcMappingService } from '#lib/services/oidc-mapping-service.js';
-	import type { OidcRoleMapping, Role } from '#lib/types/auth.js';
-	import { BUILT_IN_ROLE_ADMIN, BUILT_IN_ROLE_EDITOR, BUILT_IN_ROLE_DEPLOYER, BUILT_IN_ROLE_VIEWER } from '#lib/types/auth.js';
-	import type { Environment } from '#lib/types/environment.js';
+	import type { OidcGroupMapping } from '#lib/types/auth.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	let {
 		mappings,
-		roles,
-		environments,
 		onRefresh,
 		onEdit
 	}: {
-		mappings: OidcRoleMapping[];
-		roles: Role[];
-		environments: Environment[];
+		mappings: OidcGroupMapping[];
 		onRefresh: () => Promise<void>;
-		onEdit: (mapping: OidcRoleMapping) => void;
+		onEdit: (mapping: OidcGroupMapping) => void;
 	} = $props();
 
 	let isLoading = $state({
 		removing: false
 	});
 
-	type BadgeVariant = 'red' | 'blue' | 'purple' | 'gray' | 'green' | 'amber';
-	type IconVariant = 'emerald' | 'red' | 'amber' | 'blue' | 'purple' | 'gray' | 'sky' | 'orange';
-
-	const rolesById = $derived.by(() => {
-		const lookup: Record<string, Role> = {};
-		for (const role of roles) lookup[role.id] = role;
-		return lookup;
-	});
-
-	const envsById = $derived.by(() => {
-		const lookup: Record<string, Environment> = {};
-		for (const env of environments) lookup[env.id] = env;
-		return lookup;
-	});
-
-	function getRoleBadgeVariant(role: Role | undefined): BadgeVariant {
-		if (!role) return 'gray';
-		if (!role.builtIn) return 'green';
-		switch (role.id) {
-			case BUILT_IN_ROLE_ADMIN:
-				return 'red';
-			case BUILT_IN_ROLE_EDITOR:
-				return 'blue';
-			case BUILT_IN_ROLE_DEPLOYER:
-				return 'purple';
-			case BUILT_IN_ROLE_VIEWER:
-				return 'gray';
-			default:
-				return 'green';
-		}
-	}
-
-	function getRoleIconVariant(role: Role | undefined): IconVariant {
-		const v = getRoleBadgeVariant(role);
-		return v === 'green' ? 'emerald' : v;
-	}
-
-	function getRoleName(roleId: string): string {
-		return rolesById[roleId]?.name ?? roleId;
-	}
-
-	function getEnvName(environmentId: string | null | undefined): string {
-		if (!environmentId) return m.global_org_wide();
-		return envsById[environmentId]?.name ?? environmentId;
-	}
-
-	// ArcaneTable expects Paginated<T>; this list is unpaginated so we synthesize it.
-	const paginatedMappings = $derived.by<Paginated<OidcRoleMapping>>(() => ({
+	const paginatedMappings = $derived.by<Paginated<OidcGroupMapping>>(() => ({
 		data: mappings,
 		pagination: {
 			totalPages: 1,
@@ -100,7 +49,7 @@
 
 	let selectedIds = $state<string[]>([]);
 
-	async function handleDeleteMapping(mapping: OidcRoleMapping) {
+	async function handleDeleteMapping(mapping: OidcGroupMapping) {
 		const safeClaim = mapping.claimValue?.trim() || m.common_unknown();
 		openConfirmDialog({
 			title: m.oidc_mappings_delete_title(),
@@ -126,31 +75,15 @@
 
 	const columns = [
 		{ id: 'claimValue', accessorKey: 'claimValue', title: m.claim_value(), sortable: true, cell: ClaimCell },
-		{
-			id: 'roleId',
-			accessorKey: 'roleId',
-			title: m.common_role(),
-			sortable: true,
-			cell: RoleCell
-		},
-		{
-			id: 'environmentId',
-			accessorKey: 'environmentId',
-			title: m.resource_environment_cap(),
-			sortable: true,
-			cell: ScopeCell
-		}
-	] satisfies ColumnSpec<OidcRoleMapping>[];
+		{ id: 'groupName', accessorKey: 'groupName', title: m.resource_group_cap(), sortable: true, cell: GroupCell }
+	] satisfies ColumnSpec<OidcGroupMapping>[];
 
-	const mobileFields = [
-		{ id: 'roleId', label: m.common_role(), defaultVisible: true },
-		{ id: 'environmentId', label: m.resource_environment_cap(), defaultVisible: true }
-	];
+	const mobileFields = [{ id: 'groupName', label: m.resource_group_cap(), defaultVisible: true }];
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
 
-{#snippet ClaimCell({ item }: { item: OidcRoleMapping })}
+{#snippet ClaimCell({ item }: { item: OidcGroupMapping })}
 	<div class="flex items-center gap-2">
 		<code class="rounded bg-muted px-2 py-1 text-xs">{item.claimValue}</code>
 		{#if item.source === 'env'}
@@ -159,64 +92,53 @@
 	</div>
 {/snippet}
 
-{#snippet RoleCell({ item }: { item: OidcRoleMapping })}
-	{@const role = rolesById[item.roleId]}
-	<Badge variant={getRoleBadgeVariant(role)} minWidth="20">{getRoleName(item.roleId)}</Badge>
-{/snippet}
-
-{#snippet ScopeCell({ item }: { item: OidcRoleMapping })}
-	<span class={item.environmentId ? '' : 'text-muted-foreground italic'}>{getEnvName(item.environmentId)}</span>
+{#snippet GroupCell({ item }: { item: OidcGroupMapping })}
+	<a href={`/settings/groups/${item.groupId}`} class="hover:underline">
+		<Badge variant="blue" minWidth="20">{item.groupName}</Badge>
+	</a>
 {/snippet}
 
 {#snippet OidcMappingMobileCardSnippet({
 	item,
 	mobileFieldVisibility
 }: {
-	item: OidcRoleMapping;
+	item: OidcGroupMapping;
 	mobileFieldVisibility: MobileFieldVisibility;
 })}
-	{@const role = rolesById[item.roleId]}
 	<UniversalMobileCard
 		{item}
-		icon={{ component: ShieldAlertIcon, variant: getRoleIconVariant(role) }}
-		title={(item: OidcRoleMapping) => item.claimValue}
+		icon={{ component: UsersIcon, variant: 'blue' }}
+		title={(item: OidcGroupMapping) => item.claimValue}
 		subtitle={() => null}
 		badges={[
-			(item: OidcRoleMapping) => ({
-				variant: getRoleBadgeVariant(rolesById[item.roleId]),
-				text: getRoleName(item.roleId)
-			})
-		]}
-		fields={[
-			{
-				label: m.resource_environment_cap(),
-				getValue: (item: OidcRoleMapping) => getEnvName(item.environmentId),
-				icon: ShieldAlertIcon,
-				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility['environmentId'] ?? true
-			}
+			(item: OidcGroupMapping) =>
+				(mobileFieldVisibility['groupName'] ?? true) ? { variant: 'blue', text: item.groupName } : null
 		]}
 		rowActions={RowActions}
 	/>
 {/snippet}
 
-{#snippet RowActions({ item }: { item: OidcRoleMapping })}
+{#snippet RowActions({ item }: { item: OidcGroupMapping })}
 	<RowActionsMenu>
-		<DropdownMenu.Item disabled={item.source === 'env'} onclick={() => onEdit(item)}>
-			<EditIcon class="size-4" />
-			{m.common_edit()}
-		</DropdownMenu.Item>
+		<IfPermitted perm={PERMISSIONS.OIDCMAPPINGS_UPDATE}>
+			<DropdownMenu.Item disabled={item.source === 'env'} onclick={() => onEdit(item)}>
+				<EditIcon class="size-4" />
+				{m.common_edit()}
+			</DropdownMenu.Item>
+		</IfPermitted>
 
-		<DropdownMenu.Separator />
+		<IfPermitted perm={PERMISSIONS.OIDCMAPPINGS_DELETE}>
+			<DropdownMenu.Separator />
 
-		<DropdownMenu.Item
-			variant="destructive"
-			disabled={isLoading.removing || item.source === 'env'}
-			onclick={() => handleDeleteMapping(item)}
-		>
-			<TrashIcon class="size-4" />
-			{m.common_delete()}
-		</DropdownMenu.Item>
+			<DropdownMenu.Item
+				variant="destructive"
+				disabled={isLoading.removing || item.source === 'env'}
+				onclick={() => handleDeleteMapping(item)}
+			>
+				<TrashIcon class="size-4" />
+				{m.common_delete()}
+			</DropdownMenu.Item>
+		</IfPermitted>
 	</RowActionsMenu>
 {/snippet}
 

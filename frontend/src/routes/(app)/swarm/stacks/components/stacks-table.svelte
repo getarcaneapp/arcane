@@ -12,6 +12,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { LayersIcon, InspectIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { swarmService, type SwarmStacksPaginatedResponse } from '#lib/services/swarm-service.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { SwarmStackSummary } from '#lib/types/swarm.js';
@@ -140,7 +141,7 @@
 			{m.common_inspect()}
 		</DropdownMenu.Item>
 		<DropdownMenu.Separator />
-		<IfPermitted perm="swarm:stacks" envId={item.environmentId}>
+		<IfPermitted perm={PERMISSIONS.SWARM_STACKS} envId={item.environmentId}>
 			<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)} disabled={isLoading}>
 				<TrashIcon class="size-4" />
 				{m.common_delete()}

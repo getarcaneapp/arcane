@@ -8,6 +8,7 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { ExternalLinkIcon, GithubIcon, BookOpenIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type { AppVersionInformation, Settings } from '#lib/types/settings.js';
@@ -48,7 +49,7 @@
 	const developmentBranding = $derived(usesDevelopmentBranding());
 	const logoUrl = $derived(getApplicationLogo(false, logoColor, logoColor, { development: developmentBranding }));
 
-	const canToggleSettings = $derived(hasPermission('settings:write', LOCAL_DOCKER_ENVIRONMENT_ID));
+	const canToggleSettings = $derived(hasPermission(PERMISSIONS.SETTINGS_WRITE, LOCAL_DOCKER_ENVIRONMENT_ID));
 	let savingSetting = $state(false);
 
 	async function updateSetting(update: Partial<Settings>) {

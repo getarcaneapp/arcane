@@ -4,6 +4,7 @@ import { page } from '$app/state';
 import { redirect } from '@sveltejs/kit';
 import { QueryClient } from '@tanstack/svelte-query';
 
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { isSessionCancelledError } from '#lib/services/api-service.js';
 import { authService } from '#lib/services/auth-service.js';
@@ -198,7 +199,7 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 
 		featureStore.connect(queryClient);
 		clientStream.connect(queryClient);
-		const settingsRequest = userHasPermission(user, 'settings:read')
+		const settingsRequest = userHasPermission(user, PERMISSIONS.SETTINGS_READ)
 			? dataOrNull(
 					queryClient.query({
 						...rootQuery,
@@ -217,7 +218,7 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 			),
 			afterDiscoveryTimeout()
 		]);
-		const swarmEnvironments = readableEnvironments('swarm:read');
+		const swarmEnvironments = readableEnvironments(PERMISSIONS.SWARM_READ);
 		const swarmStatusRequest =
 			swarmEnvironments.length > 0
 				? dataOrNull(
@@ -233,7 +234,7 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 						})
 					)
 				: Promise.resolve(null);
-		const podmanEnvironments = readableEnvironments('podman:read');
+		const podmanEnvironments = readableEnvironments(PERMISSIONS.PODMAN_READ);
 		const podmanStatusRequest = (
 			podmanEnvironments.length > 0
 				? dataOrNull(

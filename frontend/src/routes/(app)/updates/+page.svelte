@@ -10,6 +10,7 @@
 	import { ContainersIcon, ProjectsIcon, UpdateIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService, type ContainerListRequestOptions } from '#lib/services/container-service.js';
 	import { imageService } from '#lib/services/image-service.js';
@@ -42,7 +43,7 @@
 	// tagged with their environment so a switch never shows another's rows.
 	const containersQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = readableEnvironments('containers:list');
+		const environments = readableEnvironments(PERMISSIONS.CONTAINERS_LIST);
 		const options = ensureStandaloneContainerUpdatesFilter(containerRequestOptions);
 		return {
 			queryKey: queryKeys.containers.list(queryScope, options),
@@ -61,7 +62,7 @@
 
 	const projectsQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = readableEnvironments('projects:list');
+		const environments = readableEnvironments(PERMISSIONS.PROJECTS_LIST);
 		const options = ensureUpdatesFilter(projectRequestOptions);
 		return {
 			queryKey: queryKeys.projects.list(queryScope, options),
@@ -87,7 +88,7 @@
 	// the query's error state also renders inline.
 	async function refreshContainers(options: ContainerListRequestOptions) {
 		const requestedScope = scope;
-		const environments = readableEnvironments('containers:list');
+		const environments = readableEnvironments(PERMISSIONS.CONTAINERS_LIST);
 		const requestedOptions = ensureStandaloneContainerUpdatesFilter(options);
 		await queryClient.fetchQuery({
 			queryKey: queryKeys.containers.list(requestedScope, requestedOptions),
@@ -100,7 +101,7 @@
 
 	async function refreshProjects(options: SearchPaginationSortRequest) {
 		const requestedScope = scope;
-		const environments = readableEnvironments('projects:list');
+		const environments = readableEnvironments(PERMISSIONS.PROJECTS_LIST);
 		const requestedOptions = ensureUpdatesFilter(options);
 		await queryClient.fetchQuery({
 			queryKey: queryKeys.projects.list(requestedScope, requestedOptions),
@@ -204,7 +205,7 @@
 			action: 'inspect',
 			label: m.images_check_updates(),
 			loadingLabel: m.common_action_checking(),
-			onclick: () => checkUpdatesMutation.mutate(actionEnvironments('image-updates:check')),
+			onclick: () => checkUpdatesMutation.mutate(actionEnvironments(PERMISSIONS.IMAGE_UPDATES_CHECK)),
 			loading: isChecking,
 			disabled: isChecking
 		},

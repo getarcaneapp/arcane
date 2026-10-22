@@ -50,6 +50,7 @@ var accessSurfacesInternal = []AccessSurface{
 		"settings.category.users",
 		"settings.category.webhooks",
 		"settings.category.diagnostics",
+		"settings.category.groups",
 	}, 120),
 
 	routeSurfaceInternal("route.dashboard", "/dashboard", "Dashboard", AccessScopeModeEnvPlusGlobal, []string{PermDashboardRead}, 10),
@@ -93,7 +94,7 @@ var accessSurfacesInternal = []AccessSurface{
 	allOfRouteSurfaceInternal("route.podman.autoupdate", "/podman/autoupdate", "Podman auto-update", AccessScopeModeEnvPlusGlobal, []string{PermPodmanRead, PermPodmanAutoUpdate}),
 	routeSurfaceInternal("route.events", "/events", "Events", AccessScopeModeGlobalOnly, []string{PermEventsRead}, 110),
 	routeSurfaceInternal("route.activities", "", "Activities", AccessScopeModeAnyEffectiveScope, []string{PermActivitiesRead}, 0),
-	allOfRouteSurfaceInternal("route.oidc-role-mappings", "", "OIDC Role Mappings", AccessScopeModeGlobalOnly, AllPermissions()),
+	routeSurfaceInternal("route.oidc-role-mappings", "", "OIDC Group Mappings", AccessScopeModeGlobalOnly, []string{PermOidcMappingsList}, 0),
 	routeSurfaceInternal("route.customize.templates.create",
 		"/customize/templates/create",
 		"Create template",
@@ -124,12 +125,14 @@ var accessSurfacesInternal = []AccessSurface{
 	settingsCategorySurfaceInternal("notifications", "/settings/notifications", "Notifications", AccessScopeModeGlobalOnly, []string{PermNotificationsManage}),
 	settingsCategorySurfaceInternal("roles", "/settings/roles", "Roles", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}),
 	settingsCategorySurfaceInternal("s3destinations", "/settings/backups/s3", "S3 Destinations", AccessScopeModeGlobalOnly, []string{PermS3DestinationsList, PermS3DestinationsRead}),
-	globalAdminSettingsCategorySurfaceInternal("systembackups", "/settings/backups", "Backups"),
+	settingsCategorySurfaceInternal("systembackups", "/settings/backups", "Backups", AccessScopeModeGlobalOnly, []string{PermAll}),
 	routeSurfaceInternal("route.settings.roles.new", "/settings/roles/new", "Create role", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}, 0),
 	routeSurfaceInternal("route.settings.roles.detail", "/settings/roles/{id}", "Role", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}, 0),
 	settingsCategorySurfaceInternal("users", "/settings/users", "Users", AccessScopeModeGlobalOnly, []string{PermUsersList, PermUsersRead}),
 	settingsCategorySurfaceInternal("webhooks", "/settings/webhooks", "Webhooks", AccessScopeModeEnvPlusGlobal, []string{PermWebhooksList}),
 	settingsCategorySurfaceInternal("diagnostics", "/settings/diagnostics", "Diagnostics", AccessScopeModeGlobalOnly, []string{PermDiagnosticsRead}),
+	settingsCategorySurfaceInternal("groups", "/settings/groups", "Groups", AccessScopeModeGlobalOnly, []string{PermGroupsList}),
+	routeSurfaceInternal("route.settings.groups.detail", "/settings/groups/{id}", "Group", AccessScopeModeGlobalOnly, []string{PermGroupsList, PermGroupsRead}, 0),
 
 	customizeCategorySurfaceInternal("templates", "/customize/templates", "Templates", []string{PermCustomizeManage, PermTemplatesList, PermTemplatesRead}),
 	customizeCategorySurfaceInternal("registries", "/customize/registries", "Container Registries", []string{PermCustomizeManage, PermRegistriesList, PermRegistriesRead}),
@@ -264,14 +267,6 @@ func routeSurfaceInternal(id, url, label, scopeMode string, permissions []string
 
 func allOfRouteSurfaceInternal(id, url, label, scopeMode string, permissions []string) AccessSurface {
 	surface := routeSurfaceInternal(id, url, label, scopeMode, permissions, 0)
-	surface.MatchMode = AccessMatchModeAllOf
-	return surface
-}
-
-// globalAdminSettingsCategorySurfaceInternal approximates the global-admin
-// gate its routes enforce: only admins hold every permission.
-func globalAdminSettingsCategorySurfaceInternal(categoryID, url, label string) AccessSurface {
-	surface := settingsCategorySurfaceInternal(categoryID, url, label, AccessScopeModeGlobalOnly, AllPermissions())
 	surface.MatchMode = AccessMatchModeAllOf
 	return surface
 }

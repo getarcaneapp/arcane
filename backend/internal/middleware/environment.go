@@ -120,34 +120,21 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	}
 
 	// SECURITY: Validate authentication BEFORE proxying to remote environments.
-	var perms *authz.PermissionSet
-	var user *types.Actor
-	if m.authValidator != nil {
-		var authenticated bool
-		perms, user, authenticated = m.authValidator(ctx, c)
-		if !authenticated {
-			return writeProxyError(c, http.StatusUnauthorized, "Authentication required to access remote environments")
-		}
-		if user != nil {
-			RecordAuthenticatedRequest(ctx, req.Header, user)
-		}
+	perms, user, authenticated := m.authValidator(ctx, c)
+	if !authenticated || perms == nil {
+		return writeProxyError(c, http.StatusUnauthorized, "Authentication required to access remote environments")
+	}
+	if user != nil {
+		RecordAuthenticatedRequest(ctx, req.Header, user)
+		c.SetRequest(req.WithContext(context.WithValue(ctx, types.CurrentUserContextKey{}, user)))
+		req = c.Request()
 	}
 
 	// SECURITY: forwarded identity headers are always cleared first; only server-resolved values are sent.
 	req.Header.Del(HeaderIconCatalog)
+	req.Header.Del(authz.HeaderAuthz)
 	if user != nil && user.Preferences.IconCatalog != nil && *user.Preferences.IconCatalog != "" {
 		req.Header.Set(HeaderIconCatalog, *user.Preferences.IconCatalog)
-	}
-	req.Header.Del(HeaderUpdateInitiatorID)
-	req.Header.Del(HeaderUpdateInitiatorName)
-	req.Header.Del(HeaderUpdateInitiatorDisplayName)
-	isContainerUpdate := req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/containers/") && strings.HasSuffix(req.URL.Path, "/update")
-	if isContainerUpdate && user != nil && user.ID != "" {
-		req.Header.Set(HeaderUpdateInitiatorID, user.ID)
-		req.Header.Set(HeaderUpdateInitiatorName, user.Username)
-		if user.DisplayName != nil {
-			req.Header.Set(HeaderUpdateInitiatorDisplayName, *user.DisplayName)
-		}
 	}
 
 	accessToken, enabled, err := m.resolver(ctx, envID)
@@ -158,7 +145,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		return writeProxyError(c, http.StatusBadRequest, "Environment is disabled")
 	}
 
-	// SECURITY: Remote agents trust the manager as sudo, so per-environment authorization happens here.
+	// SECURITY: Route permissions are checked here; the agent receives the forwarded permission set.
 	status := m.proxyPermissionStatus(c, perms, envID, suffix)
 	if replay, isReplay := req.Body.(*proxiedReplayBody); isReplay {
 		defer func() { _ = replay.Close() }()
@@ -173,6 +160,11 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		return writeProxyError(c, status, "Invalid request body")
 	}
 
+	authzHeader, err := authz.EncodeForwardedAuthz(perms, envID, kit.FromPtr(user))
+	if err != nil {
+		return writeProxyError(c, http.StatusInternalServerError, "Failed to encode forwarded permissions")
+	}
+
 	tunnel, unavailable := m.activeTunnel(ctx, envID)
 	if unavailable {
 		return writeProxyError(c, http.StatusServiceUnavailable, "Agent is not connected")
@@ -184,7 +176,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		target += "?" + req.URL.RawQuery
 	}
 	if httpx.IsWebSocketUpgradeRequest(req) {
-		if proxyErr := ws.ProxyHTTP(c.Response(), req, agent.HTTPToWebSocketURL(target), agent.BuildWebSocketHeaders(c, accessToken), m.checkOrigin, tunnel.HTTPClient); proxyErr != nil {
+		if proxyErr := ws.ProxyHTTP(c.Response(), req, agent.HTTPToWebSocketURL(target), agent.BuildWebSocketHeaders(c, accessToken, authzHeader), m.checkOrigin, tunnel.HTTPClient); proxyErr != nil {
 			slog.ErrorContext(ctx, "websocket proxy failed", "err", proxyErr)
 		}
 		return nil
@@ -221,6 +213,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	agent.CopyRequestHeaders(req.Header, proxyReq.Header)
 	agent.SetAuthHeader(proxyReq, c)
 	agent.SetAgentToken(proxyReq, accessToken)
+	proxyReq.Header.Set(authz.HeaderAuthz, authzHeader)
 	agent.SetForwardedHeaders(proxyReq, c.RealIP(), req.Host)
 
 	resp, err := tunnel.HTTPClient.Do(proxyReq)
@@ -284,6 +277,7 @@ func (m *EnvironmentMiddleware) proxyPermissionStatus(c *echo.Context, ps *authz
 			perm, known := authz.UploadKindPermission(segments[1])
 			denied := !known || !ps.Allows(perm, envID)
 			if denied {
+				recordEchoDenial(c, perm, envID)
 				slog.DebugContext(ctx, "Denying proxied upload session request: permission denied",
 					"method", method, "path", suffix, "kind", segments[1], "environmentId", envID)
 			}
@@ -293,6 +287,7 @@ func (m *EnvironmentMiddleware) proxyPermissionStatus(c *echo.Context, ps *authz
 
 	perm, ok := m.matcher.Lookup(method, suffix, req.URL.Query()).Get()
 	if !ok {
+		recordEchoDenial(c, "", envID)
 		slog.WarnContext(ctx, "Denying proxied request with no known permission mapping", "method", method, "path", suffix, "environmentId", envID)
 		return http.StatusForbidden
 	}
@@ -301,6 +296,7 @@ func (m *EnvironmentMiddleware) proxyPermissionStatus(c *echo.Context, ps *authz
 		return http.StatusOK
 	}
 	if !ps.Allows(perm, kit.Ternary(authz.IsEnvScoped(perm), envID, "")) {
+		recordEchoDenial(c, perm, envID)
 		slog.DebugContext(ctx, "Denying proxied request: permission denied", "method", method, "path", suffix, "permission", perm, "environmentId", envID)
 		return http.StatusForbidden
 	}
@@ -322,6 +318,7 @@ func (m *EnvironmentMiddleware) proxyPermissionStatus(c *echo.Context, ps *authz
 	}
 	for _, operationPermission := range required {
 		if !ps.Allows(operationPermission, envID) {
+			recordEchoDenial(c, operationPermission, envID)
 			slog.DebugContext(ctx, "Denying proxied request: body-derived permission denied",
 				"path", suffix, "permission", operationPermission, "environmentId", envID)
 			return http.StatusForbidden

@@ -9,6 +9,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
@@ -96,7 +97,7 @@ func RegisterAuth(
 		Security:    []map[string][]string{},
 	}, h.Logout)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "get-current-user",
 		Method:      http.MethodGet,
 		Path:        "/auth/me",
@@ -106,7 +107,7 @@ func RegisterAuth(
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, h.GetCurrentUser)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "get-session-bootstrap",
 		Method:      http.MethodGet,
 		Path:        "/auth/bootstrap",
@@ -126,7 +127,7 @@ func RegisterAuth(
 		Security:    []map[string][]string{},
 	}, h.RefreshToken)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "change-password",
 		Method:      http.MethodPost,
 		Path:        "/auth/password",
@@ -136,7 +137,7 @@ func RegisterAuth(
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, h.ChangePassword)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "logout-all-other-sessions",
 		Method:      http.MethodDelete,
 		Path:        "/auth/sessions",
@@ -146,7 +147,7 @@ func RegisterAuth(
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, h.LogoutAllOtherSessions)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "update-my-profile",
 		Method:      http.MethodPatch,
 		Path:        "/auth/me/profile",
@@ -156,7 +157,7 @@ func RegisterAuth(
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, h.UpdateMyProfile)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "upload-my-avatar",
 		Method:      http.MethodPost,
 		Path:        "/auth/me/avatar",
@@ -179,7 +180,7 @@ func RegisterAuth(
 		},
 	}, h.UploadMyAvatar)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "delete-my-avatar",
 		Method:      http.MethodDelete,
 		Path:        "/auth/me/avatar",

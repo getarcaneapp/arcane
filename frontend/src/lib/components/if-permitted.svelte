@@ -1,25 +1,23 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
+	import type { Permission } from '#lib/permissions.generated.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import { hasAnyPermission, isGlobalAdmin } from '#lib/utils/auth.js';
+	import { hasAnyPermission } from '#lib/utils/auth.js';
 
 	let {
 		perm,
 		envId,
-		adminOnly = false,
 		children,
 		fallback
 	}: {
-		perm?: string | string[];
+		perm?: Permission | Permission[];
 		envId?: string;
-		adminOnly?: boolean;
 		children: Snippet;
 		fallback?: Snippet;
 	} = $props();
 
 	const allowed = $derived.by(() => {
-		if (adminOnly) return isGlobalAdmin();
 		if (perm === undefined) return true;
 		const perms = typeof perm === 'string' ? [perm] : perm;
 		const envIds = envId === undefined ? environmentStore.shown.map((env) => env.id) : [envId];

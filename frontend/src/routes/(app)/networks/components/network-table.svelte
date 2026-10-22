@@ -1,4 +1,5 @@
 <script module lang="ts">
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import type { NetworkSummaryDto } from '#lib/types/docker.js';
 
 	function ipamValues(item: NetworkSummaryDto, key: 'subnet' | 'gateway'): string[] {
@@ -97,7 +98,7 @@
 			}
 			return;
 		}
-		networks = await fetchAcrossEnvironments(readableEnvironments('networks:list'), options, (id, request, config) =>
+		networks = await fetchAcrossEnvironments(readableEnvironments(PERMISSIONS.NETWORKS_LIST), options, (id, request, config) =>
 			networkService.getNetworksForEnvironment(id, request, config)
 		);
 		onNetworksChange?.(networks);

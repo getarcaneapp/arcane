@@ -1,3 +1,4 @@
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { containerService } from '#lib/services/container-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -12,7 +13,7 @@ import type { PageLoad } from './$types';
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
 	await environmentStore.ready;
-	const environments = readableEnvironments('containers:list');
+	const environments = readableEnvironments(PERMISSIONS.CONTAINERS_LIST);
 	const scope = environmentStore.shownKey;
 
 	const containerRequestOptions = resolveInitialTableRequest('arcane-container-table', {

@@ -7,6 +7,7 @@
 	import * as Accordion from '#lib/components/ui/accordion/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import type { VolumeCreate } from '#lib/types/docker.js';
 	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { parseKeyValuePairs } from '#lib/utils/form-parsers.js';
@@ -23,7 +24,7 @@
 	let { open = $bindable(false), onSubmit, isLoading }: CreateVolumeFormProps = $props();
 
 	let pickedEnvironmentId = $state('');
-	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'volumes:create'));
+	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, PERMISSIONS.VOLUMES_CREATE));
 
 	const drivers = [
 		{ value: 'local', label: m.local() },
@@ -91,7 +92,7 @@
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
 			<EnvironmentDestinationSelect
 				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
-				permission="volumes:create"
+				permission={PERMISSIONS.VOLUMES_CREATE}
 				variant="field"
 			/>
 			<FormInput

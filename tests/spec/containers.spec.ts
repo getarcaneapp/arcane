@@ -712,6 +712,14 @@ test.describe('Lifecycle', () => {
 		});
 	}
 
+	function isNetworkActionUrl(url: string, action: 'connect' | 'disconnect') {
+		const parsed = new URL(url);
+		return (
+			/^\/api\/environments\/0\/networks\/[^/]+$/.test(parsed.pathname) &&
+			parsed.searchParams.get('action') === action
+		);
+	}
+
 	async function connectAndDisconnectNetwork(page: Page, containerId: string, networkName: string) {
 		return test.step('Connect and disconnect network', async () => {
 			await page.getByRole('tab', { name: 'Networks', exact: true }).click();
@@ -723,9 +731,7 @@ test.describe('Lifecycle', () => {
 
 			const connectResponsePromise = page.waitForResponse(
 				(response) =>
-					response.request().method() === 'POST' &&
-					/\/api\/environments\/0\/networks\/[^/]+$/.test(new URL(response.url()).pathname) &&
-					new URL(response.url()).searchParams.get('action') === 'connect'
+					response.request().method() === 'POST' && isNetworkActionUrl(response.url(), 'connect')
 			);
 			await connectSection.getByRole('button', { name: 'Connect', exact: true }).click();
 			expect((await connectResponsePromise).ok()).toBe(true);
@@ -743,9 +749,7 @@ test.describe('Lifecycle', () => {
 			await networkCard.getByRole('button', { name: 'Disconnect', exact: true }).click();
 			const disconnectResponsePromise = page.waitForResponse(
 				(response) =>
-					response.request().method() === 'POST' &&
-					/\/api\/environments\/0\/networks\/[^/]+$/.test(new URL(response.url()).pathname) &&
-					new URL(response.url()).searchParams.get('action') === 'disconnect'
+					response.request().method() === 'POST' && isNetworkActionUrl(response.url(), 'disconnect')
 			);
 			await page
 				.getByRole('dialog')

@@ -1,3 +1,4 @@
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { containerService, type ContainerListRequestOptions } from '#lib/services/container-service.js';
 import { projectService } from '#lib/services/project-service.js';
@@ -36,15 +37,19 @@ export const load: PageLoad = async ({ parent }) => {
 				queryClient.query({
 					queryKey: queryKeys.containers.list(scope, containerRequestOptions),
 					queryFn: () =>
-						fetchAcrossEnvironments(readableEnvironments('containers:list'), containerRequestOptions, (id, request, config) =>
-							containerService.getContainersForEnvironment(id, request, config)
+						fetchAcrossEnvironments(
+							readableEnvironments(PERMISSIONS.CONTAINERS_LIST),
+							containerRequestOptions,
+							(id, request, config) => containerService.getContainersForEnvironment(id, request, config)
 						)
 				}),
 				queryClient.query({
 					queryKey: queryKeys.projects.list(scope, projectRequestOptions),
 					queryFn: () =>
-						fetchAcrossEnvironments(readableEnvironments('projects:list'), projectRequestOptions, (id, request, config) =>
-							projectService.getProjectsForEnvironment(id, request, config)
+						fetchAcrossEnvironments(
+							readableEnvironments(PERMISSIONS.PROJECTS_LIST),
+							projectRequestOptions,
+							(id, request, config) => projectService.getProjectsForEnvironment(id, request, config)
 						)
 				})
 			]))()

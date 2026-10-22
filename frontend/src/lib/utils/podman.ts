@@ -1,3 +1,4 @@
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 import { PODMAN_SYSTEMD_UNIT_LABEL, type PodmanStatus } from '#lib/types/podman.js';
 import { environmentHref, readableEnvironments } from '#lib/utils/environments.js';
@@ -23,7 +24,7 @@ export function shownPodmanEnvironments(
 	statuses: Record<string, PodmanStatus>,
 	supports: (status: PodmanStatus) => boolean = () => true
 ): EnvironmentRef[] {
-	return readableEnvironments('podman:read').filter((env) => {
+	return readableEnvironments(PERMISSIONS.PODMAN_READ).filter((env) => {
 		const status = statuses[env.id];
 		return status !== undefined && supports(status);
 	});

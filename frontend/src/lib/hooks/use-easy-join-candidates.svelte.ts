@@ -1,5 +1,6 @@
 import { createQuery } from '@tanstack/svelte-query';
 
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { swarmService } from '#lib/services/swarm-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -10,7 +11,7 @@ import { tryCatch } from '#lib/utils/try-catch.js';
 export function useEasyJoinCandidates() {
 	const user = userStore;
 	const managerEnvironmentIds = $derived(
-		environmentStore.shown.map((env) => env.id).filter((id) => userHasPermission(user.current, 'swarm:join', id))
+		environmentStore.shown.map((env) => env.id).filter((id) => userHasPermission(user.current, PERMISSIONS.SWARM_JOIN, id))
 	);
 	const candidatesQuery = createQuery(() => {
 		const environmentIds = managerEnvironmentIds;

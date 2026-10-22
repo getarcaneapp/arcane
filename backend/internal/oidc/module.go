@@ -7,25 +7,20 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/passkey"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
-// RegisterOidc registers all OIDC authentication endpoints (plus the OIDC
-// group → role mapping CRUD) using Huma.
+// RegisterOidc registers all OIDC authentication endpoints using Huma.
 func RegisterOidc(
 	api huma.API,
 	authService *auth.AuthService,
 	passkeyService *passkey.PasskeyService,
 	oidcService *OidcService,
-	roleService *role.RoleService,
 	userService *user.UserService,
 	cfg *config.Config,
 ) {
-	h := &OidcHandler{authService: authService, passkeyService: passkeyService, oidcService: oidcService, roleService: roleService, userService: userService, config: cfg}
+	h := &OidcHandler{authService: authService, passkeyService: passkeyService, oidcService: oidcService, userService: userService, config: cfg}
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-oidc-status",
@@ -86,47 +81,4 @@ func RegisterOidc(
 		Tags:        []string{"OIDC"},
 		Security:    []map[string][]string{},
 	}, h.ExchangeDeviceToken)
-
-	// --- OIDC role mapping endpoints ---
-
-	huma.Register(api, huma.Operation{
-		OperationID: "list-oidc-role-mappings",
-		Method:      http.MethodGet,
-		Path:        "/oidc/mappings",
-		Summary:     "List OIDC group → role mappings",
-		Description: "Returns every mapping. On each OIDC login the user's group claim is matched against ClaimValue and matching rows become source='oidc' role assignments.",
-		Tags:        []string{"OIDC"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireGlobalAdmin(api),
-	}, h.ListOidcRoleMappings)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "create-oidc-role-mapping",
-		Method:      http.MethodPost,
-		Path:        "/oidc/mappings",
-		Summary:     "Create an OIDC role mapping",
-		Tags:        []string{"OIDC"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireGlobalAdmin(api),
-	}, h.CreateOidcRoleMapping)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "update-oidc-role-mapping",
-		Method:      http.MethodPatch,
-		Path:        "/oidc/mappings/{id}",
-		Summary:     "Update an OIDC role mapping",
-		Tags:        []string{"OIDC"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireGlobalAdmin(api),
-	}, h.UpdateOidcRoleMapping)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "delete-oidc-role-mapping",
-		Method:      http.MethodDelete,
-		Path:        "/oidc/mappings/{id}",
-		Summary:     "Delete an OIDC role mapping",
-		Tags:        []string{"OIDC"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireGlobalAdmin(api),
-	}, h.DeleteOidcRoleMapping)
 }

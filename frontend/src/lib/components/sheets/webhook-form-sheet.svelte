@@ -7,6 +7,7 @@
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { projectService } from '#lib/services/project-service.js';
@@ -82,7 +83,7 @@
 	}
 
 	let pickedEnvironmentId = $state('');
-	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'webhooks:create'));
+	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, PERMISSIONS.WEBHOOKS_CREATE));
 	let selectedTargetType = $state<WebhookTargetType>('container');
 	let selectedActionType = $state<WebhookActionType>(getDefaultActionType('container'));
 	let selectedTargetId = $state('');
@@ -197,7 +198,7 @@
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
 			<EnvironmentDestinationSelect
 				bind:value={() => environmentId, handleEnvironmentChange}
-				permission="webhooks:create"
+				permission={PERMISSIONS.WEBHOOKS_CREATE}
 				variant="field"
 			/>
 			<FormInput

@@ -12,6 +12,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { StartIcon, StopIcon, RefreshIcon, TrashIcon, InspectIcon, LayersIcon, BoxIcon, HealthIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import type { ImageUpdateData } from '#lib/types/docker.js';
 	import type { RuntimeService } from '#lib/types/swarm.js';
@@ -39,10 +40,10 @@
 	}
 
 	const currentEnvId = $derived(environmentId);
-	const canStartContainer = $derived(hasPermission('containers:start', currentEnvId));
-	const canStopContainer = $derived(hasPermission('containers:stop', currentEnvId));
-	const canRestartProject = $derived(hasPermission('projects:restart', currentEnvId));
-	const canDeleteContainer = $derived(hasPermission('containers:delete', currentEnvId));
+	const canStartContainer = $derived(hasPermission(PERMISSIONS.CONTAINERS_START, currentEnvId));
+	const canStopContainer = $derived(hasPermission(PERMISSIONS.CONTAINERS_STOP, currentEnvId));
+	const canRestartProject = $derived(hasPermission(PERMISSIONS.PROJECTS_RESTART, currentEnvId));
+	const canDeleteContainer = $derived(hasPermission(PERMISSIONS.CONTAINERS_DELETE, currentEnvId));
 
 	type ServiceWithId = RuntimeService & { id: string };
 

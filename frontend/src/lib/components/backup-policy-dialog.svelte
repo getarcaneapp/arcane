@@ -6,6 +6,7 @@
 	import BackupPolicyFields from '#lib/components/backup-policy-fields.svelte';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import type { BackupPolicy, BackupPolicyForm, BackupPolicyUpdate } from '#lib/types/backup.js';
@@ -68,7 +69,7 @@
 	let destinationsLoadError = $state<string | null>(null);
 	// Destinations are a global resource. Without list access the dialog keeps a
 	// policy's configured destination read-only instead of requesting the list.
-	const canListDestinations = $derived(hasPermission('s3-destinations:list', GLOBAL_SCOPE));
+	const canListDestinations = $derived(hasPermission(PERMISSIONS.S3_DESTINATIONS_LIST, GLOBAL_SCOPE));
 	const destinationsAccessible = $derived(destinations !== undefined || canListDestinations);
 	const initialPolicy = untrack(() => policies.find((item) => item.id === policyId));
 	let initialForm: PolicyForm;

@@ -8,6 +8,7 @@
 	import { RegistryIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
 	import type { ContainerRegistry, ContainerRegistryPullUsage } from '#lib/types/docker.js';
@@ -100,7 +101,7 @@
 		}
 	}
 
-	const canCreateRegistry = $derived(hasShownPermission('registries:create'));
+	const canCreateRegistry = $derived(hasShownPermission(PERMISSIONS.REGISTRIES_CREATE));
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [

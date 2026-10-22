@@ -15,6 +15,7 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { ProjectsIcon, ImagesIcon, UpdateIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { Project } from '#lib/types/swarm.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
@@ -162,7 +163,7 @@
 	}
 
 	const bulkActions = $derived<BulkAction[]>(
-		hasShownPermission('image-updates:check')
+		hasShownPermission(PERMISSIONS.IMAGE_UPDATES_CHECK)
 			? [
 					{
 						id: 'update',
@@ -198,7 +199,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ProjectUpdateRow })}
-	<IfPermitted perm="image-updates:check" envId={item.environmentId}>
+	<IfPermitted perm={PERMISSIONS.IMAGE_UPDATES_CHECK} envId={item.environmentId}>
 		<RowActionsMenu>
 			<DropdownMenu.Item onclick={() => handleUpdateProject(item)} disabled={!!updatingProjectIds[rowKey(item)]}>
 				{#if updatingProjectIds[rowKey(item)]}

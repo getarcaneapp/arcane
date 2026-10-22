@@ -10,6 +10,7 @@
 	import { DownloadIcon, UpdateIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -56,9 +57,9 @@
 		return () => clearTimeout(timer);
 	});
 
-	const canCreateEnvironment = $derived(hasPermission('environments:create', GLOBAL_SCOPE));
-	const canDeleteEnvironment = $derived(hasPermission('environments:delete', GLOBAL_SCOPE));
-	const canUpdateEnvironments = $derived(hasShownPermission('system:upgrade'));
+	const canCreateEnvironment = $derived(hasPermission(PERMISSIONS.ENVIRONMENTS_CREATE, GLOBAL_SCOPE));
+	const canDeleteEnvironment = $derived(hasPermission(PERMISSIONS.ENVIRONMENTS_DELETE, GLOBAL_SCOPE));
+	const canUpdateEnvironments = $derived(hasShownPermission(PERMISSIONS.SYSTEM_UPGRADE));
 
 	function handleBulkDelete(ids: string[] = selectedIds) {
 		if (ids.length === 0) return;

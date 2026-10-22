@@ -3,7 +3,7 @@ import type { Environment } from '#lib/types/environment.js';
 import type { AppVersionInformation, ApplicationTheme, IconCatalog } from '#lib/types/settings.js';
 import type { CreateRequest, Paginated, UpdateRequest } from '#lib/types/shared.js';
 
-// --- RBAC: roles, permissions, assignments ---
+// --- RBAC: roles, bindings, groups ---
 
 export type RoleScope = 'global' | 'env';
 
@@ -13,7 +13,7 @@ export type Role = {
 	description?: string | null;
 	permissions: string[];
 	builtIn: boolean;
-	assignedUserCount: number;
+	bindingCount: number;
 	createdAt: string;
 	updatedAt?: string;
 };
@@ -24,42 +24,93 @@ export type RoleCreate = CreateRequest<Role, RoleWritable, 'name' | 'permissions
 
 export type RoleUpdate = UpdateRequest<Role, RoleWritable>;
 
-export type RoleAssignment = {
+export type BindingSubjectType = 'user' | 'group';
+
+export type BindingSource = 'manual' | 'federated' | 'oidc' | 'env';
+
+export type RoleBinding = {
 	id: string;
-	userId: string;
+	subjectType: BindingSubjectType;
+	subjectId: string;
+	subjectName: string;
 	roleId: string;
+	roleName: string;
 	environmentId?: string;
-	source: 'manual' | 'oidc';
+	environmentName?: string;
+	source: BindingSource;
+	createdBy?: string;
 	createdAt: string;
 };
 
-export type RoleAssignmentSummary = {
+export type RoleBindingSummary = {
+	id: string;
 	roleId: string;
+	roleName: string;
 	environmentId?: string;
-	source: 'manual' | 'oidc';
+	source: BindingSource;
+	groupId?: string;
+	groupName?: string;
 };
 
-export type SetUserAssignments = {
-	assignments: { roleId: string; environmentId?: string }[];
+export type RoleBindingCreate = {
+	subjectType: BindingSubjectType;
+	subjectId: string;
+	roleId: string;
+	environmentId?: string;
+};
+
+export type RoleBindingFilter = {
+	subjectType?: BindingSubjectType;
+	subjectId?: string;
+	roleId?: string;
+	environmentId?: string;
+};
+
+export type MembershipSource = 'manual' | 'oidc';
+
+export type Group = {
+	id: string;
+	name: string;
+	description?: string | null;
+	memberCount: number;
+	bindingCount: number;
+	createdAt: string;
+	updatedAt?: string;
+};
+
+export type GroupWritable = 'name' | 'description';
+
+export type GroupCreate = CreateRequest<Group, GroupWritable, 'name'>;
+
+export type GroupUpdate = UpdateRequest<Group, GroupWritable>;
+
+export type GroupRef = {
+	id: string;
+	name: string;
+	source: MembershipSource;
+};
+
+export type GroupMember = {
+	userId: string;
+	username: string;
+	displayName?: string | null;
+	source: MembershipSource;
+	createdAt: string;
 };
 
 export type OidcMappingSource = 'manual' | 'env';
 
-export type OidcRoleMapping = {
+export type OidcGroupMapping = {
 	id: string;
 	claimValue: string;
-	roleId: string;
-	environmentId?: string | null;
+	groupId: string;
+	groupName: string;
 	source: OidcMappingSource;
 	createdAt: string;
 	updatedAt?: string;
 };
 
-export type OidcRoleMappingWritable = 'claimValue' | 'roleId' | 'environmentId';
-
-export type OidcRoleMappingCreate = CreateRequest<OidcRoleMapping, OidcRoleMappingWritable, 'claimValue' | 'roleId'>;
-
-export type OidcRoleMappingUpdate = UpdateRequest<OidcRoleMapping, OidcRoleMappingWritable>;
+export type OidcGroupMappingSpec = Pick<OidcGroupMapping, 'claimValue' | 'groupId'>;
 
 export type PermissionsManifest = {
 	resources: PermissionResource[];
@@ -112,13 +163,6 @@ export type ApiKeyPermissionGrant = {
 	environmentId?: string;
 };
 
-export const BUILT_IN_ROLE_ADMIN = 'role_admin';
-export const BUILT_IN_ROLE_EDITOR = 'role_editor';
-export const BUILT_IN_ROLE_DEPLOYER = 'role_deployer';
-export const BUILT_IN_ROLE_VIEWER = 'role_viewer';
-
-export const SUDO_PERMISSION = '*';
-
 export const GLOBAL_SCOPE = 'global';
 
 // --- User ---
@@ -158,7 +202,8 @@ export type User = {
 	displayName?: string | null;
 	email?: string | null;
 	avatarUrl?: string;
-	roleAssignments: RoleAssignmentSummary[];
+	bindings: RoleBindingSummary[];
+	groups: GroupRef[];
 	permissionsByEnv: Record<string, string[]>;
 	isGlobalAdmin: boolean;
 	canDelete: boolean;

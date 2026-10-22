@@ -13,6 +13,7 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type {
 		PodmanPodCreateRequest,
@@ -40,7 +41,7 @@
 	let { open = $bindable(false), environments, onSubmit, isLoading }: CreatePodFormProps = $props();
 
 	let pickedEnvironmentId = $state('');
-	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'podman:pods', environments));
+	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, PERMISSIONS.PODMAN_PODS, environments));
 
 	const sizePattern = /^\d+(\.\d+)?\s*[bkmg]?b?$/i;
 	const cpusetPattern = /^\d+(-\d+)?(,\d+(-\d+)?)*$/;
@@ -375,7 +376,7 @@
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
 			<EnvironmentDestinationSelect
 				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
-				permission="podman:pods"
+				permission={PERMISSIONS.PODMAN_PODS}
 				{environments}
 				variant="field"
 			/>

@@ -9,6 +9,7 @@
 	import { AlertTriangleIcon, SettingsIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
@@ -19,7 +20,7 @@
 	import EasyJoinDialog from './components/easy-join-dialog.svelte';
 
 	const statusQuery = createQuery(() => {
-		const environments = readableEnvironments('swarm:read');
+		const environments = readableEnvironments(PERMISSIONS.SWARM_READ);
 		return {
 			queryKey: queryKeys.swarm.status(environments.map((environment) => environment.id).join(',')),
 			queryFn: () =>
@@ -110,7 +111,7 @@
 									{:else}
 										<Badge variant="gray">{m.swarm_cluster_not_initialized()}</Badge>
 									{/if}
-									{#if row.status?.clusterId && hasPermission('swarm:nodes', row.environment.id) && hasPermission('swarm:unlock', row.environment.id)}
+									{#if row.status?.clusterId && hasPermission(PERMISSIONS.SWARM_NODES, row.environment.id) && hasPermission(PERMISSIONS.SWARM_UNLOCK, row.environment.id)}
 										<ArcaneButton
 											action="create"
 											size="sm"

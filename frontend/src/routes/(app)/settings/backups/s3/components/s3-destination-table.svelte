@@ -12,6 +12,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { EditIcon, RemoteEnvironmentIcon, ClockIcon, GlobeIcon, TestIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
 	import type { S3Destination } from '#lib/types/s3-destination.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -90,7 +91,7 @@
 
 {#snippet RowActions({ item }: { item: S3Destination })}
 	<RowActionsMenu>
-		<IfPermitted perm="s3-destinations:test">
+		<IfPermitted perm={PERMISSIONS.S3_DESTINATIONS_TEST}>
 			<ActionMenuItem
 				icon={TestIcon}
 				label={m.test_connection()}
@@ -98,13 +99,13 @@
 				loading={testingId === item.id}
 			/>
 		</IfPermitted>
-		<IfPermitted perm="s3-destinations:update">
+		<IfPermitted perm={PERMISSIONS.S3_DESTINATIONS_UPDATE}>
 			<DropdownMenu.Item onclick={() => onEdit(item)}>
 				<EditIcon class="size-4" />
 				{m.common_edit()}
 			</DropdownMenu.Item>
 		</IfPermitted>
-		<IfPermitted perm="s3-destinations:delete">
+		<IfPermitted perm={PERMISSIONS.S3_DESTINATIONS_DELETE}>
 			<RemoveMenuItem onclick={() => onDelete(item)} label={m.common_delete()} />
 		</IfPermitted>
 	</RowActionsMenu>

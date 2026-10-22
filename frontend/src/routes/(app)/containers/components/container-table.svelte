@@ -43,6 +43,7 @@
 		InfoIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import {
 		containerService,
@@ -164,7 +165,7 @@
 	async function fetchContainers(request: ContainerListRequestOptions): Promise<ContainerPage> {
 		return onRefreshData
 			? onRefreshData(request)
-			: fetchAcrossEnvironments(readableEnvironments('containers:list'), request, (id, request, config) =>
+			: fetchAcrossEnvironments(readableEnvironments(PERMISSIONS.CONTAINERS_LIST), request, (id, request, config) =>
 					containerService.getContainersForEnvironment(id, request, config)
 				);
 	}
@@ -316,11 +317,11 @@
 		resourcePoller.start(() => refreshContainers(requestOptions));
 		return () => resourcePoller.stop();
 	});
-	const canUpdateContainers = $derived(hasShownPermission('containers:autoupdate'));
-	const canStartContainers = $derived(hasShownPermission('containers:start'));
-	const canStopContainers = $derived(hasShownPermission('containers:stop'));
-	const canRestartContainers = $derived(hasShownPermission('containers:restart'));
-	const canDeleteContainers = $derived(hasShownPermission('containers:delete'));
+	const canUpdateContainers = $derived(hasShownPermission(PERMISSIONS.CONTAINERS_AUTOUPDATE));
+	const canStartContainers = $derived(hasShownPermission(PERMISSIONS.CONTAINERS_START));
+	const canStopContainers = $derived(hasShownPermission(PERMISSIONS.CONTAINERS_STOP));
+	const canRestartContainers = $derived(hasShownPermission(PERMISSIONS.CONTAINERS_RESTART));
+	const canDeleteContainers = $derived(hasShownPermission(PERMISSIONS.CONTAINERS_DELETE));
 	// Reserve room for per-row state buttons so every State cell fits the width measured from the first rows.
 	const stateActionsMinWidth = $derived.by(() => {
 		if (canUpdateContainers) return 'min-w-15';
@@ -328,7 +329,7 @@
 		return '';
 	});
 	const canConvertToCompose = $derived(
-		hasShownPermission('projects:create') && settingsStore.current?.experimentalFeaturesEnabled === true
+		hasShownPermission(PERMISSIONS.PROJECTS_CREATE) && settingsStore.current?.experimentalFeaturesEnabled === true
 	);
 	const selectedEnvironmentIds = $derived(
 		new Set(containers.data?.filter((c) => selectedIds?.includes(rowKey(c))).map((c) => c.environmentId))
@@ -736,7 +737,7 @@
 			<Badge variant={getStateBadgeVariant(item.state)} minWidth="20">{getContainerStatusLabel(item.state)}</Badge>
 		{/if}
 		<div class="flex items-center gap-1 {stateActionsMinWidth}">
-			{#if !status && item.state !== 'running' && hasPermission('containers:start', item.environmentId)}
+			{#if !status && item.state !== 'running' && hasPermission(PERMISSIONS.CONTAINERS_START, item.environmentId)}
 				<ArcaneButton
 					action="base"
 					tone="ghost"
@@ -747,7 +748,7 @@
 					icon={StartIcon}
 					title={m.common_start()}
 				/>
-			{:else if !status && item.state === 'running' && hasPermission('containers:stop', item.environmentId)}
+			{:else if !status && item.state === 'running' && hasPermission(PERMISSIONS.CONTAINERS_STOP, item.environmentId)}
 				<ArcaneButton
 					action="base"
 					tone="ghost"
@@ -759,7 +760,7 @@
 					icon={StopIcon}
 				/>
 			{/if}
-			{#if !status && item.updateInfo?.hasUpdate && hasPermission('containers:autoupdate', item.environmentId)}
+			{#if !status && item.updateInfo?.hasUpdate && hasPermission(PERMISSIONS.CONTAINERS_AUTOUPDATE, item.environmentId)}
 				<ArcaneButton
 					action="base"
 					tone="ghost"
@@ -788,7 +789,9 @@
 			: item.labels?.['com.getarcaneapp.arcane.updater.strategy']?.trim() === 'tag'}
 		repo={imageRef.repo}
 		tag={imageRef.tag}
-		onUpdateContainer={hasPermission('containers:autoupdate', item.environmentId) ? () => handleUpdateContainer(item) : undefined}
+		onUpdateContainer={hasPermission(PERMISSIONS.CONTAINERS_AUTOUPDATE, item.environmentId)
+			? () => handleUpdateContainer(item)
+			: undefined}
 		debugHasUpdate={false}
 	/>
 {/snippet}
@@ -957,14 +960,14 @@
 				{m.common_inspect()}
 			</DropdownMenu.Item>
 
-			{#if hasPermission('containers:edit', envId) && !item.redeployDisabled && !item.labels?.[COMPOSE_PROJECT_LABEL]}
+			{#if hasPermission(PERMISSIONS.CONTAINERS_EDIT, envId) && !item.redeployDisabled && !item.labels?.[COMPOSE_PROJECT_LABEL]}
 				<DropdownMenu.Item onclick={() => goto(environmentHref(`/containers/${item.id}/edit`, envId))} disabled={isAnyLoading}>
 					<EditIcon class="size-4" />
 					{m.common_edit()}
 				</DropdownMenu.Item>
 			{/if}
 
-			{#if canConvertToCompose && hasPermission('projects:create', envId) && !item.labels?.[COMPOSE_PROJECT_LABEL]}
+			{#if canConvertToCompose && hasPermission(PERMISSIONS.PROJECTS_CREATE, envId) && !item.labels?.[COMPOSE_PROJECT_LABEL]}
 				<DropdownMenu.Item
 					onclick={() => goto(`/projects/new?fromContainers=${item.id}&fromEnv=${encodeURIComponent(envId)}`)}
 					disabled={isAnyLoading}
@@ -976,7 +979,7 @@
 
 			<DropdownMenu.Separator />
 
-			{#if item.updateInfo?.hasUpdate && hasPermission('containers:autoupdate', envId)}
+			{#if item.updateInfo?.hasUpdate && hasPermission(PERMISSIONS.CONTAINERS_AUTOUPDATE, envId)}
 				<ActionMenuItem
 					onclick={() => handleUpdateContainer(item)}
 					disabled={isAnyLoading}
@@ -986,7 +989,7 @@
 				/>
 			{/if}
 			{#if item.state === 'paused'}
-				<IfPermitted perm="containers:pause" {envId}>
+				<IfPermitted perm={PERMISSIONS.CONTAINERS_PAUSE} {envId}>
 					<ActionMenuItem
 						onclick={() => performContainerAction('unpause', item.id, envId)}
 						disabled={isAnyLoading}
@@ -995,7 +998,7 @@
 						loading={status === 'unpausing'}
 					/>
 				</IfPermitted>
-			{:else if item.state !== 'running' && hasPermission('containers:start', envId)}
+			{:else if item.state !== 'running' && hasPermission(PERMISSIONS.CONTAINERS_START, envId)}
 				<ActionMenuItem
 					onclick={() => performContainerAction('start', item.id, envId)}
 					disabled={isAnyLoading}
@@ -1004,7 +1007,7 @@
 					loading={status === 'starting'}
 				/>
 			{:else if item.state === 'running'}
-				<IfPermitted perm="containers:stop" {envId}>
+				<IfPermitted perm={PERMISSIONS.CONTAINERS_STOP} {envId}>
 					<ActionMenuItem
 						icon={StopIcon}
 						label={m.common_stop()}
@@ -1014,7 +1017,7 @@
 					/>
 				</IfPermitted>
 
-				<IfPermitted perm="containers:restart" {envId}>
+				<IfPermitted perm={PERMISSIONS.CONTAINERS_RESTART} {envId}>
 					<ActionMenuItem
 						icon={RefreshIcon}
 						label={m.common_restart()}
@@ -1024,7 +1027,7 @@
 					/>
 				</IfPermitted>
 
-				<IfPermitted perm="containers:pause" {envId}>
+				<IfPermitted perm={PERMISSIONS.CONTAINERS_PAUSE} {envId}>
 					<ActionMenuItem
 						onclick={() => performContainerAction('pause', item.id, envId)}
 						disabled={isAnyLoading}
@@ -1035,14 +1038,14 @@
 				</IfPermitted>
 			{/if}
 
-			{#if (item.state === 'running' || item.state === 'paused') && hasPermission('containers:kill', envId)}
+			{#if (item.state === 'running' || item.state === 'paused') && hasPermission(PERMISSIONS.CONTAINERS_KILL, envId)}
 				<DropdownMenu.Item onclick={() => openKillDialog(item)} disabled={isAnyLoading}>
 					<ZapIcon class="size-4" />
 					{m.common_kill()}
 				</DropdownMenu.Item>
 			{/if}
 
-			<IfPermitted perm="containers:redeploy" {envId}>
+			<IfPermitted perm={PERMISSIONS.CONTAINERS_REDEPLOY} {envId}>
 				{#if item.redeployDisabled}
 					<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
 						<RedeployIcon class="size-4 opacity-50" />
@@ -1061,7 +1064,7 @@
 
 			<DropdownMenu.Separator />
 
-			<IfPermitted perm="containers:delete" {envId}>
+			<IfPermitted perm={PERMISSIONS.CONTAINERS_DELETE} {envId}>
 				<ActionMenuItem
 					icon={TrashIcon}
 					label={m.common_remove()}

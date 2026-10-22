@@ -8,6 +8,7 @@
 	import { DockIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -24,7 +25,7 @@
 	const queryClient = useQueryClient();
 
 	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
-	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm:read'));
+	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions(PERMISSIONS.SWARM_READ));
 	const swarm = $derived(swarmQuery.data ?? data.swarm);
 	let isLoading = $state({ creating: false });
 	let showCreateDialog = $state(false);
@@ -66,10 +67,10 @@
 
 	const totalServices = $derived(services?.pagination?.totalItems ?? services?.data?.length ?? 0);
 
-	const canCreateService = $derived(swarm.managers.some((env) => hasPermission('swarm:services', env.id)));
+	const canCreateService = $derived(swarm.managers.some((env) => hasPermission(PERMISSIONS.SWARM_SERVICES, env.id)));
 
 	function openCreateDialog() {
-		createEnvironmentId = destinationEnvironmentId(createEnvironmentId, 'swarm:services', swarm.managers);
+		createEnvironmentId = destinationEnvironmentId(createEnvironmentId, PERMISSIONS.SWARM_SERVICES, swarm.managers);
 		showCreateDialog = true;
 	}
 
@@ -116,7 +117,7 @@
 		bind:open={showCreateDialog}
 		bind:environmentId={createEnvironmentId}
 		environments={swarm.managers}
-		environmentPermission="swarm:services"
+		environmentPermission={PERMISSIONS.SWARM_SERVICES}
 		title={m.swarm_service_create_title()}
 		description={m.swarm_service_create_description()}
 		submitLabel={m.common_create()}

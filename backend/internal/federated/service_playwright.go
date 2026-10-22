@@ -55,13 +55,12 @@ func (s *FederatedCredentialService) CreatePlaywrightCredential(ctx context.Cont
 			return fmt.Errorf("failed to create federated e2e credential: %w", err)
 		}
 
-		assignment := role.UserRoleAssignment{
-			UserID: serviceUser.ID,
+		if err := tx.Create(&role.RoleBinding{
+			UserID: new(serviceUser.ID),
 			RoleID: credential.RoleID,
-			Source: role.RoleAssignmentSourceManual,
-		}
-		if err := tx.Create(&assignment).Error; err != nil {
-			return fmt.Errorf("failed to create federated e2e role assignment: %w", err)
+			Source: role.BindingSourceFederated,
+		}).Error; err != nil {
+			return fmt.Errorf("failed to create federated e2e role binding: %w", err)
 		}
 
 		credentialID = credential.ID

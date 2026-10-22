@@ -1,3 +1,4 @@
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { networkService } from '#lib/services/network-service.js';
 import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 import type { TopologyEdgeDto, TopologyNodeDto } from '#lib/types/docker.js';
@@ -17,7 +18,7 @@ export type EnvironmentTopology = {
 };
 
 export async function fetchEnvironmentTopology(): Promise<EnvironmentTopology> {
-	const environments = readableEnvironments('networks:read');
+	const environments = readableEnvironments(PERMISSIONS.NETWORKS_READ);
 	if (environments.length === 0) return { nodes: [], edges: [], failedEnvironments: [], excludedEnvironments: [] };
 	const { value, failures, excluded } = await readAcrossEnvironments(environments, (scope, config) =>
 		networkService.getNetworkTopology(scope, config)

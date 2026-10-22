@@ -1,3 +1,4 @@
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { projectService } from '#lib/services/project-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -13,7 +14,7 @@ import { fetchProjectTags } from './projects-table.helpers';
 export const load: PageLoad = async ({ parent, url }) => {
 	const { queryClient } = await parent();
 	await environmentStore.ready;
-	const environments = readableEnvironments('projects:list');
+	const environments = readableEnvironments(PERMISSIONS.PROJECTS_LIST);
 	const scope = environmentStore.shownKey;
 	const showArchived = url.searchParams.get('archived') === 'true';
 

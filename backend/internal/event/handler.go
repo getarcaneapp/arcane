@@ -2,10 +2,16 @@ package event
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
+	"go.getarcane.app/kit/pkg"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
@@ -23,6 +29,14 @@ type ListEventsInput struct {
 	Severity     string `query:"severity" doc:"Filter by severity"`
 	Type         string `query:"type" doc:"Filter by event type (exact type or category prefix, comma-separated)"`
 	IncludeTotal bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
+}
+
+type ExportEventsInput struct {
+	Format        string `query:"format" enum:"csv,ndjson" default:"csv" doc:"Export file format"`
+	Search        string `query:"search" doc:"Search query"`
+	Severity      string `query:"severity" doc:"Filter by severity"`
+	Type          string `query:"type" doc:"Filter by event type (exact type or category prefix, comma-separated)"`
+	EnvironmentID string `query:"environmentId" doc:"Only events for this environment"`
 }
 
 type GetEventStatsInput struct{}
@@ -91,6 +105,28 @@ func (h *EventHandler) GetEventStats(ctx context.Context, _ *GetEventStatsInput)
 	}, nil
 }
 
+// ExportEvents streams matching events, oldest first, as CSV or NDJSON.
+func (h *EventHandler) ExportEvents(ctx context.Context, input *ExportEventsInput) (*huma.StreamResponse, error) {
+	params := pagination.QueryParams{
+		SearchQuery: pagination.SearchQuery{Search: input.Search},
+		Filters: map[string]string{
+			"severity":      input.Severity,
+			"type":          input.Type,
+			"environmentId": input.EnvironmentID,
+		},
+	}
+	filename := fmt.Sprintf("events-%s.%s", time.Now().UTC().Format("2006-01-02T15-04-05Z"), input.Format)
+	return &huma.StreamResponse{
+		Body: func(humaCtx huma.Context) {
+			humaCtx.SetHeader("Content-Type", kit.Ternary(input.Format == types.EventExportFormatCSV, "text/csv; charset=utf-8", "application/x-ndjson"))
+			humaCtx.SetHeader("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+			if err := h.eventService.ExportEvents(ctx, params, input.Format, humaCtx.BodyWriter()); err != nil {
+				slog.ErrorContext(ctx, "Failed to stream event export", "format", input.Format, "error", err)
+			}
+		},
+	}, nil
+}
+
 // GetEventsByEnvironment returns events for a specific environment.
 func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEventsByEnvironmentInput) (*handlerutil.Page[types.Event], error) {
 	if input.EnvironmentID == "" {
@@ -128,7 +164,8 @@ func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput)
 	}
 
 	if err := h.eventService.DeleteEvent(ctx, input.EventID); err != nil {
-		return nil, huma.Error500InternalServerError("Failed to delete event: " + err.Error())
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete event: "+apiErr.Message)
 	}
 
 	return handlerutil.MessageOutput("Event deleted successfully", ""), nil

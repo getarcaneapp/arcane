@@ -7,6 +7,7 @@
 	import { NetworksIcon, ConnectionIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { networkService } from '#lib/services/network-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -28,7 +29,7 @@
 	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
 	const networksQuery = createQuery(() => {
 		const queryScope = pageState.scope;
-		const environments = readableEnvironments('networks:list');
+		const environments = readableEnvironments(PERMISSIONS.NETWORKS_LIST);
 		const options = pageState.requestOptions;
 		return {
 			queryKey: queryKeys.networks.list(queryScope, options),
@@ -72,7 +73,7 @@
 	}
 
 	async function loadNetworks(options = pageState.requestOptions, requestedScope = pageState.scope) {
-		const environments = readableEnvironments('networks:list');
+		const environments = readableEnvironments(PERMISSIONS.NETWORKS_LIST);
 		pageState.requestOptions = options;
 		await queryClient.query({
 			queryKey: queryKeys.networks.list(requestedScope, options),

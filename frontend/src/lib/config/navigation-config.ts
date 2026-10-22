@@ -1,6 +1,7 @@
 import {
 	ApiKeyIcon,
 	UsersIcon,
+	GroupsIcon,
 	LockIcon,
 	NotificationsIcon,
 	DashboardIcon,
@@ -49,7 +50,6 @@ export type NavigationItem = {
 	 * item visible to every authenticated user.
 	 */
 	accessSurfaceId?: string;
-	adminOnly?: boolean;
 	requiredFeature?: FeatureID;
 };
 
@@ -246,8 +246,7 @@ export const navigationItems: NavigationSections = {
 					title: m.system_backups_title(),
 					url: '/settings/backups',
 					icon: BackupIcon,
-					accessSurfaceId: 'settings.category.systembackups',
-					adminOnly: true
+					accessSurfaceId: 'settings.category.systembackups'
 				},
 				{
 					title: m.users_title(),
@@ -267,6 +266,12 @@ export const navigationItems: NavigationSections = {
 					url: '/settings/diagnostics',
 					icon: ActivityIcon,
 					accessSurfaceId: 'settings.category.diagnostics'
+				},
+				{
+					title: m.groups_title(),
+					url: '/settings/groups',
+					icon: GroupsIcon,
+					accessSurfaceId: 'settings.category.groups'
 				}
 			]
 		}
@@ -323,7 +328,6 @@ function hasShownFeature(feature: FeatureID): boolean {
 
 function canSeeItem(item: NavigationItem, user: User, accessManifest: PermissionsManifest | null | undefined): boolean {
 	if (item.requiredFeature && !hasShownFeature(item.requiredFeature)) return false;
-	if (item.adminOnly && !user.isGlobalAdmin) return false;
 	if (!item.accessSurfaceId) return true;
 	if (!accessManifest?.accessSurfaces?.length) return true;
 	return canReachShownAccessSurface(accessManifest, item.accessSurfaceId, user);

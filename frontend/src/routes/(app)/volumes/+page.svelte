@@ -8,6 +8,7 @@
 	import { VolumesIcon, VolumeUnusedIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { volumeService } from '#lib/services/volume-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -28,7 +29,7 @@
 	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
 	const volumesQuery = createQuery(() => {
 		const queryScope = pageState.scope;
-		const environments = readableEnvironments('volumes:list');
+		const environments = readableEnvironments(PERMISSIONS.VOLUMES_LIST);
 		const options = pageState.requestOptions;
 		return {
 			queryKey: queryKeys.volumes.table(queryScope, options),
@@ -75,7 +76,7 @@
 	}
 
 	async function loadVolumes(options = pageState.requestOptions, requestedScope = pageState.scope) {
-		const environments = readableEnvironments('volumes:list');
+		const environments = readableEnvironments(PERMISSIONS.VOLUMES_LIST);
 		pageState.requestOptions = options;
 		await queryClient.query({
 			queryKey: queryKeys.volumes.table(requestedScope, options),
@@ -96,7 +97,7 @@
 		return countsFallback;
 	});
 
-	const canCreateVolume = $derived(hasShownPermission('volumes:create'));
+	const canCreateVolume = $derived(hasShownPermission(PERMISSIONS.VOLUMES_CREATE));
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];

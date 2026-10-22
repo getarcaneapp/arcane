@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 )
@@ -110,13 +109,13 @@ func TestSettingsHandlerRemoteWorkspaceSettingsVisibility(t *testing.T) {
 
 	permissions := authz.NewPermissionSet()
 	permissions.AddEnv("env-remote", authz.PermSettingsRead)
-	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, permissions)
+	ctx := authz.WithPermissions(t.Context(), permissions)
 	output, err := handler.GetSettings(ctx, &types.EnvironmentInput{EnvironmentID: "env-remote"})
 	require.NoError(t, err)
 	require.Equal(t, remoteSnapshot.Settings[:3], output.Body.Settings)
 	require.Equal(t, remoteSnapshot.Runtime, output.Body.Runtime)
 
-	adminCtx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
+	adminCtx := authz.WithPermissions(t.Context(), authz.SudoPermissionSet())
 	output, err = handler.GetSettings(adminCtx, &types.EnvironmentInput{EnvironmentID: "env-remote"})
 	require.NoError(t, err)
 	require.Equal(t, remoteSnapshot, output.Body)

@@ -14,7 +14,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
@@ -88,7 +87,7 @@ func (h *Handler) DownloadVolumeWorkspaceFile(ctx context.Context, input *GetVol
 }
 
 func requireVolumeWorkspacePermissions(ctx context.Context, environmentID string, changes []types.VolumeWorkspaceFileChange) error {
-	permissions, ok := middleware.PermissionsFromContext(ctx)
+	permissions, ok := authz.PermissionsFromContext(ctx)
 	if !ok || permissions == nil {
 		return huma.Error403Forbidden("insufficient permissions")
 	}

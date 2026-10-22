@@ -23,6 +23,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/group"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
@@ -41,15 +43,18 @@ func setupAuthServiceTestDB(t *testing.T) *database.DB {
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 	require.NoError(t, db.AutoMigrate(
+		&event.Event{},
 		&settings.SettingVariable{},
 		&user.User{},
 		&session.UserSession{},
 		&environment.Environment{},
 		&role.Role{},
-		&role.UserRoleAssignment{},
+		&role.RoleBinding{},
+		&group.Group{},
+		&group.GroupMember{},
+		&group.OidcGroupMapping{},
 		&apikey.ApiKey{},
 		&role.ApiKeyPermission{},
-		&role.OidcRoleMapping{},
 	))
 	return &database.DB{DB: db}
 }
@@ -781,6 +786,9 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_Creat
 	authSvc := newTestAuthService()
 	authSvc.userService = userSvc
 	authSvc.settingsService = settingsSvc
+	authSvc.groupService = group.NewGroupService(db, role.NewRoleService(db), func(context.Context) string {
+		return ""
+	})
 
 	existing, err := userSvc.CreateUser(ctx, &user.User{
 		ID: "existing-canonical-identity", Username: "José", Email: new("néw@example.com"),
@@ -852,6 +860,9 @@ func TestFindOrCreateOidcUser_MergeEnabled_WithExistingUser(t *testing.T) {
 			authSvc := newTestAuthService()
 			authSvc.userService = userSvc
 			authSvc.settingsService = settingsSvc
+			authSvc.groupService = group.NewGroupService(db, role.NewRoleService(db), func(context.Context) string {
+				return ""
+			})
 
 			userInfo := types.OidcUserInfo{
 				Subject:       "sub-merge",
@@ -883,9 +894,9 @@ func TestFindOrCreateOidcUser_MergeEnabled_WithExistingUser(t *testing.T) {
 			var userCount int64
 			require.NoError(t, db.Model(&user.User{}).Count(&userCount).Error)
 			require.Equal(t, int64(1), userCount, "no separate account should be created")
-			var roleAssignments int64
-			require.NoError(t, db.Model(&role.UserRoleAssignment{}).Where("user_id = ?", existing.ID).Count(&roleAssignments).Error)
-			require.Zero(t, roleAssignments)
+			var bindingCount int64
+			require.NoError(t, db.Model(&role.RoleBinding{}).Where("user_id = ?", existing.ID).Count(&bindingCount).Error)
+			require.Zero(t, bindingCount)
 
 			require.True(t, fetched.OidcSubjectId == nil || *fetched.OidcSubjectId == "")
 			require.Nil(t, fetched.OidcAccessToken)

@@ -1,3 +1,4 @@
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { portService } from '#lib/services/port-service.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
@@ -16,7 +17,7 @@ export const load: PageLoad = async ({ parent }) => {
 		column: 'hostPort',
 		direction: 'asc'
 	});
-	const environments = readableEnvironments('containers:list');
+	const environments = readableEnvironments(PERMISSIONS.CONTAINERS_LIST);
 
 	let ports;
 	const operationResult = await tryCatch(

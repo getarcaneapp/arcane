@@ -31,6 +31,7 @@
 	import { EditIcon, ProjectsIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { APIError } from '#lib/services/api-service.js';
 	import { containerService } from '#lib/services/container-service.js';
@@ -154,17 +155,17 @@
 	const showNetworkTab = $derived(hasNetworks || hasPorts || hasCustomHostname);
 	const hasMounts = $derived(!!(container?.mounts && container.mounts.length > 0));
 	const currentEnvId = $derived(data.envId);
-	const canViewLogs = $derived(hasPermission('containers:logs', currentEnvId));
-	const canExecShell = $derived(hasPermission('containers:exec', currentEnvId));
-	const canPauseContainer = $derived(hasPermission('containers:pause', currentEnvId));
-	const canUpdateContainer = $derived(hasPermission('containers:autoupdate', currentEnvId));
+	const canViewLogs = $derived(hasPermission(PERMISSIONS.CONTAINERS_LOGS, currentEnvId));
+	const canExecShell = $derived(hasPermission(PERMISSIONS.CONTAINERS_EXEC, currentEnvId));
+	const canPauseContainer = $derived(hasPermission(PERMISSIONS.CONTAINERS_PAUSE, currentEnvId));
+	const canUpdateContainer = $derived(hasPermission(PERMISSIONS.CONTAINERS_AUTOUPDATE, currentEnvId));
 	const canEditContainer = $derived(
-		hasPermission('containers:edit', currentEnvId) && !container?.composeInfo && !container?.redeployDisabled
+		hasPermission(PERMISSIONS.CONTAINERS_EDIT, currentEnvId) && !container?.composeInfo && !container?.redeployDisabled
 	);
-	const canKillContainer = $derived(hasPermission('containers:kill', currentEnvId));
-	const canCommitImage = $derived(hasPermission('images:commit', currentEnvId));
+	const canKillContainer = $derived(hasPermission(PERMISSIONS.CONTAINERS_KILL, currentEnvId));
+	const canCommitImage = $derived(hasPermission(PERMISSIONS.IMAGES_COMMIT, currentEnvId));
 	const canConvertToCompose = $derived(
-		hasPermission('projects:create', currentEnvId) &&
+		hasPermission(PERMISSIONS.PROJECTS_CREATE, currentEnvId) &&
 			!container?.composeInfo &&
 			settingsStore.current?.experimentalFeaturesEnabled === true
 	);

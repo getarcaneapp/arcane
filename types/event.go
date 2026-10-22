@@ -4,6 +4,12 @@ import (
 	"time"
 )
 
+// Event export formats accepted by the event export endpoint.
+const (
+	EventExportFormatCSV    = "csv"
+	EventExportFormatNDJSON = "ndjson"
+)
+
 // EventSeverityCounts holds global event counts per severity.
 type EventSeverityCounts struct {
 	Total   int64 `json:"total"`
@@ -74,6 +80,11 @@ type Event struct {
 	//
 	// Required: false
 	Metadata map[string]any `json:"metadata,omitempty"`
+
+	// Audit marks security audit events, such as RBAC changes and permission denials.
+	//
+	// Required: true
+	Audit bool `json:"audit"`
 
 	// Timestamp is when the event occurred.
 	//

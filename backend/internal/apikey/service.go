@@ -22,6 +22,7 @@ import (
 	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/audit"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
@@ -166,15 +167,14 @@ func (s *ApiKeyService) BackfillApiKeyPermissions(ctx context.Context) error {
 func (s *ApiKeyService) backfillPermsForKey(ctx context.Context, tx *gorm.DB, key ApiKey) ([]string, error) {
 	// Static admin bootstrap keys (no owner, no env scope) get full access.
 	if key.UserID == nil && key.EnvironmentID == nil {
-		return authz.AllPermissions(), nil
+		return []string{authz.PermAll}, nil
 	}
 	// Environment bootstrap keys (key bound to a specific env, no owner) get
 	// full access scoped to that environment via the auth bridge — replicate
-	// that by granting all permissions scoped to that environment. Org-level
-	// permissions land in PerEnv[envID] and are unreachable via org-level
-	// checks (which always pass envID=""), so over-granting is harmless here.
+	// that with the wildcard scoped to that environment. A PerEnv wildcard is
+	// unreachable via org-level checks (which always pass envID="").
 	if key.UserID == nil && key.EnvironmentID != nil {
-		return authz.AllPermissions(), nil
+		return []string{authz.PermAll}, nil
 	}
 	// Otherwise inherit the owner's current effective permissions.
 	var owner user.User
@@ -346,7 +346,17 @@ func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, callerP
 		if setApiKeyPermissionsErr := s.roleService.SetApiKeyPermissionsInDB(ctx, tx, created.ID, toApiKeyPermissionRows(created.ID, req.Permissions)); setApiKeyPermissionsErr != nil {
 			return fmt.Errorf("failed to persist api key permissions: %w", setApiKeyPermissionsErr)
 		}
-		return nil
+		return audit.RecordInTx(ctx, tx, types.AuditEntry{
+			Action:     types.AuditActionApiKeyCreate,
+			TargetType: types.AuditTargetApiKey,
+			TargetID:   created.ID,
+			TargetName: created.Name,
+			After:      req,
+			Metadata: map[string]any{
+				"kind":    ApiKeyKindScoped,
+				"ownerId": userID,
+			},
+		})
 	}); createTxErr != nil {
 		return nil, createTxErr
 	}
@@ -419,9 +429,25 @@ func (s *ApiKeyService) CreatePersonalApiKey(ctx context.Context, userID string,
 		return nil, err
 	}
 
-	created, err := s.createAPIKeyWithRawKey(ctx, s.db.DB, &userID, rawKey, req, nil, nil, ApiKeyKindPersonal)
-	if err != nil {
-		return nil, err
+	var created *types.ApiKeyCreatedDto
+	if txErr := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		var createErr error
+		if created, createErr = s.createAPIKeyWithRawKey(ctx, tx, &userID, rawKey, req, nil, nil, ApiKeyKindPersonal); createErr != nil {
+			return createErr
+		}
+		return audit.RecordInTx(ctx, tx, types.AuditEntry{
+			Action:     types.AuditActionApiKeyCreate,
+			TargetType: types.AuditTargetApiKey,
+			TargetID:   created.ID,
+			TargetName: created.Name,
+			After:      req,
+			Metadata: map[string]any{
+				"kind":    ApiKeyKindPersonal,
+				"ownerId": userID,
+			},
+		})
+	}); txErr != nil {
+		return nil, txErr
 	}
 	created.Permissions = []types.ApiKeyPermissionGrant{}
 	return created, nil
@@ -626,6 +652,19 @@ func (s *ApiKeyService) updateMatchingManagedAPIKey(tx *gorm.DB, apiKeyID string
 		}).Error; err != nil {
 		return fmt.Errorf("failed to update managed API key metadata: %w", err)
 	}
+	return grantManagedAdminAPIKey(tx, apiKeyID)
+}
+
+func grantManagedAdminAPIKey(tx *gorm.DB, apiKeyID string) error {
+	if err := tx.Where("api_key_id = ?", apiKeyID).Delete(&role.ApiKeyPermission{}).Error; err != nil {
+		return fmt.Errorf("failed to clear managed API key permissions: %w", err)
+	}
+	if err := tx.Create(&role.ApiKeyPermission{
+		ApiKeyID:   apiKeyID,
+		Permission: authz.PermAll,
+	}).Error; err != nil {
+		return fmt.Errorf("failed to grant managed API key permissions: %w", err)
+	}
 	return nil
 }
 
@@ -651,7 +690,7 @@ func (s *ApiKeyService) createManagedDefaultAdminAPIKey(ctx context.Context, tx 
 	if createManagedKeyErr := tx.Create(ak).Error; createManagedKeyErr != nil {
 		return fmt.Errorf("failed to create managed API key: %w", createManagedKeyErr)
 	}
-	return nil
+	return grantManagedAdminAPIKey(tx, ak.ID)
 }
 
 // reconcileManagedAPIKeys applies the desired managed-key state inside tx and
@@ -739,16 +778,13 @@ func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environment
 	// an empty set on any request authenticated by this key and every
 	// downstream RequirePermission check fails with 403.
 	if s.roleService != nil {
-		all := authz.AllPermissions()
-		grants := make([]role.ApiKeyPermission, len(all))
-		for i, p := range all {
-			grants[i] = role.ApiKeyPermission{
+		if setApiKeyPermissionsErr := s.roleService.SetApiKeyPermissions(ctx, created.ID, []role.ApiKeyPermission{
+			{
 				ApiKeyID:      created.ID,
-				Permission:    p,
+				Permission:    authz.PermAll,
 				EnvironmentID: &environmentID,
-			}
-		}
-		if setApiKeyPermissionsErr := s.roleService.SetApiKeyPermissions(ctx, created.ID, grants); setApiKeyPermissionsErr != nil {
+			},
+		}); setApiKeyPermissionsErr != nil {
 			return nil, fmt.Errorf("failed to persist environment bootstrap key permissions: %w", setApiKeyPermissionsErr)
 		}
 		// Re-load grants into the response DTO so callers see the seeded
@@ -920,7 +956,19 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 			}
 			permissionsUpdated = true
 		}
-		return nil
+		return audit.RecordInTx(ctx, tx, types.AuditEntry{
+			Action:     types.AuditActionApiKeyUpdate,
+			TargetType: types.AuditTargetApiKey,
+			TargetID:   ak.ID,
+			TargetName: changes.Name,
+			Before: map[string]any{
+				"name":        ak.Name,
+				"description": ak.Description,
+				"expiresAt":   ak.ExpiresAt,
+			},
+			After:    req,
+			Metadata: map[string]any{"permissionsUpdated": submitted["permissions"]},
+		})
 	}); err != nil {
 		return nil, err
 	}
@@ -985,12 +1033,27 @@ func (s *ApiKeyService) DeleteApiKey(ctx context.Context, id string) error {
 		return ErrApiKeyProtected
 	}
 
-	result := s.db.WithContext(ctx).Delete(&ApiKey{}, "id = ?", id)
-	if result.Error != nil {
-		return fmt.Errorf("failed to delete API key: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return ErrApiKeyNotFound
+	if err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		result := tx.Delete(&ApiKey{}, "id = ?", id)
+		if result.Error != nil {
+			return fmt.Errorf("failed to delete API key: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return ErrApiKeyNotFound
+		}
+		return audit.RecordInTx(ctx, tx, types.AuditEntry{
+			Action:     types.AuditActionApiKeyDelete,
+			TargetType: types.AuditTargetApiKey,
+			TargetID:   apiKey.ID,
+			TargetName: apiKey.Name,
+			Before: map[string]any{
+				"name":    apiKey.Name,
+				"kind":    apiKey.Kind,
+				"ownerId": apiKey.UserID,
+			},
+		})
+	}); err != nil {
+		return err
 	}
 	s.invalidateValidatedKeys(id)
 	return nil

@@ -11,6 +11,7 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { AddIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import type { Permission } from '#lib/permissions.generated.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import { getSwarmServiceModeLabel } from '#lib/utils/docker.js';
 	import { preventDefault } from '#lib/utils/settings.svelte.js';
@@ -24,7 +25,7 @@
 		open: boolean;
 		environmentId?: string;
 		environments?: EnvironmentRef[];
-		environmentPermission?: string;
+		environmentPermission?: Permission;
 		title: string;
 		description: string;
 		submitLabel: string;

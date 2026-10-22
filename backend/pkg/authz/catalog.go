@@ -34,6 +34,28 @@ var permissionCatalog = []PermissionCatalogResource{
 	{"roles", "Roles", PermissionScopeGlobal, []PermissionCatalogAction{
 		{"list", PermRolesList, "List", ""},
 		{"read", PermRolesRead, "Read", ""},
+		{"create", PermRolesCreate, "Create", ""},
+		{"update", PermRolesUpdate, "Update", ""},
+		{"delete", PermRolesDelete, "Delete", ""},
+	}},
+	{"bindings", "Role Bindings", PermissionScopeGlobal, []PermissionCatalogAction{
+		{"list", PermBindingsList, "List", ""},
+		{"create", PermBindingsCreate, "Create", ""},
+		{"delete", PermBindingsDelete, "Delete", ""},
+	}},
+	{"groups", "Groups", PermissionScopeGlobal, []PermissionCatalogAction{
+		{"list", PermGroupsList, "List", ""},
+		{"read", PermGroupsRead, "Read", ""},
+		{"create", PermGroupsCreate, "Create", ""},
+		{"update", PermGroupsUpdate, "Update", ""},
+		{"delete", PermGroupsDelete, "Delete", ""},
+		{"members", PermGroupsMembers, "Manage members", ""},
+	}},
+	{"oidcmappings", "OIDC Group Mappings", PermissionScopeGlobal, []PermissionCatalogAction{
+		{"list", PermOidcMappingsList, "List", ""},
+		{"create", PermOidcMappingsCreate, "Create", ""},
+		{"update", PermOidcMappingsUpdate, "Update", ""},
+		{"delete", PermOidcMappingsDelete, "Delete", ""},
 	}},
 	{"apikeys", "API Keys", PermissionScopeGlobal, []PermissionCatalogAction{
 		{"list", PermApiKeysList, "List", ""},
@@ -120,6 +142,9 @@ var permissionCatalog = []PermissionCatalogResource{
 	{"diagnostics", "Diagnostics", PermissionScopeGlobal, []PermissionCatalogAction{
 		{"read", PermDiagnosticsRead, "View", "View runtime diagnostics, pprof profiles, and backend logs"},
 	}},
+	{"audit", "Audit events", PermissionScopeGlobal, []PermissionCatalogAction{
+		{"read", PermAuditRead, "Read", "View audit events in the event log, including permission denials"},
+	}},
 	{"containers", "Containers", PermissionScopeEnv, []PermissionCatalogAction{
 		{"list", PermContainersList, "List", ""},
 		{"read", PermContainersRead, "Read", ""},
@@ -152,7 +177,6 @@ var permissionCatalog = []PermissionCatalogResource{
 		{"list", PermImagesList, "List", ""},
 		{"read", PermImagesRead, "Read", ""},
 		{"pull", PermImagesPull, "Pull", ""},
-		{"push", PermImagesPush, "Push", ""},
 		{"build", PermImagesBuild, "Build", ""},
 		{"tag", PermImagesTag, "Tag", ""},
 		{"commit", PermImagesCommit, "Commit container", ""},
@@ -217,7 +241,12 @@ var permissionCatalog = []PermissionCatalogResource{
 			"Create or modify a sync's pre-deploy lifecycle hook, which runs an arbitrary container with host bind mounts and env on every sync",
 		},
 
-		{"backup", PermGitOpsBackup, "Back up to Git", "View a project's Git backup preview and history, and manage the backup together with the matching sync permission (create, update, sync, delete)"},
+		{
+			"backup",
+			PermGitOpsBackup,
+			"Back up to Git",
+			"View a project's Git backup preview and history, and manage the backup together with the matching sync permission (create, update, sync, delete)",
+		},
 	}},
 	{"webhooks", "Webhooks", PermissionScopeEnv, []PermissionCatalogAction{
 		{"list", PermWebhooksList, "List", ""},

@@ -10,6 +10,7 @@
 	import { AlertIcon, InfoIcon, UpdateIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { podmanService } from '#lib/services/podman-service.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type { PodmanAutoUpdateMode, PodmanAutoUpdateResult } from '#lib/types/podman.js';
@@ -23,7 +24,7 @@
 
 	const podmanEnvs = $derived(shownPodmanEnvironments(data.podmanStatuses));
 	const runnableEnvs = $derived(
-		actionEnvironments('podman:autoupdate').filter(
+		actionEnvironments(PERMISSIONS.PODMAN_AUTOUPDATE).filter(
 			(env) => podmanEnvs.some((podmanEnv) => podmanEnv.id === env.id) && modeOf(env.id) !== 'unavailable'
 		)
 	);

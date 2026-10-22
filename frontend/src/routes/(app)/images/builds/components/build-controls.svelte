@@ -5,6 +5,7 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 
 	import type { BuildFormInputs, BuildProviderOption } from './build-form.types';
 
@@ -57,7 +58,7 @@
 		<Label for="build-load">{m.load()}</Label>
 	</div>
 
-	<IfPermitted perm="images:build">
+	<IfPermitted perm={PERMISSIONS.IMAGES_BUILD}>
 		<ArcaneButton
 			action="start_all"
 			type="button"

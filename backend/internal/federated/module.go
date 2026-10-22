@@ -52,7 +52,7 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 		federatedCredentialService: federatedCredentialService,
 	}
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-federated-credentials",
 		Method:      http.MethodGet,
 		Path:        "/federated/credentials",
@@ -60,10 +60,9 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 		Description: "Get a paginated list of workload identity federation trust rules",
 		Tags:        []string{"Federated Credentials"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermFederatedList),
-	}, h.ListFederatedCredentials)
+	}, authz.PermFederatedList, h.ListFederatedCredentials)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-federated-credential",
 		Method:      http.MethodPost,
 		Path:        "/federated/credentials",
@@ -71,10 +70,9 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 		Description: "Create a workload identity federation trust rule",
 		Tags:        []string{"Federated Credentials"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireGlobalAdmin(api),
-	}, h.CreateFederatedCredential)
+	}, authz.PermFederatedCreate, h.CreateFederatedCredential)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-federated-credential",
 		Method:      http.MethodGet,
 		Path:        "/federated/credentials/{id}",
@@ -82,10 +80,9 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 		Description: "Get details of a workload identity federation trust rule",
 		Tags:        []string{"Federated Credentials"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermFederatedRead),
-	}, h.GetFederatedCredential)
+	}, authz.PermFederatedRead, h.GetFederatedCredential)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-federated-credential",
 		Method:      http.MethodPatch,
 		Path:        "/federated/credentials/{id}",
@@ -93,10 +90,9 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 		Description: "Update a workload identity federation trust rule",
 		Tags:        []string{"Federated Credentials"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireGlobalAdmin(api),
-	}, h.UpdateFederatedCredential)
+	}, authz.PermFederatedUpdate, h.UpdateFederatedCredential)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-federated-credential",
 		Method:      http.MethodDelete,
 		Path:        "/federated/credentials/{id}",
@@ -104,6 +100,5 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 		Description: "Delete a workload identity federation trust rule and its service user",
 		Tags:        []string{"Federated Credentials"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequireGlobalAdmin(api),
-	}, h.DeleteFederatedCredential)
+	}, authz.PermFederatedDelete, h.DeleteFederatedCredential)
 }

@@ -4,6 +4,7 @@
 
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { portService } from '#lib/services/port-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -21,7 +22,7 @@
 	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
 	const portsQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = readableEnvironments('containers:list');
+		const environments = readableEnvironments(PERMISSIONS.CONTAINERS_LIST);
 		const options = requestOptions;
 		return {
 			queryKey: queryKeys.ports.list(queryScope, options),

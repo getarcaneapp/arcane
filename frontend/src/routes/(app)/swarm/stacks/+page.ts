@@ -1,5 +1,6 @@
 import { swarmEnvironmentsQueryOptions } from '#lib/components/swarm/swarm-environments.js';
 import { m } from '#lib/paraglide/messages.js';
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { swarmService } from '#lib/services/swarm-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -20,7 +21,7 @@ export const load: PageLoad = async ({ parent }) => {
 	const result = await tryCatch(
 		(async () => {
 			await environmentStore.ready;
-			const swarm = await queryClient.query(swarmEnvironmentsQueryOptions('swarm:read'));
+			const swarm = await queryClient.query(swarmEnvironmentsQueryOptions(PERMISSIONS.SWARM_READ));
 			const stacks = await queryClient.query({
 				queryKey: queryKeys.swarm.stacks(swarm.managers.map((env) => env.id).join(','), requestOptions),
 				queryFn: async () =>

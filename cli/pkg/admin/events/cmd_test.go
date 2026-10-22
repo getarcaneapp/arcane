@@ -3,6 +3,7 @@ package events_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -60,4 +61,30 @@ func TestAdminEventsListEnvSendsLimitAndStart(t *testing.T) {
 
 	require.True(t, strings.Contains(gotQuery, "limit=3") && strings.Contains(gotQuery, "start=6"),
 		"query = %q, want limit=3 and start=6", gotQuery)
+}
+
+func TestAdminEventsExportStreamsToStdout(t *testing.T) {
+	const export = "{\"id\":\"a1\",\"type\":\"role.create\",\"audit\":true}\n{\"id\":\"a2\",\"type\":\"role.create\",\"audit\":true}\n"
+	requests := make(chan *url.URL, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- r.URL
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = w.Write([]byte(export))
+	}))
+	defer srv.Close()
+
+	stdout, errOut, err := testutil.Execute(t, []string{
+		"--config", testutil.WriteConfig(t, srv.URL), "admin", "events", "export",
+		"--format", "ndjson", "--type", "role.create", "--severity", "info",
+	})
+	require.NoError(t, err, errOut)
+	require.Equal(t, strings.Split(export, "\n"), strings.Split(stdout, "\n"))
+
+	got := <-requests
+	require.Equal(t, "/api/events/export", got.Path)
+	require.Equal(t, url.Values{
+		"format":   {"ndjson"},
+		"type":     {"role.create"},
+		"severity": {"info"},
+	}, got.Query())
 }

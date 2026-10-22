@@ -22,6 +22,7 @@
 	} from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
@@ -253,7 +254,7 @@
 			observedScope = scope;
 			activeActivities = active;
 			if (finished.some(([, type]) => type === 'vulnerability_scan')) void refreshAll();
-			else if (finished.length > 0 && environmentIds.some((id) => hasPermission('images:read', id))) void loadPatches();
+			else if (finished.length > 0 && environmentIds.some((id) => hasPermission(PERMISSIONS.IMAGES_READ, id))) void loadPatches();
 		});
 	});
 
@@ -272,7 +273,9 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					// Walk the merged image list in fixed-size pages, up to a total cap.
-					const environments = vulnerabilityEnvironments().filter((env) => hasPermission('vulnerabilities:scan', env.id));
+					const environments = vulnerabilityEnvironments().filter((env) =>
+						hasPermission(PERMISSIONS.VULNERABILITIES_SCAN, env.id)
+					);
 					const fetchImagesPage = (page: number) =>
 						fetchAcrossEnvironments(environments, { pagination: { page, limit: BULK_FETCH_PAGE_SIZE } }, (id, request, config) =>
 							imageService.getImagesForEnvironment(id, request, config)
@@ -377,7 +380,8 @@
 		wasFeatureEnabled = enabled;
 	});
 	const canScanVuln = $derived(
-		vulnerabilityManagementEnabled && vulnerabilityEnvironments().some((env) => hasPermission('vulnerabilities:scan', env.id))
+		vulnerabilityManagementEnabled &&
+			vulnerabilityEnvironments().some((env) => hasPermission(PERMISSIONS.VULNERABILITIES_SCAN, env.id))
 	);
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
@@ -415,7 +419,7 @@
 			icon={ImagesIcon}
 			title={m.security_no_images_to_scan()}
 			description={m.security_no_images_description()}
-			actionLabel={hasShownPermission('images:pull') ? m.images_pull_image() : undefined}
+			actionLabel={hasShownPermission(PERMISSIONS.IMAGES_PULL) ? m.images_pull_image() : undefined}
 			actionHref="/images"
 		/>
 	{:else if overview?.drivers.imagesScanned === 0}
@@ -446,7 +450,7 @@
 >
 	{#snippet mainContent()}
 		{#if !vulnerabilityManagementEnabled}
-			<FeatureDisabled environmentId={destinationEnvironmentId('', 'vulnerabilities:read')} />
+			<FeatureDisabled environmentId={destinationEnvironmentId('', PERMISSIONS.VULNERABILITIES_READ)} />
 		{:else}
 			<Tabs.Root value={activeTab}>
 				<div class="flex flex-wrap items-center justify-between gap-2">

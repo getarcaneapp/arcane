@@ -21,7 +21,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
@@ -792,7 +791,7 @@ func TestJobSummaryReopensAndRejectsStaleSnapshots(t *testing.T) {
 	require.Error(t, err)
 	permissions := authz.NewPermissionSet()
 	permissions.AddEnv("remote", authz.PermActivitiesRead, authz.PermActivitiesDelete)
-	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, permissions)
+	ctx := authz.WithPermissions(t.Context(), permissions)
 	rows, page, err := service.ListActivitiesPaginated(ctx, "remote", pagination.QueryParams{Limit: 10})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, page.TotalItems)
@@ -847,7 +846,7 @@ func TestJobActivityVisibilityFiltersBeforePagination(t *testing.T) {
 	permissions := authz.NewPermissionSet()
 	permissions.PerEnv["0"] = map[string]struct{}{authz.PermActivitiesRead: {}}
 	permissions.PerEnv["allowed"] = map[string]struct{}{authz.PermActivitiesRead: {}}
-	ctx := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, permissions)
+	ctx := authz.WithPermissions(t.Context(), permissions)
 	seen := make(map[string]bool)
 	for page := range 2 {
 		activities, response, err := service.ListActivitiesPaginated(ctx, "0", pagination.QueryParams{Start: page, Limit: 1})
@@ -875,7 +874,7 @@ func TestJobActivityVisibilityFiltersBeforePagination(t *testing.T) {
 		),
 	)
 	require.True(t, canReadJobActivity(ctx, types.Activity{Type: types.ActivityTypeJobRun, Metadata: map[string]any{"environmentId": "allowed"}}))
-	privileged := context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, authz.SudoPermissionSet())
+	privileged := authz.WithPermissions(t.Context(), authz.SudoPermissionSet())
 	activities, response, err = service.ListActivitiesPaginated(privileged, "private", pagination.QueryParams{Limit: 10})
 	require.NoError(t, err)
 	require.Len(t, activities, 2)

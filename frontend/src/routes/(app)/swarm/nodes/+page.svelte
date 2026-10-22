@@ -7,6 +7,7 @@
 	import { AlertTriangleIcon, UsersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
@@ -23,7 +24,7 @@
 	const queryClient = useQueryClient();
 
 	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
-	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm:read'));
+	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions(PERMISSIONS.SWARM_READ));
 	const swarm = $derived(swarmQuery.data ?? data.swarm);
 
 	function nodesQueryOptions(options: SearchPaginationSortRequest, current: SwarmEnvironments = swarm) {
@@ -64,7 +65,7 @@
 		let active = true;
 		const reconciled = new Set<string>();
 		async function reconcileEnvironments() {
-			const pending = swarm.managers.filter((env) => !reconciled.has(env.id) && hasPermission('swarm:nodes', env.id));
+			const pending = swarm.managers.filter((env) => !reconciled.has(env.id) && hasPermission(PERMISSIONS.SWARM_NODES, env.id));
 			if (pending.length === 0) return;
 			for (const env of pending) reconciled.add(env.id);
 			const results = await Promise.all(pending.map((env) => tryCatch(swarmService.reconcileNodeAgents(env.id))));

@@ -2,58 +2,45 @@
 	import { z } from 'zod/v4';
 
 	import FormInput from '#lib/components/form/form-input.svelte';
-	import RoleScopeSelects from '#lib/components/sheets/role-scope-selects.svelte';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
+	import { Label } from '#lib/components/ui/label/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { OidcRoleMapping, OidcRoleMappingWritable, Role } from '#lib/types/auth.js';
-	import type { Environment } from '#lib/types/environment.js';
-	import {
-		buildGlobalEnvironmentOptions,
-		createRoleEnvironmentLabelers,
-		GLOBAL_ENVIRONMENT_OPTION_ID
-	} from '#lib/utils/options.js';
+	import type { Group, OidcGroupMapping, OidcGroupMappingSpec } from '#lib/types/auth.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
 	type Props = {
 		open: boolean;
-		mappingToEdit: OidcRoleMapping | null;
-		roles: Role[];
-		environments: Environment[];
+		mappingToEdit: OidcGroupMapping | null;
+		groups: Group[];
 		isLoading: boolean;
-		onSubmit: (data: Required<Pick<OidcRoleMapping, OidcRoleMappingWritable>>) => void;
+		onSubmit: (data: OidcGroupMappingSpec) => void;
 	};
 
-	let { open = $bindable(false), mappingToEdit, roles, environments, isLoading, onSubmit }: Props = $props();
+	let { open = $bindable(false), mappingToEdit, groups, isLoading, onSubmit }: Props = $props();
 
 	const isEditMode = $derived(!!mappingToEdit);
 
-	const envOptions = $derived(buildGlobalEnvironmentOptions(environments, m.global_org_wide()));
-	const selectedLabel = $derived(createRoleEnvironmentLabelers(roles, envOptions, m.common_select_option()));
-
 	const formSchema = z.object({
 		claimValue: z.string().min(1, m.oidc_mappings_claim_required()),
-		roleId: z.string().min(1, m.oidc_mappings_role_required()),
-		environmentId: z.string()
+		groupId: z.string().min(1, m.oidc_mappings_group_required())
 	});
 
 	const formData = $derived({
 		claimValue: mappingToEdit?.claimValue ?? '',
-		roleId: mappingToEdit?.roleId ?? roles[0]?.id ?? '',
-		environmentId: mappingToEdit?.environmentId ?? GLOBAL_ENVIRONMENT_OPTION_ID
+		groupId: mappingToEdit?.groupId ?? groups[0]?.id ?? ''
 	});
 
 	const form = $derived(createForm<typeof formSchema>(formSchema, formData));
 	let inputs = $derived(form.inputs);
 
+	const selectedGroupName = $derived(groups.find((group) => group.id === inputs.groupId.value)?.name ?? m.common_select_option());
+
 	function handleSubmit() {
 		const data = form.validate();
 		if (!data) return;
-		onSubmit({
-			claimValue: data.claimValue,
-			roleId: data.roleId,
-			environmentId: data.environmentId === GLOBAL_ENVIRONMENT_OPTION_ID ? null : data.environmentId
-		});
+		onSubmit({ claimValue: data.claimValue, groupId: data.groupId });
 	}
 
 	function handleOpenChange(newOpenState: boolean) {
@@ -66,7 +53,7 @@
 	onOpenChange={handleOpenChange}
 	variant="sheet"
 	title={isEditMode ? m.oidc_mappings_edit_title() : m.oidc_mappings_create_title()}
-	description={m.oidc_mappings_subtitle()}
+	description={m.oidc_group_mappings_subtitle()}
 	contentClass="sm:max-w-125"
 >
 	{#snippet children()}
@@ -79,19 +66,35 @@
 				bind:input={inputs.claimValue}
 			/>
 
-			<RoleScopeSelects
-				idPrefix="oidc-mapping"
-				roleLabel={m.common_role()}
-				scopeLabel={m.oidc_mappings_scope_label()}
-				{roles}
-				{envOptions}
-				bind:roleValue={inputs.roleId.value}
-				bind:environmentValue={inputs.environmentId.value}
-				roleError={inputs.roleId.error}
-				roleSelectedLabel={selectedLabel.role}
-				envSelectedLabel={selectedLabel.environment}
-				disabled={isLoading}
-			/>
+			<div class="space-y-2">
+				<Label for="oidc-mapping-group" class="mb-0">{m.resource_group_cap()}</Label>
+				<Select.Root type="single" bind:value={inputs.groupId.value} disabled={isLoading || groups.length === 0}>
+					<Select.Trigger id="oidc-mapping-group" class="w-full" aria-invalid={!!inputs.groupId.error}>
+						<span class="min-w-0 truncate">{selectedGroupName}</span>
+					</Select.Trigger>
+					<Select.Content>
+						{#each groups as group (group.id)}
+							<Select.Item value={group.id} label={group.name}>
+								<span class="flex flex-col">
+									<span>{group.name}</span>
+									{#if group.description}
+										<span class="text-xs text-muted-foreground">{group.description}</span>
+									{/if}
+								</span>
+							</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+				{#if groups.length === 0}
+					<p class="text-xs text-muted-foreground">
+						{m.oidc_mappings_no_groups()}
+						<a href="/settings/groups" class="ml-1 text-primary underline">{m.groups_title()}</a>
+					</p>
+				{/if}
+				{#if inputs.groupId.error}
+					<p class="text-xs text-destructive">{inputs.groupId.error}</p>
+				{/if}
+			</div>
 			<!-- fallow-ignore-next-line code-duplication -- per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
 		</form>
 	{/snippet}

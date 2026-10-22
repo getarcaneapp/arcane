@@ -21,6 +21,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v3/frontend"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/audit"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
@@ -126,6 +127,7 @@ type RouterParams struct {
 	Lifecycle      fx.Lifecycle
 	Config         *config.Config
 	HandlerDeps    api.HandlerDeps
+	Audit          *audit.AuditService
 	AuthMiddleware *auth.AuthMiddleware
 	TunnelRegistry *agent.TunnelRegistry
 }
@@ -265,6 +267,13 @@ func newRouter(p RouterParams) (*echo.Echo, *agent.TunnelServer) {
 			return "", nil
 		}
 		return env.ID, nil
+	})
+
+	apiGroup.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			c.SetRequest(c.Request().WithContext(middleware.WithDenialRecorder(c.Request().Context(), p.Audit)))
+			return next(c)
+		}
 	})
 
 	permissionMatcher := authz.NewPermissionMatcher()

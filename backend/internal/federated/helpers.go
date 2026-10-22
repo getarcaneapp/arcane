@@ -6,15 +6,18 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 	"go.getarcane.app/kit/normalization"
 	"go.getarcane.app/kit/pkg"
+	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 )
 
 func normalizeFederatedCredential(req types.FederatedCredential) (types.FederatedCredential, error) {
@@ -42,9 +45,6 @@ func normalizeFederatedCredential(req types.FederatedCredential) (types.Federate
 	if normalized.Name == "" || normalized.SubjectMatch == "" || normalized.RoleID == "" || len(normalized.Audiences) == 0 {
 		return normalized, common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
 	}
-	if err := validateIssuerURL(normalized.IssuerURL); err != nil {
-		return normalized, err
-	}
 	if err := validateSubjectMatch(normalized.MatchType, normalized.SubjectMatch); err != nil {
 		return normalized, err
 	}
@@ -66,24 +66,33 @@ func validateSubjectMatch(matchType, subjectMatch string) error {
 	return nil
 }
 
-func (s *FederatedCredentialService) validateRoleGrantAgainstUser(ctx context.Context, userID, roleID string, environmentID *string) error {
-	if s.roleService == nil || strings.TrimSpace(userID) == "" {
-		return nil
-	}
-
-	user, err := s.userService.GetUserByID(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("load user for federated role validation: %w", err)
-	}
-	permissions, err := s.roleService.ResolvePermissions(ctx, user.ID)
-	if err != nil {
-		return fmt.Errorf("resolve user permissions: %w", err)
-	}
-	if validateRoleAssignmentAgainstCallerErr := s.roleService.ValidateRoleAssignmentAgainstCaller(ctx, permissions, roleID, environmentID); validateRoleAssignmentAgainstCallerErr != nil {
-		if errors.Is(validateRoleAssignmentAgainstCallerErr, common.ErrRolePermissionEscalation) {
-			return common.Classify(common.ErrFederatedCredentialPermissionEscalation, fmt.Errorf("cannot map a federated credential to a role you do not hold: %w", validateRoleAssignmentAgainstCallerErr))
+func (s *FederatedCredentialService) validateRoleGrant(ctx context.Context, db *gorm.DB, caller *authz.PermissionSet, roleID string, environmentID *string) error {
+	if validateBindingErr := s.roleService.ValidateBindingAgainstCaller(ctx, db, caller, roleID, environmentID); validateBindingErr != nil {
+		if errors.Is(validateBindingErr, common.ErrRolePermissionEscalation) {
+			return common.Classify(common.ErrFederatedCredentialPermissionEscalation, fmt.Errorf("cannot manage a federated credential for a role you do not hold: %w", validateBindingErr))
 		}
-		return common.Classify(common.ErrFederatedCredentialInvalid, fmt.Errorf("invalid federated credential: %w", validateRoleAssignmentAgainstCallerErr))
+		return common.Classify(common.ErrFederatedCredentialInvalid, fmt.Errorf("invalid federated credential: %w", validateBindingErr))
+	}
+	return nil
+}
+
+// validateUpdateGrants requires the caller to cover the current grant before
+// replacing or disabling it, and the resulting grant when role or trust changes.
+func (s *FederatedCredentialService) validateUpdateGrants(ctx context.Context, db *gorm.DB, caller *authz.PermissionSet, before, after *FederatedCredential, roleChanged bool) error {
+	disabled := before.Enabled && !after.Enabled
+	trustChanged := after.IssuerURL != before.IssuerURL ||
+		!slices.Equal(after.Audiences, before.Audiences) ||
+		after.SubjectClaim != before.SubjectClaim ||
+		after.SubjectMatch != before.SubjectMatch ||
+		after.MatchType != before.MatchType ||
+		(after.Enabled && !before.Enabled)
+	if roleChanged || disabled {
+		if err := s.validateRoleGrant(ctx, db, caller, before.RoleID, before.EnvironmentID); err != nil {
+			return err
+		}
+	}
+	if roleChanged || trustChanged {
+		return s.validateRoleGrant(ctx, db, caller, after.RoleID, after.EnvironmentID)
 	}
 	return nil
 }

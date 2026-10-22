@@ -1,6 +1,7 @@
 package apikeys
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,10 +13,14 @@ import (
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
+	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
+
+// wildcardPermission grants every permission (admin); only admins can grant it.
+const wildcardPermission = "*"
 
 // Command is the parent command for API key operations
 func Command() *cobra.Command {
@@ -95,7 +100,7 @@ func newCreateCmd() *cobra.Command {
 				return err
 			}
 
-			grants, grantsErr := permissionGrants(opts.permissions)
+			grants, grantsErr := permissionGrants(cmd.Context(), c, opts.permissions)
 			if grantsErr != nil {
 				return grantsErr
 			}
@@ -137,7 +142,7 @@ func newCreateCmd() *cobra.Command {
 	command.Flags().StringVarP(&opts.description, "description", "d", "", "Description for the API key")
 	command.Flags().StringVar(&opts.expiresAt, "expires-at", "", "Expiration date (RFC3339 format)")
 	command.Flags().StringArrayVarP(&opts.permissions, "permission", "p", nil,
-		"Permission to grant as `resource:action[:envId]` (repeatable, required). Omit envId for a global grant. Cannot exceed your own permissions.")
+		"Permission to grant as `resource:action[:envId]`, or `*[:envId]` for admin (repeatable, required). Omit envId for a global grant. Cannot exceed your own permissions.")
 	_ = command.MarkFlagRequired("permission")
 	return command
 }
@@ -248,7 +253,7 @@ func newUpdateCmd() *cobra.Command {
 				}
 				expiresAt = &parsedTime
 			}
-			permissions, grantsErr := permissionGrants(opts.permissions)
+			permissions, grantsErr := permissionGrants(cmd.Context(), c, opts.permissions)
 			if grantsErr != nil {
 				return grantsErr
 			}
@@ -285,20 +290,32 @@ func newUpdateCmd() *cobra.Command {
 	command.Flags().StringVarP(&opts.description, "description", "d", "", "API key description")
 	command.Flags().StringVar(&opts.expiresAt, "expires-at", "", "Expiration date (RFC3339 format)")
 	command.Flags().StringArrayVarP(&opts.permissions, "permission", "p", nil,
-		"Replace the key's permission grants. Use `resource:action[:envId]` (repeatable). Pass --permission \"\" once to clear all grants.")
+		"Replace the key's permission grants. Use `resource:action[:envId]` or `*[:envId]` (repeatable). Pass --permission \"\" once to clear all grants.")
 	return command
 }
 
-func permissionGrants(rawPermissions []string) ([]types.ApiKeyPermissionGrant, error) {
+func permissionGrants(ctx context.Context, c *client.Client, rawPermissions []string) ([]types.ApiKeyPermissionGrant, error) {
 	grants := make([]types.ApiKeyPermissionGrant, 0, len(rawPermissions))
+	names := make([]string, 0, len(rawPermissions))
 	for _, raw := range rawPermissions {
 		token := strings.TrimSpace(raw)
 		if token == "" {
 			continue
 		}
 		parts := strings.Split(token, ":")
+		if parts[0] == wildcardPermission {
+			if len(parts) > 2 || (len(parts) == 2 && parts[1] == "") {
+				return nil, fmt.Errorf("invalid --permission value %q (expected `*[:envId]`)", raw)
+			}
+			var environmentID *string
+			if len(parts) == 2 {
+				environmentID = new(parts[1])
+			}
+			grants = append(grants, types.ApiKeyPermissionGrant{Permission: wildcardPermission, EnvironmentID: environmentID})
+			continue
+		}
 		if (len(parts) != 2 && len(parts) != 3) || parts[0] == "" || parts[1] == "" || (len(parts) == 3 && parts[2] == "") {
-			return nil, fmt.Errorf("invalid --permission value %q (expected `resource:action[:envId]`)", raw)
+			return nil, fmt.Errorf("invalid --permission value %q (expected `resource:action[:envId]` or `*[:envId]`)", raw)
 		}
 		var environmentID *string
 		if len(parts) == 3 {
@@ -308,6 +325,10 @@ func permissionGrants(rawPermissions []string) ([]types.ApiKeyPermissionGrant, e
 			Permission:    parts[0] + ":" + parts[1],
 			EnvironmentID: environmentID,
 		})
+		names = append(names, parts[0]+":"+parts[1])
+	}
+	if err := cmdutil.ValidatePermissions(ctx, c, names); err != nil {
+		return nil, err
 	}
 	return grants, nil
 }

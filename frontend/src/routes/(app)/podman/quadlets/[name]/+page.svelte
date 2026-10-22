@@ -18,6 +18,7 @@
 	import { AlertTriangleIcon, BoxIcon, CodeIcon, ContainersIcon, FileTextIcon, InfoIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService, type PodmanQuadletAction } from '#lib/services/podman-service.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -53,9 +54,9 @@
 		...new Set(containers.map((container) => container.podName).filter((name): name is string => !!name))
 	]);
 
-	const canEdit = $derived(hasPermission('podman:quadlets', envId));
-	const canLifecycle = $derived(hasPermission('podman:quadlets:lifecycle', envId) && !quadlet.template);
-	const canViewLogs = $derived(hasPermission('containers:logs', envId));
+	const canEdit = $derived(hasPermission(PERMISSIONS.PODMAN_QUADLETS, envId));
+	const canLifecycle = $derived(hasPermission(PERMISSIONS.PODMAN_QUADLETS_LIFECYCLE, envId) && !quadlet.template);
+	const canViewLogs = $derived(hasPermission(PERMISSIONS.CONTAINERS_LOGS, envId));
 
 	let content = $derived(data.file.content);
 	let workspace = $state.raw(createQuadletWorkspace());

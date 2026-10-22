@@ -16,6 +16,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/group"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/job/children/runtime"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
@@ -519,14 +521,14 @@ func TestJobService_Submit_PersistsImageUpdateWatcherRun(t *testing.T) {
 	fakeScheduler := newFakeJobScheduler()
 	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{})
 	jobSvc.SetScheduler(ctx, fakeScheduler)
-	require.NoError(t, db.AutoMigrate(&userdomain.User{}, &role.Role{}, &role.UserRoleAssignment{}))
+	require.NoError(t, db.AutoMigrate(&userdomain.User{}, &role.Role{}, &role.RoleBinding{}, &group.Group{}, &group.GroupMember{}, &event.Event{}))
 	require.NoError(t, db.Create(&userdomain.User{Username: "operator", BaseModel: database.BaseModel{ID: "operator"}}).Error)
 	require.NoError(t, db.Create(&role.Role{
 		ID:          "jobs-manager",
 		Name:        "Jobs manager",
 		Permissions: database.StringSlice{authz.PermJobsManage},
 	}).Error)
-	require.NoError(t, db.Create(&role.UserRoleAssignment{UserID: "operator", RoleID: "jobs-manager"}).Error)
+	require.NoError(t, db.Create(&role.RoleBinding{UserID: new("operator"), RoleID: "jobs-manager", Source: role.BindingSourceManual}).Error)
 	run, err := jobSvc.Submit(ctx, types.SchedulerRequest{
 		JobID:         "image-polling",
 		EnvironmentID: "0",

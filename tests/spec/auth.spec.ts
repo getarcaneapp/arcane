@@ -201,7 +201,7 @@ test.describe('Token refresh behaviour', () => {
 
 		await injectExpired401Always(page, /\/api\/environments\/[^/]+\/containers(?:\/.*)?$/);
 		// Keep /auth/bootstrap unauthenticated too so the login page does not immediately bounce back.
-		await injectExpired401Always(page, /\/api\/auth\/bootstrap(?:\?.*)?$/);
+		await injectExpired401Always(page, /\/api\/auth\/bootstrap$/);
 
 		await page.goto('/containers');
 		await expect.poll(() => refreshCalled).toBe(true);

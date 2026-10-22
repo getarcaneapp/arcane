@@ -2,6 +2,7 @@ import {
 	discardPendingActivityToasts,
 	queueActivityCompletionToast
 } from '#lib/components/activity/activity-completion-toasts.js';
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { activityService } from '#lib/services/activity-service.js';
 import { STREAM_CHANNEL_ACTIVITIES } from '#lib/services/stream-service.js';
 import {
@@ -195,7 +196,7 @@ function createActivityStore() {
 
 	const core = createEnvironmentStreamStore<ActivityEnvironmentState, ActivityStreamEvent>({
 		label: 'Activity',
-		includeEnvironment: (environment) => userStore.hasPermission('activities:read', environment.id),
+		includeEnvironment: (environment) => userStore.hasPermission(PERMISSIONS.ACTIVITIES_READ, environment.id),
 		subscribeEnvironmentFilter: (reconcile) => userStore.onChange(reconcile),
 		createEnvironmentState(environment: Pick<Environment, 'id' | 'name'>): ActivityEnvironmentState {
 			return {

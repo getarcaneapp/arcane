@@ -29,7 +29,8 @@ type MockActivity = {
 type MockUser = {
 	id: string;
 	username: string;
-	roleAssignments: never[];
+	bindings: never[];
+	groups: never[];
 	permissionsByEnv: Record<string, string[]>;
 	isGlobalAdmin: boolean;
 	createdAt: string;
@@ -137,7 +138,8 @@ function user(id: string, permissionsByEnv: Record<string, string[]>): MockUser 
 	return {
 		id,
 		username: id,
-		roleAssignments: [],
+		bindings: [],
+		groups: [],
 		permissionsByEnv,
 		isGlobalAdmin: false,
 		createdAt: new Date().toISOString()

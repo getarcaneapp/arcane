@@ -2,6 +2,7 @@ import type { QueryClient } from '@tanstack/svelte-query';
 
 import { swarmEnvironmentsQueryOptions, type SwarmEnvironments } from '#lib/components/swarm/swarm-environments.js';
 import { m } from '#lib/paraglide/messages.js';
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { swarmService } from '#lib/services/swarm-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -21,7 +22,7 @@ import type { PageLoad } from './$types';
 async function taskEnvironments(queryClient: QueryClient, nodeId: string, url: URL): Promise<SwarmEnvironments> {
 	if (!nodeId) {
 		await environmentStore.ready;
-		return queryClient.query(swarmEnvironmentsQueryOptions('swarm:read'));
+		return queryClient.query(swarmEnvironmentsQueryOptions(PERMISSIONS.SWARM_READ));
 	}
 	const envId = await resolveDetailEnvironmentId(url);
 	return {

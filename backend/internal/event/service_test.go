@@ -1,7 +1,9 @@
 package event
 
 import (
+	"bytes"
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"maps"
@@ -24,6 +26,7 @@ import (
 	"go.getarcane.app/streams/bus"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event/children/correlation"
@@ -355,6 +358,129 @@ func TestEventService_ListEventsPaginated_TypeCategoryFilter(t *testing.T) {
 	require.ElementsMatch(t, []string{"container.start", "container.stop"}, listWithTypeFilter("container"))
 	require.ElementsMatch(t, []string{"image.pull"}, listWithTypeFilter("image.pull"))
 	require.ElementsMatch(t, []string{"container.start", "container.stop", "image.pull"}, listWithTypeFilter("container,image.pull"))
+}
+
+func seedAuditTestEvents(t *testing.T, db *database.DB, svc *EventService) (ordinaryID, auditID string) {
+	t.Helper()
+	ordinary, err := svc.CreateEvent(t.Context(), CreateEventRequest{Type: EventTypeContainerStart, Title: "=container started"})
+	require.NoError(t, err)
+	audit := &Event{
+		Type:      EventType(types.AuditActionRoleCreate),
+		Severity:  EventSeverityInfo,
+		Title:     "Role created: Operators",
+		Metadata:  database.JSON{"outcome": types.AuditOutcomeSuccess},
+		Audit:     true,
+		Timestamp: time.Now().Add(time.Minute),
+	}
+	require.NoError(t, db.Create(audit).Error)
+	return ordinary.ID, audit.ID
+}
+
+func auditReaderContext(t *testing.T) context.Context {
+	return authz.WithPermissions(t.Context(), &authz.PermissionSet{
+		Global: map[string]struct{}{authz.PermEventsRead: {}, authz.PermAuditRead: {}},
+	})
+}
+
+func eventIDs(items []types.Event) []string {
+	ids := make([]string, 0, len(items))
+	for _, e := range items {
+		ids = append(ids, e.ID)
+	}
+	return ids
+}
+
+func TestEventService_AuditEventVisibility(t *testing.T) {
+	db := setupEventServiceTestDB(t)
+	svc := NewEventService(db, nil, nil)
+	ordinaryID, auditID := seedAuditTestEvents(t, db, svc)
+	reader := authz.WithPermissions(t.Context(), &authz.PermissionSet{
+		Global: map[string]struct{}{authz.PermEventsRead: {}},
+	})
+
+	list := func(ctx context.Context) []string {
+		events, _, err := svc.ListEventsPaginated(ctx, pagination.QueryParams{
+			Params: pagination.Params{Limit: 10},
+		})
+		require.NoError(t, err)
+		return eventIDs(events)
+	}
+
+	require.Equal(t, []string{ordinaryID}, list(reader))
+	require.Equal(t, []string{ordinaryID}, list(t.Context()))
+	require.ElementsMatch(t, []string{ordinaryID, auditID}, list(auditReaderContext(t)))
+
+	counts, err := svc.GetEventSeverityCounts(reader)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, counts.Total)
+	counts, err = svc.GetEventSeverityCounts(auditReaderContext(t))
+	require.NoError(t, err)
+	require.EqualValues(t, 2, counts.Total)
+}
+
+func TestEventService_DeleteEventRefusesAuditEvents(t *testing.T) {
+	db := setupEventServiceTestDB(t)
+	svc := NewEventService(db, nil, nil)
+	ordinaryID, auditID := seedAuditTestEvents(t, db, svc)
+
+	require.ErrorIs(t, svc.DeleteEvent(auditReaderContext(t), auditID), common.ErrAuditEventDelete)
+	require.ErrorIs(t, svc.DeleteEvent(t.Context(), auditID), common.ErrNotFound)
+	require.NoError(t, svc.DeleteEvent(auditReaderContext(t), ordinaryID))
+
+	var remaining []string
+	require.NoError(t, db.Model(&Event{}).Pluck("id", &remaining).Error)
+	require.Equal(t, []string{auditID}, remaining)
+}
+
+func TestEventService_RetentionSeparatesAuditEvents(t *testing.T) {
+	db := setupEventServiceTestDB(t)
+	svc := NewEventService(db, nil, nil)
+	old := time.Now().AddDate(0, 0, -30)
+	for _, row := range []*Event{
+		{Type: EventTypeContainerStart, Title: "old ordinary", Timestamp: old},
+		{Type: EventType(types.AuditActionRoleCreate), Title: "old audit", Audit: true, Timestamp: old},
+		{Type: EventType(types.AuditActionRoleDelete), Title: "new audit", Audit: true, Timestamp: time.Now()},
+	} {
+		require.NoError(t, db.Create(row).Error)
+	}
+
+	require.NoError(t, svc.DeleteOldEvents(t.Context(), 24*time.Hour))
+	var titles []string
+	require.NoError(t, db.Model(&Event{}).Order("title").Pluck("title", &titles).Error)
+	require.Equal(t, []string{"new audit", "old audit"}, titles)
+
+	removed, err := svc.PruneAuditEvents(t.Context(), time.Now().AddDate(0, 0, -7))
+	require.NoError(t, err)
+	require.EqualValues(t, 1, removed)
+	titles = nil
+	require.NoError(t, db.Model(&Event{}).Pluck("title", &titles).Error)
+	require.Equal(t, []string{"new audit"}, titles)
+}
+
+func TestEventService_ExportEvents(t *testing.T) {
+	db := setupEventServiceTestDB(t)
+	svc := NewEventService(db, nil, nil)
+	ordinaryID, auditID := seedAuditTestEvents(t, db, svc)
+
+	var csvOut bytes.Buffer
+	require.NoError(t, svc.ExportEvents(t.Context(), pagination.QueryParams{}, types.EventExportFormatCSV, &csvOut))
+	records, err := csv.NewReader(&csvOut).ReadAll()
+	require.NoError(t, err)
+	require.Len(t, records, 2)
+	require.Equal(t, eventCSVHeader, records[0])
+	require.Equal(t, ordinaryID, records[1][0])
+	require.Equal(t, "'=container started", records[1][5])
+
+	var ndjsonOut bytes.Buffer
+	require.NoError(t, svc.ExportEvents(auditReaderContext(t), pagination.QueryParams{}, types.EventExportFormatNDJSON, &ndjsonOut))
+	lines := strings.Split(strings.TrimSpace(ndjsonOut.String()), "\n")
+	require.Len(t, lines, 2)
+	var decoded types.Event
+	require.NoError(t, json.Unmarshal([]byte(lines[1]), &decoded))
+	require.Equal(t, auditID, decoded.ID)
+	require.True(t, decoded.Audit)
+
+	require.ErrorIs(t, svc.ExportEvents(t.Context(), pagination.QueryParams{}, "xml", &bytes.Buffer{}), common.ErrValidation)
 }
 
 func TestIngestAgentEventAuthenticatedEnvironment(t *testing.T) {

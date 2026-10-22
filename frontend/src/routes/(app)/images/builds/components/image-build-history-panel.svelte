@@ -27,6 +27,7 @@
 		TerminalIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -70,7 +71,7 @@
 
 	const historyQuery = createQuery(() => {
 		const scope = environmentStore.shownKey;
-		const environments = readableEnvironments('images:list');
+		const environments = readableEnvironments(PERMISSIONS.IMAGES_LIST);
 		const options = requestOptions;
 		return {
 			queryKey: queryKeys.images.buildsList(scope, options),
@@ -337,7 +338,7 @@
 						{/if}
 						<span class="text-muted-foreground">{formatBuildTimestamp(selectedBuild.createdAt)}</span>
 					</div>
-					<IfPermitted perm="images:build" envId={selectedOptimistic?.environmentId}>
+					<IfPermitted perm={PERMISSIONS.IMAGES_BUILD} envId={selectedOptimistic?.environmentId}>
 						<ArcaneButton
 							action="base"
 							tone="outline"

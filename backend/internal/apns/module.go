@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 )
 
 type Module struct {
@@ -33,7 +35,7 @@ func (m *Module) RegisterRoutes(api huma.API) {
 func RegisterApns(api huma.API, service *ApnsService) {
 	h := &ApnsHandler{service: service}
 
-	huma.Register(
+	middleware.RegisterAuthenticated(
 		api,
 		securedApnsOperation(
 			"get-apns-status",
@@ -44,7 +46,7 @@ func RegisterApns(api huma.API, service *ApnsService) {
 		),
 		h.Status,
 	)
-	huma.Register(
+	middleware.RegisterAuthenticated(
 		api,
 		securedApnsOperation(
 			"create-apns-pairing-token",
@@ -55,8 +57,8 @@ func RegisterApns(api huma.API, service *ApnsService) {
 		),
 		h.PairingToken,
 	)
-	huma.Register(api, securedApnsOperation("register-apns-device", http.MethodPost, "/apns/devices", "Register a mobile device", ""), h.RegisterDevice)
-	huma.Register(api, securedApnsOperation("update-apns-device", http.MethodPatch, "/apns/devices/{id}", "Update a mobile device", ""), h.UpdateDevice)
-	huma.Register(api, securedApnsOperation("delete-apns-device", http.MethodDelete, "/apns/devices/{id}", "Remove a mobile device", ""), h.DeleteDevice)
-	huma.Register(api, securedApnsOperation("apns-device-action", http.MethodPost, "/apns/devices/{id}", "Send a test push", ""), h.TestDevice)
+	middleware.RegisterAuthenticated(api, securedApnsOperation("register-apns-device", http.MethodPost, "/apns/devices", "Register a mobile device", ""), h.RegisterDevice)
+	middleware.RegisterAuthenticated(api, securedApnsOperation("update-apns-device", http.MethodPatch, "/apns/devices/{id}", "Update a mobile device", ""), h.UpdateDevice)
+	middleware.RegisterAuthenticated(api, securedApnsOperation("delete-apns-device", http.MethodDelete, "/apns/devices/{id}", "Remove a mobile device", ""), h.DeleteDevice)
+	middleware.RegisterAuthenticated(api, securedApnsOperation("apns-device-action", http.MethodPost, "/apns/devices/{id}", "Send a test push", ""), h.TestDevice)
 }

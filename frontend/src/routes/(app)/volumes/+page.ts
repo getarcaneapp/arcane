@@ -1,3 +1,4 @@
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { volumeService } from '#lib/services/volume-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -10,7 +11,7 @@ import type { PageLoad } from './$types';
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
 	await environmentStore.ready;
-	const environments = readableEnvironments('volumes:list');
+	const environments = readableEnvironments(PERMISSIONS.VOLUMES_LIST);
 	const scope = environmentStore.shownKey;
 
 	const volumeRequestOptions = resolveInitialTableRequest(

@@ -16,19 +16,20 @@
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import { LockIcon, InfoIcon, ArrowDownIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { oidcMappingService } from '#lib/services/oidc-mapping-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import type { OidcRoleMapping, OidcRoleMappingWritable } from '#lib/types/auth.js';
+	import type { OidcGroupMapping, OidcGroupMappingSpec } from '#lib/types/auth.js';
 	import type { Settings } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { changedFields } from '#lib/utils/payload.js';
 	import { createSettingsForm } from '#lib/utils/settings-form.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -58,15 +59,19 @@
 	});
 	const activeTab = $derived(urlTab.value);
 
-	// OIDC role mappings — co-located with the OIDC settings so admins
-	// configure the groups claim and the mappings that read it in one place.
-	let oidcMappings: OidcRoleMapping[] = $derived(data.oidcMappings ?? []);
+	let oidcMappings: OidcGroupMapping[] = $derived(data.oidcMappings ?? []);
 	let mappingSheetOpen = $state(false);
-	let editingMapping: OidcRoleMapping | null = $state(null);
+	let editingMapping: OidcGroupMapping | null = $state(null);
 	let mappingSaving = $state(false);
 
 	async function refreshMappings() {
-		oidcMappings = await oidcMappingService.list();
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(oidcMappingService.list()),
+			message: m.common_refresh_failed({ resource: m.oidc_group_mappings_title() }),
+			onSuccess: (mappings) => {
+				oidcMappings = mappings;
+			}
+		});
 	}
 
 	function openCreateMapping() {
@@ -74,23 +79,18 @@
 		mappingSheetOpen = true;
 	}
 
-	function openEditMapping(mapping: OidcRoleMapping) {
+	function openEditMapping(mapping: OidcGroupMapping) {
 		editingMapping = mapping;
 		mappingSheetOpen = true;
 	}
 
-	async function submitMapping(formData: Required<Pick<OidcRoleMapping, OidcRoleMappingWritable>>) {
+	async function submitMapping(formData: OidcGroupMappingSpec) {
 		mappingSaving = true;
 
 		if (editingMapping) {
 			const id = editingMapping.id;
 			await handleApiResultWithCallbacks({
-				result: await tryCatch(
-					oidcMappingService.update(
-						id,
-						changedFields({ ...editingMapping, environmentId: editingMapping.environmentId ?? null }, formData)
-					)
-				),
+				result: await tryCatch(oidcMappingService.update(id, formData)),
 				message: m.common_update_failed({ resource: m.resource_oidc_mapping() }),
 				setLoadingState: (v) => (mappingSaving = v),
 				onSuccess: async () => {
@@ -102,7 +102,7 @@
 			});
 		} else {
 			await handleApiResultWithCallbacks({
-				result: await tryCatch(oidcMappingService.create({ ...formData, environmentId: formData.environmentId ?? undefined })),
+				result: await tryCatch(oidcMappingService.create(formData)),
 				message: m.common_create_failed({ resource: m.resource_oidc_mapping() }),
 				setLoadingState: (v) => (mappingSaving = v),
 				onSuccess: async () => {
@@ -127,6 +127,9 @@
 				.min(15, m.security_session_timeout_min())
 				.max(525600, m.security_session_timeout_max()),
 			authPasswordPolicy: z.enum(['basic', 'standard', 'strong']),
+			defaultUserRoleId: z.string(),
+			auditRetentionDays: z.coerce.number().int(m.audit_retention_days_invalid()).min(0, m.audit_retention_days_invalid()),
+			auditDenialsEnabled: z.boolean(),
 			oidcEnabled: z.boolean(),
 			oidcMergeAccounts: z.boolean(),
 			oidcSkipTlsVerify: z.boolean(),
@@ -169,6 +172,9 @@
 			authLocalEnabled: source.authLocalEnabled,
 			authSessionTimeout: source.authSessionTimeout,
 			authPasswordPolicy: source.authPasswordPolicy,
+			defaultUserRoleId: source.defaultUserRoleId ?? '',
+			auditRetentionDays: source.auditRetentionDays ?? 365,
+			auditDenialsEnabled: source.auditDenialsEnabled ?? true,
 			oidcEnabled: source.oidcEnabled,
 			oidcMergeAccounts: source.oidcMergeAccounts,
 			oidcSkipTlsVerify: source.oidcSkipTlsVerify,
@@ -202,6 +208,12 @@
 			successMessage: m.security_settings_saved(),
 			errorMessage: m.security_settings_save_failed()
 		})
+	);
+
+	const NO_DEFAULT_ROLE = 'none';
+	const defaultRoleOptions = $derived(data.roles.filter((role) => !role.permissions.includes(PERMISSIONS.ALL)));
+	const defaultRoleLabel = $derived(
+		defaultRoleOptions.find((role) => role.id === formInputs.defaultUserRoleId.value)?.name ?? m.default_user_role_none()
 	);
 
 	const redirectUri = $derived(`${globalThis?.location?.origin ?? ''}/auth/oidc/callback`);
@@ -488,37 +500,83 @@
 					</SettingsSection>
 
 					{#if !isAutoLoginEnabled}
-						<IfPermitted adminOnly>
+						<IfPermitted perm={PERMISSIONS.OIDCMAPPINGS_LIST}>
 							<SettingsSection
-								title={m.oidc_role_mappings_title()}
-								description={m.oidc_role_mappings_description()}
+								title={m.oidc_group_mappings_title()}
+								description={m.oidc_group_mappings_description()}
 								variant="plain"
 							>
 								{#snippet actions()}
-									<ArcaneButton
-										action="create"
-										tone="outline"
-										size="sm"
-										onclick={openCreateMapping}
-										customLabel={m.common_create_button({ resource: m.resource_oidc_mapping_cap() })}
-									/>
+									<IfPermitted perm={PERMISSIONS.OIDCMAPPINGS_CREATE}>
+										<ArcaneButton
+											action="create"
+											tone="outline"
+											size="sm"
+											onclick={openCreateMapping}
+											customLabel={m.common_create_button({ resource: m.resource_oidc_mapping_cap() })}
+										/>
+									</IfPermitted>
 								{/snippet}
 								{#if oidcMappings.length > 0}
-									<OidcMappingTable
-										mappings={oidcMappings}
-										roles={data.roles}
-										environments={data.environments}
-										onRefresh={refreshMappings}
-										onEdit={openEditMapping}
-									/>
+									<OidcMappingTable mappings={oidcMappings} onRefresh={refreshMappings} onEdit={openEditMapping} />
 								{:else}
 									<div class="rounded-xl border border-dashed border-border/60 p-6 text-center">
-										<p class="text-sm text-muted-foreground">{m.oidc_mappings_empty_body()}</p>
+										<p class="text-sm text-muted-foreground">{m.oidc_group_mappings_empty_body()}</p>
 									</div>
 								{/if}
 							</SettingsSection>
 						</IfPermitted>
 					{/if}
+
+					<SettingsSection title={m.access_control_heading()} description={m.access_control_description()}>
+						<SettingsRow
+							for="defaultUserRoleId"
+							label={m.default_user_role_label()}
+							description={m.default_user_role_description()}
+						>
+							<Select.Root
+								type="single"
+								value={formInputs.defaultUserRoleId.value || NO_DEFAULT_ROLE}
+								onValueChange={(value) => (formInputs.defaultUserRoleId.value = value === NO_DEFAULT_ROLE ? '' : value)}
+							>
+								<Select.Trigger id="defaultUserRoleId" class="w-full">
+									<span class="min-w-0 truncate">{defaultRoleLabel}</span>
+								</Select.Trigger>
+								<Select.Content>
+									<Select.Item value={NO_DEFAULT_ROLE} label={m.default_user_role_none()}
+										>{m.default_user_role_none()}</Select.Item
+									>
+									{#each defaultRoleOptions as role (role.id)}
+										<Select.Item value={role.id} label={role.name}>{role.name}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</SettingsRow>
+						<SettingsRow
+							for="auditRetentionDays"
+							label={m.audit_retention_days_label()}
+							description={m.audit_retention_days_description()}
+							helpText={m.activity_history_retention_days_help()}
+							error={formInputs.auditRetentionDays.error}
+						>
+							<Input
+								id="auditRetentionDays"
+								type="number"
+								min="0"
+								placeholder="365"
+								bind:value={formInputs.auditRetentionDays.value}
+								aria-invalid={!!formInputs.auditRetentionDays.error}
+							/>
+						</SettingsRow>
+						<SettingsRow
+							for="auditDenialsEnabled"
+							label={m.audit_denials_label()}
+							description={m.audit_denials_description()}
+							layout="switch"
+						>
+							<Switch id="auditDenialsEnabled" bind:checked={formInputs.auditDenialsEnabled.value} />
+						</SettingsRow>
+					</SettingsSection>
 
 					<SettingsSection title={m.security_session_heading()}>
 						<SettingsRow
@@ -588,8 +646,7 @@
 			bind:open={mappingSheetOpen}
 			mappingToEdit={editingMapping}
 			isLoading={mappingSaving}
-			roles={data.roles}
-			environments={data.environments}
+			groups={data.groups}
 			onSubmit={submitMapping}
 		/>
 	{/snippet}

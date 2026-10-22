@@ -20,6 +20,7 @@
 	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { ArrowLeftIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { SwarmStackSourceUpdate, SwarmStackSourceWritable, SwarmSyncFile } from '#lib/types/swarm.js';
 	import {
@@ -309,7 +310,11 @@
 
 			<div class="flex items-center gap-2">
 				{#if !isEditMode}
-					<EnvironmentDestinationSelect bind:value={destinationId} permission="swarm:stacks" environments={data.environments} />
+					<EnvironmentDestinationSelect
+						bind:value={destinationId}
+						permission={PERMISSIONS.SWARM_STACKS}
+						environments={data.environments}
+					/>
 				{/if}
 				<ComposeCreateMenu
 					tooltipOpen={!inputs.name.value && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent ? undefined : false}

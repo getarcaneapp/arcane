@@ -28,6 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/federated"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/group"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/health"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
@@ -136,6 +137,7 @@ type HandlerDeps struct {
 	Webhook           *webhook.Module
 	Vulnerability     *vulnerability.Module
 	Role              *role.Module
+	Group             *group.Module
 	Variable          *variable.Module
 	Upload            *upload.Module
 	Health            *health.Module
@@ -193,13 +195,14 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityApp
 	deps.ApiKey.RegisterRoutes(api)
 	federated.RegisterFederatedCredentials(api, deps.Federated)
 	deps.Role.RegisterRoutes(api)
+	deps.Group.RegisterRoutes(api)
 	appimages.RegisterAppImages(api, deps.AppImages)
 	deps.User.RegisterRoutes(api)
 	deps.Project.RegisterRoutes(api, appCtx)
 	version.RegisterVersion(api, deps.Version)
 	deps.Event.RegisterRoutes(api)
 	deps.Activity.RegisterRoutes(api)
-	oidc.RegisterOidc(api, deps.Auth.Service(), deps.Passkey, deps.Oidc, deps.Role.Service(), deps.User.Service(), cfg)
+	oidc.RegisterOidc(api, deps.Auth.Service(), deps.Passkey, deps.Oidc, deps.User.Service(), cfg)
 	deps.Environment.RegisterRoutes(api, appCtx, deps.Version.GetAppVersionInfo)
 	deps.ContainerRegistry.RegisterRoutes(api)
 	deps.Template.RegisterRoutes(api)

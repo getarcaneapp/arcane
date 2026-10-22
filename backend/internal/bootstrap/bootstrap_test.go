@@ -203,7 +203,7 @@ func newTestSettingsModule(t *testing.T, cfg *config.Config) *settings.Module {
 	t.Cleanup(func() {
 		require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context())))
 	})
-	return settings.New(settingsService, nil, nil, cfg)
+	return settings.New(settingsService, nil, nil, cfg, nil, nil)
 }
 
 func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {

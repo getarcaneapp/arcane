@@ -11,6 +11,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { CalendarIcon, EditIcon, LockIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { podmanService } from '#lib/services/podman-service.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { PodmanSecret } from '#lib/types/podman.js';
@@ -40,7 +41,7 @@
 
 	const canManageSecrets = $derived.by(() => {
 		userStore.current;
-		return hasShownPermission('podman:secrets');
+		return hasShownPermission(PERMISSIONS.PODMAN_SECRETS);
 	});
 
 	function handleDelete(secret: SecretRow) {
@@ -129,7 +130,7 @@
 			<EditIcon class="size-4" />
 			{m.common_edit()}
 		</DropdownMenu.Item>
-		{#if canManageSecrets && hasPermission('podman:secrets', item.environmentId)}
+		{#if canManageSecrets && hasPermission(PERMISSIONS.PODMAN_SECRETS, item.environmentId)}
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)} disabled={isDeleting}>
 				<TrashIcon class="size-4" />

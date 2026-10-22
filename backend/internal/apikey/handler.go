@@ -9,6 +9,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
@@ -72,7 +73,7 @@ func (h *ApiKeyHandler) CreateApiKey(ctx context.Context, input *CreateApiKeyInp
 		return nil, err
 	}
 
-	callerPerms, _ := middleware.PermissionsFromContext(ctx)
+	callerPerms, _ := authz.PermissionsFromContext(ctx)
 	apiKey, err := h.apiKeyService.CreateApiKey(ctx, user.ID, callerPerms, input.Body)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
@@ -113,7 +114,7 @@ func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInp
 		return nil, huma.Error400BadRequest("invalid request body")
 	}
 
-	callerPerms, _ := middleware.PermissionsFromContext(ctx)
+	callerPerms, _ := authz.PermissionsFromContext(ctx)
 	apiKey, err := h.apiKeyService.UpdateApiKey(ctx, callerPerms, input.ID, input.Body, submitted)
 	if err != nil {
 		if errors.Is(err, ErrApiKeyNotFound) {

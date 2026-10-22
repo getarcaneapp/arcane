@@ -2,14 +2,19 @@
 	import { createQuery, keepPreviousData } from '@tanstack/svelte-query';
 	import { tick } from 'svelte';
 
-	import { AlertIcon, CheckIcon, CloseIcon, EventsIcon, InfoIcon } from '#lib/icons/index.js';
+	import { AlertIcon, CheckIcon, CloseIcon, DownloadIcon, EventsIcon, InfoIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { eventService } from '#lib/services/event-service.js';
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
+	import type { EventExportFormat } from '#lib/types/shared.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { downloadBlob } from '#lib/utils/browser-download.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
+	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import EventTable from './components/event-table.svelte';
 
@@ -18,6 +23,7 @@
 	let selectedIds = $state<string[]>([]);
 	let requestOptions = $derived(data.eventRequestOptions);
 	let isDeleting = $state(false);
+	let exporting = $state<EventExportFormat | null>(null);
 
 	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
 	const eventsQuery = createQuery(() => {
@@ -68,6 +74,17 @@
 		};
 	}
 
+	async function exportEvents(format: EventExportFormat) {
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(
+				eventService.exportEvents(format, { search: requestOptions.search, filters: requestOptions.filters })
+			),
+			message: m.events_export_failed(),
+			setLoadingState: (value) => (exporting = value ? format : null),
+			onSuccess: ({ blob, filename }) => downloadBlob(blob, filename)
+		});
+	}
+
 	function handleDeleteSelected() {
 		if (selectedIds.length === 0) return;
 		const ids = [...selectedIds];
@@ -93,7 +110,7 @@
 		});
 	}
 
-	const canManageEvents = $derived(hasPermission('events:delete', GLOBAL_SCOPE));
+	const canManageEvents = $derived(hasPermission(PERMISSIONS.EVENTS_DELETE, GLOBAL_SCOPE));
 
 	const actionButtons: ActionButton[] = $derived([
 		...(selectedIds.length > 0 && canManageEvents
@@ -110,6 +127,24 @@
 					}
 				]
 			: []),
+		{
+			id: 'export-csv',
+			action: 'base' as const,
+			icon: DownloadIcon,
+			label: m.events_export_csv(),
+			onclick: () => void exportEvents('csv'),
+			loading: exporting === 'csv',
+			disabled: exporting !== null
+		},
+		{
+			id: 'export-ndjson',
+			action: 'base' as const,
+			icon: DownloadIcon,
+			label: m.events_export_ndjson(),
+			onclick: () => void exportEvents('ndjson'),
+			loading: exporting === 'ndjson',
+			disabled: exporting !== null
+		},
 		{
 			id: 'refresh',
 			action: 'refresh' as const,

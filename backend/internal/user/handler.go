@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -25,6 +26,7 @@ type UserHandler struct {
 	userService              *UserService
 	invalidateUserTokenCache func(string)
 	settingsService          *settings.SettingsService
+	applyDefaultRole         func(context.Context, string) error
 }
 
 type ListUsersInput struct {
@@ -120,6 +122,9 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 			return nil, huma.Error409Conflict(ErrEmailTaken.Error())
 		}
 		return nil, huma.Error500InternalServerError("Failed to create user")
+	}
+	if applyErr := h.applyDefaultRole(ctx, createdUser.ID); applyErr != nil {
+		slog.WarnContext(ctx, "Failed to apply the default role to a new user", "userId", createdUser.ID, "error", applyErr)
 	}
 
 	out, err := h.userService.ToUserResponseDto(ctx, *createdUser)
@@ -249,7 +254,7 @@ func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*
 	// Privilege ordering: a non-admin caller may not delete a global admin
 	// target. The service enforces the same check; this pre-check produces a
 	// clean 403 without entering the delete path.
-	callerPerms, _ := middleware.PermissionsFromContext(ctx)
+	callerPerms, _ := authz.PermissionsFromContext(ctx)
 	caller, _ := userctx.CurrentUserFromContext(ctx)
 	if callerPerms != nil && !callerPerms.IsGlobalAdmin() && caller != nil && caller.ID != input.UserID {
 		targetPerms, err := h.userService.ResolveUserPermissions(ctx, input.UserID)
@@ -324,7 +329,7 @@ func NormalizeOptionalEmail(email *string) (*string, error) {
 // modify a global admin target, nor set another user's password. The service
 // re-enforces the target-admin check.
 func (h *UserHandler) checkUpdateUserPrivileges(ctx context.Context, input *UpdateUserInput, targetID string) (*authz.PermissionSet, error) {
-	callerPerms, _ := middleware.PermissionsFromContext(ctx)
+	callerPerms, _ := authz.PermissionsFromContext(ctx)
 	caller, _ := userctx.CurrentUserFromContext(ctx)
 	if callerPerms != nil && !callerPerms.IsGlobalAdmin() {
 		if input.Body.Password != "" && caller != nil && caller.ID != targetID {

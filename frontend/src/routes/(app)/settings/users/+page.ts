@@ -1,8 +1,11 @@
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 import { roleService } from '#lib/services/role-service.js';
 import { userService } from '#lib/services/user-service.js';
+import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import { hasPermission } from '#lib/utils/auth.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 
 import type { PageLoad } from './$types';
@@ -26,11 +29,13 @@ export const load: PageLoad = async ({ parent }) => {
 			queryKey: queryKeys.users.list(userRequestOptions),
 			queryFn: () => userService.getUsers(userRequestOptions)
 		}),
-		queryClient.query({
-			queryKey: queryKeys.roles.all(),
-			queryFn: () => roleService.getAll(),
-			staleTime: 30_000
-		}),
+		hasPermission(PERMISSIONS.ROLES_LIST, GLOBAL_SCOPE)
+			? queryClient.query({
+					queryKey: queryKeys.roles.all(),
+					queryFn: () => roleService.getAll(),
+					staleTime: 30_000
+				})
+			: null,
 		queryClient.query({
 			queryKey: queryKeys.environments.list({ pagination: { page: 1, limit: 1000 } }),
 			queryFn: () => environmentManagementService.getEnvironments({ pagination: { page: 1, limit: 1000 } }),

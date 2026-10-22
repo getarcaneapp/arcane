@@ -14,6 +14,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { RegistryIcon, UserIcon, ExternalLinkIcon, EditIcon, TrashIcon, TestIcon, FolderOpenIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
 	import type { ContainerRegistry, ContainerRegistryPullUsage } from '#lib/types/docker.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -42,8 +43,10 @@
 	let removingId = $state<string | null>(null);
 	let testingId = $state<string | null>(null);
 
-	const canDeleteRegistry = $derived(hasShownPermission('registries:delete'));
-	const canBrowseRegistry = $derived(hasShownPermission('registries:read') && hasShownPermission('registries:browse'));
+	const canDeleteRegistry = $derived(hasShownPermission(PERMISSIONS.REGISTRIES_DELETE));
+	const canBrowseRegistry = $derived(
+		hasShownPermission(PERMISSIONS.REGISTRIES_READ) && hasShownPermission(PERMISSIONS.REGISTRIES_BROWSE)
+	);
 
 	function maskAccessKeyId(keyId: string | undefined): string {
 		if (!keyId) return m.registries_aws_iam_role();
@@ -270,7 +273,7 @@
 			</DropdownMenu.Item>
 		{/if}
 
-		<IfPermitted perm="registries:test">
+		<IfPermitted perm={PERMISSIONS.REGISTRIES_TEST}>
 			<ActionMenuItem
 				icon={TestIcon}
 				label={m.test_connection()}
@@ -279,7 +282,7 @@
 			/>
 		</IfPermitted>
 
-		<IfPermitted perm="registries:update">
+		<IfPermitted perm={PERMISSIONS.REGISTRIES_UPDATE}>
 			<DropdownMenu.Item onclick={() => onEditRegistry(item)}>
 				<EditIcon class="size-4" />
 				{m.common_edit()}

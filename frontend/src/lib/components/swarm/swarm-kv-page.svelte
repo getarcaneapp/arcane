@@ -6,6 +6,7 @@
 	import { swarmEnvironmentsQueryOptions, type SwarmEnvironments } from '#lib/components/swarm/swarm-environments.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -38,7 +39,7 @@
 	} = $props();
 
 	const queryClient = useQueryClient();
-	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm:read'));
+	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions(PERMISSIONS.SWARM_READ));
 	const swarm = $derived(swarmQuery.data ?? initialSwarm);
 
 	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => initialRequestOptions));

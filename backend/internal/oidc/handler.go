@@ -7,14 +7,12 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
-	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/passkey"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/cookie"
@@ -22,13 +20,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-// OidcHandler handles OIDC authentication endpoints, plus OIDC group → role
-// mapping management (since mappings only make sense in the OIDC context).
+// OidcHandler handles OIDC authentication endpoints.
 type OidcHandler struct {
 	authService    *auth.AuthService
 	passkeyService *passkey.PasskeyService
 	oidcService    *OidcService
-	roleService    *role.RoleService
 	userService    *user.UserService
 	config         *config.Config
 }
@@ -91,28 +87,6 @@ type ExchangeDeviceTokenInput struct {
 
 type ExchangeDeviceTokenOutput struct {
 	Body types.AuthenticationResponse
-}
-
-type ListOidcRoleMappingsInput struct{}
-
-type CreateOidcRoleMappingInput struct {
-	types.Create[types.OidcRoleMapping]
-}
-
-type UpdateOidcRoleMappingInput struct {
-	ID string `path:"id" doc:"Mapping ID"`
-	types.Update[types.OidcRoleMapping]
-}
-
-type DeleteOidcRoleMappingInput struct {
-	ID string `path:"id" doc:"Mapping ID"`
-}
-
-type DeleteOidcRoleMappingOutput struct {
-	Body struct {
-		Success bool   `json:"success"`
-		Message string `json:"message"`
-	}
 }
 
 // GetOidcStatus returns the OIDC configuration status.
@@ -368,85 +342,4 @@ func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDe
 			User:         &userDto,
 		},
 	}, nil
-}
-
-func (h *OidcHandler) ListOidcRoleMappings(ctx context.Context, _ *ListOidcRoleMappingsInput) (*handlerutil.Out[[]types.OidcRoleMapping], error) {
-	rows, err := h.roleService.ListOidcMappings(ctx)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to list mappings: " + err.Error())
-	}
-	out := &handlerutil.Out[[]types.OidcRoleMapping]{}
-	out.Body.Success = true
-	out.Body.Data = make([]types.OidcRoleMapping, len(rows))
-	for i := range rows {
-		out.Body.Data[i] = toOidcMappingDTO(&rows[i])
-	}
-	return out, nil
-}
-
-func (h *OidcHandler) CreateOidcRoleMapping(ctx context.Context, input *CreateOidcRoleMappingInput) (*handlerutil.Out[types.OidcRoleMapping], error) {
-	mapping, err := h.roleService.CreateOidcMapping(ctx, input.Body.ClaimValue, input.Body.RoleID, input.Body.EnvironmentID)
-	if err != nil {
-		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
-	}
-	out := &handlerutil.Out[types.OidcRoleMapping]{}
-	out.Body.Success = true
-	out.Body.Data = toOidcMappingDTO(mapping)
-	return out, nil
-}
-
-func (h *OidcHandler) UpdateOidcRoleMapping(ctx context.Context, input *UpdateOidcRoleMappingInput) (*handlerutil.Out[types.OidcRoleMapping], error) {
-	submitted, err := input.SubmittedFields()
-	if err != nil {
-		return nil, huma.Error400BadRequest("invalid request body")
-	}
-	current, err := h.roleService.GetOidcMapping(ctx, input.ID)
-	if err != nil {
-		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
-	}
-	mapping, err := h.roleService.UpdateOidcMapping(
-		ctx,
-		input.ID,
-		kit.Ternary(submitted["claimValue"], input.Body.ClaimValue, current.ClaimValue),
-		kit.Ternary(submitted["roleId"], input.Body.RoleID, current.RoleID),
-		kit.Ternary(submitted["environmentId"], input.Body.EnvironmentID, current.EnvironmentID),
-	)
-	if err != nil {
-		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
-	}
-	out := &handlerutil.Out[types.OidcRoleMapping]{}
-	out.Body.Success = true
-	out.Body.Data = toOidcMappingDTO(mapping)
-	return out, nil
-}
-
-func (h *OidcHandler) DeleteOidcRoleMapping(ctx context.Context, input *DeleteOidcRoleMappingInput) (*DeleteOidcRoleMappingOutput, error) {
-	if err := h.roleService.DeleteOidcMapping(ctx, input.ID); err != nil {
-		if errors.Is(err, common.ErrOidcMappingNotFound) {
-			return nil, huma.Error404NotFound("mapping not found")
-		}
-		if errors.Is(err, common.ErrOidcMappingEnvManaged) {
-			return nil, huma.Error409Conflict(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("failed to delete mapping: " + err.Error())
-	}
-	out := &DeleteOidcRoleMappingOutput{}
-	out.Body.Success = true
-	out.Body.Message = "mapping deleted"
-	return out, nil
-}
-
-func toOidcMappingDTO(m *role.OidcRoleMapping) types.OidcRoleMapping {
-	return types.OidcRoleMapping{
-		ID:            m.ID,
-		ClaimValue:    m.ClaimValue,
-		RoleID:        m.RoleID,
-		EnvironmentID: m.EnvironmentID,
-		Source:        m.Source,
-		CreatedAt:     m.CreatedAt,
-		UpdatedAt:     m.UpdatedAt,
-	}
 }

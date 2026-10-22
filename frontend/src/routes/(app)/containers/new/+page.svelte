@@ -14,6 +14,7 @@
 	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import { ArrowLeftIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
@@ -24,7 +25,7 @@
 	const form = createForm<typeof containerFormSchema>(containerFormSchema, emptyContainerFormValues());
 	let rows = $state(emptyContainerFormRows());
 	let pickedEnvironmentId = $state('');
-	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'containers:create'));
+	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, PERMISSIONS.CONTAINERS_CREATE));
 
 	const createContainerMutation = createMutation(() => ({
 		mutationKey: queryKeys.containers.create(environmentId),
@@ -63,7 +64,7 @@
 			<h1 class="flex-1 text-base font-semibold">{m.create_container_title()}</h1>
 			<EnvironmentDestinationSelect
 				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
-				permission="containers:create"
+				permission={PERMISSIONS.CONTAINERS_CREATE}
 			/>
 		</div>
 	</div>

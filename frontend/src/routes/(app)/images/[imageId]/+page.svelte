@@ -27,6 +27,7 @@
 	} from '#lib/icons/index.js';
 	import { ResourceDetailLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
@@ -73,11 +74,11 @@
 		if (!vulnerabilityManagementEnabled) stopPolling();
 	});
 	// fallow-ignore-next-line code-duplication -- permission $derived declarations; script-level, no shared render surface
-	const canDeleteImage = $derived(hasPermission('images:delete', currentEnvId));
-	const canScanImage = $derived(vulnerabilityManagementEnabled && hasPermission('vulnerabilities:scan', currentEnvId));
-	const canPatchImage = $derived(hasPermission('images:patch', currentEnvId));
-	const canTagImage = $derived(hasPermission('images:tag', currentEnvId));
-	const canReadImage = $derived(hasPermission('images:read', currentEnvId));
+	const canDeleteImage = $derived(hasPermission(PERMISSIONS.IMAGES_DELETE, currentEnvId));
+	const canScanImage = $derived(vulnerabilityManagementEnabled && hasPermission(PERMISSIONS.VULNERABILITIES_SCAN, currentEnvId));
+	const canPatchImage = $derived(hasPermission(PERMISSIONS.IMAGES_PATCH, currentEnvId));
+	const canTagImage = $derived(hasPermission(PERMISSIONS.IMAGES_TAG, currentEnvId));
+	const canReadImage = $derived(hasPermission(PERMISSIONS.IMAGES_READ, currentEnvId));
 
 	let isLoading = $state({
 		pulling: false,
@@ -101,7 +102,7 @@
 				signal.throwIfAborted();
 				return vulnerabilityService.getScanResult(imageId!, environmentId);
 			},
-			enabled: vulnerabilityManagementEnabled && !!imageId && hasPermission('vulnerabilities:read', environmentId),
+			enabled: vulnerabilityManagementEnabled && !!imageId && hasPermission(PERMISSIONS.VULNERABILITIES_READ, environmentId),
 			retry: false
 		};
 	});

@@ -10,6 +10,7 @@
 	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { TerminalIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { deployOptionsStore } from '#lib/stores/deploy-options.store.svelte.js';
@@ -217,22 +218,32 @@
 	type ActionTarget = { id: string; environmentId: string };
 	const actionTarget = (): ActionTarget => ({ id, environmentId });
 	const canStart = $derived(
-		type === 'container' ? hasPermission('containers:start', environmentId) : hasPermission('projects:deploy', environmentId)
+		type === 'container'
+			? hasPermission(PERMISSIONS.CONTAINERS_START, environmentId)
+			: hasPermission(PERMISSIONS.PROJECTS_DEPLOY, environmentId)
 	);
 	const canStop = $derived(
-		type === 'container' ? hasPermission('containers:stop', environmentId) : hasPermission('projects:down', environmentId)
+		type === 'container'
+			? hasPermission(PERMISSIONS.CONTAINERS_STOP, environmentId)
+			: hasPermission(PERMISSIONS.PROJECTS_DOWN, environmentId)
 	);
 	const canRestart = $derived(
-		type === 'container' ? hasPermission('containers:restart', environmentId) : hasPermission('projects:restart', environmentId)
+		type === 'container'
+			? hasPermission(PERMISSIONS.CONTAINERS_RESTART, environmentId)
+			: hasPermission(PERMISSIONS.PROJECTS_RESTART, environmentId)
 	);
 	const canRedeploy = $derived(
-		type === 'container' ? hasPermission('containers:redeploy', environmentId) : hasPermission('projects:deploy', environmentId)
+		type === 'container'
+			? hasPermission(PERMISSIONS.CONTAINERS_REDEPLOY, environmentId)
+			: hasPermission(PERMISSIONS.PROJECTS_DEPLOY, environmentId)
 	);
 	const canRemove = $derived(
-		type === 'container' ? hasPermission('containers:delete', environmentId) : hasPermission('projects:delete', environmentId)
+		type === 'container'
+			? hasPermission(PERMISSIONS.CONTAINERS_DELETE, environmentId)
+			: hasPermission(PERMISSIONS.PROJECTS_DELETE, environmentId)
 	);
-	const canPull = $derived(type === 'project' && hasPermission('projects:deploy', environmentId));
-	const canBuild = $derived(type === 'project' && hasPermission('projects:deploy', environmentId));
+	const canPull = $derived(type === 'project' && hasPermission(PERMISSIONS.PROJECTS_DEPLOY, environmentId));
+	const canBuild = $derived(type === 'project' && hasPermission(PERMISSIONS.PROJECTS_DEPLOY, environmentId));
 	const deployButtonLabel = $derived(projectHasBuildDirective ? m.compose_build_and_deploy() : m.common_up());
 
 	async function handleRefresh() {

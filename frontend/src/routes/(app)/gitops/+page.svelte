@@ -10,6 +10,7 @@
 	import { RefreshIcon, ClockIcon, SuccessIcon, GitBranchIcon, UploadIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
@@ -44,8 +45,8 @@
 	let syncToEdit = $state<GitOpsSync | null>(null);
 	let pickedEnvironmentId = $state('');
 	const scope = $derived(environmentStore.shownKey);
-	const createEnvironmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'gitops:create'));
-	const canCreate = $derived(hasShownPermission('gitops:create'));
+	const createEnvironmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, PERMISSIONS.GITOPS_CREATE));
+	const canCreate = $derived(hasShownPermission(PERMISSIONS.GITOPS_CREATE));
 
 	let isLoading = $state({
 		create: false,
@@ -61,7 +62,7 @@
 
 	const syncsQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = readableEnvironments('gitops:list');
+		const environments = readableEnvironments(PERMISSIONS.GITOPS_LIST);
 		const options = requestOptions;
 		return {
 			queryKey: queryKeys.gitOpsSyncs.list(queryScope, options),
@@ -79,7 +80,7 @@
 
 	async function loadSyncs(options: SearchPaginationSortRequest = requestOptions) {
 		requestOptions = options;
-		const environments = readableEnvironments('gitops:list');
+		const environments = readableEnvironments(PERMISSIONS.GITOPS_LIST);
 		return queryClient.query({
 			queryKey: queryKeys.gitOpsSyncs.list(scope, options),
 			queryFn: () => fetchSyncs(environments, options),

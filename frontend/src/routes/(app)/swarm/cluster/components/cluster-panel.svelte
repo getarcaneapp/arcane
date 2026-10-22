@@ -12,6 +12,7 @@
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { EyeOffIcon, EyeOnIcon, SettingsIcon, UsersIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
@@ -22,7 +23,7 @@
 
 	let { environmentId, onChanged }: { environmentId: string; onChanged?: () => void | Promise<void> } = $props();
 
-	const canManageSwarm = $derived(hasPermission('swarm:nodes', environmentId));
+	const canManageSwarm = $derived(hasPermission(PERMISSIONS.SWARM_NODES, environmentId));
 
 	const swarmInfoQuery = createQuery(() => {
 		const requestedEnvironmentId = environmentId;
@@ -30,7 +31,7 @@
 		return {
 			queryKey: queryKeys.swarm.info(requestedEnvironmentId),
 			queryFn: () => swarmService.getSwarmInfo(requestedEnvironmentId),
-			enabled: hasPermission('swarm:read', requestedEnvironmentId),
+			enabled: hasPermission(PERMISSIONS.SWARM_READ, requestedEnvironmentId),
 			retry: false
 		};
 	});
@@ -40,7 +41,7 @@
 		return {
 			queryKey: queryKeys.swarm.joinTokens(requestedEnvironmentId),
 			queryFn: () => swarmService.getSwarmJoinTokens(requestedEnvironmentId),
-			enabled: hasPermission('swarm:unlock', requestedEnvironmentId),
+			enabled: hasPermission(PERMISSIONS.SWARM_UNLOCK, requestedEnvironmentId),
 			retry: false
 		};
 	});
@@ -50,7 +51,7 @@
 		return {
 			queryKey: queryKeys.swarm.unlockKey(requestedEnvironmentId),
 			queryFn: () => swarmService.getSwarmUnlockKey(requestedEnvironmentId),
-			enabled: hasPermission('swarm:unlock', requestedEnvironmentId),
+			enabled: hasPermission(PERMISSIONS.SWARM_UNLOCK, requestedEnvironmentId),
 			retry: false
 		};
 	});
@@ -130,8 +131,9 @@
 		showWorkerToken = false;
 		try {
 			const requests: Promise<unknown>[] = [];
-			if (hasPermission('swarm:read', environmentId)) requests.push(swarmInfoQuery.refetch());
-			if (hasPermission('swarm:unlock', environmentId)) requests.push(joinTokensQuery.refetch(), unlockKeyQuery.refetch());
+			if (hasPermission(PERMISSIONS.SWARM_READ, environmentId)) requests.push(swarmInfoQuery.refetch());
+			if (hasPermission(PERMISSIONS.SWARM_UNLOCK, environmentId))
+				requests.push(joinTokensQuery.refetch(), unlockKeyQuery.refetch());
 			await Promise.all(requests);
 			await onChanged?.();
 		} finally {

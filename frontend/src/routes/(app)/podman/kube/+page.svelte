@@ -18,6 +18,7 @@
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { ArrowDownIcon, ArrowLeftIcon, CloseIcon, LayersIcon, TerminalIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { networkService } from '#lib/services/network-service.js';
@@ -36,7 +37,7 @@
 
 	const podmanEnvs = $derived(shownPodmanEnvironments(data.podmanStatuses));
 	let picked = $state('');
-	const environmentId = $derived(destinationEnvironmentId(picked, 'podman:kube', podmanEnvs));
+	const environmentId = $derived(destinationEnvironmentId(picked, PERMISSIONS.PODMAN_KUBE, podmanEnvs));
 
 	let yaml = $state('');
 	let start = $state(true);
@@ -242,7 +243,7 @@
 				<div class="flex items-center gap-2">
 					<EnvironmentDestinationSelect
 						bind:value={() => environmentId, (value) => (picked = value)}
-						permission="podman:kube"
+						permission={PERMISSIONS.PODMAN_KUBE}
 						environments={podmanEnvs}
 					/>
 					<ButtonGroup.Root>

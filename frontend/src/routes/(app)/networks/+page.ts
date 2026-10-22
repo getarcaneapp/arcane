@@ -1,3 +1,4 @@
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { networkService } from '#lib/services/network-service.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
@@ -16,7 +17,7 @@ export const load: PageLoad = async ({ parent }) => {
 		column: 'name',
 		direction: 'asc'
 	});
-	const environments = readableEnvironments('networks:list');
+	const environments = readableEnvironments(PERMISSIONS.NETWORKS_LIST);
 
 	// Single API call - counts are included in the response
 	let networks;

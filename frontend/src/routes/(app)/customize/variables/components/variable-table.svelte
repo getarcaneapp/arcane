@@ -11,6 +11,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { VariableIcon, LockIcon, EditIcon, ClockIcon, GlobeIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -33,7 +34,9 @@
 	let requestOptions = $state<SearchPaginationSortRequest>({ pagination: { page: 1, limit: 20 } });
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
 
-	const canMutateVariables = $derived(hasAnyPermission(['variables:update', 'variables:delete'], GLOBAL_SCOPE));
+	const canMutateVariables = $derived(
+		hasAnyPermission([PERMISSIONS.VARIABLES_UPDATE, PERMISSIONS.VARIABLES_DELETE], GLOBAL_SCOPE)
+	);
 
 	const envNameById = $derived(new Map(environments.map((environment) => [environment.id, environment.name])));
 
@@ -207,13 +210,13 @@
 
 {#snippet RowActions({ item }: { item: GlobalVariable })}
 	<RowActionsMenu>
-		<IfPermitted perm="variables:update" envId={GLOBAL_SCOPE}>
+		<IfPermitted perm={PERMISSIONS.VARIABLES_UPDATE} envId={GLOBAL_SCOPE}>
 			<DropdownMenu.Item onclick={() => onEdit(item)}>
 				<EditIcon class="size-4" />
 				{m.common_edit()}
 			</DropdownMenu.Item>
 		</IfPermitted>
-		<IfPermitted perm="variables:delete" envId={GLOBAL_SCOPE}>
+		<IfPermitted perm={PERMISSIONS.VARIABLES_DELETE} envId={GLOBAL_SCOPE}>
 			<RemoveMenuItem onclick={() => onDelete(item)} label={m.common_delete()} />
 		</IfPermitted>
 	</RowActionsMenu>

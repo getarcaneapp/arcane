@@ -1,3 +1,4 @@
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { imageService } from '#lib/services/image-service.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
@@ -17,7 +18,7 @@ export const load: PageLoad = async ({ parent }) => {
 		column: 'created',
 		direction: 'desc'
 	});
-	const environments = readableEnvironments('images:list');
+	const environments = readableEnvironments(PERMISSIONS.IMAGES_LIST);
 	await Promise.all(environments.map((env) => featureStore.load(env.id)));
 	let images;
 	let imageUsageCounts;

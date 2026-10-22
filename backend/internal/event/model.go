@@ -142,6 +142,7 @@ type Event struct {
 	Username         *string       `json:"username,omitempty" sortable:"true"`
 	EnvironmentID    *string       `json:"environmentId,omitempty"`
 	Metadata         database.JSON `json:"metadata,omitempty" gorm:"type:text"`
+	Audit            bool          `json:"audit" gorm:"not null;default:false"`
 	Timestamp        time.Time     `json:"timestamp" sortable:"true"`
 }
 

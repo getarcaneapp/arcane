@@ -6,6 +6,7 @@
 	import { JobsIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -21,7 +22,7 @@
 
 	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
 	let nodeId = $derived(data.nodeId ?? '');
-	const swarmQuery = createQuery(() => ({ ...swarmEnvironmentsQueryOptions('swarm:read'), enabled: !nodeId }));
+	const swarmQuery = createQuery(() => ({ ...swarmEnvironmentsQueryOptions(PERMISSIONS.SWARM_READ), enabled: !nodeId }));
 	const swarm = $derived(nodeId ? data.swarm : (swarmQuery.data ?? data.swarm));
 
 	function tasksQueryOptions(options: SearchPaginationSortRequest, current: SwarmEnvironments = swarm) {

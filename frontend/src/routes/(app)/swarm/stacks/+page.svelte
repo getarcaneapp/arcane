@@ -7,6 +7,7 @@
 	import { LayersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -22,7 +23,7 @@
 	const queryClient = useQueryClient();
 
 	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
-	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm:read'));
+	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions(PERMISSIONS.SWARM_READ));
 	const swarm = $derived(swarmQuery.data ?? data.swarm);
 
 	function stacksQueryOptions(options: SearchPaginationSortRequest, current: SwarmEnvironments = swarm) {
@@ -59,7 +60,7 @@
 
 	const totalStacks = $derived(stacks?.pagination?.totalItems ?? stacks?.data?.length ?? 0);
 
-	const canCreateStack = $derived(swarm.managers.some((env) => hasPermission('swarm:stacks', env.id)));
+	const canCreateStack = $derived(swarm.managers.some((env) => hasPermission(PERMISSIONS.SWARM_STACKS, env.id)));
 
 	const actionButtons = $derived.by(() =>
 		createRefreshActionButtons({
