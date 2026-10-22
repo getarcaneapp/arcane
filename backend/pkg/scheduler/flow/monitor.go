@@ -13,7 +13,7 @@ import (
 	"github.com/italypaleale/francis/actor"
 	"github.com/italypaleale/francis/builtin/workflow"
 
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
+	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
 )
 
 const (

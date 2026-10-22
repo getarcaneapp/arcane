@@ -16,7 +16,7 @@ import (
 	"github.com/italypaleale/francis/components/sqlite"
 	"github.com/italypaleale/francis/host/local"
 
-	sqliteutil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/sqlite"
+	sqliteutil "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/sqlite"
 )
 
 // StorePath names the dedicated Francis SQLite file beside the Arcane database.

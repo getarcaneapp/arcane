@@ -8,14 +8,13 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
-	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
 )
 
 func newRestoredDatabaseForTest(t *testing.T, runIDs ...string) (string, string) {
@@ -47,11 +46,14 @@ func newRestoredDatabaseForTest(t *testing.T, runIDs ...string) (string, string)
 
 func TestFinalizeRestoredBackup(t *testing.T) {
 	databaseURL, dsn := newRestoredDatabaseForTest(t, "older", "selected")
-	crypto.InitEncryption(&crypto.Config{EncryptionKey: "recovery-finalize-test-key-32bytes", Environment: "test"})
 	recoveryKey, err := backup.GenerateRecoveryKey()
 	require.NoError(t, err)
 
-	require.NoError(t, finalizeRestoredBackup(t.Context(), databaseURL, "selected", "activity-1", types.RecoveryRestoreRequest{
+	require.NoError(t, finalizeRestoredBackup(t.Context(), map[string]string{
+		"ARCANE_DATABASE_URL":   databaseURL,
+		"ARCANE_ENCRYPTION_KEY": "recovery-finalize-test-key-32bytes",
+		"ARCANE_ENVIRONMENT":    "test",
+	}, "selected", "activity-1", types.RecoveryRestoreRequest{
 		BackupID: "request-id", RemoteSnapshotID: "snapshot-1", S3DestinationID: "destination-1", Size: 1234,
 		RecoveryKey:     recoveryKey,
 		ProjectsSetting: "/srv/projects",
@@ -90,7 +92,10 @@ func TestFinalizeRestoredBackup(t *testing.T) {
 func TestFinalizeRestoredBackupInternalFallsBackForLegacyManifest(t *testing.T) {
 	databaseURL, dsn := newRestoredDatabaseForTest(t, "older", "newest")
 
-	require.NoError(t, finalizeRestoredBackup(t.Context(), databaseURL, "", "", types.RecoveryRestoreRequest{BackupID: "missing-discovery-id"}))
+	require.NoError(t, finalizeRestoredBackup(t.Context(), map[string]string{
+		"ARCANE_DATABASE_URL": databaseURL,
+		"ARCANE_ENVIRONMENT":  "test",
+	}, "", "", types.RecoveryRestoreRequest{BackupID: "missing-discovery-id"}))
 
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)

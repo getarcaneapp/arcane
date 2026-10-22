@@ -22,20 +22,20 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/job/children/remote"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/job/children/runtime"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/tracing"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/job/children/remote"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/job/children/runtime"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	scheduleutil "github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
 // JobService manages configuration for background job schedules.
@@ -120,28 +120,22 @@ func (s *JobService) SetScheduler(ctx context.Context, controller types.JobContr
 }
 
 func (s *JobService) GetJobSchedules(ctx context.Context) types.JobScheduleConfig {
-	defaults := settings.DefaultSettingsConfig()
-
 	// Use settings.SettingsService cache for fast reads.
 	return types.JobScheduleConfig{
-		EnvironmentHealthInterval:      s.settings.GetStringSetting(ctx, "environmentHealthInterval", defaults.EnvironmentHealthInterval.Value),
-		EventCleanupInterval:           s.settings.GetStringSetting(ctx, "eventCleanupInterval", defaults.EventCleanupInterval.Value),
-		ExpiredSessionsCleanupInterval: s.settings.GetStringSetting(ctx, "expiredSessionsCleanupInterval", defaults.ExpiredSessionsCleanupInterval.Value),
-		AutoUpdateInterval:             s.settings.GetStringSetting(ctx, "autoUpdateInterval", defaults.AutoUpdateInterval.Value),
-		DockerClientRefreshInterval:    s.settings.GetStringSetting(ctx, "dockerClientRefreshInterval", defaults.DockerClientRefreshInterval.Value),
-		PollingInterval:                s.settings.GetStringSetting(ctx, "pollingInterval", defaults.PollingInterval.Value),
-		ScheduledPruneInterval:         s.settings.GetStringSetting(ctx, "scheduledPruneInterval", defaults.ScheduledPruneInterval.Value),
-		VulnerabilityScanInterval:      s.settings.GetStringSetting(ctx, "vulnerabilityScanInterval", defaults.VulnerabilityScanInterval.Value),
-		ImageAutoPatchInterval:         s.settings.GetStringSetting(ctx, "imageAutoPatchInterval", defaults.ImageAutoPatchInterval.Value),
-		AutoHealInterval:               s.settings.GetStringSetting(ctx, "autoHealInterval", defaults.AutoHealInterval.Value),
+		EnvironmentHealthInterval:      s.settings.GetStringSetting(ctx, "environmentHealthInterval"),
+		EventCleanupInterval:           s.settings.GetStringSetting(ctx, "eventCleanupInterval"),
+		ExpiredSessionsCleanupInterval: s.settings.GetStringSetting(ctx, "expiredSessionsCleanupInterval"),
+		AutoUpdateInterval:             s.settings.GetStringSetting(ctx, "autoUpdateInterval"),
+		DockerClientRefreshInterval:    s.settings.GetStringSetting(ctx, "dockerClientRefreshInterval"),
+		PollingInterval:                s.settings.GetStringSetting(ctx, "pollingInterval"),
+		ScheduledPruneInterval:         s.settings.GetStringSetting(ctx, "scheduledPruneInterval"),
+		VulnerabilityScanInterval:      s.settings.GetStringSetting(ctx, "vulnerabilityScanInterval"),
+		ImageAutoPatchInterval:         s.settings.GetStringSetting(ctx, "imageAutoPatchInterval"),
+		AutoHealInterval:               s.settings.GetStringSetting(ctx, "autoHealInterval"),
 	}
 }
 
 func (s *JobService) UpdateJobSchedules(ctx context.Context, updates types.JobScheduleConfig, submitted map[string]bool) (types.JobScheduleConfig, error) {
-	if s.cfg.UIConfigurationDisabled {
-		return types.JobScheduleConfig{}, errors.New("job schedule updates are disabled")
-	}
-
 	current := s.GetJobSchedules(ctx)
 
 	fields := []struct {
@@ -326,8 +320,7 @@ func (s *JobService) ListJobs(ctx context.Context) (*types.JobListResponse, erro
 			case jobMeta.SettingsKey == "":
 				return ""
 			}
-			defaultSchedule, _, _, err := settings.DefaultSettingsConfig().FieldByKey(jobMeta.SettingsKey)
-			return s.settings.GetStringSetting(ctx, jobMeta.SettingsKey, kit.Ternary(err != nil || defaultSchedule == "", "0 0 0 * * *", defaultSchedule))
+			return s.settings.GetStringSetting(ctx, jobMeta.SettingsKey)
 		}()
 		runtimeState, hasRuntimeState := s.scheduler.GetJobRuntimeState(jobMeta.ID)
 		useRuntimeState := hasRuntimeState && (jobMeta.SettingsKey != "" || jobMeta.ID == "upgrade-log-cleanup") && jobMeta.ID != "environment-health"
@@ -372,7 +365,7 @@ func (s *JobService) ListJobs(ctx context.Context) (*types.JobListResponse, erro
 }
 
 func (s *JobService) isJobEnabled(ctx context.Context, localMeta types.JobMetadata) bool {
-	return localMeta.EnabledKey == "" || s.settings.GetBoolSetting(ctx, localMeta.EnabledKey, false)
+	return localMeta.EnabledKey == "" || s.settings.GetBoolSetting(ctx, localMeta.EnabledKey)
 }
 
 func (s *JobService) evaluatePrerequisites(ctx context.Context, localMeta types.JobMetadata) []types.JobPrerequisite {
@@ -382,7 +375,7 @@ func (s *JobService) evaluatePrerequisites(ctx context.Context, localMeta types.
 		prerequisites = append(prerequisites, types.JobPrerequisite{
 			SettingKey:  prereq.SettingKey,
 			Label:       prereq.Label,
-			IsMet:       s.settings.GetBoolSetting(ctx, prereq.SettingKey, false),
+			IsMet:       s.settings.GetBoolSetting(ctx, prereq.SettingKey),
 			SettingsURL: prereq.SettingsURL,
 		})
 	}

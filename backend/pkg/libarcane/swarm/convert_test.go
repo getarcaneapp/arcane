@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
 func TestConvertServiceMountsResolvesComposeResourceNames(t *testing.T) {

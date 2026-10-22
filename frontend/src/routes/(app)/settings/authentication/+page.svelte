@@ -6,6 +6,7 @@
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
+	import { SettingLock } from '#lib/components/badges/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
@@ -13,7 +14,6 @@
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
@@ -23,7 +23,6 @@
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { oidcMappingService } from '#lib/services/oidc-mapping-service.js';
-	import { settingsService } from '#lib/services/settings-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { OidcRoleMapping, OidcRoleMappingWritable } from '#lib/types/auth.js';
 	import type { Settings } from '#lib/types/settings.js';
@@ -115,7 +114,8 @@
 		}
 	}
 	const currentSettings = $derived<Settings>(settingsStore.current || data.settings!);
-	const isReadOnly = $derived.by(() => settingsStore.current?.uiConfigDisabled);
+	const isReadOnly = $derived(settingsStore.readOnly);
+	const isOidcLocked = $derived(settingsStore.isLocked('oidcEnabled'));
 	const isAutoLoginEnabled = $derived(settingsStore.autoLoginEnabled.current);
 
 	const formSchema = z
@@ -141,7 +141,7 @@
 			oidcProviderLogoUrl: z.string()
 		})
 		.superRefine((formData, ctx) => {
-			const oidcEnabledForAuthValidation = data.oidcStatus.envForced ? currentSettings.oidcEnabled : formData.oidcEnabled;
+			const oidcEnabledForAuthValidation = isOidcLocked ? currentSettings.oidcEnabled : formData.oidcEnabled;
 			if (!oidcEnabledForAuthValidation && !formData.authLocalEnabled) {
 				ctx.addIssue({
 					code: 'custom',
@@ -149,7 +149,7 @@
 					path: ['authLocalEnabled']
 				});
 			}
-			if (formData.oidcEnabled && !data.oidcStatus.envForced) {
+			if (formData.oidcEnabled && !isOidcLocked) {
 				for (const field of ['oidcClientId', 'oidcIssuerUrl'] as const) {
 					if (!formData[field].trim()) {
 						ctx.addIssue({ code: 'custom', message: m.security_oidc_required_fields(), path: [field] });
@@ -193,7 +193,7 @@
 				const payload: Partial<Settings> = rest;
 				if (oidcClearClientSecret) payload.oidcClientSecret = '';
 				else if (oidcClientSecret) payload.oidcClientSecret = oidcClientSecret;
-				await settingsService.updateSettings(payload);
+				await settingsStore.save(payload);
 			},
 			onSuccess: () => {
 				formInputs.oidcClientSecret.value = '';
@@ -205,13 +205,10 @@
 	);
 
 	const redirectUri = $derived(`${globalThis?.location?.origin ?? ''}/auth/oidc/callback`);
-	const isOidcEnvForced = $derived(data.oidcStatus.envForced);
-	const isOidcForcedEnabled = $derived(isOidcEnvForced && currentSettings.oidcEnabled);
-	const isOidcForcedDisabled = $derived(isOidcEnvForced && !currentSettings.oidcEnabled);
 	const isOidcEnabledForAuthValidation = $derived.by(() =>
-		isOidcEnvForced ? currentSettings.oidcEnabled : formInputs.oidcEnabled.value
+		isOidcLocked ? currentSettings.oidcEnabled : formInputs.oidcEnabled.value
 	);
-	const showOidcDetails = $derived(formInputs.oidcEnabled.value || isOidcForcedEnabled);
+	const showOidcDetails = $derived(formInputs.oidcEnabled.value || (isOidcLocked && currentSettings.oidcEnabled));
 	const hasStoredClientSecret = $derived(!!currentSettings.oidcClientSecret);
 
 	let oidcConfigOpen = $derived(
@@ -228,7 +225,7 @@
 	}
 
 	function handleOidcEnabledChange(checked: boolean) {
-		if (!checked && !formInputs.authLocalEnabled.value && !isOidcEnvForced) {
+		if (!checked && !formInputs.authLocalEnabled.value && !isOidcLocked) {
 			formInputs.authLocalEnabled.value = true;
 			toast.info(m.security_local_enabled_info());
 		}
@@ -302,6 +299,7 @@
 								label={m.security_local_auth_label()}
 								description={m.security_local_auth_description()}
 								layout="switch"
+								lock={settingsStore.lock('authLocalEnabled')}
 							>
 								<Switch
 									id="localAuthSwitch"
@@ -317,33 +315,16 @@
 								layout="switch"
 							>
 								{#snippet labelExtra()}
-									{#if isOidcEnvForced}
+									{#if isOidcLocked}
 										<div class="mt-2">
-											<ArcaneTooltip.Root>
-												<ArcaneTooltip.Trigger>
-													<Badge variant="amber">
-														{#if isOidcForcedDisabled}
-															{m.security_server_disabled_via_server()}
-														{:else}
-															{m.security_server_configured()}
-														{/if}
-													</Badge>
-												</ArcaneTooltip.Trigger>
-												<ArcaneTooltip.Content side="top">
-													{#if isOidcForcedDisabled}
-														{m.security_oidc_forced_disabled_tooltip()}
-													{:else}
-														{m.security_oidc_forced_managed_tooltip()}
-													{/if}
-												</ArcaneTooltip.Content>
-											</ArcaneTooltip.Root>
+											<SettingLock lock={settingsStore.lock('oidcEnabled')} />
 										</div>
 									{/if}
 								{/snippet}
 								<div class="flex flex-col items-end gap-2">
 									<Switch
 										id="oidcEnabledSwitch"
-										disabled={isOidcEnvForced}
+										disabled={isOidcLocked}
 										bind:checked={formInputs.oidcEnabled.value}
 										onCheckedChange={handleOidcEnabledChange}
 									/>
@@ -362,11 +343,15 @@
 							</SettingsRow>
 
 							{#if showOidcDetails && oidcConfigOpen}
-								<SettingsRow for="oidcClientId" label={m.oidc_client_id_label()} error={formInputs.oidcClientId.error}>
+								<SettingsRow
+									for="oidcClientId"
+									label={m.oidc_client_id_label()}
+									error={formInputs.oidcClientId.error}
+									lock={settingsStore.lock('oidcClientId')}
+								>
 									<Input
 										id="oidcClientId"
 										placeholder={m.oidc_client_id_placeholder()}
-										disabled={isOidcEnvForced}
 										bind:value={formInputs.oidcClientId.value}
 										aria-invalid={!!formInputs.oidcClientId.error}
 									/>
@@ -376,17 +361,18 @@
 									label={m.oidc_client_secret_label()}
 									helpText={m.security_oidc_client_secret_help()}
 									error={formInputs.oidcClientSecret.error}
+									lock={settingsStore.lock('oidcClientSecret')}
 								>
 									<Input
 										id="oidcClientSecret"
 										type="password"
 										placeholder={m.oidc_client_secret_placeholder()}
-										disabled={isOidcEnvForced || formInputs.oidcClearClientSecret.value}
+										disabled={formInputs.oidcClearClientSecret.value}
 										bind:value={formInputs.oidcClientSecret.value}
 										aria-invalid={!!formInputs.oidcClientSecret.error}
 									/>
 								</SettingsRow>
-								{#if hasStoredClientSecret && !isOidcEnvForced}
+								{#if hasStoredClientSecret && !settingsStore.isLocked('oidcClientSecret')}
 									<SettingsRow for="clearOidcClientSecret" label={m.security_oidc_clear_client_secret()} layout="switch">
 										<Switch id="clearOidcClientSecret" bind:checked={formInputs.oidcClearClientSecret.value} />
 									</SettingsRow>
@@ -396,11 +382,11 @@
 									label={m.oidc_issuer_url_label()}
 									description={m.oidc_issuer_url_description()}
 									error={formInputs.oidcIssuerUrl.error}
+									lock={settingsStore.lock('oidcIssuerUrl')}
 								>
 									<Input
 										id="oidcIssuerUrl"
 										placeholder={m.oidc_issuer_url_placeholder()}
-										disabled={isOidcEnvForced}
 										bind:value={formInputs.oidcIssuerUrl.value}
 										aria-invalid={!!formInputs.oidcIssuerUrl.error}
 									/>
@@ -410,11 +396,11 @@
 									label={m.oidc_provider_name_label()}
 									description={m.oidc_provider_name_description()}
 									error={formInputs.oidcProviderName.error}
+									lock={settingsStore.lock('oidcProviderName')}
 								>
 									<Input
 										id="oidcProviderName"
 										placeholder={m.oidc_provider_name_placeholder()}
-										disabled={isOidcEnvForced}
 										bind:value={formInputs.oidcProviderName.value}
 										aria-invalid={!!formInputs.oidcProviderName.error}
 									/>
@@ -424,20 +410,24 @@
 									label={m.oidc_provider_logo_url_label()}
 									description={m.oidc_provider_logo_url_description()}
 									error={formInputs.oidcProviderLogoUrl.error}
+									lock={settingsStore.lock('oidcProviderLogoUrl')}
 								>
 									<Input
 										id="oidcProviderLogoUrl"
 										placeholder={m.oidc_provider_logo_url_placeholder()}
-										disabled={isOidcEnvForced}
 										bind:value={formInputs.oidcProviderLogoUrl.value}
 										aria-invalid={!!formInputs.oidcProviderLogoUrl.error}
 									/>
 								</SettingsRow>
-								<SettingsRow for="oidcScopes" label={m.oidc_scopes_label()} error={formInputs.oidcScopes.error}>
+								<SettingsRow
+									for="oidcScopes"
+									label={m.oidc_scopes_label()}
+									error={formInputs.oidcScopes.error}
+									lock={settingsStore.lock('oidcScopes')}
+								>
 									<Input
 										id="oidcScopes"
 										placeholder={m.oidc_scopes_placeholder()}
-										disabled={isOidcEnvForced}
 										bind:value={formInputs.oidcScopes.value}
 										aria-invalid={!!formInputs.oidcScopes.error}
 									/>
@@ -447,11 +437,11 @@
 									label={m.oidc_groups_claim_label()}
 									helpText={m.oidc_groups_claim_help()}
 									error={formInputs.oidcGroupsClaim.error}
+									lock={settingsStore.lock('oidcGroupsClaim')}
 								>
 									<Input
 										id="oidcGroupsClaim"
 										placeholder={m.oidc_groups_claim_placeholder()}
-										disabled={isOidcEnvForced}
 										bind:value={formInputs.oidcGroupsClaim.value}
 										aria-invalid={!!formInputs.oidcGroupsClaim.error}
 									/>
@@ -461,10 +451,10 @@
 									label={m.security_oidc_merge_accounts_label()}
 									description={m.security_oidc_merge_accounts_description()}
 									layout="switch"
+									lock={settingsStore.lock('oidcMergeAccounts')}
 								>
 									<Switch
 										id="oidcMergeAccountsSwitch"
-										disabled={isOidcEnvForced}
 										bind:checked={formInputs.oidcMergeAccounts.value}
 										onCheckedChange={handleMergeAccountsChange}
 									/>
@@ -474,24 +464,18 @@
 									label={m.oidc_skip_tls_verify_label()}
 									description={m.oidc_skip_tls_verify_description()}
 									layout="switch"
+									lock={settingsStore.lock('oidcSkipTlsVerify')}
 								>
-									<Switch
-										id="oidcSkipTlsVerifySwitch"
-										disabled={isOidcEnvForced}
-										bind:checked={formInputs.oidcSkipTlsVerify.value}
-									/>
+									<Switch id="oidcSkipTlsVerifySwitch" bind:checked={formInputs.oidcSkipTlsVerify.value} />
 								</SettingsRow>
 								<SettingsRow
 									for="oidcAutoRedirectSwitch"
 									label={m.oidc_auto_redirect_label()}
 									description={m.oidc_auto_redirect_description()}
 									layout="switch"
+									lock={settingsStore.lock('oidcAutoRedirectToProvider')}
 								>
-									<Switch
-										id="oidcAutoRedirectSwitch"
-										disabled={isOidcEnvForced}
-										bind:checked={formInputs.oidcAutoRedirectToProvider.value}
-									/>
+									<Switch id="oidcAutoRedirectSwitch" bind:checked={formInputs.oidcAutoRedirectToProvider.value} />
 								</SettingsRow>
 								<SettingsRow label={m.oidc_redirect_uri_title()} description={m.oidc_redirect_uri_description()} layout="wide">
 									<div class="flex items-center gap-2">

@@ -9,7 +9,7 @@ import (
 
 	"github.com/samber/mo"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
 const (
@@ -70,7 +70,7 @@ func (s *Service) TryAcquire(ctx context.Context, environmentID string) mo.Optio
 	if s.settings == nil {
 		return mo.Some(func() {})
 	}
-	limit := s.settings.GetIntSetting(ctx, maxConcurrentActivitiesSettingKey, defaultMaxConcurrentActivities)
+	limit := s.settings.GetIntSetting(ctx, maxConcurrentActivitiesSettingKey)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -94,7 +94,7 @@ func (s *Service) Await(ctx context.Context, activityID, environmentID string) (
 	}
 
 	for s.settings != nil {
-		limit := s.settings.GetIntSetting(ctx, maxConcurrentActivitiesSettingKey, defaultMaxConcurrentActivities)
+		limit := s.settings.GetIntSetting(ctx, maxConcurrentActivitiesSettingKey)
 		s.mu.Lock()
 		slots := s.stateLocked(environmentID)
 		if limit <= 0 || slots.held < limit {

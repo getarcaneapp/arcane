@@ -21,14 +21,14 @@ import (
 	"go.getarcane.app/sys/cgroup"
 	"golang.org/x/mod/semver"
 
-	"github.com/getarcaneapp/arcane/backend/v2/buildables"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/buildables"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apns"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 )
 
 const (
@@ -54,7 +54,6 @@ type currentImageInfo struct {
 type VersionService struct {
 	httpClient               *http.Client
 	cache                    *hot.HotCache[struct{}, latestRelease]
-	disabled                 bool
 	version                  string
 	revision                 string
 	containerRegistryService *registry.ContainerRegistryService
@@ -67,7 +66,6 @@ type VersionService struct {
 
 func NewVersionService(
 	httpClient *http.Client,
-	disabled bool,
 	appVersion, revision string,
 	containerRegistryService *registry.ContainerRegistryService,
 	dockerService *docker.DockerClientService,
@@ -79,7 +77,6 @@ func NewVersionService(
 	}
 	service := &VersionService{
 		httpClient:               httpClient,
-		disabled:                 disabled,
 		version:                  appVersion,
 		revision:                 revision,
 		containerRegistryService: containerRegistryService,
@@ -238,7 +235,7 @@ func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersi
 	cur := s.normalizeVersion(currentVersion)
 
 	latest, err := func() (string, error) {
-		if s.disabled {
+		if !s.settingsService.GetBoolSetting(ctx, "updateCheckEnabled") {
 			return "", nil
 		}
 		return s.GetLatestVersion(ctx)
@@ -327,7 +324,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *types.VersionIn
 
 	// Update fields stay empty when update checks are disabled.
 	update := func() types.VersionInfo {
-		if s.disabled {
+		if !s.settingsService.GetBoolSetting(ctx, "updateCheckEnabled") {
 			return types.VersionInfo{}
 		}
 		checkImageRef := s.updateCheckImageRef(currentImageRef)

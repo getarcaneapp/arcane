@@ -28,15 +28,17 @@ import (
 	"go.getarcane.app/sys/cgroup"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/backupbrowser"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config/schema"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/gitutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/backupbrowser"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
 )
 
 const (
@@ -849,6 +851,7 @@ func (session systemBackupSnapshotSession) readSnapshotLayout(ctx context.Contex
 }
 
 func snapshotLayoutFromManifest(manifest types.RecoveryManifest, manifestRoot string) (snapshotLayout, error) {
+	manifest.Environment = schema.ManifestEnvironment(manifest)
 	switch manifest.FormatVersion {
 	case 1:
 		// Version 1 derives the layout from the manifest environment; projects
@@ -869,7 +872,7 @@ func snapshotLayoutFromManifest(manifest types.RecoveryManifest, manifestRoot st
 			projectsPath: path.Join(manifestRoot, relative),
 			databaseName: path.Base(databasePath),
 		}, nil
-	case types.RecoveryManifestFormatVersion:
+	case 2, types.RecoveryManifestFormatVersion:
 		dataPath, err := kit.NormalizeRelativePath(strings.TrimPrefix(manifest.DataPath, "/"))
 		if err != nil {
 			return snapshotLayout{}, fmt.Errorf("invalid data path: %w", err)
@@ -894,7 +897,7 @@ func snapshotLayoutFromManifest(manifest types.RecoveryManifest, manifestRoot st
 }
 
 func recoveryManifestDatabasePath(manifest types.RecoveryManifest) (string, error) {
-	databaseURL := strings.TrimSpace(manifest.Environment["DATABASE_URL"])
+	databaseURL := strings.TrimSpace(manifest.Environment["ARCANE_DATABASE_URL"])
 	if databaseURL == "" {
 		return "", errors.New("system recovery manifest does not record the database path")
 	}
@@ -912,7 +915,7 @@ func recoveryManifestDatabasePath(manifest types.RecoveryManifest) (string, erro
 // projectsRelativePathFromManifest relates a version-1 manifest's
 // projects directory to its data directory.
 func projectsRelativePathFromManifest(manifest types.RecoveryManifest) (string, error) {
-	configured := strings.TrimSpace(manifest.Environment["PROJECTS_DIRECTORY"])
+	configured := strings.TrimSpace(manifest.Environment[settings.EnvName("projectsDirectory", "")])
 	if configured == "" {
 		return "", errors.New("system recovery manifest does not record the projects directory")
 	}

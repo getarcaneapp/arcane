@@ -6,26 +6,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSettings_ToSettingVariableSlice_Visibility(t *testing.T) {
-	settings := &Settings{
-		AuthLocalEnabled:           SettingVariable{Value: "true"},
-		OidcEnabled:                SettingVariable{Value: "true"},
-		OidcAutoRedirectToProvider: SettingVariable{Value: "false"},
-		OidcProviderName:           SettingVariable{Value: "Pocket ID"},
-		OidcProviderLogoUrl:        SettingVariable{Value: "https://id.ofkm.us/logo.png"},
-		DockerHost:                 SettingVariable{Value: "unix:///var/run/docker.sock"},
-		OidcClientId:               SettingVariable{Value: "client-id"},
-		OidcIssuerUrl:              SettingVariable{Value: "https://issuer.example"},
-		OidcScopes:                 SettingVariable{Value: "openid email profile"},
-		OidcGroupsClaim:            SettingVariable{Value: "groups"},
-		OidcSkipTlsVerify:          SettingVariable{Value: "false"},
-		OidcMergeAccounts:          SettingVariable{Value: "true"},
-		EnableGravatar:             SettingVariable{Value: "true"},
-		AvatarMaxUploadSizeMb:      SettingVariable{Value: "2"},
-		OidcClientSecret:           SettingVariable{Value: "secret"},
+func TestFieldVisibleForSettingVisibility(t *testing.T) {
+	_, byKey := settingsFields()
+	visibleKeys := func(visibility SettingVisibility) []string {
+		keys := []string{}
+		for key, field := range byKey {
+			if fieldVisibleForSettingVisibility(field, visibility) {
+				keys = append(keys, key)
+			}
+		}
+		return keys
 	}
 
-	publicKeys := settingKeysFromSliceInternal(settings.ToSettingVariableSlice(SettingVisibilityPublic, true))
+	publicKeys := visibleKeys(SettingVisibilityPublic)
 	require.Contains(t, publicKeys, "authLocalEnabled")
 	require.Contains(t, publicKeys, "oidcEnabled")
 	require.Contains(t, publicKeys, "oidcAutoRedirectToProvider")
@@ -35,7 +28,7 @@ func TestSettings_ToSettingVariableSlice_Visibility(t *testing.T) {
 	require.NotContains(t, publicKeys, "oidcClientId")
 	require.NotContains(t, publicKeys, "enableGravatar")
 
-	nonAdminKeys := settingKeysFromSliceInternal(settings.ToSettingVariableSlice(SettingVisibilityNonAdmin, true))
+	nonAdminKeys := visibleKeys(SettingVisibilityNonAdmin)
 	require.Contains(t, nonAdminKeys, "dockerHost")
 	require.Contains(t, nonAdminKeys, "oidcClientId")
 	require.Contains(t, nonAdminKeys, "oidcIssuerUrl")
@@ -49,15 +42,15 @@ func TestSettings_ToSettingVariableSlice_Visibility(t *testing.T) {
 	require.NotContains(t, nonAdminKeys, "defaultShell")
 	require.NotContains(t, nonAdminKeys, "oidcClientSecret")
 
-	allKeys := settingKeysFromSliceInternal(settings.ToSettingVariableSlice(SettingVisibilityAll, true))
-	require.Contains(t, allKeys, "oidcClientSecret")
+	require.Contains(t, visibleKeys(SettingVisibilityAll), "oidcClientSecret")
 }
 
-func settingKeysFromSliceInternal(settings []SettingVariable) map[string]string {
-	keys := make(map[string]string, len(settings))
-	for _, setting := range settings {
-		keys[setting.Key] = setting.Value
+func TestSettingsFieldDefaultsPassValidation(t *testing.T) {
+	fields, _ := settingsFields()
+	for _, field := range fields {
+		if field.isInternal {
+			continue
+		}
+		require.NoError(t, validateValue(field, field.defaultValue), field.key)
 	}
-
-	return keys
 }

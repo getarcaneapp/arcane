@@ -22,7 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
 type stallingTunnelService struct {
@@ -190,7 +190,7 @@ func TestStartTunnelClient_GRPCValidation(t *testing.T) {
 			AgentToken:    "token",
 		}, http.NotFoundHandler())
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "MANAGER_API_URL")
+		assert.Contains(t, err.Error(), "ARCANE_MANAGER_API_URL")
 	})
 
 	t.Run("agent token required", func(t *testing.T) {
@@ -200,7 +200,7 @@ func TestStartTunnelClient_GRPCValidation(t *testing.T) {
 			ManagerApiUrl: "https://manager.example.com/arcane/api",
 		}, http.NotFoundHandler())
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "AGENT_TOKEN is required")
+		assert.Contains(t, err.Error(), "ARCANE_AGENT_TOKEN is required")
 	})
 
 	t.Run("mtls requires https manager url", func(t *testing.T) {
@@ -212,7 +212,7 @@ func TestStartTunnelClient_GRPCValidation(t *testing.T) {
 			EdgeMTLSMode:  EdgeMTLSModeRequired,
 		}, http.NotFoundHandler())
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "MANAGER_API_URL to use https")
+		assert.Contains(t, err.Error(), "ARCANE_MANAGER_API_URL to use https")
 	})
 }
 

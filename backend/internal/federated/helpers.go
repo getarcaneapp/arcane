@@ -13,8 +13,8 @@ import (
 	"go.getarcane.app/kit/normalization"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 )
 
 func normalizeFederatedCredential(req types.FederatedCredential) (types.FederatedCredential, error) {

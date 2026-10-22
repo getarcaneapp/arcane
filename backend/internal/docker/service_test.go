@@ -12,15 +12,19 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
+	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
 )
 
 func TestDockerClientService_GetClientPinsEffectiveAPIVersion(t *testing.T) {
@@ -135,7 +139,12 @@ func TestDockerClientService_RefreshClientClosesOldCachedClientWhenReplaced(t *t
 	require.NoError(t, err)
 	closedBeforeReplace := oldServerClosedConnections.Load()
 
-	svc.config.DockerHost = newServer.URL
+	require.NoError(t, svc.settingsService.UpdateSettings(t.Context(), types.SettingsUpdate{"dockerHost": newServer.URL}))
+	require.Eventually(t, func() bool {
+		svc.mu.Lock()
+		defer svc.mu.Unlock()
+		return svc.Client == nil
+	}, time.Second, 10*time.Millisecond)
 
 	err = svc.RefreshClient(t.Context())
 	require.NoError(t, err)
@@ -149,6 +158,25 @@ func TestDockerClientService_RefreshClientClosesOldCachedClientWhenReplaced(t *t
 	}, time.Second, 10*time.Millisecond)
 	assert.NotSame(t, firstClient, secondClient)
 	assert.Equal(t, "1.42", secondClient.ClientVersion())
+}
+
+func TestDockerClientService_GetClientRebuildsClientWhenDockerHostChanges(t *testing.T) {
+	oldServer := newDockerPingTestServer(t, func() string { return "1.41" })
+	newServer := newDockerPingTestServer(t, func() string { return "1.41" })
+	svc := newDockerClientServiceForTest(t, oldServer.URL)
+	t.Cleanup(svc.Close)
+
+	firstClient, err := svc.GetClient(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, oldServer.URL, firstClient.DaemonHost())
+
+	require.NoError(t, svc.settingsService.UpdateSettings(t.Context(), types.SettingsUpdate{"dockerHost": newServer.URL}))
+
+	require.Eventually(t, func() bool {
+		cli, getErr := svc.GetClient(t.Context())
+		return getErr == nil && cli.DaemonHost() == newServer.URL
+	}, time.Second, 10*time.Millisecond)
+	assert.Equal(t, newServer.URL, svc.DockerHost())
 }
 
 func TestDockerClientService_RefreshClientProbeFailureKeepsCachedClient(t *testing.T) {
@@ -401,7 +429,16 @@ func TestCountImageUsage_NoImages(t *testing.T) {
 }
 
 func newDockerClientServiceForTest(t *testing.T, host string) *DockerClientService {
-	return NewDockerClientService(t.Context(), nil, &config.Config{DockerHost: host}, nil)
+	t.Helper()
+	gdb, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gdb.AutoMigrate(&settings.SettingVariable{}))
+	db := &database.DB{DB: gdb}
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
+	require.NoError(t, settingsService.UpdateSettings(t.Context(), types.SettingsUpdate{"dockerHost": host}))
+	return NewDockerClientService(t.Context(), db, settingsService)
 }
 
 func newDockerPingTestServer(t *testing.T, apiVersion func() string) *httptest.Server {

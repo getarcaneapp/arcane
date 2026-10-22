@@ -40,12 +40,13 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
-	import { settingsService } from '#lib/services/settings-service.js';
+	import { parseSettingValue, settingsService } from '#lib/services/settings-service.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
 	import type { FeatureID } from '#lib/types/features.js';
-	import type { Settings } from '#lib/types/settings.js';
+	import type { SettingKey, Settings } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -298,74 +299,36 @@
 		urlTab.select(value);
 	}
 
-	const formSchema = environmentFormSchema;
-
-	// Build current settings object from environment and settings data
+	const snapshotValues = $derived(
+		settings?.values ??
+			(Object.fromEntries(
+				Object.values(settingsStore.resolved?.meta ?? {}).map((meta) => [meta.key, parseSettingValue(meta.type, meta.default)])
+			) as Partial<Settings>)
+	);
+	const formSchema = $derived(
+		environmentFormSchema.pick(
+			Object.fromEntries(
+				Object.keys(environmentFormSchema.shape)
+					.filter(
+						(key) =>
+							key in environmentUpdateSchema.shape ||
+							key in snapshotValues ||
+							featureDefinitions.some((feature) => feature.settingKey === key)
+					)
+					.map((key) => [key, true] as const)
+			) as Partial<Record<keyof typeof environmentFormSchema.shape, true>>
+		)
+	);
+	const settingFormKeys = $derived(
+		(Object.keys(formSchema.shape) as (keyof EnvironmentFormValues)[]).filter((key) => !(key in environmentUpdateSchema.shape))
+	);
 	const currentSettings = $derived({
+		...Object.fromEntries(settingFormKeys.map((key) => [key, snapshotValues[key as SettingKey]])),
 		name: loadedEnvironment.name,
 		enabled: loadedEnvironment.enabled,
 		apiUrl: loadedEnvironment.apiUrl,
-		accessToken: '',
-		pollingEnabled: settings?.pollingEnabled ?? false,
-		imageEventWatcherEnabled: settings?.imageEventWatcherEnabled ?? false,
-		autoUpdate: settings?.autoUpdate ?? false,
-		autoInjectEnv: settings?.autoInjectEnv ?? false,
-		followProjectSymlinks: settings?.followProjectSymlinks ?? false,
-		defaultDeployPullPolicy: (settings?.defaultDeployPullPolicy as 'missing' | 'always' | 'never') || 'missing',
-		defaultShell: settings?.defaultShell || '/bin/sh',
-		projectsDirectory: settings?.projectsDirectory || '/app/data/projects',
-		templatesDirectory: settings?.templatesDirectory || '/app/data/templates',
-		swarmStackSourcesDirectory: settings?.swarmStackSourcesDirectory || '/app/data/swarm/sources',
-		diskUsagePath: settings?.diskUsagePath || '/app/data/projects',
-		maxImageUploadSize: settings?.maxImageUploadSize || 500,
-		gitSyncMaxFiles: settings?.gitSyncMaxFiles ?? 500,
-		gitSyncMaxTotalSizeMb: settings?.gitSyncMaxTotalSizeMb ?? 50,
-		gitSyncMaxBinarySizeMb: settings?.gitSyncMaxBinarySizeMb ?? 10,
-		baseServerUrl: settings?.baseServerUrl || 'http://localhost',
-		scheduledPruneEnabled: settings?.scheduledPruneEnabled ?? false,
-		pruneContainerMode: settings?.pruneContainerMode ?? 'stopped',
-		pruneContainerUntil: settings?.pruneContainerUntil ?? '',
-		pruneImageMode: settings?.pruneImageMode ?? 'dangling',
-		pruneImageUntil: settings?.pruneImageUntil ?? '',
-		pruneVolumeMode: settings?.pruneVolumeMode ?? 'none',
-		pruneNetworkMode: settings?.pruneNetworkMode ?? 'unused',
-		pruneNetworkUntil: settings?.pruneNetworkUntil ?? '',
-		pruneBuildCacheMode: settings?.pruneBuildCacheMode ?? 'none',
-		pruneBuildCacheUntil: settings?.pruneBuildCacheUntil ?? '',
-		featureVulnerabilityManagementEnabled: settings?.featureVulnerabilityManagementEnabled ?? true,
-		featureSwarmEnabled: settings?.featureSwarmEnabled ?? false,
-		vulnerabilityScanEnabled: settings?.vulnerabilityScanEnabled ?? false,
-		toolsImageRegistry: settings?.toolsImageRegistry ?? 'ghcr.io',
-		updateCheckRegistry: settings?.updateCheckRegistry ?? 'auto',
-		trivyDbRegistry: settings?.trivyDbRegistry ?? 'ghcr.io',
-		trivyNetwork: settings?.trivyNetwork || '',
-		trivySecurityOpts: settings?.trivySecurityOpts || '',
-		trivyPrivileged: settings?.trivyPrivileged ?? false,
-		trivyResourceLimitsEnabled: settings?.trivyResourceLimitsEnabled ?? true,
-		trivyCpuLimit: settings?.trivyCpuLimit ?? 1,
-		trivyMemoryLimitMb: settings?.trivyMemoryLimitMb ?? 0,
-		trivyConcurrentScanContainers: settings?.trivyConcurrentScanContainers ?? 1,
-		trivyServerEnabled: settings?.trivyServerEnabled ?? false,
-		trivyServerUrl: settings?.trivyServerUrl || '',
-		trivyServerToken: settings?.trivyServerToken || '',
-		trivyIgnoreUnfixed: settings?.trivyIgnoreUnfixed ?? true,
-		vulnerabilityThreatIntelEnabled: settings?.vulnerabilityThreatIntelEnabled ?? true,
-		trivyConfig: settings?.trivyConfig || '',
-		trivyIgnore: settings?.trivyIgnore || '',
-		imagePatchSuffix: settings?.imagePatchSuffix || 'patched',
-		imagePatchTimeoutSec: settings?.imagePatchTimeoutSec ?? 600,
-		imagePatchAllPlatforms: settings?.imagePatchAllPlatforms ?? false,
-		imageAutoPatchEnabled: settings?.imageAutoPatchEnabled ?? false,
-		lifecycleEnabled: settings?.lifecycleEnabled ?? false,
-		lifecycleDefaultRunnerImage: settings?.lifecycleDefaultRunnerImage || 'alpine:latest',
-		lifecycleMaxTimeoutSec: settings?.lifecycleMaxTimeoutSec ?? 300,
-		autoUpdateDelay: settings?.autoUpdateDelay ?? 0,
-		autoUpdateExcludedContainers: settings?.autoUpdateExcludedContainers || '',
-		autoHealEnabled: settings?.autoHealEnabled ?? false,
-		autoHealExcludedContainers: settings?.autoHealExcludedContainers || '',
-		autoHealMaxRestarts: settings?.autoHealMaxRestarts ?? 5,
-		autoHealRestartWindow: settings?.autoHealRestartWindow ?? 30
-	});
+		accessToken: ''
+	} as EnvironmentFormValues);
 
 	// Custom save handler for environment-specific settings
 	async function saveEnvironmentSettings(formData: EnvironmentFormValues) {
@@ -400,84 +363,13 @@
 				environment = result.data;
 			}
 		}
-		const parsedCurrentSettings = formSchema.safeParse(currentSettings);
-		const savedFormValues = parsedCurrentSettings.success ? parsedCurrentSettings.data : currentSettings;
-		const separatelySavedKeys: string[] = [
-			'name',
-			'enabled',
-			'apiUrl',
-			'accessToken',
-			...featureDefinitions.map((feature) => feature.settingKey)
-		];
-		const otherSettingsChanged = (Object.keys(formData) as (keyof EnvironmentFormValues)[]).some(
-			(key) => !separatelySavedKeys.includes(key) && formData[key] !== savedFormValues[key]
-		);
-		let updates: Partial<Settings> = {};
-
-		// Update environment settings if they exist
-		if (settings && otherSettingsChanged) {
-			updates = {
-				pollingEnabled: formData.pollingEnabled,
-				imageEventWatcherEnabled: formData.imageEventWatcherEnabled,
-				autoUpdate: formData.autoUpdate,
-				autoInjectEnv: formData.autoInjectEnv,
-				followProjectSymlinks: formData.followProjectSymlinks,
-				defaultDeployPullPolicy: formData.defaultDeployPullPolicy,
-				defaultShell: formData.defaultShell,
-				projectsDirectory: formData.projectsDirectory,
-				templatesDirectory: formData.templatesDirectory,
-				swarmStackSourcesDirectory: formData.swarmStackSourcesDirectory,
-				diskUsagePath: formData.diskUsagePath,
-				maxImageUploadSize: formData.maxImageUploadSize,
-				gitSyncMaxFiles: formData.gitSyncMaxFiles,
-				gitSyncMaxTotalSizeMb: formData.gitSyncMaxTotalSizeMb,
-				gitSyncMaxBinarySizeMb: formData.gitSyncMaxBinarySizeMb,
-				baseServerUrl: formData.baseServerUrl,
-				scheduledPruneEnabled: formData.scheduledPruneEnabled,
-				pruneContainerMode: formData.pruneContainerMode,
-				pruneContainerUntil: formData.pruneContainerUntil,
-				pruneImageMode: formData.pruneImageMode,
-				pruneImageUntil: formData.pruneImageUntil,
-				pruneVolumeMode: formData.pruneVolumeMode,
-				pruneNetworkMode: formData.pruneNetworkMode,
-				pruneNetworkUntil: formData.pruneNetworkUntil,
-				pruneBuildCacheMode: formData.pruneBuildCacheMode,
-				pruneBuildCacheUntil: formData.pruneBuildCacheUntil,
-				vulnerabilityScanEnabled: formData.vulnerabilityScanEnabled,
-				toolsImageRegistry: formData.toolsImageRegistry,
-				updateCheckRegistry: formData.updateCheckRegistry,
-				trivyDbRegistry: formData.trivyDbRegistry,
-				trivyNetwork: formData.trivyNetwork,
-				trivySecurityOpts: formData.trivySecurityOpts,
-				trivyPrivileged: formData.trivyPrivileged,
-				trivyResourceLimitsEnabled: formData.trivyResourceLimitsEnabled,
+		if (settings) {
+			await settingsService.updateSettingsForEnvironment(environmentId, settings, {
+				...Object.fromEntries(settingFormKeys.map((key) => [key, formData[key]])),
 				trivyCpuLimit: formData.trivyResourceLimitsEnabled ? formData.trivyCpuLimit : 0,
-				trivyMemoryLimitMb: formData.trivyResourceLimitsEnabled ? formData.trivyMemoryLimitMb : 0,
-				trivyConcurrentScanContainers: formData.trivyConcurrentScanContainers,
-				trivyServerEnabled: formData.trivyServerEnabled,
-				trivyServerUrl: formData.trivyServerUrl,
-				trivyServerToken: formData.trivyServerToken,
-				trivyIgnoreUnfixed: formData.trivyIgnoreUnfixed,
-				vulnerabilityThreatIntelEnabled: formData.vulnerabilityThreatIntelEnabled,
-				trivyConfig: formData.trivyConfig,
-				trivyIgnore: formData.trivyIgnore,
-				imagePatchSuffix: formData.imagePatchSuffix,
-				imagePatchTimeoutSec: formData.imagePatchTimeoutSec,
-				imagePatchAllPlatforms: formData.imagePatchAllPlatforms,
-				imageAutoPatchEnabled: formData.imageAutoPatchEnabled,
-				lifecycleEnabled: formData.lifecycleEnabled,
-				lifecycleDefaultRunnerImage: formData.lifecycleDefaultRunnerImage,
-				lifecycleMaxTimeoutSec: formData.lifecycleMaxTimeoutSec,
-				autoUpdateDelay: formData.autoUpdateDelay,
-				autoUpdateExcludedContainers: formData.autoUpdateExcludedContainers,
-				autoHealEnabled: formData.autoHealEnabled,
-				autoHealExcludedContainers: formData.autoHealExcludedContainers,
-				autoHealMaxRestarts: formData.autoHealMaxRestarts,
-				autoHealRestartWindow: formData.autoHealRestartWindow
-			};
+				trivyMemoryLimitMb: formData.trivyResourceLimitsEnabled ? formData.trivyMemoryLimitMb : 0
+			});
 		}
-		for (const feature of changedFeatures) updates[feature.settingKey] = formData[feature.settingKey];
-		if (Object.keys(updates).length > 0) await settingsService.updateSettingsForEnvironment(environmentId, updates);
 		if (changedFeatures.length > 0) {
 			await featureStore.refresh(environmentId);
 			if (featureStore.status(environmentId) !== 'ready') throw new Error(m.features_unavailable());
@@ -505,7 +397,7 @@
 		return (
 			!isCurrentlyOnline ||
 			!settings ||
-			settings.uiConfigDisabled ||
+			settings.readOnly ||
 			!hasPermission('settings:write', environment.id) ||
 			!featureStore.isSupported(id, environment.id)
 		);
@@ -550,7 +442,7 @@
 
 	let shellSelectValue = $derived.by((): string => {
 		if (!settings) return 'custom';
-		return shellOptions.find((o) => o.value === settings.defaultShell)?.value ?? 'custom';
+		return shellOptions.find((o) => o.value === settings.values.defaultShell)?.value ?? 'custom';
 	});
 
 	function handleShellSelectChange(value: string) {

@@ -14,7 +14,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config/schema"
 )
 
 const (
@@ -30,17 +31,19 @@ var HealthCmd = &cobra.Command{
 	Use:   "health",
 	Short: "Check API health",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg := config.Load()
+		if err := schema.CheckLegacyEnv(cmd.Context()); err != nil {
+			return err
+		}
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
 		timeout := healthTimeout
 		if timeout <= 0 {
 			timeout = defaultHealthTimeout
 		}
 
-		if err := runHealthCommandInternal(cmd.Context(), cfg, timeout); err != nil {
-			return err
-		}
-
-		return nil
+		return runHealthCommandInternal(cmd.Context(), cfg, timeout)
 	},
 }
 

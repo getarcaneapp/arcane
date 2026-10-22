@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/upload"
 )
 
 func TestUploadAndRestoreReturnsNotFoundForUnknownSession(t *testing.T) {

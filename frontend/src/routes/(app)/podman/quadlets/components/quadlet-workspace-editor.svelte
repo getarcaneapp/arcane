@@ -58,7 +58,7 @@
 	} = $props();
 
 	const environmentSettings = useEnvironmentSettings(() => environmentId);
-	const maxFileSizeMb = $derived(environmentSettings.current?.projectWorkspaceMaxFileSizeMb ?? 10);
+	const maxFileSizeMb = $derived(environmentSettings.current?.values.projectWorkspaceMaxFileSizeMb ?? 10);
 	const editable = $derived(!disabled && !readOnly);
 	const activeTab = $derived(workspace.activeTab);
 	const leadingRows = $derived([{ key: 'main', label: mainFileName, iconClass: 'text-info', locked: true }]);

@@ -50,17 +50,15 @@ services:
       - go-build-cache:/go/cache
       - go-mod-cache:/go/pkg/mod
     environment:
-      - GIN_MODE=debug
-      - ENVIRONMENT=development
-      - PORT=3552
-      - EDGE_TRANSPORT=websocket
-      - LOG_LEVEL=debug
-      - APP_URL=http://localhost:3000
+      - ARCANE_ENVIRONMENT=development
+      - ARCANE_PORT=3552
+      - ARCANE_EDGE_TRANSPORT=websocket
+      - ARCANE_LOG_LEVEL=debug
+      - ARCANE_APP_URL=http://localhost:3000
       - PUID=1000
       - PGID=1000
-      - ENCRYPTION_KEY=dev-encryption-key-replace-in-production-must-be-32-chars
-      - JWT_SECRET=dev-jwt-secret-replace-in-production-must-be-long-enough
-      - DATABASE_URL=file:/app/data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_txlock=immediate
+      - ARCANE_ENCRYPTION_KEY=dev-encryption-key-replace-in-production-must-be-32-chars
+      - ARCANE_DATABASE_URL=file:/app/data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_txlock=immediate
     working_dir: /app/backend
     networks:
       - arcane-dev
@@ -83,17 +81,15 @@ services:
     ports:
       - '3553:3553'
     environment:
-      - GIN_MODE=debug
-      - ENVIRONMENT=development
-      - LOG_LEVEL=debug
-      - PORT=3553
-      - AGENT_MODE=true
-      - AGENT_TOKEN=arc_Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-      - MANAGER_API_URL=http://backend:3552
-      - EDGE_TRANSPORT=websocket
-      - ENCRYPTION_KEY=dev-encryption-key-replace-in-production-must-be-32-chars
-      - JWT_SECRET=dev-jwt-secret-replace-in-production-must-be-long-enough
-      - DATABASE_URL=file:/app/data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_txlock=immediate
+      - ARCANE_ENVIRONMENT=development
+      - ARCANE_LOG_LEVEL=debug
+      - ARCANE_PORT=3553
+      - ARCANE_AGENT_MODE=true
+      - ARCANE_AGENT_TOKEN=arc_Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      - ARCANE_MANAGER_API_URL=http://backend:3552
+      - ARCANE_EDGE_TRANSPORT=websocket
+      - ARCANE_ENCRYPTION_KEY=dev-encryption-key-replace-in-production-must-be-32-chars
+      - ARCANE_DATABASE_URL=file:/app/data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_txlock=immediate
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - agent-dev-data:/app/data

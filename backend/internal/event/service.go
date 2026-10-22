@@ -28,14 +28,15 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event/children/correlation"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/concurrency"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event/children/correlation"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 // maxConcurrentEdgeSyncs bounds in-flight event forwards to the manager.
@@ -56,6 +57,7 @@ type EventService struct {
 	correlation *correlation.Service
 	db          *database.DB
 	cfg         *config.Config
+	settings    *settings.SettingsService
 	httpClient  *http.Client
 	edgeSyncs   *semaphore.Weighted
 	// Daemon events are persisted in batches by a writer started on first use.
@@ -66,7 +68,7 @@ type EventService struct {
 	daemonStopped bool
 }
 
-func NewEventService(db *database.DB, cfg *config.Config, httpClient *http.Client) *EventService {
+func NewEventService(db *database.DB, cfg *config.Config, settingsService *settings.SettingsService, httpClient *http.Client) *EventService {
 	if httpClient == nil {
 		httpClient = &http.Client{
 			Timeout: 15 * time.Second,
@@ -77,6 +79,7 @@ func NewEventService(db *database.DB, cfg *config.Config, httpClient *http.Clien
 		correlation: correlation.NewService(time.Now),
 		db:          db,
 		cfg:         cfg,
+		settings:    settingsService,
 		httpClient:  httpClient,
 		edgeSyncs:   semaphore.NewWeighted(maxConcurrentEdgeSyncs),
 		daemonQueue: make(chan CreateEventRequest, daemonEventQueueSize),
@@ -215,10 +218,11 @@ func (s *EventService) forwardEventToManager(ctx context.Context, eventModel *Ev
 				slog.WarnContext(syncCtx, "Failed to sync event to manager over edge tunnel", "type", outgoing.Type, "error", err)
 				return
 			}
-			if strings.TrimSpace(s.cfg.AgentToken) == "" || strings.TrimSpace(httpx.ManagerBaseURL(s.cfg.ManagerApiUrl)) == "" {
+			agentToken := strings.TrimSpace(s.settings.AgentToken(syncCtx))
+			if agentToken == "" || strings.TrimSpace(httpx.ManagerBaseURL(s.cfg.ManagerApiUrl)) == "" {
 				return
 			}
-			if httpErr := s.forwardEventToManagerHTTP(syncCtx, eventModel); httpErr != nil {
+			if httpErr := s.forwardEventToManagerHTTP(syncCtx, eventModel, agentToken); httpErr != nil {
 				slog.WarnContext(syncCtx, "Failed to sync event to manager over API", "type", outgoing.Type, "error", httpErr)
 				return
 			}
@@ -226,7 +230,7 @@ func (s *EventService) forwardEventToManager(ctx context.Context, eventModel *Ev
 	}(ctx, evt)
 }
 
-func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel *Event) error {
+func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel *Event, agentToken string) error {
 	baseURL, err := url.Parse(strings.TrimSpace(httpx.ManagerBaseURL(s.cfg.ManagerApiUrl)))
 	if err != nil {
 		return fmt.Errorf("manager API URL is invalid for manager event sync: failed to parse manager API URL: %w", err)
@@ -265,7 +269,7 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 		return fmt.Errorf("failed to create manager event request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(middleware.HeaderAgentToken, s.cfg.AgentToken)
+	req.Header.Set(middleware.HeaderAgentToken, agentToken)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {

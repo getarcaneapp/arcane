@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	sqliteutil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/sqlite"
-	"github.com/getarcaneapp/arcane/backend/v2/resources"
+	sqliteutil "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/sqlite"
+	"github.com/getarcaneapp/arcane/backend/v3/resources"
 )
 
 func TestGetEmbeddedMigrationVersions_ProvidersMatch(t *testing.T) {
@@ -49,7 +49,7 @@ func TestMigrateDatabase_BlocksDowngradeWithoutFlag(t *testing.T) {
 
 	err := migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, targetVersion)
 	require.Error(t, err)
-	require.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
+	require.ErrorContains(t, err, "ARCANE_ALLOW_DOWNGRADE=true")
 	require.ErrorContains(t, err, "newer than this Arcane binary supports")
 
 	highestVersionVersions, err := getEmbeddedMigrationVersions("sqlite")
@@ -522,7 +522,7 @@ func TestMigrateDatabase_BlocksDowngradeWhenEmbeddedMigrationMissing(t *testing.
 
 	err = migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, latestMigrationVersion)
 	require.Error(t, err)
-	require.ErrorContains(t, err, "ALLOW_DOWNGRADE=true is not sufficient")
+	require.ErrorContains(t, err, "ARCANE_ALLOW_DOWNGRADE=true is not sufficient")
 	require.ErrorContains(t, err, "restore the database from a backup")
 	require.ErrorContains(t, err, strconv.FormatInt(highestVersion+1, 10))
 	assert.Equal(t, highestVersion+1, readGooseSQLiteVersion(t, dsn))
