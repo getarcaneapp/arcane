@@ -115,10 +115,6 @@ type ListSwarmNodeTasksInput struct {
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 }
 
-type GetSwarmJoinCandidatesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 type JoinSwarmEnvironmentsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          types.SwarmJoinEnvironmentsRequest
@@ -430,7 +426,7 @@ func (h *Handler) ListNodeTasks(ctx context.Context, input *ListSwarmNodeTasksIn
 }
 
 // GetJoinCandidates lists enabled visible environments the caller can join.
-func (h *Handler) GetJoinCandidates(ctx context.Context, input *GetSwarmJoinCandidatesInput) (*handlerutil.Out[[]types.SwarmJoinCandidate], error) {
+func (h *Handler) GetJoinCandidates(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]types.SwarmJoinCandidate], error) {
 	if err := requireEasyJoinManagerPermissions(ctx, input.EnvironmentID); err != nil {
 		return nil, err
 	}

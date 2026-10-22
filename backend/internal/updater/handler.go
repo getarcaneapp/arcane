@@ -38,10 +38,6 @@ type updateContainerOutput struct {
 	Body   types.ApiResponse[any]
 }
 
-type GetUpdaterStatusInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 type GetUpdaterHistoryInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Limit         int    `query:"limit" default:"50" doc:"Number of history entries to return"`
@@ -70,7 +66,7 @@ func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput)
 }
 
 // GetUpdaterStatus returns the current status of the updater.
-func (h *UpdaterHandler) GetUpdaterStatus(ctx context.Context, input *GetUpdaterStatusInput) (*handlerutil.Out[types.UpdaterStatus], error) {
+func (h *UpdaterHandler) GetUpdaterStatus(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.UpdaterStatus], error) {
 	return &handlerutil.Out[types.UpdaterStatus]{
 		Body: types.ApiResponse[types.UpdaterStatus]{
 			Success: true,

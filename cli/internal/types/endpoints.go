@@ -340,12 +340,12 @@ func SystemUpgradeCheck(envID string) string {
 	return pathf("/api/environments/%s/system/upgrade/check", envID)
 }
 
-func SystemUpgradeAll(envID string) string {
-	return pathf("/api/environments/%s/system/upgrade/all", envID)
+func SystemUpgradeJobs(envID string) string {
+	return pathf("/api/environments/%s/system/upgrade/jobs", envID)
 }
 
-func SystemUpgradeAllStatus(envID string) string {
-	return pathf("/api/environments/%s/system/upgrade/all/status", envID)
+func SystemUpgradeJobCurrent(envID string) string {
+	return pathf("/api/environments/%s/system/upgrade/jobs/current", envID)
 }
 
 // Updater endpoints

@@ -1,21 +1,22 @@
 <script lang="ts">
-	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { onDestroy } from 'svelte';
+	import { createQuery } from '@tanstack/svelte-query';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import ReleaseNotes from '#lib/components/release-notes.svelte';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
-	import { AlertIcon, ExternalLinkIcon, SuccessIcon } from '#lib/icons/index.js';
+	import { AlertTriangleIcon, ExternalLinkIcon, SuccessIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import BaseAPIService from '#lib/services/api-service.js';
+	import { APIError } from '#lib/services/api-service.js';
 	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
+	import { MANAGER_ENVIRONMENT_ID, isActiveUpgradeJob, upgradeJobStore } from '#lib/stores/upgrade-job.store.svelte.js';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
-	import { cn } from '#lib/utils.js';
+	import type { UpgradeJob } from '#lib/types/system-upgrade.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
+	import UpgradeJobRow from './upgrade-job-row.svelte';
 	import VersionUpdateSummary from './version-update-summary.svelte';
 
 	// open/upgrading have no $bindable fallback: upstream binds can start out
@@ -24,7 +25,7 @@
 	let {
 		open = $bindable(undefined),
 		versionInformation,
-		onConfirm,
+		onFinished,
 		environmentName,
 		environmentId,
 		canInstall = true,
@@ -33,22 +34,16 @@
 	}: {
 		open?: boolean;
 		versionInformation?: AppVersionInformation;
-		/**
-		 * Triggers the upgrade. Resolving with `upToDate` lets this dialog settle
-		 * immediately instead of waiting out the no-op detection below.
-		 */
-		onConfirm: () => void | Promise<void | { upToDate?: boolean }>;
+		onFinished?: () => void | Promise<void>;
 		environmentName?: string;
 		environmentId?: string;
 		canInstall?: boolean;
 		debug?: boolean;
 		upgrading?: boolean;
 	} = $props();
-	const queryClient = useQueryClient();
 
 	const isRemoteEnvironment = $derived(!!environmentName);
-	const expectedVersion = $derived(versionInformation?.newestVersion);
-	const expectedDigest = $derived(versionInformation?.newestDigest);
+	const targetEnvironmentId = $derived(environmentId ?? MANAGER_ENVIRONMENT_ID);
 	const isSemver = $derived(!!versionInformation?.isSemverVersion);
 
 	const debugReleaseEnabled = $derived(open && debug && !versionInformation?.releaseNotes);
@@ -104,396 +99,67 @@
 		return at ? formatRelativeTime(at) : '';
 	});
 
-	let upgradeStatus = $state<'upgrading' | 'waiting' | 'ready' | 'complete' | 'failed'>('upgrading');
-	let lastSeenVersion = $state<string | null>(null);
-	let pollAbort = $state<{ aborted: boolean } | null>(null);
-	let fallbackTimeout: ReturnType<typeof setTimeout> | null = null;
-	let baselineVersionInfo = $state<AppVersionInformation | null>(null);
-	let consecutiveHealthyChecks = $state(0);
-	// Wall-clock millis at which the trigger API call resolved successfully.
-	// `null` means it hasn't returned yet (or errored). Used by the polling loop
-	// to decide whether enough time has passed since the agent was told to
-	// upgrade for "no version change" to be conclusive.
-	let triggerResolvedAt = $state<number | null>(null);
-	// The backend told us this environment already ran the newest image, so the pull
-	// found nothing to swap in and no restart is coming. Lets the no-op detection below
-	// conclude at once instead of waiting out its grace period.
-	let reportedUpToDate = $state(false);
+	let jobId = $state<string | null>(null);
+	let startAttempt = 0;
 
-	function short(v?: string | null, n = 12): string {
-		if (!v) return '';
-		const s = String(v);
-		return s.length > n ? s.slice(0, n) : s;
-	}
+	const job = $derived(upgradeJobStore.job?.id === jobId ? upgradeJobStore.job : null);
+	const result = $derived(job?.results?.find((row) => row.environmentId === targetEnvironmentId));
+	const finished = $derived(!!job && !isActiveUpgradeJob(job));
+	const succeeded = $derived(result?.status === 'updated' || result?.status === 'up_to_date');
 
-	function log(step: string, data?: unknown) {
-		if (data === undefined) {
-			console.log(`[Upgrade] ${step}`);
-			return;
-		}
-		console.log(`[Upgrade] ${step}`, data);
-	}
+	$effect(() => {
+		if (!open) return;
+		return upgradeJobStore.watch();
+	});
 
-	function versionInfoChanged(a: AppVersionInformation | null, b: AppVersionInformation | null) {
-		if (!a || !b) return false;
-		return (
-			(a.currentDigest && b.currentDigest && a.currentDigest !== b.currentDigest) ||
-			a.currentVersion !== b.currentVersion ||
-			a.revision !== b.revision ||
-			a.displayVersion !== b.displayVersion
-		);
-	}
-
-	function matchesExpected(info: AppVersionInformation) {
-		const expVer = expectedVersion?.trim();
-		const expDig = expectedDigest?.trim();
-		if (expVer) return info.currentVersion === expVer;
-		if (expDig) return info.currentDigest === expDig;
-		return true;
-	}
-
-	async function monitorUpgrade() {
-		const envId = environmentId ?? '0';
-		log('monitor-start', {
-			envId,
-			isRemoteEnvironment,
-			expectedVersion,
-			expectedDigest: short(expectedDigest),
-			baselineVersion: baselineVersionInfo?.currentVersion,
-			baselineDigest: short(baselineVersionInfo?.currentDigest)
-		});
-
-		pollAbort = { aborted: false };
-		const abortRef = pollAbort;
-
-		upgradeStatus = 'waiting';
-		consecutiveHealthyChecks = 0;
-
-		const startedAt = Date.now();
-		const timeoutMs = 3 * 60 * 1000;
-		let delayMs = 1000;
-
-		// After the trigger API reports back, the agent has had its chance to act.
-		// If the running version still equals what it was BEFORE we triggered, the
-		// upgrade was a no-op (already on latest, or nothing to do) and we can
-		// finish immediately. NO_OP_GRACE_MS is how long we give the agent to begin
-		// a restart after the trigger returns before we declare no-op.
-		const NO_OP_GRACE_MS = 5000;
-
-		// If we've successfully fetched the version this many times AND the trigger
-		// promise hasn't resolved, the agent is clearly reachable but our POST got
-		// lost (e.g. its response was dropped during a no-op or an internal restart).
-		// Treat the trigger as having implicitly resolved so the no-op detector can
-		// run. This is a fact-based fallback, not a wall-clock guess: it's gated on
-		// the agent demonstrably answering us via a different request.
-		let successfulPolls = 0;
-
-		while (!abortRef.aborted && Date.now() - startedAt < timeoutMs) {
-			// For LOCAL upgrades, the /health endpoint reflects whether *this* Arcane
-			// is back up. For REMOTE upgrades, that endpoint just pings docker — it
-			// does not tell us whether the remote agent has restarted. Skip the
-			// health gate for remote and rely on /environments/{id}/version
-			// reachability + a digest/version diff as the signal instead.
-			if (!isRemoteEnvironment) {
-				const { healthy } = await systemUpgradeService.checkHealth(envId);
-				if (!healthy) {
-					log('health', { healthy, consecutiveHealthyChecks, backoffMs: delayMs });
-					consecutiveHealthyChecks = 0;
-					await new Promise((r) => setTimeout(r, delayMs));
-					delayMs = Math.min(Math.round(delayMs * 1.4), 5000);
-					continue;
-				}
-
-				consecutiveHealthyChecks++;
-				log('health', { healthy, consecutiveHealthyChecks });
-				if (consecutiveHealthyChecks < 2) {
-					await new Promise((r) => setTimeout(r, 1000));
-					continue;
-				}
-			}
-
-			const requestResult1 = await tryCatch(
-				(async () => {
-					const info = await systemUpgradeService.getVersionInfo(envId);
-					successfulPolls += 1;
-					lastSeenVersion = info.displayVersion || info.currentVersion;
-
-					// Promote a hung trigger to "resolved" once the agent has answered
-					// at least 2 unrelated requests successfully. The agent is alive and
-					// has had time to act on our POST — its response just never came back.
-					if (triggerResolvedAt === null && successfulPolls >= 2) {
-						triggerResolvedAt = performance.now();
-						log('trigger-implicit-resolved', {
-							reason: 'agent-answered-poll-without-trigger-response',
-							successfulPolls
-						});
-					}
-
-					const expVer = expectedVersion?.trim();
-					const expDig = expectedDigest?.trim();
-					const ok = matchesExpected(info);
-					const changed = versionInfoChanged(baselineVersionInfo, info);
-
-					const triggerSettledAt = triggerResolvedAt;
-					const sinceTriggerMs = triggerSettledAt === null ? null : performance.now() - triggerSettledAt;
-
-					log('version-check', {
-						currentVersion: info.currentVersion,
-						currentDigest: short(info.currentDigest),
-						revision: short(info.revision, 8),
-						baselineVersion: baselineVersionInfo?.currentVersion,
-						baselineDigest: short(baselineVersionInfo?.currentDigest),
-						expVer,
-						expDig: short(expDig),
-						ok,
-						changed,
-						sinceTriggerMs,
-						successfulPolls
-					});
-
-					const verified = expVer || expDig ? ok : !!baselineVersionInfo && changed;
-					if (verified) {
-						log('verified', {
-							mode: expVer || expDig ? 'expected' : 'baseline-change',
-							currentVersion: info.currentVersion,
-							currentDigest: short(info.currentDigest)
-						});
-						upgradeStatus = 'ready';
-						if (isRemoteEnvironment) {
-							setTimeout(() => (upgradeStatus = 'complete'), 1500);
-						} else {
-							reloadPage();
-						}
-						return true;
-					}
-
-					// no-op detection: trigger API has returned successfully,
-					// the agent has had NO_OP_GRACE_MS to begin a restart, and the version
-					// has not moved from baseline. Conclusion: there was nothing to do.
-					if (
-						!expVer &&
-						!expDig &&
-						!!baselineVersionInfo &&
-						!changed &&
-						sinceTriggerMs !== null &&
-						(reportedUpToDate || sinceTriggerMs >= NO_OP_GRACE_MS)
-					) {
-						log('no-op-detected', {
-							reportedUpToDate,
-							sinceTriggerMs,
-							currentDigest: short(info.currentDigest),
-							baselineDigest: short(baselineVersionInfo?.currentDigest)
-						});
-						upgradeStatus = 'ready';
-						setTimeout(() => {
-							if (isRemoteEnvironment) {
-								upgradeStatus = 'complete';
-							} else {
-								closeAfterComplete();
-							}
-						}, 600);
-						return true;
-					}
-				})()
-			);
-			if (requestResult1.error !== null) {
-				const err = requestResult1.error;
-
-				lastSeenVersion = null;
-				log('version-endpoint-error', err);
-			}
-			if (requestResult1.data) return;
-
-			await new Promise((r) => setTimeout(r, 2000));
-		}
-
-		if (!abortRef.aborted) {
-			log('monitor-timeout', { timeoutMs, isRemoteEnvironment });
-			if (isRemoteEnvironment) {
-				upgradeStatus = 'failed';
-			} else {
-				if (fallbackTimeout) {
-					clearTimeout(fallbackTimeout);
-					fallbackTimeout = null;
-				}
-				upgradeStatus = 'upgrading';
-				upgrading = false;
-				BaseAPIService.setUpgradeInProgress(false);
-			}
-		}
-	}
-
-	async function captureBaseline() {
-		const requestResult2 = await tryCatch(
-			(async () => {
-				baselineVersionInfo = await queryClient.query({
-					queryKey: queryKeys.system.versionInfo(environmentId ?? '0'),
-					queryFn: () => systemUpgradeService.getVersionInfo(environmentId ?? '0'),
-					staleTime: 0
-				});
-				if (!baselineVersionInfo) return;
-
-				const baseline = baselineVersionInfo;
-				log('baseline', {
-					currentVersion: baseline.currentVersion,
-					currentDigest: short(baseline.currentDigest),
-					revision: short(baseline.revision, 8)
-				});
-			})()
-		);
-		if (requestResult2.error !== null) {
-			const err = requestResult2.error;
-
-			log('baseline-error', err);
-			baselineVersionInfo = null;
-		}
-	}
-
-	function reloadPage() {
-		window.location.reload();
+	function includesTarget(candidate: UpgradeJob | null): candidate is UpgradeJob {
+		return isActiveUpgradeJob(candidate) && !!candidate.results?.some((row) => row.environmentId === targetEnvironmentId);
 	}
 
 	async function handleConfirm() {
+		const attempt = ++startAttempt;
 		upgrading = true;
-		upgradeStatus = 'upgrading';
-		// A local upgrade restarts THIS manager; flag it so the restart's version-
-		// mismatch 401s are treated as a recoverable reconnect, not a logout.
-		if (!isRemoteEnvironment) BaseAPIService.setUpgradeInProgress(true);
-		log('confirm', {
-			isRemoteEnvironment,
-			environmentId: environmentId ?? '0',
-			expectedVersion,
-			expectedDigest: short(expectedDigest)
-		});
 
-		await captureBaseline();
-		log('baseline-done', { hasBaseline: !!baselineVersionInfo });
+		const startResult = await tryCatch(systemUpgradeService.startUpgradeJob([targetEnvironmentId]));
+		let next = startResult.data;
+		if (startResult.error instanceof APIError && startResult.error.status === 409) {
+			const active = await upgradeJobStore.load();
+			if (includesTarget(active)) next = active;
+		}
+		if (attempt !== startAttempt) return;
 
-		// The trigger POST can hang indefinitely (apiClient has no timeout) when the
-		// agent restarts mid-request. Don't block monitor startup on its completion —
-		// race it against a short delay so we can detect synchronous failures (auth,
-		// validation) but proceed to polling for any longer-running call. When the
-		// trigger eventually returns successfully we record the timestamp so the
-		// poll loop can run its no-op detection against it.
-		triggerResolvedAt = null;
-		reportedUpToDate = false;
-		lastSeenVersion = null;
-		let triggerErrored = false;
-		const triggerPromise = (async () => {
-			const result = await tryCatch(
-				Promise.resolve()
-					.then(() => onConfirm())
-					.then((result) => {
-						triggerResolvedAt = performance.now();
-						reportedUpToDate = !!result && result.upToDate === true;
-						log('trigger-resolved', { upToDate: reportedUpToDate });
-					})
-			);
-			if (result.error !== null) {
-				log('trigger-error', result.error);
-				triggerErrored = true;
-			}
-		})();
-
-		await Promise.race([triggerPromise, new Promise((r) => setTimeout(r, 1500))]);
-
-		if (triggerErrored) {
+		if (!next) {
 			upgrading = false;
-			BaseAPIService.setUpgradeInProgress(false);
-			return;
-		}
-		if (!upgrading) {
-			log('aborted-after-onConfirm', { upgrading });
+			await handleApiResultWithCallbacks({ result: startResult, message: m.upgrade_start_failed() });
 			return;
 		}
 
-		if (fallbackTimeout) clearTimeout(fallbackTimeout);
-		fallbackTimeout = setTimeout(
-			() => {
-				log('fallback-timeout', { reason: 'timeout', isRemoteEnvironment });
-				if (isRemoteEnvironment) {
-					if (upgradeStatus !== 'complete') upgradeStatus = 'failed';
-				} else {
-					reloadPage();
-				}
-			},
-			4 * 60 * 1000
-		);
-
-		log('starting-monitor', { isRemoteEnvironment, environmentId });
-		monitorUpgrade();
-
-		// If the trigger eventually errors after monitoring started, surface it but
-		// don't yank the dialog — monitor will time out on its own.
-		void triggerPromise.then(() => {
-			if (triggerErrored) log('trigger-errored-after-monitor-start');
-		});
+		upgradeJobStore.follow(next);
+		jobId = next.id;
 	}
 
-	function closeAfterComplete() {
+	function resetState() {
+		startAttempt++;
+		jobId = null;
 		upgrading = false;
-		BaseAPIService.setUpgradeInProgress(false);
-		open = false;
 	}
 
-	type StepState = 'done' | 'active' | 'pending' | 'failed';
-	const steps = $derived.by<Array<{ key: string; label: string; state: StepState }>>(() => {
-		const labels = isRemoteEnvironment
-			? [
-					{ key: 'pull', label: m.update_center_step_pull() },
-					{ key: 'restart', label: m.update_center_step_restart() },
-					{ key: 'verify', label: m.update_center_step_verify() }
-				]
-			: [
-					{ key: 'pull', label: m.update_center_step_pull() },
-					{ key: 'restart', label: m.update_center_step_restart() },
-					{ key: 'verify', label: m.update_center_step_verify() },
-					{ key: 'reload', label: m.update_center_step_reload() }
-				];
-
-		const phaseIndex = (() => {
-			switch (upgradeStatus) {
-				case 'upgrading':
-					return 0;
-				case 'waiting':
-					return 1;
-				case 'ready':
-				case 'failed':
-					return 2;
-				case 'complete':
-					return labels.length;
-				default:
-					return 0;
-			}
-		})();
-
-		return labels.map(({ key, label }, idx) => ({
-			key,
-			label,
-			state: (() => {
-				if (idx < phaseIndex) return 'done';
-				if (idx > phaseIndex) return 'pending';
-				return upgradeStatus === 'failed' ? 'failed' : 'active';
-			})()
-		}));
-	});
-
-	onDestroy(() => {
-		log('destroy');
-		if (fallbackTimeout) clearTimeout(fallbackTimeout);
-		if (pollAbort) pollAbort.aborted = true;
-		BaseAPIService.setUpgradeInProgress(false);
-	});
+	async function handleClose() {
+		const wasFinished = finished;
+		resetState();
+		open = false;
+		if (wasFinished) await onFinished?.();
+	}
 </script>
 
-<Dialog.Root {open} onOpenChange={(nextOpen) => (open = nextOpen)}>
-	<Dialog.Content
-		sectioned
-		class={cn('flex max-h-(--max-height-dscreen-90) flex-col overflow-hidden sm:max-w-140', upgrading && '[&>button]:hidden')}
-		onInteractOutside={(e: Event) => {
-			if (upgrading) e.preventDefault();
-		}}
-	>
+<Dialog.Root
+	{open}
+	onOpenChange={(nextOpen) => {
+		if (nextOpen) open = true;
+		else void handleClose();
+	}}
+>
+	<Dialog.Content sectioned class="flex max-h-(--max-height-dscreen-90) flex-col overflow-hidden sm:max-w-140">
 		{#if upgrading}
 			<div class="px-6 pt-6 pb-2">
 				<Dialog.Header>
@@ -501,60 +167,34 @@
 				</Dialog.Header>
 			</div>
 
-			<div class="px-6 pb-6">
-				<ol class="space-y-3 py-2">
-					{#each steps as step (step.key)}
-						<li class="flex items-center gap-3 text-sm">
-							<span
-								class={cn(
-									'flex size-6 shrink-0 items-center justify-center rounded-full border transition-colors',
-									step.state === 'done' && 'border-success/40 bg-success/10 text-success',
-									step.state === 'active' && 'border-primary/40 bg-primary/10 text-primary',
-									step.state === 'pending' && 'border-border bg-muted/40 text-muted-foreground/60',
-									step.state === 'failed' && 'border-warning/40 bg-warning/10 text-warning'
-								)}
-							>
-								{#if step.state === 'done'}
-									<SuccessIcon class="size-3.5" />
-								{:else if step.state === 'failed'}
-									<AlertIcon class="size-3.5" />
-								{:else if step.state === 'active'}
-									<Spinner class="size-3.5" />
-								{:else}
-									<span class="size-1.5 rounded-full bg-current opacity-60"></span>
-								{/if}
-							</span>
-							<span
-								class={cn(
-									'transition-colors',
-									step.state === 'done' && 'text-foreground',
-									(step.state === 'active' || step.state === 'failed') && 'font-medium text-foreground',
-									step.state === 'pending' && 'text-muted-foreground'
-								)}
-							>
-								{step.label}
-							</span>
-						</li>
-					{/each}
-				</ol>
-
-				{#if upgradeStatus === 'complete'}
-					<div class="mt-4 flex items-center justify-between rounded-lg border border-success/20 bg-success/5 px-3 py-2.5">
-						<p class="flex items-center gap-2 text-sm font-medium text-success">
-							<SuccessIcon class="size-4" />
-							{m.update_center_complete()}
-						</p>
-						<ArcaneButton action="base" onclick={closeAfterComplete} size="sm" customLabel={m.common_close()} />
+			<div class="min-h-0 flex-1 overflow-y-auto border-t border-border/60">
+				{#if result}
+					<ul>
+						<UpgradeJobRow {result} logsOpen />
+					</ul>
+				{:else}
+					<div class="flex items-center gap-2 px-6 py-4 text-sm text-muted-foreground">
+						<Spinner class="size-4" />
+						<span>{m.environments_update_all_loading_status()}</span>
 					</div>
-				{:else if upgradeStatus === 'failed'}
-					<div class="mt-4 flex items-center justify-between gap-3 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2.5">
-						<p class="flex items-center gap-2 text-sm font-medium text-warning">
-							<AlertIcon class="size-4 shrink-0" />
-							{lastSeenVersion
-								? m.update_center_unconfirmed_version({ version: lastSeenVersion })
-								: m.update_center_unconfirmed()}
-						</p>
-						<ArcaneButton action="base" onclick={closeAfterComplete} size="sm" customLabel={m.common_close()} />
+				{/if}
+			</div>
+
+			<div class="px-6 pb-6">
+				{#if finished}
+					<div class="mt-4 flex items-center justify-between rounded-lg border border-border/60 px-3 py-2.5">
+						{#if succeeded}
+							<p class="flex items-center gap-2 text-sm font-medium text-success">
+								<SuccessIcon class="size-4" />
+								{m.update_center_complete()}
+							</p>
+						{:else}
+							<p class="flex min-w-0 items-center gap-2 text-sm font-medium text-destructive">
+								<AlertTriangleIcon class="size-4 shrink-0" />
+								<span class="truncate">{result?.error || job?.error || m.environments_update_all_finished_with_issues()}</span>
+							</p>
+						{/if}
+						<ArcaneButton action="base" onclick={handleClose} size="sm" customLabel={m.common_close()} />
 					</div>
 				{:else}
 					<p class="mt-4 text-xs text-muted-foreground">

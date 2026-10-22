@@ -16,10 +16,6 @@ type WebhookHandler struct {
 	webhookService *WebhookService
 }
 
-type ListWebhooksInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 type CreateWebhookInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	types.Create[types.Webhook]
@@ -37,7 +33,7 @@ type UpdateWebhookInput struct {
 }
 
 // ListWebhooks returns all webhooks for an environment (tokens are masked).
-func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *ListWebhooksInput) (*handlerutil.Out[[]types.Webhook], error) {
+func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]types.Webhook], error) {
 	webhooks, err := h.webhookService.ListWebhookSummaries(ctx, input.EnvironmentID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list webhooks")

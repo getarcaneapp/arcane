@@ -29,14 +29,6 @@ type SettingsHandler struct {
 	cfg                   *config.Config
 }
 
-type GetSettingsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type GetPublicSettingsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 type SettingsSnapshotOutput struct {
 	Body types.SettingsSnapshot
 }
@@ -85,7 +77,7 @@ func (h *SettingsHandler) runtimeSettings(authenticated bool) types.SettingsRunt
 }
 
 // GetPublicSettings returns public settings for an environment.
-func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPublicSettingsInput) (*SettingsSnapshotOutput, error) {
+func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *types.EnvironmentInput) (*SettingsSnapshotOutput, error) {
 	if input.EnvironmentID != "0" {
 		snapshot, err := h.proxyRemoteJSON.JSON[types.SettingsSnapshot](ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings/public", nil)
 		if err != nil {
@@ -103,7 +95,7 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 }
 
 // GetSettings returns all settings for an environment.
-func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInput) (*SettingsSnapshotOutput, error) {
+func (h *SettingsHandler) GetSettings(ctx context.Context, input *types.EnvironmentInput) (*SettingsSnapshotOutput, error) {
 	ps, _ := middleware.PermissionsFromContext(ctx)
 	isAdmin := ps.IsGlobalAdmin()
 
@@ -145,7 +137,7 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 		if _, err := h.proxyRemoteJSON.JSON[struct{}](ctx, input.EnvironmentID, http.MethodPatch, "/api/environments/0/settings", input.Body); err != nil {
 			return nil, err
 		}
-		return h.GetSettings(ctx, &GetSettingsInput{EnvironmentID: input.EnvironmentID})
+		return h.GetSettings(ctx, &types.EnvironmentInput{EnvironmentID: input.EnvironmentID})
 	}
 
 	if err := h.settingsService.UpdateSettings(ctx, input.Body); err != nil {
@@ -170,7 +162,7 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 		}
 	}
-	return h.GetSettings(ctx, &GetSettingsInput{EnvironmentID: input.EnvironmentID})
+	return h.GetSettings(ctx, &types.EnvironmentInput{EnvironmentID: input.EnvironmentID})
 }
 
 // Search searches settings by query.

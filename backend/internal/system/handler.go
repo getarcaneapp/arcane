@@ -20,14 +20,6 @@ type SystemHandler struct {
 	appCtx        context.Context
 }
 
-type SystemHealthInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type GetDockerInfoInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 type GetDockerInfoOutput struct {
 	Body types.DockerInfo
 }
@@ -56,7 +48,7 @@ func NewHandler(systemService *SystemService, appCtx context.Context) *SystemHan
 }
 
 // Health checks if the Docker daemon is responsive.
-func (h *SystemHandler) Health(ctx context.Context, input *SystemHealthInput) (*struct{}, error) {
+func (h *SystemHandler) Health(ctx context.Context, input *types.EnvironmentInput) (*struct{}, error) {
 	if err := h.systemService.PingDocker(ctx); err != nil {
 		return nil, huma.Error503ServiceUnavailable("Docker is not responsive: " + err.Error())
 	}
@@ -65,7 +57,7 @@ func (h *SystemHandler) Health(ctx context.Context, input *SystemHealthInput) (*
 }
 
 // GetDockerInfo returns Docker daemon version and system information.
-func (h *SystemHandler) GetDockerInfo(ctx context.Context, input *GetDockerInfoInput) (*GetDockerInfoOutput, error) {
+func (h *SystemHandler) GetDockerInfo(ctx context.Context, input *types.EnvironmentInput) (*GetDockerInfoOutput, error) {
 	info, err := h.systemService.GetDockerInfo(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get Docker info: " + err.Error())

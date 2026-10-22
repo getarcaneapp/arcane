@@ -45,10 +45,6 @@ type ListNetworksOutput struct {
 	Body types.PaginatedWithCounts[types.NetworkSummary, types.NetworkUsageCounts]
 }
 
-type GetNetworkCountsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 type CreateNetworkInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	types.Create[types.Network]
@@ -61,17 +57,9 @@ type GetNetworkInput struct {
 	Order         string `query:"order" default:"asc"`
 }
 
-type GetNetworkTopologyInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 type DeleteNetworkInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	NetworkID     string `path:"networkId" doc:"Network ID"`
-}
-
-type PruneNetworksInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
 type NetworkActionInput struct {
@@ -118,7 +106,7 @@ func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksIn
 	}, nil
 }
 
-func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *GetNetworkCountsInput) (*handlerutil.Out[types.NetworkUsageCounts], error) {
+func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.NetworkUsageCounts], error) {
 	_, inuse, unused, total, err := h.dockerService.GetAllNetworks(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get network counts: " + err.Error())
@@ -237,7 +225,7 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 	}, nil
 }
 
-func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *GetNetworkTopologyInput) (*handlerutil.Out[types.NetworkTopology], error) {
+func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.NetworkTopology], error) {
 	topology, err := h.networkService.GetNetworkTopology(ctx)
 	if err != nil {
 		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
@@ -335,7 +323,7 @@ func (h *NetworkHandler) RunNetworkAction(ctx context.Context, input *NetworkAct
 	return handlerutil.MessageOutput(action.SuccessMessage, activityID), nil
 }
 
-func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworksInput) (*handlerutil.Out[types.NetworkPruneReport], error) {
+func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.NetworkPruneReport], error) {
 	var report *network.PruneReport
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{

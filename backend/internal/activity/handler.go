@@ -60,10 +60,6 @@ type GetActivityInput struct {
 	Limit         int    `query:"limit" default:"500" doc:"Maximum messages to return"`
 }
 
-type ClearActivityHistoryInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 type StreamAllActivitiesInput struct {
 	Limit int `query:"limit" default:"50" doc:"Snapshot limit per environment"`
 }
@@ -168,7 +164,7 @@ func (h *ActivityHandler) GetActivity(ctx context.Context, input *GetActivityInp
 	}, nil
 }
 
-func (h *ActivityHandler) ClearHistory(ctx context.Context, input *ClearActivityHistoryInput) (*handlerutil.Out[types.ActivityClearHistoryResult], error) {
+func (h *ActivityHandler) ClearHistory(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.ActivityClearHistoryResult], error) {
 	deleted, err := h.activityService.DeleteHistory(ctx, input.EnvironmentID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())

@@ -231,7 +231,7 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityApp
 	deps.Webhook.RegisterRoutes(api)
 	deps.Vulnerability.RegisterRoutes(api, appCtx)
 	deps.Dashboard.RegisterRoutes(api)
-	handlers.RegisterStream(api, deps.Dashboard.Handler(), deps.Activity.Handler(), deps.Environment.Handler(), deps.Event.Service(), deps.Version)
+	handlers.RegisterStream(api, deps.Dashboard.Handler(), deps.Activity.Handler(), deps.Environment.Handler(), deps.Event.Service(), deps.Version, deps.System.Service())
 
 	apiGroup.GET("/docs", func(c *echo.Context) error {
 		return c.HTML(http.StatusOK, scalarDocsHTML)

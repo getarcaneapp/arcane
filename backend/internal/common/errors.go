@@ -74,7 +74,7 @@ var (
 	ErrTokenValidation                   = Classify(ErrUnauthorized, errors.New("Invalid token claims"))
 	ErrSessionRevoked                    = Classify(ErrUnauthorized, errors.New("Session has been revoked"))
 	ErrUpgradeInProgress                 = Classify(ErrConflict, errors.New("an upgrade is already in progress"))
-	ErrUpdateAllInProgress               = Classify(ErrConflict, errors.New("an update-all job is already in progress"))
+	ErrUpgradeJobInProgress              = Classify(ErrConflict, errors.New("an upgrade job is already in progress"))
 	ErrUpdaterNoContainersMatched        = Classify(ErrBadRequest, errors.New("no compose-managed containers matched the requested resources"))
 	ErrTemplateNotFound                  = Classify(ErrNotFound, errors.New("Template not found"))
 	ErrInvalidEnvKey                     = Classify(ErrValidation, errors.New("Invalid environment key"))

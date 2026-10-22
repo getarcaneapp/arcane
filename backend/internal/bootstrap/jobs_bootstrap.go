@@ -88,13 +88,13 @@ func newJobScheduler(
 					return fmt.Errorf("submit startup job %q: %w", analytics.Name(), submitErr)
 				}
 			}
-			// Standalone tasks wait until update-all recovery has read its job, so a resumed step's new checkpoint
+			// Standalone tasks wait until upgrade job recovery has read its job, so a resumed step's new checkpoint
 			// is never mistaken for one the previous process left.
 			if !cfg.AgentMode && systemService != nil {
 				resumeDone = make(chan struct{})
 				go func() {
 					defer close(resumeDone)
-					systemService.ResumeUpdateAllOnStartup(schedulerCtx)
+					systemService.ResumeUpgradeJobOnStartup(schedulerCtx)
 					workflows.Ready()
 				}()
 			} else {

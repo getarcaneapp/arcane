@@ -37,10 +37,6 @@ type SyncGlobalVariablesInput struct{}
 
 type GetGlobalVariableSyncStatusInput struct{}
 
-type GetGlobalVariablesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 type UpdateGlobalVariablesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          types.EnvSummary
@@ -137,7 +133,7 @@ func (h *VariableHandler) GetSyncStatus(_ context.Context, _ *GetGlobalVariableS
 
 // GetMaterializedVariables returns the environment's materialized .env.global
 // content (local file for environment "0", proxied to the agent otherwise).
-func (h *VariableHandler) GetMaterializedVariables(ctx context.Context, input *GetGlobalVariablesInput) (*handlerutil.Out[[]types.EnvVariable], error) {
+func (h *VariableHandler) GetMaterializedVariables(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]types.EnvVariable], error) {
 	if input.EnvironmentID != "0" {
 		response, err := h.proxyRemoteJSON.JSON[types.ApiResponse[[]types.EnvVariable]](ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/templates/variables", nil)
 		if err != nil {

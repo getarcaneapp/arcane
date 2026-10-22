@@ -8,6 +8,7 @@ export const STREAM_CHANNEL_DASHBOARD = 'dashboard';
 export const STREAM_CHANNEL_ACTIVITIES = 'activities';
 export const STREAM_CHANNEL_EVENTS = 'events';
 export const STREAM_CHANNEL_VERSION = 'version';
+export const STREAM_CHANNEL_UPGRADE = 'arcane-upgrade';
 
 class StreamService extends BaseAPIService {
 	getClientStreamUrl(channels: string[], params: Record<string, string> = {}): string {

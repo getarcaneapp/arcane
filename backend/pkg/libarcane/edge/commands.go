@@ -199,8 +199,7 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/system/convert", CommandName: "system.convert"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/system/upgrade/check", CommandName: "system.upgrade.check"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/system/upgrade", CommandName: "system.upgrade.run"},
-	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/system/upgrade/all", CommandName: "system.upgrade.all"},
-	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/system/upgrade/all/status", CommandName: "system.upgrade.all.status"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/system/upgrade/progress", CommandName: "system.upgrade.progress"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/diagnostics/actors", CommandName: "diagnostics.actors"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/diagnostics/goroutines", CommandName: "diagnostics.goroutines"},
 

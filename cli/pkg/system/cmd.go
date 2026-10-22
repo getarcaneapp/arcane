@@ -266,7 +266,7 @@ func newUpgradeCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVarP(&opts.force, "force", "f", false, "Skip confirmation")
 	cmd.Flags().BoolVar(&opts.all, "all", false, "Update all environments with available updates")
-	cmd.Flags().BoolVar(&opts.status, "status", false, "Show the status of the latest update-all job (requires --all)")
+	cmd.Flags().BoolVar(&opts.status, "status", false, "Show the status of the latest upgrade job (requires --all)")
 	cmd.Flags().BoolVar(&opts.check, "check", false, "Only check whether an upgrade is available")
 	cmdutil.SetScope(cmdutil.ScopeGlobal, cmd)
 	return cmd
@@ -319,12 +319,12 @@ func runUpgradeAll(cmd *cobra.Command, force, status bool) error {
 		return err
 	}
 	if status {
-		return cmdutil.Run(cmd, c, cmdutil.Spec[types.EnvironmentUpdateJob]{
+		return cmdutil.Run(cmd, c, cmdutil.Spec[types.UpgradeJob]{
 			Method:         http.MethodGet,
-			Path:           clitypes.SystemUpgradeAllStatus(c.EnvID()),
-			FailureMessage: "failed to get update-all status",
-			Render: func(data types.EnvironmentUpdateJob) error {
-				output.Header("Update-All Status")
+			Path:           clitypes.SystemUpgradeJobCurrent(c.EnvID()),
+			FailureMessage: "failed to get upgrade job status",
+			Render: func(data types.UpgradeJob) error {
+				output.Header("Upgrade Job Status")
 				return renderUpgradeResults(data)
 			},
 		})
@@ -333,18 +333,18 @@ func runUpgradeAll(cmd *cobra.Command, force, status bool) error {
 	if confirmationErr != nil || !confirmed {
 		return confirmationErr
 	}
-	return cmdutil.Run(cmd, c, cmdutil.Spec[types.EnvironmentUpdateJob]{
+	return cmdutil.Run(cmd, c, cmdutil.Spec[types.UpgradeJob]{
 		Method:         http.MethodPost,
-		Path:           clitypes.SystemUpgradeAll(c.EnvID()),
-		FailureMessage: "failed to trigger update-all",
-		Render: func(data types.EnvironmentUpdateJob) error {
-			output.Success("Update-all started")
+		Path:           clitypes.SystemUpgradeJobs(c.EnvID()),
+		FailureMessage: "failed to start upgrade job",
+		Render: func(data types.UpgradeJob) error {
+			output.Success("Upgrade job started")
 			return renderUpgradeResults(data)
 		},
 	})
 }
 
-func renderUpgradeResults(job types.EnvironmentUpdateJob) error {
+func renderUpgradeResults(job types.UpgradeJob) error {
 	output.KeyValue("Status", job.Status)
 	if job.Username != "" {
 		output.KeyValue("Triggered By", job.Username)
