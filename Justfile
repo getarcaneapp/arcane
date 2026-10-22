@@ -50,7 +50,7 @@ mod i18n 'just/i18n.just'
 [group('performance')]
 mod bench 'just/bench.just'
 
-# Release tooling: version [github-output]
+# Release tooling: version [github-output] [next|beta]
 [group('release')]
 mod release 'just/release.just'
 

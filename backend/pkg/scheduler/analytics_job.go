@@ -87,6 +87,10 @@ func (j *AnalyticsJob) Run(ctx context.Context) (types.SchedulerOutcome, error) 
 		slog.DebugContext(ctx, "test environment; skipping heartbeat", "env", j.cfg.Environment)
 		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
 	}
+	if strings.Contains(config.Version, "-beta") {
+		slog.DebugContext(ctx, "beta release; skipping heartbeat", "version", config.Version)
+		return types.SchedulerOutcome{Status: types.RunStatusSkipped}, nil
+	}
 
 	allowed, err := j.claimHeartbeat(ctx)
 	if err != nil {
