@@ -5,4 +5,9 @@
 	let { data } = $props();
 </script>
 
-<SwarmKvPage resource={swarmKvResources.configs} initialItems={data.items} initialRequestOptions={data.requestOptions} />
+<SwarmKvPage
+	resource={swarmKvResources.configs}
+	initialSwarm={data.swarm}
+	initialItems={data.items}
+	initialRequestOptions={data.requestOptions}
+/>

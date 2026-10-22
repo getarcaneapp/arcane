@@ -5,7 +5,6 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { cn } from '#lib/utils.js';
 
 	type IconVariant = 'emerald' | 'red' | 'amber' | 'blue' | 'purple' | 'gray' | 'sky' | 'orange';
@@ -86,10 +85,7 @@
 		resolvedIcon?.imageUrl && resolvedIcon.imageUrl !== errorImageUrl ? resolvedIcon.imageUrl : null
 	);
 
-	// Merged rows carry their environment; show it while several environments are shown.
-	const environmentId = $derived(
-		environmentStore.shown.length > 1 ? (item as { environmentId?: string }).environmentId : undefined
-	);
+	const environmentId = $derived((item as { environmentId?: string }).environmentId);
 	const environmentField = $derived<FieldDefinition<T>[]>(
 		environmentId
 			? [{ label: m.resource_environment_cap(), getValue: () => environmentId, type: 'component', component: EnvironmentValue }]

@@ -266,7 +266,7 @@ export function createStatsWebSocket(opts: {
 	maxBackoff?: number;
 }) {
 	const buildUrl = () => {
-		const envId = opts.getEnvId() || '0';
+		const envId = opts.getEnvId();
 		const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
 		return `${protocol}://${location.host}/api/environments/${envId}/ws/system/stats`;
 	};
@@ -294,7 +294,7 @@ export function createContainerStatsWebSocket(opts: {
 	shouldReconnect?: () => boolean;
 }) {
 	const buildUrl = () => {
-		const envId = opts.getEnvId() || '0';
+		const envId = opts.getEnvId();
 		const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
 		return `${protocol}://${location.host}/api/environments/${envId}/ws/containers/${opts.containerId}/stats`;
 	};

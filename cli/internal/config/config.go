@@ -51,12 +51,10 @@ func invalidateCache() {
 	configCache.Purge()
 }
 
-// DefaultConfig uses localhost:3552, local environment "0", and info logging.
 func DefaultConfig() *types.Config {
 	return &types.Config{
-		ServerURL:          "http://localhost:3552",
-		DefaultEnvironment: "0",
-		LogLevel:           "info",
+		ServerURL: "http://localhost:3552",
+		LogLevel:  "info",
 	}
 }
 

@@ -365,6 +365,14 @@ func (h *VolumeHandler) GetVolumeUsage(ctx context.Context, input *GetVolumeUsag
 
 // GetVolumeUsageCounts returns counts of volumes by usage status.
 func (h *VolumeHandler) GetVolumeUsageCounts(ctx context.Context, input *GetVolumeUsageCountsInput) (*handlerutil.Out[VolumeUsageCountsData], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.volumeService.AggregateVolumeCounts(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to get volume counts: " + err.Error())
+		}
+		return &handlerutil.Out[VolumeUsageCountsData]{Body: body}, nil
+	}
+
 	_, _, counts, err := h.volumeService.ListVolumesPaginated(ctx, pagination.QueryParams{}, input.IncludeInternal)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get volume counts: " + err.Error())

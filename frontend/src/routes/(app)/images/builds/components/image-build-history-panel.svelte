@@ -32,7 +32,7 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ImageBuildRecord, ImageBuildStatus } from '#lib/types/docker.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import { fetchAcrossEnvironments, type EnvironmentRow } from '#lib/utils/environments.js';
+	import { type EnvironmentRow, fetchAcrossEnvironments, readableEnvironments } from '#lib/utils/environments.js';
 
 	import {
 		buildHistoryStatusLabel,
@@ -70,7 +70,7 @@
 
 	const historyQuery = createQuery(() => {
 		const scope = environmentStore.shownKey;
-		const environments = environmentStore.shown;
+		const environments = readableEnvironments('images:list');
 		const options = requestOptions;
 		return {
 			queryKey: queryKeys.images.buildsList(scope, options),

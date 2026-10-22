@@ -7,7 +7,7 @@ import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
 
-async function generateFromContainers(ids: string[], environmentId?: string) {
+async function generateFromContainers(ids: string[], environmentId: string) {
 	const { data, error } = await tryCatch(containerService.generateCompose(ids, environmentId));
 	if (error) throwPageLoadError(error, 'Failed to generate compose file from containers');
 
@@ -19,8 +19,10 @@ export const load: PageLoad = async ({ url, parent }) => {
 	const { queryClient } = await parent();
 
 	const templateId = url.searchParams.get('templateId');
-	const sourceContainerIds = url.searchParams.get('fromContainers')?.split(',').filter(Boolean) ?? [];
-	const sourceEnvironmentId = url.searchParams.get('fromEnv') || undefined;
+	const sourceEnvironmentId = url.searchParams.get('fromEnv') ?? '';
+	const sourceContainerIds = sourceEnvironmentId
+		? (url.searchParams.get('fromContainers')?.split(',').filter(Boolean) ?? [])
+		: [];
 
 	const [{ defaultTemplates, templates: allTemplates, globalVariables, permissions, loadErrors }, generated] = await Promise.all([
 		loadTemplateAuthoringData(parent),

@@ -5,7 +5,7 @@ import { queryKeys } from '#lib/query/query-keys.js';
 import { activityService } from '#lib/services/activity-service.js';
 import { STREAM_CHANNEL_ACTIVITIES } from '#lib/services/stream-service.js';
 import { clientStream } from '#lib/stores/client-stream.svelte.js';
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import type { Activity, ActivityStreamEvent } from '#lib/types/activity.type.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -74,14 +74,14 @@ export function useBackupActivity(
 			onEvent(payload) {
 				const event = payload as ActivityStreamEvent;
 				const environmentId = getEnvironmentId();
-				if ((event.environmentId || '0') !== environmentId) return;
+				if ((event.environmentId || LOCAL_DOCKER_ENVIRONMENT_ID) !== environmentId) return;
 				let activities: Activity[] = [];
 				if (event.type === 'snapshot') activities = event.activities ?? [];
 				else if (event.activity) activities = [event.activity];
 				const relevant = activities.some(
 					(activity) =>
-						(activity.sourceEnvironmentId || activity.environmentId || event.environmentId || '0') === environmentId &&
-						matches(activity)
+						(activity.sourceEnvironmentId || activity.environmentId || event.environmentId || LOCAL_DOCKER_ENVIRONMENT_ID) ===
+							environmentId && matches(activity)
 				);
 				const activeSnapshot = event.type === 'snapshot' && activeIds.length > 0;
 				const activeMessage = event.type === 'message' && activeIds.includes(event.message?.activityId ?? event.activityId ?? '');

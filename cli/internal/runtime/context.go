@@ -3,7 +3,9 @@ package runtime
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"sync"
@@ -39,7 +41,7 @@ type Options struct {
 
 type AppContext struct {
 	Options
-	FleetConfirmed   bool
+	AllConfirmed     bool
 	cfg              *clitypes.Config
 	selectedEnv      string
 	environmentsOnce sync.Once
@@ -85,24 +87,14 @@ func (a *AppContext) Config() *clitypes.Config {
 	if a == nil || a.cfg == nil {
 		return nil
 	}
-	copyCfg := a.cfg.Clone()
-	if id := cmp.Or(a.selectedEnv, a.EnvOverride); id != "" {
-		copyCfg.DefaultEnvironment = id
-	}
-	return copyCfg
+	return a.cfg.Clone()
 }
 
 func (a *AppContext) EnvID() string {
 	if a == nil {
 		return ""
 	}
-	if id := cmp.Or(a.selectedEnv, a.EnvOverride); id != "" {
-		return id
-	}
-	if a.cfg != nil {
-		return a.cfg.DefaultEnvironment
-	}
-	return ""
+	return cmp.Or(a.selectedEnv, a.EnvOverride, "0")
 }
 
 func (a *AppContext) IsJSON() bool {
@@ -118,6 +110,7 @@ func (a *AppContext) Client() (*client.Client, error) {
 		if a.clientErr != nil {
 			return
 		}
+		a.client.SetEnvironment(a.EnvID())
 		if a.RequestTimeout > 0 {
 			a.client.SetTimeout(a.RequestTimeout)
 		}
@@ -134,6 +127,7 @@ func (a *AppContext) UnauthClient() (*client.Client, error) {
 		if a.unauthClientErr != nil {
 			return
 		}
+		a.unauthClient.SetEnvironment(a.EnvID())
 		if a.RequestTimeout > 0 {
 			a.unauthClient.SetTimeout(a.RequestTimeout)
 		}
@@ -141,16 +135,15 @@ func (a *AppContext) UnauthClient() (*client.Client, error) {
 	return a.unauthClient, a.unauthClientErr
 }
 
-// PreviewEnabled reports whether this command still needs an environment scope.
-func (a *AppContext) PreviewEnabled() bool {
-	return a != nil && a.cfg.Previews.AllEnvironments && a.EnvOverride == "" && a.selectedEnv == ""
+func (a *AppContext) AllEnvironments() bool {
+	return a != nil && a.EnvOverride == "" && a.selectedEnv == ""
 }
 
 // SelectEnvironment pins subsequent requests without changing persisted configuration.
 func (a *AppContext) SelectEnvironment(id string) {
 	a.selectedEnv = id
 	if a.client != nil {
-		a.client.SetEnvironment(cmp.Or(id, a.EnvOverride, a.cfg.DefaultEnvironment, "0"))
+		a.client.SetEnvironment(a.EnvID())
 	}
 }
 
@@ -163,6 +156,10 @@ func (a *AppContext) Environments(ctx context.Context) ([]types.Environment, err
 			return
 		}
 		response, err := c.GetJSON[[]types.Environment](ctx, clitypes.Environments()+"?limit=-1")
+		if statusErr, ok := errors.AsType[*client.StatusError](err); ok && statusErr.StatusCode == http.StatusForbidden {
+			a.environmentsErr = errors.New("these credentials cannot list environments; pass --env <id> to choose one")
+			return
+		}
 		if err != nil {
 			a.environmentsErr = fmt.Errorf("failed to discover environments: %w", err)
 			return

@@ -9,14 +9,14 @@
 	import { ContainersIcon, ConnectionIcon, GlobeIcon, HashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { portService, type PortsPaginatedResponse } from '#lib/services/port-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { PortMappingDto } from '#lib/types/docker.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import {
 		environmentHref,
-		fetchAcrossEnvironments,
 		type EnvironmentPage,
-		type EnvironmentRow
+		type EnvironmentRow,
+		fetchAcrossEnvironments,
+		readableEnvironments
 	} from '#lib/utils/environments.js';
 
 	type PortRow = EnvironmentRow<PortMappingDto>;
@@ -59,7 +59,7 @@
 			await onRefreshData(options);
 			return;
 		}
-		return await fetchAcrossEnvironments(environmentStore.shown, options, (id, request, config) =>
+		return await fetchAcrossEnvironments(readableEnvironments('containers:list'), options, (id, request, config) =>
 			portService.getPortsForEnvironment(id, request, config)
 		);
 	}

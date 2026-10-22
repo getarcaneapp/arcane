@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -29,6 +30,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 const (
@@ -66,6 +69,19 @@ func NewService(
 	}
 }
 
+var stackPagination = pagination.Config[types.SwarmStackSummary]{
+	SearchAccessors: []pagination.SearchAccessor[types.SwarmStackSummary]{
+		func(stack types.SwarmStackSummary) (string, error) { return stack.Name, nil },
+		func(stack types.SwarmStackSummary) (string, error) { return stack.Namespace, nil },
+	},
+	SortBindings: []pagination.SortBinding[types.SwarmStackSummary]{
+		{Key: "name", Fn: func(a, b types.SwarmStackSummary) int { return strings.Compare(a.Name, b.Name) }},
+		{Key: "services", Fn: func(a, b types.SwarmStackSummary) int { return cmp.Compare(a.Services, b.Services) }},
+		{Key: "created", Fn: func(a, b types.SwarmStackSummary) int { return a.CreatedAt.Compare(b.CreatedAt) }},
+		{Key: "updated", Fn: func(a, b types.SwarmStackSummary) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
+	},
+}
+
 func (s *Service) ListStacksPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]types.SwarmStackSummary, pagination.Response, error) {
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, pagination.Response{}, err
@@ -78,6 +94,13 @@ func (s *Service) ListStacksPaginated(ctx context.Context, environmentID string,
 		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm services: %w", err)
 	}
 	services := servicesResult.Items
+
+	infoResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.SystemInfoResult, error) {
+		return dockerClient.Info(ctx, client.InfoOptions{})
+	})
+	if err != nil {
+		return nil, pagination.Response{}, fmt.Errorf("failed to get Docker info: %w", err)
+	}
 
 	stacks := make(map[string]*types.SwarmStackSummary)
 	for _, service := range services {
@@ -95,6 +118,7 @@ func (s *Service) ListStacksPaginated(ctx context.Context, environmentID string,
 				Services:  1,
 				CreatedAt: service.CreatedAt,
 				UpdatedAt: service.UpdatedAt,
+				ClusterID: kit.FromPtr(infoResult.Info.Swarm.Cluster).ID,
 			}
 			continue
 		}
@@ -113,7 +137,8 @@ func (s *Service) ListStacksPaginated(ctx context.Context, environmentID string,
 		return nil, pagination.Response{}, err
 	}
 	for stackName, persisted := range persistedStacks {
-		if _, exists := stacks[stackName]; exists {
+		if entry, exists := stacks[stackName]; exists {
+			entry.HasSource = true
 			continue
 		}
 		stacks[stackName] = new(persisted)
@@ -124,22 +149,54 @@ func (s *Service) ListStacksPaginated(ctx context.Context, environmentID string,
 		items = append(items, *stack)
 	}
 
-	config := pagination.Config[types.SwarmStackSummary]{
-		SearchAccessors: []pagination.SearchAccessor[types.SwarmStackSummary]{
-			func(stack types.SwarmStackSummary) (string, error) { return stack.Name, nil },
-			func(stack types.SwarmStackSummary) (string, error) { return stack.Namespace, nil },
-		},
-		SortBindings: []pagination.SortBinding[types.SwarmStackSummary]{
-			{Key: "name", Fn: func(a, b types.SwarmStackSummary) int { return strings.Compare(a.Name, b.Name) }},
-			{Key: "services", Fn: func(a, b types.SwarmStackSummary) int { return cmp.Compare(a.Services, b.Services) }},
-			{Key: "created", Fn: func(a, b types.SwarmStackSummary) int { return a.CreatedAt.Compare(b.CreatedAt) }},
-			{Key: "updated", Fn: func(a, b types.SwarmStackSummary) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
-		},
-	}
-	result := config.SearchOrderAndPaginate(items, params)
+	result := stackPagination.SearchOrderAndPaginate(items, params)
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 
 	return result.Items, paginationResp, nil
+}
+
+func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.SwarmStackSummary], error) {
+	collection, err := httpx.CollectEnvironments[types.Paginated[types.SwarmStackSummary]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return types.Paginated[types.SwarmStackSummary]{}, err
+	}
+
+	sourced := map[string]bool{}
+	for _, result := range collection.Results {
+		for _, item := range result.Value.Data {
+			if item.ClusterID != "" && item.HasSource {
+				sourced[item.ClusterID+"/"+item.Name] = true
+			}
+		}
+	}
+	listed := map[string]bool{}
+	pages := make([]pagination.EnvironmentPage[types.SwarmStackSummary], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		items := slices.DeleteFunc(slices.Clone(result.Value.Data), func(item types.SwarmStackSummary) bool {
+			key := item.ClusterID + "/" + item.Name
+			if item.ClusterID == "" || item.HasSource {
+				return false
+			}
+			if sourced[key] || listed[key] {
+				return true
+			}
+			listed[key] = true
+			return false
+		})
+		pages = append(pages, pagination.EnvironmentPage[types.SwarmStackSummary]{
+			Environment:    result.Environment,
+			Items:          items,
+			TotalAvailable: max(cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems)-int64(len(result.Value.Data)-len(items)), int64(len(items))),
+		})
+	}
+	data, resp := pagination.MergeEnvironmentPages(stackPagination, pages, params)
+
+	return types.Paginated[types.SwarmStackSummary]{
+		Success:            true,
+		Data:               data,
+		Pagination:         handlerutil.PaginationResponse(resp),
+		FailedEnvironments: collection.Failures,
+	}, nil
 }
 
 func (s *Service) DeployStack(ctx context.Context, environmentID string, req types.SwarmStackDeployRequest) (*types.SwarmStackDeployResponse, error) {
@@ -454,6 +511,7 @@ func (s *Service) buildPersistedStackSourceSummary(ctx context.Context, stackSou
 		Services:  0,
 		CreatedAt: createdAt,
 		UpdatedAt: updatedAt,
+		HasSource: true,
 	}, nil
 }
 

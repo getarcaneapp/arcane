@@ -23,7 +23,6 @@
 	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { projectService } from '#lib/services/project-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { Project, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -37,11 +36,12 @@
 	} from '#lib/utils/docker.js';
 	import {
 		environmentHref,
+		type EnvironmentPage,
+		type EnvironmentRow,
 		fetchAcrossEnvironments,
 		hasShownPermission,
-		rowKey,
-		type EnvironmentPage,
-		type EnvironmentRow
+		readableEnvironments,
+		rowKey
 	} from '#lib/utils/environments.js';
 	import { capitalizeFirstLetter, formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -90,7 +90,7 @@
 			await onRefreshData(options);
 			return;
 		}
-		projects = await fetchAcrossEnvironments(environmentStore.shown, options, (id, request, config) =>
+		projects = await fetchAcrossEnvironments(readableEnvironments('projects:list'), options, (id, request, config) =>
 			projectService.getProjectsForEnvironment(id, request, config)
 		);
 	}
@@ -326,7 +326,7 @@
 	<div class="flex items-center gap-2">
 		{#if item.gitOpsManagedBy}
 			<GitBranchIcon class="size-4" />
-			<a class="font-medium hover:underline" href="/environments/{item.environmentId}/gitops">
+			<a class="font-medium hover:underline" href={environmentHref('/gitops', item.environmentId)}>
 				{m.git()}
 			</a>
 		{:else}

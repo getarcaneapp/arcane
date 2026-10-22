@@ -9,7 +9,6 @@
 	import VirtualRows from '#lib/components/virtual-rows.svelte';
 	import { ArrowDownIcon, ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { cn } from '#lib/utils.js';
 	import { ansiToHtml, formatDateTime, nowInstantString } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -21,8 +20,7 @@
 	interface Props {
 		class?: string;
 		containerId?: string | null;
-		/** Environment that owns the resource; defaults to the selected one. */
-		environmentId?: string;
+		environmentId: string;
 		projectId?: string | null;
 		serviceId?: string | null;
 		type?: 'container' | 'project' | 'service';
@@ -170,10 +168,9 @@
 	let currentStreamSession = 0;
 	// The environment is part of the key: the same ID in another environment is a different stream.
 	function streamKey() {
-		const env = environmentId ?? '';
-		if (type === 'project') return projectId ? `${env}:project:${projectId}` : null;
-		if (type === 'service') return serviceId ? `${env}:svc:${serviceId}` : null;
-		return containerId ? `${env}:ctr:${containerId}` : null;
+		if (type === 'project') return projectId ? `${environmentId}:project:${projectId}` : null;
+		if (type === 'service') return serviceId ? `${environmentId}:svc:${serviceId}` : null;
+		return containerId ? `${environmentId}:ctr:${containerId}` : null;
 	}
 
 	const humanType = $derived(type === 'project' ? m.project() : type === 'service' ? m.swarm_service() : m.container());
@@ -186,13 +183,12 @@
 	}
 
 	async function buildLogWsEndpoint(): Promise<string> {
-		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 		const basePath =
 			type === 'project'
-				? `/api/environments/${envId}/ws/projects/${projectId}/logs`
+				? `/api/environments/${environmentId}/ws/projects/${projectId}/logs`
 				: type === 'service'
-					? `/api/environments/${envId}/ws/swarm/services/${serviceId}/logs`
-					: `/api/environments/${envId}/ws/containers/${containerId}/logs`;
+					? `/api/environments/${environmentId}/ws/swarm/services/${serviceId}/logs`
+					: `/api/environments/${environmentId}/ws/containers/${containerId}/logs`;
 		return buildWebSocketEndpoint(`${basePath}?follow=true&tail=${tailLines}&timestamps=true&format=json&batched=true`);
 	}
 

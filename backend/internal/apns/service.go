@@ -83,7 +83,7 @@ func NewApnsService(
 }
 
 func (s *ApnsService) Enabled(ctx context.Context) bool {
-	return s.config != nil && !s.config.AgentMode && s.settings.GetBoolSetting(ctx, "apnsEnabled")
+	return s.config != nil && !s.config.EdgeAgent && s.settings.GetBoolSetting(ctx, "apnsEnabled")
 }
 
 type relaySigner struct {

@@ -33,7 +33,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/notification/children/templates"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
@@ -102,7 +101,6 @@ var notificationsSent = func() metric.Int64Counter {
 type NotificationService struct {
 	db             *database.DB
 	config         *config.Config
-	settings       *settings.SettingsService
 	environmentSvc *environment.EnvironmentService
 	eventSvc       *event.EventService
 	apnsSvc        *apns.ApnsService
@@ -127,7 +125,6 @@ func logManagerDispatchNotification(ctx context.Context, target NotificationTarg
 func NewNotificationService(
 	db *database.DB,
 	cfg *config.Config,
-	settingsService *settings.SettingsService,
 	environmentSvc *environment.EnvironmentService,
 	eventSvc *event.EventService,
 	apnsSvc *apns.ApnsService,
@@ -135,7 +132,6 @@ func NewNotificationService(
 	return &NotificationService{
 		db:             db,
 		config:         cfg,
-		settings:       settingsService,
 		environmentSvc: environmentSvc,
 		eventSvc:       eventSvc,
 		apnsSvc:        apnsSvc,
@@ -187,7 +183,7 @@ func (s *NotificationService) dispatchNotificationToManager(ctx context.Context,
 	}
 
 	// Tunnel-connected edge agents often lack MANAGER_API_URL/AGENT_TOKEN, so they dispatch over the tunnel (#3002).
-	agentToken := strings.TrimSpace(s.settings.AgentToken(ctx))
+	agentToken := strings.TrimSpace(s.config.AgentToken)
 	if strings.TrimSpace(httpx.ManagerBaseURL(s.config.ManagerApiUrl)) == "" || agentToken == "" {
 		if publishViaTunnelErr := publishViaTunnel(); publishViaTunnelErr != nil {
 			return types.NotificationDispatchResponse{}, fmt.Errorf("notification dispatch needs either ARCANE_MANAGER_API_URL + ARCANE_AGENT_TOKEN or a connected edge tunnel: %w", publishViaTunnelErr)
@@ -228,7 +224,7 @@ func (s *NotificationService) dispatchNotificationToManager(ctx context.Context,
 }
 
 func (s *NotificationService) DispatchNotification(ctx context.Context, accessToken string, payload types.NotificationDispatchRequest) (types.NotificationDispatchResponse, error) {
-	if s.config != nil && s.config.AgentMode {
+	if s.config != nil && s.config.EdgeAgent {
 		return types.NotificationDispatchResponse{}, errors.New("notification dispatch is manager-only")
 	}
 	if s.environmentSvc == nil {
@@ -252,7 +248,7 @@ func (s *NotificationService) DispatchNotification(ctx context.Context, accessTo
 
 // DispatchNotificationForEnvironment dispatches for an agent already identified by its edge tunnel session (#3002).
 func (s *NotificationService) DispatchNotificationForEnvironment(ctx context.Context, environmentID string, payload types.NotificationDispatchRequest) (types.NotificationDispatchResponse, error) {
-	if s.config != nil && s.config.AgentMode {
+	if s.config != nil && s.config.EdgeAgent {
 		return types.NotificationDispatchResponse{}, errors.New("notification dispatch is manager-only")
 	}
 
@@ -689,7 +685,7 @@ func (s *NotificationService) SendBatchContainerUpdateNotification(ctx context.C
 		return nil
 	}
 
-	if s.config != nil && s.config.AgentMode {
+	if s.config != nil && s.config.EdgeAgent {
 		updates := make([]types.NotificationDispatchContainerUpdate, 0, len(entries))
 		for _, entry := range entries {
 			updates = append(updates, types.NotificationDispatchContainerUpdate{
@@ -740,7 +736,7 @@ func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, i
 		return 0, errors.New("updateInfo is required")
 	}
 
-	if s.config != nil && s.config.AgentMode {
+	if s.config != nil && s.config.EdgeAgent {
 		dispatchResponse, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
 			Kind: types.NotificationDispatchKindImageUpdate,
 			ImageUpdate: &types.NotificationDispatchImageUpdate{
@@ -782,7 +778,7 @@ func (s *NotificationService) sendImageUpdateNotificationForTarget(
 }
 
 func (s *NotificationService) SendContainerUpdateNotification(ctx context.Context, containerName, imageRef, oldDigest, newDigest string) error {
-	if s.config != nil && s.config.AgentMode {
+	if s.config != nil && s.config.EdgeAgent {
 		_, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
 			Kind: types.NotificationDispatchKindContainerUpdate,
 			ContainerUpdate: &types.NotificationDispatchContainerUpdate{
@@ -824,7 +820,7 @@ func (s *NotificationService) SendVulnerabilityNotification(ctx context.Context,
 		return nil
 	}
 
-	if s.config != nil && s.config.AgentMode {
+	if s.config != nil && s.config.EdgeAgent {
 		_, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
 			Kind: types.NotificationDispatchKindVulnerabilityFound,
 			VulnerabilityFound: &types.NotificationDispatchVulnerabilityFound{
@@ -870,7 +866,7 @@ func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Conte
 		return 0, nil
 	}
 
-	if s.config != nil && s.config.AgentMode {
+	if s.config != nil && s.config.EdgeAgent {
 		dispatchResponse, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
 			Kind: types.NotificationDispatchKindBatchImageUpdate,
 			BatchImageUpdate: &types.NotificationDispatchBatchImageUpdate{
@@ -934,7 +930,7 @@ func (s *NotificationService) SendPruneReportNotification(ctx context.Context, r
 		slog.WarnContext(ctx, "sending prune report notification with errors but no resources were pruned", "errorCount", len(result.Errors))
 	}
 
-	if s.config != nil && s.config.AgentMode {
+	if s.config != nil && s.config.EdgeAgent {
 		_, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
 			Kind: types.NotificationDispatchKindPruneReport,
 			PruneReport: &types.NotificationDispatchPruneReport{
@@ -965,7 +961,7 @@ func (s *NotificationService) sendPruneReportNotificationForTarget(ctx context.C
 
 // SendAutoHealNotification sends a notification when a container is auto-healed.
 func (s *NotificationService) SendAutoHealNotification(ctx context.Context, containerName, containerID string) error {
-	if s.config != nil && s.config.AgentMode {
+	if s.config != nil && s.config.EdgeAgent {
 		_, err := s.dispatchNotificationToManager(ctx, types.NotificationDispatchRequest{
 			Kind: types.NotificationDispatchKindAutoHeal,
 			AutoHeal: &types.NotificationDispatchAutoHeal{

@@ -1,12 +1,11 @@
 <script lang="ts">
-	import { beforeNavigate, goto, refreshAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import { ActionButtonGroup, type ActionButton } from '#lib/components/action-button-group/index.js';
+	import AgentCommandBlock from '#lib/components/agent-command-block.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
-	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import ImagePatchSettings from '#lib/components/settings/image-patch-settings.svelte';
 	import LifecycleSecuritySettings from '#lib/components/settings/lifecycle-security-settings.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
@@ -16,7 +15,6 @@
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
-	import { Input } from '#lib/components/ui/input/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { featureDefinitions } from '#lib/config/features.js';
@@ -26,7 +24,6 @@
 		AlertIcon,
 		DockerBrandIcon,
 		SecurityIcon,
-		GitBranchIcon,
 		JobsIcon,
 		ResetIcon,
 		ConnectionIcon,
@@ -34,7 +31,10 @@
 		ScanIcon,
 		ShieldCheckIcon,
 		CodeIcon,
-		SettingsIcon
+		SettingsIcon,
+		ClockIcon,
+		ActivityIcon,
+		NotificationsIcon
 	} from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
@@ -44,7 +44,7 @@
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
+	import type { DeploymentSnippets, Environment } from '#lib/types/environment.js';
 	import type { FeatureID } from '#lib/types/features.js';
 	import type { SettingKey, Settings } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
@@ -57,6 +57,8 @@
 
 	import EditableName from '../../projects/components/editable-name.svelte';
 	import EasyJoinDialog from '../../swarm/cluster/components/easy-join-dialog.svelte';
+	import ActivityTab from './components/activity-tab.svelte';
+	import BuildsTab from './components/builds-tab.svelte';
 	import ConnectionEdgeTab from './components/connection-edge-tab.svelte';
 	import DockerTab from './components/docker-tab.svelte';
 	import {
@@ -67,7 +69,9 @@
 	} from './components/environment-form-schema';
 	import EnvironmentStatusSummary from './components/environment-status-summary.svelte';
 	import JobsTab from './components/jobs-tab.svelte';
+	import NotificationsTab from './components/notifications-tab.svelte';
 	import StorageTab from './components/storage-tab.svelte';
+	import TimeoutsTab from './components/timeouts-tab.svelte';
 
 	let { data } = $props();
 	let { settings, versionInformation } = $derived(data);
@@ -77,7 +81,7 @@
 	let environment = $derived(loadedEnvironment);
 	// Edge reachability only reaches the browser through the live environment stream; the certificate is detail-only.
 	const liveEnvironment = $derived(
-		environment.isEdge ? environmentStore.available.find((env) => env.id === environment.id) : undefined
+		environment.id === '0' ? undefined : environmentStore.available.find((env) => env.id === environment.id)
 	);
 	let runtimeEnvironment: Environment = $derived(
 		liveEnvironment ? { ...liveEnvironment, edgeMTLSCertificate: environment.edgeMTLSCertificate } : environment
@@ -90,16 +94,14 @@
 	let isRegeneratingKey = $state(false);
 	let showRegenerateDialog = $state(false);
 	let regeneratedApiKey = $state<string | null>(null);
+	let regeneratedSnippets = $state<DeploymentSnippets | null>(null);
 	let easyJoinDialogOpen = $state(false);
 	let easyJoinSession = $state(0);
 	let nameInputRef = $state<HTMLInputElement | null>(null);
-	let isEditingApiUrl = $state(false);
 	const easyJoinCandidates = useEasyJoinCandidates();
 
-	// Only non-edge custom URL tests should temporarily override the displayed status.
-	let statusOverride = $state<EnvironmentStatus | null>(null);
-	let currentStatus = $derived(resolveEnvironmentStatus(runtimeEnvironment, statusOverride));
-	let isCurrentlyOnline = $derived(isEnvironmentOnline(runtimeEnvironment, statusOverride));
+	let currentStatus = $derived(resolveEnvironmentStatus(runtimeEnvironment));
+	let isCurrentlyOnline = $derived(isEnvironmentOnline(runtimeEnvironment));
 
 	const versionQuery = createQuery(() => {
 		const environmentId = environment.id;
@@ -118,13 +120,11 @@
 	let showSettingsTabs = $derived(runtimeEnvironment.enabled && hasPermission('settings:read', environment.id));
 	let settingsAvailable = $derived(isCurrentlyOnline && settings !== null);
 	let showJobsTab = $derived(showSettingsTabs && hasPermission('jobs:manage', environment.id));
+	let showNotificationsTab = $derived(runtimeEnvironment.enabled && hasPermission('notifications:manage', environment.id));
 	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.edgeMTLSCertificate));
-	let canPairEnvironments = $derived(hasPermission('environments:pair'));
+	let canPairEnvironments = $derived(hasPermission('environments:pair', environment.id));
 	let showMTLSDownloads = $derived(
-		canPairEnvironments &&
-			runtimeEnvironment.id !== '0' &&
-			runtimeEnvironment.isEdge &&
-			(runtimeEnvironment.edgeSecurityMode === 'mtls' || hasMTLSAssets)
+		canPairEnvironments && runtimeEnvironment.id !== '0' && (runtimeEnvironment.edgeSecurityMode === 'mtls' || hasMTLSAssets)
 	);
 	let canEasyJoin = $derived(
 		runtimeEnvironment.id !== '0' &&
@@ -196,23 +196,6 @@
 			});
 		}
 
-		if (environment.id !== '0') {
-			// Edge environments manage mTLS downloads and API key regeneration in the Connection & Edge tab.
-			if (!runtimeEnvironment.isEdge) {
-				actions.push({
-					id: 'regenerate-api-key',
-					action: 'base',
-					label: m.environments_regenerate_api_key(),
-					onclick: () => {
-						showRegenerateDialog = true;
-					},
-					disabled: isRegeneratingKey,
-					loading: isRegeneratingKey,
-					icon: ResetIcon
-				});
-			}
-		}
-
 		return actions;
 	});
 
@@ -223,7 +206,7 @@
 		if (runtimeEnvironment.id !== '0') {
 			items.push({
 				value: 'connection',
-				label: runtimeEnvironment.isEdge ? m.connection_edge() : m.environments_edge_connection_title(),
+				label: m.connection_edge(),
 				icon: ConnectionIcon
 			});
 		}
@@ -245,6 +228,21 @@
 					value: 'security',
 					label: m.security(),
 					icon: SecurityIcon
+				},
+				{
+					value: 'timeouts',
+					label: m.timeouts_settings(),
+					icon: ClockIcon
+				},
+				{
+					value: 'activity',
+					label: m.activity(),
+					icon: ActivityIcon
+				},
+				{
+					value: 'builds',
+					label: m.builds(),
+					icon: CodeIcon
 				}
 			);
 		}
@@ -257,18 +255,20 @@
 			});
 		}
 
-		items.push({
-			value: 'gitops',
-			label: m.git_syncs_title(),
-			icon: GitBranchIcon
-		});
+		if (showNotificationsTab) {
+			items.push({
+				value: 'notifications',
+				label: m.notifications_title(),
+				icon: NotificationsIcon
+			});
+		}
 
 		return items;
 	});
 
 	const urlTab = useUrlTab({
 		validTabs: () => tabItems.map((tab) => tab.value),
-		defaultTab: () => tabItems.find((tab) => tab.value !== 'gitops')?.value ?? 'gitops'
+		defaultTab: () => tabItems[0]?.value ?? 'features'
 	});
 	const activeTab = $derived(urlTab.value);
 
@@ -284,21 +284,6 @@
 		{ value: 'patching', label: m.security_image_patching_heading(), icon: ShieldCheckIcon },
 		{ value: 'lifecycle', label: m.security_lifecycle_hooks_heading(), icon: CodeIcon }
 	]);
-
-	$effect(() => {
-		// Don't bounce away when gitops is the only tab (offline/disabled environment) — the
-		// header still needs to be reachable to fix the connection.
-		if (activeTab === 'gitops' && tabItems.some((tab) => tab.value !== 'gitops'))
-			void goto(`/environments/${environment.id}/gitops`);
-	});
-
-	function handleTabChange(value: string) {
-		if (value === 'gitops') {
-			goto(`/environments/${environment.id}/gitops`);
-			return;
-		}
-		urlTab.select(value);
-	}
 
 	const snapshotValues = $derived(
 		settings?.values ??
@@ -327,17 +312,29 @@
 	);
 	const currentSettings = $derived({
 		...Object.fromEntries(settingFormKeys.map((key) => [key, snapshotValues[key as SettingKey]])),
+		...(settingFormKeys.includes('buildProvider') && !depotReady('', '') && { buildProvider: 'local' }),
+		...(settingFormKeys.includes('depotToken') && { depotToken: '' }),
 		name: loadedEnvironment.name,
-		enabled: loadedEnvironment.enabled,
-		apiUrl: loadedEnvironment.apiUrl,
-		accessToken: ''
+		enabled: loadedEnvironment.enabled
 	} as EnvironmentFormValues);
+
+	function settingLock(key: SettingKey) {
+		const meta = settings?.meta[key];
+		return meta?.locked ? meta : undefined;
+	}
+
+	function depotReady(projectId: string, token: string): boolean {
+		if (settings?.runtime.depotConfigured) return true;
+		return (
+			Boolean(projectId.trim() || settings?.values.depotProjectId?.trim()) &&
+			Boolean(token.trim() || settings?.values.depotToken?.trim())
+		);
+	}
 
 	// Custom save handler for environment-specific settings
 	async function saveEnvironmentSettings(formData: EnvironmentFormValues) {
 		const environmentId = environment.id;
 		const submittedInputs = formInputs;
-		const apiUrlChanged = formData.apiUrl !== environment.apiUrl;
 		const changedFeatures = featureDefinitions.filter(
 			(feature) => formData[feature.settingKey] !== currentSettings[feature.settingKey]
 		);
@@ -348,20 +345,12 @@
 		) {
 			throw new Error(m.features_unavailable());
 		}
-		if (formData.name !== environment.name || formData.enabled !== environment.enabled || apiUrlChanged) {
-			const update = changedFields(
-				environment,
-				environmentUpdateSchema.parse({
-					...formData,
-					accessToken: directRemoteUrlChanged ? formData.accessToken : undefined
-				})
-			);
+		if (formData.name !== environment.name || formData.enabled !== environment.enabled) {
+			const update = changedFields(environment, environmentUpdateSchema.parse(formData));
 			const result = await tryCatch(environmentManagementService.update(environmentId, update));
 			if (result.error) {
 				throw new Error(result.error.message);
 			}
-			submittedInputs.accessToken.value = '';
-			formData.accessToken = '';
 			if (environment.id === environmentId) {
 				environment = result.data;
 			}
@@ -370,8 +359,11 @@
 			await settingsService.updateSettingsForEnvironment(environmentId, settings, {
 				...Object.fromEntries(settingFormKeys.map((key) => [key, formData[key]])),
 				trivyCpuLimit: formData.trivyResourceLimitsEnabled ? formData.trivyCpuLimit : 0,
-				trivyMemoryLimitMb: formData.trivyResourceLimitsEnabled ? formData.trivyMemoryLimitMb : 0
+				trivyMemoryLimitMb: formData.trivyResourceLimitsEnabled ? formData.trivyMemoryLimitMb : 0,
+				buildProvider: depotReady(formData.depotProjectId, formData.depotToken) ? formData.buildProvider : 'local',
+				depotToken: formData.depotToken || undefined
 			});
+			submittedInputs.depotToken.value = '';
 		}
 		if (changedFeatures.length > 0) {
 			await featureStore.refresh(environmentId);
@@ -406,10 +398,6 @@
 		);
 	}
 
-	function clearAccessToken(): void {
-		formInputs.accessToken.value = '';
-	}
-
 	let { formInputs, settingsForm, resetForm, onSubmit } = $derived(
 		createSettingsForm({
 			schema: formSchema,
@@ -417,8 +405,7 @@
 			getCurrentSettings: () => ({
 				...currentSettings,
 				name: environment.name,
-				enabled: environment.enabled,
-				apiUrl: environment.apiUrl
+				enabled: environment.enabled
 			}),
 			onSave: saveEnvironmentSettings,
 			successMessage: m.common_update_success({ resource: m.resource_environment_cap() }),
@@ -426,15 +413,6 @@
 			onReset: () => toast.info(m.changes_reset())
 		})
 	);
-	let directRemoteUrlChanged = $derived(
-		environment.id !== '0' && !environment.isEdge && formInputs.apiUrl.value !== environment.apiUrl
-	);
-
-	beforeNavigate((navigation) => {
-		if (navigation.willUnload || (navigation.to && navigation.to.url.pathname !== navigation.from?.url.pathname)) {
-			clearAccessToken();
-		}
-	});
 
 	const shellOptions = [
 		{ value: '/bin/sh', label: '/bin/sh', description: m.docker_shell_sh_description() },
@@ -460,7 +438,6 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					isRefreshing = true;
-					statusOverride = null;
 					await featureStore.refresh(environment.id);
 					if (environment.id !== '0' && isCurrentlyOnline) await versionQuery.refetch();
 					await refreshAll();
@@ -504,11 +481,7 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					isTestingConnection = true;
-					const customUrl = formInputs.apiUrl.value !== environment.apiUrl ? formInputs.apiUrl.value : undefined;
-					const result = await environmentManagementService.testConnection(environment.id, customUrl);
-
-					const nextStatus = result.status as EnvironmentStatus;
-					statusOverride = customUrl && !environment.isEdge ? nextStatus : null;
+					const result = await environmentManagementService.testConnection(environment.id);
 
 					if (result.status === 'online') {
 						toast.success(m.environments_test_connection_success());
@@ -516,16 +489,12 @@
 						toast.error(m.environments_test_connection_error());
 					}
 
-					// If testing with saved URL (not custom), refresh to get backend's updated status
-					if (!customUrl) {
-						await refreshAll();
-					}
+					await refreshAll();
 				})()
 			);
 			if (operationResult.error !== null) {
 				const error = operationResult.error;
 
-				statusOverride = environment.isEdge ? null : 'offline';
 				toast.error(m.environments_test_connection_failed(), { description: extractApiErrorMessage(error) });
 			}
 		} finally {
@@ -546,6 +515,14 @@
 
 					if (result.apiKey) {
 						regeneratedApiKey = result.apiKey;
+						const snippets = await tryCatch(
+							queryClient.query({
+								queryKey: queryKeys.environments.deploymentSnippets(environment.id),
+								queryFn: () => environmentManagementService.getDeploymentSnippets(environment.id),
+								staleTime: 0
+							})
+						);
+						regeneratedSnippets = snippets.data;
 						toast.success(m.environments_regenerate_key_success());
 						await refreshAll();
 					} else {
@@ -615,69 +592,10 @@
 
 {#snippet apiUrlLine()}
 	<div class="flex min-w-0 items-center gap-1">
-		{#if isEditingApiUrl}
-			<Input
-				id="api-url"
-				type="url"
-				bind:value={formInputs.apiUrl.value}
-				oninput={clearAccessToken}
-				mono
-				size="sm"
-				class="h-7 w-full max-w-md"
-				aria-invalid={!!formInputs.apiUrl.error}
-				placeholder={m.environments_api_url_placeholder()}
-				autofocus
-				onkeydown={(e) => {
-					if (e.key === 'Enter') {
-						e.preventDefault();
-						isEditingApiUrl = false;
-					}
-					if (e.key === 'Escape') {
-						formInputs.apiUrl.value = environment.apiUrl;
-						clearAccessToken();
-						isEditingApiUrl = false;
-					}
-				}}
-				onblur={() => (isEditingApiUrl = false)}
-			/>
-		{:else if environment.id === '0'}
-			<ArcaneTooltip.Root>
-				<ArcaneTooltip.Trigger class="min-w-0">
-					<span class="block truncate px-1 font-mono text-xs text-muted-foreground">{formInputs.apiUrl.value}</span>
-				</ArcaneTooltip.Trigger>
-				<ArcaneTooltip.Content>
-					<p>{m.environments_local_setting_disabled()}</p>
-				</ArcaneTooltip.Content>
-			</ArcaneTooltip.Root>
-		{:else}
-			<button
-				type="button"
-				class="min-w-0 truncate rounded px-1 py-0.5 text-left font-mono text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
-				title={m.environments_api_url()}
-				onclick={() => (isEditingApiUrl = true)}
-			>
-				{formInputs.apiUrl.value || m.environments_api_url_placeholder()}
-			</button>
-		{/if}
-		<CopyButton text={formInputs.apiUrl.value} size="icon" class="size-6 shrink-0" />
+		<span class="block min-w-0 truncate px-1 font-mono text-xs text-muted-foreground">{environment.apiUrl}</span>
+		<CopyButton text={environment.apiUrl} size="icon" class="size-6 shrink-0" />
 		<span class="shrink-0 font-mono text-xs text-muted-foreground/70">#{environment.id}</span>
 	</div>
-	{#if formInputs.apiUrl.error}
-		<p class="mt-1 text-xs text-destructive">{formInputs.apiUrl.error}</p>
-	{/if}
-	{#if directRemoteUrlChanged}
-		<div class="mt-3 max-w-md">
-			<TextInputWithLabel
-				id="agent-access-token-for-url"
-				type="password"
-				autocomplete="off"
-				label={m.environments_access_token_for_url_label()}
-				description={m.environments_access_token_for_url_help()}
-				bind:value={formInputs.accessToken.value}
-				disabled={settingsForm.isLoading}
-			/>
-		</div>
-	{/if}
 {/snippet}
 
 {#snippet environmentHeaderActions()}
@@ -721,7 +639,7 @@
 	{#if regeneratedApiKey}
 		<div class="rounded-lg border border-success/30 bg-success/10 p-4 text-success">
 			<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-				<div class="space-y-2">
+				<div class="min-w-0 flex-1 space-y-2">
 					<p class="text-sm font-medium">{m.environments_new_api_key()}</p>
 					<div class="flex items-center gap-2">
 						<code class="flex-1 rounded-md bg-background/70 px-3 py-2 font-mono text-sm break-all">
@@ -730,12 +648,23 @@
 						<CopyButton text={regeneratedApiKey} size="icon" class="size-8 shrink-0" />
 					</div>
 					<p class="text-sm">{m.environments_api_key_save_warning()}</p>
+					{#if regeneratedSnippets}
+						<AgentCommandBlock
+							dockerRunLabel={m.docker_run_command()}
+							dockerRun={regeneratedSnippets.dockerRun}
+							dockerComposeLabel={m.common_docker_compose()}
+							dockerCompose={regeneratedSnippets.dockerCompose}
+						/>
+					{/if}
 				</div>
 
 				<ArcaneButton
 					action="base"
 					tone="outline"
-					onclick={() => (regeneratedApiKey = null)}
+					onclick={() => {
+						regeneratedApiKey = null;
+						regeneratedSnippets = null;
+					}}
 					customLabel={m.common_dismiss()}
 					class="shrink-0"
 				/>
@@ -750,7 +679,7 @@
 	backLabel={m.common_back()}
 	{tabItems}
 	selectedTab={activeTab}
-	onTabChange={handleTabChange}
+	onTabChange={urlTab.select}
 	showFloatingHeader={false}
 >
 	{#snippet headerInfo()}
@@ -856,8 +785,20 @@
 					</Tabs.Content>
 				</Tabs.Root>
 			</Tabs.Content>
+
+			<Tabs.Content value="timeouts">
+				<TimeoutsTab bind:formInputs lock={settingLock} />
+			</Tabs.Content>
+
+			<Tabs.Content value="activity">
+				<ActivityTab bind:formInputs lock={settingLock} />
+			</Tabs.Content>
+
+			<Tabs.Content value="builds">
+				<BuildsTab bind:formInputs settings={settings!} lock={settingLock} />
+			</Tabs.Content>
 		{:else if showSettingsTabs}
-			{#each ['storage', 'docker', 'security'] as tab (tab)}
+			{#each ['storage', 'docker', 'security', 'timeouts', 'activity', 'builds'] as tab (tab)}
 				<Tabs.Content value={tab}>
 					{@render settingsOffline()}
 				</Tabs.Content>
@@ -874,7 +815,17 @@
 			</Tabs.Content>
 		{/if}
 
-		<Tabs.Content value="gitops" />
+		{#if showNotificationsTab && isCurrentlyOnline}
+			<Tabs.Content value="notifications">
+				{#key environment.id}
+					<NotificationsTab environmentId={environment.id} disabled={settings?.readOnly ?? false} />
+				{/key}
+			</Tabs.Content>
+		{:else if showNotificationsTab}
+			<Tabs.Content value="notifications">
+				{@render settingsOffline()}
+			</Tabs.Content>
+		{/if}
 	{/snippet}
 </TabbedPageLayout>
 
@@ -894,10 +845,10 @@
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
 </AlertDialog.Root>
-{#key `${easyJoinSession}:${easyJoinCandidates.managerEnvironmentId}`}
+{#key `${easyJoinSession}:${easyJoinCandidates.managerFor(runtimeEnvironment.id)}`}
 	<EasyJoinDialog
 		bind:open={easyJoinDialogOpen}
-		managerEnvironmentId={easyJoinCandidates.managerEnvironmentId ?? undefined}
+		managerEnvironmentId={easyJoinCandidates.managerFor(runtimeEnvironment.id)}
 		targetEnvironmentId={runtimeEnvironment.id}
 		onComplete={easyJoinCandidates.refresh}
 	/>

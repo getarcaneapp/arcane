@@ -56,7 +56,7 @@ import (
 func provideBackupEngine(lc fx.Lifecycle, admission *runs.Admission, imageService *image.ImageService, roles *role.RoleService, cfg *config.Config) *backup.Engine {
 	engine := backup.NewEngine(admission, imageService)
 	engine.SetAuthorize(func(ctx context.Context, requester types.BackupRequester) error {
-		if cfg.AgentMode && requester.UserID == "agent" && requester.APIKeyID == "" {
+		if cfg.EdgeAgent && requester.UserID == "agent" && requester.APIKeyID == "" {
 			return nil
 		}
 		if requester.UserID == "" {

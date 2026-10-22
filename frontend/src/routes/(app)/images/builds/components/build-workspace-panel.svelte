@@ -65,7 +65,7 @@
 					showLabel={false}
 					customLabel={m.build_workspace_open_settings()}
 					title={m.build_workspace_open_settings()}
-					onclick={() => goto('/settings/builds')}
+					onclick={() => goto(`/environments/${environmentId}?tab=builds`)}
 					class="hover:bg-white/5"
 				/>
 			</div>

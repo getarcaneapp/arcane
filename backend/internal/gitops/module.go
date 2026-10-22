@@ -43,14 +43,15 @@ func RegisterGitOpsSyncs(api huma.API, syncService *GitOpsSyncService) {
 
 	handlerutil.RegisterSecured(
 		api,
-		handlerutil.Operation(
-			"listGitOpsSyncs",
-			"GET",
-			basePath,
-			"List GitOps syncs",
-			"Get a paginated list of GitOps syncs for an environment",
-			"GitOps Syncs",
-		),
+		huma.Operation{
+			OperationID: "listGitOpsSyncs",
+			Method:      "GET",
+			Path:        basePath,
+			Summary:     "List GitOps syncs",
+			Description: "Get a paginated list of GitOps syncs for an environment",
+			Tags:        []string{"GitOps Syncs"},
+			Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
+		},
 		authz.PermGitOpsList,
 		h.ListSyncs,
 	)

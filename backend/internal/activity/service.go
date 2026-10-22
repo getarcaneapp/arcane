@@ -8,6 +8,7 @@ import (
 	"hash/fnv"
 	"log/slog"
 	"maps"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -30,7 +31,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/dbutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 const (
@@ -46,10 +50,11 @@ const (
 var ErrActivityNotCancelable = errors.New("activity is not cancelable")
 
 type ActivityService struct {
-	db     *database.DB
-	pubsub *pubsub.Service
-	slots  *slots.Service
-	sweeps *sweeps.Service
+	Changes *concurrency.Signal[string]
+	db      *database.DB
+	pubsub  *pubsub.Service
+	slots   *slots.Service
+	sweeps  *sweeps.Service
 
 	// running maps an active activity ID to the cancel function of its work
 	// context, so cancellation requests can interrupt in-flight work. Entries
@@ -74,9 +79,11 @@ type (
 )
 
 func NewActivityService(db *database.DB, settingsService *settings.SettingsService) *ActivityService {
+	changes := concurrency.NewSignal[string]()
 	return &ActivityService{
+		Changes: changes,
 		db:      db,
-		pubsub:  pubsub.NewService(),
+		pubsub:  pubsub.NewService(changes),
 		slots:   slots.NewService(settingsService),
 		sweeps:  sweeps.NewService(db),
 		running: map[string]context.CancelCauseFunc{},
@@ -1340,6 +1347,45 @@ func (s *ActivityService) ListRemoteActivities(
 		}, nil
 	}
 	return activities, pagination.BuildResponse(total, 0, params), nil
+}
+
+func (s *ActivityService) AggregateActivities(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.Activity], error) {
+	collection, err := httpx.CollectEnvironments[types.Paginated[types.Activity]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}, "includeTotal": {"true"}})
+	if err != nil {
+		return types.Paginated[types.Activity]{}, err
+	}
+
+	pages := make([]pagination.EnvironmentPage[types.Activity], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		pages = append(pages, pagination.EnvironmentPage[types.Activity]{
+			Environment:    result.Environment,
+			Items:          result.Value.Data,
+			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
+		})
+	}
+	data, resp := pagination.MergeEnvironmentPages(pagination.Config[types.Activity]{
+		SortBindings: []pagination.SortBinding[types.Activity]{{
+			Key: kit.Ternary(params.Sort == "environment", "", params.Sort),
+			Fn: func(a, b types.Activity) int {
+				return compareActivities(a, b, pagination.QueryParams{SortParams: pagination.SortParams{Sort: kit.Ternary(params.Sort == "environment", "", params.Sort)}})
+			},
+		}},
+	}, pages, pagination.QueryParams{
+		SearchQuery: params.SearchQuery,
+		SortParams: pagination.SortParams{
+			Sort:  params.Sort,
+			Order: kit.Ternary(params.Sort == "", pagination.SortAsc, params.Order),
+		},
+		Params:  params.Params,
+		Filters: params.Filters,
+	})
+
+	return types.Paginated[types.Activity]{
+		Success:            true,
+		Data:               data,
+		Pagination:         handlerutil.PaginationResponse(resp),
+		FailedEnvironments: collection.Failures,
+	}, nil
 }
 
 func compareActivities(a, b types.Activity, params pagination.QueryParams) int {

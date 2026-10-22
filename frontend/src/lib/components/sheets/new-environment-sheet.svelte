@@ -7,12 +7,10 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
-	import UrlInput from '#lib/components/form/url-input.svelte';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import * as Tabs from '#lib/components/ui/tabs/index.js';
-	import { RemoteEnvironmentIcon, EdgeConnectionIcon, DownloadIcon } from '#lib/icons/index.js';
+	import { EdgeConnectionIcon, DownloadIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { isSessionCancelledError, withSessionSignal } from '#lib/services/api-service.js';
@@ -30,15 +28,10 @@
 	let { open = $bindable(false), onEnvironmentCreated }: NewEnvironmentSheetProps = $props();
 	const queryClient = useQueryClient();
 
-	type ConnectionMode = 'direct' | 'edge';
-	let connectionMode = $state<ConnectionMode>('direct');
-
 	let createdEnvironment = $state<{
 		id: string;
 		apiKey: string;
 		name: string;
-		apiUrl: string;
-		isEdge: boolean;
 		mtlsEnabled: boolean;
 		mtlsFiles?: DeploymentSnippetFile[];
 		dockerRun?: string;
@@ -47,8 +40,7 @@
 
 	let isLoadingSnippets = $state(false);
 	const createEnvironmentMutation = createMutation(() => ({
-		mutationFn: (variables: { dto: EnvironmentCreate; apiUrl: string; isEdge: boolean; useMTLS: boolean }) =>
-			environmentManagementService.create(variables.dto),
+		mutationFn: (variables: { dto: EnvironmentCreate; useMTLS: boolean }) => environmentManagementService.create(variables.dto),
 		onSuccess: async (created, variables) => {
 			await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
 
@@ -57,8 +49,6 @@
 					id: created.id,
 					apiKey: created.apiKey,
 					name: created.name,
-					apiUrl: variables.apiUrl,
-					isEdge: variables.isEdge,
 					mtlsEnabled: false
 				};
 
@@ -103,68 +93,22 @@
 	}));
 	const isSubmittingNewAgent = $derived(createEnvironmentMutation.isPending);
 
-	let newAgentUrlProtocol = $state<'https' | 'http'>('http');
 	let edgeMTLSEnabled = $state(false);
 
-	// Direct mode form schema requires URL
-	const directFormSchema = z.object({
-		name: z.string().min(1, m.environments_name_required()).max(25, m.environments_name_too_long()),
-		apiUrl: z.string().min(1, m.environments_server_url_required())
-	});
-
-	// Edge mode form schema only requires name
 	const edgeFormSchema = z.object({
 		name: z.string().min(1, m.environments_name_required()).max(25, m.environments_name_too_long())
 	});
-
-	const directForm = createForm<typeof directFormSchema>(directFormSchema, {
-		name: '',
-		apiUrl: ''
-	});
-	let directInputs = $derived(directForm.inputs);
 
 	const edgeForm = createForm<typeof edgeFormSchema>(edgeFormSchema, {
 		name: ''
 	});
 	let edgeInputs = $derived(edgeForm.inputs);
 
-	// Reset on open/close
-
-	function handleDirectSubmit() {
-		const data = directForm.validate();
-		if (!data) return;
-
-		const fullUrl = `${newAgentUrlProtocol}://${data.apiUrl}`;
-
-		const dto: EnvironmentCreate = {
-			name: data.name,
-			apiUrl: fullUrl,
-			useApiKey: true,
-			isEdge: false
-		};
-
-		createEnvironmentMutation.mutate({ dto, apiUrl: fullUrl, isEdge: false, useMTLS: false });
-	}
-
 	function handleEdgeSubmit() {
 		const data = edgeForm.validate();
 		if (!data) return;
 
-		const edgeApiHost = data.name
-			.trim()
-			.toLowerCase()
-			.replace(/[^a-z0-9]+/g, '-')
-			.replace(/(^-|-$)+/g, '');
-		const edgeApiUrl = `edge://${edgeApiHost}`;
-
-		const dto: EnvironmentCreate = {
-			name: data.name,
-			apiUrl: edgeApiUrl,
-			useApiKey: true,
-			isEdge: true
-		};
-
-		createEnvironmentMutation.mutate({ dto, apiUrl: '', isEdge: true, useMTLS: edgeMTLSEnabled });
+		createEnvironmentMutation.mutate({ dto: { name: data.name }, useMTLS: edgeMTLSEnabled });
 	}
 
 	function handleDone() {
@@ -226,12 +170,10 @@
 		<div class="space-y-6 px-6 py-6">
 			{#if createdEnvironment}
 				<div class="space-y-4">
-					{#if createdEnvironment.isEdge}
-						<div class="flex items-center gap-2 rounded-lg bg-primary/10 p-3 text-sm text-primary">
-							<EdgeConnectionIcon class="size-5" />
-							<span>{m.env_edge_agent_desc()}</span>
-						</div>
-					{/if}
+					<div class="flex items-center gap-2 rounded-lg bg-primary/10 p-3 text-sm text-primary">
+						<EdgeConnectionIcon class="size-5" />
+						<span>{m.env_edge_agent_desc()}</span>
+					</div>
 
 					<div class="space-y-2">
 						<div class="text-sm font-medium">{m.environments_api_key()}</div>
@@ -293,79 +235,30 @@
 					<ArcaneButton action="base" class="w-full" onclick={handleDone} customLabel={m.common_done()} />
 				</div>
 			{:else}
-				<Tabs.Root bind:value={connectionMode} class="w-full">
-					<Tabs.List class="grid w-full grid-cols-2">
-						<Tabs.Trigger value="direct" class="flex items-center">
-							<RemoteEnvironmentIcon class="size-4" />
-							Direct
-						</Tabs.Trigger>
-						<Tabs.Trigger value="edge" class="flex items-center">
-							<EdgeConnectionIcon class="size-4" />
-							Edge
-						</Tabs.Trigger>
-					</Tabs.List>
+				<p class="text-sm text-muted-foreground">
+					{m.environments_edge_desc()}
+				</p>
+				<form onsubmit={preventDefault(handleEdgeSubmit)} class="space-y-4">
+					<FormInput label={m.common_name()} placeholder={m.env_remote_docker_host()} bind:input={edgeInputs.name} />
 
-					<Tabs.Content value="direct" class="mt-4">
-						<p class="mb-4 text-sm text-muted-foreground">
-							{m.environments_direct_desc()}
-						</p>
-						<form onsubmit={preventDefault(handleDirectSubmit)} class="space-y-4">
-							<FormInput
-								label={m.common_name()}
-								placeholder={m.environments_production_docker()}
-								bind:input={directInputs.name}
-							/>
+					<LabeledSwitch
+						id="new-edge-agent-mtls"
+						label={m.environments_edge_mtls_enable()}
+						description={m.environments_edge_mtls_desc()}
+						checked={edgeMTLSEnabled}
+						onCheckedChange={(checked) => (edgeMTLSEnabled = checked)}
+						disabled={isSubmittingNewAgent}
+					/>
 
-							<UrlInput
-								id="new-agent-api-url"
-								label={m.environments_agent_address()}
-								placeholder={m.environments_agent_address_placeholder()}
-								description={m.environments_agent_address_description()}
-								bind:value={directInputs.apiUrl.value}
-								bind:protocol={newAgentUrlProtocol}
-								disabled={isSubmittingNewAgent}
-								required
-								error={directInputs.apiUrl.error ?? undefined}
-							/>
-
-							<ArcaneButton
-								action="confirm"
-								type="submit"
-								class="w-full"
-								disabled={isSubmittingNewAgent}
-								loading={isSubmittingNewAgent}
-								customLabel={m.environments_generate_config()}
-							/>
-						</form>
-					</Tabs.Content>
-
-					<Tabs.Content value="edge" class="mt-4">
-						<p class="mb-4 text-sm text-muted-foreground">
-							{m.environments_edge_desc()}
-						</p>
-						<form onsubmit={preventDefault(handleEdgeSubmit)} class="space-y-4">
-							<FormInput label={m.common_name()} placeholder={m.env_remote_docker_host()} bind:input={edgeInputs.name} />
-
-							<LabeledSwitch
-								id="new-edge-agent-mtls"
-								label={m.environments_edge_mtls_enable()}
-								description={m.environments_edge_mtls_desc()}
-								checked={edgeMTLSEnabled}
-								onCheckedChange={(checked) => (edgeMTLSEnabled = checked)}
-								disabled={isSubmittingNewAgent}
-							/>
-
-							<ArcaneButton
-								action="confirm"
-								type="submit"
-								class="w-full"
-								disabled={isSubmittingNewAgent}
-								loading={isSubmittingNewAgent}
-								customLabel={m.environments_generate_config()}
-							/>
-						</form>
-					</Tabs.Content>
-				</Tabs.Root>
+					<ArcaneButton
+						action="confirm"
+						type="submit"
+						class="w-full"
+						disabled={isSubmittingNewAgent}
+						loading={isSubmittingNewAgent}
+						customLabel={m.environments_generate_config()}
+					/>
+				</form>
 			{/if}
 		</div>
 	{/snippet}

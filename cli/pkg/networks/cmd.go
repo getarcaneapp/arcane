@@ -241,7 +241,7 @@ func newPruneCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVarP(&opts.forceFlag, "force", "f", false, "Force prune without confirmation")
-	cmdutil.SetScope(cmdutil.ScopeFleet, cmd)
+	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
 	return cmd
 }
 
@@ -362,7 +362,7 @@ func newConnectCmd() *cobra.Command {
 			}
 
 			app, _ := runtime.From(cmd.Context())
-			preview := app.PreviewEnabled()
+			allEnvironments := app.AllEnvironments()
 			allowPrompt := cmdutil.AllowPrompt(cmd)
 			resolved, _, err := networkRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 			if err != nil {
@@ -370,7 +370,7 @@ func newConnectCmd() *cobra.Command {
 			}
 
 			containerID := args[1]
-			if preview {
+			if allEnvironments {
 				dependent, _, resolveErr := containers.ContainerRef.Resolve(cmd.Context(), c, args[1], allowPrompt)
 				if resolveErr != nil {
 					return resolveErr
@@ -420,7 +420,7 @@ func newDisconnectCmd() *cobra.Command {
 			}
 
 			app, _ := runtime.From(cmd.Context())
-			preview := app.PreviewEnabled()
+			allEnvironments := app.AllEnvironments()
 			allowPrompt := cmdutil.AllowPrompt(cmd)
 			resolved, _, err := networkRef.Resolve(cmd.Context(), c, args[0], allowPrompt)
 			if err != nil {
@@ -428,7 +428,7 @@ func newDisconnectCmd() *cobra.Command {
 			}
 
 			containerID := args[1]
-			if preview {
+			if allEnvironments {
 				dependent, _, resolveErr := containers.ContainerRef.Resolve(cmd.Context(), c, args[1], allowPrompt)
 				if resolveErr != nil {
 					return resolveErr

@@ -1,6 +1,6 @@
-import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
+import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 import { PODMAN_SYSTEMD_UNIT_LABEL, type PodmanStatus } from '#lib/types/podman.js';
-import { environmentHref } from '#lib/utils/environments.js';
+import { environmentHref, readableEnvironments } from '#lib/utils/environments.js';
 
 export type PodmanStateVariant = 'green' | 'red' | 'amber' | 'gray';
 
@@ -23,7 +23,7 @@ export function shownPodmanEnvironments(
 	statuses: Record<string, PodmanStatus>,
 	supports: (status: PodmanStatus) => boolean = () => true
 ): EnvironmentRef[] {
-	return environmentStore.shown.filter((env) => {
+	return readableEnvironments('podman:read').filter((env) => {
 		const status = statuses[env.id];
 		return status !== undefined && supports(status);
 	});

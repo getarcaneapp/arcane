@@ -4,17 +4,10 @@ import { m } from '#lib/paraglide/messages.js';
 
 export const environmentUpdateSchema = z.object({
 	name: z.string().min(1),
-	enabled: z.boolean(),
-	apiUrl: z.string(),
-	accessToken: z
-		.string()
-		.trim()
-		.optional()
-		.transform((value) => value || undefined)
+	enabled: z.boolean()
 });
 
 export const environmentFormSchema = environmentUpdateSchema.extend({
-	accessToken: z.string(),
 	pollingEnabled: z.boolean(),
 	imageEventWatcherEnabled: z.boolean(),
 	autoUpdate: z.boolean(),
@@ -73,7 +66,26 @@ export const environmentFormSchema = environmentUpdateSchema.extend({
 	autoHealEnabled: z.boolean(),
 	autoHealExcludedContainers: z.string(),
 	autoHealMaxRestarts: z.coerce.number().int().min(1),
-	autoHealRestartWindow: z.coerce.number().int().min(1)
+	autoHealRestartWindow: z.coerce.number().int().min(1),
+	dockerApiTimeout: z.coerce.number().int().nonnegative(),
+	dockerImagePullTimeout: z.coerce.number().int().nonnegative(),
+	deployWaitTimeout: z.coerce.number().int().nonnegative(),
+	trivyScanTimeout: z.coerce.number().int().nonnegative(),
+	gitOperationTimeout: z.coerce.number().int().nonnegative(),
+	httpClientTimeout: z.coerce.number().int().nonnegative(),
+	registryTimeout: z.coerce.number().int().nonnegative(),
+	registryTagTimeout: z.coerce.number().int().nonnegative(),
+	proxyRequestTimeout: z.coerce.number().int().nonnegative(),
+	activityHistoryRetentionDays: z.coerce.number().int().nonnegative(),
+	upgradeLogRetentionDays: z.coerce.number().int().min(0).max(3650),
+	activityHistoryMaxEntries: z.coerce.number().int().nonnegative(),
+	maxConcurrentActivities: z.coerce.number().int().nonnegative(),
+	buildProvider: z.enum(['local', 'depot']),
+	buildsDirectory: z.string(),
+	buildTimeout: z.coerce.number().int().nonnegative(),
+	buildHistoryRetentionDays: z.coerce.number().int().nonnegative(),
+	depotProjectId: z.string(),
+	depotToken: z.string()
 });
 
 export function requireTrivyServerUrl(

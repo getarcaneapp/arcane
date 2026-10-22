@@ -60,12 +60,13 @@
 	import { COMPOSE_PROJECT_LABEL, getContainerIpAddresses, getThemedIconUrl, parseImageRef } from '#lib/utils/docker.js';
 	import {
 		environmentHref,
+		type EnvironmentPage,
+		type EnvironmentRow,
 		fetchAcrossEnvironments,
 		hasShownPermission,
 		listScopes,
-		rowKey,
-		type EnvironmentPage,
-		type EnvironmentRow
+		readableEnvironments,
+		rowKey
 	} from '#lib/utils/environments.js';
 	import { formatDateTimeShort, truncateImageDigest } from '#lib/utils/formatting.js';
 	import { quadletUnitHref } from '#lib/utils/podman.js';
@@ -163,7 +164,7 @@
 	async function fetchContainers(request: ContainerListRequestOptions): Promise<ContainerPage> {
 		return onRefreshData
 			? onRefreshData(request)
-			: fetchAcrossEnvironments(environmentStore.shown, request, (id, request, config) =>
+			: fetchAcrossEnvironments(readableEnvironments('containers:list'), request, (id, request, config) =>
 					containerService.getContainersForEnvironment(id, request, config)
 				);
 	}
@@ -670,8 +671,8 @@
 	{/if}
 {/snippet}
 
-{#snippet PortsCell({ item }: { item: ContainerSummaryDto })}
-	<PortBadge ports={item.ports ?? []} hideExposed={hideExposedPorts} wrap={false} />
+{#snippet PortsCell({ item }: { item: ContainerRow })}
+	<PortBadge ports={item.ports ?? []} environmentId={item.environmentId} hideExposed={hideExposedPorts} wrap={false} />
 {/snippet}
 
 {#snippet NameCell({ item }: { item: ContainerRow })}
@@ -911,7 +912,7 @@
 								{m.common_ports()}
 							</div>
 							<div class="mt-1">
-								<PortBadge ports={item.ports} hideExposed={hideExposedPorts} />
+								<PortBadge ports={item.ports} environmentId={item.environmentId} hideExposed={hideExposedPorts} />
 							</div>
 						</div>
 					</div>

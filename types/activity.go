@@ -50,8 +50,8 @@ type ActivityType string
 type ActivityMessageLevel string
 
 type Activity struct {
-	ID                    string             `json:"id"`
-	EnvironmentID         string             `json:"environmentId"`
+	ID string `json:"id"`
+	EnvironmentTag
 	BatchID               *string            `json:"batchId,omitempty"`
 	SourceEnvironmentID   string             `json:"sourceEnvironmentId,omitempty"`
 	SourceEnvironmentName string             `json:"sourceEnvironmentName,omitempty"`
@@ -102,10 +102,7 @@ type ActivityStreamEvent struct {
 	Message       *ActivityMessage `json:"message,omitempty"`
 	Error         string           `json:"error,omitempty"`
 	Timestamp     time.Time        `json:"timestamp"`
-	// ActivityType is the type of the owning activity for events that carry no
-	// activity payload. It is an internal hint used to skip visibility rereads
-	// for ordinary activities and is never serialized.
-	ActivityType ActivityType `json:"-"`
+	ActivityType  ActivityType     `json:"-"`
 }
 
 type ActivityClearHistoryResult struct {

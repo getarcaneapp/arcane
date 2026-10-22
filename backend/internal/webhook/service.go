@@ -32,6 +32,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/updater"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 const (
@@ -393,6 +394,28 @@ func (s *WebhookService) ListWebhookSummaries(ctx context.Context, environmentID
 	}
 
 	return summaries, nil
+}
+
+func (s *WebhookService) AggregateWebhookSummaries(ctx context.Context) (types.ApiResponse[[]types.Webhook], error) {
+	collection, err := httpx.CollectEnvironments[types.ApiResponse[[]types.Webhook]](ctx, nil)
+	if err != nil {
+		return types.ApiResponse[[]types.Webhook]{}, err
+	}
+	webhooks := make([]types.Webhook, 0)
+	for _, result := range collection.Results {
+		for _, webhook := range result.Value.Data {
+			webhook.SetEnvironment(result.Environment)
+			webhooks = append(webhooks, webhook)
+		}
+	}
+	slices.SortStableFunc(webhooks, func(a, b types.Webhook) int {
+		return b.CreatedAt.Compare(a.CreatedAt)
+	})
+	return types.ApiResponse[[]types.Webhook]{
+		Success:            true,
+		Data:               webhooks,
+		FailedEnvironments: collection.Failures,
+	}, nil
 }
 
 // remoteWebhookTargetNames fetches target names keyed by target type and ID from a remote environment.

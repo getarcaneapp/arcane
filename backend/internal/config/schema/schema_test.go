@@ -231,7 +231,6 @@ func countDocumentedSettings() int {
 var expectedEnvConfigVars = []string{
 	"ARCANE_ACTOR_PORT",
 	"ARCANE_ADMIN_STATIC_API_KEY",
-	"ARCANE_AGENT_MODE",
 	"ARCANE_AGENT_TOKEN",
 	"ARCANE_ALLOW_CLI_MFA_RESET",
 	"ARCANE_ALLOW_CLI_PASSWORD_RESET",

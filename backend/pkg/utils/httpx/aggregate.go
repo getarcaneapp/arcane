@@ -103,6 +103,26 @@ func CollectEnvironments[R any](ctx context.Context, overrides url.Values) (Envi
 	return collection, nil
 }
 
+func CollectEnvironmentData[T any](ctx context.Context, overrides url.Values, merge func([]types.EnvironmentData[T]) T) (types.ApiResponse[T], error) {
+	collection, err := CollectEnvironments[types.ApiResponse[T]](ctx, overrides)
+	if err != nil {
+		return types.ApiResponse[T]{}, err
+	}
+	environments := make([]types.EnvironmentData[T], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		environments = append(environments, types.EnvironmentData[T]{
+			Environment: result.Environment,
+			Data:        result.Value.Data,
+		})
+	}
+	return types.ApiResponse[T]{
+		Success:            true,
+		Data:               merge(environments),
+		Environments:       environments,
+		FailedEnvironments: collection.Failures,
+	}, nil
+}
+
 func dispatchEnvironment[R any](ctx context.Context, scope *EnvironmentScope, id string, overrides url.Values) (R, error) {
 	var value R
 	rest, ok := strings.CutPrefix(scope.Request.URL.EscapedPath(), environmentsPathPrefix)

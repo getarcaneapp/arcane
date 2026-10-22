@@ -33,7 +33,7 @@ test.describe('Settings', () => {
 		await expect(environmentTitleButton(page)).toHaveText(newName);
 	}
 
-	async function createDirectEnvironmentViaUI(
+	async function createEdgeEnvironmentViaUI(
 		page: Page,
 		environmentName: string,
 		environmentIds: Set<string>
@@ -46,8 +46,7 @@ test.describe('Settings', () => {
 
 		const dialog = page.getByRole('dialog');
 		await waitForDialogReady(dialog);
-		await dialog.getByLabel('Name', { exact: true }).fill(environmentName);
-		await dialog.getByLabel('Agent Address', { exact: true }).fill('localhost:3552');
+		await dialog.getByPlaceholder('Remote Docker Host').fill(environmentName);
 		const createResponsePromise = page.waitForResponse(
 			(response) =>
 				response.request().method() === 'POST' &&
@@ -55,7 +54,8 @@ test.describe('Settings', () => {
 		);
 		await page.getByRole('button', { name: 'Generate Agent Configuration', exact: true }).click();
 		const createResponse = await createResponsePromise;
-		expect(createResponse.ok(), 'Create direct environment').toBeTruthy();
+		expect(createResponse.ok(), 'Create edge environment').toBeTruthy();
+		expect(createResponse.request().postDataJSON()).toEqual({ name: environmentName });
 		const created: { data: { id: string; apiKey?: string } } = await createResponse.json();
 		environmentIds.add(created.data.id);
 		expect(created.data.id).toBeTruthy();
@@ -63,6 +63,10 @@ test.describe('Settings', () => {
 
 		await expect(
 			page.getByRole('heading', { name: 'Environment Created Successfully', exact: true })
+		).toBeVisible();
+		await expect(dialog.getByText(created.data.apiKey, { exact: true })).toBeVisible();
+		await expect(
+			dialog.locator('pre code').filter({ hasText: 'ARCANE_EDGE_AGENT=true' }).first()
 		).toBeVisible();
 		await page.getByRole('button', { name: 'Done', exact: true }).click();
 		await expect(page.getByRole('button', { name: environmentName, exact: true })).toBeVisible();
@@ -165,15 +169,8 @@ test.describe('Settings', () => {
 		});
 
 		test('should keep primary tabs selectable and restore them from the URL', async ({ page }) => {
-			await page.goto('/settings');
+			await page.goto(`/environments/${LOCAL_ENV_ID}?tab=jobs`);
 			await page.waitForLoadState('load');
-
-			const jobScheduleCategory = page
-				.getByRole('button')
-				.filter({ hasText: 'Automations' })
-				.first();
-			await expect(jobScheduleCategory).toBeVisible();
-			await jobScheduleCategory.click();
 
 			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('jobs');
 			await expect(page.getByRole('tab', { name: 'Automations', exact: true })).toHaveAttribute(
@@ -221,116 +218,63 @@ test.describe('Settings', () => {
 			const environmentIds = new Set<string>();
 
 			registerCleanup(() => removeCreatedEnvironments(page, environmentIds, envName));
-			const { id: environmentId, apiKey } = await createDirectEnvironmentViaUI(
+			const { id: environmentId, apiKey } = await createEdgeEnvironmentViaUI(
 				page,
 				envName,
 				environmentIds
 			);
 			const environmentPath = `/api/environments/${environmentId}`;
-			await expect.poll(() => activityStatuses.get(environmentId)).toBe(502);
+			await expect.poll(() => activityStatuses.get(environmentId)).toBe(200);
 			expect((await page.request.get('/api/auth/me', { timeout: 5_000 })).status()).toBe(200);
 			await expect(page).toHaveURL('/environments');
-			await page.getByRole('button', { name: 'Open activity center' }).first().click();
-			const activityCenter = page.getByRole('dialog', { name: 'Activity Center' });
-			await expect(
-				activityCenter.getByText(`Could not load activity from ${envName}`, { exact: true })
-			).toBeVisible();
-			await page.keyboard.press('Escape');
-			await expect(activityCenter).toBeHidden();
 			await page.getByRole('button', { name: envName, exact: true }).click();
 			await expect(page).toHaveURL(/\/environments\/[^/?]+\?tab=[a-z]+$/);
-
-			const apiUrlButton = page.getByTitle('API URL', { exact: true });
-			const originalApiUrl = (await apiUrlButton.textContent())!.trim();
-			const updatedApiUrl = originalApiUrl.replace(':3552', ':3553');
-			expect(updatedApiUrl).not.toBe(originalApiUrl);
+			await expect(page.getByText(/^edge:\/\/settings-ui-/).first()).toBeVisible();
 
 			await renameEnvironmentInHeader(page, updatedName);
 			const nameRequest = await saveAndWaitForPatch(page, environmentPath);
-			expect(nameRequest.postDataJSON()).not.toHaveProperty('accessToken');
+			expect(nameRequest.postDataJSON()).toEqual({ name: updatedName });
 
 			await page.reload();
 			await expect(environmentTitleButton(page)).toHaveText(updatedName);
 
-			await apiUrlButton.click();
-			await page.locator('#api-url').fill(updatedApiUrl);
-			await page.locator('#api-url').press('Tab');
-			const tokenInput = page.getByLabel('Agent access token', { exact: true });
-			await expect(tokenInput).toBeVisible();
-			await expect(tokenInput).toHaveAttribute('type', 'password');
-			await expect(tokenInput).toHaveValue('');
-
-			const rejectedResponsePromise = page.waitForResponse(
-				(response) =>
-					response.request().method() === 'PATCH' &&
-					new URL(response.url()).pathname === environmentPath
-			);
-			await page.getByRole('button', { name: 'Save', exact: true }).first().click();
-			const rejectedResponse = await rejectedResponsePromise;
-			expect(rejectedResponse.status()).toBe(400);
-			expect(rejectedResponse.request().postDataJSON()).not.toHaveProperty('accessToken');
+			await page.getByRole('tab', { name: 'Connection & Edge', exact: true }).click();
+			await page.getByRole('button', { name: 'Regenerate API Key', exact: true }).click();
+			const regenerateDialog = page.getByRole('alertdialog');
 			await expect(
-				page.getByText('Changing environment API URL requires re-entering the accessToken')
+				regenerateDialog.getByRole('heading', { name: 'Regenerate API Key?', exact: true })
 			).toBeVisible();
-			const afterRejection = await page.request.get(environmentPath);
-			expect(afterRejection.ok()).toBe(true);
-			expect(((await afterRejection.json()) as { data: { apiUrl: string } }).data.apiUrl).toBe(
-				originalApiUrl
-			);
-
-			await tokenInput.fill(apiKey);
-			await apiUrlButton.click();
-			await page.locator('#api-url').fill(`${updatedApiUrl}/changed`);
-			await page.locator('#api-url').press('Tab');
-			await expect(tokenInput).toHaveValue('');
-			await apiUrlButton.click();
-			await page.locator('#api-url').fill(updatedApiUrl);
-			await page.locator('#api-url').press('Tab');
-			await tokenInput.fill(apiKey);
-			await page.route(`**${environmentPath}`, async (route) => {
-				if (route.request().method() !== 'PATCH') return route.continue();
-				await route.fulfill({
-					status: 503,
-					contentType: 'application/problem+json',
-					body: JSON.stringify({ detail: 'Temporary update failure' })
-				});
-			});
-			const failedResponsePromise = page.waitForResponse(
+			const regenerateResponsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'PATCH' &&
 					new URL(response.url()).pathname === environmentPath
 			);
-			await page.getByRole('button', { name: 'Save', exact: true }).first().click();
-			expect((await failedResponsePromise).status()).toBe(503);
-			await expect(page.getByText('Temporary update failure')).toBeVisible();
-			expect((await tokenInput.inputValue()) === apiKey).toBe(true);
-			await page.unroute(`**${environmentPath}`);
+			await regenerateDialog
+				.getByRole('button', { name: 'Regenerate API Key', exact: true })
+				.click();
+			const regenerateResponse = await regenerateResponsePromise;
+			expect(regenerateResponse.ok(), 'Regenerate API key').toBeTruthy();
+			expect(regenerateResponse.request().postDataJSON()).toEqual({ regenerateApiKey: true });
+			const regenerated: { data: { apiKey?: string } } = await regenerateResponse.json();
+			if (!regenerated.data.apiKey) throw new Error('Regenerating did not return an API key');
+			expect(regenerated.data.apiKey === apiKey).toBe(false);
 
-			const updateRequest = await saveAndWaitForPatch(page, environmentPath);
-			const updatePayload = updateRequest.postDataJSON() as Record<string, unknown>;
-			expect(updatePayload.apiUrl).toBe(updatedApiUrl);
-			expect(updatePayload.accessToken === apiKey).toBe(true);
-			await expect(tokenInput).toBeHidden();
-			await apiUrlButton.click();
-			await page.locator('#api-url').fill(`${updatedApiUrl}/another`);
-			await page.locator('#api-url').press('Tab');
-			await expect(tokenInput).toHaveValue('');
-			await apiUrlButton.click();
-			await page.locator('#api-url').press('Escape');
-			await expect(apiUrlButton).toHaveText(updatedApiUrl);
-			await expect(tokenInput).toBeHidden();
+			await expect(page.getByText('New API Key', { exact: true })).toBeVisible();
+			await expect(page.getByText(regenerated.data.apiKey, { exact: true })).toBeVisible();
+			const regeneratedSnippet = page
+				.locator('pre code')
+				.filter({ hasText: 'ARCANE_EDGE_AGENT=true' });
+			await expect(regeneratedSnippet.first()).toBeVisible();
+			await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
+			await expect(page.getByText('New API Key', { exact: true })).toBeHidden();
 
-			await page.reload();
-			await expect(apiUrlButton).toHaveText(updatedApiUrl);
-			await expect(tokenInput).toBeHidden();
 			await renameEnvironmentInHeader(page, `${updatedName}-again`);
 			const secondNameRequest = await saveAndWaitForPatch(page, environmentPath);
-			expect(secondNameRequest.postDataJSON()).not.toHaveProperty('accessToken');
+			expect(secondNameRequest.postDataJSON()).toEqual({ name: `${updatedName}-again` });
 		});
 
 		test('should update and save the base server URL in Docker settings', async ({ page }) => {
 			await openLocalEnvironment(page);
-			await expect(page.getByLabel('Agent access token', { exact: true })).toBeHidden();
 			await page.getByRole('tab', { name: 'Docker Settings', exact: true }).click();
 
 			const baseServerUrlInput = page.locator('#base-server-url');
@@ -344,11 +288,7 @@ test.describe('Settings', () => {
 			try {
 				await baseServerUrlInput.fill(updatedBaseServerUrl);
 				await expect(baseServerUrlInput).toHaveValue(updatedBaseServerUrl);
-				const settingsRequest = await saveAndWaitForPatch(
-					page,
-					`/api/environments/${LOCAL_ENV_ID}/settings`
-				);
-				expect(settingsRequest.postDataJSON()).not.toHaveProperty('accessToken');
+				await saveAndWaitForPatch(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
 
 				await page.reload();
 				await page.getByRole('tab', { name: 'Docker Settings', exact: true }).click();
@@ -425,21 +365,10 @@ test.describe('Settings', () => {
 			const envName = `settings-reset-${Date.now().toString().slice(-5)}`;
 			const environmentIds = new Set<string>();
 			registerCleanup(() => removeCreatedEnvironments(page, environmentIds, envName));
-			const { id: environmentId, apiKey } = await createDirectEnvironmentViaUI(
-				page,
-				envName,
-				environmentIds
-			);
+			const { id: environmentId } = await createEdgeEnvironmentViaUI(page, envName, environmentIds);
 			await openEnvironment(page, environmentId);
 			const titleButton = environmentTitleButton(page);
-			const apiUrlButton = page.getByTitle('API URL', { exact: true });
-			const originalApiUrl = (await apiUrlButton.textContent())!.trim();
 			await renameEnvironmentInHeader(page, `${envName}-pending`);
-			await apiUrlButton.click();
-			await page.locator('#api-url').fill(originalApiUrl.replace(':3552', ':3553'));
-			await page.locator('#api-url').press('Tab');
-			const tokenInput = page.getByLabel('Agent access token', { exact: true });
-			await tokenInput.fill(apiKey);
 
 			const saveButton = page.getByRole('button', { name: 'Save', exact: true }).first();
 			const resetButton = page.getByRole('button', { name: 'Reset', exact: true }).first();
@@ -447,25 +376,16 @@ test.describe('Settings', () => {
 			await expect(resetButton).toBeVisible();
 			await resetButton.click();
 			await expect(titleButton).toHaveText(envName);
-			await expect(apiUrlButton).toHaveText(originalApiUrl);
-			await expect(tokenInput).toBeHidden();
 			await expect(saveButton).toBeDisabled();
 
-			await apiUrlButton.click();
-			await page.locator('#api-url').fill(originalApiUrl.replace(':3552', ':3553'));
-			await page.locator('#api-url').press('Tab');
-			await expect(tokenInput).toHaveValue('');
-			await tokenInput.fill(apiKey);
+			await renameEnvironmentInHeader(page, `${envName}-discarded`);
+			await expect(saveButton).toBeEnabled();
 			await page.getByRole('link', { name: 'Back', exact: true }).first().click();
 			await expect(page).toHaveURL(/\/environments$/);
 			await expect(page.getByRole('heading', { name: 'Environments', exact: true })).toBeVisible();
 			await page.getByRole('button', { name: envName, exact: true }).click();
 			await expect(page).toHaveURL(new RegExp(`/environments/${environmentId}(?:\\?|$)`));
 			await expect(environmentTitleButton(page)).toHaveText(envName);
-			await apiUrlButton.click();
-			await page.locator('#api-url').fill(originalApiUrl.replace(':3552', ':3553'));
-			await page.locator('#api-url').press('Tab');
-			await expect(tokenInput).toHaveValue('');
 		});
 
 		test('should update and save the default deploy pull policy in Docker settings', async ({
@@ -626,23 +546,21 @@ test.describe('Settings', () => {
 	});
 });
 
-test.describe('Switching', () => {
+test.describe('Environment filter', () => {
 	const localEnvironment = {
 		id: '0',
 		name: 'Local Test',
 		apiUrl: 'unix:///var/run/docker.sock',
 		status: 'online',
-		enabled: true,
-		isEdge: false
+		enabled: true
 	};
 
 	const remoteEnvironment = {
 		id: 'remote-switch-test',
 		name: 'Remote Test',
-		apiUrl: 'https://remote.example.invalid',
+		apiUrl: 'edge://remote-switch-test',
 		status: 'online',
-		enabled: true,
-		isEdge: false
+		enabled: true
 	};
 
 	function paginated<T>(data: T[]) {
@@ -707,7 +625,6 @@ test.describe('Switching', () => {
 
 	async function mockEnvironmentCatalog(page: Page) {
 		await page.addInitScript(() => {
-			localStorage.removeItem('selectedEnvironmentId');
 			localStorage.removeItem('arcane-container-table');
 		});
 		await page.context().route(/\/api\/environments(?:\?.*)?$/, async (route) => {
@@ -766,14 +683,12 @@ test.describe('Switching', () => {
 			});
 	}
 
-	async function selectRemoteEnvironment(page: Page) {
-		await page.getByRole('button').filter({ hasText: localEnvironment.name }).first().click();
-		const dialog = page.getByRole('dialog', { name: 'Select Environment' });
-		await expect(dialog).toBeVisible();
-		await dialog.getByRole('button').filter({ hasText: remoteEnvironment.name }).first().click();
+	async function filterToRemoteEnvironment(page: Page) {
+		await page.getByTestId('facet-environment-trigger').click();
+		await page.getByTestId(`facet-environment-option-${remoteEnvironment.id}`).click();
 	}
 
-	test.describe('Environment switch isolation', () => {
+	test.describe('Environment filter isolation', () => {
 		test('clears local rows and stats targets while the remote response is delayed', async ({
 			page
 		}) => {
@@ -822,7 +737,7 @@ test.describe('Switching', () => {
 			).toBeVisible();
 
 			try {
-				await selectRemoteEnvironment(page);
+				await filterToRemoteEnvironment(page);
 				await remoteStarted;
 				await expect(
 					page.getByRole('link', { name: 'local-a-container', exact: true })
@@ -878,7 +793,7 @@ test.describe('Switching', () => {
 					response.status() === 503
 				);
 			});
-			await selectRemoteEnvironment(page);
+			await filterToRemoteEnvironment(page);
 			await failedRemoteRequest;
 			await expect(page.getByRole('link', { name: 'local-a-container', exact: true })).toHaveCount(
 				0
@@ -888,7 +803,6 @@ test.describe('Switching', () => {
 		test('remounts same-route details and navigates to the unwrapped redeployed container id', async ({
 			page
 		}) => {
-			await page.addInitScript(() => localStorage.removeItem('selectedEnvironmentId'));
 			const detailsById = {
 				'route-a': containerDetails('route-a', 'Route A Container'),
 				'route-b': containerDetails('route-b', 'Route B Container'),
@@ -925,7 +839,7 @@ test.describe('Switching', () => {
 					});
 				});
 
-			await page.goto('/containers/route-a');
+			await page.goto('/containers/route-a?env=0');
 			await expect(page.getByRole('heading', { name: 'Route A Container' })).toBeVisible();
 			await page.getByRole('tab', { name: 'Logs' }).click();
 			await expect(page.getByRole('tab', { name: 'Logs' })).toHaveAttribute(
@@ -936,12 +850,17 @@ test.describe('Switching', () => {
 			await page.evaluate(() => {
 				const link = document.createElement('a');
 				link.id = 'same-route-navigation';
-				link.href = '/containers/route-b';
+				link.href = '/containers/route-b?env=0';
 				link.textContent = 'navigate';
 				document.body.append(link);
 			});
 			await page.locator('#same-route-navigation').click();
-			await expect(page).toHaveURL('/containers/route-b?tab=overview');
+			await expect(page).toHaveURL(
+				(url) =>
+					url.pathname === '/containers/route-b' &&
+					url.searchParams.get('env') === '0' &&
+					url.searchParams.get('tab') === 'overview'
+			);
 			await expect(page.getByRole('heading', { name: 'Route B Container' })).toBeVisible();
 			await expect(page.getByRole('tab', { name: 'Overview' })).toHaveAttribute(
 				'aria-selected',
@@ -952,7 +871,12 @@ test.describe('Switching', () => {
 			await page.getByRole('menuitem', { name: 'Redeploy', exact: true }).click();
 			const dialog = page.getByRole('dialog');
 			await dialog.getByRole('button', { name: 'Redeploy', exact: true }).click();
-			await expect(page).toHaveURL('/containers/route-redeployed?tab=overview');
+			await expect(page).toHaveURL(
+				(url) =>
+					url.pathname === '/containers/route-redeployed' &&
+					url.searchParams.get('env') === '0' &&
+					url.searchParams.get('tab') === 'overview'
+			);
 			await expect(page.getByRole('heading', { name: 'Redeployed Container' })).toBeVisible();
 		});
 	});
@@ -972,30 +896,11 @@ test.describe('Edge agents', () => {
 		await addButton.click();
 
 		await expect(page.getByText('Create New Agent Environment')).toBeVisible();
-	}
-
-	async function switchToEdgeMode(page: Page) {
-		await page.getByRole('tab', { name: 'Edge', exact: true }).click();
 		await expect(page.getByText('Agent connects outbound to the manager.')).toBeVisible();
 	}
 
 	test.describe('Edge Agent Environment', () => {
-		test('should switch between direct and edge connection modes', async ({ page }) => {
-			await openNewEnvironmentSheet(page);
-
-			await expect(page.locator('#new-agent-api-url')).toBeVisible();
-			await expect(page.getByPlaceholder('Remote Docker Host')).toBeHidden();
-
-			await switchToEdgeMode(page);
-			await expect(page.locator('#new-agent-api-url')).toBeHidden();
-			await expect(page.getByPlaceholder('Remote Docker Host')).toBeVisible();
-
-			await page.getByRole('tab', { name: 'Direct', exact: true }).click();
-			await expect(page.locator('#new-agent-api-url')).toBeVisible();
-			await expect(page.getByPlaceholder('Remote Docker Host')).toBeHidden();
-		});
-
-		test('should validate required fields for edge and direct modes', async ({ page }) => {
+		test('should require a name before creating an edge environment', async ({ page }) => {
 			await openNewEnvironmentSheet(page);
 			let createRequests = 0;
 
@@ -1006,12 +911,6 @@ test.describe('Edge agents', () => {
 				await route.continue();
 			});
 
-			// Direct mode: missing name and URL
-			await page.getByRole('button', { name: 'Generate Agent Configuration', exact: true }).click();
-			await expect.poll(() => createRequests).toBe(0);
-
-			// Edge mode: missing name
-			await switchToEdgeMode(page);
 			await page.getByRole('button', { name: 'Generate Agent Configuration', exact: true }).click();
 			await expect.poll(() => createRequests).toBe(0);
 		});
@@ -1053,7 +952,6 @@ test.describe('Edge agents', () => {
 			});
 
 			await openNewEnvironmentSheet(page);
-			await switchToEdgeMode(page);
 
 			await page.getByPlaceholder('Remote Docker Host').fill(environmentName);
 			const submitButton = page.getByRole('button', {
@@ -1092,7 +990,7 @@ test.describe('Edge agents', () => {
 				await expect(page).toHaveURL(new RegExp(`/environments/${createdEnvironmentId}`));
 			}
 
-			await expect(page.getByTitle('API URL', { exact: true })).toHaveText(/edge:\/\/edge-agent-/);
+			await expect(page.getByText(/^edge:\/\/edge-agent-/).first()).toBeVisible();
 			// A new edge environment waits for its agent, and the connection view opens by default.
 			await expect(page.getByText('Connecting', { exact: true })).toBeVisible();
 			await expect(page.getByRole('heading', { name: 'Security', exact: true })).toBeVisible();

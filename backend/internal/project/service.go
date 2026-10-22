@@ -3544,7 +3544,18 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (types.Proj
 	if listProjectsErr := s.db.WithContext(ctx).Select("id", "name", "path", "status", "compose_project_name", "is_archived").Find(&projectsList).Error; listProjectsErr != nil {
 		return types.ProjectStatusCounts{}, fmt.Errorf("failed to list projects: %w", listProjectsErr)
 	}
-	return s.listing.StatusCounts(ctx, projectRecords(projectsList)), nil
+	updates, err := s.CountProjectsWithPendingUpdates(ctx, nil)
+	if err != nil {
+		return types.ProjectStatusCounts{}, err
+	}
+	counts := s.listing.StatusCounts(ctx, projectRecords(projectsList))
+	return types.ProjectStatusCounts{
+		RunningProjects:  counts.RunningProjects,
+		StoppedProjects:  counts.StoppedProjects,
+		TotalProjects:    counts.TotalProjects,
+		ArchivedProjects: counts.ArchivedProjects,
+		UpdatesAvailable: updates,
+	}, nil
 }
 
 func (s *ProjectService) AggregateProjects(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.Project], error) {
@@ -3576,27 +3587,23 @@ func (s *ProjectService) AggregateProjects(ctx context.Context, params paginatio
 }
 
 func (s *ProjectService) AggregateProjectCounts(ctx context.Context) (types.ApiResponse[types.ProjectStatusCounts], error) {
-	collection, err := httpx.CollectEnvironments[types.ApiResponse[types.ProjectStatusCounts]](ctx, nil)
+	response, err := httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[types.ProjectStatusCounts]) types.ProjectStatusCounts {
+		var counts types.ProjectStatusCounts
+		for _, environment := range environments {
+			counts = types.ProjectStatusCounts{
+				RunningProjects:  counts.RunningProjects + environment.Data.RunningProjects,
+				StoppedProjects:  counts.StoppedProjects + environment.Data.StoppedProjects,
+				TotalProjects:    counts.TotalProjects + environment.Data.TotalProjects,
+				ArchivedProjects: counts.ArchivedProjects + environment.Data.ArchivedProjects,
+				UpdatesAvailable: counts.UpdatesAvailable + environment.Data.UpdatesAvailable,
+			}
+		}
+		return counts
+	})
 	if err != nil {
 		return types.ApiResponse[types.ProjectStatusCounts]{}, fmt.Errorf("collect environment project counts: %w", err)
 	}
-	var running, stopped, total, archived int
-	for _, result := range collection.Results {
-		running += result.Value.Data.RunningProjects
-		stopped += result.Value.Data.StoppedProjects
-		total += result.Value.Data.TotalProjects
-		archived += result.Value.Data.ArchivedProjects
-	}
-	return types.ApiResponse[types.ProjectStatusCounts]{
-		Success: true,
-		Data: types.ProjectStatusCounts{
-			RunningProjects:  running,
-			StoppedProjects:  stopped,
-			TotalProjects:    total,
-			ArchivedProjects: archived,
-		},
-		FailedEnvironments: collection.Failures,
-	}, nil
+	return response, nil
 }
 
 func (s *ProjectService) AggregateProjectTags(ctx context.Context) (types.ApiResponse[[]types.ProjectTagOption], error) {

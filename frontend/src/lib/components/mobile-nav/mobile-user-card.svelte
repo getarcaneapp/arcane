@@ -1,20 +1,10 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import EnvironmentSwitcherDialog from '#lib/components/dialogs/environment-switcher-dialog.svelte';
-	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import LocalePicker from '#lib/components/locale-picker.svelte';
 	import ThemeModeSelector from '#lib/components/theme-mode/theme-mode-selector.svelte';
-	import {
-		ArrowDownIcon,
-		LogoutIcon,
-		EnvironmentsIcon,
-		RemoteEnvironmentIcon,
-		LanguageIcon,
-		ArrowRightIcon
-	} from '#lib/icons/index.js';
+	import { ArrowDownIcon, LogoutIcon, LanguageIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { allEnvironmentsPreview, environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { User } from '#lib/types/auth.js';
 	import { cn } from '#lib/utils.js';
@@ -29,18 +19,8 @@
 	const autoLoginEnabled = settingsStore.autoLoginEnabled;
 
 	let userCardExpanded = $state(false);
-	let envDialogOpen = $state(false);
 
 	const effectiveUser = $derived(user);
-
-	function getConnectionString(): string {
-		if (!environmentStore.selected) return '';
-		if (environmentStore.selected.id === '0') {
-			return settingsStore.current?.dockerHost || 'unix:///var/run/docker.sock';
-		} else {
-			return environmentStore.selected.apiUrl;
-		}
-	}
 </script>
 
 <div class={`overflow-hidden rounded-3xl border-2 border-border bg-muted/30 dark:border-border/20 ${className}`}>
@@ -87,37 +67,6 @@
 
 	{#if userCardExpanded}
 		<div class="space-y-4 border-t border-border/20 bg-muted/10 p-4">
-			{#if !allEnvironmentsPreview.current}
-				<IfPermitted adminOnly>
-					<button
-						class="flex w-full items-center gap-3 rounded-2xl border border-border/20 bg-background/50 p-4 text-left transition-colors hover:bg-muted/30"
-						onclick={() => (envDialogOpen = true)}
-					>
-						<div class="flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-							{#if environmentStore.selected?.id === '0'}
-								<EnvironmentsIcon class="size-4" />
-							{:else}
-								<RemoteEnvironmentIcon class="size-4" />
-							{/if}
-						</div>
-						<div class="min-w-0 flex-1">
-							<div class="text-xs font-medium tracking-widest text-muted-foreground/70 uppercase">
-								{m.resource_environment_cap()}
-							</div>
-							<div class="text-sm font-medium text-foreground">
-								{environmentStore.selected ? environmentStore.selected.name : m.sidebar_no_environment()}
-							</div>
-							{#if environmentStore.selected}
-								<div class="truncate text-xs text-muted-foreground/60">
-									{getConnectionString()}
-								</div>
-							{/if}
-						</div>
-						<ArrowRightIcon class="size-5 shrink-0 text-muted-foreground/60" />
-					</button>
-				</IfPermitted>
-			{/if}
-
 			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 				<div class="rounded-2xl border border-border/20 bg-background/50 p-4">
 					<div class="flex h-full items-center gap-3">
@@ -150,5 +99,3 @@
 		</div>
 	{/if}
 </div>
-
-<EnvironmentSwitcherDialog bind:open={envDialogOpen} />

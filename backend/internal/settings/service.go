@@ -716,27 +716,6 @@ func (s *SettingsService) SetContainerAutoUpdateExclusion(ctx context.Context, c
 	return s.persistSettings(ctx, values)
 }
 
-func (s *SettingsService) AgentToken(ctx context.Context) string {
-	return cmp.Or(s.appConfig.AgentToken, s.GetStringSetting(ctx, "agentToken"))
-}
-
-func (s *SettingsService) PairAgentToken(ctx context.Context, rotate bool) (string, error) {
-	if s.appConfig.AgentToken != "" {
-		if rotate {
-			return "", common.ErrAgentTokenEnvManaged
-		}
-		return s.appConfig.AgentToken, nil
-	}
-	if token := s.GetStringSetting(ctx, "agentToken"); token != "" && !rotate {
-		return token, nil
-	}
-	token := kit.RandomString(48)
-	if err := s.UpdateSetting(ctx, "agentToken", token); err != nil {
-		return "", fmt.Errorf("persist agent token: %w", err)
-	}
-	return token, nil
-}
-
 func (s *SettingsService) EnsureJwtSigningKey(ctx context.Context) (*mldsa.PrivateKey, error) {
 	seed, err := s.ensureEncryptedKey(ctx, "jwtSigningKeySeed", mldsa.PrivateKeySize)
 	if err != nil {

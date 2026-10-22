@@ -692,7 +692,7 @@ func NewHumaMiddleware(
 			return
 		}
 
-		if newCtx, ok := tryAgentAuth(ctx, cfg, authService.settingsService); ok {
+		if newCtx, ok := tryAgentAuth(ctx, cfg); ok {
 			next(newCtx)
 			return
 		}
@@ -736,17 +736,13 @@ func NewHumaMiddleware(
 }
 
 // tryAgentAuth authenticates an agent-mode request presenting the
-// agent token as a bootstrap pairing, agent token, or API key header.
-func tryAgentAuth(ctx huma.Context, cfg *config.Config, settingsService *settings.SettingsService) (huma.Context, bool) {
-	if !cfg.AgentMode {
+// agent token as an agent token or API key header.
+func tryAgentAuth(ctx huma.Context, cfg *config.Config) (huma.Context, bool) {
+	if !cfg.EdgeAgent {
 		return ctx, false
 	}
-	agentToken := settingsService.AgentToken(ctx.Context())
-	bootstrapPairing := strings.HasPrefix(ctx.URL().Path, middleware.AgentPairingPrefix) &&
-		AgentTokenMatches(ctx.Header(middleware.HeaderAgentBootstrap), agentToken)
-	if !bootstrapPairing &&
-		!AgentTokenMatches(ctx.Header(middleware.HeaderAgentToken), agentToken) &&
-		!AgentTokenMatches(ctx.Header(middleware.HeaderApiKey), agentToken) {
+	if !AgentTokenMatches(ctx.Header(middleware.HeaderAgentToken), cfg.AgentToken) &&
+		!AgentTokenMatches(ctx.Header(middleware.HeaderApiKey), cfg.AgentToken) {
 		return ctx, false
 	}
 	authenticatedUser := createAgentSudoUser()
@@ -961,7 +957,7 @@ func (m *AuthMiddleware) Add() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			reqCtx := c.Request().Context()
-			if m.cfg.AgentMode {
+			if m.cfg.EdgeAgent {
 				return m.agentAuth(reqCtx, c, next)
 			}
 			return m.managerAuth(reqCtx, c, next)
@@ -975,21 +971,13 @@ func (m *AuthMiddleware) agentAuth(ctx context.Context, c *echo.Context, next ec
 	}
 
 	req := c.Request()
-	agentToken := m.authService.settingsService.AgentToken(ctx)
-	if strings.HasPrefix(req.URL.Path, middleware.AgentPairingPrefix) &&
-		AgentTokenMatches(req.Header.Get(middleware.HeaderAgentBootstrap), agentToken) {
-		slog.InfoContext(ctx, "Agent auth: bootstrap pairing accepted", "path", req.URL.Path, "method", req.Method)
-		agentSudo(c)
-		return next(c)
-	}
-
-	if AgentTokenMatches(req.Header.Get(middleware.HeaderAgentToken), agentToken) {
+	if AgentTokenMatches(req.Header.Get(middleware.HeaderAgentToken), m.cfg.AgentToken) {
 		agentSudo(c)
 		return next(c)
 	}
 
 	// Check for API key as agent token
-	if AgentTokenMatches(req.Header.Get(middleware.HeaderApiKey), agentToken) {
+	if AgentTokenMatches(req.Header.Get(middleware.HeaderApiKey), m.cfg.AgentToken) {
 		agentSudo(c)
 		return next(c)
 	}
@@ -999,7 +987,7 @@ func (m *AuthMiddleware) agentAuth(ctx context.Context, c *echo.Context, next ec
 		"path", req.URL.Path,
 		"method", req.Method,
 		"hasAgentTokenHdr", req.Header.Get(middleware.HeaderAgentToken) != "",
-		"agentTokenConfigSet", agentToken != "",
+		"agentTokenConfigSet", m.cfg.AgentToken != "",
 	)
 	return c.JSON(http.StatusForbidden, common.APIError{
 		Code:    "FORBIDDEN",
