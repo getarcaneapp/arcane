@@ -124,7 +124,6 @@
 	}
 
 	function isAccessibleCategory(category: SettingsCategory) {
-		if (category.id === 'systembackups' && !user?.isGlobalAdmin) return false;
 		if (!permissionsManifest?.accessSurfaces?.length) return true;
 		return canReachAccessSurfaceUrl(permissionsManifest, category.url, user, environmentStore.selected?.id);
 	}
@@ -149,7 +148,9 @@
 	// Roles and Diagnostics have no backend settings fields, so their cards reuse the gated sidebar entries.
 	const navOnlyCardDescriptions: Record<string, () => string> = {
 		'/settings/roles': m.roles_subtitle,
-		'/settings/diagnostics': m.diagnostics_description
+		'/settings/diagnostics': m.diagnostics_description,
+		'/settings/groups': m.groups_subtitle,
+		'/settings/audit': m.audit_subtitle
 	};
 	const navOnlyCategories = $derived(
 		filterByPermissions(

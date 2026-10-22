@@ -9,10 +9,11 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { LockIcon, TrashIcon, EditIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { federatedCredentialService } from '#lib/services/federated-credential-service.js';
 	import type { FederatedCredential } from '#lib/types/auth.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import { isGlobalAdmin } from '#lib/utils/auth.js';
+	import { hasAnyPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { formatOptionalDateTime, isPastDate } from '#lib/utils/formatting.js';
 
@@ -33,7 +34,7 @@
 	let isLoading = $state({
 		removing: false
 	});
-	const canManageFederatedCredentials = $derived(isGlobalAdmin());
+	const canManageFederatedCredentials = $derived(hasAnyPermission([PERMISSIONS.FEDERATED_UPDATE, PERMISSIONS.FEDERATED_DELETE]));
 
 	function getStatusText(credential: FederatedCredential): string {
 		if (isPastDate(credential.expiresAt)) return m.expired();

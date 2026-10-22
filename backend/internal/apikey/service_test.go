@@ -15,7 +15,9 @@ import (
 	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/audit"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/group"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
@@ -31,15 +33,17 @@ func setupAPIKeyServiceTestDB(t *testing.T) *database.DB {
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
+		&audit.AuditLog{},
 		&settings.SettingVariable{},
 		&user.User{},
 		&session.UserSession{},
 		&testEnvironmentRow{},
 		&role.Role{},
-		&role.UserRoleAssignment{},
+		&role.RoleBinding{},
+		&group.Group{},
+		&group.GroupMember{},
 		&ApiKey{},
 		&role.ApiKeyPermission{},
-		&role.OidcRoleMapping{},
 	))
 
 	sqlDB, err := db.DB()
@@ -219,6 +223,12 @@ func TestReconcileDefaultAdminAPIKeyCreatesManagedKey(t *testing.T) {
 	require.NotNil(t, apiKeys[0].ManagedBy)
 	require.Equal(t, managedByAdminBootstrap, *apiKeys[0].ManagedBy)
 
+	var grants []role.ApiKeyPermission
+	require.NoError(t, db.WithContext(ctx).Where("api_key_id = ?", apiKeys[0].ID).Find(&grants).Error)
+	require.Len(t, grants, 1)
+	require.Equal(t, authz.PermAll, grants[0].Permission)
+	require.Nil(t, grants[0].EnvironmentID)
+
 	validatedUser, err := service.ValidateApiKey(ctx, rawKey)
 	require.NoError(t, err)
 	require.Equal(t, adminUser.ID, validatedUser.ID)
@@ -268,13 +278,10 @@ func TestUpdateApiKeyRollsBackMetadataWhenPermissionUpdateFails(t *testing.T) {
 	require.NoError(t, db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_akp_uniq ON api_key_permissions(api_key_id, permission, COALESCE(environment_id, ''))").Error)
 
 	roleSvc := role.NewRoleService(db)
-	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
 	userSvc := user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB)
 	service := NewApiKeyService(db, userSvc, roleSvc)
 	admin := createTestAPIKeyUser(t, ctx, userSvc, "admin-update-rollback", "admin-update-rollback")
-	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, admin.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
-		{RoleID: authz.BuiltInRoleAdmin, EnvironmentID: nil},
-	}))
+	require.NoError(t, roleSvc.BindUser(ctx, admin.ID, authz.BuiltInRoleAdmin))
 
 	created, err := service.CreateApiKey(ctx, admin.ID, authz.SudoPermissionSet(), types.ApiKey{
 		Name:        "original",
@@ -325,7 +332,6 @@ func TestApiKeyGrantsAreCappedByOwnerRoles(t *testing.T) {
 	db := setupAPIKeyServiceTestDB(t)
 
 	roleSvc := role.NewRoleService(db)
-	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
 	userSvc := user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB)
 	service := NewApiKeyService(db, userSvc, roleSvc)
 	// Owner has no roles at all — their permission ceiling is empty.
@@ -338,19 +344,31 @@ func TestApiKeyGrantsAreCappedByOwnerRoles(t *testing.T) {
 	})
 	require.ErrorIs(t, err, ErrApiKeyPermissionEscalation)
 
-	// Update path: a grantless key cannot gain permissions the owner lacks.
-	require.NoError(t, db.WithContext(ctx).Create(&ApiKey{
-		Name:      "grantless",
-		KeyHash:   "hash",
-		KeyPrefix: "arc_gless",
-		UserID:    new(owner.ID),
-	}).Error)
-	var grantless ApiKey
-	require.NoError(t, db.WithContext(ctx).Where("key_prefix = ?", "arc_gless").First(&grantless).Error)
-	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), grantless.ID, types.ApiKey{
+	// Update path: a key cannot gain permissions the owner lacks.
+	require.NoError(t, roleSvc.BindUser(ctx, owner.ID, authz.BuiltInRoleViewer))
+	created, err := service.CreateApiKey(ctx, owner.ID, authz.SudoPermissionSet(), types.ApiKey{
+		Name:        "viewer-scoped",
+		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
+	})
+	require.NoError(t, err)
+	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, types.ApiKey{
+		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersStart}},
+	}, map[string]bool{"permissions": true})
+	require.ErrorIs(t, err, ErrApiKeyPermissionEscalation)
+
+	limitedCaller := authz.NewPermissionSet()
+	limitedCaller.AddScopedGlobal(types.ResourceSelector{Projects: []string{"team-a"}}, authz.PermContainersList)
+	_, err = service.UpdateApiKey(ctx, limitedCaller, created.ID, types.ApiKey{
 		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
 	}, map[string]bool{"permissions": true})
 	require.ErrorIs(t, err, ErrApiKeyPermissionEscalation)
+
+	ownerCaller, err := roleSvc.ResolvePermissions(ctx, owner.ID)
+	require.NoError(t, err)
+	_, err = service.UpdateApiKey(ctx, ownerCaller, created.ID, types.ApiKey{
+		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
+	}, map[string]bool{"permissions": true})
+	require.NoError(t, err)
 
 	// Ownerless rows (not env-bootstrap; no production path creates these)
 	// have no owner ceiling to validate against — grant edits are refused.
@@ -398,10 +416,22 @@ func TestReconcileDefaultAdminAPIKeyNoOpWhenUnchanged(t *testing.T) {
 	first := listAPIKeysForUser(t, db, adminUser.ID)
 	require.Len(t, first, 1)
 
+	require.NoError(t, db.WithContext(ctx).Where("api_key_id = ?", first[0].ID).Delete(&role.ApiKeyPermission{}).Error)
+	require.NoError(t, db.WithContext(ctx).Create(&role.ApiKeyPermission{
+		ApiKeyID:   first[0].ID,
+		Permission: authz.PermContainersList,
+	}).Error)
+
 	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, rawKey))
 	second := listAPIKeysForUser(t, db, adminUser.ID)
 	require.Len(t, second, 1)
 	require.Equal(t, first[0].ID, second[0].ID)
+
+	var grants []role.ApiKeyPermission
+	require.NoError(t, db.WithContext(ctx).Where("api_key_id = ?", second[0].ID).Find(&grants).Error)
+	require.Len(t, grants, 1)
+	require.Equal(t, authz.PermAll, grants[0].Permission)
+	require.Nil(t, grants[0].EnvironmentID)
 }
 
 func TestReconcileDefaultAdminAPIKeyReplacesManagedKeyOnRotation(t *testing.T) {
@@ -480,10 +510,7 @@ func TestReconcileDefaultAdminAPIKeyPreservesUserManagedKeys(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	adminUser := createDefaultAdminUser(t, ctx, userService)
 
-	userCreated, err := service.CreateApiKey(ctx, adminUser.ID, authz.SudoPermissionSet(), types.ApiKey{
-		Name:        "manual-key",
-		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
-	})
+	userCreated, err := service.CreatePersonalApiKey(ctx, adminUser.ID, types.ApiKey{Name: "manual-key"})
 	require.NoError(t, err)
 
 	require.NoError(t, service.ReconcileDefaultAdminAPIKey(ctx, "arc_bootstrapmanualsafe1234567890"))
@@ -554,10 +581,7 @@ func TestValidateAPIKeyUpdatesLastUsedAt(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-validate")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
-		Name:        "validate-key",
-		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
-	})
+	created, err := service.CreatePersonalApiKey(ctx, localUser.ID, types.ApiKey{Name: "validate-key"})
 	require.NoError(t, err)
 	require.Nil(t, fetchAPIKey(t, db, created.ID).LastUsedAt)
 
@@ -574,10 +598,7 @@ func TestValidateAPIKeyCacheSkipsHashValidationAndInvalidatesOnRevoke(t *testing
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-cached")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
-		Name:        "cached-key",
-		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
-	})
+	created, err := service.CreatePersonalApiKey(ctx, localUser.ID, types.ApiKey{Name: "cached-key"})
 	require.NoError(t, err)
 
 	_, err = service.ValidateApiKey(ctx, created.Key)
@@ -602,10 +623,7 @@ func TestValidateAPIKeyCacheFillDroppedWhenRevocationRacesValidation(t *testing.
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-fill-race")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
-		Name:        "fill-race-key",
-		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
-	})
+	created, err := service.CreatePersonalApiKey(ctx, localUser.ID, types.ApiKey{Name: "fill-race-key"})
 	require.NoError(t, err)
 
 	// Simulate a validation whose DB read happened before the revocation:
@@ -625,10 +643,7 @@ func TestValidateAPIKeyDebouncesLastUsedWrites(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-debounce")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
-		Name:        "debounce-key",
-		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
-	})
+	created, err := service.CreatePersonalApiKey(ctx, localUser.ID, types.ApiKey{Name: "debounce-key"})
 	require.NoError(t, err)
 
 	_, err = service.ValidateApiKey(ctx, created.Key)
@@ -649,10 +664,7 @@ func TestValidateAPIKeyDebounceReleasedOnWriteFailure(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-debounce-retry")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
-		Name:        "debounce-retry-key",
-		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
-	})
+	created, err := service.CreatePersonalApiKey(ctx, localUser.ID, types.ApiKey{Name: "debounce-retry-key"})
 	require.NoError(t, err)
 
 	canceledCtx, cancel := context.WithCancel(ctx)
@@ -671,10 +683,7 @@ func TestValidateAPIKeyLastUsedUpdateIsRequestScoped(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-request-scoped")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
-		Name:        "request-scoped-key",
-		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
-	})
+	created, err := service.CreatePersonalApiKey(ctx, localUser.ID, types.ApiKey{Name: "request-scoped-key"})
 	require.NoError(t, err)
 
 	updateStarted := make(chan struct{})
@@ -714,10 +723,7 @@ func TestMarkAPIKeyUsedHonorsRequestCancellation(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-canceled-usage")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
-		Name:        "canceled-usage-key",
-		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
-	})
+	created, err := service.CreatePersonalApiKey(ctx, localUser.ID, types.ApiKey{Name: "canceled-usage-key"})
 	require.NoError(t, err)
 
 	canceledCtx, cancel := context.WithCancel(ctx)
@@ -732,10 +738,7 @@ func TestMarkAPIKeyUsedReturnsDatabaseErrors(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-usage-error")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
-		Name:        "usage-error-key",
-		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
-	})
+	created, err := service.CreatePersonalApiKey(ctx, localUser.ID, types.ApiKey{Name: "usage-error-key"})
 	require.NoError(t, err)
 
 	sqlDB, err := db.DB.DB()
@@ -752,10 +755,7 @@ func TestValidateAPIKeyRepeatedAuthenticationDoesNotGrowGoroutines(t *testing.T)
 	service, _, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-repeated-auth")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
-		Name:        "repeated-auth-key",
-		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
-	})
+	created, err := service.CreatePersonalApiKey(ctx, localUser.ID, types.ApiKey{Name: "repeated-auth-key"})
 	require.NoError(t, err)
 
 	before := runtime.NumGoroutine()
@@ -834,10 +834,7 @@ func TestValidateAPIKeyInvalidDoesNotUpdateLastUsedAt(t *testing.T) {
 	service, db, userService := setupAPIKeyService(t)
 	localUser := createTestAPIKeyUser(t, ctx, userService, "user-invalid")
 
-	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
-		Name:        "invalid-key",
-		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
-	})
+	created, err := service.CreatePersonalApiKey(ctx, localUser.ID, types.ApiKey{Name: "invalid-key"})
 	require.NoError(t, err)
 
 	_, err = service.ValidateApiKey(ctx, invalidateAPIKey(created.Key))
@@ -879,31 +876,20 @@ func TestCreateEnvironmentApiKeySeedsAllPermissionsScopedToEnv(t *testing.T) {
 	require.NoError(t, db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_akp_uniq ON api_key_permissions(api_key_id, permission, COALESCE(environment_id, ''))").Error)
 
 	roleSvc := role.NewRoleService(db)
-	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
 	userSvc := user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB)
 	service := NewApiKeyService(db, userSvc, roleSvc)
 	admin := createTestAPIKeyUser(t, ctx, userSvc, "admin-env-bootstrap", "admin-env-bootstrap")
-	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, admin.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
-		{RoleID: authz.BuiltInRoleAdmin, EnvironmentID: nil},
-	}))
+	require.NoError(t, roleSvc.BindUser(ctx, admin.ID, authz.BuiltInRoleAdmin))
 
 	envID := "env-bootstrap-test"
 	created, err := service.CreateEnvironmentApiKey(ctx, envID)
 	require.NoError(t, err)
 
-	// Resolve the per-key permission set and confirm every permission is
-	// present, scoped to the bootstrap env (not global).
 	var grants []role.ApiKeyPermission
 	require.NoError(t, db.WithContext(ctx).Where("api_key_id = ?", created.ID).Find(&grants).Error)
-	envPerms := make(map[string]struct{}, len(grants))
-	for _, grant := range grants {
-		require.Equal(t, envID, kit.FromPtr(grant.EnvironmentID), "bootstrap key permissions must be scoped to the environment, not global")
-		envPerms[grant.Permission] = struct{}{}
-	}
-	for _, p := range authz.AllPermissions() {
-		_, has := envPerms[p]
-		require.True(t, has, "missing permission %s on bootstrap key", p)
-	}
+	require.Len(t, grants, 1)
+	require.Equal(t, authz.PermAll, grants[0].Permission)
+	require.Equal(t, envID, kit.FromPtr(grants[0].EnvironmentID), "bootstrap key permissions must be scoped to the environment, not global")
 }
 
 func TestBackfillApiKeyPermissionsRepairsExistingBootstrapKey(t *testing.T) {
@@ -912,7 +898,6 @@ func TestBackfillApiKeyPermissionsRepairsExistingBootstrapKey(t *testing.T) {
 	require.NoError(t, db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_akp_uniq ON api_key_permissions(api_key_id, permission, COALESCE(environment_id, ''))").Error)
 
 	roleSvc := role.NewRoleService(db)
-	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
 	userSvc := user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB)
 	service := NewApiKeyService(db, userSvc, roleSvc)
 
@@ -950,7 +935,8 @@ func TestBackfillApiKeyPermissionsRepairsExistingBootstrapKey(t *testing.T) {
 	require.Len(t, keys, 1)
 	var grants []role.ApiKeyPermission
 	require.NoError(t, db.WithContext(ctx).Where("api_key_id = ? AND environment_id = ?", keys[0].ID, envID).Find(&grants).Error)
-	require.Len(t, grants, len(authz.AllPermissions()))
+	require.Len(t, grants, 1)
+	require.Equal(t, authz.PermAll, grants[0].Permission)
 
 	var scopedPerms []role.ApiKeyPermission
 	require.NoError(t, db.WithContext(ctx).Where("api_key_id = ?", scopedKey.ID).Find(&scopedPerms).Error)
@@ -963,14 +949,11 @@ func TestBackfillPermsForKeyDeduplicatesGlobalAndEnvironmentPermissions(t *testi
 	db := setupAPIKeyServiceTestDB(t)
 
 	roleSvc := role.NewRoleService(db)
-	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
 	userSvc := user.NewUserService(db, roleSvc, session.RevokeAllUserSessionsExceptInDB)
 	service := NewApiKeyService(db, userSvc, roleSvc)
 
 	admin := createTestAPIKeyUser(t, ctx, userSvc, "admin", "admin")
-	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, admin.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
-		{RoleID: authz.BuiltInRoleAdmin},
-	}))
+	require.NoError(t, roleSvc.BindUser(ctx, admin.ID, authz.BuiltInRoleAdmin))
 	owner := createTestAPIKeyUser(t, ctx, userSvc, "api-key-owner")
 	envID := "env-1"
 	now := time.Now()
@@ -982,10 +965,14 @@ func TestBackfillPermsForKeyDeduplicatesGlobalAndEnvironmentPermissions(t *testi
 		Enabled: true,
 	}).Error)
 
-	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, owner.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
-		{RoleID: authz.BuiltInRoleViewer, EnvironmentID: nil},
-		{RoleID: authz.BuiltInRoleEditor, EnvironmentID: &envID},
-	}))
+	require.NoError(t, roleSvc.BindUser(ctx, owner.ID, authz.BuiltInRoleViewer))
+	require.NoError(t, db.WithContext(ctx).Create(&role.RoleBinding{
+		UserID:        new(owner.ID),
+		RoleID:        authz.BuiltInRoleEditor,
+		EnvironmentID: &envID,
+		Source:        role.BindingSourceManual,
+	}).Error)
+	roleSvc.InvalidateUsers(owner.ID)
 
 	perms, err := service.backfillPermsForKey(ctx, db.WithContext(ctx), ApiKey{
 		UserID:        &owner.ID,

@@ -42,9 +42,12 @@ import (
 	imagedomain "github.com/getarcaneapp/arcane/backend/v3/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/podman"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 	libpodman "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
@@ -1848,4 +1851,267 @@ func TestContainerMutationsRefuseQuadletContainers(t *testing.T) {
 		"GET /containers/quadlet-id/json",
 	}, dockerCalls())
 	require.Empty(t, systemd.calls)
+}
+
+type recordedDenials struct {
+	denials []types.AuthzDenial
+}
+
+func (r *recordedDenials) RecordDenial(_ context.Context, denial types.AuthzDenial) {
+	r.denials = append(r.denials, denial)
+}
+
+func scopedContainerContext(ctx context.Context, ps *authz.PermissionSet) context.Context {
+	return authz.WithRequestEnvironment(authz.WithPermissions(ctx, ps), "0")
+}
+
+func newScopedContainerFixture(t *testing.T) *ContainerService {
+	t.Helper()
+	fixture := newResourceStatsServer()
+	fixture.addContainer("a1", "team-a-web", "running", map[string]string{"team": "a"})
+	fixture.addContainer("a2", "team-a-db", "exited", map[string]string{"team": "a"})
+	fixture.addContainer("b1", "team-b-web", "running", map[string]string{"team": "b"})
+	return newResourceSortService(t, fixture)
+}
+
+func TestListContainersPaginatedAppliesResourceScope(t *testing.T) {
+	svc := newScopedContainerFixture(t)
+	ps := authz.NewPermissionSet()
+	ps.AddScopedEnv("0", types.ResourceSelector{Labels: map[string]string{"team": "a"}}, authz.PermContainersList)
+	ctx := scopedContainerContext(t.Context(), ps)
+
+	result, err := svc.ListContainersPaginated(ctx, resourceSortParams("", "", 0, 1), true, true, true, "")
+	require.NoError(t, err)
+	require.Len(t, result.Items, 1)
+	require.Equal(t, int64(2), result.Pagination.TotalItems)
+	require.Equal(t, int64(2), result.Pagination.GrandTotalItems)
+	require.Equal(t, types.ContainerStatusCounts{RunningContainers: 1, StoppedContainers: 1, TotalContainers: 2}, result.Counts)
+
+	grouped, err := svc.ListContainersPaginated(ctx, resourceSortParams("", "", 0, 20), true, true, true, containerGroupByProject)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"a1", "a2"}, summaryIDs(grouped.Items))
+	require.Equal(t, result.Counts, grouped.Counts)
+
+	counts, err := svc.GetStatusCounts(ctx, true, true)
+	require.NoError(t, err)
+	require.Equal(t, result.Counts, counts)
+
+	unscoped, err := svc.GetStatusCounts(t.Context(), true, true)
+	require.NoError(t, err)
+	require.Equal(t, types.ContainerStatusCounts{RunningContainers: 2, StoppedContainers: 1, TotalContainers: 3}, unscoped)
+}
+
+func TestAuthorizeContainerHidesOutOfScopeAndForbidsUnactionable(t *testing.T) {
+	svc := newScopedContainerFixture(t)
+	ps := authz.NewPermissionSet()
+	ps.AddScopedEnv("0", types.ResourceSelector{Labels: map[string]string{"team": "a"}}, authz.PermContainersRead)
+	ps.AddScopedEnv("0", types.ResourceSelector{Labels: map[string]string{"team": "a"}, Names: []string{"*-web"}}, authz.PermContainersStart)
+	recorder := &recordedDenials{}
+	ctx := middleware.WithDenialRecorder(scopedContainerContext(t.Context(), ps), recorder)
+
+	inspect, err := svc.AuthorizeContainer(ctx, "a1", authz.PermContainersStart)
+	require.NoError(t, err)
+	require.Equal(t, "a1", inspect.ID)
+
+	_, err = svc.AuthorizeContainer(ctx, "a2", authz.PermContainersStart)
+	require.ErrorIs(t, err, authz.ErrResourceForbidden)
+	require.Equal(t, http.StatusForbidden, common.ToAPIError(err).HTTPStatus())
+
+	err = svc.StartContainer(ctx, "b1", types.Actor{ID: "user-1"})
+	require.ErrorIs(t, err, authz.ErrResourceOutOfScope)
+	require.Equal(t, http.StatusNotFound, common.ToAPIError(err).HTTPStatus())
+
+	require.Equal(t, []types.AuthzDenial{{Permission: authz.PermContainersStart, EnvironmentID: "0"}}, recorder.denials)
+
+	unrestricted, err := svc.AuthorizeContainer(t.Context(), "missing", authz.PermContainersStart)
+	require.NoError(t, err)
+	require.Nil(t, unrestricted)
+}
+
+func newRecreateScopeTestService(t *testing.T, original container.InspectResponse) (*ContainerService, func() []map[string]string) {
+	t.Helper()
+	var mu sync.Mutex
+	var created []map[string]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := dockerTestPath(r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case path == "/version" || path == "/info" || strings.HasPrefix(path, "/images/"):
+			_, _ = w.Write([]byte("{}"))
+		case path == "/containers/create":
+			var body struct {
+				Labels map[string]string
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode container create body: %v", err)
+			}
+			mu.Lock()
+			created = append(created, body.Labels)
+			mu.Unlock()
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"Id":"new-id","Warnings":[]}`))
+		case r.Method == http.MethodGet && path == "/containers/"+original.ID+"/json":
+			if err := json.NewEncoder(w).Encode(original); err != nil {
+				t.Errorf("encode inspect response: %v", err)
+			}
+		case r.Method == http.MethodGet && path == "/containers/new-id/json":
+			if err := json.NewEncoder(w).Encode(container.InspectResponse{
+				ID:     "new-id",
+				Name:   original.Name,
+				Config: &container.Config{Image: "nginx:latest"},
+				State:  &container.State{Status: container.StateRunning},
+			}); err != nil {
+				t.Errorf("encode inspect response: %v", err)
+			}
+		default:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	db := setupProjectTestDB(t)
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	dockerService := docker.NewDockerClientService(t.Context(), nil, settingsService).WithClient(newTestDockerClient(t, server))
+	eventService := event.NewEventService(db, nil, nil, nil)
+	svc := NewContainerService(
+		eventService,
+		dockerService,
+		imagedomain.NewImageService(
+			db,
+			dockerService,
+			nil,
+			imageupdate.NewImageUpdateService(db, settingsService, nil, dockerService, eventService, nil, nil),
+			nil,
+			eventService,
+			settingsService,
+			nil,
+			nil,
+		),
+		settingsService,
+		nil,
+		kv.NewKVService(db),
+		nil,
+	)
+	return svc, func() []map[string]string {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(created)
+	}
+}
+
+func TestCreateContainerStampsActorOwner(t *testing.T) {
+	actor := types.Actor{ID: "user-1", Username: "tester"}
+
+	t.Run("user-supplied owner is replaced by the actor", func(t *testing.T) {
+		svc, created := newRecreateScopeTestService(t, container.InspectResponse{ID: "unused"})
+		ps := &authz.PermissionSet{SubjectID: actor.ID}
+		ps.AddScopedEnv("0", types.ResourceSelector{OwnerOnly: true}, authz.PermContainersCreate)
+
+		_, err := svc.CreateContainer(
+			scopedContainerContext(t.Context(), ps),
+			&container.Config{
+				Image:  "nginx:latest",
+				Labels: map[string]string{"app": "web", libarcane.LabelOwner: "intruder"},
+			},
+			&container.HostConfig{},
+			nil,
+			"web",
+			actor,
+			nil,
+		)
+		require.NoError(t, err)
+		require.Equal(t, []map[string]string{{
+			"app":                "web",
+			"com.arcane.created": "true",
+			libarcane.LabelOwner: actor.ID,
+		}}, created())
+	})
+
+	t.Run("label-scoped create requires the scoped labels", func(t *testing.T) {
+		svc, created := newRecreateScopeTestService(t, container.InspectResponse{ID: "unused"})
+		ps := authz.NewPermissionSet()
+		ps.AddScopedEnv("0", types.ResourceSelector{Labels: map[string]string{"team": "a"}}, authz.PermContainersCreate)
+		ctx := scopedContainerContext(t.Context(), ps)
+
+		_, err := svc.CreateContainer(ctx, &container.Config{Image: "nginx:latest"}, &container.HostConfig{}, nil, "web", actor, nil)
+		require.ErrorIs(t, err, authz.ErrResourceForbidden)
+		require.Empty(t, created())
+
+		_, err = svc.CreateContainer(ctx, &container.Config{Image: "nginx:latest", Labels: map[string]string{"team": "a"}}, &container.HostConfig{}, nil, "web", actor, nil)
+		require.NoError(t, err)
+		require.Len(t, created(), 1)
+	})
+}
+
+func TestEditContainerCannotLeaveScope(t *testing.T) {
+	svc, created := newRecreateScopeTestService(t, container.InspectResponse{
+		ID:   "old-id",
+		Name: "/web",
+		Config: &container.Config{
+			Image:  "nginx:latest",
+			Labels: map[string]string{"team": "a", libarcane.LabelOwner: "user-1"},
+		},
+		HostConfig: &container.HostConfig{},
+		State:      &container.State{},
+	})
+	ps := authz.NewPermissionSet()
+	ps.AddScopedEnv("0", types.ResourceSelector{Labels: map[string]string{"team": "a"}}, authz.PermContainersRead, authz.PermContainersEdit)
+	ctx := scopedContainerContext(t.Context(), ps)
+	actor := types.Actor{ID: "user-2", Username: "editor"}
+
+	_, err := svc.EditContainer(ctx, "old-id", types.ContainerEdit{Labels: new(map[string]string{"app": "web"})}, actor)
+	require.ErrorIs(t, err, authz.ErrResourceForbidden)
+	require.Empty(t, created())
+
+	_, err = svc.EditContainer(ctx, "old-id", types.ContainerEdit{Labels: new(map[string]string{"team": "a", libarcane.LabelOwner: "intruder"})}, actor)
+	require.NoError(t, err)
+	require.Equal(t, []map[string]string{{"team": "a", libarcane.LabelOwner: "user-1"}}, created())
+}
+
+func TestRedeployContainerPreservesOwnerLabel(t *testing.T) {
+	originalLabels := map[string]string{"app": "web", libarcane.LabelOwner: "user-1"}
+	svc, created := newRecreateScopeTestService(t, container.InspectResponse{
+		ID:   "old-id",
+		Name: "/web",
+		Config: &container.Config{
+			Image:  "nginx:latest",
+			Labels: originalLabels,
+		},
+		HostConfig: &container.HostConfig{},
+		State:      &container.State{},
+	})
+	ownerScope := func(subjectID string) context.Context {
+		ps := &authz.PermissionSet{SubjectID: subjectID}
+		ps.AddScopedEnv("0", types.ResourceSelector{OwnerOnly: true}, authz.PermContainersRead, authz.PermContainersRedeploy)
+		return scopedContainerContext(t.Context(), ps)
+	}
+
+	_, err := svc.RedeployContainer(ownerScope("user-2"), "old-id", types.Actor{ID: "user-2"})
+	require.ErrorIs(t, err, authz.ErrResourceOutOfScope)
+	require.Empty(t, created())
+
+	newID, err := svc.RedeployContainer(ownerScope("user-1"), "old-id", types.Actor{ID: "user-1"})
+	require.NoError(t, err)
+	require.Equal(t, "new-id", newID)
+	require.Equal(t, []map[string]string{originalLabels}, created())
+}
+
+func TestCommitContainerChecksOutputImageScope(t *testing.T) {
+	svc := newScopedContainerFixture(t)
+	ps := authz.NewPermissionSet()
+	ps.AddEnv("0", authz.PermContainersRead)
+	ps.AddScopedEnv("0", types.ResourceSelector{Names: []string{"team-a/*"}}, authz.PermImagesCommit)
+	recorder := &recordedDenials{}
+	ctx := middleware.WithDenialRecorder(scopedContainerContext(t.Context(), ps), recorder)
+
+	for _, req := range []types.ContainerCommitRequest{
+		{Repository: "team-b/app", Tag: "1"},
+		{Tag: "latest"},
+	} {
+		_, err := svc.CommitContainer(ctx, "a1", req, types.Actor{ID: "user-1"})
+		require.ErrorIs(t, err, authz.ErrResourceForbidden)
+	}
+	require.Len(t, recorder.denials, 2)
+	require.Equal(t, authz.PermImagesCommit, recorder.denials[0].Permission)
 }

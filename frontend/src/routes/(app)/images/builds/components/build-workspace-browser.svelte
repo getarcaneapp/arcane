@@ -17,6 +17,7 @@
 	import { UseClipboard } from '#lib/hooks/use-clipboard.svelte.js';
 	import { UploadIcon, MoveToFolderIcon, EllipsisIcon, CopyIcon, AlertTriangleIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import type { UploadProgressCallback } from '#lib/services/upload-service.js';
 	import type { FileEntry } from '#lib/types/shared.js';
@@ -41,7 +42,7 @@
 	} = $props();
 
 	let currentPath = $state('/');
-	const canBuildImage = $derived(hasPermission('images:build', envId));
+	const canBuildImage = $derived(hasPermission(PERMISSIONS.IMAGES_BUILD, envId));
 	const queryClient = useQueryClient();
 
 	const filesQuery = createQuery(() => ({
@@ -56,7 +57,7 @@
 
 	const loading = $derived(filesQuery.isPending);
 	const error = $derived(filesQuery.error ? extractApiErrorMessage(filesQuery.error) : null);
-	const canOpenBuildSettings = $derived(hasPermission('settings:read'));
+	const canOpenBuildSettings = $derived(hasPermission(PERMISSIONS.SETTINGS_READ));
 
 	let showCreateFolder = $state(false);
 	let showUpload = $state(false);

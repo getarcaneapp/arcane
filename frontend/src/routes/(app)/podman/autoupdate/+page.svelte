@@ -11,6 +11,7 @@
 	import { AlertIcon, InfoIcon, UpdateIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { podmanService } from '#lib/services/podman-service.js';
 	import type { PodmanAutoUpdateResult } from '#lib/types/podman.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -23,7 +24,7 @@
 
 	const podmanEnvs = $derived(shownPodmanEnvironments(data.podmanStatuses));
 	let picked = $state('');
-	const environmentId = $derived(destinationEnvironmentId(picked, 'podman:autoupdate', podmanEnvs));
+	const environmentId = $derived(destinationEnvironmentId(picked, PERMISSIONS.PODMAN_AUTOUPDATE, podmanEnvs));
 	const status = $derived(data.podmanStatuses[environmentId]);
 	const mode = $derived(status?.autoUpdateMode ?? 'unavailable');
 
@@ -63,7 +64,7 @@
 			<div class="mb-4 flex justify-end">
 				<EnvironmentDestinationSelect
 					bind:value={() => environmentId, (value) => (picked = value)}
-					permission="podman:autoupdate"
+					permission={PERMISSIONS.PODMAN_AUTOUPDATE}
 					environments={podmanEnvs}
 				/>
 			</div>

@@ -11,30 +11,26 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { UserIcon, TrashIcon, EditIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { userService } from '#lib/services/user-service.js';
 	import type { User } from '#lib/types/auth.js';
-	import type { Role } from '#lib/types/auth.js';
-	import { BUILT_IN_ROLE_ADMIN, BUILT_IN_ROLE_EDITOR, BUILT_IN_ROLE_DEPLOYER, BUILT_IN_ROLE_VIEWER } from '#lib/types/auth.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
+	import { roleBadgeVariant, type RoleBadgeVariant } from '#lib/utils/rbac.js';
 
 	let {
 		users = $bindable(),
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
-		roles,
 		onUsersChanged,
 		onEditUser
 	}: {
 		users: Paginated<User>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
-		roles: Role[];
 		onUsersChanged: () => Promise<void>;
 		onEditUser: (user: User) => void;
 	} = $props();
-
-	const rolesById = $derived(new Map(roles.map((r) => [r.id, r])));
 
 	let isLoading = $state({
 		removing: false
@@ -94,31 +90,8 @@
 		});
 	}
 
-	type BadgeVariant = 'red' | 'blue' | 'purple' | 'gray' | 'green';
-
-	/** True when the backend reports effective global administrator access. */
 	function isGlobalAdmin(user: User): boolean {
 		return user.isGlobalAdmin === true;
-	}
-
-	/** Color variant for a role badge keyed off the role ID (not its localized name). */
-	function roleVariant(roleId: string): BadgeVariant {
-		switch (roleId) {
-			case BUILT_IN_ROLE_ADMIN:
-				return 'red';
-			case BUILT_IN_ROLE_EDITOR:
-				return 'blue';
-			case BUILT_IN_ROLE_DEPLOYER:
-				return 'purple';
-			case BUILT_IN_ROLE_VIEWER:
-				return 'gray';
-			default:
-				return 'green'; // custom roles
-		}
-	}
-
-	function roleName(roleId: string): string {
-		return rolesById.get(roleId)?.name ?? m.common_unknown();
 	}
 
 	/**
@@ -128,9 +101,9 @@
 	 * - everything else      → one badge per distinct role, with a tooltip
 	 *                          listing which environments each scope applies to
 	 */
-	function rolesSummary(user: User): { text: string; variant: BadgeVariant; tooltip?: string }[] {
-		const assignments = user.roleAssignments ?? [];
-		if (assignments.length === 0) {
+	function rolesSummary(user: User): { text: string; variant: RoleBadgeVariant; tooltip?: string }[] {
+		const bindings = user.bindings ?? [];
+		if (bindings.length === 0) {
 			return [{ text: m.users_role_summary_none(), variant: 'gray' }];
 		}
 		if (isGlobalAdmin(user)) {
@@ -139,16 +112,16 @@
 		// Group by roleId so a user assigned the same role on multiple envs gets
 		// one badge with a tooltip listing the env count.
 		// A Set per role, since manual and OIDC can both grant the same environment.
-		const byRole = new Map<string, Set<string>>();
-		for (const a of assignments) {
-			const envs = byRole.get(a.roleId) ?? new Set<string>();
-			envs.add(a.environmentId ?? 'global');
-			byRole.set(a.roleId, envs);
+		const byRole = new Map<string, { name: string; envs: Set<string> }>();
+		for (const binding of bindings) {
+			const entry = byRole.get(binding.roleId) ?? { name: binding.roleName, envs: new Set<string>() };
+			entry.envs.add(binding.environmentId ?? 'global');
+			byRole.set(binding.roleId, entry);
 		}
-		return Array.from(byRole.entries()).map(([roleId, envs]) => ({
-			text: roleName(roleId),
-			variant: roleVariant(roleId),
-			tooltip: envs.size > 1 ? m.users_role_summary_env_count({ count: envs.size }) : undefined
+		return Array.from(byRole.entries()).map(([roleId, entry]) => ({
+			text: entry.name,
+			variant: roleBadgeVariant(roleId),
+			tooltip: entry.envs.size > 1 ? m.users_role_summary_env_count({ count: entry.envs.size }) : undefined
 		}));
 	}
 
@@ -156,13 +129,13 @@
 		{ accessorKey: 'username', title: m.common_username(), sortable: true, cell: UsernameCell },
 		{ accessorKey: 'displayName', title: m.common_display_name(), sortable: true, cell: DisplayNameCell },
 		{ accessorKey: 'email', title: m.common_email(), sortable: true, cell: EmailCell },
-		{ accessorKey: 'roleAssignments', title: m.common_role(), sortable: false, cell: RoleCell }
+		{ accessorKey: 'bindings', title: m.common_role(), sortable: false, cell: RoleCell }
 	] satisfies ColumnSpec<User>[];
 
 	const mobileFields = [
 		{ id: 'displayName', label: m.common_display_name(), defaultVisible: true },
 		{ id: 'email', label: m.common_email(), defaultVisible: true },
-		{ id: 'roleAssignments', label: m.common_role(), defaultVisible: true }
+		{ id: 'bindings', label: m.common_role(), defaultVisible: true }
 	];
 
 	const bulkActions = $derived.by<BulkAction[]>(() => [
@@ -219,7 +192,7 @@
 		subtitle={(item: User) => ((mobileFieldVisibility['email'] ?? true) && item.email ? item.email : null)}
 		badges={[
 			(item: User) => {
-				if (!(mobileFieldVisibility['roleAssignments'] ?? true)) return null;
+				if (!(mobileFieldVisibility['bindings'] ?? true)) return null;
 				const summary = rolesSummary(item);
 				// Mobile cards take a single badge; show the first (or a "+N" hint
 				// when the user has multiple distinct roles).
@@ -246,7 +219,7 @@
 
 {#snippet RowActions({ item }: { item: User })}
 	<RowActionsMenu>
-		<IfPermitted perm="users:update">
+		<IfPermitted perm={PERMISSIONS.USERS_UPDATE}>
 			<DropdownMenu.Item onclick={() => onEditUser(item)}>
 				<EditIcon class="size-4" />
 				{m.common_edit()}
@@ -255,7 +228,7 @@
 			<DropdownMenu.Separator />
 		</IfPermitted>
 
-		<IfPermitted perm="users:delete">
+		<IfPermitted perm={PERMISSIONS.USERS_DELETE}>
 			<DropdownMenu.Item
 				variant="destructive"
 				disabled={!canDeleteUser(item) || isLoading.removing}

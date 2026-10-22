@@ -15,6 +15,7 @@
 	import { LayersIcon, DockIcon, JobsIcon, TrashIcon, EditIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { SwarmStackSource } from '#lib/types/swarm.js';
@@ -77,7 +78,7 @@
 	const stackName = $derived(stack?.name ?? data.stackName);
 	const hasLiveStack = $derived((stack?.services ?? 0) > 0);
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const canManageStacks = $derived(hasPermission('swarm:stacks', currentEnvId));
+	const canManageStacks = $derived(hasPermission(PERMISSIONS.SWARM_STACKS, currentEnvId));
 	const canViewSource = $derived(canManageStacks && sourceState !== 'forbidden');
 	const tabItems = $derived<TabItem[]>([
 		...(hasLiveStack ? [{ value: 'services', label: m.services(), icon: DockIcon }] : []),

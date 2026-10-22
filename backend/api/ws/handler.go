@@ -138,7 +138,7 @@ func NewWebSocketHandler(
 			otel.Handle(err)
 		}
 	})
-	wsGroup := group.Group("/environments/:id/ws", authMiddleware.WithAdminNotRequired().Add())
+	wsGroup := group.Group("/environments/:id/ws", authMiddleware.Add())
 	for _, r := range handler.proxiedRoutes() {
 		wsGroup.GET(r.path, r.handler, middleware.RequireEchoPermission(r.perm))
 	}

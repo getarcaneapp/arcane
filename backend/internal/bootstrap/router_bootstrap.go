@@ -273,6 +273,13 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		return env.ID, nil
 	})
 
+	apiGroup.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			c.SetRequest(c.Request().WithContext(middleware.WithDenialRecorder(c.Request().Context(), deps.Audit.Service())))
+			return next(c)
+		}
+	})
+
 	permissionMatcher := authz.NewPermissionMatcher()
 
 	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParamAndRegistry(

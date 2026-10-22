@@ -8,6 +8,7 @@
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -35,7 +36,7 @@
 				await environmentStore.ready;
 				return swarmService.getSwarmJoinCandidates(environmentId!);
 			},
-			enabled: open && !!environmentId && hasPermission('swarm:join', environmentId)
+			enabled: open && !!environmentId && hasPermission(PERMISSIONS.SWARM_JOIN, environmentId)
 		};
 	});
 	const candidates = $derived(

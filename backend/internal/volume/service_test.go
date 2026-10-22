@@ -32,8 +32,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
@@ -572,4 +575,129 @@ func TestAggregateVolumeSizesKeepsEnvironmentRows(t *testing.T) {
 	}, body.Data)
 	require.Len(t, body.FailedEnvironments, 1)
 	require.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
+}
+
+type scopedVolumeTestEngine struct {
+	service       *VolumeService
+	createdLabels map[string]string
+	createCalls   int
+}
+
+func newScopedVolumeTestEngine(t *testing.T) *scopedVolumeTestEngine {
+	t.Helper()
+	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&event.Event{}))
+	db := &database.DB{DB: gormDB}
+	engine := &scopedVolumeTestEngine{}
+	volumes := map[string]volume.Volume{
+		"team-a": {Name: "team-a", Driver: "local"},
+		"team-b": {Name: "team-b", Driver: "local"},
+		"other":  {Name: "other", Driver: "local"},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/volumes/create"):
+			var body volume.CreateRequest
+			if decodeErr := json.NewDecoder(r.Body).Decode(&body); decodeErr != nil {
+				http.Error(w, decodeErr.Error(), http.StatusBadRequest)
+				return
+			}
+			engine.createCalls++
+			engine.createdLabels = body.Labels
+			volumes[body.Name] = volume.Volume{
+				Name:   body.Name,
+				Driver: "local",
+				Labels: body.Labels,
+			}
+			_ = json.NewEncoder(w).Encode(volumes[body.Name])
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes"):
+			_ = json.NewEncoder(w).Encode(volume.ListResponse{Volumes: []volume.Volume{volumes["team-a"], volumes["team-b"], volumes["other"]}})
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/volumes/"):
+			vol, ok := volumes[r.URL.Path[strings.LastIndex(r.URL.Path, "/")+1:]]
+			if !ok {
+				http.Error(w, `{"message":"no such volume"}`, http.StatusNotFound)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(vol)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{"Id": "c-team", "Mounts": []map[string]any{{"Type": "volume", "Name": "team-a"}}},
+				{"Id": "c-other", "Mounts": []map[string]any{{"Type": "volume", "Name": "other"}}},
+			})
+		default:
+			http.Error(w, "unexpected Docker request: "+r.Method+" "+r.URL.Path, http.StatusInternalServerError)
+		}
+	}))
+	t.Cleanup(server.Close)
+	dockerService := (&docker.DockerClientService{}).WithClient(newVolumeWorkspaceTestDockerClient(t, server))
+	engine.service = NewVolumeService(db, dockerService, event.NewEventService(db, nil, nil, nil), nil, nil, nil, nil, nil, nil, nil)
+	return engine
+}
+
+func scopedVolumeContext(t *testing.T, ps *authz.PermissionSet) context.Context {
+	t.Helper()
+	return authz.WithRequestEnvironment(authz.WithPermissions(t.Context(), ps), "0")
+}
+
+func TestListVolumesPaginatedFiltersByListScopeBeforeCounts(t *testing.T) {
+	engine := newScopedVolumeTestEngine(t)
+	ps := authz.NewPermissionSet()
+	ps.AddScopedEnv("0", types.ResourceSelector{Names: []string{"team-*"}}, authz.PermVolumesList)
+
+	items, page, counts, err := engine.service.ListVolumesPaginated(scopedVolumeContext(t, ps), pagination.QueryParams{
+		Params: pagination.Params{Limit: 1},
+	}, false)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.EqualValues(t, 2, page.TotalItems)
+	require.Equal(t, types.VolumeUsageCounts{
+		Inuse:  1,
+		Unused: 1,
+		Total:  2,
+	}, counts)
+}
+
+func TestScopedVolumeAccessReturnsNotFoundOrForbidden(t *testing.T) {
+	engine := newScopedVolumeTestEngine(t)
+	selector := types.ResourceSelector{Names: []string{"team-*"}}
+
+	hidden := authz.NewPermissionSet()
+	hidden.AddScopedEnv("0", selector, authz.PermVolumesRead, authz.PermVolumesDelete)
+	_, err := engine.service.GetVolumeByName(scopedVolumeContext(t, hidden), "other")
+	require.ErrorIs(t, err, authz.ErrResourceOutOfScope)
+	require.ErrorIs(t, engine.service.DeleteVolume(scopedVolumeContext(t, hidden), "other", false, types.SystemUser), authz.ErrResourceOutOfScope)
+
+	visible := authz.NewPermissionSet()
+	visible.AddEnv("0", authz.PermVolumesRead)
+	visible.AddScopedEnv("0", selector, authz.PermVolumesDelete)
+	require.ErrorIs(t, engine.service.DeleteVolume(scopedVolumeContext(t, visible), "other", false, types.SystemUser), authz.ErrResourceForbidden)
+}
+
+func TestCreateVolumeStampsOwnerAndChecksCreateScope(t *testing.T) {
+	engine := newScopedVolumeTestEngine(t)
+	owner := authz.NewPermissionSet()
+	owner.SubjectID = "user-1"
+	owner.AddScopedEnv("0", types.ResourceSelector{OwnerOnly: true}, authz.PermVolumesCreate)
+
+	created, err := engine.service.CreateVolume(scopedVolumeContext(t, owner), client.VolumeCreateOptions{
+		Name: "mine",
+		Labels: map[string]string{
+			libarcane.LabelOwner: "someone-else",
+			"team":               "a",
+		},
+	}, types.Actor{ID: "user-1", Username: "user"})
+	require.NoError(t, err)
+	require.Equal(t, "mine", created.Name)
+	require.Equal(t, map[string]string{
+		libarcane.LabelOwner: "user-1",
+		"team":               "a",
+	}, engine.createdLabels)
+
+	labelScoped := authz.NewPermissionSet()
+	labelScoped.AddScopedEnv("0", types.ResourceSelector{Labels: map[string]string{"team": "a"}}, authz.PermVolumesCreate)
+	_, err = engine.service.CreateVolume(scopedVolumeContext(t, labelScoped), client.VolumeCreateOptions{Name: "unlabeled"}, types.Actor{ID: "user-1"})
+	require.ErrorIs(t, err, authz.ErrResourceForbidden)
+	require.Equal(t, 1, engine.createCalls)
 }

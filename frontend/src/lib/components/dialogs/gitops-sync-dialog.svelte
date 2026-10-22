@@ -21,6 +21,7 @@
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import { ArrowRightIcon, CodeIcon, FolderOpenIcon, InfoIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitRepositoryService } from '#lib/services/git-repository-service.js';
 	import { projectService } from '#lib/services/project-service.js';
@@ -78,8 +79,8 @@
 	// / gitops:update. Users without it see a read-only summary instead of the
 	// editable section and never submit its fields; the backend enforces the same
 	// rule as defense-in-depth.
-	let canManageLifecycle = $derived(hasPermission('gitops:lifecycle', environmentId));
-	let canBackup = $derived(hasPermission('gitops:backup', environmentId));
+	let canManageLifecycle = $derived(hasPermission(PERMISSIONS.GITOPS_LIFECYCLE, environmentId));
+	let canBackup = $derived(hasPermission(PERMISSIONS.GITOPS_BACKUP, environmentId));
 
 	// Whether the sync being edited already has a hook configured. Used to flag
 	// its presence to users who can't manage it and to lock the directory-sync

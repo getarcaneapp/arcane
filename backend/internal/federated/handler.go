@@ -10,6 +10,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
@@ -65,12 +66,8 @@ func (h *FederatedCredentialHandler) ListFederatedCredentials(ctx context.Contex
 }
 
 func (h *FederatedCredentialHandler) CreateFederatedCredential(ctx context.Context, input *CreateFederatedCredentialInput) (*handlerutil.Out[types.FederatedCredential], error) {
-	user, err := handlerutil.RequireUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	credential, err := h.federatedCredentialService.Create(ctx, user.ID, input.Body)
+	caller, _ := authz.PermissionsFromContext(ctx)
+	credential, err := h.federatedCredentialService.Create(ctx, caller, input.Body)
 	if err != nil {
 		return nil, federatedCredentialManagementError(err)
 	}
@@ -98,17 +95,13 @@ func (h *FederatedCredentialHandler) GetFederatedCredential(ctx context.Context,
 }
 
 func (h *FederatedCredentialHandler) UpdateFederatedCredential(ctx context.Context, input *UpdateFederatedCredentialInput) (*handlerutil.Out[types.FederatedCredential], error) {
-	user, err := handlerutil.RequireUser(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	submitted, err := input.SubmittedFields()
 	if err != nil {
 		return nil, huma.Error400BadRequest("invalid request body")
 	}
 
-	credential, err := h.federatedCredentialService.Update(ctx, user.ID, input.ID, input.Body, submitted)
+	caller, _ := authz.PermissionsFromContext(ctx)
+	credential, err := h.federatedCredentialService.Update(ctx, caller, input.ID, input.Body, submitted)
 	if err != nil {
 		return nil, federatedCredentialManagementError(err)
 	}

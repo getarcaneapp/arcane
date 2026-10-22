@@ -44,17 +44,6 @@
 	});
 	const activeTab = $derived(urlTab.value);
 
-	const BUILT_IN_ROLE_LABELS: Record<string, () => string> = {
-		role_admin: m.account_role_administrator,
-		role_editor: m.account_role_editor,
-		role_deployer: m.account_role_deployer,
-		role_viewer: m.account_role_viewer
-	};
-
-	function prettyRoleName(roleId: string): string {
-		return BUILT_IN_ROLE_LABELS[roleId]?.() ?? roleId.replace(/^role_/, '').replace(/_/g, ' ');
-	}
-
 	const queryClient = useQueryClient();
 	const currentUser = $derived(userStore.current);
 	const isOidcUser = $derived(Boolean(currentUser?.oidcSubjectId));
@@ -355,15 +344,17 @@
 							<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 								{m.account_roles_and_access()}
 							</h3>
-							{#if currentUser.roleAssignments && currentUser.roleAssignments.length > 0}
+							{#if currentUser.bindings && currentUser.bindings.length > 0}
 								<ul class="flex flex-wrap gap-2">
-									{#each currentUser.roleAssignments as ra (`${ra.source}-${ra.roleId}-${ra.environmentId ?? 'global'}`)}
+									{#each currentUser.bindings as binding (binding.id)}
 										<li class="rounded-lg border border-border/60 bg-muted/20 px-3 py-1.5">
-											<span class="text-sm font-medium">{prettyRoleName(ra.roleId)}</span>
+											<span class="text-sm font-medium">{binding.roleName}</span>
 											<span class="ml-2 text-xs text-muted-foreground">
-												{ra.environmentId ? m.account_role_environment({ env: ra.environmentId }) : m.account_global_scope()}
-												{#if ra.source === 'oidc'}
-													<span class="ml-1 opacity-70">{m.account_via_sso()}</span>
+												{binding.environmentId
+													? m.account_role_environment({ env: binding.environmentId })
+													: m.account_global_scope()}
+												{#if binding.groupName}
+													<span class="ml-1 opacity-70">{binding.groupName}</span>
 												{/if}
 											</span>
 										</li>

@@ -3,9 +3,17 @@ package authz
 import (
 	"testing"
 
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func builtInRolePermissions(t *testing.T, id string) []string {
+	t.Helper()
+	role, ok := BuiltInRole(id)
+	require.True(t, ok, "missing built-in role %q", id)
+	return role.Permissions
+}
 
 func TestPermissionSetAllowsGlobal(t *testing.T) {
 	ps := NewPermissionSet()
@@ -72,41 +80,92 @@ func TestPermissionSetAllowsAnyEffectiveScope(t *testing.T) {
 	}
 }
 
-func TestPermissionSetIsGlobalAdminRejectsUnknownPermissions(t *testing.T) {
-	ps := NewPermissionSet()
-	perms := AllPermissions()
-	for i, perm := range perms {
-		if i == 0 {
-			continue
-		}
-		ps.AddGlobal(perm)
-	}
-	ps.AddGlobal("projects:made-up")
+func TestPermissionSetIsGlobalAdminRequiresWildcard(t *testing.T) {
+	everything := NewPermissionSet()
+	everything.AddGlobal(AllPermissions()...)
+	require.False(t, everything.IsGlobalAdmin())
 
-	require.False(t, ps.IsGlobalAdmin(),
-		"global admin should reject injected unknown permissions")
+	envWildcard := NewPermissionSet()
+	envWildcard.AddEnv("env-1", PermAll)
+	require.False(t, envWildcard.IsGlobalAdmin())
+
+	admin := NewPermissionSet()
+	admin.AddGlobal(PermAll)
+	require.True(t, admin.IsGlobalAdmin())
+	require.False(t, admin.Sudo)
 }
 
-func TestPermissionSetIsGlobalAdminRequiresExactKnownSet(t *testing.T) {
-	ps := NewPermissionSet()
-	perms := AllPermissions()
-	for _, perm := range perms[1:] {
-		ps.AddGlobal(perm)
+func TestPermissionSetWildcardAllowsEverything(t *testing.T) {
+	admin := NewPermissionSet()
+	admin.AddGlobal(PermAll)
+	for _, permission := range AllPermissions() {
+		require.True(t, admin.Allows(permission, ""), permission)
+		require.True(t, admin.Allows(permission, "env-1"), permission)
+		require.True(t, admin.Scope(permission, "env-1").IsUnrestricted(), permission)
 	}
-	ps.AddGlobal("containers:does-not-exist")
 
-	require.False(t, ps.IsGlobalAdmin(),
-		"global admin should require the complete known permission set")
+	envAdmin := NewPermissionSet()
+	envAdmin.AddEnv("env-1", PermAll)
+	require.True(t, envAdmin.Allows(PermContainersStart, "env-1"))
+	require.False(t, envAdmin.Allows(PermContainersStart, "env-2"))
+	require.False(t, envAdmin.Allows(PermUsersList, ""))
 }
 
-func TestPermissionSetIsGlobalAdmin(t *testing.T) {
-	ps := NewPermissionSet()
-	for _, perm := range AllPermissions() {
-		ps.AddGlobal(perm)
-	}
+func TestPermissionSetScopedGrants(t *testing.T) {
+	web := types.ResourceSelector{Labels: map[string]string{"team": "web"}}
+	db := types.ResourceSelector{Projects: []string{"db"}}
 
-	require.True(t, ps.IsGlobalAdmin(),
-		"complete known permission set should be global admin")
+	ps := NewPermissionSet()
+	ps.AddScopedEnv("env-1", web, PermContainersStart)
+	ps.AddScopedGlobal(db, PermContainersStart)
+
+	require.True(t, ps.Allows(PermContainersStart, "env-1"))
+	require.True(t, ps.Allows(PermContainersStart, "env-2"))
+	require.False(t, ps.Allows(PermContainersStop, "env-1"))
+	require.True(t, ps.AllowsAny(PermContainersStart))
+	require.Contains(t, ps.PerEnv, "env-1")
+	require.False(t, ps.IsGlobalAdmin())
+
+	scope := ps.Scope(PermContainersStart, "env-1")
+	require.False(t, scope.IsUnrestricted())
+	require.True(t, scope.Matches(ResourceAttributes{Labels: map[string]string{"team": "web"}}))
+	require.True(t, scope.Matches(ResourceAttributes{Project: "db"}))
+	require.False(t, scope.Matches(ResourceAttributes{Project: "cache"}))
+
+	other := ps.Scope(PermContainersStart, "env-2")
+	require.False(t, other.Matches(ResourceAttributes{Labels: map[string]string{"team": "web"}}))
+	require.True(t, other.Matches(ResourceAttributes{Project: "db"}))
+
+	require.False(t, ps.Scope(PermContainersStop, "env-1").Matches(ResourceAttributes{Project: "db"}))
+}
+
+func TestPermissionSetScopeUnrestrictedGrantWins(t *testing.T) {
+	ps := NewPermissionSet()
+	ps.AddScopedEnv("env-1", types.ResourceSelector{Names: []string{"web-*"}}, PermContainersStart)
+	ps.AddEnv("env-1", PermContainersStart)
+
+	require.True(t, ps.Scope(PermContainersStart, "env-1").IsUnrestricted())
+	require.False(t, ps.Scope(PermContainersStart, "env-2").IsUnrestricted())
+
+	var nilSet *PermissionSet
+	require.False(t, nilSet.Scope(PermContainersStart, "env-1").Matches(ResourceAttributes{Names: []string{"web-1"}}))
+}
+
+func TestPermissionSetPermissionsForEnv(t *testing.T) {
+	ps := NewPermissionSet()
+	ps.AddGlobal(PermUsersList)
+	ps.AddEnv("env-1", PermContainersList)
+	ps.AddEnv("env-2", PermImagesList)
+	ps.AddScopedEnv("env-1", types.ResourceSelector{OwnerOnly: true}, PermContainersStart)
+	ps.AddScopedEnv("env-1", types.ResourceSelector{OwnerOnly: true}, PermContainersList)
+
+	all, scoped := ps.PermissionsForEnv("env-1")
+	require.Equal(t, []string{PermContainersList, PermContainersStart, PermUsersList}, all)
+	require.Equal(t, []string{PermContainersStart}, scoped)
+
+	all, scoped = SudoPermissionSet().PermissionsForEnv("env-1")
+	require.Equal(t, []string{PermAll}, all)
+	require.Empty(t, scoped)
 }
 
 func TestSudoAllowsEverything(t *testing.T) {
@@ -190,21 +249,6 @@ func TestIsKnownPermissionRejectsSyntheticPrefixMatches(t *testing.T) {
 	}
 }
 
-func TestBuiltInRolesOnlyReferenceKnownPermissions(t *testing.T) {
-	for _, p := range BuiltInEditorPermissions() {
-		assert.True(t, IsKnownPermission(p),
-			"editor references unknown perm %q", p)
-	}
-	for _, p := range BuiltInDeployerPermissions() {
-		assert.True(t, IsKnownPermission(p),
-			"deployer references unknown perm %q", p)
-	}
-	for _, p := range BuiltInViewerPermissions() {
-		assert.True(t, IsKnownPermission(p),
-			"viewer references unknown perm %q", p)
-	}
-}
-
 func TestVariablePermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *testing.T) {
 	variablePermissions := []string{
 		PermVariablesRead,
@@ -222,15 +266,21 @@ func TestVariablePermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *testing.
 		require.True(t, IsOrgLevel(permission),
 			"variable permission %q must be global", permission)
 
-		require.NotContains(t, BuiltInMonitorPermissions(), permission,
+		require.NotContains(t, builtInRolePermissions(t, BuiltInRoleMonitor), permission,
 			"Monitor must not receive %q", permission)
 
 	}
 
+	admin := NewPermissionSet()
+	admin.AddGlobal(builtInRolePermissions(t, BuiltInRoleAdmin)...)
+	for _, permission := range variablePermissions {
+		require.True(t, admin.Allows(permission, ""),
+			"Admin must receive %q", permission)
+	}
+
 	for name, permissions := range map[string][]string{
-		"Admin":           AllPermissions(),
-		"Editor":          BuiltInEditorPermissions(),
-		"No-Shell Editor": BuiltInNoShellEditorPermissions(),
+		"Editor":          builtInRolePermissions(t, BuiltInRoleEditor),
+		"No-Shell Editor": builtInRolePermissions(t, BuiltInRoleNoShellEditor),
 	} {
 		for _, permission := range variablePermissions {
 			require.Contains(t, permissions, permission,
@@ -239,8 +289,8 @@ func TestVariablePermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *testing.
 	}
 
 	for name, permissions := range map[string][]string{
-		"Viewer":   BuiltInViewerPermissions(),
-		"Deployer": BuiltInDeployerPermissions(),
+		"Viewer":   builtInRolePermissions(t, BuiltInRoleViewer),
+		"Deployer": builtInRolePermissions(t, BuiltInRoleDeployer),
 	} {
 
 		require.Contains(t, permissions, PermVariablesRead,
@@ -262,11 +312,11 @@ func TestVariablePermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *testing.
 
 func TestSystemBackupPermissionsAreAdminOnlyGlobalGrants(t *testing.T) {
 	builtInRoles := map[string][]string{
-		"Editor":          BuiltInEditorPermissions(),
-		"No-Shell Editor": BuiltInNoShellEditorPermissions(),
-		"Viewer":          BuiltInViewerPermissions(),
-		"Monitor":         BuiltInMonitorPermissions(),
-		"Deployer":        BuiltInDeployerPermissions(),
+		"Editor":          builtInRolePermissions(t, BuiltInRoleEditor),
+		"No-Shell Editor": builtInRolePermissions(t, BuiltInRoleNoShellEditor),
+		"Viewer":          builtInRolePermissions(t, BuiltInRoleViewer),
+		"Monitor":         builtInRolePermissions(t, BuiltInRoleMonitor),
+		"Deployer":        builtInRolePermissions(t, BuiltInRoleDeployer),
 	}
 	for _, permission := range []string{PermSystemBackupsRead, PermSystemBackupsManage, PermSystemBackupsRestore, PermSystemBackupsRecoveryKey} {
 		require.True(t, IsKnownPermission(permission), "system backup permission %q must be known", permission)
@@ -300,10 +350,10 @@ func TestS3DestinationPermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *tes
 		require.Contains(t, AllPermissions(), permission,
 			"Admin must receive %q", permission)
 
-		require.NotContains(t, BuiltInMonitorPermissions(), permission,
+		require.NotContains(t, builtInRolePermissions(t, BuiltInRoleMonitor), permission,
 			"Monitor must not receive %q", permission)
 
-		require.NotContains(t, BuiltInDeployerPermissions(), permission,
+		require.NotContains(t, builtInRolePermissions(t, BuiltInRoleDeployer), permission,
 			"Deployer must not receive %q", permission)
 
 	}
@@ -311,9 +361,9 @@ func TestS3DestinationPermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *tes
 	// Roles that can run backups pick a destination, so they read but never
 	// manage the stored credentials.
 	for name, permissions := range map[string][]string{
-		"Editor":          BuiltInEditorPermissions(),
-		"No-Shell Editor": BuiltInNoShellEditorPermissions(),
-		"Viewer":          BuiltInViewerPermissions(),
+		"Editor":          builtInRolePermissions(t, BuiltInRoleEditor),
+		"No-Shell Editor": builtInRolePermissions(t, BuiltInRoleNoShellEditor),
+		"Viewer":          builtInRolePermissions(t, BuiltInRoleViewer),
 	} {
 		require.Contains(t, permissions, PermS3DestinationsList,
 			"%s must receive %q", name, PermS3DestinationsList)
@@ -394,9 +444,9 @@ func TestPermissionCatalogDerivesKnownPermissionsAndScopes(t *testing.T) {
 
 func TestVolumeRenamePermissionIsEditorOnlyByDefault(t *testing.T) {
 	require.Contains(t, AllPermissions(), PermVolumesRename)
-	require.Contains(t, BuiltInEditorPermissions(), PermVolumesRename)
-	require.NotContains(t, BuiltInViewerPermissions(), PermVolumesRename)
-	require.NotContains(t, BuiltInDeployerPermissions(), PermVolumesRename)
+	require.Contains(t, builtInRolePermissions(t, BuiltInRoleEditor), PermVolumesRename)
+	require.NotContains(t, builtInRolePermissions(t, BuiltInRoleViewer), PermVolumesRename)
+	require.NotContains(t, builtInRolePermissions(t, BuiltInRoleDeployer), PermVolumesRename)
 }
 
 func TestNotificationsManageRequiresGlobalScope(t *testing.T) {

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '../fixtures/test.fixture';
+import { patchSessionBootstrap, withEnvironments } from '../utils/session.util';
 
 const remoteEnvironment = {
 	id: 'remote-preview-test',
@@ -42,44 +43,36 @@ function paginated<T>(data: T[], counts?: Record<string, number>) {
 type Preferences = Record<string, unknown>;
 
 // Serves the signed-in user with these preferences without saving them, so other specs keep the defaults.
-async function withPreferences(
-	page: Page,
-	preferences: () => Preferences,
-	environments?: object[]
-) {
-	await page.route(/\/api\/auth\/(?:me|bootstrap)(?:\?.*)?$/, async (route) => {
+async function withPreferences(page: Page, preferences: () => Preferences) {
+	await patchSessionBootstrap(page, (bootstrap) => ({
+		...bootstrap,
+		user: {
+			...bootstrap.user,
+			preferences: { ...bootstrap.user.preferences, ...preferences() }
+		}
+	}));
+	await page.route(/\/api\/auth\/me(?:\?.*)?$/, async (route) => {
 		const response = await route.fetch();
 		const body = await response.json();
-		const bootstrap = new URL(route.request().url()).pathname.endsWith('/bootstrap');
-		const user = bootstrap ? body.data.user : body.data;
-		const patchedUser = { ...user, preferences: { ...user.preferences, ...preferences() } };
-		await route.fulfill({
-			response,
-			json: {
-				...body,
-				data: bootstrap
-					? {
-							...body.data,
-							user: patchedUser,
-							environments: environments ? paginated(environments) : body.data.environments
-						}
-					: patchedUser
-			}
-		});
+		body.data.preferences = { ...body.data.preferences, ...preferences() };
+		await route.fulfill({ response, json: body });
 	});
+}
+
+async function enablePreview(page: Page) {
+	await withPreferences(page, () => ({ allEnvironmentsPreview: true }));
 }
 
 // Lists the real local environment plus a mocked remote one, and keeps the live stream from replacing that list.
 // The merged request gets the real local rows plus the remote row, or a remote failure while `remote.failure` is set.
-async function mockRemoteEnvironment(page: Page, preferences: Preferences = {}) {
+async function mockRemoteEnvironment(page: Page) {
 	const remote: { failure?: string } = {};
 	const local = await page.request.get('/api/environments/0');
 	const localEnvironment = (await local.json()).data;
-	await withPreferences(page, () => ({ allEnvironmentsPreview: true, ...preferences }), [
-		localEnvironment,
-		remoteEnvironment
-	]);
 	await page.route(/\/api\/stream(?:\?.*)?$/, (route) => route.abort());
+	await patchSessionBootstrap(page, (bootstrap) =>
+		withEnvironments(bootstrap, [localEnvironment, remoteEnvironment])
+	);
 	await page.route(/\/api\/environments(?:\?.*)?$/, (route) =>
 		route.fulfill({ json: paginated([localEnvironment, remoteEnvironment]) })
 	);
@@ -168,6 +161,7 @@ test.describe('All environments preview', () => {
 	test('lists rows from every environment and links details to their environment', async ({
 		page
 	}) => {
+		await enablePreview(page);
 		await mockRemoteEnvironment(page);
 
 		await page.goto('/containers');
@@ -184,6 +178,7 @@ test.describe('All environments preview', () => {
 	});
 
 	test('the environment filter queries only the picked environments', async ({ page }) => {
+		await enablePreview(page);
 		await mockRemoteEnvironment(page);
 
 		await page.goto('/containers');
@@ -206,6 +201,7 @@ test.describe('All environments preview', () => {
 	});
 
 	test('a failed environment is named inline and can be retried', async ({ page }) => {
+		await enablePreview(page);
 		const remote = await mockRemoteEnvironment(page);
 		remote.failure = 'remote unavailable';
 
@@ -222,6 +218,7 @@ test.describe('All environments preview', () => {
 	});
 
 	test('page-wide confirmations count environments without listing them', async ({ page }) => {
+		await enablePreview(page);
 		await mockRemoteEnvironment(page);
 
 		await page.goto('/projects');
@@ -238,6 +235,7 @@ test.describe('All environments preview', () => {
 	});
 
 	test('sorting by environment asks the server for the merged order', async ({ page }) => {
+		await enablePreview(page);
 		await mockRemoteEnvironment(page);
 		const listRequests: string[] = [];
 		page.on('request', (request) => {
@@ -260,7 +258,11 @@ test.describe('All environments preview', () => {
 	});
 
 	test('the dot label style shows the environment name on hover', async ({ page }) => {
-		await mockRemoteEnvironment(page, { environmentLabelStyle: 'dot' });
+		await withPreferences(page, () => ({
+			allEnvironmentsPreview: true,
+			environmentLabelStyle: 'dot'
+		}));
+		await mockRemoteEnvironment(page);
 
 		await page.goto('/containers');
 		const remoteRow = page.getByRole('row').filter({ hasText: 'remote-preview-web' });

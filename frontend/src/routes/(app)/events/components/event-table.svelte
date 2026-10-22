@@ -21,6 +21,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { TrashIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { eventService } from '#lib/services/event-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -252,7 +253,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Event })}
-	<IfPermitted perm="events:delete">
+	<IfPermitted perm={PERMISSIONS.EVENTS_DELETE}>
 		<RowActionsMenu>
 			<DropdownMenu.Item
 				variant="destructive"

@@ -10,7 +10,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
@@ -438,7 +437,7 @@ func (h *Handler) GetJoinCandidates(ctx context.Context, input *GetSwarmJoinCand
 	if err != nil {
 		return nil, h.mapError(err, "Failed to list Easy Join candidates")
 	}
-	permissions, _ := middleware.PermissionsFromContext(ctx)
+	permissions, _ := authz.PermissionsFromContext(ctx)
 	candidates = slices.DeleteFunc(candidates, func(candidate types.SwarmJoinCandidate) bool {
 		return !permissions.Allows(authz.PermSwarmJoin, candidate.EnvironmentID)
 	})
@@ -452,7 +451,7 @@ func (h *Handler) JoinEnvironments(ctx context.Context, input *JoinSwarmEnvironm
 		return nil, err
 	}
 
-	permissions, _ := middleware.PermissionsFromContext(ctx)
+	permissions, _ := authz.PermissionsFromContext(ctx)
 	for _, target := range input.Body.Targets {
 		if target.EnvironmentID == input.EnvironmentID {
 			return nil, huma.Error400BadRequest("selected swarm manager cannot also be a join target")
@@ -473,7 +472,7 @@ func (h *Handler) JoinEnvironments(ctx context.Context, input *JoinSwarmEnvironm
 }
 
 func requireEasyJoinManagerPermissions(ctx context.Context, environmentID string) error {
-	permissions, _ := middleware.PermissionsFromContext(ctx)
+	permissions, _ := authz.PermissionsFromContext(ctx)
 	if permissions == nil || !permissions.Allows(authz.PermSwarmJoin, environmentID) {
 		return huma.Error403Forbidden("swarm:join permission is required on the manager environment")
 	}

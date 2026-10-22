@@ -12,6 +12,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { TrashIcon, GlobeIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { webhookService } from '#lib/services/webhook-service.js';
 	import type { Webhook } from '#lib/types/environment.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -291,13 +292,13 @@
 
 {#snippet RowActions({ item }: { item: Webhook })}
 	<RowActionsMenu>
-		<IfPermitted perm="webhooks:update">
+		<IfPermitted perm={PERMISSIONS.WEBHOOKS_UPDATE}>
 			<DropdownMenu.Item onclick={() => handleToggleWebhook(item)} disabled={isLoading.toggling}>
 				{item.enabled ? m.common_disable() : m.common_enable()}
 			</DropdownMenu.Item>
 		</IfPermitted>
 		<DropdownMenu.Separator />
-		<IfPermitted perm="webhooks:delete">
+		<IfPermitted perm={PERMISSIONS.WEBHOOKS_DELETE}>
 			<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteWebhook(item.id, item.name)}>
 				<TrashIcon class="size-4" />
 				{m.common_delete()}

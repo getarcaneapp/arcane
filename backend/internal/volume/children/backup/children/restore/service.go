@@ -25,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/backupbrowser"
@@ -59,6 +60,7 @@ set -- "$tmp"
 
 // Dependencies are the backup runtime, storage, and helper-container operations restores run through.
 type Dependencies struct {
+	Authorize       func(ctx context.Context, volumeName, perm string) error
 	Docker          *docker.DockerClientService
 	Engine          *backup.Engine
 	Events          *event.EventService
@@ -87,6 +89,14 @@ func NewService(deps Dependencies) *Service {
 }
 
 func (s *Service) RestoreBackup(ctx context.Context, volumeName, backupID string, user types.Actor) (err error) {
+	if authErr := s.deps.Authorize(ctx, volumeName, authz.PermVolumesBackup); authErr != nil {
+		if !errdefs.IsNotFound(authErr) {
+			return authErr
+		}
+		if createErr := authz.CheckCreate(ctx, authz.PermVolumesBackup, authz.VolumeAttributes(volumeName, nil)); createErr != nil {
+			return createErr
+		}
+	}
 	entry, err := s.deps.Run(ctx, backupID)
 	if err != nil {
 		return err
@@ -286,6 +296,9 @@ func (s *Service) restoreSelection(
 }
 
 func (s *Service) RestoreBackupFiles(ctx context.Context, volumeName, backupID string, selection types.BackupRestoreSelection, user types.Actor) (err error) {
+	if authErr := s.deps.Authorize(ctx, volumeName, authz.PermVolumesBackup); authErr != nil {
+		return authErr
+	}
 	entry, err := s.deps.Run(ctx, backupID)
 	if err != nil {
 		return err
@@ -449,6 +462,9 @@ func (s *Service) RestoreArchiveMembers(ctx context.Context, containerID, filena
 
 func (s *Service) UploadAndRestore(ctx context.Context, volumeName string, archive io.ReadSeeker, filename string, user types.Actor) (err error) {
 	slog.DebugContext(ctx, "volume service: upload and restore", "volume", volumeName, "filename", filename, "user", user.ID)
+	if authErr := s.deps.Authorize(ctx, volumeName, authz.PermVolumesUpload); authErr != nil {
+		return authErr
+	}
 
 	gzr, err := gzip.NewReader(archive)
 	if err != nil {

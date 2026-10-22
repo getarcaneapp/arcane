@@ -10,8 +10,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/audit"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/group"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
@@ -25,13 +27,15 @@ func setupAuthServiceTestDB(t *testing.T) *database.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
+		&audit.AuditLog{},
 		&settings.SettingVariable{},
 		&userdomain.User{},
 		&session.UserSession{},
 		&role.Role{},
-		&role.UserRoleAssignment{},
+		&role.RoleBinding{},
+		&group.Group{},
+		&group.GroupMember{},
 		&role.ApiKeyPermission{},
-		&role.OidcRoleMapping{},
 	))
 	// Production migrations define username as UNIQUE. AutoMigrate cannot infer
 	// that SQL-only constraint from the model, so mirror it in the test schema.
@@ -60,7 +64,6 @@ func setupUserAndRoleServices(t *testing.T) (*userdomain.UserService, *role.Role
 	t.Helper()
 	db := setupAuthServiceTestDB(t)
 	localRole := role.NewRoleService(db)
-	require.NoError(t, localRole.EnsureBuiltInRoles(t.Context()))
 	userRecord := userdomain.NewUserService(db, localRole, session.RevokeAllUserSessionsExceptInDB)
 	return userRecord, localRole
 }
@@ -78,9 +81,7 @@ func createTestUser(t *testing.T, svc *userdomain.UserService, id, username stri
 // grantGlobalAdmin assigns the built-in Admin role globally to the user.
 func grantGlobalAdmin(t *testing.T, roleSvc *role.RoleService, userID string) {
 	t.Helper()
-	require.NoError(t, roleSvc.ReplaceUserAssignments(t.Context(), userID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
-		{RoleID: authz.BuiltInRoleAdmin, EnvironmentID: nil},
-	}))
+	require.NoError(t, roleSvc.BindUser(t.Context(), userID, authz.BuiltInRoleAdmin))
 }
 
 func TestDeleteUserRejectsDeletingOnlyAdmin(t *testing.T) {
@@ -191,32 +192,21 @@ func TestListUsersPaginatedSetsCanDeleteFromGlobalAdminCount(t *testing.T) {
 	require.True(t, adminDTO.CanDelete)
 }
 
-func TestDeleteUserRejectsDeletingOnlyCustomAllPermissionsAdmin(t *testing.T) {
+func TestDeleteUserAllowsDeletingCustomAllPermissionsHolder(t *testing.T) {
 	userSvc, roleSvc := setupUserAndRoleServices(t)
 	ctx := t.Context()
 
 	customAdmin := createTestUser(t, userSvc, "custom-admin", "custom-admin")
 	customRole, err := roleSvc.CreateRole(ctx, "Custom Admin", nil, authz.AllPermissions())
 	require.NoError(t, err)
-	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, customAdmin.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
-		{RoleID: customRole.ID, EnvironmentID: nil},
-	}))
+	require.NoError(t, roleSvc.BindUser(ctx, customAdmin.ID, customRole.ID))
 
-	err = userSvc.DeleteUser(ctx, customAdmin.ID, nil)
-	require.ErrorIs(t, err, userdomain.ErrCannotRemoveLastAdmin)
-
-	users, _, err := userSvc.ListUsersPaginated(ctx, pagination.QueryParams{
-		Start: 0, Limit: 20,
-		Sort: "Username", Order: "asc",
-		Filters: map[string]string{},
-	})
-	require.NoError(t, err)
-	require.Len(t, users, 1)
-	require.False(t, users[0].CanDelete)
-	require.True(t, users[0].IsGlobalAdmin)
 	dto, err := userSvc.ToUserResponseDto(ctx, *customAdmin)
 	require.NoError(t, err)
-	require.False(t, dto.CanDelete)
+	require.False(t, dto.IsGlobalAdmin)
+	require.True(t, dto.CanDelete)
+
+	require.NoError(t, userSvc.DeleteUser(ctx, customAdmin.ID, nil))
 }
 
 func TestUserProfileValidationAndPersistence(t *testing.T) {
@@ -311,9 +301,7 @@ func TestUpdateUserRejectsNonAdminActorEditingAdmin(t *testing.T) {
 	manager := createTestUser(t, userSvc, "mgr-1", "manager")
 	managerRole, err := roleSvc.CreateRole(ctx, "User Manager", nil, []string{authz.PermUsersUpdate})
 	require.NoError(t, err)
-	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, manager.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
-		{RoleID: managerRole.ID, EnvironmentID: nil},
-	}))
+	require.NoError(t, roleSvc.BindUser(ctx, manager.ID, managerRole.ID))
 	managerPerms, err := roleSvc.ResolvePermissions(ctx, manager.ID)
 	require.NoError(t, err)
 
@@ -352,9 +340,7 @@ func TestUpdateUserAllowsNonAdminActorEditingNonAdmin(t *testing.T) {
 	manager := createTestUser(t, userSvc, "mgr-1", "manager")
 	managerRole, err := roleSvc.CreateRole(ctx, "User Manager", nil, []string{authz.PermUsersUpdate})
 	require.NoError(t, err)
-	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, manager.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
-		{RoleID: managerRole.ID, EnvironmentID: nil},
-	}))
+	require.NoError(t, roleSvc.BindUser(ctx, manager.ID, managerRole.ID))
 	managerPerms, err := roleSvc.ResolvePermissions(ctx, manager.ID)
 	require.NoError(t, err)
 
@@ -390,9 +376,7 @@ func TestDeleteUserRejectsNonAdminActorDeletingAdmin(t *testing.T) {
 	manager := createTestUser(t, userSvc, "mgr-1", "manager")
 	managerRole, err := roleSvc.CreateRole(ctx, "User Manager", nil, []string{authz.PermUsersDelete})
 	require.NoError(t, err)
-	require.NoError(t, roleSvc.ReplaceUserAssignments(ctx, manager.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
-		{RoleID: managerRole.ID, EnvironmentID: nil},
-	}))
+	require.NoError(t, roleSvc.BindUser(ctx, manager.ID, managerRole.ID))
 	managerPerms, err := roleSvc.ResolvePermissions(ctx, manager.ID)
 	require.NoError(t, err)
 
@@ -431,7 +415,7 @@ func TestCreateDefaultAdminDoesNotPromoteRenamedArcaneUser(t *testing.T) {
 
 	require.NoError(t, userSvc.CreateDefaultAdmin(ctx))
 
-	assignments, err := roleSvc.ListUserAssignments(ctx, imposter.ID)
+	assignments, err := roleSvc.ListUserBindings(ctx, imposter.ID)
 	require.NoError(t, err)
 	require.Empty(t, assignments)
 }
@@ -444,7 +428,7 @@ func TestCreateDefaultAdminRecoversArcaneUserWhenNoGlobalAdminExists(t *testing.
 
 	require.NoError(t, userSvc.CreateDefaultAdmin(ctx))
 
-	assignments, err := roleSvc.ListUserAssignments(ctx, orphan.ID)
+	assignments, err := roleSvc.ListUserBindings(ctx, orphan.ID)
 	require.NoError(t, err)
 	require.Len(t, assignments, 1)
 	require.Equal(t, authz.BuiltInRoleAdmin, assignments[0].RoleID)

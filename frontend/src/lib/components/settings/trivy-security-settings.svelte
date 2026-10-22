@@ -13,6 +13,7 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { networkService } from '#lib/services/network-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -95,7 +96,9 @@
 				return networkService.getNetworksForEnvironment(requestedEnvironmentId!, networkRequest);
 			},
 			enabled:
-				vulnerabilityManagementEnabled && !!requestedEnvironmentId && hasPermission('networks:read', requestedEnvironmentId)
+				vulnerabilityManagementEnabled &&
+				!!requestedEnvironmentId &&
+				hasPermission(PERMISSIONS.NETWORKS_READ, requestedEnvironmentId)
 		};
 	});
 	const customTrivyNetworkOptions = $derived(
@@ -137,7 +140,8 @@
 		const cache = queryClient.getQueryCache();
 		let lastError: unknown;
 		function reportNetworkError(error: unknown) {
-			if (!error || error === lastError || !targetEnvironmentId || !hasPermission('networks:read', targetEnvironmentId)) return;
+			if (!error || error === lastError || !targetEnvironmentId || !hasPermission(PERMISSIONS.NETWORKS_READ, targetEnvironmentId))
+				return;
 			lastError = error;
 			toast.info(m.security_trivy_network_fetch_failed());
 		}

@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	updaterlabels "go.getarcane.app/updater/labels"
 
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
@@ -414,4 +415,31 @@ services:
 	require.Equal(t, "tag", project.Services["child"].Labels[updaterlabels.LabelUpdateStrategy])
 	require.Equal(t, "=3.20.1", project.Services["child"].Labels[updaterlabels.LabelUpdateConstraint])
 	require.Equal(t, "true", project.Services["child"].Labels[updaterlabels.LabelUpdater])
+}
+
+func TestApplyOwnerLabel_StampsServicesAndLocalVolumesAndNetworks(t *testing.T) {
+	project := &composetypes.Project{
+		Services: composetypes.Services{
+			"web": {
+				Name:   "web",
+				Labels: composetypes.Labels{libarcane.LabelOwner: "someone-else"},
+			},
+		},
+		Volumes: composetypes.Volumes{
+			"data":   {Name: "data"},
+			"shared": {Name: "shared", External: true},
+		},
+		Networks: composetypes.Networks{
+			"backend": {Name: "backend"},
+			"proxy":   {Name: "proxy", External: true},
+		},
+	}
+
+	ApplyOwnerLabel(project, new("user-1"))
+
+	require.Equal(t, "user-1", project.Services["web"].Labels[libarcane.LabelOwner])
+	require.Equal(t, "user-1", project.Volumes["data"].Labels[libarcane.LabelOwner])
+	require.Equal(t, "user-1", project.Networks["backend"].Labels[libarcane.LabelOwner])
+	require.NotContains(t, project.Volumes["shared"].Labels, libarcane.LabelOwner)
+	require.NotContains(t, project.Networks["proxy"].Labels, libarcane.LabelOwner)
 }

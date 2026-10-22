@@ -10,10 +10,8 @@
 	import { UsersIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { roleService } from '#lib/services/role-service.js';
 	import { userService } from '#lib/services/user-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { User, UserCreate, UserUpdate } from '#lib/types/auth.js';
 	import type { Settings } from '#lib/types/settings.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -34,33 +32,6 @@
 	});
 
 	let userToEdit = $state<User | null>(null);
-
-	// Role assignment is admin-only on the server. Non-admins editing users can
-	// still update profile fields but must not call the assignments endpoint.
-	const isAdmin = $derived(userStore.isGlobalAdmin());
-
-	// availableRoleAssignments for the edit form — manual assignments only,
-	// stripped to (roleId, environmentId) tuples. OIDC-sourced assignments must
-	// not round-trip: PUT /users/{id}/roles replaces source='manual'
-	// rows, so resubmitting oidc rows would duplicate them as manual.
-	const editingAssignments = $derived(
-		userToEdit?.roleAssignments
-			?.filter((a) => a.source !== 'oidc')
-			.map((a) => ({ roleId: a.roleId, environmentId: a.environmentId }))
-			.sort(compareAssignments) ?? []
-	);
-
-	const nameCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-
-	// Global assignments sort first because their environment name is empty.
-	function compareAssignments(a: { roleId: string; environmentId?: string }, b: { roleId: string; environmentId?: string }) {
-		const envName = (id?: string) => (id ? (data.environments.find((e) => e.id === id)?.name ?? id) : '');
-		const roleName = (id: string) => data.roles.find((r) => r.id === id)?.name ?? id;
-		return (
-			nameCollator.compare(envName(a.environmentId), envName(b.environmentId)) ||
-			nameCollator.compare(roleName(a.roleId), roleName(b.roleId))
-		);
-	}
 
 	let isLoading = $state({
 		creating: false,
@@ -100,55 +71,25 @@
 		isEditMode,
 		userId
 	}: {
-		user: UserUpdate & {
-			roleAssignments?: { roleId: string; environmentId?: string }[];
-		};
+		user: UserUpdate;
 		isEditMode: boolean;
 		userId?: string;
 	}): Promise<boolean> {
 		const loading = isEditMode ? 'editing' : 'creating';
 		isLoading[loading] = true;
-		let assignmentsFailed = false;
 
 		if (isEditMode && userId) {
 			const safeUsername = userToEdit?.username || m.common_unknown();
-			// Split: profile fields go to PATCH /users/{id}; role assignments
-			// go to PUT /users/{id}/roles (separate endpoint).
-			const { roleAssignments, ...profile } = user;
-
-			// OIDC users submit role assignments only — skip the empty profile PUT.
-			if (Object.keys(profile).length === 0 && isAdmin && roleAssignments) {
-				const assignmentsResult = await tryCatch(roleService.setUserAssignments(userId, { assignments: roleAssignments }));
-				await handleApiResultWithCallbacks({
-					result: assignmentsResult,
-					message: m.common_update_failed({ resource: `${m.resource_user()} "${safeUsername}"` }),
-					setLoadingState: (value) => (isLoading[loading] = value),
-					onSuccess: async () => {
-						await completeUserEdit(safeUsername);
-					}
-				});
-				return !assignmentsResult.error;
-			}
-
-			const result = await tryCatch(userService.update(userId, profile));
+			const result = await tryCatch(userService.update(userId, user));
 			await handleApiResultWithCallbacks({
 				result,
 				message: m.common_update_failed({ resource: `${m.resource_user()} "${safeUsername}"` }),
 				setLoadingState: (value) => (isLoading[loading] = value),
 				onSuccess: async () => {
-					if (isAdmin && roleAssignments) {
-						const assignmentsResult = await tryCatch(roleService.setUserAssignments(userId, { assignments: roleAssignments }));
-						await handleApiResultWithCallbacks({
-							result: assignmentsResult,
-							message: m.common_update_failed({ resource: `${m.resource_user()} "${safeUsername}"` })
-						});
-						assignmentsFailed = assignmentsResult.error !== null;
-						if (assignmentsFailed) return;
-					}
 					await completeUserEdit(safeUsername);
 				}
 			});
-			return !result.error && !assignmentsFailed;
+			return !result.error;
 		} else {
 			if (!user.username) {
 				toast.error(m.common_username_required());
@@ -170,20 +111,8 @@
 				result,
 				message: m.common_create_failed({ resource: `${m.resource_user()} "${safeUsername}"` }),
 				setLoadingState: (value) => (isLoading[loading] = value),
-				onSuccess: async (created) => {
-					if (isAdmin && user.roleAssignments && created?.id) {
-						const assignmentsResult = await tryCatch(
-							roleService.setUserAssignments(created.id, { assignments: user.roleAssignments })
-						);
-						await handleApiResultWithCallbacks({
-							result: assignmentsResult,
-							message: m.common_update_failed({ resource: `${m.resource_user()} "${safeUsername}"` })
-						});
-						assignmentsFailed = assignmentsResult.error !== null;
-					}
-					if (!assignmentsFailed) {
-						toast.success(m.common_create_success({ resource: `${m.resource_user()} "${safeUsername}"` }));
-					}
+				onSuccess: async () => {
+					toast.success(m.common_create_success({ resource: `${m.resource_user()} "${safeUsername}"` }));
 					isDialogOpen.create = false;
 					await refreshUsers();
 				}
@@ -277,14 +206,7 @@
 			</SettingsRow>
 		</SettingsSection>
 
-		<UserTable
-			bind:users
-			bind:selectedIds
-			bind:requestOptions
-			roles={data.roles}
-			onUsersChanged={refreshUsers}
-			onEditUser={openEditDialog}
-		/>
+		<UserTable bind:users bind:selectedIds bind:requestOptions onUsersChanged={refreshUsers} onEditUser={openEditDialog} />
 	{/snippet}
 
 	{#snippet additionalContent()}
@@ -293,7 +215,6 @@
 			userToEdit={null}
 			roles={data.roles}
 			environments={data.environments}
-			availableRoleAssignments={[]}
 			onSubmit={handleUserSubmit}
 			isLoading={isLoading.creating}
 		/>
@@ -303,7 +224,6 @@
 			bind:userToEdit
 			roles={data.roles}
 			environments={data.environments}
-			availableRoleAssignments={editingAssignments}
 			onSubmit={handleUserSubmit}
 			isLoading={isLoading.editing}
 			allowUsernameEdit={true}

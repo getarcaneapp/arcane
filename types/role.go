@@ -6,62 +6,87 @@ import (
 
 // Role represents a named permission set returned by the API.
 type Role struct {
-	ID                string     `json:"id" readOnly:"true" doc:"Unique identifier of the role" example:"role_admin"`
-	Name              string     `json:"name" required:"false" minLength:"1" maxLength:"100" doc:"Display name of the role" example:"Admin" unorm:"nfc" trim:"true"`
-	Description       *string    `json:"description,omitempty" maxLength:"500" doc:"Optional human description" unorm:"nfc" trim:"true"`
-	Permissions       []string   `json:"permissions" required:"false" doc:"Permission strings granted by this role" example:"[\"containers:start\",\"projects:deploy\"]"`
-	BuiltIn           bool       `json:"builtIn" readOnly:"true" doc:"True for built-in roles (Admin/Editor/Deployer/Viewer); built-ins cannot be edited or deleted"`
-	AssignedUserCount int        `json:"assignedUserCount" readOnly:"true" doc:"How many users currently hold an assignment to this role"`
-	CreatedAt         time.Time  `json:"createdAt" readOnly:"true" doc:"Creation timestamp"`
-	UpdatedAt         *time.Time `json:"updatedAt,omitempty" readOnly:"true" doc:"Last update timestamp"`
+	ID           string     `json:"id" readOnly:"true" doc:"Unique identifier of the role" example:"role_admin"`
+	Name         string     `json:"name" required:"false" minLength:"1" maxLength:"100" doc:"Display name of the role" example:"Admin" unorm:"nfc" trim:"true"`
+	Description  *string    `json:"description,omitempty" maxLength:"500" doc:"Optional human description" unorm:"nfc" trim:"true"`
+	Permissions  []string   `json:"permissions" required:"false" doc:"Permission strings granted by this role" example:"[\"containers:start\",\"projects:deploy\"]"`
+	BuiltIn      bool       `json:"builtIn" readOnly:"true" doc:"True for built-in roles, which are defined in code and cannot be edited or deleted"`
+	BindingCount int        `json:"bindingCount" readOnly:"true" doc:"How many bindings reference this role"`
+	CreatedAt    time.Time  `json:"createdAt" readOnly:"true" doc:"Creation timestamp"`
+	UpdatedAt    *time.Time `json:"updatedAt,omitempty" readOnly:"true" doc:"Last update timestamp"`
 }
 
-// RoleAssignment binds a user to a role, optionally scoped to one environment.
-// EnvironmentID == nil means the assignment is global — it applies to every
-// environment and to org-level endpoints.
-type RoleAssignment struct {
-	ID            string    `json:"id" doc:"Unique identifier of the assignment"`
-	UserID        string    `json:"userId" doc:"ID of the user holding this assignment"`
-	RoleID        string    `json:"roleId" doc:"ID of the granted role"`
-	EnvironmentID *string   `json:"environmentId,omitempty" doc:"Environment ID this assignment is scoped to; omit for a global assignment"`
-	Source        string    `json:"source" doc:"How the assignment was created" enum:"manual,oidc"`
-	CreatedAt     time.Time `json:"createdAt" doc:"Creation timestamp"`
+type RoleBinding struct {
+	ID              string            `json:"id" readOnly:"true" doc:"Unique identifier of the binding"`
+	SubjectType     string            `json:"subjectType" enum:"user,group" doc:"Kind of subject the role is bound to"`
+	SubjectID       string            `json:"subjectId" doc:"ID of the bound user or group"`
+	SubjectName     string            `json:"subjectName" doc:"Username or group name of the subject"`
+	RoleID          string            `json:"roleId" doc:"ID of the bound role"`
+	RoleName        string            `json:"roleName" doc:"Display name of the bound role"`
+	EnvironmentID   *string           `json:"environmentId,omitempty" doc:"Environment the binding applies to; omitted for a global binding"`
+	EnvironmentName string            `json:"environmentName,omitempty" doc:"Display name of the environment"`
+	Selector        *ResourceSelector `json:"selector,omitempty" doc:"Resource selector restricting the binding; omitted for unrestricted bindings"`
+	Source          string            `json:"source" enum:"manual,federated,oidc" doc:"How the binding was created"`
+	CreatedBy       *string           `json:"createdBy,omitempty" doc:"ID of the user who created the binding"`
+	CreatedAt       time.Time         `json:"createdAt" doc:"Creation timestamp"`
 }
 
-// SetUserRoleAssignments replaces every manual role assignment for one user. OIDC-
-// sourced assignments are not affected and are managed via OIDC role mappings.
-type SetUserRoleAssignments struct {
-	Assignments []UserRoleAssignmentInput `json:"assignments" doc:"Desired manual role assignments for the user"`
+type RoleBindingSummary struct {
+	ID            string            `json:"id" doc:"Unique identifier of the binding"`
+	RoleID        string            `json:"roleId" doc:"ID of the bound role"`
+	RoleName      string            `json:"roleName" doc:"Display name of the bound role"`
+	EnvironmentID *string           `json:"environmentId,omitempty" doc:"Environment the binding applies to; omitted for a global binding"`
+	Selector      *ResourceSelector `json:"selector,omitempty" doc:"Resource selector restricting the binding"`
+	Source        string            `json:"source" enum:"manual,federated,oidc" doc:"How the binding was created"`
+	GroupID       *string           `json:"groupId,omitempty" doc:"Group the binding is inherited from; omitted for direct bindings"`
+	GroupName     *string           `json:"groupName,omitempty" doc:"Name of the group the binding is inherited from"`
 }
 
-// UserRoleAssignmentInput is one row in a SetUserRoleAssignments request.
-type UserRoleAssignmentInput struct {
-	RoleID        string  `json:"roleId" doc:"ID of the role to grant"`
-	EnvironmentID *string `json:"environmentId,omitempty" doc:"Environment ID to scope the assignment to; omit for a global assignment"`
+type CreateRoleBinding struct {
+	SubjectType   string            `json:"subjectType" enum:"user,group" doc:"Kind of subject to bind"`
+	SubjectID     string            `json:"subjectId" minLength:"1" doc:"ID of the user or group to bind"`
+	RoleID        string            `json:"roleId" minLength:"1" doc:"ID of the role to bind"`
+	EnvironmentID *string           `json:"environmentId,omitempty" doc:"Environment to scope the binding to; omit for a global binding"`
+	Selector      *ResourceSelector `json:"selector,omitempty" doc:"Resource selector restricting the binding"`
 }
 
-// OidcRoleMapping maps an OIDC group/claim value to a role assignment. On
-// every OIDC login, mappings whose ClaimValue is present in the user's
-// configured groups claim are converted into source='oidc' role assignments.
-type OidcRoleMapping struct {
-	ID            string     `json:"id" readOnly:"true" doc:"Unique identifier of the mapping"`
-	ClaimValue    string     `json:"claimValue" required:"false" doc:"OIDC claim value that triggers this mapping" example:"docker-admins"`
-	RoleID        string     `json:"roleId" required:"false" doc:"Role to assign when the claim matches"`
-	EnvironmentID *string    `json:"environmentId,omitempty" doc:"Environment ID to scope the assignment to; omit for a global assignment"`
-	Source        string     `json:"source" readOnly:"true" enum:"manual,env" doc:"Origin: manual rows are editable via UI/API; env rows come from ARCANE_OIDC_ROLE_MAPPINGS and are read-only"`
-	CreatedAt     time.Time  `json:"createdAt" readOnly:"true"`
-	UpdatedAt     *time.Time `json:"updatedAt,omitempty" readOnly:"true"`
+type CreateRoleBindingResult struct {
+	Binding            RoleBinding `json:"binding" doc:"The created binding"`
+	DroppedPermissions []string    `json:"droppedPermissions" doc:"Role permissions the selector cannot scope and that the binding therefore does not grant"`
 }
 
-// OidcRoleMappingSpec is the schema for one entry in the OIDC_ROLE_MAPPINGS
-// env var. Operators can declare OIDC group→role mappings at deploy time;
-// each spec is reconciled into a source='env' row at boot. Distinct from
-// OidcRoleMapping (the API DTO) so the env-var format can evolve without
-// breaking the API and vice versa.
-type OidcRoleMappingSpec struct {
-	ClaimValue    string  `json:"claimValue" doc:"OIDC claim value to match"`
-	RoleID        string  `json:"roleId" doc:"Role ID to assign when the claim matches"`
-	EnvironmentID *string `json:"environmentId,omitempty" doc:"Environment ID to scope the assignment to; omit for a global assignment"`
+type RoleBindingFilter struct {
+	SubjectType   string `json:"subjectType,omitempty"`
+	SubjectID     string `json:"subjectId,omitempty"`
+	RoleID        string `json:"roleId,omitempty"`
+	EnvironmentID string `json:"environmentId,omitempty"`
+}
+
+type BindingRef struct {
+	ID           string  `json:"id" doc:"Binding ID"`
+	RoleID       string  `json:"roleId" doc:"Role granted by the binding"`
+	RoleName     string  `json:"roleName" doc:"Display name of the role"`
+	GroupID      *string `json:"groupId,omitempty" doc:"Group the binding is inherited from"`
+	GroupName    *string `json:"groupName,omitempty" doc:"Name of the group the binding is inherited from"`
+	Unrestricted bool    `json:"unrestricted" doc:"Whether the binding has no resource selector"`
+}
+
+type EffectivePermission struct {
+	Permission   string             `json:"permission" doc:"Permission string"`
+	Unrestricted bool               `json:"unrestricted" doc:"Whether the permission applies to every resource in scope"`
+	Selectors    []ResourceSelector `json:"selectors,omitempty" doc:"Selectors limiting the permission when it is not unrestricted"`
+	Via          []BindingRef       `json:"via" doc:"Bindings that grant the permission"`
+}
+
+type EffectiveScope struct {
+	EnvironmentID *string               `json:"environmentId,omitempty" doc:"Environment the permissions apply to; omitted for global permissions"`
+	Permissions   []EffectivePermission `json:"permissions" doc:"Permissions granted at this scope"`
+}
+
+type EffectiveAccess struct {
+	UserID        string           `json:"userId" doc:"User the access was resolved for"`
+	IsGlobalAdmin bool             `json:"isGlobalAdmin" doc:"Whether the user is an administrator"`
+	Scopes        []EffectiveScope `json:"scopes" doc:"Permissions grouped by scope"`
 }
 
 // PermissionsManifest describes every permission the server recognizes,
@@ -83,11 +108,12 @@ type PermissionResource struct {
 
 // PermissionAction is one permission inside a resource group.
 type PermissionAction struct {
-	Key         string   `json:"key" doc:"Action verb" example:"start"`
-	Permission  string   `json:"permission" doc:"Fully-qualified permission string used in role definitions" example:"containers:start"`
-	Label       string   `json:"label" doc:"Human-readable label" example:"Start"`
-	Description string   `json:"description,omitempty" doc:"Optional longer description"`
-	Requires    []string `json:"requires,omitempty" doc:"Permissions that should be auto-selected when this permission is chosen in the UI"`
+	Key         string         `json:"key" doc:"Action verb" example:"start"`
+	Permission  string         `json:"permission" doc:"Fully-qualified permission string used in role definitions" example:"containers:start"`
+	Label       string         `json:"label" doc:"Human-readable label" example:"Start"`
+	Description string         `json:"description,omitempty" doc:"Optional longer description"`
+	Requires    []string       `json:"requires,omitempty" doc:"Permissions that should be auto-selected when this permission is chosen in the UI"`
+	Selectors   []SelectorKind `json:"selectors,omitempty" doc:"Selector kinds that can scope this permission in a role binding"`
 }
 
 // PermissionPreset is an optional bulk-selection bundle exposed to the UI.

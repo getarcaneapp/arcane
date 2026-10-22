@@ -9,6 +9,7 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { AlertTriangleIcon, EdgeConnectionIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS, type Permission } from '#lib/permissions.generated.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { SwarmNodeAgentDeployment, SwarmNode } from '#lib/types/swarm.js';
 	import { hasAnyPermission } from '#lib/utils/auth.js';
@@ -63,7 +64,7 @@
 		}
 	});
 
-	async function navigateToResource(path: string, permissions: string[]) {
+	async function navigateToResource(path: string, permissions: Permission[]) {
 		const environmentId = agentStatus.environmentId;
 		if (!environmentId || !hasAnyPermission(permissions, environmentId)) return;
 		const environment = environmentStore.available.find((candidate) => candidate.id === environmentId);
@@ -146,36 +147,36 @@
 					<div class="text-sm text-muted-foreground">{m.swarm_node_agent_resources_description()}</div>
 				</div>
 				<div class="flex flex-wrap gap-2">
-					{#if hasAnyPermission(['containers:list', 'containers:read'], agentStatus.environmentId)}
+					{#if hasAnyPermission([PERMISSIONS.CONTAINERS_LIST, PERMISSIONS.CONTAINERS_READ], agentStatus.environmentId)}
 						<ArcaneButton
 							action="base"
 							tone="outline"
 							customLabel={m.containers()}
-							onclick={() => navigateToResource('/containers', ['containers:list', 'containers:read'])}
+							onclick={() => navigateToResource('/containers', [PERMISSIONS.CONTAINERS_LIST, PERMISSIONS.CONTAINERS_READ])}
 						/>
 					{/if}
-					{#if hasAnyPermission(['images:list', 'images:read'], agentStatus.environmentId)}
+					{#if hasAnyPermission([PERMISSIONS.IMAGES_LIST, PERMISSIONS.IMAGES_READ], agentStatus.environmentId)}
 						<ArcaneButton
 							action="base"
 							tone="outline"
 							customLabel={m.images()}
-							onclick={() => navigateToResource('/images', ['images:list', 'images:read'])}
+							onclick={() => navigateToResource('/images', [PERMISSIONS.IMAGES_LIST, PERMISSIONS.IMAGES_READ])}
 						/>
 					{/if}
-					{#if hasAnyPermission(['volumes:list', 'volumes:read'], agentStatus.environmentId)}
+					{#if hasAnyPermission([PERMISSIONS.VOLUMES_LIST, PERMISSIONS.VOLUMES_READ], agentStatus.environmentId)}
 						<ArcaneButton
 							action="base"
 							tone="outline"
 							customLabel={m.resource_volumes_cap()}
-							onclick={() => navigateToResource('/volumes', ['volumes:list', 'volumes:read'])}
+							onclick={() => navigateToResource('/volumes', [PERMISSIONS.VOLUMES_LIST, PERMISSIONS.VOLUMES_READ])}
 						/>
 					{/if}
-					{#if hasAnyPermission(['networks:list', 'networks:read'], agentStatus.environmentId)}
+					{#if hasAnyPermission([PERMISSIONS.NETWORKS_LIST, PERMISSIONS.NETWORKS_READ], agentStatus.environmentId)}
 						<ArcaneButton
 							action="base"
 							tone="outline"
 							customLabel={m.resource_networks_cap()}
-							onclick={() => navigateToResource('/networks', ['networks:list', 'networks:read'])}
+							onclick={() => navigateToResource('/networks', [PERMISSIONS.NETWORKS_LIST, PERMISSIONS.NETWORKS_READ])}
 						/>
 					{/if}
 				</div>

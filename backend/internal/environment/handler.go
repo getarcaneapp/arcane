@@ -158,7 +158,7 @@ func NewHandler(
 
 // ListEnvironments returns a paginated list of environments.
 func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEnvironmentsInput) (*handlerutil.Page[types.Environment], error) {
-	ps, ok := middleware.PermissionsFromContext(ctx)
+	ps, ok := authz.PermissionsFromContext(ctx)
 	if !ok {
 		return nil, huma.Error403Forbidden("permission denied")
 	}
@@ -502,7 +502,7 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 // TestConnection tests connectivity to an environment.
 func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConnectionInput) (*handlerutil.Out[types.EnvironmentTest], error) {
 	if kit.FromPtr(input.Body).ApiUrl != nil {
-		permissions, ok := middleware.PermissionsFromContext(ctx)
+		permissions, ok := authz.PermissionsFromContext(ctx)
 		if !ok || !permissions.Allows(authz.PermEnvironmentsUpdate, "") {
 			return nil, huma.Error403Forbidden("permission denied: " + authz.PermEnvironmentsUpdate)
 		}

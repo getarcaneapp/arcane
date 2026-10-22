@@ -1,8 +1,9 @@
 import { m } from '#lib/paraglide/messages.js';
+import { PERMISSIONS, type Permission } from '#lib/permissions.generated.js';
 import { APIError } from '#lib/services/api-service.js';
 import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
-import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/auth.js';
+import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 import type { PermissionsManifest, User } from '#lib/types/auth.js';
 import {
 	canReachAccessSurface,
@@ -49,11 +50,11 @@ function resolveEnvId(envId?: string): string | undefined {
 	return selected.id;
 }
 
-export function hasPermission(perm: string, envId?: string): boolean {
+export function hasPermission(perm: Permission, envId?: string): boolean {
 	return userStore.hasPermission(perm, resolveEnvId(envId));
 }
 
-export function hasAnyPermission(perms: string[], envId?: string): boolean {
+export function hasAnyPermission(perms: Permission[], envId?: string): boolean {
 	return userStore.hasAnyPermission(perms, resolveEnvId(envId));
 }
 
@@ -84,26 +85,15 @@ const PROTECTED_PREFIXES = [
 const UNAUTHENTICATED_ONLY_PREFIXES = ['/login', '/oidc/login', '/img', '/favicon.ico'];
 const AUTH_CALLBACK_PREFIXES = ['/oidc/callback', '/auth/oidc/callback'];
 
-function isUserGlobalAdmin(user: User): boolean {
-	if (typeof user.isGlobalAdmin === 'boolean') return user.isGlobalAdmin;
-	const global = user.permissionsByEnv?.[GLOBAL_SCOPE];
-	if (global?.includes(SUDO_PERMISSION)) return true;
-	return false;
-}
-
 export function userIsGlobalAdmin(user: User | null | undefined): boolean {
-	return !!user && isUserGlobalAdmin(user);
+	return user?.isGlobalAdmin === true;
 }
 
-export function userHasPermission(user: User | null | undefined, permission: string, envId?: string): boolean {
+export function userHasPermission(user: User | null | undefined, permission: Permission, envId?: string): boolean {
 	if (!user?.permissionsByEnv) return false;
 	const global = user.permissionsByEnv[GLOBAL_SCOPE] ?? [];
-	if (global.includes(SUDO_PERMISSION) || global.includes(permission)) return true;
+	if (global.includes(PERMISSIONS.ALL) || global.includes(permission)) return true;
 	return envId ? (user.permissionsByEnv[envId] ?? []).includes(permission) : false;
-}
-
-function isAdminOnlyRoute(path: string): boolean {
-	return path === '/settings/roles/new' || /^\/settings\/roles\/[^/]+/.test(path);
 }
 
 const matchesAny = (path: string, prefixes: string[]) =>
@@ -191,10 +181,6 @@ export function getAuthRedirectPath(
 
 	if (path !== '/no-access' && !userHasAnyAccess(user)) {
 		return '/no-access';
-	}
-
-	if (isAdminOnlyRoute(path) && !isUserGlobalAdmin(user)) {
-		return '/settings/roles';
 	}
 
 	const surface = getRouteAccessSurfaces(accessManifest).find((candidate) => pathMatchesAccessSurface(path, candidate));

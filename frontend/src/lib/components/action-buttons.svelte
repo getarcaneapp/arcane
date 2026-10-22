@@ -9,6 +9,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { TerminalIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
@@ -219,22 +220,32 @@
 	type ActionTarget = { id: string; environmentId: string | undefined };
 	const actionTarget = (): ActionTarget => ({ id, environmentId: currentEnvId });
 	const canStart = $derived(
-		type === 'container' ? hasPermission('containers:start', currentEnvId) : hasPermission('projects:deploy', currentEnvId)
+		type === 'container'
+			? hasPermission(PERMISSIONS.CONTAINERS_START, currentEnvId)
+			: hasPermission(PERMISSIONS.PROJECTS_DEPLOY, currentEnvId)
 	);
 	const canStop = $derived(
-		type === 'container' ? hasPermission('containers:stop', currentEnvId) : hasPermission('projects:down', currentEnvId)
+		type === 'container'
+			? hasPermission(PERMISSIONS.CONTAINERS_STOP, currentEnvId)
+			: hasPermission(PERMISSIONS.PROJECTS_DOWN, currentEnvId)
 	);
 	const canRestart = $derived(
-		type === 'container' ? hasPermission('containers:restart', currentEnvId) : hasPermission('projects:restart', currentEnvId)
+		type === 'container'
+			? hasPermission(PERMISSIONS.CONTAINERS_RESTART, currentEnvId)
+			: hasPermission(PERMISSIONS.PROJECTS_RESTART, currentEnvId)
 	);
 	const canRedeploy = $derived(
-		type === 'container' ? hasPermission('containers:redeploy', currentEnvId) : hasPermission('projects:deploy', currentEnvId)
+		type === 'container'
+			? hasPermission(PERMISSIONS.CONTAINERS_REDEPLOY, currentEnvId)
+			: hasPermission(PERMISSIONS.PROJECTS_DEPLOY, currentEnvId)
 	);
 	const canRemove = $derived(
-		type === 'container' ? hasPermission('containers:delete', currentEnvId) : hasPermission('projects:delete', currentEnvId)
+		type === 'container'
+			? hasPermission(PERMISSIONS.CONTAINERS_DELETE, currentEnvId)
+			: hasPermission(PERMISSIONS.PROJECTS_DELETE, currentEnvId)
 	);
-	const canPull = $derived(type === 'project' && hasPermission('projects:deploy', currentEnvId));
-	const canBuild = $derived(type === 'project' && hasPermission('projects:deploy', currentEnvId));
+	const canPull = $derived(type === 'project' && hasPermission(PERMISSIONS.PROJECTS_DEPLOY, currentEnvId));
+	const canBuild = $derived(type === 'project' && hasPermission(PERMISSIONS.PROJECTS_DEPLOY, currentEnvId));
 	const deployButtonLabel = $derived(projectHasBuildDirective ? m.compose_build_and_deploy() : m.common_up());
 
 	async function handleRefresh() {

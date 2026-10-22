@@ -5,6 +5,7 @@
 	import { BoxIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import type { ContainerListRequestOptions } from '#lib/services/container-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -86,7 +87,7 @@
 			}
 		};
 		requestOptions = nextOptions;
-		if (!hasShownPermission('containers:list')) {
+		if (!hasShownPermission(PERMISSIONS.CONTAINERS_LIST)) {
 			return;
 		}
 		return refreshContainers(buildRequestOptions(nextOptions), scope);
@@ -98,8 +99,8 @@
 
 	const containerStatusCounts = $derived(resourcesReady ? (containers.counts ?? countsFallback) : countsFallback);
 
-	const canCreateContainers = $derived(hasShownPermission('containers:create'));
-	const canAutoUpdate = $derived(hasShownPermission('containers:autoupdate'));
+	const canCreateContainers = $derived(hasShownPermission(PERMISSIONS.CONTAINERS_CREATE));
+	const canAutoUpdate = $derived(hasShownPermission(PERMISSIONS.CONTAINERS_AUTOUPDATE));
 
 	const actionButtons: ActionButton[] = $derived(
 		[

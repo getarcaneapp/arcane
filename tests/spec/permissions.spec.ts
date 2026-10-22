@@ -9,7 +9,7 @@ import {
 	type Response
 } from '../fixtures/test.fixture';
 import { TEST_COMPOSE_YAML } from '../setup/project.data';
-import { removeApiResource, readApiData } from '../utils/fetch.util';
+import { removeApiResource, readApiData, readList } from '../utils/fetch.util';
 import { openRowActionsMenu } from '../utils/table-actions.util';
 import { setCodeMirrorValue } from '../utils/playwright.util';
 
@@ -26,6 +26,20 @@ type TestUser = {
 	username: string;
 	displayName?: string;
 	permissionsByEnv: Record<string, string[]>;
+};
+
+type TestRoleBinding = {
+	id: string;
+	subjectType: 'user' | 'group';
+	subjectId: string;
+	roleId: string;
+	roleName: string;
+	environmentId?: string;
+};
+
+type TestRoleBindingResult = {
+	binding: TestRoleBinding;
+	droppedPermissions: string[];
 };
 
 type TestEnvironment = {
@@ -104,22 +118,42 @@ async function cloneViewerRoleThroughUI(page: Page) {
 	return cloned;
 }
 
-async function selectUserAssignment(
+async function addUserBindingThroughUI(
 	page: Page,
-	dialog: ReturnType<Page['getByRole']>,
-	index: number,
+	userDialog: ReturnType<Page['getByRole']>,
+	user: TestUser,
 	environmentName: string,
 	roleName: string
 ) {
-	const environmentSelect = dialog
-		.getByRole('combobox', { name: 'Environment', exact: true })
-		.nth(index);
-	await environmentSelect.click();
+	await userDialog.getByRole('button', { name: 'Add binding', exact: true }).click();
+	const bindingDialog = page.getByRole('dialog', { name: 'Add role binding' });
+	await expect(bindingDialog).toBeVisible();
+
+	await bindingDialog.getByRole('combobox', { name: 'Role', exact: true }).click();
+	await page.getByRole('option').filter({ hasText: roleName }).click();
+	await bindingDialog.getByRole('combobox', { name: 'Environment scope', exact: true }).click();
 	await page.getByRole('option', { name: environmentName, exact: true }).click();
 
-	const roleSelect = dialog.getByRole('combobox', { name: 'Role', exact: true }).nth(index);
-	await roleSelect.click();
-	await page.getByRole('option').filter({ hasText: roleName }).click();
+	const responsePromise = page.waitForResponse(
+		(response) =>
+			response.request().method() === 'POST' &&
+			new URL(response.url()).pathname === '/api/roles/bindings'
+	);
+	await bindingDialog.getByRole('button', { name: 'Add binding', exact: true }).click();
+	const result = await readApiData<TestRoleBindingResult>(
+		await responsePromise,
+		`Bind ${roleName} on ${environmentName} to ${user.username}`
+	);
+	await expect(bindingDialog).toBeHidden();
+	expect(result.binding).toMatchObject({ subjectType: 'user', subjectId: user.id, roleName });
+	expect(result.droppedPermissions).toEqual([]);
+	await expect(
+		userDialog
+			.getByRole('row')
+			.filter({ hasText: roleName })
+			.filter({ has: page.getByRole('button', { name: 'Open menu', exact: true }) })
+	).toBeVisible();
+	return result.binding;
 }
 
 async function createRestrictedUserThroughUI(
@@ -140,11 +174,6 @@ async function createRestrictedUserThroughUI(
 	await dialog.getByLabel('Password *', { exact: true }).fill(password);
 	await dialog.getByLabel('Display Name', { exact: true }).fill('Scoped Browser User');
 	await dialog.getByLabel('Email', { exact: true }).fill(`${username}@example.test`);
-
-	await dialog.getByRole('button', { name: 'Add assignment', exact: true }).click();
-	await selectUserAssignment(page, dialog, 0, localEnvironmentName, localRoleName);
-	await dialog.getByRole('button', { name: 'Add assignment', exact: true }).click();
-	await selectUserAssignment(page, dialog, 1, remoteEnvironmentName, remoteRoleName);
 
 	let createRequests = 0;
 	const countCreateRequests = (request: Request) => {
@@ -205,15 +234,9 @@ async function createRestrictedUserThroughUI(
 		(response) =>
 			response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/users'
 	);
-	const assignmentsResponsePromise = page.waitForResponse(
-		(response) =>
-			response.request().method() === 'PUT' &&
-			/^\/api\/users\/[^/]+\/roles$/.test(new URL(response.url()).pathname)
-	);
 	await dialog.getByRole('button', { name: 'Create User', exact: true }).click();
 
 	const user = await readApiData<TestUser>(await createResponsePromise, `Create user ${username}`);
-	await readApiData<unknown[]>(await assignmentsResponsePromise, `Assign roles to ${username}`);
 	await expect(dialog).toBeHidden();
 	expect(user.username).toBe(username);
 
@@ -225,6 +248,17 @@ async function createRestrictedUserThroughUI(
 	await expect(dialog.getByLabel('Email', { exact: true })).toHaveValue('');
 	await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
 	await expect(dialog).toBeHidden();
+
+	await page.getByPlaceholder('Search…').fill(username);
+	const row = page.getByRole('row').filter({ hasText: username });
+	const menu = await openRowActionsMenu(page, row);
+	await menu.getByRole('menuitem', { name: 'Edit', exact: true }).click();
+	const editDialog = page.getByRole('dialog', { name: 'Edit User' });
+	await expect(editDialog).toBeVisible();
+	await addUserBindingThroughUI(page, editDialog, user, localEnvironmentName, localRoleName);
+	await addUserBindingThroughUI(page, editDialog, user, remoteEnvironmentName, remoteRoleName);
+	await editDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+	await expect(editDialog).toBeHidden();
 	return user;
 }
 
@@ -291,22 +325,21 @@ async function editUserThroughUI(page: Page, user: TestUser) {
 			response.request().method() === 'PATCH' &&
 			new URL(response.url()).pathname === `/api/users/${user.id}`
 	);
-	const assignmentsResponsePromise = page.waitForResponse(
-		(response) =>
-			response.request().method() === 'PUT' &&
-			new URL(response.url()).pathname === `/api/users/${user.id}/roles`
-	);
 	await dialog.getByRole('button', { name: 'Save Changes', exact: true }).click();
 
 	const updateResponse = await updateResponsePromise;
 	expect(updateResponse.request().postDataJSON()).not.toHaveProperty('password');
 	const updated = await readApiData<TestUser>(updateResponse, `Update user ${user.username}`);
-	await readApiData<unknown[]>(
-		await assignmentsResponsePromise,
-		`Retain roles for ${user.username}`
-	);
 	await expect(dialog).toBeHidden();
 	expect(updated.displayName).toBe('Scoped Browser User Updated');
+
+	const bindings = await readList<TestRoleBinding>(
+		await page.request.get('/api/roles/bindings', {
+			params: { subjectType: 'user', subjectId: user.id }
+		}),
+		`Retain bindings for ${user.username}`
+	);
+	expect(bindings.data).toHaveLength(2);
 }
 
 async function loginAs(
@@ -343,9 +376,9 @@ async function createEnvironmentAdminViaApi(page: Page, username: string, passwo
 		}),
 		`Create user ${username}`
 	);
-	await readApiData<unknown[]>(
-		await page.request.put(`/api/users/${user.id}/roles`, {
-			data: { assignments: [{ roleId: 'role_admin', environmentId: '0' }] }
+	await readApiData<TestRoleBindingResult>(
+		await page.request.post('/api/roles/bindings', {
+			data: { subjectType: 'user', subjectId: user.id, roleId: 'role_admin', environmentId: '0' }
 		}),
 		`Assign the Admin role on the local environment to ${username}`
 	);

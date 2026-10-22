@@ -12,6 +12,7 @@
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { CloseIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import type { IPAMConfig, NetworkCreateOptions } from '#lib/types/docker.js';
 	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { parseKeyValuePairs } from '#lib/utils/form-parsers.js';
@@ -28,7 +29,7 @@
 	let { open = $bindable(false), onSubmit, isLoading }: CreateNetworkFormProps = $props();
 
 	let pickedEnvironmentId = $state('');
-	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'networks:create'));
+	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, PERMISSIONS.NETWORKS_CREATE));
 
 	const drivers = [
 		{ value: 'bridge', label: m.bridge() },
@@ -162,7 +163,7 @@
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
 			<EnvironmentDestinationSelect
 				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
-				permission="networks:create"
+				permission={PERMISSIONS.NETWORKS_CREATE}
 				variant="field"
 			/>
 			<div class="space-y-2">

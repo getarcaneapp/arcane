@@ -31,7 +31,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/gitutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	git "github.com/getarcaneapp/arcane/backend/v3/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
@@ -429,6 +430,24 @@ func writeBuildProgressStatus(ctx context.Context, progressWriter io.Writer, ser
 	}
 }
 
+var imageBuildPageConfig = pagination.Config[types.ImageBuildRecord]{SortBindings: []pagination.SortBinding[types.ImageBuildRecord]{
+	{
+		Key: "createdAt",
+		Fn: func(a, b types.ImageBuildRecord) int {
+			return cmp.Or(a.CreatedAt.Compare(b.CreatedAt), strings.Compare(a.ID, b.ID))
+		},
+		DescFn: func(a, b types.ImageBuildRecord) int {
+			return cmp.Or(b.CreatedAt.Compare(a.CreatedAt), strings.Compare(a.ID, b.ID))
+		},
+	},
+	{Key: "completedAt", Fn: func(a, b types.ImageBuildRecord) int {
+		return kit.FromPtr(a.CompletedAt).Compare(kit.FromPtr(b.CompletedAt))
+	}},
+	{Key: "status", Fn: func(a, b types.ImageBuildRecord) int {
+		return strings.Compare(a.Status, b.Status)
+	}},
+}}
+
 func (s *BuildService) ListImageBuildsByEnvironmentPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]types.ImageBuildRecord, pagination.Response, error) {
 	if s.db == nil {
 		return nil, pagination.Response{}, errors.New("build history not available")
@@ -452,17 +471,31 @@ func (s *BuildService) ListImageBuildsByEnvironmentPaginated(ctx context.Context
 
 	params.Sort = cmp.Or(params.Sort, "createdAt")
 
-	paginationResp, err := pagination.PaginateAndSortDB(params, q, &builds)
+	scope := authz.ScopeFromContext(ctx, authz.PermImagesList)
+	paginationResp, err := func() (pagination.Response, error) {
+		if scope.IsUnrestricted() {
+			return pagination.PaginateAndSortDB(params, q, &builds)
+		}
+		return pagination.Response{}, q.Find(&builds).Error
+	}()
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate builds: %w", err)
 	}
 
 	records := make([]types.ImageBuildRecord, 0, len(builds))
 	for _, build := range builds {
-		records = append(records, buildToRecord(build, false))
+		if record := buildToRecord(build, false); scope.Matches(authz.ImageAttributes(record.Tags, record.Labels)) {
+			records = append(records, record)
+		}
+	}
+	if scope.IsUnrestricted() {
+		return records, paginationResp, nil
 	}
 
-	return records, paginationResp, nil
+	if params.Limit != -1 {
+		params.Limit = kit.Ternary(params.Limit <= 0, 20, min(params.Limit, 100))
+	}
+	return imageBuildPageConfig.OrderAndPaginate(records, params), pagination.BuildResponse(int64(len(records)), int64(len(records)), params), nil
 }
 
 func (s *BuildService) AggregateImageBuilds(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.ImageBuildRecord], error) {
@@ -480,24 +513,7 @@ func (s *BuildService) AggregateImageBuilds(ctx context.Context, params paginati
 		})
 	}
 
-	config := pagination.Config[types.ImageBuildRecord]{SortBindings: []pagination.SortBinding[types.ImageBuildRecord]{
-		{
-			Key: "createdAt",
-			Fn: func(a, b types.ImageBuildRecord) int {
-				return cmp.Or(a.CreatedAt.Compare(b.CreatedAt), strings.Compare(a.ID, b.ID))
-			},
-			DescFn: func(a, b types.ImageBuildRecord) int {
-				return cmp.Or(b.CreatedAt.Compare(a.CreatedAt), strings.Compare(a.ID, b.ID))
-			},
-		},
-		{Key: "completedAt", Fn: func(a, b types.ImageBuildRecord) int {
-			return kit.FromPtr(a.CompletedAt).Compare(kit.FromPtr(b.CompletedAt))
-		}},
-		{Key: "status", Fn: func(a, b types.ImageBuildRecord) int {
-			return strings.Compare(a.Status, b.Status)
-		}},
-	}}
-	data, resp := pagination.MergeEnvironmentPages(config, pages, params)
+	data, resp := pagination.MergeEnvironmentPages(imageBuildPageConfig, pages, params)
 
 	return types.Paginated[types.ImageBuildRecord]{
 		Success:            true,
@@ -517,7 +533,11 @@ func (s *BuildService) GetImageBuildByID(ctx context.Context, environmentID, bui
 		return nil, err
 	}
 
-	return new(buildToRecord(build, true)), nil
+	record := buildToRecord(build, true)
+	if err := authz.CheckResource(ctx, authz.PermImagesRead, authz.PermImagesRead, authz.ImageAttributes(record.Tags, record.Labels)); err != nil {
+		return nil, err
+	}
+	return &record, nil
 }
 
 func (s *BuildService) createBuildRecord(ctx context.Context, environmentID string, req buildtypes.BuildRequest, user *types.Actor) (*ImageBuild, error) {

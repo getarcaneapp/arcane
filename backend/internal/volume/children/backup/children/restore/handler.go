@@ -74,7 +74,8 @@ func (h *Handler) restoreBackup(ctx context.Context, input *RestoreBackupInput) 
 		return h.service.RestoreBackup(runtimeCtx, input.VolumeName, input.BackupID, *user)
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 	return handlerutil.MessageOutput("Restore initiated successfully", activityID), nil
 }
@@ -114,7 +115,8 @@ func (h *Handler) restoreBackupFiles(ctx context.Context, input *RestoreBackupIn
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
 	return handlerutil.MessageOutput("Restore initiated successfully", activityID), nil
@@ -154,7 +156,8 @@ func (h *Handler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreI
 		return h.service.UploadAndRestore(runtimeCtx, input.VolumeName, file, session.Filename, *user)
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 	return handlerutil.MessageOutput("Backup uploaded and restored successfully", activityID), nil
 }

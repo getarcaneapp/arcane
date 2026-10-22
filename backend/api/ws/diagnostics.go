@@ -53,18 +53,18 @@ func buildDiagnostics(diag *diagnostics.DiagnosticsService) types.Diagnostics {
 }
 
 // registerDiagnosticsRoutes wires the global diagnostics WebSocket streams and the
-// net/http/pprof debug endpoints. Streams require the diagnostics permission;
-// pprof keeps the stricter admin-required gate. Called from NewWebSocketHandler.
+// net/http/pprof debug endpoints. Both require the diagnostics permission.
+// Called from NewWebSocketHandler.
 func (h *WebSocketHandler) registerDiagnosticsRoutes(group *echo.Group, authMiddleware *auth.AuthMiddleware) {
 	diag := group.Group("/diagnostics",
-		authMiddleware.WithAdminNotRequired().Add(),
+		authMiddleware.Add(),
 		middleware.RequireEchoPermission(authz.PermDiagnosticsRead),
 	)
 	diag.GET("/stream", h.DiagnosticsStream)
 	diag.GET("/actors/stream", h.ActorDiagnosticsStream)
 	diag.GET("/logs/stream", h.ServerLogsStream)
 
-	pprofGroup := group.Group("/debug/pprof", authMiddleware.WithAdminRequired().Add())
+	pprofGroup := group.Group("/debug/pprof", authMiddleware.WithPermission(authz.PermDiagnosticsRead).Add())
 	pprofGroup.GET("", echo.WrapHandler(http.HandlerFunc(pprof.Index)))
 	pprofGroup.GET("/", echo.WrapHandler(http.HandlerFunc(pprof.Index)))
 	pprofGroup.GET("/cmdline", echo.WrapHandler(http.HandlerFunc(pprof.Cmdline)))
@@ -84,7 +84,6 @@ func (h *WebSocketHandler) registerDiagnosticsRoutes(group *echo.Group, authMidd
 // DiagnosticsStream pushes a snapshot on connect and every diagnosticsStreamInterval,
 // and answers refresh, dump, leak-scan, and profile commands from the client.
 func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
-	ps, _ := c.Get(string(middleware.ContextKeyUserPermissions)).(*authz.PermissionSet)
 	snapshot := func(context.Context) any {
 		d := buildDiagnostics(h.diagnosticsService)
 		return types.DiagnosticsMessage{Type: "snapshot", Snapshot: &d}
@@ -100,10 +99,6 @@ func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
 			report, scanErr := h.diagnosticsService.ScanGoroutineLeaks()
 			result.LeakReport, err = &report, scanErr
 		case "dump", "profile":
-			if !ps.IsGlobalAdmin() {
-				result.Error = "profiles require a global administrator"
-				return result
-			}
 			if cmd.Type == "dump" {
 				var text []byte
 				text, err = h.diagnosticsService.Profile(ctx, cmd.Name, 0, 2)

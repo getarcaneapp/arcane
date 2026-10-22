@@ -14,7 +14,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
@@ -58,6 +57,10 @@ func volumeWorkspaceHTTPError(err error) error {
 		return huma.Error404NotFound(err.Error())
 	case errors.Is(err, common.ErrVolumeWorkspaceBadRequest):
 		return huma.Error400BadRequest(err.Error())
+	case errors.Is(err, common.ErrForbidden):
+		return huma.Error403Forbidden(err.Error())
+	case errors.Is(err, common.ErrNotFound):
+		return huma.Error404NotFound(err.Error())
 	default:
 		return huma.Error500InternalServerError("internal error")
 	}
@@ -88,7 +91,7 @@ func (h *Handler) DownloadVolumeWorkspaceFile(ctx context.Context, input *GetVol
 }
 
 func requireVolumeWorkspacePermissions(ctx context.Context, environmentID string, changes []types.VolumeWorkspaceFileChange) error {
-	permissions, ok := middleware.PermissionsFromContext(ctx)
+	permissions, ok := authz.PermissionsFromContext(ctx)
 	if !ok || permissions == nil {
 		return huma.Error403Forbidden("insufficient permissions")
 	}

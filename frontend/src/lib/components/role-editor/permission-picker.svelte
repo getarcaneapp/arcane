@@ -4,7 +4,8 @@
 	import { Checkbox } from '#lib/components/ui/checkbox/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { PermissionsManifest, PermissionResource, PermissionAction, PermissionPreset } from '#lib/types/auth.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
+	import type { PermissionAction, PermissionPreset, PermissionResource, PermissionsManifest } from '#lib/types/auth.js';
 	import { normalizePermissionSelection } from '#lib/utils/permissions.js';
 
 	type Props = {
@@ -12,9 +13,10 @@
 		selected: string[];
 		disabled?: boolean;
 		showSearch?: boolean;
+		scope?: 'global' | 'env';
 	};
 
-	let { manifest, selected = $bindable([]), disabled = false, showSearch = true }: Props = $props();
+	let { manifest, selected = $bindable([]), disabled = false, showSearch = true, scope = 'global' }: Props = $props();
 
 	let query = $state('');
 
@@ -25,8 +27,13 @@
 		actions: PermissionAction[];
 	};
 
+	const scopedResources = $derived(manifest.resources.filter((resource) => scope === 'global' || resource.scope === 'env'));
+	const scopedPermissions = $derived(
+		new Set(scopedResources.flatMap((resource) => resource.actions.map((action) => action.permission)))
+	);
+
 	const filteredGroups: FilteredResource[] = $derived(
-		manifest.resources
+		scopedResources
 			.map((resource) => {
 				if (!normalizedQuery) {
 					return { resource, actions: resource.actions };
@@ -41,7 +48,16 @@
 	);
 
 	const selectedSet = $derived(new Set(selected));
-	const presets = $derived(manifest.presets ?? []);
+	const presets = $derived(
+		(manifest.presets ?? [])
+			.map((preset) => ({
+				...preset,
+				permissions: preset.permissions.filter(
+					(permission) => permission !== PERMISSIONS.ALL && scopedPermissions.has(permission)
+				)
+			}))
+			.filter((preset) => preset.permissions.length > 0)
+	);
 
 	const openValues: string[] = $derived(normalizedQuery ? filteredGroups.map((g) => g.resource.key) : []);
 
@@ -66,7 +82,7 @@
 
 	function toggleGroup(resource: PermissionResource, checked: boolean) {
 		if (disabled) return;
-		const groupPerms = resource.actions.map((a) => a.permission);
+		const groupPerms: string[] = resource.actions.map((a) => a.permission);
 		if (checked) {
 			const without = selected.filter((p) => !groupPerms.includes(p));
 			replaceSelected([...without, ...groupPerms]);

@@ -12,9 +12,11 @@ import (
 	"github.com/samber/mo"
 	"go.getarcane.app/kit/normalization"
 	"go.getarcane.app/kit/pkg"
+	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 )
 
 func normalizeFederatedCredential(req types.FederatedCredential) (types.FederatedCredential, error) {
@@ -42,9 +44,6 @@ func normalizeFederatedCredential(req types.FederatedCredential) (types.Federate
 	if normalized.Name == "" || normalized.SubjectMatch == "" || normalized.RoleID == "" || len(normalized.Audiences) == 0 {
 		return normalized, common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
 	}
-	if err := validateIssuerURL(normalized.IssuerURL); err != nil {
-		return normalized, err
-	}
 	if err := validateSubjectMatch(normalized.MatchType, normalized.SubjectMatch); err != nil {
 		return normalized, err
 	}
@@ -66,24 +65,12 @@ func validateSubjectMatch(matchType, subjectMatch string) error {
 	return nil
 }
 
-func (s *FederatedCredentialService) validateRoleGrantAgainstUser(ctx context.Context, userID, roleID string, environmentID *string) error {
-	if s.roleService == nil || strings.TrimSpace(userID) == "" {
-		return nil
-	}
-
-	user, err := s.userService.GetUserByID(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("load user for federated role validation: %w", err)
-	}
-	permissions, err := s.roleService.ResolvePermissions(ctx, user.ID)
-	if err != nil {
-		return fmt.Errorf("resolve user permissions: %w", err)
-	}
-	if validateRoleAssignmentAgainstCallerErr := s.roleService.ValidateRoleAssignmentAgainstCaller(ctx, permissions, roleID, environmentID); validateRoleAssignmentAgainstCallerErr != nil {
-		if errors.Is(validateRoleAssignmentAgainstCallerErr, common.ErrRolePermissionEscalation) {
-			return common.Classify(common.ErrFederatedCredentialPermissionEscalation, fmt.Errorf("cannot map a federated credential to a role you do not hold: %w", validateRoleAssignmentAgainstCallerErr))
+func (s *FederatedCredentialService) validateRoleGrant(ctx context.Context, db *gorm.DB, caller *authz.PermissionSet, roleID string, environmentID *string) error {
+	if validateBindingErr := s.roleService.ValidateBindingAgainstCaller(ctx, db, caller, roleID, environmentID, nil); validateBindingErr != nil {
+		if errors.Is(validateBindingErr, common.ErrRolePermissionEscalation) {
+			return common.Classify(common.ErrFederatedCredentialPermissionEscalation, fmt.Errorf("cannot map a federated credential to a role you do not hold: %w", validateBindingErr))
 		}
-		return common.Classify(common.ErrFederatedCredentialInvalid, fmt.Errorf("invalid federated credential: %w", validateRoleAssignmentAgainstCallerErr))
+		return common.Classify(common.ErrFederatedCredentialInvalid, fmt.Errorf("invalid federated credential: %w", validateBindingErr))
 	}
 	return nil
 }

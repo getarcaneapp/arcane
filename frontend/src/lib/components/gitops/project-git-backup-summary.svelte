@@ -24,6 +24,7 @@
 		PauseIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import type { GitOpsBackupHistoryEntry, GitOpsBackupState } from '#lib/types/automation.js';
@@ -68,7 +69,7 @@
 
 	const sync = $derived(backups.data?.data?.[0] ?? null);
 
-	const canBackup = $derived(hasPermission('gitops:backup', environmentId));
+	const canBackup = $derived(hasPermission(PERMISSIONS.GITOPS_BACKUP, environmentId));
 
 	const RECENT_LIMIT = 5;
 	const history = createQuery(() => ({
@@ -82,10 +83,10 @@
 	const fileLimit = $derived(sync?.maxSyncFiles ?? 0);
 	const filePercent = $derived(fileLimit > 0 ? (snapshotFiles / fileLimit) * 100 : 0);
 
-	const canCreate = $derived(canBackup && hasPermission('gitops:create', environmentId));
-	const canRun = $derived(canBackup && hasPermission('gitops:sync', environmentId));
-	const canEdit = $derived(canBackup && hasPermission('gitops:update', environmentId));
-	const canDisconnect = $derived(canBackup && hasPermission('gitops:delete', environmentId));
+	const canCreate = $derived(canBackup && hasPermission(PERMISSIONS.GITOPS_CREATE, environmentId));
+	const canRun = $derived(canBackup && hasPermission(PERMISSIONS.GITOPS_SYNC, environmentId));
+	const canEdit = $derived(canBackup && hasPermission(PERMISSIONS.GITOPS_UPDATE, environmentId));
+	const canDisconnect = $derived(canBackup && hasPermission(PERMISSIONS.GITOPS_DELETE, environmentId));
 	const backupState = $derived<GitOpsBackupState>(sync?.backupState ?? 'never');
 	const needsAttention = $derived(backupState === 'needs_attention');
 	const showError = $derived(!!sync?.lastSyncError && (backupState === 'failed' || needsAttention));

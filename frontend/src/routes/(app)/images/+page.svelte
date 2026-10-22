@@ -17,6 +17,7 @@
 	import { CloseIcon, VolumesIcon, LocalFolderComputerIcon, SearchIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import type { ChunkedUploadProgress } from '#lib/services/upload-service.js';
@@ -119,7 +120,7 @@
 	const pruneImagesMutation = createMutation(() => ({
 		mutationKey: ['images', 'prune', scope],
 		mutationFn: (_requestedScope: string) =>
-			settleAcrossEnvironments(actionEnvironments('images:prune'), (id) =>
+			settleAcrossEnvironments(actionEnvironments(PERMISSIONS.IMAGES_PRUNE), (id) =>
 				imageService.pruneImages(
 					{
 						mode: imagePruneMode,
@@ -144,7 +145,7 @@
 	const checkUpdatesMutation = createMutation(() => ({
 		mutationKey: ['images', 'check-updates', scope],
 		mutationFn: (_requestedScope: string) =>
-			settleAcrossEnvironments(actionEnvironments('image-updates:check'), (id) => imageService.checkAllImages(id)),
+			settleAcrossEnvironments(actionEnvironments(PERMISSIONS.IMAGE_UPDATES_CHECK), (id) => imageService.checkAllImages(id)),
 		onSuccess: async (results, requestedScope) => {
 			toast.success(m.images_update_check_completed(), activityToastOptions(extractActivityId(results[0]?.value)));
 			await invalidateEnvironmentImages(results, requestedScope);
@@ -158,7 +159,7 @@
 	}));
 
 	let pickedUploadEnvironmentId = $state('');
-	const uploadEnvironmentId = $derived(destinationEnvironmentId(pickedUploadEnvironmentId, 'images:upload'));
+	const uploadEnvironmentId = $derived(destinationEnvironmentId(pickedUploadEnvironmentId, PERMISSIONS.IMAGES_UPLOAD));
 	// Merged lists carry one environment's upload limit, so the destination's own is read while uploading.
 	// If it cannot be read, the browser sets no limit and the destination enforces its own.
 	const mergedUpload = $derived(environmentStore.shown.length > 1);
@@ -288,9 +289,9 @@
 		}
 	}
 
-	const canPullImage = $derived(hasShownPermission('images:pull'));
-	const canUploadImage = $derived(hasShownPermission('images:upload'));
-	const canPruneImage = $derived(hasShownPermission('images:prune'));
+	const canPullImage = $derived(hasShownPermission(PERMISSIONS.IMAGES_PULL));
+	const canUploadImage = $derived(hasShownPermission(PERMISSIONS.IMAGES_UPLOAD));
+	const canPruneImage = $derived(hasShownPermission(PERMISSIONS.IMAGES_PRUNE));
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];
@@ -421,7 +422,7 @@
 				<div class="space-y-4 py-4">
 					<EnvironmentDestinationSelect
 						bind:value={() => uploadEnvironmentId, (value) => (pickedUploadEnvironmentId = value)}
-						permission="images:upload"
+						permission={PERMISSIONS.IMAGES_UPLOAD}
 						variant="field"
 					/>
 					<FileDropZone
@@ -496,7 +497,7 @@
 					<Dialog.Title>{m.images_prune_confirm_title()}</Dialog.Title>
 					<Dialog.Description>
 						{m.images_prune_confirm_description({ mode: imagePruneMode })}
-						{acrossEnvironmentsNote(actionEnvironments('images:prune'))}
+						{acrossEnvironmentsNote(actionEnvironments(PERMISSIONS.IMAGES_PRUNE))}
 					</Dialog.Description>
 				</Dialog.Header>
 				<SettingsSection class="py-4">

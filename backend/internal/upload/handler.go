@@ -15,7 +15,6 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
@@ -77,7 +76,7 @@ func requireUploadPermission(ctx context.Context, kind, environmentID string) er
 	if !known {
 		return huma.Error403Forbidden("permission denied: unknown upload kind " + kind)
 	}
-	ps, _ := middleware.PermissionsFromContext(ctx)
+	ps, _ := authz.PermissionsFromContext(ctx)
 	if !ps.Allows(perm, environmentID) {
 		return huma.Error403Forbidden("permission denied: " + perm)
 	}

@@ -41,7 +41,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *ApiKeyService) {
 		apiKeyService: apiKeyService,
 	}
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-api-keys",
 		Method:      http.MethodGet,
 		Path:        "/apikeys",
@@ -49,10 +49,9 @@ func RegisterApiKeys(api huma.API, apiKeyService *ApiKeyService) {
 		Description: "Get a paginated list of API keys",
 		Tags:        []string{"API Keys"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermApiKeysList),
-	}, h.ListApiKeys)
+	}, authz.PermApiKeysList, h.ListApiKeys)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-api-key",
 		Method:      http.MethodPost,
 		Path:        "/apikeys",
@@ -60,10 +59,9 @@ func RegisterApiKeys(api huma.API, apiKeyService *ApiKeyService) {
 		Description: "Create a new API key for programmatic access",
 		Tags:        []string{"API Keys"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermApiKeysCreate),
-	}, h.CreateApiKey)
+	}, authz.PermApiKeysCreate, h.CreateApiKey)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-api-key",
 		Method:      http.MethodGet,
 		Path:        "/apikeys/{id}",
@@ -71,10 +69,9 @@ func RegisterApiKeys(api huma.API, apiKeyService *ApiKeyService) {
 		Description: "Get details of a specific API key by ID",
 		Tags:        []string{"API Keys"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermApiKeysRead),
-	}, h.GetApiKey)
+	}, authz.PermApiKeysRead, h.GetApiKey)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-api-key",
 		Method:      http.MethodPatch,
 		Path:        "/apikeys/{id}",
@@ -82,10 +79,9 @@ func RegisterApiKeys(api huma.API, apiKeyService *ApiKeyService) {
 		Description: "Update an existing API key's details",
 		Tags:        []string{"API Keys"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermApiKeysUpdate),
-	}, h.UpdateApiKey)
+	}, authz.PermApiKeysUpdate, h.UpdateApiKey)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-api-key",
 		Method:      http.MethodDelete,
 		Path:        "/apikeys/{id}",
@@ -93,12 +89,11 @@ func RegisterApiKeys(api huma.API, apiKeyService *ApiKeyService) {
 		Description: "Delete an API key by ID",
 		Tags:        []string{"API Keys"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermApiKeysDelete),
-	}, h.DeleteApiKey)
+	}, authz.PermApiKeysDelete, h.DeleteApiKey)
 
 	// Self-service endpoints — no admin permission required, scoped to the
 	// caller's own keys via current-user context.
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "list-my-api-keys",
 		Method:      http.MethodGet,
 		Path:        "/auth/me/apikeys",
@@ -111,7 +106,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *ApiKeyService) {
 	// Personal keys inherit the owner's permissions, so creating or deleting
 	// them is session-only (BearerAuth, no ApiKeyAuth): a stolen API key must
 	// not be able to mint or remove persistence credentials.
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "create-my-api-key",
 		Method:      http.MethodPost,
 		Path:        "/auth/me/apikeys",
@@ -123,7 +118,7 @@ func RegisterApiKeys(api huma.API, apiKeyService *ApiKeyService) {
 		},
 	}, h.CreateMyApiKey)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "delete-my-api-key",
 		Method:      http.MethodDelete,
 		Path:        "/auth/me/apikeys/{id}",

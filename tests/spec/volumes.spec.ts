@@ -3,6 +3,7 @@ import { test, expect, type Page } from '../fixtures/test.fixture';
 import { removeApiResource, fetchVolumeCountsWithRetry } from '../utils/fetch.util';
 import { VolumeUsageCounts } from 'types/volumes.type';
 import { openRowActionsMenu } from '../utils/table-actions.util';
+import { patchSessionBootstrap, withEnvironments } from '../utils/session.util';
 
 let volumeCount: VolumeUsageCounts = { inuse: 0, unused: 0, total: 0 };
 
@@ -564,30 +565,24 @@ test.describe('Volumes shift-select', () => {
 			isEdge: false
 		};
 		const environments = [localEnvironment, remoteEnvironment];
-		const environmentList = {
-			success: true,
-			data: environments,
-			pagination: {
-				totalPages: 1,
-				totalItems: 2,
-				currentPage: 1,
-				itemsPerPage: 20,
-				grandTotalItems: 2
-			}
-		};
+		await patchSessionBootstrap(page.context(), (bootstrap) =>
+			withEnvironments(bootstrap, environments)
+		);
 		await page.context().route(/\/api\/environments(?:\?.*)?$/, async (route) => {
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/json',
-				body: JSON.stringify(environmentList)
-			});
-		});
-		await page.context().route(/\/api\/auth\/bootstrap(?:\?.*)?$/, async (route) => {
-			const response = await route.fetch();
-			const body = await response.json();
-			await route.fulfill({
-				response,
-				json: { ...body, data: { ...body.data, environments: environmentList } }
+				body: JSON.stringify({
+					success: true,
+					data: environments,
+					pagination: {
+						totalPages: 1,
+						totalItems: 2,
+						currentPage: 1,
+						itemsPerPage: 20,
+						grandTotalItems: 2
+					}
+				})
 			});
 		});
 		await page.context().route(/\/api\/stream(?:\?.*)?$/, async (route) => {

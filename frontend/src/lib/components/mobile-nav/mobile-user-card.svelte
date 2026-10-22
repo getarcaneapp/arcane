@@ -13,6 +13,7 @@
 		ArrowRightIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { allEnvironmentsPreview, environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
@@ -88,7 +89,7 @@
 	{#if userCardExpanded}
 		<div class="space-y-4 border-t border-border/20 bg-muted/10 p-4">
 			{#if !allEnvironmentsPreview.current}
-				<IfPermitted adminOnly>
+				<IfPermitted perm={PERMISSIONS.ENVIRONMENTS_LIST}>
 					<button
 						class="flex w-full items-center gap-3 rounded-2xl border border-border/20 bg-background/50 p-4 text-left transition-colors hover:bg-muted/30"
 						onclick={() => (envDialogOpen = true)}

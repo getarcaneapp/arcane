@@ -9,6 +9,7 @@
 	import { VolumesIcon, VolumeUnusedIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { volumeService } from '#lib/services/volume-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -102,7 +103,7 @@
 		return countsFallback;
 	});
 
-	const canCreateVolume = $derived(hasShownPermission('volumes:create'));
+	const canCreateVolume = $derived(hasShownPermission(PERMISSIONS.VOLUMES_CREATE));
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];

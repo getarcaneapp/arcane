@@ -50,7 +50,6 @@ export type NavigationItem = {
 	 * item visible to every authenticated user.
 	 */
 	accessSurfaceId?: string;
-	adminOnly?: boolean;
 	requiredFeature?: FeatureID;
 };
 
@@ -246,8 +245,7 @@ export const navigationItems: NavigationSections = {
 					title: m.system_backups_title(),
 					url: '/settings/backups',
 					icon: BackupIcon,
-					accessSurfaceId: 'settings.category.systembackups',
-					adminOnly: true
+					accessSurfaceId: 'settings.category.systembackups'
 				},
 				{
 					title: m.builds(),
@@ -281,6 +279,18 @@ export const navigationItems: NavigationSections = {
 					url: '/settings/diagnostics',
 					icon: ActivityIcon,
 					accessSurfaceId: 'settings.category.diagnostics'
+				},
+				{
+					title: m.groups_title(),
+					url: '/settings/groups',
+					icon: UsersIcon,
+					accessSurfaceId: 'settings.category.groups'
+				},
+				{
+					title: m.audit_title(),
+					url: '/settings/audit',
+					icon: EventsIcon,
+					accessSurfaceId: 'settings.category.audit'
 				}
 			]
 		}
@@ -347,7 +357,6 @@ function canSeeItem(
 	accessManifest: PermissionsManifest | null | undefined
 ): boolean {
 	if (item.requiredFeature && !hasShownFeature(item.requiredFeature, currentEnvId ?? '0')) return false;
-	if (item.adminOnly && !user.isGlobalAdmin) return false;
 	if (!item.accessSurfaceId) return true;
 	if (!accessManifest?.accessSurfaces?.length) return true;
 	return canReachShownAccessSurface(accessManifest, item.accessSurfaceId, user, currentEnvId);

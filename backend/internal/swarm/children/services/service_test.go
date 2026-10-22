@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/containerd/errdefs"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/api/types/system"
 	"github.com/moby/moby/client"
@@ -15,6 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 )
 
 func newSwarmTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
@@ -140,4 +144,78 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 			tt.assertMode(t, updatedSpec.Mode)
 		})
 	}
+}
+
+func newScopedSwarmServiceTestService(t *testing.T) (*Service, *int) {
+	t.Helper()
+	removeCalls := 0
+	services := map[string]swarm.Service{
+		"svc-a": {ID: "svc-a", Spec: swarm.ServiceSpec{Annotations: swarm.Annotations{Name: "team_api", Labels: map[string]string{types.SwarmStackNamespaceLabel: "team"}}}},
+		"svc-b": {ID: "svc-b", Spec: swarm.ServiceSpec{Annotations: swarm.Annotations{Name: "team_web", Labels: map[string]string{types.SwarmStackNamespaceLabel: "team"}}}},
+		"svc-c": {ID: "svc-c", Spec: swarm.ServiceSpec{Annotations: swarm.Annotations{Name: "other_api", Labels: map[string]string{types.SwarmStackNamespaceLabel: "other"}}}},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1.41/services":
+			_ = json.NewEncoder(w).Encode([]swarm.Service{services["svc-a"], services["svc-b"], services["svc-c"]})
+		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1.41/services/"):
+			service, ok := services[strings.TrimPrefix(r.URL.Path, "/v1.41/services/")]
+			if !ok {
+				http.Error(w, `{"message":"no such service"}`, http.StatusNotFound)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(service)
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/v1.41/services/"):
+			removeCalls++
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodGet && (r.URL.Path == "/v1.41/nodes" || r.URL.Path == "/v1.41/networks" || r.URL.Path == "/v1.41/tasks"):
+			_ = json.NewEncoder(w).Encode([]any{})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	dockerService := &docker.DockerClientService{Client: newSwarmTestDockerClient(t, server)}
+	return NewService(dockerService, func(context.Context) error {
+		return nil
+	}, nil), &removeCalls
+}
+
+func scopedSwarmContext(t *testing.T, ps *authz.PermissionSet) context.Context {
+	t.Helper()
+	return authz.WithRequestEnvironment(authz.WithPermissions(t.Context(), ps), "0")
+}
+
+func TestListServicesPaginatedFiltersByScopeBeforeTotals(t *testing.T) {
+	svc, _ := newScopedSwarmServiceTestService(t)
+	ps := authz.NewPermissionSet()
+	ps.AddScopedEnv("0", types.ResourceSelector{Projects: []string{"team"}}, authz.PermSwarmRead)
+
+	items, page, err := svc.ListServicesPaginated(scopedSwarmContext(t, ps), pagination.QueryParams{
+		Params: pagination.Params{Limit: 1},
+	})
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	require.EqualValues(t, 2, page.TotalItems)
+}
+
+func TestScopedSwarmServiceAccessReturnsNotFoundOrForbidden(t *testing.T) {
+	svc, removeCalls := newScopedSwarmServiceTestService(t)
+	selector := types.ResourceSelector{Projects: []string{"team"}}
+
+	hidden := authz.NewPermissionSet()
+	hidden.AddScopedEnv("0", selector, authz.PermSwarmRead, authz.PermSwarmServices, authz.PermSwarmServicesLogs)
+	_, err := svc.GetService(scopedSwarmContext(t, hidden), "svc-c")
+	require.ErrorIs(t, err, authz.ErrResourceOutOfScope)
+	require.ErrorIs(t, svc.RemoveService(scopedSwarmContext(t, hidden), "svc-c"), authz.ErrResourceOutOfScope)
+	require.ErrorIs(t, svc.AuthorizeService(scopedSwarmContext(t, hidden), "svc-c", authz.PermSwarmServicesLogs), authz.ErrResourceOutOfScope)
+
+	visible := authz.NewPermissionSet()
+	visible.AddEnv("0", authz.PermSwarmRead)
+	visible.AddScopedEnv("0", selector, authz.PermSwarmServices, authz.PermSwarmServicesLogs)
+	require.ErrorIs(t, svc.RemoveService(scopedSwarmContext(t, visible), "svc-c"), authz.ErrResourceForbidden)
+	require.ErrorIs(t, svc.AuthorizeService(scopedSwarmContext(t, visible), "svc-c", authz.PermSwarmServicesLogs), authz.ErrResourceForbidden)
+	require.NoError(t, svc.AuthorizeService(scopedSwarmContext(t, visible), "svc-a", authz.PermSwarmServicesLogs))
+	require.Zero(t, *removeCalls)
 }

@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
@@ -26,6 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/upload"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
@@ -180,10 +180,8 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*handlerutil.Out[types.ImageDetailSummary], error) {
 	out, err := h.imageService.GetImageDetail(ctx, input.ImageID)
 	if err != nil {
-		if errdefs.IsNotFound(err) {
-			return nil, huma.Error404NotFound("Image not found: " + err.Error())
-		}
-		return nil, huma.Error500InternalServerError("Failed to get image: " + err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to get image: "+apiErr.Message)
 	}
 
 	return &handlerutil.Out[types.ImageDetailSummary]{
@@ -210,7 +208,8 @@ func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*han
 	}
 
 	if tagImageErr := h.imageService.TagImage(ctx, imageName, input.Body, *user); tagImageErr != nil {
-		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to tag image: %v", tagImageErr))
+		apiErr := common.ToAPIError(common.ClassifyDockerError(tagImageErr))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "failed to tag image: "+apiErr.Message)
 	}
 
 	return handlerutil.MessageOutput("Image tagged successfully", ""), nil
@@ -225,7 +224,8 @@ func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHisto
 
 	history, err := h.imageService.GetImageHistory(ctx, imageName)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to get image history: %v", err))
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "failed to get image history: "+apiErr.Message)
 	}
 	if history == nil {
 		history = []types.ImageHistoryItem{}
@@ -269,7 +269,8 @@ func (h *ImageHandler) ExportImage(ctx context.Context, input *ExportImageInput)
 
 	reader, err := h.imageService.ExportImage(ctx, imageName)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to export image: %v", err))
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "failed to export image: "+apiErr.Message)
 	}
 
 	return &huma.StreamResponse{
@@ -305,14 +306,8 @@ func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput)
 	}
 
 	if removeImageErr := h.imageService.RemoveImage(ctx, input.ImageID, input.Force, *user); removeImageErr != nil {
-		switch {
-		case errdefs.IsConflict(removeImageErr):
-			return nil, huma.Error409Conflict("Failed to remove image: " + removeImageErr.Error())
-		case errdefs.IsNotFound(removeImageErr):
-			return nil, huma.Error404NotFound("Failed to remove image: " + removeImageErr.Error())
-		default:
-			return nil, huma.Error500InternalServerError("Failed to remove image: " + removeImageErr.Error())
-		}
+		apiErr := common.ToAPIError(common.ClassifyDockerError(removeImageErr))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to remove image: "+apiErr.Message)
 	}
 
 	return handlerutil.MessageOutput("Image removed successfully", ""), nil
@@ -332,6 +327,10 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 	// Get full image name with tag and credentials
 	fullImageName := input.Body.GetFullImageName()
 	credentials := input.Body.GetCredentials()
+	if authErr := authorizeImageCreate(ctx, authz.PermImagesPull, authz.ImageAttributes([]string{fullImageName}, nil)); authErr != nil {
+		apiErr := common.ToAPIError(authErr)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
 
 	return &huma.StreamResponse{
 		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
@@ -387,6 +386,10 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 	user, err := handlerutil.RequireUser(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if authErr := authorizeImageCreate(ctx, authz.PermImagesBuild, authz.ImageAttributes(input.Body.Tags, input.Body.Labels)); authErr != nil {
+		apiErr := common.ToAPIError(authErr)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
 	return &huma.StreamResponse{
@@ -485,6 +488,10 @@ func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildIn
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, huma.Error404NotFound("build not found")
 		}
+		if errors.Is(err, authz.ErrResourceForbidden) || errors.Is(err, authz.ErrResourceOutOfScope) {
+			apiErr := common.ToAPIError(recordImageDenial(ctx, authz.PermImagesRead, err))
+			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+		}
 		return nil, huma.Error500InternalServerError("Failed to retrieve build history: " + err.Error())
 	}
 
@@ -545,7 +552,7 @@ func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageU
 		return &handlerutil.Out[types.ImageUsageCounts]{Body: body}, nil
 	}
 
-	_, counts, err := h.dockerService.GetAllImages(ctx)
+	counts, err := h.imageService.GetImageUsageCounts(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get image usage counts: " + err.Error())
 	}
@@ -579,7 +586,8 @@ func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput)
 		if errors.Is(err, common.ErrBadRequest) {
 			return nil, huma.Error413RequestEntityTooLarge("Failed to load image: " + err.Error())
 		}
-		return nil, huma.Error500InternalServerError("Failed to load image: " + err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to load image: "+apiErr.Message)
 	}
 
 	return &handlerutil.Out[types.ImageLoadResult]{

@@ -33,10 +33,12 @@ import (
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	volumebackup "github.com/getarcaneapp/arcane/backend/v3/internal/volume/children/backup"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/volume/children/workspace"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
@@ -114,6 +116,7 @@ func NewVolumeService(
 		RecoveryKeys:     recoveryKeys,
 		Locks:            &service.workspaceLocks,
 		AlreadyRunning:   ErrVolumeBackupAlreadyRunning,
+		Authorize:        service.authorizeVolume,
 		HelperImage:      service.getVolumeHelperImage,
 		AcquireHelper:    service.acquireVolumeHelper,
 		Exec:             service.execInContainer,
@@ -122,12 +125,17 @@ func NewVolumeService(
 	}
 	if containerService != nil {
 		backupDeps.StopContainer, backupDeps.StartContainer = containerService.StopContainer, containerService.StartContainer
+		backupDeps.AuthorizeContainer = func(ctx context.Context, containerID, perm string) error {
+			_, err := containerService.AuthorizeContainer(ctx, containerID, perm)
+			return err
+		}
 	}
 	service.backup = volumebackup.NewService(backupDeps)
 	service.workspace = workspace.NewService(workspace.Dependencies{
 		Docker:                dockerService,
 		Events:                eventService,
 		Locks:                 &service.workspaceLocks,
+		Authorize:             service.authorizeVolume,
 		AcquireHelper:         service.acquireVolumeHelper,
 		RequireACFS:           service.requireVolumeHelperACFS,
 		Exec:                  service.execInContainer,
@@ -356,6 +364,9 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*type
 	if err != nil {
 		return nil, fmt.Errorf("volume not found: %w", err)
 	}
+	if authorizeErr := authorizeVolumeAttributes(ctx, authz.PermVolumesRead, volResult.Volume); authorizeErr != nil {
+		return nil, authorizeErr
+	}
 	usage, _ := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (mo.Option[[]volume.Volume], error) {
 		return docker.GetVolumeUsageDataStaleWhileRevalidate(ctx, dockerClient), nil
 	})
@@ -376,10 +387,48 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*type
 	return &v, nil
 }
 
+func recordVolumeDenial(ctx context.Context, perm string, err error) error {
+	if errors.Is(err, authz.ErrResourceForbidden) {
+		middleware.RecordDenial(ctx, types.AuthzDenial{
+			Permission:    perm,
+			EnvironmentID: authz.RequestEnvironmentFromContext(ctx),
+			RemoteAddr:    middleware.GetRemoteAddrFromContext(ctx),
+		})
+	}
+	return err
+}
+
+func authorizeVolumeAttributes(ctx context.Context, perm string, vol volume.Volume) error {
+	return recordVolumeDenial(ctx, perm, authz.CheckResource(ctx, perm, authz.PermVolumesRead, authz.VolumeAttributes(vol.Name, vol.Labels)))
+}
+
+func (s *VolumeService) authorizeVolume(ctx context.Context, name, perm string) error {
+	if authz.ScopeFromContext(ctx, perm).IsUnrestricted() {
+		return nil
+	}
+	vol, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
+		return dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
+	})
+	if err != nil {
+		return common.ClassifyDockerError(fmt.Errorf("volume not found: %w", err))
+	}
+	return authorizeVolumeAttributes(ctx, perm, vol.Volume)
+}
+
 func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeCreateOptions, user types.Actor) (*types.Volume, error) {
 	slog.DebugContext(ctx, "volume service: create volume", "volume", options.Name, "driver", options.Driver, "user", user.ID)
 	if strings.TrimSpace(options.Name) == "" {
 		return nil, common.Classify(common.ErrBadRequest, errors.New("volume name is required"))
+	}
+	options = client.VolumeCreateOptions{
+		Name:              options.Name,
+		Driver:            options.Driver,
+		DriverOpts:        options.DriverOpts,
+		Labels:            libarcane.WithOwnerLabel(options.Labels, user.ID),
+		ClusterVolumeSpec: options.ClusterVolumeSpec,
+	}
+	if err := recordVolumeDenial(ctx, authz.PermVolumesCreate, authz.CheckCreate(ctx, authz.PermVolumesCreate, authz.VolumeAttributes(options.Name, options.Labels))); err != nil {
+		return nil, err
 	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -439,6 +488,9 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 	// Clients may not know this environment's backup volume name, so its removal is refused here.
 	if s.IsBackupVolume(name) {
 		return common.ErrVolumeDeleteProtected
+	}
+	if err := s.authorizeVolume(ctx, name, authz.PermVolumesDelete); err != nil {
+		return err
 	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -531,6 +583,9 @@ func (s *VolumeService) GetVolumeUsage(ctx context.Context, name string) (bool, 
 	if err != nil {
 		return false, nil, fmt.Errorf("volume not found: %w", err)
 	}
+	if authorizeErr := authorizeVolumeAttributes(ctx, authz.PermVolumesRead, vol.Volume); authorizeErr != nil {
+		return false, nil, authorizeErr
+	}
 
 	containerIDs, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) ([]string, error) {
 		return docker.GetContainersUsingVolume(ctx, dockerClient, vol.Volume.Name)
@@ -558,9 +613,10 @@ func (s *VolumeService) GetVolumeSizes(ctx context.Context) (map[string]VolumeSi
 		return nil, fmt.Errorf("failed to get volume usage data: %w", err)
 	}
 
+	scope := authz.ScopeFromContext(ctx, authz.PermVolumesList)
 	result := make(map[string]VolumeSizeData, len(usageVolumes))
 	for _, v := range usageVolumes {
-		if v.UsageData != nil {
+		if v.UsageData != nil && scope.Matches(authz.VolumeAttributes(v.Name, v.Labels)) {
 			result[v.Name] = VolumeSizeData{
 				Size:     v.UsageData.Size,
 				RefCount: v.UsageData.RefCount,
@@ -837,10 +893,11 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 
 	enrichedVolumes := enrichVolumesWithUsageData(volResult.volumes, usageVolumes)
 
+	scope := authz.ScopeFromContext(ctx, authz.PermVolumesList)
 	items := make([]types.Volume, 0, len(enrichedVolumes))
 	for _, v := range enrichedVolumes {
 		volDto := types.NewVolume(v)
-		if !includeInternal && s.isInternalVolume(volDto) {
+		if (!includeInternal && s.isInternalVolume(volDto)) || !scope.Matches(authz.VolumeAttributes(v.Name, v.Labels)) {
 			continue
 		}
 		if containerIDs, ok := volumeContainerMap[v.Name]; ok {
@@ -964,6 +1021,12 @@ func (s *VolumeService) RenameVolume(ctx context.Context, oldName, newName strin
 	}
 	if s.isInternalVolume(types.NewVolume(source.Volume)) {
 		return nil, common.ErrVolumeRenameProtected
+	}
+	if authorizeErr := authorizeVolumeAttributes(ctx, authz.PermVolumesRename, source.Volume); authorizeErr != nil {
+		return nil, authorizeErr
+	}
+	if denialErr := recordVolumeDenial(ctx, authz.PermVolumesRename, authz.CheckCreate(ctx, authz.PermVolumesRename, authz.VolumeAttributes(newName, source.Volume.Labels))); denialErr != nil {
+		return nil, denialErr
 	}
 
 	// Stop any read-only browse helper first; a helper mounting the volume would

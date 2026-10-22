@@ -23,6 +23,7 @@
 	import { ArrowLeftIcon } from '#lib/icons/index.js';
 	import { AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { projectService } from '#lib/services/project-service.js';
@@ -69,12 +70,12 @@
 	let pickedEnvironmentId = $state('');
 	// Converted containers default the destination to their environment.
 	const environmentId = $derived(
-		destinationEnvironmentId(pickedEnvironmentId || (data.sourceEnvironmentId ?? ''), 'projects:create')
+		destinationEnvironmentId(pickedEnvironmentId || (data.sourceEnvironmentId ?? ''), PERMISSIONS.PROJECTS_CREATE)
 	);
 	const currentEnvId = $derived(environmentId);
-	const canCreateProject = $derived(hasPermission('projects:create', currentEnvId));
+	const canCreateProject = $derived(hasPermission(PERMISSIONS.PROJECTS_CREATE, currentEnvId));
 	// Originals are removed from their own environment, not the destination.
-	const canDeleteContainers = $derived(hasPermission('containers:delete', data.sourceEnvironmentId ?? currentEnvId));
+	const canDeleteContainers = $derived(hasPermission(PERMISSIONS.CONTAINERS_DELETE, data.sourceEnvironmentId ?? currentEnvId));
 	const sourceContainerIds = $derived(data.sourceContainerIds ?? []);
 	// Files are uploaded to the destination, so its limit applies.
 	const destinationSettings = useEnvironmentSettings(() => currentEnvId);
@@ -365,7 +366,7 @@
 			<div class="flex items-center gap-2">
 				<EnvironmentDestinationSelect
 					bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
-					permission="projects:create"
+					permission={PERMISSIONS.PROJECTS_CREATE}
 				/>
 				<ComposeCreateMenu
 					tooltipOpen={!effectiveName && !createMenuBusy ? undefined : false}
@@ -399,7 +400,7 @@
 						ui.creatingTemplate}
 					createTemplateLoading={ui.creatingTemplate}
 					onCreateTemplate={handleCreateTemplate}
-					createTemplatePermission="templates:create"
+					createTemplatePermission={PERMISSIONS.TEMPLATES_CREATE}
 				/>
 			</div>
 		</div>

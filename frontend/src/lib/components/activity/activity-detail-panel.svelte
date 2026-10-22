@@ -6,6 +6,7 @@
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { ActivityIcon, TerminalIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import type { Activity } from '#lib/types/activity.type.js';
 
@@ -32,7 +33,7 @@
 
 <div class="border-b border-border/50 bg-muted/25">
 	{#if liveActivity.type === 'job_run' && jobId && runId}
-		<IfPermitted perm="jobs:manage" envId={environmentId}>
+		<IfPermitted perm={PERMISSIONS.JOBS_MANAGE} envId={environmentId}>
 			<div class="px-4 py-2">
 				<Button variant="ghost" size="sm" onclick={() => (historyOpen = true)}>{m.jobs_run_history()}</Button>
 				<Dialog.Root bind:open={historyOpen}>

@@ -24,6 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
@@ -564,7 +565,7 @@ func (s *Service) joinEnvironment(
 }
 
 func (s *Service) fetchSwarmNodeIdentityViaEdge(ctx context.Context, environmentID string) (*SwarmNodeIdentity, error) {
-	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	reqCtx, cancel := context.WithTimeout(authz.WithPermissions(ctx, authz.SudoPermissionSet()), 5*time.Second)
 	defer cancel()
 
 	var parsed struct {

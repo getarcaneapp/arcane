@@ -5,9 +5,13 @@
 // from the request path).
 package authz
 
+import "slices"
+
 const (
-	// Built-in role IDs. Stable across migrations so other code may reference them
-	// safely. All six built-in roles are seeded by migration 054_add_rbac.
+	PermAll = "*"
+
+	// Built-in role IDs. Stable so other code and foreign keys may reference
+	// them; their definitions come from BuiltInRoles().
 
 	BuiltInRoleAdmin         = "role_admin"
 	BuiltInRoleEditor        = "role_editor"
@@ -24,14 +28,33 @@ const (
 	PermUsersUpdate = "users:update"
 	PermUsersDelete = "users:delete"
 
-	// PermRolesList and the role permissions below cover role management
-	// (Create / Update / Delete) and role assignment to users. They are reserved
-	// for global admins and intentionally not exposed as delegated permissions —
-	// see backend/internal/middleware/role.go::RequireGlobalAdmin. Likewise, managing
-	// OIDC group → role mappings is admin-only because it is effectively another
-	// path for granting role assignments.
-	PermRolesList = "roles:list"
-	PermRolesRead = "roles:read"
+	// Role, binding, group, and OIDC mapping permissions are delegable: holders
+	// may only grant permissions, scopes, and selectors they hold themselves
+	// (see CanDefineRole and CanBind).
+	PermRolesList   = "roles:list"
+	PermRolesRead   = "roles:read"
+	PermRolesCreate = "roles:create"
+	PermRolesUpdate = "roles:update"
+	PermRolesDelete = "roles:delete"
+
+	PermBindingsList   = "bindings:list"
+	PermBindingsCreate = "bindings:create"
+	PermBindingsDelete = "bindings:delete"
+
+	PermGroupsList    = "groups:list"
+	PermGroupsRead    = "groups:read"
+	PermGroupsCreate  = "groups:create"
+	PermGroupsUpdate  = "groups:update"
+	PermGroupsDelete  = "groups:delete"
+	PermGroupsMembers = "groups:members"
+
+	PermOidcMappingsList   = "oidcmappings:list"
+	PermOidcMappingsCreate = "oidcmappings:create"
+	PermOidcMappingsUpdate = "oidcmappings:update"
+	PermOidcMappingsDelete = "oidcmappings:delete"
+
+	PermAuditRead   = "audit:read"
+	PermAuditExport = "audit:export"
 
 	PermApiKeysList   = "apikeys:list"
 	PermApiKeysRead   = "apikeys:read"
@@ -149,7 +172,6 @@ const (
 	PermImagesList   = "images:list"
 	PermImagesRead   = "images:read"
 	PermImagesPull   = "images:pull"
-	PermImagesPush   = "images:push"
 	PermImagesBuild  = "images:build"
 	PermImagesTag    = "images:tag"
 	PermImagesCommit = "images:commit"
@@ -277,8 +299,7 @@ func IsEnvScoped(perm string) bool {
 
 // allPermissionsSet is the canonical exact-set lookup of every defined
 // permission, built once from AllPermissions(). Anchors IsKnownPermission and
-// IsEnvScoped to exact membership so PermissionSet.IsGlobalAdmin can rely on
-// "ps.Global ⊆ allPermissionsSet" as a true invariant.
+// IsEnvScoped to exact membership.
 var allPermissionsSet = func() map[string]struct{} {
 	all := AllPermissions()
 	m := make(map[string]struct{}, len(all))
@@ -288,17 +309,16 @@ var allPermissionsSet = func() map[string]struct{} {
 	return m
 }()
 
-// totalPermissionsCount caches len(allPermissionsSet) so callers on the auth
-// hot path (notably PermissionSet.IsGlobalAdmin) don't re-allocate and walk a
-// ~100-element slice on every authenticated request.
+// totalPermissionsCount caches len(allPermissionsSet) so callers don't
+// re-allocate and walk the full permission list.
 var totalPermissionsCount = len(allPermissionsSet)
 
 // TotalPermissionsCount returns the number of distinct permission constants
 // the package defines. Computed once at init; cheap to call repeatedly.
 func TotalPermissionsCount() int { return totalPermissionsCount }
 
-// AllPermissions returns every recognized permission constant. Used to seed
-// the Admin built-in role and to validate role definitions.
+// AllPermissions returns every recognized permission constant. Used to
+// validate role definitions. PermAll is not included.
 func AllPermissions() []string {
 	var count int
 	for _, resource := range permissionCatalog {
@@ -320,159 +340,192 @@ func IsKnownPermission(perm string) bool {
 	return ok
 }
 
-// BuiltInEditorPermissions returns the permission set for the Editor built-in
-// role: read+write on Docker resources and read on most org-level resources.
-// Excludes user/role/key management and settings writes.
-func BuiltInEditorPermissions() []string {
-	return []string{
-		// Read on org-level
-		PermUsersList, PermUsersRead,
-		PermRolesList, PermRolesRead,
-		PermApiKeysList, PermApiKeysRead,
-		PermFederatedList, PermFederatedRead,
-		PermSettingsRead,
-		PermEnvironmentsList, PermEnvironmentsRead, PermEnvironmentsSync,
-		PermRegistriesList, PermRegistriesRead, PermRegistriesBrowse,
-		PermTemplatesList, PermTemplatesRead, PermTemplatesCreate, PermTemplatesUpdate, PermTemplatesDelete,
-		PermVariablesRead, PermVariablesCreate, PermVariablesUpdate, PermVariablesDelete, PermVariablesSync,
-		PermGitReposList, PermGitReposRead,
-		// Editor can run volume backups, so it needs to pick a destination.
-		PermS3DestinationsList, PermS3DestinationsRead,
-		PermEventsRead,
-		// Full env-scoped Docker management
-		PermContainersList,
-		PermContainersRead,
-		PermContainersLogs,
-		PermContainersCreate,
-		PermContainersStart,
-		PermContainersStop,
-		PermContainersRestart,
-		PermContainersRedeploy,
-		PermContainersEdit,
-		PermContainersKill,
-		PermContainersPause,
-		PermContainersDelete,
-		PermContainersExec,
-		PermContainersAutoUpdate,
+type RoleDefinition struct {
+	ID          string
+	Name        string
+	Description string
+	Permissions []string
+	BuiltIn     bool
+}
 
-		PermProjectsList, PermProjectsRead, PermProjectsLogs, PermProjectsCreate, PermProjectsUpdate, PermProjectsDeploy, PermProjectsDown, PermProjectsRestart, PermProjectsDelete, PermProjectsArchive,
-		PermImagesList, PermImagesRead, PermImagesPull, PermImagesPush, PermImagesBuild, PermImagesTag, PermImagesCommit, PermImagesPrune, PermImagesDelete, PermImagesUpload, PermImagesPatch,
-		PermVolumesList, PermVolumesRead, PermVolumesCreate, PermVolumesRename, PermVolumesDelete, PermVolumesPrune, PermVolumesUpload, PermVolumesBackup,
-		PermNetworksList, PermNetworksRead, PermNetworksCreate, PermNetworksDelete, PermNetworksPrune, PermNetworksConnect, PermNetworksDisconnect,
-		PermSwarmRead, PermSwarmSpec, PermSwarmNodes, PermSwarmServices, PermSwarmServicesLogs, PermSwarmStacks, PermSwarmConfigs, PermSwarmSecrets,
-		PermPodmanRead, PermPodmanPods, PermPodmanQuadlets, PermPodmanQuadletsLifecycle, PermPodmanKube, PermPodmanSecrets, PermPodmanAutoUpdate,
-		PermGitOpsList, PermGitOpsRead, PermGitOpsCreate, PermGitOpsUpdate, PermGitOpsDelete, PermGitOpsSync, PermGitOpsBackup,
-		PermWebhooksList, PermWebhooksCreate, PermWebhooksUpdate, PermWebhooksDelete,
-		PermJobsManage, PermNotificationsManage, PermDashboardRead,
-		PermSystemRead, PermSystemPrune,
-		PermImageUpdatesRead, PermImageUpdatesCheck,
-		PermVulnsRead, PermVulnsScan, PermVulnsManage,
-		PermBuildWorkspacesManage,
-		PermActivitiesRead, PermActivitiesCancel, PermActivitiesDelete,
+var builtInEditorPermissions = []string{
+	// Read on org-level
+	PermUsersList, PermUsersRead,
+	PermRolesList, PermRolesRead,
+	PermApiKeysList, PermApiKeysRead,
+	PermFederatedList, PermFederatedRead,
+	PermSettingsRead,
+	PermEnvironmentsList, PermEnvironmentsRead, PermEnvironmentsSync,
+	PermRegistriesList, PermRegistriesRead, PermRegistriesBrowse,
+	PermTemplatesList, PermTemplatesRead, PermTemplatesCreate, PermTemplatesUpdate, PermTemplatesDelete,
+	PermVariablesRead, PermVariablesCreate, PermVariablesUpdate, PermVariablesDelete, PermVariablesSync,
+	PermGitReposList, PermGitReposRead,
+	// Editor can run volume backups, so it needs to pick a destination.
+	PermS3DestinationsList, PermS3DestinationsRead,
+	PermEventsRead,
+	// Full env-scoped Docker management
+	PermContainersList,
+	PermContainersRead,
+	PermContainersLogs,
+	PermContainersCreate,
+	PermContainersStart,
+	PermContainersStop,
+	PermContainersRestart,
+	PermContainersRedeploy,
+	PermContainersEdit,
+	PermContainersKill,
+	PermContainersPause,
+	PermContainersDelete,
+	PermContainersExec,
+	PermContainersAutoUpdate,
+
+	PermProjectsList, PermProjectsRead, PermProjectsLogs, PermProjectsCreate, PermProjectsUpdate, PermProjectsDeploy, PermProjectsDown, PermProjectsRestart, PermProjectsDelete, PermProjectsArchive,
+	PermImagesList, PermImagesRead, PermImagesPull, PermImagesBuild, PermImagesTag, PermImagesCommit, PermImagesPrune, PermImagesDelete, PermImagesUpload, PermImagesPatch,
+	PermVolumesList, PermVolumesRead, PermVolumesCreate, PermVolumesRename, PermVolumesDelete, PermVolumesPrune, PermVolumesUpload, PermVolumesBackup,
+	PermNetworksList, PermNetworksRead, PermNetworksCreate, PermNetworksDelete, PermNetworksPrune, PermNetworksConnect, PermNetworksDisconnect,
+	PermSwarmRead, PermSwarmSpec, PermSwarmNodes, PermSwarmServices, PermSwarmServicesLogs, PermSwarmStacks, PermSwarmConfigs, PermSwarmSecrets,
+	PermPodmanRead, PermPodmanPods, PermPodmanQuadlets, PermPodmanQuadletsLifecycle, PermPodmanKube, PermPodmanSecrets, PermPodmanAutoUpdate,
+	PermGitOpsList, PermGitOpsRead, PermGitOpsCreate, PermGitOpsUpdate, PermGitOpsDelete, PermGitOpsSync, PermGitOpsBackup,
+	PermWebhooksList, PermWebhooksCreate, PermWebhooksUpdate, PermWebhooksDelete,
+	PermJobsManage, PermNotificationsManage, PermDashboardRead,
+	PermSystemRead, PermSystemPrune,
+	PermImageUpdatesRead, PermImageUpdatesCheck,
+	PermVulnsRead, PermVulnsScan, PermVulnsManage,
+	PermBuildWorkspacesManage,
+	PermActivitiesRead, PermActivitiesCancel, PermActivitiesDelete,
+}
+
+var builtInDeployerPermissions = []string{
+	PermEnvironmentsList, PermEnvironmentsRead,
+	PermRegistriesList, PermRegistriesRead,
+	PermTemplatesList, PermTemplatesRead,
+	PermVariablesRead,
+	PermEventsRead,
+	PermContainersList,
+	PermContainersRead,
+	PermContainersLogs,
+	PermContainersStart,
+	PermContainersStop,
+	PermContainersRestart,
+	PermContainersRedeploy,
+	PermContainersEdit,
+	PermContainersKill,
+	PermContainersPause,
+
+	PermProjectsList, PermProjectsRead, PermProjectsLogs, PermProjectsDeploy, PermProjectsDown, PermProjectsRestart,
+	PermImagesList, PermImagesRead, PermImagesPull, PermImagesTag, PermImagesCommit,
+	PermVolumesList, PermVolumesRead,
+	PermNetworksList, PermNetworksRead,
+	PermSwarmRead, PermSwarmServicesLogs,
+	PermPodmanRead, PermPodmanQuadletsLifecycle, PermPodmanAutoUpdate,
+	PermGitOpsList, PermGitOpsRead, PermGitOpsSync,
+	PermDashboardRead,
+	PermSystemRead,
+	PermImageUpdatesRead, PermImageUpdatesCheck,
+	PermVulnsRead,
+	PermActivitiesRead, PermActivitiesCancel,
+}
+
+var builtInViewerPermissions = []string{
+	PermUsersList, PermUsersRead,
+	PermRolesList, PermRolesRead,
+	PermApiKeysList, PermApiKeysRead,
+	PermFederatedList, PermFederatedRead,
+	PermSettingsRead,
+	PermEnvironmentsList, PermEnvironmentsRead,
+	PermRegistriesList, PermRegistriesRead,
+	PermTemplatesList, PermTemplatesRead,
+	PermVariablesRead,
+	PermGitReposList, PermGitReposRead,
+	PermS3DestinationsList, PermS3DestinationsRead,
+	PermEventsRead,
+	PermContainersList, PermContainersRead, PermContainersLogs,
+	PermProjectsList, PermProjectsRead, PermProjectsLogs,
+	PermImagesList, PermImagesRead,
+	PermVolumesList, PermVolumesRead,
+	PermNetworksList, PermNetworksRead,
+	PermSwarmRead, PermSwarmServicesLogs,
+	PermPodmanRead,
+	PermGitOpsList, PermGitOpsRead,
+	PermWebhooksList,
+	PermDashboardRead,
+	PermSystemRead,
+	PermImageUpdatesRead,
+	PermVulnsRead,
+	PermActivitiesRead,
+}
+
+var builtInMonitorPermissions = []string{
+	PermEnvironmentsList, PermEnvironmentsRead,
+	PermEventsRead,
+	PermContainersList, PermContainersRead, PermContainersLogs,
+	PermProjectsList, PermProjectsRead, PermProjectsLogs,
+	PermImagesList, PermImagesRead,
+	PermVolumesList, PermVolumesRead,
+	PermNetworksList, PermNetworksRead,
+	PermSwarmRead, PermSwarmServicesLogs,
+	PermPodmanRead,
+	PermDashboardRead,
+	PermSystemRead,
+	PermImageUpdatesRead,
+	PermVulnsRead,
+	PermActivitiesRead,
+}
+
+func BuiltInRoles() []RoleDefinition {
+	return []RoleDefinition{
+		{
+			ID:          BuiltInRoleAdmin,
+			Name:        "Admin",
+			Description: "Full administrative access",
+			Permissions: []string{PermAll},
+			BuiltIn:     true,
+		},
+		{
+			ID:          BuiltInRoleEditor,
+			Name:        "Editor",
+			Description: "Read and write on Docker resources",
+			Permissions: slices.Clone(builtInEditorPermissions),
+			BuiltIn:     true,
+		},
+		{
+			ID:          BuiltInRoleNoShellEditor,
+			Name:        "No-Shell Editor",
+			Description: "Editor without interactive container shell access",
+			Permissions: slices.DeleteFunc(slices.Clone(builtInEditorPermissions), func(p string) bool {
+				return p == PermContainersExec
+			}),
+			BuiltIn: true,
+		},
+		{
+			ID:          BuiltInRoleDeployer,
+			Name:        "Deployer",
+			Description: "Deploy and lifecycle containers and projects",
+			Permissions: slices.Clone(builtInDeployerPermissions),
+			BuiltIn:     true,
+		},
+		{
+			ID:          BuiltInRoleMonitor,
+			Name:        "Monitor",
+			Description: "Observability-only access: logs, dashboards, events",
+			Permissions: slices.Clone(builtInMonitorPermissions),
+			BuiltIn:     true,
+		},
+		{
+			ID:          BuiltInRoleViewer,
+			Name:        "Viewer",
+			Description: "Read-only access to all resources",
+			Permissions: slices.Clone(builtInViewerPermissions),
+			BuiltIn:     true,
+		},
 	}
 }
 
-// BuiltInDeployerPermissions returns the permission set for the Deployer
-// built-in role: container/project lifecycle and read-only on everything else.
-// Cannot create or delete resources; cannot manage settings/users/roles/keys.
-func BuiltInDeployerPermissions() []string {
-	return []string{
-		PermEnvironmentsList, PermEnvironmentsRead,
-		PermRegistriesList, PermRegistriesRead,
-		PermTemplatesList, PermTemplatesRead,
-		PermVariablesRead,
-		PermEventsRead,
-		PermContainersList,
-		PermContainersRead,
-		PermContainersLogs,
-		PermContainersStart,
-		PermContainersStop,
-		PermContainersRestart,
-		PermContainersRedeploy,
-		PermContainersEdit,
-		PermContainersKill,
-		PermContainersPause,
-
-		PermProjectsList, PermProjectsRead, PermProjectsLogs, PermProjectsDeploy, PermProjectsDown, PermProjectsRestart,
-		PermImagesList, PermImagesRead, PermImagesPull, PermImagesTag, PermImagesCommit,
-		PermVolumesList, PermVolumesRead,
-		PermNetworksList, PermNetworksRead,
-		PermSwarmRead, PermSwarmServicesLogs,
-		PermPodmanRead, PermPodmanQuadletsLifecycle, PermPodmanAutoUpdate,
-		PermGitOpsList, PermGitOpsRead, PermGitOpsSync,
-		PermDashboardRead,
-		PermSystemRead,
-		PermImageUpdatesRead, PermImageUpdatesCheck,
-		PermVulnsRead,
-		PermActivitiesRead, PermActivitiesCancel,
-	}
-}
-
-// BuiltInViewerPermissions returns the permission set for the Viewer built-in
-// role: read-only access across every resource.
-func BuiltInViewerPermissions() []string {
-	return []string{
-		PermUsersList, PermUsersRead,
-		PermRolesList, PermRolesRead,
-		PermApiKeysList, PermApiKeysRead,
-		PermFederatedList, PermFederatedRead,
-		PermSettingsRead,
-		PermEnvironmentsList, PermEnvironmentsRead,
-		PermRegistriesList, PermRegistriesRead,
-		PermTemplatesList, PermTemplatesRead,
-		PermVariablesRead,
-		PermGitReposList, PermGitReposRead,
-		PermS3DestinationsList, PermS3DestinationsRead,
-		PermEventsRead,
-		PermContainersList, PermContainersRead, PermContainersLogs,
-		PermProjectsList, PermProjectsRead, PermProjectsLogs,
-		PermImagesList, PermImagesRead,
-		PermVolumesList, PermVolumesRead,
-		PermNetworksList, PermNetworksRead,
-		PermSwarmRead, PermSwarmServicesLogs,
-		PermPodmanRead,
-		PermGitOpsList, PermGitOpsRead,
-		PermWebhooksList,
-		PermDashboardRead,
-		PermSystemRead,
-		PermImageUpdatesRead,
-		PermVulnsRead,
-		PermActivitiesRead,
-	}
-}
-
-// BuiltInMonitorPermissions returns the permission set for the Monitor
-// built-in role: observability-only access — read Docker resources, view logs,
-// dashboards, and events. No mutations, no exec, no user/role/settings access.
-func BuiltInMonitorPermissions() []string {
-	return []string{
-		PermEnvironmentsList, PermEnvironmentsRead,
-		PermEventsRead,
-		PermContainersList, PermContainersRead, PermContainersLogs,
-		PermProjectsList, PermProjectsRead, PermProjectsLogs,
-		PermImagesList, PermImagesRead,
-		PermVolumesList, PermVolumesRead,
-		PermNetworksList, PermNetworksRead,
-		PermSwarmRead, PermSwarmServicesLogs,
-		PermPodmanRead,
-		PermDashboardRead,
-		PermSystemRead,
-		PermImageUpdatesRead,
-		PermVulnsRead,
-		PermActivitiesRead,
-	}
-}
-
-// BuiltInNoShellEditorPermissions returns the Editor permission set minus
-// PermContainersExec. For teams that want full Docker management but no
-// interactive shell access into running containers.
-func BuiltInNoShellEditorPermissions() []string {
-	src := BuiltInEditorPermissions()
-	out := make([]string, 0, len(src))
-	for _, p := range src {
-		if p != PermContainersExec {
-			out = append(out, p)
+func BuiltInRole(id string) (RoleDefinition, bool) {
+	for _, role := range BuiltInRoles() {
+		if role.ID == id {
+			return role, true
 		}
 	}
-	return out
+	return RoleDefinition{}, false
 }

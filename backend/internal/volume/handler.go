@@ -279,6 +279,8 @@ func (h *VolumeHandler) RenameVolume(ctx context.Context, input *RenameVolumeInp
 			return nil, huma.NewError(http.StatusInsufficientStorage, err.Error())
 		case errors.Is(err, common.ErrNotFound):
 			return nil, huma.Error404NotFound(err.Error())
+		case errors.Is(err, common.ErrForbidden):
+			return nil, huma.Error403Forbidden(err.Error())
 		default:
 			return nil, huma.Error500InternalServerError("Failed to rename volume: " + err.Error())
 		}
@@ -314,7 +316,8 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 		return h.volumeService.DeleteVolume(runtimeCtx, input.VolumeName, input.Force, *user)
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to delete volume: " + err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete volume: "+apiErr.Message)
 	}
 
 	return handlerutil.MessageOutput("Volume removed successfully", activityID), nil
@@ -357,7 +360,8 @@ func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInp
 func (h *VolumeHandler) GetVolumeUsage(ctx context.Context, input *GetVolumeUsageInput) (*handlerutil.Out[VolumeUsageResponse], error) {
 	inUse, containers, err := h.volumeService.GetVolumeUsage(ctx, input.VolumeName)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to get volume usage: " + err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to get volume usage: "+apiErr.Message)
 	}
 
 	return &handlerutil.Out[VolumeUsageResponse]{

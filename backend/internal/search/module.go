@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
@@ -45,7 +46,7 @@ func RegisterCustomize(api huma.API, customizeSearchService *CustomizeSearchServ
 		customizeSearchService: customizeSearchService,
 	}
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "search-customize",
 		Method:      http.MethodPost,
 		Path:        "/customize/search",
@@ -55,7 +56,7 @@ func RegisterCustomize(api huma.API, customizeSearchService *CustomizeSearchServ
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, h.Search)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "get-customize-categories",
 		Method:      http.MethodGet,
 		Path:        "/customize/categories",

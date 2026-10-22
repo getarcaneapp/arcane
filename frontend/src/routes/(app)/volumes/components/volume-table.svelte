@@ -16,6 +16,7 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { TrashIcon, InspectIcon, VolumesIcon, CalendarIcon, EditIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { volumeService, type VolumesPaginatedResponse } from '#lib/services/volume-service.js';
@@ -76,11 +77,11 @@
 	// this the derived would cache a pre-hydration false forever.
 	const canDeleteVolume = $derived.by(() => {
 		userStore.current;
-		return hasShownPermission('volumes:delete');
+		return hasShownPermission(PERMISSIONS.VOLUMES_DELETE);
 	});
 	const canRenameVolume = $derived.by(() => {
 		userStore.current;
-		return hasShownPermission('volumes:rename');
+		return hasShownPermission(PERMISSIONS.VOLUMES_RENAME);
 	});
 	let tablePreferences = $state<{ persistCustomSettings(settings: Record<string, unknown>): void }>();
 	let customSettings = $state<Record<string, unknown>>({});
@@ -167,7 +168,7 @@
 			tablePreferencesReady &&
 			!!environmentStore.selected?.id &&
 			columnVisibility['size'] !== false &&
-			hasShownPermission('volumes:read')
+			hasShownPermission(PERMISSIONS.VOLUMES_READ)
 		);
 	});
 	const sizesQuery = createQuery(() => {
@@ -176,7 +177,7 @@
 		return {
 			queryKey: queryKeys.volumes.sizes(queryScope),
 			queryFn: async () => {
-				const readable = environments.filter((env) => hasPermission('volumes:read', env.id));
+				const readable = environments.filter((env) => hasPermission(PERMISSIONS.VOLUMES_READ, env.id));
 				if (readable.length === 0) return [];
 				const { value } = await readAcrossEnvironments(readable, (scope, config) => volumeService.getVolumeSizes(scope, config));
 				return environmentRows(value, readable);
@@ -416,7 +417,7 @@
 			<DropdownMenu.Separator />
 		{/if}
 
-		{#if canRenameVolume && hasPermission('volumes:rename', item.environmentId)}
+		{#if canRenameVolume && hasPermission(PERMISSIONS.VOLUMES_RENAME, item.environmentId)}
 			<DropdownMenu.Item
 				onclick={() => handleRenameVolume(item)}
 				disabled={item.inUse || isBackupVolume(item) || isLoading.renaming}
@@ -426,7 +427,7 @@
 			</DropdownMenu.Item>
 		{/if}
 
-		{#if canDeleteVolume && hasPermission('volumes:delete', item.environmentId)}
+		{#if canDeleteVolume && hasPermission(PERMISSIONS.VOLUMES_DELETE, item.environmentId)}
 			<DropdownMenu.Item
 				variant="destructive"
 				onclick={() => handleRemoveVolumeConfirm(item.name, item.environmentId)}

@@ -34,6 +34,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow/flowtest"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
@@ -960,4 +961,94 @@ func TestAggregateImageCountsSumsEnvironments(t *testing.T) {
 	}, body.Data)
 	require.Len(t, body.FailedEnvironments, 1)
 	assert.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
+}
+
+func newScopedImageTestService(t *testing.T) *ImageService {
+	t.Helper()
+	db := setupImageProjectTestDB(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch path := imageDockerTestPath(r.URL.Path); {
+		case path == "/images/json":
+			_ = json.NewEncoder(w).Encode([]image.Summary{
+				{ID: "sha256:team-one", RepoTags: []string{"team/app:1"}, Size: 10},
+				{ID: "sha256:team-two", RepoTags: []string{"team/app:2"}, Size: 20},
+				{ID: "sha256:other", RepoTags: []string{"other:latest"}, Size: 40},
+			})
+		case path == "/containers/json":
+			_ = json.NewEncoder(w).Encode([]container.Summary{
+				{ID: "c-team", ImageID: "sha256:team-one"},
+				{ID: "c-other", ImageID: "sha256:other"},
+			})
+		case strings.HasPrefix(path, "/images/other") && strings.HasSuffix(path, "/json"):
+			_ = json.NewEncoder(w).Encode(image.InspectResponse{
+				ID:       "sha256:other",
+				RepoTags: []string{"other:latest"},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return NewImageService(db, &docker.DockerClientService{Client: newTestDockerClient(t, server)}, nil, nil, nil, event.NewEventService(db, nil, nil, nil), nil, nil, nil)
+}
+
+func scopedImageContext(t *testing.T, ps *authz.PermissionSet) context.Context {
+	t.Helper()
+	return authz.WithRequestEnvironment(authz.WithPermissions(t.Context(), ps), "0")
+}
+
+func TestImageService_ScopedUsageCountsOnlyCountImagesInListScope(t *testing.T) {
+	imageSvc := newScopedImageTestService(t)
+	ps := authz.NewPermissionSet()
+	ps.AddScopedEnv("0", types.ResourceSelector{Names: []string{"team/*"}}, authz.PermImagesList)
+
+	counts, err := imageSvc.GetImageUsageCounts(scopedImageContext(t, ps))
+	require.NoError(t, err)
+	assert.Equal(t, types.ImageUsageCounts{
+		Inuse:     1,
+		Unused:    1,
+		Total:     2,
+		TotalSize: 30,
+	}, counts)
+
+	unrestricted, err := imageSvc.GetImageUsageCounts(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, 3, unrestricted.Total)
+}
+
+func TestImageService_ScopedImageAccessReturnsNotFoundOrForbidden(t *testing.T) {
+	imageSvc := newScopedImageTestService(t)
+	selector := types.ResourceSelector{Names: []string{"team/*"}}
+
+	hidden := authz.NewPermissionSet()
+	hidden.AddScopedEnv("0", selector, authz.PermImagesRead, authz.PermImagesDelete)
+	_, err := imageSvc.GetImageDetail(scopedImageContext(t, hidden), "other:latest")
+	require.ErrorIs(t, err, authz.ErrResourceOutOfScope)
+	err = imageSvc.RemoveImage(scopedImageContext(t, hidden), "other:latest", false, types.SystemUser)
+	require.ErrorIs(t, err, authz.ErrResourceOutOfScope)
+
+	visible := authz.NewPermissionSet()
+	visible.AddEnv("0", authz.PermImagesRead)
+	visible.AddScopedEnv("0", selector, authz.PermImagesDelete)
+	err = imageSvc.RemoveImage(scopedImageContext(t, visible), "other:latest", false, types.SystemUser)
+	require.ErrorIs(t, err, authz.ErrResourceForbidden)
+}
+
+func TestAuthorizeImageCreateRejectsLabelScopedCreateWithoutLabels(t *testing.T) {
+	ps := authz.NewPermissionSet()
+	ps.AddScopedEnv("0", types.ResourceSelector{Labels: map[string]string{"team": "a"}}, authz.PermImagesPull)
+	ctx := scopedImageContext(t, ps)
+
+	require.ErrorIs(t, authorizeImageCreate(ctx, authz.PermImagesPull, authz.ImageAttributes([]string{"nginx:latest"}, nil)), authz.ErrResourceForbidden)
+	require.NoError(t, authorizeImageCreate(ctx, authz.PermImagesPull, authz.ImageAttributes([]string{"nginx:latest"}, map[string]string{"team": "a"})))
+}
+
+func TestAuthorizeImageCreateChecksEachOutputTag(t *testing.T) {
+	ps := authz.NewPermissionSet()
+	ps.AddScopedEnv("0", types.ResourceSelector{Names: []string{"team-a/*"}}, authz.PermImagesBuild)
+	ctx := scopedImageContext(t, ps)
+
+	require.NoError(t, authorizeImageCreate(ctx, authz.PermImagesBuild, authz.ImageAttributes([]string{"team-a/app:1", "team-a/app:latest"}, nil)))
+	require.ErrorIs(t, authorizeImageCreate(ctx, authz.PermImagesBuild, authz.ImageAttributes([]string{"team-a/app:1", "team-b/app:1"}, nil)), authz.ErrResourceForbidden)
 }

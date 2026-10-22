@@ -17,6 +17,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { TerminalIcon, TemplateIcon, AddIcon, ArrowDownIcon as ChevronDown, GitBranchIcon } from '#lib/icons/index.js';
+	import type { Permission } from '#lib/permissions.generated.js';
 	import { templateBtnClass } from '#lib/utils/compose-flow.js';
 	import type { ShortcutKey } from '#lib/utils/navigation.js';
 
@@ -58,7 +59,7 @@
 		// When set, the create-template item is gated behind this RBAC permission
 		// (with a leading separator), matching the new-project page. When omitted,
 		// the item renders unconditionally (new-swarm-stack page).
-		createTemplatePermission?: string;
+		createTemplatePermission?: Permission;
 	}
 
 	let {

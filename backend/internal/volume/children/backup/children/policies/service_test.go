@@ -20,6 +20,10 @@ func noLatestRun(context.Context, string) (*types.VolumeBackupEntry, error) {
 	return nil, nil
 }
 
+func allowVolume(context.Context, string, string) error {
+	return nil
+}
+
 func newVolumeAdmissionForTest(t testing.TB) *runs.Admission {
 	t.Helper()
 	runtime := francistest.New(t)
@@ -57,6 +61,7 @@ func TestVolumeBackupPolicy_UpdateRegistersIndependentJobsAndSettings(t *testing
 	service := NewService(Dependencies{
 		DB:             db,
 		S3Destinations: s3.NewS3DestinationService(db, func(context.Context, string) error { return nil }),
+		Authorize:      allowVolume,
 		LatestRun:      noLatestRun,
 	})
 	gate := newVolumeAdmissionForTest(t)
@@ -100,6 +105,7 @@ func TestVolumeBackupPolicy_GetReturnsLastRunForEachPolicy(t *testing.T) {
 	service := NewService(Dependencies{
 		DB:             &database.DB{DB: gormDB},
 		S3Destinations: s3.NewS3DestinationService(&database.DB{DB: gormDB}, func(context.Context, string) error { return nil }),
+		Authorize:      allowVolume,
 		LatestRun: func(_ context.Context, policyID string) (*types.VolumeBackupEntry, error) {
 			return latest[policyID], nil
 		},
@@ -134,6 +140,7 @@ func TestVolumeBackupPolicy_UpdateUsesSelectedS3Destination(t *testing.T) {
 	service := NewService(Dependencies{
 		DB:             db,
 		S3Destinations: s3.NewS3DestinationService(db, nil),
+		Authorize:      allowVolume,
 		LatestRun:      noLatestRun,
 	})
 	collection, err := service.UpdateBackupPolicies(t.Context(), "app-data", []types.UpdateBackupPolicy{{
@@ -165,7 +172,12 @@ func TestBackupPolicyDestinationLookupFailure(t *testing.T) {
 	require.NoError(t, db.AutoMigrate(&VolumeBackupPolicy{}, &s3.S3Destination{}))
 	policy := &VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 0 2 * * *", S3DestinationID: "missing"}
 	require.NoError(t, db.Create(policy).Error)
-	service := NewService(Dependencies{DB: &database.DB{DB: db}, S3Destinations: s3.NewS3DestinationService(&database.DB{DB: db}, nil), LatestRun: noLatestRun})
+	service := NewService(Dependencies{
+		DB:             &database.DB{DB: db},
+		S3Destinations: s3.NewS3DestinationService(&database.DB{DB: db}, nil),
+		Authorize:      allowVolume,
+		LatestRun:      noLatestRun,
+	})
 	for _, drop := range []bool{false, true} {
 		if drop {
 			require.NoError(t, db.Migrator().DropTable(&s3.S3Destination{}))

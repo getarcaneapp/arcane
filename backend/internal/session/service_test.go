@@ -10,8 +10,10 @@ import (
 	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/audit"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/group"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
@@ -81,13 +83,15 @@ func setupAuthServiceTestDB(t *testing.T) *database.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
+		&audit.AuditLog{},
 		&settings.SettingVariable{},
 		&user.User{},
 		&UserSession{},
 		&role.Role{},
-		&role.UserRoleAssignment{},
+		&role.RoleBinding{},
+		&group.Group{},
+		&group.GroupMember{},
 		&role.ApiKeyPermission{},
-		&role.OidcRoleMapping{},
 	))
 	// environments and api_keys live in packages that import this one; the
 	// in-package tests only need the tables to exist.

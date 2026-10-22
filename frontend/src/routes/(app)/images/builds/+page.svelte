@@ -12,6 +12,7 @@
 	import { ResourceDetailLayout } from '#lib/layouts/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { isSessionCancelledError, withSessionSignal } from '#lib/services/api-service.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
@@ -53,7 +54,7 @@
 	const buildsRootOf = (settings: ResolvedSettings | undefined) =>
 		(settings?.values.buildsDirectory ?? '/builds').trim() || '/builds';
 	let pickedEnvironmentId = $state('');
-	const buildEnvironmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'images:build'));
+	const buildEnvironmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, PERMISSIONS.IMAGES_BUILD));
 	const queryClient = useQueryClient();
 	const buildSettingsQuery = createQuery(() => buildSettingsOptions(buildEnvironmentId));
 	const buildsRoot = $derived(buildsRootOf(buildSettingsQuery.data));

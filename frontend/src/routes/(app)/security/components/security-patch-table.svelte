@@ -36,6 +36,7 @@
 	import MonoCell from '#lib/components/vulnerability/mono-cell.svelte';
 	import { ShieldCheckIcon, ImagesIcon, ClockIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import { activityToastOptions } from '#lib/utils/activity-toast.js';
@@ -56,7 +57,7 @@
 	// this the derived would cache a pre-hydration false forever.
 	const canPatchImage = $derived.by(() => {
 		userStore.current;
-		return vulnerabilityEnvironments().some((env) => hasPermission('images:patch', env.id));
+		return vulnerabilityEnvironments().some((env) => hasPermission(PERMISSIONS.IMAGES_PATCH, env.id));
 	});
 
 	// Only the latest request is applied, so a slow response for an earlier filter cannot replace newer rows.
@@ -74,7 +75,7 @@
 	}
 
 	async function handlePatchImage(item: PatchTargetRow) {
-		if (!hasPermission('images:patch', item.environmentId)) return;
+		if (!hasPermission(PERMISSIONS.IMAGES_PATCH, item.environmentId)) return;
 		const operationResult = await tryCatch(
 			(async () => {
 				// The fixable counts come from the stored scan, so patch from that report.
@@ -222,7 +223,7 @@
 	<RowActionsMenu>
 		<DropdownMenu.Item
 			onclick={() => handlePatchImage(item)}
-			disabled={item.localOnly || item.fixableCount === 0 || !hasPermission('images:patch', item.environmentId)}
+			disabled={item.localOnly || item.fixableCount === 0 || !hasPermission(PERMISSIONS.IMAGES_PATCH, item.environmentId)}
 		>
 			<ShieldCheckIcon class="size-4" />
 			<div class="flex flex-col items-start">

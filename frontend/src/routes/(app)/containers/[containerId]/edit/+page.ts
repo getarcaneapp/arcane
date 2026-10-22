@@ -1,5 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { containerService } from '#lib/services/container-service.js';
 import { userHasPermission } from '#lib/utils/auth.js';
@@ -12,7 +13,7 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 	const envId = await resolveDetailEnvironmentId(url);
 	const containerId = params.containerId;
 
-	if (!userHasPermission(user, 'containers:edit', envId)) {
+	if (!userHasPermission(user, PERMISSIONS.CONTAINERS_EDIT, envId)) {
 		redirect(302, environmentHref(`/containers/${containerId}`, envId));
 	}
 

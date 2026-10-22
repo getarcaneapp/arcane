@@ -30,6 +30,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
@@ -302,7 +303,7 @@ func (s *VariableService) resolveEffectiveVariables(ctx context.Context, envID s
 // environment's .env.global. Remote environments are imported once before the
 // first overwrite so pre-existing per-env variables are preserved.
 func (s *VariableService) SyncEnvironment(ctx context.Context, envID string) error {
-	err := s.syncEnvironment(ctx, envID)
+	err := s.syncEnvironment(authz.WithPermissions(ctx, authz.SudoPermissionSet()), envID)
 	s.recordSyncStatus(envID, err)
 	return err
 }

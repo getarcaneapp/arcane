@@ -7,6 +7,7 @@
 	import { LockIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService } from '#lib/services/podman-service.js';
 	import type { PodmanSecret } from '#lib/types/podman.js';
@@ -25,7 +26,7 @@
 
 	const pageState = new ResourceListPageState(untrack(() => data.requestOptions));
 	const podmanEnvironments = $derived(shownPodmanEnvironments(data.podmanStatuses));
-	const canCreate = $derived(podmanEnvironments.some((env) => hasPermission('podman:secrets', env.id)));
+	const canCreate = $derived(podmanEnvironments.some((env) => hasPermission(PERMISSIONS.PODMAN_SECRETS, env.id)));
 	let isSheetOpen = $state(false);
 	let sheetSession = $state(0);
 	let secretToEdit = $state<EnvironmentRow<PodmanSecret> | null>(null);

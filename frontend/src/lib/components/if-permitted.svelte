@@ -8,25 +8,23 @@
 	this component re-evaluates and shows/hides its children without a remount.
 
 	Permission logic lives in `#lib/utils/auth` — this component is
-	a thin presentational wrapper around `hasPermission`, `hasAnyPermission`,
-	and `isGlobalAdmin`.
+	a thin presentational wrapper around `hasPermission` and `hasAnyPermission`.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
+	import type { Permission } from '#lib/permissions.generated.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import { hasPermission, hasAnyPermission, isGlobalAdmin } from '#lib/utils/auth.js';
+	import { hasPermission, hasAnyPermission } from '#lib/utils/auth.js';
 
 	let {
 		perm,
 		envId,
-		adminOnly = false,
 		children,
 		fallback
 	}: {
-		perm?: string | string[];
+		perm?: Permission | Permission[];
 		envId?: string;
-		adminOnly?: boolean;
 		children: Snippet;
 		fallback?: Snippet;
 	} = $props();
@@ -35,7 +33,6 @@
 		// Touch the selected env id so the derived re-runs when it changes.
 		const activeEnvId = envId ?? environmentStore.selected?.id;
 
-		if (adminOnly) return isGlobalAdmin();
 		if (perm === undefined) return true;
 		if (typeof perm === 'string') return hasPermission(perm, activeEnvId);
 		return hasAnyPermission(perm, activeEnvId);

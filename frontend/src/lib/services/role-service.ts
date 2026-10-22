@@ -1,4 +1,14 @@
-import type { Role, RoleCreate, RoleUpdate, RoleAssignment, SetUserAssignments, PermissionsManifest } from '#lib/types/auth.js';
+import type {
+	EffectiveAccess,
+	PermissionsManifest,
+	Role,
+	RoleBinding,
+	RoleBindingCreate,
+	RoleBindingCreateResult,
+	RoleBindingFilter,
+	RoleCreate,
+	RoleUpdate
+} from '#lib/types/auth.js';
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
@@ -15,7 +25,7 @@ class RoleAPIService extends BaseAPIService {
 		// Unpaginated convenience for selects. Backend caps at a generous
 		// limit (1000) which is well above any realistic role count.
 		const res = await this.api.get('/roles', {
-			params: { limit: 1000, sort: 'name', order: 'asc' }
+			params: { limit: -1, sort: 'name', order: 'asc' }
 		});
 		return res.data.data ?? [];
 	}
@@ -40,12 +50,30 @@ class RoleAPIService extends BaseAPIService {
 		return this.handleResponse(this.api.get('/roles/permissions')) as Promise<PermissionsManifest>;
 	}
 
-	async getUserAssignments(userId: string): Promise<RoleAssignment[]> {
-		return this.handleResponse(this.api.get(`/users/${userId}/roles`)) as Promise<RoleAssignment[]>;
+	async getBindings(filter: RoleBindingFilter, options?: SearchPaginationSortRequest): Promise<Paginated<RoleBinding>> {
+		const params = { ...transformPaginationParams(options), ...filter };
+		const res = await this.api.get('/roles/bindings', { params });
+		return res.data;
 	}
 
-	async setUserAssignments(userId: string, payload: SetUserAssignments): Promise<RoleAssignment[]> {
-		return this.handleResponse(this.api.put(`/users/${userId}/roles`, payload)) as Promise<RoleAssignment[]>;
+	async getBinding(id: string): Promise<RoleBinding> {
+		return this.handleResponse(this.api.get(`/roles/bindings/${id}`));
+	}
+
+	async createBinding(binding: RoleBindingCreate): Promise<RoleBindingCreateResult> {
+		return this.handleResponse(this.api.post('/roles/bindings', binding));
+	}
+
+	async deleteBinding(id: string): Promise<void> {
+		return this.handleResponse(this.api.delete(`/roles/bindings/${id}`));
+	}
+
+	async getUserEffectiveAccess(userId: string): Promise<EffectiveAccess> {
+		return this.handleResponse(this.api.get(`/users/${userId}/effective-access`));
+	}
+
+	async getMyEffectiveAccess(): Promise<EffectiveAccess> {
+		return this.handleResponse(this.api.get('/auth/me/effective-access'));
 	}
 }
 

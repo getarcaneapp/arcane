@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { test, expect, type Page } from '../fixtures/test.fixture';
 import { openRowActionsMenu } from '../utils/table-actions.util';
+import { patchSessionBootstrap, withEnvironments } from '../utils/session.util';
 
 const ROUTES = {
 	page: '/security',
@@ -475,6 +476,9 @@ test.describe('Security Page', () => {
 		await page.addInitScript(() => {
 			localStorage.removeItem('selectedEnvironmentId');
 		});
+		await patchSessionBootstrap(page, (bootstrap) =>
+			withEnvironments(bootstrap, [localEnvironment, remoteEnvironment])
+		);
 		await page.route(/\/api\/environments(?:\?.*)?$/, async (route) => {
 			await route.fulfill({ json: paginated([localEnvironment, remoteEnvironment]) });
 		});

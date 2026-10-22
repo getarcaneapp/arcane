@@ -1,5 +1,6 @@
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import type { AccessSurface, PermissionsManifest, User } from '#lib/types/auth.js';
-import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/auth.js';
+import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 
 type SurfaceIndex = Map<string, AccessSurface>;
 
@@ -106,7 +107,7 @@ function hasPermissionForScopeInternal(
 	selectedEnvId: string | undefined
 ): boolean {
 	const global = user.permissionsByEnv?.[GLOBAL_SCOPE] ?? [];
-	if (global.includes(SUDO_PERMISSION)) return true;
+	if (global.includes(PERMISSIONS.ALL)) return true;
 
 	switch (scopeMode) {
 		case 'global-only':

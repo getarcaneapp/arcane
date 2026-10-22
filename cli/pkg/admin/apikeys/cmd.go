@@ -1,6 +1,7 @@
 package apikeys
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
+	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
@@ -95,7 +97,7 @@ func newCreateCmd() *cobra.Command {
 				return err
 			}
 
-			grants, grantsErr := permissionGrants(opts.permissions)
+			grants, grantsErr := permissionGrants(cmd.Context(), c, opts.permissions)
 			if grantsErr != nil {
 				return grantsErr
 			}
@@ -248,7 +250,7 @@ func newUpdateCmd() *cobra.Command {
 				}
 				expiresAt = &parsedTime
 			}
-			permissions, grantsErr := permissionGrants(opts.permissions)
+			permissions, grantsErr := permissionGrants(cmd.Context(), c, opts.permissions)
 			if grantsErr != nil {
 				return grantsErr
 			}
@@ -289,8 +291,9 @@ func newUpdateCmd() *cobra.Command {
 	return command
 }
 
-func permissionGrants(rawPermissions []string) ([]types.ApiKeyPermissionGrant, error) {
+func permissionGrants(ctx context.Context, c *client.Client, rawPermissions []string) ([]types.ApiKeyPermissionGrant, error) {
 	grants := make([]types.ApiKeyPermissionGrant, 0, len(rawPermissions))
+	names := make([]string, 0, len(rawPermissions))
 	for _, raw := range rawPermissions {
 		token := strings.TrimSpace(raw)
 		if token == "" {
@@ -308,6 +311,10 @@ func permissionGrants(rawPermissions []string) ([]types.ApiKeyPermissionGrant, e
 			Permission:    parts[0] + ":" + parts[1],
 			EnvironmentID: environmentID,
 		})
+		names = append(names, parts[0]+":"+parts[1])
+	}
+	if err := cmdutil.ValidatePermissions(ctx, c, names); err != nil {
+		return nil, err
 	}
 	return grants, nil
 }

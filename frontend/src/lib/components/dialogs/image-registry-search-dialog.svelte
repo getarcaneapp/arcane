@@ -8,6 +8,7 @@
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { SearchIcon, DownloadIcon, VerifiedCheckIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import type { ImageSearchResultDto } from '#lib/types/docker.js';
 	import { destinationEnvironmentId } from '#lib/utils/environments.js';
@@ -28,7 +29,7 @@
 	let isSearching = $state(false);
 	let pullingImageName = $state<string | null>(null);
 	let pickedEnvironmentId = $state('');
-	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'images:pull'));
+	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, PERMISSIONS.IMAGES_PULL));
 
 	const normalizedTag = $derived(tag.trim() || 'latest');
 	const canSearch = $derived(query.trim().length > 0 && !isSearching);
@@ -118,7 +119,7 @@
 		<div class="grid gap-4 py-4">
 			<EnvironmentDestinationSelect
 				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
-				permission="images:pull"
+				permission={PERMISSIONS.IMAGES_PULL}
 				variant="field"
 			/>
 			<div class="grid gap-3 sm:grid-cols-content-36-action">

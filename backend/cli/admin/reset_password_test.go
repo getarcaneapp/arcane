@@ -9,8 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/audit"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/group"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
@@ -24,10 +26,13 @@ func newResetPasswordTestDB(t *testing.T) *database.DB {
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(
+		&audit.AuditLog{},
 		&user.User{},
 		&session.UserSession{},
 		&role.Role{},
-		&role.UserRoleAssignment{},
+		&role.RoleBinding{},
+		&group.Group{},
+		&group.GroupMember{},
 	))
 
 	db := &database.DB{DB: gormDB}
@@ -41,7 +46,6 @@ func createGlobalAdmin(t *testing.T, db *database.DB) (*user.User, *user.UserSer
 	t.Helper()
 	ctx := t.Context()
 	roleService := role.NewRoleService(db)
-	require.NoError(t, roleService.EnsureBuiltInRoles(ctx))
 	userService := user.NewUserService(db, roleService, session.RevokeAllUserSessionsExceptInDB)
 	passwordHash, err := userService.HashPassword(t.Context(), "old-password")
 	require.NoError(t, err)
@@ -52,9 +56,7 @@ func createGlobalAdmin(t *testing.T, db *database.DB) (*user.User, *user.UserSer
 		RequiresPasswordChange: true,
 	})
 	require.NoError(t, err)
-	require.NoError(t, roleService.ReplaceUserAssignments(ctx, adminUser.ID, role.RoleAssignmentSourceManual, []role.UserRoleAssignment{
-		{RoleID: authz.BuiltInRoleAdmin},
-	}))
+	require.NoError(t, roleService.BindUser(ctx, adminUser.ID, authz.BuiltInRoleAdmin))
 
 	return adminUser, userService
 }

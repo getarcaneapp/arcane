@@ -20,6 +20,7 @@
 		ExternalLinkIcon as LinkIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { gitRepositoryService } from '#lib/services/git-repository-service.js';
 	import type { GitRepository } from '#lib/types/automation.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -47,7 +48,7 @@
 		testing: false
 	});
 
-	const canDeleteRepository = $derived(hasPermission('git-repositories:delete'));
+	const canDeleteRepository = $derived(hasPermission(PERMISSIONS.GIT_REPOSITORIES_DELETE));
 
 	const bulkActions = $derived.by<BulkAction[]>(() => [
 		{
@@ -225,14 +226,14 @@
 
 {#snippet RowActions({ item }: { item: GitRepository })}
 	<RowActionsMenu>
-		<IfPermitted perm="git-repositories:test">
+		<IfPermitted perm={PERMISSIONS.GIT_REPOSITORIES_TEST}>
 			<DropdownMenu.Item onclick={() => handleTest(item.id, item.name)} disabled={isLoading.testing}>
 				<TestTubeIcon class="size-4" />
 				{m.test_connection()}
 			</DropdownMenu.Item>
 		</IfPermitted>
 
-		<IfPermitted perm="git-repositories:update">
+		<IfPermitted perm={PERMISSIONS.GIT_REPOSITORIES_UPDATE}>
 			<DropdownMenu.Item onclick={() => onEditRepository(item)}>
 				<PencilIcon class="size-4" />
 				{m.common_edit()}

@@ -14,6 +14,7 @@
 	import { NotificationsIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { apnsService } from '#lib/services/apns-service.js';
 	import { notificationService } from '#lib/services/notification-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
@@ -63,7 +64,7 @@
 	];
 
 	const isReadOnly = $derived(settingsStore.readOnly);
-	const canToggleMobilePush = $derived(hasPermission('settings:write'));
+	const canToggleMobilePush = $derived(hasPermission(PERMISSIONS.SETTINGS_WRITE));
 	const mobilePushEnabled = $derived(settingsStore.current?.apnsEnabled === true);
 	let savingMobilePush = $state(false);
 	let mobileDevices = $state<ApnsDevice[]>([]);

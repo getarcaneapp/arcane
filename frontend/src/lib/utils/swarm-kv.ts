@@ -1,11 +1,12 @@
 import { LockIcon, TemplateIcon, type IconType } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
+import { PERMISSIONS, type Permission } from '#lib/permissions.generated.js';
 import type { SwarmKvKind } from '#lib/types/swarm.js';
 
 export type SwarmKvResource = {
 	kind: SwarmKvKind;
 	persistKey: string;
-	permission: string;
+	permission: Permission;
 	icon: IconType;
 	resource: () => string;
 	title: () => string;
@@ -27,7 +28,7 @@ export const swarmKvResources: Record<SwarmKvKind, SwarmKvResource> = {
 	secrets: {
 		kind: 'secrets',
 		persistKey: 'arcane-swarm-secrets-table',
-		permission: 'swarm:secrets',
+		permission: PERMISSIONS.SWARM_SECRETS,
 		icon: LockIcon,
 		resource: m.swarm_secret,
 		title: m.swarm_secrets_title,
@@ -47,7 +48,7 @@ export const swarmKvResources: Record<SwarmKvKind, SwarmKvResource> = {
 	configs: {
 		kind: 'configs',
 		persistKey: 'arcane-swarm-configs-table',
-		permission: 'swarm:configs',
+		permission: PERMISSIONS.SWARM_CONFIGS,
 		icon: TemplateIcon,
 		resource: m.swarm_config,
 		title: m.swarm_configs_title,

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -424,4 +425,57 @@ func TestEnvScopedOperationsDeclarePermission(t *testing.T) {
 		assert.Failf(t, "unexpected failure", "%d env-scoped operation(s) missing required-permission metadata; register them with middleware.RegisterWithPermission:\n  %s",
 			len(missing), strings.Join(missing, "\n  "))
 	}
+}
+
+func TestEveryOperationIsPermissionedOrDeclared(t *testing.T) {
+	sudoOnlyOperations := map[string]string{
+		"getGlobalVariables":    "agent-only materialized variables guarded by middleware.RequireSudo",
+		"updateGlobalVariables": "agent-only materialized variables guarded by middleware.RequireSudo",
+	}
+	handlerEnforcedOperations := map[string]string{
+		"create-upload-session": "permission derived from the {kind} segment through authz.UploadKindPermission",
+		"upload-chunk":          "permission derived from the {kind} segment through authz.UploadKindPermission",
+		"get-upload-session":    "permission derived from the {kind} segment through authz.UploadKindPermission",
+		"delete-upload-session": "permission derived from the {kind} segment through authz.UploadKindPermission",
+		"dispatch-notification": "environment access token revalidated by the handler",
+	}
+	router := echo.New()
+	agentAPI := SetupAPI(
+		router,
+		router.Group("/api"),
+		handlerutil.NewActivityAppContext(t.Context()),
+		&config.Config{AgentMode: true},
+		HandlerDeps{Health: health.New(&health.Service{})},
+	)
+
+	var undeclared []string
+	for _, humaAPI := range []humav2.API{SetupAPIForSpec(), agentAPI} {
+		for path, item := range humaAPI.OpenAPI().Paths {
+			for method, op := range map[string]*humav2.Operation{
+				http.MethodGet:    item.Get,
+				http.MethodPost:   item.Post,
+				http.MethodPut:    item.Put,
+				http.MethodDelete: item.Delete,
+				http.MethodPatch:  item.Patch,
+				http.MethodHead:   item.Head,
+			} {
+				if op == nil || op.Security != nil && len(op.Security) == 0 {
+					continue
+				}
+				permission, _ := op.Metadata[authz.MetaRequiredPermission].(string)
+				_, actions := op.Metadata[authz.MetaActionPermissions].(map[string]string)
+				authenticated, _ := op.Metadata[authz.MetaAuthenticatedOnly].(bool)
+				_, sudoOnly := sudoOnlyOperations[op.OperationID]
+				_, handlerEnforced := handlerEnforcedOperations[op.OperationID]
+				if permission != "" || actions || authenticated || sudoOnly || handlerEnforced {
+					continue
+				}
+				undeclared = append(undeclared, method+" "+path+" ("+op.OperationID+")")
+			}
+		}
+	}
+
+	sort.Strings(undeclared)
+	assert.Empty(t, slices.Compact(undeclared),
+		"operations must use middleware.RegisterWithPermission, RegisterWithActionPermissions, or RegisterAuthenticated, or be declared here")
 }

@@ -14,7 +14,7 @@ import (
 // RegisterRoutes registers the system backup endpoints, including the
 // system-managed volume backup endpoints.
 func RegisterRoutes(api huma.API, h *Handler) {
-	adminOnly := middleware.RequireGlobalAdmin(api)
+	adminOnly := middleware.RequireAdmin(api)
 	middleware.RegisterWithPermission(
 		api,
 		huma.Operation{

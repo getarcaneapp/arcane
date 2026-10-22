@@ -152,7 +152,10 @@ func newLogoutCmd() *cobra.Command {
 }
 
 func newMeCmd() *cobra.Command {
-	return &cobra.Command{
+	var opts struct {
+		effective bool
+	}
+	command := &cobra.Command{
 		Use:          "me",
 		Short:        "Get current user information",
 		SilenceUsage: true,
@@ -161,6 +164,14 @@ func newMeCmd() *cobra.Command {
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
 				return err
+			}
+			if opts.effective {
+				return cmdutil.Run(cmd, c, cmdutil.Spec[types.EffectiveAccess]{
+					Method:         http.MethodGet,
+					Path:           clitypes.MeEffectiveAccess(),
+					FailureMessage: "failed to get effective access",
+					Render:         cmdutil.RenderEffectiveAccess,
+				})
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.User]{
@@ -174,6 +185,8 @@ func newMeCmd() *cobra.Command {
 			})
 		},
 	}
+	command.Flags().BoolVar(&opts.effective, "effective", false, "Show effective permissions per environment, with selectors and granting bindings")
+	return command
 }
 
 func newPasswordCmd() *cobra.Command {

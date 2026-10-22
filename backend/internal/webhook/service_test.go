@@ -21,8 +21,10 @@ import (
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 )
 
@@ -600,6 +602,42 @@ func TestCreateWebhook_RequiresTargetActionPermission(t *testing.T) {
 	require.ErrorIs(t, err, ErrWebhookForbidden)
 	_, err = svc.UpdateWebhook(ctx, wh.ID, "env-1", types.Webhook{}, map[string]bool{"enabled": true}, types.Actor{}, allowed)
 	require.NoError(t, err)
+}
+
+func TestCreateWebhook_ScopedCallerLimitedToTargetsInScope(t *testing.T) {
+	ctx := t.Context()
+	db := setupWebhookServiceTestDB(t)
+	require.NoError(t, db.AutoMigrate(&project.Project{}))
+	require.NoError(t, db.WithContext(ctx).Create(&project.Project{
+		BaseModel: database.BaseModel{ID: "team-a-project"},
+		Name:      "team-a",
+		Path:      "/projects/team-a",
+	}).Error)
+	require.NoError(t, db.WithContext(ctx).Create(&project.Project{
+		BaseModel: database.BaseModel{ID: "team-b-project"},
+		Name:      "team-b",
+		Path:      "/projects/team-b",
+	}).Error)
+	svc := &WebhookService{
+		db:             db,
+		projectService: project.NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, &config.Config{}, nil, nil),
+	}
+
+	scoped := authz.NewPermissionSet()
+	scoped.AddEnv(types.LocalDockerEnvironmentID, authz.PermWebhooksCreate, authz.PermWebhooksUpdate)
+	scoped.AddScopedEnv(types.LocalDockerEnvironmentID, types.ResourceSelector{Projects: []string{"team-a"}}, authz.PermProjectsDown, authz.PermProjectsRead)
+
+	_, _, err := svc.CreateWebhook(ctx, "down", WebhookTargetTypeProject, WebhookActionTypeDown, "team-b-project", types.LocalDockerEnvironmentID, types.Actor{}, scoped)
+	require.ErrorIs(t, err, authz.ErrResourceOutOfScope)
+	wh, _, err := svc.CreateWebhook(ctx, "down", WebhookTargetTypeProject, WebhookActionTypeDown, "team-a-project", types.LocalDockerEnvironmentID, types.Actor{}, scoped)
+	require.NoError(t, err)
+	_, err = svc.UpdateWebhook(ctx, wh.ID, types.LocalDockerEnvironmentID, types.Webhook{}, map[string]bool{"enabled": true}, types.Actor{}, scoped)
+	require.NoError(t, err)
+
+	remoteScoped := authz.NewPermissionSet()
+	remoteScoped.AddScopedEnv("env-1", types.ResourceSelector{Projects: []string{"team-a"}}, authz.PermProjectsDown)
+	_, _, err = svc.CreateWebhook(ctx, "down", WebhookTargetTypeProject, WebhookActionTypeDown, "team-a-project", "env-1", types.Actor{}, remoteScoped)
+	require.ErrorIs(t, err, ErrWebhookForbidden)
 }
 
 func TestUpdateWebhook_NotFoundForUnknownID(t *testing.T) {

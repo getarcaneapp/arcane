@@ -13,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/apns"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/appimages"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/audit"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/build"
@@ -27,6 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/federated"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/group"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/health"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
@@ -79,10 +81,24 @@ var ServiceOptions = fx.Options(
 		fx.Annotate(activity.NewActivityService, fx.As(fx.Self()), fx.As(new(activitylib.Service))),
 		fx.Annotate(event.NewEventService, fx.OnStop(func(ctx context.Context, service *event.EventService) error { return service.Stop(ctx) })),
 		job.NewJobService,
+		fx.Annotate(
+			func(db *database.DB, settingsService *settings.SettingsService) *audit.AuditService {
+				return audit.NewAuditService(db, func(ctx context.Context) bool {
+					return settingsService.GetBoolSetting(ctx, "auditDenialsEnabled")
+				})
+			},
+			fx.OnStart((*audit.AuditService).Start),
+			fx.OnStop((*audit.AuditService).Stop),
+		),
 		fx.Annotate(role.NewRoleService, fx.OnStop((*role.RoleService).Stop)),
 		fx.Annotate(apikey.NewApiKeyService, fx.OnStop((*apikey.ApiKeyService).Stop)),
 		func(db *database.DB, roles *role.RoleService) *user.UserService {
 			return user.NewUserService(db, roles, session.RevokeAllUserSessionsExceptInDB)
+		},
+		func(db *database.DB, roles *role.RoleService, settingsService *settings.SettingsService) *group.GroupService {
+			return group.NewGroupService(db, roles, func(ctx context.Context) string {
+				return settingsService.GetStringSetting(ctx, "defaultUserRoleId")
+			})
 		},
 		federated.NewFederatedCredentialService,
 		kv.NewKVService,
@@ -183,6 +199,8 @@ var ServiceOptions = fx.Options(
 	fx.Provide(
 		event.New,
 		role.New,
+		group.New,
+		audit.New,
 		apikey.New,
 		template.New,
 		gitrepo.New,
@@ -218,8 +236,15 @@ var ServiceOptions = fx.Options(
 		func(service *imageupdate.ImageUpdateService, imageService *image.ImageService) *imageupdate.Module {
 			return imageupdate.New(service, imageService.GetUpdateInfoByImageRefs)
 		},
-		func(service *settings.SettingsService, search *settings.SettingsSearchService, localEnvironment *environment.EnvironmentService, cfg *config.Config) *settings.Module {
-			return settings.New(service, search, localEnvironment.ProxyJSONRequest, cfg)
+		func(
+			service *settings.SettingsService,
+			search *settings.SettingsSearchService,
+			localEnvironment *environment.EnvironmentService,
+			cfg *config.Config,
+			auditService *audit.AuditService,
+			roles *role.RoleService,
+		) *settings.Module {
+			return settings.New(service, search, localEnvironment.ProxyJSONRequest, cfg, auditService, roles)
 		},
 		func(service *s3domain.S3DestinationService, localEnvironment *environment.EnvironmentService) *s3domain.Module {
 			return s3domain.New(service, func(ctx context.Context) {
@@ -234,8 +259,8 @@ var ServiceOptions = fx.Options(
 		func(service *auth.AuthService, userService *user.UserService, settingsService *settings.SettingsService, passkeyService *passkey.PasskeyService) *auth.Module {
 			return auth.New(service, userService, settingsService, passkeyService.BeginMFAAuthentication)
 		},
-		func(service *user.UserService, localAuth *auth.AuthService, settingsService *settings.SettingsService) *user.Module {
-			return user.New(service, localAuth.InvalidateUserTokenCache, settingsService)
+		func(service *user.UserService, localAuth *auth.AuthService, settingsService *settings.SettingsService, groups *group.GroupService) *user.Module {
+			return user.New(service, localAuth.InvalidateUserTokenCache, settingsService, groups.ApplyDefaultRole)
 		},
 	),
 )
@@ -263,5 +288,6 @@ var JobOptions = fx.Options(
 		scheduler.NewBackupRepositoryPruneJob,
 		fx.Annotate(scheduler.NewUpgradeLogCleanupJob, fx.ResultTags(`name:"upgrade-log-cleanup"`)),
 		scheduler.NewApnsOutboxJob,
+		fx.Annotate(scheduler.NewAuditRetentionJob, fx.ResultTags(`name:"audit-retention"`)),
 	),
 )

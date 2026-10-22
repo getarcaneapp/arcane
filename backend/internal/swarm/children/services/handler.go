@@ -2,11 +2,13 @@ package services
 
 import (
 	"context"
+	"errors"
 
 	"github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
@@ -22,7 +24,17 @@ func NewHandler(
 	audit func(ctx context.Context, environmentID, action, resourceType, resourceID, resourceName string, metadata map[string]any),
 	mapError func(err error, fallback string) error,
 ) *Handler {
-	return &Handler{service: service, audit: audit, mapError: mapError}
+	return &Handler{
+		service: service,
+		audit:   audit,
+		mapError: func(err error, fallback string) error {
+			if errors.Is(err, common.ErrForbidden) || errors.Is(err, common.ErrNotFound) {
+				apiErr := common.ToAPIError(err)
+				return huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+			}
+			return mapError(err, fallback)
+		},
+	}
 }
 
 type ListSwarmServicesInput struct {

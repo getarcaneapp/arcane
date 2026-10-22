@@ -22,11 +22,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/audit"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/group"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
@@ -117,11 +119,14 @@ func setupFederatedCredentialServiceTestDB(t *testing.T) *database.DB {
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
+		&audit.AuditLog{},
 		&settings.SettingVariable{},
 		&user.User{},
 		&session.UserSession{},
 		&role.Role{},
-		&role.UserRoleAssignment{},
+		&role.RoleBinding{},
+		&group.Group{},
+		&group.GroupMember{},
 		&FederatedCredential{},
 		&FederatedTokenReplay{},
 		&event.Event{},
@@ -148,7 +153,7 @@ func setupFederatedCredentialService(t *testing.T, issuer *federatedTestIssuer) 
 	eventSvc := event.NewEventService(db, &config.Config{}, nil, nil)
 	signingKey, err := mldsa.GenerateKey(mldsa.MLDSA87())
 	require.NoError(t, err)
-	authSvc := auth.NewAuthService(userSvc, settingsSvc, eventSvc, sessionSvc, roleSvc, nil, nil, &config.Config{
+	authSvc := auth.NewAuthService(userSvc, settingsSvc, eventSvc, sessionSvc, nil, nil, nil, &config.Config{
 		JWTRefreshExpiry: 24 * time.Hour,
 	}).WithSigningKey(signingKey)
 
@@ -173,9 +178,10 @@ func setupFederatedCredentialService(t *testing.T, issuer *federatedTestIssuer) 
 		IsServiceAccount: true,
 	}
 	require.NoError(t, db.WithContext(ctx).Create(&serviceUser).Error)
-	require.NoError(t, db.WithContext(ctx).Create(&role.UserRoleAssignment{
-		UserID: serviceUser.ID,
+	require.NoError(t, db.WithContext(ctx).Create(&role.RoleBinding{
+		UserID: new(serviceUser.ID),
 		RoleID: viewerRole.ID,
+		Source: role.BindingSourceFederated,
 	}).Error)
 
 	credential := FederatedCredential{
@@ -330,7 +336,7 @@ func TestFederatedCredentialServiceUpdateDisableRevokesIssuedSessions(t *testing
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	_, err = service.Update(ctx, "admin-user", "cred-github-actions", types.FederatedCredential{}, map[string]bool{"enabled": true})
+	_, err = service.Update(ctx, authz.SudoPermissionSet(), "cred-github-actions", types.FederatedCredential{}, map[string]bool{"enabled": true})
 	require.NoError(t, err)
 
 	_, _, err = authSvc.VerifyToken(ctx, resp.AccessToken)
@@ -364,7 +370,7 @@ func TestFederatedCredentialServiceCreateRejectsBareWildcardGlob(t *testing.T) {
 	issuer := newFederatedTestIssuer(t)
 	service, _, _ := setupFederatedCredentialService(t, issuer)
 
-	_, err := service.Create(t.Context(), "admin-user", types.FederatedCredential{
+	_, err := service.Create(t.Context(), authz.SudoPermissionSet(), types.FederatedCredential{
 		Name:            "Unsafe wildcard",
 		IssuerURL:       "https://token.actions.githubusercontent.com",
 		Audiences:       []string{"arcane-ci"},

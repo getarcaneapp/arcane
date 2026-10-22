@@ -9,6 +9,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/cookie"
 )
@@ -34,6 +35,7 @@ var (
 		"Proxy-Authorization": {}, "Te": {}, "Trailer": {}, "Transfer-Encoding": {},
 		"Upgrade": {}, "Content-Length": {}, "Accept-Encoding": {}, "Origin": {}, "Referer": {},
 		"Access-Control-Request-Method": {}, "Access-Control-Request-Headers": {}, "Cookie": {},
+		authz.HeaderAuthz: {},
 	}
 )
 
@@ -69,7 +71,7 @@ func SetAgentToken(req *http.Request, accessToken *string) {
 
 // BuildWebSocketHeaders constructs a header set for proxying WebSocket requests
 // to a remote environment, forwarding authentication in the same way as HTTP proxying.
-func BuildWebSocketHeaders(c *echo.Context, accessToken *string) http.Header {
+func BuildWebSocketHeaders(c *echo.Context, accessToken *string, authzHeader string) http.Header {
 	headers := http.Header{}
 	req := c.Request()
 
@@ -94,6 +96,9 @@ func BuildWebSocketHeaders(c *echo.Context, accessToken *string) http.Header {
 
 	// Set agent token for remote environment authentication
 	remenv.ApplyAgentTokenHeaders(headers, accessToken)
+	if authzHeader != "" {
+		headers.Set(authz.HeaderAuthz, authzHeader)
+	}
 
 	return headers
 }

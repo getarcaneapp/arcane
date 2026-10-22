@@ -12,6 +12,7 @@
 	import { BoxIcon, ProjectsIcon, StartIcon, StopIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { projectService } from '#lib/services/project-service.js';
@@ -163,7 +164,7 @@
 		mutationKey: queryKeys.projects.checkUpdates(scope),
 		mutationFn: async (_requestedScope: string) => {
 			const results = await settleAcrossEnvironments(
-				actionEnvironments('image-updates:check', 'projects:deploy'),
+				actionEnvironments(PERMISSIONS.IMAGE_UPDATES_CHECK, PERMISSIONS.PROJECTS_DEPLOY),
 				updateEnvironmentProjects
 			);
 			return {
@@ -213,7 +214,7 @@
 		openConfirmDialog({
 			title: m.compose_update_projects(),
 			message:
-				`${m.compose_update_projects_confirm_message()} ${acrossEnvironmentsNote(actionEnvironments('image-updates:check', 'projects:deploy'))}`.trim(),
+				`${m.compose_update_projects_confirm_message()} ${acrossEnvironmentsNote(actionEnvironments(PERMISSIONS.IMAGE_UPDATES_CHECK, PERMISSIONS.PROJECTS_DEPLOY))}`.trim(),
 			confirm: {
 				label: m.compose_update_projects(),
 				destructive: false,
@@ -245,8 +246,8 @@
 		await goto(`${url.pathname}${url.search}`, { reset: false, replace: true });
 	}
 
-	const canCreateProject = $derived(hasShownPermission('projects:create'));
-	const canDeployProject = $derived(hasShownPermission('projects:deploy'));
+	const canCreateProject = $derived(hasShownPermission(PERMISSIONS.PROJECTS_CREATE));
+	const canDeployProject = $derived(hasShownPermission(PERMISSIONS.PROJECTS_DEPLOY));
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];

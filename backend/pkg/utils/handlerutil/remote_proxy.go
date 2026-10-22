@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
 )
 
@@ -48,6 +49,10 @@ func marshalRemoteRequestBodyInternal(requestBody any) ([]byte, error) {
 
 // TranslateRemoteProxyError converts environment transport failures into Huma errors.
 func TranslateRemoteProxyError(err error) error {
+	if errors.Is(err, authz.ErrForwardedAuthzTooLarge) {
+		return huma.NewError(http.StatusRequestHeaderFieldsTooLarge, "Forwarded permissions are too large for this environment")
+	}
+
 	if transportErr, ok := errors.AsType[*remenv.TransportError](err); ok {
 		return huma.Error502BadGateway("failed to proxy request to environment: " + transportErr.Error())
 	}

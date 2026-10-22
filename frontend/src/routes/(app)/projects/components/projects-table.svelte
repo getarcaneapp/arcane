@@ -22,6 +22,7 @@
 	import { AlertIcon, BoxIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon } from '#lib/icons/index.js';
 	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -150,9 +151,9 @@
 	}
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
-	const canDeployProject = $derived(hasShownPermission('projects:deploy'));
-	const canDownProject = $derived(hasShownPermission('projects:down'));
-	const canArchiveProject = $derived(hasShownPermission('projects:archive'));
+	const canDeployProject = $derived(hasShownPermission(PERMISSIONS.PROJECTS_DEPLOY));
+	const canDownProject = $derived(hasShownPermission(PERMISSIONS.PROJECTS_DOWN));
+	const canArchiveProject = $derived(hasShownPermission(PERMISSIONS.PROJECTS_ARCHIVE));
 
 	const {
 		performProjectAction,
@@ -313,7 +314,7 @@
 	<ProjectTagEditor
 		tags={item.tags ?? []}
 		availableTags={tagCatalog}
-		canEdit={hasPermission('projects:update', item.environmentId) && !item.isDiscovered}
+		canEdit={hasPermission(PERMISSIONS.PROJECTS_UPDATE, item.environmentId) && !item.isDiscovered}
 		onToggle={(name, attached, color) => handleTagToggle(item, name, attached, color)}
 	/>
 {/snippet}
@@ -488,7 +489,7 @@
 			{m.common_edit()}
 		</DropdownMenu.Item>
 
-		{#if item.gitOpsManagedBy && hasPermission('projects:update', envId)}
+		{#if item.gitOpsManagedBy && hasPermission(PERMISSIONS.PROJECTS_UPDATE, envId)}
 			<ActionMenuItem
 				onclick={() => handleSyncFromGit(item.id, item.gitOpsManagedBy!, envId)}
 				disabled={isAnyLoading}
@@ -501,7 +502,7 @@
 		<DropdownMenu.Separator />
 
 		{#if item.status !== 'running'}
-			<IfPermitted perm="projects:deploy" {envId}>
+			<IfPermitted perm={PERMISSIONS.PROJECTS_DEPLOY} {envId}>
 				<ActionMenuItem
 					onclick={() => performProjectAction('start', item.id, envId)}
 					disabled={lifecycleDisabled}
@@ -512,7 +513,7 @@
 				/>
 			</IfPermitted>
 		{:else}
-			<IfPermitted perm="projects:down" {envId}>
+			<IfPermitted perm={PERMISSIONS.PROJECTS_DOWN} {envId}>
 				<ActionMenuItem
 					onclick={() => performProjectAction('stop', item.id, envId)}
 					disabled={lifecycleDisabled}
@@ -523,7 +524,7 @@
 				/>
 			</IfPermitted>
 
-			<IfPermitted perm="projects:restart" {envId}>
+			<IfPermitted perm={PERMISSIONS.PROJECTS_RESTART} {envId}>
 				<ActionMenuItem
 					onclick={() => performProjectAction('restart', item.id, envId)}
 					disabled={lifecycleDisabled}
@@ -535,7 +536,7 @@
 			</IfPermitted>
 		{/if}
 
-		<IfPermitted perm="projects:deploy" {envId}>
+		<IfPermitted perm={PERMISSIONS.PROJECTS_DEPLOY} {envId}>
 			{#if item.redeployDisabled}
 				<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
 					<RedeployIcon class="size-4 opacity-50" />
@@ -555,7 +556,7 @@
 
 		<DropdownMenu.Separator />
 
-		<IfPermitted perm="projects:archive" {envId}>
+		<IfPermitted perm={PERMISSIONS.PROJECTS_ARCHIVE} {envId}>
 			{#if item.isArchived}
 				<ActionMenuItem
 					onclick={() => performProjectAction('unarchive', item.id, envId)}
@@ -576,7 +577,7 @@
 			{/if}
 		</IfPermitted>
 
-		<IfPermitted perm="projects:delete" {envId}>
+		<IfPermitted perm={PERMISSIONS.PROJECTS_DELETE} {envId}>
 			<ActionMenuItem
 				destructive
 				onclick={() => handleDestroyProject(item.id, envId)}

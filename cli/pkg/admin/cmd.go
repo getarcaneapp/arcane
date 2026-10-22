@@ -4,8 +4,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin/apikeys"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin/audit"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin/bindings"
 	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin/events"
 	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin/federatedcredentials"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin/groups"
 	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin/notifications"
 	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin/oidcmappings"
 	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin/roles"
@@ -23,10 +26,13 @@ func Command() *cobra.Command {
 	command.AddCommand(backups.Command())
 	command.AddCommand(users.Command())
 	command.AddCommand(roles.Command())
+	command.AddCommand(bindings.Command())
+	command.AddCommand(groups.Command())
 	command.AddCommand(oidcmappings.Command())
 	command.AddCommand(apikeys.Command())
 	command.AddCommand(federatedcredentials.Command())
 	command.AddCommand(events.Command())
+	command.AddCommand(audit.Command())
 	command.AddCommand(notifications.Command())
 	return command
 }

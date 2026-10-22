@@ -21,7 +21,7 @@ func Command() *cobra.Command {
 		Use:     "users",
 		Aliases: []string{"user", "usr"},
 		Short:   "Manage users",
-		Long:    "Manage users. Role assignments are managed separately via `arcane admin roles assign` — the legacy `--role` flag has been removed alongside the binary admin/user model.",
+		Long:    "Manage users. Role bindings are managed separately through `/api/roles/bindings` — the legacy `--role` flag has been removed alongside the binary admin/user model.",
 	}
 	command.AddCommand(newListCmd())
 	command.AddCommand(newCreateCmd())
@@ -53,14 +53,14 @@ func newListCmd() *cobra.Command {
 				Resource: "users",
 				Endpoint: clitypes.Users(),
 				Params:   cmdutil.ListParams{Resource: "users", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
-				Headers:  []string{"ID", "USERNAME", "DISPLAY NAME", "EMAIL", "ROLE ASSIGNMENTS"},
+				Headers:  []string{"ID", "USERNAME", "DISPLAY NAME", "EMAIL", "ROLE BINDINGS"},
 				Row: func(usr types.User) []string {
 					return []string{
 						usr.ID,
 						usr.Username,
 						kit.FromPtr(usr.DisplayName),
 						kit.FromPtr(usr.Email),
-						roleAssignmentSummary(usr.RoleAssignments),
+						roleBindingSummary(usr.Bindings),
 					}
 				},
 			})
@@ -82,7 +82,7 @@ func newCreateCmd() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "create",
 		Short: "Create a new user",
-		Long:  "Create a new user. The user is created without any role assignments — grant them via `arcane admin roles assign <userId>` after creation.",
+		Long:  "Create a new user. The user only receives the configured default role — bind more roles through `/api/roles/bindings` after creation.",
 
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
@@ -112,7 +112,7 @@ func newCreateCmd() *cobra.Command {
 					output.Success("User %s created successfully", data.Username)
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Username", data.Username)
-					output.Info("No roles assigned. Use `arcane admin roles assign %s --role <roleId>` to grant access.", data.ID)
+					output.Info("Bind roles to user %s through `/api/roles/bindings` to grant access.", data.ID)
 					return nil
 				},
 			})
@@ -154,10 +154,10 @@ func newGetCmd() *cobra.Command {
 					}
 					output.KeyValue("Created", data.CreatedAt)
 
-					output.KeyValue("Role Assignments", roleAssignmentSummary(data.RoleAssignments))
-					if len(data.RoleAssignments) > 0 {
-						rows := make([][]string, len(data.RoleAssignments))
-						for i, a := range data.RoleAssignments {
+					output.KeyValue("Role Bindings", roleBindingSummary(data.Bindings))
+					if len(data.Bindings) > 0 {
+						rows := make([][]string, len(data.Bindings))
+						for i, a := range data.Bindings {
 							env := "global"
 							if a.EnvironmentID != nil {
 								env = *a.EnvironmentID
@@ -183,7 +183,7 @@ func newUpdateCmd() *cobra.Command {
 	}
 	command := &cobra.Command{
 		Use:          "update <user-id>",
-		Short:        "Update user profile (role assignments managed separately)",
+		Short:        "Update user profile (role bindings managed separately)",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -253,7 +253,7 @@ func newDeleteCmd() *cobra.Command {
 	return command
 }
 
-func roleAssignmentSummary(assignments []types.RoleAssignmentSummary) string {
+func roleBindingSummary(assignments []types.RoleBindingSummary) string {
 	type bucket struct {
 		envScoped int
 		hasGlobal bool

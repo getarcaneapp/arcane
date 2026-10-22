@@ -52,7 +52,7 @@ type Config struct {
 	ApnsRelayUrl          string         `env:"ARCANE_APNS_RELAY_URL" default:"https://apns.getarcane.app" options:"trimTrailingSlash"`
 	ApnsKeyAlgorithm      string         `env:"ARCANE_APNS_KEY_ALGORITHM" default:"ed25519" options:"toLower"`
 
-	OidcRoleMappings string `env:"ARCANE_OIDC_ROLE_MAPPINGS" default:"" options:"file"`
+	OidcGroupMappings string `env:"ARCANE_OIDC_GROUP_MAPPINGS" default:"" options:"file"`
 
 	PUID                    string `env:"PUID" default:""`
 	PGID                    string `env:"PGID" default:""`

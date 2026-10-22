@@ -28,6 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/updater"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
@@ -246,12 +247,31 @@ var webhookActionPermissions = map[string]map[string]string{
 	},
 }
 
-func authorizeWebhookAction(callerPerms *authz.PermissionSet, targetType, actionType, environmentID string) error {
+func (s *WebhookService) authorizeWebhookAction(ctx context.Context, callerPerms *authz.PermissionSet, targetType, actionType, targetID, environmentID string) error {
 	permission, ok := webhookActionPermissions[targetType][actionType]
 	if !ok || !callerPerms.Allows(permission, environmentID) {
 		return ErrWebhookForbidden
 	}
-	return nil
+	if callerPerms.Scope(permission, environmentID).IsUnrestricted() {
+		return nil
+	}
+	if !isRemoteWebhookEnvironment(environmentID) {
+		scopedCtx := authz.WithRequestEnvironment(authz.WithPermissions(ctx, callerPerms), environmentID)
+		switch targetType {
+		case WebhookTargetTypeContainer:
+			_, err := s.containerService.AuthorizeContainer(scopedCtx, targetID, permission)
+			return err
+		case WebhookTargetTypeProject:
+			_, err := s.projectService.GetAuthorizedProject(scopedCtx, targetID, permission)
+			return err
+		}
+	}
+	middleware.RecordDenial(ctx, types.AuthzDenial{
+		Permission:    permission,
+		EnvironmentID: environmentID,
+		RemoteAddr:    middleware.GetRemoteAddrFromContext(ctx),
+	})
+	return ErrWebhookForbidden
 }
 
 func resolvedWebhookActionType(targetType, actionType string) string {
@@ -281,9 +301,6 @@ func (s *WebhookService) CreateWebhook(
 	if err != nil {
 		return nil, "", err
 	}
-	if authorizeErr := authorizeWebhookAction(callerPerms, targetType, resolvedActionType, environmentID); authorizeErr != nil {
-		return nil, "", authorizeErr
-	}
 
 	targetRef := ""
 
@@ -292,6 +309,9 @@ func (s *WebhookService) CreateWebhook(
 		targetID = ""
 	} else if strings.TrimSpace(targetID) == "" {
 		return nil, "", ErrWebhookMissingTarget
+	}
+	if authorizeErr := s.authorizeWebhookAction(ctx, callerPerms, targetType, resolvedActionType, targetID, environmentID); authorizeErr != nil {
+		return nil, "", authorizeErr
 	}
 
 	// Container references can only be resolved against the local Docker daemon;
@@ -544,7 +564,14 @@ func (s *WebhookService) UpdateWebhook(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get webhook: %w", err)
 	}
-	if authorizeErr := authorizeWebhookAction(callerPerms, wh.TargetType, resolvedWebhookActionType(wh.TargetType, wh.ActionType), wh.EnvironmentID); authorizeErr != nil {
+	if authorizeErr := s.authorizeWebhookAction(
+		ctx,
+		callerPerms,
+		wh.TargetType,
+		resolvedWebhookActionType(wh.TargetType, wh.ActionType),
+		cmp.Or(wh.TargetRef, wh.TargetID),
+		wh.EnvironmentID,
+	); authorizeErr != nil {
 		return nil, authorizeErr
 	}
 

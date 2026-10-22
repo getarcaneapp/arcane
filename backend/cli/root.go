@@ -44,4 +44,5 @@ func init() {
 	rootCmd.AddCommand(upgrade.UpgradeCmd)
 	rootCmd.AddCommand(recovery.RestoreCmd)
 	rootCmd.AddCommand(generate.Command())
+	rootCmd.AddCommand(newPermissionsTSCmd())
 }

@@ -2,12 +2,15 @@
 package settings
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
@@ -18,11 +21,24 @@ type Module struct {
 	search          *SettingsSearchService
 	proxyRemoteJSON handlerutil.RemoteJSONProxy
 	config          *config.Config
+	audit           AuditRecorder
+	roles           *role.RoleService
+}
+
+type AuditRecorder interface {
+	Record(ctx context.Context, entry types.AuditEntry) error
 }
 
 // New builds the settings domain around its initialized service.
-func New(service *SettingsService, search *SettingsSearchService, proxyRemoteJSON handlerutil.RemoteJSONProxy, cfg *config.Config) *Module {
-	return &Module{service: service, search: search, proxyRemoteJSON: proxyRemoteJSON, config: cfg}
+func New(service *SettingsService, search *SettingsSearchService, proxyRemoteJSON handlerutil.RemoteJSONProxy, cfg *config.Config, audit AuditRecorder, roles *role.RoleService) *Module {
+	return &Module{
+		service:         service,
+		search:          search,
+		proxyRemoteJSON: proxyRemoteJSON,
+		config:          cfg,
+		audit:           audit,
+		roles:           roles,
+	}
 }
 
 // Service exposes settings operations to collaborating domains.
@@ -36,19 +52,29 @@ func (m *Module) Service() *SettingsService {
 // RegisterRoutes mounts settings endpoints for runtime and schema discovery.
 func (m *Module) RegisterRoutes(api huma.API) {
 	if m == nil {
-		RegisterSettings(api, nil, nil, nil, nil)
+		RegisterSettings(api, nil, nil, nil, nil, nil, nil)
 		return
 	}
-	RegisterSettings(api, m.service, m.search, m.proxyRemoteJSON, m.config)
+	RegisterSettings(api, m.service, m.search, m.proxyRemoteJSON, m.config, m.audit, m.roles)
 }
 
 // RegisterSettings registers settings management routes using Huma.
-func RegisterSettings(api huma.API, settingsService *SettingsService, settingsSearchService *SettingsSearchService, proxyRemoteJSON handlerutil.RemoteJSONProxy, cfg *config.Config) {
+func RegisterSettings(
+	api huma.API,
+	settingsService *SettingsService,
+	settingsSearchService *SettingsSearchService,
+	proxyRemoteJSON handlerutil.RemoteJSONProxy,
+	cfg *config.Config,
+	audit AuditRecorder,
+	roles *role.RoleService,
+) {
 	h := &SettingsHandler{
 		settingsService:       settingsService,
 		settingsSearchService: settingsSearchService,
 		proxyRemoteJSON:       proxyRemoteJSON,
 		cfg:                   cfg,
+		audit:                 audit,
+		roles:                 roles,
 	}
 
 	// Environment-scoped settings endpoints
@@ -83,7 +109,7 @@ func RegisterSettings(api huma.API, settingsService *SettingsService, settingsSe
 	}, authz.PermSettingsWrite, h.UpdateSettings)
 
 	// Top-level settings endpoints (not environment-scoped)
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "search-settings",
 		Method:      http.MethodPost,
 		Path:        "/settings/search",
@@ -93,7 +119,7 @@ func RegisterSettings(api huma.API, settingsService *SettingsService, settingsSe
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, h.Search)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "get-settings-categories",
 		Method:      http.MethodGet,
 		Path:        "/settings/categories",

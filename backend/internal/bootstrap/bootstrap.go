@@ -31,6 +31,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/group"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
@@ -220,6 +221,7 @@ type initializeStartupStateParams struct {
 	Image       *image.ImageService
 	Variable    *variable.VariableService
 	Role        *role.RoleService
+	Group       *group.GroupService
 	Auth        *auth.AuthService
 	User        *user.UserService
 	ApiKey      *apikey.ApiKeyService
@@ -270,21 +272,13 @@ func initializeStartupState(p initializeStartupStateParams) {
 
 		p.Environment.SetVariableSyncer(p.Variable)
 		p.Environment.SetUserInvalidator(func(userID string) {
-			p.Role.InvalidateUser(userID)
+			p.Role.InvalidateUsers(userID)
 			p.Auth.InvalidateUserTokenCache(userID)
 		})
 	}
 
 	startup.InitializeNonAgentFeatures(appCtx, cfg.AgentMode,
-		p.Role.EnsureBuiltInRoles,
-		func(ctx context.Context) error {
-			// Backfill legacy users.roles first so CreateDefaultAdmin's zero-global-admin gate sees them;
-			// the role startup tasks below repeat it for agent mode and retries.
-			if err := p.Role.BackfillLegacyRoleAssignments(ctx); err != nil {
-				slog.WarnContext(ctx, "Failed to backfill legacy role assignments before admin bootstrap", "error", err)
-			}
-			return p.User.CreateDefaultAdmin(ctx)
-		},
+		p.User.CreateDefaultAdmin,
 		func(ctx context.Context) error {
 			return p.ApiKey.ReconcileDefaultAdminAPIKey(ctx, cfg.AdminStaticAPIKey)
 		},
@@ -295,18 +289,11 @@ func initializeStartupState(p initializeStartupStateParams) {
 	)
 	startup.CleanupUnknownSettings(appCtx, p.Settings)
 
-	if err := p.Role.EnsureBuiltInRoles(appCtx); err != nil {
-		slog.ErrorContext(appCtx, "Failed to reconcile built-in roles", "error", err)
-	}
-	// Runs after EnsureBuiltInRoles seeds role IDs and before the API key backfill and admin guard read assignments.
-	if err := p.Role.BackfillLegacyRoleAssignments(appCtx); err != nil {
-		slog.ErrorContext(appCtx, "Failed to backfill legacy users.roles into user_role_assignments", "error", err)
-	}
 	if err := p.ApiKey.BackfillApiKeyPermissions(appCtx); err != nil {
 		slog.WarnContext(appCtx, "Failed to backfill API key permissions", "error", err)
 	}
-	if err := p.Role.ReconcileEnvOidcMappings(appCtx, cfg.OidcRoleMappings); err != nil {
-		slog.ErrorContext(appCtx, "Failed to reconcile ARCANE_OIDC_ROLE_MAPPINGS", "error", err)
+	if err := p.Group.ReconcileEnvOidcMappings(appCtx, cfg.OidcGroupMappings); err != nil {
+		slog.ErrorContext(appCtx, "Failed to reconcile ARCANE_OIDC_GROUP_MAPPINGS", "error", err)
 	}
 	if !cfg.AgentMode {
 		if err := p.Role.AssertGlobalAdminExists(appCtx, p.DB.WithContext(appCtx)); err != nil {

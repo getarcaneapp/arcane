@@ -11,6 +11,7 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { EnvironmentsIcon, RemoteEnvironmentIcon, AddIcon, SettingsIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
@@ -363,7 +364,7 @@
 
 	{#snippet footer()}
 		<div class="flex w-full items-center justify-between gap-2">
-			<IfPermitted perm="environments:create">
+			<IfPermitted perm={PERMISSIONS.ENVIRONMENTS_CREATE}>
 				<ArcaneButton
 					action="base"
 					tone="outline"

@@ -73,7 +73,7 @@ func TestListPatchTargets_ExcludesUntaggedImages(t *testing.T) {
 	settingsSvc, db := patchFeatureSettings(t)
 	require.NoError(t, settingsSvc.UpdateSettings(ctx, types.SettingsUpdate{"dockerHost": "unix:///nonexistent-arcane-test.sock"}))
 
-	svc := NewService(db, docker.NewDockerClientService(ctx, nil, settingsSvc), settingsSvc, nil, nil, nil)
+	svc := NewService(db, docker.NewDockerClientService(ctx, nil, settingsSvc), settingsSvc, nil, nil, nil, nil)
 
 	records := []vulnerability.VulnerabilityScanRecord{
 		{
@@ -134,6 +134,7 @@ func TestVulnerabilityFeatureBlocksReportPatchesOnly(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 	_, err := svc.PatchImage(t.Context(), "0", "test-image", types.PatchOptions{ScanID: "test-image"}, types.Actor{})
 	require.ErrorIs(t, err, common.ErrFeatureDisabled)
@@ -150,7 +151,7 @@ func TestVulnerabilityFeatureBlocksReportPatchesOnly(t *testing.T) {
 
 func TestQueuedReportPatchStopsWhenFeatureDisabled(t *testing.T) {
 	settingsSvc, db := patchFeatureSettings(t)
-	svc := NewService(db, nil, settingsSvc, nil, nil, nil)
+	svc := NewService(db, nil, settingsSvc, nil, nil, nil, nil)
 	record := &ImagePatchRecord{
 		EnvironmentID:   "0",
 		OriginalImageID: "test-image",
@@ -202,6 +203,7 @@ func TestDisabledFeatureSkipsPatchVerificationScan(t *testing.T) {
 		nil,
 		// Any attempt to scan would access unconfigured dependencies and fail.
 		&vulnerability.VulnerabilityService{},
+		nil,
 	)
 	require.NotPanics(t, func() {
 		svc.verifyPatchedImage(t.Context(), &ImagePatchRecord{EnvironmentID: "0", PatchedRef: "test:patched"}, "")
@@ -274,7 +276,7 @@ func TestAggregatePatchTargetsMergesEnvironments(t *testing.T) {
 		}
 		return out
 	}
-	svc := NewService(nil, nil, nil, nil, nil, nil)
+	svc := NewService(nil, nil, nil, nil, nil, nil, nil)
 	merge := func(sort string, order pagination.SortOrder, start, limit int) types.Paginated[types.PatchTarget] {
 		body, err := svc.AggregatePatchTargets(ctx, pagination.QueryParams{
 			SortParams: pagination.SortParams{Sort: sort, Order: order},

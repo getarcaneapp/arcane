@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
@@ -15,13 +15,10 @@ const (
 	// (WebSocket/diagnostics) and the Huma auth bridge (REST). Keep these in one
 	// place so a change to a header name applies to every route type at once.
 
-	HeaderAgentBootstrap             = "X-Arcane-Agent-Bootstrap"
-	HeaderAgentToken                 = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
-	HeaderApiKey                     = "X-Api-Key"            // #nosec G101: header name, not a credential
-	HeaderActivityBatchID            = "X-Arcane-Batch-Id"
-	HeaderUpdateInitiatorID          = "X-Arcane-Update-Initiator-Id"
-	HeaderUpdateInitiatorName        = "X-Arcane-Update-Initiator-Name"
-	HeaderUpdateInitiatorDisplayName = "X-Arcane-Update-Initiator-Display-Name"
+	HeaderAgentBootstrap  = "X-Arcane-Agent-Bootstrap"
+	HeaderAgentToken      = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
+	HeaderApiKey          = "X-Api-Key"            // #nosec G101: header name, not a credential
+	HeaderActivityBatchID = "X-Arcane-Batch-Id"
 	// HeaderIconCatalog carries the requesting user's icon catalog preference to
 	// remote environments. Agents authenticate proxied calls as a synthetic user
 	// with no preferences, so without it every remote environment would resolve
@@ -48,6 +45,22 @@ const (
 // ContextKey is a type for context keys used by Huma handlers.
 type ContextKey string
 
+type DenialRecorder interface {
+	RecordDenial(ctx context.Context, denial types.AuthzDenial)
+}
+
+type denialRecorderKey struct{}
+
+func WithDenialRecorder(ctx context.Context, recorder DenialRecorder) context.Context {
+	return context.WithValue(ctx, denialRecorderKey{}, recorder)
+}
+
+func RecordDenial(ctx context.Context, denial types.AuthzDenial) {
+	if recorder, ok := ctx.Value(denialRecorderKey{}).(DenialRecorder); ok {
+		recorder.RecordDenial(ctx, denial)
+	}
+}
+
 // GetUserIDFromContext retrieves the user ID from the context.
 func GetUserIDFromContext(ctx context.Context) (string, bool) {
 	userID, ok := ctx.Value(ContextKeyUserID).(string)
@@ -58,13 +71,6 @@ func GetUserIDFromContext(ctx context.Context) (string, bool) {
 func GetCurrentSessionIDFromContext(ctx context.Context) (string, bool) {
 	sessionID, ok := ctx.Value(ContextKeyCurrentSessionID).(string)
 	return sessionID, ok
-}
-
-// PermissionsFromContext retrieves the caller's resolved PermissionSet.
-// Returns nil, false on unauthenticated paths.
-func PermissionsFromContext(ctx context.Context) (*authz.PermissionSet, bool) {
-	ps, ok := ctx.Value(ContextKeyUserPermissions).(*authz.PermissionSet)
-	return ps, ok
 }
 
 // GetRemoteAddrFromContext retrieves the request remote address from context.

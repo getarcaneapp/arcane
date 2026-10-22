@@ -4,6 +4,7 @@ import { navigating, page } from '$app/state';
 import { error, redirect } from '@sveltejs/kit';
 import { QueryClient } from '@tanstack/svelte-query';
 
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { isSessionCancelledError } from '#lib/services/api-service.js';
 import { authService } from '#lib/services/auth-service.js';
@@ -224,7 +225,7 @@ async function loadRoot({ url, depends }: Parameters<LayoutLoad>[0], releaseSele
 		featureStore.connect(queryClient);
 		const currentEnvironmentId = await environmentStore.getCurrentEnvironmentId();
 		const settingsRequest = (
-			userHasPermission(user, 'settings:read')
+			userHasPermission(user, PERMISSIONS.SETTINGS_READ)
 				? dataOrNull(
 						queryClient.query({
 							...rootQuery,
@@ -251,7 +252,7 @@ async function loadRoot({ url, depends }: Parameters<LayoutLoad>[0], releaseSele
 			if (env.id !== currentEnvironmentId) void featureStore.load(env.id);
 		}
 		// Optional discovery: skip it without swarm:read and never toast a denial.
-		const swarmStatusRequest = userHasPermission(user, 'swarm:read', currentEnvironmentId)
+		const swarmStatusRequest = userHasPermission(user, PERMISSIONS.SWARM_READ, currentEnvironmentId)
 			? dataOrNull(
 					queryClient.query({
 						...rootQuery,
@@ -261,7 +262,7 @@ async function loadRoot({ url, depends }: Parameters<LayoutLoad>[0], releaseSele
 				)
 			: Promise.resolve(null);
 		const podmanEnvironmentIds = [...new Set([currentEnvironmentId, ...environmentStore.shown.map((env) => env.id)])].filter(
-			(id) => userHasPermission(user, 'podman:read', id)
+			(id) => userHasPermission(user, PERMISSIONS.PODMAN_READ, id)
 		);
 		const podmanStatusRequest = Promise.all(
 			podmanEnvironmentIds.map(async (id) => {

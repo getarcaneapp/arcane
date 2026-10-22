@@ -10,6 +10,7 @@
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { Textarea } from '#lib/components/ui/textarea/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { podmanService } from '#lib/services/podman-service.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type { PodmanSecret } from '#lib/types/podman.js';
@@ -43,9 +44,9 @@
 	let submitting = $state(false);
 
 	const environmentId = $derived(
-		existing?.environmentId ?? destinationEnvironmentId(pickedEnvironmentId, 'podman:secrets', environments)
+		existing?.environmentId ?? destinationEnvironmentId(pickedEnvironmentId, PERMISSIONS.PODMAN_SECRETS, environments)
 	);
-	const canManage = $derived(hasPermission('podman:secrets', environmentId));
+	const canManage = $derived(hasPermission(PERMISSIONS.PODMAN_SECRETS, environmentId));
 	const valueLabel = $derived(existing ? m.podman_secrets_new_value_label() : m.value());
 
 	const description = $derived(
@@ -110,7 +111,7 @@
 			{#if !existing}
 				<EnvironmentDestinationSelect
 					bind:value={() => environmentId, (next) => (pickedEnvironmentId = next)}
-					permission="podman:secrets"
+					permission={PERMISSIONS.PODMAN_SECRETS}
 					{environments}
 					variant="field"
 				/>

@@ -8,7 +8,6 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
@@ -16,7 +15,7 @@ import (
 func volumeWorkspacePermissionContext(t *testing.T, environmentID string, permissions ...string) context.Context {
 	permissionSet := authz.NewPermissionSet()
 	permissionSet.AddEnv(environmentID, permissions...)
-	return context.WithValue(t.Context(), middleware.ContextKeyUserPermissions, permissionSet)
+	return authz.WithPermissions(t.Context(), permissionSet)
 }
 
 func TestParseVolumeWorkspaceManifest(t *testing.T) {

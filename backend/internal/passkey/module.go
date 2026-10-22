@@ -6,6 +6,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
 )
 
@@ -92,7 +93,7 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 		Security:    public,
 	}, h.UseRecoveryCode)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "list-my-passkeys",
 		Method:      http.MethodGet,
 		Path:        "/auth/me/passkeys",
@@ -100,7 +101,7 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 		Tags:        []string{"Auth", "Passkeys"},
 		Security:    interactive,
 	}, h.ListMyPasskeys)
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "get-passkey-capabilities",
 		Method:      http.MethodGet,
 		Path:        "/auth/me/passkeys/capabilities",
@@ -108,7 +109,7 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 		Tags:        []string{"Auth", "Passkeys"},
 		Security:    interactive,
 	}, h.GetCapabilities)
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "begin-passkey-registration",
 		Method:      http.MethodPost,
 		Path:        "/auth/me/passkeys/register/begin",
@@ -116,7 +117,7 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 		Tags:        []string{"Auth", "Passkeys"},
 		Security:    interactive,
 	}, h.BeginRegistration)
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "finish-passkey-registration",
 		Method:      http.MethodPost,
 		Path:        "/auth/me/passkeys/register/finish",
@@ -124,7 +125,7 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 		Tags:        []string{"Auth", "Passkeys"},
 		Security:    interactive,
 	}, h.FinishRegistration)
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "rename-my-passkey",
 		Method:      http.MethodPatch,
 		Path:        "/auth/me/passkeys/{id}",
@@ -132,7 +133,7 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 		Tags:        []string{"Auth", "Passkeys"},
 		Security:    interactive,
 	}, h.RenamePasskey)
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "delete-my-passkey",
 		Method:      http.MethodDelete,
 		Path:        "/auth/me/passkeys/{id}",
@@ -140,7 +141,7 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 		Tags:        []string{"Auth", "Passkeys"},
 		Security:    interactive,
 	}, h.DeletePasskey)
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "begin-passkey-step-up",
 		Method:      http.MethodPost,
 		Path:        "/auth/me/passkeys/reauth/begin",
@@ -148,7 +149,7 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 		Tags:        []string{"Auth", "Passkeys"},
 		Security:    interactive,
 	}, h.BeginStepUp)
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "finish-passkey-step-up",
 		Method:      http.MethodPost,
 		Path:        "/auth/me/passkeys/reauth/finish",
@@ -156,7 +157,7 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 		Tags:        []string{"Auth", "Passkeys"},
 		Security:    interactive,
 	}, h.FinishStepUp)
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "password-step-up",
 		Method:      http.MethodPost,
 		Path:        "/auth/me/passkeys/reauth/password",
@@ -165,7 +166,7 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 		Security:    interactive,
 	}, h.PasswordStepUp)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "get-passkey-mfa-status",
 		Method:      http.MethodGet,
 		Path:        "/auth/me/mfa",
@@ -173,7 +174,7 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 		Tags:        []string{"Auth", "MFA"},
 		Security:    interactive,
 	}, h.GetMFAStatus)
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "enable-passkey-mfa",
 		Method:      http.MethodPost,
 		Path:        "/auth/me/mfa/enable",
@@ -181,7 +182,7 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 		Tags:        []string{"Auth", "MFA"},
 		Security:    interactive,
 	}, h.EnableMFA)
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "disable-passkey-mfa",
 		Method:      http.MethodPost,
 		Path:        "/auth/me/mfa/disable",
@@ -189,7 +190,7 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 		Tags:        []string{"Auth", "MFA"},
 		Security:    interactive,
 	}, h.DisableMFA)
-	huma.Register(api, huma.Operation{
+	middleware.RegisterAuthenticated(api, huma.Operation{
 		OperationID: "regenerate-passkey-recovery-codes",
 		Method:      http.MethodPost,
 		Path:        "/auth/me/mfa/recovery",

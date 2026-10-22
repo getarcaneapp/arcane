@@ -26,6 +26,7 @@
 		SearchIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { templateService } from '#lib/services/template-service.js';
 	import type { Template } from '#lib/types/swarm.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -42,7 +43,7 @@
 	void open;
 
 	const loadingStates = new SvelteSet<string>();
-	const canCreateTemplate = $derived(hasPermission('templates:create'));
+	const canCreateTemplate = $derived(hasPermission(PERMISSIONS.TEMPLATES_CREATE));
 	let sortBy = $state<'name-asc' | 'name-desc'>('name-asc');
 	let groupByRegistry = $state(true);
 	let searchQuery = $state('');

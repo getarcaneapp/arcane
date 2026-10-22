@@ -6,6 +6,7 @@
 	import { AlertTriangleIcon, UsersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
@@ -44,7 +45,12 @@
 		async function reconcileSelectedEnvironment() {
 			await environmentStore.ready;
 			const environmentId = environmentStore.selected?.id;
-			if (!active || !environmentId || !hasPermission('swarm:nodes', environmentId) || reconciledEnvironmentId === environmentId)
+			if (
+				!active ||
+				!environmentId ||
+				!hasPermission(PERMISSIONS.SWARM_NODES, environmentId) ||
+				reconciledEnvironmentId === environmentId
+			)
 				return;
 			reconciledEnvironmentId = environmentId;
 			const result = await tryCatch(swarmService.reconcileNodeAgents());

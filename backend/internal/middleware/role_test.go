@@ -9,6 +9,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humaecho"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/require"
 
@@ -24,7 +25,7 @@ func TestRequirePermission_RejectsCallerMissingPermission(t *testing.T) {
 		// Caller has containers:list but NOT containers:start.
 		ps := authz.NewPermissionSet()
 		ps.AddEnv("env-1", authz.PermContainersList)
-		next(huma.WithContext(ctx, context.WithValue(ctx.Context(), ContextKeyUserPermissions, ps)))
+		next(huma.WithContext(ctx, authz.WithPermissions(ctx.Context(), ps)))
 	})
 
 	huma.Register(api, huma.Operation{
@@ -56,7 +57,7 @@ func TestRequirePermission_AllowsCallerWithPermissionOnEnv(t *testing.T) {
 	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
 		ps := authz.NewPermissionSet()
 		ps.AddEnv("env-1", authz.PermContainersStart)
-		next(huma.WithContext(ctx, context.WithValue(ctx.Context(), ContextKeyUserPermissions, ps)))
+		next(huma.WithContext(ctx, authz.WithPermissions(ctx.Context(), ps)))
 	})
 
 	type out struct {
@@ -97,7 +98,7 @@ func TestRequirePermission_EnvScopedDoesNotLeakAcrossEnvs(t *testing.T) {
 		ps := authz.NewPermissionSet()
 		// Permission scoped to env-1; request will target env-2.
 		ps.AddEnv("env-1", authz.PermContainersStart)
-		next(huma.WithContext(ctx, context.WithValue(ctx.Context(), ContextKeyUserPermissions, ps)))
+		next(huma.WithContext(ctx, authz.WithPermissions(ctx.Context(), ps)))
 	})
 
 	huma.Register(api, huma.Operation{
@@ -128,7 +129,7 @@ func TestRequirePermissionEnvironmentGrantCannotManageGlobalNotificationsInterna
 	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
 		ps := authz.NewPermissionSet()
 		ps.AddEnv("env-1", authz.PermNotificationsManage)
-		next(huma.WithContext(ctx, context.WithValue(ctx.Context(), ContextKeyUserPermissions, ps)))
+		next(huma.WithContext(ctx, authz.WithPermissions(ctx.Context(), ps)))
 	})
 
 	huma.Register(api, huma.Operation{
@@ -156,7 +157,7 @@ func TestRequirePermission_SudoCallerAllowed(t *testing.T) {
 	api := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))
 
 	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
-		next(huma.WithContext(ctx, context.WithValue(ctx.Context(), ContextKeyUserPermissions, authz.SudoPermissionSet())))
+		next(huma.WithContext(ctx, authz.WithPermissions(ctx.Context(), authz.SudoPermissionSet())))
 	})
 
 	handlerRan := false
@@ -193,6 +194,15 @@ func TestRequireSudoRejectsHumanAdminAndAllowsAgent(t *testing.T) {
 			ps.AddGlobal(authz.AllPermissions()...)
 			return ps
 		}(), wantStatus: http.StatusForbidden},
+		{name: "forwarded admin", permission: func() *authz.PermissionSet {
+			admin := authz.NewPermissionSet()
+			admin.AddGlobal(authz.PermAll)
+			raw, err := authz.EncodeForwardedAuthz(admin, "env-1", types.Actor{ID: "user-1"})
+			require.NoError(t, err)
+			ps, _, err := authz.DecodeForwardedAuthz(raw, types.LocalDockerEnvironmentID)
+			require.NoError(t, err)
+			return ps
+		}(), wantStatus: http.StatusForbidden},
 		{name: "agent sudo", permission: authz.SudoPermissionSet(), wantStatus: http.StatusNoContent, wantRan: true},
 	}
 
@@ -201,7 +211,7 @@ func TestRequireSudoRejectsHumanAdminAndAllowsAgent(t *testing.T) {
 			router := echo.New()
 			api := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))
 			api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
-				next(huma.WithContext(ctx, context.WithValue(ctx.Context(), ContextKeyUserPermissions, tt.permission)))
+				next(huma.WithContext(ctx, authz.WithPermissions(ctx.Context(), tt.permission)))
 			})
 
 			handlerRan := false
@@ -244,7 +254,7 @@ func TestRequirePermissionAllowsScopeWhenAnyEnvironmentAllows(t *testing.T) {
 			api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
 				ps := authz.NewPermissionSet()
 				ps.AddEnv("env-1", authz.PermContainersList)
-				scoped := httpx.WithEnvironmentScope(context.WithValue(ctx.Context(), ContextKeyUserPermissions, ps), &httpx.EnvironmentScope{IDs: tt.ids})
+				scoped := httpx.WithEnvironmentScope(authz.WithPermissions(ctx.Context(), ps), &httpx.EnvironmentScope{IDs: tt.ids})
 				next(huma.WithContext(ctx, scoped))
 			})
 			huma.Register(api, huma.Operation{
@@ -278,7 +288,7 @@ func TestRequireActionPermission(t *testing.T) {
 	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
 		ps := authz.NewPermissionSet()
 		ps.AddEnv("env-1", authz.PermContainersStart)
-		next(huma.WithContext(ctx, context.WithValue(ctx.Context(), ContextKeyUserPermissions, ps)))
+		next(huma.WithContext(ctx, authz.WithPermissions(ctx.Context(), ps)))
 	})
 
 	handlerRan := false

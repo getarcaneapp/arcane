@@ -53,14 +53,9 @@ func (ps *PlaywrightService) CreateTestApiKeys(ctx context.Context, count int) (
 		return nil, fmt.Errorf("failed to get arcane user: %w", err)
 	}
 
-	// Grant every recognized permission globally so the test key behaves like
-	// the legacy "admin-everywhere" credential the e2e suite expects. There is
+	// Grant the admin wildcard globally so the test key behaves like the
+	// legacy "admin-everywhere" credential the e2e suite expects. There is
 	// no request context here, so grant validation runs against a sudo set.
-	allPerms := authz.AllPermissions()
-	grants := make([]types.ApiKeyPermissionGrant, len(allPerms))
-	for i, p := range allPerms {
-		grants[i] = types.ApiKeyPermissionGrant{Permission: p}
-	}
 
 	var createdKeys []*types.ApiKeyCreatedDto
 	for i := range count {
@@ -68,7 +63,7 @@ func (ps *PlaywrightService) CreateTestApiKeys(ctx context.Context, count int) (
 		req := types.ApiKey{
 			Name:        fmt.Sprintf("test-api-key-%d", i+1),
 			Description: &description,
-			Permissions: grants,
+			Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermAll}},
 		}
 
 		apiKey, createApiKeyErr := ps.apiKeyService.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), req)

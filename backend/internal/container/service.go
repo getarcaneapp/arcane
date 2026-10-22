@@ -45,6 +45,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/podman"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 	libpodman "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
@@ -91,6 +92,7 @@ type ContainerListResult struct {
 
 type containerLifecycleAction struct {
 	action             string
+	perm               string
 	eventType          event.EventType
 	metadata           database.JSON
 	runContainerAction func(context.Context) error
@@ -382,6 +384,10 @@ func (s *ContainerService) lockContainer(ctx context.Context, op, containerID st
 }
 
 func (s *ContainerService) runContainerLifecycleAction(ctx context.Context, containerID string, user types.Actor, cfg containerLifecycleAction) error {
+	if _, authErr := s.AuthorizeContainer(ctx, containerID, cfg.perm); authErr != nil {
+		return authErr
+	}
+
 	unlock, err := s.lockContainer(ctx, cfg.action+" container", containerID)
 	if err != nil {
 		return err
@@ -409,6 +415,7 @@ func (s *ContainerService) runContainerLifecycleAction(ctx context.Context, cont
 func (s *ContainerService) StartContainer(ctx context.Context, containerID string, user types.Actor) error {
 	return s.runContainerLifecycleAction(ctx, containerID, user, containerLifecycleAction{
 		action:    "start",
+		perm:      authz.PermContainersStart,
 		eventType: event.EventTypeContainerStart,
 		runContainerAction: func(ctx context.Context) error {
 			if handled, unitErr := s.podmanService.ContainerUnitAction(ctx, containerID, libpodman.Systemd.Start); handled {
@@ -425,6 +432,7 @@ func (s *ContainerService) StartContainer(ctx context.Context, containerID strin
 func (s *ContainerService) StopContainer(ctx context.Context, containerID string, user types.Actor) error {
 	return s.runContainerLifecycleAction(ctx, containerID, user, containerLifecycleAction{
 		action:    "stop",
+		perm:      authz.PermContainersStop,
 		eventType: event.EventTypeContainerStop,
 		runContainerAction: func(ctx context.Context) error {
 			if handled, unitErr := s.podmanService.ContainerUnitAction(ctx, containerID, libpodman.Systemd.Stop); handled {
@@ -438,6 +446,7 @@ func (s *ContainerService) StopContainer(ctx context.Context, containerID string
 func (s *ContainerService) RestartContainer(ctx context.Context, containerID string, user types.Actor) error {
 	return s.runContainerLifecycleAction(ctx, containerID, user, containerLifecycleAction{
 		action:    "restart",
+		perm:      authz.PermContainersRestart,
 		eventType: event.EventTypeContainerRestart,
 		runContainerAction: func(ctx context.Context) error {
 			if handled, unitErr := s.podmanService.ContainerUnitAction(ctx, containerID, libpodman.Systemd.Restart); handled {
@@ -458,6 +467,7 @@ func (s *ContainerService) RestartContainer(ctx context.Context, containerID str
 func (s *ContainerService) KillContainer(ctx context.Context, containerID, signal string, user types.Actor) error {
 	return s.runContainerLifecycleAction(ctx, containerID, user, containerLifecycleAction{
 		action:    "kill",
+		perm:      authz.PermContainersKill,
 		eventType: event.EventTypeContainerKill,
 		metadata:  database.JSON{"signal": signal},
 		runContainerAction: func(ctx context.Context) error {
@@ -473,6 +483,7 @@ func (s *ContainerService) KillContainer(ctx context.Context, containerID, signa
 func (s *ContainerService) PauseContainer(ctx context.Context, containerID string, user types.Actor) error {
 	return s.runContainerLifecycleAction(ctx, containerID, user, containerLifecycleAction{
 		action:    "pause",
+		perm:      authz.PermContainersPause,
 		eventType: event.EventTypeContainerPause,
 		runContainerAction: func(ctx context.Context) error {
 			_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerPauseResult, error) {
@@ -487,6 +498,7 @@ func (s *ContainerService) PauseContainer(ctx context.Context, containerID strin
 func (s *ContainerService) UnpauseContainer(ctx context.Context, containerID string, user types.Actor) error {
 	return s.runContainerLifecycleAction(ctx, containerID, user, containerLifecycleAction{
 		action:    "unpause",
+		perm:      authz.PermContainersPause,
 		eventType: event.EventTypeContainerUnpause,
 		runContainerAction: func(ctx context.Context) error {
 			_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerUnpauseResult, error) {
@@ -503,16 +515,29 @@ func (s *ContainerService) CommitContainer(ctx context.Context, containerID stri
 	if containerID == "" {
 		return nil, errors.New("container ID is required")
 	}
+	if _, authErr := s.AuthorizeContainer(ctx, containerID, authz.PermContainersRead); authErr != nil {
+		return nil, authErr
+	}
+
+	repository := strings.TrimSpace(req.Repository)
+	tag := strings.TrimSpace(req.Tag)
+	reference := kit.Ternary(repository != "" && tag != "", repository+":"+tag, repository)
+	if !authz.ScopeFromContext(ctx, authz.PermImagesCommit).IsUnrestricted() {
+		sourceContainer, inspectErr := s.inspectAuthorizedContainer(ctx, containerID, authz.PermContainersRead)
+		if inspectErr != nil {
+			return nil, inspectErr
+		}
+		attrs := authz.ImageAttributes([]string{reference}, kit.FromPtr(sourceContainer.Config).Labels)
+		if scopeErr := recordScopeDenial(ctx, authz.PermImagesCommit, authz.CheckCreate(ctx, authz.PermImagesCommit, attrs)); scopeErr != nil {
+			return nil, scopeErr
+		}
+	}
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeImageError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{"action": "commit"})
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-
-	repository := strings.TrimSpace(req.Repository)
-	tag := strings.TrimSpace(req.Tag)
-	reference := kit.Ternary(repository != "" && tag != "", repository+":"+tag, repository)
 
 	result, err := dockerClient.ContainerCommit(ctx, containerID, client.ContainerCommitOptions{
 		Reference: reference,
@@ -548,9 +573,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	}
 	defer unlock()
 
-	containerJSON, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
-	})
+	containerInfo, err := s.inspectAuthorizedContainer(ctx, containerID, authz.PermContainersRedeploy)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{
 			"action": "redeploy",
@@ -559,7 +582,6 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		return "", fmt.Errorf("failed to inspect container: %w", err)
 	}
 
-	containerInfo := containerJSON.Container
 	if containerInfo.Config == nil {
 		err = errors.New("container config is nil")
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{
@@ -603,7 +625,22 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 				"service", serviceName,
 			)
 
-			if updateProjectServicesErr := s.projectService.UpdateProjectServices(ctx, proj.ID, []string{serviceName}, user, false); updateProjectServicesErr != nil {
+			serviceContainers, listErr := s.dockerService.ListContainers(ctx)
+			if listErr != nil {
+				return "", fmt.Errorf("failed to list compose service containers: %w", listErr)
+			}
+			for _, sc := range serviceContainers {
+				if docker.ComposeProjectLabel(sc.Labels) != projectName || docker.ComposeServiceLabel(sc.Labels) != serviceName {
+					continue
+				}
+				scopeErr := recordScopeDenial(ctx, authz.PermContainersRedeploy,
+					authz.CheckResource(ctx, authz.PermContainersRedeploy, authz.PermContainersRead, authz.ContainerAttributes(sc.Names, sc.Labels)))
+				if scopeErr != nil {
+					return "", scopeErr
+				}
+			}
+			updateProjectServicesErr := s.projectService.UpdateProjectServices(authz.WithPermissions(ctx, authz.SudoPermissionSet()), proj.ID, []string{serviceName}, user, false)
+			if updateProjectServicesErr != nil {
 				s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", updateProjectServicesErr, database.JSON{
 					"action":      "redeploy",
 					"step":        "compose_update_services",
@@ -1040,7 +1077,7 @@ func applyEditToContainerConfig(cfg container.Config, previousBindings network.P
 		Entrypoint:      kit.Ternary(req.Entrypoint != nil, append([]string{}, kit.FromPtr(req.Entrypoint)...), cfg.Entrypoint),
 		NetworkDisabled: cfg.NetworkDisabled,
 		OnBuild:         cfg.OnBuild,
-		Labels:          kit.Ternary(req.Labels != nil, maps.Clone(kit.FromPtr(req.Labels)), cfg.Labels),
+		Labels:          kit.Ternary(req.Labels != nil, libarcane.WithOwnerLabel(kit.FromPtr(req.Labels), cfg.Labels[libarcane.LabelOwner]), cfg.Labels),
 		StopSignal:      cfg.StopSignal,
 		StopTimeout:     cfg.StopTimeout,
 		Shell:           cfg.Shell,
@@ -1129,18 +1166,16 @@ func buildEditNetworkingConfig(containerInspect container.InspectResponse, req *
 // GetContainerEditConfig returns the purpose-built DTO backing the container
 // edit form.
 func (s *ContainerService) GetContainerEditConfig(ctx context.Context, containerID string) (types.ContainerEditConfig, error) {
-	containerJSON, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
-	})
+	containerInfo, err := s.inspectAuthorizedContainer(ctx, containerID, authz.PermContainersRead)
 	if err != nil {
 		return types.ContainerEditConfig{}, fmt.Errorf("failed to inspect container: %w", err)
 	}
 
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 	return types.NewContainerEditConfigFromInspect(
-		&containerJSON.Container,
-		docker.ComposeProjectLabel(kit.FromPtr(containerJSON.Container.Config).Labels) != "",
-		labels.ShouldDisableArcaneServerRedeploy(kit.FromPtr(containerJSON.Container.Config).Labels, containerJSON.Container.ID, currentContainerID, currentContainerErr),
+		&containerInfo,
+		docker.ComposeProjectLabel(kit.FromPtr(containerInfo.Config).Labels) != "",
+		labels.ShouldDisableArcaneServerRedeploy(kit.FromPtr(containerInfo.Config).Labels, containerInfo.ID, currentContainerID, currentContainerErr),
 	), nil
 }
 
@@ -1154,9 +1189,7 @@ func (s *ContainerService) EditContainer(ctx context.Context, containerID string
 	}
 	defer unlock()
 
-	containerJSON, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
-	})
+	containerInfo, err := s.inspectAuthorizedContainer(ctx, containerID, authz.PermContainersEdit)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, event.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, database.JSON{
 			"action": "edit",
@@ -1165,7 +1198,6 @@ func (s *ContainerService) EditContainer(ctx context.Context, containerID string
 		return "", fmt.Errorf("failed to inspect container: %w", err)
 	}
 
-	containerInfo := containerJSON.Container
 	if containerInfo.Config == nil {
 		return "", errors.New("container config is nil")
 	}
@@ -1210,6 +1242,13 @@ func (s *ContainerService) EditContainer(ctx context.Context, containerID string
 	if applyEditToHostConfigErr := applyEditToHostConfig(&newHostConfig, req); applyEditToHostConfigErr != nil {
 		return "", common.Classify(common.ErrValidation, applyEditToHostConfigErr)
 	}
+	if scopeErr := recordScopeDenial(
+		ctx,
+		authz.PermContainersEdit,
+		authz.CheckCreate(ctx, authz.PermContainersEdit, authz.ContainerAttributes([]string{newName}, newConfig.Labels)),
+	); scopeErr != nil {
+		return "", scopeErr
+	}
 	networkingConfig, err := buildEditNetworkingConfig(containerInfo, req.NetworkingConfig, apiVersion)
 	if err != nil {
 		return "", common.Classify(common.ErrValidation, err)
@@ -1231,14 +1270,12 @@ func (s *ContainerService) EditContainer(ctx context.Context, containerID string
 }
 
 func (s *ContainerService) GetContainerByReference(ctx context.Context, ref string) (*container.InspectResponse, error) {
-	containerInspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, ref, client.ContainerInspectOptions{})
-	})
+	containerInspect, err := s.inspectAuthorizedContainer(ctx, ref, authz.PermContainersRead)
 	if err != nil {
 		return nil, fmt.Errorf("container not found: %w", err)
 	}
 
-	return new(containerInspect.Container), nil
+	return &containerInspect, nil
 }
 
 func (s *ContainerService) GetContainerByID(ctx context.Context, id string) (*container.InspectResponse, error) {
@@ -1297,6 +1334,9 @@ var containerProcessesPsArgs = [][]string{
 
 // GetContainerProcesses returns Docker's `top` snapshot for a container.
 func (s *ContainerService) GetContainerProcesses(ctx context.Context, containerID string) (types.ContainerProcesses, error) {
+	if _, authErr := s.AuthorizeContainer(ctx, containerID, authz.PermContainersRead); authErr != nil {
+		return types.ContainerProcesses{}, authErr
+	}
 	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerTopResult, error) {
 		var result client.ContainerTopResult
 		var err error
@@ -1338,23 +1378,37 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	}
 	defer unlock()
 
-	containerJSON, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
-	})
+	containerInfo, inspectErr := s.inspectAuthorizedContainer(ctx, containerID, authz.PermContainersDelete)
 	if inspectErr != nil {
 		return fmt.Errorf("failed to inspect container before removal: %w", inspectErr)
 	}
-	if guardErr := s.podmanService.GuardQuadletManaged(ctx, kit.FromPtr(containerJSON.Container.Config).Labels); guardErr != nil {
+	if guardErr := s.podmanService.GuardQuadletManaged(ctx, kit.FromPtr(containerInfo.Config).Labels); guardErr != nil {
 		return guardErr
 	}
 
 	// Get container mounts before deletion if we need to remove volumes
 	var volumesToRemove []string
 	if removeVolumes {
-		for _, mount := range containerJSON.Container.Mounts {
+		for _, mount := range containerInfo.Mounts {
 			// Only collect named volumes (not bind mounts or tmpfs)
 			if mount.Type == "volume" && mount.Name != "" {
 				volumesToRemove = append(volumesToRemove, mount.Name)
+			}
+		}
+	}
+
+	if !authz.ScopeFromContext(ctx, authz.PermVolumesDelete).IsUnrestricted() {
+		for _, volumeName := range volumesToRemove {
+			vol, volumeErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.VolumeInspectResult, error) {
+				return dockerClient.VolumeInspect(ctx, volumeName, client.VolumeInspectOptions{})
+			})
+			if volumeErr != nil {
+				return common.ClassifyDockerError(fmt.Errorf("failed to inspect volume %s before removal: %w", volumeName, volumeErr))
+			}
+			scopeErr := recordScopeDenial(ctx, authz.PermVolumesDelete,
+				authz.CheckResource(ctx, authz.PermVolumesDelete, authz.PermVolumesRead, authz.VolumeAttributes(volumeName, vol.Volume.Labels)))
+			if scopeErr != nil {
+				return scopeErr
 			}
 		}
 	}
@@ -1433,6 +1487,16 @@ func (s *ContainerService) CreateContainer(
 	}
 	if strings.TrimSpace(config.Image) == "" {
 		return nil, common.Classify(common.ErrBadRequest, errors.New("container image is required"))
+	}
+	createLabels := map[string]string{"com.arcane.created": "true"}
+	maps.Copy(createLabels, config.Labels)
+	config.Labels = libarcane.WithOwnerLabel(createLabels, user.ID)
+	if scopeErr := recordScopeDenial(
+		ctx,
+		authz.PermContainersCreate,
+		authz.CheckCreate(ctx, authz.PermContainersCreate, authz.ContainerAttributes([]string{containerName}, config.Labels)),
+	); scopeErr != nil {
+		return nil, scopeErr
 	}
 	if _, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, config.Image)
@@ -1532,6 +1596,9 @@ func (s *ContainerService) CreateContainer(
 }
 
 func (s *ContainerService) StreamStats(ctx context.Context, containerID string, statsChan chan<- any) error {
+	if _, authErr := s.AuthorizeContainer(ctx, containerID, authz.PermContainersRead); authErr != nil {
+		return authErr
+	}
 	return s.stats.Stream(ctx, containerID, statsChan)
 }
 
@@ -1553,7 +1620,7 @@ func (s *ContainerService) SampleResources(ctx context.Context, ids []string, ma
 		return nil, err
 	}
 	matched := make([]types.ContainerSummary, 0, len(requested))
-	for _, dc := range dockerContainers {
+	for _, dc := range containersInScope(ctx, authz.PermContainersRead, dockerContainers) {
 		if dc.State == container.StateRunning && slices.Contains(requested, dc.ID) {
 			matched = append(matched, types.ContainerSummary{ID: dc.ID, State: string(dc.State)})
 		}
@@ -1583,7 +1650,7 @@ func (s *ContainerService) ListContainersPaginated(
 		dockerContainers = running
 	}
 
-	dockerContainers = FilterExcludedContainers(dockerContainers, includeInternal, includeHidden)
+	dockerContainers = listableContainers(ctx, dockerContainers, includeInternal, includeHidden)
 	// Update lookup failures degrade to missing status rather than a failed list.
 	updateInfoMap, err := s.imageService.GetUpdateInfoByContainers(ctx, dockerContainers)
 	if err != nil {
@@ -1823,6 +1890,26 @@ func flattenContainerProjectGroups(groups []types.ContainerSummaryGroup) []types
 	}
 
 	return flattened
+}
+
+func listableContainers(ctx context.Context, containers []container.Summary, includeInternal, includeHidden bool) []container.Summary {
+	return containersInScope(ctx, authz.PermContainersList, FilterExcludedContainers(containers, includeInternal, includeHidden))
+}
+
+func (s *ContainerService) GetStatusCounts(ctx context.Context, includeInternal, includeHidden bool) (types.ContainerStatusCounts, error) {
+	dockerContainers, err := s.dockerService.ListContainers(ctx)
+	if err != nil {
+		return types.ContainerStatusCounts{}, err
+	}
+	listable := listableContainers(ctx, dockerContainers, includeInternal, includeHidden)
+	running := len(slices.DeleteFunc(slices.Clone(listable), func(dc container.Summary) bool {
+		return dc.State != container.StateRunning
+	}))
+	return types.ContainerStatusCounts{
+		RunningContainers: running,
+		StoppedContainers: len(listable) - running,
+		TotalContainers:   len(listable),
+	}, nil
 }
 
 // FilterExcludedContainers removes internal and hidden containers unless their corresponding inclusion flags are enabled.
@@ -2078,6 +2165,9 @@ func (s *ContainerService) CalculateStatusCounts(items []types.ContainerSummary)
 
 // CreateExec creates an exec instance in the container
 func (s *ContainerService) CreateExec(ctx context.Context, containerID string, cmd []string, cols, rows uint) (string, error) {
+	if _, authErr := s.AuthorizeContainer(ctx, containerID, authz.PermContainersExec); authErr != nil {
+		return "", authErr
+	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to Docker: %w", err)
@@ -2175,22 +2265,20 @@ func (d *demuxedLogs) Close() error {
 	return errors.Join(d.logs.Close(), d.pipe.Close())
 }
 
-func (s *ContainerService) openLogs(ctx context.Context, containerID string, options client.ContainerLogsOptions) (io.ReadCloser, client.ContainerInspectResult, error) {
-	containerInspect, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerInspectResult, error) {
-		return compat.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
-	})
+func (s *ContainerService) openLogs(ctx context.Context, containerID string, options client.ContainerLogsOptions) (io.ReadCloser, container.InspectResponse, error) {
+	containerInspect, err := s.inspectAuthorizedContainer(ctx, containerID, authz.PermContainersLogs)
 	if err != nil {
-		return nil, client.ContainerInspectResult{}, fmt.Errorf("failed to inspect container for logs: %w", err)
+		return nil, container.InspectResponse{}, fmt.Errorf("failed to inspect container for logs: %w", err)
 	}
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, client.ContainerInspectResult{}, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, container.InspectResponse{}, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	logs, err := dockerClient.ContainerLogs(ctx, containerID, options)
 	if err != nil {
-		return nil, client.ContainerInspectResult{}, fmt.Errorf("failed to get container logs: %w", err)
+		return nil, container.InspectResponse{}, fmt.Errorf("failed to get container logs: %w", err)
 	}
 	return logs, containerInspect, nil
 }
@@ -2209,7 +2297,7 @@ func (s *ContainerService) StreamLogs(ctx context.Context, containerID string, l
 	}
 	defer func() { _ = logs.Close() }()
 
-	return docker.StreamContainerLogs(ctx, logs, logsChan, follow, kit.FromPtr(containerInspect.Container.Config).Tty)
+	return docker.StreamContainerLogs(ctx, logs, logsChan, follow, kit.FromPtr(containerInspect.Config).Tty)
 }
 
 // DownloadLogs returns every log line Docker retains for the container as a
@@ -2225,8 +2313,8 @@ func (s *ContainerService) DownloadLogs(ctx context.Context, containerID string)
 		return nil, "", err
 	}
 
-	filename := "container-" + containerInspect.Container.ID[:min(12, len(containerInspect.Container.ID))] + "-logs.log"
-	if kit.FromPtr(containerInspect.Container.Config).Tty {
+	filename := "container-" + containerInspect.ID[:min(12, len(containerInspect.ID))] + "-logs.log"
+	if kit.FromPtr(containerInspect.Config).Tty {
 		return logs, filename, nil
 	}
 

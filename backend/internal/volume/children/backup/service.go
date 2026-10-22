@@ -61,23 +61,25 @@ type Store struct {
 
 // Dependencies are the persistence, runtime, and helper-container operations volume backups use.
 type Dependencies struct {
-	Store            Store
-	DB               *database.DB
-	Docker           *docker.DockerClientService
-	Events           *event.EventService
-	Settings         *settings.SettingsService
-	Engine           *backup.Engine
-	S3Destinations   *s3.S3DestinationService
-	RecoveryKeys     *backup.RecoveryKeyStore
-	Locks            *utils.KeyedMutex
-	AlreadyRunning   error
-	StopContainer    func(ctx context.Context, containerID string, user types.Actor) error
-	StartContainer   func(ctx context.Context, containerID string, user types.Actor) error
-	HelperImage      func(ctx context.Context) (string, error)
-	AcquireHelper    func(ctx context.Context, volumeName string) (string, func(), error)
-	Exec             func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
-	BackupVolumeName string
-	EncryptionKey    string
+	Store              Store
+	DB                 *database.DB
+	Docker             *docker.DockerClientService
+	Events             *event.EventService
+	Settings           *settings.SettingsService
+	Engine             *backup.Engine
+	S3Destinations     *s3.S3DestinationService
+	RecoveryKeys       *backup.RecoveryKeyStore
+	Locks              *utils.KeyedMutex
+	AlreadyRunning     error
+	Authorize          func(ctx context.Context, volumeName, perm string) error
+	StopContainer      func(ctx context.Context, containerID string, user types.Actor) error
+	StartContainer     func(ctx context.Context, containerID string, user types.Actor) error
+	AuthorizeContainer func(ctx context.Context, containerID, perm string) error
+	HelperImage        func(ctx context.Context) (string, error)
+	AcquireHelper      func(ctx context.Context, volumeName string) (string, func(), error)
+	Exec               func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
+	BackupVolumeName   string
+	EncryptionKey      string
 }
 
 // Service runs volume backups and owns their policies, file browser, and restores.
@@ -139,6 +141,7 @@ func NewService(deps Dependencies) *Service {
 		S3Destinations: deps.S3Destinations,
 		Settings:       deps.Settings,
 		AlreadyRunning: deps.AlreadyRunning,
+		Authorize:      deps.Authorize,
 		LatestRun: func(ctx context.Context, policyID string) (*types.VolumeBackupEntry, error) {
 			entry, err := s.deps.Store.Latest(ctx, policyID)
 			if err != nil || entry == nil {
@@ -152,6 +155,7 @@ func NewService(deps Dependencies) *Service {
 		Reconcile: s.ReconcileBackup,
 	})
 	s.browser = browser.NewService(browser.Dependencies{
+		Authorize:  deps.Authorize,
 		Docker:     deps.Docker,
 		Engine:     deps.Engine,
 		Run:        deps.Store.Run,
@@ -165,6 +169,7 @@ func NewService(deps Dependencies) *Service {
 		Exec:            deps.Exec,
 	})
 	s.restore = restore.NewService(restore.Dependencies{
+		Authorize:       deps.Authorize,
 		Docker:          deps.Docker,
 		Engine:          deps.Engine,
 		Events:          deps.Events,
@@ -243,6 +248,9 @@ func (s *Service) RenamePolicies(tx *gorm.DB, oldName, newName string) error {
 func (s *Service) List(ctx context.Context, volumeName string, params pagination.QueryParams) ([]types.VolumeBackup, pagination.Response, error) {
 	slog.DebugContext(ctx, "volume service: list backups paginated", "volume", volumeName, "search", params.Search, "sort", params.Sort,
 		"order", params.Order, "start", params.Start, "limit", params.Limit)
+	if err := s.deps.Authorize(ctx, volumeName, authz.PermVolumesRead); err != nil {
+		return nil, pagination.Response{}, err
+	}
 	backups, page, err := s.deps.Store.List(ctx, volumeName, params)
 	if err != nil {
 		return nil, pagination.Response{}, err
@@ -528,7 +536,7 @@ func (s *Service) createSnapshots(ctx context.Context, dockerClient *client.Clie
 }
 
 func (s *Service) UploadBackup(ctx context.Context, backupID, s3DestinationID string) (*types.VolumeBackup, error) {
-	entry, err := s.deps.Store.Run(ctx, backupID)
+	entry, err := s.authorizedRun(ctx, backupID, authz.PermVolumesBackup)
 	if err != nil {
 		return nil, err
 	}
@@ -578,7 +586,7 @@ func (s *Service) UploadBackup(ctx context.Context, backupID, s3DestinationID st
 }
 
 func (s *Service) DeleteBackup(ctx context.Context, backupID string, user *types.Actor) error {
-	entry, err := s.deps.Store.Run(ctx, backupID)
+	entry, err := s.authorizedRun(ctx, backupID, authz.PermVolumesBackup)
 	if err != nil {
 		return err
 	}
@@ -715,7 +723,7 @@ func (s *Service) forgetSnapshots(ctx context.Context, dockerClient *client.Clie
 // DownloadBackup streams a backup as a tar.gz archive: legacy archives stream their stored
 // file, and local Rustic snapshots are restored into a scratch volume and packaged on the fly.
 func (s *Service) DownloadBackup(ctx context.Context, backupID string, user *types.Actor) (io.ReadCloser, int64, error) {
-	entry, err := s.deps.Store.Run(ctx, backupID)
+	entry, err := s.authorizedRun(ctx, backupID, authz.PermVolumesRead)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -941,6 +949,9 @@ func (s *Service) StartBackup(ctx context.Context, environmentID, volumeName str
 	plan, err := s.resolveBackupPlan(ctx, volumeName, types.VolumeBackupTriggerManual, request, nil)
 	if err != nil {
 		return types.VolumeBackupEntry{}, err
+	}
+	if authorizeErr := s.deps.Authorize(ctx, volumeName, authz.PermVolumesBackup); authorizeErr != nil {
+		return types.VolumeBackupEntry{}, authorizeErr
 	}
 	requester := backup.NewRequester(ctx, user, environmentID, authz.PermVolumesBackup)
 	if authorizeErr := s.deps.Engine.Authorize(ctx, requester); authorizeErr != nil {

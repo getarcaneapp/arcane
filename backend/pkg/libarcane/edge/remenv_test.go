@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
 )
 
@@ -194,6 +195,7 @@ func TestGetSkipHeaders_ContainsExpectedEntries(t *testing.T) {
 	require.Contains(t, skip, "Cookie")
 	require.Contains(t, skip, "Origin")
 	require.Contains(t, skip, "Referer")
+	require.Contains(t, skip, authz.HeaderAuthz)
 }
 
 func TestBuildWebSocketHeaders_UsesAuthorizationHeaderAndAddsAgentToken(t *testing.T) {
@@ -206,12 +208,13 @@ func TestBuildWebSocketHeaders_UsesAuthorizationHeaderAndAddsAgentToken(t *testi
 	c := e.NewContext(req, w)
 
 	agent := "agent-token"
-	headers := BuildWebSocketHeaders(c, &agent)
+	headers := BuildWebSocketHeaders(c, &agent, "encoded-authz")
 
 	require.Equal(t, agent, headers.Get(HeaderAPIKey))
 	require.Equal(t, "Bearer auth", headers.Get(HeaderAuthorization))
 	require.Empty(t, headers.Get(HeaderCookie))
 	require.Equal(t, agent, headers.Get(HeaderAgentToken))
+	require.Equal(t, "encoded-authz", headers.Get(authz.HeaderAuthz))
 }
 
 func TestBuildWebSocketHeaders_UsesCookieTokenAsBearer(t *testing.T) {
@@ -221,7 +224,7 @@ func TestBuildWebSocketHeaders_UsesCookieTokenAsBearer(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: "token", Value: "cookie-token"})
 	c := e.NewContext(req, w)
 
-	headers := BuildWebSocketHeaders(c, nil)
+	headers := BuildWebSocketHeaders(c, nil, "")
 	require.Equal(t, "Bearer cookie-token", headers.Get(HeaderAuthorization))
 }
 
@@ -232,7 +235,7 @@ func TestBuildWebSocketHeaders_ForwardsCookieHeaderWhenNoAuthPresent(t *testing.
 	req.Header.Set(HeaderCookie, "session=abc")
 	c := e.NewContext(req, w)
 
-	headers := BuildWebSocketHeaders(c, nil)
+	headers := BuildWebSocketHeaders(c, nil, "")
 	require.Equal(t, "session=abc", headers.Get(HeaderCookie))
 }
 

@@ -10,6 +10,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { FileTextIcon, InspectIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { PodmanQuadletDetail, PodmanStatus } from '#lib/types/podman.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -35,11 +36,11 @@
 
 	const canManageQuadlets = $derived.by(() => {
 		userStore.current;
-		return hasShownPermission('podman:quadlets');
+		return hasShownPermission(PERMISSIONS.PODMAN_QUADLETS);
 	});
 	const canRunLifecycle = $derived.by(() => {
 		userStore.current;
-		return hasShownPermission('podman:quadlets:lifecycle');
+		return hasShownPermission(PERMISSIONS.PODMAN_QUADLETS_LIFECYCLE);
 	});
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
@@ -137,7 +138,7 @@
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
 		</DropdownMenu.Item>
-		{#if canRunLifecycle && hasPermission('podman:quadlets:lifecycle', item.environmentId) && !item.template}
+		{#if canRunLifecycle && hasPermission(PERMISSIONS.PODMAN_QUADLETS_LIFECYCLE, item.environmentId) && !item.template}
 			{@const status = podmanStatuses[item.environmentId]}
 			<DropdownMenu.Separator />
 			{#each quadletActions as action (action)}
@@ -153,7 +154,7 @@
 				</DropdownMenu.Item>
 			{/each}
 		{/if}
-		{#if canManageQuadlets && hasPermission('podman:quadlets', item.environmentId)}
+		{#if canManageQuadlets && hasPermission(PERMISSIONS.PODMAN_QUADLETS, item.environmentId)}
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item
 				variant="destructive"

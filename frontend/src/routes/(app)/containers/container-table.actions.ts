@@ -3,6 +3,7 @@ import { toast } from 'svelte-sonner';
 // fallow-ignore-file code-duplication -- project and global tables already delegate removal to confirmAndRemoveContainer; only state callbacks differ
 import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 import { m } from '#lib/paraglide/messages.js';
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { containerService, type ContainersPaginatedResponse } from '#lib/services/container-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { Activity } from '#lib/types/activity.type.js';
@@ -237,7 +238,7 @@ export function createContainerActions({
 
 	function handleBulkUpdate(validIds: string[], allIds: string[]) {
 		const updateScope = scope();
-		const tracksActivities = environmentStore.shown.every((env) => hasPermission('activities:read', env.id));
+		const tracksActivities = environmentStore.shown.every((env) => hasPermission(PERMISSIONS.ACTIVITIES_READ, env.id));
 		const totalCount = allIds.length;
 		const filteredCount = validIds.length;
 		const message =
@@ -258,7 +259,7 @@ export function createContainerActions({
 				failure: () => m.containers_bulk_update_accept_failed()
 			},
 			acceptanceOnly: true,
-			activityLink: hasShownPermission('activities:read'),
+			activityLink: hasShownPermission(PERMISSIONS.ACTIVITIES_READ),
 			onItemSuccess: (_id, activity) => onUpdateAccepted(activity),
 			setLoading: (loading) => {
 				isBulkLoading['update'] = loading;

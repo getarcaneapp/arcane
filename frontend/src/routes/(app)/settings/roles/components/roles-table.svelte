@@ -12,12 +12,13 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { ShieldAlertIcon, TrashIcon, EditIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { roleService } from '#lib/services/role-service.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { Role } from '#lib/types/auth.js';
-	import { BUILT_IN_ROLE_ADMIN, BUILT_IN_ROLE_EDITOR, BUILT_IN_ROLE_DEPLOYER, BUILT_IN_ROLE_VIEWER } from '#lib/types/auth.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
+	import { roleBadgeVariant } from '#lib/utils/rbac.js';
 
 	let {
 		roles = $bindable(),
@@ -31,33 +32,16 @@
 		onRolesChanged: () => Promise<void>;
 	} = $props();
 
-	const isAdmin = $derived(userStore.isGlobalAdmin());
+	const canDeleteRoles = $derived(hasPermission(PERMISSIONS.ROLES_DELETE));
 
 	let isLoading = $state({
 		removing: false
 	});
 
-	type BadgeVariant = 'red' | 'blue' | 'purple' | 'gray' | 'green' | 'amber';
 	type IconVariant = 'emerald' | 'red' | 'amber' | 'blue' | 'purple' | 'gray' | 'sky' | 'orange';
 
-	function getRoleBadgeVariant(role: Role): BadgeVariant {
-		if (!role.builtIn) return 'green';
-		switch (role.id) {
-			case BUILT_IN_ROLE_ADMIN:
-				return 'red';
-			case BUILT_IN_ROLE_EDITOR:
-				return 'blue';
-			case BUILT_IN_ROLE_DEPLOYER:
-				return 'purple';
-			case BUILT_IN_ROLE_VIEWER:
-				return 'gray';
-			default:
-				return 'green';
-		}
-	}
-
 	function getRoleIconVariant(role: Role): IconVariant {
-		const v = getRoleBadgeVariant(role);
+		const v = roleBadgeVariant(role.id);
 		return v === 'green' ? 'emerald' : v;
 	}
 
@@ -117,11 +101,11 @@
 		{ accessorKey: 'description', title: m.common_description(), sortable: false, cell: DescriptionCell },
 		{ id: 'type', accessorKey: 'builtIn', title: m.common_type(), sortable: false, cell: TypeCell },
 		{
-			id: 'assignedUsers',
-			accessorKey: 'assignedUserCount',
-			title: m.roles_col_assigned_users(),
+			id: 'bindings',
+			accessorKey: 'bindingCount',
+			title: m.bindings_title(),
 			sortable: true,
-			cell: AssignedUsersCell
+			cell: BindingsCell
 		},
 		{
 			id: 'permissions',
@@ -135,7 +119,7 @@
 	const mobileFields = [
 		{ id: 'description', label: m.common_description(), defaultVisible: true },
 		{ id: 'permissions', label: m.permissions(), defaultVisible: true },
-		{ id: 'assignedUsers', label: m.roles_col_assigned_users(), defaultVisible: true }
+		{ id: 'bindings', label: m.bindings_title(), defaultVisible: true }
 	];
 
 	const bulkActions = $derived.by<BulkAction[]>(() => [
@@ -145,7 +129,7 @@
 			action: 'remove',
 			onClick: handleDeleteSelected,
 			loading: isLoading.removing,
-			disabled: isLoading.removing || deletableSelectedIds.length === 0 || hasBuiltInSelection || !isAdmin,
+			disabled: isLoading.removing || deletableSelectedIds.length === 0 || hasBuiltInSelection || !canDeleteRoles,
 			icon: TrashIcon
 		}
 	]);
@@ -171,8 +155,8 @@
 	<Badge variant={item.builtIn ? 'amber' : 'blue'} minWidth="20">{item.builtIn ? m.roles_built_in() : m.custom()}</Badge>
 {/snippet}
 
-{#snippet AssignedUsersCell({ item }: { item: Role })}
-	<span class="tabular-nums">{m.roles_assigned_users_count({ count: item.assignedUserCount })}</span>
+{#snippet BindingsCell({ item }: { item: Role })}
+	<span class="tabular-nums">{m.bindings_count({ count: item.bindingCount })}</span>
 {/snippet}
 
 {#snippet PermissionsCell({ item }: { item: Role })}
@@ -207,11 +191,11 @@
 				show: mobileFieldVisibility['permissions'] ?? true
 			},
 			{
-				label: m.roles_col_assigned_users(),
-				getValue: (item: Role) => m.roles_assigned_users_count({ count: item.assignedUserCount }),
+				label: m.bindings_title(),
+				getValue: (item: Role) => m.bindings_count({ count: item.bindingCount }),
 				icon: ShieldAlertIcon,
 				iconVariant: 'gray' as const,
-				show: mobileFieldVisibility['assignedUsers'] ?? true
+				show: mobileFieldVisibility['bindings'] ?? true
 			}
 		]}
 		rowActions={RowActions}
@@ -219,27 +203,25 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Role })}
-	{#if isAdmin}
-		<RowActionsMenu>
-			<IfPermitted adminOnly>
-				<DropdownMenu.Item onclick={() => goto(`/settings/roles/${item.id}`)}>
-					<EditIcon class="size-4" />
-					{m.common_edit()}
-				</DropdownMenu.Item>
+	<RowActionsMenu>
+		<DropdownMenu.Item onclick={() => goto(`/settings/roles/${item.id}`)}>
+			<EditIcon class="size-4" />
+			{item.builtIn || !hasPermission(PERMISSIONS.ROLES_UPDATE) ? m.common_view() : m.common_edit()}
+		</DropdownMenu.Item>
 
-				<DropdownMenu.Separator />
+		<IfPermitted perm={PERMISSIONS.ROLES_DELETE}>
+			<DropdownMenu.Separator />
 
-				<DropdownMenu.Item
-					variant="destructive"
-					disabled={item.builtIn || isLoading.removing}
-					onclick={() => handleDeleteRole(item)}
-				>
-					<TrashIcon class="size-4" />
-					{m.common_delete()}
-				</DropdownMenu.Item>
-			</IfPermitted>
-		</RowActionsMenu>
-	{/if}
+			<DropdownMenu.Item
+				variant="destructive"
+				disabled={item.builtIn || isLoading.removing}
+				onclick={() => handleDeleteRole(item)}
+			>
+				<TrashIcon class="size-4" />
+				{m.common_delete()}
+			</DropdownMenu.Item>
+		</IfPermitted>
+	</RowActionsMenu>
 {/snippet}
 
 <ArcaneTable

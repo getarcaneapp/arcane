@@ -6,6 +6,7 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { JobsIcon, ConnectionIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -31,7 +32,7 @@
 				await environmentStore.ready;
 				return swarmService.getServiceTasks(requestedServiceId, { pagination: { page: 1, limit: 100 } });
 			},
-			enabled: !!environmentId && !!serviceName && !!requestedServiceId && hasPermission('swarm:read', environmentId)
+			enabled: !!environmentId && !!serviceName && !!requestedServiceId && hasPermission(PERMISSIONS.SWARM_READ, environmentId)
 		};
 	});
 	const tasks = $derived(sortSwarmTasks(tasksQuery.data?.data ?? []));

@@ -1,5 +1,6 @@
 import { createQuery } from '@tanstack/svelte-query';
 
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
 import type { AppVersionInformation } from '#lib/types/settings.js';
@@ -15,7 +16,7 @@ export function useUpgradeCheck({ queryScope, getVersionInformation, getDebug = 
 	let showConfirmDialog = $state(false);
 
 	// Same permission the update-all endpoint enforces (PermSystemUpgrade).
-	const canInstallUpdates = $derived(hasPermission('system:upgrade'));
+	const canInstallUpdates = $derived(hasPermission(PERMISSIONS.SYSTEM_UPGRADE));
 	const shouldCheckUpgrade = $derived(!!(getVersionInformation()?.updateAvailable && canInstallUpdates && !getDebug()));
 	const upgradeAvailabilityQuery = createQuery(() => ({
 		queryKey: queryKeys.system.upgradeAvailable(queryScope),

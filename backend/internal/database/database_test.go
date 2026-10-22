@@ -118,36 +118,48 @@ func TestMigrateDatabase_DowngradesWhenAllowed(t *testing.T) {
 		db, err := Initialize(cleanupCtx, orphanDSN+"?_fk=0", MigrationOptions{})
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, db.Close()) })
-		assertClean := func() {
+		assertClean := func(bindingsSchema bool) {
 			t.Helper()
 			for table, expectedIDs := range map[string][]string{
-				"users":                 {"user"},
-				"roles":                 {"role"},
-				"environments":          {"env"},
-				"api_keys":              {"environment", "personal", "system"},
-				"user_role_assignments": {"global", "oidc", "scoped"},
-				"api_key_permissions":   {"environment", "global", "scoped", "system"},
-				"oidc_role_mappings":    {"global", "scoped"},
+				"users":               {"user"},
+				"roles":               {"role", "role_admin", "role_deployer", "role_editor", "role_monitor", "role_no_shell_editor", "role_viewer"},
+				"environments":        {"env"},
+				"api_keys":            {"environment", "personal", "system"},
+				"api_key_permissions": {"environment", "global", "scoped", "system"},
 			} {
 				ids := []string{}
 				require.NoError(t, db.Table(table).Order("id").Pluck("id", &ids).Error)
 				require.Equal(t, expectedIDs, ids, table)
 			}
+			directIDs := []string{}
+			var oidcGrants, mappings int64
+			if bindingsSchema {
+				require.NoError(t, db.Table("role_bindings").Where("user_id IS NOT NULL").Order("id").Pluck("id", &directIDs).Error)
+				require.NoError(t, db.Table("group_members").Where("source = ?", "oidc").Count(&oidcGrants).Error)
+				require.NoError(t, db.Table("oidc_group_mappings").Count(&mappings).Error)
+			} else {
+				require.NoError(t, db.Table("user_role_assignments").Where("source <> ?", "oidc").Order("id").Pluck("id", &directIDs).Error)
+				require.NoError(t, db.Table("user_role_assignments").Where("source = ?", "oidc").Count(&oidcGrants).Error)
+				require.NoError(t, db.Table("oidc_role_mappings").Count(&mappings).Error)
+			}
+			require.Equal(t, []string{"global", "scoped"}, directIDs)
+			require.EqualValues(t, 1, oidcGrants)
+			require.EqualValues(t, 2, mappings)
 			require.NoError(t, db.Raw(`SELECT COUNT(*) FROM pragma_foreign_key_check`).Scan(&violations).Error)
 			require.Zero(t, violations)
 		}
-		assertClean()
+		assertClean(true)
 
 		require.NoError(t, db.Close())
 		db, err = Initialize(cleanupCtx, orphanDSN, MigrationOptions{})
 		require.NoError(t, err)
-		assertClean()
+		assertClean(true)
 		sqlDB, err := db.SQLDB()
 		require.NoError(t, err)
 		require.NoError(t, migrateDatabase(cleanupCtx, sqlDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 91))
-		assertClean()
+		assertClean(false)
 		require.NoError(t, migrateDatabase(cleanupCtx, sqlDB, dbProviderSQLite, MigrationOptions{}, latestMigrationVersion))
-		assertClean()
+		assertClean(true)
 	})
 }
 
@@ -725,7 +737,7 @@ func TestInitialize_RecordsGooseVersionOnFreshSQLite(t *testing.T) {
 				var enabled int
 				require.NoError(t, conn.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&enabled))
 				require.Equal(t, 1, enabled)
-				_, insertErr := conn.ExecContext(ctx, `INSERT INTO user_role_assignments (id, user_id, role_id)
+				_, insertErr := conn.ExecContext(ctx, `INSERT INTO role_bindings (id, user_id, role_id)
 					VALUES ('invalid', 'missing-user', 'missing-role')`)
 				require.ErrorContains(t, insertErr, "FOREIGN KEY constraint failed")
 			}
@@ -738,10 +750,11 @@ func TestInitialize_RecordsGooseVersionOnFreshSQLite(t *testing.T) {
 	}
 
 	for parent, deletedTables := range map[string][]string{
-		"users":        {"users", "user_role_assignments", "api_keys", "api_key_permissions"},
+		"users":        {"users", "role_bindings", "group_members", "api_keys", "api_key_permissions"},
 		"api_keys":     {"api_keys", "api_key_permissions"},
-		"environments": {"environments", "user_role_assignments", "api_keys", "api_key_permissions", "oidc_role_mappings"},
-		"roles":        {"roles", "user_role_assignments", "oidc_role_mappings"},
+		"environments": {"environments", "role_bindings", "api_keys", "api_key_permissions"},
+		"roles":        {"roles", "role_bindings"},
+		"groups":       {"groups", "group_members", "oidc_group_mappings"},
 	} {
 		t.Run(parent+" deletion cascades", func(t *testing.T) {
 			cascadeDB, cascadeErr := Initialize(ctx, "file:"+filepath.Join(t.TempDir(), "cascade.db"), MigrationOptions{})
@@ -758,19 +771,22 @@ func TestInitialize_RecordsGooseVersionOnFreshSQLite(t *testing.T) {
 					('other', 'Other', 'hash-other', 'arc_other', 'other', 'other'),
 					('system', 'System', 'hash-system', 'arc_system', NULL, NULL);
 				UPDATE environments SET api_key_id = 'target' WHERE id = 'target';
-				INSERT INTO user_role_assignments (id, user_id, role_id, environment_id) VALUES
+				INSERT INTO groups (id, name) VALUES ('target', 'Target'), ('other', 'Other');
+				INSERT INTO role_bindings (id, user_id, role_id, environment_id) VALUES
 					('target', 'target', 'target', 'target'), ('other', 'other', 'other', 'other');
+				INSERT INTO group_members (id, group_id, user_id) VALUES
+					('target', 'target', 'target'), ('other', 'other', 'other');
 				INSERT INTO api_key_permissions (id, api_key_id, permission, environment_id) VALUES
 					('target', 'target', 'containers:read', 'target'),
 					('other', 'other', 'containers:read', 'other'),
 					('system', 'system', 'containers:read', NULL);
-				INSERT INTO oidc_role_mappings (id, claim_value, role_id, environment_id) VALUES
-					('target', 'target', 'target', 'target'), ('other', 'other', 'other', 'other');
+				INSERT INTO oidc_group_mappings (id, claim_value, group_id) VALUES
+					('target', 'target', 'target'), ('other', 'other', 'other');
 			`).Error)
 			require.NoError(t, cascadeDB.Table(parent).Where("id = ?", "target").Delete(nil).Error)
 			for _, table := range []string{
-				"users", "api_keys", "environments", "roles",
-				"user_role_assignments", "api_key_permissions", "oidc_role_mappings",
+				"users", "api_keys", "environments", "roles", "groups",
+				"role_bindings", "group_members", "api_key_permissions", "oidc_group_mappings",
 			} {
 				var count int64
 				require.NoError(t, cascadeDB.Table(table).Where("id = ?", "other").Count(&count).Error)
@@ -1369,4 +1385,72 @@ func TestSQLiteDSN_ConcurrencyDefaults(t *testing.T) {
 			require.Equal(t, tt.txlock, parsed.Query().Get("_txlock"))
 		})
 	}
+}
+
+func TestMigration096_ConvertsAssignmentsToBindingsAndGroups(t *testing.T) {
+	ctx := t.Context()
+	db, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-rbac-bindings.db")
+	db.SetMaxOpenConns(1)
+	require.NoError(t, migrateDatabase(ctx, db, dbProviderSQLite, MigrationOptions{}, 95))
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO users (id, username, password_hash, roles) VALUES
+			('admin', 'admin', 'unused', '[]'), ('svc', 'svc', 'unused', '[]'),
+			('full', 'full', 'unused', '[]'), ('partial', 'partial', 'unused', '[]'),
+			('legacy-admin', 'legacy-admin', 'unused', '[" Admin "]'), ('legacy-user', 'legacy-user', 'unused', '["user"]'),
+			('legacy-bad', 'legacy-bad', 'unused', 'not-json'), ('stale', 'stale', 'unused', '[]');
+		INSERT INTO roles (id, name, permissions, built_in) VALUES
+			('role_viewer', 'Viewer', '["containers:list"]', 1), ('custom', 'Custom', '["containers:start"]', 0);
+		INSERT INTO environments (id, name, api_url) VALUES ('env', 'Env', 'http://env');
+		INSERT INTO federated_credentials (id, name, issuer_url, audiences, subject_match, role_id, identity_user_id)
+			VALUES ('cred', 'Cred', 'https://issuer.example', '[]', 'repo:*', 'custom', 'svc');
+		INSERT INTO user_role_assignments (id, user_id, role_id, environment_id, source) VALUES
+			('admin-manual', 'admin', 'role_viewer', NULL, 'manual'),
+			('svc-manual', 'svc', 'custom', 'env', 'manual'),
+			('full-global', 'full', 'role_viewer', NULL, 'oidc'),
+			('full-env', 'full', 'custom', 'env', 'oidc'),
+			('partial-global', 'partial', 'role_viewer', NULL, 'oidc'),
+			('stale-global', 'stale', 'custom', NULL, 'oidc');
+		INSERT INTO oidc_role_mappings (id, claim_value, role_id, environment_id, source) VALUES
+			('ops-global', 'ops', 'role_viewer', NULL, 'env'),
+			('ops-env', 'ops', 'custom', 'env', 'env');
+	`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrateDatabase(ctx, db, dbProviderSQLite, MigrationOptions{}, 96))
+	queryString := func(query string) string {
+		t.Helper()
+		var value string
+		require.NoError(t, db.QueryRowContext(ctx, query).Scan(&value))
+		return value
+	}
+	queryInt := func(query string) int {
+		t.Helper()
+		var value int
+		require.NoError(t, db.QueryRowContext(ctx, query).Scan(&value))
+		return value
+	}
+	assert.Equal(t, "manual", queryString(`SELECT source FROM role_bindings WHERE id = 'admin-manual' AND user_id = 'admin'`))
+	assert.Equal(t, "federated", queryString(`SELECT source FROM role_bindings WHERE id = 'svc-manual' AND environment_id = 'env'`))
+	assert.Equal(t, "role_admin:manual", queryString(`SELECT role_id || ':' || source FROM role_bindings WHERE user_id = 'legacy-admin' AND environment_id IS NULL`))
+	assert.Equal(t, "role_viewer", queryString(`SELECT role_id FROM role_bindings WHERE user_id = 'legacy-user'`))
+	assert.Equal(t, "role_viewer", queryString(`SELECT role_id FROM role_bindings WHERE user_id = 'legacy-bad'`))
+	assert.Equal(t, 1, queryInt(`SELECT COUNT(*) FROM role_bindings WHERE user_id = 'admin'`))
+	assert.Equal(t, 6, queryInt(`SELECT COUNT(*) FROM roles WHERE built_in = 1`))
+	assert.Equal(t, "[]", queryString(`SELECT permissions FROM roles WHERE id = 'role_viewer'`))
+	assert.Equal(t, "Custom", queryString(`SELECT name FROM roles WHERE id = 'custom' AND permissions = '["containers:start"]'`))
+	assert.Equal(t, 2, queryInt(`SELECT COUNT(*) FROM role_bindings rb INNER JOIN groups g ON g.id = rb.group_id WHERE g.name = 'ops'`))
+	assert.Equal(t, "ops:env", queryString(`SELECT claim_value || ':' || source FROM oidc_group_mappings`))
+	assert.Equal(t, "full:oidc", queryString(`SELECT user_id || ':' || source FROM group_members`))
+	assert.Equal(t, 1, queryInt(`SELECT COUNT(*) FROM group_members`))
+	assert.Equal(t, "role_viewer:oidc", queryString(`SELECT role_id || ':' || source FROM role_bindings WHERE id = 'partial-global' AND user_id = 'partial' AND environment_id IS NULL`))
+	assert.Equal(t, "custom:oidc", queryString(`SELECT role_id || ':' || source FROM role_bindings WHERE id = 'stale-global' AND user_id = 'stale' AND environment_id IS NULL`))
+	assert.Zero(t, queryInt(`SELECT COUNT(*) FROM role_bindings WHERE user_id = 'full'`))
+	assert.Zero(t, queryInt(`SELECT COUNT(*) FROM sqlite_master WHERE name IN ('user_role_assignments', 'oidc_role_mappings')`))
+
+	require.NoError(t, migrateDatabase(ctx, db, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 94))
+	assert.Equal(t, 2, queryInt(`SELECT COUNT(*) FROM user_role_assignments WHERE source = 'manual' AND id IN ('admin-manual', 'svc-manual')`))
+	assert.Equal(t, 2, queryInt(`SELECT COUNT(*) FROM user_role_assignments WHERE source = 'oidc' AND user_id = 'full'`))
+	assert.Equal(t, 1, queryInt(`SELECT COUNT(*) FROM user_role_assignments WHERE user_id = 'partial' AND source = 'oidc'`))
+	assert.Equal(t, 2, queryInt(`SELECT COUNT(*) FROM oidc_role_mappings WHERE claim_value = 'ops' AND source = 'env'`))
+	assert.Zero(t, queryInt(`SELECT COUNT(*) FROM sqlite_master WHERE name IN ('role_bindings', 'groups', 'group_members', 'oidc_group_mappings')`))
 }

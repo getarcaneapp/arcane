@@ -5,6 +5,7 @@ import (
 	"context"
 	stdjson "encoding/json"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -19,7 +20,10 @@ import (
 	"go.getarcane.app/docker"
 	"go.getarcane.app/kit/pkg"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 )
 
@@ -50,7 +54,10 @@ func (s *Service) ListServicesPaginated(ctx context.Context, params pagination.Q
 		return nil, pagination.Response{}, fmt.Errorf("failed to list swarm services: %w", err)
 	}
 
-	return s.PaginateSummaries(ctx, servicesResult.Items, params)
+	scope := authz.ScopeFromContext(ctx, authz.PermSwarmRead)
+	return s.PaginateSummaries(ctx, slices.DeleteFunc(servicesResult.Items, func(service swarm.Service) bool {
+		return !scope.Matches(serviceSpecAttributes(service.Spec))
+	}), params)
 }
 
 // PaginateSummaries summarizes services with their running nodes and networks, then paginates them.
@@ -108,6 +115,9 @@ func (s *Service) GetService(ctx context.Context, serviceID string) (*types.Swar
 		return nil, fmt.Errorf("failed to inspect swarm service: %w", err)
 	}
 	service := serviceResult.Service
+	if authorizeErr := authorizeService(ctx, authz.PermSwarmRead, service.Spec); authorizeErr != nil {
+		return nil, authorizeErr
+	}
 
 	inspect := types.NewSwarmServiceInspect(service)
 	inspect.Nodes = s.resolveServiceNodeNames(ctx, serviceID)
@@ -269,6 +279,10 @@ func (s *Service) CreateService(ctx context.Context, req types.SwarmServiceCreat
 		return nil, fmt.Errorf("failed to parse service spec: %w", unmarshalErr)
 	}
 
+	if err := recordServiceDenial(ctx, authz.PermSwarmServices, authz.CheckCreate(ctx, authz.PermSwarmServices, serviceSpecAttributes(spec))); err != nil {
+		return nil, err
+	}
+
 	optionsPayload := kit.FromPtr(req.Options)
 
 	// Sanitize spec to avoid empty UID/GID in secret/config refs
@@ -295,19 +309,31 @@ func (s *Service) UpdateService(ctx context.Context, serviceID string, req types
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, err
 	}
+	if err := s.AuthorizeService(ctx, serviceID, authz.PermSwarmServices); err != nil {
+		return nil, err
+	}
+	if err := recordServiceDenial(ctx, authz.PermSwarmServices, authz.CheckCreate(ctx, authz.PermSwarmServices, serviceSpecAttributes(req.Spec))); err != nil {
+		return nil, err
+	}
 
+	optionsPayload := kit.FromPtr(req.Options)
 	versionIndex := req.Version
-	if versionIndex == 0 {
+	if versionIndex == 0 || optionsPayload.Rollback == "previous" {
 		serviceResult, serviceInspectErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceInspectResult, error) {
 			return dockerClient.ServiceInspect(ctx, serviceID, client.ServiceInspectOptions{})
 		})
 		if serviceInspectErr != nil {
 			return nil, fmt.Errorf("failed to inspect swarm service: %w", serviceInspectErr)
 		}
-		versionIndex = serviceResult.Service.Version.Index
+		versionIndex = cmp.Or(versionIndex, serviceResult.Service.Version.Index)
+		if optionsPayload.Rollback == "previous" {
+			previousErr := recordServiceDenial(ctx, authz.PermSwarmServices,
+				authz.CheckCreate(ctx, authz.PermSwarmServices, serviceSpecAttributes(kit.FromPtr(serviceResult.Service.PreviousSpec))))
+			if previousErr != nil {
+				return nil, previousErr
+			}
+		}
 	}
-
-	optionsPayload := kit.FromPtr(req.Options)
 
 	// Sanitize spec to avoid empty UID/GID in secret/config refs
 	sanitizeServiceSpec(&req.Spec)
@@ -335,6 +361,9 @@ func (s *Service) RemoveService(ctx context.Context, serviceID string) error {
 	if err := s.ensureManager(ctx); err != nil {
 		return err
 	}
+	if err := s.AuthorizeService(ctx, serviceID, authz.PermSwarmServices); err != nil {
+		return err
+	}
 
 	if _, serviceRemoveErr := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceRemoveResult, error) {
 		return dockerClient.ServiceRemove(ctx, serviceID, client.ServiceRemoveOptions{})
@@ -347,6 +376,9 @@ func (s *Service) RemoveService(ctx context.Context, serviceID string) error {
 
 func (s *Service) StreamServiceLogs(ctx context.Context, serviceID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
 	if err := s.ensureManager(ctx); err != nil {
+		return err
+	}
+	if err := s.AuthorizeService(ctx, serviceID, authz.PermSwarmServicesLogs); err != nil {
 		return err
 	}
 
@@ -382,6 +414,9 @@ func (s *Service) ListServiceTasksPaginated(ctx context.Context, serviceID strin
 	if err := s.ensureManager(ctx); err != nil {
 		return nil, pagination.Response{}, err
 	}
+	if err := s.AuthorizeService(ctx, serviceID, authz.PermSwarmRead); err != nil {
+		return nil, pagination.Response{}, err
+	}
 
 	filters := make(client.Filters)
 	filters.Add("service", serviceID)
@@ -398,6 +433,14 @@ func (s *Service) RollbackService(ctx context.Context, serviceID string) (*types
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect swarm service: %w", err)
+	}
+	if authorizeErr := authorizeService(ctx, authz.PermSwarmServices, serviceResult.Service.Spec); authorizeErr != nil {
+		return nil, authorizeErr
+	}
+	previousErr := recordServiceDenial(ctx, authz.PermSwarmServices,
+		authz.CheckCreate(ctx, authz.PermSwarmServices, serviceSpecAttributes(kit.FromPtr(serviceResult.Service.PreviousSpec))))
+	if previousErr != nil {
+		return nil, previousErr
 	}
 
 	updateResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceUpdateResult, error) {
@@ -426,6 +469,9 @@ func (s *Service) ScaleService(ctx context.Context, serviceID string, replicas u
 		return nil, fmt.Errorf("failed to inspect swarm service: %w", err)
 	}
 	service := serviceResult.Service
+	if authorizeErr := authorizeService(ctx, authz.PermSwarmServices, service.Spec); authorizeErr != nil {
+		return nil, authorizeErr
+	}
 
 	switch {
 	case service.Spec.Mode.Replicated != nil:
@@ -447,6 +493,42 @@ func (s *Service) ScaleService(ctx context.Context, serviceID string, replicas u
 	}
 
 	return &types.SwarmServiceUpdateResponse{Warnings: updateResult.Warnings}, nil
+}
+
+func (s *Service) AuthorizeService(ctx context.Context, serviceID, perm string) error {
+	if authz.ScopeFromContext(ctx, perm).IsUnrestricted() {
+		return nil
+	}
+	serviceResult, err := s.docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceInspectResult, error) {
+		return dockerClient.ServiceInspect(ctx, serviceID, client.ServiceInspectOptions{})
+	})
+	if err != nil {
+		return common.ClassifyDockerError(fmt.Errorf("failed to inspect swarm service: %w", err))
+	}
+	return authorizeService(ctx, perm, serviceResult.Service.Spec)
+}
+
+func authorizeService(ctx context.Context, perm string, spec swarm.ServiceSpec) error {
+	return recordServiceDenial(ctx, perm, authz.CheckResource(ctx, perm, authz.PermSwarmRead, serviceSpecAttributes(spec)))
+}
+
+func recordServiceDenial(ctx context.Context, perm string, err error) error {
+	if errors.Is(err, authz.ErrResourceForbidden) {
+		middleware.RecordDenial(ctx, types.AuthzDenial{
+			Permission:    perm,
+			EnvironmentID: authz.RequestEnvironmentFromContext(ctx),
+			RemoteAddr:    middleware.GetRemoteAddrFromContext(ctx),
+		})
+	}
+	return err
+}
+
+func serviceSpecAttributes(spec swarm.ServiceSpec) authz.ResourceAttributes {
+	return authz.ResourceAttributes{
+		Names:   []string{spec.Name},
+		Labels:  spec.Labels,
+		Project: spec.Labels[types.SwarmStackNamespaceLabel],
+	}
 }
 
 func (s *Service) summarizeServices(ctx context.Context, services []swarm.Service) ([]types.SwarmServiceSummary, error) {

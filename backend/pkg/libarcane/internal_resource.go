@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"strings"
 
@@ -23,10 +24,21 @@ const (
 	InternalResourceLabel = "com.getarcaneapp.internal.resource"
 	// HiddenResourceLabel hides containers from container lists and dashboard counts.
 	HiddenResourceLabel = "com.getarcaneapp.arcane.hidden"
+	LabelOwner          = "com.getarcaneapp.arcane.owner"
 	// LabelArcaneUpgrader marks the short-lived helper container that performs an
 	// Arcane self-upgrade. Container lookups must skip it despite its Arcane label.
 	LabelArcaneUpgrader = "com.getarcaneapp.arcane.upgrader"
 )
+
+func WithOwnerLabel(source map[string]string, ownerID string) map[string]string {
+	owned := make(map[string]string, len(source)+1)
+	maps.Copy(owned, source)
+	delete(owned, LabelOwner)
+	if ownerID != "" {
+		owned[LabelOwner] = ownerID
+	}
+	return owned
+}
 
 // FindArcaneContainerIDByLabel locates Arcane's own container through the
 // Arcane label. Running containers win; otherwise the first match is returned.

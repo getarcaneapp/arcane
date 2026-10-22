@@ -2,9 +2,7 @@ package container
 
 import (
 	"context"
-	"fmt"
 	"io"
-	"maps"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -20,7 +18,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/container/children/stats"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
@@ -157,7 +154,7 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 		return &ListContainersOutput{Body: body}, nil
 	}
 
-	if ps, _ := middleware.PermissionsFromContext(ctx); stats.ContainerResourceSortPermissionDenied(ps, input.EnvironmentID, input.Sort) {
+	if ps, _ := authz.PermissionsFromContext(ctx); stats.ContainerResourceSortPermissionDenied(ps, input.EnvironmentID, input.Sort) {
 		return nil, huma.Error403Forbidden("permission denied: " + authz.PermContainersRead)
 	}
 
@@ -179,28 +176,15 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 }
 
 func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *GetContainerStatusCountsInput) (*handlerutil.Out[types.ContainerStatusCounts], error) {
-	containers, _, _, _, err := h.dockerService.GetAllContainers(ctx)
+	counts, err := h.containerService.GetStatusCounts(ctx, input.IncludeInternal, input.IncludeHidden)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get container counts: " + err.Error())
-	}
-
-	containers = FilterExcludedContainers(containers, input.IncludeInternal, input.IncludeHidden)
-
-	running := 0
-	for _, c := range containers {
-		if c.State == "running" {
-			running++
-		}
 	}
 
 	return &handlerutil.Out[types.ContainerStatusCounts]{
 		Body: types.ApiResponse[types.ContainerStatusCounts]{
 			Success: true,
-			Data: types.ContainerStatusCounts{
-				RunningContainers: running,
-				StoppedContainers: len(containers) - running,
-				TotalContainers:   len(containers),
-			},
+			Data:    counts,
 		},
 	}, nil
 }
@@ -255,9 +239,6 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 		}
 	}
 
-	createLabels := map[string]string{"com.arcane.created": "true"}
-	maps.Copy(createLabels, input.Body.Labels)
-
 	containerJSON, err := h.containerService.CreateContainer(
 		ctx,
 		&dockercontainer.Config{
@@ -268,7 +249,7 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 			User:            input.Body.User,
 			Env:             kit.Ternary(len(input.Body.Environment) > 0, input.Body.Environment, input.Body.Env),
 			ExposedPorts:    exposedPorts,
-			Labels:          createLabels,
+			Labels:          input.Body.Labels,
 			Healthcheck:     healthConfigFromCreate(input.Body.Healthcheck),
 			Hostname:        input.Body.Hostname,
 			Domainname:      input.Body.Domainname,
@@ -369,6 +350,12 @@ func (h *ContainerHandler) DownloadContainerLogs(ctx context.Context, input *Get
 }
 
 func (h *ContainerHandler) GenerateCompose(ctx context.Context, input *GenerateComposeInput) (*handlerutil.Out[types.ContainerGenerateComposeResponse], error) {
+	for _, containerID := range input.Body.ContainerIDs {
+		if _, err := h.containerService.AuthorizeContainer(ctx, containerID, authz.PermContainersRead); err != nil {
+			apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+			return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to generate compose file: "+apiErr.Message)
+		}
+	}
 	composeContent, err := projects.ComposeGenerate(ctx, h.dockerService.DockerHost(), "", input.Body.ContainerIDs)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to generate compose file: " + err.Error())
@@ -501,7 +488,8 @@ func (h *ContainerHandler) CommitContainer(ctx context.Context, input *CommitCon
 
 	out, err := h.containerService.CommitContainer(ctx, input.ContainerID, input.Body, *user)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to commit container: %v", err))
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "failed to commit container: "+apiErr.Message)
 	}
 
 	return &handlerutil.Out[types.ContainerCommitResult]{
@@ -732,6 +720,11 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 }
 
 func (h *ContainerHandler) SetAutoUpdate(ctx context.Context, input *SetAutoUpdateInput) (*handlerutil.Out[types.MessageResponse], error) {
+	if _, authErr := h.containerService.AuthorizeContainer(ctx, input.ContainerID, authz.PermContainersAutoUpdate); authErr != nil {
+		apiErr := common.ToAPIError(common.ClassifyDockerError(authErr))
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to update auto-update setting: "+apiErr.Message)
+	}
+
 	// Resolve container name from ID
 	containerName, err := h.containerService.GetContainerNameByID(ctx, input.ContainerID)
 	if err != nil {

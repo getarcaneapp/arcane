@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json/v2"
+	"fmt"
 	"io"
+	"math/rand/v2"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/coder/websocket"
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
@@ -320,23 +324,16 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 		catalog        *string
 		clientSupplied string
 		wantHeader     string
-		userID         string
-		userName       string
-		wantInitiator  string
 	}{
-		{name: "forwards the caller's preference", catalog: new("dashboard-icons"), wantHeader: "dashboard-icons", userID: "user-1", userName: "operator", wantInitiator: "user-1"},
+		{name: "forwards the caller's preference", catalog: new("dashboard-icons"), wantHeader: "dashboard-icons"},
 		{name: "strips a client-supplied header when the caller has no preference", clientSupplied: "dashboard-icons", wantHeader: ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var forwarded string
-			var forwardedInitiator string
-			var forwardedName string
 			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				forwarded = r.Header.Get(HeaderIconCatalog)
-				forwardedInitiator = r.Header.Get(HeaderUpdateInitiatorID)
-				forwardedName = r.Header.Get(HeaderUpdateInitiatorName)
 				w.WriteHeader(http.StatusOK)
 			}))
 			defer backend.Close()
@@ -351,8 +348,6 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 				authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
 					_, _ = ctx, c
 					u := &types.Actor{}
-					u.ID = tt.userID
-					u.Username = tt.userName
 					u.Preferences.IconCatalog = tt.catalog
 					return authz.SudoPermissionSet(), u, true
 				},
@@ -367,8 +362,6 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 			})
 
 			req := httptest.NewRequest(http.MethodPost, "/api/environments/env-remote/containers/container-1/update", http.NoBody)
-			req.Header.Set(HeaderUpdateInitiatorID, "spoofed")
-			req.Header.Set(HeaderUpdateInitiatorName, "spoofed")
 			if tt.clientSupplied != "" {
 				req.Header.Set(HeaderIconCatalog, tt.clientSupplied)
 			}
@@ -377,10 +370,160 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 
 			require.Equal(t, http.StatusOK, recorder.Code)
 			assert.Equal(t, tt.wantHeader, forwarded)
-			assert.Equal(t, tt.wantInitiator, forwardedInitiator)
-			assert.Equal(t, tt.userName, forwardedName)
 		})
 	}
+}
+
+type recordedDenials struct {
+	denials []types.AuthzDenial
+}
+
+func (r *recordedDenials) RecordDenial(_ context.Context, denial types.AuthzDenial) {
+	r.denials = append(r.denials, denial)
+}
+
+func newForwardingEnvironmentMiddleware(backendURL string, perms *authz.PermissionSet) *EnvironmentMiddleware {
+	return &EnvironmentMiddleware{
+		localID:   "0",
+		paramName: "id",
+		resolver: func(ctx context.Context, id string) (string, *string, bool, error) {
+			_, _ = ctx, id
+			return backendURL, nil, true, nil
+		},
+		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
+			_, _ = ctx, c
+			return perms, &types.Actor{ID: "user-1", Username: "operator"}, true
+		},
+		httpClient: &http.Client{},
+		registry:   edge.NewTunnelRegistry(),
+		checkOrigin: func(*http.Request) bool {
+			return true
+		},
+	}
+}
+
+func TestEnvironmentMiddleware_ForwardsServerResolvedAuthzHeader(t *testing.T) {
+	web := types.ResourceSelector{Labels: map[string]string{"team": "web"}}
+	scoped := authz.NewPermissionSet()
+	scoped.AddEnv("env-remote", authz.PermContainersList)
+	scoped.AddScopedEnv("env-remote", web, authz.PermContainersStop)
+	admin := authz.NewPermissionSet()
+	admin.AddGlobal(authz.PermAll)
+
+	tests := []struct {
+		name      string
+		perms     *authz.PermissionSet
+		wantAdmin bool
+	}{
+		{name: "scoped user", perms: scoped},
+		{name: "admin", perms: admin, wantAdmin: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var forwarded string
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				forwarded = r.Header.Get(authz.HeaderAuthz)
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer backend.Close()
+
+			router := echo.New()
+			api := attachMiddleware(router, newForwardingEnvironmentMiddleware(backend.URL, tt.perms))
+			api.GET("/environments/:id/containers", func(c *echo.Context) error {
+				return c.JSON(http.StatusOK, map[string]any{"success": true})
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/api/environments/env-remote/containers", http.NoBody)
+			req.Header.Set(authz.HeaderAuthz, "spoofed")
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, req)
+
+			require.Equal(t, http.StatusOK, recorder.Code)
+			require.NotEqual(t, "spoofed", forwarded)
+			decoded, actor, err := authz.DecodeForwardedAuthz(forwarded, types.LocalDockerEnvironmentID)
+			require.NoError(t, err)
+			assert.Equal(t, "user-1", actor.ID)
+			assert.False(t, decoded.Sudo)
+			assert.Equal(t, tt.wantAdmin, decoded.IsGlobalAdmin())
+			assert.True(t, decoded.Allows(authz.PermContainersList, types.LocalDockerEnvironmentID))
+			assert.Equal(t, tt.wantAdmin, decoded.Scope(authz.PermContainersStop, types.LocalDockerEnvironmentID).IsUnrestricted())
+		})
+	}
+}
+
+func TestEnvironmentMiddleware_ForwardsAuthzHeaderOnWebSocket(t *testing.T) {
+	forwarded := make(chan string, 1)
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		forwarded <- r.Header.Get(authz.HeaderAuthz)
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer backend.Close()
+
+	perms := authz.NewPermissionSet()
+	perms.AddEnv("env-remote", authz.PermContainersLogs)
+	router := echo.New()
+	api := attachMiddleware(router, newForwardingEnvironmentMiddleware(backend.URL, perms))
+	api.GET("/environments/:id/ws/containers/:containerId/logs", func(c *echo.Context) error {
+		return c.NoContent(http.StatusOK)
+	})
+	manager := httptest.NewServer(router)
+	defer manager.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	conn, resp, err := websocket.Dial(ctx, edge.HTTPToWebSocketURL(manager.URL)+"/api/environments/env-remote/ws/containers/c1/logs", &websocket.DialOptions{
+		HTTPHeader: http.Header{authz.HeaderAuthz: []string{"spoofed"}},
+	})
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	require.NoError(t, err)
+	defer func() { _ = conn.CloseNow() }()
+
+	select {
+	case raw := <-forwarded:
+		decoded, actor, decodeErr := authz.DecodeForwardedAuthz(raw, types.LocalDockerEnvironmentID)
+		require.NoError(t, decodeErr)
+		assert.Equal(t, "user-1", actor.ID)
+		assert.True(t, decoded.Allows(authz.PermContainersLogs, types.LocalDockerEnvironmentID))
+	case <-ctx.Done():
+		t.Fatal("websocket upgrade never reached the remote environment")
+	}
+}
+
+func TestEnvironmentMiddleware_RejectsOversizedForwardedAuthz(t *testing.T) {
+	backendHit := false
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		backendHit = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	r := rand.New(rand.NewPCG(1, 2))
+	names := make([]string, 1200)
+	for i := range names {
+		names[i] = fmt.Sprintf("%016x%016x", r.Uint64(), r.Uint64())
+	}
+	perms := authz.NewPermissionSet()
+	perms.AddScopedEnv("env-remote", types.ResourceSelector{Names: names}, authz.PermContainersList)
+
+	router := echo.New()
+	api := attachMiddleware(router, newForwardingEnvironmentMiddleware(backend.URL, perms))
+	api.GET("/environments/:id/containers", func(c *echo.Context) error {
+		return c.JSON(http.StatusOK, map[string]any{"success": true})
+	})
+
+	denials := &recordedDenials{}
+	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-remote/containers", http.NoBody)
+	req = req.WithContext(WithDenialRecorder(req.Context(), denials))
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	assert.Equal(t, http.StatusRequestHeaderFieldsTooLarge, recorder.Code)
+	assert.False(t, backendHit)
+	require.Len(t, denials.denials, 1)
+	assert.Equal(t, "env-remote", denials.denials[0].EnvironmentID)
 }
 
 func TestIsManagementPath_SwarmIsMethodAware(t *testing.T) {

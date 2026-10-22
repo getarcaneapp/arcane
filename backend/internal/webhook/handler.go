@@ -7,7 +7,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
 )
@@ -58,7 +58,7 @@ func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhook
 		actor = *currentUser
 	}
 
-	callerPerms, _ := middleware.PermissionsFromContext(ctx)
+	callerPerms, _ := authz.PermissionsFromContext(ctx)
 	wh, rawToken, err := h.webhookService.CreateWebhook(
 		ctx,
 		input.Body.Name,
@@ -102,7 +102,7 @@ func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhook
 		actor = *currentUser
 	}
 
-	callerPerms, _ := middleware.PermissionsFromContext(ctx)
+	callerPerms, _ := authz.PermissionsFromContext(ctx)
 	wh, err := h.webhookService.UpdateWebhook(ctx, input.WebhookID, input.EnvironmentID, input.Body, submitted, actor, callerPerms)
 	if err != nil {
 		apiErr := common.ToAPIError(err)

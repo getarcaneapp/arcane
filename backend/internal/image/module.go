@@ -49,7 +49,7 @@ func New(
 		build:               buildService,
 		activity:            activityService,
 		upload:              uploadService,
-		attestationsHandler: attestations.NewHandler(attestations.NewService(service.dockerService, service.registryService.GetRegistryAuthForImage)),
+		attestationsHandler: attestations.NewHandler(attestations.NewService(service.dockerService, service.registryService.GetRegistryAuthForImage, authorizeImage)),
 	}
 }
 

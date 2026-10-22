@@ -5,6 +5,7 @@
 	import { AlertIcon, CheckIcon, CloseIcon, EventsIcon, InfoIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { eventService } from '#lib/services/event-service.js';
 	import { STREAM_CHANNEL_EVENTS } from '#lib/services/stream-service.js';
@@ -133,7 +134,7 @@
 		});
 	}
 
-	const canManageEvents = $derived(hasPermission('events:delete'));
+	const canManageEvents = $derived(hasPermission(PERMISSIONS.EVENTS_DELETE));
 
 	const actionButtons: ActionButton[] = $derived([
 		...(selectedIds.length > 0 && canManageEvents

@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from '../fixtures/test.fixture';
 import { setCodeMirrorValue } from '../utils/playwright.util';
 import { removeApiResource, readApiData } from '../utils/fetch.util';
+import { patchSessionBootstrap, withEnvironments } from '../utils/session.util';
 import { openRowActionsMenu } from '../utils/table-actions.util';
 import { type Activity } from '../../frontend/src/lib/types/activity.type';
 
@@ -49,39 +50,38 @@ test.describe('Workspace restore', () => {
 	}
 
 	async function mockAppShell(page: Page) {
-		const user = {
+		await page.addInitScript(() => localStorage.removeItem('selectedEnvironmentId'));
+		const adminUser = {
 			id: 'backup-picker-admin',
 			username: 'arcane',
-			roleAssignments: [],
+			bindings: [],
+			groups: [],
 			permissionsByEnv: { global: ['*'] },
+			scopedPermissionsByEnv: {},
 			isGlobalAdmin: true,
 			createdAt: new Date().toISOString()
 		};
-		const environments = {
-			success: true,
-			data: [
-				{ id: '0', name: 'Local', apiUrl: '', status: 'online', enabled: true, isEdge: false }
-			],
-			pagination: { currentPage: 1, totalPages: 1, totalItems: 1, itemsPerPage: 1000 }
-		};
-		const version = { currentVersion: 'e2e', displayVersion: 'e2e', enabledFeatures: [] };
-		await page.addInitScript(() => localStorage.removeItem('selectedEnvironmentId'));
-		await page.route(/\/api\/auth\/bootstrap(?:\?.*)?$/, async (route) => {
-			const bootstrap = await route.fetch();
-			const body = await bootstrap.json();
-			await route.fulfill({
-				response: bootstrap,
-				json: { ...body, data: { ...body.data, user, environments, version } }
-			});
-		});
+		const environments = [
+			{ id: '0', name: 'Local', apiUrl: '', status: 'online', enabled: true, isEdge: false }
+		];
+		await patchSessionBootstrap(page, (bootstrap) => ({
+			...withEnvironments(bootstrap, environments),
+			user: adminUser
+		}));
 		await page.route(/\/api\/auth\/me$/, async (route) => {
-			await route.fulfill({ json: response(user) });
+			await route.fulfill({ json: response(adminUser) });
 		});
 		await page.route(/\/api\/auth\/autologin$/, async (route) => {
 			await route.fulfill({ json: response({ enabled: false }) });
 		});
 		await page.route(/\/api\/environments(?:\?.*)?$/, async (route) => {
-			await route.fulfill({ json: environments });
+			await route.fulfill({
+				json: {
+					success: true,
+					data: environments,
+					pagination: { currentPage: 1, totalPages: 1, totalItems: 1, itemsPerPage: 1000 }
+				}
+			});
 		});
 		await page.route(/\/api\/environments\/0\/settings$/, async (route) => {
 			await route.fulfill({ json: { settings: [], runtime: {}, readOnly: false } });
@@ -102,7 +102,9 @@ test.describe('Workspace restore', () => {
 			await route.fulfill({ status: 503, json: { message: 'not needed for global admin' } });
 		});
 		await page.route(/\/api\/app\/version$/, async (route) => {
-			await route.fulfill({ json: version });
+			await route.fulfill({
+				json: { currentVersion: 'e2e', displayVersion: 'e2e', enabledFeatures: [] }
+			});
 		});
 		await page.route(/\/api\/stream(?:\?.*)?$/, async (route) => {
 			await route.fulfill({ contentType: 'text/event-stream', body: '' });

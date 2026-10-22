@@ -1,4 +1,4 @@
-import type { User } from '#lib/types/auth.js';
+import type { RoleBindingFilter, User } from '#lib/types/auth.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 
 function stableSerialize(value: unknown): string {
@@ -65,6 +65,23 @@ export const queryKeys = {
 		list: (options: SearchPaginationSortRequest) => ['roles', 'list', stableSerialize(options)] as const,
 		detail: (roleId: string) => ['roles', 'detail', roleId] as const,
 		permissionsManifest: () => ['roles', 'permissions-manifest'] as const
+	},
+	bindings: {
+		all: ['bindings'] as const,
+		list: (filter: RoleBindingFilter, options: SearchPaginationSortRequest) =>
+			['bindings', 'list', stableSerialize(filter), stableSerialize(options)] as const,
+		effectiveAccess: (userId: string) => ['bindings', 'effective-access', userId] as const
+	},
+	groups: {
+		all: ['groups'] as const,
+		list: (options: SearchPaginationSortRequest) => ['groups', 'list', stableSerialize(options)] as const,
+		options: () => ['groups', 'options'] as const,
+		detail: (groupId: string) => ['groups', 'detail', groupId] as const,
+		members: (groupId: string) => ['groups', 'members', groupId] as const
+	},
+	audit: {
+		all: ['audit'] as const,
+		list: (options: SearchPaginationSortRequest) => ['audit', 'list', stableSerialize(options)] as const
 	},
 	users: {
 		all: ['users'] as const,

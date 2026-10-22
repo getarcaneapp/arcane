@@ -18,6 +18,7 @@
 		TrashIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import type { Activity, ActivityGroup } from '#lib/types/activity.type.js';
 	import { cn } from '#lib/utils.js';
@@ -103,7 +104,7 @@
 					{/snippet}
 				</Collapsible.Trigger>
 				{#if cancelable}
-					<IfPermitted perm="activities:cancel">
+					<IfPermitted perm={PERMISSIONS.ACTIVITIES_CANCEL}>
 						<button
 							type="button"
 							onclick={() => confirmCancelActivity(activity.id)}
@@ -220,7 +221,7 @@
 						>
 							{m.activity_completion_toasts_label()}
 						</DropdownMenu.CheckboxItem>
-						<IfPermitted perm="activities:delete">
+						<IfPermitted perm={PERMISSIONS.ACTIVITIES_DELETE}>
 							<DropdownMenu.Separator />
 							<DropdownMenu.Item onclick={clearHistoryInternal} variant="destructive">
 								<TrashIcon class="size-4" aria-hidden="true" />

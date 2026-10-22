@@ -22,6 +22,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 )
 
@@ -1484,4 +1486,33 @@ func TestSettingsServiceEncryptsStoredSensitiveSettingsOnlyOnce(t *testing.T) {
 	var stored SettingVariable
 	require.NoError(t, db.WithContext(ctx).Where("key = ?", "depotToken").First(&stored).Error)
 	require.Equal(t, foreignCiphertext, stored.Value)
+}
+
+func TestSettingsServiceValidateDefaultUserRoleEnforcesDelegation(t *testing.T) {
+	ctx := t.Context()
+	db := setupSettingsTestDB(t)
+	require.NoError(t, db.AutoMigrate(&role.Role{}))
+	require.NoError(t, db.Create([]role.Role{
+		{
+			ID:          "role_template_reader",
+			Name:        "Template Reader",
+			Permissions: database.StringSlice{authz.PermTemplatesRead},
+		},
+		{
+			ID:          "role_user_creator",
+			Name:        "User Creator",
+			Permissions: database.StringSlice{authz.PermTemplatesRead, authz.PermUsersCreate},
+		},
+	}).Error)
+	svc, err := newSettingsServiceForTest(t, ctx, db)
+	require.NoError(t, err)
+	roles := role.NewRoleService(db)
+	caller := &authz.PermissionSet{
+		Global: map[string]struct{}{authz.PermTemplatesRead: {}},
+	}
+
+	require.NoError(t, svc.ValidateDefaultUserRole(ctx, roles, caller, "role_template_reader"))
+	require.ErrorIs(t, svc.ValidateDefaultUserRole(ctx, roles, caller, "role_user_creator"), common.ErrForbidden)
+	require.ErrorIs(t, svc.ValidateDefaultUserRole(ctx, roles, caller, "role_missing"), common.ErrValidation)
+	require.ErrorIs(t, svc.ValidateDefaultUserRole(ctx, roles, caller, authz.BuiltInRoleAdmin), common.ErrValidation)
 }

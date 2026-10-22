@@ -14,6 +14,7 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/upload"
@@ -93,7 +94,8 @@ func (h *Handler) DownloadBackup(ctx context.Context, input *DownloadBackupInput
 	user, _ := userctx.CurrentUserFromContext(ctx)
 	reader, size, err := h.service.DownloadBackup(ctx, input.BackupID, user)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
 	return &huma.StreamResponse{
@@ -125,7 +127,8 @@ func (h *Handler) ListBackups(ctx context.Context, input *ListBackupsInput) (*Li
 
 	backups, paginationResp, err := h.service.List(ctx, input.VolumeName, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
 	warning := h.service.backupMountWarning(ctx)
@@ -150,7 +153,8 @@ func (h *Handler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*
 		return nil, huma.Error409Conflict(err.Error())
 	}
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 	return &handlerutil.Out[types.VolumeBackupEntry]{
 		Body: types.ApiResponse[types.VolumeBackupEntry]{Success: true, Data: entry},
@@ -181,7 +185,8 @@ func (h *Handler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*
 		return nil, huma.Error409Conflict(err.Error())
 	}
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 	return handlerutil.MessageOutput("Backup deleted successfully", activityID), nil
 }
@@ -233,7 +238,8 @@ func (h *Handler) UploadBackup(ctx context.Context, input *UploadBackupInput) (*
 		return nil, huma.Error409Conflict(err.Error())
 	}
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 	uploaded.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 	return &handlerutil.Out[*types.VolumeBackup]{Body: types.ApiResponse[*types.VolumeBackup]{Success: true, Data: uploaded}}, nil

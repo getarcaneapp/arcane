@@ -192,7 +192,7 @@ func (h *AuthHandler) Logout(ctx context.Context, input *LogoutInput) (*LogoutOu
 
 // GetCurrentUser reads the current user from the database. Uses
 // ToUserResponseDto (not the generic struct mapper) so the RBAC fields
-// (RoleAssignments, PermissionsByEnv) are resolved via RoleService.
+// (Bindings, Groups, PermissionsByEnv) are resolved via RoleService.
 func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*handlerutil.Out[types.User], error) {
 	currentUser, err := requireUser(ctx)
 	if err != nil {
@@ -221,7 +221,7 @@ func (h *AuthHandler) GetSessionBootstrap(ctx context.Context, _ *struct{}) (*ha
 	if err != nil {
 		return nil, err
 	}
-	ps, _ := middleware.PermissionsFromContext(ctx)
+	ps, _ := authz.PermissionsFromContext(ctx)
 	bootstrap, err := h.authService.GetSessionBootstrap(ctx, currentUser.ID, ps)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to load session")
@@ -642,6 +642,37 @@ func createAgentSudoUser() *userdomain.User {
 	}
 }
 
+func createForwardedUser(actor types.Actor) *userdomain.User {
+	return &userdomain.User{
+		ID:          cmp.Or(actor.ID, "agent"),
+		Username:    cmp.Or(actor.Username, "agent"),
+		DisplayName: actor.DisplayName,
+		Preferences: actor.Preferences,
+	}
+}
+
+func agentRequestContext(ctx context.Context, rawAuthz string) (context.Context, *userdomain.User, *authz.PermissionSet, error) {
+	if rawAuthz == "" {
+		agentUser := createAgentSudoUser()
+		ps := authz.SudoPermissionSet()
+		return setUserInContext(ctx, agentUser, ps), agentUser, ps, nil
+	}
+	ps, actor, err := authz.DecodeForwardedAuthz(rawAuthz, types.LocalDockerEnvironmentID)
+	if err != nil {
+		return ctx, nil, nil, err
+	}
+	forwardedUser := createForwardedUser(actor)
+	authCtx := setUserInContext(ctx, forwardedUser, ps)
+	if actor.ID != "" {
+		authCtx = utils.WithUpdateInitiator(authCtx, types.ActivityStartedBy{
+			UserID:      actor.ID,
+			Username:    actor.Username,
+			DisplayName: kit.FromPtr(actor.DisplayName),
+		})
+	}
+	return authCtx, forwardedUser, ps, nil
+}
+
 // applyProxiedIconCatalog copies the requesting user's icon catalog
 // preference, forwarded by the manager, onto the synthetic user this request
 // authenticates as. Without it the synthetic user has no preferences and every
@@ -692,7 +723,12 @@ func NewHumaMiddleware(
 			return
 		}
 
-		if newCtx, ok := tryAgentAuth(ctx, cfg, authService.settingsService); ok {
+		if newCtx, ok, err := tryAgentAuth(ctx, cfg, authService.settingsService); ok {
+			if err != nil {
+				slog.WarnContext(ctx.Context(), "Agent auth: rejected forwarded authorization", "path", ctx.URL().Path, "error", err)
+				_ = huma.WriteErr(api, ctx, http.StatusForbidden, "Invalid forwarded authorization")
+				return
+			}
 			next(newCtx)
 			return
 		}
@@ -737,9 +773,9 @@ func NewHumaMiddleware(
 
 // tryAgentAuth authenticates an agent-mode request presenting the
 // agent token as a bootstrap pairing, agent token, or API key header.
-func tryAgentAuth(ctx huma.Context, cfg *config.Config, settingsService *settings.SettingsService) (huma.Context, bool) {
+func tryAgentAuth(ctx huma.Context, cfg *config.Config, settingsService *settings.SettingsService) (huma.Context, bool, error) {
 	if !cfg.AgentMode {
-		return ctx, false
+		return ctx, false, nil
 	}
 	agentToken := settingsService.AgentToken(ctx.Context())
 	bootstrapPairing := strings.HasPrefix(ctx.URL().Path, middleware.AgentPairingPrefix) &&
@@ -747,25 +783,14 @@ func tryAgentAuth(ctx huma.Context, cfg *config.Config, settingsService *setting
 	if !bootstrapPairing &&
 		!AgentTokenMatches(ctx.Header(middleware.HeaderAgentToken), agentToken) &&
 		!AgentTokenMatches(ctx.Header(middleware.HeaderApiKey), agentToken) {
-		return ctx, false
+		return ctx, false, nil
 	}
-	authenticatedUser := createAgentSudoUser()
+	authCtx, authenticatedUser, _, err := agentRequestContext(ctx.Context(), kit.Ternary(bootstrapPairing, "", ctx.Header(authz.HeaderAuthz)))
+	if err != nil {
+		return ctx, true, err
+	}
 	applyProxiedIconCatalog(ctx, authenticatedUser)
-	authCtx := setUserInContext(ctx.Context(), authenticatedUser, authz.SudoPermissionSet())
-	updatePath := strings.Contains(ctx.URL().Path, "/containers/") && strings.HasSuffix(ctx.URL().Path, "/update")
-	if ctx.Method() == http.MethodPost && updatePath {
-		if initiatorID := strings.TrimSpace(ctx.Header(middleware.HeaderUpdateInitiatorID)); initiatorID != "" {
-			initiator := types.ActivityStartedBy{
-				UserID:      initiatorID,
-				Username:    strings.TrimSpace(ctx.Header(middleware.HeaderUpdateInitiatorName)),
-				DisplayName: strings.TrimSpace(ctx.Header(middleware.HeaderUpdateInitiatorDisplayName)),
-			}
-			authCtx = utils.WithUpdateInitiator(authCtx, initiator)
-		}
-	}
-	// The agent token path is infrastructure-level and not per-user, so it
-	// gets a sudo PermissionSet that bypasses every check.
-	return huma.WithContext(ctx, authCtx), true
+	return huma.WithContext(ctx, authCtx), true, nil
 }
 
 // handleApiKeyAuth handles the API-key-present branch. Invalid user
@@ -886,13 +911,13 @@ func setUserInContext(ctx context.Context, authenticatedUser *userdomain.User, p
 	}
 	ctx = context.WithValue(ctx, middleware.ContextKeyUserID, authenticatedUser.ID)
 	ctx = context.WithValue(ctx, types.CurrentUserContextKey{}, authenticatedUser)
-	ctx = context.WithValue(ctx, middleware.ContextKeyUserPermissions, ps)
+	ctx = authz.WithPermissions(ctx, ps)
 	return ctx
 }
 
 type AuthOptions struct {
-	AdminRequired   bool
-	SuccessOptional bool
+	RequiredPermission string
+	SuccessOptional    bool
 }
 
 type ApiKeyValidator interface {
@@ -945,15 +970,9 @@ func (m *AuthMiddleware) WithPermissionResolver(resolver PermissionResolver) *Au
 	return &clone
 }
 
-func (m *AuthMiddleware) WithAdminNotRequired() *AuthMiddleware {
+func (m *AuthMiddleware) WithPermission(permission string) *AuthMiddleware {
 	clone := *m
-	clone.options.AdminRequired = false
-	return &clone
-}
-
-func (m *AuthMiddleware) WithAdminRequired() *AuthMiddleware {
-	clone := *m
-	clone.options.AdminRequired = true
+	clone.options.RequiredPermission = permission
 	return &clone
 }
 
@@ -976,35 +995,42 @@ func (m *AuthMiddleware) agentAuth(ctx context.Context, c *echo.Context, next ec
 
 	req := c.Request()
 	agentToken := m.authService.settingsService.AgentToken(ctx)
-	if strings.HasPrefix(req.URL.Path, middleware.AgentPairingPrefix) &&
-		AgentTokenMatches(req.Header.Get(middleware.HeaderAgentBootstrap), agentToken) {
+	bootstrapPairing := strings.HasPrefix(req.URL.Path, middleware.AgentPairingPrefix) &&
+		AgentTokenMatches(req.Header.Get(middleware.HeaderAgentBootstrap), agentToken)
+	if bootstrapPairing {
 		slog.InfoContext(ctx, "Agent auth: bootstrap pairing accepted", "path", req.URL.Path, "method", req.Method)
-		agentSudo(c)
-		return next(c)
 	}
 
-	if AgentTokenMatches(req.Header.Get(middleware.HeaderAgentToken), agentToken) {
-		agentSudo(c)
-		return next(c)
+	if !bootstrapPairing &&
+		!AgentTokenMatches(req.Header.Get(middleware.HeaderAgentToken), agentToken) &&
+		!AgentTokenMatches(req.Header.Get(middleware.HeaderApiKey), agentToken) {
+		slog.WarnContext(
+			ctx, "Agent auth forbidden",
+			"path", req.URL.Path,
+			"method", req.Method,
+			"hasAgentTokenHdr", req.Header.Get(middleware.HeaderAgentToken) != "",
+			"agentTokenConfigSet", agentToken != "",
+		)
+		return c.JSON(http.StatusForbidden, common.APIError{
+			Code:    "FORBIDDEN",
+			Message: "Invalid or missing agent token",
+		})
 	}
 
-	// Check for API key as agent token
-	if AgentTokenMatches(req.Header.Get(middleware.HeaderApiKey), agentToken) {
-		agentSudo(c)
-		return next(c)
+	authCtx, agentUser, ps, err := agentRequestContext(ctx, kit.Ternary(bootstrapPairing, "", req.Header.Get(authz.HeaderAuthz)))
+	if err != nil {
+		slog.WarnContext(ctx, "Agent auth: rejected forwarded authorization", "path", req.URL.Path, "method", req.Method, "error", err)
+		return c.JSON(http.StatusForbidden, common.APIError{
+			Code:    "FORBIDDEN",
+			Message: "Invalid forwarded authorization",
+		})
 	}
-
-	slog.WarnContext(
-		ctx, "Agent auth forbidden",
-		"path", req.URL.Path,
-		"method", req.Method,
-		"hasAgentTokenHdr", req.Header.Get(middleware.HeaderAgentToken) != "",
-		"agentTokenConfigSet", agentToken != "",
-	)
-	return c.JSON(http.StatusForbidden, common.APIError{
-		Code:    "FORBIDDEN",
-		Message: "Invalid or missing agent token",
-	})
+	c.SetRequest(req.WithContext(authCtx))
+	c.Set(string(middleware.ContextKeyUserID), agentUser.ID)
+	c.Set(string(middleware.ContextKeyCurrentUser), agentUser)
+	c.Set(string(middleware.ContextKeyUserPermissions), ps)
+	c.Set(string(middleware.ContextKeyAuthMethod), "agent_token")
+	return next(c)
 }
 
 // AgentTokenMatches compares a presented token against the configured
@@ -1122,11 +1148,14 @@ func (m *AuthMiddleware) apiKeyHeaderAuth(ctx context.Context, c *echo.Context, 
 }
 
 func (m *AuthMiddleware) authorizeAndContinue(c *echo.Context, next echo.HandlerFunc, ps *authz.PermissionSet) error {
-	if m.options.AdminRequired && !ps.IsGlobalAdmin() {
+	if m.options.RequiredPermission != "" && !ps.Allows(m.options.RequiredPermission, "") {
 		return c.JSON(http.StatusForbidden, common.APIError{
 			Code:    "FORBIDDEN",
 			Message: "You don't have permission to access this resource",
 		})
+	}
+	if authenticatedUser, ok := c.Get(string(middleware.ContextKeyCurrentUser)).(*userdomain.User); ok {
+		c.SetRequest(c.Request().WithContext(setUserInContext(c.Request().Context(), authenticatedUser, ps)))
 	}
 	return next(c)
 }
@@ -1157,14 +1186,6 @@ func (m *AuthMiddleware) resolveEnvironmentAccessToken(ctx context.Context, toke
 	}
 
 	return mo.Some(env)
-}
-
-func agentSudo(c *echo.Context) {
-	agentUser := createAgentSudoUser()
-	c.Set(string(middleware.ContextKeyUserID), agentUser.ID)
-	c.Set(string(middleware.ContextKeyCurrentUser), agentUser)
-	c.Set(string(middleware.ContextKeyUserPermissions), authz.SudoPermissionSet())
-	c.Set(string(middleware.ContextKeyAuthMethod), "agent_token")
 }
 
 func environmentScoped(c *echo.Context, env *environment.Environment) *authz.PermissionSet {

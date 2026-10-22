@@ -52,6 +52,7 @@
 	import { RefreshIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { projectService } from '#lib/services/project-service.js';
@@ -124,9 +125,9 @@
 	});
 
 	const envId = $derived(data.envId);
-	const canUpdateProject = $derived(hasPermission('projects:update', envId));
-	const canArchiveProject = $derived(hasPermission('projects:archive', envId));
-	const canViewProjectLogs = $derived(hasPermission('projects:logs', envId));
+	const canUpdateProject = $derived(hasPermission(PERMISSIONS.PROJECTS_UPDATE, envId));
+	const canArchiveProject = $derived(hasPermission(PERMISSIONS.PROJECTS_ARCHIVE, envId));
+	const canViewProjectLogs = $derived(hasPermission(PERMISSIONS.PROJECTS_LOGS, envId));
 	// Project lifecycle permissions are evaluated per-button inside
 	// <ActionButtons/> directly; no need to derive them here.
 

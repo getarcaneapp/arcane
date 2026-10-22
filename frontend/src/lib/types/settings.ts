@@ -82,6 +82,9 @@ export type Settings = {
 	authLocalEnabled: boolean;
 	authSessionTimeout: number;
 	authPasswordPolicy: 'basic' | 'standard' | 'strong';
+	defaultUserRoleId: string;
+	auditRetentionDays: number;
+	auditDenialsEnabled: boolean;
 	toolsImageRegistry: 'ghcr.io' | 'docker.io';
 	updateCheckRegistry: UpdateCheckRegistry;
 	trivyDbRegistry: 'ghcr.io' | 'docker.io';

@@ -13,6 +13,7 @@
 	import { ActivityIcon, ImagesIcon, InspectIcon, ScanIcon, ShieldAlertIcon, ShieldCheckIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
@@ -275,7 +276,7 @@
 			activeActivities = active;
 			// Scan polling follows one environment's overview, so with several shown a finished scan refreshes findings.
 			if (environmentIds.length > 1 && finished.some(([, type]) => type === 'vulnerability_scan')) void refreshAll();
-			else if (finished.length > 0 && environmentIds.some((id) => hasPermission('images:read', id))) void loadPatches();
+			else if (finished.length > 0 && environmentIds.some((id) => hasPermission(PERMISSIONS.IMAGES_READ, id))) void loadPatches();
 		});
 	});
 
@@ -295,7 +296,9 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					// Walk the merged image list in fixed-size pages, up to a total cap.
-					const environments = vulnerabilityEnvironments().filter((env) => hasPermission('vulnerabilities:scan', env.id));
+					const environments = vulnerabilityEnvironments().filter((env) =>
+						hasPermission(PERMISSIONS.VULNERABILITIES_SCAN, env.id)
+					);
 					const fetchImagesPage = (page: number) =>
 						fetchAcrossEnvironments(environments, { pagination: { page, limit: BULK_FETCH_PAGE_SIZE } }, (id, request, config) =>
 							imageService.getImagesForEnvironment(id, request, config)
@@ -408,7 +411,8 @@
 		wasFeatureEnabled = enabled;
 	});
 	const canScanVuln = $derived(
-		vulnerabilityManagementEnabled && vulnerabilityEnvironments().some((env) => hasPermission('vulnerabilities:scan', env.id))
+		vulnerabilityManagementEnabled &&
+			vulnerabilityEnvironments().some((env) => hasPermission(PERMISSIONS.VULNERABILITIES_SCAN, env.id))
 	);
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
@@ -446,7 +450,7 @@
 			icon={ImagesIcon}
 			title={m.security_no_images_to_scan()}
 			description={m.security_no_images_description()}
-			actionLabel={hasPermission('images:pull', currentEnvId) ? m.images_pull_image() : undefined}
+			actionLabel={hasPermission(PERMISSIONS.IMAGES_PULL, currentEnvId) ? m.images_pull_image() : undefined}
 			actionHref="/images"
 		/>
 	{:else if overview?.drivers.imagesScanned === 0}

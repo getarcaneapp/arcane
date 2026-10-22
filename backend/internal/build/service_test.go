@@ -29,7 +29,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/gitutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	git "github.com/getarcaneapp/arcane/backend/v3/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
@@ -472,6 +473,48 @@ func TestBuildService_ListImageBuilds_OmitsOutputColumn(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, detail.Output)
 	assert.Equal(t, output, *detail.Output)
+}
+
+func TestBuildService_ImageBuildHistory_RespectsImageScope(t *testing.T) {
+	db, err := setupBuildHistoryTestDB()
+	require.NoError(t, err)
+	svc := &BuildService{db: db}
+
+	for _, seed := range []struct {
+		id   string
+		tags database.StringSlice
+	}{
+		{id: "build-team", tags: database.StringSlice{"team/app:1"}},
+		{id: "build-other", tags: database.StringSlice{"other/app:1"}},
+		{id: "build-untagged"},
+	} {
+		require.NoError(t, db.WithContext(t.Context()).Create(&ImageBuild{
+			ID:            seed.id,
+			EnvironmentID: "0",
+			Status:        ImageBuildStatusSuccess,
+			ContextDir:    "/ctx",
+			Tags:          seed.tags,
+		}).Error)
+	}
+
+	ps := authz.NewPermissionSet()
+	ps.AddScopedEnv("0", types.ResourceSelector{Names: []string{"team/*"}}, authz.PermImagesList, authz.PermImagesRead)
+	ctx := authz.WithRequestEnvironment(authz.WithPermissions(t.Context(), ps), "0")
+
+	records, page, err := svc.ListImageBuildsByEnvironmentPaginated(ctx, "0", pagination.QueryParams{
+		Params: pagination.Params{Limit: 10},
+	})
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.Equal(t, "build-team", records[0].ID)
+	assert.EqualValues(t, 1, page.TotalItems)
+
+	_, err = svc.GetImageBuildByID(ctx, "0", "build-team")
+	require.NoError(t, err)
+	_, err = svc.GetImageBuildByID(ctx, "0", "build-other")
+	require.ErrorIs(t, err, authz.ErrResourceOutOfScope)
+	_, err = svc.GetImageBuildByID(ctx, "0", "build-untagged")
+	require.ErrorIs(t, err, authz.ErrResourceOutOfScope)
 }
 
 func TestBuildService_PruneHistory_DeletesOnlyOldTerminalBuilds(t *testing.T) {

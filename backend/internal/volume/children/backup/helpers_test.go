@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -23,6 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/podman"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 )
 
 func TestResolveBackupStorageMountFromMounts(t *testing.T) {
@@ -186,6 +188,10 @@ func setupVolumeBackupLifecycleTest(t *testing.T, handler http.Handler) *Service
 		Docker:         dockerService,
 		StopContainer:  containerService.StopContainer,
 		StartContainer: containerService.StartContainer,
+		AuthorizeContainer: func(ctx context.Context, containerID, perm string) error {
+			_, authorizeErr := containerService.AuthorizeContainer(ctx, containerID, perm)
+			return authorizeErr
+		},
 	})
 }
 
@@ -227,6 +233,40 @@ func TestVolumeBackupContainerLifecycleStopsAndRestartsOnlyRunningContainersUsin
 	require.NoError(t, err)
 	require.Empty(t, remaining)
 	require.Equal(t, []string{"stop:uses-volume", "start:uses-volume"}, operations)
+}
+
+func TestVolumeBackupContainerLifecycleRefusesWithoutStartPermission(t *testing.T) {
+	var mu sync.Mutex
+	var operations []string
+	serverHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+				{ID: "uses-volume", Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}}},
+			}))
+		case strings.HasSuffix(r.URL.Path, "/containers/uses-volume/json"):
+			assert.NoError(t, json.NewEncoder(w).Encode(container.InspectResponse{
+				ID:     "uses-volume",
+				Name:   "/uses-volume",
+				Config: &container.Config{},
+			}))
+		default:
+			mu.Lock()
+			operations = append(operations, r.URL.Path)
+			mu.Unlock()
+			http.NotFound(w, r)
+		}
+	})
+
+	service := setupVolumeBackupLifecycleTest(t, serverHandler)
+	permissions := authz.NewPermissionSet()
+	permissions.AddGlobal(authz.PermContainersStop)
+	ctx := authz.WithPermissions(t.Context(), permissions)
+	stopped, err := service.stopRunningContainersForBackup(ctx, "app-data", types.Actor{ID: "user-1", Username: "tester"}, false)
+	require.ErrorIs(t, err, authz.ErrResourceOutOfScope)
+	require.Empty(t, stopped)
+	require.Empty(t, operations)
 }
 
 func TestVolumeBackupContainerLifecycleRollsBackStoppedContainersOnStopFailure(t *testing.T) {

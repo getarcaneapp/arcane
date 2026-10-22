@@ -4,6 +4,7 @@
 	import GitRepositoryFormSheet from '#lib/components/sheets/git-repository-sheet.svelte';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { gitRepositoryService } from '#lib/services/git-repository-service.js';
 	import type { GitRepository, GitRepositoryCreate, GitRepositoryUpdate } from '#lib/types/automation.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -98,7 +99,7 @@
 		}
 	}
 
-	const canCreateRepository = $derived(hasPermission('git-repositories:create'));
+	const canCreateRepository = $derived(hasPermission(PERMISSIONS.GIT_REPOSITORIES_CREATE));
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];

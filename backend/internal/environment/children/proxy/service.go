@@ -22,11 +22,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
 )
 
 // Service sends requests to remote environment agents over HTTP or edge
@@ -132,7 +134,7 @@ func (s *Service) Execute(
 ) (*remenv.Response, error) {
 	// Forward the activity batch ID so bulk actions proxied to a remote
 	// environment group the same way they do locally.
-	requestHeaders := make(map[string]string, 3)
+	requestHeaders := make(map[string]string, 4)
 	if batchID := utils.ActivityBatchIDFromContext(ctx); batchID != "" {
 		requestHeaders[middleware.HeaderActivityBatchID] = batchID
 	}
@@ -140,6 +142,14 @@ func (s *Service) Execute(
 		requestHeaders["Content-Type"] = "application/json"
 	}
 	remenv.ApplyAgentTokenHeaderMap(requestHeaders, target.accessToken)
+	if ps, _ := authz.PermissionsFromContext(ctx); ps != nil && !ps.Sudo {
+		actor, _ := userctx.CurrentUserFromContext(ctx)
+		authzHeader, err := authz.EncodeForwardedAuthz(ps, target.id, kit.FromPtr(actor))
+		if err != nil {
+			return nil, fmt.Errorf("failed to forward permissions to environment %s: %w", target.name, err)
+		}
+		requestHeaders[authz.HeaderAuthz] = authzHeader
+	}
 
 	resp, err := s.client.Do(ctx, remenv.Request{
 		EnvironmentID: target.id,
@@ -346,7 +356,7 @@ func (s *Service) fanOutSyncToEnvironment[Model, Item, Request any](
 
 	slog.InfoContext(ctx, "Starting sync to environment", "kind", kind, "environmentId", target.id, "environmentName", target.name, "apiUrl", target.targetURL)
 
-	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	reqCtx, cancel := context.WithTimeout(authz.WithPermissions(ctx, authz.SudoPermissionSet()), 30*time.Second)
 	defer cancel()
 
 	slog.InfoContext(ctx, "Sending sync request to agent", "kind", kind, "url", target.targetURL+path, "count", len(syncItems), "isEdge", target.isEdge)

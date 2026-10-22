@@ -24,6 +24,7 @@
 	} from '#lib/icons/index.js';
 	import { ResourceDetailLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { templateService } from '#lib/services/template-service.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -157,7 +158,7 @@
 		return data.allTemplates.find((t) => !t.isRemote && t.metadata?.remoteUrl === template.metadata?.remoteUrl);
 	});
 
-	const canDownload = $derived(template.isRemote && !localVersionOfRemote && hasPermission('templates:create'));
+	const canDownload = $derived(template.isRemote && !localVersionOfRemote && hasPermission(PERMISSIONS.TEMPLATES_CREATE));
 
 	async function handleDownload() {
 		if (status.isDownloading || !canDownload) return;
@@ -312,7 +313,7 @@
 					{/snippet}
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="end">
-					<IfPermitted perm="projects:create">
+					<IfPermitted perm={PERMISSIONS.PROJECTS_CREATE}>
 						<DropdownMenu.Item onclick={() => goto(`/projects/new?templateId=${template.id}`)}>
 							<MoveToFolderIcon class="size-4" />
 							{m.compose_create_project()}

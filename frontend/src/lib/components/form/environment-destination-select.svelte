@@ -9,6 +9,7 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { ArrowDownIcon, EdgeConnectionIcon, EnvironmentsIcon, RemoteEnvironmentIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import type { Permission } from '#lib/permissions.generated.js';
 	import { environmentColor } from '#lib/stores/environment-colors.store.svelte.js';
 	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -24,7 +25,7 @@
 		size = 'default'
 	}: {
 		value?: string;
-		permission?: string;
+		permission?: Permission;
 		environments?: EnvironmentRef[];
 		variant?: 'toolbar' | 'field';
 		size?: 'sm' | 'default';

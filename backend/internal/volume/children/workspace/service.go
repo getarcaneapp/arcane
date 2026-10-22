@@ -36,6 +36,7 @@ import (
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 	acfsutils "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/acfs"
@@ -47,6 +48,7 @@ type Dependencies struct {
 	Docker                *dockerInternal.DockerClientService
 	Events                *event.EventService
 	Locks                 *utils.KeyedMutex
+	Authorize             func(ctx context.Context, volumeName, perm string) error
 	AcquireHelper         func(ctx context.Context, volumeName string) (string, func(), error)
 	RequireACFS           func(ctx context.Context, volumeName, containerID string) error
 	Exec                  func(ctx context.Context, containerID, execUser string, cmd []string) (string, string, error)
@@ -72,6 +74,9 @@ func (s *Service) MaxFileSizeBytes(ctx context.Context) int64 {
 }
 
 func (s *Service) GetVolumeWorkspace(ctx context.Context, volumeName string) (*types.Workspace, error) {
+	if err := s.deps.Authorize(ctx, volumeName, authz.PermVolumesRead); err != nil {
+		return nil, err
+	}
 	defer s.deps.Locks.RLock(volumeName)()
 
 	totalStartedAt := time.Now()
@@ -170,6 +175,9 @@ func (s *Service) readVolumeWorkspaceFromContainer(ctx context.Context, containe
 }
 
 func (s *Service) GetVolumeWorkspaceFile(ctx context.Context, volumeName, relativePath string) (*types.WorkspaceFileContent, error) {
+	if err := s.deps.Authorize(ctx, volumeName, authz.PermVolumesRead); err != nil {
+		return nil, err
+	}
 	defer s.deps.Locks.RLock(volumeName)()
 
 	if err := s.validateVolumeHelperSupport(ctx, volumeName); err != nil {
@@ -238,6 +246,9 @@ func (s *Service) GetVolumeWorkspaceFile(ctx context.Context, volumeName, relati
 }
 
 func (s *Service) DownloadVolumeWorkspaceFile(ctx context.Context, volumeName, relativePath string) (io.ReadCloser, int64, error) {
+	if err := s.deps.Authorize(ctx, volumeName, authz.PermVolumesRead); err != nil {
+		return nil, 0, err
+	}
 	unlock := s.deps.Locks.RLock(volumeName)
 	if err := s.validateVolumeHelperSupport(ctx, volumeName); err != nil {
 		unlock()
@@ -469,6 +480,12 @@ func (s *Service) UpdateVolumeWorkspace(
 
 	if err := workspacepkg.ValidateUpdateManifest(manifest.FileTreeRevision, len(manifest.FileChanges), 500); err != nil {
 		return nil, common.Classify(common.ErrVolumeWorkspaceBadRequest, err)
+	}
+	required, _ := authz.VolumeWorkspaceRequiredPermissions(manifest.FileChanges)
+	for _, perm := range append([]string{authz.PermVolumesRead}, required...) {
+		if err := s.deps.Authorize(ctx, volumeName, perm); err != nil {
+			return nil, err
+		}
 	}
 	uploadReferences := make([]workspacepkg.UploadReference, 0, len(manifest.FileChanges))
 	for _, change := range manifest.FileChanges {

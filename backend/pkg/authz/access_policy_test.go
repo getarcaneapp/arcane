@@ -58,8 +58,8 @@ func TestAccessSurfaceRegistryDefinesSettingsCustomizeAndLandingSemantics(t *tes
 	require.Equal(t, authz.AccessSurfaceKindRoute, oidcRoleMappings.Kind)
 	require.Empty(t, oidcRoleMappings.URL)
 	require.Equal(t, authz.AccessScopeModeGlobalOnly, oidcRoleMappings.ScopeMode)
-	require.Equal(t, authz.AccessMatchModeAllOf, oidcRoleMappings.MatchMode)
-	require.ElementsMatch(t, authz.AllPermissions(), oidcRoleMappings.Permissions)
+	require.Equal(t, authz.AccessMatchModeAnyOf, oidcRoleMappings.MatchMode)
+	require.ElementsMatch(t, []string{authz.PermOidcMappingsList}, oidcRoleMappings.Permissions)
 
 	settingsLanding := requireAccessSurfaceInternal(t, "landing.settings")
 	require.Equal(t, authz.AccessSurfaceKindLanding, settingsLanding.Kind)
@@ -68,6 +68,20 @@ func TestAccessSurfaceRegistryDefinesSettingsCustomizeAndLandingSemantics(t *tes
 	require.Contains(t, settingsLanding.Children, "settings.category.webhooks")
 	require.Contains(t, settingsLanding.Children, "settings.category.apikeys")
 	require.Contains(t, settingsLanding.Children, "settings.category.jobschedule")
+	require.Contains(t, settingsLanding.Children, "settings.category.groups")
+	require.Contains(t, settingsLanding.Children, "settings.category.audit")
+
+	groups := requireAccessSurfaceInternal(t, "settings.category.groups")
+	require.Equal(t, authz.AccessScopeModeGlobalOnly, groups.ScopeMode)
+	require.ElementsMatch(t, []string{authz.PermGroupsList}, groups.Permissions)
+
+	audit := requireAccessSurfaceInternal(t, "settings.category.audit")
+	require.Equal(t, authz.AccessScopeModeGlobalOnly, audit.ScopeMode)
+	require.ElementsMatch(t, []string{authz.PermAuditRead}, audit.Permissions)
+
+	backups := requireAccessSurfaceInternal(t, "settings.category.systembackups")
+	require.Equal(t, authz.AccessScopeModeGlobalOnly, backups.ScopeMode)
+	require.ElementsMatch(t, []string{authz.PermAll}, backups.Permissions)
 
 	dashboard := requireAccessSurfaceInternal(t, "route.dashboard")
 	require.Equal(t, authz.AccessSurfaceKindRoute, dashboard.Kind)
@@ -119,12 +133,14 @@ func TestCanAccessSurfaceEvaluatesScopeModesAndLandingChildren(t *testing.T) {
 	require.False(t, authz.CanAccessSurface(authz.NewPermissionSet(), "route.activities", "env-a"))
 
 	globalAdminPS := authz.NewPermissionSet()
-	globalAdminPS.AddGlobal(authz.AllPermissions()...)
+	globalAdminPS.AddGlobal(authz.PermAll)
 	require.True(t, authz.CanAccessSurface(globalAdminPS, "route.oidc-role-mappings", "env-a"))
 	require.True(t, authz.CanAccessSurface(authz.SudoPermissionSet(), "route.oidc-role-mappings", "env-a"))
 
 	nonAdminPS := authz.NewPermissionSet()
-	nonAdminPS.AddGlobal(authz.BuiltInEditorPermissions()...)
+	editor, ok := authz.BuiltInRole(authz.BuiltInRoleEditor)
+	require.True(t, ok)
+	nonAdminPS.AddGlobal(editor.Permissions...)
 	require.False(t, authz.CanAccessSurface(nonAdminPS, "route.oidc-role-mappings", "env-a"))
 
 	environmentAdminPS := authz.NewPermissionSet()
@@ -147,7 +163,7 @@ func TestAccessSurfaceRegistryIsDefensiveAndInternallyConsistent(t *testing.T) {
 
 	for _, surface := range fresh {
 		for _, perm := range surface.Permissions {
-			require.True(t, authz.IsKnownPermission(perm), "surface %s references unknown permission %s", surface.ID, perm)
+			require.True(t, perm == authz.PermAll || authz.IsKnownPermission(perm), "surface %s references unknown permission %s", surface.ID, perm)
 		}
 		for _, childID := range surface.Children {
 			_, ok := findAccessSurfaceInternal(childID)

@@ -10,6 +10,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { BoxIcon, CalendarIcon, ContainersIcon, InspectIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import type { PodmanPodAction } from '#lib/services/podman-service.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { PodmanPod } from '#lib/types/podman.js';
@@ -35,7 +36,7 @@
 
 	const canManagePods = $derived.by(() => {
 		userStore.current;
-		return hasShownPermission('podman:pods');
+		return hasShownPermission(PERMISSIONS.PODMAN_PODS);
 	});
 	const lifecycleActions: PodmanPodAction[] = ['start', 'stop', 'restart', 'pause', 'unpause', 'kill'];
 
@@ -117,7 +118,7 @@
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
 		</DropdownMenu.Item>
-		{#if canManagePods && hasPermission('podman:pods', item.environmentId)}
+		{#if canManagePods && hasPermission(PERMISSIONS.PODMAN_PODS, item.environmentId)}
 			<DropdownMenu.Separator />
 			{#each lifecycleActions as action (action)}
 				<DropdownMenu.Item

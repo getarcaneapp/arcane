@@ -9,6 +9,7 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { InspectIcon, FolderOpenIcon, GlobeIcon, TrashIcon, DownloadIcon, MoveToFolderIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import type { Template } from '#lib/types/swarm.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 
@@ -28,8 +29,8 @@
 
 	const MAX_TAGS = 4;
 
-	const canCreateTemplate = $derived(hasPermission('templates:create'));
-	const canDeleteTemplate = $derived(hasPermission('templates:delete'));
+	const canCreateTemplate = $derived(hasPermission(PERMISSIONS.TEMPLATES_CREATE));
+	const canDeleteTemplate = $derived(hasPermission(PERMISSIONS.TEMPLATES_DELETE));
 	const registryName = $derived(
 		template.registry?.name ?? (template.isRemote ? m.templates_unknown_registry() : m.templates_local_templates())
 	);
@@ -65,7 +66,7 @@
 					{m.common_view_details()}
 				</DropdownMenu.Item>
 
-				<IfPermitted perm="projects:create">
+				<IfPermitted perm={PERMISSIONS.PROJECTS_CREATE}>
 					<DropdownMenu.Item onclick={() => goto(`/projects/new?templateId=${template.id}`)}>
 						<MoveToFolderIcon class="size-4" />
 						{m.compose_create_project()}

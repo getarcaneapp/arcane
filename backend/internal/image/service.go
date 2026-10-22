@@ -39,6 +39,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/vulnerability"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/registryauth"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
@@ -103,7 +104,7 @@ func NewImageService(
 		vulnerabilityService: vulnerabilityService,
 		eventService:         eventService,
 		settingsService:      settingsService,
-		patch:                patch.NewService(db, dockerService, settingsService, activityService, registryService, vulnerabilityService),
+		patch:                patch.NewService(db, dockerService, settingsService, activityService, registryService, vulnerabilityService, authorizeImage),
 		projectIDCache: hot.NewHotCache[struct{}, map[string]string](hot.LRU, 1).
 			WithTTL(projectIDCacheTTL).
 			Build(),
@@ -277,6 +278,9 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.Im
 	if waitErr := g.Wait(); waitErr != nil {
 		return nil, waitErr
 	}
+	if err := authorizeImage(ctx, authz.PermImagesRead, inspect); err != nil {
+		return nil, err
+	}
 
 	out := types.NewImageDetailSummary(&inspect)
 	if listSize > 0 {
@@ -290,9 +294,21 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.Im
 }
 
 func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, user types.Actor) error {
+	if err := s.authorizeImageRef(ctx, id, authz.PermImagesDelete); err != nil {
+		return err
+	}
 	imageDetails, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, id)
 	})
+	if !authz.ScopeFromContext(ctx, authz.PermImagesDelete).IsUnrestricted() {
+		if inspectErr != nil {
+			return fmt.Errorf("failed to inspect image: %w", inspectErr)
+		}
+		removedTags := kit.Ternary(slices.Contains(imageDetails.RepoTags, id), []string{id}, imageDetails.RepoTags)
+		if err := authorizeImageCreate(ctx, authz.PermImagesDelete, authz.ImageAttributes(removedTags, kit.FromPtr(imageDetails.Config).Labels)); err != nil {
+			return err
+		}
+	}
 	imageName := func() string {
 		if inspectErr == nil && len(imageDetails.RepoTags) > 0 {
 			return imageDetails.RepoTags[0]
@@ -518,6 +534,9 @@ func (s *ImageService) TagImage(ctx context.Context, source string, req types.Im
 	}
 
 	target := kit.Ternary(tag != "", repository+":"+tag, repository)
+	if err := s.authorizeImageRef(ctx, source, authz.PermImagesTag, target); err != nil {
+		return err
+	}
 
 	defer s.eventService.BeginDockerResourceSuppressionWindow("image", "", target)()
 	_, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageTagResult, error) {
@@ -546,6 +565,9 @@ func (s *ImageService) GetImageHistory(ctx context.Context, imageName string) ([
 	imageName = strings.TrimSpace(imageName)
 	if imageName == "" {
 		return nil, errors.New("image name is required")
+	}
+	if err := s.authorizeImageRef(ctx, imageName, authz.PermImagesRead); err != nil {
+		return nil, err
 	}
 
 	result, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageHistoryResult, error) {
@@ -601,6 +623,9 @@ func (s *ImageService) ExportImage(ctx context.Context, imageName string) (io.Re
 	if imageName == "" {
 		return nil, errors.New("image name is required")
 	}
+	if err := s.authorizeImageRef(ctx, imageName, authz.PermImagesRead); err != nil {
+		return nil, err
+	}
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -614,7 +639,10 @@ func (s *ImageService) ExportImage(ctx context.Context, imageName string) (io.Re
 	return reader, nil
 }
 
-func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader, fileName string, user types.Actor, maxSizeBytes int64) (*types.ImageLoadResult, error) {
+func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.ReadSeeker, fileName string, user types.Actor, maxSizeBytes int64) (*types.ImageLoadResult, error) {
+	if err := authorizeImageArchive(ctx, reader); err != nil {
+		return nil, err
+	}
 	limitedReader := &uploadLimitReader{reader: reader, remaining: maxSizeBytes + 1}
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
@@ -973,7 +1001,7 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 		if err != nil {
 			return fmt.Errorf("failed to list Docker images: %w", err)
 		}
-		dockerImages = imageList
+		dockerImages = scopedImages(groupCtx, imageList)
 		return nil
 	})
 
@@ -1023,6 +1051,22 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	), params)
 
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params), nil
+}
+
+func (s *ImageService) GetImageUsageCounts(ctx context.Context) (types.ImageUsageCounts, error) {
+	if authz.ScopeFromContext(ctx, authz.PermImagesList).IsUnrestricted() {
+		_, counts, err := s.dockerService.GetAllImages(ctx)
+		return counts, err
+	}
+	images, err := s.dockerService.ListImages(ctx)
+	if err != nil {
+		return types.ImageUsageCounts{}, err
+	}
+	containers, err := s.dockerService.ListContainers(ctx)
+	if err != nil {
+		return types.ImageUsageCounts{}, err
+	}
+	return dockerInternal.CountImageUsage(scopedImages(ctx, images), containers), nil
 }
 
 func (s *ImageService) AggregateImages(ctx context.Context, params pagination.QueryParams) (types.ImageListResponse, error) {

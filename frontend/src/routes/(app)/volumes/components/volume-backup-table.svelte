@@ -43,6 +43,7 @@
 		ArrowDownIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
 	import { volumeBackupService, type VolumeBackupListResponse } from '#lib/services/volume-backup-service.js';
 	import { volumeService } from '#lib/services/volume-service.js';
@@ -79,9 +80,9 @@
 	} = $props();
 
 	const currentEnvId = $derived(environmentId);
-	const canReadActivities = $derived(hasPermission('activities:read', currentEnvId));
-	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
-	const canDeleteBackup = $derived(hasPermission('volumes:backup', currentEnvId));
+	const canReadActivities = $derived(hasPermission(PERMISSIONS.ACTIVITIES_READ, currentEnvId));
+	const canBackupVolume = $derived(hasPermission(PERMISSIONS.VOLUMES_BACKUP, currentEnvId));
+	const canDeleteBackup = $derived(hasPermission(PERMISSIONS.VOLUMES_BACKUP, currentEnvId));
 	// Destinations are a global resource; an environment-scoped backup grant does not cover them.
 	const canListS3Destinations = $derived(hasPermission('s3-destinations:list', GLOBAL_SCOPE));
 
@@ -534,7 +535,7 @@
 				</DropdownMenu.Item>
 			{/each}
 		{/if}
-		<IfPermitted perm="volumes:backup" envId={currentEnvId}>
+		<IfPermitted perm={PERMISSIONS.VOLUMES_BACKUP} envId={currentEnvId}>
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)}>
 				<TrashIcon class="size-4" />

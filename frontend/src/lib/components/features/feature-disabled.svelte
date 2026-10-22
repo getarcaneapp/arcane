@@ -3,6 +3,7 @@
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { hasAnyPermission } from '#lib/utils/auth.js';
@@ -19,7 +20,7 @@
 		<p>{m.features_unavailable()}</p>
 		<ArcaneButton action="base" customLabel={m.common_retry()} onclick={() => void featureStore.refresh(environmentId)} />
 	{/if}
-	{#if hasAnyPermission(['settings:read', 'settings:write'], environmentId) && hasAnyPermission(['environments:list', 'environments:read'], '*')}
+	{#if hasAnyPermission([PERMISSIONS.SETTINGS_READ, PERMISSIONS.SETTINGS_WRITE], environmentId) && hasAnyPermission([PERMISSIONS.ENVIRONMENTS_LIST, PERMISSIONS.ENVIRONMENTS_READ], '*')}
 		<ArcaneButton
 			action="base"
 			customLabel={m.features_title()}

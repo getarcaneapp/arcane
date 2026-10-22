@@ -17,6 +17,7 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { AlertTriangleIcon, InfoIcon, JobsIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { jobScheduleService } from '#lib/services/job-schedule-service.js';
@@ -39,7 +40,7 @@
 	let { formInputs = $bindable(), environmentId }: JobsTabProps = $props();
 
 	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', environmentId));
-	const canManageJobs = $derived(hasPermission('jobs:manage', environmentId));
+	const canManageJobs = $derived(hasPermission(PERMISSIONS.JOBS_MANAGE, environmentId));
 	const jobsQuery = createQuery(() => ({
 		queryKey: queryKeys.jobs.list(environmentId),
 		queryFn: async ({ signal }) => {

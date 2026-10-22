@@ -8,7 +8,6 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
@@ -117,7 +116,7 @@ func requireLifecyclePermission(ctx context.Context, environmentID string, lifec
 	if !lifecycleRequested {
 		return nil
 	}
-	if ps, _ := middleware.PermissionsFromContext(ctx); ps.Allows(authz.PermGitOpsLifecycle, environmentID) {
+	if ps, _ := authz.PermissionsFromContext(ctx); ps.Allows(authz.PermGitOpsLifecycle, environmentID) {
 		return nil
 	}
 	return huma.Error403Forbidden("configuring a pre-deploy lifecycle hook requires the " + authz.PermGitOpsLifecycle + " permission")
@@ -129,7 +128,7 @@ func requireBackupPermission(ctx context.Context, environmentID string, backup b
 	if !backup {
 		return nil
 	}
-	if ps, _ := middleware.PermissionsFromContext(ctx); ps.Allows(authz.PermGitOpsBackup, environmentID) {
+	if ps, _ := authz.PermissionsFromContext(ctx); ps.Allows(authz.PermGitOpsBackup, environmentID) {
 		return nil
 	}
 	return huma.Error403Forbidden("backing a project up to Git requires the " + authz.PermGitOpsBackup + " permission")

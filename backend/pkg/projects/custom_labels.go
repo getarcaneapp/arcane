@@ -570,6 +570,27 @@ func applyServiceLabelMetadata(project *composetypes.Project) error {
 	return nil
 }
 
+func ApplyOwnerLabel(project *composetypes.Project, ownerUserID *string) {
+	for name, service := range project.Services {
+		service.Labels = libarcane.WithOwnerLabel(service.Labels, kit.FromPtr(ownerUserID))
+		project.Services[name] = service
+	}
+	for name, volume := range project.Volumes {
+		if bool(volume.External) {
+			continue
+		}
+		volume.Labels = libarcane.WithOwnerLabel(volume.Labels, kit.FromPtr(ownerUserID))
+		project.Volumes[name] = volume
+	}
+	for name, network := range project.Networks {
+		if bool(network.External) {
+			continue
+		}
+		network.Labels = libarcane.WithOwnerLabel(network.Labels, kit.FromPtr(ownerUserID))
+		project.Networks[name] = network
+	}
+}
+
 func updaterMetadataLabels(block any) (map[string]string, error) {
 	arcane, ok := kit.AsStringMap(block)
 	if !ok {

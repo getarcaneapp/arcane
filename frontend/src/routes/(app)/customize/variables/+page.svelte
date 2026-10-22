@@ -5,6 +5,7 @@
 	import VariableFormSheet from '#lib/components/sheets/variable-form-sheet.svelte';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { variableService } from '#lib/services/variable-service.js';
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import type { GlobalVariable, GlobalVariableCreate, GlobalVariableUpdate, VariableEnvSyncResult } from '#lib/types/variable.js';
@@ -26,7 +27,7 @@
 	let variableToEdit = $state<GlobalVariable | null>(null);
 	let isSubmitting = $state(false);
 
-	const canCreateVariables = $derived(hasPermission('variables:create', GLOBAL_SCOPE));
+	const canCreateVariables = $derived(hasPermission(PERMISSIONS.VARIABLES_CREATE, GLOBAL_SCOPE));
 
 	function reportSyncResults(results?: VariableEnvSyncResult[]) {
 		const failed = results?.filter((result) => result.status === 'error') ?? [];

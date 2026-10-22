@@ -40,6 +40,7 @@ type Project struct {
 	ServiceCount       int           `json:"service_count" sortable:"true"`
 	RunningCount       int           `json:"running_count" sortable:"true"`
 	GitOpsManagedBy    *string       `json:"gitops_managed_by,omitempty" gorm:"column:gitops_managed_by"`
+	OwnerUserID        *string       `json:"owner_user_id,omitempty" gorm:"column:owner_user_id"`
 	ComposeProjectName *string       `json:"compose_project_name,omitempty" gorm:"column:compose_project_name"`
 	ImageRefsJSON      string        `json:"image_refs_json,omitempty" gorm:"column:image_refs_json"`
 	BuildImageRefsJSON *string       `json:"-" gorm:"column:build_image_refs_json"`

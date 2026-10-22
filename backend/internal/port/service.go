@@ -12,6 +12,7 @@ import (
 	"go.getarcane.app/kit/pkg"
 
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
@@ -31,8 +32,12 @@ func (s *PortService) ListPortsPaginated(ctx context.Context, params pagination.
 		return nil, pagination.Response{}, fmt.Errorf("failed to list containers: %w", err)
 	}
 
+	scope := authz.ScopeFromContext(ctx, authz.PermContainersList)
 	items := make([]types.PortMapping, 0)
 	for _, rawContainer := range containers {
+		if !scope.Matches(authz.ContainerAttributes(rawContainer.Names, rawContainer.Labels)) {
+			continue
+		}
 		summary := types.NewContainerSummary(rawContainer)
 		containerName := primaryContainerName(summary.Names, summary.ID)
 		for _, port := range summary.Ports {

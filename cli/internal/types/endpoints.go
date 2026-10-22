@@ -32,11 +32,12 @@ const (
 
 // Auth endpoints
 
-func AuthLogout() string    { return "/api/auth/logout" }
-func AuthMe() string        { return "/api/auth/me" }
-func AuthPassword() string  { return "/api/auth/password" }
-func AuthRefresh() string   { return "/api/auth/refresh" }
-func AuthFederated() string { return "/api/auth/federated/token" }
+func AuthLogout() string        { return "/api/auth/logout" }
+func AuthMe() string            { return "/api/auth/me" }
+func MeEffectiveAccess() string { return "/api/auth/me/effective-access" }
+func AuthPassword() string      { return "/api/auth/password" }
+func AuthRefresh() string       { return "/api/auth/refresh" }
+func AuthFederated() string     { return "/api/auth/federated/token" }
 
 // OIDC endpoints
 
@@ -58,8 +59,8 @@ func AuthMeApiKey(id string) string { return pathf("/api/auth/me/apikeys/%s", id
 
 func Users() string         { return "/api/users" }
 func User(id string) string { return pathf("/api/users/%s", id) }
-func UserRoleAssignments(userID string) string {
-	return pathf("/api/users/%s/roles", userID)
+func UserEffectiveAccess(id string) string {
+	return pathf("/api/users/%s/effective-access", id)
 }
 
 // Role (RBAC) endpoints
@@ -67,11 +68,24 @@ func UserRoleAssignments(userID string) string {
 func Roles() string                     { return "/api/roles" }
 func Role(id string) string             { return pathf("/api/roles/%s", id) }
 func RolesAvailablePermissions() string { return "/api/roles/permissions" }
+func RoleBindings() string              { return "/api/roles/bindings" }
+func RoleBinding(id string) string      { return pathf("/api/roles/bindings/%s", id) }
 
-// OIDC role mapping endpoints
+func Groups() string                { return "/api/groups" }
+func Group(id string) string        { return pathf("/api/groups/%s", id) }
+func GroupMembers(id string) string { return pathf("/api/groups/%s/members", id) }
+func GroupMember(id, userID string) string {
+	return pathf("/api/groups/%s/members/%s", id, userID)
+}
 
-func OidcRoleMappings() string         { return "/api/oidc/mappings" }
-func OidcRoleMapping(id string) string { return pathf("/api/oidc/mappings/%s", id) }
+func AuditLogs() string         { return "/api/audit/logs" }
+func AuditLog(id string) string { return pathf("/api/audit/logs/%s", id) }
+func AuditLogsExport() string   { return "/api/audit/logs/export" }
+
+// OIDC group mapping endpoints
+
+func OidcMappings() string         { return "/api/oidc/mappings" }
+func OidcMapping(id string) string { return pathf("/api/oidc/mappings/%s", id) }
 
 // Federated credential endpoints
 

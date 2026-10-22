@@ -18,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/entityjobs"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
@@ -33,6 +34,7 @@ type Dependencies struct {
 	S3Destinations *s3.S3DestinationService
 	Settings       *settings.SettingsService
 	AlreadyRunning error
+	Authorize      func(ctx context.Context, volumeName, perm string) error
 	LatestRun      func(ctx context.Context, policyID string) (*types.VolumeBackupEntry, error)
 	CreateBackup   func(ctx context.Context, volumeName, policyID string) (*types.VolumeBackup, error)
 	Reconcile      func(ctx context.Context, previous types.SchedulerRun, volumeName string) (types.SchedulerOutcome, error)
@@ -106,6 +108,9 @@ func (s *Service) Policy(ctx context.Context, volumeName, policyID string) (*Vol
 }
 
 func (s *Service) GetBackupPolicies(ctx context.Context, volumeName string) (*types.VolumeBackupPolicyCollection, error) {
+	if err := s.deps.Authorize(ctx, volumeName, authz.PermVolumesRead); err != nil {
+		return nil, err
+	}
 	policies, err := s.policies(ctx, volumeName)
 	if err != nil {
 		return nil, err
@@ -135,6 +140,9 @@ func (s *Service) GetBackupPolicies(ctx context.Context, volumeName string) (*ty
 }
 
 func (s *Service) UpdateBackupPolicies(ctx context.Context, volumeName string, updates []types.UpdateBackupPolicy) (*types.VolumeBackupPolicyCollection, error) {
+	if err := s.deps.Authorize(ctx, volumeName, authz.PermVolumesBackup); err != nil {
+		return nil, err
+	}
 	existing, err := s.policies(ctx, volumeName)
 	if err != nil {
 		return nil, err

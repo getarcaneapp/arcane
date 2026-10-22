@@ -22,7 +22,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/dashboard"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/version"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
@@ -85,6 +84,7 @@ func RegisterStream(
 		Description: "Streams the requested channels (environments, dashboard, activities, events, version) as JSON envelopes over a single Server-Sent Events connection",
 		Tags:        []string{"Stream"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaAuthenticatedOnly: true},
 		Middlewares: huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
 			httpx.SetStreamHeaders(ctx)
 			// The HTTP tracing middleware skips streams, so the lifetime span is a root unless the client sent a traceparent.
@@ -115,7 +115,7 @@ func RegisterStream(
 }
 
 func (h *StreamHandler) StreamClient(ctx context.Context, input *StreamClientInput, send sse.Sender) {
-	ps, _ := middleware.PermissionsFromContext(ctx)
+	ps, _ := authz.PermissionsFromContext(ctx)
 	releaseDeadPeerTimeout, timeoutErr := httpx.AcquireDeadPeerTimeout(ctx, clientStreamDeadPeerTimeout)
 	if timeoutErr != nil {
 		slog.DebugContext(ctx, "could not bound client stream dead-peer timeout", "error", timeoutErr)

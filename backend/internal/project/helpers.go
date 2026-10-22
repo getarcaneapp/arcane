@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 
@@ -15,7 +16,9 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
@@ -158,6 +161,7 @@ func projectRecord(p Project) types.ProjectRecord {
 		ServiceCount:       p.ServiceCount,
 		RunningCount:       p.RunningCount,
 		GitOpsManagedBy:    p.GitOpsManagedBy,
+		OwnerUserID:        p.OwnerUserID,
 		ComposeProjectName: p.ComposeProjectName,
 		BuildImageRefsJSON: p.BuildImageRefsJSON,
 		IsArchived:         p.IsArchived,
@@ -224,4 +228,22 @@ func (s tagStore) DeleteTag(projectID, name string, source types.ProjectTagSourc
 
 func (s tagStore) DeleteSource(projectID string, source types.ProjectTagSource) error {
 	return s.tx.Where("project_id = ? AND source = ?", projectID, source).Delete(&ProjectTag{}).Error
+}
+
+func recordProjectDenial(ctx context.Context, perm string, err error) error {
+	if errors.Is(err, authz.ErrResourceForbidden) {
+		middleware.RecordDenial(ctx, types.AuthzDenial{
+			Permission:    perm,
+			EnvironmentID: authz.RequestEnvironmentFromContext(ctx),
+			RemoteAddr:    middleware.GetRemoteAddrFromContext(ctx),
+		})
+	}
+	return err
+}
+
+func scopedProjects(ctx context.Context, projectsList []Project) []Project {
+	scope := authz.ScopeFromContext(ctx, authz.PermProjectsList)
+	return slices.DeleteFunc(projectsList, func(proj Project) bool {
+		return !scope.Matches(authz.ProjectAttributes(proj.Name, proj.OwnerUserID))
+	})
 }

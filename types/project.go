@@ -454,6 +454,8 @@ type Project struct {
 	// Required: false
 	GitOpsManagedBy *string `json:"gitOpsManagedBy,omitempty" readOnly:"true"`
 
+	OwnerUserID *string `json:"ownerUserId,omitempty" readOnly:"true"`
+
 	// UpdateInfo contains aggregated image update status for the project.
 	//
 	// Required: false
@@ -822,6 +824,7 @@ type ProjectRecord struct {
 	ServiceCount       int
 	RunningCount       int
 	GitOpsManagedBy    *string
+	OwnerUserID        *string
 	ComposeProjectName *string
 	BuildImageRefsJSON *string
 	IsArchived         bool

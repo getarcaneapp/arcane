@@ -17,6 +17,7 @@
 	} from '#lib/config/navigation-config.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
@@ -37,7 +38,7 @@
 	const permissionsManifestLoadFailed = $derived(data.permissionsManifestLoadFailed);
 	const swarmEnabled = $derived(data.swarmEnabled);
 	const podmanStatuses = $derived(data.podmanStatuses);
-	const canReadActivities = $derived(userHasPermissionInAnyEnvironment(user, 'activities:read'));
+	const canReadActivities = $derived(userHasPermissionInAnyEnvironment(user, PERMISSIONS.ACTIVITIES_READ));
 
 	const isMobile = new IsMobile();
 	const isTablet = new IsTablet();

@@ -53,6 +53,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/deployment"
 	projectdetails "github.com/getarcaneapp/arcane/backend/v3/internal/project/children/details"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/listing"
@@ -62,6 +63,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/workspace"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
@@ -10618,4 +10620,189 @@ func TestAggregateProjectTagsUnionsByName(t *testing.T) {
 
 	assert.Equal(t, []types.ProjectTagOption{{Name: "api", Color: "green"}, {Name: "prod", Color: "red"}, {Name: "web", Color: "blue"}}, body.Data)
 	require.Len(t, body.FailedEnvironments, 1)
+}
+
+type projectDenialRecorder struct {
+	denials []types.AuthzDenial
+}
+
+func (r *projectDenialRecorder) RecordDenial(_ context.Context, denial types.AuthzDenial) {
+	r.denials = append(r.denials, denial)
+}
+
+func scopedProjectContext(ctx context.Context, grants map[string]types.ResourceSelector) context.Context {
+	ps := authz.NewPermissionSet()
+	ps.SubjectID = "u1"
+	for perm, sel := range grants {
+		ps.AddScopedEnv("0", sel, perm)
+	}
+	return authz.WithRequestEnvironment(authz.WithPermissions(ctx, ps), "0")
+}
+
+func TestProjectService_CreateProject_StampsOwnerAndChecksScope(t *testing.T) {
+	svc, _, _ := newProjectServiceForOverrideTest(t, "seed")
+	compose := "services:\n  app:\n    image: nginx:alpine\n"
+	user := types.Actor{ID: "u1", Username: "tester"}
+
+	ownerCtx := scopedProjectContext(t.Context(), map[string]types.ResourceSelector{
+		authz.PermProjectsCreate: {OwnerOnly: true},
+	})
+	created, err := svc.CreateProject(ownerCtx, "owned-app", compose, nil, types.CreateProjectWorkspaceManifest{}, nil, nil, nil, user)
+	require.NoError(t, err)
+	assert.Equal(t, "u1", kit.FromPtr(created.OwnerUserID))
+	stored, err := svc.GetProjectFromDatabaseByID(t.Context(), created.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "u1", kit.FromPtr(stored.OwnerUserID))
+
+	nameCtx := scopedProjectContext(t.Context(), map[string]types.ResourceSelector{
+		authz.PermProjectsCreate: {Names: []string{"team-*"}},
+	})
+	_, err = svc.CreateProject(nameCtx, "other-app", compose, nil, types.CreateProjectWorkspaceManifest{}, nil, nil, nil, user)
+	require.ErrorIs(t, err, authz.ErrResourceForbidden)
+	_, err = svc.CreateProject(nameCtx, "team-app", compose, nil, types.CreateProjectWorkspaceManifest{}, nil, nil, nil, user)
+	require.NoError(t, err)
+
+	labelCtx := scopedProjectContext(t.Context(), map[string]types.ResourceSelector{
+		authz.PermProjectsCreate: {Labels: map[string]string{"team": "a"}},
+	})
+	_, err = svc.CreateProject(labelCtx, "label-app", compose, nil, types.CreateProjectWorkspaceManifest{}, nil, nil, nil, user)
+	require.ErrorIs(t, err, authz.ErrResourceForbidden)
+
+	gitOpsCreated, err := svc.CreateProject(t.Context(), "gitops-app", compose, nil, types.CreateProjectWorkspaceManifest{}, nil, nil, nil, user, false)
+	require.NoError(t, err)
+	assert.Nil(t, gitOpsCreated.OwnerUserID)
+}
+
+func TestProjectService_ListProjects_ScopedFiltersBeforePagination(t *testing.T) {
+	svc, _, _ := newProjectServiceForOverrideTest(t, "seed")
+	projectsRoot, err := svc.GetProjectsDirectory(t.Context())
+	require.NoError(t, err)
+	for _, seed := range []struct {
+		name  string
+		owner *string
+	}{
+		{name: "team-a", owner: new("u1")},
+		{name: "team-b", owner: new("u2")},
+		{name: "solo", owner: new("u1")},
+	} {
+		require.NoError(t, svc.db.Create(&Project{
+			ID:          "project-" + seed.name,
+			Name:        seed.name,
+			DirName:     new(seed.name),
+			Path:        createComposeProjectDir(t, projectsRoot, seed.name),
+			Status:      ProjectStatusStopped,
+			OwnerUserID: seed.owner,
+		}).Error)
+	}
+
+	nameCtx := scopedProjectContext(t.Context(), map[string]types.ResourceSelector{
+		authz.PermProjectsList: {Names: []string{"team-*"}},
+	})
+	items, page, err := svc.ListProjects(nameCtx, pagination.QueryParams{
+		Limit: 1,
+		Sort:  "name", Order: pagination.SortAsc,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, page.TotalItems)
+	require.Len(t, items, 1)
+	assert.Equal(t, "team-a", items[0].Name)
+
+	ownerCtx := scopedProjectContext(t.Context(), map[string]types.ResourceSelector{
+		authz.PermProjectsList: {OwnerOnly: true},
+	})
+	items, page, err = svc.ListProjects(ownerCtx, pagination.QueryParams{
+		Limit: -1,
+		Sort:  "name", Order: pagination.SortAsc,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, page.TotalItems)
+	assert.Equal(t, []string{"solo", "team-a"}, []string{items[0].Name, items[1].Name})
+	assert.Equal(t, "u1", kit.FromPtr(items[0].OwnerUserID))
+
+	references, err := svc.ListProjectReferences(ownerCtx)
+	require.NoError(t, err)
+	assert.Equal(t, []types.ProjectReference{
+		{ID: "project-solo", Name: "solo"},
+		{ID: "project-team-a", Name: "team-a"},
+	}, references)
+
+	_, page, err = svc.ListProjects(t.Context(), pagination.QueryParams{
+		Limit: -1,
+		Sort:  "name", Order: pagination.SortAsc,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 4, page.TotalItems)
+}
+
+func TestProjectService_GetAuthorizedProject_OutOfScopeVsForbidden(t *testing.T) {
+	svc, project, _ := newProjectServiceForOverrideTest(t, "team-a")
+	recorder := &projectDenialRecorder{}
+	ctx := middleware.WithDenialRecorder(scopedProjectContext(t.Context(), map[string]types.ResourceSelector{
+		authz.PermProjectsRead:   {Names: []string{"team-*"}},
+		authz.PermProjectsDeploy: {Names: []string{"prod-*"}},
+	}), recorder)
+
+	got, err := svc.GetAuthorizedProject(ctx, project.ID, authz.PermProjectsRead)
+	require.NoError(t, err)
+	assert.Equal(t, project.ID, got.ID)
+
+	_, err = svc.GetAuthorizedProject(ctx, project.ID, authz.PermProjectsDeploy)
+	require.ErrorIs(t, err, authz.ErrResourceForbidden)
+	require.ErrorIs(t, err, common.ErrForbidden)
+	require.Len(t, recorder.denials, 1)
+	assert.Equal(t, authz.PermProjectsDeploy, recorder.denials[0].Permission)
+	assert.Equal(t, "0", recorder.denials[0].EnvironmentID)
+
+	require.NoError(t, svc.db.Create(&Project{
+		ID:     "project-secret",
+		Name:   "secret",
+		Path:   filepath.Join(t.TempDir(), "secret"),
+		Status: ProjectStatusStopped,
+	}).Error)
+	_, err = svc.GetAuthorizedProject(ctx, "project-secret", authz.PermProjectsDeploy)
+	require.ErrorIs(t, err, authz.ErrResourceOutOfScope)
+	require.ErrorIs(t, err, common.ErrNotFound)
+	require.Len(t, recorder.denials, 1)
+
+	err = svc.DeployProject(ctx, "project-secret", types.Actor{ID: "u1"}, nil)
+	require.ErrorIs(t, err, common.ErrNotFound)
+
+	_, err = svc.GetAuthorizedProject(t.Context(), "project-secret", authz.PermProjectsDeploy)
+	require.NoError(t, err)
+}
+
+func TestProjectService_LoadComposeProject_AppliesOwnerLabel(t *testing.T) {
+	svc, project, projectPath := newProjectServiceForOverrideTest(t, "owner-labels")
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(
+		"services:\n"+
+			"  app:\n"+
+			"    image: nginx:alpine\n"+
+			"    labels:\n"+
+			"      "+libarcane.LabelOwner+": intruder\n"+
+			"      keep: me\n"+
+			"  worker:\n"+
+			"    image: busybox\n",
+	), 0o600))
+
+	composeProject, err := svc.loadComposeProjectForProject(t.Context(), &Project{
+		BaseModel:   project.BaseModel,
+		Name:        project.Name,
+		DirName:     project.DirName,
+		Path:        project.Path,
+		Status:      project.Status,
+		OwnerUserID: new("u1"),
+	}, nil)
+	require.NoError(t, err)
+	require.Len(t, composeProject.Services, 2)
+	for name, service := range composeProject.Services {
+		assert.Equal(t, "u1", service.Labels[libarcane.LabelOwner], name)
+	}
+	assert.Equal(t, "me", composeProject.Services["app"].Labels["keep"])
+
+	composeProject, err = svc.loadComposeProjectForProject(t.Context(), project, nil)
+	require.NoError(t, err)
+	for name, service := range composeProject.Services {
+		assert.NotContains(t, service.Labels, libarcane.LabelOwner, name)
+	}
+	assert.Equal(t, "me", composeProject.Services["app"].Labels["keep"])
 }

@@ -20,6 +20,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/audit"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
@@ -77,7 +78,7 @@ func TestNewHumaMiddleware_AcceptsEnvironmentAccessTokenViaAPIKey(t *testing.T) 
 		require.Equal(t, "environment:env-self", localUser.ID)
 		require.Equal(t, "Self Target", localUser.Username)
 
-		ps, ok := middleware.PermissionsFromContext(ctx)
+		ps, ok := authz.PermissionsFromContext(ctx)
 		require.True(t, ok)
 		require.True(t, ps.Allows(authz.PermContainersStart, "env-self"))
 		require.False(t, ps.Allows(authz.PermContainersStart, "env-other"))
@@ -497,7 +498,7 @@ func setupAuthMiddlewareTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}, &user.User{}, &session.UserSession{}))
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}, &user.User{}, &session.UserSession{}, &audit.AuditLog{}))
 	return &database.DB{DB: db}
 }
 
@@ -703,7 +704,7 @@ func TestAuthMiddleware_ManagerAuthEnvironmentAccessToken(t *testing.T) {
 					},
 				})
 			if tc.adminRequired {
-				authMiddleware = authMiddleware.WithAdminRequired()
+				authMiddleware = authMiddleware.WithPermission(authz.PermDiagnosticsRead)
 			}
 			router.Use(authMiddleware.Add())
 			called := false

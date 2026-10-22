@@ -24,6 +24,7 @@
 		LayoutListIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { podmanService } from '#lib/services/podman-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { systemService } from '#lib/services/system-service.js';
@@ -124,16 +125,16 @@
 		}
 
 		return environmentStore.available.filter(
-			(environment) => environment.enabled && hasPermission('dashboard:read', environment.id)
+			(environment) => environment.enabled && hasPermission(PERMISSIONS.DASHBOARD_READ, environment.id)
 		);
 	});
 	const currentEnvironmentId = $derived(environmentStore.selected?.id ?? null);
 
 	function canPruneInEnvironment(envId: string): boolean {
-		return hasAnyPermission(['images:prune', 'volumes:prune', 'networks:prune'], envId);
+		return hasAnyPermission([PERMISSIONS.IMAGES_PRUNE, PERMISSIONS.VOLUMES_PRUNE, PERMISSIONS.NETWORKS_PRUNE], envId);
 	}
 	function canUpgradeEnvironment(): boolean {
-		return hasPermission('environments:update');
+		return hasPermission(PERMISSIONS.ENVIRONMENTS_UPDATE);
 	}
 
 	function createEmptyLiveStatsState(): EnvironmentLiveStatsState {
@@ -147,7 +148,7 @@
 	}
 
 	function canLoadLiveStats(environment: Environment): boolean {
-		return shouldLoadEnvironment(environment) && hasPermission('system:read', environment.id);
+		return shouldLoadEnvironment(environment) && hasPermission(PERMISSIONS.SYSTEM_READ, environment.id);
 	}
 
 	function clearLiveStatsDeadline(liveStatsState: EnvironmentLiveStatsState) {
@@ -257,7 +258,7 @@
 
 	function openEngineInfo(item: DashboardEnvironmentOverview) {
 		const environmentId = item.environment.id;
-		const podCount = hasPermission('podman:read', environmentId) ? item.podCount : undefined;
+		const podCount = hasPermission(PERMISSIONS.PODMAN_READ, environmentId) ? item.podCount : undefined;
 		engineInfoError = null;
 		engineInfoOpen = true;
 		engineInfoEngine = podCount === undefined ? 'docker' : 'podman';
@@ -472,7 +473,7 @@
 		if (!shouldLoadEnvironment(environment)) {
 			return 'live';
 		}
-		if (!hasPermission('system:read', environment.id)) {
+		if (!hasPermission(PERMISSIONS.SYSTEM_READ, environment.id)) {
 			return 'denied';
 		}
 		const liveStatsState = getLiveStatsState(environment.id);

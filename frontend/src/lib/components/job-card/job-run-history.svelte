@@ -6,6 +6,7 @@
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { jobScheduleService } from '#lib/services/job-schedule-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
@@ -218,7 +219,7 @@
 				{/each}
 			{/if}
 			{#if action.error}<p class="text-destructive">{extractApiErrorMessage(action.error)}</p>{/if}
-			<IfPermitted perm="jobs:manage" envId={environmentId}>
+			<IfPermitted perm={PERMISSIONS.JOBS_MANAGE} envId={environmentId}>
 				<div class="flex flex-wrap gap-2">
 					{#each availableActions as item (item.id)}
 						<Button

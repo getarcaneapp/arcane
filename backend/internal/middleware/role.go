@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"go.getarcane.app/kit/pkg"
 
@@ -52,23 +53,36 @@ func RegisterWithActionPermissions[I, O any](api huma.API, op huma.Operation, pa
 	huma.Register(api, op, handler)
 }
 
+func RegisterAuthenticated[I, O any](api huma.API, op huma.Operation, handler func(context.Context, *I) (*O, error)) {
+	if op.Metadata == nil {
+		op.Metadata = map[string]any{}
+	}
+	op.Metadata[authz.MetaAuthenticatedOnly] = true
+	huma.Register(api, op, handler)
+}
+
 // RequireEchoPermission rejects Echo requests lacking perm for the environment
 // in the request path, or globally for organization-level permissions. It must
 // run after auth.AuthMiddleware has attached the caller's permission set.
 func RequireEchoPermission(perm string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
-			ps, _ := c.Get(string(ContextKeyUserPermissions)).(*authz.PermissionSet)
-			envID := ""
-			if authz.IsEnvScoped(perm) {
-				envID = authz.EnvIDFromPath(c.Request().URL.Path)
+			ps, ok := c.Get(string(ContextKeyUserPermissions)).(*authz.PermissionSet)
+			if !ok && c.Get(string(ContextKeyUserID)) != nil {
+				return c.JSON(http.StatusInternalServerError, common.APIError{
+					Code:    "INTERNAL_ERROR",
+					Message: "permission set unavailable for authenticated request",
+				})
 			}
+			envID := kit.Ternary(authz.IsEnvScoped(perm), authz.EnvIDFromPath(c.Request().URL.Path), "")
 			if !ps.Allows(perm, envID) {
+				recordEchoDenial(c, perm, envID)
 				return c.JSON(http.StatusForbidden, common.APIError{
 					Code:    "FORBIDDEN",
 					Message: "permission denied: " + perm,
 				})
 			}
+			c.SetRequest(c.Request().WithContext(authz.WithRequestEnvironment(c.Request().Context(), envID)))
 			return next(c)
 		}
 	}
@@ -84,14 +98,7 @@ func RequireEchoPermission(perm string) echo.MiddlewareFunc {
 //	huma.Register(api, huma.Operation{..., Middlewares: middleware.RequirePermission(api, authz.PermContainersStart)}, h.Handler)
 func RequirePermission(api huma.API, perm string) huma.Middlewares {
 	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
-		ps, _ := PermissionsFromContext(ctx.Context())
-		if !permissionAllowedInternal(ctx, ps, perm) {
-			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: "+perm); err != nil {
-				slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
-			}
-			return
-		}
-		next(ctx)
+		authorizePermission(api, ctx, next, perm)
 	}}
 }
 
@@ -108,15 +115,27 @@ func RequireActionPermission(api huma.API, param string, perms map[string]string
 			}
 			return
 		}
-		ps, _ := PermissionsFromContext(ctx.Context())
-		if !permissionAllowedInternal(ctx, ps, perm) {
-			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: "+perm); err != nil {
-				slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
-			}
-			return
-		}
-		next(ctx)
+		authorizePermission(api, ctx, next, perm)
 	}}
+}
+
+func authorizePermission(api huma.API, ctx huma.Context, next func(huma.Context), perm string) {
+	ps, ok := authz.PermissionsFromContext(ctx.Context())
+	if _, authenticated := GetUserIDFromContext(ctx.Context()); authenticated && !ok {
+		if err := huma.WriteErr(api, ctx, http.StatusInternalServerError, "permission set unavailable for authenticated request"); err != nil {
+			slog.WarnContext(ctx.Context(), "failed to write 500 response", "error", err)
+		}
+		return
+	}
+	envID := kit.Ternary(authz.IsEnvScoped(perm), authz.EnvIDFromPath(ctx.URL().Path), "")
+	if !permissionAllowedInternal(ctx, ps, perm) {
+		recordHumaDenial(ctx, perm, envID)
+		if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: "+perm); err != nil {
+			slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
+		}
+		return
+	}
+	next(huma.WithContext(ctx, authz.WithRequestEnvironment(ctx.Context(), envID)))
 }
 
 func permissionAllowedInternal(ctx huma.Context, ps *authz.PermissionSet, perm string) bool {
@@ -128,17 +147,12 @@ func permissionAllowedInternal(ctx huma.Context, ps *authz.PermissionSet, perm s
 	return ps.Allows(perm, kit.Ternary(authz.IsEnvScoped(perm), authz.EnvIDFromPath(ctx.URL().Path), ""))
 }
 
-// RequireGlobalAdmin returns a per-operation Huma middleware that rejects any
-// caller who is not a global admin (or sudo). Used for operations that are
-// intentionally not exposed as delegated permissions — role creation/edits,
-// user role assignment, and OIDC mapping management. Keeping these admin-only
-// avoids the meta-escalation surface where a holder of `roles:assign` could
-// promote themselves via a custom role.
-func RequireGlobalAdmin(api huma.API) huma.Middlewares {
+func RequireAdmin(api huma.API) huma.Middlewares {
 	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
-		ps, _ := PermissionsFromContext(ctx.Context())
+		ps, _ := authz.PermissionsFromContext(ctx.Context())
 		if !ps.IsGlobalAdmin() {
-			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: global admin required"); err != nil {
+			recordHumaDenial(ctx, authz.PermAll, "")
+			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: admin required"); err != nil {
 				slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
 			}
 			return
@@ -152,7 +166,7 @@ func RequireGlobalAdmin(api huma.API) huma.Middlewares {
 // sufficient because these operations may expose materialized secret values.
 func RequireSudo(api huma.API) huma.Middlewares {
 	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
-		ps, _ := PermissionsFromContext(ctx.Context())
+		ps, _ := authz.PermissionsFromContext(ctx.Context())
 		if ps == nil || !ps.Sudo {
 			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: agent authentication required"); err != nil {
 				slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
@@ -161,4 +175,31 @@ func RequireSudo(api huma.API) huma.Middlewares {
 		}
 		next(ctx)
 	}}
+}
+
+func recordHumaDenial(ctx huma.Context, perm, envID string) {
+	RecordDenial(ctx.Context(), types.AuthzDenial{
+		Permission:    perm,
+		EnvironmentID: envID,
+		Method:        ctx.Method(),
+		Path:          ctx.URL().Path,
+		RemoteAddr:    ctx.RemoteAddr(),
+		UserAgent:     ctx.Header("User-Agent"),
+	})
+}
+
+func recordEchoDenial(c *echo.Context, perm, envID string) {
+	req := c.Request()
+	ctx := req.Context()
+	if actor := c.Get(string(ContextKeyCurrentUser)); actor != nil {
+		ctx = context.WithValue(ctx, types.CurrentUserContextKey{}, actor)
+	}
+	RecordDenial(ctx, types.AuthzDenial{
+		Permission:    perm,
+		EnvironmentID: envID,
+		Method:        req.Method,
+		Path:          req.URL.Path,
+		RemoteAddr:    c.RealIP(),
+		UserAgent:     req.UserAgent(),
+	})
 }

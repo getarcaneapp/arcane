@@ -30,7 +30,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/search"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
@@ -309,6 +311,21 @@ func (s *SettingsService) UpdateSettingValues(ctx context.Context, updates []lib
 		return err
 	}
 	return s.persistSettings(ctx, values)
+}
+
+func (s *SettingsService) ValidateDefaultUserRole(ctx context.Context, roles *role.RoleService, caller *authz.PermissionSet, roleID string) error {
+	roleID = strings.TrimSpace(roleID)
+	if roleID == authz.BuiltInRoleAdmin {
+		return common.Classify(common.ErrValidation, errors.New("defaultUserRoleId cannot be the Admin role"))
+	}
+	if roleID == "" || roleID == s.GetSettingsConfig().DefaultUserRoleId.Value {
+		return nil
+	}
+	err := roles.ValidateBindingAgainstCaller(ctx, s.db.DB, caller, roleID, nil, nil)
+	if errors.Is(err, common.ErrRoleNotFound) {
+		return common.Classify(common.ErrValidation, errors.New("defaultUserRoleId does not match an existing role"))
+	}
+	return err
 }
 
 // UpdateSettings publishes the refreshed snapshot before returning. Each

@@ -7,6 +7,7 @@
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
@@ -33,7 +34,7 @@
 
 	let isPulling = $state(false);
 	let pickedEnvironmentId = $state('');
-	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'images:pull'));
+	const environmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, PERMISSIONS.IMAGES_PULL));
 
 	async function handleSubmit() {
 		const data = form.validate();
@@ -97,7 +98,7 @@
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
 			<EnvironmentDestinationSelect
 				bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
-				permission="images:pull"
+				permission={PERMISSIONS.IMAGES_PULL}
 				variant="field"
 			/>
 			<FormInput

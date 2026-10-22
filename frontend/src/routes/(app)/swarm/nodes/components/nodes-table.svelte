@@ -20,6 +20,7 @@
 		TagIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -42,7 +43,7 @@
 	} = $props();
 
 	const currentEnvId = $derived(environmentStore.selected?.id);
-	const canManageNodes = $derived(hasPermission('swarm:nodes', currentEnvId));
+	const canManageNodes = $derived(hasPermission(PERMISSIONS.SWARM_NODES, currentEnvId));
 	let isLoading = $state(false);
 	let isAgentDialogOpen = $state(false);
 	let selectedNode = $state<SwarmNode | null>(null);

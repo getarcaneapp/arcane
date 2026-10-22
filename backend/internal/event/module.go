@@ -112,7 +112,7 @@ func RegisterEvents(api huma.API, eventService *EventService) {
 		eventService: eventService,
 	}
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "listEvents",
 		Method:      "GET",
 		Path:        "/events",
@@ -120,10 +120,9 @@ func RegisterEvents(api huma.API, eventService *EventService) {
 		Description: "Get a paginated list of system events",
 		Tags:        []string{"Events"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermEventsRead),
-	}, h.ListEvents)
+	}, authz.PermEventsRead, h.ListEvents)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getEventStats",
 		Method:      "GET",
 		Path:        "/events/stats",
@@ -131,10 +130,9 @@ func RegisterEvents(api huma.API, eventService *EventService) {
 		Description: "Get global event counts grouped by severity",
 		Tags:        []string{"Events"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermEventsRead),
-	}, h.GetEventStats)
+	}, authz.PermEventsRead, h.GetEventStats)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "deleteEvent",
 		Method:      "DELETE",
 		Path:        "/events/{eventId}",
@@ -142,10 +140,9 @@ func RegisterEvents(api huma.API, eventService *EventService) {
 		Description: "Delete a system event by ID",
 		Tags:        []string{"Events"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermEventsDelete),
-	}, h.DeleteEvent)
+	}, authz.PermEventsDelete, h.DeleteEvent)
 
-	huma.Register(api, huma.Operation{
+	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getEventsByEnvironment",
 		Method:      "GET",
 		Path:        "/events/environment/{environmentId}",
@@ -153,6 +150,5 @@ func RegisterEvents(api huma.API, eventService *EventService) {
 		Description: "Get a paginated list of events for a specific environment",
 		Tags:        []string{"Events"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-		Middlewares: middleware.RequirePermission(api, authz.PermEventsRead),
-	}, h.GetEventsByEnvironment)
+	}, authz.PermEventsRead, h.GetEventsByEnvironment)
 }

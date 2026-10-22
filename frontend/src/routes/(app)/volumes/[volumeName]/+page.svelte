@@ -40,6 +40,7 @@
 	} from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 	import { volumeService } from '#lib/services/volume-service.js';
@@ -88,10 +89,10 @@
 	const backupVolumeName = $derived(volumeSettings ? volumeSettings.backupVolumeName || 'arcane-backups' : undefined);
 	const isBackupVolume = $derived(!backupVolumeName || volume?.name === backupVolumeName);
 
-	const canDeleteVolume = $derived(hasPermission('volumes:delete', currentEnvId));
-	const canReadVolume = $derived(hasPermission('volumes:read', currentEnvId));
-	const canUploadVolume = $derived(hasPermission('volumes:upload', currentEnvId));
-	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
+	const canDeleteVolume = $derived(hasPermission(PERMISSIONS.VOLUMES_DELETE, currentEnvId));
+	const canReadVolume = $derived(hasPermission(PERMISSIONS.VOLUMES_READ, currentEnvId));
+	const canUploadVolume = $derived(hasPermission(PERMISSIONS.VOLUMES_UPLOAD, currentEnvId));
+	const canBackupVolume = $derived(hasPermission(PERMISSIONS.VOLUMES_BACKUP, currentEnvId));
 	const volumeWorkspaceMaxFileSizeMb = $derived(environmentSettings.current?.values.volumeWorkspaceMaxFileSizeMb ?? 10);
 
 	let isLoading = $state({ remove: false, save: false });

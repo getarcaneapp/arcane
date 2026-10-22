@@ -24,7 +24,9 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	libswarm "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/swarm"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
@@ -151,6 +153,9 @@ func (s *Service) DeployStack(ctx context.Context, environmentID string, req typ
 	if stackName == "" {
 		return nil, errors.New("stack name is required")
 	}
+	if err := authorizeStack(ctx, stackName); err != nil {
+		return nil, err
+	}
 
 	dockerClient, err := s.docker.GetClient(ctx)
 	if err != nil {
@@ -249,6 +254,9 @@ func (s *Service) GetStackSource(ctx context.Context, environmentID, stackName s
 	stackName = strings.TrimSpace(stackName)
 	if stackName == "" {
 		return nil, errors.New("stack name is required")
+	}
+	if err := authorizeStack(ctx, stackName); err != nil {
+		return nil, err
 	}
 
 	_, stackSourceDir, err := s.resolveSwarmStackSourceDir(ctx, environmentID, stackName)
@@ -465,6 +473,9 @@ func (s *Service) RemoveStack(ctx context.Context, environmentID, stackName stri
 	stackName = strings.TrimSpace(stackName)
 	if stackName == "" {
 		return errors.New("stack name is required")
+	}
+	if err := authorizeStack(ctx, stackName); err != nil {
+		return err
 	}
 
 	services, err := s.listStackServicesRaw(ctx, stackName)
@@ -763,6 +774,21 @@ func (s *Service) deleteStackSource(ctx context.Context, environmentID, stackNam
 	}
 
 	return nil
+}
+
+func authorizeStack(ctx context.Context, stackName string) error {
+	err := authz.CheckResource(ctx, authz.PermSwarmStacks, authz.PermSwarmRead, authz.ResourceAttributes{
+		Names:   []string{stackName},
+		Project: stackName,
+	})
+	if errors.Is(err, authz.ErrResourceForbidden) {
+		middleware.RecordDenial(ctx, types.AuthzDenial{
+			Permission:    authz.PermSwarmStacks,
+			EnvironmentID: authz.RequestEnvironmentFromContext(ctx),
+			RemoteAddr:    middleware.GetRemoteAddrFromContext(ctx),
+		})
+	}
+	return err
 }
 
 func normalizeSwarmEnvironmentID(environmentID string) string {

@@ -2,6 +2,7 @@ import { error } from '@sveltejs/kit';
 import { toast } from 'svelte-sonner';
 
 import { m } from '#lib/paraglide/messages.js';
+import type { Permission } from '#lib/permissions.generated.js';
 import type { APIRequestConfig } from '#lib/services/api-service.js';
 import settingsStore from '#lib/stores/config-store.svelte.js';
 import {
@@ -63,13 +64,13 @@ export function environmentFilterIds(value: unknown, environments: EnvironmentRe
  * Shown environments a page-wide action runs in: those granting every permission. When none do, all
  * shown ones are returned so the server still reports the denial, as with one environment.
  */
-export function actionEnvironments(...permissions: string[]): EnvironmentRef[] {
+export function actionEnvironments(...permissions: Permission[]): EnvironmentRef[] {
 	const permitted = environmentStore.shown.filter((env) => permissions.every((permission) => hasPermission(permission, env.id)));
 	return permitted.length > 0 ? permitted : environmentStore.shown;
 }
 
 /** Whether a permission is held in any shown environment; row actions check the row's own environment. */
-export function hasShownPermission(permission: string): boolean {
+export function hasShownPermission(permission: Permission): boolean {
 	return environmentStore.shown.some((env) => hasPermission(permission, env.id));
 }
 
@@ -98,7 +99,7 @@ export async function resolveDetailEnvironmentId(url: URL): Promise<string> {
  */
 export function destinationEnvironmentId(
 	picked: string,
-	permission: string,
+	permission: Permission,
 	environments: EnvironmentRef[] = environmentStore.shown
 ): string {
 	const selected = environmentStore.selected?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID;

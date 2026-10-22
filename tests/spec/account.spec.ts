@@ -90,9 +90,9 @@ test('manages an isolated account, preferences, credentials, and sessions', asyn
 			}),
 			`Create account user ${username}`
 		);
-		await readApiData<unknown[]>(
-			await page.request.put(`/api/users/${user.id}/roles`, {
-				data: { assignments: [{ roleId: 'role_viewer' }] }
+		await readApiData<unknown>(
+			await page.request.post('/api/roles/bindings', {
+				data: { subjectType: 'user', subjectId: user.id, roleId: 'role_viewer' }
 			}),
 			`Assign Viewer role to ${username}`
 		);
@@ -349,9 +349,9 @@ test('registers, renames, authenticates with, and removes a passkey with MFA', a
 			}),
 			`Create passkey user ${username}`
 		);
-		await readApiData<unknown[]>(
-			await page.request.put(`/api/users/${user.id}/roles`, {
-				data: { assignments: [{ roleId: 'role_viewer' }] }
+		await readApiData<unknown>(
+			await page.request.post('/api/roles/bindings', {
+				data: { subjectType: 'user', subjectId: user.id, roleId: 'role_viewer' }
 			}),
 			`Assign Viewer role to ${username}`
 		);

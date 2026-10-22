@@ -12,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
 	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
@@ -65,7 +66,8 @@ func (h *Handler) GetBackupPolicy(ctx context.Context, input *GetVolumeBackupPol
 
 	policies, err := h.service.GetBackupPolicies(ctx, input.VolumeName)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 	return &handlerutil.Out[types.VolumeBackupPolicyCollection]{Body: types.ApiResponse[types.VolumeBackupPolicyCollection]{Success: true, Data: *policies}}, nil
 }
@@ -135,6 +137,9 @@ func (h *Handler) UpdateBackupPolicy(ctx context.Context, input *UpdateVolumeBac
 		return updateErr
 	})
 	if err != nil {
+		if apiErr := common.ToAPIError(err); apiErr.HTTPStatus() == http.StatusForbidden || apiErr.HTTPStatus() == http.StatusNotFound {
+			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+		}
 		if errorStatus == http.StatusInternalServerError {
 			return nil, huma.Error500InternalServerError(err.Error())
 		}

@@ -14,6 +14,7 @@
 	import { EyeOffIcon, EyeOnIcon, LockIcon, SettingsIcon, UsersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -26,8 +27,10 @@
 	import EasyJoinDialog from './components/easy-join-dialog.svelte';
 
 	const currentEnvId = $derived(environmentStore.selected?.id);
-	const canManageSwarm = $derived(hasPermission('swarm:nodes', currentEnvId));
-	const canEasyJoin = $derived(hasPermission('swarm:nodes', currentEnvId) && hasPermission('swarm:unlock', currentEnvId));
+	const canManageSwarm = $derived(hasPermission(PERMISSIONS.SWARM_NODES, currentEnvId));
+	const canEasyJoin = $derived(
+		hasPermission(PERMISSIONS.SWARM_NODES, currentEnvId) && hasPermission(PERMISSIONS.SWARM_UNLOCK, currentEnvId)
+	);
 
 	const swarmInfoQuery = createQuery(() => {
 		const environmentId = currentEnvId;
@@ -38,7 +41,7 @@
 				await environmentStore.ready;
 				return swarmService.getSwarmInfo();
 			},
-			enabled: !!environmentId && hasPermission('swarm:read', environmentId),
+			enabled: !!environmentId && hasPermission(PERMISSIONS.SWARM_READ, environmentId),
 			retry: false
 		};
 	});
@@ -51,7 +54,7 @@
 				await environmentStore.ready;
 				return swarmService.getSwarmJoinTokens();
 			},
-			enabled: !!environmentId && hasPermission('swarm:unlock', environmentId),
+			enabled: !!environmentId && hasPermission(PERMISSIONS.SWARM_UNLOCK, environmentId),
 			retry: false
 		};
 	});
@@ -64,7 +67,7 @@
 				await environmentStore.ready;
 				return swarmService.getSwarmUnlockKey();
 			},
-			enabled: !!environmentId && hasPermission('swarm:unlock', environmentId),
+			enabled: !!environmentId && hasPermission(PERMISSIONS.SWARM_UNLOCK, environmentId),
 			retry: false
 		};
 	});
@@ -148,8 +151,9 @@
 		showWorkerToken = false;
 		try {
 			const requests: Promise<unknown>[] = [];
-			if (hasPermission('swarm:read', environmentId)) requests.push(swarmInfoQuery.refetch());
-			if (hasPermission('swarm:unlock', environmentId)) requests.push(joinTokensQuery.refetch(), unlockKeyQuery.refetch());
+			if (hasPermission(PERMISSIONS.SWARM_READ, environmentId)) requests.push(swarmInfoQuery.refetch());
+			if (hasPermission(PERMISSIONS.SWARM_UNLOCK, environmentId))
+				requests.push(joinTokensQuery.refetch(), unlockKeyQuery.refetch());
 			await Promise.all(requests);
 		} finally {
 			if (environmentId === currentEnvId) isLoading.refresh = false;

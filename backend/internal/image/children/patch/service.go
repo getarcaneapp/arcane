@@ -23,6 +23,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/moby/buildkit/util/progress/progressui"
+	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 	"github.com/opencontainers/image-spec/specs-go/v1"
 	copacommon "github.com/project-copacetic/copacetic/pkg/common"
@@ -43,6 +44,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/vulnerability"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/vuln"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
@@ -77,6 +79,7 @@ type Service struct {
 	activityService      *activity.ActivityService
 	registryService      *registry.ContainerRegistryService
 	vulnerabilityService *vulnerability.VulnerabilityService
+	authorize            func(ctx context.Context, perm string, inspect image.InspectResponse, createdTags ...string) error
 
 	// patchSlot serializes patch executions: one BuildKit patch at a time, and
 	// the process-wide logrus mirror only ever carries one run's output.
@@ -90,6 +93,7 @@ func NewService(
 	activityService *activity.ActivityService,
 	registryService *registry.ContainerRegistryService,
 	vulnerabilityService *vulnerability.VulnerabilityService,
+	authorize func(ctx context.Context, perm string, inspect image.InspectResponse, createdTags ...string) error,
 ) *Service {
 	// Copa logs through the global logrus logger; route it into slog so its
 	// output follows Arcane's log format.
@@ -102,6 +106,7 @@ func NewService(
 		activityService:      activityService,
 		registryService:      registryService,
 		vulnerabilityService: vulnerabilityService,
+		authorize:            authorize,
 		patchSlot:            make(chan struct{}, 1),
 	}
 }
@@ -195,6 +200,9 @@ func (s *Service) startPatch(
 	patchedRef, err := resolvePatchedRef(imageRef, opts.PatchedTag, suffix)
 	if err != nil {
 		return nil, nil, err
+	}
+	if authorizeErr := s.authorize(ctx, authz.PermImagesPatch, imageInspect.InspectResponse, patchedRef); authorizeErr != nil {
+		return nil, nil, authorizeErr
 	}
 
 	// Copa reads registry credentials from the docker config; refresh it before any registry lookups.
@@ -597,6 +605,27 @@ func (s *Service) ListPatches(ctx context.Context, envID string, params paginati
 		q = q.Where("original_ref LIKE ? OR patched_ref LIKE ?", searchPattern, searchPattern)
 	}
 	q = pagination.ApplyFilter(q, "status", params.Filters["status"])
+	if scope := authz.ScopeFromContext(ctx, authz.PermImagesList); !scope.IsUnrestricted() {
+		var candidates []ImagePatchRecord
+		if err := s.db.WithContext(ctx).Model(&ImagePatchRecord{}).Select("id", "original_image_id", "original_ref", "patched_ref").Where("environment_id = ?", envID).Find(&candidates).Error; err != nil {
+			return nil, pagination.Response{}, fmt.Errorf("failed to scope image patches: %w", err)
+		}
+		images, listImagesErr := s.dockerService.ListImages(ctx)
+		if listImagesErr != nil {
+			slog.WarnContext(ctx, "failed to list images for patch history scope; matching by name only", "error", listImagesErr)
+		}
+		labelsByImageID := make(map[string]map[string]string, len(images))
+		for i := range images {
+			labelsByImageID[images[i].ID] = images[i].Labels
+		}
+		allowed := make([]string, 0, len(candidates))
+		for _, candidate := range candidates {
+			if scope.Matches(authz.ImageAttributes([]string{candidate.OriginalRef, candidate.PatchedRef}, labelsByImageID[candidate.OriginalImageID])) {
+				allowed = append(allowed, candidate.ID)
+			}
+		}
+		q = q.Where("id IN ?", allowed)
+	}
 
 	paginationResp, err := pagination.PaginateAndSortDB(pagination.QueryParams{ //exhaustruct:enforce
 		SearchQuery: params.SearchQuery,

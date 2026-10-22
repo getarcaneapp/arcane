@@ -9,7 +9,7 @@ import (
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
@@ -40,15 +40,6 @@ type UpdateRoleInput struct {
 
 type DeleteRoleInput struct {
 	ID string `path:"id" doc:"Role ID"`
-}
-
-type ListUserRoleAssignmentsInput struct {
-	UserID string `path:"userId" doc:"User ID"`
-}
-
-type SetUserRoleAssignmentsInput struct {
-	UserID string `path:"userId" doc:"User ID"`
-	Body   types.SetUserRoleAssignments
 }
 
 func (h *RoleHandler) ListRoles(ctx context.Context, input *ListRolesInput) (*handlerutil.Page[types.Role], error) {
@@ -84,8 +75,8 @@ func (h *RoleHandler) GetRole(ctx context.Context, input *GetRoleInput) (*handle
 }
 
 func (h *RoleHandler) CreateRole(ctx context.Context, input *CreateRoleInput) (*handlerutil.Out[types.Role], error) {
-	callerPS, _ := middleware.PermissionsFromContext(ctx)
-	if err := h.roleService.ValidatePermissionsAgainstCaller(callerPS, input.Body.Permissions); err != nil {
+	callerPS, _ := authz.PermissionsFromContext(ctx)
+	if err := h.roleService.ValidateRoleDefinitionAgainstCaller(callerPS, input.Body.Permissions); err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
@@ -110,13 +101,14 @@ func (h *RoleHandler) UpdateRole(ctx context.Context, input *UpdateRoleInput) (*
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 	permissions := kit.Ternary(submitted["permissions"], input.Body.Permissions, []string(current.Permissions))
-	callerPS, _ := middleware.PermissionsFromContext(ctx)
-	if validateErr := h.roleService.ValidatePermissionsAgainstCaller(callerPS, permissions); validateErr != nil {
+	callerPS, _ := authz.PermissionsFromContext(ctx)
+	if validateErr := h.roleService.ValidateRoleDefinitionAgainstCaller(callerPS, permissions); validateErr != nil {
 		apiErr := common.ToAPIError(validateErr)
 		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 	role, err := h.roleService.UpdateRole(
 		ctx,
+		callerPS,
 		input.ID,
 		kit.Ternary(submitted["name"], input.Body.Name, current.Name),
 		kit.Ternary(submitted["description"], input.Body.Description, current.Description),
@@ -132,13 +124,16 @@ func (h *RoleHandler) UpdateRole(ctx context.Context, input *UpdateRoleInput) (*
 }
 
 func (h *RoleHandler) DeleteRole(ctx context.Context, input *DeleteRoleInput) (*handlerutil.Out[types.MessageResponse], error) {
-	if err := h.roleService.DeleteRole(ctx, input.ID); err != nil {
+	callerPS, _ := authz.PermissionsFromContext(ctx)
+	if err := h.roleService.DeleteRole(ctx, callerPS, input.ID); err != nil {
 		switch {
 		case errors.Is(err, common.ErrRoleNotFound):
 			return nil, huma.Error404NotFound("role not found")
 		case errors.Is(err, common.ErrRoleBuiltIn):
 			return nil, huma.Error403Forbidden("built-in roles cannot be deleted")
-		case errors.Is(err, common.ErrNoGlobalAdminRemains), errors.Is(err, common.ErrRoleUsedByFederatedCredential):
+		case errors.Is(err, common.ErrRolePermissionEscalation):
+			return nil, huma.Error403Forbidden(err.Error())
+		case errors.Is(err, common.ErrRoleUsedByFederatedCredential):
 			return nil, huma.Error409Conflict(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to delete role: " + err.Error())
@@ -152,49 +147,6 @@ func (h *RoleHandler) GetPermissionsManifest(_ context.Context, _ *struct{}) (*h
 	}, nil
 }
 
-func (h *RoleHandler) ListUserRoleAssignments(ctx context.Context, input *ListUserRoleAssignmentsInput) (*handlerutil.Out[[]types.RoleAssignment], error) {
-	rows, err := h.roleService.ListUserAssignments(ctx, input.UserID)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to list assignments: " + err.Error())
-	}
-	dtos := make([]types.RoleAssignment, len(rows))
-	for i := range rows {
-		dtos[i] = toAssignmentDTO(&rows[i])
-	}
-	return &handlerutil.Out[[]types.RoleAssignment]{
-		Body: types.ApiResponse[[]types.RoleAssignment]{Success: true, Data: dtos},
-	}, nil
-}
-
-func (h *RoleHandler) SetUserRoleAssignments(ctx context.Context, input *SetUserRoleAssignmentsInput) (*handlerutil.Out[[]types.RoleAssignment], error) {
-	desired := make([]UserRoleAssignment, len(input.Body.Assignments))
-	for i, a := range input.Body.Assignments {
-		desired[i] = UserRoleAssignment{RoleID: a.RoleID, EnvironmentID: a.EnvironmentID}
-	}
-	if err := h.roleService.ReplaceUserAssignments(ctx, input.UserID, RoleAssignmentSourceManual, desired); err != nil {
-		switch {
-		case errors.Is(err, common.ErrUserNotFound):
-			return nil, huma.Error404NotFound(err.Error())
-		case errors.Is(err, common.ErrInvalidRoleAssignment):
-			return nil, huma.Error400BadRequest(err.Error())
-		case errors.Is(err, common.ErrNoGlobalAdminRemains):
-			return nil, huma.Error409Conflict(err.Error())
-		}
-		return nil, huma.Error500InternalServerError("failed to set assignments: " + err.Error())
-	}
-	rows, err := h.roleService.ListUserAssignments(ctx, input.UserID)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("failed to read back assignments: " + err.Error())
-	}
-	dtos := make([]types.RoleAssignment, len(rows))
-	for i := range rows {
-		dtos[i] = toAssignmentDTO(&rows[i])
-	}
-	return &handlerutil.Out[[]types.RoleAssignment]{
-		Body: types.ApiResponse[[]types.RoleAssignment]{Success: true, Data: dtos},
-	}, nil
-}
-
 func (h *RoleHandler) toRoleDTO(ctx context.Context, r *Role) types.Role {
 	out := types.Role{
 		ID:          r.ID,
@@ -205,19 +157,8 @@ func (h *RoleHandler) toRoleDTO(ctx context.Context, r *Role) types.Role {
 		CreatedAt:   r.CreatedAt,
 		UpdatedAt:   r.UpdatedAt,
 	}
-	if count, err := h.roleService.CountUsersAssignedToRole(ctx, r.ID); err == nil {
-		out.AssignedUserCount = count
+	if count, err := h.roleService.CountBindingsForRole(ctx, r.ID); err == nil {
+		out.BindingCount = count
 	}
 	return out
-}
-
-func toAssignmentDTO(r *UserRoleAssignment) types.RoleAssignment {
-	return types.RoleAssignment{
-		ID:            r.ID,
-		UserID:        r.UserID,
-		RoleID:        r.RoleID,
-		EnvironmentID: r.EnvironmentID,
-		Source:        r.Source,
-		CreatedAt:     r.CreatedAt,
-	}
 }

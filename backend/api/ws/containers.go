@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"encoding/json/v2"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync/atomic"
@@ -14,6 +15,7 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
 )
 
@@ -49,6 +51,7 @@ func (h *WebSocketHandler) ContainersStats(c *echo.Context) error {
 
 	ctx, cancel := context.WithCancel(c.Request().Context())
 	defer cancel()
+	subscriptionScope := kit.Ternary(authz.ScopeFromContext(ctx, authz.PermContainersRead).IsUnrestricted(), "*", fmt.Sprintf("conn:%p", conn))
 
 	var ids atomic.Pointer[[]string]
 	subscribed := make(chan struct{}, 1)
@@ -84,7 +87,7 @@ func (h *WebSocketHandler) ContainersStats(c *echo.Context) error {
 			case <-subCtx.Done():
 			}
 		}()
-		h.containersStatsHub.Subscribe(subCtx, strings.Join(want, ","),
+		h.containersStatsHub.Subscribe(subCtx, subscriptionScope+"|"+strings.Join(want, ","),
 			func(runCtx context.Context, publish func(containersStatsResult)) {
 				for {
 					samples, err := h.containerService.SampleResources(runCtx, want, containersStatsInterval/4)

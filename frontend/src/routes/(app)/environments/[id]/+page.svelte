@@ -38,6 +38,7 @@
 	} from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import { parseSettingValue, settingsService } from '#lib/services/settings-service.js';
@@ -115,11 +116,11 @@
 
 	let isCurrentlyStandby = $derived(currentStatus === 'standby');
 	// Settings tabs stay listed while offline so the selected tab survives a temporary outage.
-	let showSettingsTabs = $derived(runtimeEnvironment.enabled && hasPermission('settings:read', environment.id));
+	let showSettingsTabs = $derived(runtimeEnvironment.enabled && hasPermission(PERMISSIONS.SETTINGS_READ, environment.id));
 	let settingsAvailable = $derived(isCurrentlyOnline && settings !== null);
-	let showJobsTab = $derived(showSettingsTabs && hasPermission('jobs:manage', environment.id));
+	let showJobsTab = $derived(showSettingsTabs && hasPermission(PERMISSIONS.JOBS_MANAGE, environment.id));
 	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.edgeMTLSCertificate));
-	let canPairEnvironments = $derived(hasPermission('environments:pair'));
+	let canPairEnvironments = $derived(hasPermission(PERMISSIONS.ENVIRONMENTS_PAIR));
 	let showMTLSDownloads = $derived(
 		canPairEnvironments &&
 			runtimeEnvironment.id !== '0' &&
@@ -343,7 +344,7 @@
 		);
 		if (
 			changedFeatures.length > 0 &&
-			(!hasPermission('settings:write', environmentId) ||
+			(!hasPermission(PERMISSIONS.SETTINGS_WRITE, environmentId) ||
 				changedFeatures.some((feature) => !featureStore.isSupported(feature.id, environmentId)))
 		) {
 			throw new Error(m.features_unavailable());
@@ -401,7 +402,7 @@
 			!isCurrentlyOnline ||
 			!settings ||
 			settings.readOnly ||
-			!hasPermission('settings:write', environment.id) ||
+			!hasPermission(PERMISSIONS.SETTINGS_WRITE, environment.id) ||
 			!featureStore.isSupported(id, environment.id)
 		);
 	}

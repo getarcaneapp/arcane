@@ -13,12 +13,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/backupbrowser"
 )
 
 // Dependencies are the backup storage and repository operations the browser reads through.
 type Dependencies struct {
+	Authorize       func(ctx context.Context, volumeName, perm string) error
 	Docker          *docker.DockerClientService
 	Engine          *backup.Engine
 	Run             func(ctx context.Context, backupID string) (*types.VolumeBackup, error)
@@ -40,7 +42,7 @@ func NewService(deps Dependencies) *Service {
 }
 
 func (s *Service) ListBackupFiles(ctx context.Context, backupID string) ([]string, error) {
-	entry, err := s.deps.Run(ctx, backupID)
+	entry, err := s.authorizedRun(ctx, backupID)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +70,7 @@ func (s *Service) BrowseBackupFiles(ctx context.Context, backupID, requestedPath
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("%w: %w", common.ErrInvalidBackupSelection, err)
 	}
-	entry, err := s.deps.Run(ctx, backupID)
+	entry, err := s.authorizedRun(ctx, backupID)
 	if err != nil {
 		return nil, pagination.Response{}, err
 	}
@@ -78,6 +80,17 @@ func (s *Service) BrowseBackupFiles(ctx context.Context, backupID, requestedPath
 	}
 	items, page := backupbrowser.Browse(entries, params)
 	return items, page, nil
+}
+
+func (s *Service) authorizedRun(ctx context.Context, backupID string) (*types.VolumeBackup, error) {
+	entry, err := s.deps.Run(ctx, backupID)
+	if err != nil {
+		return nil, err
+	}
+	if authorizeErr := s.deps.Authorize(ctx, entry.VolumeName, authz.PermVolumesRead); authorizeErr != nil {
+		return nil, authorizeErr
+	}
+	return entry, nil
 }
 
 func (s *Service) backupFileEntries(ctx context.Context, entry *types.VolumeBackup, browsePath string, recursive bool) ([]types.BackupFileEntry, error) {

@@ -22,6 +22,7 @@
 	} from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService, type PodmanPodAction } from '#lib/services/podman-service.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
@@ -50,7 +51,7 @@
 	}));
 	const pod = $derived(podQuery.data ?? data.pod);
 	const isRunning = $derived(pod.state.toLowerCase() === 'running');
-	const canManage = $derived(hasPermission('podman:pods', envId));
+	const canManage = $derived(hasPermission(PERMISSIONS.PODMAN_PODS, envId));
 
 	let pendingAction = $state<PodmanPodAction | null>(null);
 

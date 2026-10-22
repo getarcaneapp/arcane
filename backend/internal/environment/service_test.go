@@ -25,6 +25,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/audit"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
@@ -142,6 +143,7 @@ func setupEnvironmentServiceTestDB(t *testing.T) *database.DB {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&Environment{},
+		&audit.AuditLog{},
 		&registry.ContainerRegistry{},
 		&s3.S3Destination{},
 		&settings.SettingVariable{},

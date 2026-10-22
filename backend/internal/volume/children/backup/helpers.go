@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -23,6 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
@@ -53,6 +55,21 @@ func resolveBackupStorageMountFromMounts(ctx context.Context, mounts []container
 	}
 	mirroredMount.ReadOnly = readOnly
 	return mirroredMount
+}
+
+func (s *Service) authorizedRun(ctx context.Context, backupID, perm string) (*types.VolumeBackup, error) {
+	entry, err := s.deps.Store.Run(ctx, backupID)
+	if err != nil {
+		return nil, err
+	}
+	authorizeErr := s.deps.Authorize(ctx, entry.VolumeName, perm)
+	if errdefs.IsNotFound(authorizeErr) {
+		authorizeErr = authz.CheckResource(ctx, perm, authz.PermVolumesRead, authz.VolumeAttributes(entry.VolumeName, nil))
+	}
+	if authorizeErr != nil {
+		return nil, authorizeErr
+	}
+	return entry, nil
 }
 
 // localRusticRepositoryInitialized reports whether the local repository has a Rustic config.
@@ -112,7 +129,7 @@ func (s *Service) StorageMount(ctx context.Context, dockerClient *client.Client,
 }
 
 func (s *Service) stopRunningContainersForBackup(ctx context.Context, volumeName string, user types.Actor, refuseArcaneWriters bool) ([]container.Summary, error) {
-	if s.deps.StopContainer == nil || s.deps.StartContainer == nil {
+	if s.deps.StopContainer == nil || s.deps.StartContainer == nil || s.deps.AuthorizeContainer == nil {
 		return nil, errors.New("container service is unavailable")
 	}
 	containers, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
@@ -144,6 +161,13 @@ func (s *Service) stopRunningContainersForBackup(ctx context.Context, volumeName
 		}
 	}
 	containerIDs := docker.FilterContainersUsingVolume(eligible, volumeName)
+	for _, containerID := range containerIDs {
+		for _, perm := range []string{authz.PermContainersStop, authz.PermContainersStart} {
+			if authErr := s.deps.AuthorizeContainer(ctx, containerID, perm); authErr != nil {
+				return nil, fmt.Errorf("not allowed to stop and restart container %s for volume %s: %w", containerID, volumeName, authErr)
+			}
+		}
+	}
 	stopped := make([]container.Summary, 0, len(containerIDs))
 	for _, candidate := range eligible {
 		if !slices.Contains(containerIDs, candidate.ID) {

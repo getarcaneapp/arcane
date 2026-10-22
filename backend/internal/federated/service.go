@@ -24,7 +24,9 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/audit"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
@@ -33,6 +35,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/dbutil"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
@@ -100,17 +103,23 @@ func NewFederatedCredentialService(
 	}
 }
 
-func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID string, req types.FederatedCredential) (*types.FederatedCredential, error) {
+func (s *FederatedCredentialService) Create(ctx context.Context, caller *authz.PermissionSet, req types.FederatedCredential) (*types.FederatedCredential, error) {
 	normalized, err := normalizeFederatedCredential(req)
 	if err != nil {
 		return nil, err
 	}
-	if validateRoleGrantAgainstUserErr := s.validateRoleGrantAgainstUser(ctx, callerUserID, normalized.RoleID, normalized.EnvironmentID); validateRoleGrantAgainstUserErr != nil {
-		return nil, validateRoleGrantAgainstUserErr
+	if validateIssuerErr := validateIssuerURL(normalized.IssuerURL); validateIssuerErr != nil {
+		return nil, validateIssuerErr
 	}
 
 	var created FederatedCredential
 	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		if lockErr := s.roleService.LockGlobalAdminGuard(tx); lockErr != nil {
+			return lockErr
+		}
+		if validateRoleGrantErr := s.validateRoleGrant(ctx, tx, caller, normalized.RoleID, normalized.EnvironmentID); validateRoleGrantErr != nil {
+			return validateRoleGrantErr
+		}
 		serviceUser := user.User{
 			Username:         "svc_federated_" + strings.ReplaceAll(uuid.New().String(), "-", ""),
 			DisplayName:      mo.EmptyableToOption(strings.TrimSpace("Federated: " + normalized.Name)).ToPointer(),
@@ -139,22 +148,28 @@ func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID st
 			return fmt.Errorf("failed to create federated credential: %w", createCredentialErr)
 		}
 
-		assignment := role.UserRoleAssignment{
-			UserID:        serviceUser.ID,
+		if createRoleBindingErr := tx.Create(&role.RoleBinding{
+			UserID:        new(serviceUser.ID),
 			RoleID:        normalized.RoleID,
 			EnvironmentID: normalized.EnvironmentID,
-			Source:        role.RoleAssignmentSourceManual,
+			Source:        role.BindingSourceFederated,
+		}).Error; createRoleBindingErr != nil {
+			return fmt.Errorf("failed to create federated role binding: %w", createRoleBindingErr)
 		}
-		if createRoleAssignmentErr := tx.Create(&assignment).Error; createRoleAssignmentErr != nil {
-			return fmt.Errorf("failed to create federated role assignment: %w", createRoleAssignmentErr)
-		}
-		return nil
+		return audit.RecordInTx(ctx, tx, types.AuditEntry{
+			Action:        types.AuditActionFederatedCreate,
+			TargetType:    types.AuditTargetFederatedCredential,
+			TargetID:      created.ID,
+			TargetName:    created.Name,
+			EnvironmentID: created.EnvironmentID,
+			After:         toFederatedCredentialDTO(&created),
+		})
 	})
 	if err != nil {
 		return nil, err
 	}
 	if s.roleService != nil {
-		s.roleService.InvalidateUser(created.IdentityUserID)
+		s.roleService.InvalidateUsers(created.IdentityUserID)
 	}
 
 	return s.Get(ctx, created.ID)
@@ -204,55 +219,74 @@ func findCredential(query *gorm.DB, id string) (FederatedCredential, error) {
 	return credential, nil
 }
 
-func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID, id string, req types.FederatedCredential, submitted map[string]bool) (*types.FederatedCredential, error) {
-	credential, err := findCredential(s.db.WithContext(ctx), id)
-	if err != nil {
-		return nil, err
-	}
-
-	normalized, err := normalizeFederatedCredential(types.FederatedCredential{
-		Name:            kit.Ternary(submitted["name"], req.Name, credential.Name),
-		Description:     kit.Ternary(submitted["description"], req.Description, credential.Description),
-		Enabled:         kit.Ternary(submitted["enabled"], req.Enabled, credential.Enabled),
-		IssuerURL:       kit.Ternary(submitted["issuerUrl"], req.IssuerURL, credential.IssuerURL),
-		Audiences:       kit.Ternary(submitted["audiences"], req.Audiences, []string(credential.Audiences)),
-		SubjectClaim:    kit.Ternary(submitted["subjectClaim"], req.SubjectClaim, credential.SubjectClaim),
-		SubjectMatch:    kit.Ternary(submitted["subjectMatch"], req.SubjectMatch, credential.SubjectMatch),
-		MatchType:       kit.Ternary(submitted["matchType"], req.MatchType, credential.MatchType),
-		RoleID:          kit.Ternary(submitted["roleId"], req.RoleID, credential.RoleID),
-		EnvironmentID:   kit.Ternary(submitted["environmentId"], req.EnvironmentID, credential.EnvironmentID),
-		TokenTTLSeconds: kit.Ternary(submitted["tokenTtlSeconds"], req.TokenTTLSeconds, credential.TokenTTLSeconds),
-		ExpiresAt:       kit.Ternary(submitted["expiresAt"], req.ExpiresAt, credential.ExpiresAt),
-	})
-	if err != nil {
-		return nil, err
-	}
-	updated := FederatedCredential{
-		BaseModel:       credential.BaseModel,
-		Name:            normalized.Name,
-		Description:     normalized.Description,
-		Enabled:         normalized.Enabled,
-		IssuerURL:       normalized.IssuerURL,
-		Audiences:       normalized.Audiences,
-		SubjectClaim:    normalized.SubjectClaim,
-		SubjectMatch:    normalized.SubjectMatch,
-		MatchType:       normalized.MatchType,
-		RoleID:          normalized.RoleID,
-		EnvironmentID:   normalized.EnvironmentID,
-		IdentityUserID:  credential.IdentityUserID,
-		TokenTTLSeconds: normalized.TokenTTLSeconds,
-		LastUsedAt:      credential.LastUsedAt,
-		ExpiresAt:       normalized.ExpiresAt,
-	}
-	roleChanged := updated.RoleID != credential.RoleID || kit.FromPtr(updated.EnvironmentID) != kit.FromPtr(credential.EnvironmentID)
-	revokeActiveSessions := credential.Enabled && !updated.Enabled
-	if roleChanged {
-		if validateRoleGrantAgainstUserErr := s.validateRoleGrantAgainstUser(ctx, callerUserID, updated.RoleID, updated.EnvironmentID); validateRoleGrantAgainstUserErr != nil {
-			return nil, validateRoleGrantAgainstUserErr
+func (s *FederatedCredentialService) Update(ctx context.Context, caller *authz.PermissionSet, id string, req types.FederatedCredential, submitted map[string]bool) (*types.FederatedCredential, error) {
+	var (
+		updated              FederatedCredential
+		roleChanged          bool
+		revokeActiveSessions bool
+	)
+	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		if lockErr := s.roleService.LockGlobalAdminGuard(tx); lockErr != nil {
+			return lockErr
 		}
-	}
+		credential, findErr := findCredential(tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}), id)
+		if findErr != nil {
+			return findErr
+		}
 
-	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		normalized, normalizeErr := normalizeFederatedCredential(types.FederatedCredential{
+			Name:            kit.Ternary(submitted["name"], req.Name, credential.Name),
+			Description:     kit.Ternary(submitted["description"], req.Description, credential.Description),
+			Enabled:         kit.Ternary(submitted["enabled"], req.Enabled, credential.Enabled),
+			IssuerURL:       kit.Ternary(submitted["issuerUrl"], req.IssuerURL, credential.IssuerURL),
+			Audiences:       kit.Ternary(submitted["audiences"], req.Audiences, []string(credential.Audiences)),
+			SubjectClaim:    kit.Ternary(submitted["subjectClaim"], req.SubjectClaim, credential.SubjectClaim),
+			SubjectMatch:    kit.Ternary(submitted["subjectMatch"], req.SubjectMatch, credential.SubjectMatch),
+			MatchType:       kit.Ternary(submitted["matchType"], req.MatchType, credential.MatchType),
+			RoleID:          kit.Ternary(submitted["roleId"], req.RoleID, credential.RoleID),
+			EnvironmentID:   kit.Ternary(submitted["environmentId"], req.EnvironmentID, credential.EnvironmentID),
+			TokenTTLSeconds: kit.Ternary(submitted["tokenTtlSeconds"], req.TokenTTLSeconds, credential.TokenTTLSeconds),
+			ExpiresAt:       kit.Ternary(submitted["expiresAt"], req.ExpiresAt, credential.ExpiresAt),
+		})
+		if normalizeErr != nil {
+			return normalizeErr
+		}
+		if submitted["issuerUrl"] {
+			if validateIssuerErr := validateIssuerURL(normalized.IssuerURL); validateIssuerErr != nil {
+				return validateIssuerErr
+			}
+		}
+		updated = FederatedCredential{
+			BaseModel:       credential.BaseModel,
+			Name:            normalized.Name,
+			Description:     normalized.Description,
+			Enabled:         normalized.Enabled,
+			IssuerURL:       normalized.IssuerURL,
+			Audiences:       normalized.Audiences,
+			SubjectClaim:    normalized.SubjectClaim,
+			SubjectMatch:    normalized.SubjectMatch,
+			MatchType:       normalized.MatchType,
+			RoleID:          normalized.RoleID,
+			EnvironmentID:   normalized.EnvironmentID,
+			IdentityUserID:  credential.IdentityUserID,
+			TokenTTLSeconds: normalized.TokenTTLSeconds,
+			LastUsedAt:      credential.LastUsedAt,
+			ExpiresAt:       normalized.ExpiresAt,
+		}
+		roleChanged = updated.RoleID != credential.RoleID || kit.FromPtr(updated.EnvironmentID) != kit.FromPtr(credential.EnvironmentID)
+		revokeActiveSessions = credential.Enabled && !updated.Enabled
+		trustChanged := updated.IssuerURL != credential.IssuerURL ||
+			!slices.Equal(updated.Audiences, credential.Audiences) ||
+			updated.SubjectClaim != credential.SubjectClaim ||
+			updated.SubjectMatch != credential.SubjectMatch ||
+			updated.MatchType != credential.MatchType ||
+			(updated.Enabled && !credential.Enabled)
+		if roleChanged || trustChanged {
+			if validateRoleGrantErr := s.validateRoleGrant(ctx, tx, caller, updated.RoleID, updated.EnvironmentID); validateRoleGrantErr != nil {
+				return validateRoleGrantErr
+			}
+		}
+
 		if updateCredentialErr := tx.Save(&updated).Error; updateCredentialErr != nil {
 			return fmt.Errorf("failed to update federated credential: %w", updateCredentialErr)
 		}
@@ -265,27 +299,34 @@ func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID, i
 			}
 		}
 		if roleChanged {
-			if clearRoleAssignmentErr := tx.Where("user_id = ? AND source = ?", updated.IdentityUserID, role.RoleAssignmentSourceManual).
-				Delete(&role.UserRoleAssignment{}).Error; clearRoleAssignmentErr != nil {
-				return fmt.Errorf("failed to clear federated role assignment: %w", clearRoleAssignmentErr)
+			if clearRoleBindingErr := tx.Where("user_id = ? AND source = ?", updated.IdentityUserID, role.BindingSourceFederated).
+				Delete(&role.RoleBinding{}).Error; clearRoleBindingErr != nil {
+				return fmt.Errorf("failed to clear federated role binding: %w", clearRoleBindingErr)
 			}
-			assignment := role.UserRoleAssignment{
-				UserID:        updated.IdentityUserID,
+			if updateRoleBindingErr := tx.Create(&role.RoleBinding{
+				UserID:        new(updated.IdentityUserID),
 				RoleID:        updated.RoleID,
 				EnvironmentID: updated.EnvironmentID,
-				Source:        role.RoleAssignmentSourceManual,
-			}
-			if updateRoleAssignmentErr := tx.Create(&assignment).Error; updateRoleAssignmentErr != nil {
-				return fmt.Errorf("failed to update federated role assignment: %w", updateRoleAssignmentErr)
+				Source:        role.BindingSourceFederated,
+			}).Error; updateRoleBindingErr != nil {
+				return fmt.Errorf("failed to update federated role binding: %w", updateRoleBindingErr)
 			}
 		}
-		return nil
+		return audit.RecordInTx(ctx, tx, types.AuditEntry{
+			Action:        types.AuditActionFederatedUpdate,
+			TargetType:    types.AuditTargetFederatedCredential,
+			TargetID:      updated.ID,
+			TargetName:    updated.Name,
+			EnvironmentID: updated.EnvironmentID,
+			Before:        toFederatedCredentialDTO(&credential),
+			After:         toFederatedCredentialDTO(&updated),
+		})
 	})
 	if err != nil {
 		return nil, err
 	}
 	if roleChanged && s.roleService != nil {
-		s.roleService.InvalidateUser(updated.IdentityUserID)
+		s.roleService.InvalidateUsers(updated.IdentityUserID)
 	}
 	if (revokeActiveSessions || roleChanged) && s.authService != nil {
 		s.authService.InvalidateUserTokenCache(updated.IdentityUserID)
@@ -300,19 +341,29 @@ func (s *FederatedCredentialService) Delete(ctx context.Context, id string) erro
 	}
 
 	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		if lockErr := s.roleService.LockGlobalAdminGuard(tx); lockErr != nil {
+			return lockErr
+		}
 		if deleteErr := tx.Delete(&FederatedCredential{}, "id = ?", credential.ID).Error; deleteErr != nil {
 			return fmt.Errorf("failed to delete federated credential: %w", deleteErr)
 		}
 		if deleteErr := tx.Delete(&user.User{}, "id = ?", credential.IdentityUserID).Error; deleteErr != nil {
 			return fmt.Errorf("failed to delete federated service user: %w", deleteErr)
 		}
-		return nil
+		return audit.RecordInTx(ctx, tx, types.AuditEntry{
+			Action:        types.AuditActionFederatedDelete,
+			TargetType:    types.AuditTargetFederatedCredential,
+			TargetID:      credential.ID,
+			TargetName:    credential.Name,
+			EnvironmentID: credential.EnvironmentID,
+			Before:        toFederatedCredentialDTO(&credential),
+		})
 	})
 	if err != nil {
 		return err
 	}
 	if s.roleService != nil {
-		s.roleService.InvalidateUser(credential.IdentityUserID)
+		s.roleService.InvalidateUsers(credential.IdentityUserID)
 	}
 	if s.authService != nil {
 		s.authService.InvalidateUserTokenCache(credential.IdentityUserID)

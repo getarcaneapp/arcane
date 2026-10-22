@@ -1598,7 +1598,14 @@ func (s *EnvironmentService) CheckS3DestinationReferences(ctx context.Context, d
 			continue
 		}
 		var result types.S3DestinationUsage
-		if proxyErr := s.ProxyJSONRequestForEnvironment(ctx, env, http.MethodGet, "/api/backups/s3/"+url.PathEscape(destinationID)+"/usage", nil, &result); proxyErr != nil {
+		if proxyErr := s.ProxyJSONRequestForEnvironment(
+			authz.WithPermissions(ctx, authz.SudoPermissionSet()),
+			env,
+			http.MethodGet,
+			"/api/backups/s3/"+url.PathEscape(destinationID)+"/usage",
+			nil,
+			&result,
+		); proxyErr != nil {
 			return fmt.Errorf("cannot verify S3 destination references on environment %s; restore connectivity before deleting: %w", env.Name, proxyErr)
 		}
 		if result.InUse {

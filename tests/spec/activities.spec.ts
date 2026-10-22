@@ -1,4 +1,5 @@
 import { removeApiResource } from '../utils/fetch.util';
+import { patchSessionBootstrap, withEnvironments } from '../utils/session.util';
 import { waitForDialogReady } from '../utils/playwright.util';
 import { test, expect, type Locator, type Page, type Route } from '../fixtures/test.fixture';
 
@@ -30,8 +31,10 @@ type MockActivity = {
 type MockUser = {
 	id: string;
 	username: string;
-	roleAssignments: never[];
+	bindings: never[];
+	groups: never[];
 	permissionsByEnv: Record<string, string[]>;
+	scopedPermissionsByEnv: Record<string, string[]>;
 	isGlobalAdmin: boolean;
 	createdAt: string;
 };
@@ -104,10 +107,10 @@ async function preserveLocalEnvironmentSelection(page: Page) {
 	});
 }
 
-async function mockSession(
-	page: Page,
-	{ environments, resolveUser }: { environments: MockEnvironment[]; resolveUser?: () => MockUser }
-) {
+async function mockEnvironmentList(page: Page, environments: MockEnvironment[]) {
+	await patchSessionBootstrap(page.context(), (bootstrap) =>
+		withEnvironments(bootstrap, environments)
+	);
 	await page.context().route(/\/api\/environments(?:\?.*)?$/, async (route) => {
 		await route.fulfill({
 			status: 200,
@@ -115,24 +118,13 @@ async function mockSession(
 			body: JSON.stringify(paginated(environments))
 		});
 	});
+}
 
-	await page.context().route(/\/api\/auth\/bootstrap(?:\?.*)?$/, async (route) => {
-		const response = await route.fetch();
-		const body = await response.json();
-		await route.fulfill({
-			response,
-			json: {
-				...body,
-				data: {
-					...body.data,
-					user: resolveUser?.() ?? body.data.user,
-					environments: paginated(environments)
-				}
-			}
-		});
-	});
-
-	if (!resolveUser) return;
+async function mockCurrentUser(page: Page, resolveUser: () => MockUser) {
+	await patchSessionBootstrap(page.context(), (bootstrap) => ({
+		...bootstrap,
+		user: resolveUser()
+	}));
 	await page.context().route(/\/api\/auth\/me$/, async (route) => {
 		await route.fulfill({
 			status: 200,
@@ -146,8 +138,10 @@ function user(id: string, permissionsByEnv: Record<string, string[]>): MockUser 
 	return {
 		id,
 		username: id,
-		roleAssignments: [],
+		bindings: [],
+		groups: [],
 		permissionsByEnv,
+		scopedPermissionsByEnv: {},
 		isGlobalAdmin: false,
 		createdAt: new Date().toISOString()
 	};
@@ -343,10 +337,8 @@ test.describe('Activity Center', () => {
 		const statsSockets: string[] = [];
 
 		await preserveLocalEnvironmentSelection(page);
-		await mockSession(page, {
-			environments: [localEnvironment, onlineRemoteEnvironment],
-			resolveUser: () => scopedUser
-		});
+		await mockCurrentUser(page, () => scopedUser);
+		await mockEnvironmentList(page, [localEnvironment, onlineRemoteEnvironment]);
 		await mockActivityReads(
 			page,
 			{
@@ -386,14 +378,13 @@ test.describe('Activity Center', () => {
 		const streamChannels: string[][] = [];
 
 		await preserveLocalEnvironmentSelection(page);
-		await mockSession(page, {
-			environments: [localEnvironment],
-			resolveUser: () =>
-				user('dashboard-only-user', {
-					global: [],
-					'0': ['dashboard:read']
-				})
-		});
+		await mockCurrentUser(page, () =>
+			user('dashboard-only-user', {
+				global: [],
+				'0': ['dashboard:read']
+			})
+		);
+		await mockEnvironmentList(page, [localEnvironment]);
 		page.on('request', (request) => {
 			const url = new URL(request.url());
 			if (url.pathname === '/api/stream') {
@@ -424,10 +415,8 @@ test.describe('Activity Center', () => {
 		});
 
 		await preserveLocalEnvironmentSelection(page);
-		await mockSession(page, {
-			environments: [localEnvironment],
-			resolveUser: () => user('snapshot-generation-user', { global: ['*'] })
-		});
+		await mockCurrentUser(page, () => user('snapshot-generation-user', { global: ['*'] }));
+		await mockEnvironmentList(page, [localEnvironment]);
 		await page.context().route(/\/api\/stream(?:\?.*)?$/, async (route) => {
 			await route.fulfill({ status: 503, contentType: 'application/json', body: '{}' });
 		});
@@ -472,10 +461,8 @@ test.describe('Activity Center', () => {
 		const permissions = { global: ['*'] };
 
 		await preserveLocalEnvironmentSelection(page);
-		await mockSession(page, {
-			environments: [localEnvironment],
-			resolveUser: () => user(activeUserId, permissions)
-		});
+		await mockCurrentUser(page, () => user(activeUserId, permissions));
+		await mockEnvironmentList(page, [localEnvironment]);
 		await page.context().route(/\/api\/stream(?:\?.*)?$/, async (route) => {
 			const channels =
 				new URL(route.request().url()).searchParams.get('channels')?.split(',') ?? [];
@@ -544,7 +531,7 @@ test.describe('Activity Center', () => {
 
 	test('shows activity from every configured environment', async ({ page }) => {
 		await preserveLocalEnvironmentSelection(page);
-		await mockSession(page, { environments: [localEnvironment, remoteEnvironment] });
+		await mockEnvironmentList(page, [localEnvironment, remoteEnvironment]);
 		await mockActivityReads(page, {
 			'0': [activity('local-activity', '0', 'Local', 'local-network', 5)],
 			'remote-activity-test': [
@@ -568,7 +555,7 @@ test.describe('Activity Center', () => {
 
 	test('keeps reachable activity visible when a configured environment fails', async ({ page }) => {
 		await preserveLocalEnvironmentSelection(page);
-		await mockSession(page, { environments: [localEnvironment, remoteEnvironment] });
+		await mockEnvironmentList(page, [localEnvironment, remoteEnvironment]);
 		await mockActivityReads(
 			page,
 			{
@@ -602,7 +589,7 @@ test.describe('Activity Center', () => {
 		page
 	}) => {
 		await preserveLocalEnvironmentSelection(page);
-		await mockSession(page, { environments: [localEnvironment, remoteEnvironment] });
+		await mockEnvironmentList(page, [localEnvironment, remoteEnvironment]);
 		await mockActivityReads(page, {
 			'0': [activity('local-activity', '0', 'Local', 'local-network', 5)],
 			'remote-activity-test': [

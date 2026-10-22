@@ -2,6 +2,7 @@ package settings
 
 import (
 	"context"
+	"log/slog"
 	"maps"
 	"net/http"
 	"slices"
@@ -13,7 +14,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/search"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/telemetry"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
@@ -27,6 +28,8 @@ type SettingsHandler struct {
 	settingsSearchService *SettingsSearchService
 	proxyRemoteJSON       handlerutil.RemoteJSONProxy
 	cfg                   *config.Config
+	audit                 AuditRecorder
+	roles                 *role.RoleService
 }
 
 type GetSettingsInput struct {
@@ -104,7 +107,7 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 
 // GetSettings returns all settings for an environment.
 func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInput) (*SettingsSnapshotOutput, error) {
-	ps, _ := middleware.PermissionsFromContext(ctx)
+	ps, _ := authz.PermissionsFromContext(ctx)
 	isAdmin := ps.IsGlobalAdmin()
 
 	if input.EnvironmentID != "0" {
@@ -148,6 +151,13 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 		return h.GetSettings(ctx, &GetSettingsInput{EnvironmentID: input.EnvironmentID})
 	}
 
+	caller, _ := authz.PermissionsFromContext(ctx)
+	if err := h.settingsService.ValidateDefaultUserRole(ctx, h.roles, caller, input.Body["defaultUserRoleId"]); err != nil {
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+	}
+
+	currentCfg := h.settingsService.GetSettingsConfig()
 	if err := h.settingsService.UpdateSettings(ctx, input.Body); err != nil {
 		apiErr := common.ToAPIError(err)
 		switch apiErr.HTTPStatus() {
@@ -170,7 +180,31 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 		}
 	}
+	h.recordAuditedChanges(ctx, currentCfg)
 	return h.GetSettings(ctx, &GetSettingsInput{EnvironmentID: input.EnvironmentID})
+}
+
+func (h *SettingsHandler) recordAuditedChanges(ctx context.Context, before *Settings) {
+	after := h.settingsService.GetSettingsConfig()
+	for key, values := range map[string][2]string{
+		"defaultUserRoleId":   {before.DefaultUserRoleId.Value, after.DefaultUserRoleId.Value},
+		"auditRetentionDays":  {before.AuditRetentionDays.Value, after.AuditRetentionDays.Value},
+		"auditDenialsEnabled": {before.AuditDenialsEnabled.Value, after.AuditDenialsEnabled.Value},
+	} {
+		if values[0] == values[1] {
+			continue
+		}
+		if err := h.audit.Record(ctx, types.AuditEntry{
+			Action:     types.AuditActionSettingsUpdate,
+			TargetType: types.AuditTargetSetting,
+			TargetID:   key,
+			TargetName: key,
+			Before:     map[string]string{"value": values[0]},
+			After:      map[string]string{"value": values[1]},
+		}); err != nil {
+			slog.WarnContext(ctx, "Failed to record settings audit entry", "key", key, "error", err)
+		}
+	}
 }
 
 // Search searches settings by query.
@@ -193,7 +227,7 @@ func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput
 // GetCategories returns the settings categories reachable at any scope.
 func (h *SettingsHandler) GetCategories(ctx context.Context, input *struct{}) (*GetCategoriesOutput, error) {
 	categories := []types.Category{}
-	ps, _ := middleware.PermissionsFromContext(ctx)
+	ps, _ := authz.PermissionsFromContext(ctx)
 	if ps == nil {
 		return &GetCategoriesOutput{Body: categories}, nil
 	}

@@ -131,7 +131,12 @@ func TestVolumeBackup_ValidationErrors(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-validation?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&policies.VolumeBackupPolicy{}))
-	service := NewService(Dependencies{DB: &database.DB{DB: gormDB}})
+	service := NewService(Dependencies{
+		DB: &database.DB{DB: gormDB},
+		Authorize: func(context.Context, string, string) error {
+			return nil
+		},
+	})
 	ctx := t.Context()
 
 	_, err = service.policies.UpdateBackupPolicies(ctx, "app-data", []types.UpdateBackupPolicy{{Schedule: "not a cron", LocalEnabled: true}})

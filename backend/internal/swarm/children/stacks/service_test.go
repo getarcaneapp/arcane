@@ -15,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 )
 
 func setupSwarmServiceTestDB(t *testing.T) *database.DB {
@@ -123,6 +124,41 @@ func TestService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager(t *t
 	require.NoError(t, err)
 	require.Len(t, source.Files, 1)
 	require.Equal(t, []byte("worker_processes auto;"), source.Files[0].Content)
+}
+
+func TestService_StackSourceRespectsStackScope(t *testing.T) {
+	db := setupSwarmServiceTestDB(t)
+	t.Setenv("ARCANE_SWARM_STACK_SOURCES_DIRECTORY", t.TempDir())
+
+	settingsSvc, err := newSettingsServiceForSwarmTest(t, t.Context(), db)
+	require.NoError(t, err)
+
+	svc := NewService(nil, nil, nil, nil, nil, settingsSvc)
+	deployRec := stubStackSourceUpdateDeploy(t)
+	for _, name := range []string{"demo-stack", "other-stack"} {
+		_, err = svc.UpdateStackSource(t.Context(), "0", name, types.SwarmStackSource{
+			ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+		}, fullStackSourceSubmitted)
+		require.NoError(t, err)
+	}
+
+	ps := authz.NewPermissionSet()
+	ps.AddEnv("0", authz.PermSwarmRead)
+	ps.AddScopedEnv("0", types.ResourceSelector{Projects: []string{"demo-stack"}}, authz.PermSwarmStacks)
+	ctx := authz.WithRequestEnvironment(authz.WithPermissions(t.Context(), ps), "0")
+
+	_, err = svc.GetStackSource(ctx, "0", "demo-stack")
+	require.NoError(t, err)
+
+	_, err = svc.GetStackSource(ctx, "0", "other-stack")
+	require.ErrorIs(t, err, authz.ErrResourceForbidden)
+
+	calls := deployRec.calls
+	_, err = svc.UpdateStackSource(ctx, "0", "other-stack", types.SwarmStackSource{
+		ComposeContent: "services:\n  web:\n    image: nginx:latest\n",
+	}, fullStackSourceSubmitted)
+	require.ErrorIs(t, err, authz.ErrResourceForbidden)
+	require.Equal(t, calls, deployRec.calls)
 }
 
 func TestService_UpdateAndGetStackSource_RoundTripsOverride(t *testing.T) {

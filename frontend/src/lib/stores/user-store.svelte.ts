@@ -1,9 +1,10 @@
 import { setMode } from 'mode-watcher';
 import { untrack } from 'svelte';
 
+import { PERMISSIONS, type Permission } from '#lib/permissions.generated.js';
 import { timeFormatStore } from '#lib/stores/time-format.store.svelte.js';
 import type { User } from '#lib/types/auth.js';
-import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/auth.js';
+import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 import { setLocale } from '#lib/utils/formatting.js';
 import {
 	applyAccentColor,
@@ -18,10 +19,10 @@ import {
 let current = $state.raw<User | null>(null);
 const listeners = new Set<(user: User | null) => void>();
 
-export const userHasPermissionInAnyEnvironment = (user: User | null | undefined, perm: string): boolean => {
+export const userHasPermissionInAnyEnvironment = (user: User | null | undefined, perm: Permission): boolean => {
 	if (!user?.permissionsByEnv) return false;
 	const global = user.permissionsByEnv[GLOBAL_SCOPE] ?? [];
-	if (global.includes(SUDO_PERMISSION) || global.includes(perm)) return true;
+	if (global.includes(PERMISSIONS.ALL) || global.includes(perm)) return true;
 	return Object.values(user.permissionsByEnv).some((permissions) => permissions.includes(perm));
 };
 
@@ -87,34 +88,35 @@ const permissions = (envId?: string): Set<string> => {
 };
 
 /** Returns true if the caller may perform `perm`. Sudo callers (`*` in global) always return true. */
-const hasPermission = (perm: string, envId?: string): boolean => {
+const hasPermission = (perm: Permission, envId?: string): boolean => {
 	const set = permissions(envId);
-	if (set.has(SUDO_PERMISSION)) return true;
-	return set.has(perm);
+	return set.has(PERMISSIONS.ALL) || set.has(perm);
 };
 
 /** Returns true if the caller has ANY of the supplied permissions. */
-const hasAnyPermission = (perms: string[], envId?: string): boolean => {
+const hasAnyPermission = (perms: Permission[], envId?: string): boolean => {
 	if (perms.length === 0) return true;
 	const set = permissions(envId);
-	if (set.has(SUDO_PERMISSION)) return true;
+	if (set.has(PERMISSIONS.ALL)) return true;
 	return perms.some((p) => set.has(p));
 };
 
 /** Returns true if the caller may perform `perm` in at least one effective environment scope. */
-const hasPermissionInAnyEnvironment = (perm: string): boolean => {
+const hasPermissionInAnyEnvironment = (perm: Permission): boolean => {
 	return userHasPermissionInAnyEnvironment(current, perm);
 };
 
-/** Returns true if the caller effectively holds global administrator access. */
-const isGlobalAdmin = (): boolean => {
+const isScoped = (perm: Permission, envId?: string): boolean => {
 	const user = current;
-	if (!user) return false;
-	if (typeof user.isGlobalAdmin === 'boolean') return user.isGlobalAdmin;
-	const global = user.permissionsByEnv?.[GLOBAL_SCOPE];
-	if (global?.includes(SUDO_PERMISSION)) return true;
-	return false;
+	if (!user || !hasPermission(perm, envId)) return false;
+	if (user.isGlobalAdmin) return false;
+	const unrestricted = (scope: string) =>
+		(user.permissionsByEnv?.[scope] ?? []).includes(perm) && !(user.scopedPermissionsByEnv?.[scope] ?? []).includes(perm);
+	return !unrestricted(GLOBAL_SCOPE) && !(envId && envId !== GLOBAL_SCOPE && unrestricted(envId));
 };
+
+/** Returns true if the caller effectively holds global administrator access. */
+const isGlobalAdmin = (): boolean => current?.isGlobalAdmin === true;
 
 export default {
 	get current() {
@@ -133,5 +135,6 @@ export default {
 	hasPermission,
 	hasAnyPermission,
 	hasPermissionInAnyEnvironment,
+	isScoped,
 	isGlobalAdmin
 };

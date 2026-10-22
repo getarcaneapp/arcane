@@ -13,6 +13,8 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
 )
 
@@ -32,6 +34,10 @@ func (h *WebSocketHandler) ContainerStats(c *echo.Context) error {
 	containerID := c.Param("containerId")
 	if strings.TrimSpace(containerID) == "" {
 		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
+	}
+	if _, err := h.containerService.AuthorizeContainer(c.Request().Context(), containerID, authz.PermContainersRead); err != nil {
+		apiErr := common.ToAPIError(err)
+		return c.JSON(apiErr.HTTPStatus(), apiErr)
 	}
 
 	conn, onRemove, ok := h.acceptWS(c, types.WSKindContainerStats, containerID)

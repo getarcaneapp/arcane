@@ -28,6 +28,7 @@
 	} from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type {
@@ -178,7 +179,7 @@
 	const hasMounts = $derived(mounts.length > 0);
 
 	const envId = $derived(environmentStore.selected?.id || '0');
-	const canManageServices = $derived(hasPermission('swarm:services', envId));
+	const canManageServices = $derived(hasPermission(PERMISSIONS.SWARM_SERVICES, envId));
 	const canScaleService = $derived(canManageServices && showsReplicas);
 
 	const serviceActions = $derived<ActionButton[]>([
@@ -224,7 +225,7 @@
 			onclick: handleDelete
 		}
 	]);
-	const canViewServiceLogs = $derived(hasPermission('swarm:services:logs', envId));
+	const canViewServiceLogs = $derived(hasPermission(PERMISSIONS.SWARM_SERVICES_LOGS, envId));
 
 	const tabItems = $derived<TabItem[]>([
 		{ value: 'overview', label: m.common_overview(), icon: DockIcon },

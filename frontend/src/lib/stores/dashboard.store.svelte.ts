@@ -1,5 +1,6 @@
 import { browser } from '$app/env';
 
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { dashboardService } from '#lib/services/dashboard-service.js';
 import { STREAM_CHANNEL_DASHBOARD } from '#lib/services/stream-service.js';
 import { clientStream } from '#lib/stores/client-stream.svelte.js';
@@ -28,7 +29,7 @@ function createDashboardStore() {
 
 	const core = createEnvironmentStreamStore<DashboardEnvironmentState, DashboardStreamEvent>({
 		label: 'Dashboard',
-		includeEnvironment: (environment) => userStore.hasPermission('dashboard:read', environment.id),
+		includeEnvironment: (environment) => userStore.hasPermission(PERMISSIONS.DASHBOARD_READ, environment.id),
 		subscribeEnvironmentFilter: (reconcile) => userStore.onChange(reconcile),
 		refreshOnStart: true,
 		clearErrorExtra: { errorCode: undefined },

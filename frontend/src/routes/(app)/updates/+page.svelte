@@ -10,6 +10,7 @@
 	import { ContainersIcon, ProjectsIcon, UpdateIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService, type ContainerListRequestOptions } from '#lib/services/container-service.js';
 	import { imageService } from '#lib/services/image-service.js';
@@ -198,7 +199,7 @@
 			action: 'inspect',
 			label: m.images_check_updates(),
 			loadingLabel: m.common_action_checking(),
-			onclick: () => checkUpdatesMutation.mutate(actionEnvironments('image-updates:check')),
+			onclick: () => checkUpdatesMutation.mutate(actionEnvironments(PERMISSIONS.IMAGE_UPDATES_CHECK)),
 			loading: isChecking,
 			disabled: isChecking
 		},

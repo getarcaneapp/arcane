@@ -5,6 +5,7 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -24,7 +25,7 @@
 				await environmentStore.ready;
 				return imageService.getImageHistory(requestedImageId, environmentId);
 			},
-			enabled: !!environmentId && !!requestedImageId && hasPermission('images:read', environmentId)
+			enabled: !!environmentId && !!requestedImageId && hasPermission(PERMISSIONS.IMAGES_READ, environmentId)
 		};
 	});
 	const history = $derived(historyQuery.data ?? []);

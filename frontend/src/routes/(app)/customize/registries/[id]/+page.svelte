@@ -18,6 +18,7 @@
 	import { AlertTriangleIcon, ArrowRightIcon, RegistryIcon, SearchIcon, TagIcon, TrashIcon } from '#lib/icons/index.js';
 	import { ResourceDetailLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
 	import type { RegistryTag } from '#lib/types/docker.js';
@@ -39,7 +40,7 @@
 	const { host: registryHost, namespace: registryNamespace } = $derived(splitRegistryUrl(registry.url));
 	const repository = $derived(data.repository);
 	const tags = $derived(data.tags);
-	const canDeleteTags = $derived(hasPermission('registries:delete-tags'));
+	const canDeleteTags = $derived(hasPermission(PERMISSIONS.REGISTRIES_DELETE_TAGS));
 
 	let selecting = $state(false);
 	let selected = $state<string[]>([]);

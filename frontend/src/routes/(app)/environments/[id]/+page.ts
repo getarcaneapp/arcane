@@ -1,3 +1,4 @@
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 import { settingsService } from '#lib/services/settings-service.js';
@@ -24,7 +25,7 @@ export const load: PageLoad = async ({ params, parent }) => {
 			}
 			await featureStore.load(params.id);
 			// An unknown status only leaves the Swarm toggle unlocked; nothing else depends on it.
-			const swarmActiveRequest = userHasPermission(user, 'swarm:read', params.id)
+			const swarmActiveRequest = userHasPermission(user, PERMISSIONS.SWARM_READ, params.id)
 				? tryCatch(
 						queryClient.query({
 							queryKey: queryKeys.swarm.status(params.id),
@@ -39,7 +40,7 @@ export const load: PageLoad = async ({ params, parent }) => {
 					queryClient.query({
 						queryKey: queryKeys.environments.settings(params.id),
 						queryFn: () =>
-							userHasPermission(user, 'settings:read', params.id)
+							userHasPermission(user, PERMISSIONS.SETTINGS_READ, params.id)
 								? settingsService.getSettingsForEnvironment(params.id)
 								: settingsService.getPublicSettingsForEnvironment(params.id)
 					}))()

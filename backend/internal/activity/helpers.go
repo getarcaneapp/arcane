@@ -7,13 +7,12 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 )
 
 // Job summaries live in their target environment's environment_id column.
 func scopeJobActivityVisibility(ctx context.Context, query *gorm.DB, environmentID, permission string) *gorm.DB {
-	permissions, present := middleware.PermissionsFromContext(ctx)
+	permissions, present := authz.PermissionsFromContext(ctx)
 	if !present || permissions.Allows(permission, environmentID) {
 		return query
 	}
@@ -29,7 +28,7 @@ func canReadJobActivity(ctx context.Context, item types.Activity) bool {
 	if environmentID == "" {
 		return false
 	}
-	permissions, _ := middleware.PermissionsFromContext(ctx)
+	permissions, _ := authz.PermissionsFromContext(ctx)
 	return permissions.Allows(authz.PermActivitiesRead, environmentID)
 }
 

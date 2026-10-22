@@ -30,6 +30,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
@@ -54,9 +56,10 @@ type NetworkService struct {
 }
 
 type networkTopologyCacheEntry struct {
-	topology *types.NetworkTopology
-	builtAt  time.Time
-	gen      uint64
+	topology   *types.NetworkTopology
+	attributes map[string]authz.ResourceAttributes
+	builtAt    time.Time
+	gen        uint64
 }
 
 func NewNetworkService(db *database.DB, dockerService *dockerInternal.DockerClientService, eventService *event.EventService) *NetworkService {
@@ -74,6 +77,9 @@ func (s *NetworkService) GetNetworkByID(ctx context.Context, id string) (*networ
 	if err != nil {
 		return nil, fmt.Errorf("network not found: %w", err)
 	}
+	if authorizeErr := authorizeNetworkAttributes(ctx, authz.PermNetworksRead, networkInspect.Network); authorizeErr != nil {
+		return nil, authorizeErr
+	}
 
 	return new(networkInspect.Network), nil
 }
@@ -82,7 +88,7 @@ func (s *NetworkService) GetNetworkByID(ctx context.Context, id string) (*networ
 func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*types.NetworkTopology, error) {
 	gen := s.topologyGen.Load()
 	if entry := s.topologyCache.Load(); entry != nil && entry.gen == gen && time.Since(entry.builtAt) < networkTopologyCacheTTL {
-		return entry.topology, nil
+		return scopedTopology(ctx, entry), nil
 	}
 
 	// Keyed by generation so callers after a network change never join an older build.
@@ -90,16 +96,12 @@ func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*types.Network
 		buildCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), networkTopologyBuildTimeout)
 		defer cancel()
 
-		topology, err := s.buildTopology(buildCtx)
+		entry, err := s.buildTopology(buildCtx, gen)
 		if err != nil {
 			return nil, err
 		}
-		s.topologyCache.Store(&networkTopologyCacheEntry{
-			topology: topology,
-			builtAt:  time.Now(),
-			gen:      gen,
-		})
-		return topology, nil
+		s.topologyCache.Store(entry)
+		return entry, nil
 	})
 
 	select {
@@ -109,15 +111,46 @@ func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*types.Network
 		if res.Err != nil {
 			return nil, res.Err
 		}
-		topology, ok := res.Val.(*types.NetworkTopology)
+		entry, ok := res.Val.(*networkTopologyCacheEntry)
 		if !ok {
 			return nil, errors.New("network topology cache returned unexpected type")
 		}
-		return topology, nil
+		return scopedTopology(ctx, entry), nil
 	}
 }
 
-func (s *NetworkService) buildTopology(ctx context.Context) (*types.NetworkTopology, error) {
+func scopedTopology(ctx context.Context, entry *networkTopologyCacheEntry) *types.NetworkTopology {
+	networkScope := authz.ScopeFromContext(ctx, authz.PermNetworksRead)
+	containerScope := authz.ScopeFromContext(ctx, authz.PermContainersList)
+	if networkScope.IsUnrestricted() && containerScope.IsUnrestricted() {
+		return entry.topology
+	}
+
+	visible := func(node types.NetworkTopologyNode) bool {
+		return kit.Ternary(node.Type == types.NetworkTopologyNodeTypeNetwork, networkScope, containerScope).Matches(entry.attributes[node.ID])
+	}
+	visibleByID := make(map[string]bool, len(entry.topology.Nodes))
+	for _, node := range entry.topology.Nodes {
+		visibleByID[node.ID] = visible(node)
+	}
+
+	edges := slices.DeleteFunc(slices.Clone(entry.topology.Edges), func(edge types.NetworkTopologyEdge) bool {
+		return !visibleByID[edge.Source] || !visibleByID[edge.Target]
+	})
+	connected := make(map[string]bool, len(edges))
+	for _, edge := range edges {
+		connected[edge.Target] = true
+	}
+
+	return &types.NetworkTopology{
+		Nodes: slices.DeleteFunc(slices.Clone(entry.topology.Nodes), func(node types.NetworkTopologyNode) bool {
+			return !visibleByID[node.ID] || (node.Type == types.NetworkTopologyNodeTypeContainer && !connected[node.ID])
+		}),
+		Edges: edges,
+	}
+}
+
+func (s *NetworkService) buildTopology(ctx context.Context, gen uint64) (*networkTopologyCacheEntry, error) {
 	containers, err := s.dockerService.ListContainers(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list containers: %w", err)
@@ -165,11 +198,13 @@ func (s *NetworkService) buildTopology(ctx context.Context) (*types.NetworkTopol
 
 	nodes := make([]types.NetworkTopologyNode, 0, len(networkList.Items))
 	edges := make([]types.NetworkTopologyEdge, 0)
+	attributes := make(map[string]authz.ResourceAttributes, len(networkList.Items))
 	containerNodeIDs := make(map[string]struct{})
 	for i, rawNetwork := range networkList.Items {
 		if inspectedNetworks[i].ID == "" {
 			continue
 		}
+		attributes[rawNetwork.ID] = authz.NetworkAttributes(rawNetwork.Name, rawNetwork.Labels)
 		nodes = append(nodes, types.NetworkTopologyNode{
 			ID:   rawNetwork.ID,
 			Name: rawNetwork.Name,
@@ -184,6 +219,7 @@ func (s *NetworkService) buildTopology(ctx context.Context) (*types.NetworkTopol
 		for containerID, endpoint := range inspectedNetworks[i].Containers {
 			if _, exists := containerNodeIDs[containerID]; !exists {
 				ctr := containersByID[containerID]
+				attributes[containerID] = authz.ContainerAttributes(ctr.Names, ctr.Labels)
 				nodes = append(nodes, types.NetworkTopologyNode{
 					ID:   containerID,
 					Name: cmp.Or(kit.Ternary(len(ctr.Names) > 0, docker.ContainerNameFromNames(ctr.Names), ctr.ID), endpoint.Name),
@@ -213,15 +249,37 @@ func (s *NetworkService) buildTopology(ctx context.Context) (*types.NetworkTopol
 		return cmp.Or(strings.Compare(a.Source, b.Source), strings.Compare(a.Target, b.Target))
 	})
 
-	return &types.NetworkTopology{
-		Nodes: nodes,
-		Edges: edges,
+	return &networkTopologyCacheEntry{
+		topology: &types.NetworkTopology{
+			Nodes: nodes,
+			Edges: edges,
+		},
+		attributes: attributes,
+		builtAt:    time.Now(),
+		gen:        gen,
 	}, nil
 }
 
 func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options client.NetworkCreateOptions, user types.Actor) (*network.CreateResponse, error) {
 	if strings.TrimSpace(name) == "" {
 		return nil, common.Classify(common.ErrBadRequest, errors.New("network name is required"))
+	}
+	options = client.NetworkCreateOptions{
+		Driver:     options.Driver,
+		Scope:      options.Scope,
+		EnableIPv4: options.EnableIPv4,
+		EnableIPv6: options.EnableIPv6,
+		IPAM:       options.IPAM,
+		Internal:   options.Internal,
+		Attachable: options.Attachable,
+		Ingress:    options.Ingress,
+		ConfigOnly: options.ConfigOnly,
+		ConfigFrom: options.ConfigFrom,
+		Options:    options.Options,
+		Labels:     libarcane.WithOwnerLabel(options.Labels, user.ID),
+	}
+	if err := recordNetworkDenial(ctx, authz.PermNetworksCreate, authz.CheckCreate(ctx, authz.PermNetworksCreate, authz.NetworkAttributes(name, options.Labels))); err != nil {
+		return nil, err
 	}
 	defer s.eventService.BeginDockerResourceSuppressionWindow("network", "", name)()
 	response, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkCreateResult, error) {
@@ -248,6 +306,9 @@ func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options
 }
 
 func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user types.Actor) error {
+	if err := s.authorizeNetwork(ctx, id, authz.PermNetworksDelete); err != nil {
+		return err
+	}
 	networkInfo, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkInspectResult, error) {
 		return compat.NetworkInspectWithCompatibility(ctx, dockerClient, id, client.NetworkInspectOptions{})
 	})
@@ -281,6 +342,9 @@ func (s *NetworkService) ConnectContainer(ctx context.Context, networkID string,
 	ipv6, ipv6Err := netip.ParseAddr(strings.TrimSpace(req.IPv6Address))
 	if ipv6Err != nil && strings.TrimSpace(req.IPv6Address) != "" {
 		return common.Classify(common.ErrValidation, fmt.Errorf("invalid IPv6 address %s: %w", strings.TrimSpace(req.IPv6Address), ipv6Err))
+	}
+	if err := s.authorizeNetworkAttachment(ctx, networkID, req.ContainerID, authz.PermNetworksConnect); err != nil {
+		return err
 	}
 
 	if _, networkConnectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkConnectResult, error) {
@@ -332,6 +396,9 @@ func (s *NetworkService) ConnectContainer(ctx context.Context, networkID string,
 
 // DisconnectContainer disconnects a container from a network.
 func (s *NetworkService) DisconnectContainer(ctx context.Context, networkID string, req types.NetworkContainerRequest, user types.Actor) error {
+	if err := s.authorizeNetworkAttachment(ctx, networkID, req.ContainerID, authz.PermNetworksDisconnect); err != nil {
+		return err
+	}
 	if _, networkDisconnectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkDisconnectResult, error) {
 		return dockerClient.NetworkDisconnect(ctx, networkID, client.NetworkDisconnectOptions{
 			Container: req.ContainerID,
@@ -403,9 +470,13 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 		return nil, pagination.Response{}, types.NetworkUsageCounts{}, fmt.Errorf("failed to list Docker networks: %w", err)
 	}
 
+	scope := authz.ScopeFromContext(ctx, authz.PermNetworksList)
 	items := make([]types.NetworkSummary, 0, len(networkList.Items))
 	inUse := 0
 	for _, n := range networkList.Items {
+		if !scope.Matches(authz.NetworkAttributes(n.Name, n.Labels)) {
+			continue
+		}
 		netDto, mapErr := mapping.MapOne[network.Summary, types.NetworkSummary](n)
 		if mapErr != nil {
 			return nil, pagination.Response{}, types.NetworkUsageCounts{}, fmt.Errorf("failed to map network: %w", mapErr)

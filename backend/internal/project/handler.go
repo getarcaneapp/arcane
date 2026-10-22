@@ -667,6 +667,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 				ActivityID:         mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 				LastSyncCommit:     details.LastSyncCommit,
 				GitOpsManagedBy:    details.GitOpsManagedBy,
+				OwnerUserID:        details.OwnerUserID,
 				UpdateInfo:         details.UpdateInfo,
 				ArchivedAt:         details.ArchivedAt,
 				Status:             details.Status,

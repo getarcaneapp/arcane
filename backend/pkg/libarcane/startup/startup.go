@@ -62,19 +62,12 @@ func CleanupOrphanedVolumeHelpers(ctx context.Context, cleanupFunc func(context.
 func InitializeNonAgentFeatures(
 	ctx context.Context,
 	agentMode bool,
-	ensureBuiltInRolesFunc func(context.Context) error,
 	createAdminFunc func(context.Context) error,
 	reconcileDefaultAdminAPIKeyFunc func(context.Context) error,
 	autoLoginInitFunc func(context.Context) error,
 ) {
 	if agentMode {
 		return
-	}
-
-	if ensureBuiltInRolesFunc != nil {
-		if err := ensureBuiltInRolesFunc(ctx); err != nil {
-			slog.ErrorContext(ctx, "Failed to seed built-in roles before admin bootstrap", "error", err.Error())
-		}
 	}
 
 	if err := createAdminFunc(ctx); err != nil {

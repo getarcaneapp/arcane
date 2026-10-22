@@ -9,6 +9,7 @@
 	import { BoxIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService } from '#lib/services/podman-service.js';
 	import type { PodmanPodCreateRequest } from '#lib/types/podman.js';
@@ -27,7 +28,7 @@
 
 	const pageState = new ResourceListPageState(untrack(() => data.requestOptions));
 	const podmanEnvironments = $derived(shownPodmanEnvironments(data.podmanStatuses));
-	const manageableEnvironments = $derived(podmanEnvironments.filter((env) => hasPermission('podman:pods', env.id)));
+	const manageableEnvironments = $derived(podmanEnvironments.filter((env) => hasPermission(PERMISSIONS.PODMAN_PODS, env.id)));
 	let isLoading = $state({ create: false, prune: false });
 
 	const podsQuery = createQuery(() => {

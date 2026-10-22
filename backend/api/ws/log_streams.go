@@ -15,6 +15,8 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
 )
 
@@ -187,6 +189,11 @@ func (h *WebSocketHandler) ProjectLogs(c *echo.Context) error {
 	projectID := c.Param("projectId")
 	if strings.TrimSpace(projectID) == "" {
 		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Project ID is required"})
+	}
+
+	if _, err := h.projectService.GetAuthorizedProject(c.Request().Context(), projectID, authz.PermProjectsLogs); err != nil {
+		apiErr := common.ToAPIError(err)
+		return c.JSON(apiErr.HTTPStatus(), apiErr)
 	}
 
 	streamLogs := h.projectLogStreamer
@@ -388,6 +395,11 @@ func (h *WebSocketHandler) ContainerLogs(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
 	}
 
+	if _, err := h.containerService.AuthorizeContainer(c.Request().Context(), containerID, authz.PermContainersLogs); err != nil {
+		apiErr := common.ToAPIError(err)
+		return c.JSON(apiErr.HTTPStatus(), apiErr)
+	}
+
 	streamLogs := h.containerLogStreamer
 	if streamLogs == nil {
 		streamLogs = h.containerService.StreamLogs
@@ -431,6 +443,10 @@ func (h *WebSocketHandler) ServiceLogs(c *echo.Context) error {
 	serviceID := c.Param("serviceId")
 	if strings.TrimSpace(serviceID) == "" {
 		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Service ID is required"})
+	}
+	if err := h.swarmService.AuthorizeService(c.Request().Context(), serviceID, authz.PermSwarmServicesLogs); err != nil {
+		apiErr := common.ToAPIError(err)
+		return c.JSON(apiErr.HTTPStatus(), apiErr)
 	}
 
 	params := parseLogStreamParams(c)

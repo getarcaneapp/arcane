@@ -22,6 +22,7 @@
 	import { AlertIcon, BackupIcon, CloudStorageIcon, InfoIcon, LockIcon, ResetIcon, UploadIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { systemBackupService } from '#lib/services/system-backup-service.js';
 	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
@@ -93,7 +94,7 @@
 	let restoreFilesLoaded = $state(false);
 	let restoringFiles = $state(false);
 	const isReadOnly = $derived(settingsStore.readOnly);
-	const canManageRecoveryKey = $derived(hasPermission('system-backups:recovery-key'));
+	const canManageRecoveryKey = $derived(hasPermission(PERMISSIONS.SYSTEM_BACKUPS_RECOVERY_KEY));
 	const destinationOptions = $derived(backupDestinationOptions(data.destinations.length > 0));
 	const s3Options = $derived(s3DestinationOptions(data.destinations));
 	const backupTypeOptions = $derived([
@@ -394,7 +395,7 @@
 	let mounted = false;
 	async function discoverStoredBackups() {
 		if (!mounted || autoDiscovered || !policyCollection.recoveryKeyStored || !data.destinations.length) return;
-		if (!hasPermission('system-backups:manage')) return;
+		if (!hasPermission(PERMISSIONS.SYSTEM_BACKUPS_MANAGE)) return;
 		autoDiscovered = true;
 		const found = await runAutomaticBackupDiscovery(data.destinations);
 		if (mounted && found) await refresh();

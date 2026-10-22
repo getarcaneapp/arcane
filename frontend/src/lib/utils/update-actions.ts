@@ -2,6 +2,7 @@ import { toast } from 'svelte-sonner';
 
 import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 import { m } from '#lib/paraglide/messages.js';
+import { PERMISSIONS } from '#lib/permissions.generated.js';
 import BaseAPIService from '#lib/services/api-service.js';
 import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
 import { imageService } from '#lib/services/image-service.js';
@@ -119,7 +120,7 @@ async function disarmWhenBackendResponds() {
  * updater run — the same path the nightly auto-update job takes).
  */
 export function confirmAndApplyAllUpdates({ setLoading, onRefresh }: ConfirmAndApplyAllUpdatesOptions) {
-	const environments = actionEnvironments('image-updates:check');
+	const environments = actionEnvironments(PERMISSIONS.IMAGE_UPDATES_CHECK);
 	openConfirmDialog({
 		title: m.update_all(),
 		message: `${m.updates_update_all_confirm_message()} ${acrossEnvironmentsNote(environments)}`.trim(),

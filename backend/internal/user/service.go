@@ -1,6 +1,7 @@
 package user
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -20,6 +21,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/audit"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
@@ -175,7 +177,13 @@ func (s *UserService) CreateUser(ctx context.Context, localUser *User) (*User, e
 			}
 			return fmt.Errorf("failed to create user: %w", createUserErr)
 		}
-		return nil
+		return audit.RecordInTx(ctx, tx, types.AuditEntry{
+			Action:     types.AuditActionUserCreate,
+			TargetType: types.AuditTargetUser,
+			TargetID:   localUser.ID,
+			TargetName: localUser.Username,
+			After:      userSnapshot(*localUser),
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -333,7 +341,14 @@ func (s *UserService) UpdateUser(ctx context.Context, localUser *User, actorPerm
 		if reloadErr := tx.Where("id = ?", localUser.ID).First(&updated).Error; reloadErr != nil {
 			return fmt.Errorf("failed to reload user: %w", reloadErr)
 		}
-		return nil
+		return audit.RecordInTx(ctx, tx, types.AuditEntry{
+			Action:     types.AuditActionUserUpdate,
+			TargetType: types.AuditTargetUser,
+			TargetID:   updated.ID,
+			TargetName: updated.Username,
+			Before:     userSnapshot(current),
+			After:      userSnapshot(updated),
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -418,7 +433,12 @@ func (s *UserService) SetPassword(ctx context.Context, localUser *User, password
 		if reloadErr := tx.Where("id = ?", localUser.ID).First(&updated).Error; reloadErr != nil {
 			return fmt.Errorf("failed to reload user: %w", reloadErr)
 		}
-		return nil
+		return audit.RecordInTx(ctx, tx, types.AuditEntry{
+			Action:     types.AuditActionUserPasswordReset,
+			TargetType: types.AuditTargetUser,
+			TargetID:   updated.ID,
+			TargetName: updated.Username,
+		})
 	})
 	if err != nil {
 		return nil, err
@@ -462,6 +482,15 @@ func (s *UserService) SetPasswordAndRevokeSessionsExcept(ctx context.Context, lo
 		updatedUser.RequiresPasswordChange = false
 		if updatePasswordErr := tx.Save(&updatedUser).Error; updatePasswordErr != nil {
 			return fmt.Errorf("failed to update user password: %w", updatePasswordErr)
+		}
+		if recordErr := audit.RecordInTx(ctx, tx, types.AuditEntry{
+			Action:     types.AuditActionUserPasswordReset,
+			TargetType: types.AuditTargetUser,
+			TargetID:   updatedUser.ID,
+			TargetName: updatedUser.Username,
+			Metadata:   map[string]any{"sessionsRevoked": true},
+		}); recordErr != nil {
+			return recordErr
 		}
 		return s.revokeSessionsExcept(ctx, tx, updatedUser.ID, exceptSessionID)
 	})
@@ -537,7 +566,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 			return fmt.Errorf("failed to count users: %w", err)
 		}
 		if count > 0 {
-			admins, err := s.roleService.CountGlobalAdmins(ctx, s.db.DB, "")
+			admins, err := s.roleService.CountAdmins(ctx, s.db.DB)
 			if err != nil {
 				return fmt.Errorf("failed to count global admins: %w", err)
 			}
@@ -608,33 +637,11 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 
 // grantDefaultAdminRole grants the global Admin role to the bootstrap
 // user. Reached only on fresh bootstrap or zero-admin recovery.
-// ReplaceUserAssignments replaces manual-source rows, so carry forward only the
-// existing manual assignments — copying OIDC-sourced rows here would duplicate
-// them as manual and pin them forever.
 func (s *UserService) grantDefaultAdminRole(ctx context.Context, adminUserID string) error {
-	assignments, err := s.roleService.ListUserAssignments(ctx, adminUserID)
-	if err != nil {
-		return fmt.Errorf("failed to list default admin assignments: %w", err)
+	if err := s.roleService.BindUser(ctx, adminUserID, authz.BuiltInRoleAdmin); err != nil {
+		return fmt.Errorf("failed to grant default admin global role: %w", err)
 	}
-	for _, a := range assignments {
-		if a.RoleID == authz.BuiltInRoleAdmin && a.EnvironmentID == nil {
-			return nil // already has it
-		}
-	}
-	manual := make([]role.UserRoleAssignment, 0, len(assignments)+1)
-	for _, a := range assignments {
-		if a.Source == role.RoleAssignmentSourceManual {
-			manual = append(manual, role.UserRoleAssignment{RoleID: a.RoleID, EnvironmentID: a.EnvironmentID})
-		}
-	}
-	manual = append(manual, role.UserRoleAssignment{
-		RoleID:        authz.BuiltInRoleAdmin,
-		EnvironmentID: nil,
-	})
-	if setUserAssignmentsErr := s.roleService.ReplaceUserAssignments(ctx, adminUserID, role.RoleAssignmentSourceManual, manual); setUserAssignmentsErr != nil {
-		return fmt.Errorf("failed to grant default admin global role: %w", setUserAssignmentsErr)
-	}
-	slog.InfoContext(ctx, "Default admin granted global Admin role assignment", "userId", adminUserID)
+	slog.InfoContext(ctx, "Default admin granted global Admin role binding", "userId", adminUserID)
 	return nil
 }
 
@@ -654,8 +661,21 @@ func (s *UserService) DeleteUser(ctx context.Context, id string, actorPerms *aut
 		if err != nil {
 			return fmt.Errorf("failed to resolve target permissions: %w", err)
 		}
+		var existing User
+		if loadErr := tx.Where("id = ?", id).Limit(1).Find(&existing).Error; loadErr != nil {
+			return fmt.Errorf("failed to load user: %w", loadErr)
+		}
 		if deleteErr := tx.Delete(&User{}, "id = ?", id).Error; deleteErr != nil {
 			return fmt.Errorf("failed to delete user: %w", deleteErr)
+		}
+		if recordErr := audit.RecordInTx(ctx, tx, types.AuditEntry{
+			Action:     types.AuditActionUserDelete,
+			TargetType: types.AuditTargetUser,
+			TargetID:   id,
+			TargetName: existing.Username,
+			Before:     userSnapshot(existing),
+		}); recordErr != nil {
+			return recordErr
 		}
 		if !targetPerms.IsGlobalAdmin() {
 			return nil
@@ -695,7 +715,7 @@ func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.
 func (s *UserService) ToUserResponseDto(ctx context.Context, u User) (types.User, error) {
 	dto := s.toUserResponseDto(ctx, u)
 	if dto.IsGlobalAdmin && s.roleService != nil {
-		remaining, err := s.roleService.CountGlobalAdmins(ctx, s.db.DB, u.ID)
+		remaining, err := s.roleService.CountAdmins(ctx, s.db.DB, u.ID)
 		if err != nil {
 			return types.User{}, fmt.Errorf("failed to check whether user can be deleted: %w", err)
 		}
@@ -714,7 +734,7 @@ func (s *UserService) toUserResponseDtos(ctx context.Context, users []User) []ty
 	if s.roleService == nil {
 		return result
 	}
-	if total, err := s.roleService.CountGlobalAdmins(ctx, s.db.DB, ""); err == nil && total == 1 {
+	if total, err := s.roleService.CountAdmins(ctx, s.db.DB); err == nil && total == 1 {
 		for i := range result {
 			if result[i].IsGlobalAdmin {
 				result[i].CanDelete = false
@@ -724,8 +744,6 @@ func (s *UserService) toUserResponseDtos(ctx context.Context, users []User) []ty
 	return result
 }
 
-// toUserResponseDto builds the public User DTO. RoleAssignments and
-// PermissionsByEnv come from the RBAC service. Callers apply the last-admin guard.
 func (s *UserService) toUserResponseDto(ctx context.Context, u User) types.User {
 	dto := types.User{
 		ID:                     u.ID,
@@ -741,8 +759,10 @@ func (s *UserService) toUserResponseDto(ctx context.Context, u User) types.User 
 		RequiresPasswordChange: u.RequiresPasswordChange,
 		CreatedAt:              u.CreatedAt.Format("2006-01-02T15:04:05.999999Z"),
 		UpdatedAt:              u.UpdatedAt.Format("2006-01-02T15:04:05.999999Z"),
-		RoleAssignments:        []types.RoleAssignmentSummary{},
+		Bindings:               []types.RoleBindingSummary{},
+		Groups:                 []types.GroupRef{},
 		PermissionsByEnv:       map[string][]string{},
+		ScopedPermissionsByEnv: map[string][]string{},
 	}
 	if u.LastLogin != nil {
 		lastLogin := u.LastLogin.Format("2006-01-02T15:04:05.999999Z")
@@ -756,45 +776,39 @@ func (s *UserService) toUserResponseDto(ctx context.Context, u User) types.User 
 	if s.roleService == nil {
 		return dto
 	}
-	if rows, err := s.roleService.ListUserAssignments(ctx, u.ID); err == nil {
-		dto.RoleAssignments = make([]types.RoleAssignmentSummary, len(rows))
-		for i, r := range rows {
-			dto.RoleAssignments[i] = types.RoleAssignmentSummary{
-				RoleID:        r.RoleID,
-				EnvironmentID: r.EnvironmentID,
-				Source:        r.Source,
-			}
-		}
+	if bindings, err := s.roleService.ListUserBindings(ctx, u.ID); err == nil {
+		dto.Bindings = bindings
+	}
+	if groups, err := s.roleService.ListUserGroups(ctx, u.ID); err == nil {
+		dto.Groups = groups
 	}
 	if ps, err := s.roleService.ResolvePermissions(ctx, u.ID); err == nil && ps != nil {
 		dto.IsGlobalAdmin = ps.IsGlobalAdmin()
-		dto.PermissionsByEnv = permissionSetToMap(ps)
+		dto.PermissionsByEnv, dto.ScopedPermissionsByEnv = permissionSetToMaps(ps)
 	}
 	return dto
 }
 
-// permissionSetToMap flattens a PermissionSet into the wire format consumed
-// by the frontend: a map from environment ID (or "global") to a list of
-// permission strings. Sudo callers expose "*" under "global" as a sentinel
-// meaning "every permission".
-func permissionSetToMap(ps *authz.PermissionSet) map[string][]string {
-	out := map[string][]string{}
-	if ps == nil {
-		return out
+func permissionSetToMaps(ps *authz.PermissionSet) (all, scoped map[string][]string) {
+	all, scoped = map[string][]string{}, map[string][]string{}
+	for _, envID := range append([]string{""}, slices.Collect(maps.Keys(ps.PerEnv))...) {
+		envAll, envScoped := ps.PermissionsForEnv(envID)
+		if !ps.Sudo && slices.Contains(envAll, authz.PermAll) {
+			envAll = slices.Compact(slices.Sorted(slices.Values(slices.Concat(
+				envAll,
+				slices.DeleteFunc(authz.AllPermissions(), func(p string) bool {
+					return envID != "" && !authz.IsEnvScoped(p)
+				}),
+			))))
+		}
+		if len(envAll) > 0 {
+			all[cmp.Or(envID, "global")] = envAll
+		}
+		if len(envScoped) > 0 {
+			scoped[cmp.Or(envID, "global")] = envScoped
+		}
 	}
-	if ps.Sudo {
-		out["global"] = []string{"*"}
-		return out
-	}
-	if len(ps.Global) > 0 {
-		globals := slices.Collect(maps.Keys(ps.Global))
-		out["global"] = globals
-	}
-	for envID, perms := range ps.PerEnv {
-		list := slices.Collect(maps.Keys(perms))
-		out[envID] = list
-	}
-	return out
+	return all, scoped
 }
 
 func (s *UserService) GetUser(ctx context.Context, userID string) (*User, error) {

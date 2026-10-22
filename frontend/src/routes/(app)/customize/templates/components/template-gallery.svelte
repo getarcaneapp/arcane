@@ -12,6 +12,7 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { SearchIcon, TemplateIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { templateService } from '#lib/services/template-service.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { Template } from '#lib/types/swarm.js';
@@ -42,7 +43,7 @@
 	const totalItems = $derived(templates.pagination?.totalItems ?? 0);
 	const pageSize = $derived(requestOptions.pagination?.limit ?? templates.pagination?.itemsPerPage ?? 20);
 	const hasActiveQuery = $derived(!!requestOptions.search || requestOptions.filters?.['type'] !== undefined);
-	const canCreateTemplate = $derived(hasPermission('templates:create'));
+	const canCreateTemplate = $derived(hasPermission(PERMISSIONS.TEMPLATES_CREATE));
 
 	const typeFilterLabel = $derived(templateTypeFilters.find((f) => f.value === typeFilter)?.label ?? m.common_all());
 

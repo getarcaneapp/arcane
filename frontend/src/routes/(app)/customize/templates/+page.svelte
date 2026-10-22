@@ -9,6 +9,7 @@
 	import { RegistryIcon, TemplateIcon, FolderOpenIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { templateService } from '#lib/services/template-service.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { TemplateRegistry, TemplateRegistryCreate, TemplateRegistryUpdate } from '#lib/types/swarm.js';
@@ -156,8 +157,8 @@
 		}
 	}
 
-	const canCreateTemplate = $derived(hasPermission('templates:create'));
-	const canUpdateTemplate = $derived(hasPermission('templates:update'));
+	const canCreateTemplate = $derived(hasPermission(PERMISSIONS.TEMPLATES_CREATE));
+	const canUpdateTemplate = $derived(hasPermission(PERMISSIONS.TEMPLATES_UPDATE));
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];

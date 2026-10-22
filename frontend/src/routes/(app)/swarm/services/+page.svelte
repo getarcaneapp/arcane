@@ -6,6 +6,7 @@
 	import { DockIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { PERMISSIONS } from '#lib/permissions.generated.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { SwarmServiceCreateSpec } from '#lib/types/swarm.js';
@@ -38,7 +39,7 @@
 	const totalServices = $derived(services?.pagination?.totalItems ?? services?.data?.length ?? 0);
 
 	const currentEnvId = $derived(environmentStore.selected?.id);
-	const canCreateService = $derived(hasPermission('swarm:services', currentEnvId));
+	const canCreateService = $derived(hasPermission(PERMISSIONS.SWARM_SERVICES, currentEnvId));
 
 	async function handleCreateService(payload: { spec: Record<string, unknown>; options?: Record<string, unknown> }) {
 		const spec = payload.spec as unknown as SwarmServiceCreateSpec;

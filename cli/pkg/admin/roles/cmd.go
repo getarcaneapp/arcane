@@ -1,4 +1,4 @@
-// Package roles manages roles and user assignments.
+// Package roles manages roles.
 package roles
 
 import (
@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
@@ -22,7 +21,7 @@ func Command() *cobra.Command {
 	command := &cobra.Command{
 		Use:     "roles",
 		Aliases: []string{"role"},
-		Short:   "Manage roles and per-user role assignments",
+		Short:   "Manage roles",
 	}
 	command.AddCommand(newListCmd())
 	command.AddCommand(newGetCmd())
@@ -30,8 +29,6 @@ func Command() *cobra.Command {
 	command.AddCommand(newUpdateCmd())
 	command.AddCommand(newDeleteCmd())
 	command.AddCommand(newPermissionsCmd())
-	command.AddCommand(newAssignmentsCmd())
-	command.AddCommand(newAssignCmd())
 	return command
 }
 
@@ -59,13 +56,13 @@ func newListCmd() *cobra.Command {
 				Resource: "roles",
 				Endpoint: clitypes.Roles(),
 				Params:   cmdutil.ListParams{Resource: "roles", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
-				Headers:  []string{"ID", "NAME", "TYPE", "USERS", "PERMISSIONS"},
+				Headers:  []string{"ID", "NAME", "TYPE", "BINDINGS", "PERMISSIONS"},
 				Row: func(r types.Role) []string {
 					return []string{
 						r.ID,
 						r.Name,
 						kit.Ternary(r.BuiltIn, "built-in", "custom"),
-						strconv.Itoa(r.AssignedUserCount),
+						strconv.Itoa(r.BindingCount),
 						strconv.Itoa(len(r.Permissions)),
 					}
 				},
@@ -101,7 +98,7 @@ func newGetCmd() *cobra.Command {
 						output.KeyValue("Description", *data.Description)
 					}
 					output.KeyValue("Built-in", strconv.FormatBool(data.BuiltIn))
-					output.KeyValue("Assigned users", strconv.Itoa(data.AssignedUserCount))
+					output.KeyValue("Bindings", strconv.Itoa(data.BindingCount))
 					output.KeyValue("Permissions", strconv.Itoa(len(data.Permissions)))
 					if len(data.Permissions) > 0 {
 						rows := make([][]string, len(data.Permissions))
@@ -140,6 +137,9 @@ func newCreateCmd() *cobra.Command {
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
 				return err
+			}
+			if validateErr := cmdutil.ValidatePermissions(cmd.Context(), c, opts.permissions); validateErr != nil {
+				return validateErr
 			}
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Role]{
@@ -181,6 +181,9 @@ func newUpdateCmd() *cobra.Command {
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
 				return err
+			}
+			if validateErr := cmdutil.ValidatePermissions(cmd.Context(), c, opts.permissions); validateErr != nil {
+				return validateErr
 			}
 
 			body := map[string]any{}
@@ -233,7 +236,7 @@ func newDeleteCmd() *cobra.Command {
 			}
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
-				Prompt:         fmt.Sprintf("Delete role %s? This removes every assignment of it.", args[0]),
+				Prompt:         fmt.Sprintf("Delete role %s? This removes every binding of it.", args[0]),
 				Path:           clitypes.Role(args[0]),
 				FailureMessage: "failed to delete role",
 				SuccessMessage: "Role deleted",
@@ -278,95 +281,4 @@ func newPermissionsCmd() *cobra.Command {
 			})
 		},
 	}
-}
-
-// ---------- User assignments ----------
-
-func newAssignmentsCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:          "assignments <user-id>",
-		Short:        "List a user's role assignments",
-		Args:         cobra.ExactArgs(1),
-		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			c, err := cmdutil.ClientFromCommand(cmd)
-			if err != nil {
-				return err
-			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[[]types.RoleAssignment]{
-				Method:         http.MethodGet,
-				Path:           clitypes.UserRoleAssignments(args[0]),
-				FailureMessage: "failed to list assignments",
-				Render: func(data []types.RoleAssignment) error {
-					if len(data) == 0 {
-						output.Info("No role assignments for user %s", args[0])
-						return nil
-					}
-					rows := make([][]string, len(data))
-					for i, a := range data {
-						scope := "global"
-						if a.EnvironmentID != nil {
-							scope = *a.EnvironmentID
-						}
-						rows[i] = []string{a.RoleID, scope, a.Source, a.CreatedAt.Format("2006-01-02 15:04")}
-					}
-					return output.Table([]string{"ROLE", "SCOPE", "SOURCE", "CREATED"}, rows)
-				},
-			})
-		},
-	}
-}
-
-func newAssignCmd() *cobra.Command {
-	var opts struct {
-		roles []string
-	}
-	command := &cobra.Command{
-		Use:   "assign <user-id>",
-		Short: "Replace a user's manual role assignments",
-		Long: "Replace every MANUAL role assignment on the user with the set passed via --role. OIDC-sourced assignments are " +
-			"left untouched — manage those via OIDC role mappings.\n\nEach --role flag accepts `<roleId>[:<envId>]`. Omit " +
-			"the env id for a global assignment. Pass --role multiple times to assign more than one role. Pass --role \"\" " +
-			"(empty) once to clear every manual assignment.",
-
-		Example: `  arcane admin roles assign u_123 --role role_editor:env_prod --role role_viewer
-  arcane admin roles assign u_123 --role role_admin
-  arcane admin roles assign u_123 --role ""    # clear all manual assignments`,
-		Args:         cobra.ExactArgs(1),
-		SilenceUsage: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			assignments := make([]types.UserRoleAssignmentInput, 0, len(opts.roles))
-			for _, raw := range opts.roles {
-				token := strings.TrimSpace(raw)
-				if token == "" {
-					continue
-				}
-				roleID, envID, hasEnv := strings.Cut(token, ":")
-				assignments = append(assignments, types.UserRoleAssignmentInput{
-					RoleID:        roleID,
-					EnvironmentID: kit.Ternary(hasEnv && envID != "", new(envID), nil),
-				})
-			}
-			req := types.SetUserRoleAssignments{
-				Assignments: assignments,
-			}
-			c, err := cmdutil.ClientFromCommand(cmd)
-			if err != nil {
-				return err
-			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[[]types.RoleAssignment]{
-				Method:         http.MethodPut,
-				Path:           clitypes.UserRoleAssignments(args[0]),
-				FailureMessage: "failed to set assignments",
-				Body:           req,
-				Render: func(data []types.RoleAssignment) error {
-					output.Success("User %s now has %d role assignment(s)", args[0], len(data))
-					return nil
-				},
-			})
-		},
-	}
-	command.Flags().StringArrayVar(&opts.roles, "role", nil, "Role to grant as `<roleId>[:<envId>]` (repeatable). Pass --role \"\" to clear all manual assignments.")
-	_ = command.MarkFlagRequired("role")
-	return command
 }

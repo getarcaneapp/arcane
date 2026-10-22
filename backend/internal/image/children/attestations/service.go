@@ -19,17 +19,19 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
-	"github.com/google/go-containerregistry/pkg/v1"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/klauspost/compress/zstd"
 	"github.com/moby/buildkit/util/attestation"
+	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/registryauth"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
@@ -61,6 +63,7 @@ var errAttestationLayerTooLarge = common.Classify(common.ErrBadRequest, fmt.Erro
 type Service struct {
 	dockerService *docker.DockerClientService
 	registryAuth  func(ctx context.Context, imageRef string) (string, error)
+	authorize     func(ctx context.Context, perm string, inspect image.InspectResponse, createdTags ...string) error
 }
 
 type Query struct {
@@ -91,8 +94,13 @@ type attestationStatementEnvelope struct {
 func NewService(
 	dockerService *docker.DockerClientService,
 	registryAuth func(ctx context.Context, imageRef string) (string, error),
+	authorize func(ctx context.Context, perm string, inspect image.InspectResponse, createdTags ...string) error,
 ) *Service {
-	return &Service{dockerService: dockerService, registryAuth: registryAuth}
+	return &Service{
+		dockerService: dockerService,
+		registryAuth:  registryAuth,
+		authorize:     authorize,
+	}
 }
 
 // GetImageAttestations returns in-toto attestations attached to a local image or registry reference.
@@ -225,6 +233,9 @@ func (s *Service) resolveImageAttestationReference(ctx context.Context, imageNam
 	if inspect, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, imageName)
 	}); inspectErr == nil {
+		if err := s.authorize(ctx, authz.PermImagesRead, inspect.InspectResponse); err != nil {
+			return reference{}, err
+		}
 		imageRef := func() string {
 			for _, candidate := range inspect.RepoDigests {
 				if trimmed := strings.TrimSpace(candidate); strings.Contains(trimmed, "@sha256:") && !strings.Contains(trimmed, "<none>") {
@@ -250,6 +261,9 @@ func (s *Service) resolveImageAttestationReference(ctx context.Context, imageNam
 	}
 	if _, err := name.ParseReference(imageName, name.WeakValidation); err != nil {
 		return reference{}, common.Classify(common.ErrBadRequest, fmt.Errorf("image %q does not have a registry reference: %w", imageName, err))
+	}
+	if err := s.authorize(ctx, authz.PermImagesRead, image.InspectResponse{RepoTags: []string{imageName}}); err != nil {
+		return reference{}, err
 	}
 	_, subjectDigest, _ := strings.Cut(imageName, "@")
 	return reference{

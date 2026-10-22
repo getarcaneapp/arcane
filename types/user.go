@@ -33,36 +33,29 @@ type UserPreferences struct {
 	EnvironmentLabelStyle *string            `json:"environmentLabelStyle,omitempty" enum:"name,dot" doc:"How resource lists label environments"`
 }
 
-// RoleAssignmentSummary is a compact form of a user's role assignment used
-// inside the User payload (so the frontend can render the assignments table
-// without a separate request).
-type RoleAssignmentSummary struct {
-	RoleID        string  `json:"roleId" doc:"Role ID granted by this assignment"`
-	EnvironmentID *string `json:"environmentId,omitempty" doc:"Environment ID this assignment is scoped to; omit for a global assignment"`
-	Source        string  `json:"source" doc:"How the assignment was created" enum:"manual,oidc"`
-}
-
 // User represents a user in API responses.
 type User struct {
-	FontSize               *int                    `json:"fontSize,omitempty" minimum:"12" maximum:"20" doc:"Preferred root UI font size in px" example:"14"`
-	DisplayName            *string                 `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user" example:"John Doe" unorm:"nfc" trim:"true"`
-	Email                  *string                 `json:"email,omitempty" doc:"Email address of the user" example:"john@example.com"`
-	AvatarURL              *string                 `json:"avatarUrl,omitempty" readOnly:"true" doc:"URL to the user's custom avatar image; omitted when using the default profile picture"`
-	OidcSubjectId          *string                 `json:"oidcSubjectId,omitempty" readOnly:"true" doc:"OIDC subject identifier for SSO users"`
-	Locale                 *string                 `json:"locale,omitempty" doc:"Locale preference of the user" example:"en-US"`
-	LastLogin              *string                 `json:"lastLogin,omitempty" readOnly:"true" doc:"Date and time of the user's most recent sign-in; omitted when the user has never signed in"`
-	PermissionsByEnv       map[string][]string     `json:"permissionsByEnv" readOnly:"true" doc:"Permissions by environment ID; 'global' applies to all environments and organization endpoints"`
-	Preferences            UserPreferences         `json:"preferences" required:"false" doc:"Personal display and UI preferences"`
-	ID                     string                  `json:"id" readOnly:"true" doc:"Unique identifier of the user" example:"550e8400-e29b-41d4-a716-446655440000"`
-	Username               string                  `json:"username" required:"false" minLength:"1" maxLength:"255" pattern:"^[^@]+$" patternDescription:"No @ character" doc:"Username (no @)"`
-	Password               string                  `json:"password,omitempty" writeOnly:"true" minLength:"8" doc:"Password of the user; never returned"`
-	TimeFormat             TimeFormat              `json:"timeFormat" required:"false" enum:"auto,12h,24h" doc:"Preferred time display format" example:"auto"`
-	CreatedAt              string                  `json:"createdAt,omitempty" readOnly:"true" doc:"Date and time when the user was created"`
-	UpdatedAt              string                  `json:"updatedAt,omitempty" readOnly:"true" doc:"Date and time when the user was last updated"`
-	RoleAssignments        []RoleAssignmentSummary `json:"roleAssignments" readOnly:"true" doc:"Role assignments held by the user"`
-	IsGlobalAdmin          bool                    `json:"isGlobalAdmin" readOnly:"true" doc:"Whether the user effectively holds global administrator access"`
-	CanDelete              bool                    `json:"canDelete" readOnly:"true" doc:"Whether the user can currently be deleted"`
-	RequiresPasswordChange bool                    `json:"requiresPasswordChange" readOnly:"true" doc:"Whether the user must change their password"`
+	FontSize               *int                 `json:"fontSize,omitempty" minimum:"12" maximum:"20" doc:"Preferred root UI font size in px" example:"14"`
+	DisplayName            *string              `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user" example:"John Doe" unorm:"nfc" trim:"true"`
+	Email                  *string              `json:"email,omitempty" doc:"Email address of the user" example:"john@example.com"`
+	AvatarURL              *string              `json:"avatarUrl,omitempty" readOnly:"true" doc:"URL to the user's custom avatar image; omitted when using the default profile picture"`
+	OidcSubjectId          *string              `json:"oidcSubjectId,omitempty" readOnly:"true" doc:"OIDC subject identifier for SSO users"`
+	Locale                 *string              `json:"locale,omitempty" doc:"Locale preference of the user" example:"en-US"`
+	LastLogin              *string              `json:"lastLogin,omitempty" readOnly:"true" doc:"Date and time of the user's most recent sign-in; omitted when the user has never signed in"`
+	PermissionsByEnv       map[string][]string  `json:"permissionsByEnv" readOnly:"true" doc:"Permissions by environment ID; 'global' applies to all environments and organization endpoints"`
+	ScopedPermissionsByEnv map[string][]string  `json:"scopedPermissionsByEnv" readOnly:"true" doc:"Subset of permissionsByEnv limited by resource selectors"`
+	Preferences            UserPreferences      `json:"preferences" required:"false" doc:"Personal display and UI preferences"`
+	ID                     string               `json:"id" readOnly:"true" doc:"Unique identifier of the user" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Username               string               `json:"username" required:"false" minLength:"1" maxLength:"255" pattern:"^[^@]+$" patternDescription:"No @ character" doc:"Username (no @)"`
+	Password               string               `json:"password,omitempty" writeOnly:"true" minLength:"8" doc:"Password of the user; never returned"`
+	TimeFormat             TimeFormat           `json:"timeFormat" required:"false" enum:"auto,12h,24h" doc:"Preferred time display format" example:"auto"`
+	CreatedAt              string               `json:"createdAt,omitempty" readOnly:"true" doc:"Date and time when the user was created"`
+	UpdatedAt              string               `json:"updatedAt,omitempty" readOnly:"true" doc:"Date and time when the user was last updated"`
+	Bindings               []RoleBindingSummary `json:"bindings" readOnly:"true" doc:"Role bindings held by the user directly or through groups"`
+	Groups                 []GroupRef           `json:"groups" readOnly:"true" doc:"Groups the user belongs to"`
+	IsGlobalAdmin          bool                 `json:"isGlobalAdmin" readOnly:"true" doc:"Whether the user effectively holds global administrator access"`
+	CanDelete              bool                 `json:"canDelete" readOnly:"true" doc:"Whether the user can currently be deleted"`
+	RequiresPasswordChange bool                 `json:"requiresPasswordChange" readOnly:"true" doc:"Whether the user must change their password"`
 }
 
 // Actor identifies a user performing domain work without exposing persistence data.

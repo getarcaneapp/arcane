@@ -58,6 +58,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/workspace"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
@@ -212,6 +213,7 @@ func (s *ProjectService) EnsureGitOpsProjectLinked(ctx context.Context, gitOpsSy
 		ServiceCount:       project.ServiceCount,
 		RunningCount:       project.RunningCount,
 		GitOpsManagedBy:    &gitOpsSync.ID,
+		OwnerUserID:        project.OwnerUserID,
 		ComposeProjectName: project.ComposeProjectName,
 		ImageRefsJSON:      project.ImageRefsJSON,
 		BuildImageRefsJSON: project.BuildImageRefsJSON,
@@ -463,8 +465,8 @@ func (s *ProjectService) GetProjectsDirectory(ctx context.Context) (string, erro
 	return filepath.Clean(projectsDir), nil
 }
 
-func (s *ProjectService) getMutableProject(ctx context.Context, projectID string) (*Project, error) {
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+func (s *ProjectService) getMutableProject(ctx context.Context, projectID, perm string) (*Project, error) {
+	proj, err := s.GetAuthorizedProject(ctx, projectID, perm)
 	if err != nil {
 		return nil, err
 	}
@@ -516,6 +518,17 @@ func (s *ProjectService) GetProjectFromDatabaseByID(ctx context.Context, id stri
 		return nil, common.Classify(common.ErrNotFound, errors.New("project not found"))
 	}
 	return projectModel, nil
+}
+
+func (s *ProjectService) GetAuthorizedProject(ctx context.Context, projectID, perm string) (*Project, error) {
+	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if authErr := recordProjectDenial(ctx, perm, authz.CheckResource(ctx, perm, authz.PermProjectsRead, authz.ProjectAttributes(proj.Name, proj.OwnerUserID))); authErr != nil {
+		return nil, authErr
+	}
+	return proj, nil
 }
 
 // FindProjectByID reports a missing project as found=false instead of an error.
@@ -623,6 +636,7 @@ func (s *ProjectService) EnsureProjectPathUnderRoot(ctx context.Context, proj *P
 		ServiceCount:       proj.ServiceCount,
 		RunningCount:       proj.RunningCount,
 		GitOpsManagedBy:    proj.GitOpsManagedBy,
+		OwnerUserID:        proj.OwnerUserID,
 		ComposeProjectName: proj.ComposeProjectName,
 		ImageRefsJSON:      proj.ImageRefsJSON,
 		BuildImageRefsJSON: proj.BuildImageRefsJSON,
@@ -752,6 +766,7 @@ func (s *ProjectService) loadComposeProjectForProject(ctx context.Context, proj 
 	if loadErr != nil {
 		return nil, loadErr
 	}
+	projects.ApplyOwnerLabel(composeProject, proj.OwnerUserID)
 	return composeProject, nil
 }
 
@@ -837,6 +852,7 @@ func (s *ProjectService) refreshComposeProjectName(ctx context.Context, proj *Pr
 		ServiceCount:       proj.ServiceCount,
 		RunningCount:       proj.RunningCount,
 		GitOpsManagedBy:    proj.GitOpsManagedBy,
+		OwnerUserID:        proj.OwnerUserID,
 		ComposeProjectName: meta.ComposeProjectName,
 		ImageRefsJSON:      proj.ImageRefsJSON,
 		BuildImageRefsJSON: proj.BuildImageRefsJSON,
@@ -1064,7 +1080,7 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 }
 
 func (s *ProjectService) updateProjectServices(ctx context.Context, projectID string, servicesToUpdate []string, user types.Actor, discoverTags bool) error {
-	proj, err := s.getMutableProject(ctx, projectID)
+	proj, err := s.getMutableProject(ctx, projectID, authz.PermProjectsUpdate)
 	if err != nil {
 		return err
 	}
@@ -1164,7 +1180,7 @@ func (s *ProjectService) ArchiveProject(ctx context.Context, projectID string, u
 	}
 	defer unlock()
 
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	proj, err := s.GetAuthorizedProject(ctx, projectID, authz.PermProjectsArchive)
 	if err != nil {
 		return err
 	}
@@ -1209,7 +1225,7 @@ func (s *ProjectService) UnarchiveProject(ctx context.Context, projectID string,
 	}
 	defer unlock()
 
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	proj, err := s.GetAuthorizedProject(ctx, projectID, authz.PermProjectsArchive)
 	if err != nil {
 		return err
 	}
@@ -1243,7 +1259,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 }
 
 func (s *ProjectService) deployProject(ctx context.Context, projectID string, user types.Actor, options *types.ProjectDeployOptions) error {
-	projectFromDb, err := s.getMutableProject(ctx, projectID)
+	projectFromDb, err := s.getMutableProject(ctx, projectID, authz.PermProjectsDeploy)
 	switch {
 	case errors.Is(err, common.ErrProjectArchived):
 		return err
@@ -1326,7 +1342,7 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 	}
 	defer unlock()
 
-	projectFromDb, err := s.getMutableProject(ctx, projectID)
+	projectFromDb, err := s.getMutableProject(ctx, projectID, authz.PermProjectsDown)
 	if err != nil {
 		return err
 	}
@@ -1385,6 +1401,10 @@ func (s *ProjectService) CreateProject(
 	allowNameSuffix := len(allowNameSuffixOptions) == 0 || allowNameSuffixOptions[0]
 	// A top-level `name:` in the compose file is authoritative over the submitted project name.
 	name = cmp.Or(projects.ComposeContentProjectName(composeContent), name)
+	ownerUserID := kit.Ternary(allowNameSuffix, mo.EmptyableToOption(user.ID).ToPointer(), nil)
+	if createErr := recordProjectDenial(ctx, authz.PermProjectsCreate, authz.CheckCreate(ctx, authz.PermProjectsCreate, authz.ProjectAttributes(name, ownerUserID))); createErr != nil {
+		return nil, createErr
+	}
 
 	projectsDirectory, err := s.GetProjectsDirectory(ctx)
 	if err != nil {
@@ -1514,10 +1534,11 @@ func (s *ProjectService) CreateProject(
 	})
 
 	proj := &Project{
-		Name:    name,
-		DirName: &folderName,
-		Path:    projectPath,
-		Status:  ProjectStatusStopped,
+		Name:        name,
+		DirName:     &folderName,
+		Path:        projectPath,
+		Status:      ProjectStatusStopped,
+		OwnerUserID: ownerUserID,
 	}
 
 	if transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -1563,7 +1584,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 	}
 	defer unlock()
 
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	proj, err := s.GetAuthorizedProject(ctx, projectID, authz.PermProjectsDelete)
 	if err != nil {
 		return err
 	}
@@ -1644,7 +1665,7 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 	}
 	defer unlock()
 
-	proj, err := s.getMutableProject(ctx, projectID)
+	proj, err := s.getMutableProject(ctx, projectID, authz.PermProjectsDeploy)
 	if err != nil {
 		return err
 	}
@@ -1683,7 +1704,7 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 }
 
 func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string, progressWriter io.Writer, user types.Actor, credentials []types.ContainerRegistryCredential) error {
-	proj, err := s.getMutableProject(ctx, projectID)
+	proj, err := s.getMutableProject(ctx, projectID, authz.PermProjectsDeploy)
 	if err != nil {
 		return err
 	}
@@ -1710,7 +1731,7 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 }
 
 func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID string, options types.ProjectBuildOptions, progressWriter io.Writer, user *types.Actor) error {
-	projectFromDb, err := s.getMutableProject(ctx, projectID)
+	projectFromDb, err := s.getMutableProject(ctx, projectID, authz.PermProjectsDeploy)
 	if err != nil {
 		return err
 	}
@@ -1732,7 +1753,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 	}
 	defer unlock()
 
-	proj, err := s.getMutableProject(ctx, projectID)
+	proj, err := s.getMutableProject(ctx, projectID, authz.PermProjectsRestart)
 	if err != nil {
 		return err
 	}
@@ -1875,7 +1896,7 @@ func (s *ProjectService) projectContent(ctx context.Context, projectID string) (
 }
 
 func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string, opts types.ProjectDetailsOptions) (types.Project, error) {
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	proj, err := s.GetAuthorizedProject(ctx, projectID, authz.PermProjectsRead)
 	if err != nil {
 		return types.Project{}, err
 	}
@@ -1962,6 +1983,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 		StatusReason:    proj.StatusReason,
 		LastSyncCommit:  syncRecord.LastSyncCommit,
 		GitOpsManagedBy: proj.GitOpsManagedBy,
+		OwnerUserID:     proj.OwnerUserID,
 		UpdateInfo: func() *types.ProjectUpdateInfo {
 			if !opts.IncludeUpdateInfo {
 				return nil
@@ -2105,6 +2127,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfo(
 			ActivityID:      d.ActivityID,
 			LastSyncCommit:  d.LastSyncCommit,
 			GitOpsManagedBy: d.GitOpsManagedBy,
+			OwnerUserID:     d.OwnerUserID,
 			UpdateInfo: func() *types.ProjectUpdateInfo {
 				if services := servicesByProjectID[d.ID]; services != nil {
 					return BuildConfiguredUpdateInfo(
@@ -2337,7 +2360,8 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 
 	// Update and label filters read the container snapshot, so they page in memory over every candidate;
 	// otherwise the database pages and only the page gets live status and compose-backed presentation fields.
-	paginateInDB := updatesFilter == "" && strings.TrimSpace(params.Filters["label"]) == ""
+	scope := authz.ScopeFromContext(ctx, authz.PermProjectsList)
+	paginateInDB := scope.IsUnrestricted() && updatesFilter == "" && strings.TrimSpace(params.Filters["label"]) == ""
 	if !paginateInDB && params.Limit != -1 {
 		params.Limit = kit.Ternary(params.Limit <= 0, 20, min(params.Limit, 100))
 	}
@@ -2405,6 +2429,9 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 			}
 		}
 	}
+	items = slices.DeleteFunc(items, func(item types.Project) bool {
+		return !scope.Matches(authz.ProjectAttributes(item.Name, item.OwnerUserID))
+	})
 
 	result, pageIndexes := func() (pagination.FilterResult[types.Project], []int) {
 		if paginateInDB {
@@ -2576,6 +2603,7 @@ func (s *ProjectService) refreshProjectImageRefs(ctx context.Context, proj *Proj
 			ServiceCount:       proj.ServiceCount,
 			RunningCount:       proj.RunningCount,
 			GitOpsManagedBy:    proj.GitOpsManagedBy,
+			OwnerUserID:        proj.OwnerUserID,
 			ComposeProjectName: proj.ComposeProjectName,
 			ImageRefsJSON:      "",
 			BuildImageRefsJSON: proj.BuildImageRefsJSON,
@@ -2604,6 +2632,7 @@ func (s *ProjectService) refreshProjectImageRefs(ctx context.Context, proj *Proj
 		ServiceCount:       proj.ServiceCount,
 		RunningCount:       proj.RunningCount,
 		GitOpsManagedBy:    proj.GitOpsManagedBy,
+		OwnerUserID:        proj.OwnerUserID,
 		ComposeProjectName: proj.ComposeProjectName,
 		ImageRefsJSON:      imageRefsJSON,
 		BuildImageRefsJSON: new(buildImageRefsJSON),
@@ -2900,7 +2929,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	defer unlock()
 
 	recoverErr := s.updates.RecoverProject(ctx, projectID)
-	proj, err := s.getMutableProject(ctx, projectID)
+	proj, err := s.getMutableProject(ctx, projectID, authz.PermProjectsUpdate)
 	if err != nil {
 		return nil, err
 	}
@@ -2929,6 +2958,13 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 		return kit.Ternary(yamlName != "", &yamlName, name)
 	}()
 	newName := strings.TrimSpace(kit.FromPtr(name))
+	if renameErr := recordProjectDenial(
+		ctx,
+		authz.PermProjectsUpdate,
+		authz.CheckCreate(ctx, authz.PermProjectsUpdate, authz.ProjectAttributes(cmp.Or(newName, proj.Name), proj.OwnerUserID)),
+	); renameErr != nil {
+		return nil, renameErr
+	}
 	if recoverErr != nil {
 		if newName != "" && proj.Name != newName {
 			return nil, recoverErr
@@ -2966,6 +3002,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 			ServiceCount:       serviceCount,
 			RunningCount:       runningCount,
 			GitOpsManagedBy:    proj.GitOpsManagedBy,
+			OwnerUserID:        proj.OwnerUserID,
 			ComposeProjectName: proj.ComposeProjectName,
 			ImageRefsJSON:      proj.ImageRefsJSON,
 			BuildImageRefsJSON: proj.BuildImageRefsJSON,
@@ -3084,6 +3121,7 @@ func (s *ProjectService) applyProjectUpdate(
 			ServiceCount:       proj.ServiceCount,
 			RunningCount:       proj.RunningCount,
 			GitOpsManagedBy:    proj.GitOpsManagedBy,
+			OwnerUserID:        proj.OwnerUserID,
 			ComposeProjectName: proj.ComposeProjectName,
 			ImageRefsJSON:      proj.ImageRefsJSON,
 			BuildImageRefsJSON: proj.BuildImageRefsJSON,
@@ -3133,7 +3171,7 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(
 	}
 	defer unlock()
 
-	proj, err := s.getMutableProject(ctx, projectID)
+	proj, err := s.getMutableProject(ctx, projectID, authz.PermProjectsUpdate)
 	if err != nil {
 		return nil, false, err
 	}
@@ -3298,6 +3336,7 @@ func (s *ProjectService) prepareProjectRenameVolumeMigration(
 			ServiceCount:       proj.ServiceCount,
 			RunningCount:       proj.RunningCount,
 			GitOpsManagedBy:    proj.GitOpsManagedBy,
+			OwnerUserID:        proj.OwnerUserID,
 			ComposeProjectName: proj.ComposeProjectName,
 			ImageRefsJSON:      proj.ImageRefsJSON,
 			BuildImageRefsJSON: proj.BuildImageRefsJSON,
@@ -3363,7 +3402,7 @@ func (s *ProjectService) saveProjectServiceImages(ctx context.Context, projectID
 	if len(changes) == 0 {
 		return nil, errors.New("service image changes are required")
 	}
-	proj, err := s.getMutableProject(ctx, projectID)
+	proj, err := s.getMutableProject(ctx, projectID, authz.PermProjectsUpdate)
 	if err != nil {
 		return nil, err
 	}
@@ -3384,7 +3423,7 @@ func (s *ProjectService) saveProjectServiceImages(ctx context.Context, projectID
 }
 
 func (s *ProjectService) GetProjectWorkspace(ctx context.Context, projectID string) (*types.Workspace, error) {
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	proj, err := s.GetAuthorizedProject(ctx, projectID, authz.PermProjectsRead)
 	if err != nil {
 		return nil, err
 	}
@@ -3396,7 +3435,7 @@ func (s *ProjectService) GetProjectWorkspace(ctx context.Context, projectID stri
 }
 
 func (s *ProjectService) GetProjectWorkspaceFile(ctx context.Context, projectID, relativePath string) (*types.WorkspaceFileContent, error) {
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	proj, err := s.GetAuthorizedProject(ctx, projectID, authz.PermProjectsRead)
 	if err != nil {
 		return nil, err
 	}
@@ -3405,7 +3444,7 @@ func (s *ProjectService) GetProjectWorkspaceFile(ctx context.Context, projectID,
 }
 
 func (s *ProjectService) DownloadProjectWorkspaceFile(ctx context.Context, projectID, relativePath string) (io.ReadCloser, int64, string, error) {
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	proj, err := s.GetAuthorizedProject(ctx, projectID, authz.PermProjectsRead)
 	if err != nil {
 		return nil, 0, "", err
 	}
@@ -3428,7 +3467,7 @@ func (s *ProjectService) UpdateProjectWorkspace(
 	}
 	defer unlock()
 
-	proj, err := s.getMutableProject(ctx, projectID)
+	proj, err := s.getMutableProject(ctx, projectID, authz.PermProjectsUpdate)
 	if err != nil {
 		return nil, err
 	}
@@ -3526,7 +3565,7 @@ func (s *ProjectService) projectServices(ctx context.Context, projectID string) 
 }
 
 func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	proj, err := s.GetAuthorizedProject(ctx, projectID, authz.PermProjectsLogs)
 	if err != nil {
 		return err
 	}
@@ -3541,10 +3580,10 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (types.ProjectStatusCounts, error) {
 	// Runtime status comes from containers, so only the matching and fallback columns are read.
 	var projectsList []Project
-	if listProjectsErr := s.db.WithContext(ctx).Select("id", "name", "path", "status", "compose_project_name", "is_archived").Find(&projectsList).Error; listProjectsErr != nil {
+	if listProjectsErr := s.db.WithContext(ctx).Select("id", "name", "path", "status", "compose_project_name", "is_archived", "owner_user_id").Find(&projectsList).Error; listProjectsErr != nil {
 		return types.ProjectStatusCounts{}, fmt.Errorf("failed to list projects: %w", listProjectsErr)
 	}
-	return s.listing.StatusCounts(ctx, projectRecords(projectsList)), nil
+	return s.listing.StatusCounts(ctx, projectRecords(scopedProjects(ctx, projectsList))), nil
 }
 
 func (s *ProjectService) AggregateProjects(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.Project], error) {
@@ -3643,9 +3682,16 @@ func (s *ProjectService) ListProjectTagOptions(ctx context.Context) ([]types.Pro
 
 // ListProjectReferences returns the ID and name of every project, including archived ones, without runtime state.
 func (s *ProjectService) ListProjectReferences(ctx context.Context) ([]types.ProjectReference, error) {
-	references := []types.ProjectReference{}
-	if err := s.db.WithContext(ctx).Model(&Project{}).Select("id", "name").Order("name").Find(&references).Error; err != nil {
+	var projectsList []Project
+	if err := s.db.WithContext(ctx).Select("id", "name", "owner_user_id").Order("name").Find(&projectsList).Error; err != nil {
 		return nil, fmt.Errorf("list project references: %w", err)
+	}
+	references := []types.ProjectReference{}
+	for _, proj := range scopedProjects(ctx, projectsList) {
+		references = append(references, types.ProjectReference{
+			ID:   proj.ID,
+			Name: proj.Name,
+		})
 	}
 	return references, nil
 }
@@ -3655,6 +3701,9 @@ func (s *ProjectService) UpdateProjectTag(ctx context.Context, projectID, name s
 	normalized, normalizedColor, err := tags.NormalizeUpdate(name, color, attached)
 	if err != nil {
 		return nil, err
+	}
+	if _, authErr := s.GetAuthorizedProject(ctx, projectID, authz.PermProjectsUpdate); authErr != nil {
+		return nil, authErr
 	}
 
 	var projectModel Project
