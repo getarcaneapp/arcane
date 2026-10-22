@@ -1,4 +1,4 @@
-export type UpdateAllEnvironmentStatus =
+export type UpgradeJobResultStatus =
 	| 'pending'
 	| 'updating'
 	| 'updated'
@@ -7,26 +7,35 @@ export type UpdateAllEnvironmentStatus =
 	| 'skipped_offline'
 	| 'failed';
 
-export type UpdateAllStage = 'checking' | 'starting' | 'reconnecting' | 'verifying';
+export type UpgradeJobStage = 'checking' | 'starting' | 'pulling' | 'upgrading' | 'reconnecting' | 'verifying';
 
-export interface UpdateAllEnvironmentResult {
+export interface UpgradeJobResult {
 	environmentId: string;
 	environmentName: string;
-	status: UpdateAllEnvironmentStatus;
-	stage?: UpdateAllStage;
-	stageStartedAt?: string;
+	status: UpgradeJobResultStatus;
 	fromVersion?: string;
+	fromDigest?: string;
 	toVersion?: string;
+	stage?: UpgradeJobStage;
+	stageStartedAt?: string;
+	percent: number;
+	logs?: string[];
 	error?: string;
 }
 
-export type UpdateAllJobStatus = 'pending_restart' | 'running' | 'completed' | 'failed';
+export type UpgradeJobStatus = 'pending_restart' | 'running' | 'completed' | 'failed';
 
-export interface UpdateAllJob {
+export interface UpgradeJob {
 	id: string;
-	status: UpdateAllJobStatus;
-	results?: UpdateAllEnvironmentResult[];
-	error?: string;
 	createdAt: string;
+	updatedAt?: string;
+	status: UpgradeJobStatus;
+	userId: string;
+	username: string;
+	managerVersionAtStart: string;
+	managerDigestAtStart: string;
+	managerTargetVersion: string;
+	results?: UpgradeJobResult[];
+	error?: string;
 	completedAt?: string;
 }

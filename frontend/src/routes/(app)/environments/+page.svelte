@@ -2,6 +2,7 @@
 	import { dev } from '$app/env';
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import UpdateAllDialog from '#lib/components/dialogs/update-all-dialog.svelte';
@@ -36,6 +37,24 @@
 			(v) => (isLoading.refresh = v)
 		);
 	}
+
+	const connectivityFingerprint = $derived(
+		environmentStore.available
+			.map((environment) => `${environment.id}:${environment.status}:${environment.connected}:${!!environment.lastPollAt}`)
+			.join('|')
+	);
+	let lastConnectivityFingerprint: string | undefined;
+	$effect(() => {
+		const fingerprint = connectivityFingerprint;
+		const changed = untrack(() => {
+			const differs = lastConnectivityFingerprint !== undefined && lastConnectivityFingerprint !== fingerprint;
+			lastConnectivityFingerprint = fingerprint;
+			return differs;
+		});
+		if (!changed) return;
+		const timer = setTimeout(() => void refresh(), 1000);
+		return () => clearTimeout(timer);
+	});
 
 	const canCreateEnvironment = $derived(hasPermission('environments:create'));
 	const canDeleteEnvironment = $derived(hasPermission('environments:delete'));

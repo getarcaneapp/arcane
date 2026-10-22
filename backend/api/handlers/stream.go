@@ -23,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/version"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
@@ -45,10 +46,11 @@ type StreamHandler struct {
 	activity    *activity.ActivityHandler
 	environment *environment.EnvironmentHandler
 	version     *version.VersionService
+	system      *system.SystemService
 }
 
 type StreamClientInput struct {
-	Channels     string `query:"channels" doc:"Comma-separated channels to subscribe to: environments, dashboard, activities, events, version"`
+	Channels     string `query:"channels" doc:"Comma-separated channels to subscribe to: environments, dashboard, activities, events, version, arcane-upgrade"`
 	DebugAllGood bool   `query:"debugAllGood" default:"false" doc:"Debug mode for the dashboard channel: force an empty action item list"`
 	Limit        int    `query:"limit" default:"0" doc:"Maximum activities to include in each activities-channel snapshot"`
 }
@@ -61,6 +63,7 @@ func RegisterStream(
 	environmentHandler *environment.EnvironmentHandler,
 	eventService *event.EventService,
 	versionService *version.VersionService,
+	systemService *system.SystemService,
 ) {
 	h := &StreamHandler{
 		events:      eventService,
@@ -68,6 +71,7 @@ func RegisterStream(
 		activity:    activityHandler,
 		environment: environmentHandler,
 		version:     versionService,
+		system:      systemService,
 	}
 
 	meter := otel.Meter(tracing.InstrumentationName)
@@ -82,7 +86,7 @@ func RegisterStream(
 		Method:      http.MethodGet,
 		Path:        "/stream",
 		Summary:     "Multiplexed client stream",
-		Description: "Streams the requested channels (environments, dashboard, activities, events, version) as JSON envelopes over a single Server-Sent Events connection",
+		Description: "Streams the requested channels (environments, dashboard, activities, events, version, arcane-upgrade) as JSON envelopes over a single Server-Sent Events connection",
 		Tags:        []string{"Stream"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 		Middlewares: huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
@@ -123,13 +127,13 @@ func (h *StreamHandler) StreamClient(ctx context.Context, input *StreamClientInp
 	defer releaseDeadPeerTimeout()
 
 	// Select the producers for the requested channels, dropping any the caller lacks permission for.
-	requested := make(map[string]bool, 5)
+	requested := make(map[string]bool, 6)
 	for name := range strings.SplitSeq(input.Channels, ",") {
 		if trimmed := strings.TrimSpace(strings.ToLower(name)); trimmed != "" {
 			requested[trimmed] = true
 		}
 	}
-	producers := make([]agg.Producer[types.StreamEvent], 0, 5)
+	producers := make([]agg.Producer[types.StreamEvent], 0, 6)
 
 	if requested[types.StreamChannelEnvironments] {
 		// Ungated like listEnvironments; the producer filters to the caller's accessible environments.
@@ -206,6 +210,16 @@ func (h *StreamHandler) StreamClient(ctx context.Context, input *StreamClientInp
 				return types.StreamEvent{Channel: channel, Version: &event, Timestamp: event.Timestamp}
 			},
 			h.version.RunStreamProducer,
+		))
+	}
+
+	if requested[types.StreamChannelUpgrade] && ps.Allows(authz.PermSystemRead, environment.LocalEnvironmentID) {
+		producers = append(producers, forwardStreamChannel(
+			types.StreamChannelUpgrade,
+			func(channel string, job types.UpgradeJob) types.StreamEvent {
+				return types.StreamEvent{Channel: channel, Upgrade: &job, Timestamp: time.Now()}
+			},
+			h.system.RunUpgradeStreamProducer,
 		))
 	}
 

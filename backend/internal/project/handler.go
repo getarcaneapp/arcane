@@ -49,20 +49,6 @@ type ListProjectsInput struct {
 	Name          string `query:"name" doc:"Filter by exact project name (comma-separated for several)"`
 }
 
-type GetProjectStatusCountsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-// ListProjectTagsInput identifies the environment whose tag catalog is requested.
-type ListProjectTagsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-// ListProjectReferencesInput identifies the environment whose project references are requested.
-type ListProjectReferencesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 // UpdateProjectTagInput identifies a project and the UI tag mutation to apply.
 type UpdateProjectTagInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
@@ -159,7 +145,7 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 }
 
 // GetProjectStatusCounts returns counts of projects by status.
-func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetProjectStatusCountsInput) (*handlerutil.Out[types.ProjectStatusCounts], error) {
+func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.ProjectStatusCounts], error) {
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
 		body, err := h.projectService.AggregateProjectCounts(ctx)
 		if err != nil {
@@ -181,7 +167,7 @@ func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetP
 }
 
 // ListProjectTags returns the reusable project tag catalog for an environment.
-func (h *ProjectHandler) ListProjectTags(ctx context.Context, _ *ListProjectTagsInput) (*handlerutil.Out[[]types.ProjectTagOption], error) {
+func (h *ProjectHandler) ListProjectTags(ctx context.Context, _ *types.EnvironmentInput) (*handlerutil.Out[[]types.ProjectTagOption], error) {
 	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
 		body, err := h.projectService.AggregateProjectTags(ctx)
 		if err != nil {
@@ -197,7 +183,7 @@ func (h *ProjectHandler) ListProjectTags(ctx context.Context, _ *ListProjectTags
 }
 
 // ListProjectReferences returns the ID and name of every project in an environment.
-func (h *ProjectHandler) ListProjectReferences(ctx context.Context, _ *ListProjectReferencesInput) (*handlerutil.Out[[]types.ProjectReference], error) {
+func (h *ProjectHandler) ListProjectReferences(ctx context.Context, _ *types.EnvironmentInput) (*handlerutil.Out[[]types.ProjectReference], error) {
 	references, err := h.projectService.ListProjectReferences(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to list project references: " + err.Error())

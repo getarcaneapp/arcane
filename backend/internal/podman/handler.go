@@ -22,24 +22,16 @@ type Handler struct {
 	eventService *event.EventService
 }
 
-type GetPodmanStatusInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type GetPodmanInfoInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
 type RunPodmanAutoUpdateInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          *types.PodmanAutoUpdateOptions
 }
 
-func (h *Handler) GetStatus(ctx context.Context, _ *GetPodmanStatusInput) (*handlerutil.Out[types.PodmanStatus], error) {
+func (h *Handler) GetStatus(ctx context.Context, _ *types.EnvironmentInput) (*handlerutil.Out[types.PodmanStatus], error) {
 	return &handlerutil.Out[types.PodmanStatus]{Body: types.ApiResponse[types.PodmanStatus]{Success: true, Data: h.service.Status(ctx)}}, nil
 }
 
-func (h *Handler) GetInfo(ctx context.Context, _ *GetPodmanInfoInput) (*handlerutil.Out[types.PodmanInfo], error) {
+func (h *Handler) GetInfo(ctx context.Context, _ *types.EnvironmentInput) (*handlerutil.Out[types.PodmanInfo], error) {
 	info, err := h.service.Info(ctx)
 	if err != nil {
 		apiErr := common.ToAPIError(err)

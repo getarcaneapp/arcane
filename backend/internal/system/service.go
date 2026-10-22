@@ -170,9 +170,13 @@ func (s *SystemService) TriggerUpgradeViaCLI(ctx context.Context, user types.Act
 	return s.upgrade.TriggerUpgradeViaCLI(ctx, user, target)
 }
 
-// ResumeUpdateAllOnStartup finalizes an update-all job interrupted by the manager restart.
-func (s *SystemService) ResumeUpdateAllOnStartup(ctx context.Context) {
-	s.upgrade.ResumeUpdateAllOnStartup(ctx)
+// ResumeUpgradeJobOnStartup finalizes an upgrade job interrupted by the manager restart.
+func (s *SystemService) ResumeUpgradeJobOnStartup(ctx context.Context) {
+	s.upgrade.ResumeUpgradeJobOnStartup(ctx)
+}
+
+func (s *SystemService) RunUpgradeStreamProducer(ctx context.Context, events chan<- types.UpgradeJob) {
+	s.upgrade.RunStreamProducer(ctx, events)
 }
 
 // PruneUpgradeLogs removes expired upgrade logs.

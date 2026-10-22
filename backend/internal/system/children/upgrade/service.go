@@ -1,6 +1,7 @@
 package upgrade
 
 import (
+	"bufio"
 	"cmp"
 	"context"
 	"encoding/json/v2"
@@ -29,6 +30,8 @@ import (
 	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
 	kit "go.getarcane.app/kit/pkg"
+	"go.getarcane.app/kit/pkg/mapping"
+	"go.getarcane.app/streams/agg"
 	"go.getarcane.app/sys/cgroup"
 	"go.getarcane.app/updater"
 	"go.getarcane.app/updater/labels"
@@ -60,9 +63,9 @@ import (
 var (
 	upgradeLogName = regexp.MustCompile(`^arcane-upgrade-\d+\.log$`)
 	// exactReleaseTag pins an exact release (vX.Y.Z, prereleases included); channels like v2 or v2.9 are mutable.
-	exactReleaseTag         = regexp.MustCompile(`^v?\d+\.\d+\.\d+(?:[-+].*)?$`)
-	activeUpdateAllStatuses = []EnvironmentUpdateJobStatus{EnvironmentUpdateJobStatusPendingRestart, EnvironmentUpdateJobStatusRunning}
-	errUpdateAllInProgress  = common.Classify(common.ErrUpdateAllInProgress, errors.New("an update-all job is already in progress"))
+	exactReleaseTag          = regexp.MustCompile(`^v?\d+\.\d+\.\d+(?:[-+].*)?$`)
+	activeUpgradeJobStatuses = []UpgradeJobStatus{UpgradeJobStatusPendingRestart, UpgradeJobStatusRunning}
+	errUpgradeJobInProgress  = common.Classify(common.ErrUpgradeJobInProgress, errors.New("an upgrade job is already in progress"))
 )
 
 const (
@@ -73,34 +76,40 @@ const (
 	// The upgrader is gone and its exit code with it: success and failure are indistinguishable.
 	upgraderExitCodeLost upgraderExit = 3
 
-	updateAllStaleThreshold      = time.Hour
-	updateAllAgentRequestTimeout = 15 * time.Second
-	updateAllConfirmPollInterval = 10 * time.Second
-	updateAllConfirmTimeout      = 5 * time.Minute
-	updateAllErrorMaxLen         = 500
-	updateAllWorkflowName        = "update-all"
+	upgradeJobStaleThreshold      = time.Hour
+	upgradeJobAgentRequestTimeout = 15 * time.Second
+	upgradeJobRedialMaxBackoff    = 5 * time.Second
+	upgradeJobLegacyPollInterval  = 10 * time.Second
+	upgradeJobPublishInterval     = 250 * time.Millisecond
+	upgradeJobConfirmTimeout      = 5 * time.Minute
+	upgradeJobErrorMaxLen         = 500
+	upgradeJobWorkflowName        = "update-all"
 	// Generous: the upgrader pulls the target image before recreating anything.
-	updateAllManagerWatchTimeout = 15 * time.Minute
+	upgradeJobManagerWatchTimeout = 15 * time.Minute
 	// How long a recreate already underway gets to stop this container before no restart is assumed.
-	updateAllManagerNoRestartGrace = 15 * time.Second
+	upgradeJobManagerNoRestartGrace = 15 * time.Second
 )
 
 type Service struct {
 	upgrading    atomic.Bool
-	updatingAll  atomic.Bool
+	startingJob  atomic.Bool
+	progress     *progressFeed
+	jobHub       *agg.Hub[types.UpgradeJob]
+	jobChanged   chan struct{}
+	latestJob    atomic.Pointer[types.UpgradeJob]
 	flow         *flow.Engine
 	environments *environment.EnvironmentService
 	roles        *role.RoleService
-	// updateAllWorkflow upgrades every agent in turn, then the manager last.
-	updateAllWorkflow *flow.Workflow
-	db                *database.DB
-	dockerService     *dockerInternal.DockerClientService
-	versionService    *version.VersionService
-	eventService      *event.EventService
-	settingsService   *settings.SettingsService
-	projectService    *project.ProjectService
-	registryService   *registry.ContainerRegistryService
-	keepUpgrader      bool
+	// upgradeJobWorkflow upgrades every agent in turn, then the manager last.
+	upgradeJobWorkflow *flow.Workflow
+	db                 *database.DB
+	dockerService      *dockerInternal.DockerClientService
+	versionService     *version.VersionService
+	eventService       *event.EventService
+	settingsService    *settings.SettingsService
+	projectService     *project.ProjectService
+	registryService    *registry.ContainerRegistryService
+	keepUpgrader       bool
 	// resolveRuntimeOptions determines how the upgrader container reaches the Docker daemon.
 	resolveRuntimeOptions func(
 		ctx context.Context,
@@ -112,14 +121,14 @@ type Service struct {
 	) ([]string, []mount.Mount, container.NetworkMode, error)
 }
 
-// remoteAgent is one environment the update-all workflow upgrades.
+// remoteAgent is one environment the upgrade job workflow upgrades.
 type remoteAgent struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 }
 
-// updateAllInput is the update-all payload: the job and the API key that requested it.
-type updateAllInput struct {
+// upgradeJobInput is the upgrade job payload: the job and the API key that requested it.
+type upgradeJobInput struct {
 	JobID string `json:"jobId"`
 	KeyID string `json:"keyId,omitempty"`
 }
@@ -132,6 +141,8 @@ type preparedUpgrade struct {
 	// targetImage is what the recreated container runs; pullImage is the immutable reference pulled (same unless frozen).
 	targetImage string
 	pullImage   string
+	fromVersion string
+	toVersion   string
 	// saveCompose persists a tag change in the container's Compose project.
 	saveCompose func(context.Context)
 }
@@ -172,16 +183,19 @@ func NewService(
 		registryService:       registryService,
 		resolveRuntimeOptions: resolveRuntimeOptions,
 		keepUpgrader:          keepUpgrader,
+		progress:              newProgressFeed(),
+		jobHub:                agg.NewHub[types.UpgradeJob](),
+		jobChanged:            make(chan struct{}, 1),
 	}
 }
 
-// RegisterWorkflows defines the update-all workflow while the host is still unstarted. Its payload names the job;
+// RegisterWorkflows defines the upgrade job workflow while the host is still unstarted. Its payload names the job;
 // the job row holds every result, so a redelivered task resumes from what the row records.
 func (s *Service) RegisterWorkflows(engine *flow.Engine, environments *environment.EnvironmentService, roles *role.RoleService) error {
 	var err error
 	s.flow, s.environments, s.roles = engine, environments, roles
-	s.updateAllWorkflow, err = engine.Define(flow.Definition{
-		Name:        updateAllWorkflowName,
+	s.upgradeJobWorkflow, err = engine.Define(flow.Definition{
+		Name:        upgradeJobWorkflowName,
 		Version:     1,
 		Fingerprint: "65b33dbbe55a5018517b2e8506d9b487f322803ed5a9dfec0edbf5103c96e586",
 		Concurrency: 1,
@@ -337,13 +351,13 @@ func (s *Service) prepareUpgrade(ctx context.Context, user types.Actor, target u
 	config := kit.FromPtr(current.Config)
 	binaryPath := kit.Ternary(labels.IsArcaneAgentContainer(config.Labels), "/app/arcane-agent", "/app/arcane")
 
+	info := kit.FromPtr(s.versionService.GetAppVersionInfo(ctx))
 	targetImage := strings.TrimSpace(target.NewImageRef)
 	if targetImage == "" {
 		// A blank target resolves against the version check; a manager-supplied version outranks this instance's own.
-		info := s.versionService.GetAppVersionInfo(ctx)
 		if targetImage, err = resolveSelfUpgradeTargetImage(config.Image, &types.VersionInfo{
-			NewestVersion: cmp.Or(strings.TrimSpace(targetVersion), kit.FromPtr(info).NewestVersion),
-			NewestDigest:  kit.FromPtr(info).NewestDigest,
+			NewestVersion: cmp.Or(strings.TrimSpace(targetVersion), info.NewestVersion),
+			NewestDigest:  info.NewestDigest,
 		}); err != nil {
 			return nil, fmt.Errorf("resolve upgrade target image: %w", err)
 		}
@@ -361,11 +375,14 @@ func (s *Service) prepareUpgrade(ctx context.Context, user types.Actor, target u
 		"method":        "cli",
 		"targetImage":   targetImage,
 		"pullImage":     pullImage,
+		"fromVersion":   info.CurrentVersion,
 	}
 	if logUserEventErr := s.eventService.LogUserEvent(ctx, event.EventTypeSystemUpgrade, user.ID, user.Username, metadata); logUserEventErr != nil {
 		slog.WarnContext(ctx, "Failed to log upgrade event", "error", logUserEventErr)
 	}
 
+	toVersion := cmp.Or(strings.TrimSpace(targetVersion), info.NewestVersion, info.NewestDigest, targetImage)
+	s.progress.start(info.CurrentVersion, toVersion)
 	return &preparedUpgrade{
 		dockerClient:  dockerClient,
 		current:       current,
@@ -373,12 +390,20 @@ func (s *Service) prepareUpgrade(ctx context.Context, user types.Actor, target u
 		binaryPath:    binaryPath,
 		targetImage:   targetImage,
 		pullImage:     pullImage,
+		fromVersion:   info.CurrentVersion,
+		toVersion:     toVersion,
 		saveCompose:   saveCompose,
 	}, nil
 }
 
-func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgrade) (string, error) {
+func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgrade) (_ string, err error) {
 	defer s.upgrading.Store(false)
+	defer func() {
+		if err != nil {
+			s.progress.finish(err.Error())
+		}
+	}()
+	s.progress.emit(types.UpgradeProgressEventStage, 0, string(UpgradeStagePulling))
 
 	// The upgrader runs from the target image, so the upgrade CLI is the new version.
 	dockerClient := prepared.dockerClient
@@ -399,10 +424,9 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 		}
 		return "", fmt.Errorf("pull upgrader image: %w", err)
 	}
-	// Drain and validate the JSON stream to complete the pull.
-	if renderJSONMessageStreamErr := docker.RenderJSONMessageStream(pullReader, io.Discard); renderJSONMessageStreamErr != nil {
+	if pullErr := s.reportPull(pullReader); pullErr != nil {
 		_ = pullReader.Close()
-		return "", fmt.Errorf("failed to complete upgrader image pull: %w", renderJSONMessageStreamErr)
+		return "", fmt.Errorf("failed to complete upgrader image pull: %w", pullErr)
 	}
 	if closeErr := pullReader.Close(); closeErr != nil {
 		slog.WarnContext(ctx, "Failed to close upgrader image pull reader", "error", closeErr)
@@ -519,7 +543,58 @@ func (s *Service) runPreparedUpgrade(ctx context.Context, prepared *preparedUpgr
 	}
 
 	slog.InfoContext(ctx, "Upgrade container started", "upgraderId", resp.ID[:12], "upgraderName", upgraderName)
+	s.progress.emit(types.UpgradeProgressEventStage, pullPercentCeiling, string(UpgradeStageUpgrading))
+	go s.followUpgrader(context.WithoutCancel(ctx), resp.ID)
 	return resp.ID, nil
+}
+
+func (s *Service) reportPull(pullReader io.Reader) error {
+	lines, writer := io.Pipe()
+	defer func() { _ = lines.Close() }()
+	go func() {
+		_ = writer.CloseWithError(docker.RenderJSONMessageStream(pullReader, writer))
+	}()
+	layers := map[string]bool{}
+	scanner := bufio.NewScanner(lines)
+	for scanner.Scan() {
+		line := scanner.Text()
+		s.progress.emit(types.UpgradeProgressEventLog, trackPullLine(layers, line), line)
+	}
+	return scanner.Err()
+}
+
+func (s *Service) followUpgrader(ctx context.Context, upgraderID string) {
+	ctx, cancel := context.WithTimeout(ctx, upgradeJobManagerWatchTimeout)
+	defer cancel()
+	lines := make(chan string, progressFeedBuffer)
+	go func() {
+		defer close(lines)
+		logs, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.ContainerLogsResult, error) {
+			return cli.ContainerLogs(ctx, upgraderID, client.ContainerLogsOptions{ShowStdout: true, ShowStderr: true, Follow: true})
+		})
+		if err == nil {
+			err = docker.StreamMultiplexedLogs(ctx, logs, lines)
+		}
+		if err != nil {
+			slog.DebugContext(ctx, "Cannot follow upgrader logs", "upgraderId", upgraderID, "error", err)
+			s.progress.emit(types.UpgradeProgressEventLog, 0, "Upgrader logs are unavailable; waiting for the upgrade to finish")
+		}
+	}()
+	exit, exitCode := upgraderExitUnobserved, int64(0)
+	exited := make(chan struct{})
+	go func() {
+		defer close(exited)
+		exit, exitCode = s.waitForUpgrader(ctx, upgraderID)
+	}()
+	for line := range lines {
+		s.progress.emit(parseUpgraderLine(line))
+	}
+	<-exited
+	select {
+	case <-ctx.Done():
+	case <-time.After(upgradeJobManagerNoRestartGrace):
+	}
+	s.progress.finish(kit.Ternary(exit == upgraderExitFailed, fmt.Sprintf("Upgrader exited with code %d", exitCode), "Upgrader exited without restarting Arcane"))
 }
 
 // configuredTargetImage spells targetImage like the container's Compose service (or its runtime image when unmanaged).
@@ -616,87 +691,89 @@ func resolveSelfUpgradeTargetImage(currentImageRef string, info *types.VersionIn
 	return withTag.String(), nil
 }
 
-// StartUpdateAll records an update-all job and submits the workflow that upgrades every agent, then the manager.
-// Every environment pulls the latest image, whether or not it reports an update.
-func (s *Service) StartUpdateAll(ctx context.Context, user types.Actor) (*EnvironmentUpdateJob, error) {
+// StartUpgradeJob records an upgrade job and submits the workflow that upgrades the requested agents, then the manager.
+// No environment IDs means every enabled environment. Each one pulls the latest image, whether or not it reports an update.
+func (s *Service) StartUpgradeJob(ctx context.Context, user types.Actor, environmentIDs []string) (*UpgradeJob, error) {
 	// Closes the in-process check-then-create window (e.g. a double-click); the job row is the durable guard.
-	if !s.updatingAll.CompareAndSwap(false, true) {
-		return nil, errUpdateAllInProgress
+	if !s.startingJob.CompareAndSwap(false, true) {
+		return nil, errUpgradeJobInProgress
 	}
-	defer s.updatingAll.Store(false)
+	defer s.startingJob.Store(false)
 
-	active, err := s.findUpdateAllJob(ctx, "status IN ?", activeUpdateAllStatuses)
+	active, err := s.findUpgradeJob(ctx, "status IN ?", activeUpgradeJobStatuses)
 	if err != nil {
-		return nil, fmt.Errorf("check for active update-all job: %w", err)
+		return nil, fmt.Errorf("check for active upgrade job: %w", err)
 	}
 	if active != nil {
-		return nil, errUpdateAllInProgress
+		return nil, errUpgradeJobInProgress
 	}
 
+	remotes, err := s.environments.ListRemoteEnvironments(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list remote environments: %w", err)
+	}
+	agents := make([]remoteAgent, len(remotes))
+	for i, remote := range remotes {
+		agents[i] = remoteAgent{ID: remote.ID, Name: remote.Name}
+	}
 	info := s.versionService.GetAppVersionInfo(ctx)
-	job := &EnvironmentUpdateJob{
-		Status:                EnvironmentUpdateJobStatusRunning,
+	results, err := seedUpgradeResults(environmentIDs, UpgradeJobResult{
+		EnvironmentID:   environment.LocalEnvironmentID,
+		EnvironmentName: s.environments.ResolveEnvironmentName(ctx, environment.LocalEnvironmentID),
+		Status:          UpgradeResultStatusPending,
+		FromVersion:     info.CurrentVersion,
+		ToVersion:       cmp.Or(info.NewestVersion, info.NewestDigest, info.CurrentVersion, info.CurrentDigest),
+	}, agents)
+	if err != nil {
+		return nil, err
+	}
+	job := &UpgradeJob{
+		Status:                UpgradeJobStatusRunning,
 		UserID:                user.ID,
 		Username:              user.Username,
 		ManagerVersionAtStart: info.CurrentVersion,
 		ManagerDigestAtStart:  info.CurrentDigest,
 		ManagerTargetVersion:  cmp.Or(info.NewestVersion, info.NewestDigest),
-		// The manager row stays pending until the final manager step.
-		Results: EnvironmentUpdateResults{{
-			EnvironmentID:   environment.LocalEnvironmentID,
-			EnvironmentName: s.environments.ResolveEnvironmentName(ctx, environment.LocalEnvironmentID),
-			Status:          EnvironmentUpdateResultStatusPending,
-			FromVersion:     info.CurrentVersion,
-			ToVersion:       cmp.Or(info.NewestVersion, info.NewestDigest, info.CurrentVersion, info.CurrentDigest),
-		}},
+		Results:               results,
 	}
-	// Seed every remote row so the dialog shows the whole fleet at once; the agents step fills any gaps.
-	if remotes, listErr := s.environments.ListRemoteEnvironments(ctx); listErr != nil {
-		slog.WarnContext(ctx, "update-all: failed to pre-list remote environments for seeding", "error", listErr)
-	} else {
-		for _, remote := range remotes {
-			upsertPendingResult(job, remote.ID, remote.Name)
-		}
-	}
-
-	if createUpgradeJobErr := s.db.WithContext(ctx).Create(job).Error; createUpgradeJobErr != nil {
-		return nil, fmt.Errorf("create update-all job: %w", createUpgradeJobErr)
+	if createUpgradeJobErr := s.saveJob(ctx, job); createUpgradeJobErr != nil {
+		return nil, fmt.Errorf("create upgrade job: %w", createUpgradeJobErr)
 	}
 
 	keyID, _ := ctx.Value(middleware.ContextKeyApiKeyID).(string)
-	instanceID, submitErr := s.flow.Submit(ctx, s.updateAllWorkflow, updateAllInput{
+	instanceID, submitErr := s.flow.Submit(ctx, s.upgradeJobWorkflow, upgradeJobInput{
 		JobID: job.ID,
 		KeyID: keyID,
 	}, activitylib.StartRequest{})
 	if submitErr != nil {
-		s.markUpdateAllFailed(context.WithoutCancel(ctx), job, fmt.Sprintf("failed to start update-all: %v", submitErr))
-		return nil, fmt.Errorf("start update-all: %w", submitErr)
+		s.markUpgradeJobFailed(context.WithoutCancel(ctx), job, fmt.Sprintf("failed to start upgrade job: %v", submitErr))
+		return nil, fmt.Errorf("start upgrade job: %w", submitErr)
 	}
-	go s.watchUpdateAll(context.WithoutCancel(ctx), job.ID, instanceID)
-	slog.InfoContext(ctx, "Update-all started; upgrading agents first", "jobId", job.ID, "user", user.Username)
+	go s.watchUpgradeJob(context.WithoutCancel(ctx), job.ID, instanceID)
+	slog.InfoContext(ctx, "Upgrade job started; upgrading agents first", "jobId", job.ID, "user", user.Username, "environments", len(job.Results))
 	return job, nil
 }
 
-// watchUpdateAll fails a job whose workflow ends without reaching the manager step, which would leave it running
+// watchUpgradeJob fails a job whose workflow ends without reaching the manager step, which would leave it running
 // and refuse every later run.
-func (s *Service) watchUpdateAll(ctx context.Context, jobID, instanceID string) {
-	outcome, err := s.flow.Wait(ctx, s.updateAllWorkflow, instanceID)
+func (s *Service) watchUpgradeJob(ctx context.Context, jobID, instanceID string) {
+	outcome, err := s.flow.Wait(ctx, s.upgradeJobWorkflow, instanceID)
 	if err != nil || outcome.Status == types.RunStatusSucceeded {
 		return
 	}
-	current, err := s.loadUpdateAllJob(ctx, jobID)
-	if err != nil || current.Status != EnvironmentUpdateJobStatusRunning {
+	current, err := s.loadUpgradeJob(ctx, jobID)
+	if err != nil || current.Status != UpgradeJobStatusRunning {
 		return
 	}
-	s.markUpdateAllFailed(ctx, current, cmp.Or(outcome.Message, "update-all did not finish"))
+	s.markUpgradeJobFailed(ctx, current, cmp.Or(outcome.Message, "upgrade job did not finish"))
 }
 
-// ResumeUpdateAllOnStartup finalizes a job the manager left pending_restart by self-upgrading,
+// ResumeUpgradeJobOnStartup finalizes a job the manager left pending_restart by self-upgrading,
 // and fails a running job whose workflow is gone. It is a no-op when nothing is pending.
-func (s *Service) ResumeUpdateAllOnStartup(ctx context.Context) {
-	job, err := s.findUpdateAllJob(ctx, "status IN ?", activeUpdateAllStatuses)
+func (s *Service) ResumeUpgradeJobOnStartup(ctx context.Context) {
+	job, err := s.findUpgradeJob(ctx, "status IN ?", activeUpgradeJobStatuses)
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to load pending update-all job on startup", "error", err)
+		slog.WarnContext(ctx, "Failed to load pending upgrade job on startup", "error", err)
 		return
 	}
 	if job == nil {
@@ -704,32 +781,49 @@ func (s *Service) ResumeUpdateAllOnStartup(ctx context.Context) {
 	}
 
 	// A running job resumes with its workflow; one without a live workflow cannot resume, so fail it.
-	if job.Status == EnvironmentUpdateJobStatusRunning {
+	if job.Status == UpgradeJobStatusRunning {
 		standalone, standaloneErr := s.flow.Standalone(ctx)
-		if index := slices.IndexFunc(standalone, func(run types.SchedulerRun) bool { return run.JobID == updateAllWorkflowName }); standaloneErr == nil && index >= 0 {
-			go s.watchUpdateAll(context.WithoutCancel(ctx), job.ID, standalone[index].ID)
+		if index := slices.IndexFunc(standalone, func(run types.SchedulerRun) bool { return run.JobID == upgradeJobWorkflowName }); standaloneErr == nil && index >= 0 {
+			go s.watchUpgradeJob(context.WithoutCancel(ctx), job.ID, standalone[index].ID)
 			return
 		}
-		s.markUpdateAllFailed(ctx, job, "interrupted by manager restart")
+		s.markUpgradeJobFailed(ctx, job, "interrupted by manager restart")
 		return
 	}
 
 	info := s.versionService.GetAppVersionInfo(ctx)
 	action := resolveResumeAction(job, info.CurrentVersion, info.CurrentDigest, time.Now())
 	if action.markStale {
-		s.markUpdateAllFailed(ctx, job, "update-all job is stale; manager did not restart in time")
+		s.markUpgradeJobFailed(ctx, job, "upgrade job is stale; manager did not restart in time")
 		return
 	}
 
 	// The agents ran before the restart; only the manager row is left to settle.
-	managerStatus := kit.Ternary(action.managerSucceeded, EnvironmentUpdateResultStatusUpdated, EnvironmentUpdateResultStatusFailed)
-	s.finalizeUpdateAllJob(ctx, job, managerStatus, info.CurrentVersion)
-	slog.InfoContext(ctx, "Finalized update-all job after manager restart", "jobId", job.ID, "managerUpgraded", action.managerSucceeded)
+	if manager := slices.IndexFunc(job.Results, func(r UpgradeJobResult) bool {
+		return r.EnvironmentID == environment.LocalEnvironmentID
+	}); manager >= 0 {
+		lines, replayErr := readUpgradeLog(libarcane.UpgradeLogDirectory, job.CreatedAt)
+		if replayErr != nil {
+			slog.WarnContext(ctx, "upgrade job: failed to replay manager upgrade log", "jobId", job.ID, "error", replayErr)
+		}
+		sink := &progressSink{service: s, job: job, index: manager, baseSet: true}
+		for _, line := range lines {
+			sink.apply(ctx, types.UpgradeProgressEvent{
+				Type:    types.UpgradeProgressEventLog,
+				Message: line,
+				At:      time.Now(),
+				Replay:  true,
+			})
+		}
+	}
+	managerStatus := kit.Ternary(action.managerSucceeded, UpgradeResultStatusUpdated, UpgradeResultStatusFailed)
+	s.finalizeUpgradeJob(ctx, job, managerStatus, info.CurrentVersion)
+	slog.InfoContext(ctx, "Finalized upgrade job after manager restart", "jobId", job.ID, "managerUpgraded", action.managerSucceeded)
 }
 
 // resolveResumeAction marks a pending_restart job stale after the threshold, otherwise reports whether the manager upgrade landed.
-func resolveResumeAction(job *EnvironmentUpdateJob, currentVersion, currentDigest string, now time.Time) resumeAction {
-	if now.Sub(job.CreatedAt) > updateAllStaleThreshold {
+func resolveResumeAction(job *UpgradeJob, currentVersion, currentDigest string, now time.Time) resumeAction {
+	if now.Sub(job.CreatedAt) > upgradeJobStaleThreshold {
 		return resumeAction{markStale: true}
 	}
 	return resumeAction{managerSucceeded: upgradeLanded(job.ManagerVersionAtStart, job.ManagerDigestAtStart, job.ManagerTargetVersion, currentVersion, currentDigest)}
@@ -745,22 +839,21 @@ func upgradeLanded(fromVersion, fromDigest, target, currentVersion, currentDiges
 	return versionChanged || digestChanged || onTarget
 }
 
-// discoverAgents lists the remote environments the agents step upgrades in turn.
+// discoverAgents lists the remote environments the job targets, which the agents step upgrades in turn.
 func (s *Service) discoverAgents(ctx context.Context, t flow.Task) (any, error) {
-	envs, err := s.environments.ListRemoteEnvironments(ctx)
-	if err != nil {
-		var input updateAllInput
-		if payloadErr := t.Payload(&input); payloadErr != nil {
-			return nil, errors.Join(err, payloadErr)
-		}
-		if job, loadErr := s.loadUpdateAllJob(ctx, input.JobID); loadErr == nil {
-			s.markUpdateAllFailed(ctx, job, fmt.Sprintf("failed to list remote environments: %v", err))
-		}
+	var input upgradeJobInput
+	if err := t.Payload(&input); err != nil {
 		return nil, err
 	}
-	agents := make([]remoteAgent, len(envs))
-	for i, remote := range envs {
-		agents[i] = remoteAgent{ID: remote.ID, Name: remote.Name}
+	job, err := s.loadUpgradeJob(ctx, input.JobID)
+	if err != nil {
+		return nil, err
+	}
+	agents := make([]remoteAgent, 0, len(job.Results))
+	for _, row := range job.Results {
+		if row.EnvironmentID != environment.LocalEnvironmentID {
+			agents = append(agents, remoteAgent{ID: row.EnvironmentID, Name: row.EnvironmentName})
+		}
 	}
 	return agents, nil
 }
@@ -768,31 +861,32 @@ func (s *Service) discoverAgents(ctx context.Context, t flow.Task) (any, error) 
 // upgradeAgentTask triggers and confirms one remote environment's upgrade, persisting each stage for the status endpoint.
 // A redelivered task skips an agent whose result is already terminal.
 func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err error) {
-	var input updateAllInput
+	var input upgradeJobInput
 	var remote remoteAgent
 	if decodeErr := errors.Join(t.Payload(&input), t.DecodeItem(&remote)); decodeErr != nil {
 		return nil, decodeErr
 	}
-	job, err := s.loadUpdateAllJob(ctx, input.JobID)
+	job, err := s.loadUpgradeJob(ctx, input.JobID)
 	if err != nil {
 		return nil, err
 	}
-	if job.Status != EnvironmentUpdateJobStatusRunning {
+	if job.Status != UpgradeJobStatusRunning {
 		return nil, nil
 	}
-	if allowed, authorizeErr := s.authorizeUpdateAll(ctx, job, input.KeyID); !allowed {
+	if allowed, authorizeErr := s.authorizeUpgradeJob(ctx, job, input.KeyID); !allowed {
 		return nil, authorizeErr
 	}
-	result := &job.Results[upsertPendingResult(job, remote.ID, remote.Name)]
-	if result.Status != EnvironmentUpdateResultStatusPending && result.Status != EnvironmentUpdateResultStatusUpdating {
+	index := upsertPendingResult(job, remote.ID, remote.Name)
+	result := &job.Results[index]
+	if result.Status != UpgradeResultStatusPending && result.Status != UpgradeResultStatusUpdating {
 		return nil, nil
 	}
 	// A saved starting or later stage means the trigger may have reached the agent; sending it again could start a second upgrader.
 	// Only a later stage proves the agent accepted it.
-	triggered := result.Status == EnvironmentUpdateResultStatusUpdating && result.Stage != "" && result.Stage != EnvironmentUpdateStageChecking
-	unconfirmed := triggered && result.Stage == EnvironmentUpdateStageStarting
-	settle := func(status EnvironmentUpdateResultStatus, message string) {
-		*result = EnvironmentUpdateResult{ //exhaustruct:enforce
+	triggered := result.Status == UpgradeResultStatusUpdating && result.Stage != "" && result.Stage != UpgradeStageChecking
+	unconfirmed := triggered && result.Stage == UpgradeStageStarting
+	settle := func(status UpgradeResultStatus, message string) {
+		*result = UpgradeJobResult{ //exhaustruct:enforce
 			EnvironmentID:   result.EnvironmentID,
 			EnvironmentName: result.EnvironmentName,
 			Status:          status,
@@ -801,12 +895,14 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 			ToVersion:       result.ToVersion,
 			Stage:           result.Stage,
 			StageStartedAt:  result.StageStartedAt,
-			Error:           message[:min(len(message), updateAllErrorMaxLen)],
+			Percent:         kit.Ternary(status == UpgradeResultStatusUpdated, 100, result.Percent),
+			Logs:            result.Logs,
+			Error:           message[:min(len(message), upgradeJobErrorMaxLen)],
 		}
 	}
-	settle(EnvironmentUpdateResultStatusUpdating, result.Error)
-	if persistErr := s.db.WithContext(ctx).Save(job).Error; persistErr != nil {
-		slog.WarnContext(ctx, "update-all: failed to persist updating status", "jobId", job.ID, "environmentId", remote.ID, "error", persistErr)
+	settle(UpgradeResultStatusUpdating, result.Error)
+	if persistErr := s.saveJob(ctx, job); persistErr != nil {
+		slog.WarnContext(ctx, "upgrade job: failed to persist updating status", "jobId", job.ID, "environmentId", remote.ID, "error", persistErr)
 	}
 	defer func() {
 		*result = result.clearStage()
@@ -814,8 +910,8 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 		if err = ctx.Err(); err != nil {
 			return
 		}
-		if persistErr := s.db.WithContext(ctx).Save(job).Error; persistErr != nil {
-			slog.WarnContext(ctx, "update-all: failed to persist progress", "jobId", job.ID, "environmentId", remote.ID, "error", persistErr)
+		if persistErr := s.saveJob(ctx, job); persistErr != nil {
+			slog.WarnContext(ctx, "upgrade job: failed to persist progress", "jobId", job.ID, "environmentId", remote.ID, "error", persistErr)
 		}
 	}()
 
@@ -826,12 +922,12 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 			CurrentDigest:  result.FromDigest,
 		}
 	} else {
-		s.setUpdateStage(ctx, job, result, EnvironmentUpdateStageChecking)
-		versionCtx, cancel := context.WithTimeout(ctx, updateAllAgentRequestTimeout)
+		s.setUpdateStage(ctx, job, result, UpgradeStageChecking)
+		versionCtx, cancel := context.WithTimeout(ctx, upgradeJobAgentRequestTimeout)
 		checkErr := s.environments.ProxyJSONRequest(versionCtx, remote.ID, http.MethodGet, "/api/app/version", nil, &info)
 		cancel()
 		if checkErr != nil {
-			settle(updateAllAgentFailureStatus(checkErr), checkErr.Error())
+			settle(upgradeJobAgentFailureStatus(checkErr), checkErr.Error())
 			return nil, nil
 		}
 		// The manager's newest release outranks the agent's own check, so the recorded target tracks what was sent.
@@ -839,157 +935,183 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 		if newest := strings.TrimSpace(s.versionService.GetAppVersionInfo(ctx).NewestVersion); newest != "" {
 			body, marshalErr := json.Marshal(TriggerUpgradeBody{TargetVersion: newest})
 			if marshalErr != nil {
-				slog.WarnContext(ctx, "update-all: failed to marshal trigger body", "environmentId", remote.ID, "error", marshalErr)
+				slog.WarnContext(ctx, "upgrade job: failed to marshal trigger body", "environmentId", remote.ID, "error", marshalErr)
 			} else {
 				info.NewestVersion, triggerBody = newest, body // keep: versiontypes.Info is decoded by ProxyJSONRequest and has ~20 fields
 			}
 		}
 		// The saved starting stage keeps a replay from sending the trigger again, so the trigger waits on it.
-		*result = EnvironmentUpdateResult{ //exhaustruct:enforce
+		*result = UpgradeJobResult{ //exhaustruct:enforce
 			EnvironmentID:   result.EnvironmentID,
 			EnvironmentName: result.EnvironmentName,
 			Status:          result.Status,
 			FromVersion:     info.CurrentVersion,
 			FromDigest:      info.CurrentDigest,
 			ToVersion:       cmp.Or(info.NewestVersion, info.NewestDigest, info.CurrentVersion, info.CurrentDigest),
-			Stage:           EnvironmentUpdateStageStarting,
+			Stage:           UpgradeStageStarting,
 			StageStartedAt:  new(time.Now()),
+			Percent:         0,
+			Logs:            nil,
 			Error:           result.Error,
 		}
-		if saveErr := s.db.WithContext(ctx).Save(job).Error; saveErr != nil {
-			settle(EnvironmentUpdateResultStatusFailed, "Could not save upgrade progress: "+saveErr.Error())
+		if saveErr := s.saveJob(ctx, job); saveErr != nil {
+			settle(UpgradeResultStatusFailed, "Could not save upgrade progress: "+saveErr.Error())
 			return nil, nil
 		}
-		triggerCtx, cancel := context.WithTimeout(ctx, updateAllAgentRequestTimeout)
+		triggerCtx, cancel := context.WithTimeout(ctx, upgradeJobAgentRequestTimeout)
 		resp, triggerErr := s.environments.ExecuteRemoteRequest(triggerCtx, remote.ID, http.MethodPost, "/api/environments/0/system/upgrade", triggerBody)
 		cancel()
 		if triggerErr == nil {
 			triggerErr = resp.RequireSuccess()
 		}
 		if triggerErr != nil {
-			settle(EnvironmentUpdateResultStatusFailed, triggerErr.Error())
+			settle(UpgradeResultStatusFailed, triggerErr.Error())
 			return nil, nil
 		}
 
 		// An agent already on the target finds nothing to swap in; confirming would only burn the poll window.
 		if info.AlreadyOnNewest() {
-			*result = EnvironmentUpdateResult{ //exhaustruct:enforce
+			*result = UpgradeJobResult{ //exhaustruct:enforce
 				EnvironmentID:   result.EnvironmentID,
 				EnvironmentName: result.EnvironmentName,
-				Status:          EnvironmentUpdateResultStatusUpToDate,
+				Status:          UpgradeResultStatusUpToDate,
 				FromVersion:     result.FromVersion,
 				FromDigest:      result.FromDigest,
 				ToVersion:       info.CurrentVersion,
 				Stage:           result.Stage,
 				StageStartedAt:  result.StageStartedAt,
+				Percent:         100,
+				Logs:            result.Logs,
 				Error:           result.Error,
 			}
 			return nil, nil
 		}
 	}
 
-	// Poll until the agent's version lands; past the window the upgrade is only recorded as triggered.
 	// An unconfirmed request keeps its starting stage, so another restart still knows nothing confirmed it.
-	stage := func(next EnvironmentUpdateStage) {
+	stage := func(next UpgradeStage) {
 		if !unconfirmed {
 			s.setUpdateStage(ctx, job, result, next)
 		}
 	}
-	stage(EnvironmentUpdateStageReconnecting)
-	ticker := time.NewTicker(updateAllConfirmPollInterval)
-	defer ticker.Stop()
-	for deadline := time.Now().Add(updateAllConfirmTimeout); time.Now().Before(deadline); {
+	sink := &progressSink{service: s, job: job, index: index, keepStage: unconfirmed}
+	waitCtx, cancel := context.WithTimeout(ctx, upgradeJobConfirmTimeout)
+	defer cancel()
+	runtimeChanged, unsubscribe := s.environments.SubscribeRuntimeChanges()
+	defer unsubscribe()
+	for backoff := time.Second; waitCtx.Err() == nil; backoff = min(2*backoff, upgradeJobRedialMaxBackoff) {
+		doneMessage, done, streamErr := s.followAgentProgress(waitCtx, remote.ID, sink)
+		sink.flush(ctx)
+		statusErr, _ := errors.AsType[*remenv.StatusError](streamErr)
+		legacy := slices.Contains([]int{http.StatusNotFound, http.StatusMethodNotAllowed}, kit.FromPtr(statusErr).StatusCode)
+		if done || legacy {
+			stage(UpgradeStageVerifying)
+			versionCtx, versionCancel := context.WithTimeout(waitCtx, upgradeJobAgentRequestTimeout)
+			var current types.VersionInfo
+			streamErr = s.environments.ProxyJSONRequest(versionCtx, remote.ID, http.MethodGet, "/api/app/version", nil, &current)
+			versionCancel()
+			switch {
+			case streamErr != nil:
+			// An unconfirmed request proves nothing by the agent merely matching the target, so it needs a real change.
+			case upgradeLanded(
+				info.CurrentVersion,
+				info.CurrentDigest,
+				kit.Ternary(unconfirmed || strings.TrimPrefix(result.ToVersion, "v") == strings.TrimPrefix(info.CurrentVersion, "v") || result.ToVersion == info.CurrentDigest, "", result.ToVersion),
+				current.CurrentVersion,
+				current.CurrentDigest,
+			):
+				settle(UpgradeResultStatusUpdated, result.Error)
+				return nil, nil
+			case done:
+				settle(UpgradeResultStatusFailed, cmp.Or(doneMessage, "Agent finished the upgrade without changing version"))
+				return nil, nil
+			}
+		}
+		slog.DebugContext(ctx, "upgrade job: agent progress unavailable", "environmentId", remote.ID, "legacy", legacy, "error", streamErr)
+		stage(kit.Ternary(streamErr == nil, UpgradeStageVerifying, UpgradeStageReconnecting))
 		select {
-		case <-ctx.Done():
-			return nil, nil
-		case <-ticker.C:
-		}
-		pollCtx, pollCancel := context.WithTimeout(ctx, updateAllAgentRequestTimeout)
-		var current types.VersionInfo
-		pollErr := s.environments.ProxyJSONRequest(pollCtx, remote.ID, http.MethodGet, "/api/app/version", nil, &current)
-		pollCancel()
-		if pollErr != nil {
-			stage(EnvironmentUpdateStageReconnecting)
-			continue
-		}
-		stage(EnvironmentUpdateStageVerifying)
-		// An unconfirmed request proves nothing by the agent merely matching the target, so it needs a real change.
-		if upgradeLanded(
-			info.CurrentVersion,
-			info.CurrentDigest,
-			kit.Ternary(unconfirmed || strings.TrimPrefix(result.ToVersion, "v") == strings.TrimPrefix(info.CurrentVersion, "v") || result.ToVersion == info.CurrentDigest, "", result.ToVersion),
-			current.CurrentVersion,
-			current.CurrentDigest,
-		) {
-			settle(EnvironmentUpdateResultStatusUpdated, result.Error)
-			return nil, nil
+		case <-waitCtx.Done():
+		case <-runtimeChanged:
+		case <-time.After(kit.Ternary(legacy, upgradeJobLegacyPollInterval, backoff)):
 		}
 	}
-	if unconfirmed {
-		settle(EnvironmentUpdateResultStatusFailed, "Upgrade request was interrupted before the agent confirmed it")
+	if ctx.Err() != nil {
 		return nil, nil
 	}
-	settle(EnvironmentUpdateResultStatusTriggered, result.Error)
+	if unconfirmed {
+		settle(UpgradeResultStatusFailed, "Upgrade request was interrupted before the agent confirmed it")
+		return nil, nil
+	}
+	settle(UpgradeResultStatusTriggered, result.Error)
 	return nil, nil
 }
 
 // upgradeManagerTask triggers the manager's own self-upgrade last. The job is persisted pending_restart BEFORE the
 // trigger, so a redelivery never triggers twice and the next boot finalizes it.
 func (s *Service) upgradeManagerTask(ctx context.Context, t flow.Task) (any, error) {
-	var input updateAllInput
+	var input upgradeJobInput
 	if err := t.Payload(&input); err != nil {
 		return nil, err
 	}
-	job, err := s.loadUpdateAllJob(ctx, input.JobID)
+	job, err := s.loadUpgradeJob(ctx, input.JobID)
 	if err != nil {
 		return nil, err
 	}
 	allowed, err := func() (bool, error) {
-		if job.Status != EnvironmentUpdateJobStatusRunning {
+		if job.Status != UpgradeJobStatusRunning {
 			return false, nil
 		}
-		return s.authorizeUpdateAll(ctx, job, input.KeyID)
+		return s.authorizeUpgradeJob(ctx, job, input.KeyID)
 	}()
 	if err != nil {
 		return nil, err
 	}
-	if allowed {
+	manager := slices.IndexFunc(job.Results, func(r UpgradeJobResult) bool {
+		return r.EnvironmentID == environment.LocalEnvironmentID
+	})
+	if allowed && manager < 0 {
+		s.finalizeUpgradeJob(ctx, job, "", "")
+	}
+	if allowed && manager >= 0 {
 		// Every agent task has finished, so an agent row still in progress belongs to a task that failed first.
-		results := make(EnvironmentUpdateResults, 0, len(job.Results))
+		results := make(UpgradeJobResults, 0, len(job.Results))
 		for _, row := range job.Results {
 			switch {
 			case row.EnvironmentID == environment.LocalEnvironmentID:
-				results = append(results, EnvironmentUpdateResult{ //exhaustruct:enforce
+				results = append(results, UpgradeJobResult{ //exhaustruct:enforce
 					EnvironmentID:   row.EnvironmentID,
 					EnvironmentName: row.EnvironmentName,
-					Status:          EnvironmentUpdateResultStatusUpdating,
+					Status:          UpgradeResultStatusUpdating,
 					FromVersion:     row.FromVersion,
 					FromDigest:      row.FromDigest,
 					ToVersion:       row.ToVersion,
-					Stage:           EnvironmentUpdateStageStarting,
+					Stage:           UpgradeStageStarting,
 					StageStartedAt:  new(time.Now()),
+					Percent:         0,
+					Logs:            row.Logs,
 					Error:           row.Error,
 				})
-			case row.Status == EnvironmentUpdateResultStatusPending || row.Status == EnvironmentUpdateResultStatusUpdating:
-				results = append(results, EnvironmentUpdateResult{ //exhaustruct:enforce
+			case row.Status == UpgradeResultStatusPending || row.Status == UpgradeResultStatusUpdating:
+				results = append(results, UpgradeJobResult{ //exhaustruct:enforce
 					EnvironmentID:   row.EnvironmentID,
 					EnvironmentName: row.EnvironmentName,
-					Status:          EnvironmentUpdateResultStatusFailed,
+					Status:          UpgradeResultStatusFailed,
 					FromVersion:     row.FromVersion,
 					FromDigest:      row.FromDigest,
 					ToVersion:       row.ToVersion,
 					Stage:           "",
 					StageStartedAt:  nil,
+					Percent:         row.Percent,
+					Logs:            row.Logs,
 					Error:           "Agent upgrade did not finish",
 				})
 			default:
 				results = append(results, row)
 			}
 		}
-		manager := slices.IndexFunc(results, func(r EnvironmentUpdateResult) bool { return r.EnvironmentID == environment.LocalEnvironmentID })
-		*job = EnvironmentUpdateJob{ //exhaustruct:enforce
+		*job = UpgradeJob{ //exhaustruct:enforce
 			BaseModel:             job.BaseModel,
-			Status:                EnvironmentUpdateJobStatusPendingRestart,
+			Status:                UpgradeJobStatusPendingRestart,
 			UserID:                job.UserID,
 			Username:              job.Username,
 			ManagerVersionAtStart: job.ManagerVersionAtStart,
@@ -1000,55 +1122,110 @@ func (s *Service) upgradeManagerTask(ctx context.Context, t flow.Task) (any, err
 			CompletedAt:           job.CompletedAt,
 		}
 		// A replay that misses pending_restart would trigger the manager upgrade again, so the trigger waits on it.
-		if savePendingRestartErr := s.db.WithContext(ctx).Save(job).Error; savePendingRestartErr != nil {
+		if savePendingRestartErr := s.saveJob(ctx, job); savePendingRestartErr != nil {
 			return nil, fmt.Errorf("persist pending_restart before manager upgrade: %w", savePendingRestartErr)
 		}
 		// Only a manager already on the newest image makes a no-op upgrader run expected; checked after the fact it proves nothing.
 		wasAlreadyNewest := s.AlreadyOnNewestImage(ctx)
-		upgraderID, triggerErr := s.TriggerUpgradeViaCLI(ctx, types.Actor{ID: job.UserID, Username: job.Username}, updater.SelfUpdateTarget{})
+		_, events, _, unsubscribe := s.progress.subscribe()
+		defer unsubscribe()
+		sink := &progressSink{service: s, job: job, index: manager}
+		var upgraderID string
+		var triggerErr error
+		triggered := make(chan struct{})
+		go func() {
+			defer close(triggered)
+			upgraderID, triggerErr = s.TriggerUpgradeViaCLI(ctx, types.Actor{ID: job.UserID, Username: job.Username}, updater.SelfUpdateTarget{})
+		}()
+		sink.follow(ctx, events, triggered)
 		if triggerErr != nil {
 			// No restart is coming, so this flips the manager's updating row to failed now.
-			s.markUpdateAllFailed(ctx, job, fmt.Sprintf("manager upgrade trigger failed: %v", triggerErr))
+			s.markUpgradeJobFailed(ctx, job, fmt.Sprintf("manager upgrade trigger failed: %v", triggerErr))
 		} else {
-			if manager >= 0 {
-				s.setUpdateStage(ctx, job, &job.Results[manager], EnvironmentUpdateStageReconnecting)
-			}
-			slog.InfoContext(ctx, "Update-all: agents done, manager self-upgrade triggered", "jobId", job.ID, "upgraderId", upgraderID)
-			s.watchManagerUpgrader(ctx, job, upgraderID, wasAlreadyNewest)
+			slog.InfoContext(ctx, "Upgrade job: agents done, manager self-upgrade triggered", "jobId", job.ID, "upgraderId", upgraderID)
+			s.watchManagerUpgrader(ctx, sink, events, upgraderID, wasAlreadyNewest)
 		}
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		if job, err = s.loadUpdateAllJob(ctx, input.JobID); err != nil {
+		if job, err = s.loadUpgradeJob(ctx, input.JobID); err != nil {
 			return nil, err
 		}
 	}
-	if job.Status == EnvironmentUpdateJobStatusFailed {
+	if job.Status == UpgradeJobStatusFailed {
 		return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: kit.FromPtr(job.Error)}, nil
 	}
-	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Update-all finished; " + string(job.Status)}, nil
+	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Upgrade job finished; " + string(job.Status)}, nil
 }
 
 // watchManagerUpgrader closes out a pending_restart job whose manager was never recreated, which a recreate would have
 // prevented by stopping this process. wasAlreadyNewest is the pre-trigger check that a no-op run was expected.
-func (s *Service) watchManagerUpgrader(ctx context.Context, job *EnvironmentUpdateJob, upgraderID string, wasAlreadyNewest bool) {
+func (s *Service) watchManagerUpgrader(
+	ctx context.Context,
+	sink *progressSink,
+	events <-chan types.UpgradeProgressEvent,
+	upgraderID string,
+	wasAlreadyNewest bool,
+) {
+	exit, exitCode := upgraderExitUnobserved, int64(0)
+	observed := make(chan struct{})
+	go func() {
+		defer close(observed)
+		exit, exitCode = s.waitForUpgrader(ctx, upgraderID)
+	}()
+	sink.follow(ctx, events, observed)
+	job := sink.job
+
+	// Let a recreate already underway stop this process; an unobserved run waits out the stale window instead.
+	select {
+	case <-ctx.Done():
+		return
+	case <-time.After(kit.Ternary(exit == upgraderExitUnobserved, time.Until(job.CreatedAt.Add(upgradeJobStaleThreshold)), upgradeJobManagerNoRestartGrace)):
+	}
+
+	job, err := s.loadUpgradeJob(ctx, job.ID)
+	if err != nil {
+		slog.WarnContext(ctx, "upgrade job: failed to reload job after upgrader exit", "upgraderId", upgraderID, "error", err)
+		return
+	}
+	if job.Status != UpgradeJobStatusPendingRestart {
+		return
+	}
+
+	info := s.versionService.GetAppVersionInfo(ctx)
+	switch {
+	case exit == upgraderExitUnobserved:
+		slog.WarnContext(ctx, "upgrade job: manager upgrade was never observed and no restart followed", "jobId", job.ID)
+		s.markUpgradeJobFailed(ctx, job, "manager upgrade could not be observed: the upgrader run was never seen to finish and the manager did not restart")
+	case exit == upgraderExitFailed:
+		s.markUpgradeJobFailed(ctx, job, fmt.Sprintf("manager upgrade failed: upgrader exited with code %d", exitCode))
+	case exit == upgraderExitCodeLost && (!wasAlreadyNewest || !info.AlreadyOnNewest()):
+		// Without an exit code a no-op is only credible when the check said so both before and after the run.
+		s.markUpgradeJobFailed(ctx, job, "manager upgrade could not be confirmed: the upgrader exited without a readable status and this manager was not a confirmed no-op upgrade")
+	default:
+		slog.InfoContext(ctx, "Upgrade job: manager was already up to date; no restart needed", "jobId", job.ID, "version", info.CurrentVersion)
+		s.finalizeUpgradeJob(ctx, job, UpgradeResultStatusUpToDate, info.CurrentVersion)
+	}
+}
+
+func (s *Service) waitForUpgrader(ctx context.Context, upgraderID string) (upgraderExit, int64) {
 	exit, exitCode := upgraderExitUnobserved, int64(0)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		slog.WarnContext(ctx, "update-all: cannot watch upgrader container", "upgraderId", upgraderID, "error", err)
+		slog.WarnContext(ctx, "upgrade job: cannot watch upgrader container", "upgraderId", upgraderID, "error", err)
 	} else {
-		waitCtx, cancel := context.WithTimeout(ctx, updateAllManagerWatchTimeout)
+		waitCtx, cancel := context.WithTimeout(ctx, upgradeJobManagerWatchTimeout)
 		wait := dockerClient.ContainerWait(waitCtx, upgraderID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
 		select {
 		case result, ok := <-wait.Result:
 			// A closed channel yields a zero response that looks like exit 0; a wait error comes with a filler code 0.
 			switch {
 			case !ok:
-				slog.WarnContext(ctx, "update-all: upgrader wait ended without a status", "upgraderId", upgraderID)
+				slog.WarnContext(ctx, "upgrade job: upgrader wait ended without a status", "upgraderId", upgraderID)
 			case result.StatusCode != 0:
 				exit, exitCode = upgraderExitFailed, result.StatusCode
 			case result.Error != nil:
-				slog.WarnContext(ctx, "update-all: upgrader wait reported an error", "upgraderId", upgraderID, "error", result.Error.Message)
+				slog.WarnContext(ctx, "upgrade job: upgrader wait reported an error", "upgraderId", upgraderID, "error", result.Error.Message)
 				exit = upgraderExitCodeLost
 			default:
 				exit = upgraderExitSucceeded
@@ -1058,57 +1235,27 @@ func (s *Service) watchManagerUpgrader(ctx context.Context, job *EnvironmentUpda
 			if errdefs.IsNotFound(waitErr) {
 				exit = upgraderExitCodeLost
 			} else {
-				slog.WarnContext(ctx, "update-all: failed waiting for upgrader container", "upgraderId", upgraderID, "error", waitErr)
+				slog.WarnContext(ctx, "upgrade job: failed waiting for upgrader container", "upgraderId", upgraderID, "error", waitErr)
 			}
 		case <-waitCtx.Done():
-			slog.WarnContext(ctx, "update-all: timed out waiting for upgrader container", "upgraderId", upgraderID)
+			slog.WarnContext(ctx, "upgrade job: timed out waiting for upgrader container", "upgraderId", upgraderID)
 		}
 		cancel()
 	}
-
-	// Let a recreate already underway stop this process; an unobserved run waits out the stale window instead.
-	select {
-	case <-ctx.Done():
-		return
-	case <-time.After(kit.Ternary(exit == upgraderExitUnobserved, time.Until(job.CreatedAt.Add(updateAllStaleThreshold)), updateAllManagerNoRestartGrace)):
-	}
-
-	job, err = s.loadUpdateAllJob(ctx, job.ID)
-	if err != nil {
-		slog.WarnContext(ctx, "update-all: failed to reload job after upgrader exit", "upgraderId", upgraderID, "error", err)
-		return
-	}
-	if job.Status != EnvironmentUpdateJobStatusPendingRestart {
-		return
-	}
-
-	info := s.versionService.GetAppVersionInfo(ctx)
-	switch {
-	case exit == upgraderExitUnobserved:
-		slog.WarnContext(ctx, "update-all: manager upgrade was never observed and no restart followed", "jobId", job.ID)
-		s.markUpdateAllFailed(ctx, job, "manager upgrade could not be observed: the upgrader run was never seen to finish and the manager did not restart")
-	case exit == upgraderExitFailed:
-		s.markUpdateAllFailed(ctx, job, fmt.Sprintf("manager upgrade failed: upgrader exited with code %d", exitCode))
-	case exit == upgraderExitCodeLost && (!wasAlreadyNewest || !info.AlreadyOnNewest()):
-		// Without an exit code a no-op is only credible when the check said so both before and after the run.
-		s.markUpdateAllFailed(ctx, job, "manager upgrade could not be confirmed: the upgrader exited without a readable status and this manager was not a confirmed no-op upgrade")
-	default:
-		slog.InfoContext(ctx, "Update-all: manager was already up to date; no restart needed", "jobId", job.ID, "version", info.CurrentVersion)
-		s.finalizeUpdateAllJob(ctx, job, EnvironmentUpdateResultStatusUpToDate, info.CurrentVersion)
-	}
+	return exit, exitCode
 }
 
 // upsertPendingResult returns the index of envID's result row, appending a pending row when seeding missed it.
-func upsertPendingResult(job *EnvironmentUpdateJob, envID, envName string) int {
-	if idx := slices.IndexFunc(job.Results, func(r EnvironmentUpdateResult) bool { return r.EnvironmentID == envID }); idx >= 0 {
+func upsertPendingResult(job *UpgradeJob, envID, envName string) int {
+	if idx := slices.IndexFunc(job.Results, func(r UpgradeJobResult) bool { return r.EnvironmentID == envID }); idx >= 0 {
 		return idx
 	}
-	pending := EnvironmentUpdateResult{
+	pending := UpgradeJobResult{
 		EnvironmentID:   envID,
 		EnvironmentName: envName,
-		Status:          EnvironmentUpdateResultStatusPending,
+		Status:          UpgradeResultStatusPending,
 	}
-	*job = EnvironmentUpdateJob{ //exhaustruct:enforce
+	*job = UpgradeJob{ //exhaustruct:enforce
 		BaseModel:             job.BaseModel,
 		Status:                job.Status,
 		UserID:                job.UserID,
@@ -1123,24 +1270,24 @@ func upsertPendingResult(job *EnvironmentUpdateJob, envID, envName string) int {
 	return len(job.Results) - 1
 }
 
-// updateAllAgentFailureStatus classifies a failed agent pre-check: a reached environment whose request failed or timed
+// upgradeJobAgentFailureStatus classifies a failed agent pre-check: a reached environment whose request failed or timed
 // out (poll-mode tunnels connect on demand) is a failure; only a never-reachable one is an offline skip.
-func updateAllAgentFailureStatus(err error) EnvironmentUpdateResultStatus {
+func upgradeJobAgentFailureStatus(err error) UpgradeResultStatus {
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		return EnvironmentUpdateResultStatusFailed
+		return UpgradeResultStatusFailed
 	}
 	if _, ok := errors.AsType[*remenv.StatusError](err); ok {
-		return EnvironmentUpdateResultStatusFailed
+		return UpgradeResultStatusFailed
 	}
-	return EnvironmentUpdateResultStatusSkippedOffline
+	return UpgradeResultStatusSkippedOffline
 }
 
 // setUpdateStage records result's step and persists the job; re-entering the current stage keeps its start time.
-func (s *Service) setUpdateStage(ctx context.Context, job *EnvironmentUpdateJob, result *EnvironmentUpdateResult, stage EnvironmentUpdateStage) {
+func (s *Service) setUpdateStage(ctx context.Context, job *UpgradeJob, result *UpgradeJobResult, stage UpgradeStage) {
 	if result.Stage == stage {
 		return
 	}
-	*result = EnvironmentUpdateResult{ //exhaustruct:enforce
+	*result = UpgradeJobResult{ //exhaustruct:enforce
 		EnvironmentID:   result.EnvironmentID,
 		EnvironmentName: result.EnvironmentName,
 		Status:          result.Status,
@@ -1149,21 +1296,203 @@ func (s *Service) setUpdateStage(ctx context.Context, job *EnvironmentUpdateJob,
 		ToVersion:       result.ToVersion,
 		Stage:           stage,
 		StageStartedAt:  new(time.Now()),
+		Percent:         result.Percent,
+		Logs:            result.Logs,
 		Error:           result.Error,
 	}
-	if err := s.db.WithContext(ctx).Save(job).Error; err != nil {
-		slog.WarnContext(ctx, "update-all: failed to persist stage", "jobId", job.ID, "environmentId", result.EnvironmentID, "stage", stage, "error", err)
+	if err := s.saveJob(ctx, job); err != nil {
+		slog.WarnContext(ctx, "upgrade job: failed to persist stage", "jobId", job.ID, "environmentId", result.EnvironmentID, "stage", stage, "error", err)
 	}
 }
 
-// GetLatestUpdateAllJob returns the most recently created update-all job, or nil.
-func (s *Service) GetLatestUpdateAllJob(ctx context.Context) (*EnvironmentUpdateJob, error) {
-	return s.findUpdateAllJob(ctx)
+// GetCurrentUpgradeJob returns the most recently created upgrade job, or nil.
+func (s *Service) GetCurrentUpgradeJob(ctx context.Context) (*UpgradeJob, error) {
+	return s.findUpgradeJob(ctx)
 }
 
-// findUpdateAllJob returns the newest job matching the inline GORM conditions, or nil when none does.
-func (s *Service) findUpdateAllJob(ctx context.Context, conds ...any) (*EnvironmentUpdateJob, error) {
-	var jobs []EnvironmentUpdateJob
+func (s *Service) saveJob(ctx context.Context, job *UpgradeJob) error {
+	if err := s.db.WithContext(ctx).Save(job).Error; err != nil {
+		return err
+	}
+	snapshot, err := mapping.MapOne[*UpgradeJob, types.UpgradeJob](job)
+	if err != nil {
+		slog.WarnContext(ctx, "upgrade job: failed to map job for the stream", "jobId", job.ID, "error", err)
+		return nil
+	}
+	s.latestJob.Store(&snapshot)
+	select {
+	case s.jobChanged <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
+func (s *Service) RunStreamProducer(ctx context.Context, events chan<- types.UpgradeJob) {
+	s.jobHub.Subscribe(ctx, "current",
+		func(runCtx context.Context, publish func(types.UpgradeJob)) {
+			job, err := s.GetCurrentUpgradeJob(runCtx)
+			switch {
+			case err != nil:
+				slog.WarnContext(runCtx, "upgrade job: failed to load current job for the stream", "error", err)
+			case job != nil:
+				if snapshot, mapErr := mapping.MapOne[*UpgradeJob, types.UpgradeJob](job); mapErr == nil {
+					publish(snapshot)
+				}
+			}
+			for {
+				select {
+				case <-runCtx.Done():
+					return
+				case <-s.jobChanged:
+					if latest := s.latestJob.Load(); latest != nil {
+						publish(*latest)
+					}
+				}
+			}
+		},
+		func(job types.UpgradeJob) bool {
+			return agg.Send(ctx, events, job)
+		})
+}
+
+func (s *Service) StreamProgress(ctx context.Context, deliver func(types.UpgradeProgressEvent) bool) {
+	history, live, active, unsubscribe := s.progress.subscribe()
+	defer unsubscribe()
+	if !active && len(history) == 0 {
+		lines, err := readUpgradeLog(libarcane.UpgradeLogDirectory, time.Now().Add(-upgradeJobManagerWatchTimeout))
+		if err != nil {
+			slog.WarnContext(ctx, "Failed to replay upgrade log", "error", err)
+		}
+		info := kit.FromPtr(s.versionService.GetAppVersionInfo(ctx))
+		for _, line := range lines {
+			if !deliver(types.UpgradeProgressEvent{
+				Type:      types.UpgradeProgressEventLog,
+				Message:   line,
+				ToVersion: info.CurrentVersion,
+				At:        time.Now(),
+				Replay:    true,
+			}) {
+				return
+			}
+		}
+		deliver(types.UpgradeProgressEvent{
+			Type:      types.UpgradeProgressEventDone,
+			Percent:   100,
+			ToVersion: info.CurrentVersion,
+			At:        time.Now(),
+			Replay:    true,
+		})
+		return
+	}
+	for _, update := range history {
+		if !deliver(update) {
+			return
+		}
+	}
+	if !active {
+		return
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case update, ok := <-live:
+			if !ok || !deliver(update) || update.Type == types.UpgradeProgressEventDone {
+				return
+			}
+		}
+	}
+}
+
+func (s *Service) followAgentProgress(ctx context.Context, envID string, sink *progressSink) (string, bool, error) {
+	resp, err := s.environments.OpenRemoteStream(ctx, envID, "/api/environments/0/system/upgrade/progress")
+	if err != nil {
+		return "", false, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	doneMessage, done := "", false
+	sink.replaying = false
+	err = readProgressStream(resp.Body, func(update types.UpgradeProgressEvent) bool {
+		sink.apply(ctx, update)
+		doneMessage, done = update.Message, update.Type == types.UpgradeProgressEventDone
+		return !done
+	})
+	if err == nil && !done {
+		err = io.ErrUnexpectedEOF
+	}
+	return doneMessage, done, err
+}
+
+type progressSink struct {
+	service   *Service
+	job       *UpgradeJob
+	index     int
+	keepStage bool
+	dirty     bool
+	savedAt   time.Time
+	replaying bool
+	baseSet   bool
+	baseLogs  []string
+}
+
+func (p *progressSink) apply(ctx context.Context, update types.UpgradeProgressEvent) {
+	row := &p.job.Results[p.index]
+	stageChanged := update.Type == types.UpgradeProgressEventStage && !p.keepStage && UpgradeStage(update.Message) != row.Stage
+	logs := row.Logs
+	if update.Replay && !p.replaying {
+		if !p.baseSet {
+			p.baseLogs, p.baseSet = row.Logs, true
+		}
+		logs, p.replaying = p.baseLogs, true
+	}
+	*row = UpgradeJobResult{
+		EnvironmentID:   row.EnvironmentID,
+		EnvironmentName: row.EnvironmentName,
+		Status:          row.Status,
+		FromVersion:     row.FromVersion,
+		FromDigest:      row.FromDigest,
+		ToVersion:       row.ToVersion,
+		Stage:           kit.Ternary(stageChanged, UpgradeStage(update.Message), row.Stage),
+		StageStartedAt:  kit.Ternary(stageChanged, new(time.Now()), row.StageStartedAt),
+		Percent:         max(row.Percent, update.Percent),
+		Logs:            kit.Ternary(update.Type == types.UpgradeProgressEventLog, appendLogs(logs, update.Message), logs),
+		Error:           row.Error,
+	}
+	p.dirty = true
+	if stageChanged || update.Type == types.UpgradeProgressEventDone || time.Since(p.savedAt) >= upgradeJobPublishInterval {
+		p.flush(ctx)
+	}
+}
+
+func (p *progressSink) flush(ctx context.Context) {
+	if !p.dirty {
+		return
+	}
+	if err := p.service.saveJob(ctx, p.job); err != nil {
+		slog.WarnContext(ctx, "upgrade job: failed to persist progress", "jobId", p.job.ID, "environmentId", p.job.Results[p.index].EnvironmentID, "error", err)
+	}
+	p.dirty, p.savedAt = false, time.Now()
+}
+
+func (p *progressSink) follow(ctx context.Context, events <-chan types.UpgradeProgressEvent, done <-chan struct{}) {
+	for {
+		select {
+		case <-done:
+			p.flush(ctx)
+			return
+		case update, ok := <-events:
+			if !ok {
+				events = nil
+				continue
+			}
+			p.apply(ctx, update)
+		}
+	}
+}
+
+// findUpgradeJob returns the newest job matching the inline GORM conditions, or nil when none does.
+func (s *Service) findUpgradeJob(ctx context.Context, conds ...any) (*UpgradeJob, error) {
+	var jobs []UpgradeJob
 	if err := s.db.WithContext(ctx).Order("created_at DESC").Limit(1).Find(&jobs, conds...).Error; err != nil {
 		return nil, err
 	}
@@ -1173,19 +1502,19 @@ func (s *Service) findUpdateAllJob(ctx context.Context, conds ...any) (*Environm
 	return &jobs[0], nil
 }
 
-// loadUpdateAllJob loads a job by ID, failing when it no longer exists.
-func (s *Service) loadUpdateAllJob(ctx context.Context, id string) (*EnvironmentUpdateJob, error) {
-	job, err := s.findUpdateAllJob(ctx, "id = ?", id)
+// loadUpgradeJob loads a job by ID, failing when it no longer exists.
+func (s *Service) loadUpgradeJob(ctx context.Context, id string) (*UpgradeJob, error) {
+	job, err := s.findUpgradeJob(ctx, "id = ?", id)
 	if err == nil && job == nil {
-		err = fmt.Errorf("update-all job %s not found", id)
+		err = fmt.Errorf("upgrade job %s not found", id)
 	}
 	return job, err
 }
 
-// authorizeUpdateAll reports whether the job's requester may still upgrade, failing the job when not.
+// authorizeUpgradeJob reports whether the job's requester may still upgrade, failing the job when not.
 // A task recovered after a restart never passed the request's permission check. Shutdown returns its
 // error so the task resumes instead of failing the job.
-func (s *Service) authorizeUpdateAll(ctx context.Context, job *EnvironmentUpdateJob, keyID string) (bool, error) {
+func (s *Service) authorizeUpgradeJob(ctx context.Context, job *UpgradeJob, keyID string) (bool, error) {
 	permissions, err := s.roles.ResolveExecutionPermissions(ctx, job.UserID, keyID)
 	if ctx.Err() != nil {
 		return false, ctx.Err()
@@ -1193,32 +1522,34 @@ func (s *Service) authorizeUpdateAll(ctx context.Context, job *EnvironmentUpdate
 	if err == nil && permissions.Allows(authz.PermSystemUpgrade, environment.LocalEnvironmentID) {
 		return true, nil
 	}
-	s.markUpdateAllFailed(ctx, job, "requesting user no longer has permission to upgrade")
+	s.markUpgradeJobFailed(ctx, job, "requesting user no longer has permission to upgrade")
 	return false, nil
 }
 
-func (s *Service) markUpdateAllFailed(ctx context.Context, job *EnvironmentUpdateJob, reason string) {
-	results := make(EnvironmentUpdateResults, 0, len(job.Results))
+func (s *Service) markUpgradeJobFailed(ctx context.Context, job *UpgradeJob, reason string) {
+	results := make(UpgradeJobResults, 0, len(job.Results))
 	for _, row := range job.Results {
-		if row.Status != EnvironmentUpdateResultStatusUpdating {
+		if row.Status != UpgradeResultStatusUpdating && row.Status != UpgradeResultStatusPending {
 			results = append(results, row.clearStage())
 			continue
 		}
-		results = append(results, EnvironmentUpdateResult{ //exhaustruct:enforce
+		results = append(results, UpgradeJobResult{ //exhaustruct:enforce
 			EnvironmentID:   row.EnvironmentID,
 			EnvironmentName: row.EnvironmentName,
-			Status:          EnvironmentUpdateResultStatusFailed,
+			Status:          UpgradeResultStatusFailed,
 			FromVersion:     row.FromVersion,
 			FromDigest:      row.FromDigest,
 			ToVersion:       row.ToVersion,
 			Stage:           "",
 			StageStartedAt:  nil,
+			Percent:         row.Percent,
+			Logs:            row.Logs,
 			Error:           reason,
 		})
 	}
-	*job = EnvironmentUpdateJob{ //exhaustruct:enforce
+	*job = UpgradeJob{ //exhaustruct:enforce
 		BaseModel:             job.BaseModel,
-		Status:                EnvironmentUpdateJobStatusFailed,
+		Status:                UpgradeJobStatusFailed,
 		UserID:                job.UserID,
 		Username:              job.Username,
 		ManagerVersionAtStart: job.ManagerVersionAtStart,
@@ -1228,15 +1559,15 @@ func (s *Service) markUpdateAllFailed(ctx context.Context, job *EnvironmentUpdat
 		Error:                 &reason,
 		CompletedAt:           new(time.Now()),
 	}
-	if err := s.db.WithContext(ctx).Save(job).Error; err != nil {
-		slog.WarnContext(ctx, "update-all: failed to mark job failed", "jobId", job.ID, "error", err)
+	if err := s.saveJob(ctx, job); err != nil {
+		slog.WarnContext(ctx, "upgrade job: failed to mark job failed", "jobId", job.ID, "error", err)
 	}
 
 	// LogUserEvent always records an info-severity "completed" event, so create the error event directly.
 	if _, err := s.eventService.CreateEvent(ctx, event.CreateEventRequest{
 		Type:        event.EventTypeSystemUpgrade,
 		Severity:    event.EventSeverityError,
-		Title:       "Update all environments failed",
+		Title:       "Upgrade job failed",
 		Description: reason,
 		UserID:      new(job.UserID),
 		Username:    new(job.Username),
@@ -1247,38 +1578,55 @@ func (s *Service) markUpdateAllFailed(ctx context.Context, job *EnvironmentUpdat
 			"reason":       reason,
 		},
 	}); err != nil {
-		slog.WarnContext(ctx, "update-all: failed to log failure event", "jobId", job.ID, "error", err)
+		slog.WarnContext(ctx, "upgrade job: failed to log failure event", "jobId", job.ID, "error", err)
 	}
 
-	slog.WarnContext(ctx, "Update-all job failed", "jobId", job.ID, "reason", reason)
+	slog.WarnContext(ctx, "Upgrade job failed", "jobId", job.ID, "reason", reason)
 }
 
-// finalizeUpdateAllJob settles the manager row, completes the job and records the audit event.
-func (s *Service) finalizeUpdateAllJob(ctx context.Context, job *EnvironmentUpdateJob, managerStatus EnvironmentUpdateResultStatus, managerVersion string) {
-	results := make(EnvironmentUpdateResults, 0, len(job.Results))
+// finalizeUpgradeJob settles the manager row, completes the job and records the audit event.
+func (s *Service) finalizeUpgradeJob(ctx context.Context, job *UpgradeJob, managerStatus UpgradeResultStatus, managerVersion string) {
+	results := make(UpgradeJobResults, 0, len(job.Results))
 	failed := 0
 	for _, row := range job.Results {
-		if row.EnvironmentID == environment.LocalEnvironmentID {
-			row = EnvironmentUpdateResult{ //exhaustruct:enforce
+		switch {
+		case row.EnvironmentID == environment.LocalEnvironmentID:
+			row = UpgradeJobResult{ //exhaustruct:enforce
 				EnvironmentID:   row.EnvironmentID,
 				EnvironmentName: row.EnvironmentName,
 				Status:          managerStatus,
 				FromVersion:     row.FromVersion,
 				FromDigest:      row.FromDigest,
-				ToVersion:       kit.Ternary(managerStatus == EnvironmentUpdateResultStatusFailed, row.ToVersion, managerVersion),
+				ToVersion:       kit.Ternary(managerStatus == UpgradeResultStatusFailed, row.ToVersion, managerVersion),
 				Stage:           row.Stage,
 				StageStartedAt:  row.StageStartedAt,
-				Error:           kit.Ternary(managerStatus == EnvironmentUpdateResultStatusFailed, "manager version did not change after upgrade", row.Error),
+				Percent:         kit.Ternary(managerStatus == UpgradeResultStatusFailed, row.Percent, 100),
+				Logs:            row.Logs,
+				Error:           kit.Ternary(managerStatus == UpgradeResultStatusFailed, "manager version did not change after upgrade", row.Error),
+			}
+		case row.Status == UpgradeResultStatusPending || row.Status == UpgradeResultStatusUpdating:
+			row = UpgradeJobResult{ //exhaustruct:enforce
+				EnvironmentID:   row.EnvironmentID,
+				EnvironmentName: row.EnvironmentName,
+				Status:          UpgradeResultStatusFailed,
+				FromVersion:     row.FromVersion,
+				FromDigest:      row.FromDigest,
+				ToVersion:       row.ToVersion,
+				Stage:           row.Stage,
+				StageStartedAt:  row.StageStartedAt,
+				Percent:         row.Percent,
+				Logs:            row.Logs,
+				Error:           "Agent upgrade did not finish",
 			}
 		}
-		if row.Status == EnvironmentUpdateResultStatusFailed {
+		if row.Status == UpgradeResultStatusFailed {
 			failed++
 		}
 		results = append(results, row.clearStage())
 	}
-	*job = EnvironmentUpdateJob{ //exhaustruct:enforce
+	*job = UpgradeJob{ //exhaustruct:enforce
 		BaseModel:             job.BaseModel,
-		Status:                EnvironmentUpdateJobStatusCompleted,
+		Status:                UpgradeJobStatusCompleted,
 		UserID:                job.UserID,
 		Username:              job.Username,
 		ManagerVersionAtStart: job.ManagerVersionAtStart,
@@ -1288,8 +1636,8 @@ func (s *Service) finalizeUpdateAllJob(ctx context.Context, job *EnvironmentUpda
 		Error:                 job.Error,
 		CompletedAt:           new(time.Now()),
 	}
-	if err := s.db.WithContext(ctx).Save(job).Error; err != nil {
-		slog.WarnContext(ctx, "update-all: failed to finalize job", "jobId", job.ID, "error", err)
+	if err := s.saveJob(ctx, job); err != nil {
+		slog.WarnContext(ctx, "upgrade job: failed to finalize job", "jobId", job.ID, "error", err)
 		return
 	}
 
@@ -1301,7 +1649,7 @@ func (s *Service) finalizeUpdateAllJob(ctx context.Context, job *EnvironmentUpda
 	}
 	if failed == 0 {
 		if err := s.eventService.LogUserEvent(ctx, event.EventTypeSystemUpgrade, job.UserID, job.Username, metadata); err != nil {
-			slog.WarnContext(ctx, "Failed to log update-all event", "jobId", job.ID, "error", err)
+			slog.WarnContext(ctx, "Failed to log upgrade job event", "jobId", job.ID, "error", err)
 		}
 		return
 	}
@@ -1309,13 +1657,13 @@ func (s *Service) finalizeUpdateAllJob(ctx context.Context, job *EnvironmentUpda
 	if _, err := s.eventService.CreateEvent(ctx, event.CreateEventRequest{
 		Type:        event.EventTypeSystemUpgrade,
 		Severity:    event.EventSeverityWarning,
-		Title:       "Update all environments completed with errors",
+		Title:       "Upgrade job completed with errors",
 		Description: fmt.Sprintf("%d of %d environments failed to update", failed, len(job.Results)),
 		UserID:      new(job.UserID),
 		Username:    new(job.Username),
 		Metadata:    metadata,
 	}); err != nil {
-		slog.WarnContext(ctx, "Failed to log update-all event", "jobId", job.ID, "error", err)
+		slog.WarnContext(ctx, "Failed to log upgrade job event", "jobId", job.ID, "error", err)
 	}
 }
 
