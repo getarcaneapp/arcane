@@ -17,7 +17,7 @@ export function environmentColumns<T extends { environmentId?: string }>(): Colu
 			accessorFn: (row) => row.environmentId,
 			title: dots ? m.environment_column_short() : m.resource_environment_cap(),
 			sortable: true,
-			width: dots ? 'min' : undefined,
+			width: 'min',
 			cellComponent: EnvironmentCell
 		}
 	];
