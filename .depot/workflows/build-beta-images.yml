@@ -1,0 +1,111 @@
+name: Build Beta Images of Arcane
+
+on:
+  push:
+    branches:
+      - breaking/v3
+  workflow_dispatch:
+
+concurrency:
+  group: build-beta-images
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  beta-version:
+    runs-on:
+      size: 4x16
+      image: g7r5wqb57k.registry.depot.dev/ci:latest
+    outputs:
+      version: ${{ steps.beta-version.outputs.version }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Compute beta image version
+        id: beta-version
+        run: just release version github-output beta
+
+  build-beta-images:
+    needs: beta-version
+    runs-on:
+      size: 32x128
+      image: g7r5wqb57k.registry.depot.dev/ci:latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
+        with:
+          node-version: 26
+          cache: true
+          run-install: true
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          cache: true
+          cache-dependency-path: |
+            go.work
+            go.work.sum
+            */go.mod
+            */go.sum
+
+      - name: Request App Token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.ARCANE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ARCANE_APP_PRIVATE_KEY }}
+          owner: getarcaneapp
+          repositories: arcane
+          permission-contents: read
+
+      - name: Set up Depot CLI
+        uses: depot/setup-action@91bc8495a33ebfc504ffc89e5674379ccf23c29c # v1.7.2
+        with:
+          configure-docker: true
+
+      - name: Login to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ vars.GHCR_USERNAME }}
+          password: ${{ secrets.ARCANE_BOT_TOKEN }}
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PAT }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser-pro
+          version: '~> 2'
+          args: release --clean --nightly --skip=announce,validate,homebrew,nfpm,notarize,archive
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          BUILD_BETA: 'true'
+          SKIP_RELEASE: 'true'
+          SKIP_CHANGELOG: 'true'
+          NEXT_IMAGE_VERSION: ${{ needs.beta-version.outputs.version }}
+          GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
