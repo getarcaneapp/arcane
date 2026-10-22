@@ -82,6 +82,7 @@
 		<Table.Header>
 			<Table.Row>
 				<Table.Head>{m.common_name()}</Table.Head>
+				<Table.Head>{m.common_version()}</Table.Head>
 				<Table.Head>{m.common_status()}</Table.Head>
 				<Table.Head>{m.containers()}</Table.Head>
 				<Table.Head>{m.images()}</Table.Head>
@@ -105,15 +106,21 @@
 							{#if row.podCount !== null}
 								<Badge variant="purple" size="sm">{m.podman()}</Badge>
 							{/if}
-							{#if row.versionText}
-								<Badge variant="gray" size="sm" mono>
-									{row.versionText}
-									{#if row.updateAvailable}
-										<span class="ml-1.5 inline-flex h-2 w-2 rounded-full bg-warning"></span>
-									{/if}
-								</Badge>
-							{/if}
 						</div>
+					</Table.Cell>
+					<Table.Cell>
+						{#if row.versionText}
+							<Badge variant="gray" size="sm" mono>
+								{row.versionText}
+								{#if row.updateAvailable}
+									<span class="ml-1.5 inline-flex h-2 w-2 rounded-full bg-warning"></span>
+								{/if}
+							</Badge>
+						{:else if row.loading}
+							<Skeleton class="h-4 w-20" />
+						{:else}
+							<span class="text-xs text-muted-foreground">—</span>
+						{/if}
 					</Table.Cell>
 					<Table.Cell>
 						<span class="flex items-center gap-2">

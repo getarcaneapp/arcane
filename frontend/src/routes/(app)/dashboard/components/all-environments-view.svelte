@@ -123,7 +123,9 @@
 			return [];
 		}
 
-		return environmentStore.available.filter((environment) => hasPermission('dashboard:read', environment.id));
+		return environmentStore.available.filter(
+			(environment) => environment.enabled && hasPermission('dashboard:read', environment.id)
+		);
 	});
 	const currentEnvironmentId = $derived(environmentStore.selected?.id ?? null);
 
