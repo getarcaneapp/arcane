@@ -31,14 +31,15 @@ import (
 	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	acfsutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/acfs"
-	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	acfsutils "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/acfs"
+	workspacepkg "github.com/getarcaneapp/arcane/backend/v3/pkg/workspace"
 )
 
 // Dependencies are the helper-container, lock, and backup operations the workspace runs through.
@@ -53,9 +54,7 @@ type Dependencies struct {
 	BackupStorageMount    func(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) (mount.Mount, error)
 	ArchiveFileTarget     func(ctx context.Context, volumeName, backupID, rel string) (string, string, error)
 	RestoreArchiveMembers func(ctx context.Context, containerID, filename string, cleanedPaths []string) (string, error)
-	MaxDepth              int
-	MaxEntries            int
-	MaxFileSizeBytes      int64
+	Settings              *settings.SettingsService
 }
 
 // Service browses and edits the files inside a volume through its helper container.
@@ -68,8 +67,8 @@ func NewService(deps Dependencies) *Service {
 }
 
 // MaxFileSizeBytes is the largest file the workspace reads or accepts.
-func (s *Service) MaxFileSizeBytes() int64 {
-	return s.volumeWorkspaceMaxFileSizeBytes()
+func (s *Service) MaxFileSizeBytes(ctx context.Context) int64 {
+	return workspacepkg.MaxFileSizeBytes(s.deps.Settings.GetIntSetting(ctx, "volumeWorkspaceMaxFileSizeMb"))
 }
 
 func (s *Service) GetVolumeWorkspace(ctx context.Context, volumeName string) (*types.Workspace, error) {
@@ -122,14 +121,7 @@ func (s *Service) GetVolumeWorkspace(ctx context.Context, volumeName string) (*t
 }
 
 func (s *Service) readVolumeWorkspaceFromContainer(ctx context.Context, containerID string) (*types.Workspace, error) {
-	maxDepth := s.deps.MaxDepth
-	if maxDepth <= 0 {
-		maxDepth = 50
-	}
-	maxEntries := s.deps.MaxEntries
-	if maxEntries <= 0 {
-		maxEntries = 10000
-	}
+	maxEntries := s.deps.Settings.GetIntSetting(ctx, "volumeWorkspaceMaxEntries")
 
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
@@ -146,7 +138,7 @@ func (s *Service) readVolumeWorkspaceFromContainer(ctx context.Context, containe
 	go func() {
 		cmd := []string{
 			"acfs", "walk", "--root", "/volume", "--path", "/",
-			"--max-depth", strconv.Itoa(maxDepth), "--max-entries", strconv.Itoa(maxEntries),
+			"--max-depth", strconv.Itoa(s.deps.Settings.GetIntSetting(ctx, "volumeWorkspaceMaxDepth")), "--max-entries", strconv.Itoa(maxEntries),
 		}
 		exitCode, execErr := docker.ExecInContainer(workCtx, dockerClient, containerID, client.ExecCreateOptions{
 			AttachStdout: true,
@@ -160,7 +152,7 @@ func (s *Service) readVolumeWorkspaceFromContainer(ctx context.Context, containe
 		done <- execErr
 	}()
 
-	tree, parseErr := decodeVolumeWorkspaceWalk(pipeReader, maxEntries, s.volumeWorkspaceMaxFileSizeBytes())
+	tree, parseErr := decodeVolumeWorkspaceWalk(pipeReader, maxEntries, s.MaxFileSizeBytes(ctx))
 	if parseErr != nil {
 		cancel()
 		_ = pipeReader.CloseWithError(parseErr)
@@ -175,13 +167,6 @@ func (s *Service) readVolumeWorkspaceFromContainer(ctx context.Context, containe
 	}
 
 	return tree, nil
-}
-
-func (s *Service) volumeWorkspaceMaxFileSizeBytes() int64 {
-	if s.deps.MaxFileSizeBytes <= 0 {
-		return workspacepkg.MaxFileSizeBytes(workspacepkg.DefaultMaxFileSizeMB)
-	}
-	return s.deps.MaxFileSizeBytes
 }
 
 func (s *Service) GetVolumeWorkspaceFile(ctx context.Context, volumeName, relativePath string) (*types.WorkspaceFileContent, error) {
@@ -223,9 +208,9 @@ func (s *Service) GetVolumeWorkspaceFile(ctx context.Context, volumeName, relati
 		return nil, common.Classify(common.ErrVolumeWorkspaceBadRequest, errors.New("path is a directory"))
 	}
 	if !acfsutils.IsRegular(entry) {
-		return volumeWorkspaceFileContentResponse(rel, "special", entry.Size, nil, s.volumeWorkspaceMaxFileSizeBytes())
+		return volumeWorkspaceFileContentResponse(rel, "special", entry.Size, nil, s.MaxFileSizeBytes(ctx))
 	}
-	maxFileSizeBytes := s.volumeWorkspaceMaxFileSizeBytes()
+	maxFileSizeBytes := s.MaxFileSizeBytes(ctx)
 	if entry.Size > maxFileSizeBytes {
 		return volumeWorkspaceFileContentResponse(rel, "regular", entry.Size, nil, maxFileSizeBytes)
 	}

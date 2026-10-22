@@ -53,29 +53,6 @@ func TestReadProjectWorkspace_ZeroMaxDepthDisablesExpansion(t *testing.T) {
 	assert.Empty(t, files)
 }
 
-func TestReadProjectWorkspace_UseScanDepthSentinelUsesWorkspaceMaxDepth(t *testing.T) {
-	projectDir := t.TempDir()
-	t.Setenv("PROJECT_WORKSPACE_MAX_DEPTH", "2")
-
-	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
-	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, "level1", "level2"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "level1", "visible.txt"), []byte("visible\n"), 0o644))
-	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "level1", "level2", "hidden.txt"), []byte("hidden\n"), 0o644))
-
-	files, _, _, err := ReadProjectWorkspace(t.Context(), projectDir, ProjectWorkspaceUseScanDepth, "", "compose.yaml", 0, 0)
-	require.NoError(t, err)
-
-	relativePaths := make([]string, 0, len(files))
-	for _, file := range files {
-		relativePaths = append(relativePaths, file.RelativePath)
-	}
-
-	assert.Contains(t, relativePaths, "level1")
-	assert.Contains(t, relativePaths, filepath.ToSlash(filepath.Join("level1", "visible.txt")))
-	assert.Contains(t, relativePaths, filepath.ToSlash(filepath.Join("level1", "level2")))
-	assert.NotContains(t, relativePaths, filepath.ToSlash(filepath.Join("level1", "level2", "hidden.txt")))
-}
-
 func TestApplyWorkspaceFileChanges_RejectsUnsafePathsAndProtectedFiles(t *testing.T) {
 	t.Parallel()
 

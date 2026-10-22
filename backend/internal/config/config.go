@@ -3,6 +3,7 @@ package config
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -15,8 +16,8 @@ import (
 
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 type AppEnvironment string
@@ -30,144 +31,92 @@ const (
 // Config holds all application configuration.
 // Fields tagged with `env` will be loaded from the corresponding environment variable.
 // Fields with `options:"file"` support Docker secrets via the _FILE suffix.
-// Available options: file, toLower, trimTrailingSlash, deprecated
 type Config struct {
 	BuildablesConfig
 
-	AppUrl                string         `env:"APP_URL" default:"http://localhost:3552"`
-	DatabaseURL           string         `env:"DATABASE_URL" default:"file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_txlock=immediate" options:"file"`
-	AllowDowngrade        bool           `env:"ALLOW_DOWNGRADE" default:"false"`
-	AllowCLIPasswordReset bool           `env:"ALLOW_CLI_PASSWORD_RESET" default:"false"`
-	AllowCLIMFAReset      bool           `env:"ALLOW_CLI_MFA_RESET" default:"false"`
-	ActorPort             string         `env:"ACTOR_PORT" default:"3551"`
-	Port                  string         `env:"PORT" default:"3552"`
-	Listen                string         `env:"LISTEN" default:""`
-	TLSEnabled            bool           `env:"TLS_ENABLED" default:"false"`
-	TLSCertFile           string         `env:"TLS_CERT_FILE" default:""`
-	TLSKeyFile            string         `env:"TLS_KEY_FILE" default:""`
-	Environment           AppEnvironment `env:"ENVIRONMENT" default:"production"`
-	JWTSecret             string         `env:"JWT_SECRET" options:"file,deprecated"`
-	JWTRefreshExpiry      time.Duration  `env:"JWT_REFRESH_EXPIRY" default:"168h"`
-	EncryptionKey         string         `env:"ENCRYPTION_KEY" default:"arcane-dev-key-32-characters!!!" options:"file"`
-	AdminStaticAPIKey     string         `env:"ADMIN_STATIC_API_KEY" default:"" options:"file"`
-	ApnsRelayUrl          string         `env:"APNS_RELAY_URL" default:"https://apns.getarcane.app" options:"trimTrailingSlash"`
-	ApnsKeyAlgorithm      string         `env:"APNS_KEY_ALGORITHM" default:"ed25519" options:"toLower"`
+	AppUrl                string         `env:"ARCANE_APP_URL" default:""`
+	DatabaseURL           string         `env:"ARCANE_DATABASE_URL" default:"file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_txlock=immediate" options:"file"`
+	AllowDowngrade        bool           `env:"ARCANE_ALLOW_DOWNGRADE" default:"false"`
+	AllowCLIPasswordReset bool           `env:"ARCANE_ALLOW_CLI_PASSWORD_RESET" default:"false"`
+	AllowCLIMFAReset      bool           `env:"ARCANE_ALLOW_CLI_MFA_RESET" default:"false"`
+	ActorPort             string         `env:"ARCANE_ACTOR_PORT" default:"3551"`
+	Port                  string         `env:"ARCANE_PORT" default:"3552"`
+	Listen                string         `env:"ARCANE_LISTEN" default:""`
+	TLSEnabled            bool           `env:"ARCANE_TLS_ENABLED" default:"false"`
+	TLSCertFile           string         `env:"ARCANE_TLS_CERT_FILE" default:""`
+	TLSKeyFile            string         `env:"ARCANE_TLS_KEY_FILE" default:""`
+	Environment           AppEnvironment `env:"ARCANE_ENVIRONMENT" default:"production"`
+	JWTRefreshExpiry      time.Duration  `env:"ARCANE_JWT_REFRESH_EXPIRY" default:"168h"`
+	EncryptionKey         string         `env:"ARCANE_ENCRYPTION_KEY" default:"" options:"file"`
+	AdminStaticAPIKey     string         `env:"ARCANE_ADMIN_STATIC_API_KEY" default:"" options:"file"`
+	ApnsRelayUrl          string         `env:"ARCANE_APNS_RELAY_URL" default:"https://apns.getarcane.app" options:"trimTrailingSlash"`
+	ApnsKeyAlgorithm      string         `env:"ARCANE_APNS_KEY_ALGORITHM" default:"ed25519" options:"toLower"`
 
-	OidcEnabled                bool   `env:"OIDC_ENABLED" default:"false"`
-	OidcClientID               string `env:"OIDC_CLIENT_ID" default:"" options:"file"`
-	OidcClientSecret           string `env:"OIDC_CLIENT_SECRET" default:"" options:"file"`
-	OidcIssuerURL              string `env:"OIDC_ISSUER_URL" default:""`
-	OidcScopes                 string `env:"OIDC_SCOPES" default:"openid email profile"`
-	OidcGroupsClaim            string `env:"OIDC_GROUPS_CLAIM" default:"groups"`
-	OidcSkipTlsVerify          bool   `env:"OIDC_SKIP_TLS_VERIFY" default:"false"`
-	OidcAutoRedirectToProvider bool   `env:"OIDC_AUTO_REDIRECT_TO_PROVIDER" default:"false"`
-	OidcProviderName           string `env:"OIDC_PROVIDER_NAME" default:""`
-	OidcProviderLogoUrl        string `env:"OIDC_PROVIDER_LOGO_URL" default:""`
-	OidcMobileRedirectUris     string `env:"OIDC_MOBILE_REDIRECT_URIS" default:"arcane-mobile://oidc-callback"`
-	OidcRoleMappings           string `env:"OIDC_ROLE_MAPPINGS" default:"" options:"file"`
+	OidcRoleMappings string `env:"ARCANE_OIDC_ROLE_MAPPINGS" default:"" options:"file"`
 
-	PUID                          string `env:"PUID" default:""`
-	PGID                          string `env:"PGID" default:""`
-	DockerHost                    string `env:"DOCKER_HOST" default:"unix:///var/run/docker.sock"`
-	DockerConfig                  string `env:"DOCKER_CONFIG" default:""`
-	ProjectsDirectory             string `env:"PROJECTS_DIRECTORY" default:"/app/data/projects"`
-	TemplatesDirectory            string `env:"TEMPLATES_DIRECTORY" default:"/app/data/templates"`
-	ProjectScanMaxDepth           int    `env:"PROJECT_SCAN_MAX_DEPTH" default:"3"`
-	ProjectWorkspaceMaxDepth      int    `env:"PROJECT_WORKSPACE_MAX_DEPTH" default:"20"`
-	ProjectWorkspaceMaxEntries    int    `env:"PROJECT_WORKSPACE_MAX_ENTRIES" default:"2000"`
-	ProjectWorkspaceMaxFileSizeMB int    `env:"PROJECT_WORKSPACE_MAX_FILE_SIZE_MB" default:"10"`
-	ProjectScanSkipDirs           string `env:"PROJECT_SCAN_SKIP_DIRS" default:".git,node_modules,vendor,.venv,venv,__pycache__,.cache,dist,build,target,.next,.nuxt,.svelte-kit"`
-	VolumeWorkspaceMaxDepth       int    `env:"VOLUME_WORKSPACE_MAX_DEPTH" default:"50"`
-	VolumeWorkspaceMaxEntries     int    `env:"VOLUME_WORKSPACE_MAX_ENTRIES" default:"10000"`
-	VolumeWorkspaceMaxFileSizeMB  int    `env:"VOLUME_WORKSPACE_MAX_FILE_SIZE_MB" default:"10"`
-	LogJson                       bool   `env:"LOG_JSON" default:"false"`
-	LogLevel                      string `env:"LOG_LEVEL" default:"info" options:"toLower"`
-	AgentMode                     bool   `env:"AGENT_MODE" default:"false"`
-	AgentToken                    string `env:"AGENT_TOKEN" default:"" options:"file"`
-	ManagerApiUrl                 string `env:"MANAGER_API_URL" default:""`
-	UpdateCheckDisabled           bool   `env:"UPDATE_CHECK_DISABLED" default:"false"`
-	UIConfigurationDisabled       bool   `env:"UI_CONFIGURATION_DISABLED" default:"false"`
-	AnalyticsDisabled             bool   `env:"ANALYTICS_DISABLED" default:"false"`
-	GPUMonitoringEnabled          bool   `env:"GPU_MONITORING_ENABLED" default:"false"`
-	GPUType                       string `env:"GPU_TYPE" default:"auto"`
+	PUID                    string `env:"PUID" default:""`
+	PGID                    string `env:"PGID" default:""`
+	DockerConfig            string `env:"DOCKER_CONFIG" default:""`
+	InContainer             bool   `env:"ARCANE_IN_CONTAINER" default:"false"`
+	LogJson                 bool   `env:"ARCANE_LOG_JSON" default:"false"`
+	LogLevel                string `env:"ARCANE_LOG_LEVEL" default:"info" options:"toLower"`
+	AgentMode               bool   `env:"ARCANE_AGENT_MODE" default:"false"`
+	AgentToken              string `env:"ARCANE_AGENT_TOKEN" default:"" options:"file"`
+	ManagerApiUrl           string `env:"ARCANE_MANAGER_API_URL" default:""`
+	UIConfigurationDisabled bool   `env:"ARCANE_UI_CONFIGURATION_DISABLED" default:"false"`
 
-	EdgeAgent             bool   `env:"EDGE_AGENT" default:"false"`
-	EdgeTransport         string `env:"EDGE_TRANSPORT" default:"auto" options:"toLower"`
-	EdgeReconnectInterval int    `env:"EDGE_RECONNECT_INTERVAL" default:"5"` // seconds
-	EdgeMTLSMode          string `env:"EDGE_MTLS_MODE" default:"disabled" options:"toLower"`
-	EdgeMTLSCAFile        string `env:"EDGE_MTLS_CA_FILE" default:""`
-	EdgeMTLSCertFile      string `env:"EDGE_MTLS_CERT_FILE" default:""`
-	EdgeMTLSKeyFile       string `env:"EDGE_MTLS_KEY_FILE" default:""`
-	EdgeMTLSServerName    string `env:"EDGE_MTLS_SERVER_NAME" default:""`
-	EdgeMTLSAssetsDir     string `env:"EDGE_MTLS_ASSETS_DIR" default:""`
+	EdgeAgent             bool   `env:"ARCANE_EDGE_AGENT" default:"false"`
+	EdgeTransport         string `env:"ARCANE_EDGE_TRANSPORT" default:"auto" options:"toLower"`
+	EdgeReconnectInterval int    `env:"ARCANE_EDGE_RECONNECT_INTERVAL" default:"5"` // seconds
+	EdgeMTLSMode          string `env:"ARCANE_EDGE_MTLS_MODE" default:"disabled" options:"toLower"`
+	EdgeMTLSCAFile        string `env:"ARCANE_EDGE_MTLS_CA_FILE" default:""`
+	EdgeMTLSCertFile      string `env:"ARCANE_EDGE_MTLS_CERT_FILE" default:""`
+	EdgeMTLSKeyFile       string `env:"ARCANE_EDGE_MTLS_KEY_FILE" default:""`
+	EdgeMTLSServerName    string `env:"ARCANE_EDGE_MTLS_SERVER_NAME" default:""`
+	EdgeMTLSAssetsDir     string `env:"ARCANE_EDGE_MTLS_ASSETS_DIR" default:""`
 
-	TrustedProxies   string      `env:"TRUSTED_PROXIES" default:""`
-	FilePerm         os.FileMode `env:"FILE_PERM" default:"0644"`
-	DirPerm          os.FileMode `env:"DIR_PERM" default:"0755"`
-	GitWorkDir       string      `env:"GIT_WORK_DIR" default:"data/git"`
-	BackupVolumeName string      `env:"ARCANE_BACKUP_VOLUME_NAME" default:"arcane-backups"`
-	HTTPProxy        string      `env:"HTTP_PROXY" default:""`
-	HTTPSProxy       string      `env:"HTTPS_PROXY" default:""`
-	NoProxy          string      `env:"NO_PROXY" default:""`
-	Timezone         string      `env:"TZ" default:"Local"`
+	TrustedProxies       string      `env:"ARCANE_TRUSTED_PROXIES" default:""`
+	FilePerm             os.FileMode `env:"ARCANE_FILE_PERM" default:"0644"`
+	DirPerm              os.FileMode `env:"ARCANE_DIR_PERM" default:"0755"`
+	GitWorkDir           string      `env:"ARCANE_GIT_WORK_DIR" default:"data/git"`
+	BackupVolumeName     string      `env:"ARCANE_BACKUP_VOLUME_NAME" default:"arcane-backups"`
+	UpgradeKeepContainer bool        `env:"ARCANE_UPGRADE_KEEP_CONTAINER" default:"false"`
+	HTTPProxy            string      `env:"HTTP_PROXY" default:""`
+	HTTPSProxy           string      `env:"HTTPS_PROXY" default:""`
+	NoProxy              string      `env:"NO_PROXY" default:""`
+	Timezone             string      `env:"TZ" default:"Local"`
 }
 
-func Load() *Config {
+func Load() (*Config, error) {
 	cfg := &Config{}
-	loadFromEnv(cfg)
+	if err := loadFromEnv(cfg); err != nil {
+		return nil, err
+	}
 	applyOptions(cfg)
 	cfg.AgentMode = cfg.AgentMode || cfg.EdgeAgent
 	applyProxyDefaults(cfg)
-	applyWorkspaceDefaults(cfg)
+
+	key := strings.TrimSpace(cfg.EncryptionKey)
+	if cfg.Environment.IsProdEnvironment() && !cfg.AgentMode && key != "" &&
+		!strings.HasPrefix(key, "hex:") && !strings.HasPrefix(key, "base64:") && len(strings.TrimPrefix(key, "raw:")) < 32 {
+		return nil, errors.New("ARCANE_ENCRYPTION_KEY passphrase must be at least 32 characters in production (or use a hex:/base64: encoded 32-byte key)")
+	}
 
 	// Set global file permissions
 	utils.FilePerm = cfg.FilePerm
 	utils.DirPerm = cfg.DirPerm
 
-	return cfg
+	return cfg, nil
 }
 
-type ProjectWorkspaceConfig struct {
-	ProjectScanMaxDepth           int
-	ProjectWorkspaceMaxDepth      int
-	ProjectWorkspaceMaxEntries    int
-	ProjectWorkspaceMaxFileSizeMB int
-	ProjectScanSkipDirs           string
-}
-
-func LoadProjectWorkspaceConfig() ProjectWorkspaceConfig {
-	cfg := &Config{}
-	loadFromEnv(cfg)
-	applyWorkspaceDefaults(cfg)
-
-	return ProjectWorkspaceConfig{
-		ProjectScanMaxDepth:           cfg.ProjectScanMaxDepth,
-		ProjectWorkspaceMaxDepth:      cfg.ProjectWorkspaceMaxDepth,
-		ProjectWorkspaceMaxEntries:    cfg.ProjectWorkspaceMaxEntries,
-		ProjectWorkspaceMaxFileSizeMB: cfg.ProjectWorkspaceMaxFileSizeMB,
-		ProjectScanSkipDirs:           cfg.ProjectScanSkipDirs,
-	}
-}
-
-func applyWorkspaceDefaults(cfg *Config) {
-	if cfg.ProjectWorkspaceMaxDepth <= 0 {
-		cfg.ProjectWorkspaceMaxDepth = 20
-	}
-	if cfg.ProjectWorkspaceMaxEntries <= 0 {
-		cfg.ProjectWorkspaceMaxEntries = 2000
-	}
-	if cfg.ProjectWorkspaceMaxFileSizeMB <= 0 {
-		cfg.ProjectWorkspaceMaxFileSizeMB = 10
-	}
-	if cfg.VolumeWorkspaceMaxDepth <= 0 {
-		cfg.VolumeWorkspaceMaxDepth = 50
-	}
-	if cfg.VolumeWorkspaceMaxEntries <= 0 {
-		cfg.VolumeWorkspaceMaxEntries = 10000
-	}
-	if cfg.VolumeWorkspaceMaxFileSizeMB <= 0 {
-		cfg.VolumeWorkspaceMaxFileSizeMB = 10
-	}
+func EnvNames() []string {
+	var names []string
+	visitConfigFields(reflect.ValueOf(&Config{}).Elem(), func(_ reflect.Value, fieldType reflect.StructField) {
+		if envTag := fieldType.Tag.Get("env"); envTag != "" {
+			names = append(names, envTag)
+		}
+	})
+	return names
 }
 
 // applyProxyDefaults auto-trusts loopback proxies when LISTEN binds to a
@@ -193,12 +142,14 @@ func applyProxyDefaults(cfg *Config) {
 		return
 	}
 	cfg.TrustedProxies = "127.0.0.0/8,::1/128"
-	slog.InfoContext(context.Background(), "LISTEN bound to loopback; trusting loopback proxies for X-Forwarded headers", //nolint:forbidigo // Configuration loads before any request context exists.
+	slog.InfoContext(context.Background(), //nolint:forbidigo // Configuration loads before any request context exists.
+		"ARCANE_LISTEN bound to loopback; trusting loopback proxies for X-Forwarded headers",
 		"listen", cfg.Listen, "trustedProxies", cfg.TrustedProxies)
 }
 
 // loadFromEnv uses reflection to load configuration from environment variables.
-func loadFromEnv(cfg *Config) {
+func loadFromEnv(cfg *Config) error {
+	var errs []error
 	v := reflect.ValueOf(cfg).Elem()
 	visitConfigFields(v, func(field reflect.Value, fieldType reflect.StructField) {
 		envTag := fieldType.Tag.Get("env")
@@ -218,30 +169,16 @@ func loadFromEnv(cfg *Config) {
 			}
 		}
 
-		setFieldValue(field, fieldType, envValue)
+		if err := setFieldValue(field, envValue); err != nil {
+			errs = append(errs, fmt.Errorf("invalid environment variable %s: %w", envTag, err))
+		}
 	})
+	return errors.Join(errs...)
 }
 
 // hasOption reports whether the field's `options` tag lists option.
 func hasOption(fieldType reflect.StructField, option string) bool {
 	return slices.Contains(strings.Split(fieldType.Tag.Get("options"), ","), option)
-}
-
-// DeprecatedEnvVarsSet returns the env names of fields tagged deprecated that
-// still carry a value, so bootstrap can warn once logging is configured.
-func (c *Config) DeprecatedEnvVarsSet() []string {
-	var envNames []string
-	v := reflect.ValueOf(c).Elem()
-	visitConfigFields(v, func(field reflect.Value, fieldType reflect.StructField) {
-		if !hasOption(fieldType, "deprecated") {
-			return
-		}
-		if field.Kind() == reflect.String && field.String() == "" {
-			return
-		}
-		envNames = append(envNames, fieldType.Tag.Get("env"))
-	})
-	return envNames
 }
 
 // applyOptions processes special options for Config fields after initial load.
@@ -308,61 +245,45 @@ func visitConfigFields(v reflect.Value, fn func(reflect.Value, reflect.StructFie
 }
 
 // setFieldValue sets a reflect.Value from a string based on the field's type.
-func setFieldValue(field reflect.Value, fieldType reflect.StructField, value string) {
-	ctx := context.Background() //nolint:forbidigo // Configuration loads before any request context exists.
+func setFieldValue(field reflect.Value, value string) error {
 	if !field.CanSet() {
-		return
+		return nil
 	}
 
-	if field.Kind() == reflect.String {
+	switch {
+	case field.Kind() == reflect.String:
 		field.SetString(value)
-		return
-	}
-
-	if field.Kind() == reflect.Bool {
-		if b, err := strconv.ParseBool(value); err == nil {
-			field.SetBool(b)
+	case field.Kind() == reflect.Bool:
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return err
 		}
-		return
-	}
-
-	if field.Kind() == reflect.Uint32 {
-		// Handle os.FileMode (which is uint32)
-		if i, err := strconv.ParseUint(value, 8, 32); err == nil {
-			field.SetUint(i)
+		field.SetBool(b)
+	case field.Kind() == reflect.Uint32:
+		i, err := strconv.ParseUint(value, 8, 32)
+		if err != nil {
+			return fmt.Errorf("expected an octal file mode: %w", err)
 		}
-		return
-	}
-
-	if field.Kind() == reflect.Int {
-		if i, err := strconv.Atoi(value); err == nil {
-			field.SetInt(int64(i))
-		}
-		return
-	}
-
-	if field.Type() == reflect.TypeFor[time.Duration]() {
+		field.SetUint(i)
+	case field.Type() == reflect.TypeFor[time.Duration]():
 		d, err := time.ParseDuration(value)
-		if err == nil && d > 0 {
-			field.SetInt(int64(d))
-			return
+		if err != nil {
+			return err
 		}
-		reason := kit.Ternary(err == nil, "Non-positive duration for config field", "Invalid duration for config field")
-		envTag, defaultValue := fieldType.Tag.Get("env"), fieldType.Tag.Get("default")
-		fallback, fallbackErr := time.ParseDuration(defaultValue)
-		if fallbackErr != nil {
-			slog.WarnContext(ctx, "Invalid duration for config field and invalid tagged default", "reason", reason, "field", envTag, "value", value, "default", defaultValue)
-			return
+		if d <= 0 {
+			return fmt.Errorf("duration %q must be positive", value)
 		}
-		slog.WarnContext(ctx, "Invalid duration for config field, using tagged default", "reason", reason, "field", envTag, "value", value, "default", defaultValue)
-		field.SetInt(int64(fallback))
-		return
-	}
-
-	// String-based types like AppEnvironment; os.FileMode is handled as Uint32 above.
-	if field.Type().ConvertibleTo(reflect.TypeFor[string]()) {
+		field.SetInt(int64(d))
+	case field.Kind() == reflect.Int:
+		i, err := strconv.Atoi(value)
+		if err != nil {
+			return err
+		}
+		field.SetInt(int64(i))
+	case field.Type().ConvertibleTo(reflect.TypeFor[string]()):
 		field.Set(reflect.ValueOf(value).Convert(field.Type()))
 	}
+	return nil
 }
 
 func (a AppEnvironment) IsProdEnvironment() bool {
@@ -374,7 +295,6 @@ func (a AppEnvironment) IsTestEnvironment() bool {
 }
 
 // ListenAddr returns the effective address for the HTTP server to bind to.
-// It uses LISTEN as the host (if set) and PORT for the port.
 func (c *Config) ListenAddr() string {
 	host := strings.TrimSpace(c.Listen)
 	port := cmp.Or(c.Port, "3552")
@@ -403,45 +323,6 @@ func (c *Config) GetLocation() *time.Location {
 }
 
 // GetAppURL returns the effective application URL.
-// If in agent mode and APP_URL is not explicitly set, it returns the manager's URL.
 func (c *Config) GetAppURL() string {
-	// If APP_URL is explicitly set to something other than the default, use it
-	if os.Getenv("APP_URL") != "" {
-		return c.AppUrl
-	}
-
-	// If in agent mode and we have a manager URL, use the manager URL
-	if c.AgentMode {
-		if managerBase := httpx.ManagerBaseURL(c.ManagerApiUrl); managerBase != "" {
-			return managerBase
-		}
-	}
-
-	return c.AppUrl
-}
-
-// MaskSensitive returns a copy of the config with sensitive fields masked.
-// Useful for logging configuration without exposing secrets.
-func (c *Config) MaskSensitive() map[string]any {
-	result := make(map[string]any)
-	v := reflect.ValueOf(c).Elem()
-	t := v.Type()
-
-	for i := range v.NumField() {
-		field := v.Field(i)
-		fieldType := t.Field(i)
-
-		envTag := cmp.Or(fieldType.Tag.Get("env"), fieldType.Name)
-
-		// Fields with "file" option are considered sensitive
-		if hasOption(fieldType, "file") {
-			// Mask sensitive values
-			strVal := fmt.Sprintf("%v", field.Interface())
-			result[envTag] = kit.Ternary(strVal != "", "****", "(empty)")
-		} else {
-			result[envTag] = field.Interface()
-		}
-	}
-
-	return result
+	return cmp.Or(c.AppUrl, kit.Ternary(c.AgentMode, httpx.ManagerBaseURL(c.ManagerApiUrl), ""), "http://localhost:"+c.Port)
 }

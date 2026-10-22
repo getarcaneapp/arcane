@@ -8,13 +8,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/samber/mo"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 const (
@@ -48,6 +47,7 @@ type RuntimeIdentityConfig struct {
 	DockerConfig      string
 	DatabaseURL       string
 	ProjectsDirectory string
+	InContainer       bool
 }
 
 // ApplyRequestedRuntimeIdentity switches the current process to the configured
@@ -66,7 +66,7 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConf
 		projectsDir = filepath.Clean(strings.TrimSpace(cfg.ProjectsDirectory))
 	}
 
-	inContainer := runningInContainer(os.Getenv, os.Stat)
+	inContainer := runningInContainer(cfg.InContainer, os.Getenv, os.Stat)
 	req, warning, err := loadRuntimeIdentityRequest(cfg, inContainer)
 	if warning != "" {
 		slog.WarnContext(ctx, "Runtime identity warning", "warning", warning)
@@ -157,12 +157,8 @@ func loadRuntimeIdentityRequest(cfg *RuntimeIdentityConfig, inContainer bool) (r
 	}, "", nil
 }
 
-func runningInContainer(getenv func(string) string, stat func(string) (os.FileInfo, error)) bool {
-	if kit.ParseOrDefault(strings.TrimSpace(getenv("ARCANE_IN_CONTAINER")), false, strconv.ParseBool) {
-		return true
-	}
-
-	if strings.TrimSpace(getenv("container")) != "" {
+func runningInContainer(arcaneInContainer bool, getenv func(string) string, stat func(string) (os.FileInfo, error)) bool {
+	if arcaneInContainer || strings.TrimSpace(getenv("container")) != "" {
 		return true
 	}
 

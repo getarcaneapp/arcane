@@ -1,6 +1,7 @@
 package version
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,12 +28,14 @@ import (
 	"go.getarcane.app/updater/labels"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
 func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBuild(t *testing.T) {
@@ -117,9 +120,9 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 			Request:    req,
 		}, nil
 	})}
-	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server))
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	svc := NewVersionService(httpClient, false, "1.2.3", "revision", nil, dockerService, imageUpdateService, nil)
+	svc := NewVersionService(httpClient, "1.2.3", "revision", nil, dockerService, imageUpdateService, newVersionSettingsService(t, true))
 
 	info := svc.GetAppVersionInfo(ctx)
 
@@ -131,7 +134,7 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 }
 
 func TestVersionService_GetAppVersionInfoDisplaysSemverNextVersion(t *testing.T) {
-	svc := NewVersionService(nil, true, "2.4.0-next.2", "2c3e44a10ddda540d7e19fc2a876c931fc33a426", nil, nil, nil, nil)
+	svc := NewVersionService(nil, "2.4.0-next.2", "2c3e44a10ddda540d7e19fc2a876c931fc33a426", nil, nil, nil, newVersionSettingsService(t, false))
 
 	info := svc.GetAppVersionInfo(t.Context())
 
@@ -141,7 +144,7 @@ func TestVersionService_GetAppVersionInfoDisplaysSemverNextVersion(t *testing.T)
 }
 
 func TestVersionService_GetAppVersionInfoPreservesDevVersion(t *testing.T) {
-	svc := NewVersionService(nil, true, "dev", "unknown", nil, nil, nil, nil)
+	svc := NewVersionService(nil, "dev", "unknown", nil, nil, nil, newVersionSettingsService(t, false))
 
 	info := svc.GetAppVersionInfo(t.Context())
 
@@ -154,6 +157,18 @@ func TestVersionService_GetAppVersionInfoPreservesDevVersion(t *testing.T) {
 // Test fixtures shared by this package's tests.
 
 // setupImageUpdateTestDB creates an in-memory SQLite database for testing
+func newVersionSettingsService(t *testing.T, updateCheckEnabled bool) *settings.SettingsService {
+	t.Helper()
+	gdb, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gdb.AutoMigrate(&settings.SettingVariable{}))
+	svc, err := settings.NewSettingsService(t.Context(), &database.DB{DB: gdb}, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
+	require.NoError(t, svc.SetBoolSetting(t.Context(), "updateCheckEnabled", updateCheckEnabled))
+	return svc
+}
+
 func setupImageUpdateTestDB(t *testing.T) *database.DB {
 	t.Helper()
 	dsn := fmt.Sprintf("file:image-update-test-%d?mode=memory&cache=shared", time.Now().UnixNano())
@@ -202,7 +217,7 @@ func TestVersionService_IsNextBuild(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			svc := NewVersionService(nil, true, tt.version, "rev", nil, nil, nil, nil)
+			svc := NewVersionService(nil, tt.version, "rev", nil, nil, nil, newVersionSettingsService(t, false))
 			assert.Equal(t, tt.want, svc.isNextBuild(tt.currentTag))
 		})
 	}
@@ -306,10 +321,10 @@ func TestVersionService_GetAppVersionInfoNextChannelUsesImageLabel(t *testing.T)
 			Request:    req,
 		}, nil
 	})}
-	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server))
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	registrySvc := registry.NewContainerRegistryService(nil, nil, nil, nil)
-	svc := NewVersionService(httpClient, false, "2.8.0-next.65", "revision", registrySvc, dockerService, imageUpdateService, nil)
+	svc := NewVersionService(httpClient, "2.8.0-next.65", "revision", registrySvc, dockerService, imageUpdateService, newVersionSettingsService(t, true))
 
 	info := svc.GetAppVersionInfo(ctx)
 
@@ -350,10 +365,10 @@ func TestVersionService_GetAppVersionInfoNextChannelLabelFailureFallsBackToDiges
 		CheckTime:      time.Now().UTC(),
 	}).Error)
 
-	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server))
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	registrySvc := registry.NewContainerRegistryService(nil, nil, nil, nil)
-	svc := NewVersionService(nil, false, "2.8.0-next.65", "revision", registrySvc, dockerService, imageUpdateService, nil)
+	svc := NewVersionService(nil, "2.8.0-next.65", "revision", registrySvc, dockerService, imageUpdateService, newVersionSettingsService(t, true))
 
 	info := svc.GetAppVersionInfo(ctx)
 
@@ -374,7 +389,7 @@ func TestVersionService_GetAppVersionInfoSuppressesOlderStableForPrerelease(t *t
 	})}
 	// An -rc. prerelease stays on the stable track; the downgrade guard must
 	// still drop the older stable tag rather than showing a backwards arrow.
-	svc := NewVersionService(httpClient, false, "2.8.0-rc.1", "revision", nil, nil, nil, nil)
+	svc := NewVersionService(httpClient, "2.8.0-rc.1", "revision", nil, nil, nil, newVersionSettingsService(t, true))
 
 	info := svc.GetAppVersionInfo(t.Context())
 

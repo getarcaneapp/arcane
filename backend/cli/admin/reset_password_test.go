@@ -9,13 +9,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
 )
 
 func newResetPasswordTestDB(t *testing.T) *database.DB {
@@ -139,7 +139,7 @@ func TestResetPasswordInternalRejectsNonAdmin(t *testing.T) {
 }
 
 func TestEnsurePasswordResetEnabled(t *testing.T) {
-	require.ErrorContains(t, ensurePasswordResetEnabledInternal(&config.Config{}), "ALLOW_CLI_PASSWORD_RESET=true")
+	require.ErrorContains(t, ensurePasswordResetEnabledInternal(&config.Config{}), "ARCANE_ALLOW_CLI_PASSWORD_RESET=true")
 	require.NoError(t, ensurePasswordResetEnabledInternal(&config.Config{AllowCLIPasswordReset: true}))
 }
 

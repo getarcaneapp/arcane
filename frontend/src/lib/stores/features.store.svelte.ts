@@ -42,7 +42,7 @@ async function load(environmentId: string, force = false): Promise<void> {
 		try {
 			const settings = await settingsService.getPublicSettingsForEnvironment(environmentId, controller.signal);
 			if (controller.signal.aborted) return;
-			const state = resolveFeatures(settings);
+			const state = resolveFeatures(settings.values);
 			environments = { ...environments, [environmentId]: state };
 			if (!isFeatureEnabled(state, 'vulnerabilityManagement')) await clearVulnerabilityQueries(environmentId);
 		} catch {

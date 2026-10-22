@@ -12,7 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
 // ErrComposeTagReadOnly rejects UI edits of a tag the Compose file owns.

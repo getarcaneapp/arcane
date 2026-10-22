@@ -676,7 +676,7 @@
 				// Fall back to the dialog's built-in defaults if settings can't be loaded.
 				pruneDefaults = null;
 			} else {
-				pruneDefaults = operationResult.data;
+				pruneDefaults = operationResult.data.values;
 			}
 		} finally {
 			pruneDefaultsLoadingId = null;

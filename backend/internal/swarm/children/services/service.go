@@ -19,8 +19,8 @@ import (
 	"go.getarcane.app/docker"
 	"go.getarcane.app/kit/pkg"
 
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 )
 
 // Service manages swarm services.

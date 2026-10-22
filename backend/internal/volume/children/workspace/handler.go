@@ -11,15 +11,14 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
 type Handler struct {
@@ -110,11 +109,7 @@ func (h *Handler) UpdateVolumeWorkspace(ctx context.Context, input *UpdateVolume
 	if requireVolumeWorkspacePermissionsErr := requireVolumeWorkspacePermissions(ctx, input.EnvironmentID, manifest.FileChanges); requireVolumeWorkspacePermissionsErr != nil {
 		return nil, requireVolumeWorkspacePermissionsErr
 	}
-	maxFileSizeBytes := workspacepkg.MaxFileSizeBytes(workspacepkg.DefaultMaxFileSizeMB)
-	if h.service != nil {
-		maxFileSizeBytes = h.service.MaxFileSizeBytes()
-	}
-	uploads, err := handlerutil.ReadWorkspaceUploads(input.RawBody, maxFileSizeBytes)
+	uploads, err := handlerutil.ReadWorkspaceUploads(input.RawBody, h.service.MaxFileSizeBytes(ctx))
 	if err != nil {
 		return nil, err
 	}

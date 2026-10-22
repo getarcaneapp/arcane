@@ -23,31 +23,38 @@ import (
 	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops/children/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	projectpkg "github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/entityjobs"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow/flowtest"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops/children/backup"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	projectpkg "github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/gitutil"
+	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/entityjobs"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow/flowtest"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
 )
 
-var testDockerService = &dockerInternal.DockerClientService{Client: func() *mobyclient.Client {
+var testDockerService = (&dockerInternal.DockerClientService{}).WithClient(func() *mobyclient.Client {
 	cli, _ := mobyclient.New(mobyclient.WithHost("tcp://127.0.0.1:1"), mobyclient.WithAPIVersion("1.41"))
 	return cli
-}()}
+}())
+
+func loadTestConfig(t testing.TB) *config.Config {
+	t.Helper()
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	return cfg
+}
 
 func setupGitOpsProjectTestDB(t *testing.T) *database.DB {
 	t.Helper()
@@ -62,7 +69,9 @@ func setupGitOpsProjectTestDB(t *testing.T) *database.DB {
 
 func newGitOpsSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	service, err := settings.NewSettingsService(ctx, db, &config.Config{})
+	settingsEnv, err := settings.LoadEnv()
+	require.NoError(t, err)
+	service, err := settings.NewSettingsService(ctx, db, &config.Config{}, settingsEnv)
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, service.Stop(context.WithoutCancel(t.Context()))) })
 	}
@@ -91,8 +100,8 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T) (*GitOpsSyncService, *dat
 	projectsDir := t.TempDir()
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, config.Load(), nil)
-	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, testDockerService, nil, nil, nil, config.Load(), nil, nil)
+	eventService := event.NewEventService(db, loadTestConfig(t), nil, nil)
+	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, testDockerService, nil, nil, nil, loadTestConfig(t), nil, nil)
 
 	return NewGitOpsSyncService(db, nil, projectService, nil, eventService, settingsService), db, projectsDir
 }
@@ -148,8 +157,8 @@ func setupGitOpsSyncRemoteTestService(t *testing.T, files map[string]string) (*G
 	projectsDir := t.TempDir()
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, config.Load(), nil)
-	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, testDockerService, nil, nil, nil, config.Load(), nil, nil)
+	eventService := event.NewEventService(db, loadTestConfig(t), nil, nil)
+	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, testDockerService, nil, nil, nil, loadTestConfig(t), nil, nil)
 	repoService := gitrepo.NewGitRepositoryService(db, t.TempDir(), eventService, settingsService)
 
 	service := NewGitOpsSyncService(db, repoService, projectService, nil, eventService, settingsService)
@@ -676,9 +685,9 @@ func TestGitOpsSyncService_GetEnvironmentSyncLimits(t *testing.T) {
 
 func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 	ctx := t.Context()
-	t.Setenv("GIT_SYNC_MAX_FILES", "")
-	t.Setenv("GIT_SYNC_MAX_TOTAL_SIZE_MB", "")
-	t.Setenv("GIT_SYNC_MAX_BINARY_SIZE_MB", "")
+	t.Setenv("ARCANE_GIT_SYNC_MAX_FILES", "")
+	t.Setenv("ARCANE_GIT_SYNC_MAX_TOTAL_SIZE_MB", "")
+	t.Setenv("ARCANE_GIT_SYNC_MAX_BINARY_SIZE_MB", "")
 
 	db := setupGitOpsProjectTestDB(t)
 	settingsSvc, err := newGitOpsSettingsServiceForTest(t, ctx, db)
@@ -733,9 +742,9 @@ func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 	})
 
 	t.Run("environment variables override stored sync limits", func(t *testing.T) {
-		t.Setenv("GIT_SYNC_MAX_FILES", "10000")
-		t.Setenv("GIT_SYNC_MAX_TOTAL_SIZE_MB", "1024")
-		t.Setenv("GIT_SYNC_MAX_BINARY_SIZE_MB", "12")
+		t.Setenv("ARCANE_GIT_SYNC_MAX_FILES", "10000")
+		t.Setenv("ARCANE_GIT_SYNC_MAX_TOTAL_SIZE_MB", "1024")
+		t.Setenv("ARCANE_GIT_SYNC_MAX_BINARY_SIZE_MB", "12")
 		settingsSvcEnv, svcErr := newGitOpsSettingsServiceForTest(t, ctx, db)
 		require.NoError(t, svcErr)
 		svcEnv := &GitOpsSyncService{settingsService: settingsSvcEnv}
@@ -754,9 +763,9 @@ func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 	})
 
 	t.Run("environment variable zero disables runtime caps", func(t *testing.T) {
-		t.Setenv("GIT_SYNC_MAX_FILES", "0")
-		t.Setenv("GIT_SYNC_MAX_TOTAL_SIZE_MB", "0")
-		t.Setenv("GIT_SYNC_MAX_BINARY_SIZE_MB", "0")
+		t.Setenv("ARCANE_GIT_SYNC_MAX_FILES", "0")
+		t.Setenv("ARCANE_GIT_SYNC_MAX_TOTAL_SIZE_MB", "0")
+		t.Setenv("ARCANE_GIT_SYNC_MAX_BINARY_SIZE_MB", "0")
 		settingsSvcEnv, svcErr := newGitOpsSettingsServiceForTest(t, ctx, db)
 		require.NoError(t, svcErr)
 		svcEnv := &GitOpsSyncService{settingsService: settingsSvcEnv}
@@ -1112,8 +1121,8 @@ func setupGitOpsBackupTestService(t *testing.T) *backupTestEnv {
 	projectsDir := t.TempDir()
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, config.Load(), nil)
-	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, testDockerService, nil, nil, nil, config.Load(), nil, nil)
+	eventService := event.NewEventService(db, loadTestConfig(t), nil, nil)
+	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, testDockerService, nil, nil, nil, loadTestConfig(t), nil, nil)
 	repoService := gitrepo.NewGitRepositoryService(db, t.TempDir(), eventService, settingsService)
 
 	service := NewGitOpsSyncService(db, repoService, projectService, nil, eventService, settingsService)

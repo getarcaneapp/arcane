@@ -21,13 +21,8 @@ import (
 	"go.getarcane.app/acfs"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
-)
-
-const (
-	ProjectWorkspaceUseScanDepth = -1
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	workspacepkg "github.com/getarcaneapp/arcane/backend/v3/pkg/workspace"
 )
 
 var (
@@ -54,16 +49,6 @@ func ReadProjectWorkspace(
 	maxEntries int,
 	maxFileSizeBytes int64,
 ) ([]types.WorkspaceFileEntry, string, bool, error) {
-	if maxDepth == ProjectWorkspaceUseScanDepth {
-		maxDepth = config.LoadProjectWorkspaceConfig().ProjectWorkspaceMaxDepth
-	}
-	if maxEntries <= 0 {
-		maxEntries = config.LoadProjectWorkspaceConfig().ProjectWorkspaceMaxEntries
-	}
-	if maxFileSizeBytes <= 0 {
-		maxFileSizeBytes = workspacepkg.MaxFileSizeBytes(config.LoadProjectWorkspaceConfig().ProjectWorkspaceMaxFileSizeMB)
-	}
-
 	projectAbs, err := filepath.Abs(projectPath)
 	if err != nil {
 		return nil, "", false, fmt.Errorf("resolve project path: %w", err)
@@ -85,7 +70,7 @@ func ReadProjectWorkspace(
 		projectAbs:       projectAbs,
 		maxDepth:         maxDepth,
 		maxEntries:       maxEntries,
-		maxFileSizeBytes: maxFileSizeBytes,
+		maxFileSizeBytes: kit.Ternary(maxFileSizeBytes <= 0, workspacepkg.MaxFileSizeBytes(workspacepkg.DefaultMaxFileSizeMB), maxFileSizeBytes),
 		protected:        ProtectedProjectPaths(projectAbs, composeFileName),
 		skipDirs:         projectScanSkipDirectorySetInternal(skipDirectories),
 		files:            []types.WorkspaceFileEntry{},
@@ -159,7 +144,7 @@ func (w *projectWorkspaceTreeWalkerInternal) visit(rel string, entry fs.DirEntry
 	// Entries are visited in a fixed level-by-level, name-sorted order, so
 	// cutting off after maxEntries still yields a stable revision as long as
 	// the concurrency compare walk uses the same cap.
-	if w.entryCount >= w.maxEntries {
+	if w.maxEntries > 0 && w.entryCount >= w.maxEntries {
 		w.truncated = true
 		return false, nil
 	}

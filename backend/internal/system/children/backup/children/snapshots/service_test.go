@@ -157,8 +157,8 @@ func TestProjectsRelativePathFromManifest(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			manifest := types.RecoveryManifest{Environment: map[string]string{
-				"DATABASE_URL":       test.databaseURL,
-				"PROJECTS_DIRECTORY": test.projectsDirectory,
+				"ARCANE_DATABASE_URL":       test.databaseURL,
+				"ARCANE_PROJECTS_DIRECTORY": test.projectsDirectory,
 			}}
 			relative, err := projectsRelativePathFromManifest(manifest)
 			if test.errorContains != "" {
@@ -245,7 +245,7 @@ func TestSnapshotLayoutFromManifest(t *testing.T) {
 		},
 		{
 			name:     "version 1 projects outside data are omitted",
-			manifest: types.RecoveryManifest{FormatVersion: 1, Environment: map[string]string{"DATABASE_URL": "file:/app/data/arcane.db", "PROJECTS_DIRECTORY": "/srv/projects"}},
+			manifest: types.RecoveryManifest{FormatVersion: 1, Environment: map[string]string{"DATABASE_URL": "file:/app/data/arcane.db", "ARCANE_PROJECTS_DIRECTORY": "/srv/projects"}},
 			root:     "/app/data", expected: snapshotLayout{dataPath: "/app/data", databaseName: "arcane.db"},
 		},
 		{
@@ -264,7 +264,7 @@ func TestSnapshotLayoutFromManifest(t *testing.T) {
 			name: "version 2 malformed database path", manifest: types.RecoveryManifest{FormatVersion: 2, DataPath: "/data", ProjectsPath: "/data", DatabasePath: ""}, root: "/data",
 			errorContains: "invalid database path",
 		},
-		{name: "unsupported version", manifest: types.RecoveryManifest{FormatVersion: 3}, root: "/data", errorContains: "unsupported format 3"},
+		{name: "unsupported version", manifest: types.RecoveryManifest{FormatVersion: 4}, root: "/data", errorContains: "unsupported format 4"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

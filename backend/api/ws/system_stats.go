@@ -20,8 +20,8 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/cgroup"
 
-	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
-	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
+	httputil "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 const (
@@ -226,8 +226,8 @@ func (h *WebSocketHandler) collectSystemStats(ctx context.Context) types.SystemS
 	}
 
 	var gpuStats []types.GPUStats
-	if h.gpuMonitor != nil && h.gpuMonitor.Enabled() {
-		if stats, statsErr := h.gpuMonitor.Stats(ctx); statsErr == nil {
+	if monitor := h.gpuMonitor.Load(); monitor != nil && monitor.Enabled() {
+		if stats, statsErr := monitor.Stats(ctx); statsErr == nil {
 			gpuStats = stats
 		}
 	}

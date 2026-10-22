@@ -10,11 +10,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/passkey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	userdomain "github.com/getarcaneapp/arcane/backend/v2/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/passkey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
+	userdomain "github.com/getarcaneapp/arcane/backend/v3/internal/user"
 )
 
 func newResetMFATestDB(t *testing.T) *database.DB {
@@ -38,7 +38,7 @@ func newResetMFATestDB(t *testing.T) *database.DB {
 }
 
 func TestEnsureMFAResetEnabled(t *testing.T) {
-	require.ErrorContains(t, ensureMFAResetEnabledInternal(&config.Config{}), "ALLOW_CLI_MFA_RESET=true")
+	require.ErrorContains(t, ensureMFAResetEnabledInternal(&config.Config{}), "ARCANE_ALLOW_CLI_MFA_RESET=true")
 	require.NoError(t, ensureMFAResetEnabledInternal(&config.Config{AllowCLIMFAReset: true}))
 }
 

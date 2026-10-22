@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	updaterlabels "go.getarcane.app/updater/labels"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
 func TestParseArcaneComposeMetadata_InterpolationAndAnchor(t *testing.T) {

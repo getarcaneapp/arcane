@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/testutil"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/testutil"
 )
 
 func TestTemplatesListJSONIncludesPaginatedEnvelope(t *testing.T) {

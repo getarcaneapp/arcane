@@ -26,33 +26,33 @@ import (
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/network"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	systembackup "github.com/getarcaneapp/arcane/backend/v2/internal/system/children/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system/children/prune"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system/children/upgrade"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/version"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/vuln"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/network"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	systembackup "github.com/getarcaneapp/arcane/backend/v3/internal/system/children/backup"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/system/children/prune"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/system/children/upgrade"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/version"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/vuln"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
 )
 
 // SystemService owns Docker system-wide operations and coordinates the prune
@@ -88,6 +88,7 @@ func NewSystemService(
 	recoveryKeys *backup.RecoveryKeyStore,
 	actors *francis.Runtime,
 	cfg *config.Config,
+	settingsEnv settings.Env,
 ) *SystemService {
 	s := &SystemService{
 		db:               db,
@@ -99,7 +100,7 @@ func NewSystemService(
 			WithTTL(dockerHostMemoryCacheTTL).
 			Build(),
 		prune:   prune.NewService(cfg.GetLocation(), dockerService, activityService, imageUpdateService, volumeService, networkService),
-		upgrade: upgrade.NewService(db, dockerService, versionService, eventService, settingsService, projectService, registryService, resolveUpgraderRuntimeOptions),
+		upgrade: upgrade.NewService(db, dockerService, versionService, eventService, settingsService, projectService, registryService, resolveUpgraderRuntimeOptions, cfg.UpgradeKeepContainer),
 	}
 	s.backup = systembackup.NewService(systembackup.Dependencies{
 		Store:                 s.backupStore(s3Destinations),
@@ -113,6 +114,7 @@ func NewSystemService(
 		Activity:              activityService,
 		Settings:              settingsService,
 		Config:                cfg,
+		SettingsEnv:           settingsEnv,
 		RecoveryKeys:          recoveryKeys,
 		ResolveRuntimeOptions: resolveUpgraderRuntimeOptions,
 	})

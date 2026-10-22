@@ -96,10 +96,11 @@ func generateMTLSOutput(cmd *cobra.Command, mtlsOutDir, mtlsEnvID, mtlsAppURL st
 	_, _ = fmt.Fprintf(w, "Agent key: %s\n", paths.ClientKeyPath)
 	_, _ = fmt.Fprintln(w)
 	_, _ = fmt.Fprintln(w, "Manager env")
-	_, _ = fmt.Fprintf(w, "EDGE_MTLS_MODE=required\nEDGE_MTLS_CA_FILE=%s\n", paths.CACertPath)
+	_, _ = fmt.Fprintf(w, "ARCANE_EDGE_MTLS_MODE=required\nARCANE_EDGE_MTLS_CA_FILE=%s\n", paths.CACertPath)
 	_, _ = fmt.Fprintln(w)
 	_, _ = fmt.Fprintln(w, "Agent env")
-	_, _ = fmt.Fprintf(w, "EDGE_MTLS_MODE=required\nEDGE_MTLS_CA_FILE=%s\nEDGE_MTLS_CERT_FILE=%s\nEDGE_MTLS_KEY_FILE=%s\n", paths.CACertPath, paths.ClientCertPath, paths.ClientKeyPath)
+	_, _ = fmt.Fprintf(w, "ARCANE_EDGE_MTLS_MODE=required\nARCANE_EDGE_MTLS_CA_FILE=%s\nARCANE_EDGE_MTLS_CERT_FILE=%s\nARCANE_EDGE_MTLS_KEY_FILE=%s\n",
+		paths.CACertPath, paths.ClientCertPath, paths.ClientKeyPath)
 	return nil
 }
 
@@ -123,7 +124,7 @@ func generateTLSOutput(cmd *cobra.Command, tlsOutDir, tlsCommonName string, tlsH
 	_, _ = fmt.Fprintf(w, "Server key: %s\n", paths.KeyPath)
 	_, _ = fmt.Fprintln(w)
 	_, _ = fmt.Fprintln(w, "Manager env")
-	_, _ = fmt.Fprintf(w, "TLS_ENABLED=true\nTLS_CERT_FILE=%s\nTLS_KEY_FILE=%s\n", paths.CertPath, paths.KeyPath)
+	_, _ = fmt.Fprintf(w, "ARCANE_TLS_ENABLED=true\nARCANE_TLS_CERT_FILE=%s\nARCANE_TLS_KEY_FILE=%s\n", paths.CertPath, paths.KeyPath)
 	return nil
 }
 

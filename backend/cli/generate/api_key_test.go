@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	cligenerate "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
+	cligenerate "github.com/getarcaneapp/arcane/cli/v3/pkg/generate"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,6 +26,6 @@ func TestAPIKeyCommandAvailableInBackendCLI(t *testing.T) {
 	require.True(t, strings.HasPrefix(strings.TrimSpace(out), "arc_"),
 		"expected raw arc_ key in output, got: %q", out)
 
-	require.NotContains(t, out, "ADMIN_STATIC_API_KEY",
+	require.NotContains(t, out, "ARCANE_ADMIN_STATIC_API_KEY",
 		"expected raw arc_ key in output, got: %q", out)
 }

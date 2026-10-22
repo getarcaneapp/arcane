@@ -7,7 +7,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
 )
 
 func TestService_RenderEmailTemplate_IncludesEnvironment(t *testing.T) {

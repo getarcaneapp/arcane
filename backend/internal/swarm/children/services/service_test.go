@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 )
 
 func newSwarmTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
@@ -122,7 +122,7 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 			}))
 			t.Cleanup(server.Close)
 
-			dockerService := &docker.DockerClientService{Client: newSwarmTestDockerClient(t, server)}
+			dockerService := (&docker.DockerClientService{}).WithClient(newSwarmTestDockerClient(t, server))
 			svc := NewService(dockerService, func(context.Context) error { return nil }, nil)
 
 			resp, err := svc.ScaleService(ctx, "service-1", replicas)

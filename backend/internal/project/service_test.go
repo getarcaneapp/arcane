@@ -45,38 +45,38 @@ import (
 	updatertypes "go.getarcane.app/updater/types"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/deployment"
-	projectdetails "github.com/getarcaneapp/arcane/backend/v2/internal/project/children/details"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/listing"
-	projectsync "github.com/getarcaneapp/arcane/backend/v2/internal/project/children/sync"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/tags"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/update"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/workspace"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/deployment"
+	projectdetails "github.com/getarcaneapp/arcane/backend/v3/internal/project/children/details"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/listing"
+	projectsync "github.com/getarcaneapp/arcane/backend/v3/internal/project/children/sync"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/tags"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/update"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/workspace"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumes"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/iconcatalog"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
 var testRegistryCredentials = func(context.Context) ([]types.ContainerRegistryCredential, error) { return nil, nil }
 
-var testDockerService = &docker.DockerClientService{Client: func() *client.Client {
+var testDockerService = (&docker.DockerClientService{}).WithClient(func() *client.Client {
 	cli, _ := client.New(client.WithHost("tcp://127.0.0.1:1"), client.WithAPIVersion("1.41"))
 	return cli
-}()}
+}())
 
 type testBuildBuilder struct {
 	err error
@@ -94,6 +94,13 @@ func (testBuildBuilder) BuildSettings() buildtypes.BuildSettings {
 }
 
 var _ builder = testBuildBuilder{}
+
+func loadTestConfig(t testing.TB) *config.Config {
+	t.Helper()
+	cfg, err := config.Load()
+	require.NoError(t, err)
+	return cfg
+}
 
 func setupProjectTestDB(t *testing.T) *database.DB {
 	t.Helper()
@@ -137,7 +144,9 @@ func TestValidateWorkspaceChangesAgainstGitOps(t *testing.T) {
 
 func newSettingsServiceForTest(t *testing.T, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	svc, err := settings.NewSettingsService(ctx, db, &config.Config{})
+	settingsEnv, err := settings.LoadEnv()
+	require.NoError(t, err)
+	svc, err := settings.NewSettingsService(ctx, db, &config.Config{}, settingsEnv)
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}
@@ -239,13 +248,13 @@ func TestProjectService_RefreshProjectImageRefs_PersistsBuildMetadata(t *testing
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -288,13 +297,13 @@ func TestProjectService_BackfillProjectImageRefs_RetriesOnlyMissingMetadata(t *t
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -340,17 +349,17 @@ func setupProjectDestroyTestService(t *testing.T) (*ProjectService, *database.DB
 	projectsDir := t.TempDir()
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, config.Load(), nil)
+	eventService := event.NewEventService(db, loadTestConfig(t), nil, nil)
 	return NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	), db, projectsDir
@@ -508,13 +517,13 @@ func TestProjectService_GetProjectFromDatabaseByID(t *testing.T) {
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -544,13 +553,13 @@ func TestProjectService_UpdateProjectStatus(t *testing.T) {
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -582,13 +591,13 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		svc := NewProjectService(
 			db,
 			nil,
-			event.NewEventService(db, nil, nil),
-			image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+			event.NewEventService(db, nil, nil, nil),
+			image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 			testDockerService,
 			testBuildBuilder{},
 			nil,
 			nil,
-			config.Load(),
+			loadTestConfig(t),
 			kv.NewKVService(db),
 			testRegistryCredentials,
 		)
@@ -610,13 +619,13 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		svc := NewProjectService(
 			db,
 			nil,
-			event.NewEventService(db, nil, nil),
-			image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+			event.NewEventService(db, nil, nil, nil),
+			image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 			testDockerService,
 			testBuildBuilder{},
 			nil,
 			nil,
-			config.Load(),
+			loadTestConfig(t),
 			kv.NewKVService(db),
 			testRegistryCredentials,
 		)
@@ -638,13 +647,13 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		svc := NewProjectService(
 			db,
 			nil,
-			event.NewEventService(db, nil, nil),
-			image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+			event.NewEventService(db, nil, nil, nil),
+			image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 			testDockerService,
 			testBuildBuilder{},
 			nil,
 			nil,
-			config.Load(),
+			loadTestConfig(t),
 			kv.NewKVService(db),
 			testRegistryCredentials,
 		)
@@ -666,13 +675,13 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		svc := NewProjectService(
 			db,
 			nil,
-			event.NewEventService(db, nil, nil),
-			image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+			event.NewEventService(db, nil, nil, nil),
+			image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 			testDockerService,
 			testBuildBuilder{},
 			nil,
 			nil,
-			config.Load(),
+			loadTestConfig(t),
 			kv.NewKVService(db),
 			testRegistryCredentials,
 		)
@@ -715,13 +724,13 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		svc := NewProjectService(
 			db,
 			nil,
-			event.NewEventService(db, nil, nil),
-			image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+			event.NewEventService(db, nil, nil, nil),
+			image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 			testDockerService,
 			testBuildBuilder{},
 			nil,
 			nil,
-			config.Load(),
+			loadTestConfig(t),
 			kv.NewKVService(db),
 			testRegistryCredentials,
 		)
@@ -760,7 +769,7 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 	db := setupProjectTestDB(t)
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
@@ -780,20 +789,20 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 		},
 	}, nil)
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
-	eventService := event.NewEventService(db, nil, nil)
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
+	eventService := event.NewEventService(db, nil, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil)
+	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
 		imageService,
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -888,20 +897,20 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 		},
 	}, nil)
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
-	eventService := event.NewEventService(db, nil, nil)
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
+	eventService := event.NewEventService(db, nil, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil)
+	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
 		imageService,
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -968,20 +977,20 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 		},
 	}, nil)
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
-	eventService := event.NewEventService(db, nil, nil)
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
+	eventService := event.NewEventService(db, nil, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil)
+	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
 		imageService,
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -1043,20 +1052,20 @@ func TestProjectService_ComposePullSelectedServices_ReconcilesOnlyOnSuccess(t *t
 		authHeadersByRef[fullRef] = authHeader
 	})
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
-	eventService := event.NewEventService(db, nil, nil)
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
+	eventService := event.NewEventService(db, nil, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil)
+	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
 		imageService,
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -1160,19 +1169,19 @@ func TestProjectService_ComposePullSelectedServices_LeavesRecordsWhenPullFails(t
 	}))
 	t.Cleanup(failingServer.Close)
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, failingServer)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, failingServer))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, event.NewEventService(db, nil, nil), settingsService, nil)
+	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, event.NewEventService(db, nil, nil, nil), settingsService, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
 		imageService,
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -1214,7 +1223,7 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFails(t *testing.T
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
@@ -1230,9 +1239,9 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFails(t *testing.T
 	}))
 	t.Cleanup(failingServer.Close)
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, failingServer)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, failingServer))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, event.NewEventService(db, nil, nil), settingsService, nil)
+	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, event.NewEventService(db, nil, nil, nil), settingsService, nil, nil)
 
 	projectPath := createComposeProjectDir(t, projectsDir, "compose-update-pull-fail")
 	require.NoError(
@@ -1272,7 +1281,7 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFails(t *testing.T
 		composeUpProjectServices = originalComposeUp
 	})
 	upCalled := false
-	composeUpProjectServices = func(context.Context, *composetypes.Project, []string, bool, bool, bool, map[string]dockerregistry.AuthConfig, time.Duration) error {
+	composeUpProjectServices = func(context.Context, string, *composetypes.Project, []string, bool, bool, bool, map[string]dockerregistry.AuthConfig, time.Duration) error {
 		upCalled = true
 		return errors.New("compose up should not run")
 	}
@@ -1280,13 +1289,13 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFails(t *testing.T
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
 		imageService,
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -1308,7 +1317,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreate(t *testing.T) {
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
@@ -1329,10 +1338,10 @@ func TestProjectService_UpdateProjectServicesForcesRecreate(t *testing.T) {
 		assert.Equal(t, imageRef, fullRef, "namespace dependents must not be pulled")
 	})
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	eventService := event.NewEventService(db, nil, nil)
-	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
+	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil, nil)
 
 	projectPath := createComposeProjectDir(t, projectsDir, "compose-update-force")
 	require.NoError(
@@ -1384,7 +1393,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreate(t *testing.T) {
 		composeUpProjectServices = originalComposeUp
 	})
 	var stopped []string
-	composeStopProjectServices = func(_ context.Context, _ *composetypes.Project, services []string) error {
+	composeStopProjectServices = func(_ context.Context, _ string, _ *composetypes.Project, services []string) error {
 		stopped = services
 		return nil
 	}
@@ -1392,6 +1401,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreate(t *testing.T) {
 	forceRecreate := false
 	composeUpProjectServices = func(
 		_ context.Context,
+		_ string,
 		selected *composetypes.Project,
 		services []string,
 		removeOrphans, force, _ bool,
@@ -1408,7 +1418,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreate(t *testing.T) {
 		return errors.New("compose up failed after assertion")
 	}
 
-	svc := NewProjectService(db, settingsService, eventService, imageService, dockerService, testBuildBuilder{}, nil, nil, config.Load(), kv.NewKVService(db), testRegistryCredentials)
+	svc := NewProjectService(db, settingsService, eventService, imageService, dockerService, testBuildBuilder{}, nil, nil, loadTestConfig(t), kv.NewKVService(db), testRegistryCredentials)
 	err = svc.UpdateProjectServices(ctx, projectRecord.ID, []string{"app"}, types.SystemUser, true)
 	require.Error(t, err)
 	assert.True(t, eventService.ShouldSuppressDaemonEvent("container", "replacement", "app", "compose-update-force"), "failed updates retain correlation through rollback grace")
@@ -1447,13 +1457,13 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/_ping"):
@@ -1486,17 +1496,17 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 	t.Cleanup(dockerServer.Close)
 	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURL(t, dockerServer.URL))
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, dockerServer)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, dockerServer))
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -1547,22 +1557,22 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_AppliesVolumeMigrati
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -1603,7 +1613,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
@@ -1636,17 +1646,17 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 	}))
 	t.Cleanup(dockerServer.Close)
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, dockerServer)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, dockerServer))
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -1734,22 +1744,22 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_RollsBackVolumeMigra
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -1788,22 +1798,22 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_SucceedsCommittedRen
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -1845,24 +1855,24 @@ func TestProjectService_UpdateProject_ClearsJournalForNonRenameWhenRecoveryDocke
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -1923,24 +1933,24 @@ func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryWithoutDoc
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
-		&docker.DockerClientService{Client: newTestDockerClient(t, configureProjectRuntimeDocker(t, nil))},
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, configureProjectRuntimeDocker(t, nil))),
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -1998,22 +2008,22 @@ func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
-		&docker.DockerClientService{Client: newTestDockerClient(t, configureProjectRuntimeDocker(t, nil))},
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, configureProjectRuntimeDocker(t, nil))),
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -2058,22 +2068,22 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
-		&docker.DockerClientService{Client: newTestDockerClient(t, configureProjectRuntimeDocker(t, nil))},
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, configureProjectRuntimeDocker(t, nil))),
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -2116,22 +2126,22 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -2172,13 +2182,13 @@ func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunn
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	server := configureProjectRuntimeDocker(t, []container.Summary{
 		{
 			ID:     "app-container",
@@ -2198,12 +2208,12 @@ func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunn
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
-		&docker.DockerClientService{Client: newTestDockerClient(t, server)},
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -2276,7 +2286,7 @@ func TestProjectService_RecoverStuckProjectStatuses(t *testing.T) {
 			ctx := t.Context()
 
 			projectsDir := t.TempDir()
-			t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+			t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 			settingsService, err := newSettingsServiceForTest(t, ctx, db)
 			require.NoError(t, err)
@@ -2286,13 +2296,13 @@ func TestProjectService_RecoverStuckProjectStatuses(t *testing.T) {
 			svc := NewProjectService(
 				db,
 				settingsService,
-				event.NewEventService(db, nil, nil),
-				image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
-				&docker.DockerClientService{Client: newTestDockerClient(t, server)},
+				event.NewEventService(db, nil, nil, nil),
+				image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+				(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 				testBuildBuilder{},
 				nil,
 				nil,
-				config.Load(),
+				loadTestConfig(t),
 				kv.NewKVService(db),
 				testRegistryCredentials,
 			)
@@ -2321,24 +2331,24 @@ func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVo
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	server := newProjectRuntimeDockerServer(t, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
-		&docker.DockerClientService{Client: newTestDockerClient(t, server)},
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -2390,13 +2400,13 @@ func TestProjectService_UpdateProject_RenameRejectsUnknownWhenRuntimeIsRunning(t
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	server := newProjectRuntimeDockerServer(t, []container.Summary{
 		{
 			ID:     "app-container",
@@ -2417,12 +2427,12 @@ func TestProjectService_UpdateProject_RenameRejectsUnknownWhenRuntimeIsRunning(t
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
-		&docker.DockerClientService{Client: newTestDockerClient(t, server)},
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -2465,22 +2475,22 @@ func TestProjectService_UpdateProject_ValidatesComposeUsingExistingProjectName(t
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -2520,22 +2530,22 @@ func TestProjectService_UpdateProject_AllowsMissingEnvFileDuringComposeValidatio
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -2577,22 +2587,22 @@ func TestProjectService_UpdateProject_EnvRetargetWritesExplicitIdenticalComposeT
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -2643,22 +2653,22 @@ func TestProjectService_UpdateProject_EnvRetargetWithoutComposePayloadPreservesN
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -2707,22 +2717,22 @@ func TestProjectService_UpdateProject_EnvRetargetWritesEditedComposeToSelectedBa
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -2766,22 +2776,22 @@ func TestProjectService_UpdateProject_AllowsMissingLocalIncludeDuringComposeVali
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -2828,22 +2838,22 @@ func TestProjectService_CreateProject_AllowsExternalInclude(t *testing.T) {
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -2871,22 +2881,22 @@ func TestProjectService_UpdateProject_AllowsExternalInclude(t *testing.T) {
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -2928,20 +2938,20 @@ func TestProjectService_CreateProject_CommitsWorkspaceAndConfigurationTogether(t
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -2986,20 +2996,20 @@ func TestProjectService_CreateProject_RollsBackInvalidWorkspaceManifest(t *testi
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -3032,22 +3042,22 @@ func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -3094,22 +3104,22 @@ func newProjectServiceForOverrideTest(t *testing.T, dirName string) (*ProjectSer
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -3217,22 +3227,22 @@ func TestProjectService_UpdateProject_UsesProvidedEnvContentDuringComposeValidat
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -3276,22 +3286,22 @@ func TestProjectService_UpdateProject_ReturnsEnvParseErrorDuringComposeValidatio
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -3333,22 +3343,22 @@ func TestProjectService_UpdateProject_UsesGlobalEnvDuringComposeValidation(t *te
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -3393,23 +3403,23 @@ func TestProjectService_UpdateProject_DoesNotResolveHostEnvThroughGlobalEnvDurin
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 	t.Setenv("HOST_ONLY_PATH", "/host/secret")
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -3450,22 +3460,22 @@ func TestProjectService_UpdateProject_DerivesProjectOverrideEnvWhenGitSourceExis
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -3509,22 +3519,22 @@ func TestProjectService_UpdateProject_UnchangedGitEnvLeavesFilesUntouched(t *tes
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -3618,22 +3628,22 @@ func TestProjectService_UpdateProject_DeletingGitBackedKeyFallsBackToGit(t *test
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -3680,22 +3690,22 @@ func TestProjectService_ApplyGitSyncProjectFiles_MigratesDirectEnvIntoProjectOve
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -3743,22 +3753,22 @@ func TestProjectService_ApplyGitSyncProjectFiles_PreservesGitEnvSyntax(t *testin
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -3817,22 +3827,22 @@ func TestProjectService_ApplyGitSyncProjectFiles_NormalizesStaleCopiedGitOverrid
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -3877,22 +3887,22 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesLegacyDeletedGitMasks(t 
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -3938,22 +3948,22 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesGitEnvSource(t *testing.
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -3994,22 +4004,22 @@ func TestProjectService_ApplyGitSyncProjectFiles_WritesAndRemovesComposeOverride
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -4057,22 +4067,22 @@ func TestProjectService_ApplyGitSyncProjectFiles_UsesGlobalEnvDuringComposeValid
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -4120,22 +4130,22 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfUndefinedComposeVar(t
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -4180,22 +4190,22 @@ func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -4331,23 +4341,23 @@ func TestProjectService_GetProjectDetails_IncludesUpdateInfo(t *testing.T) {
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	imageService := image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil)
+	imageService := image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
 		imageService,
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -4391,7 +4401,7 @@ func TestProjectService_GetProjectDetails_RefreshesRuntimeStatusWithoutRuntimeSe
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
@@ -4452,13 +4462,13 @@ func TestProjectService_GetProjectDetails_RefreshesRuntimeStatusWithoutRuntimeSe
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
-		&docker.DockerClientService{Client: newTestDockerClient(t, server)},
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -4476,7 +4486,7 @@ func TestProjectService_GetProjectDetails_PopulatesRuntimeServicesFromComposePs(
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
@@ -4516,13 +4526,13 @@ func TestProjectService_GetProjectDetails_PopulatesRuntimeServicesFromComposePs(
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
-		&docker.DockerClientService{Client: newTestDockerClient(t, server)},
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -4574,23 +4584,23 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	imageService := image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil)
+	imageService := image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
 		imageService,
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -4698,7 +4708,7 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 func TestBuildDiscoveredComposeProjectUpdateRows(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
-	imageService := image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil)
+	imageService := image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil)
 	now := time.Now().UTC()
 
 	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{
@@ -4766,7 +4776,7 @@ func TestBuildDiscoveredComposeProjectUpdateRows(t *testing.T) {
 func TestBuildDiscoveredComposeProjectUpdateRows_FallsBackToImageID(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := t.Context()
-	imageService := image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil)
+	imageService := image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{
 		ID:             "sha256:media-image",
@@ -4874,13 +4884,13 @@ func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -4938,13 +4948,13 @@ func TestProjectService_ListProjects_FiltersByExactName(t *testing.T) {
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5000,13 +5010,13 @@ func TestProjectService_ArchiveProject_RequiresStoppedProject(t *testing.T) {
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
-		&docker.DockerClientService{Client: newTestDockerClient(t, server)},
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5041,13 +5051,13 @@ func TestProjectService_ArchiveProject_TogglesArchiveFlag(t *testing.T) {
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
-		&docker.DockerClientService{Client: newTestDockerClient(t, configureProjectRuntimeDocker(t, nil))},
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, configureProjectRuntimeDocker(t, nil))),
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5099,13 +5109,13 @@ func TestProjectService_ArchiveProject_LiveVerificationErrorPolicy(t *testing.T)
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5149,9 +5159,9 @@ func TestProjectService_ListProjects_PersistsInferredServiceCount(t *testing.T) 
 	service := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
-		&docker.DockerClientService{Client: newTestDockerClient(t, configureProjectRuntimeDocker(t, containers))},
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, configureProjectRuntimeDocker(t, containers))),
 		testBuildBuilder{},
 		nil,
 		nil,
@@ -5201,13 +5211,13 @@ func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSe
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
-		&docker.DockerClientService{Client: newTestDockerClient(t, configureProjectRuntimeDocker(t, nil))},
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, configureProjectRuntimeDocker(t, nil))),
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5252,13 +5262,13 @@ func TestProjectService_DeployProject_StopsOnBuildPreparationError(t *testing.T)
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		buildSvc,
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5301,13 +5311,13 @@ func TestProjectService_DeployProject_BuildsGeneratedImageWithoutPull(t *testing
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, testDockerService, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, testDockerService, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		buildSvc,
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5339,13 +5349,13 @@ func TestProjectService_SyncProjectsFromFileSystem_IgnoresSymlinkedProjectDirsWh
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5377,13 +5387,13 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsSymlinkedProjectDirsWh
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5412,13 +5422,13 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversNestedProjectsAndRel
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5458,13 +5468,13 @@ func TestProjectService_SyncProjectsFromFileSystem_RespectsConfiguredScanMaxDept
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5517,13 +5527,13 @@ services:
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5555,13 +5565,13 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5607,13 +5617,13 @@ func TestProjectService_SyncProjectsFromFileSystem_PrunesLeakedScratchRow(t *tes
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5655,13 +5665,13 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectsWhenDirector
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5687,13 +5697,13 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectWithAmbiguous
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5738,13 +5748,13 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedS
 	defaultSvc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5760,13 +5770,13 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedS
 	depthLimitedSvc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5805,13 +5815,13 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesDBRecordsWhenDirecto
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5882,13 +5892,13 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversReadableProjectsDesp
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5930,13 +5940,13 @@ func TestProjectService_SyncProjectsFromFileSystem_AllowsDuplicateLeafDirectorie
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -5973,13 +5983,13 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsNestedSymlinkedProject
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -6016,13 +6026,13 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesSymlinkedProjectsWhenD
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -6058,13 +6068,13 @@ func TestProjectService_SyncProjectsFromFileSystem_RefreshesServiceCountOnCompos
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -6102,13 +6112,13 @@ services:
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -6147,13 +6157,13 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesValidCustomNameWitho
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -6209,13 +6219,13 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesGitOpsProjectWithCus
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -6271,13 +6281,13 @@ func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *tes
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -6311,17 +6321,17 @@ func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testi
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -6378,17 +6388,17 @@ func TestProjectService_UpdateProject_WritesThroughExternalEnvSymlink(t *testing
 	originalLinkTarget, err := os.Readlink(envPath)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -6449,17 +6459,17 @@ func TestProjectService_UpdateProject_RestoresExternalEnvSymlinkTargetWhenProjec
 	originalLinkTarget, err := os.Readlink(envPath)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -6627,13 +6637,13 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackUncommittedDirecto
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -6693,13 +6703,13 @@ func TestProjectService_RecoverProjectRenameJournals_StartedPhaseSkipsVolumeRoll
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -6768,13 +6778,13 @@ func TestProjectService_RecoverProjectRenameJournals_RelocatesTargetWhenBothPath
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -6843,13 +6853,13 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDir
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -6920,13 +6930,13 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsPreservedTargetJourna
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
-		&docker.DockerClientService{Client: newTestDockerClient(t, server)},
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -6985,13 +6995,13 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournal(t *t
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -7037,13 +7047,13 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalAfterSourc
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -7090,13 +7100,13 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_KeepsJournalWhenSourceC
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -7183,17 +7193,17 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRo
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -7289,17 +7299,17 @@ func TestProjectService_RecoverProjectRenameJournals_CompletesCommittedVolumeJou
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -7374,17 +7384,17 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackCommittedJournalWh
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -7496,17 +7506,17 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -7589,13 +7599,13 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsRollbackCleanupWhenDoc
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -7660,17 +7670,17 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalWhenS
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -7758,17 +7768,17 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalAndCl
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -7853,17 +7863,17 @@ func TestProjectService_RecoverProjectRenameJournals_MarksSourceCleanupPendingWh
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -7950,17 +7960,17 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsSourceCleanupPendingJ
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -8061,17 +8071,17 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackSourceCleanupPendi
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -8163,17 +8173,17 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsSourceCleanupPendingJo
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -8245,13 +8255,13 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDir
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -8323,17 +8333,17 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsMissingPathJournalWhe
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -8409,17 +8419,17 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackSo
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -8500,17 +8510,17 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackTa
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -8597,17 +8607,17 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPres
 	require.NoError(t, db.Create(project).Error)
 
 	kvService := kv.NewKVService(db)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kvService,
 		testRegistryCredentials,
 	)
@@ -8785,8 +8795,8 @@ func TestUpdateProjectServiceImagesRejectsManagedOrArchived(t *testing.T) {
 			service := NewProjectService(
 				db,
 				nil,
-				event.NewEventService(db, nil, nil),
-				image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+				event.NewEventService(db, nil, nil, nil),
+				image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 				testDockerService,
 				testBuildBuilder{},
 				nil,
@@ -8810,7 +8820,7 @@ func TestUpdateProjectServiceImagesPersistsBeforeDeploymentAndRetries(t *testing
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
 	directory := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", directory)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", directory)
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", directory))
@@ -8830,18 +8840,18 @@ func TestUpdateProjectServiceImagesPersistsBeforeDeploymentAndRetries(t *testing
 	})
 	var deployed []*composetypes.Project
 	var scopes [][]string
-	composeStopProjectServices = func(context.Context, *composetypes.Project, []string) error { return nil }
-	composeUpProjectServices = func(_ context.Context, selected *composetypes.Project, services []string, _, _, _ bool, _ map[string]dockerregistry.AuthConfig, _ time.Duration) error {
+	composeStopProjectServices = func(context.Context, string, *composetypes.Project, []string) error { return nil }
+	composeUpProjectServices = func(_ context.Context, _ string, selected *composetypes.Project, services []string, _, _, _ bool, _ map[string]dockerregistry.AuthConfig, _ time.Duration) error {
 		deployed = append(deployed, selected)
 		scopes = append(scopes, services)
 		return deploymentError
 	}
-	pullDocker := &docker.DockerClientService{Client: newTestDockerClient(t, newImagePullServerWithObserver(t, nil, nil))}
+	pullDocker := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, newImagePullServerWithObserver(t, nil, nil)))
 	service := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, pullDocker, nil, imageupdate.NewImageUpdateService(db, nil, nil, pullDocker, nil, nil, nil), nil, event.NewEventService(db, nil, nil), settingsService, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, pullDocker, nil, imageupdate.NewImageUpdateService(db, nil, nil, pullDocker, nil, nil, nil), nil, event.NewEventService(db, nil, nil, nil), settingsService, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
@@ -8874,7 +8884,7 @@ func TestUpdateProjectServiceImagesRejectsOverrideBeforeWriting(t *testing.T) {
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
 	directory := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", directory)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", directory)
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", directory))
@@ -8888,8 +8898,8 @@ func TestUpdateProjectServiceImagesRejectsOverrideBeforeWriting(t *testing.T) {
 	service := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
@@ -8955,7 +8965,7 @@ func TestDiscoveredProjectTagUpdatesRemainScoped(t *testing.T) {
 		},
 		{ID: "second", Image: "example:3.1.0", ImageID: "shared", Labels: map[string]string{"com.docker.compose.project": "second-project", "com.docker.compose.service": "web"}},
 	}
-	imageSvc := image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil)
+	imageSvc := image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil)
 	rows := discoveryListingForTest(imageSvc).DiscoveredUpdateRows(t.Context(), containers, nil, "")
 	require.Len(t, rows, 1)
 	require.Equal(t, "first-project", rows[0].Name)
@@ -8968,7 +8978,7 @@ func TestDiscoveredProjectTagUpdatesRemainScoped(t *testing.T) {
 		db,
 		settingsService,
 		nil,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
@@ -9090,8 +9100,8 @@ func TestCountProjectsWithPendingTagUpdatesUsesRuntimeContainers(t *testing.T) {
 	service := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
@@ -9189,7 +9199,7 @@ func TestProjectServiceManualUpdateDiscoversTags(t *testing.T) {
 			db := setupProjectTestDB(t)
 			directory := t.TempDir()
 			require.NoError(t, db.AutoMigrate(&registry.ContainerRegistry{}))
-			t.Setenv("PROJECTS_DIRECTORY", directory)
+			t.Setenv("ARCANE_PROJECTS_DIRECTORY", directory)
 			settingsService, err := newSettingsServiceForTest(t, ctx, db)
 			require.NoError(t, err)
 			require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", directory))
@@ -9216,20 +9226,20 @@ func TestProjectServiceManualUpdateDiscoversTags(t *testing.T) {
 			})
 			var deployed []*composetypes.Project
 			var scopes [][]string
-			composeStopProjectServices = func(context.Context, *composetypes.Project, []string) error { return nil }
-			composeUpProjectServices = func(_ context.Context, selected *composetypes.Project, services []string, _, _, _ bool, _ map[string]dockerregistry.AuthConfig, _ time.Duration) error {
+			composeStopProjectServices = func(context.Context, string, *composetypes.Project, []string) error { return nil }
+			composeUpProjectServices = func(_ context.Context, _ string, selected *composetypes.Project, services []string, _, _, _ bool, _ map[string]dockerregistry.AuthConfig, _ time.Duration) error {
 				deployed = append(deployed, selected)
 				scopes = append(scopes, services)
 				return deploymentError
 			}
-			pullDocker := &docker.DockerClientService{Client: newTestDockerClient(t, newImagePullServerWithObserver(t, nil, nil))}
+			pullDocker := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, newImagePullServerWithObserver(t, nil, nil)))
 			transport := &serviceTagTransport{tags: tt.tags}
 			registryService := registry.NewContainerRegistryService(db, nil, nil, nil, &http.Client{Transport: transport})
 			service := NewProjectService(
 				db,
 				settingsService,
-				event.NewEventService(db, nil, nil),
-				image.NewImageService(db, pullDocker, nil, imageupdate.NewImageUpdateService(db, nil, nil, pullDocker, nil, nil, nil), nil, event.NewEventService(db, nil, nil), settingsService, nil),
+				event.NewEventService(db, nil, nil, nil),
+				image.NewImageService(db, pullDocker, nil, imageupdate.NewImageUpdateService(db, nil, nil, pullDocker, nil, nil, nil), nil, event.NewEventService(db, nil, nil, nil), settingsService, nil, nil),
 				testDockerService,
 				testBuildBuilder{},
 				nil,
@@ -9314,7 +9324,7 @@ func TestConfiguredProjectTagChecksMatchCurrentServicePolicy(t *testing.T) {
 func TestStoppedProjectTagPolicyNeverInheritsSharedDigestCheck(t *testing.T) {
 	db := setupProjectTestDB(t)
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 	settingsService, err := newSettingsServiceForTest(t, t.Context(), db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(t.Context(), "projectsDirectory", projectsDir))
@@ -9336,17 +9346,17 @@ func TestStoppedProjectTagPolicyNeverInheritsSharedDigestCheck(t *testing.T) {
 	projectRecord := &Project{ID: "tag-stopped", Name: "tag-stopped", DirName: new("tag-stopped"), Path: projectPath, Status: ProjectStatusStopped, ImageRefsJSON: `["nginx:3.1.0"]`}
 	require.NoError(t, db.Create(projectRecord).Error)
 	require.NoError(t, db.Create(&imageupdate.ImageUpdateRecord{ID: "shared-digest", Repository: "docker.io/library/nginx", Tag: "3.1.0", UpdateType: "digest", CheckTime: time.Now()}).Error)
-	imageService := image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil)
+	imageService := image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil)
 	service := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
 		imageService,
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -9404,7 +9414,7 @@ func TestConfiguredProjectUsesScheduledRuntimeChecks(t *testing.T) {
 			ctx := t.Context()
 			db := setupProjectTestDB(t)
 			directory := t.TempDir()
-			t.Setenv("PROJECTS_DIRECTORY", directory)
+			t.Setenv("ARCANE_PROJECTS_DIRECTORY", directory)
 			settingsService, err := newSettingsServiceForTest(t, ctx, db)
 			require.NoError(t, err)
 			require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", directory))
@@ -9450,11 +9460,11 @@ func TestConfiguredProjectUsesScheduledRuntimeChecks(t *testing.T) {
 			service := NewProjectService(
 				db,
 				settingsService,
-				event.NewEventService(db, nil, nil),
-				image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
-				&docker.DockerClientService{Client: newTestDockerClient(t, configureProjectRuntimeDocker(t, []container.Summary{
+				event.NewEventService(db, nil, nil, nil),
+				image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+				(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, configureProjectRuntimeDocker(t, []container.Summary{
 					{ID: "scheduled-container", Names: []string{"/scheduled-project-web-1"}, Image: "example:3.1.0", State: container.StateRunning, Labels: runtimeLabels},
-				}))},
+				}))),
 				testBuildBuilder{},
 				nil,
 				nil,
@@ -9657,22 +9667,22 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfPermissionLockedEnv(t
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil)
+	eventService := event.NewEventService(db, nil, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
 		eventService,
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -9805,7 +9815,7 @@ func newEnvDirectoryProject(t *testing.T, id string) (*ProjectService, *Project,
 	ctx := t.Context()
 
 	projectsDir := t.TempDir()
-	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+	t.Setenv("ARCANE_PROJECTS_DIRECTORY", projectsDir)
 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
@@ -9814,13 +9824,13 @@ func newEnvDirectoryProject(t *testing.T, id string) (*ProjectService, *Project,
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -10036,8 +10046,8 @@ func TestProjectTags_ReconcilePreservesUIAndComposeOwnershipIsReadOnly(t *testin
 	service := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
@@ -10110,13 +10120,13 @@ func TestProjectTags_FilterUsesExactORNames(t *testing.T) {
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil),
-		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil),
+		event.NewEventService(db, nil, nil, nil),
+		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
 		nil,
-		config.Load(),
+		loadTestConfig(t),
 		kv.NewKVService(db),
 		testRegistryCredentials,
 	)
@@ -10141,10 +10151,12 @@ func setupLifecycleTestDB(t *testing.T) *database.DB {
 
 func newLifecycleTestService(t *testing.T, db *database.DB) (*LifecycleService, *settings.SettingsService) {
 	t.Helper()
-	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{})
+	settingsEnv, err := settings.LoadEnv()
+	require.NoError(t, err)
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settingsEnv)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	events := event.NewEventService(db, nil, nil)
+	events := event.NewEventService(db, nil, nil, nil)
 	return NewLifecycleService(db, settingsService, events, nil, nil), settingsService
 }
 
@@ -10298,8 +10310,8 @@ func TestRunPreDeploy_KillSwitchAndLastRunState(t *testing.T) {
 		}
 	}))
 	t.Cleanup(dockerServer.Close)
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, dockerServer)}
-	svc := NewLifecycleService(db, settingsService, event.NewEventService(db, nil, nil), dockerService, nil)
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, dockerServer))
+	svc := NewLifecycleService(db, settingsService, event.NewEventService(db, nil, nil, nil), dockerService, nil)
 
 	syncID := "sync-1"
 	project := &Project{

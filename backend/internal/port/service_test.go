@@ -17,9 +17,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 func newPortServiceTestDockerService(t *testing.T, containers []container.Summary) *docker.DockerClientService {
@@ -39,7 +39,7 @@ func newPortServiceTestDockerService(t *testing.T, containers []container.Summar
 	}))
 	t.Cleanup(server.Close)
 
-	return docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(newTestDockerClient(t, server))
+	return (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 }
 
 func TestPortService_ListPortsPaginated_FlattensPublishedAndExposedPorts(t *testing.T) {

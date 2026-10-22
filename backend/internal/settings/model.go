@@ -1,8 +1,10 @@
 package settings
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"slices"
 	"strconv"
@@ -10,7 +12,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/getarcaneapp/arcane/types/v3"
+	"github.com/samber/mo"
 	"go.getarcane.app/kit/pkg"
+
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 const (
@@ -30,12 +38,21 @@ type SettingVisibility int
 
 type settingFieldMeta struct {
 	index               int
+	position            int
 	key                 string
-	attrs               string
+	envName             string
+	defaultValue        string
+	valueType           string
+	min                 mo.Option[float64]
+	max                 mo.Option[float64]
+	values              []string
 	isPublic            bool
 	isVisibleToNonAdmin bool
 	isSensitive         bool
 	isEncrypted         bool
+	isInternal          bool
+	isManagerOnly       bool
+	isPropagated        bool
 }
 
 var settingsFieldCache struct {
@@ -65,163 +82,175 @@ func (s SettingVariable) AsDurationSeconds() time.Duration {
 //nolint:lll // Reflection metadata must remain in single struct-tag literals.
 type Settings struct {
 	// General category
-	ProjectsDirectory           SettingVariable `key:"projectsDirectory,envOverride" meta:"label=Projects Directory;type=text;keywords=projects,directory,path,folder,location,storage,files,compose,docker-compose;category=internal;description=Configure where project files are stored"`
-	TemplatesDirectory          SettingVariable `key:"templatesDirectory,envOverride" meta:"label=Templates Directory;type=text;keywords=templates,directory,path,folder,location,storage,compose,docker-compose;category=internal;description=Configure where local compose template folders are discovered"`
-	FollowProjectSymlinks       SettingVariable `key:"followProjectSymlinks,envOverride" meta:"label=Follow Project Symlinks;type=boolean;keywords=projects,symlink,symlinks,symbolic links,compose,directory,discovery;category=general;description=Treat symlinked child directories inside the projects directory as Docker Compose projects"`
-	SwarmStackSourcesDirectory  SettingVariable `key:"swarmStackSourcesDirectory,envOverride" meta:"label=Swarm Stack Sources Directory;type=text;keywords=swarm,stacks,stack,source,sources,directory,path,folder,location,storage,compose,env;category=internal;description=Configure where swarm stack source files are stored"`
-	DiskUsagePath               SettingVariable `key:"diskUsagePath" meta:"label=Disk Usage Path;type=text;keywords=disk,usage,path,storage,folder,files;category=general;description=Path used for disk usage calculations"`
-	BaseServerURL               SettingVariable `key:"baseServerUrl" meta:"label=Base Server URL;type=text;keywords=base,url,server,domain,host,endpoint,address,link;category=general;description=Set the base URL for the application"`
-	EnableGravatar              SettingVariable `key:"enableGravatar,authrequired,envOverride" meta:"label=Enable Gravatar;type=boolean;keywords=gravatar,avatar,profile,picture,image,user,photo;category=users;description=Enable Gravatar profile pictures for users"`
-	AvatarMaxUploadSizeMb       SettingVariable `key:"avatarMaxUploadSizeMb,authrequired" meta:"label=Avatar Max Upload Size (MB);type=number;keywords=avatar,profile,picture,upload,size,limit,maximum,image,user,photo,mb;category=users;description=Maximum size in MB for profile picture uploads (default: 2)"`
-	DefaultShell                SettingVariable `key:"defaultShell" meta:"label=Default Shell;type=text;keywords=shell,default,shellpath,path,login;category=general;description=Default shell to use for commands"`
-	ExperimentalFeaturesEnabled SettingVariable `key:"experimentalFeaturesEnabled,authrequired" meta:"label=Experimental Features;type=boolean;keywords=experimental,features,beta,preview,flags;category=general;description=Enable experimental features that may change or be removed in future releases"`
-	DevelopmentBrandingEnabled  SettingVariable `key:"developmentBrandingEnabled,public" meta:"label=Development Branding;type=boolean;keywords=development,branding,logo,icon,favicon,next,dev,preview,prerelease;category=general;description=Show the development icon instead of the standard Arcane logo on non-stable builds"`
-	AllEnvironmentsLimit        SettingVariable `key:"allEnvironmentsLimit,public" meta:"label=All Environments Limit;type=number;keywords=all,environments,limit,maximum,preview,merged,scope,request;category=internal;description=Maximum environments included in one all-environments request (default: 64)"`
-	EnvironmentHealthInterval   SettingVariable `key:"environmentHealthInterval" meta:"label=Environment Health Check Interval;type=cron;keywords=environment,health,check,interval,frequency,heartbeat,status,monitoring,uptime,jobs,schedule;description=How often to check environment connectivity (cron expression)" catmeta:"id=jobschedule;title=Automations;icon=jobs;url=/settings/jobs;description=Configure how often Arcane background jobs run"`
+	ProjectsDirectory           SettingVariable `key:"projectsDirectory" default:"/app/data/projects" meta:"label=Projects Directory;type=text;keywords=projects,directory,path,folder,location,storage,files,compose,docker-compose;category=internal;description=Configure where project files are stored"`
+	TemplatesDirectory          SettingVariable `key:"templatesDirectory" default:"/app/data/templates" meta:"label=Templates Directory;type=text;keywords=templates,directory,path,folder,location,storage,compose,docker-compose;category=internal;description=Configure where local compose template folders are discovered"`
+	FollowProjectSymlinks       SettingVariable `key:"followProjectSymlinks" default:"false" meta:"label=Follow Project Symlinks;type=boolean;keywords=projects,symlink,symlinks,symbolic links,compose,directory,discovery;category=general;description=Treat symlinked child directories inside the projects directory as Docker Compose projects"`
+	SwarmStackSourcesDirectory  SettingVariable `key:"swarmStackSourcesDirectory" default:"/app/data/swarm/sources" meta:"label=Swarm Stack Sources Directory;type=text;keywords=swarm,stacks,stack,source,sources,directory,path,folder,location,storage,compose,env;category=internal;description=Configure where swarm stack source files are stored"`
+	DiskUsagePath               SettingVariable `key:"diskUsagePath" default:"/app/data/projects" meta:"label=Disk Usage Path;type=text;keywords=disk,usage,path,storage,folder,files;category=general;description=Path used for disk usage calculations"`
+	BaseServerURL               SettingVariable `key:"baseServerUrl" default:"http://localhost" meta:"label=Base Server URL;type=text;keywords=base,url,server,domain,host,endpoint,address,link;category=general;description=Set the base URL for the application"`
+	EnableGravatar              SettingVariable `key:"enableGravatar,authrequired" default:"false" meta:"label=Enable Gravatar;type=boolean;keywords=gravatar,avatar,profile,picture,image,user,photo;category=users;description=Enable Gravatar profile pictures for users"`
+	AvatarMaxUploadSizeMb       SettingVariable `key:"avatarMaxUploadSizeMb,authrequired,manager" default:"2" meta:"label=Avatar Max Upload Size (MB);type=integer;min=1;max=50;keywords=avatar,profile,picture,upload,size,limit,maximum,image,user,photo,mb;category=users;description=Maximum size in MB for profile picture uploads"`
+	DefaultShell                SettingVariable `key:"defaultShell" default:"/bin/sh" meta:"label=Default Shell;type=text;keywords=shell,default,shellpath,path,login;category=general;description=Default shell to use for commands"`
+	ExperimentalFeaturesEnabled SettingVariable `key:"experimentalFeaturesEnabled,authrequired,manager" default:"false" meta:"label=Experimental Features;type=boolean;keywords=experimental,features,beta,preview,flags;category=general;description=Enable experimental features that may change or be removed in future releases"`
+	DevelopmentBrandingEnabled  SettingVariable `key:"developmentBrandingEnabled,public,manager" default:"true" meta:"label=Development Branding;type=boolean;keywords=development,branding,logo,icon,favicon,next,dev,preview,prerelease;category=general;description=Show the development icon instead of the standard Arcane logo on non-stable builds"`
+	AllEnvironmentsLimit        SettingVariable `key:"allEnvironmentsLimit,public,manager" default:"64" meta:"label=All Environments Limit;type=integer;min=2;max=256;keywords=all,environments,limit,maximum,preview,merged,scope,request;category=internal;description=Maximum environments included in one all-environments request"`
+	EnvironmentHealthInterval   SettingVariable `key:"environmentHealthInterval" default:"0 */2 * * * *" meta:"label=Environment Health Check Interval;type=cron;keywords=environment,health,check,interval,frequency,heartbeat,status,monitoring,uptime,jobs,schedule;description=How often to check environment connectivity (cron expression)" catmeta:"id=jobschedule;title=Automations;icon=jobs;url=/settings/jobs;description=Configure how often Arcane background jobs run"`
 
 	// Docker category
-	AutoUpdate                     SettingVariable `key:"autoUpdate" meta:"label=Auto Update;type=boolean;keywords=auto,update,automatic,upgrade,refresh,restart,deploy;category=internal;description=Automatically update containers when new images are available"`
-	AutoUpdateInterval             SettingVariable `key:"autoUpdateInterval" meta:"label=Auto Update Interval;type=cron;keywords=auto,update,interval,frequency,schedule,automatic,timing;category=internal;description=How often to check for automatic updates (cron expression)"`
-	AutoUpdateDelay                SettingVariable `key:"autoUpdateDelay" meta:"label=Auto Update Delay;type=number;keywords=auto,update,delay,hours,wait,age,supply,chain,security,quarantine;category=internal;description=Hours a new image must be available before auto-update applies it (0 = immediately)"`
-	AutoUpdateExcludedContainers   SettingVariable `key:"autoUpdateExcludedContainers" meta:"label=Excluded Containers;type=text;keywords=exclude,containers,ignore,skip;category=internal;description=Comma-separated list of containers to exclude from auto-update"`
-	PollingEnabled                 SettingVariable `key:"pollingEnabled" meta:"label=Enable Polling;type=boolean;keywords=polling,check,monitor,watch,scan,detection,automatic;category=internal;description=Enable automatic checking for image updates"`
-	PollingInterval                SettingVariable `key:"pollingInterval" meta:"label=Polling Interval;type=cron;keywords=interval,frequency,schedule,time,minutes,period,delay;category=internal;description=How often to check for image updates (cron expression)"`
-	ImageEventWatcherEnabled       SettingVariable `key:"imageEventWatcherEnabled" meta:"label=Enable Event-Driven Image Checks;type=boolean;keywords=image,updates,event,watcher,registry,rate,limit;category=internal;description=Check image registries immediately after Docker image events; registry rate limits may apply"`
-	DockerClientRefreshInterval    SettingVariable `key:"dockerClientRefreshInterval" meta:"label=Docker Client Refresh Interval;type=cron;keywords=docker,client,refresh,daemon,api,version,reconnect,renegotiate,schedule;category=internal;description=How often to refresh the cached Docker client API version (cron expression)"`
-	EventCleanupInterval           SettingVariable `key:"eventCleanupInterval" meta:"label=Event Cleanup Interval;type=cron;keywords=events,cleanup,retention,interval,frequency,schedule,history,logs,jobs;description=How often to delete old events (cron expression)"`
-	ExpiredSessionsCleanupInterval SettingVariable `key:"expiredSessionsCleanupInterval" meta:"label=Expired Sessions Cleanup Interval;type=cron;keywords=sessions,cleanup,retention,expired,revoked,interval,frequency,schedule,auth,jobs;description=How often to delete expired and old revoked sessions (cron expression)"`
-	ActivityHistoryRetentionDays   SettingVariable `key:"activityHistoryRetentionDays" meta:"label=Activity History Retention;type=number;keywords=activity,history,retention,days,cleanup,background,tasks;category=activity;description=Delete completed Activity Center entries older than this many days. Set 0 to disable age-based cleanup." catmeta:"id=activity;title=Activity;icon=activity;url=/settings/activity;description=Configure Activity Center history and cleanup"`
-	UpgradeLogRetentionDays        SettingVariable `key:"upgradeLogRetentionDays" meta:"label=Upgrade Log Retention;type=number;keywords=upgrade,logs,retention,days,cleanup;category=activity;description=Delete upgrade log files older than this many days. Cleanup runs hourly. Default: 3 days. Set 0 to keep logs indefinitely."`
-	ActivityHistoryMaxEntries      SettingVariable `key:"activityHistoryMaxEntries" meta:"label=Activity History Limit;type=number;keywords=activity,history,limit,entries,count,cleanup,background,tasks;category=activity;description=Maximum completed Activity Center entries to keep per environment. Set 0 to disable count-based cleanup."`
-	MaxConcurrentActivities        SettingVariable `key:"maxConcurrentActivities" meta:"label=Concurrent Activity Limit;type=number;keywords=activity,concurrency,limit,queue,parallel,bulk,background,tasks;category=activity;description=Maximum long-running activities per environment before new ones queue. Set 0 for unlimited."`
-	AutoInjectEnv                  SettingVariable `key:"autoInjectEnv" meta:"label=Auto Inject Env Variables;type=boolean;keywords=auto,inject,env,environment,variables,interpolation;category=internal;description=Automatically inject project .env variables into all containers (default: false)"`
-	DefaultDeployPullPolicy        SettingVariable `key:"defaultDeployPullPolicy" meta:"label=Default Deploy Pull Policy;type=select;keywords=deploy,pull,policy,compose,up,missing,always;category=internal;description=Default image pull policy when deploying projects"`
-	ToolsImageRegistry             SettingVariable `key:"toolsImageRegistry,envOverride" meta:"label=Tools Image Registry;type=select;keywords=tools,image,registry,ghcr,docker,hub,helper,volume;category=internal;description=Container registry used to pull the Arcane tools helper image"`
-	UpdateCheckRegistry            SettingVariable `key:"updateCheckRegistry,envOverride" meta:"label=Update Check Registry;type=select;keywords=update,check,registry,ghcr,docker,hub,ecr,self,image,digest;category=internal;description=Registry queried when checking whether the Arcane image has a newer digest"`
-	ScheduledPruneEnabled          SettingVariable `key:"scheduledPruneEnabled" meta:"label=Scheduled Prune Enabled;type=boolean;keywords=prune,cleanup,maintenance,schedule,automatic;category=internal;description=Enable scheduled pruning of unused Docker resources"`
-	ScheduledPruneInterval         SettingVariable `key:"scheduledPruneInterval" meta:"label=Scheduled Prune Interval;type=cron;keywords=prune,cleanup,interval,minutes,schedule;category=internal;description=How often to run scheduled prunes (cron expression)"`
-	PruneContainerMode             SettingVariable `key:"pruneContainerMode" meta:"label=Prune Containers;type=select;keywords=prune,containers,cleanup,maintenance,mode,older,stopped;category=internal;description=Select how containers should be pruned when the scheduled prune job runs"`
-	PruneContainerUntil            SettingVariable `key:"pruneContainerUntil" meta:"label=Container Age Filter;type=text;keywords=prune,containers,cleanup,maintenance,until,older,duration;category=internal;description=Duration threshold for scheduled container prune when mode is olderThan"`
-	PruneImageMode                 SettingVariable `key:"pruneImageMode" meta:"label=Prune Images;type=select;keywords=prune,images,cleanup,maintenance,mode,dangling,all,older;category=internal;description=Select how images should be pruned when the scheduled prune job runs"`
-	PruneImageUntil                SettingVariable `key:"pruneImageUntil" meta:"label=Image Age Filter;type=text;keywords=prune,images,cleanup,maintenance,until,older,duration;category=internal;description=Duration threshold for scheduled image prune when mode is olderThan"`
-	PruneVolumeMode                SettingVariable `key:"pruneVolumeMode" meta:"label=Prune Volumes;type=select;keywords=prune,volumes,cleanup,maintenance,mode,anonymous,named;category=internal;description=Select how volumes should be pruned when the scheduled prune job runs"`
-	PruneNetworkMode               SettingVariable `key:"pruneNetworkMode" meta:"label=Prune Networks;type=select;keywords=prune,networks,cleanup,maintenance,mode,unused,older;category=internal;description=Select how networks should be pruned when the scheduled prune job runs"`
-	PruneNetworkUntil              SettingVariable `key:"pruneNetworkUntil" meta:"label=Network Age Filter;type=text;keywords=prune,networks,cleanup,maintenance,until,older,duration;category=internal;description=Duration threshold for scheduled network prune when mode is olderThan"`
-	PruneBuildCacheMode            SettingVariable `key:"pruneBuildCacheMode" meta:"label=Prune Build Cache;type=select;keywords=prune,build cache,cleanup,maintenance,mode,unused,all,older;category=internal;description=Select how build cache should be pruned when the scheduled prune job runs"`
-	PruneBuildCacheUntil           SettingVariable `key:"pruneBuildCacheUntil" meta:"label=Build Cache Age Filter;type=text;keywords=prune,build cache,cleanup,maintenance,until,older,duration;category=internal;description=Duration threshold for scheduled build cache prune when mode is olderThan"`
-	AutoHealEnabled                SettingVariable `key:"autoHealEnabled" meta:"label=Auto Heal;type=boolean;keywords=auto,heal,health,restart,unhealthy,recovery,container,healthcheck;category=internal;description=Automatically restart containers that become unhealthy"`
-	AutoHealInterval               SettingVariable `key:"autoHealInterval" meta:"label=Auto Heal Interval;type=cron;keywords=auto,heal,interval,frequency,schedule,health,jobs;description=How often to check container health (cron expression)" catmeta:"id=jobschedule"`
-	AutoHealExcludedContainers     SettingVariable `key:"autoHealExcludedContainers" meta:"label=Auto Heal Excluded Containers;type=text;keywords=auto,heal,exclude,containers,ignore,skip,health;category=internal;description=Comma-separated list of containers to exclude from auto-heal"`
-	AutoHealMaxRestarts            SettingVariable `key:"autoHealMaxRestarts" meta:"label=Auto Heal Max Restarts;type=number;keywords=auto,heal,max,restarts,limit,loop,protection;category=internal;description=Maximum auto-heal restarts per container within the restart window (default: 5)"`
-	AutoHealRestartWindow          SettingVariable `key:"autoHealRestartWindow" meta:"label=Auto Heal Restart Window;type=number;keywords=auto,heal,restart,window,minutes,cooldown,protection;category=internal;description=Time window in minutes for counting auto-heal restarts (default: 30)"`
-	VolumeHelperIdleTimeout        SettingVariable `key:"volumeHelperIdleTimeout" meta:"label=Volume Helper Idle Timeout;type=number;keywords=volume,workspace,helper,idle,timeout,cleanup,reaper,minutes;category=internal;description=Minutes a volume helper container may sit idle before automatic removal (default: 10; 0 disables)"`
-	MaxImageUploadSize             SettingVariable `key:"maxImageUploadSize" meta:"label=Max Image Upload Size;type=number;keywords=upload,size,limit,maximum,image,tar,file,megabytes,mb,storage;category=internal;description=Maximum size in MB for image archive uploads (default: 500)"`
-	GitSyncMaxFiles                SettingVariable `key:"gitSyncMaxFiles,envOverride" meta:"label=Git Sync Max Files;type=number;keywords=git,sync,files,limit,repository,compose,gitops;category=general;description=Maximum number of repository files copied during a Git sync. Set 0 to disable the environment cap (default: 500)"`
-	GitSyncMaxTotalSizeMb          SettingVariable `key:"gitSyncMaxTotalSizeMb,envOverride" meta:"label=Git Sync Max Total Size (MB);type=number;keywords=git,sync,size,limit,repository,compose,gitops,mb;category=general;description=Maximum combined size in MB for files copied during a Git sync. Set 0 to disable the environment cap (default: 50)"`
-	GitSyncMaxBinarySizeMb         SettingVariable `key:"gitSyncMaxBinarySizeMb,envOverride" meta:"label=Git Sync Max Binary Size (MB);type=number;keywords=git,sync,binary,size,limit,repository,compose,gitops,mb;category=general;description=Maximum size in MB for a single binary file copied during a Git sync. Set 0 to disable the environment cap (default: 10)"`
-	DockerHost                     SettingVariable `key:"dockerHost,authrequired,envOverride" meta:"label=Docker Host;type=text;keywords=docker,host,daemon,socket,unix,remote;category=internal;description=URI for Docker daemon"`
-	BuildProvider                  SettingVariable `key:"buildProvider,envOverride" meta:"label=Build Provider;type=select;keywords=build,buildkit,depot,provider,remote,local;category=build;description=Default build provider (local or depot)" catmeta:"id=build;title=Build;icon=code;url=/settings/builds;description=Configure BuildKit and Depot build settings"`
-	BuildHistoryRetentionDays      SettingVariable `key:"buildHistoryRetentionDays,envOverride" meta:"label=Build History Retention;type=number;keywords=build,history,retention,days,cleanup,image;category=build;description=Delete completed and failed image build records older than this many days. Set 0 to disable age-based cleanup."`
-	BuildsDirectory                SettingVariable `key:"buildsDirectory,envOverride" meta:"label=Builds Directory;type=text;keywords=builds,directory,path,workspace,context;category=build;description=Root directory for manual build workspaces"`
-	BuildTimeout                   SettingVariable `key:"buildTimeout,envOverride" meta:"label=Build Timeout;type=number;keywords=build,timeout,seconds,buildkit;category=build;description=Timeout for BuildKit builds in seconds (default: 1800 = 30 minutes)"`
-	DepotProjectId                 SettingVariable `key:"depotProjectId,envOverride" meta:"label=Depot Project ID;type=text;keywords=depot,project,id,build,provider;category=build;description=Depot project identifier"`
-	DepotToken                     SettingVariable `key:"depotToken,envOverride,sensitive" meta:"label=Depot Token;type=password;keywords=depot,token,api,secret,build,provider;category=build;description=Depot API token"`
+	AutoUpdate                     SettingVariable `key:"autoUpdate" default:"false" meta:"label=Auto Update;type=boolean;keywords=auto,update,automatic,upgrade,refresh,restart,deploy;category=internal;description=Automatically update containers when new images are available"`
+	AutoUpdateInterval             SettingVariable `key:"autoUpdateInterval" default:"0 0 0 * * *" meta:"label=Auto Update Interval;type=cron;keywords=auto,update,interval,frequency,schedule,automatic,timing;category=internal;description=How often to check for automatic updates (cron expression)"`
+	AutoUpdateDelay                SettingVariable `key:"autoUpdateDelay" default:"0" meta:"label=Auto Update Delay;type=integer;min=0;max=8760;keywords=auto,update,delay,hours,wait,age,supply,chain,security,quarantine;category=internal;description=Hours a new image must be available before auto-update applies it (0 = immediately)"`
+	AutoUpdateExcludedContainers   SettingVariable `key:"autoUpdateExcludedContainers" default:"" meta:"label=Excluded Containers;type=text;keywords=exclude,containers,ignore,skip;category=internal;description=Comma-separated list of containers to exclude from auto-update"`
+	PollingEnabled                 SettingVariable `key:"pollingEnabled" default:"true" meta:"label=Enable Polling;type=boolean;keywords=polling,check,monitor,watch,scan,detection,automatic;category=internal;description=Enable automatic checking for image updates"`
+	PollingInterval                SettingVariable `key:"pollingInterval" default:"0 0 * * * *" meta:"label=Polling Interval;type=cron;keywords=interval,frequency,schedule,time,minutes,period,delay;category=internal;description=How often to check for image updates (cron expression)"`
+	ImageEventWatcherEnabled       SettingVariable `key:"imageEventWatcherEnabled" default:"false" meta:"label=Enable Event-Driven Image Checks;type=boolean;keywords=image,updates,event,watcher,registry,rate,limit;category=internal;description=Check image registries immediately after Docker image events; registry rate limits may apply"`
+	DockerClientRefreshInterval    SettingVariable `key:"dockerClientRefreshInterval" default:"0 */5 * * * *" meta:"label=Docker Client Refresh Interval;type=cron;keywords=docker,client,refresh,daemon,api,version,reconnect,renegotiate,schedule;category=internal;description=How often to refresh the cached Docker client API version (cron expression)"`
+	EventCleanupInterval           SettingVariable `key:"eventCleanupInterval" default:"0 0 */6 * * *" meta:"label=Event Cleanup Interval;type=cron;keywords=events,cleanup,retention,interval,frequency,schedule,history,logs,jobs;description=How often to delete old events (cron expression)"`
+	ExpiredSessionsCleanupInterval SettingVariable `key:"expiredSessionsCleanupInterval" default:"0 0 0 * * *" meta:"label=Expired Sessions Cleanup Interval;type=cron;keywords=sessions,cleanup,retention,expired,revoked,interval,frequency,schedule,auth,jobs;description=How often to delete expired and old revoked sessions (cron expression)"`
+	ActivityHistoryRetentionDays   SettingVariable `key:"activityHistoryRetentionDays" default:"30" meta:"label=Activity History Retention;type=integer;min=0;keywords=activity,history,retention,days,cleanup,background,tasks;category=activity;description=Delete completed Activity Center entries older than this many days. Set 0 to disable age-based cleanup." catmeta:"id=activity;title=Activity;icon=activity;url=/settings/activity;description=Configure Activity Center history and cleanup"`
+	UpgradeLogRetentionDays        SettingVariable `key:"upgradeLogRetentionDays" default:"3" meta:"label=Upgrade Log Retention;type=integer;min=0;max=3650;keywords=upgrade,logs,retention,days,cleanup;category=activity;description=Delete upgrade log files older than this many days. Cleanup runs hourly. Set 0 to keep logs indefinitely."`
+	ActivityHistoryMaxEntries      SettingVariable `key:"activityHistoryMaxEntries" default:"1000" meta:"label=Activity History Limit;type=integer;min=0;keywords=activity,history,limit,entries,count,cleanup,background,tasks;category=activity;description=Maximum completed Activity Center entries to keep per environment. Set 0 to disable count-based cleanup."`
+	MaxConcurrentActivities        SettingVariable `key:"maxConcurrentActivities" default:"5" meta:"label=Concurrent Activity Limit;type=integer;min=0;keywords=activity,concurrency,limit,queue,parallel,bulk,background,tasks;category=activity;description=Maximum long-running activities per environment before new ones queue. Set 0 for unlimited."`
+	AutoInjectEnv                  SettingVariable `key:"autoInjectEnv" default:"false" meta:"label=Auto Inject Env Variables;type=boolean;keywords=auto,inject,env,environment,variables,interpolation;category=internal;description=Automatically inject project .env variables into all containers"`
+	DefaultDeployPullPolicy        SettingVariable `key:"defaultDeployPullPolicy" default:"missing" meta:"label=Default Deploy Pull Policy;type=select;values=missing|always|never;keywords=deploy,pull,policy,compose,up,missing,always;category=internal;description=Default image pull policy when deploying projects"`
+	ToolsImageRegistry             SettingVariable `key:"toolsImageRegistry" default:"ghcr.io" meta:"label=Tools Image Registry;type=select;values=ghcr.io|docker.io;keywords=tools,image,registry,ghcr,docker,hub,helper,volume;category=internal;description=Container registry used to pull the Arcane tools helper image"`
+	UpdateCheckRegistry            SettingVariable `key:"updateCheckRegistry" default:"auto" meta:"label=Update Check Registry;type=select;values=auto|ghcr.io|docker.io|public.ecr.aws;keywords=update,check,registry,ghcr,docker,hub,ecr,self,image,digest;category=internal;description=Registry queried when checking whether the Arcane image has a newer digest"`
+	ScheduledPruneEnabled          SettingVariable `key:"scheduledPruneEnabled" default:"false" meta:"label=Scheduled Prune Enabled;type=boolean;keywords=prune,cleanup,maintenance,schedule,automatic;category=internal;description=Enable scheduled pruning of unused Docker resources"`
+	ScheduledPruneInterval         SettingVariable `key:"scheduledPruneInterval" default:"0 0 0 * * *" meta:"label=Scheduled Prune Interval;type=cron;keywords=prune,cleanup,interval,minutes,schedule;category=internal;description=How often to run scheduled prunes (cron expression)"`
+	PruneContainerMode             SettingVariable `key:"pruneContainerMode" default:"stopped" meta:"label=Prune Containers;type=select;values=none|stopped|olderThan;keywords=prune,containers,cleanup,maintenance,mode,older,stopped;category=internal;description=Select how containers should be pruned when the scheduled prune job runs"`
+	PruneContainerUntil            SettingVariable `key:"pruneContainerUntil" default:"" meta:"label=Container Age Filter;type=text;keywords=prune,containers,cleanup,maintenance,until,older,duration;category=internal;description=Duration threshold for scheduled container prune when mode is olderThan"`
+	PruneImageMode                 SettingVariable `key:"pruneImageMode" default:"dangling" meta:"label=Prune Images;type=select;values=none|dangling|all|olderThan;keywords=prune,images,cleanup,maintenance,mode,dangling,all,older;category=internal;description=Select how images should be pruned when the scheduled prune job runs"`
+	PruneImageUntil                SettingVariable `key:"pruneImageUntil" default:"" meta:"label=Image Age Filter;type=text;keywords=prune,images,cleanup,maintenance,until,older,duration;category=internal;description=Duration threshold for scheduled image prune when mode is olderThan"`
+	PruneVolumeMode                SettingVariable `key:"pruneVolumeMode" default:"none" meta:"label=Prune Volumes;type=select;values=none|anonymous|all;keywords=prune,volumes,cleanup,maintenance,mode,anonymous,named;category=internal;description=Select how volumes should be pruned when the scheduled prune job runs"`
+	PruneNetworkMode               SettingVariable `key:"pruneNetworkMode" default:"unused" meta:"label=Prune Networks;type=select;values=none|unused|olderThan;keywords=prune,networks,cleanup,maintenance,mode,unused,older;category=internal;description=Select how networks should be pruned when the scheduled prune job runs"`
+	PruneNetworkUntil              SettingVariable `key:"pruneNetworkUntil" default:"" meta:"label=Network Age Filter;type=text;keywords=prune,networks,cleanup,maintenance,until,older,duration;category=internal;description=Duration threshold for scheduled network prune when mode is olderThan"`
+	PruneBuildCacheMode            SettingVariable `key:"pruneBuildCacheMode" default:"none" meta:"label=Prune Build Cache;type=select;values=none|unused|all|olderThan;keywords=prune,build cache,cleanup,maintenance,mode,unused,all,older;category=internal;description=Select how build cache should be pruned when the scheduled prune job runs"`
+	PruneBuildCacheUntil           SettingVariable `key:"pruneBuildCacheUntil" default:"" meta:"label=Build Cache Age Filter;type=text;keywords=prune,build cache,cleanup,maintenance,until,older,duration;category=internal;description=Duration threshold for scheduled build cache prune when mode is olderThan"`
+	AutoHealEnabled                SettingVariable `key:"autoHealEnabled" default:"false" meta:"label=Auto Heal;type=boolean;keywords=auto,heal,health,restart,unhealthy,recovery,container,healthcheck;category=internal;description=Automatically restart containers that become unhealthy"`
+	AutoHealInterval               SettingVariable `key:"autoHealInterval" default:"0 */5 * * * *" meta:"label=Auto Heal Interval;type=cron;keywords=auto,heal,interval,frequency,schedule,health,jobs;description=How often to check container health (cron expression)" catmeta:"id=jobschedule"`
+	AutoHealExcludedContainers     SettingVariable `key:"autoHealExcludedContainers" default:"" meta:"label=Auto Heal Excluded Containers;type=text;keywords=auto,heal,exclude,containers,ignore,skip,health;category=internal;description=Comma-separated list of containers to exclude from auto-heal"`
+	AutoHealMaxRestarts            SettingVariable `key:"autoHealMaxRestarts" default:"5" meta:"label=Auto Heal Max Restarts;type=integer;min=0;keywords=auto,heal,max,restarts,limit,loop,protection;category=internal;description=Maximum auto-heal restarts per container within the restart window"`
+	AutoHealRestartWindow          SettingVariable `key:"autoHealRestartWindow" default:"30" meta:"label=Auto Heal Restart Window;type=integer;min=0;keywords=auto,heal,restart,window,minutes,cooldown,protection;category=internal;description=Time window in minutes for counting auto-heal restarts"`
+	VolumeHelperIdleTimeout        SettingVariable `key:"volumeHelperIdleTimeout" default:"10" meta:"label=Volume Helper Idle Timeout;type=integer;min=0;keywords=volume,workspace,helper,idle,timeout,cleanup,reaper,minutes;category=internal;description=Minutes a volume helper container may sit idle before automatic removal (0 disables)"`
+	MaxImageUploadSize             SettingVariable `key:"maxImageUploadSize" default:"500" meta:"label=Max Image Upload Size;type=integer;min=0;keywords=upload,size,limit,maximum,image,tar,file,megabytes,mb,storage;category=internal;description=Maximum size in MB for image archive uploads"`
+	GitSyncMaxFiles                SettingVariable `key:"gitSyncMaxFiles" default:"500" meta:"label=Git Sync Max Files;type=integer;min=0;keywords=git,sync,files,limit,repository,compose,gitops;category=general;description=Maximum number of repository files copied during a Git sync. Set 0 to disable the environment cap"`
+	GitSyncMaxTotalSizeMb          SettingVariable `key:"gitSyncMaxTotalSizeMb" default:"50" meta:"label=Git Sync Max Total Size (MB);type=integer;min=0;keywords=git,sync,size,limit,repository,compose,gitops,mb;category=general;description=Maximum combined size in MB for files copied during a Git sync. Set 0 to disable the environment cap"`
+	GitSyncMaxBinarySizeMb         SettingVariable `key:"gitSyncMaxBinarySizeMb" default:"10" meta:"label=Git Sync Max Binary Size (MB);type=integer;min=0;keywords=git,sync,binary,size,limit,repository,compose,gitops,mb;category=general;description=Maximum size in MB for a single binary file copied during a Git sync. Set 0 to disable the environment cap"`
+	ProjectScanMaxDepth            SettingVariable `key:"projectScanMaxDepth" default:"3" meta:"label=Project Scan Max Depth;type=integer;min=1;keywords=projects,scan,depth,discovery,directory;category=internal;description=Maximum directory depth searched when discovering projects"`
+	ProjectScanSkipDirs            SettingVariable `key:"projectScanSkipDirs" default:".git,node_modules,vendor,.venv,venv,__pycache__,.cache,dist,build,target,.next,.nuxt,.svelte-kit" meta:"label=Project Scan Skipped Directories;type=text;keywords=projects,scan,skip,ignore,directories,discovery,workspace;category=internal;description=Comma-separated directory names skipped during project discovery and workspace listing"`
+	ProjectWorkspaceMaxDepth       SettingVariable `key:"projectWorkspaceMaxDepth" default:"20" meta:"label=Project Workspace Max Depth;type=integer;min=1;keywords=projects,workspace,depth,files,tree;category=internal;description=Maximum directory depth listed in the project workspace"`
+	ProjectWorkspaceMaxEntries     SettingVariable `key:"projectWorkspaceMaxEntries" default:"2000" meta:"label=Project Workspace Max Entries;type=integer;min=1;keywords=projects,workspace,entries,files,limit;category=internal;description=Maximum number of entries listed in the project workspace"`
+	ProjectWorkspaceMaxFileSizeMb  SettingVariable `key:"projectWorkspaceMaxFileSizeMb,authrequired" default:"10" meta:"label=Project Workspace Max File Size (MB);type=integer;min=1;keywords=projects,workspace,file,size,limit,upload,editor;category=internal;description=Largest project workspace file that can be viewed, edited, or uploaded"`
+	VolumeWorkspaceMaxDepth        SettingVariable `key:"volumeWorkspaceMaxDepth" default:"50" meta:"label=Volume Workspace Max Depth;type=integer;min=1;keywords=volumes,workspace,depth,files,tree;category=internal;description=Maximum directory depth listed in the volume workspace"`
+	VolumeWorkspaceMaxEntries      SettingVariable `key:"volumeWorkspaceMaxEntries" default:"10000" meta:"label=Volume Workspace Max Entries;type=integer;min=1;keywords=volumes,workspace,entries,files,limit;category=internal;description=Maximum number of entries listed in the volume workspace"`
+	VolumeWorkspaceMaxFileSizeMb   SettingVariable `key:"volumeWorkspaceMaxFileSizeMb,authrequired" default:"10" meta:"label=Volume Workspace Max File Size (MB);type=integer;min=1;keywords=volumes,workspace,file,size,limit,upload,editor;category=internal;description=Largest volume workspace file that can be viewed, edited, or uploaded"`
+	GpuMonitoringEnabled           SettingVariable `key:"gpuMonitoringEnabled" default:"false" meta:"label=GPU Monitoring;type=boolean;keywords=gpu,monitoring,vram,nvidia,amd,intel,stats;category=internal;description=Report GPU VRAM usage in system stats"`
+	GpuType                        SettingVariable `key:"gpuType" default:"auto" meta:"label=GPU Type;type=select;values=auto|nvidia|amd|intel;keywords=gpu,type,vendor,nvidia,amd,intel;category=internal;description=GPU vendor to monitor, or auto to detect it"`
+	AnalyticsEnabled               SettingVariable `key:"analyticsEnabled,manager" default:"true" meta:"label=Anonymous Analytics;type=boolean;keywords=analytics,telemetry,heartbeat,usage,anonymous;category=internal;description=Send an anonymous usage heartbeat"`
+	UpdateCheckEnabled             SettingVariable `key:"updateCheckEnabled,manager" default:"true" meta:"label=Update Check;type=boolean;keywords=update,check,version,release,upgrade;category=internal;description=Check for new Arcane releases"`
+	DockerHost                     SettingVariable `key:"dockerHost,authrequired" env:"DOCKER_HOST" default:"unix:///var/run/docker.sock" meta:"label=Docker Host;type=text;keywords=docker,host,daemon,socket,unix,remote;category=internal;description=URI for Docker daemon"`
+	BuildProvider                  SettingVariable `key:"buildProvider,propagate" default:"local" meta:"label=Build Provider;type=select;values=local|depot;keywords=build,buildkit,depot,provider,remote,local;category=build;description=Default build provider (local or depot)" catmeta:"id=build;title=Build;icon=code;url=/settings/builds;description=Configure BuildKit and Depot build settings"`
+	BuildHistoryRetentionDays      SettingVariable `key:"buildHistoryRetentionDays" default:"30" meta:"label=Build History Retention;type=integer;min=0;keywords=build,history,retention,days,cleanup,image;category=build;description=Delete completed and failed image build records older than this many days. Set 0 to disable age-based cleanup."`
+	BuildsDirectory                SettingVariable `key:"buildsDirectory,propagate" default:"/builds" meta:"label=Builds Directory;type=text;keywords=builds,directory,path,workspace,context;category=build;description=Root directory for manual build workspaces"`
+	BuildTimeout                   SettingVariable `key:"buildTimeout,propagate" default:"1800" meta:"label=Build Timeout;type=integer;min=0;keywords=build,timeout,seconds,buildkit;category=build;description=Timeout for BuildKit builds in seconds"`
+	DepotProjectId                 SettingVariable `key:"depotProjectId,propagate" default:"" meta:"label=Depot Project ID;type=text;keywords=depot,project,id,build,provider;category=build;description=Depot project identifier"`
+	DepotToken                     SettingVariable `key:"depotToken,sensitive" default:"" meta:"label=Depot Token;type=password;keywords=depot,token,api,secret,build,provider;category=build;description=Depot API token"`
 
 	// Authentication and security categories
-	AuthLocalEnabled                      SettingVariable `key:"authLocalEnabled,public" meta:"label=Local Authentication;type=boolean;keywords=local,auth,authentication,username,password,login,credentials;category=authentication;description=Enable local username/password authentication" catmeta:"id=authentication;title=Authentication;icon=lock;url=/settings/authentication;description=Manage authentication providers, password policy, and session behavior"`
-	AuthSessionTimeout                    SettingVariable `key:"authSessionTimeout" meta:"label=Session Timeout;type=number;keywords=session,timeout,expire,duration,lifetime,minutes,logout;category=authentication;description=How long user sessions remain active"`
-	AuthPasswordPolicy                    SettingVariable `key:"authPasswordPolicy" meta:"label=Password Policy;type=select;keywords=password,policy,strength,complexity,requirements,security,rules;category=authentication;description=Set password strength requirements"`
-	FeatureVulnerabilityManagementEnabled SettingVariable `key:"featureVulnerabilityManagementEnabled,public,envOverride" meta:"label=Vulnerability management;type=boolean;keywords=features,vulnerability,security,scan,enable,disable;category=general;description=Enable vulnerability management for this environment. Disabling retains reports and configuration and leaves standalone image patching available"`
-	FeatureSwarmEnabled                   SettingVariable `key:"featureSwarmEnabled,public,envOverride" meta:"label=Docker Swarm;type=boolean;keywords=features,swarm,cluster,stacks,services,nodes,enable,disable;category=general;description=Show Docker Swarm for this environment. An active swarm cluster keeps it enabled"`
-	VulnerabilityScanEnabled              SettingVariable `key:"vulnerabilityScanEnabled" meta:"label=Scheduled Vulnerability Scan;type=boolean;keywords=vulnerability,scan,security,trivy,schedule,automatic,cve;category=security;description=Enable scheduled vulnerability scanning of all Docker images" catmeta:"id=security;title=Security;icon=shield;url=/settings/security;description=Configure vulnerability scanning and runtime security settings"`
-	VulnerabilityScanInterval             SettingVariable `key:"vulnerabilityScanInterval" meta:"label=Vulnerability Scan Interval;type=cron;keywords=vulnerability,scan,interval,schedule,frequency,trivy,cve;category=security;description=How often to run scheduled vulnerability scans (cron expression)"`
-	VulnerabilityThreatIntelEnabled       SettingVariable `key:"vulnerabilityThreatIntelEnabled,envOverride" meta:"label=Threat Intelligence;type=boolean;keywords=kev,cisa,epss,first,exploit,threat,intel,risk,airgap,offline,security;category=security;description=Fetch the CISA KEV catalog and FIRST EPSS scores to prioritize exploited vulnerabilities. Disable for air-gapped installs."`
-	TrivyDbRegistry                       SettingVariable `key:"trivyDbRegistry,envOverride" meta:"label=Trivy DB Registry;type=select;keywords=trivy,db,java-db,checks,registry,ghcr,docker,hub,vulnerability,security,scanner;category=security;description=Container registry used to pull the Trivy vulnerability database artifacts"`
-	TrivyNetwork                          SettingVariable `key:"trivyNetwork,envOverride" meta:"label=Trivy Network;type=text;keywords=trivy,network,mode,bridge,host,none,scanner,vulnerability,security;category=security;description=Docker network mode/network name used for Trivy scan containers. Leave empty to inherit Arcane's network automatically."`
-	TrivySecurityOpts                     SettingVariable `key:"trivySecurityOpts,envOverride" meta:"label=Trivy Security Options;type=textarea;keywords=trivy,security,opt,security_opt,selinux,labels,apparmor,scanner;category=security;description=Docker security options applied to Trivy scan containers. Use commas or new lines to separate entries (for example: label=disable)"`
-	TrivyPrivileged                       SettingVariable `key:"trivyPrivileged,envOverride" meta:"label=Trivy Privileged;type=boolean;keywords=trivy,privileged,security,selinux,scanner;category=security;description=Run Trivy scan containers in privileged mode when required by the host security policy"`
-	TrivyResourceLimitsEnabled            SettingVariable `key:"trivyResourceLimitsEnabled,envOverride" meta:"label=Trivy Resource Limits;type=boolean;keywords=trivy,resources,limits,cpu,memory,ram,security,scan;category=security;description=Enable CPU and memory limits for Trivy scan containers"`
-	TrivyCpuLimit                         SettingVariable `key:"trivyCpuLimit,envOverride" meta:"label=Trivy CPU Limit (cores);type=number;keywords=trivy,cpu,cores,limit,scanner,resources;category=security;description=Maximum CPU cores for Trivy scan containers (supports decimals, e.g. 1.5). Set 0 to disable CPU limit"`
-	TrivyMemoryLimitMb                    SettingVariable `key:"trivyMemoryLimitMb,envOverride" meta:"label=Trivy Memory Limit (MB);type=number;keywords=trivy,memory,ram,mb,limit,scanner,resources;category=security;description=Maximum memory for Trivy scan containers in MB. Set 0 to disable memory limit"`
-	TrivyConcurrentScanContainers         SettingVariable `key:"trivyConcurrentScanContainers,envOverride" meta:"label=Trivy Concurrent Scan Containers;type=number;keywords=trivy,concurrent,scan,containers,parallel,workers,limit,security;category=security;description=Maximum number of concurrent Trivy scan containers for manual and scheduled scans. Minimum 1"`
-	TrivyConfig                           SettingVariable `key:"trivyConfig" meta:"label=Trivy Config (YAML);type=textarea;keywords=trivy,config,yaml,configuration,scanner,settings;category=security;description=Trivy configuration file content in YAML format"`
-	TrivyIgnore                           SettingVariable `key:"trivyIgnore" meta:"label=.trivyignore;type=textarea;keywords=trivy,ignore,ignorefile,vulnerabilities,exceptions,exclusions;category=security;description=Trivy ignore file content - one vulnerability ID per line"`
-	TrivyServerEnabled                    SettingVariable `key:"trivyServerEnabled,envOverride" meta:"label=Trivy Client/Server Mode;type=boolean;keywords=trivy,server,client,remote,scanner,vulnerability,security,armv7,32bit;category=security;description=Scan against a remote Trivy server instead of downloading the vulnerability database locally. Recommended for 32-bit hosts (arm/v7) where the local DB cannot be memory-mapped."`
-	TrivyServerUrl                        SettingVariable `key:"trivyServerUrl,envOverride" meta:"label=Trivy Server URL;type=text;keywords=trivy,server,url,remote,scanner,vulnerability,security;category=security;description=URL of the remote Trivy server (e.g. http://trivy.example.com:4954). Used when client/server mode is enabled."`
-	TrivyServerToken                      SettingVariable `key:"trivyServerToken,envOverride,sensitive" meta:"label=Trivy Server Token;type=password;keywords=trivy,server,token,auth,remote,scanner,security;category=security;description=Optional authentication token sent to the remote Trivy server. Leave empty if the server requires no token."`
-	TrivyIgnoreUnfixed                    SettingVariable `key:"trivyIgnoreUnfixed,envOverride" meta:"label=Only Report Fixable Vulnerabilities;type=boolean;keywords=trivy,fixable,unfixed,ignore,vulnerability,security,noise,fixes;category=security;description=Only report vulnerabilities that have a known fix available. Reduces noise from vulnerabilities you cannot act on."`
-	ImagePatchSuffix                      SettingVariable `key:"imagePatchSuffix" meta:"label=Patched Image Tag Suffix;type=text;keywords=patch,copa,copacetic,image,tag,suffix,vulnerability,security;category=security;description=Suffix appended to the source tag when patching an image (default: patched)"`
-	ImagePatchTimeoutSec                  SettingVariable `key:"imagePatchTimeoutSec,envOverride" meta:"label=Image Patch Timeout (seconds);type=number;keywords=patch,copa,copacetic,image,timeout,seconds,buildkit,security;category=security;description=Timeout for a single image patch operation in seconds (default: 600)"`
-	ImagePatchAllPlatforms                SettingVariable `key:"imagePatchAllPlatforms" meta:"label=Patch All Platforms;type=boolean;keywords=patch,copa,copacetic,image,platform,architecture,multi,arch,security;category=security;description=Patch every platform in a multi-platform image instead of only the platform this server runs on"`
-	ImageAutoPatchEnabled                 SettingVariable `key:"imageAutoPatchEnabled" meta:"label=Scheduled Image Patching;type=boolean;keywords=patch,copa,copacetic,image,automatic,schedule,vulnerability,security,cve;category=security;description=Automatically patch images whose latest vulnerability scan found fixable OS package vulnerabilities"`
-	ImageAutoPatchInterval                SettingVariable `key:"imageAutoPatchInterval" meta:"label=Image Patch Interval;type=cron;keywords=patch,copa,copacetic,image,interval,schedule,frequency,cron,security;category=security;description=How often to run scheduled image patching (cron expression)"`
-	LifecycleEnabled                      SettingVariable `key:"lifecycleEnabled,envOverride" meta:"label=Enable Lifecycle Hooks;type=boolean;keywords=lifecycle,hook,hooks,pre-deploy,script,gitops,sops,secrets;category=security;description=Allow GitOps syncs to configure pre-deploy lifecycle scripts. Disabled by default because scripts are repo-trusted code that runs on every deploy"`
-	LifecycleDefaultRunnerImage           SettingVariable `key:"lifecycleDefaultRunnerImage,envOverride" meta:"label=Lifecycle Hook Runner Image;type=text;keywords=lifecycle,hook,runner,image,container,pre-deploy,script,gitops;category=security;description=Default container image used to run GitOps pre-deploy lifecycle scripts when a sync does not override it"`
-	LifecycleMaxTimeoutSec                SettingVariable `key:"lifecycleMaxTimeoutSec,envOverride" meta:"label=Lifecycle Hook Max Timeout (seconds);type=number;keywords=lifecycle,hook,timeout,seconds,limit,maximum,script,pre-deploy;category=security;description=Maximum allowed timeout for lifecycle scripts in seconds (default: 300)"`
-	OidcEnabled                           SettingVariable `key:"oidcEnabled,public,envOverride" meta:"label=OIDC Authentication;type=boolean;keywords=oidc,openid,connect,sso,oauth,external,provider,federation;category=authentication;description=Enable OpenID Connect (OIDC) authentication"`
-	OidcClientId                          SettingVariable `key:"oidcClientId,authrequired,envOverride" meta:"label=OIDC Client ID;type=text;keywords=oidc,client,id,oauth,openid;category=authentication;description=OIDC provider client ID"`
-	OidcClientSecret                      SettingVariable `key:"oidcClientSecret,sensitive,envOverride" meta:"label=OIDC Client Secret;type=password;keywords=oidc,client,secret,oauth,openid;category=authentication;description=OIDC provider client secret"`
-	OidcIssuerUrl                         SettingVariable `key:"oidcIssuerUrl,authrequired,envOverride" meta:"label=OIDC Issuer URL;type=text;keywords=oidc,issuer,url,oauth,openid,provider;category=authentication;description=OIDC provider issuer URL"`
-	OidcAuthorizationEndpoint             SettingVariable `key:"oidcAuthorizationEndpoint,envOverride" meta:"label=OIDC Authorization Endpoint;type=text;keywords=oidc,authorization,endpoint,oauth,openid;category=authentication;description=Override OIDC authorization endpoint"`
-	OidcTokenEndpoint                     SettingVariable `key:"oidcTokenEndpoint,envOverride" meta:"label=OIDC Token Endpoint;type=text;keywords=oidc,token,endpoint,oauth,openid;category=authentication;description=Override OIDC token endpoint"`
-	OidcUserinfoEndpoint                  SettingVariable `key:"oidcUserinfoEndpoint,envOverride" meta:"label=OIDC Userinfo Endpoint;type=text;keywords=oidc,userinfo,endpoint,oauth,openid;category=authentication;description=Override OIDC userinfo endpoint"`
-	OidcJwksEndpoint                      SettingVariable `key:"oidcJwksEndpoint,envOverride" meta:"label=OIDC JWKS Endpoint;type=text;keywords=oidc,jwks,keys,endpoint,oauth,openid;category=authentication;description=Override OIDC JWKS endpoint"`
-	OidcDeviceAuthorizationEndpoint       SettingVariable `key:"oidcDeviceAuthorizationEndpoint,envOverride" meta:"label=OIDC Device Authorization Endpoint;type=text;keywords=oidc,device,authorization,endpoint,oauth,openid,cli;category=authentication;description=Override OIDC device authorization endpoint for CLI authentication"`
-	OidcScopes                            SettingVariable `key:"oidcScopes,authrequired,envOverride" meta:"label=OIDC Scopes;type=text;keywords=oidc,scopes,oauth,openid,permissions;category=authentication;description=OIDC scopes to request"`
-	OidcGroupsClaim                       SettingVariable `key:"oidcGroupsClaim,authrequired,envOverride" meta:"label=OIDC Groups Claim;type=text;keywords=oidc,groups,claim,role,mapping,rbac;category=authentication;description=Claim name to read group memberships from for role mapping (default: groups)"`
-	OidcSkipTlsVerify                     SettingVariable `key:"oidcSkipTlsVerify,authrequired,envOverride" meta:"label=OIDC Skip TLS Verify;type=boolean;keywords=oidc,tls,verify,skip,insecure;category=authentication;description=Skip TLS verification for OIDC provider"`
-	OidcAutoRedirectToProvider            SettingVariable `key:"oidcAutoRedirectToProvider,public,envOverride" meta:"label=OIDC Auto Redirect;type=boolean;keywords=oidc,auto,redirect,automatic,login,provider,sso;category=authentication;description=Automatically redirect to OIDC provider on login page"`
-	OidcMergeAccounts                     SettingVariable `key:"oidcMergeAccounts,authrequired,envOverride" meta:"label=OIDC Account Merging;type=boolean;keywords=oidc,merge,link,accounts,email,match,existing,users,combine;category=authentication;description=Allow OIDC logins to merge with existing accounts by email"`
-	OidcProviderName                      SettingVariable `key:"oidcProviderName,public,envOverride" meta:"label=OIDC Provider Name;type=text;keywords=oidc,provider,name,display,label,sso;category=authentication;description=Custom name for the OIDC provider (e.g., Authentik, Keycloak)"`
-	OidcProviderLogoUrl                   SettingVariable `key:"oidcProviderLogoUrl,public,envOverride" meta:"label=OIDC Provider Logo URL;type=text;keywords=oidc,provider,logo,url,image,icon,sso;category=authentication;description=Custom logo URL for the OIDC provider"`
-	OidcMobileRedirectUris                SettingVariable `key:"oidcMobileRedirectUris,envOverride" meta:"label=OIDC Mobile Redirect URIs;type=text;keywords=oidc,mobile,redirect,uri,callback,scheme,ios,android,native;category=authentication;description=Comma-separated allowlist of native app redirect URIs (e.g., arcane-mobile://oidc-callback)"`
+	AuthLocalEnabled                      SettingVariable `key:"authLocalEnabled,public,manager" default:"true" meta:"label=Local Authentication;type=boolean;keywords=local,auth,authentication,username,password,login,credentials;category=authentication;description=Enable local username/password authentication" catmeta:"id=authentication;title=Authentication;icon=lock;url=/settings/authentication;description=Manage authentication providers, password policy, and session behavior"`
+	AuthSessionTimeout                    SettingVariable `key:"authSessionTimeout,manager" default:"1440" meta:"label=Session Timeout;type=integer;min=0;keywords=session,timeout,expire,duration,lifetime,minutes,logout;category=authentication;description=How long user sessions remain active"`
+	AuthPasswordPolicy                    SettingVariable `key:"authPasswordPolicy,manager" default:"strong" meta:"label=Password Policy;type=select;values=basic|standard|strong;keywords=password,policy,strength,complexity,requirements,security,rules;category=authentication;description=Set password strength requirements"`
+	FeatureVulnerabilityManagementEnabled SettingVariable `key:"featureVulnerabilityManagementEnabled,public" default:"true" meta:"label=Vulnerability management;type=boolean;keywords=features,vulnerability,security,scan,enable,disable;category=general;description=Enable vulnerability management for this environment. Disabling retains reports and configuration and leaves standalone image patching available"`
+	FeatureSwarmEnabled                   SettingVariable `key:"featureSwarmEnabled,public" default:"false" meta:"label=Docker Swarm;type=boolean;keywords=features,swarm,cluster,stacks,services,nodes,enable,disable;category=general;description=Show Docker Swarm for this environment. An active swarm cluster keeps it enabled"`
+	VulnerabilityScanEnabled              SettingVariable `key:"vulnerabilityScanEnabled" default:"false" meta:"label=Scheduled Vulnerability Scan;type=boolean;keywords=vulnerability,scan,security,trivy,schedule,automatic,cve;category=security;description=Enable scheduled vulnerability scanning of all Docker images" catmeta:"id=security;title=Security;icon=shield;url=/settings/security;description=Configure vulnerability scanning and runtime security settings"`
+	VulnerabilityScanInterval             SettingVariable `key:"vulnerabilityScanInterval" default:"0 0 0 * * *" meta:"label=Vulnerability Scan Interval;type=cron;keywords=vulnerability,scan,interval,schedule,frequency,trivy,cve;category=security;description=How often to run scheduled vulnerability scans (cron expression)"`
+	VulnerabilityThreatIntelEnabled       SettingVariable `key:"vulnerabilityThreatIntelEnabled" default:"true" meta:"label=Threat Intelligence;type=boolean;keywords=kev,cisa,epss,first,exploit,threat,intel,risk,airgap,offline,security;category=security;description=Fetch the CISA KEV catalog and FIRST EPSS scores to prioritize exploited vulnerabilities. Disable for air-gapped installs."`
+	TrivyDbRegistry                       SettingVariable `key:"trivyDbRegistry" default:"ghcr.io" meta:"label=Trivy DB Registry;type=select;values=ghcr.io|docker.io;keywords=trivy,db,java-db,checks,registry,ghcr,docker,hub,vulnerability,security,scanner;category=security;description=Container registry used to pull the Trivy vulnerability database artifacts"`
+	TrivyNetwork                          SettingVariable `key:"trivyNetwork" default:"" meta:"label=Trivy Network;type=text;keywords=trivy,network,mode,bridge,host,none,scanner,vulnerability,security;category=security;description=Docker network mode/network name used for Trivy scan containers. Leave empty to inherit Arcane's network automatically."`
+	TrivySecurityOpts                     SettingVariable `key:"trivySecurityOpts" default:"" meta:"label=Trivy Security Options;type=textarea;keywords=trivy,security,opt,security_opt,selinux,labels,apparmor,scanner;category=security;description=Docker security options applied to Trivy scan containers. Use commas or new lines to separate entries (for example: label=disable)"`
+	TrivyPrivileged                       SettingVariable `key:"trivyPrivileged" default:"false" meta:"label=Trivy Privileged;type=boolean;keywords=trivy,privileged,security,selinux,scanner;category=security;description=Run Trivy scan containers in privileged mode when required by the host security policy"`
+	TrivyResourceLimitsEnabled            SettingVariable `key:"trivyResourceLimitsEnabled,propagate" default:"true" meta:"label=Trivy Resource Limits;type=boolean;keywords=trivy,resources,limits,cpu,memory,ram,security,scan;category=security;description=Enable CPU and memory limits for Trivy scan containers"`
+	TrivyCpuLimit                         SettingVariable `key:"trivyCpuLimit,propagate" default:"1" meta:"label=Trivy CPU Limit (cores);type=number;min=0;keywords=trivy,cpu,cores,limit,scanner,resources;category=security;description=Maximum CPU cores for Trivy scan containers (supports decimals, e.g. 1.5). Set 0 to disable CPU limit"`
+	TrivyMemoryLimitMb                    SettingVariable `key:"trivyMemoryLimitMb,propagate" default:"0" meta:"label=Trivy Memory Limit (MB);type=integer;min=0;keywords=trivy,memory,ram,mb,limit,scanner,resources;category=security;description=Maximum memory for Trivy scan containers in MB. Set 0 to disable memory limit"`
+	TrivyConcurrentScanContainers         SettingVariable `key:"trivyConcurrentScanContainers,propagate" default:"1" meta:"label=Trivy Concurrent Scan Containers;type=integer;min=1;keywords=trivy,concurrent,scan,containers,parallel,workers,limit,security;category=security;description=Maximum number of concurrent Trivy scan containers for manual and scheduled scans. Minimum 1"`
+	TrivyConfig                           SettingVariable `key:"trivyConfig" default:"" meta:"label=Trivy Config (YAML);type=textarea;keywords=trivy,config,yaml,configuration,scanner,settings;category=security;description=Trivy configuration file content in YAML format"`
+	TrivyIgnore                           SettingVariable `key:"trivyIgnore" default:"" meta:"label=.trivyignore;type=textarea;keywords=trivy,ignore,ignorefile,vulnerabilities,exceptions,exclusions;category=security;description=Trivy ignore file content - one vulnerability ID per line"`
+	TrivyServerEnabled                    SettingVariable `key:"trivyServerEnabled" default:"false" meta:"label=Trivy Client/Server Mode;type=boolean;keywords=trivy,server,client,remote,scanner,vulnerability,security,armv7,32bit;category=security;description=Scan against a remote Trivy server instead of downloading the vulnerability database locally. Recommended for 32-bit hosts (arm/v7) where the local DB cannot be memory-mapped."`
+	TrivyServerUrl                        SettingVariable `key:"trivyServerUrl" default:"" meta:"label=Trivy Server URL;type=text;keywords=trivy,server,url,remote,scanner,vulnerability,security;category=security;description=URL of the remote Trivy server (e.g. http://trivy.example.com:4954). Used when client/server mode is enabled."`
+	TrivyServerToken                      SettingVariable `key:"trivyServerToken,sensitive" default:"" meta:"label=Trivy Server Token;type=password;keywords=trivy,server,token,auth,remote,scanner,security;category=security;description=Optional authentication token sent to the remote Trivy server. Leave empty if the server requires no token."`
+	TrivyIgnoreUnfixed                    SettingVariable `key:"trivyIgnoreUnfixed" default:"true" meta:"label=Only Report Fixable Vulnerabilities;type=boolean;keywords=trivy,fixable,unfixed,ignore,vulnerability,security,noise,fixes;category=security;description=Only report vulnerabilities that have a known fix available. Reduces noise from vulnerabilities you cannot act on."`
+	ImagePatchSuffix                      SettingVariable `key:"imagePatchSuffix" default:"patched" meta:"label=Patched Image Tag Suffix;type=text;keywords=patch,copa,copacetic,image,tag,suffix,vulnerability,security;category=security;description=Suffix appended to the source tag when patching an image"`
+	ImagePatchTimeoutSec                  SettingVariable `key:"imagePatchTimeoutSec" default:"600" meta:"label=Image Patch Timeout (seconds);type=integer;min=0;keywords=patch,copa,copacetic,image,timeout,seconds,buildkit,security;category=security;description=Timeout for a single image patch operation in seconds"`
+	ImagePatchAllPlatforms                SettingVariable `key:"imagePatchAllPlatforms" default:"false" meta:"label=Patch All Platforms;type=boolean;keywords=patch,copa,copacetic,image,platform,architecture,multi,arch,security;category=security;description=Patch every platform in a multi-platform image instead of only the platform this server runs on"`
+	ImageAutoPatchEnabled                 SettingVariable `key:"imageAutoPatchEnabled" default:"false" meta:"label=Scheduled Image Patching;type=boolean;keywords=patch,copa,copacetic,image,automatic,schedule,vulnerability,security,cve;category=security;description=Automatically patch images whose latest vulnerability scan found fixable OS package vulnerabilities"`
+	ImageAutoPatchInterval                SettingVariable `key:"imageAutoPatchInterval" default:"0 0 3 * * *" meta:"label=Image Patch Interval;type=cron;keywords=patch,copa,copacetic,image,interval,schedule,frequency,cron,security;category=security;description=How often to run scheduled image patching (cron expression)"`
+	LifecycleEnabled                      SettingVariable `key:"lifecycleEnabled" default:"false" meta:"label=Enable Lifecycle Hooks;type=boolean;keywords=lifecycle,hook,hooks,pre-deploy,script,gitops,sops,secrets;category=security;description=Allow GitOps syncs to configure pre-deploy lifecycle scripts. Disabled by default because scripts are repo-trusted code that runs on every deploy"`
+	LifecycleDefaultRunnerImage           SettingVariable `key:"lifecycleDefaultRunnerImage" default:"alpine:latest" meta:"label=Lifecycle Hook Runner Image;type=text;keywords=lifecycle,hook,runner,image,container,pre-deploy,script,gitops;category=security;description=Default container image used to run GitOps pre-deploy lifecycle scripts when a sync does not override it"`
+	LifecycleMaxTimeoutSec                SettingVariable `key:"lifecycleMaxTimeoutSec" default:"300" meta:"label=Lifecycle Hook Max Timeout (seconds);type=integer;min=0;keywords=lifecycle,hook,timeout,seconds,limit,maximum,script,pre-deploy;category=security;description=Maximum allowed timeout for lifecycle scripts in seconds"`
+	OidcEnabled                           SettingVariable `key:"oidcEnabled,public,manager" default:"false" meta:"label=OIDC Authentication;type=boolean;keywords=oidc,openid,connect,sso,oauth,external,provider,federation;category=authentication;description=Enable OpenID Connect (OIDC) authentication"`
+	OidcClientId                          SettingVariable `key:"oidcClientId,authrequired,manager" default:"" meta:"label=OIDC Client ID;type=text;keywords=oidc,client,id,oauth,openid;category=authentication;description=OIDC provider client ID"`
+	OidcClientSecret                      SettingVariable `key:"oidcClientSecret,sensitive,manager" default:"" meta:"label=OIDC Client Secret;type=password;keywords=oidc,client,secret,oauth,openid;category=authentication;description=OIDC provider client secret"`
+	OidcIssuerUrl                         SettingVariable `key:"oidcIssuerUrl,authrequired,manager" default:"" meta:"label=OIDC Issuer URL;type=text;keywords=oidc,issuer,url,oauth,openid,provider;category=authentication;description=OIDC provider issuer URL"`
+	OidcAuthorizationEndpoint             SettingVariable `key:"oidcAuthorizationEndpoint,manager" default:"" meta:"label=OIDC Authorization Endpoint;type=text;keywords=oidc,authorization,endpoint,oauth,openid;category=authentication;description=Override OIDC authorization endpoint"`
+	OidcTokenEndpoint                     SettingVariable `key:"oidcTokenEndpoint,manager" default:"" meta:"label=OIDC Token Endpoint;type=text;keywords=oidc,token,endpoint,oauth,openid;category=authentication;description=Override OIDC token endpoint"`
+	OidcUserinfoEndpoint                  SettingVariable `key:"oidcUserinfoEndpoint,manager" default:"" meta:"label=OIDC Userinfo Endpoint;type=text;keywords=oidc,userinfo,endpoint,oauth,openid;category=authentication;description=Override OIDC userinfo endpoint"`
+	OidcJwksEndpoint                      SettingVariable `key:"oidcJwksEndpoint,manager" default:"" meta:"label=OIDC JWKS Endpoint;type=text;keywords=oidc,jwks,keys,endpoint,oauth,openid;category=authentication;description=Override OIDC JWKS endpoint"`
+	OidcDeviceAuthorizationEndpoint       SettingVariable `key:"oidcDeviceAuthorizationEndpoint,manager" default:"" meta:"label=OIDC Device Authorization Endpoint;type=text;keywords=oidc,device,authorization,endpoint,oauth,openid,cli;category=authentication;description=Override OIDC device authorization endpoint for CLI authentication"`
+	OidcScopes                            SettingVariable `key:"oidcScopes,authrequired,manager" default:"openid email profile" meta:"label=OIDC Scopes;type=text;keywords=oidc,scopes,oauth,openid,permissions;category=authentication;description=OIDC scopes to request"`
+	OidcGroupsClaim                       SettingVariable `key:"oidcGroupsClaim,authrequired,manager" default:"groups" meta:"label=OIDC Groups Claim;type=text;keywords=oidc,groups,claim,role,mapping,rbac;category=authentication;description=Claim name to read group memberships from for role mapping"`
+	OidcSkipTlsVerify                     SettingVariable `key:"oidcSkipTlsVerify,authrequired,manager" default:"false" meta:"label=OIDC Skip TLS Verify;type=boolean;keywords=oidc,tls,verify,skip,insecure;category=authentication;description=Skip TLS verification for OIDC provider"`
+	OidcAutoRedirectToProvider            SettingVariable `key:"oidcAutoRedirectToProvider,public,manager" default:"false" meta:"label=OIDC Auto Redirect;type=boolean;keywords=oidc,auto,redirect,automatic,login,provider,sso;category=authentication;description=Automatically redirect to OIDC provider on login page"`
+	OidcMergeAccounts                     SettingVariable `key:"oidcMergeAccounts,authrequired,manager" default:"false" meta:"label=OIDC Account Merging;type=boolean;keywords=oidc,merge,link,accounts,email,match,existing,users,combine;category=authentication;description=Allow OIDC logins to merge with existing accounts by email"`
+	OidcProviderName                      SettingVariable `key:"oidcProviderName,public,manager" default:"" meta:"label=OIDC Provider Name;type=text;keywords=oidc,provider,name,display,label,sso;category=authentication;description=Custom name for the OIDC provider (e.g., Authentik, Keycloak)"`
+	OidcProviderLogoUrl                   SettingVariable `key:"oidcProviderLogoUrl,public,manager" default:"" meta:"label=OIDC Provider Logo URL;type=text;keywords=oidc,provider,logo,url,image,icon,sso;category=authentication;description=Custom logo URL for the OIDC provider"`
+	OidcMobileRedirectUris                SettingVariable `key:"oidcMobileRedirectUris,manager" default:"arcane-mobile://oidc-callback" meta:"label=OIDC Mobile Redirect URIs;type=text;keywords=oidc,mobile,redirect,uri,callback,scheme,ios,android,native;category=authentication;description=Comma-separated allowlist of native app redirect URIs (e.g., arcane-mobile://oidc-callback)"`
 
 	// Notifications category (placeholder for category metadata only - actual settings managed via notification service)
-	NotificationsCategoryPlaceholder SettingVariable `key:"notificationsCategory,internal" meta:"label=Notifications;type=internal;keywords=notifications,alerts,email,discord,webhooks,events,messages;category=notifications;description=Configure notification providers and alerts" catmeta:"id=notifications;title=Notifications;icon=bell;url=/settings/notifications;description=Configure email and Discord notifications for container and image updates"`
+	NotificationsCategoryPlaceholder SettingVariable `key:"notificationsCategory,internal" default:"" meta:"label=Notifications;type=internal;keywords=notifications,alerts,email,discord,webhooks,events,messages;category=notifications;description=Configure notification providers and alerts" catmeta:"id=notifications;title=Notifications;icon=bell;url=/settings/notifications;description=Configure email and Discord notifications for container and image updates"`
 
-	ApnsEnabled    SettingVariable `key:"apnsEnabled,authrequired" meta:"label=Mobile Push Notifications;type=boolean;keywords=apns,push,mobile,ios,notifications,relay;category=notifications;description=Let users receive native push notifications in the Arcane mobile app"`
-	ApnsChannelID  SettingVariable `key:"apnsChannelId,internal"`
-	ApnsSigningKey SettingVariable `key:"apnsSigningKey,internal,sensitive"`
+	ApnsEnabled    SettingVariable `key:"apnsEnabled,authrequired,manager" default:"false" meta:"label=Mobile Push Notifications;type=boolean;keywords=apns,push,mobile,ios,notifications,relay;category=notifications;description=Let users receive native push notifications in the Arcane mobile app"`
+	ApnsChannelID  SettingVariable `key:"apnsChannelId,internal" default:""`
+	ApnsSigningKey SettingVariable `key:"apnsSigningKey,internal,sensitive" default:""`
 
-	AgentToken                 SettingVariable `key:"agentToken,internal,sensitive"`
-	BrowserSessionSigningKey   SettingVariable `key:"browserSessionSigningKey,internal,sensitive"`
-	JwtSigningKeySeed          SettingVariable `key:"jwtSigningKeySeed,internal,sensitive"`
-	InstanceID                 SettingVariable `key:"instanceId,internal"`
-	SensitiveSettingsEncrypted SettingVariable `key:"sensitiveSettingsEncrypted,internal"`
+	AgentToken                 SettingVariable `key:"agentToken,internal,sensitive" default:""`
+	BrowserSessionSigningKey   SettingVariable `key:"browserSessionSigningKey,internal,sensitive" default:""`
+	JwtSigningKeySeed          SettingVariable `key:"jwtSigningKeySeed,internal,sensitive" default:""`
+	InstanceID                 SettingVariable `key:"instanceId,internal" default:""`
+	SensitiveSettingsEncrypted SettingVariable `key:"sensitiveSettingsEncrypted,internal" default:""`
 
 	// Users category (admin management page - no actual settings)
-	UsersCategoryPlaceholder SettingVariable `key:"usersCategory,internal" meta:"label=Users;type=internal;keywords=users,accounts,management,admin,access,permissions,roles;category=users;description=Manage user accounts and permissions" catmeta:"id=users;title=Users;icon=user;url=/settings/users;description=Manage user accounts and access control"`
+	UsersCategoryPlaceholder SettingVariable `key:"usersCategory,internal" default:"" meta:"label=Users;type=internal;keywords=users,accounts,management,admin,access,permissions,roles;category=users;description=Manage user accounts and permissions" catmeta:"id=users;title=Users;icon=user;url=/settings/users;description=Manage user accounts and access control"`
 
 	// API Keys category (admin management page - no actual settings)
-	ApiKeysCategoryPlaceholder SettingVariable `key:"apiKeysCategory,internal" meta:"label=API Keys;type=internal;keywords=api,keys,tokens,authentication,access,programmatic,integration;category=apikeys;description=Manage API keys for programmatic access" catmeta:"id=apikeys;title=API Keys;icon=apikey;url=/settings/api-keys;description=Create and manage API keys for programmatic access to Arcane"`
+	ApiKeysCategoryPlaceholder SettingVariable `key:"apiKeysCategory,internal" default:"" meta:"label=API Keys;type=internal;keywords=api,keys,tokens,authentication,access,programmatic,integration;category=apikeys;description=Manage API keys for programmatic access" catmeta:"id=apikeys;title=API Keys;icon=apikey;url=/settings/api-keys;description=Create and manage API keys for programmatic access to Arcane"`
 
-	S3DestinationsCategoryPlaceholder SettingVariable `key:"s3DestinationsCategory,internal" meta:"label=S3 Destinations;type=internal;keywords=s3,storage,backup,aws,minio,backblaze,hetzner;category=s3destinations;description=Manage reusable S3-compatible storage destinations" catmeta:"id=s3destinations;title=S3 Destinations;icon=remoteenvironment;url=/settings/backups/s3;description=Create and manage reusable S3-compatible backup destinations"`
+	S3DestinationsCategoryPlaceholder SettingVariable `key:"s3DestinationsCategory,internal" default:"" meta:"label=S3 Destinations;type=internal;keywords=s3,storage,backup,aws,minio,backblaze,hetzner;category=s3destinations;description=Manage reusable S3-compatible storage destinations" catmeta:"id=s3destinations;title=S3 Destinations;icon=remoteenvironment;url=/settings/backups/s3;description=Create and manage reusable S3-compatible backup destinations"`
 
-	SystemBackupsCategoryPlaceholder SettingVariable `key:"systemBackupsCategory,internal" meta:"label=Backups;type=internal;keywords=backup,recovery,restore,configuration,secrets;category=systembackups;description=Back up and restore this Arcane instance" catmeta:"id=systembackups;title=Backups;icon=backup;url=/settings/backups;description=Create encrypted recovery backups of Arcane data and configuration"`
-	SystemVolumeBackupConfig         SettingVariable `key:"systemVolumeBackupConfig,internal"`
+	SystemBackupsCategoryPlaceholder SettingVariable `key:"systemBackupsCategory,internal" default:"" meta:"label=Backups;type=internal;keywords=backup,recovery,restore,configuration,secrets;category=systembackups;description=Back up and restore this Arcane instance" catmeta:"id=systembackups;title=Backups;icon=backup;url=/settings/backups;description=Create encrypted recovery backups of Arcane data and configuration"`
+	SystemVolumeBackupConfig         SettingVariable `key:"systemVolumeBackupConfig,internal" default:"{\"policies\":[]}"`
 
-	FederatedCredentialsCategoryPlaceholder SettingVariable `key:"federatedCredentialsCategory,internal" meta:"label=Federated Credentials;type=internal;keywords=federated,credentials,workload,identity,oidc,token exchange,ci,github,gitlab;category=authentication;description=Manage workload identity federation credentials"`
+	FederatedCredentialsCategoryPlaceholder SettingVariable `key:"federatedCredentialsCategory,internal" default:"" meta:"label=Federated Credentials;type=internal;keywords=federated,credentials,workload,identity,oidc,token exchange,ci,github,gitlab;category=authentication;description=Manage workload identity federation credentials"`
 
 	// Webhooks category (management page - no actual settings)
-	WebhooksCategoryPlaceholder SettingVariable `key:"webhooksCategory,internal" meta:"label=Webhooks;type=internal;keywords=webhooks,trigger,inbound,http,container,stack,gitops,updater,automation,ci,cd;category=webhooks;description=Manage inbound webhooks to trigger updates" catmeta:"id=webhooks;title=Webhooks;icon=globe;url=/settings/webhooks;description=Create and manage inbound webhooks to trigger container, stack, or GitOps updates"`
+	WebhooksCategoryPlaceholder SettingVariable `key:"webhooksCategory,internal" default:"" meta:"label=Webhooks;type=internal;keywords=webhooks,trigger,inbound,http,container,stack,gitops,updater,automation,ci,cd;category=webhooks;description=Manage inbound webhooks to trigger updates" catmeta:"id=webhooks;title=Webhooks;icon=globe;url=/settings/webhooks;description=Create and manage inbound webhooks to trigger container, stack, or GitOps updates"`
 
 	// Timeout category
-	DockerAPITimeout       SettingVariable `key:"dockerApiTimeout,envOverride" meta:"label=Docker API Timeout;type=number;keywords=docker,api,timeout,seconds,list,operations;category=timeouts;description=Timeout for Docker list operations in seconds (default: 30)" catmeta:"id=timeouts;title=Timeouts;icon=clock;url=/settings/timeouts;description=Configure operation timeouts for slow networks or hardware"`
-	DockerImagePullTimeout SettingVariable `key:"dockerImagePullTimeout,envOverride" meta:"label=Docker Image Pull Timeout;type=number;keywords=docker,image,pull,timeout,seconds,download;category=timeouts;description=Timeout for Docker image pulls in seconds (default: 600 = 10 minutes)"`
-	TrivyScanTimeout       SettingVariable `key:"trivyScanTimeout,envOverride" meta:"label=Trivy Scan Timeout;type=number;keywords=trivy,vulnerability,scan,timeout,seconds,cve;category=timeouts;description=Timeout for Trivy image scans in seconds (default: 900 = 15 minutes)"`
-	GitOperationTimeout    SettingVariable `key:"gitOperationTimeout,envOverride" meta:"label=Git Operation Timeout;type=number;keywords=git,clone,timeout,seconds,repository;category=timeouts;description=Timeout for Git clone/fetch operations in seconds (default: 300 = 5 minutes)"`
-	HTTPClientTimeout      SettingVariable `key:"httpClientTimeout,envOverride" meta:"label=HTTP Client Timeout;type=number;keywords=http,client,timeout,seconds,api,request;category=timeouts;description=Default timeout for HTTP requests in seconds (default: 30)"`
-	RegistryTimeout        SettingVariable `key:"registryTimeout,envOverride" meta:"label=Registry Timeout;type=number;keywords=registry,timeout,seconds,docker,auth;category=timeouts;description=Timeout for container registry operations in seconds (default: 30)"`
-	RegistryTagTimeout     SettingVariable `key:"registryTagTimeout,envOverride" meta:"label=Registry Tag Timeout;type=number;keywords=registry,tags,timeout,seconds,pagination,update,version;category=timeouts;description=Timeout for listing every tag in a repository during version update checks in seconds (default: 120)"`
-	ProxyRequestTimeout    SettingVariable `key:"proxyRequestTimeout,envOverride" meta:"label=Proxy Request Timeout;type=number;keywords=proxy,request,timeout,seconds,forward;category=timeouts;description=Timeout for proxied requests in seconds (default: 60)"`
-	DeployWaitTimeout      SettingVariable `key:"deployWaitTimeout,envOverride" meta:"label=Deploy Wait Timeout;type=number;keywords=deploy,compose,up,wait,healthy,depends_on,timeout,seconds;category=timeouts;description=Timeout waiting for services to become healthy or complete during a deploy in seconds (default: 600 = 10 minutes)"`
+	DockerAPITimeout       SettingVariable `key:"dockerApiTimeout,propagate" default:"30" meta:"label=Docker API Timeout;type=integer;min=0;keywords=docker,api,timeout,seconds,list,operations;category=timeouts;description=Timeout for Docker list operations in seconds" catmeta:"id=timeouts;title=Timeouts;icon=clock;url=/settings/timeouts;description=Configure operation timeouts for slow networks or hardware"`
+	DockerImagePullTimeout SettingVariable `key:"dockerImagePullTimeout,propagate" default:"600" meta:"label=Docker Image Pull Timeout;type=integer;min=0;keywords=docker,image,pull,timeout,seconds,download;category=timeouts;description=Timeout for Docker image pulls in seconds"`
+	TrivyScanTimeout       SettingVariable `key:"trivyScanTimeout,propagate" default:"900" meta:"label=Trivy Scan Timeout;type=integer;min=0;keywords=trivy,vulnerability,scan,timeout,seconds,cve;category=timeouts;description=Timeout for Trivy image scans in seconds"`
+	GitOperationTimeout    SettingVariable `key:"gitOperationTimeout,propagate" default:"300" meta:"label=Git Operation Timeout;type=integer;min=0;keywords=git,clone,timeout,seconds,repository;category=timeouts;description=Timeout for Git clone/fetch operations in seconds"`
+	HTTPClientTimeout      SettingVariable `key:"httpClientTimeout,propagate" default:"30" meta:"label=HTTP Client Timeout;type=integer;min=0;keywords=http,client,timeout,seconds,api,request;category=timeouts;description=Default timeout for HTTP requests in seconds"`
+	RegistryTimeout        SettingVariable `key:"registryTimeout,propagate" default:"30" meta:"label=Registry Timeout;type=integer;min=0;keywords=registry,timeout,seconds,docker,auth;category=timeouts;description=Timeout for container registry operations in seconds"`
+	RegistryTagTimeout     SettingVariable `key:"registryTagTimeout,propagate" default:"120" meta:"label=Registry Tag Timeout;type=integer;min=0;keywords=registry,tags,timeout,seconds,pagination,update,version;category=timeouts;description=Timeout for listing every tag in a repository during version update checks in seconds"`
+	ProxyRequestTimeout    SettingVariable `key:"proxyRequestTimeout,propagate" default:"60" meta:"label=Proxy Request Timeout;type=integer;min=0;keywords=proxy,request,timeout,seconds,forward;category=timeouts;description=Timeout for proxied requests in seconds"`
+	DeployWaitTimeout      SettingVariable `key:"deployWaitTimeout,propagate" default:"600" meta:"label=Deploy Wait Timeout;type=integer;min=0;keywords=deploy,compose,up,wait,healthy,depends_on,timeout,seconds;category=timeouts;description=Timeout waiting for services to become healthy or complete during a deploy in seconds"`
 }
 
 func (SettingVariable) TableName() string {
 	return "settings"
 }
 
-func buildSettingsFieldCacheInternal() {
+func buildSettingsFieldCache() {
 	rt := reflect.TypeFor[Settings]()
 	ordered := make([]settingFieldMeta, 0, rt.NumField())
 	byKey := make(map[string]settingFieldMeta, rt.NumField())
@@ -233,16 +262,28 @@ func buildSettingsFieldCacheInternal() {
 			continue
 		}
 
-		attrList := splitSettingAttrsInternal(attrs)
+		attrList := strings.Split(attrs, ",")
+		metaTag := utils.ParseMetaTag(field.Tag.Get("meta"))
+		minValue, minErr := strconv.ParseFloat(metaTag["min"], 64)
+		maxValue, maxErr := strconv.ParseFloat(metaTag["max"], 64)
 
 		meta := settingFieldMeta{
 			index:               i,
+			position:            len(ordered),
 			key:                 key,
-			attrs:               attrs,
+			envName:             EnvName(key, field.Tag.Get("env")),
+			defaultValue:        field.Tag.Get("default"),
+			valueType:           cmp.Or(metaTag["type"], "text"),
+			min:                 kit.Ternary(minErr == nil, mo.Some(minValue), mo.None[float64]()),
+			max:                 kit.Ternary(maxErr == nil, mo.Some(maxValue), mo.None[float64]()),
+			values:              kit.TrimNonEmpty(strings.Split(metaTag["values"], "|")),
 			isPublic:            slices.Contains(attrList, "public"),
 			isVisibleToNonAdmin: slices.Contains(attrList, "public") || slices.Contains(attrList, "authrequired"),
 			isSensitive:         slices.Contains(attrList, "sensitive"),
 			isEncrypted:         slices.Contains(attrList, "sensitive") && !slices.Contains(attrList, "internal"),
+			isInternal:          slices.Contains(attrList, "internal"),
+			isManagerOnly:       slices.Contains(attrList, "manager"),
+			isPropagated:        slices.Contains(attrList, "propagate"),
 		}
 		ordered = append(ordered, meta)
 		byKey[key] = meta
@@ -252,17 +293,50 @@ func buildSettingsFieldCacheInternal() {
 	settingsFieldCache.byKey = byKey
 }
 
-func getSettingsFieldCacheInternal() ([]settingFieldMeta, map[string]settingFieldMeta) {
-	settingsFieldCache.once.Do(buildSettingsFieldCacheInternal)
+func settingsFields() ([]settingFieldMeta, map[string]settingFieldMeta) {
+	settingsFieldCache.once.Do(buildSettingsFieldCache)
 	return settingsFieldCache.ordered, settingsFieldCache.byKey
 }
 
-func splitSettingAttrsInternal(attrs string) []string {
-	if attrs == "" {
+func PropagatedKeys() []string {
+	fields, _ := settingsFields()
+	keys := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if field.isPropagated {
+			keys = append(keys, field.key)
+		}
+	}
+	return keys
+}
+
+func validateValue(meta settingFieldMeta, value string) error {
+	invalid := func(format string, args ...any) error {
+		return common.Classify(common.ErrValidation, &types.FieldError{Field: meta.key, Err: fmt.Errorf(format, args...)})
+	}
+	number, numberErr := strconv.ParseFloat(value, 64)
+	_, integerErr := strconv.Atoi(value)
+	_, cronErr := schedule.Parser().Parse(value)
+
+	switch {
+	case meta.valueType == "boolean" && value != "true" && value != "false":
+		return invalid("%s must be true or false", meta.key)
+	case meta.valueType == "cron" && value != "" && cronErr != nil:
+		return invalid("%s must be a valid cron expression: %w", meta.key, cronErr)
+	case len(meta.values) > 0 && !slices.Contains(meta.values, value):
+		return invalid("%s must be one of %s", meta.key, strings.Join(meta.values, ", "))
+	case meta.valueType != "integer" && meta.valueType != "number":
+		return nil
+	case meta.valueType == "integer" && integerErr != nil:
+		return invalid("%s must be a whole number", meta.key)
+	case numberErr != nil || math.IsNaN(number) || math.IsInf(number, 0):
+		return invalid("%s must be a number", meta.key)
+	case number < meta.min.OrElse(math.Inf(-1)):
+		return invalid("%s must be at least %g", meta.key, meta.min.MustGet())
+	case number > meta.max.OrElse(math.Inf(1)):
+		return invalid("%s must be at most %g", meta.key, meta.max.MustGet())
+	default:
 		return nil
 	}
-
-	return strings.Split(attrs, ",")
 }
 
 func (s *Settings) Clone() *Settings {
@@ -273,30 +347,7 @@ func (s *Settings) Clone() *Settings {
 	return new(*s)
 }
 
-func (s *Settings) ToSettingVariableSlice(visibility SettingVisibility, redactSensitiveValues bool) []SettingVariable {
-	cfgValue := reflect.ValueOf(s).Elem()
-	fields, _ := getSettingsFieldCacheInternal()
-
-	res := make([]SettingVariable, 0, len(fields))
-	for _, field := range fields {
-		if !fieldVisibleForSettingVisibilityInternal(field, visibility) {
-			continue
-		}
-
-		value := cfgValue.Field(field.index).FieldByName("Value").String()
-		value = kit.Ternary(value == "" || !redactSensitiveValues || !strings.Contains(field.attrs, "sensitive"), value, redactionMask)
-
-		settingVariable := SettingVariable{
-			Key:   field.key,
-			Value: value,
-		}
-		res = append(res, settingVariable)
-	}
-
-	return res
-}
-
-func fieldVisibleForSettingVisibilityInternal(field settingFieldMeta, visibility SettingVisibility) bool {
+func fieldVisibleForSettingVisibility(field settingFieldMeta, visibility SettingVisibility) bool {
 	switch visibility {
 	case SettingVisibilityPublic:
 		return field.isPublic
@@ -311,7 +362,7 @@ func fieldVisibleForSettingVisibilityInternal(field settingFieldMeta, visibility
 
 func (s *Settings) FieldByKey(key string) (defaultValue string, isPublic, isSensitive bool, err error) {
 	rv := reflect.ValueOf(s).Elem()
-	_, byKey := getSettingsFieldCacheInternal()
+	_, byKey := settingsFields()
 
 	field, ok := byKey[key]
 	if !ok {
@@ -324,7 +375,7 @@ func (s *Settings) FieldByKey(key string) (defaultValue string, isPublic, isSens
 
 func (s *Settings) UpdateField(key, value string, noSensitive bool) error {
 	rv := reflect.ValueOf(s).Elem()
-	_, byKey := getSettingsFieldCacheInternal()
+	_, byKey := settingsFields()
 
 	field, ok := byKey[key]
 	if !ok {

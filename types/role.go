@@ -48,7 +48,7 @@ type OidcRoleMapping struct {
 	ClaimValue    string     `json:"claimValue" required:"false" doc:"OIDC claim value that triggers this mapping" example:"docker-admins"`
 	RoleID        string     `json:"roleId" required:"false" doc:"Role to assign when the claim matches"`
 	EnvironmentID *string    `json:"environmentId,omitempty" doc:"Environment ID to scope the assignment to; omit for a global assignment"`
-	Source        string     `json:"source" readOnly:"true" enum:"manual,env" doc:"Origin: manual rows are editable via UI/API; env rows come from OIDC_ROLE_MAPPINGS and are read-only"`
+	Source        string     `json:"source" readOnly:"true" enum:"manual,env" doc:"Origin: manual rows are editable via UI/API; env rows come from ARCANE_OIDC_ROLE_MAPPINGS and are read-only"`
 	CreatedAt     time.Time  `json:"createdAt" readOnly:"true"`
 	UpdatedAt     *time.Time `json:"updatedAt,omitempty" readOnly:"true"`
 }

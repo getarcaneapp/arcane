@@ -16,15 +16,15 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project/children/tags"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project/children/tags"
+	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/workspace"
 )
 
 // ProjectHandler provides Huma-based project management endpoints.
@@ -453,7 +453,7 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 	if err != nil {
 		return nil, err
 	}
-	uploads, err := handlerutil.ReadWorkspaceUploads(input.RawBody, workspace.MaxFileSizeBytes(h.projectService.config.ProjectWorkspaceMaxFileSizeMB))
+	uploads, err := handlerutil.ReadWorkspaceUploads(input.RawBody, workspace.MaxFileSizeBytes(h.projectService.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")))
 	if err != nil {
 		return nil, err
 	}
@@ -882,7 +882,7 @@ func (h *ProjectHandler) UpdateProjectWorkspace(ctx context.Context, input *Upda
 	if err != nil {
 		return nil, err
 	}
-	uploads, err := handlerutil.ReadWorkspaceUploads(input.RawBody, workspace.MaxFileSizeBytes(h.projectService.config.ProjectWorkspaceMaxFileSizeMB))
+	uploads, err := handlerutil.ReadWorkspaceUploads(input.RawBody, workspace.MaxFileSizeBytes(h.projectService.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")))
 	if err != nil {
 		return nil, err
 	}

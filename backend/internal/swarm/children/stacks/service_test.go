@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
 func setupSwarmServiceTestDB(t *testing.T) *database.DB {
@@ -27,7 +27,9 @@ func setupSwarmServiceTestDB(t *testing.T) *database.DB {
 
 func newSettingsServiceForSwarmTest(t testing.TB, ctx context.Context, db *database.DB) (*settings.SettingsService, error) {
 	t.Helper()
-	svc, err := settings.NewSettingsService(ctx, db, &config.Config{})
+	settingsEnv, err := settings.LoadEnv()
+	require.NoError(t, err)
+	svc, err := settings.NewSettingsService(ctx, db, &config.Config{}, settingsEnv)
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, svc.Stop(context.WithoutCancel(t.Context()))) })
 	}
@@ -63,7 +65,7 @@ func TestService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager(t *t
 	ctx := t.Context()
 	db := setupSwarmServiceTestDB(t)
 	rootDir := t.TempDir()
-	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
+	t.Setenv("ARCANE_SWARM_STACK_SOURCES_DIRECTORY", rootDir)
 
 	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
 	require.NoError(t, err)
@@ -127,7 +129,7 @@ func TestService_UpdateAndGetStackSource_RoundTripsOverride(t *testing.T) {
 	ctx := t.Context()
 	db := setupSwarmServiceTestDB(t)
 	rootDir := t.TempDir()
-	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
+	t.Setenv("ARCANE_SWARM_STACK_SOURCES_DIRECTORY", rootDir)
 
 	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
 	require.NoError(t, err)
@@ -167,7 +169,7 @@ func TestService_UpdateStackSource_PrunesAndRestoresOnDeployFailure(t *testing.T
 	ctx := t.Context()
 	db := setupSwarmServiceTestDB(t)
 	rootDir := t.TempDir()
-	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
+	t.Setenv("ARCANE_SWARM_STACK_SOURCES_DIRECTORY", rootDir)
 
 	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
 	require.NoError(t, err)

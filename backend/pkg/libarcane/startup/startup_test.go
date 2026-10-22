@@ -6,32 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	kit "go.getarcane.app/kit/pkg"
 )
-
-type mockSettingsManager struct {
-	persistCalled        bool
-	setBoolCalled        bool
-	ensureDefaultsCalled bool
-	persistErr           error
-	setBoolErr           error
-	ensureDefaultsErr    error
-}
-
-func (m *mockSettingsManager) PersistEnvSettingsIfMissing(ctx context.Context) error {
-	m.persistCalled = true
-	return m.persistErr
-}
-
-func (m *mockSettingsManager) SetBoolSetting(ctx context.Context, key string, value bool) error {
-	m.setBoolCalled = true
-	return m.setBoolErr
-}
-
-func (m *mockSettingsManager) EnsureDefaultSettings(ctx context.Context) error {
-	m.ensureDefaultsCalled = true
-	return m.ensureDefaultsErr
-}
 
 type mockSettingsPruner struct {
 	pruneCalled bool
@@ -41,158 +16,6 @@ type mockSettingsPruner struct {
 func (m *mockSettingsPruner) PruneUnknownSettings(ctx context.Context) error {
 	m.pruneCalled = true
 	return m.pruneErr
-}
-
-func TestLoadAgentToken(t *testing.T) {
-	ctx := t.Context()
-
-	t.Run("loads token when agent mode and token empty", func(t *testing.T) {
-		cfg := &RuntimeConfig{
-			AgentMode:  true,
-			AgentToken: "",
-		}
-		getSettingFunc := func(ctx context.Context, key, def string) string {
-			return kit.Ternary(key == "agentToken", "loaded-token", def)
-		}
-
-		LoadAgentToken(ctx, cfg, getSettingFunc)
-
-		assert.Equal(t, "loaded-token", cfg.AgentToken)
-	})
-
-	t.Run("does not load when not in agent mode", func(t *testing.T) {
-		cfg := &RuntimeConfig{
-			AgentMode:  false,
-			AgentToken: "",
-		}
-		called := false
-		getSettingFunc := func(ctx context.Context, key, def string) string {
-			called = true
-			return ""
-		}
-
-		LoadAgentToken(ctx, cfg, getSettingFunc)
-
-		assert.False(t, called)
-		assert.Empty(t, cfg.AgentToken)
-	})
-
-	t.Run("does not load when token already set", func(t *testing.T) {
-		cfg := &RuntimeConfig{
-			AgentMode:  true,
-			AgentToken: "existing-token",
-		}
-		called := false
-		getSettingFunc := func(ctx context.Context, key, def string) string {
-			called = true
-			return ""
-		}
-
-		LoadAgentToken(ctx, cfg, getSettingFunc)
-
-		assert.False(t, called)
-		assert.Equal(t, "existing-token", cfg.AgentToken)
-	})
-}
-
-func TestEnsureEncryptionKey(t *testing.T) {
-	ctx := t.Context()
-
-	t.Run("sets key when in agent mode", func(t *testing.T) {
-		cfg := &RuntimeConfig{
-			AgentMode:   true,
-			Environment: "production",
-		}
-		ensureKeyFunc := func(ctx context.Context) (string, error) {
-			return "secret-key", nil
-		}
-
-		EnsureEncryptionKey(ctx, cfg, ensureKeyFunc)
-
-		assert.Equal(t, "secret-key", cfg.EncryptionKey)
-	})
-
-	t.Run("sets key when not in production", func(t *testing.T) {
-		cfg := &RuntimeConfig{
-			AgentMode:   false,
-			Environment: "development",
-		}
-		ensureKeyFunc := func(ctx context.Context) (string, error) {
-			return "dev-key", nil
-		}
-
-		EnsureEncryptionKey(ctx, cfg, ensureKeyFunc)
-
-		assert.Equal(t, "dev-key", cfg.EncryptionKey)
-	})
-
-	t.Run("does not set key in production non-agent mode", func(t *testing.T) {
-		cfg := &RuntimeConfig{
-			AgentMode:     false,
-			Environment:   "production",
-			EncryptionKey: "existing",
-		}
-		called := false
-		ensureKeyFunc := func(ctx context.Context) (string, error) {
-			called = true
-			return "new-key", nil
-		}
-
-		EnsureEncryptionKey(ctx, cfg, ensureKeyFunc)
-
-		assert.False(t, called)
-		assert.Equal(t, "existing", cfg.EncryptionKey)
-	})
-
-	t.Run("handles error gracefully", func(t *testing.T) {
-		cfg := &RuntimeConfig{
-			AgentMode:     true,
-			EncryptionKey: "fallback",
-		}
-		ensureKeyFunc := func(ctx context.Context) (string, error) {
-			return "", errors.New("key generation failed")
-		}
-
-		EnsureEncryptionKey(ctx, cfg, ensureKeyFunc)
-
-		assert.Equal(t, "fallback", cfg.EncryptionKey)
-	})
-}
-
-func TestInitializeDefaultSettings(t *testing.T) {
-	ctx := t.Context()
-	cfg := &RuntimeConfig{}
-
-	t.Run("calls all initialization methods", func(t *testing.T) {
-		mgr := &mockSettingsManager{}
-
-		InitializeDefaultSettings(ctx, cfg, mgr)
-
-		assert.True(t, mgr.ensureDefaultsCalled)
-		assert.True(t, mgr.persistCalled)
-	})
-
-	t.Run("handles ensure defaults error", func(t *testing.T) {
-		mgr := &mockSettingsManager{
-			ensureDefaultsErr: errors.New("defaults failed"),
-		}
-
-		InitializeDefaultSettings(ctx, cfg, mgr)
-
-		assert.True(t, mgr.ensureDefaultsCalled)
-		assert.True(t, mgr.persistCalled)
-	})
-
-	t.Run("handles persist error", func(t *testing.T) {
-		mgr := &mockSettingsManager{
-			persistErr: errors.New("persist failed"),
-		}
-
-		InitializeDefaultSettings(ctx, cfg, mgr)
-
-		assert.True(t, mgr.ensureDefaultsCalled)
-		assert.True(t, mgr.persistCalled)
-	})
 }
 
 func TestCleanupUnknownSettings(t *testing.T) {
@@ -245,7 +68,6 @@ func TestInitializeNonAgentFeatures(t *testing.T) {
 	ctx := t.Context()
 
 	t.Run("skips in agent mode", func(t *testing.T) {
-		cfg := &RuntimeConfig{AgentMode: true}
 		createAdminCalled := false
 		reconcileDefaultAdminAPIKeyCalled := false
 		createAdminFunc := func(ctx context.Context) error {
@@ -257,14 +79,13 @@ func TestInitializeNonAgentFeatures(t *testing.T) {
 			return nil
 		}
 
-		InitializeNonAgentFeatures(ctx, cfg, nil, createAdminFunc, reconcileDefaultAdminAPIKeyFunc, nil)
+		InitializeNonAgentFeatures(ctx, true, nil, createAdminFunc, reconcileDefaultAdminAPIKeyFunc, nil)
 
 		assert.False(t, createAdminCalled)
 		assert.False(t, reconcileDefaultAdminAPIKeyCalled)
 	})
 
 	t.Run("calls all functions in non-agent mode", func(t *testing.T) {
-		cfg := &RuntimeConfig{AgentMode: false}
 		createAdminCalled := false
 		reconcileDefaultAdminAPIKeyCalled := false
 		autoLoginInitCalled := false
@@ -282,7 +103,7 @@ func TestInitializeNonAgentFeatures(t *testing.T) {
 			return nil
 		}
 
-		InitializeNonAgentFeatures(ctx, cfg, nil, createAdminFunc, reconcileDefaultAdminAPIKeyFunc, autoLoginInitFunc)
+		InitializeNonAgentFeatures(ctx, false, nil, createAdminFunc, reconcileDefaultAdminAPIKeyFunc, autoLoginInitFunc)
 
 		assert.True(t, createAdminCalled)
 		assert.True(t, reconcileDefaultAdminAPIKeyCalled)
@@ -290,7 +111,6 @@ func TestInitializeNonAgentFeatures(t *testing.T) {
 	})
 
 	t.Run("handles errors gracefully", func(t *testing.T) {
-		cfg := &RuntimeConfig{AgentMode: false}
 		reconcileDefaultAdminAPIKeyFunc := func(ctx context.Context) error {
 			return errors.New("api key reconcile failed")
 		}
@@ -301,6 +121,6 @@ func TestInitializeNonAgentFeatures(t *testing.T) {
 			return errors.New("admin creation failed")
 		}
 
-		InitializeNonAgentFeatures(ctx, cfg, nil, createAdminFunc, reconcileDefaultAdminAPIKeyFunc, autoLoginInitFunc)
+		InitializeNonAgentFeatures(ctx, false, nil, createAdminFunc, reconcileDefaultAdminAPIKeyFunc, autoLoginInitFunc)
 	})
 }

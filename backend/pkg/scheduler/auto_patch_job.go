@@ -5,10 +5,10 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	scheduleutil "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/schedule"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
+	scheduleutil "github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/schedule"
 )
 
 const (
@@ -24,10 +24,10 @@ func NewAutoPatchJob(engine *flow.Engine, imageService *image.ImageService, sett
 		Workflow: imageService.PatchWorkflow(),
 		JobName:  AutoPatchJobName,
 		ScheduleFn: func(ctx context.Context) string {
-			return scheduleutil.Or(ctx, settingsService.GetStringSetting(ctx, "imageAutoPatchInterval", autoPatchDefaultCron), autoPatchDefaultCron, AutoPatchJobName)
+			return scheduleutil.Or(ctx, settingsService.GetStringSetting(ctx, "imageAutoPatchInterval"), autoPatchDefaultCron, AutoPatchJobName)
 		},
 		ShouldRunFn: func(ctx context.Context) bool {
-			return settingsService.IsFeatureEnabled(ctx, types.FeatureVulnerabilityManagement) && settingsService.GetBoolSetting(ctx, "imageAutoPatchEnabled", false)
+			return settingsService.IsFeatureEnabled(ctx, types.FeatureVulnerabilityManagement) && settingsService.GetBoolSetting(ctx, "imageAutoPatchEnabled")
 		},
 	}
 }

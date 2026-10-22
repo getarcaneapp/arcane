@@ -15,11 +15,11 @@ import (
 	"github.com/labstack/echo/v5"
 	"go.getarcane.app/streams/logs"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/diagnostics"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
 )
 
 const (
