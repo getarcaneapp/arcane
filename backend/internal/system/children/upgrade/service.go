@@ -200,7 +200,7 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine, environments *environme
 	s.upgradeJobWorkflow, err = engine.Define(flow.Definition{
 		Name:        upgradeJobWorkflowName,
 		Version:     2,
-		Fingerprint: "65b33dbbe55a5018517b2e8506d9b487f322803ed5a9dfec0edbf5103c96e586",
+		Fingerprint: "2e931d8b90fa1ef53d566ac5616cb3ab1da3ea8da166ad728ca6d92cfc9a05bc",
 		Concurrency: 1,
 		Timeout:     24 * time.Hour,
 		Steps: []workflow.StepSpec{
