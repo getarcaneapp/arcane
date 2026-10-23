@@ -485,6 +485,7 @@
 
 		// The root load's refresh re-reads the environment list into the store.
 		await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
+		await queryClient.invalidateQueries({ queryKey: queryKeys.jobs.list(environmentId) });
 		await refreshEnvironment();
 	}
 
