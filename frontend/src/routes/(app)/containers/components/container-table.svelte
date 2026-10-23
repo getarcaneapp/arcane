@@ -296,6 +296,19 @@
 
 	const resourcesCurrent = $derived(scope === environmentStore.shownKey);
 
+	const activeUpdateKeys = $derived(
+		new Set(
+			activityStore.activities
+				.filter(
+					(activity) =>
+						activity.type === 'auto_update' &&
+						activity.resourceType === 'container' &&
+						(activity.status === 'queued' || activity.status === 'running')
+				)
+				.map((activity) => `${activity.sourceEnvironmentId || activity.environmentId}:${activity.resourceId}`)
+		)
+	);
+
 	// Only the on/off state is tracked here. The callback reads requestOptions when
 	// it runs, so pagination or filter changes do not restart the poll cycle.
 	$effect(() => {
@@ -708,7 +721,7 @@
 {/snippet}
 
 {#snippet StateCell({ item }: { item: ContainerRow })}
-	{@const status = actionStatus[rowKey(item)]}
+	{@const status = actionStatus[rowKey(item)] || (activeUpdateKeys.has(`${item.environmentId}:${item.id}`) ? 'updating' : '')}
 	<div class="flex items-center gap-2">
 		{#if status === 'updating'}
 			<Badge variant="primary" minWidth="20" beam>{getActionStatusMessage(status)}</Badge>
