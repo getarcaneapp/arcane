@@ -364,20 +364,32 @@ test.describe('Container updates', () => {
 test.describe('Arcane upgrades', () => {
 	const TOKEN_EXPIRY_KEY = 'arcane_token_expiry';
 	const REFRESH_COOKIE = 'arcane_refresh_test=complete';
+	const UPGRADE_CHANNEL = 'arcane-upgrade';
+	const START_ROUTE = /\/api\/environments\/0\/system\/upgrade\/jobs$/;
+	const CURRENT_ROUTE = /\/api\/environments\/0\/system\/upgrade\/jobs\/current$/;
+	const STREAM_ROUTE = /\/api\/stream(?:\?.*)?$/;
 	const reloadCounts = new WeakMap<Page, number>();
 
 	type ManagerStatus = 'updated' | 'failed' | 'updating';
 	type JobStatus = 'running' | 'completed' | 'failed';
+	type UpgradeJobFixture = ReturnType<typeof upgradeJob>;
+	type UpgradeServer = { job: UpgradeJobFixture | null; startCalls: number };
 
-	function updateAllJob(status: JobStatus, managerStatus: ManagerStatus) {
+	function upgradeJob(status: JobStatus, managerStatus: ManagerStatus) {
 		return {
-			id: 'playwright-update-all',
+			id: 'playwright-upgrade',
 			status,
+			userId: 'playwright',
+			username: 'playwright',
+			managerVersionAtStart: '1.0.0',
+			managerDigestAtStart: '',
+			managerTargetVersion: '2.0.0',
 			results: [
 				{
 					environmentId: '0',
 					environmentName: 'Manager',
 					status: managerStatus,
+					percent: managerStatus === 'updating' ? 50 : 100,
 					...(managerStatus === 'failed' ? { error: 'Manager update failed' } : {})
 				}
 			],
@@ -418,32 +430,12 @@ test.describe('Arcane upgrades', () => {
 		}, TOKEN_EXPIRY_KEY);
 	}
 
-	async function fulfillJob(route: Route, status: JobStatus, managerStatus: ManagerStatus) {
+	async function fulfillJob(route: Route, job: UpgradeJobFixture) {
 		await route.fulfill({
 			status: route.request().method() === 'POST' ? 202 : 200,
 			contentType: 'application/json',
-			body: JSON.stringify({ success: true, data: updateAllJob(status, managerStatus) })
+			body: JSON.stringify({ success: true, data: job })
 		});
-	}
-
-	async function openAndConfirmUpdateAll(page: Page) {
-		// Opening checks for an existing run before showing confirmation. These tests
-		// start a new run; their status fixtures apply only after this initial lookup.
-		await page.route(
-			'**/api/environments/0/system/upgrade/all/status',
-			async (route) => {
-				await fulfillProblem(route, 404, 'no update-all job found');
-			},
-			{ times: 1 }
-		);
-		await page.getByRole('button', { name: 'Update All', exact: true }).first().click();
-		const dialog = page.getByRole('dialog');
-		await expect(dialog.getByRole('heading', { name: 'Update all environments' })).toBeVisible();
-		await dialog.getByRole('button', { name: 'Update All', exact: true }).click();
-	}
-
-	function currentReloadCount(page: Page) {
-		return reloadCounts.get(page) ?? 0;
 	}
 
 	// Huma renders errors as RFC 7807 problem documents; the dialog surfaces `detail`.
@@ -455,19 +447,100 @@ test.describe('Arcane upgrades', () => {
 		});
 	}
 
+	async function fulfillVersionMismatch(route: Route) {
+		await route.fulfill({
+			status: 401,
+			contentType: 'application/json',
+			body: JSON.stringify({ message: 'Application has been updated. Refreshing session.' })
+		});
+	}
+
+	async function fulfillStream(route: Route, events: Record<string, unknown>[]) {
+		const timestamp = new Date().toISOString();
+		await route.fulfill({
+			status: 200,
+			contentType: 'text/event-stream',
+			body: events.map((event) => `data: ${JSON.stringify({ ...event, timestamp })}\n\n`).join('')
+		});
+	}
+
+	function subscribesToUpgrades(route: Route) {
+		const channels = new URL(route.request().url()).searchParams.get('channels')?.split(',') ?? [];
+		return channels.includes(UPGRADE_CHANNEL);
+	}
+
+	function hasRefreshCookie(route: Route) {
+		return route.request().headers()['cookie']?.includes(REFRESH_COOKIE) ?? false;
+	}
+
+	function upgradeEvent(job: UpgradeJobFixture) {
+		return { channel: UPGRADE_CHANNEL, upgrade: job };
+	}
+
+	function newBuildEvent() {
+		return { channel: 'version', version: { type: 'snapshot', info: versionInfo('2.0.0') } };
+	}
+
+	async function routeUpgradeJobs(
+		page: Page,
+		onStart: (route: Route, server: UpgradeServer) => Promise<void>
+	) {
+		const server: UpgradeServer = { job: null, startCalls: 0 };
+		await page.route(START_ROUTE, async (route) => {
+			server.startCalls++;
+			await onStart(route, server);
+		});
+		await page.route(CURRENT_ROUTE, async (route) => {
+			if (!server.job) {
+				await fulfillProblem(route, 404, 'no upgrade job found');
+				return;
+			}
+			await fulfillJob(route, server.job);
+		});
+		await page.route(STREAM_ROUTE, async (route) => {
+			if (!subscribesToUpgrades(route)) {
+				await route.continue();
+				return;
+			}
+			await fulfillStream(route, server.job ? [upgradeEvent(server.job)] : []);
+		});
+		return server;
+	}
+
+	async function routeUpgradeStream(page: Page, handle: (route: Route) => Promise<boolean>) {
+		await page.route(STREAM_ROUTE, async (route) => {
+			if (!subscribesToUpgrades(route) || !(await handle(route))) {
+				await route.fallback();
+			}
+		});
+	}
+
+	function startAndRun(job: UpgradeJobFixture) {
+		return async (route: Route, server: UpgradeServer) => {
+			server.job = job;
+			await fulfillJob(route, upgradeJob('running', 'updating'));
+		};
+	}
+
+	async function openAndConfirmUpdateAll(page: Page) {
+		await page.getByRole('button', { name: 'Update All', exact: true }).first().click();
+		const dialog = page.getByRole('dialog');
+		await expect(dialog.getByRole('heading', { name: 'Update all environments' })).toBeVisible();
+		await dialog.getByRole('button', { name: 'Update All', exact: true }).click();
+	}
+
+	function currentReloadCount(page: Page) {
+		return reloadCounts.get(page) ?? 0;
+	}
+
 	test.describe('Update All startup', () => {
-		const CONFLICT_DETAIL = 'an update-all job is already in progress';
+		const CONFLICT_DETAIL = 'an upgrade job is already in progress';
 
 		test('a failed start surfaces the API error and returns to the confirm step', async ({
 			page
 		}) => {
-			let statusCalls = 0;
-			await page.route(/\/api\/environments\/0\/system\/upgrade\/all$/, async (route) => {
+			const server = await routeUpgradeJobs(page, async (route) => {
 				await fulfillProblem(route, 500, 'Failed to initiate upgrade: pull access denied');
-			});
-			await page.route(/\/api\/environments\/0\/system\/upgrade\/all\/status$/, async (route) => {
-				statusCalls++;
-				await fulfillJob(route, 'completed', 'updated');
 			});
 
 			await page.goto('/environments');
@@ -479,34 +552,27 @@ test.describe('Arcane upgrades', () => {
 			await expect(toast).toBeVisible({ timeout: 10_000 });
 			await expect(toast).toContainText('pull access denied');
 
-			// The failed POST checks for an active job once, then returns to confirmation.
 			const dialog = page.getByRole('dialog');
 			await expect(dialog.getByRole('heading', { name: 'Update all environments' })).toBeVisible();
 			await expect(dialog.getByRole('button', { name: 'Update All', exact: true })).toBeVisible();
-			expect(statusCalls).toBe(1);
+			expect(server.startCalls).toBe(1);
 		});
 
 		test('a 409 conflict adopts the active job and follows it to completion', async ({ page }) => {
-			let startCalls = 0;
-			let statusCalls = 0;
-			await page.route(/\/api\/environments\/0\/system\/upgrade\/all$/, async (route) => {
-				startCalls++;
+			const server = await routeUpgradeJobs(page, async (route, current) => {
+				current.job = upgradeJob('running', 'updating');
 				await fulfillProblem(route, 409, CONFLICT_DETAIL);
-			});
-			await page.route(/\/api\/environments\/0\/system\/upgrade\/all\/status$/, async (route) => {
-				statusCalls++;
-				// Recovery and the dialog each adopt the active job; later polls complete it.
-				if (statusCalls <= 2) {
-					await fulfillJob(route, 'running', 'updating');
-					return;
-				}
-				await fulfillJob(route, 'completed', 'updated');
 			});
 
 			await page.goto('/environments');
 			await openAndConfirmUpdateAll(page);
 
 			const dialog = page.getByRole('dialog');
+			await expect(dialog.getByRole('heading', { name: 'Updating environments…' })).toBeVisible({
+				timeout: 10_000
+			});
+			server.job = upgradeJob('completed', 'updated');
+
 			await expect(dialog.getByRole('heading', { name: 'All environments processed' })).toBeVisible(
 				{
 					timeout: 10_000
@@ -515,25 +581,16 @@ test.describe('Arcane upgrades', () => {
 			await expect(dialog.getByText('1 of 1', { exact: true })).toBeVisible();
 			await expect(page.locator('li[data-sonner-toast]')).toHaveCount(0);
 			// The conflict is never retried; the existing job is tracked instead.
-			expect(startCalls).toBe(1);
-			expect(statusCalls).toBeGreaterThanOrEqual(2);
+			expect(server.startCalls).toBe(1);
 		});
 
 		test('a 409 conflict without an active job reports the conflict and does not retry', async ({
 			page
 		}) => {
-			await page.clock.install();
-			let startCalls = 0;
-			let statusCalls = 0;
-			await page.route(/\/api\/environments\/0\/system\/upgrade\/all$/, async (route) => {
-				startCalls++;
+			const server = await routeUpgradeJobs(page, async (route) => {
 				await fulfillProblem(route, 409, CONFLICT_DETAIL);
 			});
-			await page.route(/\/api\/environments\/0\/system\/upgrade\/all\/status$/, async (route) => {
-				statusCalls++;
-				// The guard tripped but the latest job is already terminal: nothing to adopt.
-				await fulfillJob(route, 'completed', 'updated');
-			});
+			server.job = upgradeJob('completed', 'updated');
 
 			await page.goto('/environments');
 			await openAndConfirmUpdateAll(page);
@@ -546,89 +603,33 @@ test.describe('Arcane upgrades', () => {
 
 			const dialog = page.getByRole('dialog');
 			await expect(dialog.getByRole('heading', { name: 'Update all environments' })).toBeVisible();
-
-			// Wait past one poll interval to prove neither polling nor a retry kicked in.
-			// One recovery lookup and three dialog adoption reads precede this interval.
-			await page.clock.runFor(4_000);
-			expect(startCalls).toBe(1);
-			expect(statusCalls).toBe(4);
+			expect(server.startCalls).toBe(1);
 		});
 
-		test('a 409 conflict adopts a job that is persisted shortly after the conflict', async ({
-			page
-		}) => {
-			let statusCalls = 0;
-			await page.route(/\/api\/environments\/0\/system\/upgrade\/all$/, async (route) => {
-				await fulfillProblem(route, 409, CONFLICT_DETAIL);
-			});
-			await page.route(/\/api\/environments\/0\/system\/upgrade\/all\/status$/, async (route) => {
-				statusCalls++;
-				// Recovery and the first dialog read precede persistence; the dialog retries.
-				if (statusCalls <= 2) {
-					await fulfillProblem(route, 404, 'no update-all job found');
-					return;
-				}
-				await fulfillJob(
-					route,
-					statusCalls === 3 ? 'running' : 'completed',
-					statusCalls === 3 ? 'updating' : 'updated'
-				);
-			});
-
-			await page.goto('/environments');
-			await openAndConfirmUpdateAll(page);
-
-			const dialog = page.getByRole('dialog');
-			await expect(dialog.getByRole('heading', { name: 'All environments processed' })).toBeVisible(
-				{
-					timeout: 10_000
-				}
-			);
-			await expect(page.locator('li[data-sonner-toast]')).toHaveCount(0);
-		});
-
-		test('closing during a pending start keeps recovery running without reopening the dialog', async ({
-			page
-		}) => {
-			await page.clock.install();
+		test('closing during a pending start does not reopen the dialog', async ({ page }) => {
 			let releaseStart!: () => void;
 			const startReleased = new Promise<void>((resolve) => {
 				releaseStart = resolve;
 			});
-			let statusCalls = 0;
-			let startCalls = 0;
-			await page.route(/\/api\/environments\/0\/system\/upgrade\/all$/, async (route) => {
-				startCalls++;
+			const server = await routeUpgradeJobs(page, async (route, current) => {
 				await startReleased;
-				await fulfillJob(route, 'running', 'updating');
-			});
-			await page.route(/\/api\/environments\/0\/system\/upgrade\/all\/status$/, async (route) => {
-				statusCalls++;
-				await fulfillJob(route, 'completed', 'updated');
+				current.job = upgradeJob('running', 'updating');
+				await fulfillJob(route, current.job);
 			});
 
 			await page.goto('/environments');
 			await openAndConfirmUpdateAll(page);
 
-			await expect.poll(() => startCalls).toBe(1);
+			await expect.poll(() => server.startCalls).toBe(1);
 			const dialog = page.getByRole('dialog');
 			await expect(dialog.getByRole('heading', { name: 'Updating environments…' })).toBeVisible();
 			await dialog.getByRole('button', { name: 'Close', exact: true }).first().click();
 			await expect(dialog).toBeHidden();
 
-			// The late response starts service-owned recovery without reopening the dialog.
-			const startResponse = page.waitForResponse(/\/api\/environments\/0\/system\/upgrade\/all$/);
+			const startResponse = page.waitForResponse(START_ROUTE);
 			releaseStart();
 			await (await startResponse).finished();
-			await expect
-				.poll(async () => {
-					await page.clock.runFor(4_000);
-					return statusCalls;
-				})
-				.toBe(1);
-			await page.clock.runFor(4_000);
 			await expect(dialog).toBeHidden();
-			expect(statusCalls).toBe(1);
 			await expect(page.locator('li[data-sonner-toast]')).toHaveCount(0);
 		});
 	});
@@ -638,12 +639,7 @@ test.describe('Arcane upgrades', () => {
 			page
 		}) => {
 			registerReloadCounter(page);
-			await page.route(/\/api\/environments\/0\/system\/upgrade\/all$/, async (route) => {
-				await fulfillJob(route, 'running', 'updating');
-			});
-			await page.route(/\/api\/environments\/0\/system\/upgrade\/all\/status$/, async (route) => {
-				await fulfillJob(route, 'completed', 'updated');
-			});
+			await routeUpgradeJobs(page, startAndRun(upgradeJob('completed', 'updated')));
 
 			await page.goto('/environments');
 			await openAndConfirmUpdateAll(page);
@@ -666,12 +662,7 @@ test.describe('Arcane upgrades', () => {
 
 		test('Update All leaves failed manager results visible without reloading', async ({ page }) => {
 			registerReloadCounter(page);
-			await page.route(/\/api\/environments\/0\/system\/upgrade\/all$/, async (route) => {
-				await fulfillJob(route, 'running', 'updating');
-			});
-			await page.route(/\/api\/environments\/0\/system\/upgrade\/all\/status$/, async (route) => {
-				await fulfillJob(route, 'failed', 'failed');
-			});
+			await routeUpgradeJobs(page, startAndRun(upgradeJob('failed', 'failed')));
 
 			await page.goto('/environments');
 			await openAndConfirmUpdateAll(page);
@@ -683,11 +674,8 @@ test.describe('Arcane upgrades', () => {
 			await expect.poll(() => currentReloadCount(page)).toBe(1);
 		});
 
-		test('the single-manager flow reloads immediately after version verification', async ({
-			page
-		}) => {
+		test('the single-manager flow reloads once the new build is announced', async ({ page }) => {
 			registerReloadCounter(page);
-			let upgradeTriggered = false;
 
 			await page.route(/\/api\/environments\/0\/version(?:\?.*)?$/, async (route) => {
 				await route.fulfill({
@@ -703,23 +691,11 @@ test.describe('Arcane upgrades', () => {
 					body: JSON.stringify({ canUpgrade: true, error: false, message: '' })
 				});
 			});
-			await page.route(/\/api\/environments\/0\/system\/upgrade$/, async (route) => {
-				upgradeTriggered = true;
-				await route.fulfill({
-					status: 200,
-					contentType: 'application/json',
-					body: JSON.stringify({ success: true, message: 'Upgrade started' })
-				});
-			});
-			await page.route(/\/api\/health$/, async (route) => {
-				await route.fulfill({ status: 200, body: '' });
-			});
-			await page.route(/\/api\/app\/version$/, async (route) => {
-				await route.fulfill({
-					status: 200,
-					contentType: 'application/json',
-					body: JSON.stringify(versionInfo(upgradeTriggered ? '2.0.0' : '1.0.0'))
-				});
+			const server = await routeUpgradeJobs(page, startAndRun(upgradeJob('running', 'updating')));
+			await routeUpgradeStream(page, async (route) => {
+				if (!server.job) return false;
+				await fulfillStream(route, [upgradeEvent(server.job), newBuildEvent()]);
+				return true;
 			});
 
 			const dashboardUpgradeCheck = page.waitForResponse((response) => {
@@ -742,122 +718,11 @@ test.describe('Arcane upgrades', () => {
 			await dialog.getByRole('button', { name: 'Update to 2.0.0', exact: true }).click();
 
 			await expect.poll(() => currentReloadCount(page), { timeout: 10_000 }).toBe(2);
+			expect(server.startCalls).toBe(1);
 			await expect(page).toHaveURL('/dashboard');
 		});
 
-		test('status and activity 401s share one refresh before the upgrade reload', async ({
-			page
-		}) => {
-			await page.clock.install();
-			registerReloadCounter(page);
-			await registerTokenSeeding(page);
-
-			let releaseActivity!: () => void;
-			const activityRelease = new Promise<void>((resolve) => {
-				releaseActivity = resolve;
-			});
-			await page.route(/\/api\/stream(?:\?.*)?$/, async (route) => {
-				const channels =
-					new URL(route.request().url()).searchParams.get('channels')?.split(',') ?? [];
-				if (!channels.includes('activities')) {
-					await route.fulfill({
-						status: 200,
-						contentType: 'text/event-stream',
-						body: ''
-					});
-					return;
-				}
-				await activityRelease;
-				if (route.request().headers()['cookie']?.includes(REFRESH_COOKIE)) {
-					const timestamp = new Date().toISOString();
-					await route.fulfill({
-						status: 200,
-						contentType: 'text/event-stream',
-						body: `data: ${JSON.stringify({
-							channel: 'activities',
-							activity: { type: 'snapshot', environmentId: '0', activities: [], timestamp },
-							timestamp
-						})}\n\n`
-					});
-					return;
-				}
-				await route.fulfill({
-					status: 401,
-					contentType: 'application/json',
-					body: JSON.stringify({ message: 'Application has been updated. Refreshing session.' })
-				});
-			});
-
-			let refreshCalls = 0;
-			let releaseRefresh!: () => void;
-			const refreshReleased = new Promise<void>((resolve) => {
-				releaseRefresh = resolve;
-			});
-			await page.route(/\/api\/auth\/refresh$/, async (route) => {
-				refreshCalls++;
-				await refreshReleased;
-				await route.fulfill({
-					status: 200,
-					headers: {
-						'content-type': 'application/json',
-						'set-cookie': `${REFRESH_COOKIE}; Path=/; SameSite=Lax`
-					},
-					body: JSON.stringify({
-						success: true,
-						data: {
-							token: 'mocked-session-token',
-							refreshToken: 'mocked-refresh-token',
-							expiresAt: new Date(Date.now() + 3_600_000).toISOString()
-						}
-					})
-				});
-			});
-
-			await page.route(/\/api\/environments\/0\/system\/upgrade\/all$/, async (route) => {
-				await fulfillJob(route, 'running', 'updating');
-			});
-			await page.route(/\/api\/environments\/0\/system\/upgrade\/all\/status$/, async (route) => {
-				if (route.request().headers()['cookie']?.includes(REFRESH_COOKIE)) {
-					await fulfillJob(route, 'completed', 'updated');
-					return;
-				}
-				await route.fulfill({
-					status: 401,
-					contentType: 'application/json',
-					body: JSON.stringify({ message: 'Application has been updated. Refreshing session.' })
-				});
-			});
-
-			try {
-				await page.goto('/environments');
-				const statusUnauthorized = page.waitForResponse((response) => {
-					return (
-						new URL(response.url()).pathname === '/api/environments/0/system/upgrade/all/status' &&
-						response.status() === 401
-					);
-				});
-				await openAndConfirmUpdateAll(page);
-				releaseActivity();
-				await expect.poll(() => refreshCalls).toBe(1);
-				await page.clock.runFor(3500);
-				const statusResponse = await statusUnauthorized;
-				await statusResponse.finished();
-				// Queue this after the response event so its 401 handler has joined the
-				// in-flight refresh before that refresh is released.
-				await page.evaluate(() => undefined);
-				expect(refreshCalls).toBe(1);
-				releaseRefresh();
-
-				await expect.poll(() => currentReloadCount(page), { timeout: 15_000 }).toBe(2);
-				expect(refreshCalls).toBe(1);
-				await expect(page).toHaveURL('/environments');
-			} finally {
-				releaseActivity();
-				releaseRefresh();
-			}
-		});
-
-		test('a transient refresh failure keeps the session and recovers on the next poll', async ({
+		test('a transient refresh failure keeps the session and recovers on the next reconnect', async ({
 			page
 		}) => {
 			registerReloadCounter(page);
@@ -892,15 +757,15 @@ test.describe('Arcane upgrades', () => {
 				});
 			});
 
-			await page.route(/\/api\/environments\/0\/system\/upgrade\/all$/, async (route) => {
-				await fulfillJob(route, 'running', 'updating');
-			});
-			await page.route(/\/api\/environments\/0\/system\/upgrade\/all\/status$/, async (route) => {
-				await route.fulfill({
-					status: 401,
-					contentType: 'application/json',
-					body: JSON.stringify({ message: 'Application has been updated. Refreshing session.' })
-				});
+			const server = await routeUpgradeJobs(page, startAndRun(upgradeJob('running', 'updating')));
+			await routeUpgradeStream(page, async (route) => {
+				if (!server.job) return false;
+				if (hasRefreshCookie(route)) {
+					await fulfillStream(route, [newBuildEvent()]);
+					return true;
+				}
+				await fulfillVersionMismatch(route);
+				return true;
 			});
 
 			try {
@@ -916,38 +781,27 @@ test.describe('Arcane upgrades', () => {
 				releaseRefresh();
 
 				await expect.poll(() => currentReloadCount(page), { timeout: 15_000 }).toBe(2);
-				expect(refreshCalls).toBe(2);
 				await expect(page).toHaveURL('/environments');
 			} finally {
 				releaseRefresh();
 			}
 		});
 
-		test('a rejected refresh during an upgrade redirects to login instead of polling', async ({
+		test('a rejected refresh during an upgrade redirects to login instead of reconnecting', async ({
 			page
 		}) => {
 			await registerTokenSeeding(page);
 			let refreshCalls = 0;
-			let updateStarted = false;
 
-			await page.route('**/api/environments/0/system/upgrade/all', async (route) => {
-				updateStarted = true;
-				await fulfillJob(route, 'running', 'updating');
-			});
-			await page.route('**/api/environments/0/system/upgrade/all/status', async (route) => {
-				if (!updateStarted) {
-					await fulfillProblem(route, 404, 'no update-all job found');
-					return;
-				}
-				await route.fulfill({
-					status: 401,
-					contentType: 'application/json',
-					body: JSON.stringify({ message: 'Application has been updated. Refreshing session.' })
-				});
+			const server = await routeUpgradeJobs(page, startAndRun(upgradeJob('running', 'updating')));
+			await routeUpgradeStream(page, async (route) => {
+				if (!server.job) return false;
+				await fulfillVersionMismatch(route);
+				return true;
 			});
 
 			await page.route('**/api/auth/refresh', async (route) => {
-				if (!updateStarted) {
+				if (!server.job) {
 					await route.continue();
 					return;
 				}
@@ -959,7 +813,7 @@ test.describe('Arcane upgrades', () => {
 				});
 			});
 			await page.route(/\/api\/auth\/(?:me|bootstrap)(?:\?.*)?$/, async (route) => {
-				if (!updateStarted) {
+				if (!server.job) {
 					await route.continue();
 					return;
 				}
@@ -972,7 +826,7 @@ test.describe('Arcane upgrades', () => {
 
 			await page.goto('/environments');
 			await openAndConfirmUpdateAll(page);
-			await expect.poll(() => updateStarted).toBe(true);
+			await expect.poll(() => server.startCalls).toBe(1);
 
 			await page.waitForURL(/\/login(?:\?|$)/, { timeout: 10_000 });
 			expect(refreshCalls).toBe(1);
@@ -981,38 +835,25 @@ test.describe('Arcane upgrades', () => {
 			).toBeVisible();
 		});
 
-		test('a missing refresh cookie during an upgrade redirects to login instead of polling', async ({
+		test('a missing refresh cookie during an upgrade redirects to login instead of reconnecting', async ({
 			page
 		}) => {
 			let refreshCalls = 0;
-			let updateStarted = false;
 			await page.context().clearCookies({ name: /^(__Secure-)?refresh$/ });
-			await page.route('**/api/auth/refresh', async (route) => {
-				if (!updateStarted) {
-					await route.continue();
-					return;
-				}
-				refreshCalls++;
-				await route.continue();
-			});
-			await page.route('**/api/environments/0/system/upgrade/all', async (route) => {
-				updateStarted = true;
-				await fulfillJob(route, 'running', 'updating');
-			});
-			await page.route('**/api/environments/0/system/upgrade/all/status', async (route) => {
-				if (!updateStarted) {
-					await fulfillProblem(route, 404, 'no update-all job found');
-					return;
-				}
-				await route.fulfill({
-					status: 401,
-					contentType: 'application/json',
-					body: JSON.stringify({ message: 'Application has been updated. Refreshing session.' })
-				});
+
+			const server = await routeUpgradeJobs(page, startAndRun(upgradeJob('running', 'updating')));
+			await routeUpgradeStream(page, async (route) => {
+				if (!server.job) return false;
+				await fulfillVersionMismatch(route);
+				return true;
 			});
 
+			await page.route('**/api/auth/refresh', async (route) => {
+				if (server.job) refreshCalls++;
+				await route.continue();
+			});
 			await page.route(/\/api\/auth\/(?:me|bootstrap)(?:\?.*)?$/, async (route) => {
-				if (!updateStarted) {
+				if (!server.job) {
 					await route.continue();
 					return;
 				}
@@ -1025,7 +866,7 @@ test.describe('Arcane upgrades', () => {
 
 			await page.goto('/environments');
 			await openAndConfirmUpdateAll(page);
-			await expect.poll(() => updateStarted).toBe(true);
+			await expect.poll(() => server.startCalls).toBe(1);
 
 			await page.waitForURL(/\/login(?:\?|$)/, { timeout: 10_000 });
 			expect(refreshCalls).toBe(1);
