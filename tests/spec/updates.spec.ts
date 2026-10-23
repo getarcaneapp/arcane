@@ -571,6 +571,7 @@ test.describe('Arcane upgrades', () => {
 			await expect(dialog.getByRole('heading', { name: 'Updating environments…' })).toBeVisible({
 				timeout: 10_000
 			});
+			await expect(dialog.getByText('0 of 1', { exact: true })).toBeVisible({ timeout: 10_000 });
 			server.job = upgradeJob('completed', 'updated');
 
 			await expect(dialog.getByRole('heading', { name: 'All environments processed' })).toBeVisible(
