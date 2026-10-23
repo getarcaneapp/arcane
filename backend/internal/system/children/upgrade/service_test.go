@@ -596,15 +596,15 @@ func TestUpgradeJobStageChangesPersist(t *testing.T) {
 	}
 	require.NoError(t, db.WithContext(ctx).Create(job).Error)
 
-	svc.setUpdateStage(ctx, job, &job.Results[0], UpgradeStageChecking)
+	svc.setUpdateStage(ctx, job, 0, UpgradeStageChecking)
 	started := job.Results[0].StageStartedAt
 	require.NotNil(t, started)
 	require.WithinDuration(t, time.Now(), *started, time.Second)
 
-	svc.setUpdateStage(ctx, job, &job.Results[0], UpgradeStageChecking)
+	svc.setUpdateStage(ctx, job, 0, UpgradeStageChecking)
 	require.Same(t, started, job.Results[0].StageStartedAt)
 
-	svc.setUpdateStage(ctx, job, &job.Results[0], UpgradeStageStarting)
+	svc.setUpdateStage(ctx, job, 0, UpgradeStageStarting)
 	var got UpgradeJob
 	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
 	require.Equal(t, UpgradeStageStarting, got.Results[0].Stage)

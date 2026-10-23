@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -83,6 +84,7 @@ const (
 	upgradeJobPublishInterval     = 250 * time.Millisecond
 	upgradeJobConfirmTimeout      = 5 * time.Minute
 	upgradeJobErrorMaxLen         = 500
+	upgradeJobMaxParallelAgents   = 4
 	upgradeJobWorkflowName        = "update-all"
 	// Generous: the upgrader pulls the target image before recreating anything.
 	upgradeJobManagerWatchTimeout = 15 * time.Minute
@@ -93,6 +95,7 @@ const (
 type Service struct {
 	upgrading    atomic.Bool
 	startingJob  atomic.Bool
+	resultMu     sync.Mutex
 	progress     *progressFeed
 	jobHub       *agg.Hub[types.UpgradeJob]
 	jobChanged   chan struct{}
@@ -100,7 +103,7 @@ type Service struct {
 	flow         *flow.Engine
 	environments *environment.EnvironmentService
 	roles        *role.RoleService
-	// upgradeJobWorkflow upgrades every agent in turn, then the manager last.
+	// upgradeJobWorkflow upgrades agents in parallel, then the manager last.
 	upgradeJobWorkflow *flow.Workflow
 	db                 *database.DB
 	dockerService      *dockerInternal.DockerClientService
@@ -196,13 +199,13 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine, environments *environme
 	s.flow, s.environments, s.roles = engine, environments, roles
 	s.upgradeJobWorkflow, err = engine.Define(flow.Definition{
 		Name:        upgradeJobWorkflowName,
-		Version:     1,
+		Version:     2,
 		Fingerprint: "65b33dbbe55a5018517b2e8506d9b487f322803ed5a9dfec0edbf5103c96e586",
 		Concurrency: 1,
 		Timeout:     24 * time.Hour,
 		Steps: []workflow.StepSpec{
 			workflow.Step("discover", engine.Handler(s.discoverAgents), workflow.WithMaxAttempts(1)),
-			workflow.ForEach("agents", engine.Handler(s.upgradeAgentTask), workflow.WithItemsFrom("discover"), workflow.WithMaxParallel(1),
+			workflow.ForEach("agents", engine.Handler(s.upgradeAgentTask), workflow.WithItemsFrom("discover"), workflow.WithMaxParallel(upgradeJobMaxParallelAgents),
 				workflow.WithMaxAttempts(1), workflow.WithFailurePolicy(workflow.TolerateFailures)),
 			workflow.Step("manager", engine.Handler(s.upgradeManagerTask), workflow.WithMaxAttempts(1)),
 		},
@@ -839,7 +842,7 @@ func upgradeLanded(fromVersion, fromDigest, target, currentVersion, currentDiges
 	return versionChanged || digestChanged || onTarget
 }
 
-// discoverAgents lists the remote environments the job targets, which the agents step upgrades in turn.
+// discoverAgents lists the remote environments the job targets, which the agents step upgrades in parallel.
 func (s *Service) discoverAgents(ctx context.Context, t flow.Task) (any, error) {
 	var input upgradeJobInput
 	if err := t.Payload(&input); err != nil {
@@ -901,7 +904,7 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 		}
 	}
 	settle(UpgradeResultStatusUpdating, result.Error)
-	if persistErr := s.saveJob(ctx, job); persistErr != nil {
+	if persistErr := s.saveResult(ctx, job, index); persistErr != nil {
 		slog.WarnContext(ctx, "upgrade job: failed to persist updating status", "jobId", job.ID, "environmentId", remote.ID, "error", persistErr)
 	}
 	defer func() {
@@ -910,7 +913,7 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 		if err = ctx.Err(); err != nil {
 			return
 		}
-		if persistErr := s.saveJob(ctx, job); persistErr != nil {
+		if persistErr := s.saveResult(ctx, job, index); persistErr != nil {
 			slog.WarnContext(ctx, "upgrade job: failed to persist progress", "jobId", job.ID, "environmentId", remote.ID, "error", persistErr)
 		}
 	}()
@@ -922,7 +925,7 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 			CurrentDigest:  result.FromDigest,
 		}
 	} else {
-		s.setUpdateStage(ctx, job, result, UpgradeStageChecking)
+		s.setUpdateStage(ctx, job, index, UpgradeStageChecking)
 		versionCtx, cancel := context.WithTimeout(ctx, upgradeJobAgentRequestTimeout)
 		checkErr := s.environments.ProxyJSONRequest(versionCtx, remote.ID, http.MethodGet, "/api/app/version", nil, &info)
 		cancel()
@@ -954,7 +957,7 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 			Logs:            nil,
 			Error:           result.Error,
 		}
-		if saveErr := s.saveJob(ctx, job); saveErr != nil {
+		if saveErr := s.saveResult(ctx, job, index); saveErr != nil {
 			settle(UpgradeResultStatusFailed, "Could not save upgrade progress: "+saveErr.Error())
 			return nil, nil
 		}
@@ -991,7 +994,7 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 	// An unconfirmed request keeps its starting stage, so another restart still knows nothing confirmed it.
 	stage := func(next UpgradeStage) {
 		if !unconfirmed {
-			s.setUpdateStage(ctx, job, result, next)
+			s.setUpdateStage(ctx, job, index, next)
 		}
 	}
 	sink := &progressSink{service: s, job: job, index: index, keepStage: unconfirmed}
@@ -1283,7 +1286,8 @@ func upgradeJobAgentFailureStatus(err error) UpgradeResultStatus {
 }
 
 // setUpdateStage records result's step and persists the job; re-entering the current stage keeps its start time.
-func (s *Service) setUpdateStage(ctx context.Context, job *UpgradeJob, result *UpgradeJobResult, stage UpgradeStage) {
+func (s *Service) setUpdateStage(ctx context.Context, job *UpgradeJob, index int, stage UpgradeStage) {
+	result := &job.Results[index]
 	if result.Stage == stage {
 		return
 	}
@@ -1300,9 +1304,28 @@ func (s *Service) setUpdateStage(ctx context.Context, job *UpgradeJob, result *U
 		Logs:            result.Logs,
 		Error:           result.Error,
 	}
-	if err := s.saveJob(ctx, job); err != nil {
+	if err := s.saveResult(ctx, job, index); err != nil {
 		slog.WarnContext(ctx, "upgrade job: failed to persist stage", "jobId", job.ID, "environmentId", result.EnvironmentID, "stage", stage, "error", err)
 	}
+}
+
+func (s *Service) saveResult(ctx context.Context, job *UpgradeJob, index int) error {
+	s.resultMu.Lock()
+	defer s.resultMu.Unlock()
+	latest, err := s.loadUpgradeJob(ctx, job.ID)
+	if err != nil {
+		return err
+	}
+	row := job.Results[index]
+	at := slices.IndexFunc(latest.Results, func(candidate UpgradeJobResult) bool {
+		return candidate.EnvironmentID == row.EnvironmentID
+	})
+	if at < 0 {
+		latest.Results = append(latest.Results, row)
+	} else {
+		latest.Results[at] = row
+	}
+	return s.saveJob(ctx, latest)
 }
 
 // GetCurrentUpgradeJob returns the most recently created upgrade job, or nil.
@@ -1468,7 +1491,7 @@ func (p *progressSink) flush(ctx context.Context) {
 	if !p.dirty {
 		return
 	}
-	if err := p.service.saveJob(ctx, p.job); err != nil {
+	if err := p.service.saveResult(ctx, p.job, p.index); err != nil {
 		slog.WarnContext(ctx, "upgrade job: failed to persist progress", "jobId", p.job.ID, "environmentId", p.job.Results[p.index].EnvironmentID, "error", err)
 	}
 	p.dirty, p.savedAt = false, time.Now()
