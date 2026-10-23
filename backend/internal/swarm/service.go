@@ -10,12 +10,15 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/api/types/system"
 	"github.com/moby/moby/client"
+	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
@@ -29,6 +32,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm/children/services"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm/children/stacks"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 const (
@@ -92,6 +97,31 @@ func (s *SwarmService) IsEnabled(ctx context.Context) (bool, error) {
 	}
 
 	return enabled, nil
+}
+
+func (s *SwarmService) GetStatus(ctx context.Context) (types.SwarmRuntimeStatus, error) {
+	enabled, err := s.IsEnabled(ctx)
+	if err != nil || !enabled {
+		return types.SwarmRuntimeStatus{Enabled: enabled}, err
+	}
+	info, err := s.getDockerInfo(ctx)
+	if err != nil {
+		slog.DebugContext(ctx, "Skipping swarm cluster ID", "error", err)
+	}
+	return types.SwarmRuntimeStatus{
+		Enabled:   true,
+		ClusterID: kit.FromPtr(info.Swarm.Cluster).ID,
+	}, nil
+}
+
+func (s *SwarmService) AggregateStatus(ctx context.Context) (types.ApiResponse[types.SwarmRuntimeStatus], error) {
+	return httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[types.SwarmRuntimeStatus]) types.SwarmRuntimeStatus {
+		return types.SwarmRuntimeStatus{
+			Enabled: slices.ContainsFunc(environments, func(environment types.EnvironmentData[types.SwarmRuntimeStatus]) bool {
+				return environment.Data.Enabled
+			}),
+		}
+	})
 }
 
 func (s *SwarmService) ListTasksPaginated(ctx context.Context, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error) {
@@ -311,6 +341,23 @@ func (s *SwarmService) UpdateSwarmSpec(ctx context.Context, req types.SwarmUpdat
 	return nil
 }
 
+var taskPagination = pagination.Config[types.SwarmTaskSummary]{
+	SearchAccessors: []pagination.SearchAccessor[types.SwarmTaskSummary]{
+		func(task types.SwarmTaskSummary) (string, error) { return task.Name, nil },
+		func(task types.SwarmTaskSummary) (string, error) { return task.ServiceName, nil },
+		func(task types.SwarmTaskSummary) (string, error) { return task.NodeName, nil },
+		func(task types.SwarmTaskSummary) (string, error) { return task.ID, nil },
+		func(task types.SwarmTaskSummary) (string, error) { return task.CurrentState, nil },
+	},
+	SortBindings: []pagination.SortBinding[types.SwarmTaskSummary]{
+		{Key: "service", Fn: func(a, b types.SwarmTaskSummary) int { return strings.Compare(a.ServiceName, b.ServiceName) }},
+		{Key: "node", Fn: func(a, b types.SwarmTaskSummary) int { return strings.Compare(a.NodeName, b.NodeName) }},
+		{Key: "state", Fn: func(a, b types.SwarmTaskSummary) int { return strings.Compare(a.CurrentState, b.CurrentState) }},
+		{Key: "created", Fn: func(a, b types.SwarmTaskSummary) int { return a.CreatedAt.Compare(b.CreatedAt) }},
+		{Key: "updated", Fn: func(a, b types.SwarmTaskSummary) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
+	},
+}
+
 func (s *SwarmService) listTasksPaginatedWithFilters(ctx context.Context, filters client.Filters, params pagination.QueryParams) ([]types.SwarmTaskSummary, pagination.Response, error) {
 	servicesResult, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ServiceListResult, error) {
 		return dockerClient.ServiceList(ctx, client.ServiceListOptions{})
@@ -351,25 +398,33 @@ func (s *SwarmService) listTasksPaginatedWithFilters(ctx context.Context, filter
 		items = append(items, types.NewSwarmTaskSummary(task, serviceNameByID[task.ServiceID], nodeNameByID[task.NodeID]))
 	}
 
-	config := pagination.Config[types.SwarmTaskSummary]{
-		SearchAccessors: []pagination.SearchAccessor[types.SwarmTaskSummary]{
-			func(task types.SwarmTaskSummary) (string, error) { return task.Name, nil },
-			func(task types.SwarmTaskSummary) (string, error) { return task.ServiceName, nil },
-			func(task types.SwarmTaskSummary) (string, error) { return task.NodeName, nil },
-			func(task types.SwarmTaskSummary) (string, error) { return task.ID, nil },
-			func(task types.SwarmTaskSummary) (string, error) { return task.CurrentState, nil },
-		},
-		SortBindings: []pagination.SortBinding[types.SwarmTaskSummary]{
-			{Key: "service", Fn: func(a, b types.SwarmTaskSummary) int { return strings.Compare(a.ServiceName, b.ServiceName) }},
-			{Key: "node", Fn: func(a, b types.SwarmTaskSummary) int { return strings.Compare(a.NodeName, b.NodeName) }},
-			{Key: "state", Fn: func(a, b types.SwarmTaskSummary) int { return strings.Compare(a.CurrentState, b.CurrentState) }},
-			{Key: "created", Fn: func(a, b types.SwarmTaskSummary) int { return a.CreatedAt.Compare(b.CreatedAt) }},
-			{Key: "updated", Fn: func(a, b types.SwarmTaskSummary) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
-		},
-	}
-	result := config.SearchOrderAndPaginate(items, params)
+	result := taskPagination.SearchOrderAndPaginate(items, params)
 	paginationResp := pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params)
 	return result.Items, paginationResp, nil
+}
+
+func (s *SwarmService) AggregateTasks(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.SwarmTaskSummary], error) {
+	collection, err := httpx.CollectEnvironments[types.Paginated[types.SwarmTaskSummary]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return types.Paginated[types.SwarmTaskSummary]{}, err
+	}
+
+	pages := make([]pagination.EnvironmentPage[types.SwarmTaskSummary], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		pages = append(pages, pagination.EnvironmentPage[types.SwarmTaskSummary]{
+			Environment:    result.Environment,
+			Items:          result.Value.Data,
+			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
+		})
+	}
+	data, resp := pagination.MergeEnvironmentPages(taskPagination, pages, params)
+
+	return types.Paginated[types.SwarmTaskSummary]{
+		Success:            true,
+		Data:               data,
+		Pagination:         handlerutil.PaginationResponse(resp),
+		FailedEnvironments: collection.Failures,
+	}, nil
 }
 
 func decodeSwarmSpec(raw stdjson.RawMessage) (swarm.Spec, error) {

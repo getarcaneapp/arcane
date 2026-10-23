@@ -7,7 +7,7 @@
 	import { gitRepositoryService } from '#lib/services/git-repository-service.js';
 	import type { GitRepository, GitRepositoryCreate, GitRepositoryUpdate } from '#lib/types/automation.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import RepositoryTable from './components/repository-table.svelte';
@@ -98,7 +98,7 @@
 		}
 	}
 
-	const canCreateRepository = $derived(hasPermission('git-repositories:create'));
+	const canCreateRepository = $derived(hasShownPermission('git-repositories:create'));
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];

@@ -9,6 +9,7 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 // Handler serves the swarm config endpoints.
@@ -68,6 +69,13 @@ type DeleteSwarmConfigInput struct {
 // Returns a mapped HTTP error when config enumeration fails.
 func (h *Handler) ListConfigs(ctx context.Context, input *ListSwarmConfigsInput) (*handlerutil.Page[types.SwarmConfig], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.service.Aggregate(ctx, params)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to list swarm configs: " + err.Error())
+		}
+		return &handlerutil.Page[types.SwarmConfig]{Body: body}, nil
+	}
 	items, page, err := h.service.ListConfigs(ctx, params)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to list swarm configs")

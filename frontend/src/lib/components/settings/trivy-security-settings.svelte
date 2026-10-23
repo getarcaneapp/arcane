@@ -15,7 +15,6 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { networkService } from '#lib/services/network-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { Settings } from '#lib/types/settings.js';
@@ -53,10 +52,10 @@
 
 	let {
 		formInputs = $bindable(),
-		environmentId = undefined
+		environmentId
 	}: {
 		formInputs: TrivySecurityFormInputs;
-		environmentId?: string;
+		environmentId: string;
 	} = $props();
 
 	type TrivyNetworkOption = {
@@ -81,21 +80,14 @@
 		pagination: { page: 1, limit: 1000 },
 		sort: { column: 'name', direction: 'asc' }
 	};
-	const targetEnvironmentId = $derived(environmentId ?? environmentStore.selected?.id);
-	const vulnerabilityManagementEnabled = $derived(
-		!!targetEnvironmentId && featureStore.isEnabled('vulnerabilityManagement', targetEnvironmentId)
-	);
+	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', environmentId));
 	const networksQuery = createQuery(() => {
-		const requestedEnvironmentId = targetEnvironmentId;
+		const requestedEnvironmentId = environmentId;
 		userStore.current;
 		return {
-			queryKey: queryKeys.networks.list(requestedEnvironmentId ?? '', networkRequest),
-			queryFn: async () => {
-				await environmentStore.ready;
-				return networkService.getNetworksForEnvironment(requestedEnvironmentId!, networkRequest);
-			},
-			enabled:
-				vulnerabilityManagementEnabled && !!requestedEnvironmentId && hasPermission('networks:read', requestedEnvironmentId)
+			queryKey: queryKeys.networks.list(requestedEnvironmentId, networkRequest),
+			queryFn: () => networkService.getNetworksForEnvironment(requestedEnvironmentId, networkRequest),
+			enabled: vulnerabilityManagementEnabled && hasPermission('networks:read', requestedEnvironmentId)
 		};
 	});
 	const customTrivyNetworkOptions = $derived(
@@ -137,16 +129,14 @@
 		const cache = queryClient.getQueryCache();
 		let lastError: unknown;
 		function reportNetworkError(error: unknown) {
-			if (!error || error === lastError || !targetEnvironmentId || !hasPermission('networks:read', targetEnvironmentId)) return;
+			if (!error || error === lastError || !hasPermission('networks:read', environmentId)) return;
 			lastError = error;
 			toast.info(m.security_trivy_network_fetch_failed());
 		}
 		reportNetworkError(networksQuery.error);
 		return cache.subscribe((event) => {
 			if (event.type !== 'updated' && event.type !== 'observerResultsUpdated') return;
-			if (
-				event.query === cache.find({ queryKey: queryKeys.networks.list(targetEnvironmentId ?? '', networkRequest), exact: true })
-			) {
+			if (event.query === cache.find({ queryKey: queryKeys.networks.list(environmentId, networkRequest), exact: true })) {
 				reportNetworkError(event.query.state.error);
 			}
 		});
@@ -370,5 +360,5 @@
 		</SettingsSection>
 	</div>
 {:else}
-	<FeatureDisabled environmentId={targetEnvironmentId} />
+	<FeatureDisabled {environmentId} />
 {/if}

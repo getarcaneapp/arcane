@@ -573,3 +573,34 @@ func TestAggregateVolumeSizesKeepsEnvironmentRows(t *testing.T) {
 	require.Len(t, body.FailedEnvironments, 1)
 	require.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
 }
+
+func TestAggregateVolumeCountsSumsEnvironments(t *testing.T) {
+	ctx, _ := volumeScopeContext(t, "/api/environments/a,b,c/volumes/counts", map[string]any{
+		"a": types.ApiResponse[VolumeUsageCountsData]{
+			Success: true,
+			Data: VolumeUsageCountsData{
+				Inuse:  1,
+				Unused: 2,
+				Total:  3,
+			},
+		},
+		"b": types.ApiResponse[VolumeUsageCountsData]{
+			Success: true,
+			Data: VolumeUsageCountsData{
+				Inuse: 4,
+				Total: 4,
+			},
+		},
+	})
+
+	body, err := (&VolumeService{}).AggregateVolumeCounts(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, VolumeUsageCountsData{
+		Inuse:  5,
+		Unused: 2,
+		Total:  7,
+	}, body.Data)
+	require.Len(t, body.Environments, 2)
+	require.Len(t, body.FailedEnvironments, 1)
+}

@@ -88,6 +88,7 @@ func RegisterVolumes(
 		Description: "Get counts of volumes in use, unused, and total",
 		Tags:        []string{"Volumes"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermVolumesList, h.GetVolumeUsageCounts)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

@@ -661,7 +661,7 @@
 	}
 
 	const checkProjectUpdatesMutation = createMutation(() => ({
-		mutationKey: queryKeys.projects.detailCheckUpdates(envId ?? '0', projectId),
+		mutationKey: queryKeys.projects.detailCheckUpdates(envId, projectId),
 		mutationFn: () => projectService.checkUpdates(projectId, envId),
 		onSuccess: async (result) => {
 			const currentEnvId = envId;
@@ -1409,11 +1409,8 @@
 	}
 
 	const backUrl = $derived.by(() => {
-		const from = page.url.searchParams.get('from');
-		const sourceEnvironmentId = page.url.searchParams.get('environmentId');
-
-		if (from === 'gitops' && sourceEnvironmentId) {
-			return `/environments/${sourceEnvironmentId}/gitops`;
+		if (page.url.searchParams.get('from') === 'gitops') {
+			return '/gitops';
 		}
 
 		return '/projects';
@@ -2174,7 +2171,7 @@
 					class="max-w-40 min-w-0 sm:max-w-56 md:max-w-72 lg:max-w-88"
 				/>
 				{@render projectStatus(project)}
-				<EnvironmentCell value={envId} />
+				<EnvironmentCell value={envId} plain />
 				{#if project.isArchived}
 					<Badge variant="gray" minWidth="20">{m.projects_archived_badge()}</Badge>
 				{/if}

@@ -1,42 +1,38 @@
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { Activity, ActivityClearHistoryResult, ActivityDetail } from '#lib/types/activity.type.js';
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
-import BaseAPIService from './api-service';
+import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 class ActivityService extends BaseAPIService {
-	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
-		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
-	}
-
-	async getActivities(options?: SearchPaginationSortRequest, environmentId?: string): Promise<Paginated<Activity>> {
-		const envId = await this.resolveEnvironmentId(environmentId);
+	async getActivities(
+		options: SearchPaginationSortRequest | undefined,
+		environmentId: string,
+		config?: APIRequestConfig
+	): Promise<Paginated<Activity>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${envId}/activities`, {
+		const res = await this.api.get(`/environments/${environmentId}/activities`, {
+			...config,
 			params,
 			suppressAccessDeniedToast: true
 		});
 		return res.data;
 	}
 
-	async getActivity(activityId: string, environmentId?: string, limit = 500): Promise<ActivityDetail> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.get(`/environments/${envId}/activities/${activityId}`, { params: { limit } }));
+	async getActivity(activityId: string, environmentId: string, limit = 500): Promise<ActivityDetail> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/activities/${activityId}`, { params: { limit } }));
 	}
 
-	async cancelActivity(activityId: string, environmentId?: string): Promise<Activity> {
-		const envId = await this.resolveEnvironmentId(environmentId);
+	async cancelActivity(activityId: string, environmentId: string): Promise<Activity> {
 		return this.handleResponse(
-			this.api.post(`/environments/${envId}/activities/${encodeURIComponent(activityId)}`, undefined, {
+			this.api.post(`/environments/${environmentId}/activities/${encodeURIComponent(activityId)}`, undefined, {
 				params: { action: 'cancel' }
 			})
 		);
 	}
 
-	async clearHistory(environmentId?: string): Promise<ActivityClearHistoryResult> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.delete(`/environments/${envId}/activities/history`));
+	async clearHistory(environmentId: string): Promise<ActivityClearHistoryResult> {
+		return this.handleResponse(this.api.delete(`/environments/${environmentId}/activities/history`));
 	}
 }
 

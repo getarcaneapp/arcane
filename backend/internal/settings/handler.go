@@ -52,9 +52,9 @@ type GetCategoriesOutput struct {
 
 func (h *SettingsHandler) runtimeSettings(authenticated bool) types.SettingsRuntime {
 	telemetryRuntime := types.SettingsRuntime{
-		FrontendTracingEnabled: !h.cfg.AgentMode && telemetry.Endpoint("traces") != "",
-		FrontendMetricsEnabled: !h.cfg.AgentMode && telemetry.Endpoint("metrics") != "",
-		FrontendLogsEnabled:    !h.cfg.AgentMode && telemetry.Endpoint("logs") != "",
+		FrontendTracingEnabled: !h.cfg.EdgeAgent && telemetry.Endpoint("traces") != "",
+		FrontendMetricsEnabled: !h.cfg.EdgeAgent && telemetry.Endpoint("metrics") != "",
+		FrontendLogsEnabled:    !h.cfg.EdgeAgent && telemetry.Endpoint("logs") != "",
 	}
 	if !authenticated {
 		return telemetryRuntime
@@ -78,15 +78,22 @@ func (h *SettingsHandler) runtimeSettings(authenticated bool) types.SettingsRunt
 
 // GetPublicSettings returns public settings for an environment.
 func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *types.EnvironmentInput) (*SettingsSnapshotOutput, error) {
+	_, authenticated := middleware.GetUserIDFromContext(ctx)
 	if input.EnvironmentID != "0" {
 		snapshot, err := h.proxyRemoteJSON.JSON[types.SettingsSnapshot](ctx, input.EnvironmentID, http.MethodGet, "/api/environments/0/settings/public", nil)
 		if err != nil {
 			return nil, err
 		}
+		if !authenticated {
+			_, fieldsByKey := settingsFields()
+			snapshot.Settings = slices.DeleteFunc(snapshot.Settings, func(state types.SettingState) bool {
+				return !fieldsByKey[state.Key].isPublic
+			})
+		}
 		return &SettingsSnapshotOutput{Body: *snapshot}, nil
 	}
 
-	snapshot := h.settingsService.SettingsSnapshot(SettingVisibilityPublic)
+	snapshot := h.settingsService.SettingsSnapshot(kit.Ternary(authenticated, SettingVisibilityNonAdmin, SettingVisibilityPublic))
 	return &SettingsSnapshotOutput{Body: types.SettingsSnapshot{
 		Settings: snapshot.Settings,
 		Runtime:  h.runtimeSettings(false),

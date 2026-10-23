@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -56,7 +57,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
 )
 
 type EnvironmentService struct {
@@ -98,6 +98,8 @@ var (
 	ErrEnvironmentAccessTokenRequired = errors.New("environment access token required")
 	ErrInvalidEnvironmentAccessToken  = errors.New("invalid environment access token")
 	ErrEnvironmentNotFound            = common.Classify(common.ErrNotFound, errors.New("environment not found"))
+
+	edgeSlugPattern = regexp.MustCompile(`[^a-z0-9]+`)
 )
 
 // VariableSyncer pushes the effective global-variable set to one environment.
@@ -115,23 +117,7 @@ type resourceSync struct {
 type DeploymentSnippets struct {
 	DockerRun     string
 	DockerCompose string
-	MTLS          *DeploymentSnippetMTLS
-}
-
-type DeploymentSnippetFile struct {
-	Name          string `json:"name" doc:"Suggested filename"`
-	Content       string `json:"content,omitempty" doc:"PEM file contents. Omitted for sensitive files such as private keys; use downloadUrl instead."`
-	DownloadURL   string `json:"downloadUrl,omitempty" doc:"Pairing-permission endpoint to download this file when content is withheld"`
-	Sensitive     bool   `json:"sensitive,omitempty" doc:"True when this file is sensitive and must be fetched via downloadUrl"`
-	ContainerPath string `json:"containerPath" doc:"Container mount path expected by the mTLS snippet"`
-	Permissions   string `json:"permissions" doc:"Suggested file mode"`
-}
-
-type DeploymentSnippetMTLS struct {
-	DockerRun     string                  `json:"dockerRun" doc:"Docker run snippet using Arcane-generated mTLS assets"`
-	DockerCompose string                  `json:"dockerCompose" doc:"Docker compose snippet using Arcane-generated mTLS assets"`
-	Files         []DeploymentSnippetFile `json:"files" doc:"Generated PEM files to place on the edge host"`
-	HostDirHint   string                  `json:"hostDirHint" doc:"Suggested host directory containing the generated PEM files"`
+	MTLS          *types.DeploymentSnippetMTLS
 }
 
 // ForgetSyncState makes the next sync of every resource group resend regardless of payload changes.
@@ -144,7 +130,6 @@ func (s *EnvironmentService) ForgetSyncState(environmentID string) {
 
 func NewEnvironmentService(
 	db *database.DB,
-	httpClient *http.Client,
 	dockerService *docker.DockerClientService,
 	eventService *event.EventService,
 	settingsService *settings.SettingsService,
@@ -179,8 +164,8 @@ func NewEnvironmentService(
 			running: make(map[string]bool),
 			pending: make(map[string]bool),
 		},
-		proxy:    proxy.New(db, httpClient, settingsService, syncGate),
-		health:   health.New(httpClient, dockerService),
+		proxy:    proxy.New(db, settingsService, syncGate),
+		health:   health.New(dockerService),
 		snippets: snippets.New(eventService),
 		swarm:    swarm.New(apiKeyService),
 	}
@@ -266,7 +251,7 @@ func (s *EnvironmentService) ResolveEdgeEnvironmentByToken(ctx context.Context, 
 	var env Environment
 	if err := s.db.WithContext(ctx).
 		Select("id", "access_token").
-		Where("is_edge = ?", true).
+		Where("id <> ?", LocalEnvironmentID).
 		Where("enabled = ?", true).
 		Where("access_token = ?", token).
 		First(&env).Error; err != nil {
@@ -278,9 +263,9 @@ func (s *EnvironmentService) ResolveEdgeEnvironmentByToken(ctx context.Context, 
 		if slog.Default().Enabled(ctx, slog.LevelDebug) {
 			var totalEdgeEnvs int64
 			var edgeEnvsWithToken int64
-			totalEdgeEnvsErr := s.db.WithContext(ctx).Model(&Environment{}).Where("is_edge = ?", true).Count(&totalEdgeEnvs).Error
+			totalEdgeEnvsErr := s.db.WithContext(ctx).Model(&Environment{}).Where("id <> ?", LocalEnvironmentID).Count(&totalEdgeEnvs).Error
 			edgeEnvsWithTokenErr := s.db.WithContext(ctx).Model(&Environment{}).
-				Where("is_edge = ?", true).
+				Where("id <> ?", LocalEnvironmentID).
 				Where("access_token IS NOT NULL AND access_token != ?", "").
 				Count(&edgeEnvsWithToken).Error
 
@@ -376,22 +361,24 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, env *Environ
 	if err := normalization.Normalize(env); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(env.ApiUrl) == "" {
-		return nil, common.Classify(common.ErrValidation, errors.New("apiUrl is required"))
-	}
+	id := uuid.New().String()
 	now := time.Now()
+	apiURL := cmp.Or(env.ApiUrl, "edge://"+cmp.Or(strings.Trim(edgeSlugPattern.ReplaceAllString(strings.ToLower(env.Name), "-"), "-"), id))
+	var apiURLTaken int64
+	if err := s.db.WithContext(ctx).Model(&Environment{}).Where("lower(api_url) = ?", strings.ToLower(apiURL)).Count(&apiURLTaken).Error; err != nil {
+		return nil, fmt.Errorf("failed to check environment api url: %w", err)
+	}
 	*env = Environment{ //exhaustruct:enforce
 		BaseModel: database.BaseModel{
-			ID:        uuid.New().String(),
+			ID:        id,
 			CreatedAt: now,
 			UpdatedAt: new(now),
 		},
 		Name:   env.Name,
-		ApiUrl: env.ApiUrl,
+		ApiUrl: kit.Ternary(apiURLTaken > 0, apiURL+"-"+id, apiURL),
 		// Only set status to offline if not already set (e.g., API key flow sets it to pending)
 		Status:              cmp.Or(env.Status, string(EnvironmentStatusOffline)),
 		Enabled:             env.Enabled,
-		IsEdge:              env.IsEdge,
 		Hidden:              env.Hidden,
 		LastSeen:            env.LastSeen,
 		LastEdgeTransport:   env.LastEdgeTransport,
@@ -434,34 +421,8 @@ func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, u
 	if name, ok := updates["name"].(string); ok {
 		updates["name"] = normalization.Text(name, true, true)
 	}
-	current, err := s.GetEnvironmentByID(ctx, id)
-	if err != nil {
+	if _, err := s.GetEnvironmentByID(ctx, id); err != nil {
 		return nil, err
-	}
-
-	if validateCredentialTargetChangeErr := validation.ValidateCredentialTargetChange(
-		"environment API URL",
-		current.ApiUrl,
-		func() *string {
-			if apiURL, isString := updates["api_url"].(string); isString {
-				return new(apiURL)
-			}
-			return nil
-		}(),
-		func(value string) string {
-			normalized, normalizeErr := httpx.NormalizeBaseURL(value)
-			if normalizeErr != nil {
-				return strings.TrimSpace(value)
-			}
-			return normalized
-		},
-		map[string]bool{"accessToken": kit.FromPtr(current.AccessToken) != ""},
-		map[string]bool{"accessToken": func() bool {
-			_, accessTokenUpdated := updates["access_token"]
-			return accessTokenUpdated
-		}()},
-	); validateCredentialTargetChangeErr != nil {
-		return nil, validateCredentialTargetChangeErr
 	}
 
 	updates["updated_at"] = new(time.Now())
@@ -665,7 +626,6 @@ func (s *EnvironmentService) linkEnvironmentApiKey(ctx context.Context, envID, n
 			ApiUrl:              envRecord.ApiUrl,
 			Status:              string(EnvironmentStatusPending),
 			Enabled:             envRecord.Enabled,
-			IsEdge:              envRecord.IsEdge,
 			Hidden:              envRecord.Hidden,
 			LastSeen:            nil,
 			LastEdgeTransport:   envRecord.LastEdgeTransport,
@@ -861,6 +821,12 @@ func (s *EnvironmentService) ListActiveRemoteEnvironments(ctx context.Context) (
 	return environments, nil
 }
 
+func (s *EnvironmentService) AggregateVersions(ctx context.Context) (types.ApiResponse[types.VersionInfo], error) {
+	return httpx.CollectEnvironmentData(ctx, nil, func([]types.EnvironmentData[types.VersionInfo]) types.VersionInfo {
+		return types.VersionInfo{}
+	})
+}
+
 // GetEnvironmentByIDCached is GetEnvironmentByID behind a short TTL cache that
 // remembers unknown IDs; status and heartbeat fields may be stale.
 func (s *EnvironmentService) GetEnvironmentByIDCached(ctx context.Context, id string) (*Environment, error) {
@@ -896,7 +862,7 @@ func (s *EnvironmentService) invalidateEnvironmentCache(id string) {
 }
 
 func (s *EnvironmentService) ListAccessibleEnvironments(ctx context.Context, ps *authz.PermissionSet, params pagination.QueryParams) (types.Paginated[types.Environment], error) {
-	envs, page, err := s.ListEnvironmentsPaginated(ctx, params, accessibleEnvironmentIDs(ps))
+	envs, page, err := s.ListEnvironmentsPaginated(ctx, params, ps.AccessibleEnvironmentIDs())
 	if err != nil {
 		return types.Paginated[types.Environment]{}, err
 	}
@@ -993,8 +959,8 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 				{
 					Key: "type",
 					Fn: func(item types.Environment, filterValue string) bool {
-						if !item.IsEdge {
-							return strings.ToLower(strings.TrimSpace(filterValue)) == "http"
+						if item.ID == LocalEnvironmentID {
+							return false
 						}
 						if strings.ToLower(strings.TrimSpace(filterValue)) == "polling" {
 							return item.LastPollAt != nil
@@ -1264,7 +1230,7 @@ func (s *EnvironmentService) runHealthCheck(ctx context.Context, envID string) (
 		return types.SchedulerOutcome{Status: types.RunStatusCanceled, Message: "Environment disabled"}, nil
 	}
 	wasOnline := localEnvironment.Status == string(EnvironmentStatusOnline)
-	status, err := s.TestConnection(ctx, envID, nil)
+	status, err := s.TestConnection(ctx, envID)
 	switch {
 	case err != nil:
 		slog.WarnContext(ctx, "environment health check failed", "environmentId", envID, "status", status, "error", err)
@@ -1331,15 +1297,15 @@ func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, 
 	return s.proxy.SyncRepositories(ctx, target)
 }
 
-func (s *EnvironmentService) TestConnection(ctx context.Context, id string, customApiUrl *string) (string, error) {
+func (s *EnvironmentService) TestConnection(ctx context.Context, id string) (string, error) {
 	envRecord, err := s.GetEnvironmentByID(ctx, id)
 	if err != nil {
 		return "error", err
 	}
 
-	status, err := s.health.Probe(ctx, id, mo.PointerToOption(customApiUrl).OrElse(envRecord.ApiUrl), envRecord.IsEdge, customApiUrl != nil,
+	status, err := s.health.Probe(ctx, id,
 		func(probeCtx context.Context) (int, error) {
-			target, targetErr := proxy.NewTarget(envRecord.ID, envRecord.Name, envRecord.ApiUrl, envRecord.IsEdge, envRecord.AccessToken)
+			target, targetErr := proxy.NewTarget(envRecord.ID, envRecord.Name, envRecord.AccessToken)
 			if targetErr != nil {
 				return 0, targetErr
 			}
@@ -1349,17 +1315,10 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 			}
 			return resp.StatusCode, nil
 		})
-	if customApiUrl == nil {
-		if updateErr := s.updateEnvironmentStatus(ctx, id, status); updateErr != nil {
-			slog.WarnContext(ctx, "Failed to persist environment status", "environmentId", id, "status", status, "error", updateErr)
-		}
-		return status, err
+	if updateErr := s.updateEnvironmentStatus(ctx, id, status); updateErr != nil {
+		slog.WarnContext(ctx, "Failed to persist environment status", "environmentId", id, "status", status, "error", updateErr)
 	}
-	if err != nil {
-		slog.WarnContext(ctx, "Environment custom URL connection test failed", "environmentId", id, "error", err)
-		return "error", common.ErrEnvironmentConnectionTestFailed
-	}
-	return status, nil
+	return status, err
 }
 
 func (s *EnvironmentService) updateEnvironmentStatus(ctx context.Context, id, status string) error {
@@ -1368,14 +1327,13 @@ func (s *EnvironmentService) updateEnvironmentStatus(ctx context.Context, id, st
 		"status":     status,
 		"updated_at": &now,
 	}
-	query := s.db.WithContext(ctx).Model(&Environment{}).Where("id = ?", id)
 	if status == string(EnvironmentStatusOnline) {
 		updates["last_seen"] = &now
-		query = query.Where("status <> ? OR is_edge = ?", string(EnvironmentStatusPending), false)
-	} else {
-		query = query.Where("status <> ?", string(EnvironmentStatusPending))
 	}
-	result := query.Updates(updates)
+	result := s.db.WithContext(ctx).Model(&Environment{}).
+		Where("id = ?", id).
+		Where("status <> ?", string(EnvironmentStatusPending)).
+		Updates(updates)
 	if result.Error != nil {
 		return fmt.Errorf("failed to update environment status: %w", result.Error)
 	}
@@ -1383,7 +1341,6 @@ func (s *EnvironmentService) updateEnvironmentStatus(ctx context.Context, id, st
 		slog.DebugContext(ctx, "skipping status update for pending environment", "environmentId", id)
 		return nil
 	}
-	// Direct environments have no tunnel callback, so this is their only liveness change.
 	s.NotifyRuntimeStateChanged()
 	return nil
 }
@@ -1397,9 +1354,9 @@ func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id 
 		UPDATE environments
 		SET last_seen = ?, status = ?, updated_at = ?
 		WHERE id = ?
-		AND NOT (status = ? AND is_edge = ?)
+		AND status <> ?
 		AND (status != ? OR last_seen IS NULL OR last_seen < ?)
-	`, new(now), string(EnvironmentStatusOnline), new(now), id, string(EnvironmentStatusPending), true, string(EnvironmentStatusOnline), now.Add(-30*time.Second))
+	`, new(now), string(EnvironmentStatusOnline), new(now), id, string(EnvironmentStatusPending), string(EnvironmentStatusOnline), now.Add(-30*time.Second))
 
 	if result.Error != nil {
 		return fmt.Errorf("failed to update environment heartbeat: %w", result.Error)
@@ -1450,7 +1407,7 @@ func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Contex
 // ApplyEnvironmentRuntimeState overlays in-memory tunnel and poll state onto an
 // edge environment without mutating persisted state.
 func ApplyEnvironmentRuntimeState(env types.Environment) types.Environment {
-	if !env.IsEdge {
+	if env.ID == LocalEnvironmentID {
 		return env
 	}
 
@@ -1473,7 +1430,6 @@ func ApplyEnvironmentRuntimeState(env types.Environment) types.Environment {
 			}
 		}(),
 		Enabled:           env.Enabled,
-		IsEdge:            env.IsEdge,
 		LastSeen:          env.LastSeen,
 		EdgeTransport:     kit.Ternary(kit.FromPtr(runtimeState).Transport != "", new(kit.FromPtr(runtimeState).Transport), nil),
 		LastEdgeTransport: env.LastEdgeTransport,
@@ -1490,8 +1446,6 @@ func ApplyEnvironmentRuntimeState(env types.Environment) types.Environment {
 		LastPollAt:          pollState.LastPollAt,
 		EdgeMTLSCertificate: env.EdgeMTLSCertificate,
 		ApiKey:              env.ApiKey,
-		AccessToken:         "",
-		UseApiKey:           false,
 		RegenerateApiKey:    false,
 	}
 }
@@ -1499,8 +1453,22 @@ func ApplyEnvironmentRuntimeState(env types.Environment) types.Environment {
 // ReconcileEdgeStatusesOnStartup marks non-pending edge environments offline at
 // startup, since tunnels are process-local and persisted "online" flags are stale.
 func (s *EnvironmentService) ReconcileEdgeStatusesOnStartup(ctx context.Context) error {
+	var awaitingEnrollment []string
+	if err := s.db.WithContext(ctx).Model(&Environment{}).
+		Where("id <> ?", LocalEnvironmentID).
+		Where("status = ?", string(EnvironmentStatusPending)).
+		Where("access_token IS NULL OR access_token = ?", "").
+		Order("name").
+		Pluck("name", &awaitingEnrollment).Error; err != nil {
+		return fmt.Errorf("failed to list environments awaiting enrollment: %w", err)
+	}
+	if len(awaitingEnrollment) > 0 {
+		slog.WarnContext(ctx, "Environments need re-enrollment as edge agents; regenerate their API key and redeploy the agent with ARCANE_EDGE_AGENT=true",
+			"count", len(awaitingEnrollment), "environments", awaitingEnrollment)
+	}
+
 	result := s.db.WithContext(ctx).Model(&Environment{}).
-		Where("is_edge = ?", true).
+		Where("id <> ?", LocalEnvironmentID).
 		Where("status <> ?", string(EnvironmentStatusPending)).
 		Where("status <> ?", string(EnvironmentStatusOffline)).
 		Updates(map[string]any{
@@ -1614,7 +1582,7 @@ func (s *EnvironmentService) resolveRemoteEnvironmentTarget(ctx context.Context,
 		return nil, fmt.Errorf("failed to get environment: %w", err)
 	}
 
-	return proxy.NewTarget(envRecord.ID, envRecord.Name, envRecord.ApiUrl, envRecord.IsEdge, envRecord.AccessToken)
+	return proxy.NewTarget(envRecord.ID, envRecord.Name, envRecord.AccessToken)
 }
 
 func (s *EnvironmentService) ExecuteRemoteRequest(ctx context.Context, envID, method, path string, body []byte) (*remenv.Response, error) {
@@ -1652,7 +1620,7 @@ func (s *EnvironmentService) ProxyJSONRequestForEnvironment(ctx context.Context,
 	proxyCtx, cancel := s.proxy.Context(ctx)
 	defer cancel()
 
-	target, err := proxy.NewTarget(env.ID, env.Name, env.ApiUrl, env.IsEdge, env.AccessToken)
+	target, err := proxy.NewTarget(env.ID, env.Name, env.AccessToken)
 	if err != nil {
 		return err
 	}
@@ -1671,15 +1639,6 @@ func (s *EnvironmentService) ProxyRequest(ctx context.Context, envID, method, pa
 	}
 
 	return resp.Body, resp.StatusCode, nil
-}
-
-// GenerateDeploymentSnippets generates Docker deployment snippets for an environment.
-func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, envID, managerURL, agentURL, apiKey string) (*DeploymentSnippets, error) {
-	dockerRun, dockerCompose := snippets.Direct(strings.TrimRight(managerURL, "/"), agentURL, apiKey)
-	return &DeploymentSnippets{
-		DockerRun:     dockerRun,
-		DockerCompose: dockerCompose,
-	}, nil
 }
 
 // GenerateEdgeDeploymentSnippets generates Docker deployment snippets for an
@@ -1727,9 +1686,9 @@ func (s *EnvironmentService) GenerateEdgeDeploymentSnippets(ctx context.Context,
 		}, nil
 	}
 
-	files := make([]DeploymentSnippetFile, 0, len(generatedAssets.Files))
+	files := make([]types.DeploymentSnippetFile, 0, len(generatedAssets.Files))
 	for _, file := range generatedAssets.Files {
-		files = append(files, DeploymentSnippetFile{
+		files = append(files, types.DeploymentSnippetFile{
 			Name:          file.Name,
 			Content:       file.Content,
 			ContainerPath: file.ContainerPath,
@@ -1739,7 +1698,7 @@ func (s *EnvironmentService) GenerateEdgeDeploymentSnippets(ctx context.Context,
 	return &DeploymentSnippets{
 		DockerRun:     dockerRun,
 		DockerCompose: dockerCompose,
-		MTLS: &DeploymentSnippetMTLS{
+		MTLS: &types.DeploymentSnippetMTLS{
 			DockerRun:     mtlsDockerRun,
 			DockerCompose: mtlsDockerCompose,
 			Files:         files,
@@ -1896,7 +1855,6 @@ func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
 			ApiUrl:              agentURL,
 			Status:              string(EnvironmentStatusPending),
 			Enabled:             true,
-			IsEdge:              true,
 			Hidden:              false,
 			ParentEnvironmentID: new(parentEnvironmentID),
 			SwarmNodeID:         new(nodeID),

@@ -2,6 +2,7 @@ package podman
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
+	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 	internaltypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
@@ -58,6 +60,7 @@ func newPodsCmd() *cobra.Command {
 				})
 			},
 		}
+		cmdutil.SetResource(podRef, actionCmd)
 		if action.name == "stop" {
 			actionCmd.Flags().IntVarP(&timeout, "timeout", "t", 10, "Seconds to wait before killing the pod")
 		}
@@ -115,7 +118,7 @@ func newPodListCmd() *cobra.Command {
 }
 
 func newPodInspectCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:          "inspect <pod>",
 		Aliases:      []string{"get"},
 		Short:        "Show pod details",
@@ -153,6 +156,8 @@ func newPodInspectCmd() *cobra.Command {
 			})
 		},
 	}
+	cmdutil.SetResource(podRef, cmd)
+	return cmd
 }
 
 func newPodDeleteCmd() *cobra.Command {
@@ -180,6 +185,35 @@ func newPodDeleteCmd() *cobra.Command {
 			})
 		},
 	}
+	cmdutil.SetResource(podRef, cmd)
 	cmd.Flags().BoolVarP(&opts.force, "force", "f", false, "Stop and remove running containers and skip the confirmation prompt")
 	return cmd
+}
+
+var podRef = cmdutil.ResourceRef[types.PodInspect, types.Pod]{
+	EnvironmentScoped: true,
+	Singular:          "pod",
+	Plural:            "pods",
+	IDHint:            "the pod ID",
+	ListCmd:           "arcane podman pods list",
+	SearchCandidates: func(ctx context.Context, c *client.Client, identifier string) ([]types.Pod, error) {
+		return searchPodman(ctx, c, internaltypes.PodmanPods(c.EnvID()), func(pod types.Pod) bool {
+			return strings.EqualFold(pod.Name, identifier) || cmdutil.LooksLikeIDPrefix(strings.ToLower(identifier)) && strings.HasPrefix(pod.ID, strings.ToLower(identifier))
+		})
+	},
+	Label: func(pod types.Pod) string {
+		return fmt.Sprintf("%s (%s)", pod.Name, pod.ID[:min(len(pod.ID), 12)])
+	},
+	Promote: func(pod types.Pod) *types.PodInspect {
+		return &types.PodInspect{
+			ID:   pod.ID,
+			Name: pod.Name,
+		}
+	},
+	IdentifierOf: func(pod types.PodInspect) string {
+		return pod.Name
+	},
+	Exact: func(pod types.Pod, identifierLower, original string) bool {
+		return strings.EqualFold(pod.Name, original) || pod.ID == identifierLower
+	},
 }

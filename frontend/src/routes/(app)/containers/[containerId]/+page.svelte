@@ -470,7 +470,7 @@
 				minWidth="20">{getContainerStatusLabel(container.state.status)}</Badge
 			>
 		{/if}
-		<EnvironmentCell value={currentEnvId} />
+		<EnvironmentCell value={currentEnvId} plain />
 		{#if updateInfo?.hasUpdate}
 			<Badge variant="amber" minWidth="20">{m.sidebar_update_available()}</Badge>
 		{/if}

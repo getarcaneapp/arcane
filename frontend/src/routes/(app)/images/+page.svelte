@@ -13,7 +13,6 @@
 	import { displaySize, FileDropZone, MEGABYTE, type FileDropZoneProps } from '#lib/components/ui/file-drop-zone/index.js';
 	import { Progress } from '#lib/components/ui/progress/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { CloseIcon, VolumesIcon, LocalFolderComputerIcon, SearchIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -31,6 +30,7 @@
 		fetchAcrossEnvironments,
 		hasShownPermission,
 		listScopes,
+		readableEnvironments,
 		settleAcrossEnvironments,
 		sumAcrossEnvironments,
 		withFailedEnvironments
@@ -54,7 +54,6 @@
 	let uploadProgress = $state<ChunkedUploadProgress | null>(null);
 	let imagePruneMode = $state<'dangling' | 'all' | 'olderThan'>('dangling');
 	let imagePruneUntil = $state('');
-	const envId = $derived(environmentStore.selected?.id || '0');
 	const scope = $derived(environmentStore.shownKey);
 	const imageUsageFallback: ImageUsageCounts = {
 		imagesInuse: 0,
@@ -63,14 +62,10 @@
 		totalImageSize: 0
 	};
 
-	// The upload limit rides along with the image list; older agents omit it and
-	// the server still enforces the real limit.
-	const DEFAULT_MAX_UPLOAD_SIZE_MB = 500;
-
 	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
 	const imagesQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = environmentStore.shown;
+		const environments = readableEnvironments('images:list');
 		const options = requestOptions;
 		return {
 			queryKey: queryKeys.images.list(queryScope, options),
@@ -88,11 +83,15 @@
 
 	const imageUsageCountsQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = environmentStore.shown;
+		const environments = readableEnvironments('images:list');
 		return {
 			queryKey: queryKeys.images.usageCounts(queryScope),
 			queryFn: () =>
-				sumAcrossEnvironments(environments, (id, config) => imageService.getImageUsageCountsForEnvironment(id, config)),
+				sumAcrossEnvironments(
+					environments,
+					(id, config) => imageService.getImageUsageCountsForEnvironment(id, config),
+					imageUsageFallback
+				),
 			initialData: data.scope === queryScope ? data.imageUsageCounts : undefined,
 			select: (value) => ({ envId: queryScope, value })
 		};
@@ -161,20 +160,17 @@
 	const uploadEnvironmentId = $derived(destinationEnvironmentId(pickedUploadEnvironmentId, 'images:upload'));
 	// Merged lists carry one environment's upload limit, so the destination's own is read while uploading.
 	// If it cannot be read, the browser sets no limit and the destination enforces its own.
-	const mergedUpload = $derived(environmentStore.shown.length > 1);
 	const uploadLimitQuery = createQuery(() => ({
 		queryKey: queryKeys.images.uploadLimit(uploadEnvironmentId),
 		queryFn: async () =>
 			(await imageService.getImagesForEnvironment(uploadEnvironmentId, { pagination: { page: 1, limit: 1 } })).maxImageUploadSize,
-		enabled: isUploadDialogOpen && mergedUpload,
+		enabled: isUploadDialogOpen,
 		retry: false
 	}));
-	const maxUploadSizeMB = $derived(
-		mergedUpload ? uploadLimitQuery.data : (images?.maxImageUploadSize ?? DEFAULT_MAX_UPLOAD_SIZE_MB)
-	);
+	const maxUploadSizeMB = $derived(uploadLimitQuery.data);
 
 	const uploadImagesMutation = createMutation(() => ({
-		mutationKey: ['images', 'upload', envId],
+		mutationKey: ['images', 'upload', uploadEnvironmentId],
 		mutationFn: async ({ files, requestedEnvId }: { files: File[]; requestedEnvId: string }) => {
 			for (const file of files) {
 				try {
@@ -201,17 +197,6 @@
 			}
 		}
 	}));
-
-	useEnvironmentRefresh(() => {
-		selectedIds = [];
-		isPullDialogOpen = false;
-		isRegistrySearchDialogOpen = false;
-		isUploadDialogOpen = false;
-		isConfirmPruneDialogOpen = false;
-		uploadedFiles = [];
-		pickedUploadEnvironmentId = '';
-		isRefreshing = false;
-	});
 
 	const imageUsageCounts = $derived(
 		imageUsageCountsQuery.data?.envId === scope ? imageUsageCountsQuery.data.value : imageUsageFallback
@@ -256,7 +241,7 @@
 	];
 
 	async function loadImages(options: SearchPaginationSortRequest = requestOptions, requestedScope: string = scope) {
-		const environments = environmentStore.shown;
+		const environments = readableEnvironments('images:list');
 		requestOptions = options;
 		await Promise.all([
 			queryClient.query({
@@ -270,7 +255,11 @@
 			queryClient.query({
 				queryKey: queryKeys.images.usageCounts(requestedScope),
 				queryFn: () =>
-					sumAcrossEnvironments(environments, (id, config) => imageService.getImageUsageCountsForEnvironment(id, config)),
+					sumAcrossEnvironments(
+						environments,
+						(id, config) => imageService.getImageUsageCountsForEnvironment(id, config),
+						imageUsageFallback
+					),
 				staleTime: 0
 			})
 		]);

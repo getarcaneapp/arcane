@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { goto, refreshAll } from '$app/navigation';
+	import { goto } from '$app/navigation';
+	import { createQuery, keepPreviousData } from '@tanstack/svelte-query';
 	import { PersistedState } from 'runed';
-	import { onDestroy, onMount, untrack } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import { type ActionButton } from '#lib/components/action-button-group/index.js';
@@ -10,10 +11,11 @@
 	import DockerInfoDialog, { type EngineInfo } from '#lib/components/dialogs/docker-info-dialog.svelte';
 	import PruneConfirmationDialog from '#lib/components/dialogs/prune-confirmation-dialog.svelte';
 	import * as StatStrip from '#lib/components/stat-strip/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import {
+		AlertTriangleIcon,
 		BoxIcon,
 		ContainersIcon,
-		EnvironmentsIcon,
 		ImagesIcon,
 		InfoIcon,
 		InspectIcon,
@@ -24,30 +26,40 @@
 		LayoutListIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { apiKeyService } from '#lib/services/api-key-service.js';
+	import { containerService } from '#lib/services/container-service.js';
+	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
+	import { imageService } from '#lib/services/image-service.js';
 	import { podmanService } from '#lib/services/podman-service.js';
+	import { projectService } from '#lib/services/project-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { systemService } from '#lib/services/system-service.js';
-	import { activityStore } from '#lib/stores/activity.store.svelte.js';
-	import { dashboardStore } from '#lib/stores/dashboard.store.svelte.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { volumeService } from '#lib/services/volume-service.js';
+	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
+	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { Activity } from '#lib/types/activity.type.js';
 	import type { PruneType, SystemPruneRequest } from '#lib/types/automation.js';
-	import type { Environment } from '#lib/types/environment.js';
+	import type { ContainerStatusCounts, ImageUsageCounts, VolumeUsageCounts } from '#lib/types/docker.js';
+	import type { Environment, EnvironmentVulnerabilitySummary } from '#lib/types/environment.js';
+	import type { PodmanStatus } from '#lib/types/podman.js';
 	import type { AppVersionInformation, Settings } from '#lib/types/settings.js';
 	import type {
-		DashboardActionItemKind,
 		DashboardEnvironmentCardState,
 		DashboardEnvironmentOverview,
 		DashboardLiveStatsStatus,
 		SystemStats
 	} from '#lib/types/shared.js';
+	import type { ProjectStatusCounts } from '#lib/types/swarm.js';
 	import { cn } from '#lib/utils.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasAnyPermission, hasPermission } from '#lib/utils/auth.js';
 	import { isEnvironmentOnline } from '#lib/utils/docker.js';
+	import { readableEnvironments, sumAcrossEnvironments, type EnvironmentFailure } from '#lib/utils/environments.js';
+	import { parseInstant, withOccurrenceKeys } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { createStatsWebSocket, type ReconnectingWebSocket } from '#lib/utils/ws.js';
 
@@ -67,11 +79,9 @@
 
 	let {
 		heroGreeting,
-		debugAllGood = false,
 		debugUpgrade = false
 	}: {
 		heroGreeting: string;
-		debugAllGood?: boolean;
 		debugUpgrade?: boolean;
 	} = $props();
 
@@ -87,6 +97,26 @@
 		newestVersion: 'debug-v2',
 		updateAvailable: true
 	};
+
+	const EMPTY_CONTAINER_COUNTS: ContainerStatusCounts = {
+		runningContainers: 0,
+		stoppedContainers: 0,
+		totalContainers: 0,
+		updatesAvailable: 0
+	};
+	const EMPTY_IMAGE_COUNTS: ImageUsageCounts = {
+		imagesInuse: 0,
+		imagesUnused: 0,
+		totalImages: 0,
+		totalImageSize: 0
+	};
+	const EMPTY_VOLUME_COUNTS: VolumeUsageCounts = {
+		inuse: 0,
+		unused: 0,
+		total: 0
+	};
+	const ALL_API_KEYS = { pagination: { page: 1, limit: -1 } };
+	const API_KEY_EXPIRY_WINDOW_HOURS = 14 * 24;
 
 	type EnvironmentLiveStatsState = {
 		stats: SystemStats | null;
@@ -104,8 +134,6 @@
 	let pruneDefaults = $state<Settings | null>(null);
 	let pruneDefaultsLoadingId = $state<string | null>(null);
 	let pruningEnvironmentId = $state<string | null>(null);
-	let pendingPruneActivityId = $state<string | null>(null);
-	let reloadVersion = $state(0);
 	let liveStatsByEnvironmentId = $state<Record<string, EnvironmentLiveStatsState>>({});
 	let upgradeDialogOpenById = $state<Record<string, boolean>>({});
 	let upgradeDialogUpgradingById = $state<Record<string, boolean>>({});
@@ -127,13 +155,12 @@
 			(environment) => environment.enabled && hasPermission('dashboard:read', environment.id)
 		);
 	});
-	const currentEnvironmentId = $derived(environmentStore.selected?.id ?? null);
 
 	function canPruneInEnvironment(envId: string): boolean {
 		return hasAnyPermission(['images:prune', 'volumes:prune', 'networks:prune'], envId);
 	}
-	function canUpgradeEnvironment(): boolean {
-		return hasPermission('environments:update');
+	function canUpgradeEnvironment(envId: string): boolean {
+		return hasPermission('environments:update', envId);
 	}
 
 	function createEmptyLiveStatsState(): EnvironmentLiveStatsState {
@@ -286,17 +313,11 @@
 
 	const environmentCards = $derived.by((): DashboardEnvironmentCardState[] => {
 		return [...availableEnvironments]
-			.sort((a, b) => {
-				const currentOrder = Number(b.id === currentEnvironmentId) - Number(a.id === currentEnvironmentId);
-				if (currentOrder !== 0) {
-					return currentOrder;
-				}
-
-				return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.id.localeCompare(b.id);
-			})
+			.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.id.localeCompare(b.id))
 			.map((environment) => ({ environment }));
 	});
 	const loadableEnvironmentCards = $derived(environmentCards.filter(({ environment }) => shouldLoadEnvironment(environment)));
+	const loadableEnvironmentIds = $derived(new Set(loadableEnvironmentCards.map(({ environment }) => environment.id)));
 	const liveStatsEnvironmentIds = $derived.by(
 		() =>
 			new Set(
@@ -306,82 +327,214 @@
 			)
 	);
 
-	function resolveSnapshotErrorMessage(state: NonNullable<ReturnType<typeof dashboardStore.getEnvironmentState>>): string {
-		if (state.errorCode === 'agent_incompatible') {
-			return m.dashboard_all_agent_incompatible();
-		}
-		return state.errorMessage || m.common_unknown();
+	function loadableEnvironments(permission: string): EnvironmentRef[] {
+		return readableEnvironments(permission).filter((environment) => loadableEnvironmentIds.has(environment.id));
 	}
 
-	const boardState = $derived.by(() => {
-		void reloadVersion;
+	function dashboardQueryKey(domain: string, environments: EnvironmentRef[]) {
+		return [domain, environmentStore.shownKey, 'dashboard', environments.map((environment) => environment.id).join(',')];
+	}
 
-		const overviewById = new Map<string, DashboardEnvironmentOverview>();
-		const items: DashboardEnvironmentOverview[] = [];
+	function byEnvironmentId<C>(result: { byEnvironment: { environment: EnvironmentRef; data: C }[] } | undefined): Map<string, C> {
+		return new Map((result?.byEnvironment ?? []).map(({ environment, data }) => [environment.id, data]));
+	}
 
-		for (const { environment } of environmentCards) {
-			const state = dashboardStore.getEnvironmentState(environment.id);
-			let item: DashboardEnvironmentOverview;
+	function isVersionInformation(value: Partial<AppVersionInformation> | undefined): value is AppVersionInformation {
+		return value?.currentVersion !== undefined;
+	}
 
-			if (state?.snapshot) {
-				// Last-known data keeps rendering even while the environment is
-				// erroring; the error banner is shown alongside it.
-				const snapshot = state.snapshot;
-				item = {
-					environment,
-					containers: snapshot.containers.counts ?? { runningContainers: 0, stoppedContainers: 0, totalContainers: 0 },
-					imageUsageCounts: snapshot.imageUsageCounts,
-					volumeUsageCounts: snapshot.volumeUsageCounts,
-					actionItems: {
-						...snapshot.actionItems,
-						items: snapshot.actionItems.items.filter(
-							(item) =>
-								item.kind !== 'actionable_vulnerabilities' || featureStore.isEnabled('vulnerabilityManagement', environment.id)
-						)
-					},
-					settings: snapshot.settings,
-					versionInfo: snapshot.versionInfo,
-					podCount: snapshot.podCount,
-					snapshotState: 'ready',
-					snapshotError: state.streamError ? resolveSnapshotErrorMessage(state) : undefined
-				};
-			} else if (state?.streamError) {
-				item = {
-					...createBaseEnvironmentOverview(environment),
-					snapshotState: 'error',
-					snapshotError: resolveSnapshotErrorMessage(state)
-				};
-			} else {
-				item = createBaseEnvironmentOverview(environment);
-			}
-
-			overviewById.set(environment.id, item);
-			items.push(item);
-		}
-
+	const containersQuery = createQuery(() => {
+		const environments = loadableEnvironments('containers:list');
 		return {
-			overviewById,
-			summary: buildOverviewSummary(items)
+			queryKey: dashboardQueryKey('containers', environments),
+			queryFn: () =>
+				sumAcrossEnvironments(
+					environments,
+					(scope, config) => containerService.getContainerStatusCountsForEnvironment(scope, config),
+					EMPTY_CONTAINER_COUNTS
+				),
+			placeholderData: keepPreviousData
 		};
 	});
 
-	function isEnvironmentSnapshotLoading(environmentId: string): boolean {
-		return dashboardStore.isSnapshotLoading(environmentId);
-	}
+	const projectsQuery = createQuery(() => {
+		const environments = loadableEnvironments('projects:list');
+		return {
+			queryKey: dashboardQueryKey('projects', environments),
+			queryFn: () =>
+				sumAcrossEnvironments<Pick<ProjectStatusCounts, 'updatesAvailable'>>(
+					environments,
+					(scope, config) => projectService.getProjectStatusCountsForEnvironment(scope, config),
+					{ updatesAvailable: 0 }
+				),
+			placeholderData: keepPreviousData
+		};
+	});
 
-	const boardSummaryLoading = $derived.by(() => {
-		let hasReachable = false;
-		for (const { environment } of environmentCards) {
-			if (!shouldLoadEnvironment(environment)) {
-				continue;
-			}
-			hasReachable = true;
-			if (dashboardStore.getEnvironmentState(environment.id)?.hasLoaded) {
-				return false;
+	const imagesQuery = createQuery(() => {
+		const environments = loadableEnvironments('images:list');
+		return {
+			queryKey: dashboardQueryKey('images', environments),
+			queryFn: () =>
+				sumAcrossEnvironments(
+					environments,
+					(scope, config) => imageService.getImageUsageCountsForEnvironment(scope, config),
+					EMPTY_IMAGE_COUNTS
+				),
+			placeholderData: keepPreviousData
+		};
+	});
+
+	const volumesQuery = createQuery(() => {
+		const environments = loadableEnvironments('volumes:list');
+		return {
+			queryKey: dashboardQueryKey('volumes', environments),
+			queryFn: () =>
+				sumAcrossEnvironments(
+					environments,
+					(scope, config) => volumeService.getVolumeUsageCounts(scope, config),
+					EMPTY_VOLUME_COUNTS
+				),
+			placeholderData: keepPreviousData
+		};
+	});
+
+	const vulnerabilitiesQuery = createQuery(() => {
+		const environments = loadableEnvironments('vulnerabilities:read').filter((environment) =>
+			featureStore.isEnabled('vulnerabilityManagement', environment.id)
+		);
+		return {
+			queryKey: dashboardQueryKey('vulnerabilities', environments),
+			queryFn: () =>
+				sumAcrossEnvironments<Pick<EnvironmentVulnerabilitySummary, 'actionableCount'>>(
+					environments,
+					(scope, config) => vulnerabilityService.getEnvironmentSummary(scope, config),
+					{ actionableCount: 0 }
+				),
+			placeholderData: keepPreviousData
+		};
+	});
+
+	const podmanQuery = createQuery(() => {
+		const environments = loadableEnvironments('podman:read');
+		return {
+			queryKey: dashboardQueryKey('podman', environments),
+			queryFn: () =>
+				sumAcrossEnvironments<Pick<PodmanStatus, 'detected' | 'podCount'>>(
+					environments,
+					(scope, config) => podmanService.getStatus(scope, config),
+					{ detected: false, podCount: 0 }
+				),
+			placeholderData: keepPreviousData
+		};
+	});
+
+	const versionsQuery = createQuery(() => {
+		const environments = loadableEnvironments('environments:read');
+		return {
+			queryKey: dashboardQueryKey('environments', environments),
+			queryFn: () =>
+				sumAcrossEnvironments<Partial<AppVersionInformation>>(
+					environments,
+					(scope, config) => environmentManagementService.getVersion(scope, config),
+					{}
+				),
+			placeholderData: keepPreviousData
+		};
+	});
+
+	const apiKeysQuery = createQuery(() => ({
+		queryKey: queryKeys.apiKeys.list(ALL_API_KEYS),
+		queryFn: () => apiKeyService.getApiKeys(ALL_API_KEYS),
+		enabled: userStore.hasPermission('apikeys:list')
+	}));
+
+	const environmentQueries = [
+		containersQuery,
+		projectsQuery,
+		imagesQuery,
+		volumesQuery,
+		vulnerabilitiesQuery,
+		podmanQuery,
+		versionsQuery
+	];
+
+	const containersByEnvironment = $derived(byEnvironmentId(containersQuery.data));
+	const projectsByEnvironment = $derived(byEnvironmentId(projectsQuery.data));
+	const imagesByEnvironment = $derived(byEnvironmentId(imagesQuery.data));
+	const vulnerabilitiesByEnvironment = $derived(byEnvironmentId(vulnerabilitiesQuery.data));
+	const podmanByEnvironment = $derived(byEnvironmentId(podmanQuery.data));
+	const versionsByEnvironment = $derived(byEnvironmentId(versionsQuery.data));
+
+	const failedEnvironments = $derived.by((): EnvironmentFailure[] => {
+		const failures = environmentQueries.flatMap((query) => query.data?.failedEnvironments ?? []);
+		return failures.filter(
+			(failure, index) => failures.findIndex((other) => other.environment.id === failure.environment.id) === index
+		);
+	});
+	const failedEnvironmentMessages = $derived.by(() => {
+		const messages = new Map<string, string[]>();
+		for (const query of environmentQueries) {
+			for (const { environment, message } of query.data?.failedEnvironments ?? []) {
+				messages.set(environment.id, [...(messages.get(environment.id) ?? []), message]);
 			}
 		}
-		return hasReachable;
+		return messages;
 	});
+	const queryErrors = $derived(
+		[...environmentQueries, apiKeysQuery].flatMap((query) => (query.error ? [extractApiErrorMessage(query.error)] : []))
+	);
+	const excludedEnvironmentCount = $derived(
+		Math.max(0, ...environmentQueries.map((query) => query.data?.excludedEnvironments.length ?? 0))
+	);
+
+	const expiringApiKeys = $derived.by(() => {
+		const cutoff = Temporal.Now.instant().add({ hours: API_KEY_EXPIRY_WINDOW_HOURS });
+		return (apiKeysQuery.data?.data ?? []).filter((apiKey) => {
+			const expiresAt = parseInstant(apiKey.expiresAt);
+			return expiresAt !== null && Temporal.Instant.compare(expiresAt, cutoff) <= 0;
+		}).length;
+	});
+
+	function buildEnvironmentOverview(environment: Environment): DashboardEnvironmentOverview {
+		const containers = containersByEnvironment.get(environment.id) ?? EMPTY_CONTAINER_COUNTS;
+		const updates = containers.updatesAvailable + (projectsByEnvironment.get(environment.id)?.updatesAvailable ?? 0);
+		const vulnerabilities = vulnerabilitiesByEnvironment.get(environment.id)?.actionableCount ?? 0;
+		const expiringKeys = environment.id === LOCAL_DOCKER_ENVIRONMENT_ID ? expiringApiKeys : 0;
+		const podman = podmanByEnvironment.get(environment.id);
+		const versionInfo = versionsByEnvironment.get(environment.id);
+
+		return {
+			environment,
+			containers,
+			imageUsageCounts: imagesByEnvironment.get(environment.id) ?? EMPTY_IMAGE_COUNTS,
+			updates,
+			vulnerabilities,
+			actionItemCount: [containers.stoppedContainers, updates, vulnerabilities, expiringKeys].filter((count) => count > 0).length,
+			versionInfo: isVersionInformation(versionInfo) ? versionInfo : undefined,
+			podCount: podman?.detected ? podman.podCount : undefined,
+			error: failedEnvironmentMessages.get(environment.id)?.join('; ')
+		};
+	}
+
+	const overviewById = $derived(
+		new Map(environmentCards.map(({ environment }) => [environment.id, buildEnvironmentOverview(environment)]))
+	);
+
+	const boardSummary = $derived(
+		buildOverviewSummary([...overviewById.values()], {
+			containers: containersQuery.data ?? EMPTY_CONTAINER_COUNTS,
+			images: imagesQuery.data ?? EMPTY_IMAGE_COUNTS,
+			volumes: volumesQuery.data ?? EMPTY_VOLUME_COUNTS,
+			pods: podmanQuery.data?.podCount ?? 0
+		})
+	);
+
+	function isEnvironmentCountsLoading(environmentId: string): boolean {
+		return loadableEnvironmentIds.has(environmentId) && !containersByEnvironment.has(environmentId) && containersQuery.isFetching;
+	}
+
+	const boardSummaryLoading = $derived(loadableEnvironmentIds.size > 0 && containersQuery.isPending);
 
 	$effect(() => {
 		const environmentsToLoad = loadableEnvironmentCards.map(({ environment }) => environment);
@@ -406,61 +559,21 @@
 		});
 	});
 
-	let refreshedPruneActivityId: string | null = null;
-	function refreshCompletedPrune(activities: readonly Activity[] = activityStore.activities) {
-		const id = pendingPruneActivityId;
-		if (!id || id === refreshedPruneActivityId) return;
-		const status = activities.find((activity) => activity.id === id)?.status;
-		if (status !== 'success' && status !== 'failed' && status !== 'cancelled') return;
-		refreshedPruneActivityId = id;
-		void refreshOverview();
-	}
-
-	onMount(() => activityStore.subscribeActivities(refreshCompletedPrune));
-
-	onMount(() => {
-		void dashboardStore.start({ debugAllGood });
-	});
-
 	onDestroy(() => {
 		cleanupEnvironmentLiveStats();
-		dashboardStore.stop();
 	});
+
+	async function refetchEnvironmentQueries() {
+		await Promise.all([...environmentQueries, apiKeysQuery].map((query) => query.refetch()));
+	}
 
 	async function refreshOverview() {
 		isRefreshing = true;
 		try {
 			retryFailedLiveStats();
-			await refreshAll();
-			await dashboardStore.refresh();
-			reloadVersion += 1;
+			await refetchEnvironmentQueries();
 		} finally {
 			isRefreshing = false;
-		}
-	}
-
-	async function useEnvironment(environment: Environment) {
-		if (!environment.enabled) {
-			toast.error(m.environments_cannot_switch_disabled());
-			return;
-		}
-
-		if (!isEnvironmentOnline(environment)) {
-			toast.error(m.common_unavailable());
-			return;
-		}
-
-		const operationResult = await tryCatch(
-			(async () => {
-				await environmentStore.setEnvironment(environment);
-				toast.success(m.environments_switched_to({ name: environment.name }));
-			})()
-		);
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
-
-			console.error('Failed to switch environment:', error);
-			toast.error(m.common_update_failed({ resource: m.resource_environment() }));
 		}
 	}
 
@@ -489,22 +602,13 @@
 		return (
 			canPruneInEnvironment(item.environment.id) &&
 			item.environment.enabled &&
-			item.snapshotState === 'ready' &&
+			item.error === undefined &&
 			isEnvironmentOnline(item.environment)
 		);
 	}
 
-	function getEnvironmentActionButtons(item: DashboardEnvironmentOverview, isCurrent: boolean): ActionButton[] {
+	function getEnvironmentActionButtons(item: DashboardEnvironmentOverview): ActionButton[] {
 		const buttons: ActionButton[] = [];
-
-		buttons.push({
-			id: `${item.environment.id}-use`,
-			action: 'base',
-			label: m.environments_use_environment(),
-			disabled: !shouldLoadEnvironment(item.environment) || isCurrent,
-			onclick: () => void useEnvironment(item.environment),
-			icon: EnvironmentsIcon
-		});
 
 		buttons.push({
 			id: `${item.environment.id}-details`,
@@ -548,65 +652,39 @@
 
 	const environmentTableRows = $derived.by((): EnvironmentTableRow[] => {
 		return environmentCards.map(({ environment }) => {
-			const baseItem = createBaseEnvironmentOverview(environment);
-			const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem;
+			const loadedItem = overviewById.get(environment.id) ?? createBaseEnvironmentOverview(environment);
 			const stats = getLiveStatsState(environment.id)?.stats ?? null;
-			const isCurrent = currentEnvironmentId === environment.id;
-			const [useButton, ...menuButtons] = getEnvironmentActionButtons(loadedItem, isCurrent);
 			const vInfo = loadedItem.versionInfo;
-			const actionItemCount = (kind: DashboardActionItemKind) =>
-				loadedItem.actionItems.items.find((item) => item.kind === kind)?.count ?? 0;
 			return {
 				environment,
-				isCurrent,
 				online: isEnvironmentOnline(environment),
-				loading: isEnvironmentSnapshotLoading(environment.id),
+				loading: isEnvironmentCountsLoading(environment.id),
 				running: loadedItem.containers.runningContainers,
 				total: loadedItem.containers.totalContainers,
 				images: loadedItem.imageUsageCounts.totalImages,
 				podCount: loadedItem.podCount ?? null,
-				updates: actionItemCount('image_updates'),
-				vulnerabilities: actionItemCount('actionable_vulnerabilities'),
+				updates: loadedItem.updates,
+				vulnerabilities: loadedItem.vulnerabilities,
 				cpu: getCpuMetric(stats),
 				memory: getMemoryMetric(stats),
 				disk: getDiskMetric(stats),
 				statsStatus: getLiveStatsStatus(environment),
 				versionText: vInfo ? vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown' : null,
 				updateAvailable: !!vInfo?.updateAvailable,
-				useButton,
-				menuButtons
+				menuButtons: getEnvironmentActionButtons(loadedItem)
 			};
 		});
 	});
 
 	// Updates hero: aggregate pending image updates across every environment,
 	// mirroring the iOS Updates overview header.
-	const updatesOverview = $derived.by(() => {
-		let pending = 0;
-		let checkedEnvironments = 0;
-
-		for (const { environment } of environmentCards) {
-			if (!shouldLoadEnvironment(environment)) {
-				continue;
-			}
-			const state = dashboardStore.getEnvironmentState(environment.id);
-			if (!state?.hasLoaded) {
-				continue;
-			}
-			checkedEnvironments += 1;
-			if (debugAllGood) {
-				continue;
-			}
-			const updateItem = state.snapshot?.actionItems.items.find((item) => item.kind === 'image_updates');
-			pending += updateItem?.count ?? 0;
-		}
-
-		const checking = checkedEnvironments < loadableEnvironmentCards.length;
-		return { pending, checking };
+	const updatesOverview = $derived({
+		pending: (containersQuery.data?.updatesAvailable ?? 0) + (projectsQuery.data?.updatesAvailable ?? 0),
+		checking: loadableEnvironmentIds.size > 0 && (containersQuery.isPending || projectsQuery.isPending)
 	});
 
 	const summaryTiles = $derived.by(() => {
-		const summary = boardState.summary;
+		const summary = boardSummary;
 		let updatesContext: string;
 		if (updatesOverview.pending === 0 && !updatesOverview.checking) {
 			updatesContext = m.dashboard_updates_up_to_date();
@@ -726,28 +804,18 @@
 			setLoadingState: (value) => {
 				pruningEnvironmentId = value ? environmentId : null;
 			},
-			onSuccess: async (data) => {
+			onSuccess: (data) => {
 				isPruneDialogOpen = false;
 				pruneEnvironment = null;
 				pruneDefaults = null;
-				const activityId = extractActivityId(data);
 				const toastOptions = {
-					...(activityToastOptions(activityId) ?? {}),
+					...(activityToastOptions(extractActivityId(data)) ?? {}),
 					description: targetEnvironment.environment.name
 				};
 				if (selectedTypes.length === 1) {
 					toast.success(m.dashboard_prune_success_one({ types: typesString }), toastOptions);
 				} else {
 					toast.success(m.dashboard_prune_success_many({ types: typesString }), toastOptions);
-				}
-				// The prune runs as a background activity, so refresh once it actually
-				// completes — refreshing now would capture pre-prune state. Fall back to
-				// an immediate refresh when no activity id is returned.
-				if (activityId) {
-					pendingPruneActivityId = activityId;
-					refreshCompletedPrune();
-				} else {
-					await refreshOverview();
 				}
 			}
 		});
@@ -809,6 +877,43 @@
 		</StatStrip.Root>
 	</section>
 
+	{#if failedEnvironments.length > 0 || queryErrors.length > 0}
+		<section class="shrink-0">
+			<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon}>
+				<div class="flex flex-wrap items-center justify-between gap-2">
+					<Alert.Description>
+						{#if failedEnvironments.length > 0}
+							<p>
+								{m.all_environments_unavailable({
+									environments: failedEnvironments
+										.map(({ environment, message }) => `${environment.name} (${message})`)
+										.join(', ')
+								})}
+							</p>
+						{/if}
+						{#each withOccurrenceKeys(queryErrors) as error (error.key)}
+							<p class="whitespace-pre-line">{error.value}</p>
+						{/each}
+					</Alert.Description>
+					<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onClickPromise={refetchEnvironmentQueries} />
+				</div>
+			</Alert.Root>
+		</section>
+	{/if}
+
+	{#if excludedEnvironmentCount > 0}
+		<section class="shrink-0">
+			<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon}>
+				<Alert.Description>
+					{m.all_environments_excluded({
+						count: excludedEnvironmentCount,
+						limit: settingsStore.current?.allEnvironmentsLimit ?? 0
+					})}
+				</Alert.Description>
+			</Alert.Root>
+		</section>
+	{/if}
+
 	<section class="flex min-h-0 flex-1 flex-col overflow-hidden pt-3">
 		{#if environmentCards.length === 0}
 			<div class="rounded-xl border border-dashed border-border/60 px-4 py-8 text-center">
@@ -822,24 +927,19 @@
 			<div class="min-h-0 flex-1 overflow-y-auto pb-2">
 				<div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
 					{#each environmentCards as item (item.environment.id)}
-						{@const baseItem = createBaseEnvironmentOverview(item.environment)}
-						{@const environment = baseItem.environment}
-						{@const overview = boardState.overviewById.get(environment.id) ?? baseItem}
-						{@const isCurrent = currentEnvironmentId === environment.id}
+						{@const environment = item.environment}
+						{@const overview = overviewById.get(environment.id) ?? createBaseEnvironmentOverview(environment)}
 						{@const systemStats = getLiveStatsState(environment.id)?.stats ?? null}
 						{@const liveStatsStatus = getLiveStatsStatus(environment)}
-						{@const [useButton, ...menuButtons] = getEnvironmentActionButtons(overview, isCurrent)}
 						<EnvironmentCard
 							{overview}
-							{isCurrent}
 							{systemStats}
 							{liveStatsStatus}
-							snapshotLoading={isEnvironmentSnapshotLoading(environment.id)}
-							{useButton}
-							{menuButtons}
+							countsLoading={isEnvironmentCountsLoading(environment.id)}
+							menuButtons={getEnvironmentActionButtons(overview)}
 							{debugUpgrade}
 							debugVersionInfo={DEBUG_VERSION_INFO}
-							canUpgrade={canUpgradeEnvironment()}
+							canUpgrade={canUpgradeEnvironment(environment.id)}
 							onRefreshRequested={refreshOverview}
 							bind:upgradeOpen={upgradeDialogOpenById[environment.id]}
 							bind:upgradeLoading={upgradeDialogUpgradingById[environment.id]}

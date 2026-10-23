@@ -36,7 +36,7 @@ func TestProjectsListAllIncludesArchived(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	_, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "projects", "list", "--json", "--all"},
+		[]string{"--config", configPath, "--env", "0", "projects", "list", "--json", "--all"},
 	)
 
 	require.NoError(t, err,
@@ -84,7 +84,7 @@ func TestProjectsListUpdatesJSONContract(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "projects", "list", "--updates", "has_update", "--json"},
+		[]string{"--config", configPath, "--env", "0", "projects", "list", "--updates", "has_update", "--json"},
 	)
 
 	require.NoError(t, err,
@@ -144,7 +144,7 @@ func TestProjectsUpdatesCommandUsesHasUpdateFilter(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "--output", "text", "projects", "updates"},
+		[]string{"--config", configPath, "--env", "0", "--output", "text", "projects", "updates"},
 	)
 
 	require.NoError(t, err,

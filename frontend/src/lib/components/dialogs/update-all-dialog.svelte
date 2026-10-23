@@ -37,7 +37,7 @@
 		open?: boolean;
 		versionInformation?: AppVersionInformation;
 		canConfirm?: boolean;
-		/** Dev-only: run a scripted fake fleet instead of calling the API. */
+		/** Dev-only: run a scripted fake set of environments instead of calling the API. */
 		debugDemo?: boolean;
 		onFinished?: () => void | Promise<void>;
 	} = $props();
@@ -139,7 +139,7 @@
 	async function handleClose() {
 		const attempt = ++startAttempt;
 		// Refresh through SvelteKit instead of reloading the document: a hard reload
-		// lands while agents are still reconnecting after the fleet restart, which
+		// lands while agents are still reconnecting after every environment restarts, which
 		// renders every environment as offline for a moment.
 		if (job && !debugDemo) await tryCatch(refreshAll());
 		if (attempt !== startAttempt) return;
@@ -192,8 +192,8 @@
 		failed: 'bg-destructive'
 	};
 
-	// Dev-only preview: step a fake fleet through every row state so this dialog can be
-	// designed and reviewed without triggering a real fleet update. Only ever enabled
+	// Dev-only preview: step fake environments through every row state so this dialog can be
+	// designed and reviewed without triggering a real update of all environments. Only ever enabled
 	// from a dev-guarded callsite.
 	async function runDebugDemo() {
 		const attempt = startAttempt;
@@ -209,7 +209,7 @@
 			row.percent = percent;
 			row.logs = [...(row.logs ?? []), `time=${nowInstantString()} level=INFO msg="${stage}"`];
 		};
-		// Big enough fleet (10) to exercise the scrolling list (#3655).
+		// Enough environments (10) to exercise the scrolling list (#3655).
 		const demo: Array<{ name: string; outcome: UpgradeJobResultStatus; to: string; error?: string }> = [
 			{ name: 'Local Docker', outcome: 'updated', to: 'v0.9.2' },
 			{ name: 'palladium', outcome: 'updated', to: 'v0.9.2' },

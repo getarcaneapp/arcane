@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/url"
-	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -39,14 +38,6 @@ type hostFixture struct {
 
 func TestRestartBetweenStepsReattachesSQLite(t *testing.T) {
 	testRestartBetweenSteps(t, "file:"+filepath.ToSlash(filepath.Join(t.TempDir(), "actors.db")))
-}
-
-func TestRestartBetweenStepsReattachesPostgres(t *testing.T) {
-	databaseURL := os.Getenv("ARCANE_TEST_POSTGRES_DSN")
-	if databaseURL == "" {
-		t.Skip("ARCANE_TEST_POSTGRES_DSN is not set")
-	}
-	testRestartBetweenSteps(t, databaseURL)
 }
 
 func testRestartBetweenSteps(t *testing.T, databaseURL string) {

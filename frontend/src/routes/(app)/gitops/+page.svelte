@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { afterNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import GitOpsImportDialog from '#lib/components/dialogs/gitops-import-dialog.svelte';
@@ -8,7 +10,9 @@
 	import { RefreshIcon, ClockIcon, SuccessIcon, GitBranchIcon, UploadIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
+	import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type {
 		GitOpsSync,
 		GitOpsSyncCounts,
@@ -17,28 +21,71 @@
 		GitOpsSyncUpdate,
 		ImportGitOpsSyncRequest
 	} from '#lib/types/automation.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import {
+		destinationEnvironmentId,
+		fetchAcrossEnvironments,
+		hasShownPermission,
+		readableEnvironments
+	} from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import SyncTable from './components/sync-table.svelte';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
-	let syncs = $derived(data.syncs);
+	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.syncRequestOptions));
 	let selectedIds = $state<string[]>([]);
 	let isSyncDialogOpen = $state(false);
 	let syncSession = $state(0);
 	let isImportDialogOpen = $state(false);
 	let syncToEdit = $state<GitOpsSync | null>(null);
-	let syncRequestOptions = $derived(data.syncRequestOptions);
-	let environmentId = $derived(data.environmentId);
+	let pickedEnvironmentId = $state('');
+	const scope = $derived(environmentStore.shownKey);
+	const createEnvironmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'gitops:create'));
+	const canCreate = $derived(hasShownPermission('gitops:create'));
 
 	let isLoading = $state({
 		create: false,
 		edit: false,
-		refresh: false,
 		import: false
 	});
+
+	function fetchSyncs(environments: EnvironmentRef[], options: SearchPaginationSortRequest) {
+		return fetchAcrossEnvironments(environments, options, (id, request, config) =>
+			gitOpsSyncService.getSyncs(id, request, config)
+		);
+	}
+
+	const syncsQuery = createQuery(() => {
+		const queryScope = scope;
+		const environments = readableEnvironments('gitops:list');
+		const options = requestOptions;
+		return {
+			queryKey: queryKeys.gitOpsSyncs.list(queryScope, options),
+			queryFn: () => fetchSyncs(environments, options),
+			placeholderData: (previous, query) => {
+				if (query?.queryKey[1] === queryScope) return previous;
+				return undefined;
+			},
+			select: (value) => ({ scope: queryScope, value })
+		};
+	});
+	const syncs = $derived(syncsQuery.data?.value ?? data.syncs);
+	const resourcesReady = $derived(syncsQuery.data?.scope === scope || data.scope === scope);
+	const isRefreshing = $derived(syncsQuery.isFetching && !syncsQuery.isPending);
+
+	async function loadSyncs(options: SearchPaginationSortRequest = requestOptions) {
+		requestOptions = options;
+		const environments = readableEnvironments('gitops:list');
+		return queryClient.query({
+			queryKey: queryKeys.gitOpsSyncs.list(scope, options),
+			queryFn: () => fetchSyncs(environments, options),
+			staleTime: 0
+		});
+	}
 
 	const syncCountsFallback: GitOpsSyncCounts = {
 		totalSyncs: 0,
@@ -47,51 +94,40 @@
 		deploySyncs: 0,
 		backupSyncs: 0
 	};
-	const syncCounts = $derived(syncs?.counts ?? syncCountsFallback);
+	const syncCounts = $derived(resourcesReady ? (syncs.counts ?? syncCountsFallback) : syncCountsFallback);
 
 	let dialogTargetType = $state<string | undefined>(undefined);
 	let dialogMode = $state<GitOpsSyncMode | undefined>(undefined);
 	let dialogProjectId = $state<string | undefined>(undefined);
 
-	function parseSyncModeInternal(value: string | null): GitOpsSyncMode | undefined {
+	function parseSyncMode(value: string | null): GitOpsSyncMode | undefined {
 		return value === 'deploy' || value === 'backup' ? value : undefined;
 	}
 
 	afterNavigate(() => {
 		const action = page.url.searchParams.get('action');
+		const environmentId = page.url.searchParams.get('env') ?? '';
 		if (action === 'create') {
+			pickedEnvironmentId = environmentId;
 			openCreateSyncDialog(
 				page.url.searchParams.get('targetType') ?? undefined,
-				parseSyncModeInternal(page.url.searchParams.get('mode')),
+				parseSyncMode(page.url.searchParams.get('mode')),
 				page.url.searchParams.get('projectId') ?? undefined
 			);
 		} else if (action === 'edit') {
 			const syncId = page.url.searchParams.get('syncId');
-			if (!syncId) return;
-			void openEditSyncDialogById(syncId);
+			if (!syncId || !environmentId) return;
+			void openEditSyncDialogById(environmentId, syncId);
 		} else {
 			return;
 		}
 
 		const newUrl = new URL(page.url.href);
-		for (const param of ['action', 'targetType', 'mode', 'projectId', 'syncId']) {
+		for (const param of ['action', 'targetType', 'mode', 'projectId', 'syncId', 'env']) {
 			newUrl.searchParams.delete(param);
 		}
 		void goto(newUrl.toString(), { replace: true, reset: false });
 	});
-
-	async function refreshSyncs() {
-		isLoading.refresh = true;
-		await handleApiResultWithCallbacks({
-			result: await tryCatch(gitOpsSyncService.getSyncs(environmentId, syncRequestOptions)),
-			message: m.common_refresh_failed({ resource: m.git_syncs_title() }),
-			setLoadingState: (value) => (isLoading.refresh = value),
-			onSuccess: async (newSyncs) => {
-				syncs = newSyncs;
-				toast.success(m.common_refresh_success({ resource: m.git_syncs_title() }));
-			}
-		});
-	}
 
 	function openCreateSyncDialog(targetType?: string | Event, mode?: GitOpsSyncMode, projectId?: string) {
 		syncToEdit = null;
@@ -111,8 +147,8 @@
 		isSyncDialogOpen = true;
 	}
 
-	async function openEditSyncDialogById(syncId: string) {
-		const loaded = syncs?.data.find((item) => item.id === syncId);
+	async function openEditSyncDialogById(environmentId: string, syncId: string) {
+		const loaded = syncs.data.find((item) => item.id === syncId && item.environmentId === environmentId);
 		if (loaded) {
 			openEditSyncDialog(loaded);
 			return;
@@ -122,7 +158,7 @@
 			result: await tryCatch(gitOpsSyncService.getSync(environmentId, syncId)),
 			message: m.common_not_found_title({ resource: m.resource_sync_cap() }),
 			setLoadingState: (value) => (isLoading.edit = value),
-			onSuccess: (sync) => openEditSyncDialog(sync)
+			onSuccess: (sync) => openEditSyncDialog({ ...sync, environmentId })
 		});
 	}
 
@@ -135,25 +171,22 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					if (isEditMode && syncToEdit?.id) {
-						await gitOpsSyncService.updateSync(environmentId, syncToEdit.id, sync as GitOpsSyncUpdate);
+						await gitOpsSyncService.updateSync(syncToEdit.environmentId, syncToEdit.id, sync as GitOpsSyncUpdate);
 						toast.success(m.common_update_success({ resource: m.resource_sync() }));
 					} else {
-						await gitOpsSyncService.createSync(environmentId, sync as GitOpsSyncCreate);
+						await gitOpsSyncService.createSync(createEnvironmentId, sync as GitOpsSyncCreate);
 						toast.success(m.common_create_success({ resource: m.resource_sync() }));
 					}
 
-					syncs = await gitOpsSyncService.getSyncs(environmentId, syncRequestOptions);
+					await loadSyncs();
 					isSyncDialogOpen = false;
 				})()
 			);
 			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				console.error('Error saving sync:', error);
 				const title = isEditMode
 					? m.common_update_failed({ resource: m.resource_sync() })
 					: m.common_create_failed({ resource: m.resource_sync() });
-				toast.error(title, { description: extractApiErrorMessage(error) });
+				toast.error(title, { description: extractApiErrorMessage(operationResult.error) });
 			}
 		} finally {
 			isLoading[loadingKey] = false;
@@ -165,7 +198,7 @@
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const response = await gitOpsSyncService.importSyncs(environmentId, data);
+					const response = await gitOpsSyncService.importSyncs(createEnvironmentId, data);
 
 					if (response.failedCount === 0) {
 						toast.success(m.git_sync_import_success({ count: response.successCount }));
@@ -179,61 +212,65 @@
 							toast.error(m.git_sync_import_failed_count({ count: response.failedCount }));
 						}
 
-						// Show error details
-						if (response.errors && response.errors.length > 0) {
-							console.error('Import errors:', response.errors);
-							// Could show a dialog with errors here, for now just toast the first few
-							response.errors.slice(0, 3).forEach((err) => toast.error(err));
-						}
+						response.errors?.slice(0, 3).forEach((err) => toast.error(err));
 					}
 
-					syncs = await gitOpsSyncService.getSyncs(environmentId, syncRequestOptions);
+					await loadSyncs();
 				})()
 			);
 			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				console.error('Error importing syncs:', error);
-				toast.error(error instanceof Error ? error.message : m.git_sync_import_failed());
+				toast.error(m.git_sync_import_failed(), { description: extractApiErrorMessage(operationResult.error) });
 			}
 		} finally {
 			isLoading.import = false;
 		}
 	}
 
-	const actionButtons: ActionButton[] = [
-		{
-			id: 'create',
-			action: 'create',
-			placement: 'primary',
-			label: m.common_add_button({ resource: m.resource_sync_cap() }),
-			onclick: () => openCreateSyncDialog()
-		},
-		{
-			id: 'import',
-			action: 'create',
-			label: m.git_sync_import_open_button(),
-			icon: UploadIcon,
-			onclick: () => (isImportDialogOpen = true)
-		},
-		{
-			id: 'manage-repos',
-			action: 'edit',
-			label: m.git_repositories_title(),
-			icon: GitBranchIcon,
-			onclick: () => goto('/customize/git-repositories')
-		},
-		{
-			id: 'refresh',
-			action: 'refresh',
-			placement: 'secondary',
-			iconOnly: true,
-			label: m.common_refresh(),
-			onclick: refreshSyncs,
-			loading: isLoading.refresh,
-			disabled: isLoading.refresh
-		}
-	];
+	const actionButtons: ActionButton[] = $derived(
+		[
+			canCreate
+				? {
+						id: 'create',
+						action: 'create',
+						placement: 'primary',
+						label: m.common_add_button({ resource: m.resource_sync_cap() }),
+						onclick: () => {
+							pickedEnvironmentId = '';
+							openCreateSyncDialog();
+						}
+					}
+				: null,
+			canCreate
+				? {
+						id: 'import',
+						action: 'create',
+						label: m.git_sync_import_open_button(),
+						icon: UploadIcon,
+						onclick: () => {
+							pickedEnvironmentId = '';
+							isImportDialogOpen = true;
+						}
+					}
+				: null,
+			{
+				id: 'manage-repos',
+				action: 'edit',
+				label: m.git_repositories_title(),
+				icon: GitBranchIcon,
+				onclick: () => goto('/customize/git-repositories')
+			},
+			{
+				id: 'refresh',
+				action: 'refresh',
+				placement: 'secondary',
+				iconOnly: true,
+				label: m.common_refresh(),
+				onclick: () => loadSyncs(),
+				loading: isRefreshing,
+				disabled: syncsQuery.isFetching
+			}
+		].filter((button) => button !== null) as ActionButton[]
+	);
 
 	const statCards = $derived<StatCardConfig[]>([
 		{
@@ -260,15 +297,9 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.git_syncs_title()} subtitle={m.git_subtitle()} {actionButtons} {statCards} environmentPicker>
+<ResourcePageLayout title={m.git_syncs_title()} subtitle={m.git_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<SyncTable
-			{environmentId}
-			bind:syncs
-			bind:selectedIds
-			bind:requestOptions={syncRequestOptions}
-			onEditSync={openEditSyncDialog}
-		/>
+		<SyncTable {syncs} bind:selectedIds bind:requestOptions onRefresh={loadSyncs} onEditSync={openEditSyncDialog} />
 	{/snippet}
 
 	{#snippet additionalContent()}
@@ -277,7 +308,7 @@
 				<GitOpsSyncFormSheet
 					bind:open={isSyncDialogOpen}
 					bind:syncToEdit
-					{environmentId}
+					bind:environmentId={() => syncToEdit?.environmentId ?? createEnvironmentId, (value) => (pickedEnvironmentId = value)}
 					targetType={dialogTargetType}
 					mode={dialogMode}
 					projectId={dialogProjectId}
@@ -286,6 +317,11 @@
 				/>
 			{/key}
 		{/if}
-		<GitOpsImportDialog bind:open={isImportDialogOpen} onSubmit={handleImportSubmit} isLoading={isLoading.import} />
+		<GitOpsImportDialog
+			bind:open={isImportDialogOpen}
+			bind:environmentId={() => createEnvironmentId, (value) => (pickedEnvironmentId = value)}
+			onSubmit={handleImportSubmit}
+			isLoading={isLoading.import}
+		/>
 	{/snippet}
 </ResourcePageLayout>

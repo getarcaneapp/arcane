@@ -44,7 +44,6 @@
 	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 	import { volumeService } from '#lib/services/volume-service.js';
 	import { volumeWorkspaceService } from '#lib/services/volume-workspace-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { Volume } from '#lib/types/docker.js';
 	import type { BackupEntry } from '#lib/types/shared.js';
 	import type { VolumeWorkspaceFileChange, VolumeWorkspaceFileContent } from '#lib/types/volume-workspace.js';
@@ -412,15 +411,11 @@
 				void loadAfterUpdate();
 			}
 		});
-		const unsubscribeEnvironment = environmentStore.subscribeSelected(() => {
-			void loadAfterUpdate();
-		});
 		void loadAfterUpdate();
 		notifyWorkspaceBackupError(workspaceBackupPathQuery.error);
 		return () => {
 			active = false;
 			unsubscribe();
-			unsubscribeEnvironment();
 		};
 	});
 
@@ -1105,7 +1100,7 @@
 					{#if volume.scope}
 						<Badge variant="purple" minWidth="20">{volume.scope}</Badge>
 					{/if}
-					<EnvironmentCell value={currentEnvId} />
+					<EnvironmentCell value={currentEnvId} plain />
 				</div>
 			</div>
 		{/snippet}

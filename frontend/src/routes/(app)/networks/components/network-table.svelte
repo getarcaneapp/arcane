@@ -52,17 +52,17 @@
 	import { NetworksIcon, GlobeIcon, InspectIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { networkService, type NetworksPaginatedResponse } from '#lib/services/network-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import {
 		environmentHref,
-		fetchAcrossEnvironments,
-		rowKey,
 		type EnvironmentPage,
-		type EnvironmentRow
+		type EnvironmentRow,
+		fetchAcrossEnvironments,
+		readableEnvironments,
+		rowKey
 	} from '#lib/utils/environments.js';
 	import { capitalizeFirstLetter } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -97,7 +97,7 @@
 			}
 			return;
 		}
-		networks = await fetchAcrossEnvironments(environmentStore.shown, options, (id, request, config) =>
+		networks = await fetchAcrossEnvironments(readableEnvironments('networks:list'), options, (id, request, config) =>
 			networkService.getNetworksForEnvironment(id, request, config)
 		);
 		onNetworksChange?.(networks);
@@ -150,7 +150,7 @@
 			message: m.networks_delete_selected_message({ count: ids.length }),
 			confirmLabel: m.common_delete(),
 			destructive: true,
-			run: (id, environmentId) => networkService.deleteNetwork(id, environmentId),
+			runInEnvironment: (id, environmentId) => networkService.deleteNetwork(id, environmentId),
 			messages: {
 				success: (count) => m.common_bulk_delete_success({ count, resource: m.resource_networks_cap() }),
 				partial: (success, total, failed) =>

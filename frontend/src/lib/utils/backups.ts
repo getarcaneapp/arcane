@@ -3,6 +3,7 @@ import { toast } from 'svelte-sonner';
 import { m } from '#lib/paraglide/messages.js';
 import { systemBackupService } from '#lib/services/system-backup-service.js';
 import { volumeBackupService } from '#lib/services/volume-backup-service.js';
+import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import type {
 	BackupDestination,
 	BackupManagementType,
@@ -130,7 +131,7 @@ export async function discoverDestinationBackups(destinationId: string): Promise
 	if (systemResult.error === null && systemResult.data > 0) {
 		toast.success(m.system_backups_discovered({ count: systemResult.data }));
 	}
-	const volumeResult = await tryCatch(volumeBackupService.discoverBackups(destinationId));
+	const volumeResult = await tryCatch(volumeBackupService.discoverBackups(destinationId, LOCAL_DOCKER_ENVIRONMENT_ID));
 	if (volumeResult.error === null) {
 		if (volumeResult.data.count > 0) {
 			toast.success(m.volume_backups_discovered({ count: volumeResult.data.count }));
@@ -146,7 +147,7 @@ export async function discoverDestinationBackups(destinationId: string): Promise
 export async function runAutomaticBackupDiscovery(destinations: { id: string }[]): Promise<boolean> {
 	const results = await Promise.allSettled([
 		...destinations.map((item) => systemBackupService.discover(item.id, '')),
-		...destinations.map((item) => volumeBackupService.discoverBackups(item.id))
+		...destinations.map((item) => volumeBackupService.discoverBackups(item.id, LOCAL_DOCKER_ENVIRONMENT_ID))
 	]);
 	let discovered = 0;
 	for (const result of results) {

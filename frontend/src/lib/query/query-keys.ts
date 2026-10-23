@@ -17,11 +17,23 @@ export const queryKeys = {
 	swarm: {
 		info: (environmentId: string) => ['swarm', environmentId, 'info'] as const,
 		status: (environmentId: string) => ['swarm', environmentId, 'status'] as const,
+		environments: (scope: string, permission: string) => ['swarm', scope, 'environments', permission] as const,
 		joinTokens: (environmentId: string) => ['swarm', environmentId, 'join-tokens'] as const,
 		unlockKey: (environmentId: string) => ['swarm', environmentId, 'unlock-key'] as const,
 		joinCandidates: (environmentId: string | null, user: Pick<User, 'id' | 'permissionsByEnv'> | null) =>
 			['swarm', environmentId, 'join-candidates', user?.id ?? null, stableSerialize(user?.permissionsByEnv)] as const,
-		serviceTasks: (environmentId: string, serviceId: string) => ['swarm', environmentId, 'service-tasks', serviceId] as const
+		serviceTasks: (environmentId: string, serviceId: string) => ['swarm', environmentId, 'service-tasks', serviceId] as const,
+		services: (scope: string, options: SearchPaginationSortRequest) =>
+			['swarm', scope, 'services', stableSerialize(options)] as const,
+		tasks: (scope: string, nodeId: string, options: SearchPaginationSortRequest) =>
+			['swarm', scope, 'tasks', nodeId, stableSerialize(options)] as const,
+		stacks: (scope: string, options: SearchPaginationSortRequest) =>
+			['swarm', scope, 'stacks', stableSerialize(options)] as const,
+		nodes: (scope: string, options: SearchPaginationSortRequest) => ['swarm', scope, 'nodes', stableSerialize(options)] as const,
+		configs: (scope: string, options: SearchPaginationSortRequest) =>
+			['swarm', scope, 'configs', stableSerialize(options)] as const,
+		secrets: (scope: string, options: SearchPaginationSortRequest) =>
+			['swarm', scope, 'secrets', stableSerialize(options)] as const
 	},
 	podman: {
 		environment: (environmentId: string) => ['podman', environmentId] as const,
@@ -56,9 +68,8 @@ export const queryKeys = {
 	},
 	settings: {
 		all: ['settings'] as const,
-		global: () => ['settings', 'global'] as const,
 		byEnvironment: (environmentId: string) => ['settings', environmentId] as const,
-		public: (environmentId: string) => ['settings', 'public', environmentId] as const
+		public: (environmentId: string) => ['settings', environmentId, 'public'] as const
 	},
 	roles: {
 		all: () => ['roles', 'all'] as const,
@@ -81,10 +92,9 @@ export const queryKeys = {
 	environments: {
 		all: ['environments'] as const,
 		list: (options: SearchPaginationSortRequest) => ['environments', stableSerialize(options)] as const,
-		switcher: (options: SearchPaginationSortRequest) => ['environments', 'switcher', stableSerialize(options)] as const,
 		detail: (environmentId: string) => ['environment', environmentId] as const,
 		settings: (environmentId: string) => ['environment-settings', environmentId] as const,
-		deploymentSnippets: (environmentId: string) => ['environment', 'deployment-snippets', environmentId] as const
+		deploymentSnippets: (environmentId: string) => ['environment', environmentId, 'deployment-snippets'] as const
 	},
 	gitRepositories: {
 		all: ['git-repositories'] as const,
@@ -129,19 +139,18 @@ export const queryKeys = {
 	system: {
 		appVersion: () => ['system', 'app-version'] as const,
 		upgradeAvailable: (scope: 'mobile-nav' | 'sidebar') => ['system', 'upgrade-available', scope] as const,
-		environmentUpgradeAvailable: (environmentId: string) =>
-			['system', 'upgrade-available', 'environment', environmentId] as const,
-		upgradeHealth: (environmentId: string) => ['system', 'upgrade-health', environmentId] as const,
-		versionInfo: (environmentId: string) => ['system', 'version-info', environmentId] as const,
-		dockerInfo: (environmentId: string) => ['system', 'docker-info', environmentId] as const
+		environmentUpgradeAvailable: (environmentId: string) => ['system', environmentId, 'upgrade-available'] as const,
+		upgradeHealth: (environmentId: string) => ['system', environmentId, 'upgrade-health'] as const,
+		versionInfo: (environmentId: string) => ['system', environmentId, 'version-info'] as const,
+		dockerInfo: (environmentId: string) => ['system', environmentId, 'docker-info'] as const
 	},
 	containers: {
 		all: ['containers'] as const,
 		listPrefix: (scope: string) => ['containers', scope] as const,
 		list: (environmentId: string, options: SearchPaginationSortRequest) =>
 			['containers', environmentId, stableSerialize(options)] as const,
-		create: (environmentId: string) => ['containers', 'create', environmentId] as const,
-		statusCounts: (environmentId: string) => ['containers', 'status-counts', environmentId] as const,
+		create: (environmentId: string) => ['containers', environmentId, 'create'] as const,
+		statusCounts: (environmentId: string) => ['containers', environmentId, 'status-counts'] as const,
 		environment: (environmentId: string) => ['container', environmentId] as const,
 		detail: (environmentId: string, containerId: string) => ['container', environmentId, containerId] as const,
 		editConfig: (environmentId: string, containerId: string) => ['container', environmentId, containerId, 'edit-config'] as const,
@@ -152,8 +161,8 @@ export const queryKeys = {
 		listPrefix: (scope: string) => ['images', scope] as const,
 		list: (environmentId: string, options: SearchPaginationSortRequest) =>
 			['images', environmentId, stableSerialize(options)] as const,
-		usageCounts: (environmentId: string) => ['images', 'usage-counts', environmentId] as const,
-		uploadLimit: (environmentId: string) => ['images', 'upload-limit', environmentId] as const,
+		usageCounts: (environmentId: string) => ['images', environmentId, 'usage-counts'] as const,
+		uploadLimit: (environmentId: string) => ['images', environmentId, 'upload-limit'] as const,
 		environment: (environmentId: string) => ['image', environmentId] as const,
 		history: (environmentId: string, imageId: string) => ['image', environmentId, imageId, 'history'] as const,
 		detail: (environmentId: string, imageId: string) => ['image', environmentId, imageId] as const,
@@ -162,7 +171,9 @@ export const queryKeys = {
 		buildsList: (environmentId: string, options: SearchPaginationSortRequest) =>
 			['images', environmentId, 'builds', stableSerialize(options)] as const,
 		buildRecord: (environmentId: string, buildId: string) => ['images', environmentId, 'builds', buildId] as const,
-		buildRun: (environmentId: string) => ['images', environmentId, 'build-run'] as const
+		buildRun: (environmentId: string) => ['images', environmentId, 'build-run'] as const,
+		patchTargets: (scope: string, options: SearchPaginationSortRequest) =>
+			['images', scope, 'patch-targets', stableSerialize(options)] as const
 	},
 	projects: {
 		all: ['projects'] as const,
@@ -170,11 +181,11 @@ export const queryKeys = {
 		listPrefix: (scope: string) => ['projects', scope] as const,
 		list: (environmentId: string, options: SearchPaginationSortRequest) =>
 			['projects', environmentId, stableSerialize(options)] as const,
-		checkUpdates: (environmentId: string) => ['projects', 'check-updates', environmentId] as const,
+		checkUpdates: (environmentId: string) => ['projects', environmentId, 'check-updates'] as const,
 		detailCheckUpdates: (environmentId: string, projectId: string) =>
-			['project', 'check-updates', environmentId, projectId] as const,
-		statusCounts: (environmentId: string) => ['projects', 'status-counts', environmentId] as const,
-		tags: (environmentId: string) => ['projects', 'tags', environmentId] as const,
+			['project', environmentId, projectId, 'check-updates'] as const,
+		statusCounts: (environmentId: string) => ['projects', environmentId, 'status-counts'] as const,
+		tags: (environmentId: string) => ['projects', environmentId, 'tags'] as const,
 		detail: (environmentId: string, projectId: string) => ['project', environmentId, projectId] as const,
 		workspace: (environmentId: string, projectId: string) => ['project', environmentId, projectId, 'workspace'] as const,
 		workspaceFile: (environmentId: string, projectId: string, relativePath: string) =>
@@ -191,6 +202,10 @@ export const queryKeys = {
 		all: ['ports'] as const,
 		list: (environmentId: string, options: SearchPaginationSortRequest) =>
 			['ports', environmentId, stableSerialize(options)] as const
+	},
+	webhooks: {
+		all: ['webhooks'] as const,
+		list: (scope: string, options: SearchPaginationSortRequest) => ['webhooks', scope, stableSerialize(options)] as const
 	},
 	gitOpsSyncs: {
 		all: ['gitops-syncs'] as const,
@@ -219,13 +234,13 @@ export const queryKeys = {
 			['volume-backups', environmentId, volumeName, backupId, 'has-path', path] as const
 	},
 	vulnerabilities: {
-		overviewByEnvironment: (environmentId: string) => ['vulnerabilities', 'overview', environmentId] as const,
-		scanSummaries: (scope: string, imageKeys: string[]) => ['vulnerabilities', 'scan-summaries', scope, ...imageKeys] as const,
-		scanResult: (environmentId: string, imageId: string) => ['vulnerabilities', 'scan-result', environmentId, imageId] as const,
+		overviewByEnvironment: (environmentId: string) => ['vulnerabilities', environmentId, 'overview'] as const,
+		scanSummaries: (scope: string, imageKeys: string[]) => ['vulnerabilities', scope, 'scan-summaries', ...imageKeys] as const,
+		scanResult: (environmentId: string, imageId: string) => ['vulnerabilities', environmentId, 'scan-result', imageId] as const,
 		allByEnvironment: (environmentId: string, request: SearchPaginationSortRequest) =>
-			['vulnerabilities', 'all', environmentId, stableSerialize(request)] as const,
+			['vulnerabilities', environmentId, 'all', stableSerialize(request)] as const,
 		imageRows: (environmentId: string, imageId: string, request: SearchPaginationSortRequest) =>
-			['vulnerabilities', 'image', environmentId, imageId, stableSerialize(request)] as const
+			['vulnerabilities', environmentId, 'image', imageId, stableSerialize(request)] as const
 	},
 	buildWorkspace: {
 		all: ['build-workspace'] as const,

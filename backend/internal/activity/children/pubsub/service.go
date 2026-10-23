@@ -12,6 +12,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
+
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
 )
 
 const (
@@ -28,6 +30,7 @@ const (
 
 // Service fans activity stream events out to per-environment subscribers.
 type Service struct {
+	changes       *concurrency.Signal[string]
 	subscribersMu sync.RWMutex
 	subscribers   map[int]*subscriber
 	nextSubID     int
@@ -64,8 +67,9 @@ type pendingStreamEvent struct {
 }
 
 // NewService returns an empty subscriber registry.
-func NewService() *Service {
+func NewService(changes *concurrency.Signal[string]) *Service {
 	return &Service{
+		changes:           changes,
 		subscribers:       map[int]*subscriber{},
 		terminalPublished: map[string]time.Time{},
 	}
@@ -219,6 +223,7 @@ func (s *Service) PublishActivity(item types.Activity) {
 		Activity:   &item,
 		Timestamp:  time.Now(),
 	})
+	s.changes.Publish(item.EnvironmentID)
 }
 
 // PublishMessage delivers one activity message to every subscriber of environmentID.

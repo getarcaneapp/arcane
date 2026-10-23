@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -16,7 +14,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
@@ -255,67 +252,15 @@ type capturedVariableSyncRequestInternal struct {
 	Body    []byte
 }
 
-func TestSyncEnvironment_DirectMaterializesSecretsThroughAgentRoute(t *testing.T) {
-	service, db, _ := setupVariableServiceTest(t)
-	token := "direct-agent-token"
-
-	var requestMu sync.Mutex
-	requests := make([]capturedVariableSyncRequestInternal, 0, 2)
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		body, err := io.ReadAll(request.Body)
-		if !assert.NoError(t, err) {
-			return
-		}
-		requestMu.Lock()
-		requests = append(requests, capturedVariableSyncRequestInternal{
-			Method: request.Method,
-			Path:   request.URL.Path,
-			Headers: map[string]string{
-				remenv.HeaderAPIKey:     request.Header.Get(remenv.HeaderAPIKey),
-				remenv.HeaderAgentToken: request.Header.Get(remenv.HeaderAgentToken),
-			},
-			Body: body,
-		})
-		requestMu.Unlock()
-
-		writer.Header().Set("Content-Type", "application/json")
-		if request.Method == http.MethodGet {
-			_, _ = writer.Write([]byte(`{"success":true,"data":[]}`))
-			return
-		}
-		_, _ = writer.Write([]byte(`{"success":true,"data":{"message":"updated"}}`))
-	}))
-	defer server.Close()
-
-	require.NoError(t, db.Create(&environment.Environment{
-		ID:          "env-direct",
-		Name:        "Direct",
-		ApiUrl:      server.URL,
-		Status:      string(environment.EnvironmentStatusOnline),
-		Enabled:     true,
-		AccessToken: &token,
-	}).Error)
-	environmentService := environment.NewEnvironmentService(db, nil, nil, nil, service.settingsService, nil)
-	service.proxyEnvironmentJSON = environmentService.ProxyJSONRequest
-	createMaterializedSecretVariable(t, service)
-
-	require.NoError(t, service.SyncEnvironment(t.Context(), "env-direct"))
-	requestMu.Lock()
-	captured := append([]capturedVariableSyncRequestInternal(nil), requests...)
-	requestMu.Unlock()
-	requireMaterializationRequests(t, captured, token)
-}
-
 func TestSyncEnvironment_EdgeMaterializesSecretsThroughAgentRoute(t *testing.T) {
 	service, db, _ := setupVariableServiceTest(t)
 	token := "edge-agent-token"
 	require.NoError(t, db.Create(&environment.Environment{
 		ID:          "env-edge",
 		Name:        "Edge",
-		ApiUrl:      "http://edge.invalid",
+		ApiUrl:      "edge://env-edge",
 		Status:      string(environment.EnvironmentStatusOnline),
 		Enabled:     true,
-		IsEdge:      true,
 		AccessToken: &token,
 	}).Error)
 

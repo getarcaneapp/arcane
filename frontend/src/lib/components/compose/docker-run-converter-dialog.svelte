@@ -21,10 +21,12 @@
 	let {
 		open = $bindable(false),
 		converting = $bindable(false),
+		environmentId,
 		onConverted
 	}: {
 		open: boolean;
 		converting: boolean;
+		environmentId: string;
 		onConverted: (data: ConvertedDockerRun) => void;
 	} = $props();
 
@@ -43,7 +45,7 @@
 
 		converting = true;
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(systemService.convert(dockerRunCommand)),
+			result: await tryCatch(systemService.convert(dockerRunCommand, environmentId)),
 			message: m.compose_convert_failed(),
 			setLoadingState: (value) => (converting = value),
 			onSuccess: async (data) => {

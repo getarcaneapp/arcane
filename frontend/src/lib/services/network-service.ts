@@ -1,4 +1,3 @@
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type {
 	NetworkSummaryDto,
 	NetworkUsageCounts,
@@ -15,15 +14,6 @@ import BaseAPIService, { type APIRequestConfig } from './api-service';
 export type NetworksPaginatedResponse = Paginated<NetworkSummaryDto, NetworkUsageCounts>;
 
 class NetworkService extends BaseAPIService {
-	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
-		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
-	}
-
-	async getNetworks(options?: SearchPaginationSortRequest): Promise<NetworksPaginatedResponse> {
-		const envId = await this.resolveEnvironmentId();
-		return this.getNetworksForEnvironment(envId, options);
-	}
-
 	async getNetworksForEnvironment(
 		environmentId: string,
 		options?: SearchPaginationSortRequest,
@@ -34,15 +24,9 @@ class NetworkService extends BaseAPIService {
 		return res.data;
 	}
 
-	async getNetworkUsageCounts(): Promise<NetworkUsageCounts> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		const res = await this.api.get(`/environments/${envId}/networks/counts`);
+	async getNetworkUsageCounts(environmentId: string, config?: APIRequestConfig): Promise<NetworkUsageCounts> {
+		const res = await this.api.get(`/environments/${environmentId}/networks/counts`, config);
 		return res.data.data;
-	}
-
-	async getNetwork(networkId: string, options?: SearchPaginationSortRequest): Promise<NetworkInspectDto> {
-		const envId = await this.resolveEnvironmentId();
-		return this.getNetworkForEnvironment(envId, networkId, options);
 	}
 
 	async getNetworkForEnvironment(
@@ -54,44 +38,39 @@ class NetworkService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/networks/${networkId}`, { params }));
 	}
 
-	async getNetworkTopology(environmentId?: string): Promise<NetworkTopologyDto> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.get(`/environments/${envId}/networks/topology`));
+	async getNetworkTopology(environmentId: string, config?: APIRequestConfig): Promise<NetworkTopologyDto> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/networks/topology`, config));
 	}
 
-	async createNetwork(name: string, options: NetworkCreateOptions, environmentId?: string): Promise<any> {
-		const envId = await this.resolveEnvironmentId(environmentId);
+	async createNetwork(name: string, options: NetworkCreateOptions, environmentId: string): Promise<any> {
 		const request: NetworkCreate = {
 			name,
 			options
 		};
-		return this.handleResponse(this.api.post(`/environments/${envId}/networks`, request));
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/networks`, request));
 	}
 
-	async deleteNetwork(networkId: string, environmentId?: string): Promise<any> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.delete(`/environments/${envId}/networks/${networkId}`));
+	async deleteNetwork(networkId: string, environmentId: string): Promise<any> {
+		return this.handleResponse(this.api.delete(`/environments/${environmentId}/networks/${networkId}`));
 	}
 
 	async connectContainer(
 		networkId: string,
 		request: { containerId: string; aliases?: string[]; ipv4Address?: string; ipv6Address?: string },
-		environmentId?: string
+		environmentId: string
 	): Promise<any> {
-		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(
-			this.api.post(`/environments/${envId}/networks/${networkId}`, request, { params: { action: 'connect' } })
+			this.api.post(`/environments/${environmentId}/networks/${networkId}`, request, { params: { action: 'connect' } })
 		);
 	}
 
 	async disconnectContainer(
 		networkId: string,
 		request: { containerId: string; force?: boolean },
-		environmentId?: string
+		environmentId: string
 	): Promise<any> {
-		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(
-			this.api.post(`/environments/${envId}/networks/${networkId}`, request, { params: { action: 'disconnect' } })
+			this.api.post(`/environments/${environmentId}/networks/${networkId}`, request, { params: { action: 'disconnect' } })
 		);
 	}
 }

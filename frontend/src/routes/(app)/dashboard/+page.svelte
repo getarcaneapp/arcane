@@ -2,12 +2,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 
-	import type { PageProps } from './$types';
 	import AllEnvironmentsView from './components/all-environments-view.svelte';
-
-	let { data }: PageProps = $props();
-
-	const debugAllGood = $derived(data.debugAllGood ?? false);
 
 	const currentUser = $derived(userStore.current);
 
@@ -26,4 +21,4 @@
 	);
 </script>
 
-<AllEnvironmentsView heroGreeting={dashboardHeroGreeting} {debugAllGood} />
+<AllEnvironmentsView heroGreeting={dashboardHeroGreeting} />

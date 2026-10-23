@@ -1,4 +1,5 @@
 export const PODMAN_SYSTEMD_UNIT_LABEL = 'PODMAN_SYSTEMD_UNIT';
+export const PODMAN_STATUS_DEPENDENCY = 'app:podman-status';
 
 export type PodmanAutoUpdateMode = 'rest' | 'systemd' | 'unavailable';
 export type PodmanSystemdScope = 'system' | 'user';
@@ -19,6 +20,7 @@ export const PODMAN_KUBE_GENERATE_TYPES: PodmanKubeGenerateType[] = ['pod', 'ser
 
 export interface PodmanStatus {
 	detected: boolean;
+	podCount: number;
 	version?: string;
 	apiVersion?: string;
 	rootless: boolean;

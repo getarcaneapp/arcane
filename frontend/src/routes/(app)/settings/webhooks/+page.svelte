@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
@@ -9,16 +10,57 @@
 	import { GlobeIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { webhookService } from '#lib/services/webhook-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { Webhook, WebhookCreated, WebhookCreate } from '#lib/types/environment.js';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { type EnvironmentPage, fetchAcrossEnvironments, readableEnvironments } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import WebhookTable from './components/webhook-table.svelte';
 
-	let { data } = $props();
+	const queryClient = useQueryClient();
+	let requestOptions = $state<SearchPaginationSortRequest>({ pagination: { page: 1, limit: 20 } });
 
-	let webhooks = $derived<Webhook[]>(data.webhooks);
+	function webhookPage(items: Webhook[]): Paginated<Webhook> {
+		return {
+			data: items,
+			pagination: {
+				totalPages: 1,
+				totalItems: items.length,
+				currentPage: 1,
+				itemsPerPage: Math.max(items.length, 1)
+			}
+		};
+	}
+
+	const webhooksQuery = createQuery(() => {
+		const environments = readableEnvironments('webhooks:list');
+		const options = requestOptions;
+		return {
+			queryKey: queryKeys.webhooks.list(environmentStore.shownKey, options),
+			queryFn: () =>
+				fetchAcrossEnvironments(environments, options, (scope, _request, config) =>
+					webhookService.getWebhooks(scope, config).then(webhookPage)
+				)
+		};
+	});
+
+	const webhooks = $derived<EnvironmentPage<Paginated<Webhook>>>(
+		webhooksQuery.data ?? { data: [], pagination: webhookPage([]).pagination }
+	);
+
+	async function loadWebhooks(options: SearchPaginationSortRequest = requestOptions) {
+		requestOptions = options;
+		const result = await webhooksQuery.refetch();
+		return result.data ?? webhooks;
+	}
+
+	async function refreshWebhooks() {
+		await queryClient.invalidateQueries({ queryKey: queryKeys.webhooks.all });
+	}
 
 	let isDialogOpen = $state({
 		create: false,
@@ -38,16 +80,16 @@
 		return `${origin}/api/webhooks/trigger/${encodeURIComponent(newlyCreatedWebhook.token)}`;
 	});
 
-	async function handleCreateWebhook(webhook: WebhookCreate) {
+	async function handleCreateWebhook(webhook: WebhookCreate, environmentId: string) {
 		isLoading.creating = true;
-		const result = await tryCatch(webhookService.create(webhook));
+		const result = await tryCatch(webhookService.create(webhook, environmentId));
 		await handleApiResultWithCallbacks({
 			result,
 			message: m.webhook_create_failed({ name: webhook.name }),
 			setLoadingState: (value) => (isLoading.creating = value),
 			onSuccess: async (created) => {
 				toast.success(m.webhook_create_success({ name: webhook.name }));
-				webhooks = await webhookService.getWebhooks();
+				await refreshWebhooks();
 				isDialogOpen.create = false;
 				newlyCreatedWebhook = created as WebhookCreated;
 				isDialogOpen.showToken = true;
@@ -74,15 +116,9 @@
 	icon={GlobeIcon}
 	pageType="management"
 	{actionButtons}
-	environmentPicker
 >
 	{#snippet mainContent()}
-		<WebhookTable
-			bind:webhooks
-			onWebhooksChanged={async () => {
-				webhooks = await webhookService.getWebhooks();
-			}}
-		/>
+		<WebhookTable {webhooks} bind:requestOptions onRefresh={loadWebhooks} onWebhooksChanged={refreshWebhooks} />
 	{/snippet}
 
 	{#snippet additionalContent()}

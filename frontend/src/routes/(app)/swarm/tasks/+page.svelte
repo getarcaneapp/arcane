@@ -1,38 +1,64 @@
 <script lang="ts">
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { untrack } from 'svelte';
+
+	import { swarmEnvironmentsQueryOptions, type SwarmEnvironments } from '#lib/components/swarm/swarm-environments.js';
 	import { JobsIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import { simpleRefresh } from '#lib/utils/api.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { fetchAcrossEnvironments, withFailedEnvironments } from '#lib/utils/environments.js';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
+	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import SwarmTasksTable from './components/tasks-table.svelte';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
-	let tasks = $derived(data.tasks);
-	let requestOptions = $derived(data.requestOptions);
+	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
 	let nodeId = $derived(data.nodeId ?? '');
-	let isLoading = $state({ refresh: false });
+	const swarmQuery = createQuery(() => ({ ...swarmEnvironmentsQueryOptions('swarm:read'), enabled: !nodeId }));
+	const swarm = $derived(nodeId ? data.swarm : (swarmQuery.data ?? data.swarm));
 
-	async function fetchTasks(options: typeof requestOptions) {
-		if (nodeId) {
-			return swarmService.getNodeTasks(nodeId, options);
-		}
-		return swarmService.getTasks(options);
+	function tasksQueryOptions(options: SearchPaginationSortRequest, current: SwarmEnvironments = swarm) {
+		const { environments, failedEnvironments, scope } = current;
+		const node = nodeId;
+		return {
+			queryKey: queryKeys.swarm.tasks(scope, node, options),
+			queryFn: async () =>
+				withFailedEnvironments(
+					await fetchAcrossEnvironments(environments, options, (id, request, config) => {
+						if (node) return swarmService.getNodeTasks(node, request, id, config);
+						return swarmService.getTasks(request, id, config);
+					}),
+					failedEnvironments
+				)
+		};
+	}
+
+	const tasksQuery = createQuery(() => ({
+		...tasksQueryOptions(requestOptions),
+		placeholderData: (previous) => previous
+	}));
+	let tasks = $derived(tasksQuery.data ?? data.tasks);
+	const isRefreshing = $derived(tasksQuery.isFetching && !tasksQuery.isPending);
+
+	function fetchTasks(options: SearchPaginationSortRequest, current: SwarmEnvironments = swarm) {
+		requestOptions = options;
+		return queryClient.query({ ...tasksQueryOptions(options, current), staleTime: 0 });
 	}
 
 	async function refresh() {
-		await simpleRefresh(
-			() => fetchTasks(requestOptions),
-			(data) => (tasks = data),
-			m.common_refresh_failed({ resource: m.tasks() }),
-			(loading) => (isLoading.refresh = loading)
-		);
+		const discovered = nodeId ? undefined : (await swarmQuery.refetch()).data;
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(fetchTasks(requestOptions, discovered ?? swarm)),
+			message: m.common_refresh_failed({ resource: m.tasks() })
+		});
 	}
-
-	useEnvironmentRefresh(refresh);
 
 	const totalTasks = $derived(tasks?.pagination?.totalItems ?? tasks?.data?.length ?? 0);
 
@@ -40,7 +66,7 @@
 		createRefreshActionButtons({
 			refreshLabel: m.common_refresh(),
 			onRefresh: refresh,
-			refreshing: isLoading.refresh
+			refreshing: isRefreshing
 		})
 	);
 
@@ -59,7 +85,6 @@
 	subtitle={nodeId ? m.swarm_tasks_subtitle_node_scoped() : m.swarm_tasks_subtitle()}
 	{actionButtons}
 	{statCards}
-	environmentPicker
 >
 	{#snippet mainContent()}
 		<SwarmTasksTable bind:tasks bind:requestOptions {fetchTasks} />

@@ -78,13 +78,10 @@ services:
       dockerfile: docker/Dockerfile.dev
       target: backend-dev
     container_name: arcane-agent
-    ports:
-      - '3553:3553'
     environment:
       - ARCANE_ENVIRONMENT=development
       - ARCANE_LOG_LEVEL=debug
-      - ARCANE_PORT=3553
-      - ARCANE_AGENT_MODE=true
+      - ARCANE_EDGE_AGENT=true
       - ARCANE_AGENT_TOKEN=arc_Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
       - ARCANE_MANAGER_API_URL=http://backend:3552
       - ARCANE_EDGE_TRANSPORT=websocket
@@ -106,12 +103,6 @@ services:
       - arcane-dev
     restart: unless-stopped
     stop_grace_period: 15s
-    healthcheck:
-      test: ['CMD-SHELL', 'curl -fsS http://localhost:3553/api/health >/dev/null || exit 1']
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
 
 networks:
   arcane-dev:

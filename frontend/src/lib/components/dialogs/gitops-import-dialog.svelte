@@ -1,5 +1,6 @@
 <script lang="ts">
 	import GitopsDialogFooter from '#lib/components/dialogs/gitops-dialog-footer.svelte';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
@@ -10,11 +11,12 @@
 
 	type GitOpsImportFormProps = {
 		open: boolean;
+		environmentId: string;
 		onSubmit: (data: ImportGitOpsSyncRequest[]) => void;
 		isLoading: boolean;
 	};
 
-	let { open = $bindable(false), onSubmit, isLoading }: GitOpsImportFormProps = $props();
+	let { open = $bindable(false), environmentId = $bindable(), onSubmit, isLoading }: GitOpsImportFormProps = $props();
 
 	let jsonContent = $state('');
 	let error = $state<string | null>(null);
@@ -76,6 +78,7 @@
 >
 	{#snippet children()}
 		<div class="grid gap-y-3 py-4">
+			<EnvironmentDestinationSelect bind:value={environmentId} permission="gitops:create" variant="field" />
 			<div class="space-y-1.5">
 				<Label for="json-file">{m.git_sync_import_upload_label()}</Label>
 				<input

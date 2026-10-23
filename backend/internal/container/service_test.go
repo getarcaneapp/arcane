@@ -31,6 +31,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/kit/pkg"
+	"go.getarcane.app/updater/labels"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
@@ -49,6 +50,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
 type resourceStatsServer struct {
@@ -321,7 +323,7 @@ func TestContainerServiceCommitContainerCallsDockerAPI(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	svc := NewContainerService(
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		nil,
 		nil,
@@ -370,7 +372,7 @@ func TestContainerServiceCommitContainerOmitsReferenceWhenRepositoryEmpty(t *tes
 	t.Cleanup(server.Close)
 
 	svc := NewContainerService(
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		nil,
 		nil,
@@ -393,13 +395,13 @@ func TestContainerServiceCommitContainerOmitsReferenceWhenRepositoryEmpty(t *tes
 }
 
 func newGroupedContainerSummary(name, localProject string) types.ContainerSummary {
-	labels := map[string]string{}
-	labels["com.docker.compose.project"] = cmp.Or(localProject, labels["com.docker.compose.project"])
+	containerLabels := map[string]string{}
+	containerLabels["com.docker.compose.project"] = cmp.Or(localProject, containerLabels["com.docker.compose.project"])
 
 	return types.ContainerSummary{
 		ID:     name,
 		Names:  []string{name},
-		Labels: labels,
+		Labels: containerLabels,
 		State:  "running",
 	}
 }
@@ -645,7 +647,7 @@ func TestContainerServiceResizeExec(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	svc := NewContainerService(
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		nil,
 		nil,
@@ -662,7 +664,7 @@ func TestContainerServiceResizeExec(t *testing.T) {
 
 func TestRecreateContainerDaemonCorrelation(t *testing.T) {
 	db := setupProjectTestDB(t)
-	events := event.NewEventService(db, nil, nil, nil)
+	events := event.NewEventService(db, nil, nil)
 	observed := make(chan string, 8)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := dockerTestPath(r.URL.Path)
@@ -776,7 +778,7 @@ func TestRecreateContainerRollsBackAfterRequestCancellation(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	kvService := kv.NewKVService(db)
-	svc := NewContainerService(event.NewEventService(db, nil, nil, nil), (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
+	svc := NewContainerService(event.NewEventService(db, nil, nil), (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, kvService, nil)
 	info := container.InspectResponse{
 		ID:         "old-id",
 		Name:       "/web",
@@ -1070,12 +1072,12 @@ func newResourceStatsServer() *resourceStatsServer {
 	}
 }
 
-func (f *resourceStatsServer) addContainer(id, name, state string, labels ...map[string]string) {
+func (f *resourceStatsServer) addContainer(id, name, state string, containerLabels ...map[string]string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var l map[string]string
-	if len(labels) > 0 {
-		l = labels[0]
+	if len(containerLabels) > 0 {
+		l = containerLabels[0]
 	}
 	f.containers = append(f.containers, container.Summary{ID: id, Names: []string{"/" + name}, State: container.ContainerState(state), Image: "img:latest", Labels: l})
 }
@@ -1536,7 +1538,7 @@ func newLogsTestService(t *testing.T, tty bool, logsBody []byte, gotQuery *url.V
 	t.Cleanup(server.Close)
 
 	return NewContainerService(
-		event.NewEventService(setupProjectTestDB(t), nil, nil, nil),
+		event.NewEventService(setupProjectTestDB(t), nil, nil),
 		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		nil,
 		nil,
@@ -1794,7 +1796,7 @@ func newQuadletTestContainerService(t *testing.T) (*ContainerService, *quadletTe
 
 	systemd := &quadletTestSystemd{}
 	svc := NewContainerService(
-		event.NewEventService(setupProjectTestDB(t), nil, nil, nil),
+		event.NewEventService(setupProjectTestDB(t), nil, nil),
 		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, dockerServer)),
 		nil,
 		nil,
@@ -1848,4 +1850,88 @@ func TestContainerMutationsRefuseQuadletContainers(t *testing.T) {
 		"GET /containers/quadlet-id/json",
 	}, dockerCalls())
 	require.Empty(t, systemd.calls)
+}
+
+func TestPendingContainerCountUsesScopedTagRecords(t *testing.T) {
+	db := setupProjectTestDB(t)
+	tagLabels := map[string]string{labels.LabelUpdateStrategy: "auto"}
+	records := []imageupdate.ImageUpdateRecord{
+		{ID: "shared", Repository: "docker.io/library/app", Tag: "stable", HasUpdate: true, UpdateType: "digest"},
+		{ID: "container::first", PolicyKey: imageref.UpdatePolicyKey("app:1.2.3", tagLabels), ContainerID: "first", ImageID: "shared", HasUpdate: true, UpdateType: "tag"},
+		{
+			ID: "container::other-project",
+			PolicyKey: imageref.UpdatePolicyKey(
+				"app:1.2.3",
+				tagLabels,
+			),
+			ContainerID: "other-project",
+			ImageID:     "shared",
+			HasUpdate:   true,
+			UpdateType:  "tag",
+		},
+	}
+	require.NoError(t, db.Create(&records).Error)
+	service := &ContainerService{imageService: imagedomain.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil)}
+	containers := []container.Summary{
+		{ID: "first", Image: "app:1.2.3", ImageID: "shared", Labels: map[string]string{labels.LabelUpdateStrategy: "auto"}},
+		{ID: "unchecked", Image: "app:1.2.3", ImageID: "shared", Labels: map[string]string{labels.LabelUpdateStrategy: "auto"}},
+	}
+	count, err := service.CountPendingUpdates(t.Context(), containers)
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+	containers = append(containers, container.Summary{ID: "digest", Image: "app:latest", ImageID: "shared"})
+	count, err = service.CountPendingUpdates(t.Context(), containers)
+	require.NoError(t, err)
+	require.Equal(t, 2, count, "a digest record under another tag of the running image counts")
+	containers = append(containers, container.Summary{ID: "digest-twin", Image: "app:latest", ImageID: "shared"})
+	count, err = service.CountPendingUpdates(t.Context(), containers)
+	require.NoError(t, err)
+	require.Equal(t, 3, count, "separate containers sharing one image each count once")
+	containers[0].Labels[labels.LabelUpdater] = "off"
+	count, err = service.CountPendingUpdates(t.Context(), containers)
+	require.NoError(t, err)
+	require.Equal(t, 3, count, "disabling automatic installation keeps the pending update visible")
+	containers[0].Labels[imageref.UpdateCheckLabel] = "false"
+	count, err = service.CountPendingUpdates(t.Context(), containers)
+	require.NoError(t, err)
+	require.Equal(t, 2, count, "disabling update checks suppresses the result")
+	containers[2].ImageID = ""
+	count, err = service.CountPendingUpdates(t.Context(), containers)
+	require.NoError(t, err)
+	require.Equal(t, 1, count, "a missing runtime image ID inherits no digest check")
+}
+
+func TestAggregateContainerCountsSumsEnvironments(t *testing.T) {
+	ctx, _ := containerScopeContext(t, "/api/environments/a,b,c/containers/counts", map[string]any{
+		"a": types.ApiResponse[types.ContainerStatusCounts]{
+			Success: true,
+			Data: types.ContainerStatusCounts{
+				RunningContainers: 2,
+				StoppedContainers: 1,
+				TotalContainers:   3,
+				UpdatesAvailable:  1,
+			},
+		},
+		"b": types.ApiResponse[types.ContainerStatusCounts]{
+			Success: true,
+			Data: types.ContainerStatusCounts{
+				RunningContainers: 1,
+				TotalContainers:   1,
+				UpdatesAvailable:  2,
+			},
+		},
+	})
+
+	body, err := (&ContainerService{}).AggregateContainerCounts(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, types.ContainerStatusCounts{
+		RunningContainers: 3,
+		StoppedContainers: 1,
+		TotalContainers:   4,
+		UpdatesAvailable:  3,
+	}, body.Data)
+	require.Len(t, body.Environments, 2)
+	require.Equal(t, 2, body.Environments[1].Data.UpdatesAvailable)
+	require.Len(t, body.FailedEnvironments, 1)
 }

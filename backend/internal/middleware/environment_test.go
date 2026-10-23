@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
@@ -24,17 +25,16 @@ func newTestEnvironmentMiddleware() *EnvironmentMiddleware {
 	return &EnvironmentMiddleware{
 		localID:   "0",
 		paramName: "id",
-		resolver: func(ctx context.Context, id string) (string, *string, bool, error) {
+		resolver: func(ctx context.Context, id string) (*string, bool, error) {
 			_ = ctx
-			return "edge://oracle-1", nil, true, nil
+			return nil, true, nil
 		},
 		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
 			_ = ctx
 			_ = c
 			return authz.SudoPermissionSet(), nil, true
 		},
-		httpClient: &http.Client{},
-		registry:   edge.NewTunnelRegistry(),
+		registry: edge.NewTunnelRegistry(),
 	}
 }
 
@@ -256,8 +256,7 @@ func TestEnvironmentMiddleware_LocalEnvironmentSkipsProxyPermissionCheck(t *test
 			_ = c
 			return authz.NewPermissionSet(), nil, true
 		},
-		httpClient: &http.Client{},
-		registry:   edge.NewTunnelRegistry(),
+		registry: edge.NewTunnelRegistry(),
 	}
 
 	router := echo.New()
@@ -275,23 +274,6 @@ func TestEnvironmentMiddleware_LocalEnvironmentSkipsProxyPermissionCheck(t *test
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.True(t, localHandlerHit, "local environment request must reach the local handler, not be proxy-authorized")
-}
-
-func TestEnvironmentMiddleware_RejectsInvalidProxyTarget(t *testing.T) {
-	middleware := newTestEnvironmentMiddleware()
-	middleware.resolver = func(ctx context.Context, id string) (string, *string, bool, error) {
-		_, _ = ctx, id
-		return "ftp://example.com", nil, true, nil
-	}
-	router := echo.New()
-	attachMiddleware(router, middleware)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-remote/containers", http.NoBody)
-	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, req)
-
-	assert.Equal(t, http.StatusInternalServerError, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), "Invalid proxy target URL")
 }
 
 func TestEnvironmentMiddleware_KeepsNodeAgentDeploymentCreationLocal(t *testing.T) {
@@ -333,20 +315,34 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 			var forwarded string
 			var forwardedInitiator string
 			var forwardedName string
-			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			registry := edge.NewTunnelRegistry()
+			manager := echo.New()
+			manager.GET("/api/tunnel/connect", edge.NewTunnelServerWithRegistry(registry, func(context.Context, string) (string, error) {
+				return "env-remote", nil
+			}, nil).HandleConnect)
+			managerServer := httptest.NewServer(manager)
+			defer managerServer.Close()
+			agentCtx, cancelAgent := context.WithCancel(t.Context())
+			defer cancelAgent()
+			go edge.NewTunnelClient(&edge.Config{
+				EdgeAgent:     true,
+				EdgeTransport: edge.EdgeTransportWebSocket,
+				ManagerApiUrl: managerServer.URL,
+				AgentToken:    "agent-token",
+			}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				forwarded = r.Header.Get(HeaderIconCatalog)
 				forwardedInitiator = r.Header.Get(HeaderUpdateInitiatorID)
 				forwardedName = r.Header.Get(HeaderUpdateInitiatorName)
 				w.WriteHeader(http.StatusOK)
-			}))
-			defer backend.Close()
+			})).StartWithErrorChan(agentCtx, nil)
+			require.True(t, registry.WaitForActive(t.Context(), "env-remote", 5*time.Second).IsPresent())
 
 			mw := &EnvironmentMiddleware{
 				localID:   "0",
 				paramName: "id",
-				resolver: func(ctx context.Context, id string) (string, *string, bool, error) {
+				resolver: func(ctx context.Context, id string) (*string, bool, error) {
 					_, _ = ctx, id
-					return backend.URL, nil, true, nil
+					return nil, true, nil
 				},
 				authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
 					_, _ = ctx, c
@@ -356,8 +352,7 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 					u.Preferences.IconCatalog = tt.catalog
 					return authz.SudoPermissionSet(), u, true
 				},
-				httpClient: &http.Client{},
-				registry:   edge.NewTunnelRegistry(),
+				registry: registry,
 			}
 
 			router := echo.New()

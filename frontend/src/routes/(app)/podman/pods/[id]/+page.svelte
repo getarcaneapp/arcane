@@ -120,7 +120,7 @@
 					{pod.name}
 				</h1>
 				<Badge variant={podmanStateVariant(pod.state)} minWidth="20">{pod.state}</Badge>
-				<EnvironmentCell value={envId} />
+				<EnvironmentCell value={envId} plain />
 			</div>
 		{/snippet}
 

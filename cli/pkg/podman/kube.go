@@ -107,6 +107,7 @@ func newKubeDownCmd() *cobra.Command {
 		force bool
 	}
 	cmd := &cobra.Command{
+		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeDestination},
 		Use:          "down <file>",
 		Short:        "Remove pods created from Kubernetes YAML",
 		Args:         cobra.ExactArgs(1),

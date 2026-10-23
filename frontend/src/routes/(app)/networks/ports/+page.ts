@@ -1,7 +1,7 @@
 import { queryKeys } from '#lib/query/query-keys.js';
 import { portService } from '#lib/services/port-service.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
-import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
+import { fetchAcrossEnvironments, readableEnvironments } from '#lib/utils/environments.js';
 import { resolveListPageLoadContext } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -10,13 +10,13 @@ import type { PageLoad } from './$types';
 export const load: PageLoad = async ({ parent }) => {
 	const {
 		queryClient,
-		environments,
 		scope,
 		requestOptions: portRequestOptions
 	} = await resolveListPageLoadContext(parent, 'arcane-ports-table', {
 		column: 'hostPort',
 		direction: 'asc'
 	});
+	const environments = readableEnvironments('containers:list');
 
 	let ports;
 	const operationResult = await tryCatch(

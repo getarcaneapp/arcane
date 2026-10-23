@@ -64,6 +64,8 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 		eventService:       m.handler.eventService,
 		cfg:                m.handler.cfg,
 		streamHub:          m.handler.streamHub,
+		changeHub:          m.handler.changeHub,
+		changeCursors:      m.handler.changeCursors,
 		activityService:    m.handler.activityService,
 		appCtx:             appCtx.Context(),
 		localVersion:       localVersion,
@@ -142,26 +144,6 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 	}, authz.PermEnvironmentsRead, h.TestConnection)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "updateHeartbeat",
-		Method:      "POST",
-		Path:        "/environments/{id}/heartbeat",
-		Summary:     "Update environment heartbeat",
-		Description: "Update the heartbeat timestamp for an environment",
-		Tags:        []string{"Environments"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermEnvironmentsSync, h.UpdateHeartbeat)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "pairAgent",
-		Method:      "POST",
-		Path:        "/environments/{id}/agent/pair",
-		Summary:     "Pair with local agent",
-		Description: "Generate or rotate the local agent pairing token",
-		Tags:        []string{"Environments"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermEnvironmentsPair, h.PairAgent)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "syncEnvironment",
 		Method:      "POST",
 		Path:        "/environments/{id}/sync",
@@ -220,6 +202,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 		Description: "Get the version of a remote environment",
 		Tags:        []string{"Environments"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermEnvironmentsRead, h.GetEnvironmentVersion)
 
 	huma.Register(api, huma.Operation{
