@@ -772,7 +772,7 @@ func (s *Service) watchUpgradeJob(ctx context.Context, jobID, instanceID string)
 }
 
 // ResumeUpgradeJobOnStartup finalizes a job the manager left pending_restart by self-upgrading,
-// and fails a running job whose workflow is gone. It is a no-op when nothing is pending.
+// and fails a running job whose workflow is gone or whose manager was upgraded outside it. It is a no-op when nothing is pending.
 func (s *Service) ResumeUpgradeJobOnStartup(ctx context.Context) {
 	job, err := s.findUpgradeJob(ctx, "status IN ?", activeUpgradeJobStatuses)
 	if err != nil {
@@ -783,10 +783,12 @@ func (s *Service) ResumeUpgradeJobOnStartup(ctx context.Context) {
 		return
 	}
 
+	info := s.versionService.GetAppVersionInfo(ctx)
 	// A running job resumes with its workflow; one without a live workflow cannot resume, so fail it.
 	if job.Status == UpgradeJobStatusRunning {
 		standalone, standaloneErr := s.flow.Standalone(ctx)
-		if index := slices.IndexFunc(standalone, func(run types.SchedulerRun) bool { return run.JobID == upgradeJobWorkflowName }); standaloneErr == nil && index >= 0 {
+		index := slices.IndexFunc(standalone, func(run types.SchedulerRun) bool { return run.JobID == upgradeJobWorkflowName })
+		if standaloneErr == nil && index >= 0 && !upgradeLanded(job.ManagerVersionAtStart, job.ManagerDigestAtStart, "", info.CurrentVersion, info.CurrentDigest) {
 			go s.watchUpgradeJob(context.WithoutCancel(ctx), job.ID, standalone[index].ID)
 			return
 		}
@@ -794,7 +796,6 @@ func (s *Service) ResumeUpgradeJobOnStartup(ctx context.Context) {
 		return
 	}
 
-	info := s.versionService.GetAppVersionInfo(ctx)
 	action := resolveResumeAction(job, info.CurrentVersion, info.CurrentDigest, time.Now())
 	if action.markStale {
 		s.markUpgradeJobFailed(ctx, job, "upgrade job is stale; manager did not restart in time")
@@ -1128,37 +1129,36 @@ func (s *Service) upgradeManagerTask(ctx context.Context, t flow.Task) (any, err
 		if savePendingRestartErr := s.saveJob(ctx, job); savePendingRestartErr != nil {
 			return nil, fmt.Errorf("persist pending_restart before manager upgrade: %w", savePendingRestartErr)
 		}
-		// Only a manager already on the newest image makes a no-op upgrader run expected; checked after the fact it proves nothing.
-		wasAlreadyNewest := s.AlreadyOnNewestImage(ctx)
-		_, events, _, unsubscribe := s.progress.subscribe()
-		defer unsubscribe()
-		sink := &progressSink{service: s, job: job, index: manager}
-		var upgraderID string
-		var triggerErr error
-		triggered := make(chan struct{})
-		go func() {
-			defer close(triggered)
-			upgraderID, triggerErr = s.TriggerUpgradeViaCLI(ctx, types.Actor{ID: job.UserID, Username: job.Username}, updater.SelfUpdateTarget{})
-		}()
-		sink.follow(ctx, events, triggered)
-		if triggerErr != nil {
-			// No restart is coming, so this flips the manager's updating row to failed now.
-			s.markUpgradeJobFailed(ctx, job, fmt.Sprintf("manager upgrade trigger failed: %v", triggerErr))
-		} else {
-			slog.InfoContext(ctx, "Upgrade job: agents done, manager self-upgrade triggered", "jobId", job.ID, "upgraderId", upgraderID)
-			s.watchManagerUpgrader(ctx, sink, events, upgraderID, wasAlreadyNewest)
-		}
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		if job, err = s.loadUpgradeJob(ctx, input.JobID); err != nil {
-			return nil, err
-		}
+		go s.triggerManagerUpgrade(context.WithoutCancel(ctx), job, manager)
+		return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Upgrade job finished; " + string(UpgradeJobStatusPendingRestart)}, nil
 	}
 	if job.Status == UpgradeJobStatusFailed {
 		return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: kit.FromPtr(job.Error)}, nil
 	}
 	return types.SchedulerOutcome{Status: types.RunStatusSucceeded, Message: "Upgrade job finished; " + string(job.Status)}, nil
+}
+
+func (s *Service) triggerManagerUpgrade(ctx context.Context, job *UpgradeJob, manager int) {
+	// Only a manager already on the newest image makes a no-op upgrader run expected; checked after the fact it proves nothing.
+	wasAlreadyNewest := s.AlreadyOnNewestImage(ctx)
+	_, events, _, unsubscribe := s.progress.subscribe()
+	defer unsubscribe()
+	sink := &progressSink{service: s, job: job, index: manager}
+	var upgraderID string
+	var triggerErr error
+	triggered := make(chan struct{})
+	go func() {
+		defer close(triggered)
+		upgraderID, triggerErr = s.TriggerUpgradeViaCLI(ctx, types.Actor{ID: job.UserID, Username: job.Username}, updater.SelfUpdateTarget{})
+	}()
+	sink.follow(ctx, events, triggered)
+	if triggerErr != nil {
+		// No restart is coming, so this flips the manager's updating row to failed now.
+		s.markUpgradeJobFailed(ctx, job, fmt.Sprintf("manager upgrade trigger failed: %v", triggerErr))
+		return
+	}
+	slog.InfoContext(ctx, "Upgrade job: agents done, manager self-upgrade triggered", "jobId", job.ID, "upgraderId", upgraderID)
+	s.watchManagerUpgrader(ctx, sink, events, upgraderID, wasAlreadyNewest)
 }
 
 // watchManagerUpgrader closes out a pending_restart job whose manager was never recreated, which a recreate would have
