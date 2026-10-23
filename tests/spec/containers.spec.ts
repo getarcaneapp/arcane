@@ -1391,8 +1391,8 @@ test.describe('Resource sorting', () => {
 		const bigBytesRow = page
 			.getByRole('row')
 			.filter({ has: page.getByRole('link', { name: 'big-bytes' }) });
-		await expect(bigBytesRow.getByText('10.0%')).toBeVisible();
-		await expect(bigBytesRow.getByText('3 GB', { exact: true })).toBeVisible();
+		await expect(bigBytesRow.getByText('10%', { exact: true })).toBeVisible();
+		await expect(bigBytesRow.getByTitle('3 GB', { exact: true })).toBeVisible();
 
 		const brokenRow = page
 			.getByRole('row')
