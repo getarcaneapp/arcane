@@ -6,9 +6,8 @@
 	import ReleaseNotes from '#lib/components/release-notes.svelte';
 	import { Button } from '#lib/components/ui/button/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
-	import * as Popover from '#lib/components/ui/popover/index.js';
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
-	import { SuccessIcon, AlertTriangleIcon, ExternalLinkIcon, InfoIcon } from '#lib/icons/index.js';
+	import { SuccessIcon, AlertTriangleIcon, ExternalLinkIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { APIError } from '#lib/services/api-service.js';
 	import systemUpgradeService from '#lib/services/api/system-upgrade-service.js';
@@ -107,7 +106,7 @@
 		};
 	};
 
-	async function handleConfirm() {
+	async function handleConfirm(environmentIds?: string[]) {
 		const attempt = ++startAttempt;
 		starting = true;
 
@@ -116,7 +115,7 @@
 			return;
 		}
 
-		const startResult = await tryCatch(systemUpgradeService.startUpgradeJob());
+		const startResult = await tryCatch(systemUpgradeService.startUpgradeJob(environmentIds));
 		let next = startResult.data;
 		// The backend refuses a second job while one is active (409). Adopt that job
 		// and follow it instead of failing; never retry the POST.
@@ -129,7 +128,7 @@
 
 		if (!next) {
 			await handleApiResultWithCallbacks({ result: startResult, message: m.environments_update_all_trigger_failed() });
-			resetState();
+			if (attempt === startAttempt) starting = false;
 			return;
 		}
 
@@ -170,6 +169,11 @@
 		failed: results.filter((r) => r.status === 'failed').length,
 		unconfirmed: results.filter((r) => r.status === 'triggered').length
 	});
+	const versionChange = $derived.by(() => {
+		const from = job?.managerVersionAtStart?.trim() ?? '';
+		const to = job?.managerTargetVersion?.trim() ?? '';
+		return from && to && from !== to ? `${from} → ${to}` : '';
+	});
 	const hasIssues = $derived(outcomeCounts.failed > 0 || outcomeCounts.unconfirmed > 0);
 	const failed = $derived(job?.status === 'failed' || hasIssues);
 
@@ -182,15 +186,23 @@
 		return m.environments_update_all_in_progress();
 	});
 
-	const segmentClasses: Record<UpgradeJobResultStatus, string> = {
-		pending: 'bg-muted',
-		updating: 'bg-primary animate-pulse',
-		updated: 'bg-success',
-		up_to_date: 'bg-success',
-		triggered: 'bg-warning',
-		skipped_offline: 'bg-warning',
-		failed: 'bg-destructive'
-	};
+	const orderedResults = $derived([
+		...results.filter((r) => r.environmentId !== MANAGER_ENVIRONMENT_ID),
+		...(managerResult ? [managerResult] : [])
+	]);
+	const failedIds = $derived(results.filter((r) => r.status === 'failed').map((r) => r.environmentId));
+	const updatingCount = $derived(results.filter((r) => r.status === 'updating').length);
+	const progressSegments = $derived([
+		{ count: outcomeCounts.updated + outcomeCounts.current, class: 'bg-success', label: m.environments_update_all_legend_done },
+		{ count: updatingCount, class: 'bg-primary animate-pulse', label: m.environments_update_all_legend_updating },
+		{
+			count: outcomeCounts.skipped + outcomeCounts.unconfirmed,
+			class: 'bg-warning',
+			label: m.environments_update_all_legend_skipped
+		},
+		{ count: outcomeCounts.failed, class: 'bg-destructive', label: m.environments_update_all_legend_failed },
+		{ count: totalCount - doneCount - updatingCount, class: 'bg-muted', label: m.environments_update_all_legend_queued }
+	]);
 
 	// Dev-only preview: step fake environments through every row state so this dialog can be
 	// designed and reviewed without triggering a real update of all environments. Only ever enabled
@@ -242,37 +254,43 @@
 		};
 		starting = false;
 
-		// Remotes first, manager last — the real processing order.
-		const steps = [...demo.entries()].map(([index, entry]) => ({ index, entry }));
-		for (const { index, entry } of [...steps.slice(1), ...steps.slice(0, 1)]) {
+		// Remotes four at a time, manager last — the real processing order.
+		const runRow = async (index: number, entry: (typeof demo)[number]) => {
 			const row = demoJob?.results?.[index];
-			if (!live() || !row) return;
+			if (!live() || !row) return false;
 			row.status = 'updating';
 			enterStage(row, 'checking', 5);
-			if (!(await pause(700))) return;
+			if (!(await pause(700))) return false;
 			enterStage(row, 'pulling', 30);
-			if (!(await pause(700))) return;
+			if (!(await pause(700))) return false;
 			enterStage(row, 'upgrading', 70);
-			if (!(await pause(700))) return;
+			if (!(await pause(700))) return false;
 			enterStage(row, 'reconnecting', 90);
 			// One slow reconnect, to exercise the elapsed-time display.
-			if (index === 1 && !(await pause(5000))) return;
+			if (index === 1 && !(await pause(5000))) return false;
 			// The manager restart is the one moment the reconnecting banner shows.
 			if (index === 0 && demoJob) {
 				demoJob.status = 'pending_restart';
 				demoReconnecting = true;
-				if (!(await pause(3000))) return;
+				if (!(await pause(3000))) return false;
 				demoReconnecting = false;
 			}
 			enterStage(row, 'verifying', 95);
-			if (!(await pause(700))) return;
+			if (!(await pause(700))) return false;
 			row.status = entry.outcome;
 			row.stage = undefined;
 			row.stageStartedAt = undefined;
 			row.percent = 100;
 			row.toVersion = entry.to;
 			if (entry.error) row.error = entry.error;
+			return true;
+		};
+		const remotes = [...demo.entries()].slice(1);
+		for (let start = 0; start < remotes.length; start += 4) {
+			const batch = remotes.slice(start, start + 4).map(([index, entry]) => runRow(index, entry));
+			if ((await Promise.all(batch)).includes(false)) return;
 		}
+		if (!demo[0] || !(await runRow(0, demo[0]))) return;
 
 		if (!live() || !demoJob) return;
 		demoJob.status = 'completed';
@@ -338,44 +356,45 @@
 							{/if}
 							<Dialog.Title><span class="block min-w-0 truncate">{title}</span></Dialog.Title>
 						</div>
-						<div class="flex shrink-0 items-center gap-1 pr-6">
-							{#if totalCount > 0}
-								<span class="text-xs text-muted-foreground tabular-nums">
-									{m.environments_update_all_progress({ done: doneCount, total: totalCount })}
-								</span>
-							{/if}
-							{#if phase === 'running'}
-								<Popover.Root>
-									<Popover.Trigger>
-										{#snippet child({ props })}
-											<Button {...props} variant="ghost" size="icon" class="size-7" aria-label={m.info()}>
-												<InfoIcon class="size-4" />
-											</Button>
-										{/snippet}
-									</Popover.Trigger>
-									<Popover.Content align="end" class="w-80">
-										<div class="space-y-2 text-xs leading-relaxed text-muted-foreground">
-											<p>{m.environments_update_all_manager_note()}</p>
-											<p>{m.environments_update_all_reconnection_note()}</p>
-										</div>
-									</Popover.Content>
-								</Popover.Root>
-							{/if}
-						</div>
+						{#if totalCount > 0}
+							<span class="shrink-0 pr-6 text-xs text-muted-foreground tabular-nums">
+								{m.environments_update_all_progress({ done: doneCount, total: totalCount })}
+							</span>
+						{/if}
 					</div>
+					{#if versionChange || (phase === 'running' && job)}
+						<p class="flex flex-wrap gap-x-2 text-xs text-muted-foreground tabular-nums">
+							{#if versionChange}<span>{versionChange}</span>{/if}
+							{#if phase === 'running' && job}<UpdateAllElapsed since={job.createdAt} />{/if}
+						</p>
+					{/if}
 				</Dialog.Header>
 
 				{#if totalCount > 0}
-					<div class="mt-3 flex gap-1">
-						{#each results as result (result.environmentId)}
-							<div class={cn('h-1.5 flex-1 rounded-full transition-colors', segmentClasses[result.status])}></div>
+					<div class="mt-4 flex h-1.5 overflow-hidden rounded-full bg-muted">
+						{#each progressSegments as segment, index (index)}
+							{#if segment.count > 0}
+								<div
+									class={cn('h-full w-(--segment-width) transition-all', segment.class)}
+									style:--segment-width="{(segment.count / totalCount) * 100}%"
+								></div>
+							{/if}
+						{/each}
+					</div>
+					<div class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground tabular-nums">
+						{#each progressSegments as segment, index (index)}
+							{#if segment.count > 0}
+								<span class="inline-flex items-center gap-1.5">
+									<span class={cn('size-1.5 rounded-full', segment.class)}></span>
+									{segment.label({ count: segment.count })}
+								</span>
+							{/if}
 						{/each}
 					</div>
 				{/if}
 
-				{#if phase === 'finished'}
-					<p class="mt-3 text-sm text-muted-foreground">{m.environments_update_all_summary(outcomeCounts)}</p>
-					{#if job?.error}<p class="mt-2 text-sm text-destructive">{job.error}</p>{/if}
+				{#if phase === 'finished' && job?.error}
+					<p class="mt-3 text-sm text-destructive">{job.error}</p>
 				{/if}
 
 				{#if reconnecting}
@@ -397,7 +416,7 @@
 					     under a max-height-only parent, so it never clips (#3655). -->
 					<div class="max-h-96 overflow-y-auto">
 						<ul class="divide-y divide-border/50">
-							{#each results as result (result.environmentId)}
+							{#each orderedResults as result (result.environmentId)}
 								<UpgradeJobRow {result} />
 							{/each}
 						</ul>
@@ -415,9 +434,14 @@
 			{#if phase === 'confirm'}
 				<Button variant="outline" onclick={() => (open = false)}>{m.common_cancel()}</Button>
 				{#if canConfirm}
-					<Button onclick={handleConfirm}>{m.update_all()}</Button>
+					<Button onclick={() => handleConfirm()}>{m.update_all()}</Button>
 				{/if}
 			{:else}
+				{#if phase === 'finished' && canConfirm && !debugDemo && failedIds.length > 0}
+					<Button variant="outline" disabled={starting} onclick={() => handleConfirm(failedIds)}>
+						{m.environments_update_all_retry_failed()}
+					</Button>
+				{/if}
 				<Button variant="outline" onclick={handleClose}>{m.common_close()}</Button>
 			{/if}
 		</Dialog.Footer>
