@@ -58,18 +58,19 @@
 
 {#snippet metric(value: number | null, variant: MetricRingVariant, status: DashboardLiveStatsStatus)}
 	{#if status === 'loading'}
-		<Skeleton class="ml-auto h-4 w-12" />
+		<div class="ml-auto size-9.5 animate-pulse rounded-full bg-muted"></div>
 	{:else if status === 'denied'}
 		<span class="text-xs text-muted-foreground" title={m.common_access_denied()}>—</span>
 	{:else if value === null || Number.isNaN(value)}
 		<span class="text-xs text-muted-foreground" title={status === 'unavailable' ? m.stats_unavailable() : undefined}>—</span>
 	{:else}
 		<span
-			class={cn('flex items-center justify-end gap-2', status === 'stale' && 'opacity-60')}
+			class={cn('flex justify-end', status === 'stale' && 'opacity-60')}
 			title={status === 'stale' ? m.stats_stale() : undefined}
 		>
-			<MetricRing percent={value} {variant} />
-			<span class="text-xs font-medium text-foreground tabular-nums">{Math.round(value)}%</span>
+			<MetricRing percent={value} {variant} size={38} stroke={3}>
+				<span class="text-2xs font-medium text-foreground tabular-nums">{Math.round(value)}%</span>
+			</MetricRing>
 		</span>
 	{/if}
 {/snippet}

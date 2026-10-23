@@ -262,7 +262,11 @@
 						<p class="text-xs text-muted-foreground">{m.file_limit({ limit: fileLimit })}</p>
 					{/if}
 				</div>
-				<MetricRing variant="backup" percent={filePercent} size={44} stroke={5} />
+				<MetricRing variant="backup" percent={filePercent} size={44} stroke={5}>
+					{#if fileLimit > 0}
+						<span class="text-2xs font-medium text-foreground tabular-nums">{Math.round(filePercent)}%</span>
+					{/if}
+				</MetricRing>
 			</div>
 			<StatCard
 				title={m.last_backup()}

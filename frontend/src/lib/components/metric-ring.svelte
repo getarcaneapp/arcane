@@ -15,15 +15,18 @@
 </script>
 
 <script lang="ts">
+	import type { Snippet } from 'svelte';
+
 	interface Props {
 		/** 0-100; values outside the range are clamped. */
 		percent?: number;
 		variant: MetricRingVariant;
 		size?: number;
 		stroke?: number;
+		children?: Snippet;
 	}
 
-	let { percent, variant, size = 26, stroke = 3.5 }: Props = $props();
+	let { percent, variant, size = 26, stroke = 3.5, children }: Props = $props();
 
 	const clampedPercent = $derived(percent === undefined ? 0 : Math.max(0, Math.min(100, percent)));
 	const radius = $derived((size - stroke) / 2);
@@ -35,24 +38,37 @@
 	const stops = $derived(gradientStops[variant]);
 </script>
 
-<svg width={size} height={size} viewBox="0 0 {size} {size}" class="shrink-0 -rotate-90" aria-hidden="true">
-	<defs>
-		<linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-			<stop offset="0%" stop-color={stops[0]} />
-			<stop offset="100%" stop-color={stops[1]} />
-		</linearGradient>
-	</defs>
-	<circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="currentColor" stroke-width={stroke} class="text-muted/40" />
-	<circle
-		cx={size / 2}
-		cy={size / 2}
-		r={radius}
-		fill="none"
-		stroke="url(#{gradientId})"
-		stroke-width={stroke}
-		stroke-linecap="round"
-		stroke-dasharray={circumference}
-		stroke-dashoffset={dashOffset}
-		class="transition-stroke-dashoffset duration-300 ease-out"
-	/>
-</svg>
+<span class="relative inline-flex size-(--ring-size) shrink-0 items-center justify-center" style:--ring-size="{size}px">
+	<svg width={size} height={size} viewBox="0 0 {size} {size}" class="absolute inset-0 -rotate-90" aria-hidden="true">
+		<defs>
+			<linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+				<stop offset="0%" stop-color={stops[0]} />
+				<stop offset="100%" stop-color={stops[1]} />
+			</linearGradient>
+		</defs>
+		<circle
+			cx={size / 2}
+			cy={size / 2}
+			r={radius}
+			fill="none"
+			stroke="currentColor"
+			stroke-width={stroke}
+			class="text-muted/40"
+		/>
+		<circle
+			cx={size / 2}
+			cy={size / 2}
+			r={radius}
+			fill="none"
+			stroke="url(#{gradientId})"
+			stroke-width={stroke}
+			stroke-linecap="round"
+			stroke-dasharray={circumference}
+			stroke-dashoffset={dashOffset}
+			class="transition-stroke-dashoffset duration-300 ease-out"
+		/>
+	</svg>
+	{#if children}
+		<span class="relative">{@render children()}</span>
+	{/if}
+</span>
