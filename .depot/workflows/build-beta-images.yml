@@ -61,6 +61,12 @@ jobs:
             */go.mod
             */go.sum
 
+      - name: Capture frontend build versions
+        id: frontend-versions
+        run: |
+          echo "node_version=$(node --version)" >> "$GITHUB_OUTPUT"
+          echo "sveltekit_version=$(vp -C frontend node -p 'require("@sveltejs/kit/package.json").version')" >> "$GITHUB_OUTPUT"
+
       - name: Request App Token
         id: app-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
@@ -108,4 +114,6 @@ jobs:
           SKIP_RELEASE: 'true'
           SKIP_CHANGELOG: 'true'
           NEXT_IMAGE_VERSION: ${{ needs.beta-version.outputs.version }}
+          NODE_VERSION: ${{ steps.frontend-versions.outputs.node_version }}
+          SVELTEKIT_VERSION: ${{ steps.frontend-versions.outputs.sveltekit_version }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
