@@ -32,7 +32,7 @@ func trustBundle() []byte {
 		files = []string{file}
 	}
 	dirs := defaultCertDirs
-	if dir, ok := os.LookupEnv("SSL_CERT_DIR"); ok {
+	if dir := os.Getenv("SSL_CERT_DIR"); dir != "" {
 		dirs = filepath.SplitList(dir)
 	}
 
