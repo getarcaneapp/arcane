@@ -263,8 +263,13 @@ test.describe('All environments', () => {
 		await expect(remoteRow).toBeVisible();
 		await expect(remoteRow).not.toContainText(remoteEnvironment.name);
 
-		await remoteRow.getByLabel(remoteEnvironment.name).hover();
 		// The row shows only the dot, so the visible name is the tooltip.
-		await expect(page.getByText(remoteEnvironment.name, { exact: true })).toBeVisible();
+		await expect(async () => {
+			await page.mouse.move(0, 0);
+			await remoteRow.getByLabel(remoteEnvironment.name).hover();
+			await expect(page.getByText(remoteEnvironment.name, { exact: true })).toBeVisible({
+				timeout: 1_000
+			});
+		}).toPass();
 	});
 });
