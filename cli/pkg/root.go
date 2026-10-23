@@ -116,7 +116,7 @@ func NewRootCommand() *cobra.Command {
 	cmdutil.EnumVarP(root, flags, &opts.logLevel, "log-level", "", "info", "Log level", "debug", "info", "warn", "error", "fatal")
 	flags.StringVarP(&opts.configPath, "config", "c", "", "Path to config file (default ~/.config/arcanecli.yml)")
 	cmdutil.EnumVarP(root, flags, &opts.outputMode, "output", "", "text", "Output mode", "text", "json")
-	flags.StringVar(&opts.envOverride, "env", "", "Override default environment ID for this invocation")
+	flags.StringVar(&opts.envOverride, "env", "", "Limit this invocation to one environment ID (default: all environments)")
 	flags.BoolVarP(&opts.assumeYes, "yes", "y", false, "Automatic yes to prompts")
 	flags.BoolVar(&opts.noColor, "no-color", false, "Disable colored output")
 	flags.DurationVar(&opts.requestTimeout, "request-timeout", 0, "HTTP request timeout override (e.g. 30s, 2m)")
@@ -200,6 +200,9 @@ func instrumentCommandTree(cmd *cobra.Command) {
 		originalRunE := cmd.RunE
 		cmd.RunE = func(command *cobra.Command, args []string) error {
 			logger.GetLogger().Debug(action, "command", command.CommandPath(), "arg_count", len(args))
+			if !command.HasParent() {
+				return originalRunE(command, args)
+			}
 			return cmdutil.RunScoped(command, args, originalRunE)
 		}
 	}

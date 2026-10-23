@@ -17,7 +17,7 @@ type ContainerRemoveStatus = 'removing' | '';
 
 type ContainerLifecycleActionConfig = {
 	status: Exclude<ContainerLifecycleStatus, ''>;
-	run: (id: string, environmentId?: string) => Promise<unknown>;
+	run: (id: string, environmentId: string) => Promise<unknown>;
 	success: () => string;
 	failure: () => string;
 };
@@ -58,7 +58,7 @@ const containerLifecycleActionConfigs: Record<ContainerLifecycleAction, Containe
 type RunContainerLifecycleActionOptions = {
 	action: ContainerLifecycleAction;
 	containerId: string;
-	environmentId?: string;
+	environmentId: string;
 	setStatus: (status: ContainerLifecycleStatus) => void;
 	onRefresh?: () => Promise<unknown> | unknown;
 };
@@ -101,7 +101,7 @@ export async function runContainerLifecycleAction({
 type ConfirmAndRemoveContainerOptions = {
 	containerId: string;
 	containerName: string;
-	environmentId?: string;
+	environmentId: string;
 	setStatus: (status: ContainerRemoveStatus) => void;
 	onRefresh?: () => Promise<unknown> | unknown;
 };

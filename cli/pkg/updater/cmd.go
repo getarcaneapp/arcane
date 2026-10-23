@@ -76,7 +76,7 @@ func newRunCmd() *cobra.Command {
 				return fmt.Errorf("failed to run updater: %w", err)
 			}
 
-			if app, ok := runtime.From(cmd.Context()); ok && app.FleetConfirmed && result.Data.Failed > 0 {
+			if app, ok := runtime.From(cmd.Context()); ok && app.AllConfirmed && result.Data.Failed > 0 {
 				return fmt.Errorf("updater failed for %d resources", result.Data.Failed)
 			}
 
@@ -93,7 +93,7 @@ func newRunCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmdutil.SetScope(cmdutil.ScopeFleet, cmd)
+	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
 	return cmd
 }
 

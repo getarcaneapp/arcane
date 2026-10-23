@@ -19,18 +19,22 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"go.opentelemetry.io/contrib/bridges/otelslog"
+	"go.opentelemetry.io/otel"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config/schema"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/dashboard"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/di"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
@@ -54,12 +58,15 @@ func Bootstrap(ctx context.Context) error {
 	if err := gotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("load .env: %w", err)
 	}
-	if err := schema.CheckLegacyEnv(ctx); err != nil {
-		return err
-	}
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load configuration: %w", err)
+	}
+	if err = cfg.Validate(); err != nil {
+		return fmt.Errorf("invalid configuration: %w", err)
+	}
+	if legacyEnvErr := schema.CheckLegacyEnv(ctx); legacyEnvErr != nil {
+		return legacyEnvErr
 	}
 	settingsEnv, err := settings.LoadEnv()
 	if err != nil {
@@ -106,7 +113,7 @@ func Bootstrap(ctx context.Context) error {
 	crypto.InitEncryption(&crypto.Config{
 		EncryptionKey: encryptionKey,
 		Environment:   string(cfg.Environment),
-		AgentMode:     cfg.AgentMode,
+		AgentMode:     cfg.EdgeAgent,
 	})
 
 	// Telemetry identifies this installation by its persisted instance ID, so it starts once the
@@ -195,6 +202,11 @@ func applicationOptions(appCtx context.Context, cfg *config.Config, settingsEnv 
 			startGlobalVariableSync,
 			startBackgroundStartupTasks,
 			startProjectStatusWatcher,
+			func(dashboardService *dashboard.DashboardService) {
+				if err := dashboardService.ObserveInventory(otel.Meter(tracing.InstrumentationName)); err != nil {
+					otel.Handle(err)
+				}
+			},
 		),
 		fx.WithLogger(func() fxevent.Logger {
 			logger := &fxevent.SlogLogger{Logger: slog.Default()}
@@ -216,6 +228,8 @@ type initializeStartupStateParams struct {
 	Volume      *volume.VolumeService
 	Settings    *settings.SettingsService
 	Environment *environment.EnvironmentService
+	Activity    *activity.ActivityService
+	Event       *event.EventService
 	GitOpsSync  *gitops.GitOpsSyncService
 	Project     *project.ProjectService
 	Container   *container.ContainerService
@@ -232,6 +246,10 @@ const startupTaskTimeout = 30 * time.Second
 func initializeStartupState(p initializeStartupStateParams) {
 	appCtx := p.AppCtx
 	cfg := p.Config
+
+	p.Activity.Changes.Subscribe(func(environmentID string) {
+		p.Event.PublishChange(environmentID, "activity")
+	})
 
 	helperCtx, cancelHelpers := context.WithTimeout(appCtx, startupTaskTimeout)
 	startup.CleanupOrphanedVolumeHelpers(helperCtx, p.Volume.CleanupOrphanedVolumeHelpers)
@@ -264,7 +282,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 		cancelTask()
 	}
 
-	if !cfg.AgentMode {
+	if !cfg.EdgeAgent {
 		if err := p.Environment.ReconcileEdgeStatusesOnStartup(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Failed to reconcile edge environment statuses on startup", "error", err)
 		}
@@ -277,7 +295,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 		})
 	}
 
-	startup.InitializeNonAgentFeatures(appCtx, cfg.AgentMode,
+	startup.InitializeNonAgentFeatures(appCtx, cfg.EdgeAgent,
 		p.Role.EnsureBuiltInRoles,
 		func(ctx context.Context) error {
 			// Backfill legacy users.roles first so CreateDefaultAdmin's zero-global-admin gate sees them;
@@ -310,19 +328,19 @@ func initializeStartupState(p initializeStartupStateParams) {
 	if err := p.Role.ReconcileEnvOidcMappings(appCtx, cfg.OidcRoleMappings); err != nil {
 		slog.ErrorContext(appCtx, "Failed to reconcile ARCANE_OIDC_ROLE_MAPPINGS", "error", err)
 	}
-	if !cfg.AgentMode {
+	if !cfg.EdgeAgent {
 		if err := p.Role.AssertGlobalAdminExists(appCtx, p.DB.WithContext(appCtx)); err != nil {
 			slog.ErrorContext(appCtx, "RBAC global admin guard failed", "error", err)
 		}
 	}
 
-	// Only edge agents auto-pair; direct agents are passive and the manager dials them.
-	if agentToken := p.Settings.AgentToken(appCtx); cfg.AgentMode && cfg.EdgeAgent && agentToken != "" && cfg.ManagerApiUrl != "" {
-		if err := handleAgentBootstrapPairing(appCtx, cfg, agentToken); err != nil {
+	if cfg.EdgeAgent {
+		if config.DirectAgentRequested(os.Getenv) {
+			slog.WarnContext(appCtx, "ARCANE_AGENT_MODE is ignored", "guidance", config.ErrDirectAgentRemoved.Error())
+		}
+		if err := handleAgentBootstrapPairing(appCtx, cfg); err != nil {
 			slog.WarnContext(appCtx, "Failed to auto-pair agent with manager", "error", err)
 		}
-	} else if cfg.AgentMode && !cfg.EdgeAgent {
-		slog.InfoContext(appCtx, "Direct mode active: agent operates as a passive HTTP server; no outbound connection to manager required")
 	}
 }
 
@@ -330,11 +348,10 @@ func startEdgeTunnelClient(appCtx context.Context, lc fx.Lifecycle, cfg *config.
 	var stop func(context.Context) error
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			agentToken := settingsService.AgentToken(appCtx)
-			if !cfg.EdgeAgent || cfg.ManagerApiUrl == "" || agentToken == "" {
+			if !cfg.EdgeAgent {
 				return nil
 			}
-			tunnelStop, err := edge.StartTunnelClient(appCtx, buildEdgeRuntimeConfig(cfg, agentToken), router)
+			tunnelStop, err := edge.StartTunnelClient(appCtx, buildEdgeRuntimeConfig(cfg, cfg.AgentToken), router)
 			if err != nil {
 				slog.ErrorContext(appCtx, "Failed to start edge tunnel client", "error", err)
 				return nil
@@ -353,7 +370,7 @@ func startEdgeTunnelClient(appCtx context.Context, lc fx.Lifecycle, cfg *config.
 }
 
 func startGlobalVariableSync(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config, variables *variable.VariableService, _ *http.Server) {
-	if cfg.AgentMode {
+	if cfg.EdgeAgent {
 		return
 	}
 	lc.Append(fx.Hook{OnStart: func(context.Context) error {
@@ -423,7 +440,7 @@ func registerAppCancelHook(lc fx.Lifecycle, cancelApp context.CancelCauseFunc) {
 	})
 }
 
-func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, agentToken string) error {
+func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config) error {
 	slog.InfoContext(ctx, "Agent mode detected with token, attempting auto-pairing", "managerUrl", cfg.ManagerApiUrl)
 
 	pairURL := strings.TrimRight(httpx.ManagerBaseURL(cfg.ManagerApiUrl), "/") + "/api/environments/pair"
@@ -436,9 +453,9 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, agentT
 		return fmt.Errorf("failed to create pairing request: %w", err)
 	}
 
-	req.Header.Set("X-Api-Key", agentToken)
+	req.Header.Set("X-Api-Key", cfg.AgentToken)
 
-	httpClient, err := edge.NewManagerHTTPClient(buildEdgeRuntimeConfig(cfg, agentToken), 10*time.Second)
+	httpClient, err := edge.NewManagerHTTPClient(buildEdgeRuntimeConfig(cfg, cfg.AgentToken), 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to configure edge pairing client: %w", err)
 	}
@@ -460,7 +477,7 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, agentT
 		return nil
 	case resp.StatusCode == http.StatusUnauthorized:
 		// Not fatal: the key may belong to an earlier pairing, and a configured token still works.
-		slog.DebugContext(ctx, "Pairing skipped - API key not recognized (agent may already be paired)", "managerUrl", cfg.ManagerApiUrl)
+		slog.WarnContext(ctx, "Manager did not recognize ARCANE_AGENT_TOKEN; regenerate the API key for this environment in the manager and update ARCANE_AGENT_TOKEN", "managerUrl", cfg.ManagerApiUrl)
 		return nil
 	}
 	return fmt.Errorf("pairing failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))

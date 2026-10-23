@@ -4,7 +4,6 @@ import { tryCatch } from '#lib/utils/try-catch.js';
 import BaseAPIService, { handleUnauthorizedResponseInternal, withSessionSignal } from './api-service';
 
 export const STREAM_CHANNEL_ENVIRONMENTS = 'environments';
-export const STREAM_CHANNEL_DASHBOARD = 'dashboard';
 export const STREAM_CHANNEL_ACTIVITIES = 'activities';
 export const STREAM_CHANNEL_EVENTS = 'events';
 export const STREAM_CHANNEL_VERSION = 'version';

@@ -18,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm/children/nodes"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
 )
 
@@ -82,6 +83,13 @@ func NewHandler(swarmService *SwarmService, eventService *event.EventService) *S
 // Returns a mapped HTTP error when task enumeration fails.
 func (h *SwarmHandler) ListTasks(ctx context.Context, input *ListSwarmTasksInput) (*handlerutil.Page[types.SwarmTaskSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.swarmService.AggregateTasks(ctx, params)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to list swarm tasks: " + err.Error())
+		}
+		return &handlerutil.Page[types.SwarmTaskSummary]{Body: body}, nil
+	}
 	items, paginationResp, err := h.swarmService.ListTasksPaginated(ctx, params)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to list swarm tasks: "+err.Error())
@@ -104,7 +112,15 @@ func (h *SwarmHandler) ListTasks(ctx context.Context, input *ListSwarmTasksInput
 // Returns the current swarm information when swarm mode is available.
 // Returns a mapped HTTP error when swarm inspection fails.
 func (h *SwarmHandler) GetSwarmStatus(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.SwarmRuntimeStatus], error) {
-	enabled, err := h.swarmService.IsEnabled(ctx)
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.swarmService.AggregateStatus(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to read swarm status")
+		}
+		return &handlerutil.Out[types.SwarmRuntimeStatus]{Body: body}, nil
+	}
+
+	status, err := h.swarmService.GetStatus(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to read swarm status")
 	}
@@ -112,7 +128,7 @@ func (h *SwarmHandler) GetSwarmStatus(ctx context.Context, input *types.Environm
 	return &handlerutil.Out[types.SwarmRuntimeStatus]{
 		Body: types.ApiResponse[types.SwarmRuntimeStatus]{
 			Success: true,
-			Data:    types.SwarmRuntimeStatus{Enabled: enabled},
+			Data:    status,
 		},
 	}, nil
 }

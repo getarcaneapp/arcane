@@ -98,6 +98,13 @@ export const navigationItems: NavigationSections = {
 			icon: EnvironmentsIcon,
 			shortcut: ['mod', '3'],
 			accessSurfaceId: 'route.environments'
+		},
+		{
+			title: m.git_syncs_title(),
+			url: '/gitops',
+			icon: GitBranchIcon,
+			shortcut: ['mod', 'g'],
+			accessSurfaceId: 'route.gitops'
 		}
 	],
 	resourceItems: [
@@ -237,31 +244,11 @@ export const navigationItems: NavigationSections = {
 					accessSurfaceId: 'settings.category.notifications'
 				},
 				{
-					title: m.activity(),
-					url: '/settings/activity',
-					icon: ActivityIcon,
-					accessSurfaceId: 'settings.category.activity'
-				},
-				{
 					title: m.system_backups_title(),
 					url: '/settings/backups',
 					icon: BackupIcon,
 					accessSurfaceId: 'settings.category.systembackups',
 					adminOnly: true
-				},
-				{
-					title: m.builds(),
-					url: '/settings/builds',
-					icon: HammerIcon,
-					shortcut: ['mod', 'shift', '6'],
-					accessSurfaceId: 'settings.category.build'
-				},
-				{
-					title: m.timeouts_settings(),
-					url: '/settings/timeouts',
-					icon: JobsIcon,
-					shortcut: ['mod', 'shift', '7'],
-					accessSurfaceId: 'settings.category.timeouts'
 				},
 				{
 					title: m.users_title(),
@@ -307,21 +294,19 @@ export const navigationItems: NavigationSections = {
  *
  * @param items navigation items to filter
  * @param user the current user (or null when unauthenticated)
- * @param currentEnvId the currently-selected env, for env-scoped checks
  */
 export function filterByPermissions(
 	items: NavigationItem[] | undefined,
 	user: User | null,
-	currentEnvId: string | undefined,
 	accessManifest?: PermissionsManifest | null
 ): NavigationItem[] {
 	if (!items) return [];
 	if (!user) return [];
 	const out: NavigationItem[] = [];
 	for (const item of items) {
-		if (!canSeeItem(item, user, currentEnvId, accessManifest)) continue;
+		if (!canSeeItem(item, user, accessManifest)) continue;
 		if (item.items && item.items.length > 0) {
-			const filteredChildren = filterByPermissions(item.items, user, currentEnvId, accessManifest);
+			const filteredChildren = filterByPermissions(item.items, user, accessManifest);
 			// Drop a parent group only when it has children declared but none
 			// survived the filter. A parent with NO children declared (a leaf
 			// link that happens to have an empty items array) stays.
@@ -334,23 +319,16 @@ export function filterByPermissions(
 	return out;
 }
 
-/** Whether a feature is enabled in `envId` or, while the all environments preview is on, in any shown environment. */
-function hasShownFeature(feature: FeatureID, envId: string): boolean {
-	const envIds = environmentStore.selected ? [envId, ...environmentStore.shown.map((env) => env.id)] : [envId];
-	return envIds.some((id) => featureStore.isEnabled(feature, id));
+function hasShownFeature(feature: FeatureID): boolean {
+	return environmentStore.shown.some((env) => featureStore.isEnabled(feature, env.id));
 }
 
-function canSeeItem(
-	item: NavigationItem,
-	user: User,
-	currentEnvId: string | undefined,
-	accessManifest: PermissionsManifest | null | undefined
-): boolean {
-	if (item.requiredFeature && !hasShownFeature(item.requiredFeature, currentEnvId ?? '0')) return false;
+function canSeeItem(item: NavigationItem, user: User, accessManifest: PermissionsManifest | null | undefined): boolean {
+	if (item.requiredFeature && !hasShownFeature(item.requiredFeature)) return false;
 	if (item.adminOnly && !user.isGlobalAdmin) return false;
 	if (!item.accessSurfaceId) return true;
 	if (!accessManifest?.accessSurfaces?.length) return true;
-	return canReachShownAccessSurface(accessManifest, item.accessSurfaceId, user, currentEnvId);
+	return canReachShownAccessSurface(accessManifest, item.accessSurfaceId, user);
 }
 
 /** Returns the title of the navigation item whose URL is the longest prefix of `pathname`. */
@@ -385,13 +363,11 @@ const defaultMobilePinnedItems: NavigationItem[] = [...navigationItems.managemen
 	(item) => ['/dashboard', '/projects', '/containers', '/images'].includes(item.url)
 );
 
-export function getSwarmNavigationItems(swarmEnabled: boolean | undefined, currentEnvId: string): NavigationItem[] {
+export function getSwarmNavigationItems(swarmEnabled: boolean | undefined): NavigationItem[] {
 	if (swarmEnabled) {
 		return navigationItems.swarmItems;
 	}
-	// With the preview on, Swarm may run on another shown environment; the cluster page's picker selects it.
-	const candidates = [currentEnvId, ...environmentStore.shown.map((env) => env.id)];
-	if (swarmEnabled === false && !candidates.some((id) => featureStore.isSwarmEnabled(id, false))) {
+	if (swarmEnabled === false && !environmentStore.shown.some((env) => featureStore.isSwarmEnabled(env.id, false))) {
 		return [];
 	}
 
@@ -429,7 +405,6 @@ export function getAvailableMobileNavItems(options?: {
 	swarmEnabled?: boolean;
 	podmanStatuses?: Record<string, PodmanStatus>;
 	user?: User | null;
-	currentEnvId?: string;
 	accessManifest?: PermissionsManifest | null;
 }): NavigationItem[] {
 	const flatItems: NavigationItem[] = [];
@@ -441,7 +416,7 @@ export function getAvailableMobileNavItems(options?: {
 		flatItems.push(...navigationItems.resourceItems);
 	}
 
-	const swarmItems = getSwarmNavigationItems(options?.swarmEnabled, options?.currentEnvId ?? '0');
+	const swarmItems = getSwarmNavigationItems(options?.swarmEnabled);
 	if (swarmItems.length > 0) {
 		flatItems.push(...swarmItems);
 	}
@@ -458,7 +433,7 @@ export function getAvailableMobileNavItems(options?: {
 
 	if (options?.user === null) return [];
 	if (!options?.user) return flatItems;
-	return filterByPermissions(flatItems, options.user, options.currentEnvId, options.accessManifest);
+	return filterByPermissions(flatItems, options.user, options.accessManifest);
 }
 
 export const defaultMobileNavigationSettings: MobileNavigationSettings = {
@@ -467,18 +442,3 @@ export const defaultMobileNavigationSettings: MobileNavigationSettings = {
 	showLabels: true,
 	scrollToHide: true
 };
-
-export function getManagementItems(environmentId: string): NavigationItem[] {
-	const gitSyncsItem: NavigationItem = {
-		title: m.git_syncs_title(),
-		url: `/environments/${environmentId}/gitops`,
-		icon: GitBranchIcon,
-		shortcut: ['mod', 'g'],
-		accessSurfaceId: 'route.environments.gitops'
-	};
-
-	return navigationItems.managementItems.map((item) => {
-		if (item.url !== '/environments') return item;
-		return { ...item, items: [...(item.items ?? []), gitSyncsItem] };
-	});
-}

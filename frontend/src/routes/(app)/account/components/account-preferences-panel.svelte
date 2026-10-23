@@ -24,6 +24,8 @@
 	import { saveUserPreferences } from '#lib/utils/user-preferences.js';
 	import { debounced } from '#lib/utils/ws.js';
 
+	import AllEnvironmentsPreferences from './all-environments-preferences.svelte';
+
 	const mobileNavigation = getMobileNavigation();
 	const currentUser = $derived(userStore.current);
 	const preferences = $derived(currentUser?.preferences ?? {});
@@ -273,4 +275,6 @@
 			/>
 		</SettingsRow>
 	</SettingsSection>
+
+	<AllEnvironmentsPreferences />
 </div>

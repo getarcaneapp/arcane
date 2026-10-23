@@ -429,6 +429,8 @@ type ContainerStatusCounts struct {
 	//
 	// Required: true
 	TotalContainers int `json:"totalContainers"`
+
+	UpdatesAvailable int `json:"updatesAvailable" doc:"Standalone containers with a pending image update"`
 }
 
 // ContainerActionResult represents the result of a container action (start/stop/etc).

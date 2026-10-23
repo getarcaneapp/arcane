@@ -8,18 +8,19 @@ import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 import {
+	fetchRiskOverview,
 	mapVulnerabilityPage,
 	mapVulnerabilityRequest,
 	vulnerabilityEnvironments,
-	vulnerabilityOverviewEnvironment
+	vulnerabilityOverviewEnvironments,
+	withVulnerabilityToggles
 } from '#lib/utils/vulnerability.js';
 
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
-	const envId = await environmentStore.getCurrentEnvironmentId();
-	const shown = await environmentStore.getShownEnvironments();
+	await environmentStore.ready;
 
 	const vulnerabilityRequestOptions = resolveInitialTableRequest(
 		'arcane-security-vuln-table',
@@ -47,35 +48,36 @@ export const load: PageLoad = async ({ parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	await Promise.all([envId, ...shown.map((env) => env.id)].map((id) => featureStore.load(id)));
-	const overviewEnvironment = vulnerabilityOverviewEnvironment();
-	if (!overviewEnvironment) {
+	await Promise.all(environmentStore.shown.map((env) => featureStore.load(env.id)));
+	if (vulnerabilityOverviewEnvironments().length === 0) {
 		return {
-			envId,
 			featureDisabled: true,
 			overview: null,
-			vulnerabilities: { data: [], pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 } },
 			vulnerabilityRequestOptions,
 			patchRequestOptions
 		};
 	}
 
-	const requestForApi = mapVulnerabilityRequest(vulnerabilityRequestOptions);
+	const requestForApi = mapVulnerabilityRequest(
+		withVulnerabilityToggles(vulnerabilityRequestOptions, { showIgnored: false, fixAvailable: false })
+	);
 
 	let overview;
-	let vulnerabilities;
 	const operationResult = await tryCatch(
 		(async () =>
 			Promise.all([
 				queryClient.query({
-					queryKey: queryKeys.vulnerabilities.overviewByEnvironment(overviewEnvironment.id),
-					queryFn: () => vulnerabilityService.getRiskOverviewForEnvironment(overviewEnvironment.id)
+					queryKey: queryKeys.vulnerabilities.overviewByEnvironment(environmentStore.shownKey),
+					queryFn: fetchRiskOverview
 				}),
 				queryClient.query({
 					queryKey: queryKeys.vulnerabilities.allByEnvironment(environmentStore.shownKey, requestForApi),
-					queryFn: () =>
-						fetchAcrossEnvironments(vulnerabilityEnvironments(), requestForApi, (id, request, config) =>
-							vulnerabilityService.getAllVulnerabilitiesForEnvironment(id, request, config)
+					queryFn: async () =>
+						mapVulnerabilityPage(
+							await fetchAcrossEnvironments(vulnerabilityEnvironments(), requestForApi, (id, request, config) =>
+								vulnerabilityService.getAllVulnerabilitiesForEnvironment(id, request, config)
+							),
+							requestForApi
 						)
 				})
 			]))()
@@ -85,14 +87,12 @@ export const load: PageLoad = async ({ parent }) => {
 
 		throwPageLoadError(err, 'Failed to load security data');
 	} else {
-		[overview, vulnerabilities] = operationResult.data;
+		[overview] = operationResult.data;
 	}
 
 	return {
-		envId,
 		featureDisabled: false,
 		overview,
-		vulnerabilities: mapVulnerabilityPage(vulnerabilities, vulnerabilityRequestOptions),
 		vulnerabilityRequestOptions,
 		patchRequestOptions
 	};

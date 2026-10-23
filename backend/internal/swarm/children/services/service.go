@@ -7,6 +7,7 @@ import (
 	"encoding/json/v2"
 	"fmt"
 	"maps"
+	"net/url"
 	"slices"
 	"sort"
 	"strings"
@@ -21,6 +22,8 @@ import (
 
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 // Service manages swarm services.
@@ -53,6 +56,35 @@ func (s *Service) ListServicesPaginated(ctx context.Context, params pagination.Q
 	return s.PaginateSummaries(ctx, servicesResult.Items, params)
 }
 
+var servicePagination = pagination.Config[types.SwarmServiceSummary]{
+	SearchAccessors: []pagination.SearchAccessor[types.SwarmServiceSummary]{
+		func(svc types.SwarmServiceSummary) (string, error) { return svc.Name, nil },
+		func(svc types.SwarmServiceSummary) (string, error) { return svc.Image, nil },
+		func(svc types.SwarmServiceSummary) (string, error) { return svc.ID, nil },
+		func(svc types.SwarmServiceSummary) (string, error) { return svc.StackName, nil },
+		func(svc types.SwarmServiceSummary) (string, error) { return svc.Mode, nil },
+		func(svc types.SwarmServiceSummary) (string, error) {
+			return strings.Join(svc.Networks, " "), nil
+		},
+		func(svc types.SwarmServiceSummary) (string, error) {
+			return strings.Join(svc.Nodes, " "), nil
+		},
+	},
+	SortBindings: []pagination.SortBinding[types.SwarmServiceSummary]{
+		{Key: "name", Fn: func(a, b types.SwarmServiceSummary) int { return strings.Compare(a.Name, b.Name) }},
+		{Key: "image", Fn: func(a, b types.SwarmServiceSummary) int { return strings.Compare(a.Image, b.Image) }},
+		{Key: "mode", Fn: func(a, b types.SwarmServiceSummary) int { return strings.Compare(a.Mode, b.Mode) }},
+		{Key: "replicas", Fn: func(a, b types.SwarmServiceSummary) int {
+			if localCmp := cmp.Compare(a.Replicas, b.Replicas); localCmp != 0 {
+				return localCmp
+			}
+			return cmp.Compare(a.RunningReplicas, b.RunningReplicas)
+		}},
+		{Key: "created", Fn: func(a, b types.SwarmServiceSummary) int { return a.CreatedAt.Compare(b.CreatedAt) }},
+		{Key: "updated", Fn: func(a, b types.SwarmServiceSummary) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
+	},
+}
+
 // PaginateSummaries summarizes services with their running nodes and networks, then paginates them.
 func (s *Service) PaginateSummaries(
 	ctx context.Context,
@@ -64,36 +96,32 @@ func (s *Service) PaginateSummaries(
 		return nil, pagination.Response{}, err
 	}
 
-	config := pagination.Config[types.SwarmServiceSummary]{
-		SearchAccessors: []pagination.SearchAccessor[types.SwarmServiceSummary]{
-			func(svc types.SwarmServiceSummary) (string, error) { return svc.Name, nil },
-			func(svc types.SwarmServiceSummary) (string, error) { return svc.Image, nil },
-			func(svc types.SwarmServiceSummary) (string, error) { return svc.ID, nil },
-			func(svc types.SwarmServiceSummary) (string, error) { return svc.StackName, nil },
-			func(svc types.SwarmServiceSummary) (string, error) { return svc.Mode, nil },
-			func(svc types.SwarmServiceSummary) (string, error) {
-				return strings.Join(svc.Networks, " "), nil
-			},
-			func(svc types.SwarmServiceSummary) (string, error) {
-				return strings.Join(svc.Nodes, " "), nil
-			},
-		},
-		SortBindings: []pagination.SortBinding[types.SwarmServiceSummary]{
-			{Key: "name", Fn: func(a, b types.SwarmServiceSummary) int { return strings.Compare(a.Name, b.Name) }},
-			{Key: "image", Fn: func(a, b types.SwarmServiceSummary) int { return strings.Compare(a.Image, b.Image) }},
-			{Key: "mode", Fn: func(a, b types.SwarmServiceSummary) int { return strings.Compare(a.Mode, b.Mode) }},
-			{Key: "replicas", Fn: func(a, b types.SwarmServiceSummary) int {
-				if localCmp := cmp.Compare(a.Replicas, b.Replicas); localCmp != 0 {
-					return localCmp
-				}
-				return cmp.Compare(a.RunningReplicas, b.RunningReplicas)
-			}},
-			{Key: "created", Fn: func(a, b types.SwarmServiceSummary) int { return a.CreatedAt.Compare(b.CreatedAt) }},
-			{Key: "updated", Fn: func(a, b types.SwarmServiceSummary) int { return a.UpdatedAt.Compare(b.UpdatedAt) }},
-		},
-	}
-	result := config.SearchOrderAndPaginate(summaries, params)
+	result := servicePagination.SearchOrderAndPaginate(summaries, params)
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params), nil
+}
+
+func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.SwarmServiceSummary], error) {
+	collection, err := httpx.CollectEnvironments[types.Paginated[types.SwarmServiceSummary]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return types.Paginated[types.SwarmServiceSummary]{}, err
+	}
+
+	pages := make([]pagination.EnvironmentPage[types.SwarmServiceSummary], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		pages = append(pages, pagination.EnvironmentPage[types.SwarmServiceSummary]{
+			Environment:    result.Environment,
+			Items:          result.Value.Data,
+			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
+		})
+	}
+	data, resp := pagination.MergeEnvironmentPages(servicePagination, pages, params)
+
+	return types.Paginated[types.SwarmServiceSummary]{
+		Success:            true,
+		Data:               data,
+		Pagination:         handlerutil.PaginationResponse(resp),
+		FailedEnvironments: collection.Failures,
+	}, nil
 }
 
 func (s *Service) GetService(ctx context.Context, serviceID string) (*types.SwarmServiceInspect, error) {

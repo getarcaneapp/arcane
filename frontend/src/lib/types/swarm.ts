@@ -67,6 +67,7 @@ export interface ServiceVirtualIP {
 
 export interface SwarmRuntimeStatus {
 	enabled: boolean;
+	clusterId?: string;
 }
 
 export interface RawServiceVirtualIP {
@@ -78,6 +79,8 @@ export interface RawServiceVirtualIP {
 
 export interface SwarmServiceSummary {
 	id: string;
+	environmentId?: string;
+	environmentName?: string;
 	name: string;
 	image: string;
 	mode: SwarmServiceModeName;
@@ -231,6 +234,8 @@ export interface SwarmServiceUpdateResponse {
 
 export interface SwarmTaskSummary {
 	id: string;
+	environmentId?: string;
+	environmentName?: string;
 	name: string;
 	serviceId: string;
 	serviceName: string;
@@ -248,6 +253,8 @@ export interface SwarmTaskSummary {
 
 export interface SwarmNode {
 	id: string;
+	environmentId?: string;
+	environmentName?: string;
 	name?: string;
 	version?: number;
 	hostname: string;
@@ -320,11 +327,15 @@ export type SwarmNodeUpdate = UpdateRequest<SwarmNode, SwarmNodeWritable>;
 
 export interface SwarmStackSummary {
 	id: string;
+	environmentId?: string;
+	environmentName?: string;
 	name: string;
 	namespace: string;
 	services: number;
 	createdAt: string;
 	updatedAt: string;
+	clusterId?: string;
+	hasSource: boolean;
 }
 
 export interface SwarmStackInspect {
@@ -495,6 +506,8 @@ export interface SwarmKvSpec {
 
 export interface SwarmKvSummary {
 	id: string;
+	environmentId?: string;
+	environmentName?: string;
 	version: { Index?: number };
 	createdAt: string;
 	updatedAt: string;
@@ -655,6 +668,7 @@ export interface ProjectStatusCounts {
 	stoppedProjects: number;
 	totalProjects: number;
 	archivedProjects: number;
+	updatesAvailable: number;
 }
 
 // --- Compose templates ---

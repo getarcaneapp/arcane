@@ -67,7 +67,7 @@ async function mockRefreshSuccess(page: Page): Promise<() => number> {
 			body: JSON.stringify({
 				success: true,
 				data: {
-					token: 'mocked-access-token',
+					token: 'mocked-session-token',
 					refreshToken: 'mocked-refresh-token',
 					expiresAt: new Date(Date.now() + 3_600_000).toISOString()
 				}

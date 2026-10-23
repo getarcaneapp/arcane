@@ -6,7 +6,6 @@ import (
 	"crypto/mldsa"
 	"encoding/base64"
 	"encoding/json/v2"
-	"net/http"
 	"testing"
 	"time"
 
@@ -1003,7 +1002,7 @@ func TestGetSessionBootstrap(t *testing.T) {
 			require.NoError(t, versionSettings.SetBoolSetting(t.Context(), "updateCheckEnabled", false))
 			s := &AuthService{
 				userService:        userSvc,
-				environmentService: environment.NewEnvironmentService(db, http.DefaultClient, nil, nil, nil, nil),
+				environmentService: environment.NewEnvironmentService(db, nil, nil, nil, nil),
 				versionService:     version.NewVersionService(nil, "1.2.3", "revision", nil, nil, nil, versionSettings),
 			}
 
@@ -1029,7 +1028,7 @@ func TestGetSessionBootstrap(t *testing.T) {
 		require.NoError(t, versionSettings.SetBoolSetting(t.Context(), "updateCheckEnabled", false))
 		s := &AuthService{
 			userService:        user.NewUserService(db, nil, session.RevokeAllUserSessionsExceptInDB),
-			environmentService: environment.NewEnvironmentService(db, http.DefaultClient, nil, nil, nil, nil),
+			environmentService: environment.NewEnvironmentService(db, nil, nil, nil, nil),
 			versionService:     version.NewVersionService(nil, "1.2.3", "revision", nil, nil, nil, versionSettings),
 		}
 

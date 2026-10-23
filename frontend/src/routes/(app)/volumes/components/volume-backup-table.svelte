@@ -663,7 +663,7 @@
 						action="inspect"
 						size="sm"
 						customLabel={m.activity_view_activity()}
-						onclick={() => activityStore.openCenter(activityId)}
+						onclick={() => activityStore.openCenter(activityId, undefined, currentEnvId)}
 					/>
 				{/if}
 			</Alert.Description></Alert.Root

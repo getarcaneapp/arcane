@@ -24,7 +24,7 @@ func NormalizeBaseURL(rawURL string) (string, error) {
 }
 
 // ManagerBaseURL returns the base URL of the manager application.
-// It strips any trailing slashes or /api suffix from MANAGER_API_URL.
+// It strips any trailing slashes or /api suffix from ARCANE_MANAGER_API_URL.
 func ManagerBaseURL(rawURL string) string {
 	if rawURL == "" {
 		return ""

@@ -182,7 +182,7 @@ export function createContainerActions({
 			message: config.message(ids.length),
 			confirmLabel: config.label,
 			destructive: config.destructive ?? false,
-			run: (id, environmentId) => config.run(id, environmentId),
+			runInEnvironment: (id, environmentId) => config.run(id, environmentId),
 			messages: {
 				success: config.success,
 				partial: config.partial,
@@ -251,7 +251,7 @@ export function createContainerActions({
 			message,
 			confirmLabel: m.common_update(),
 			destructive: false,
-			run: (id, environmentId) => containerService.updateContainer(id, environmentId),
+			runInEnvironment: (id, environmentId) => containerService.updateContainer(id, environmentId),
 			messages: {
 				success: (count) => m.containers_bulk_update_accepted({ count }),
 				partial: (success, total, failed) => m.containers_bulk_update_accept_partial({ success, total, failed }),
@@ -279,7 +279,7 @@ export function createContainerActions({
 				{ id: 'force', label: m.containers_remove_force_label(), initialState: false },
 				{ id: 'volumes', label: m.containers_remove_volumes_label(), initialState: false }
 			],
-			run: (id, environmentId, checkboxStates) =>
+			runInEnvironment: (id, environmentId, checkboxStates) =>
 				containerService.deleteContainer(id, {
 					force: !!checkboxStates['force'],
 					volumes: !!checkboxStates['volumes'],

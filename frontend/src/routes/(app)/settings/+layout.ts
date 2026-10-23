@@ -1,5 +1,4 @@
 import { settingsService } from '#lib/services/settings-service.js';
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 export const load = async ({ parent }) => {
@@ -10,8 +9,6 @@ export const load = async ({ parent }) => {
 
 			return {
 				settings,
-				// The root load has selected the environment these settings belong to.
-				settingsEnvironmentId: environmentStore.selected?.id,
 				oidcStatus
 			};
 		})()

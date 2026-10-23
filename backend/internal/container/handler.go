@@ -179,28 +179,23 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 }
 
 func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *GetContainerStatusCountsInput) (*handlerutil.Out[types.ContainerStatusCounts], error) {
-	containers, _, _, _, err := h.dockerService.GetAllContainers(ctx)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to get container counts: " + err.Error())
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.containerService.AggregateContainerCounts(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to get container counts: " + err.Error())
+		}
+		return &handlerutil.Out[types.ContainerStatusCounts]{Body: body}, nil
 	}
 
-	containers = FilterExcludedContainers(containers, input.IncludeInternal, input.IncludeHidden)
-
-	running := 0
-	for _, c := range containers {
-		if c.State == "running" {
-			running++
-		}
+	counts, err := h.containerService.GetContainerStatusCounts(ctx, input.IncludeInternal, input.IncludeHidden)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to get container counts: " + err.Error())
 	}
 
 	return &handlerutil.Out[types.ContainerStatusCounts]{
 		Body: types.ApiResponse[types.ContainerStatusCounts]{
 			Success: true,
-			Data: types.ContainerStatusCounts{
-				RunningContainers: running,
-				StoppedContainers: len(containers) - running,
-				TotalContainers:   len(containers),
-			},
+			Data:    counts,
 		},
 	}, nil
 }

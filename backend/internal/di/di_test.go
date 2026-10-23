@@ -106,7 +106,7 @@ type graphParams struct {
 	GitOpsSync        *gitops.GitOpsSyncService
 	Webhook           *webhook.Module
 	Vulnerability     *vulnerability.VulnerabilityService
-	Dashboard         *dashboard.Module
+	Dashboard         *dashboard.DashboardService
 	Podman            *podman.Module
 	Role              *role.RoleService
 	Variable          *variable.VariableService
@@ -148,7 +148,7 @@ func TestOptionsValidate(t *testing.T) {
 }
 
 func TestDockerEventLifecycle(t *testing.T) {
-	for _, mode := range []string{"manager", "agent", "edge"} {
+	for _, mode := range []string{"manager", "edge"} {
 		t.Run(mode, func(t *testing.T) {
 			streamStopped := make(chan struct{})
 			var stopped sync.Once
@@ -189,11 +189,11 @@ func TestDockerEventLifecycle(t *testing.T) {
 			t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
 			require.NoError(t, db.AutoMigrate(&event.Event{}, &settings.SettingVariable{}))
 			databaseDB := &database.DB{DB: db}
-			cfg := &config.Config{AgentMode: mode != "manager", EdgeAgent: mode == "edge"}
+			cfg := &config.Config{EdgeAgent: mode == "edge"}
 			settingsService, err := settings.NewSettingsService(t.Context(), databaseDB, cfg, settings.Env{"dockerHost": server.URL})
 			require.NoError(t, err)
 			lifecycle := fxtest.NewLifecycle(t)
-			eventService := event.NewEventService(databaseDB, cfg, settingsService, nil)
+			eventService := event.NewEventService(databaseDB, cfg, nil)
 			provideDockerClientService(t.Context(), lifecycle, databaseDB, settingsService, eventService)
 			t.Cleanup(func() {
 				ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 3*time.Second)

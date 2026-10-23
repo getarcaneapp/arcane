@@ -4,12 +4,11 @@ import { markActivityToastShown } from '#lib/components/activity/activity-comple
 import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 import { runWithActivityBatchId } from '#lib/services/api-service.js';
 import { activityStore } from '#lib/stores/activity.store.svelte.js';
-import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import type { Activity } from '#lib/types/activity.type.js';
 import type { Result } from '#lib/types/result.js';
 import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-import { parseRowKey } from '#lib/utils/environments.js';
+import { parseEnvironmentRowKey, parseRowKey } from '#lib/utils/environments.js';
 import { streamCacheBuster } from '#lib/utils/streaming.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -34,11 +33,11 @@ export interface BulkOperationResult {
 	failed: number;
 }
 
-export interface RunBulkOperationOptions<T> {
+interface RunBulkOperationOptions<T> {
 	/** The ids or table row keys to operate on. A no-op when empty. */
 	ids: string[];
-	/** Runs the operation for a single id in its row's environment. May throw — failures are tallied. */
-	run: (id: string, environmentId: string) => Promise<T>;
+	/** Runs the operation for a single id or row key. May throw — failures are tallied. */
+	run: (key: string) => Promise<T>;
 	messages: BulkOperationMessages;
 	/** Toggle a loading flag around the whole run. */
 	setLoading?: (loading: boolean) => void;
@@ -114,13 +113,8 @@ async function runBulkOperation<T>({
 			Array.from(counts, ([environmentId, count]) => [environmentId, count > 1 ? streamCacheBuster() : null])
 		);
 		const startRun = (key: string) => {
-			const { id, environmentId } = parseRowKey(key);
-			const batchId = batchIds.get(environmentId);
-			// Plain ids belong to the selected environment, as the services assume.
-			const rowEnvironmentId = environmentId ?? environmentStore.selected?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID;
-			return batchId
-				? runWithActivityBatchId(batchId, () => tryCatch(run(id, rowEnvironmentId)))
-				: tryCatch(run(id, rowEnvironmentId));
+			const batchId = batchIds.get(parseRowKey(key).environmentId);
+			return batchId ? runWithActivityBatchId(batchId, () => tryCatch(run(key))) : tryCatch(run(key));
 		};
 		if (sequential) {
 			for (const id of ids) {
@@ -163,39 +157,56 @@ export interface BulkConfirmCheckbox {
 	initialState?: boolean;
 }
 
-export interface BulkConfirmAndRunOptions<T> extends Omit<RunBulkOperationOptions<T>, 'run'> {
-	title: string;
-	message: string;
-	confirmLabel: string;
-	destructive?: boolean;
-	/** Optional confirm-dialog checkboxes (e.g. force / remove volumes). */
-	checkboxes?: BulkConfirmCheckbox[];
-	/** Runs the operation for a single id in its row's environment, given the resolved checkbox states. */
-	run: (id: string, environmentId: string, checkboxStates: Record<string, boolean>) => Promise<T>;
+type BulkConfirmRun<T> =
+	| {
+			run: (id: string, checkboxStates: Record<string, boolean>) => Promise<T>;
+	  }
+	| {
+			runInEnvironment: (id: string, environmentId: string, checkboxStates: Record<string, boolean>) => Promise<T>;
+	  };
+
+export type BulkConfirmAndRunOptions<T> = Omit<RunBulkOperationOptions<T>, 'run'> &
+	BulkConfirmRun<T> & {
+		title: string;
+		message: string;
+		confirmLabel: string;
+		destructive?: boolean;
+		/** Optional confirm-dialog checkboxes (e.g. force / remove volumes). */
+		checkboxes?: BulkConfirmCheckbox[];
+	};
+
+function rowRunner<T>(options: BulkConfirmRun<T>, checkboxStates: Record<string, boolean>): (key: string) => Promise<T> {
+	if ('runInEnvironment' in options) {
+		return (key) => {
+			const { id, environmentId } = parseEnvironmentRowKey(key);
+			return options.runInEnvironment(id, environmentId, checkboxStates);
+		};
+	}
+	return (key) => options.run(parseRowKey(key).id, checkboxStates);
 }
 
 /**
  * Opens a confirm dialog (with optional checkboxes) and, on confirm, runs the
  * bulk operation via {@link runBulkOperation}. A no-op when `ids` is empty.
  */
-export function bulkConfirmAndRun<T>({
-	ids,
-	title,
-	message,
-	confirmLabel,
-	destructive = false,
-	checkboxes,
-	run,
-	messages,
-	setLoading,
-	onComplete,
-	clearSelection,
-	onItemFailure,
-	sequential,
-	acceptanceOnly,
-	activityLink,
-	onItemSuccess
-}: BulkConfirmAndRunOptions<T>): void {
+export function bulkConfirmAndRun<T>(options: BulkConfirmAndRunOptions<T>): void {
+	const {
+		ids,
+		title,
+		message,
+		confirmLabel,
+		destructive = false,
+		checkboxes,
+		messages,
+		setLoading,
+		onComplete,
+		clearSelection,
+		onItemFailure,
+		sequential,
+		acceptanceOnly,
+		activityLink,
+		onItemSuccess
+	} = options;
 	if (!ids || ids.length === 0) return;
 
 	openConfirmDialog({
@@ -208,7 +219,7 @@ export function bulkConfirmAndRun<T>({
 			action: async (checkboxStates) => {
 				await runBulkOperation({
 					ids,
-					run: (id, environmentId) => run(id, environmentId, checkboxStates),
+					run: rowRunner(options, checkboxStates),
 					messages,
 					setLoading,
 					onComplete,

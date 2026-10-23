@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"strings"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
@@ -17,7 +16,6 @@ import (
 const (
 	DeploymentSnippetsDataPath = "/app/data"
 	DeploymentSnippetsMTLSPath = "/app/data/edge-mtls-agent"
-	AgentContainerPort         = "3553"
 )
 
 // Service issues edge mTLS assets and records their audit events.
@@ -27,46 +25,6 @@ type Service struct {
 
 func New(eventService *event.EventService) *Service {
 	return &Service{eventService: eventService}
-}
-
-// Direct renders docker run and compose snippets for a direct agent.
-func Direct(managerURL, agentURL, apiKey string) (string, string) {
-	portMapping := fmt.Sprintf("%s:%s", AgentHostPort(agentURL), AgentContainerPort)
-
-	dockerRun := strings.Join([]string{
-		"docker run -d \\",
-		"  --name arcane-agent \\",
-		"  --restart unless-stopped \\",
-		"  -e ARCANE_AGENT_MODE=true \\",
-		fmt.Sprintf("  -e ARCANE_AGENT_TOKEN=%s \\", apiKey),
-		fmt.Sprintf("  -e ARCANE_MANAGER_API_URL=%s \\", managerURL),
-		fmt.Sprintf("  -p %s \\", portMapping),
-		"  -v /var/run/docker.sock:/var/run/docker.sock \\",
-		fmt.Sprintf("  -v arcane-data:%s \\", DeploymentSnippetsDataPath),
-		"  ghcr.io/getarcaneapp/agent:latest",
-	}, "\n")
-
-	dockerCompose := strings.Join([]string{
-		"services:",
-		"  arcane-agent:",
-		"    image: ghcr.io/getarcaneapp/agent:latest",
-		"    container_name: arcane-agent",
-		"    restart: unless-stopped",
-		"    environment:",
-		"      - ARCANE_AGENT_MODE=true",
-		"      - ARCANE_AGENT_TOKEN=" + apiKey,
-		"      - ARCANE_MANAGER_API_URL=" + managerURL,
-		"    ports:",
-		fmt.Sprintf("      - %q", portMapping),
-		"    volumes:",
-		"      - /var/run/docker.sock:/var/run/docker.sock",
-		"      - arcane-data:" + DeploymentSnippetsDataPath,
-		"",
-		"volumes:",
-		"  arcane-data:",
-	}, "\n")
-
-	return dockerRun, dockerCompose
 }
 
 // Edge renders docker run and compose snippets for an edge agent, which
@@ -184,23 +142,4 @@ func (s *Service) GenerateMTLS(ctx context.Context, edgeCfg *edge.Config, envID,
 	}, "\n")
 
 	return generatedAssets, mtlsDockerRun, mtlsDockerCompose
-}
-
-func AgentHostPort(agentURL string) string {
-	parsed, err := url.Parse(strings.TrimSpace(agentURL))
-	if err != nil || parsed.Host == "" {
-		return AgentContainerPort
-	}
-	if port := parsed.Port(); port != "" {
-		return port
-	}
-
-	switch strings.ToLower(parsed.Scheme) {
-	case "https":
-		return "443"
-	case "http":
-		return "80"
-	default:
-		return AgentContainerPort
-	}
 }

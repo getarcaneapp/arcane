@@ -9,10 +9,9 @@
 	import { TemplateIcon, FileTextIcon, RegistryIcon, VariableIcon, CustomizeIcon, GitBranchIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { customizeSearchService } from '#lib/services/customize-search.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { CustomizeCategory } from '#lib/types/shared.js';
-	import { canReachAccessSurfaceUrl } from '#lib/utils/access-policy.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { canReachAccessSurfaceUrl } from '#lib/utils/auth.js';
 	import { normalizeCategory, orderCategoriesByNav } from '#lib/utils/category-page.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -56,7 +55,7 @@
 
 	function isAccessibleCategory(category: CustomizeCategory) {
 		if (!permissionsManifest?.accessSurfaces?.length) return true;
-		return canReachAccessSurfaceUrl(permissionsManifest, category.url, user, environmentStore.selected?.id);
+		return canReachAccessSurfaceUrl(permissionsManifest, category.url, user);
 	}
 
 	onMount(async () => {

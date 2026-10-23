@@ -283,6 +283,7 @@ export interface ContainerStatusCounts {
 	runningContainers: number;
 	stoppedContainers: number;
 	totalContainers: number;
+	updatesAvailable: number;
 }
 
 export interface ContainerHealthLogEntry {
@@ -863,6 +864,8 @@ export interface TopologyNodeDto {
 	name: string;
 	type: TopologyNodeType;
 	metadata: TopologyNodeMetadata;
+	environmentId: string;
+	environmentName: string;
 }
 
 export interface TopologyEdgeDto {

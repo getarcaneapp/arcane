@@ -52,7 +52,7 @@ func setupGitRepositoryServiceTest(t *testing.T) *GitRepositoryService {
 	settingsService, err := newSettingsServiceForTest(t, t.Context(), wrappedDB)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(wrappedDB, &config.Config{}, nil, nil)
+	eventService := event.NewEventService(wrappedDB, &config.Config{}, nil)
 
 	return NewGitRepositoryService(wrappedDB, t.TempDir(), eventService, settingsService)
 }

@@ -5,7 +5,6 @@
 
 	export interface EnvironmentTableRow {
 		environment: Environment;
-		isCurrent: boolean;
 		online: boolean;
 		loading: boolean;
 		running: number;
@@ -20,20 +19,18 @@
 		statsStatus: DashboardLiveStatsStatus;
 		versionText: string | null;
 		updateAvailable: boolean;
-		useButton?: ActionButton;
 		menuButtons: ActionButton[];
 	}
 </script>
 
 <script lang="ts">
-	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import MetricRing, { type MetricRingVariant } from '#lib/components/metric-ring.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
-	import { EnvironmentsIcon, ShieldAlertIcon, UpdateIcon, VerifiedCheckIcon, type IconType } from '#lib/icons/index.js';
+	import { ShieldAlertIcon, UpdateIcon, VerifiedCheckIcon, type IconType } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { cn } from '#lib/utils.js';
@@ -97,7 +94,7 @@
 		</Table.Header>
 		<Table.Body>
 			{#each rows as row (row.environment.id)}
-				<Table.Row data-state={row.isCurrent ? 'selected' : undefined}>
+				<Table.Row>
 					<Table.Cell>
 						<div class="flex min-w-0 items-center gap-2">
 							<a class="truncate font-medium hover:underline" href="/environments/{row.environment.id}">
@@ -158,19 +155,6 @@
 					{/if}
 					<Table.Cell class="text-right">
 						<div class="flex items-center justify-end gap-1">
-							{#if row.useButton}
-								<ArcaneButton
-									action="base"
-									size="sm"
-									tone="ghost"
-									icon={EnvironmentsIcon}
-									customLabel={row.isCurrent ? m.common_current() : row.useButton.label}
-									loading={row.useButton.loading}
-									disabled={row.useButton.disabled}
-									onclick={row.useButton.onclick}
-									class={cn(row.isCurrent && 'disabled:opacity-100 [&_svg]:text-primary!')}
-								/>
-							{/if}
 							<RowActionsMenu>
 								{#each row.menuButtons as btn (btn.id)}
 									<DropdownMenu.Item

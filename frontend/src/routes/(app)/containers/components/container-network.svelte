@@ -140,7 +140,7 @@
 		<Card.Content>
 			{#if container.ports && container.ports.length > 0}
 				<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service network; typed props diverge across the boundary -->
-				<PortBadge ports={container.ports} />
+				<PortBadge ports={container.ports} environmentId={envId} />
 			{:else}
 				<div class="rounded-lg border border-dashed py-12 text-center text-muted-foreground">
 					<div class="text-sm">{m.containers_no_ports()}</div>

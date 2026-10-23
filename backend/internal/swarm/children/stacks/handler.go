@@ -8,6 +8,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 // Handler serves the swarm stack endpoints.
@@ -97,6 +98,13 @@ type RenderSwarmStackConfigInput struct {
 // Returns a mapped HTTP error when stack enumeration fails.
 func (h *Handler) ListStacks(ctx context.Context, input *ListSwarmStacksInput) (*handlerutil.Page[types.SwarmStackSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.service.Aggregate(ctx, params)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to list swarm stacks: " + err.Error())
+		}
+		return &handlerutil.Page[types.SwarmStackSummary]{Body: body}, nil
+	}
 	items, paginationResp, err := h.service.ListStacksPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to list swarm stacks: "+err.Error())

@@ -3,7 +3,6 @@ package job
 import (
 	"context"
 	"errors"
-	"net/http"
 	"testing"
 	"time"
 	"uuid"
@@ -83,7 +82,7 @@ func newJobServiceForTest(t *testing.T, db *database.DB, settingsService *settin
 		cfg,
 		newJobCoordinatorForTest(t, db),
 		role.NewRoleService(db),
-		environment.NewEnvironmentService(db, http.DefaultClient, nil, nil, settingsService, nil),
+		environment.NewEnvironmentService(db, nil, nil, settingsService, nil),
 		activity.NewActivityService(db, settingsService),
 	)
 	service.SetScheduler(t.Context(), newFakeJobScheduler())
@@ -469,14 +468,14 @@ func TestJobService_UpdateJobSchedules_RestoresPreviousScheduleWhenRescheduleFai
 	require.Equal(t, "0 0 0 * * *", persisted.Value)
 }
 
-func TestJobService_UpdateJobSchedules_SkipsManagerOnlyJobsInAgentMode(t *testing.T) {
+func TestJobService_UpdateJobSchedules_SkipsManagerOnlyJobsOnEdgeAgent(t *testing.T) {
 	ctx := t.Context()
 	db := setupSettingsTestDB(t)
 
 	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{AgentMode: true})
+	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{EdgeAgent: true})
 	fakeScheduler := newFakeJobScheduler("environment-health")
 	jobSvc.SetScheduler(ctx, fakeScheduler)
 
@@ -623,7 +622,7 @@ func newJobActivityTestService(t *testing.T) (*JobService, *activity.ActivitySer
 		&config.Config{},
 		newJobCoordinatorForTest(t, db),
 		role.NewRoleService(db),
-		environment.NewEnvironmentService(db, http.DefaultClient, nil, nil, settingsService, nil),
+		environment.NewEnvironmentService(db, nil, nil, settingsService, nil),
 		activities,
 	)
 	svc.SetScheduler(t.Context(), newFakeJobScheduler())
@@ -890,7 +889,7 @@ func TestJobActivityRestartRepairsFailedProjection(t *testing.T) {
 		&config.Config{},
 		svc.runs,
 		role.NewRoleService(db),
-		environment.NewEnvironmentService(db, http.DefaultClient, nil, nil, svc.settings, nil),
+		environment.NewEnvironmentService(db, nil, nil, svc.settings, nil),
 		activities,
 	)
 	restarted.SetScheduler(ctx, newFakeJobScheduler())

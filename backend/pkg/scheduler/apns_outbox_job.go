@@ -29,7 +29,7 @@ func (j *ApnsOutboxJob) Schedule(_ context.Context) string {
 }
 
 func (j *ApnsOutboxJob) ShouldSchedule(ctx context.Context) bool {
-	return (j.config == nil || !j.config.AgentMode) && j.service.Enabled(ctx)
+	return (j.config == nil || !j.config.EdgeAgent) && j.service.Enabled(ctx)
 }
 
 func (j *ApnsOutboxJob) Run(ctx context.Context) (types.SchedulerOutcome, error) {

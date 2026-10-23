@@ -3,7 +3,6 @@
 	import { untrack } from 'svelte';
 
 	import PodmanSecretFormSheet from '#lib/components/sheets/podman-secret-form-sheet.svelte';
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { LockIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -80,10 +79,6 @@
 			onSuccess: (latest) => openSheet({ ...secret, ...latest })
 		});
 	}
-
-	useEnvironmentRefresh(() => {
-		isSheetOpen = false;
-	});
 
 	async function handleSaved() {
 		isSheetOpen = false;

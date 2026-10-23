@@ -23,8 +23,8 @@
 	import type { RegistryTag } from '#lib/types/docker.js';
 	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
-	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { bytes, formatRelativeTime } from '#lib/utils/formatting.js';
 	import { buildImageReference, splitRegistryUrl } from '#lib/utils/registry.js';
 	import { debounced } from '#lib/utils/ws.js';
@@ -39,7 +39,7 @@
 	const { host: registryHost, namespace: registryNamespace } = $derived(splitRegistryUrl(registry.url));
 	const repository = $derived(data.repository);
 	const tags = $derived(data.tags);
-	const canDeleteTags = $derived(hasPermission('registries:delete-tags'));
+	const canDeleteTags = $derived(hasShownPermission('registries:delete-tags'));
 
 	let selecting = $state(false);
 	let selected = $state<string[]>([]);

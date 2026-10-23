@@ -1056,29 +1056,18 @@ func (s *ImageService) AggregateImages(ctx context.Context, params pagination.Qu
 }
 
 func (s *ImageService) AggregateImageCounts(ctx context.Context) (types.ApiResponse[types.ImageUsageCounts], error) {
-	collection, err := httpx.CollectEnvironments[types.ApiResponse[types.ImageUsageCounts]](ctx, nil)
-	if err != nil {
-		return types.ApiResponse[types.ImageUsageCounts]{}, err
-	}
-
-	inuse, unused, total, totalSize := 0, 0, 0, int64(0)
-	for _, result := range collection.Results {
-		inuse += result.Value.Data.Inuse
-		unused += result.Value.Data.Unused
-		total += result.Value.Data.Total
-		totalSize += result.Value.Data.TotalSize
-	}
-
-	return types.ApiResponse[types.ImageUsageCounts]{
-		Success: true,
-		Data: types.ImageUsageCounts{
-			Inuse:     inuse,
-			Unused:    unused,
-			Total:     total,
-			TotalSize: totalSize,
-		},
-		FailedEnvironments: collection.Failures,
-	}, nil
+	return httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[types.ImageUsageCounts]) types.ImageUsageCounts {
+		var counts types.ImageUsageCounts
+		for _, environment := range environments {
+			counts = types.ImageUsageCounts{
+				Inuse:     counts.Inuse + environment.Data.Inuse,
+				Unused:    counts.Unused + environment.Data.Unused,
+				Total:     counts.Total + environment.Data.Total,
+				TotalSize: counts.TotalSize + environment.Data.TotalSize,
+			}
+		}
+		return counts
+	})
 }
 
 // BuildProjectIDMap returns a map of compose project name → project ID for any

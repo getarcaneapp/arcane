@@ -1,18 +1,13 @@
 package remenv
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"net"
 	"net/http"
 	"strings"
-
-	"go.getarcane.app/kit/pkg"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const (
@@ -48,9 +43,7 @@ func RedactedTokenFingerprint(token string) string {
 
 type Request struct {
 	EnvironmentID string
-	IsEdge        bool
 	Method        string
-	URL           string
 	Path          string
 	Headers       map[string]string
 	Body          []byte
@@ -87,73 +80,26 @@ func (t TunnelTransportFuncs) Do(ctx context.Context, envID, method, path string
 }
 
 type Client struct {
-	httpClient *http.Client
-	tunnel     TunnelTransport
+	tunnel TunnelTransport
 }
 
-func NewClient(httpClient *http.Client, tunnel TunnelTransport) *Client {
-	base := kit.FromPtr(httpClient)
-	return &Client{
-		httpClient: &http.Client{
-			Transport:     otelhttp.NewTransport(base.Transport),
-			CheckRedirect: base.CheckRedirect,
-			Jar:           base.Jar,
-		},
-		tunnel: tunnel,
-	}
+func NewClient(tunnel TunnelTransport) *Client {
+	return &Client{tunnel: tunnel}
 }
 
 func (c *Client) Do(ctx context.Context, req Request) (*Response, error) {
-	if req.IsEdge {
-		if c.tunnel == nil {
-			return nil, &TransportError{Err: errors.New("edge transport unavailable")}
-		}
-		if err := c.tunnel.EnsureAvailable(ctx, req.EnvironmentID); err != nil {
-			return nil, &TransportError{Err: err}
-		}
-		headers := maps.Clone(req.Headers)
-		if headers == nil {
-			headers = map[string]string{}
-		}
-		resp, err := c.tunnel.Do(ctx, req.EnvironmentID, req.Method, req.Path, headers, req.Body)
-		if err != nil {
-			return nil, &TransportError{Err: err}
-		}
-		return resp, nil
+	if err := c.tunnel.EnsureAvailable(ctx, req.EnvironmentID); err != nil {
+		return nil, &TransportError{Err: err}
 	}
-
-	var bodyReader io.Reader
-	if len(req.Body) > 0 {
-		bodyReader = bytes.NewReader(req.Body)
+	headers := maps.Clone(req.Headers)
+	if headers == nil {
+		headers = map[string]string{}
 	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, req.Method, req.URL, bodyReader)
-	if err != nil {
-		return nil, &TransportError{Err: fmt.Errorf("failed to create request: %w", err)}
-	}
-
-	for key, value := range req.Headers {
-		httpReq.Header.Set(key, value)
-	}
-
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := c.tunnel.Do(ctx, req.EnvironmentID, req.Method, req.Path, headers, req.Body)
 	if err != nil {
 		return nil, &TransportError{Err: err}
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, &TransportError{Err: fmt.Errorf("failed to read response body: %w", err)}
-	}
-
-	headers := make(map[string]string, len(resp.Header))
-	for key, values := range resp.Header {
-		if len(values) > 0 {
-			headers[key] = values[0]
-		}
-	}
-	return &Response{StatusCode: resp.StatusCode, Body: respBody, Headers: headers}, nil
+	return resp, nil
 }
 
 func (r *Response) RequireSuccess() error {
@@ -179,15 +125,8 @@ func (e *TransportError) Unavailable() bool {
 	if errors.Is(e.Err, context.DeadlineExceeded) || errors.Is(e.Err, ErrEnvironmentUnavailable) {
 		return true
 	}
-	if networkErr, ok := errors.AsType[net.Error](e.Err); ok && networkErr.Timeout() {
-		return true
-	}
-	operationErr, ok := errors.AsType[*net.OpError](e.Err)
-	if !ok || operationErr.Op != "dial" {
-		return false
-	}
-	_, isAddressErr := errors.AsType[*net.AddrError](operationErr)
-	return !isAddressErr
+	networkErr, ok := errors.AsType[net.Error](e.Err)
+	return ok && networkErr.Timeout()
 }
 
 func (e *TransportError) Error() string {

@@ -11,8 +11,10 @@
 	import { refreshLogViewerStream, startLogViewerStream, stopLogViewerStream } from '#lib/utils/log-viewer.js';
 
 	let {
+		environmentId,
 		serviceId
 	}: {
+		environmentId: string;
 		serviceId: string | undefined;
 	} = $props();
 
@@ -74,6 +76,7 @@
 				bind:this={viewer}
 				bind:autoScroll
 				type="service"
+				{environmentId}
 				{serviceId}
 				bind:showParsedJson={preferences.showParsedJson}
 				showStreamLabels={preferences.showStreamLabels}

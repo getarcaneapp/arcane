@@ -67,7 +67,7 @@ func newPruneCmd() *cobra.Command {
 			})
 		},
 	}
-	cmdutil.SetScope(cmdutil.ScopeFleet, cmd)
+	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
 	return cmd
 }
 
@@ -150,7 +150,7 @@ func newContainersStartCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&opts.startStoppedOnlyFlag, "stopped", false, "Only start containers that are currently stopped")
-	cmdutil.SetScope(cmdutil.ScopeFleet, cmd)
+	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
 	return cmd
 }
 
@@ -174,7 +174,7 @@ func newContainersStopCmd() *cobra.Command {
 			})
 		},
 	}
-	cmdutil.SetScope(cmdutil.ScopeFleet, cmd)
+	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
 	return cmd
 }
 
@@ -244,7 +244,7 @@ func newUpgradeCmd() *cobra.Command {
 			switch {
 			case opts.check:
 				return cmdutil.RunEnvironments(cmd, args, runUpgradeCheck, false)
-			case app.PreviewEnabled() || opts.all:
+			case app.AllEnvironments() || opts.all:
 				return runUpgradeAll(cmd, opts.force, opts.status)
 			default:
 				confirmed, confirmationErr := cmdutil.ConfirmOrCancel(cmd, opts.force, "Are you sure you want to upgrade the system?")
@@ -300,16 +300,13 @@ func runUpgradeCheck(cmd *cobra.Command, _ []string) error {
 
 func runUpgradeAll(cmd *cobra.Command, force, status bool) error {
 	app, _ := runtime.From(cmd.Context())
-	if app.PreviewEnabled() {
+	if app.AllEnvironments() {
 		environments, discoveryErr := app.Environments(cmd.Context())
 		if discoveryErr != nil {
 			return discoveryErr
 		}
 		if len(environments) == 0 {
 			return errors.New("no enabled environments available")
-		}
-		for _, env := range environments {
-			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Upgrade environment: %s (%s)\n", cmp.Or(env.Name, env.ID), env.ID)
 		}
 		app.SelectEnvironment("0")
 		defer app.SelectEnvironment("")

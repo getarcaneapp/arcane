@@ -331,7 +331,7 @@ func TestVariableMaterializationRoutesAreAgentOnly(t *testing.T) {
 		router,
 		router.Group("/api"),
 		handlerutil.NewActivityAppContext(t.Context()),
-		&config.Config{AgentMode: true},
+		&config.Config{EdgeAgent: true},
 		HandlerDeps{Health: health.New(&health.Service{})},
 	)
 	require.Nil(t, agentAPI.OpenAPI().Paths["/variables"])

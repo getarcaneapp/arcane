@@ -309,7 +309,7 @@ func TestBuildService_BuildImage_FailureRecordsHistoryAndEvent(t *testing.T) {
 	buildErr := errors.New("BuildKit could not load the image with the docker exporter")
 	svc := &BuildService{
 		db:           db,
-		eventService: event.NewEventService(db, nil, nil, nil),
+		eventService: event.NewEventService(db, nil, nil),
 		builder: testBuildRecorder{
 			err: buildErr,
 		},
@@ -361,7 +361,7 @@ func TestBuildService_BuildImage_FailureExporterErrorsAppearInOutputHistoryAndEv
 
 	svc := &BuildService{
 		db:           db,
-		eventService: event.NewEventService(db, nil, nil, nil),
+		eventService: event.NewEventService(db, nil, nil),
 		builder: testBuildRecorder{
 			err: buildErr,
 			onProgress: func(_ buildtypes.BuildRequest, w io.Writer) {

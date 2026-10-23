@@ -217,7 +217,7 @@ func TestImageService_GetImageDetail_EnrichesPinnedReferences(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil, nil), nil, nil, nil)
+	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
 
 	detail, err := imageSvc.GetImageDetail(t.Context(), pinnedID)
 	require.NoError(t, err)
@@ -250,7 +250,7 @@ func TestImageService_GetImageDetail_ContainerFailureDoesNotBreakInspection(t *t
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil, nil), nil, nil, nil)
+	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
 
 	detail, err := imageSvc.GetImageDetail(t.Context(), testID)
 	require.NoError(t, err)
@@ -417,7 +417,7 @@ func TestGetPullOptionsWithAuth_ExternalCredentialsOverrideDBRegistry(t *testing
 
 func TestImageServicePullImageRetriesAnonymouslyAfterAuthRejected(t *testing.T) {
 	db := setupImageProjectTestDB(t)
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	var authHeaders []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "/images/create") {
@@ -454,7 +454,7 @@ func TestImageServicePullImageRetriesAnonymouslyAfterAuthRejected(t *testing.T) 
 
 func TestImageServiceTagImageCallsDockerAPI(t *testing.T) {
 	db := setupImageProjectTestDB(t)
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	var gotRepo, gotTag string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || imageDockerTestPath(r.URL.Path) != "/images/source:latest/tag" {
@@ -494,7 +494,7 @@ func TestImageServiceGetImageHistoryCallsDockerAPI(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil, nil), nil, nil, nil)
+	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
 
 	history, err := imageSvc.GetImageHistory(t.Context(), "source:latest")
 	require.NoError(t, err)
@@ -526,7 +526,7 @@ func TestImageServiceExportImageReturnsTarStream(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil, nil), nil, nil, nil)
+	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
 
 	reader, err := imageSvc.ExportImage(t.Context(), "source:latest")
 	require.NoError(t, err)
@@ -556,7 +556,7 @@ func TestImageServiceSearchImagesCallsDockerAPI(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil, nil), nil, nil, nil)
+	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
 
 	results, err := imageSvc.SearchImages(t.Context(), "nginx")
 	require.NoError(t, err)
@@ -958,6 +958,8 @@ func TestAggregateImageCountsSumsEnvironments(t *testing.T) {
 		Total:     5,
 		TotalSize: 150,
 	}, body.Data)
+	require.Len(t, body.Environments, 2)
+	assert.Equal(t, int64(50), body.Environments[1].Data.TotalSize)
 	require.Len(t, body.FailedEnvironments, 1)
 	assert.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
 }

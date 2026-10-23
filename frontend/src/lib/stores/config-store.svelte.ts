@@ -1,16 +1,14 @@
 import { untrack } from 'svelte';
 
 import { settingsService } from '#lib/services/settings-service.js';
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import type { ResolvedSettings, SettingKey, Settings } from '#lib/types/settings.js';
 
 let resolved = $state.raw<ResolvedSettings>();
 const listeners = new Set<(settings: Settings | undefined) => void>();
 
 const reload = async () => {
-	const environmentId = await environmentStore.getCurrentEnvironmentId();
-	const settings = await settingsService.getReadableSettings(environmentId);
-	if (environmentId === environmentStore.selected?.id) set(settings);
+	set(await settingsService.getReadableSettings(LOCAL_DOCKER_ENVIRONMENT_ID));
 };
 
 const set = (settings: ResolvedSettings) => {
@@ -21,10 +19,9 @@ const set = (settings: ResolvedSettings) => {
 };
 
 const save = async (changes: Partial<Settings>) => {
-	const environmentId = await environmentStore.getCurrentEnvironmentId();
-	const base = resolved ?? (await settingsService.getReadableSettings(environmentId));
-	const updated = await settingsService.updateSettingsForEnvironment(environmentId, base, changes);
-	if (environmentId === environmentStore.selected?.id) set(updated);
+	const base = resolved ?? (await settingsService.getReadableSettings(LOCAL_DOCKER_ENVIRONMENT_ID));
+	const updated = await settingsService.updateSettingsForEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID, base, changes);
+	set(updated);
 	return updated;
 };
 

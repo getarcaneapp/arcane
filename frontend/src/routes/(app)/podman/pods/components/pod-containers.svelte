@@ -61,6 +61,7 @@
 							<Table.Cell><span class="text-muted-foreground">{member.status ?? ''}</span></Table.Cell>
 							<Table.Cell>
 								<PortBadge
+									environmentId={envId}
 									ports={(member.ports ?? []).map((port) => ({
 										ip: port.hostIp,
 										privatePort: port.containerPort,

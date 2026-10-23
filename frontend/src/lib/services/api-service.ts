@@ -16,6 +16,7 @@ export interface APIRequestConfig {
 	suppressAccessDeniedToast?: boolean;
 	timeout?: number | false;
 	onFailedEnvironments?: (failures: { environment: { id: string; name: string }; message: string }[]) => void;
+	onEnvironments?: (entries: { environment: { id: string; name: string }; data: unknown }[]) => void;
 }
 
 interface InternalRequestConfig extends APIRequestConfig {
@@ -148,7 +149,7 @@ async function parseResponseBody(response: Response, responseType: APIRequestCon
 }
 
 let tokenRefreshHandler: (() => Promise<string | null>) | null = null;
-// True while a manager self-update or fleet "Update All" runs; its version-mismatch 401s
+// True while a manager self-update or "Update All" runs; its version-mismatch 401s
 // are recoverable and must not bounce the user to /login.
 let upgradeInProgress = false;
 let reloadForNewBuildStarted = false;
@@ -321,6 +322,7 @@ class APIClient {
 				const parsed = upperMethod === 'HEAD' ? undefined : await parseResponseBody(response.clone(), config.responseType);
 				if (session?.aborted) throw new SessionCancelledError();
 				if (Array.isArray(parsed?.failedEnvironments)) config.onFailedEnvironments?.(parsed.failedEnvironments);
+				if (Array.isArray(parsed?.environments)) config.onEnvironments?.(parsed.environments);
 				return {
 					data: parsed as T,
 					headers: response.headers,

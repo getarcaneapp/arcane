@@ -126,7 +126,7 @@ test.describe('Management', () => {
 			const running = containersData.data.find((c) => c.state === 'running');
 			expect(running, 'No running container available').toBeDefined();
 
-			await page.goto(`/containers/${running!.id}`);
+			await page.goto(`/containers/${running!.id}?env=0`);
 			await page.waitForLoadState('load');
 
 			await page.getByRole('tab', { name: 'Logs' }).click();
@@ -144,7 +144,7 @@ test.describe('Management', () => {
 			expect(running, 'No running container available').toBeDefined();
 
 			await mockContainerLogsWebSocket(page);
-			await page.goto(`/containers/${running!.id}`);
+			await page.goto(`/containers/${running!.id}?env=0`);
 			await page.waitForLoadState('load');
 			await page.getByRole('tab', { name: 'Logs' }).click();
 
@@ -168,7 +168,7 @@ test.describe('Management', () => {
 			const stopped = containersData.data.find((c) => c.state !== 'running');
 			expect(stopped, 'No stopped container available').toBeDefined();
 
-			await page.goto(`/containers/${stopped!.id}`);
+			await page.goto(`/containers/${stopped!.id}?env=0`);
 			await page.waitForLoadState('load');
 
 			await page.getByRole('tab', { name: 'Logs' }).click();
@@ -183,7 +183,7 @@ test.describe('Management', () => {
 			const running = containersData.data.find((c) => c.state === 'running');
 			expect(running, 'No running container available').toBeDefined();
 
-			await page.goto(`/containers/${running!.id}`);
+			await page.goto(`/containers/${running!.id}?env=0`);
 			await page.waitForLoadState('load');
 
 			await page.getByRole('tab', { name: 'Logs' }).click();
@@ -823,7 +823,7 @@ test.describe('Lifecycle', () => {
 	) {
 		return test.step('Edit and recreate container', async () => {
 			await clickHeaderAction(page, 'Edit');
-			await expect(page).toHaveURL(`/containers/${containerId}/edit`);
+			await expect(page).toHaveURL(`/containers/${containerId}/edit?env=0`);
 			await expect(page.getByText('Applying changes recreates this container.')).toBeVisible();
 			await expect(page.getByLabel('Container Name *', { exact: true })).toHaveValue(
 				newContainerName.replace(/-edited$/, '')
@@ -1164,7 +1164,7 @@ test.describe('Lifecycle', () => {
 			(await page.request.get(`/api/environments/0/containers/${currentContainerId}`)).ok()
 		).toBe(true);
 
-		await page.goto(`/containers/${currentContainerId}`);
+		await page.goto(`/containers/${currentContainerId}?env=0`);
 		await killContainerThroughUI(page, currentContainerId, editedContainerName);
 		await expectContainerStatus(page, currentContainerId, 'exited');
 		await runSimpleContainerAction(page, currentContainerId, 'start', 'Start', 'container_start');
@@ -1343,7 +1343,6 @@ test.describe('Resource sorting', () => {
 
 	async function openContainers(page: Page) {
 		await page.addInitScript(() => {
-			localStorage.removeItem('selectedEnvironmentId');
 			localStorage.removeItem('arcane-container-table');
 		});
 		await page.goto('/containers');
@@ -1356,7 +1355,9 @@ test.describe('Resource sorting', () => {
 			.getByRole('row')
 			.filter({ has: page.locator('a[href^="/containers/"]') })
 			.locator('a[href^="/containers/"]')
-			.evaluateAll((els) => els.map((el) => el.getAttribute('href')?.split('/').pop() ?? ''));
+			.evaluateAll((els) =>
+				els.map((el) => el.getAttribute('href')?.split('?')[0]?.split('/').pop() ?? '')
+			);
 	}
 
 	async function setPageSize(page: Page, size: string) {
@@ -1475,12 +1476,12 @@ test.describe('Resource sorting', () => {
 		await expect.poll(() => scenario.requests.length, { timeout: 10000 }).toBeGreaterThan(frozen);
 
 		scenario.failList = true;
-		await expect(page.getByText('Automatic refresh failed: daemon exploded')).toBeVisible({
+		await expect(page.getByText(/^Automatic refresh failed: .*daemon exploded$/)).toBeVisible({
 			timeout: 15000
 		});
 
 		scenario.failList = false;
-		await expect(page.getByText('Automatic refresh failed: daemon exploded')).toBeHidden({
+		await expect(page.getByText(/^Automatic refresh failed: .*daemon exploded$/)).toBeHidden({
 			timeout: 15000
 		});
 	});
@@ -1570,7 +1571,6 @@ test.describe('Project grouping', () => {
 		context
 	}) => {
 		await page.addInitScript(() => {
-			localStorage.removeItem('selectedEnvironmentId');
 			localStorage.removeItem('arcane-container-table');
 			localStorage.setItem('container-groups-collapsed', JSON.stringify({ immich: false }));
 			localStorage.removeItem('collapsible-cards-expanded');
@@ -1735,7 +1735,6 @@ test.describe('Project grouping', () => {
 
 	async function openGroupedContainers(page: Page, collapsed: Record<string, boolean>) {
 		await page.addInitScript((collapsedState) => {
-			localStorage.removeItem('selectedEnvironmentId');
 			localStorage.removeItem('arcane-container-table');
 			localStorage.setItem('container-groups-collapsed', JSON.stringify(collapsedState));
 			localStorage.removeItem('collapsible-cards-expanded');

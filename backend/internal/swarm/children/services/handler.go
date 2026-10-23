@@ -8,6 +8,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 // Handler serves the swarm service endpoints.
@@ -91,6 +92,13 @@ type ScaleSwarmServiceInput struct {
 // underlying swarm lookup fails.
 func (h *Handler) ListServices(ctx context.Context, input *ListSwarmServicesInput) (*handlerutil.Page[types.SwarmServiceSummary], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.service.Aggregate(ctx, params)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to list swarm services: " + err.Error())
+		}
+		return &handlerutil.Page[types.SwarmServiceSummary]{Body: body}, nil
+	}
 	items, paginationResp, err := h.service.ListServicesPaginated(ctx, params)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to list swarm services: "+err.Error())

@@ -247,11 +247,11 @@
 				</div>
 				{#if item.serviceConfig?.ports?.length}
 					<div class="mt-1 flex min-w-0 pl-7">
-						<PortBadge ports={item.serviceConfig.ports} wrap={false} />
+						<PortBadge ports={item.serviceConfig.ports} {environmentId} wrap={false} />
 					</div>
 				{:else if item.ports?.length}
 					<div class="mt-1 flex min-w-0 pl-7">
-						<PortBadge ports={parseRuntimePorts(item.ports)} wrap={false} />
+						<PortBadge ports={parseRuntimePorts(item.ports)} {environmentId} wrap={false} />
 					</div>
 				{/if}
 			</div>

@@ -648,6 +648,8 @@ type ProjectStatusCounts struct {
 	//
 	// Required: true
 	ArchivedProjects int `json:"archivedProjects"`
+
+	UpdatesAvailable int `json:"updatesAvailable" doc:"Active projects with a pending image update"`
 }
 
 // ComposeCache stores values until their Compose configuration inputs change.

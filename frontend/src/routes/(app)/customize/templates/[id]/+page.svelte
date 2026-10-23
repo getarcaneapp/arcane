@@ -26,7 +26,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { templateService } from '#lib/services/template-service.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
@@ -157,7 +157,7 @@
 		return data.allTemplates.find((t) => !t.isRemote && t.metadata?.remoteUrl === template.metadata?.remoteUrl);
 	});
 
-	const canDownload = $derived(template.isRemote && !localVersionOfRemote && hasPermission('templates:create'));
+	const canDownload = $derived(template.isRemote && !localVersionOfRemote && hasShownPermission('templates:create'));
 
 	async function handleDownload() {
 		if (status.isDownloading || !canDownload) return;

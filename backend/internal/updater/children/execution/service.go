@@ -116,7 +116,7 @@ func (s *Service) update(ctx context.Context, t flow.Task) (any, error) {
 	failed := func(reason string) types.SchedulerOutcome {
 		return types.SchedulerOutcome{Status: types.RunStatusFailed, Message: reason}
 	}
-	if input.UserID != "" && (!s.deps.Config.AgentMode || input.UserID != "agent" || input.KeyID != "") {
+	if input.UserID != "" && (!s.deps.Config.EdgeAgent || input.UserID != "agent" || input.KeyID != "") {
 		permissions, permissionsErr := s.deps.Roles.ResolveExecutionPermissions(ctx, input.UserID, input.KeyID)
 		if permissionsErr != nil || !permissions.Allows(authz.PermImageUpdatesCheck, "0") {
 			return failed("requesting user no longer has permission to update containers"), nil

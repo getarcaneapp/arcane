@@ -8,30 +8,29 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { getSwarmTaskStateVariant, sortSwarmTasks } from '#lib/utils/swarm-tasks.js';
 
 	let {
+		environmentId,
 		serviceName,
 		serviceId
 	}: {
+		environmentId: string;
 		serviceName: string;
 		serviceId: string;
 	} = $props();
 
 	const tasksQuery = createQuery(() => {
-		const environmentId = environmentStore.selected?.id;
+		const requestedEnvironmentId = environmentId;
 		const requestedServiceId = serviceId;
 		userStore.current;
 		return {
-			queryKey: queryKeys.swarm.serviceTasks(environmentId ?? '', requestedServiceId),
-			queryFn: async () => {
-				await environmentStore.ready;
-				return swarmService.getServiceTasks(requestedServiceId, { pagination: { page: 1, limit: 100 } });
-			},
-			enabled: !!environmentId && !!serviceName && !!requestedServiceId && hasPermission('swarm:read', environmentId)
+			queryKey: queryKeys.swarm.serviceTasks(requestedEnvironmentId, requestedServiceId),
+			queryFn: () =>
+				swarmService.getServiceTasks(requestedServiceId, { pagination: { page: 1, limit: 100 } }, requestedEnvironmentId),
+			enabled: !!serviceName && !!requestedServiceId && hasPermission('swarm:read', requestedEnvironmentId)
 		};
 	});
 	const tasks = $derived(sortSwarmTasks(tasksQuery.data?.data ?? []));

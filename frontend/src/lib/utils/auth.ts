@@ -1,6 +1,6 @@
 import { m } from '#lib/paraglide/messages.js';
 import { APIError } from '#lib/services/api-service.js';
-import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/auth.js';
 import type { PermissionsManifest, User } from '#lib/types/auth.js';
@@ -10,7 +10,6 @@ import {
 	getRouteAccessSurfaces,
 	pathMatchesAccessSurface
 } from '#lib/utils/access-policy.js';
-import { isEnvironmentOnline } from '#lib/utils/docker.js';
 
 export function normalizeAuthenticationError(error: unknown, fallback: string): { kind: 'proxy' | 'other'; message: string } {
 	if (error instanceof APIError) {
@@ -42,19 +41,12 @@ export function normalizeAuthenticationError(error: unknown, fallback: string): 
 
 // --- Store-backed permission checks (for .svelte / runtime) ---
 
-function resolveEnvId(envId?: string): string | undefined {
-	if (envId) return envId;
-	const selected = environmentStore.selected;
-	if (!selected?.id) return undefined;
-	return selected.id;
+export function hasPermission(perm: string, envId: string): boolean {
+	return userStore.hasPermission(perm, envId);
 }
 
-export function hasPermission(perm: string, envId?: string): boolean {
-	return userStore.hasPermission(perm, resolveEnvId(envId));
-}
-
-export function hasAnyPermission(perms: string[], envId?: string): boolean {
-	return userStore.hasAnyPermission(perms, resolveEnvId(envId));
+export function hasAnyPermission(perms: string[], envId: string): boolean {
+	return userStore.hasAnyPermission(perms, envId);
 }
 
 export function isGlobalAdmin(): boolean {
@@ -117,45 +109,28 @@ function userHasAnyAccess(user: User): boolean {
 	return false;
 }
 
-/** Whether a surface is reachable in `envId` or, while the all environments preview is on, in any shown environment. */
 export function canReachShownAccessSurface(
 	accessManifest: PermissionsManifest | null | undefined,
 	surfaceId: string | undefined,
-	user: User,
-	envId: string | undefined
+	user: User
 ): boolean {
-	const envIds = environmentStore.selected ? [envId, ...environmentStore.shown.map((env) => env.id)] : [envId];
-	return envIds.some((id) => canReachAccessSurface(accessManifest, surfaceId, user, id));
+	return [undefined, ...environmentStore.shown.map((env) => env.id)].some((id) =>
+		canReachAccessSurface(accessManifest, surfaceId, user, id)
+	);
 }
 
-/**
- * The first shown environment that can open `path` when `envId` cannot. Pages that show one environment
- * at a time load the selected one, so the preview switches to this one instead of failing.
- */
-export function shownEnvironmentForRoute(
-	path: string,
-	user: User,
-	envId: string | undefined,
-	accessManifest: PermissionsManifest | null | undefined
-): EnvironmentRef | undefined {
-	const surface = getRouteAccessSurfaces(accessManifest).find((candidate) => pathMatchesAccessSurface(path, candidate));
-	if (!surface || canReachAccessSurface(accessManifest, surface.id, user, envId)) return undefined;
-	const reachable = environmentStore.shown.filter((env) => canReachAccessSurface(accessManifest, surface.id, user, env.id));
-	// An online environment is preferred, so the page can load; local is always reachable.
-	const online = reachable.find((env) => {
-		const environment = environmentStore.available.find((candidate) => candidate.id === env.id);
-		return env.id === LOCAL_DOCKER_ENVIRONMENT_ID || (!!environment && isEnvironmentOnline(environment));
-	});
-	return online ?? reachable[0];
+export function canReachAccessSurfaceUrl(
+	accessManifest: PermissionsManifest | null | undefined,
+	url: string,
+	user: User | null | undefined
+): boolean {
+	if (!user) return false;
+	return canReachShownAccessSurface(accessManifest, accessManifest?.accessSurfaces?.find((entry) => entry.url === url)?.id, user);
 }
 
-function pickFallbackRoute(
-	user: User,
-	envId: string | undefined,
-	accessManifest: PermissionsManifest | null | undefined
-): string {
+function pickFallbackRoute(user: User, accessManifest: PermissionsManifest | null | undefined): string {
 	for (const surface of getFallbackAccessSurfaces(accessManifest)) {
-		if (canReachShownAccessSurface(accessManifest, surface.id, user, envId)) {
+		if (canReachShownAccessSurface(accessManifest, surface.id, user)) {
 			return surface.url ?? '/no-access';
 		}
 	}
@@ -165,7 +140,6 @@ function pickFallbackRoute(
 export function getAuthRedirectPath(
 	path: string,
 	user: User | null,
-	envId?: string,
 	accessManifest?: PermissionsManifest | null,
 	accessManifestLoadFailed = false,
 	landingPath: string = '/dashboard'
@@ -198,8 +172,8 @@ export function getAuthRedirectPath(
 	}
 
 	const surface = getRouteAccessSurfaces(accessManifest).find((candidate) => pathMatchesAccessSurface(path, candidate));
-	if (surface && !canReachShownAccessSurface(accessManifest, surface.id, user, envId)) {
-		const fallback = pickFallbackRoute(user, envId, accessManifest);
+	if (surface && !canReachShownAccessSurface(accessManifest, surface.id, user)) {
+		const fallback = pickFallbackRoute(user, accessManifest);
 		return fallback === path ? '/no-access' : fallback;
 	}
 

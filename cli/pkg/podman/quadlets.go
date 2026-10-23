@@ -2,6 +2,7 @@ package podman
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"maps"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
+	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 	internaltypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
@@ -37,7 +39,7 @@ func newQuadletsCmd() *cobra.Command {
 		{name: "stop", verb: "Stop"},
 		{name: "restart", verb: "Restart"},
 	} {
-		cmd.AddCommand(&cobra.Command{
+		actionCmd := &cobra.Command{
 			Use:          action.name + " <name>",
 			Short:        action.verb + " a quadlet's systemd unit",
 			Args:         cobra.ExactArgs(1),
@@ -60,7 +62,9 @@ func newQuadletsCmd() *cobra.Command {
 					},
 				})
 			},
-		})
+		}
+		cmdutil.SetResource(quadletRef, actionCmd)
+		cmd.AddCommand(actionCmd)
 	}
 	return cmd
 }
@@ -125,7 +129,7 @@ func newQuadletListCmd() *cobra.Command {
 }
 
 func newQuadletGetCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:          "get <name>",
 		Aliases:      []string{"inspect"},
 		Short:        "Show quadlet details",
@@ -171,6 +175,8 @@ func newQuadletGetCmd() *cobra.Command {
 			})
 		},
 	}
+	cmdutil.SetResource(quadletRef, cmd)
+	return cmd
 }
 
 func newQuadletInstallCmd() *cobra.Command {
@@ -262,6 +268,32 @@ func newQuadletDeleteCmd() *cobra.Command {
 			})
 		},
 	}
+	cmdutil.SetResource(quadletRef, cmd)
 	cmd.Flags().BoolVarP(&opts.force, "force", "f", false, "Force deletion without confirmation")
 	return cmd
+}
+
+var quadletRef = cmdutil.ResourceRef[types.QuadletDetail, types.QuadletDetail]{
+	EnvironmentScoped: true,
+	Singular:          "quadlet",
+	Plural:            "quadlets",
+	IDHint:            "the quadlet file name",
+	ListCmd:           "arcane podman quadlets list",
+	SearchCandidates: func(ctx context.Context, c *client.Client, identifier string) ([]types.QuadletDetail, error) {
+		return searchPodman(ctx, c, internaltypes.PodmanQuadlets(c.EnvID()), func(quadlet types.QuadletDetail) bool {
+			return strings.EqualFold(quadlet.Name, identifier) || strings.EqualFold(quadlet.UnitName, identifier)
+		})
+	},
+	Label: func(quadlet types.QuadletDetail) string {
+		return fmt.Sprintf("%s (%s)", quadlet.Name, quadlet.UnitName)
+	},
+	Promote: func(quadlet types.QuadletDetail) *types.QuadletDetail {
+		return &quadlet
+	},
+	IdentifierOf: func(quadlet types.QuadletDetail) string {
+		return quadlet.Name
+	},
+	Exact: func(quadlet types.QuadletDetail, identifierLower, original string) bool {
+		return quadlet.Name == original
+	},
 }

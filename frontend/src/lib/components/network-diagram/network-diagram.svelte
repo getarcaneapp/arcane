@@ -21,8 +21,11 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { EyeOnIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { NetworkTopologyDto, TopologyEdgeDto, TopologyNodeDto } from '#lib/types/docker.js';
+	import type { TopologyEdgeDto } from '#lib/types/docker.js';
 	import { cn } from '#lib/utils.js';
+	import { environmentHref } from '#lib/utils/environments.js';
+
+	import type { EnvironmentTopology } from './topology.js';
 
 	import '@xyflow/svelte/dist/style.css';
 
@@ -30,9 +33,17 @@
 		topology,
 		class: className = ''
 	}: {
-		topology: NetworkTopologyDto;
+		topology: Pick<EnvironmentTopology, 'nodes' | 'edges'>;
 		class?: string;
 	} = $props();
+
+	type TopologyNodeDto = EnvironmentTopology['nodes'][number];
+
+	function nodeHref(node: TopologyNodeDto, path: string): string {
+		const prefix = `${node.environmentId}/`;
+		const id = node.id.startsWith(prefix) ? node.id.slice(prefix.length) : node.id;
+		return environmentHref(`${path}/${id}`, node.environmentId);
+	}
 
 	let isReady = $state(false);
 
@@ -185,6 +196,7 @@
 		if (node.type === 'network') {
 			return [
 				node.name,
+				node.environmentName,
 				node.metadata.driver ? `Driver: ${node.metadata.driver}` : null,
 				node.metadata.scope ? `Scope: ${node.metadata.scope}` : null,
 				node.metadata.isDefault ? 'Default Docker network' : null
@@ -193,7 +205,12 @@
 				.join('\n');
 		}
 
-		return [node.name, node.metadata.status ? `Status: ${node.metadata.status}` : null, node.metadata.image ?? null]
+		return [
+			node.name,
+			node.environmentName,
+			node.metadata.status ? `Status: ${node.metadata.status}` : null,
+			node.metadata.image ?? null
+		]
 			.filter(Boolean)
 			.join('\n');
 	}
@@ -364,7 +381,7 @@
 					'font-weight: 600'
 				].join('; '),
 				data: {
-					href: `/networks/${node.id}`,
+					href: nodeHref(node, '/networks'),
 					kind: 'network',
 					label: nodeLabel(node)
 				},
@@ -381,7 +398,7 @@
 				id: node.id,
 				position: layout.containerPositions[node.id] ?? { x: 440, y: 0 },
 				data: {
-					href: `/containers/${node.id}`,
+					href: nodeHref(node, '/containers'),
 					kind: 'container',
 					label: containerLabel(node, connectionsByContainer[node.id] ?? [])
 				},
@@ -472,7 +489,7 @@
 								onCheckedChange={(checked) =>
 									(visibleDefaults.current = { ...visibleDefaults.current, [node.id]: checked === true })}
 							>
-								{node.name}
+								{node.name} · {node.environmentName}
 							</DropdownMenu.CheckboxItem>
 						{/each}
 					</DropdownMenu.Content>

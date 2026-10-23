@@ -19,6 +19,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import type { UploadProgressCallback } from '#lib/services/upload-service.js';
+	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import type { FileEntry } from '#lib/types/shared.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -56,7 +57,7 @@
 
 	const loading = $derived(filesQuery.isPending);
 	const error = $derived(filesQuery.error ? extractApiErrorMessage(filesQuery.error) : null);
-	const canOpenBuildSettings = $derived(hasPermission('settings:read'));
+	const canOpenBuildSettings = $derived(hasPermission('settings:read', GLOBAL_SCOPE));
 
 	let showCreateFolder = $state(false);
 	let showUpload = $state(false);
@@ -248,7 +249,12 @@
 			<div class="flex flex-wrap justify-center gap-2">
 				<ArcaneButton action="refresh" customLabel={m.common_retry()} onclick={() => filesQuery.refetch()} />
 				{#if canOpenBuildSettings}
-					<ArcaneButton action="base" tone="outline" customLabel={m.build_workspace_open_settings()} href="/settings/builds" />
+					<ArcaneButton
+						action="base"
+						tone="outline"
+						customLabel={m.build_workspace_open_settings()}
+						href={`/environments/${envId}?tab=builds`}
+					/>
 				{:else}
 					<p class="text-xs text-muted-foreground">{m.build_workspace_ask_admin()}</p>
 				{/if}

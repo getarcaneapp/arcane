@@ -6,6 +6,8 @@ import (
 
 // AutoUpdateRecord reports a persisted resource auto-update operation.
 type AutoUpdateRecord struct {
+	EnvironmentTag
+
 	ID               string         `json:"id"`
 	CreatedAt        time.Time      `json:"createdAt" sortable:"true"`
 	UpdatedAt        *time.Time     `json:"updatedAt,omitempty"`

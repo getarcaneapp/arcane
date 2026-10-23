@@ -10,4 +10,4 @@ list:
 # Edge tunnel protobuf/gRPC code
 proto:
     {{ just_executable() }} lint proto
-    cd {{ edge_proto_dir }} && go run github.com/bufbuild/buf/cmd/buf@latest generate
+    cd {{ edge_proto_dir }} && ../.bin/buf generate

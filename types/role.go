@@ -108,7 +108,7 @@ type AccessSurface struct {
 	Label         string   `json:"label" doc:"Human-readable surface label" example:"Webhooks"`
 	AccessMode    string   `json:"accessMode" enum:"permissions,any-child" doc:"How reachability is evaluated"`
 	MatchMode     string   `json:"matchMode" enum:"any-of,all-of" doc:"How permissions are combined when accessMode is permissions"`
-	ScopeMode     string   `json:"scopeMode" enum:"global-only,selected-env-plus-global,any-effective-scope" doc:"Which effective permission scope is considered"`
+	ScopeMode     string   `json:"scopeMode" enum:"global-only,env-plus-global,any-effective-scope" doc:"Which effective permission scope is considered"`
 	Permissions   []string `json:"permissions,omitempty" doc:"Permissions used by permission-based surfaces"`
 	Children      []string `json:"children,omitempty" doc:"Child surface IDs used by aggregate landing surfaces"`
 	FallbackOrder int      `json:"fallbackOrder,omitempty" doc:"Positive ordering hint for route fallback selection"`

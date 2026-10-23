@@ -26,8 +26,9 @@ import (
 // Command is the command for managing API configuration
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "config",
-		Short: "Manage Arcane CLI's Configuration",
+		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
+		Use:         "config",
+		Short:       "Manage Arcane CLI's Configuration",
 	}
 	cmd.AddCommand(newConfigShowCmd(), newConfigSetCmd(), newConfigInitCmd(), newConfigBackupCmd(), newConfigPathCmd(), newConfigTestCmd())
 	return cmd
@@ -60,7 +61,6 @@ func newConfigShowCmd() *cobra.Command {
 			output.KeyValue("Auth file", authPath)
 			output.KeyValue("Server URL", cmp.Or(cfg.ServerURL, "(not set)"))
 			output.KeyValue("API key", maskAPIKey(cfg.APIKey))
-			output.KeyValue("Environment", cmp.Or(cfg.DefaultEnvironment, "0 (local)"))
 			output.KeyValue("Federated audience", cmp.Or(cfg.FederatedAudience, "(not set)"))
 			output.KeyValue("Log level", cmp.Or(cfg.LogLevel, "info (default)"))
 			output.KeyValue("Update channel", cmp.Or(cfg.CLIUpdateChannel, "(auto)"))
@@ -71,7 +71,6 @@ func newConfigShowCmd() *cobra.Command {
 				output.KeyValue("Refresh token", maskAPIKey(cfg.RefreshToken))
 			}
 			output.Header("Previews")
-			output.KeyValue("allEnvironments", strconv.FormatBool(cfg.Previews.AllEnvironments))
 			output.KeyValue("newSelfUpdater", strconv.FormatBool(cfg.Previews.NewSelfUpdater))
 			output.Header("Pagination resources")
 			for _, resource := range types.KnownPaginatedResources {
@@ -115,7 +114,6 @@ func newConfigSetCmd() *cobra.Command {
 		serverURL         string
 		apiKey            string
 		jwtToken          string
-		environment       string
 		federatedAudience string
 		logLevel          string
 		defaultLimit      int
@@ -131,7 +129,6 @@ Preferred syntax (key/value pairs):
 Examples:
 	arcane config set server-url http://localhost:3553
 	arcane config set api-key arc_xxxxxxxxxxxxx
-	arcane config set previews.allEnvironments true
 	arcane config set previews.newSelfUpdater true
 	arcane config set pagination.default.limit 25
 	arcane config set pagination.resources.images.limit 100
@@ -162,7 +159,6 @@ Legacy flag syntax (flags shown below) is still supported:
 				{"server-url", opts.serverURL},
 				{"api-key", opts.apiKey},
 				{"jwt-token", opts.jwtToken},
-				{"environment", opts.environment},
 				{"federated-audience", opts.federatedAudience},
 				{"log-level", opts.logLevel},
 			} {
@@ -189,9 +185,9 @@ Legacy flag syntax (flags shown below) is still supported:
 			}
 
 			if len(args) == 0 && len(opts.resourceLimits) == 0 && !cmd.Flags().Changed("default-limit") &&
-				cmp.Or(opts.serverURL, opts.apiKey, opts.jwtToken, opts.environment, opts.federatedAudience, opts.logLevel) == "" {
+				cmp.Or(opts.serverURL, opts.apiKey, opts.jwtToken, opts.federatedAudience, opts.logLevel) == "" {
 				return errors.New("no configuration values provided. Use `arcane config set <key> <value>` (e.g. `arcane config set server-url " +
-					"http://localhost:3552`) or legacy flags (--server-url, --api-key, --jwt-token, --environment, --log-level, " +
+					"http://localhost:3552`) or legacy flags (--server-url, --api-key, --jwt-token, --log-level, " +
 					"--default-limit, --resource-limit)")
 			}
 
@@ -221,7 +217,6 @@ Legacy flag syntax (flags shown below) is still supported:
 	cmd.Flags().StringVar(&opts.serverURL, "server-url", "", "Arcane server URL (e.g., http://localhost:3553)")
 	cmd.Flags().StringVar(&opts.apiKey, "api-key", "", "API key for authentication")
 	cmd.Flags().StringVar(&opts.jwtToken, "jwt-token", "", "JWT access token for authentication (Bearer token)")
-	cmd.Flags().StringVar(&opts.environment, "environment", "", "Default environment ID")
 	cmd.Flags().StringVar(&opts.federatedAudience, "federated-audience", "", "Default audience for federated authentication")
 	cmdutil.EnumVarP(cmd, cmd.Flags(), &opts.logLevel, "log-level", "", "", "Default log level", "debug", "info", "warn", "error")
 	cmd.Flags().IntVar(&opts.defaultLimit, "default-limit", 0, "Global default list limit for paginated resources (0 clears)")
@@ -445,22 +440,13 @@ func applyConfigSetArg(ctx context.Context, cfg *types.Config, key, value string
 		cfg.RefreshToken = ""
 		_, _ = fmt.Fprintf(w, "Set jwt_token = %s\n", maskAPIKey(value))
 		return nil
-	case "previews.allenvironments", "previews.newselfupdater":
-		name := kit.Ternary(normalized == "previews.allenvironments", "allEnvironments", "newSelfUpdater")
+	case "previews.newselfupdater":
 		enabled, err := strconv.ParseBool(value)
 		if err != nil {
-			return fmt.Errorf("invalid previews.%s value %q (expected true or false)", name, value)
+			return fmt.Errorf("invalid previews.newSelfUpdater value %q (expected true or false)", value)
 		}
-		if normalized == "previews.allenvironments" {
-			cfg.Previews.AllEnvironments = enabled
-		} else {
-			cfg.Previews.NewSelfUpdater = enabled
-		}
-		_, _ = fmt.Fprintf(w, "Set previews.%s = %t\n", name, enabled)
-		return nil
-	case "environment", "default-environment", "default_environment":
-		cfg.DefaultEnvironment = value
-		_, _ = fmt.Fprintf(w, "Set default_environment = %s\n", value)
+		cfg.Previews.NewSelfUpdater = enabled
+		_, _ = fmt.Fprintf(w, "Set previews.newSelfUpdater = %t\n", enabled)
 		return nil
 	case "federated-audience", "federated_audience", "audience":
 		cfg.FederatedAudience = value
@@ -516,7 +502,7 @@ func applyConfigSetArg(ctx context.Context, cfg *types.Config, key, value string
 		case strings.HasPrefix(normalized, "pagination.resources.") && strings.HasSuffix(normalized, ".limit"):
 			resourceValue = strings.TrimSuffix(strings.TrimPrefix(normalized, "pagination.resources."), ".limit")
 		default:
-			return fmt.Errorf("unknown config key %q. Supported keys include server-url, api-key, jwt-token, environment, "+
+			return fmt.Errorf("unknown config key %q. Supported keys include server-url, api-key, jwt-token, "+
 				"federated-audience, log-level, default-limit, resource-limit, and pagination.resources.<resource>.limit", key)
 		}
 		resource = types.NormalizePaginatedResource(resourceValue)

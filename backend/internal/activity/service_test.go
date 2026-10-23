@@ -2,6 +2,7 @@ package activity
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
+	"github.com/labstack/echo/v5"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/sys/crypto"
@@ -26,8 +28,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 func setupActivityServiceTestDB(t *testing.T) *database.DB {
@@ -920,7 +924,7 @@ func TestSyncResourcesToEnvironmentOutcomes(t *testing.T) {
 			crypto.InitEncryption(&crypto.Config{EncryptionKey: "test-encryption-key-for-testing-32bytes-min", Environment: "test"})
 			var mu sync.Mutex
 			var calls []string
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			agent := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				mu.Lock()
 				calls = append(calls, r.URL.Path)
 				mu.Unlock()
@@ -934,10 +938,25 @@ func TestSyncResourcesToEnvironmentOutcomes(t *testing.T) {
 				default:
 					_, _ = w.Write([]byte(`{"success":true}`))
 				}
-			}))
-			defer server.Close()
-			require.NoError(t, db.Create(&environment.Environment{ID: "remote", Name: "Remote", ApiUrl: server.URL, AccessToken: new("agent-token"), Enabled: true}).Error)
-			service := environment.NewEnvironmentService(db, server.Client(), nil, nil, nil, nil)
+			})
+			manager := echo.New()
+			manager.GET("/api/tunnel/connect", edge.NewTunnelServerWithRegistry(edge.GetRegistry(), func(context.Context, string) (string, error) {
+				return "remote", nil
+			}, nil).HandleConnect)
+			managerServer := httptest.NewServer(manager)
+			defer managerServer.Close()
+			agentCtx, cancelAgent := context.WithCancel(t.Context())
+			defer cancelAgent()
+			defer edge.GetRegistry().Unregister("remote")
+			go edge.NewTunnelClient(&edge.Config{
+				EdgeAgent:     true,
+				EdgeTransport: edge.EdgeTransportWebSocket,
+				ManagerApiUrl: managerServer.URL,
+				AgentToken:    "agent-token",
+			}, agent).StartWithErrorChan(agentCtx, nil)
+			require.True(t, edge.GetRegistry().WaitForActive(t.Context(), "remote", 5*time.Second).IsPresent())
+			require.NoError(t, db.Create(&environment.Environment{ID: "remote", Name: "Remote", ApiUrl: "edge://remote", AccessToken: new("agent-token"), Enabled: true}).Error)
+			service := environment.NewEnvironmentService(db, nil, nil, nil, nil)
 			activityService := NewActivityService(db, nil)
 			id, err := service.SyncResourcesToEnvironment(t.Context(), "remote", &types.Actor{ID: "operator", Username: "operator"}, activityService)
 			require.NotEmpty(t, id)
@@ -983,4 +1002,59 @@ func TestActivityService_StartActivityWithIDIsIdempotent(t *testing.T) {
 	var count int64
 	require.NoError(t, db.Model(&Activity{}).Where("id = ?", "workflow-activity").Count(&count).Error)
 	require.Equal(t, int64(1), count)
+}
+
+func activityScopeContext(t *testing.T, target string, bodies map[string]any) context.Context {
+	t.Helper()
+	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(body)
+		}),
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	})
+}
+
+func TestAggregateActivitiesKeepsActiveFirst(t *testing.T) {
+	now := time.Now()
+	ctx := activityScopeContext(t, "/api/environments/a,b,c/activities", map[string]any{
+		"a": types.Paginated[types.Activity]{
+			Success: true,
+			Data: []types.Activity{{
+				ID:        "done",
+				Status:    types.ActivityStatusSuccess,
+				CreatedAt: now,
+				EndedAt:   new(now),
+			}},
+		},
+		"b": types.Paginated[types.Activity]{
+			Success: true,
+			Data: []types.Activity{{
+				ID:        "running",
+				Status:    types.ActivityStatusRunning,
+				CreatedAt: now.Add(-time.Hour),
+			}},
+		},
+	})
+
+	body, err := (&ActivityService{}).AggregateActivities(ctx, pagination.QueryParams{
+		SortParams: pagination.SortParams{Order: pagination.SortDesc},
+		Params:     pagination.Params{Limit: 20},
+	})
+	require.NoError(t, err)
+
+	require.Len(t, body.Data, 2)
+	require.Equal(t, "running", body.Data[0].ID)
+	require.Equal(t, "Env b", body.Data[0].EnvironmentName)
+	require.Equal(t, "done", body.Data[1].ID)
+	require.Len(t, body.FailedEnvironments, 1)
 }

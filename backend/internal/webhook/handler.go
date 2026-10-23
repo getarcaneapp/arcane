@@ -9,6 +9,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
 )
 
@@ -34,6 +35,13 @@ type UpdateWebhookInput struct {
 
 // ListWebhooks returns all webhooks for an environment (tokens are masked).
 func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[[]types.Webhook], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.webhookService.AggregateWebhookSummaries(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to list webhooks")
+		}
+		return &handlerutil.Out[[]types.Webhook]{Body: body}, nil
+	}
 	webhooks, err := h.webhookService.ListWebhookSummaries(ctx, input.EnvironmentID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list webhooks")

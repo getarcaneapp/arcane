@@ -48,7 +48,39 @@ async function mockDashboardStatsWebSocket(
 	};
 }
 
-// Environment cards expose everything but "Use" through a row actions menu.
+const mockedCounts: Record<string, Record<string, number>> = {
+	containers: {
+		runningContainers: 4,
+		stoppedContainers: 3,
+		totalContainers: 7,
+		updatesAvailable: 0
+	},
+	images: { imagesInuse: 5, imagesUnused: 4, totalImages: 9, totalImageSize: 0 },
+	projects: { updatesAvailable: 0 },
+	volumes: { inuse: 1, unused: 1, total: 2 }
+};
+
+async function mockDashboardCounts(page: Page) {
+	const requested: string[] = [];
+	await page.route(
+		/\/api\/environments\/[^/]+\/(containers|images|projects|volumes)\/counts(?:\?.*)?$/,
+		async (route) => {
+			const [, , , scope, domain] = new URL(route.request().url()).pathname.split('/');
+			const environmentIds = decodeURIComponent(scope).split(',');
+			const data = mockedCounts[domain];
+			requested.push(`${domain}:${environmentIds.join(',')}`);
+			await route.fulfill({
+				json: {
+					success: true,
+					data,
+					environments: environmentIds.map((id) => ({ environment: { id, name: id }, data }))
+				}
+			});
+		}
+	);
+	return requested;
+}
+
 async function openEnvironmentActionsMenu(page: Page) {
 	const trigger = page
 		.locator('main')
@@ -62,6 +94,10 @@ async function openEnvironmentActionsMenu(page: Page) {
 }
 
 test.describe('Dashboard system stats websocket', () => {
+	test.beforeEach(async ({ page }) => {
+		await mockDashboardCounts(page);
+	});
+
 	test('renders metrics from the system stats websocket stream', async ({ page }) => {
 		await mockDashboardStatsWebSocket(page);
 
@@ -153,7 +189,34 @@ test.describe('Dashboard system stats websocket', () => {
 	});
 });
 
+test.describe('Dashboard counts', () => {
+	test('renders each environment from the counts endpoints', async ({ page }) => {
+		const requested = await mockDashboardCounts(page);
+		const snapshotRequests: string[] = [];
+		page.on('request', (request) => {
+			if (/\/api\/environments\/[^/]+\/dashboard(?:\?.*)?$/.test(request.url()))
+				snapshotRequests.push(request.url());
+		});
+		await mockDashboardStatsWebSocket(page);
+
+		await page.goto(defaultDashboardPath);
+		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
+
+		const main = page.locator('main');
+		await expect(main.getByText('4/7', { exact: true })).toBeVisible();
+		await expect(main.getByText('9', { exact: true }).first()).toBeVisible();
+		await expect
+			.poll(() => requested)
+			.toEqual(expect.arrayContaining(['containers:0', 'images:0', 'projects:0', 'volumes:0']));
+		expect(snapshotRequests).toEqual([]);
+	});
+});
+
 test.describe('Dashboard environment actions', () => {
+	test.beforeEach(async ({ page }) => {
+		await mockDashboardCounts(page);
+	});
+
 	test('opens environment details through the row menu', async ({ page }) => {
 		await mockDashboardStatsWebSocket(page);
 
@@ -165,21 +228,16 @@ test.describe('Dashboard environment actions', () => {
 		await expect(page).toHaveURL(/\/environments\/0(?:\?.*)?$/);
 	});
 
-	test('keeps the use action and the menu trigger keyboard reachable', async ({ page }) => {
+	test('keeps the menu trigger keyboard reachable', async ({ page }) => {
 		await mockDashboardStatsWebSocket(page);
 
 		await page.goto(defaultDashboardPath);
 		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
 
-		const useButton = page
-			.locator('main')
-			.getByRole('button', { name: 'Current', exact: true })
-			.first();
 		const menuTrigger = page
 			.locator('main')
 			.getByRole('button', { name: 'Open menu', exact: true })
 			.first();
-		await expect(useButton).toBeVisible();
 		await expect(menuTrigger).toBeVisible();
 
 		await menuTrigger.focus();
@@ -189,19 +247,5 @@ test.describe('Dashboard environment actions', () => {
 		await expect(page.getByRole('menu')).toBeVisible();
 		await page.keyboard.press('Escape');
 		await expect(menuTrigger).toBeFocused();
-	});
-
-	test('disables the use action for the environment already in use', async ({ page }) => {
-		await mockDashboardStatsWebSocket(page);
-
-		await page.goto(defaultDashboardPath);
-		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
-
-		const currentButton = page
-			.locator('main')
-			.getByRole('button', { name: 'Current', exact: true })
-			.first();
-		await expect(currentButton).toBeVisible();
-		await expect(currentButton).toBeDisabled();
 	});
 });

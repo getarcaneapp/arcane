@@ -18,9 +18,10 @@ import (
 
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "registries",
-		Aliases: []string{"registry", "reg"},
-		Short:   "Manage container registries",
+		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
+		Use:         "registries",
+		Aliases:     []string{"registry", "reg"},
+		Short:       "Manage container registries",
 	}
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newGetCmd())

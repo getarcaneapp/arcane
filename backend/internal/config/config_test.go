@@ -306,6 +306,31 @@ func TestConfig_AllowDowngrade(t *testing.T) {
 	})
 }
 
+func TestConfig_ValidateRejectsLegacyDirectAgent(t *testing.T) {
+	t.Setenv("ARCANE_EDGE_AGENT", "")
+
+	for _, name := range []string{"AGENT_MODE", "ARCANE_AGENT_MODE"} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(name, "true")
+
+			require.EqualError(t, mustLoad(t).Validate(), "direct agents were removed in v3; set ARCANE_EDGE_AGENT=true and ARCANE_MANAGER_API_URL, then re-enroll from the manager")
+		})
+	}
+}
+
+func TestConfig_ValidateRequiresEdgeAgentManagerAndToken(t *testing.T) {
+	t.Setenv("AGENT_MODE", "")
+	t.Setenv("ARCANE_AGENT_MODE", "")
+	t.Setenv("ARCANE_EDGE_AGENT", "true")
+	t.Setenv("ARCANE_MANAGER_API_URL", "https://manager.example.com")
+	t.Setenv("ARCANE_AGENT_TOKEN", "")
+
+	require.EqualError(t, mustLoad(t).Validate(), "ARCANE_EDGE_AGENT=true requires ARCANE_MANAGER_API_URL and ARCANE_AGENT_TOKEN")
+
+	t.Setenv("ARCANE_AGENT_TOKEN", "agent-token")
+	require.NoError(t, mustLoad(t).Validate())
+}
+
 func TestConfig_AllowCLIPasswordReset(t *testing.T) {
 	origAllowCLIPasswordReset := os.Getenv("ARCANE_ALLOW_CLI_PASSWORD_RESET")
 	defer restoreEnv("ARCANE_ALLOW_CLI_PASSWORD_RESET", origAllowCLIPasswordReset)

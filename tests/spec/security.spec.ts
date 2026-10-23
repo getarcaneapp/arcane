@@ -450,96 +450,16 @@ test.describe('Security Page', () => {
 		await exportCsv(page, testInfo);
 	});
 
-	test('discards an export that finishes after switching environments', async ({ page }) => {
-		const localEnvironment = {
-			id: '0',
-			name: 'Local Test',
-			apiUrl: 'unix:///var/run/docker.sock',
-			status: 'online',
-			enabled: true,
-			isEdge: false
-		};
-		const remoteEnvironment = {
-			id: 'remote-export-test',
-			name: 'Remote Test',
-			apiUrl: 'https://remote.example.invalid',
-			status: 'online',
-			enabled: true,
-			isEdge: false
-		};
+	test('discards an export that finishes after leaving the page', async ({ page }) => {
 		let releaseExport = () => {};
 		const held = new Promise<void>((resolve) => {
 			releaseExport = resolve;
 		});
 
-		await page.addInitScript(() => {
-			localStorage.removeItem('selectedEnvironmentId');
-		});
-		await page.route(/\/api\/environments(?:\?.*)?$/, async (route) => {
-			await route.fulfill({ json: paginated([localEnvironment, remoteEnvironment]) });
-		});
-		await page.route(/\/api\/auth\/bootstrap(?:\?.*)?$/, async (route) => {
-			const response = await route.fetch();
-			const body = await response.json();
-			await route.fulfill({
-				response,
-				json: {
-					...body,
-					data: { ...body.data, environments: paginated([localEnvironment, remoteEnvironment]) }
-				}
-			});
-		});
-		await page.route(/\/api\/stream(?:\?.*)?$/, async (route) => {
-			const channels =
-				new URL(route.request().url()).searchParams.get('channels')?.split(',') ?? [];
-			const timestamp = new Date().toISOString();
-			await route.fulfill({
-				status: 200,
-				contentType: 'text/event-stream',
-				body: channels.includes('environments')
-					? `data: ${JSON.stringify({
-							channel: 'environments',
-							environment: {
-								type: 'snapshot',
-								environments: [localEnvironment, remoteEnvironment],
-								timestamp
-							},
-							timestamp
-						})}\n\n`
-					: ''
-			});
-		});
-		await page.route(
-			/\/api\/environments\/remote-export-test\/settings(?:\/public)?$/,
-			async (route) => {
-				await route.fulfill({
-					json: {
-						settings: [
-							{
-								key: 'featureVulnerabilityManagementEnabled',
-								value: 'true',
-								type: 'boolean',
-								default: 'true',
-								source: 'db',
-								locked: false,
-								sensitive: false,
-								scope: 'environment',
-								envName: 'ARCANE_FEATURE_VULNERABILITY_MANAGEMENT_ENABLED'
-							}
-						],
-						runtime: {},
-						readOnly: false
-					}
-				});
-			}
-		);
 		await mockSecurityPageData(page, []);
-		await page.route(
-			/\/api\/environments\/[^/]+\/vulnerabilities\/all(?:\?.*)?$/,
-			async (route) => {
-				await route.fulfill({ json: paginated([]) });
-			}
-		);
+		await page.route(/\/api\/environments\/0\/vulnerabilities\/all(?:\?.*)?$/, async (route) => {
+			await route.fulfill({ json: paginated([]) });
+		});
 		await page.route(/\/api\/environments\/0\/vulnerabilities\/export(?:\?.*)?$/, async (route) => {
 			await held;
 			await fulfillExport(route);
@@ -548,13 +468,8 @@ test.describe('Security Page', () => {
 		await navigateToSecurity(page);
 		await exportButton(page).click();
 
-		await page.getByRole('button').filter({ hasText: localEnvironment.name }).first().click();
-		const dialog = page.getByRole('dialog', { name: 'Select Environment' });
-		await expect(dialog).toBeVisible();
-		await dialog.getByRole('button').filter({ hasText: remoteEnvironment.name }).first().click();
-		await expect(
-			page.getByRole('button').filter({ hasText: remoteEnvironment.name }).first()
-		).toBeVisible();
+		await page.getByRole('link', { name: 'Dashboard', exact: true }).click();
+		await expect(page).toHaveURL('/dashboard');
 
 		const downloadPromise = page.waitForEvent('download', { timeout: 1500 }).catch(() => null);
 		releaseExport();

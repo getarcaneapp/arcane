@@ -10,7 +10,7 @@
 	import * as ImageCropper from '#lib/components/ui/image-cropper/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
-	import { UserIcon, SettingsIcon, TestIcon } from '#lib/icons/index.js';
+	import { UserIcon, SettingsIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { userService } from '#lib/services/user-service.js';
@@ -26,16 +26,14 @@
 	import AccountApiKeysPanel from './components/account-api-keys-panel.svelte';
 	import AccountPreferencesPanel from './components/account-preferences-panel.svelte';
 	import AccountSecurityPanel from './components/account-security-panel.svelte';
-	import AllEnvironmentsPreferences from './components/all-environments-preferences.svelte';
 
-	type AccountTab = 'account' | 'preferences' | 'previews';
+	type AccountTab = 'account' | 'preferences';
 
 	const accountTabItems = $derived.by(
 		() =>
 			[
 				{ value: 'account', label: m.common_account(), icon: UserIcon },
-				{ value: 'preferences', label: m.account_preferences(), icon: SettingsIcon },
-				{ value: 'previews', label: m.previews(), icon: TestIcon }
+				{ value: 'preferences', label: m.account_preferences(), icon: SettingsIcon }
 			] satisfies TabItem[]
 	);
 	const urlTab = useUrlTab<AccountTab>({
@@ -390,10 +388,6 @@
 
 			<Tabs.Content value="preferences" class="mt-6">
 				<AccountPreferencesPanel />
-			</Tabs.Content>
-
-			<Tabs.Content value="previews" class="mt-6">
-				<AllEnvironmentsPreferences />
 			</Tabs.Content>
 		</Tabs.Root>
 	{:else}

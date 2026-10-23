@@ -158,7 +158,6 @@ function createActivityStore() {
 	let _statusFilters = $state<ActivityStatus[]>([]);
 	let _typeFilters = $state<ActivityType[]>([]);
 	let _open = $state(false);
-	let _currentEnvironmentId = $state(LOCAL_DOCKER_ENVIRONMENT_ID);
 	let sessionGeneration = 0;
 	let requestedEnvironments: Record<string, string> = {};
 	// Last observed status per activity, for completion-toast transition
@@ -285,9 +284,6 @@ function createActivityStore() {
 				activities: updatedActivities
 			}));
 			rebuildActivitiesInternal();
-		},
-		onSelectedEnvironment(environment) {
-			_currentEnvironmentId = environment?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID;
 		}
 	});
 
@@ -414,9 +410,7 @@ function createActivityStore() {
 
 	function activityEnvironmentIdInternal(activityId: string): string {
 		const activity = _details[activityId]?.activity ?? _activities.find((item) => item.id === activityId) ?? null;
-		return activity
-			? sourceEnvironmentIdInternal(activity)
-			: requestedEnvironments[activityId] || _currentEnvironmentId || LOCAL_DOCKER_ENVIRONMENT_ID;
+		return activity ? sourceEnvironmentIdInternal(activity) : requestedEnvironments[activityId] || LOCAL_DOCKER_ENVIRONMENT_ID;
 	}
 
 	async function loadDetailInternal(activityId: string) {
@@ -610,9 +604,6 @@ function createActivityStore() {
 		get environmentFailures(): ActivityEnvironmentFailure[] {
 			return environmentFailuresInternal();
 		},
-		get currentEnvironmentId(): string {
-			return _currentEnvironmentId;
-		},
 		isExpanded(activityId: string): boolean {
 			return !!_expandedActivityIds[activityId];
 		},
@@ -660,7 +651,6 @@ function createActivityStore() {
 				_statusFilters = [];
 				_typeFilters = [];
 				_open = false;
-				_currentEnvironmentId = LOCAL_DOCKER_ENVIRONMENT_ID;
 			}
 			return wasStarted;
 		},

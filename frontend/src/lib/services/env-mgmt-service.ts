@@ -3,7 +3,7 @@ import type { AppVersionInformation } from '#lib/types/settings.js';
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
-import BaseAPIService from './api-service';
+import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 class EnvironmentManagementService extends BaseAPIService {
 	async create(dto: EnvironmentCreate): Promise<Environment> {
@@ -31,8 +31,8 @@ class EnvironmentManagementService extends BaseAPIService {
 		await this.api.delete(`/environments/${environmentId}`);
 	}
 
-	async testConnection(environmentId: string, apiUrl?: string): Promise<{ status: 'online' | 'offline'; message?: string }> {
-		const res = await this.api.post(`/environments/${environmentId}/test`, apiUrl ? { apiUrl } : undefined);
+	async testConnection(environmentId: string): Promise<{ status: 'online' | 'offline'; message?: string }> {
+		const res = await this.api.post(`/environments/${environmentId}/test`);
 		return res.data.data as { status: 'online' | 'offline'; message?: string };
 	}
 
@@ -45,8 +45,8 @@ class EnvironmentManagementService extends BaseAPIService {
 		return res.data.data as DeploymentSnippets;
 	}
 
-	async getVersion(environmentId: string): Promise<AppVersionInformation> {
-		const res = await this.api.get(`/environments/${environmentId}/version`);
+	async getVersion(environmentId: string, config?: APIRequestConfig): Promise<AppVersionInformation> {
+		const res = await this.api.get(`/environments/${environmentId}/version`, config);
 		return res.data.data as AppVersionInformation;
 	}
 }

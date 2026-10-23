@@ -107,6 +107,14 @@ func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksIn
 }
 
 func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.NetworkUsageCounts], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.networkService.AggregateNetworkCounts(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to get network counts: " + err.Error())
+		}
+		return &handlerutil.Out[types.NetworkUsageCounts]{Body: body}, nil
+	}
+
 	_, inuse, unused, total, err := h.dockerService.GetAllNetworks(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get network counts: " + err.Error())
@@ -226,6 +234,14 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 }
 
 func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.NetworkTopology], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.networkService.AggregateNetworkTopology(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to build network topology: " + err.Error())
+		}
+		return &handlerutil.Out[types.NetworkTopology]{Body: body}, nil
+	}
+
 	topology, err := h.networkService.GetNetworkTopology(ctx)
 	if err != nil {
 		apiErr := common.ToAPIError(common.ClassifyDockerError(err))

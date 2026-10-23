@@ -7,6 +7,7 @@
 
 	import FileBrowserDialog from '#lib/components/dialogs/file-browser-dialog.svelte';
 	import GitopsDialogFooter from '#lib/components/dialogs/gitops-dialog-footer.svelte';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -58,7 +59,7 @@
 	let {
 		open = $bindable(false),
 		syncToEdit = $bindable(),
-		environmentId,
+		environmentId = $bindable(),
 		targetType,
 		mode,
 		projectId,
@@ -640,6 +641,9 @@
 			</div>
 		{:else}
 			<form id="sync-form" onsubmit={preventDefault(handleSubmit)} class="grid gap-5 py-2">
+				{#if !isEditMode}
+					<EnvironmentDestinationSelect bind:value={environmentId} permission="gitops:create" variant="field" />
+				{/if}
 				{#if isEditMode}
 					<p class="text-xs text-muted-foreground">
 						<span class="font-medium text-foreground">{isBackupMode ? m.push() : m.pull()}</span>

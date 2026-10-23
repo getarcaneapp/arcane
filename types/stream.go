@@ -4,12 +4,8 @@ import (
 	"time"
 )
 
-// Channel names a subscribable feed. Callers request channels explicitly
-// because they differ enormously in cost: environments is one local query,
-// while dashboard proxies a request to every remote agent on every tick.
 const (
 	StreamChannelEnvironments = "environments"
-	StreamChannelDashboard    = "dashboard"
 	StreamChannelActivities   = "activities"
 	StreamChannelEvents       = "events"
 	StreamChannelVersion      = "version"
@@ -29,11 +25,6 @@ type StreamEvent struct {
 	//
 	// Required: false
 	Type string `json:"type,omitempty"`
-
-	// Dashboard carries a ChannelDashboard payload.
-	//
-	// Required: false
-	Dashboard *DashboardStreamEvent `json:"dashboard,omitempty"`
 
 	// Activity carries a ChannelActivities payload.
 	//

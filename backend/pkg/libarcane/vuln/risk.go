@@ -222,19 +222,36 @@ func (r *RiskScore) ImageScore() (float64, types.VulnerabilityPatchPriority) {
 // EnvironmentScore returns the environment's unrounded 0-100 score and the rounded API score.
 // Modeled on the overall RS³: an exposure-weighted average of image scores that stays in the High band while a fixable known-exploited finding is running.
 func (r *RiskScore) EnvironmentScore() (float64, types.VulnerabilityPatchPriority) {
+	basis := r.Basis()
+	total := basis.Score
+	if basis.ExploitedRunning {
+		total = max(total, exploitedRunningFloorInternal)
+	}
+	return total, r.result(total)
+}
+
+func (r *RiskScore) Basis() types.RiskScoreBasis {
 	sum, weight := 0.0, 0.0
 	for id, score := range r.scores {
 		sum += score * r.weights[id]
 		weight += r.weights[id]
 	}
-	total := 0.0
+	average := 0.0
 	if weight > 0 {
-		total = sum / weight
+		average = sum / weight
 	}
-	if r.exploitedRunning {
-		total = max(total, exploitedRunningFloorInternal)
+	return types.RiskScoreBasis{
+		Score:            average,
+		Weight:           weight,
+		ExploitedRunning: r.exploitedRunning,
 	}
-	return total, r.result(total)
+}
+
+func (r *RiskScore) AddEnvironment(environmentID string, basis types.RiskScoreBasis) {
+	if basis.Weight > 0 {
+		r.addScore(environmentID, basis.Score, basis.Weight, types.VulnerabilityScoreStatusComplete)
+	}
+	r.exploitedRunning = r.exploitedRunning || basis.ExploitedRunning
 }
 
 // result rounds a score into the API shape; only unscorable members make it unavailable.

@@ -248,7 +248,7 @@ func TestProjectService_RefreshProjectImageRefs_PersistsBuildMetadata(t *testing
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -297,7 +297,7 @@ func TestProjectService_BackfillProjectImageRefs_RetriesOnlyMissingMetadata(t *t
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -349,7 +349,7 @@ func setupProjectDestroyTestService(t *testing.T) (*ProjectService, *database.DB
 	projectsDir := t.TempDir()
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, loadTestConfig(t), nil, nil)
+	eventService := event.NewEventService(db, loadTestConfig(t), nil)
 	return NewProjectService(
 		db,
 		settingsService,
@@ -517,7 +517,7 @@ func TestProjectService_GetProjectFromDatabaseByID(t *testing.T) {
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -553,7 +553,7 @@ func TestProjectService_UpdateProjectStatus(t *testing.T) {
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -591,7 +591,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		svc := NewProjectService(
 			db,
 			nil,
-			event.NewEventService(db, nil, nil, nil),
+			event.NewEventService(db, nil, nil),
 			image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 			testDockerService,
 			testBuildBuilder{},
@@ -619,7 +619,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		svc := NewProjectService(
 			db,
 			nil,
-			event.NewEventService(db, nil, nil, nil),
+			event.NewEventService(db, nil, nil),
 			image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 			testDockerService,
 			testBuildBuilder{},
@@ -647,7 +647,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		svc := NewProjectService(
 			db,
 			nil,
-			event.NewEventService(db, nil, nil, nil),
+			event.NewEventService(db, nil, nil),
 			image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 			testDockerService,
 			testBuildBuilder{},
@@ -675,7 +675,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		svc := NewProjectService(
 			db,
 			nil,
-			event.NewEventService(db, nil, nil, nil),
+			event.NewEventService(db, nil, nil),
 			image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 			testDockerService,
 			testBuildBuilder{},
@@ -724,7 +724,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		svc := NewProjectService(
 			db,
 			nil,
-			event.NewEventService(db, nil, nil, nil),
+			event.NewEventService(db, nil, nil),
 			image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 			testDockerService,
 			testBuildBuilder{},
@@ -790,13 +790,13 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 	}, nil)
 
 	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		imageService,
 		dockerService,
 		testBuildBuilder{},
@@ -898,13 +898,13 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 	}, nil)
 
 	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		imageService,
 		dockerService,
 		testBuildBuilder{},
@@ -978,13 +978,13 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 	}, nil)
 
 	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		imageService,
 		dockerService,
 		testBuildBuilder{},
@@ -1053,13 +1053,13 @@ func TestProjectService_ComposePullSelectedServices_ReconcilesOnlyOnSuccess(t *t
 	})
 
 	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
 	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		imageService,
 		dockerService,
 		testBuildBuilder{},
@@ -1171,11 +1171,11 @@ func TestProjectService_ComposePullSelectedServices_LeavesRecordsWhenPullFails(t
 
 	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, failingServer))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, event.NewEventService(db, nil, nil, nil), settingsService, nil, nil)
+	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, event.NewEventService(db, nil, nil), settingsService, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		imageService,
 		dockerService,
 		testBuildBuilder{},
@@ -1241,7 +1241,7 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFails(t *testing.T
 
 	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, failingServer))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, event.NewEventService(db, nil, nil, nil), settingsService, nil, nil)
+	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, event.NewEventService(db, nil, nil), settingsService, nil, nil)
 
 	projectPath := createComposeProjectDir(t, projectsDir, "compose-update-pull-fail")
 	require.NoError(
@@ -1289,7 +1289,7 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFails(t *testing.T
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		imageService,
 		dockerService,
 		testBuildBuilder{},
@@ -1340,7 +1340,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreate(t *testing.T) {
 
 	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	imageService := image.NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService, settingsService, nil, nil)
 
 	projectPath := createComposeProjectDir(t, projectsDir, "compose-update-force")
@@ -1475,7 +1475,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/_ping"):
@@ -1574,7 +1574,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_AppliesVolumeMigrati
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -1662,7 +1662,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
@@ -1761,7 +1761,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_RollsBackVolumeMigra
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -1815,7 +1815,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_SucceedsCommittedRen
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -1873,7 +1873,7 @@ func TestProjectService_UpdateProject_ClearsJournalForNonRenameWhenRecoveryDocke
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(
 		db,
@@ -1951,7 +1951,7 @@ func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryWithoutDoc
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	kvService := kv.NewKVService(db)
 	svc := NewProjectService(
 		db,
@@ -2025,7 +2025,7 @@ func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -2085,7 +2085,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -2143,7 +2143,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -2200,7 +2200,7 @@ func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunn
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	server := configureProjectRuntimeDocker(t, []container.Summary{
 		{
 			ID:     "app-container",
@@ -2308,7 +2308,7 @@ func TestProjectService_RecoverStuckProjectStatuses(t *testing.T) {
 			svc := NewProjectService(
 				db,
 				settingsService,
-				event.NewEventService(db, nil, nil, nil),
+				event.NewEventService(db, nil, nil),
 				image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 				(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 				testBuildBuilder{},
@@ -2349,7 +2349,7 @@ func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVo
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	server := newProjectRuntimeDockerServer(t, nil)
 	svc := NewProjectService(
 		db,
@@ -2418,7 +2418,7 @@ func TestProjectService_UpdateProject_RenameRejectsUnknownWhenRuntimeIsRunning(t
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	server := newProjectRuntimeDockerServer(t, []container.Summary{
 		{
 			ID:     "app-container",
@@ -2492,7 +2492,7 @@ func TestProjectService_UpdateProject_ValidatesComposeUsingExistingProjectName(t
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -2547,7 +2547,7 @@ func TestProjectService_UpdateProject_AllowsMissingEnvFileDuringComposeValidatio
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -2604,7 +2604,7 @@ func TestProjectService_UpdateProject_EnvRetargetWritesExplicitIdenticalComposeT
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -2670,7 +2670,7 @@ func TestProjectService_UpdateProject_EnvRetargetWithoutComposePayloadPreservesN
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -2734,7 +2734,7 @@ func TestProjectService_UpdateProject_EnvRetargetWritesEditedComposeToSelectedBa
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -2793,7 +2793,7 @@ func TestProjectService_UpdateProject_AllowsMissingLocalIncludeDuringComposeVali
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -2855,7 +2855,7 @@ func TestProjectService_CreateProject_AllowsExternalInclude(t *testing.T) {
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -2898,7 +2898,7 @@ func TestProjectService_UpdateProject_AllowsExternalInclude(t *testing.T) {
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -2957,7 +2957,7 @@ func TestProjectService_CreateProject_CommitsWorkspaceAndConfigurationTogether(t
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -3015,7 +3015,7 @@ func TestProjectService_CreateProject_RollsBackInvalidWorkspaceManifest(t *testi
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -3059,7 +3059,7 @@ func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -3121,7 +3121,7 @@ func newProjectServiceForOverrideTest(t *testing.T, dirName string) (*ProjectSer
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -3244,7 +3244,7 @@ func TestProjectService_UpdateProject_UsesProvidedEnvContentDuringComposeValidat
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -3303,7 +3303,7 @@ func TestProjectService_UpdateProject_ReturnsEnvParseErrorDuringComposeValidatio
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -3360,7 +3360,7 @@ func TestProjectService_UpdateProject_UsesGlobalEnvDuringComposeValidation(t *te
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -3421,7 +3421,7 @@ func TestProjectService_UpdateProject_DoesNotResolveHostEnvThroughGlobalEnvDurin
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -3477,7 +3477,7 @@ func TestProjectService_UpdateProject_DerivesProjectOverrideEnvWhenGitSourceExis
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -3536,7 +3536,7 @@ func TestProjectService_UpdateProject_UnchangedGitEnvLeavesFilesUntouched(t *tes
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -3645,7 +3645,7 @@ func TestProjectService_UpdateProject_DeletingGitBackedKeyFallsBackToGit(t *test
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -3707,7 +3707,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_MigratesDirectEnvIntoProjectOve
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -3770,7 +3770,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_PreservesGitEnvSyntax(t *testin
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -3844,7 +3844,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_NormalizesStaleCopiedGitOverrid
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -3904,7 +3904,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesLegacyDeletedGitMasks(t 
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -3965,7 +3965,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesGitEnvSource(t *testing.
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -4021,7 +4021,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_WritesAndRemovesComposeOverride
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -4084,7 +4084,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_UsesGlobalEnvDuringComposeValid
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -4147,7 +4147,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfUndefinedComposeVar(t
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -4207,7 +4207,7 @@ func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -4363,7 +4363,7 @@ func TestProjectService_GetProjectDetails_IncludesUpdateInfo(t *testing.T) {
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		imageService,
 		testDockerService,
 		testBuildBuilder{},
@@ -4474,7 +4474,7 @@ func TestProjectService_GetProjectDetails_RefreshesRuntimeStatusWithoutRuntimeSe
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		testBuildBuilder{},
@@ -4538,7 +4538,7 @@ func TestProjectService_GetProjectDetails_PopulatesRuntimeServicesFromComposePs(
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		testBuildBuilder{},
@@ -4606,7 +4606,7 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		imageService,
 		testDockerService,
 		testBuildBuilder{},
@@ -4896,7 +4896,7 @@ func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -4960,7 +4960,7 @@ func TestProjectService_ListProjects_FiltersByExactName(t *testing.T) {
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -5022,7 +5022,7 @@ func TestProjectService_ArchiveProject_RequiresStoppedProject(t *testing.T) {
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		testBuildBuilder{},
@@ -5063,7 +5063,7 @@ func TestProjectService_ArchiveProject_TogglesArchiveFlag(t *testing.T) {
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, configureProjectRuntimeDocker(t, nil))),
 		testBuildBuilder{},
@@ -5121,7 +5121,7 @@ func TestProjectService_ArchiveProject_LiveVerificationErrorPolicy(t *testing.T)
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -5171,7 +5171,7 @@ func TestProjectService_ListProjects_PersistsInferredServiceCount(t *testing.T) 
 	service := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, configureProjectRuntimeDocker(t, containers))),
 		testBuildBuilder{},
@@ -5223,7 +5223,7 @@ func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSe
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, configureProjectRuntimeDocker(t, nil))),
 		testBuildBuilder{},
@@ -5274,7 +5274,7 @@ func TestProjectService_DeployProject_StopsOnBuildPreparationError(t *testing.T)
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		buildSvc,
@@ -5323,7 +5323,7 @@ func TestProjectService_DeployProject_BuildsGeneratedImageWithoutPull(t *testing
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, testDockerService, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		buildSvc,
@@ -5361,7 +5361,7 @@ func TestProjectService_SyncProjectsFromFileSystem_IgnoresSymlinkedProjectDirsWh
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -5399,7 +5399,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsSymlinkedProjectDirsWh
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -5434,7 +5434,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversNestedProjectsAndRel
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -5480,7 +5480,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RespectsConfiguredScanMaxDept
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -5539,7 +5539,7 @@ services:
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -5577,7 +5577,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -5629,7 +5629,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PrunesLeakedScratchRow(t *tes
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -5677,7 +5677,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectsWhenDirector
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -5709,7 +5709,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectWithAmbiguous
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -5760,7 +5760,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedS
 	defaultSvc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -5782,7 +5782,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedS
 	depthLimitedSvc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -5827,7 +5827,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesDBRecordsWhenDirecto
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -5904,7 +5904,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversReadableProjectsDesp
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -5952,7 +5952,7 @@ func TestProjectService_SyncProjectsFromFileSystem_AllowsDuplicateLeafDirectorie
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -5995,7 +5995,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsNestedSymlinkedProject
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -6038,7 +6038,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesSymlinkedProjectsWhenD
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -6080,7 +6080,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RefreshesServiceCountOnCompos
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -6124,7 +6124,7 @@ services:
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -6169,7 +6169,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesValidCustomNameWitho
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -6231,7 +6231,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesGitOpsProjectWithCus
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -6293,7 +6293,7 @@ func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *tes
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -6333,7 +6333,7 @@ func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testi
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 	require.NoError(t, settingsService.SetStringSetting(ctx, "followProjectSymlinks", "true"))
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -6400,7 +6400,7 @@ func TestProjectService_UpdateProject_WritesThroughExternalEnvSymlink(t *testing
 	originalLinkTarget, err := os.Readlink(envPath)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -6471,7 +6471,7 @@ func TestProjectService_UpdateProject_RestoresExternalEnvSymlinkTargetWhenProjec
 	originalLinkTarget, err := os.Readlink(envPath)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -6649,7 +6649,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackUncommittedDirecto
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -6715,7 +6715,7 @@ func TestProjectService_RecoverProjectRenameJournals_StartedPhaseSkipsVolumeRoll
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -6790,7 +6790,7 @@ func TestProjectService_RecoverProjectRenameJournals_RelocatesTargetWhenBothPath
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -6865,7 +6865,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDir
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -6942,7 +6942,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsPreservedTargetJourna
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)),
 		testBuildBuilder{},
@@ -7007,7 +7007,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournal(t *t
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -7059,7 +7059,7 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalAfterSourc
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -7112,7 +7112,7 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_KeepsJournalWhenSourceC
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -7209,7 +7209,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRo
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
@@ -7315,7 +7315,7 @@ func TestProjectService_RecoverProjectRenameJournals_CompletesCommittedVolumeJou
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
@@ -7400,7 +7400,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackCommittedJournalWh
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
@@ -7522,7 +7522,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
@@ -7611,7 +7611,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsRollbackCleanupWhenDoc
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -7686,7 +7686,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalWhenS
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
@@ -7784,7 +7784,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalAndCl
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
@@ -7879,7 +7879,7 @@ func TestProjectService_RecoverProjectRenameJournals_MarksSourceCleanupPendingWh
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
@@ -7976,7 +7976,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsSourceCleanupPendingJ
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
@@ -8087,7 +8087,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackSourceCleanupPendi
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
@@ -8189,7 +8189,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsSourceCleanupPendingJo
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
@@ -8267,7 +8267,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDir
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -8349,7 +8349,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsMissingPathJournalWhe
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
@@ -8435,7 +8435,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackSo
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
@@ -8526,7 +8526,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackTa
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
@@ -8623,7 +8623,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPres
 	svc := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		dockerService,
 		testBuildBuilder{},
@@ -8807,7 +8807,7 @@ func TestUpdateProjectServiceImagesRejectsManagedOrArchived(t *testing.T) {
 			service := NewProjectService(
 				db,
 				nil,
-				event.NewEventService(db, nil, nil, nil),
+				event.NewEventService(db, nil, nil),
 				image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 				testDockerService,
 				testBuildBuilder{},
@@ -8862,8 +8862,8 @@ func TestUpdateProjectServiceImagesPersistsBeforeDeploymentAndRetries(t *testing
 	service := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
-		image.NewImageService(db, pullDocker, nil, imageupdate.NewImageUpdateService(db, nil, nil, pullDocker, nil, nil, nil), nil, event.NewEventService(db, nil, nil, nil), settingsService, nil, nil),
+		event.NewEventService(db, nil, nil),
+		image.NewImageService(db, pullDocker, nil, imageupdate.NewImageUpdateService(db, nil, nil, pullDocker, nil, nil, nil), nil, event.NewEventService(db, nil, nil), settingsService, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
 		nil,
@@ -8910,7 +8910,7 @@ func TestUpdateProjectServiceImagesRejectsOverrideBeforeWriting(t *testing.T) {
 	service := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -9112,7 +9112,7 @@ func TestCountProjectsWithPendingTagUpdatesUsesRuntimeContainers(t *testing.T) {
 	service := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -9250,8 +9250,8 @@ func TestProjectServiceManualUpdateDiscoversTags(t *testing.T) {
 			service := NewProjectService(
 				db,
 				settingsService,
-				event.NewEventService(db, nil, nil, nil),
-				image.NewImageService(db, pullDocker, nil, imageupdate.NewImageUpdateService(db, nil, nil, pullDocker, nil, nil, nil), nil, event.NewEventService(db, nil, nil, nil), settingsService, nil, nil),
+				event.NewEventService(db, nil, nil),
+				image.NewImageService(db, pullDocker, nil, imageupdate.NewImageUpdateService(db, nil, nil, pullDocker, nil, nil, nil), nil, event.NewEventService(db, nil, nil), settingsService, nil, nil),
 				testDockerService,
 				testBuildBuilder{},
 				nil,
@@ -9362,7 +9362,7 @@ func TestStoppedProjectTagPolicyNeverInheritsSharedDigestCheck(t *testing.T) {
 	service := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		imageService,
 		testDockerService,
 		testBuildBuilder{},
@@ -9472,7 +9472,7 @@ func TestConfiguredProjectUsesScheduledRuntimeChecks(t *testing.T) {
 			service := NewProjectService(
 				db,
 				settingsService,
-				event.NewEventService(db, nil, nil, nil),
+				event.NewEventService(db, nil, nil),
 				image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 				(&docker.DockerClientService{}).WithClient(newTestDockerClient(t, configureProjectRuntimeDocker(t, []container.Summary{
 					{ID: "scheduled-container", Names: []string{"/scheduled-project-web-1"}, Image: "example:3.1.0", State: container.StateRunning, Labels: runtimeLabels},
@@ -9684,7 +9684,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfPermissionLockedEnv(t
 	settingsService, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	eventService := event.NewEventService(db, nil, nil, nil)
+	eventService := event.NewEventService(db, nil, nil)
 	svc := NewProjectService(
 		db,
 		settingsService,
@@ -9836,7 +9836,7 @@ func newEnvDirectoryProject(t *testing.T, id string) (*ProjectService, *Project,
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -10058,7 +10058,7 @@ func TestProjectTags_ReconcilePreservesUIAndComposeOwnershipIsReadOnly(t *testin
 	service := NewProjectService(
 		db,
 		nil,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -10132,7 +10132,7 @@ func TestProjectTags_FilterUsesExactORNames(t *testing.T) {
 	svc := NewProjectService(
 		db,
 		settingsService,
-		event.NewEventService(db, nil, nil, nil),
+		event.NewEventService(db, nil, nil),
 		image.NewImageService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		testDockerService,
 		testBuildBuilder{},
@@ -10168,7 +10168,7 @@ func newLifecycleTestService(t *testing.T, db *database.DB) (*LifecycleService, 
 	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settingsEnv)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context()))) })
-	events := event.NewEventService(db, nil, nil, nil)
+	events := event.NewEventService(db, nil, nil)
 	return NewLifecycleService(db, settingsService, events, nil, nil), settingsService
 }
 
@@ -10323,7 +10323,7 @@ func TestRunPreDeploy_KillSwitchAndLastRunState(t *testing.T) {
 	}))
 	t.Cleanup(dockerServer.Close)
 	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, dockerServer))
-	svc := NewLifecycleService(db, settingsService, event.NewEventService(db, nil, nil, nil), dockerService, nil)
+	svc := NewLifecycleService(db, settingsService, event.NewEventService(db, nil, nil), dockerService, nil)
 
 	syncID := "sync-1"
 	project := &Project{
@@ -10594,15 +10594,18 @@ func TestAggregateProjectsMergesEnvironments(t *testing.T) {
 
 func TestAggregateProjectCountsSumsEnvironments(t *testing.T) {
 	ctx, _ := projectScopeContext(t, "/api/environments/a,b,c/projects/counts", map[string]any{
-		"a": types.ApiResponse[types.ProjectStatusCounts]{Success: true, Data: types.ProjectStatusCounts{RunningProjects: 2, StoppedProjects: 1, TotalProjects: 4, ArchivedProjects: 1}},
-		"b": types.ApiResponse[types.ProjectStatusCounts]{Success: true, Data: types.ProjectStatusCounts{RunningProjects: 1, StoppedProjects: 3, TotalProjects: 4}},
+		"a": types.ApiResponse[types.ProjectStatusCounts]{Success: true, Data: types.ProjectStatusCounts{RunningProjects: 2, StoppedProjects: 1, TotalProjects: 4, ArchivedProjects: 1, UpdatesAvailable: 1}},
+		"b": types.ApiResponse[types.ProjectStatusCounts]{Success: true, Data: types.ProjectStatusCounts{RunningProjects: 1, StoppedProjects: 3, TotalProjects: 4, UpdatesAvailable: 2}},
 	})
 
 	body, err := (&ProjectService{}).AggregateProjectCounts(ctx)
 	require.NoError(t, err)
 
 	assert.True(t, body.Success)
-	assert.Equal(t, types.ProjectStatusCounts{RunningProjects: 3, StoppedProjects: 4, TotalProjects: 8, ArchivedProjects: 1}, body.Data)
+	assert.Equal(t, types.ProjectStatusCounts{RunningProjects: 3, StoppedProjects: 4, TotalProjects: 8, ArchivedProjects: 1, UpdatesAvailable: 3}, body.Data)
+	require.Len(t, body.Environments, 2)
+	assert.Equal(t, types.EnvironmentRef{ID: "b", Name: "Env b"}, body.Environments[1].Environment)
+	assert.Equal(t, 2, body.Environments[1].Data.UpdatesAvailable)
 	require.Len(t, body.FailedEnvironments, 1)
 	assert.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
 }

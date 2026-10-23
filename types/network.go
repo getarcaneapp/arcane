@@ -329,6 +329,8 @@ type NetworkTopologyNodeMetadata struct {
 }
 
 type NetworkTopologyNode struct {
+	EnvironmentTag
+
 	// ID is the unique node identifier.
 	//
 	// Required: true

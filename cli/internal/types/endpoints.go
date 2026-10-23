@@ -83,6 +83,10 @@ func FederatedCredential(id string) string { return pathf("/api/federated/creden
 func Environments() string                { return "/api/environments" }
 func Environment(id string) string        { return pathf("/api/environments/%s", id) }
 func EnvironmentTest(envID string) string { return pathf("/api/environments/%s/test", envID) }
+func EnvironmentDeployment(envID string) string {
+	return pathf("/api/environments/%s/deployment", envID)
+}
+
 func EnvironmentVersion(envID string) string {
 	return pathf("/api/environments/%s/version", envID)
 }

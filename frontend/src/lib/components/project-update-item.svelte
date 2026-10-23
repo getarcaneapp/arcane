@@ -24,8 +24,7 @@
 
 	interface Props {
 		updateInfo?: ProjectUpdateInfo;
-		/** Environment that owns the project; defaults to the selected one. */
-		environmentId?: string;
+		environmentId: string;
 		class?: string;
 		onCheck?: () => void | Promise<void>;
 		checking?: boolean;

@@ -12,12 +12,12 @@
 
 	let {
 		job,
-		environmentId = '0',
+		environmentId,
 		open = $bindable(false),
 		onUpdate
 	}: {
 		job: JobStatus;
-		environmentId?: string;
+		environmentId: string;
 		open?: boolean;
 		onUpdate?: () => void;
 	} = $props();

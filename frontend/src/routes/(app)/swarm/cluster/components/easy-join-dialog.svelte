@@ -10,7 +10,6 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { SwarmJoinCandidate, SwarmJoinEnvironmentResult, SwarmJoinEnvironmentTarget } from '#lib/types/swarm.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -26,15 +25,11 @@
 	};
 
 	let { open = $bindable(false), managerEnvironmentId, targetEnvironmentId, onComplete }: Props = $props();
-	const requestedManagerId = $derived(managerEnvironmentId ?? environmentStore.selected?.id);
 	const candidatesQuery = createQuery(() => {
-		const environmentId = requestedManagerId;
+		const environmentId = managerEnvironmentId;
 		return {
 			queryKey: queryKeys.swarm.joinCandidates(environmentId ?? null, userStore.current),
-			queryFn: async () => {
-				await environmentStore.ready;
-				return swarmService.getSwarmJoinCandidates(environmentId!);
-			},
+			queryFn: () => swarmService.getSwarmJoinCandidates(environmentId!),
 			enabled: open && !!environmentId && hasPermission('swarm:join', environmentId)
 		};
 	});
@@ -94,7 +89,7 @@
 	}
 
 	async function joinSelected() {
-		const environmentId = requestedManagerId;
+		const environmentId = managerEnvironmentId;
 		if (!environmentId) return;
 		const selectedTargets = Object.values(targets);
 		if (selectedTargets.length === 0) {
@@ -105,7 +100,7 @@
 		mutationError = '';
 		results = [];
 		const result = await tryCatch(swarmService.joinEnvironments({ remoteAddrs, targets: selectedTargets }, environmentId));
-		if (destroyed || environmentId !== requestedManagerId) {
+		if (destroyed || environmentId !== managerEnvironmentId) {
 			isJoining = false;
 			return;
 		}

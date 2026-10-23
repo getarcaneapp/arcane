@@ -92,7 +92,7 @@ export type PermissionPreset = {
 export type AccessSurfaceKind = 'route' | 'settings-category' | 'customize-category' | 'landing';
 export type AccessMode = 'permissions' | 'any-child';
 export type AccessMatchMode = 'any-of' | 'all-of';
-export type AccessScopeMode = 'global-only' | 'selected-env-plus-global' | 'any-effective-scope';
+export type AccessScopeMode = 'global-only' | 'env-plus-global' | 'any-effective-scope';
 
 export type AccessSurface = {
 	id: string;
@@ -147,7 +147,6 @@ export type UserPreferences = {
 	mobileNavigationShowLabels?: boolean;
 	defaultLandingPage?: string;
 	defaultProjectEditorLayout?: ProjectEditorLayout;
-	allEnvironmentsPreview?: boolean;
 	environmentColors?: Record<string, string>;
 	environmentLabelStyle?: EnvironmentLabelStyle;
 };

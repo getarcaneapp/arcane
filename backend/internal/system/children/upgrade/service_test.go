@@ -493,7 +493,7 @@ func TestUpgradeJobFailedJobMarksUnfinishedResultsFailed(t *testing.T) {
 	db := &database.DB{DB: gormDB}
 	require.NoError(t, db.AutoMigrate(&UpgradeJob{}, &event.Event{}))
 
-	svc := NewService(db, nil, nil, event.NewEventService(db, nil, nil, nil), nil, nil, nil, nil, false)
+	svc := NewService(db, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil, nil, false)
 	job := &UpgradeJob{
 		Status:   UpgradeJobStatusRunning,
 		UserID:   "user-1",
@@ -542,7 +542,7 @@ func TestUpgradeJobFinalizesUpToDateManagerWithoutRestart(t *testing.T) {
 	db := &database.DB{DB: gormDB}
 	require.NoError(t, db.AutoMigrate(&UpgradeJob{}, &event.Event{}))
 
-	svc := NewService(db, nil, nil, event.NewEventService(db, nil, nil, nil), nil, nil, nil, nil, false)
+	svc := NewService(db, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil, nil, false)
 	job := &UpgradeJob{
 		Status:                UpgradeJobStatusPendingRestart,
 		UserID:                "user-1",
@@ -693,7 +693,7 @@ func TestResumeUpgradeJobFinalizesManagerWithoutRerunningAgents(t *testing.T) {
 	// The reported version differs from ManagerVersionAtStart, so the manager upgrade
 	// is judged successful.
 	versionSvc := version.NewVersionService(nil, "v9.9.9-new", "", nil, nil, nil, versionSettings)
-	svc := NewService(db, nil, versionSvc, event.NewEventService(db, nil, nil, nil), nil, nil, nil, nil, false)
+	svc := NewService(db, nil, versionSvc, event.NewEventService(db, nil, nil), nil, nil, nil, nil, false)
 	harness := flowtest.New(t, nil)
 	require.NoError(t, svc.RegisterWorkflows(harness.Engine, nil, nil))
 	harness.Start(t)

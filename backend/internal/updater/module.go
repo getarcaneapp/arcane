@@ -82,6 +82,7 @@ func RegisterUpdater(api huma.API, updaterService *UpdaterService, appCtx handle
 		Description: "Get the history of update operations",
 		Tags:        []string{"Updater"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermImageUpdatesRead, h.GetUpdaterHistory)
 
 	acceptedSchema := huma.SchemaFromType(api.OpenAPI().Components.Schemas, reflect.TypeFor[types.ApiResponse[types.Activity]]())

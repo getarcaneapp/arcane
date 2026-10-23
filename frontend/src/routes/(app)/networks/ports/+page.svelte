@@ -2,13 +2,12 @@
 	import { createQuery } from '@tanstack/svelte-query';
 	import { tick } from 'svelte';
 
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { portService } from '#lib/services/port-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
+	import { fetchAcrossEnvironments, readableEnvironments } from '#lib/utils/environments.js';
 
 	import PortTable from './components/port-table.svelte';
 
@@ -22,7 +21,7 @@
 	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
 	const portsQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = environmentStore.shown;
+		const environments = readableEnvironments('containers:list');
 		const options = requestOptions;
 		return {
 			queryKey: queryKeys.ports.list(queryScope, options),
@@ -38,10 +37,6 @@
 		};
 	});
 	const ports = $derived(portsQuery.data?.envId === scope ? portsQuery.data.value : null);
-
-	useEnvironmentRefresh(() => {
-		selectedIds = [];
-	});
 
 	async function refresh() {
 		await portsQuery.refetch();

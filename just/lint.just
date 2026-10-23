@@ -35,4 +35,5 @@ types:
 
 # Edge tunnel protobuf definitions
 proto:
-    cd {{ edge_proto_dir }} && go run github.com/bufbuild/buf/cmd/buf@latest lint
+    GOBIN="$PWD/backend/.bin" go install github.com/bufbuild/buf/cmd/buf@latest
+    cd {{ edge_proto_dir }} && ../.bin/buf lint

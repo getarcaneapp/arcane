@@ -1,4 +1,3 @@
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
 import type {
 	SwarmServiceSummary,
@@ -51,264 +50,274 @@ export type SwarmTasksPaginatedResponse = Paginated<SwarmTaskSummary>;
 export type SwarmStacksPaginatedResponse = Paginated<SwarmStackSummary>;
 
 class SwarmService extends BaseAPIService {
-	async getServices(options?: SearchPaginationSortRequest): Promise<SwarmServicesPaginatedResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async getServices(
+		options: SearchPaginationSortRequest | undefined,
+		environmentId: string,
+		config?: APIRequestConfig
+	): Promise<SwarmServicesPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${envId}/swarm/services`, { params });
+		const res = await this.api.get(`/environments/${environmentId}/swarm/services`, { ...config, params });
 		return res.data;
 	}
 
-	async getService(serviceId: string): Promise<SwarmServiceInspect> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/services/${serviceId}`));
+	async getService(serviceId: string, environmentId: string): Promise<SwarmServiceInspect> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/services/${serviceId}`));
 	}
 
-	async createService(request: SwarmServiceCreateRequest): Promise<SwarmServiceCreateResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/services`, request));
+	async createService(request: SwarmServiceCreateRequest, environmentId: string): Promise<SwarmServiceCreateResponse> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/services`, request));
 	}
 
-	async updateService(serviceId: string, request: SwarmServiceUpdateRequest): Promise<SwarmServiceUpdateResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.put(`/environments/${envId}/swarm/services/${serviceId}`, request));
+	async updateService(
+		serviceId: string,
+		request: SwarmServiceUpdateRequest,
+		environmentId: string
+	): Promise<SwarmServiceUpdateResponse> {
+		return this.handleResponse(this.api.put(`/environments/${environmentId}/swarm/services/${serviceId}`, request));
 	}
 
-	async getServiceTasks(serviceId: string, options?: SearchPaginationSortRequest): Promise<SwarmTasksPaginatedResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async getServiceTasks(
+		serviceId: string,
+		options: SearchPaginationSortRequest | undefined,
+		environmentId: string
+	): Promise<SwarmTasksPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${envId}/swarm/services/${serviceId}/tasks`, { params });
+		const res = await this.api.get(`/environments/${environmentId}/swarm/services/${serviceId}/tasks`, { params });
 		return res.data;
 	}
 
-	async rollbackService(serviceId: string): Promise<SwarmServiceUpdateResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async rollbackService(serviceId: string, environmentId: string): Promise<SwarmServiceUpdateResponse> {
 		return this.handleResponse(
-			this.api.post(`/environments/${envId}/swarm/services/${serviceId}`, undefined, { params: { action: 'rollback' } })
+			this.api.post(`/environments/${environmentId}/swarm/services/${serviceId}`, undefined, { params: { action: 'rollback' } })
 		);
 	}
 
-	async scaleService(serviceId: string, request: SwarmServiceScaleRequest): Promise<SwarmServiceUpdateResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.patch(`/environments/${envId}/swarm/services/${serviceId}`, request));
+	async scaleService(
+		serviceId: string,
+		request: SwarmServiceScaleRequest,
+		environmentId: string
+	): Promise<SwarmServiceUpdateResponse> {
+		return this.handleResponse(this.api.patch(`/environments/${environmentId}/swarm/services/${serviceId}`, request));
 	}
 
-	async removeService(serviceId: string): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		await this.handleResponse(this.api.delete(`/environments/${envId}/swarm/services/${serviceId}`));
+	async removeService(serviceId: string, environmentId: string): Promise<void> {
+		await this.handleResponse(this.api.delete(`/environments/${environmentId}/swarm/services/${serviceId}`));
 	}
 
-	async getNodes(options?: SearchPaginationSortRequest): Promise<SwarmNodesPaginatedResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async getNodes(
+		options: SearchPaginationSortRequest | undefined,
+		environmentId: string,
+		config?: APIRequestConfig
+	): Promise<SwarmNodesPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${envId}/swarm/nodes`, { params });
+		const res = await this.api.get(`/environments/${environmentId}/swarm/nodes`, { ...config, params });
 		return res.data;
 	}
 
-	async getNodeAgentDeployment(nodeId: string, rotate = false): Promise<SwarmNodeAgentDeployment> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/nodes/${nodeId}/agent/deployment`, { rotate }));
+	async getNodeAgentDeployment(nodeId: string, rotate = false, environmentId: string): Promise<SwarmNodeAgentDeployment> {
+		return this.handleResponse(
+			this.api.post(`/environments/${environmentId}/swarm/nodes/${nodeId}/agent/deployment`, { rotate })
+		);
 	}
 
-	async reconcileNodeAgents(): Promise<SwarmNodeAgentReconcileResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/nodes/agents/reconcile`, {}));
+	async reconcileNodeAgents(environmentId: string): Promise<SwarmNodeAgentReconcileResponse> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/nodes/agents/reconcile`, {}));
 	}
 
-	async bindNodeAgent(nodeId: string, request: SwarmNodeAgentBindingRequest): Promise<SwarmNode> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.put(`/environments/${envId}/swarm/nodes/${nodeId}/agent/binding`, request));
+	async bindNodeAgent(nodeId: string, request: SwarmNodeAgentBindingRequest, environmentId: string): Promise<SwarmNode> {
+		return this.handleResponse(this.api.put(`/environments/${environmentId}/swarm/nodes/${nodeId}/agent/binding`, request));
 	}
 
-	async detachNodeAgent(nodeId: string): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		await this.handleResponse(this.api.delete(`/environments/${envId}/swarm/nodes/${nodeId}/agent/binding`));
+	async detachNodeAgent(nodeId: string, environmentId: string): Promise<void> {
+		await this.handleResponse(this.api.delete(`/environments/${environmentId}/swarm/nodes/${nodeId}/agent/binding`));
 	}
 
-	async removeNodeAgentDeployment(nodeId: string): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		await this.handleResponse(this.api.delete(`/environments/${envId}/swarm/nodes/${nodeId}/agent/deployment`));
+	async removeNodeAgentDeployment(nodeId: string, environmentId: string): Promise<void> {
+		await this.handleResponse(this.api.delete(`/environments/${environmentId}/swarm/nodes/${nodeId}/agent/deployment`));
 	}
 
-	async updateNode(nodeId: string, request: SwarmNodeUpdate): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		await this.handleResponse(this.api.patch(`/environments/${envId}/swarm/nodes/${nodeId}`, request));
+	async updateNode(nodeId: string, request: SwarmNodeUpdate, environmentId: string): Promise<void> {
+		await this.handleResponse(this.api.patch(`/environments/${environmentId}/swarm/nodes/${nodeId}`, request));
 	}
 
-	async removeNode(nodeId: string, force = false): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		await this.handleResponse(this.api.delete(`/environments/${envId}/swarm/nodes/${nodeId}`, { params: { force } }));
+	async removeNode(nodeId: string, force = false, environmentId: string): Promise<void> {
+		await this.handleResponse(this.api.delete(`/environments/${environmentId}/swarm/nodes/${nodeId}`, { params: { force } }));
 	}
 
-	async promoteNode(nodeId: string): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async promoteNode(nodeId: string, environmentId: string): Promise<void> {
 		await this.handleResponse(
-			this.api.post(`/environments/${envId}/swarm/nodes/${nodeId}`, undefined, { params: { action: 'promote' } })
+			this.api.post(`/environments/${environmentId}/swarm/nodes/${nodeId}`, undefined, { params: { action: 'promote' } })
 		);
 	}
 
-	async demoteNode(nodeId: string): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async demoteNode(nodeId: string, environmentId: string): Promise<void> {
 		await this.handleResponse(
-			this.api.post(`/environments/${envId}/swarm/nodes/${nodeId}`, undefined, { params: { action: 'demote' } })
+			this.api.post(`/environments/${environmentId}/swarm/nodes/${nodeId}`, undefined, { params: { action: 'demote' } })
 		);
 	}
 
-	async getNodeTasks(nodeId: string, options?: SearchPaginationSortRequest): Promise<SwarmTasksPaginatedResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async getNodeTasks(
+		nodeId: string,
+		options: SearchPaginationSortRequest | undefined,
+		environmentId: string,
+		config?: APIRequestConfig
+	): Promise<SwarmTasksPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${envId}/swarm/nodes/${nodeId}/tasks`, { params });
+		const res = await this.api.get(`/environments/${environmentId}/swarm/nodes/${nodeId}/tasks`, { ...config, params });
 		return res.data;
 	}
 
-	async getTasks(options?: SearchPaginationSortRequest): Promise<SwarmTasksPaginatedResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async getTasks(
+		options: SearchPaginationSortRequest | undefined,
+		environmentId: string,
+		config?: APIRequestConfig
+	): Promise<SwarmTasksPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${envId}/swarm/tasks`, { params });
+		const res = await this.api.get(`/environments/${environmentId}/swarm/tasks`, { ...config, params });
 		return res.data;
 	}
 
-	async getStacks(options?: SearchPaginationSortRequest): Promise<SwarmStacksPaginatedResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async getStacks(
+		options: SearchPaginationSortRequest | undefined,
+		environmentId: string,
+		config?: APIRequestConfig
+	): Promise<SwarmStacksPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${envId}/swarm/stacks`, { params });
+		const res = await this.api.get(`/environments/${environmentId}/swarm/stacks`, { ...config, params });
 		return res.data;
 	}
 
-	async deployStack(request: SwarmStackDeployRequest): Promise<SwarmStackDeployResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/stacks`, request));
+	async deployStack(request: SwarmStackDeployRequest, environmentId: string): Promise<SwarmStackDeployResponse> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/stacks`, request));
 	}
 
-	async getStack(name: string): Promise<SwarmStackInspect> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/stacks/${name}`));
+	async getStack(name: string, environmentId: string): Promise<SwarmStackInspect> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/stacks/${name}`));
 	}
 
-	async getStackSource(name: string): Promise<SwarmStackSource> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/stacks/${name}/source`));
+	async getStackSource(name: string, environmentId: string): Promise<SwarmStackSource> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/stacks/${name}/source`));
 	}
 
-	async updateStackSource(name: string, request: SwarmStackSourceUpdate): Promise<SwarmStackSource> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.patch(`/environments/${envId}/swarm/stacks/${name}/source`, request));
+	async updateStackSource(name: string, request: SwarmStackSourceUpdate, environmentId: string): Promise<SwarmStackSource> {
+		return this.handleResponse(this.api.patch(`/environments/${environmentId}/swarm/stacks/${name}/source`, request));
 	}
 
-	async removeStack(name: string): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		await this.handleResponse(this.api.delete(`/environments/${envId}/swarm/stacks/${name}`));
+	async removeStack(name: string, environmentId: string): Promise<void> {
+		await this.handleResponse(this.api.delete(`/environments/${environmentId}/swarm/stacks/${name}`));
 	}
 
-	async getStackServices(name: string, options?: SearchPaginationSortRequest): Promise<SwarmServicesPaginatedResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async getStackServices(
+		name: string,
+		options: SearchPaginationSortRequest | undefined,
+		environmentId: string,
+		config?: APIRequestConfig
+	): Promise<SwarmServicesPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${envId}/swarm/stacks/${name}/services`, { params });
+		const res = await this.api.get(`/environments/${environmentId}/swarm/stacks/${name}/services`, { ...config, params });
 		return res.data;
 	}
 
-	async getStackTasks(name: string, options?: SearchPaginationSortRequest): Promise<SwarmTasksPaginatedResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async getStackTasks(
+		name: string,
+		options: SearchPaginationSortRequest | undefined,
+		environmentId: string,
+		config?: APIRequestConfig
+	): Promise<SwarmTasksPaginatedResponse> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${envId}/swarm/stacks/${name}/tasks`, { params });
+		const res = await this.api.get(`/environments/${environmentId}/swarm/stacks/${name}/tasks`, { ...config, params });
 		return res.data;
 	}
 
-	async renderStackConfig(request: SwarmStackRenderConfigRequest): Promise<SwarmStackRenderConfigResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/stacks/config/render`, request));
+	async renderStackConfig(
+		request: SwarmStackRenderConfigRequest,
+		environmentId: string
+	): Promise<SwarmStackRenderConfigResponse> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/stacks/config/render`, request));
 	}
 
-	async getSwarmInfo(): Promise<SwarmInfo> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/info`));
+	async getSwarmInfo(environmentId: string): Promise<SwarmInfo> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/info`));
 	}
 
-	async getSwarmStatus(environmentId?: string, config?: APIRequestConfig): Promise<SwarmRuntimeStatus> {
-		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
-		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/status`, config));
+	async getSwarmStatus(environmentId: string, config?: APIRequestConfig): Promise<SwarmRuntimeStatus> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/status`, config));
 	}
 
-	async initSwarm(request: SwarmInitRequest): Promise<SwarmInitResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/init`, request));
+	async initSwarm(request: SwarmInitRequest, environmentId: string): Promise<SwarmInitResponse> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/init`, request));
 	}
 
-	async joinSwarm(request: SwarmJoinRequest): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		await this.handleResponse(this.api.post(`/environments/${envId}/swarm/join`, request));
+	async joinSwarm(request: SwarmJoinRequest, environmentId: string): Promise<void> {
+		await this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/join`, request));
 	}
 
-	async getSwarmJoinCandidates(environmentId?: string, config?: APIRequestConfig): Promise<SwarmJoinCandidate[]> {
-		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
-		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/join/candidates`, config));
+	async getSwarmJoinCandidates(environmentId: string, config?: APIRequestConfig): Promise<SwarmJoinCandidate[]> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/join/candidates`, config));
 	}
 
-	async joinEnvironments(request: SwarmJoinEnvironmentsRequest, environmentId?: string): Promise<SwarmJoinEnvironmentsResponse> {
-		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
-		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/join/environments`, request));
+	async joinEnvironments(request: SwarmJoinEnvironmentsRequest, environmentId: string): Promise<SwarmJoinEnvironmentsResponse> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/join/environments`, request));
 	}
 
-	async leaveSwarm(request: SwarmLeaveRequest): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		await this.handleResponse(this.api.post(`/environments/${envId}/swarm/leave`, request));
+	async leaveSwarm(request: SwarmLeaveRequest, environmentId: string): Promise<void> {
+		await this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/leave`, request));
 	}
 
-	async unlockSwarm(request: SwarmUnlockRequest): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		await this.handleResponse(this.api.post(`/environments/${envId}/swarm/unlock`, request));
+	async unlockSwarm(request: SwarmUnlockRequest, environmentId: string): Promise<void> {
+		await this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/unlock`, request));
 	}
 
-	async getSwarmUnlockKey(): Promise<SwarmUnlockKeyResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/unlock/key`));
+	async getSwarmUnlockKey(environmentId: string): Promise<SwarmUnlockKeyResponse> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/unlock/key`));
 	}
 
-	async getSwarmJoinTokens(): Promise<SwarmJoinTokensResponse> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/join/tokens`));
+	async getSwarmJoinTokens(environmentId: string): Promise<SwarmJoinTokensResponse> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/join/tokens`));
 	}
 
-	async rotateSwarmJoinTokens(request: SwarmRotateJoinTokensRequest = {}): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async rotateSwarmJoinTokens(request: SwarmRotateJoinTokensRequest = {}, environmentId: string): Promise<void> {
 		await this.handleResponse(
-			this.api.post(`/environments/${envId}/swarm/join/tokens`, request, { params: { action: 'rotate' } })
+			this.api.post(`/environments/${environmentId}/swarm/join/tokens`, request, { params: { action: 'rotate' } })
 		);
 	}
 
-	async updateSwarmSpec(request: SwarmUpdateRequest): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		await this.handleResponse(this.api.put(`/environments/${envId}/swarm/spec`, request));
+	async updateSwarmSpec(request: SwarmUpdateRequest, environmentId: string): Promise<void> {
+		await this.handleResponse(this.api.put(`/environments/${environmentId}/swarm/spec`, request));
 	}
 
-	async getKvItems(kind: SwarmKvKind, options?: SearchPaginationSortRequest): Promise<Paginated<SwarmKvSummary>> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		const res = await this.api.get(`/environments/${envId}/swarm/${kind}`, { params: transformPaginationParams(options) });
+	async getKvItems(
+		kind: SwarmKvKind,
+		options: SearchPaginationSortRequest | undefined,
+		environmentId: string,
+		config?: APIRequestConfig
+	): Promise<Paginated<SwarmKvSummary>> {
+		const res = await this.api.get(`/environments/${environmentId}/swarm/${kind}`, {
+			...config,
+			params: transformPaginationParams(options)
+		});
 		return res.data;
 	}
 
-	async getKvItem(kind: SwarmKvKind, id: string, environmentId?: string): Promise<SwarmKvSummary> {
-		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
-		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/${kind}/${encodeURIComponent(id)}`));
+	async getKvItem(kind: SwarmKvKind, id: string, environmentId: string): Promise<SwarmKvSummary> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/swarm/${kind}/${encodeURIComponent(id)}`));
 	}
 
-	async createKvItem(kind: SwarmKvKind, request: SwarmKvCreateRequest, environmentId?: string): Promise<SwarmKvSummary> {
-		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
-		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/${kind}`, request));
+	async createKvItem(kind: SwarmKvKind, request: SwarmKvCreateRequest, environmentId: string): Promise<SwarmKvSummary> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/swarm/${kind}`, request));
 	}
 
 	async updateKvItem(
 		kind: SwarmKvKind,
 		id: string,
 		request: SwarmKvUpdateRequest,
-		environmentId?: string
+		environmentId: string
 	): Promise<SwarmKvSummary> {
-		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
-		return this.handleResponse(this.api.put(`/environments/${envId}/swarm/${kind}/${encodeURIComponent(id)}`, request));
+		return this.handleResponse(this.api.put(`/environments/${environmentId}/swarm/${kind}/${encodeURIComponent(id)}`, request));
 	}
 
-	async removeKvItem(kind: SwarmKvKind, id: string): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		await this.handleResponse(this.api.delete(`/environments/${envId}/swarm/${kind}/${encodeURIComponent(id)}`));
+	async removeKvItem(kind: SwarmKvKind, id: string, environmentId: string): Promise<void> {
+		await this.handleResponse(this.api.delete(`/environments/${environmentId}/swarm/${kind}/${encodeURIComponent(id)}`));
 	}
 }
 

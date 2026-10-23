@@ -22,6 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/quadlets"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/secrets"
 	libpodman "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
 )
 
@@ -95,7 +96,23 @@ func (s *Service) Status(ctx context.Context) types.PodmanStatus {
 		SystemdAvailable:     availability.Available,
 		SystemdScope:         availability.Scope,
 		SystemdReason:        availability.Reason,
+		PodCount:             s.PodCount(ctx).OrElse(0),
 	}
+}
+
+func (s *Service) AggregateStatus(ctx context.Context) (types.ApiResponse[types.PodmanStatus], error) {
+	return httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[types.PodmanStatus]) types.PodmanStatus {
+		detected, podCount := false, 0
+		for _, environment := range environments {
+			detected = detected || environment.Data.Detected
+			podCount += environment.Data.PodCount
+		}
+		return types.PodmanStatus{
+			Detected:       detected,
+			AutoUpdateMode: types.PodmanAutoUpdateModeUnavailable,
+			PodCount:       podCount,
+		}
+	})
 }
 
 func (s *Service) Info(ctx context.Context) (types.PodmanInfo, error) {

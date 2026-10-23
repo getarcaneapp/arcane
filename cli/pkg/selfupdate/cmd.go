@@ -68,7 +68,10 @@ type githubLatestRelease struct {
 func Command() *cobra.Command {
 	var opts cliUpdateOptions
 	cmd := &cobra.Command{
-		Use: "self-update", Aliases: []string{"self", "cli"}, Short: "Update arcane-cli",
+		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
+		Use:         "self-update",
+		Aliases:     []string{"self", "cli"},
+		Short:       "Update arcane-cli",
 		Long: `Update arcane-cli using the configured release channel.
 
 Enable Sigstore verification with arcane-cli config set previews.newSelfUpdater true.

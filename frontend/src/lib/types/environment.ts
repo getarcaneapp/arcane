@@ -18,7 +18,6 @@ export type Environment = {
 	apiUrl: string;
 	status: EnvironmentStatus;
 	enabled: boolean;
-	isEdge: boolean;
 	edgeTransport?: 'grpc' | 'websocket';
 	lastEdgeTransport?: 'grpc' | 'websocket';
 	edgeSecurityMode?: 'token' | 'mtls';
@@ -34,16 +33,14 @@ export type Environment = {
 	lastSeen?: string;
 	edgeMTLSCertificate?: EdgeMTLSCertificate;
 	apiKey?: string;
-	accessToken?: string;
-	useApiKey?: boolean;
 	regenerateApiKey?: boolean;
 };
 
-export type EnvironmentWritable = 'name' | 'apiUrl' | 'enabled' | 'isEdge' | 'accessToken' | 'useApiKey' | 'regenerateApiKey';
+export type EnvironmentWritable = 'name' | 'enabled' | 'regenerateApiKey';
 
-export type EnvironmentCreate = CreateRequest<Environment, Exclude<EnvironmentWritable, 'regenerateApiKey'>, 'name' | 'apiUrl'>;
+export type EnvironmentCreate = CreateRequest<Environment, Exclude<EnvironmentWritable, 'regenerateApiKey'>, 'name'>;
 
-export type EnvironmentUpdate = UpdateRequest<Environment, Exclude<EnvironmentWritable, 'useApiKey'>>;
+export type EnvironmentUpdate = UpdateRequest<Environment, EnvironmentWritable>;
 
 export interface DeploymentSnippetFile {
 	name: string;
@@ -81,6 +78,7 @@ export type Webhook = {
 	targetId: string;
 	targetName?: string;
 	environmentId: string;
+	environmentName?: string;
 	enabled: boolean;
 	lastTriggeredAt?: string;
 	createdAt: string;
@@ -160,9 +158,16 @@ export interface VulnerabilityScanInsights {
 
 export type VulnerabilityExposure = 'running' | 'stopped' | 'unused' | 'unknown';
 
+export interface VulnerabilityRiskScoreBasis {
+	score: number;
+	weight: number;
+	exploitedRunning: boolean;
+}
+
 export interface VulnerabilityRiskTrendPoint {
 	date: string;
 	riskScore: number;
+	scoreBasis?: VulnerabilityRiskScoreBasis;
 }
 
 export interface VulnerabilityRiskDrivers {
@@ -195,6 +200,8 @@ export interface VulnerabilityRiskScoreDriver {
 }
 
 export interface VulnerabilityRiskImage {
+	environmentId?: string;
+	environmentName?: string;
 	imageId: string;
 	imageName: string;
 	riskScore: number;
@@ -210,6 +217,8 @@ export interface VulnerabilityRiskImage {
 }
 
 export interface VulnerabilityRiskFinding {
+	environmentId?: string;
+	environmentName?: string;
 	vulnerabilityId: string;
 	pkgName: string;
 	title?: string;
@@ -235,6 +244,7 @@ export interface VulnerabilityRiskOverview {
 	riskScore: number;
 	riskBand: VulnerabilityRiskBand;
 	scoreStatus: VulnerabilityScoreStatus;
+	scoreBasis: VulnerabilityRiskScoreBasis;
 	delta7d?: number;
 	trend: VulnerabilityRiskTrendPoint[];
 	drivers: VulnerabilityRiskDrivers;
@@ -247,6 +257,18 @@ export interface VulnerabilityRiskOverview {
 	prevalentFindings: VulnerabilityRiskFinding[];
 	threatIntel: VulnerabilityThreatIntelStatus;
 	computedAt: string;
+}
+
+export interface EnvironmentData<T> {
+	environment: { id: string; name: string };
+	data: T;
+}
+
+export interface EnvironmentVulnerabilitySummary {
+	totalImages: number;
+	scannedImages: number;
+	summary?: SeveritySummary;
+	actionableCount: number;
 }
 
 export interface SeveritySummary {
@@ -300,6 +322,7 @@ export interface ScannerStatus {
 export interface IgnoredVulnerability {
 	id: string;
 	environmentId: string;
+	environmentName?: string;
 	imageId: string;
 	vulnerabilityId: string;
 	pkgName: string;

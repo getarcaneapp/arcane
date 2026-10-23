@@ -23,8 +23,6 @@ agent:
         exit 1
     fi
 
-    port="${ARCANE_PORT:-3553}"
-    app_url="${ARCANE_APP_URL:-http://localhost:${port}}"
     manager_api_url="${ARCANE_MANAGER_API_URL:-https://localhost:3552}"
     edge_mtls_assets_dir="${ARCANE_EDGE_MTLS_ASSETS_DIR:-./.tmp/edge-test-agent/edge-mtls-agent}"
     edge_mtls_ca_file="${ARCANE_EDGE_MTLS_CA_FILE:-./backend/local-manager.crt}"
@@ -35,8 +33,6 @@ agent:
 
     mkdir -p "${projects_directory}" "${git_work_dir}" "${edge_mtls_assets_dir}"
 
-    ARCANE_PORT="${port}" \
-    ARCANE_APP_URL="${app_url}" \
     ARCANE_EDGE_AGENT=true \
     ARCANE_EDGE_TRANSPORT=poll \
     ARCANE_EDGE_MTLS_MODE=required \

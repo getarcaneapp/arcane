@@ -1,4 +1,3 @@
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 import type {
 	OidcStatusInfo,
@@ -24,12 +23,6 @@ export function parseSettingValue(type: string, value: string): string | number 
 }
 
 class SettingsService extends BaseAPIService {
-	async getSettings(): Promise<ResolvedSettings> {
-		await environmentStore.ready;
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.getSettingsForEnvironmentMerged(envId);
-	}
-
 	async getSettingsForEnvironmentMerged(environmentId: string): Promise<ResolvedSettings> {
 		if (environmentId === '0') return this.getSettingsForEnvironment('0');
 		const [main, environment] = await Promise.all([

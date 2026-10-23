@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/containerd/errdefs"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/api/types/system"
 	"github.com/moby/moby/client"
@@ -15,6 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 func newSwarmTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
@@ -140,4 +144,46 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 			tt.assertMode(t, updatedSpec.Mode)
 		})
 	}
+}
+
+func servicesScopeContext(t *testing.T, target string, bodies map[string]any) context.Context {
+	t.Helper()
+	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(body)
+		}),
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	})
+}
+
+func TestAggregateMergesEnvironments(t *testing.T) {
+	ctx := servicesScopeContext(t, "/api/environments/a,b,c/swarm/services", map[string]any{
+		"a": types.Paginated[types.SwarmServiceSummary]{
+			Success: true,
+			Data:    []types.SwarmServiceSummary{{ID: "s1", Name: "web"}},
+		},
+		"b": types.Paginated[types.SwarmServiceSummary]{
+			Success: true,
+			Data:    []types.SwarmServiceSummary{{ID: "s2", Name: "api"}},
+		},
+	})
+
+	body, err := (&Service{}).Aggregate(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
+	require.NoError(t, err)
+
+	require.Len(t, body.Data, 2)
+	require.ElementsMatch(t, []string{"Env a", "Env b"}, []string{body.Data[0].Environment().Name, body.Data[1].Environment().Name})
+	require.EqualValues(t, 2, body.Pagination.TotalItems)
+	require.Len(t, body.FailedEnvironments, 1)
+	require.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
 }

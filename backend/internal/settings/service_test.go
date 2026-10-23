@@ -489,8 +489,6 @@ func TestSettingsService_ReadOnlyGate(t *testing.T) {
 	require.Equal(t, LockReasonReadOnly, reason)
 	_, reason = svc.IsLocked("trivyNetwork")
 	require.Equal(t, LockReasonEnv, reason)
-	locked, _ = svc.IsLocked("agentToken")
-	require.False(t, locked)
 
 	err = svc.UpdateSettings(ctx, types.SettingsUpdate{"baseServerUrl": "https://changed.example"})
 	require.ErrorIs(t, err, common.ErrValidation)
@@ -500,7 +498,6 @@ func TestSettingsService_ReadOnlyGate(t *testing.T) {
 
 	err = svc.UpdateSettings(ctx, types.SettingsUpdate{"baseServerUrl": "http://localhost"})
 	require.NoError(t, err)
-	require.NoError(t, svc.SetStringSetting(ctx, "agentToken", "token"))
 }
 
 func TestSettingsService_GetSetHelpers(t *testing.T) {
@@ -783,7 +780,7 @@ func TestResolveEncryptionKey(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, k1)
 
-	k2, err := ResolveEncryptionKey(ctx, db, &config.Config{AgentMode: true, Environment: config.AppEnvironmentProduction})
+	k2, err := ResolveEncryptionKey(ctx, db, &config.Config{EdgeAgent: true, Environment: config.AppEnvironmentProduction})
 	require.NoError(t, err)
 	require.Equal(t, k1, k2, "encryption key should be stable between calls")
 
@@ -803,45 +800,6 @@ func TestResolveEncryptionKey(t *testing.T) {
 	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "browserSessionSigningKey").First(&browserSetting).Error)
 	require.NotEmpty(t, browserSetting.Value)
 	require.NotEqual(t, base64.StdEncoding.EncodeToString(browserKey1), browserSetting.Value)
-}
-
-func TestSettingsService_AgentTokenUsesStoredTokenWhenEnvUnset(t *testing.T) {
-	ctx := t.Context()
-	svc, err := newSettingsServiceForTest(t, ctx, setupSettingsTestDB(t))
-	require.NoError(t, err)
-	require.Empty(t, svc.AgentToken(ctx))
-
-	paired, err := svc.PairAgentToken(ctx, false)
-	require.NoError(t, err)
-	require.NotEmpty(t, paired)
-	require.Equal(t, paired, svc.AgentToken(ctx))
-
-	same, err := svc.PairAgentToken(ctx, false)
-	require.NoError(t, err)
-	require.Equal(t, paired, same)
-
-	rotated, err := svc.PairAgentToken(ctx, true)
-	require.NoError(t, err)
-	require.NotEqual(t, paired, rotated)
-	require.Equal(t, rotated, svc.AgentToken(ctx))
-}
-
-func TestSettingsService_AgentTokenPrefersEnv(t *testing.T) {
-	t.Setenv("ARCANE_AGENT_TOKEN", "env-agent-token")
-	ctx := t.Context()
-	svc, err := newSettingsServiceForTest(t, ctx, setupSettingsTestDB(t))
-	require.NoError(t, err)
-	require.NoError(t, svc.UpdateSetting(ctx, "agentToken", "stored-agent-token"))
-
-	require.Equal(t, "env-agent-token", svc.AgentToken(ctx))
-
-	paired, err := svc.PairAgentToken(ctx, false)
-	require.NoError(t, err)
-	require.Equal(t, "env-agent-token", paired)
-
-	_, err = svc.PairAgentToken(ctx, true)
-	require.ErrorIs(t, err, common.ErrAgentTokenEnvManaged)
-	require.Equal(t, "stored-agent-token", svc.GetStringSetting(ctx, "agentToken"))
 }
 
 func TestSettingsService_LoadDatabaseSettings_ReloadsChanges(t *testing.T) {
@@ -977,8 +935,9 @@ func TestSettingsService_SettingsSnapshot(t *testing.T) {
 		nonAdminKeys = append(nonAdminKeys, state.Key)
 	}
 	require.Contains(t, nonAdminKeys, "dockerHost")
+	require.Subset(t, nonAdminKeys, []string{"authPasswordPolicy", "baseServerUrl", "buildProvider", "defaultShell", "lifecycleEnabled"})
+	require.NotContains(t, nonAdminKeys, "depotToken")
 	require.NotContains(t, nonAdminKeys, "oidcClientSecret")
-	require.NotContains(t, nonAdminKeys, "baseServerUrl")
 }
 
 func TestSettingsService_UpdateSettings_MaskedAndInternalKeys(t *testing.T) {
@@ -1001,7 +960,6 @@ func TestSettingsService_UpdateSettings_MaskedAndInternalKeys(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, key, fieldErr.Field)
 	}
-	require.Empty(t, svc.GetSettingsConfig().AgentToken.Value)
 }
 
 func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyScanTimeout(t *testing.T) {

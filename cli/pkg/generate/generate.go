@@ -6,13 +6,16 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
 )
 
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "generate",
-		Aliases: []string{"gen", "g"},
-		Short:   "Generate secrets and bootstrap credentials for Arcane",
+		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
+		Use:         "generate",
+		Aliases:     []string{"gen", "g"},
+		Short:       "Generate secrets and bootstrap credentials for Arcane",
 	}
 	cmd.AddCommand(newAPIKeyCmd(), newMTLSCmd(), newTLSCmd(), newSecretCmd())
 	return cmd

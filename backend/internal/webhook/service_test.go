@@ -5,12 +5,14 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
@@ -24,6 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 // setupWebhookServiceTestDB creates an isolated in-memory SQLite DB for each test.
@@ -821,4 +824,47 @@ func TestRemoteWebhookRequest(t *testing.T) {
 			assert.Equal(t, tt.wantResult, wantResult)
 		})
 	}
+}
+
+func webhookScopeContext(t *testing.T, target string, bodies map[string]any) context.Context {
+	t.Helper()
+	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(body)
+		}),
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	})
+}
+
+func TestAggregateWebhookSummariesMergesEnvironments(t *testing.T) {
+	now := time.Now()
+	ctx := webhookScopeContext(t, "/api/environments/a,b,c/webhooks", map[string]any{
+		"a": types.ApiResponse[[]types.Webhook]{
+			Success: true,
+			Data:    []types.Webhook{{ID: "old", CreatedAt: now.Add(-time.Hour)}},
+		},
+		"b": types.ApiResponse[[]types.Webhook]{
+			Success: true,
+			Data:    []types.Webhook{{ID: "new", CreatedAt: now}},
+		},
+	})
+
+	body, err := (&WebhookService{}).AggregateWebhookSummaries(ctx)
+	require.NoError(t, err)
+
+	require.Len(t, body.Data, 2)
+	require.Equal(t, "new", body.Data[0].ID)
+	require.Equal(t, types.EnvironmentRef{ID: "b", Name: "Env b"}, body.Data[0].Environment())
+	require.Equal(t, types.EnvironmentRef{ID: "a", Name: "Env a"}, body.Data[1].Environment())
+	require.Len(t, body.FailedEnvironments, 1)
 }

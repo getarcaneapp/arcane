@@ -79,8 +79,7 @@ func NormalizePaginatedResource(resource string) string {
 
 // PreviewsConfig contains optional CLI preview features.
 type PreviewsConfig struct {
-	AllEnvironments bool `yaml:"allEnvironments"`
-	NewSelfUpdater  bool `yaml:"newSelfUpdater"`
+	NewSelfUpdater bool `yaml:"newSelfUpdater"`
 }
 
 // Config holds the CLI configuration for connecting to an Arcane server.
@@ -96,8 +95,6 @@ type Config struct {
 	RefreshToken string `yaml:"-"`
 	// Previews contains optional CLI preview features.
 	Previews PreviewsConfig `yaml:"previews"`
-	// DefaultEnvironment is the default environment ID to use
-	DefaultEnvironment string `yaml:"default_environment,omitempty"`
 	// FederatedAudience is the default token audience for `arcane-cli auth federated`
 	FederatedAudience string `yaml:"federated_audience,omitempty"`
 	// LogLevel is the logging level (debug, info, warn, error, fatal, panic)

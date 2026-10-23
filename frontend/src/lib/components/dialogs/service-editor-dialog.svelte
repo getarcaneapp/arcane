@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import * as Accordion from '#lib/components/ui/accordion/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -10,6 +11,7 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { AddIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import { getSwarmServiceModeLabel } from '#lib/utils/docker.js';
 	import { preventDefault } from '#lib/utils/settings.svelte.js';
 
@@ -20,6 +22,9 @@
 
 	type ServiceEditorDialogProps = {
 		open: boolean;
+		environmentId?: string;
+		environments?: EnvironmentRef[];
+		environmentPermission?: string;
 		title: string;
 		description: string;
 		submitLabel: string;
@@ -120,6 +125,9 @@
 
 	let {
 		open = $bindable(false),
+		environmentId = $bindable(),
+		environments,
+		environmentPermission,
 		title,
 		description,
 		submitLabel,
@@ -381,6 +389,14 @@
 <ResponsiveDialog bind:open onOpenChange={handleOpenChange} variant="sheet" {title} {description} contentClass="sm:max-w-150">
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="space-y-6 py-4">
+			{#if environments}
+				<EnvironmentDestinationSelect
+					bind:value={environmentId}
+					permission={environmentPermission}
+					{environments}
+					variant="field"
+				/>
+			{/if}
 			{#if specParseError}
 				<Alert.Root variant="destructive">
 					<Alert.Description>{m.swarm_service_spec_parse_failed()} {specParseError}</Alert.Description>

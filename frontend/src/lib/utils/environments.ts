@@ -4,12 +4,7 @@ import { toast } from 'svelte-sonner';
 import { m } from '#lib/paraglide/messages.js';
 import type { APIRequestConfig } from '#lib/services/api-service.js';
 import settingsStore from '#lib/stores/config-store.svelte.js';
-import {
-	allEnvironmentsPreview,
-	environmentStore,
-	LOCAL_DOCKER_ENVIRONMENT_ID,
-	type EnvironmentRef
-} from '#lib/stores/environment.store.svelte.js';
+import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { extractApiErrorMessage } from '#lib/utils/api.js';
 import { hasPermission } from '#lib/utils/auth.js';
@@ -26,6 +21,7 @@ export type EnvironmentPage<P extends Page<object>> = Omit<P, 'data' | 'groups'>
 	groups?: { groupName: string; items: EnvironmentRow<P['data'][number]>[] }[];
 	/** Environments whose request failed; the list renders without them. */
 	failedEnvironments?: EnvironmentFailure[];
+	excludedEnvironments?: EnvironmentRef[];
 };
 
 // Unit separator: resource IDs never contain it, so table keys stay unambiguous.
@@ -46,6 +42,12 @@ export function parseRowKey(key: string): { environmentId?: string; id: string }
 	return { environmentId: key.slice(0, index), id: key.slice(index + 1) };
 }
 
+export function parseEnvironmentRowKey(key: string): { environmentId: string; id: string } {
+	const { environmentId, id } = parseRowKey(key);
+	if (environmentId === undefined) throw new Error(`Row key "${key}" is not tagged with an environment`);
+	return { environmentId, id };
+}
+
 export function environmentName(environmentId: string): string {
 	return environmentStore.available.find((env) => env.id === environmentId)?.name ?? environmentId;
 }
@@ -53,9 +55,8 @@ export function environmentName(environmentId: string): string {
 /** Filter key of the environment facet; fetchAcrossEnvironments consumes it, so the backend never sees it. */
 export const ENVIRONMENT_FILTER = 'environment';
 
-/** Environment filter IDs among `environments`; stale IDs are dropped, and it is empty with one environment. */
 export function environmentFilterIds(value: unknown, environments: EnvironmentRef[] = environmentStore.shown): string[] {
-	if (environments.length < 2 || !Array.isArray(value)) return [];
+	if (!Array.isArray(value)) return [];
 	return value.map(String).filter((id) => environments.some((env) => env.id === id));
 }
 
@@ -68,49 +69,38 @@ export function actionEnvironments(...permissions: string[]): EnvironmentRef[] {
 	return permitted.length > 0 ? permitted : environmentStore.shown;
 }
 
+export function readableEnvironments(permission: string): EnvironmentRef[] {
+	return environmentStore.shown.filter((env) => hasPermission(permission, env.id));
+}
+
 /** Whether a permission is held in any shown environment; row actions check the row's own environment. */
 export function hasShownPermission(permission: string): boolean {
 	return environmentStore.shown.some((env) => hasPermission(permission, env.id));
 }
 
-/** Link to a resource detail page; `?env=` is added only for an environment other than the selected one. */
 export function environmentHref(path: string, environmentId: string): string {
-	if (environmentId === (environmentStore.selected?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID)) return path;
 	return `${path}${path.includes('?') ? '&' : '?'}env=${encodeURIComponent(environmentId)}`;
 }
 
-/**
- * Detail loaders: the `?env=` environment, otherwise the selected one. With the preview on, an `env` that is
- * not shown is a 404 rather than the selected environment's resource of the same name. With it off, `env` is ignored.
- */
 export async function resolveDetailEnvironmentId(url: URL): Promise<string> {
-	const current = await environmentStore.getCurrentEnvironmentId();
+	await environmentStore.ready;
 	const requested = url.searchParams.get('env');
-	if (!requested || !allEnvironmentsPreview.current) return current;
-	if (!environmentStore.shown.some((env) => env.id === requested))
+	if (!requested || !environmentStore.available.some((env) => env.id === requested))
 		error(404, m.common_not_found_title({ resource: m.resource_environment_cap() }));
 	return requested;
 }
 
-/**
- * Destination for a create: the picked environment among `environments` that grants `permission`, else the
- * selected one, else the first that grants it. With one shown environment this is the selected one.
- */
 export function destinationEnvironmentId(
 	picked: string,
 	permission: string,
 	environments: EnvironmentRef[] = environmentStore.shown
 ): string {
-	const selected = environmentStore.selected?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID;
 	const permitted = environments.filter((env) => hasPermission(permission, env.id)).map((env) => env.id);
-	const candidate = permitted.includes(picked) ? picked : selected;
-	return permitted.includes(candidate) ? candidate : (permitted[0] ?? candidate);
+	if (permitted.includes(picked)) return picked;
+	if (permitted.includes(LOCAL_DOCKER_ENVIRONMENT_ID)) return LOCAL_DOCKER_ENVIRONMENT_ID;
+	return permitted[0] ?? (picked || LOCAL_DOCKER_ENVIRONMENT_ID);
 }
 
-/**
- * List query scopes an operation in these environments affects: each environment's own, their
- * merged one and the currently shown one. With one environment shown this is just its ID.
- */
 export function listScopes(environmentIds: string[]): string[] {
 	return [...new Set([...environmentIds, environmentIds.join(','), environmentStore.shownKey])];
 }
@@ -121,15 +111,10 @@ export function acrossEnvironmentsNote(environments: EnvironmentRef[]): string {
 	return m.all_environments_confirm_note({ count: environments.length });
 }
 
-/**
- * Runs a read once per environment; failures are returned beside the values. When reporting inline
- * (by default, when several environments are read), an access-denied response is left to the inline
- * alert instead of a toast, and a failure names its environment.
- */
 export async function collectAcrossEnvironments<T>(
 	environments: EnvironmentRef[],
 	run: (environmentId: string, config: APIRequestConfig) => Promise<T>,
-	reportInline = environments.length > 1
+	reportInline = true
 ): Promise<{ values: { environment: EnvironmentRef; value: T }[]; failures: EnvironmentFailure[] }> {
 	const config: APIRequestConfig = { suppressAccessDeniedToast: reportInline };
 	const outcomes = await Promise.all(
@@ -155,7 +140,7 @@ export async function settleAcrossEnvironments<T>(
 	environments: EnvironmentRef[],
 	run: (environmentId: string) => Promise<T>
 ): Promise<{ environment: EnvironmentRef; value: T }[]> {
-	const { values, failures } = await collectAcrossEnvironments(environments, (id) => run(id));
+	const { values, failures } = await collectAcrossEnvironments(environments, (id) => run(id), environments.length > 1);
 	for (const { environment, message } of failures) {
 		toast.error(m.all_environments_request_failed({ environment: environment.name }), {
 			id: `environment-request-failed-${environment.id}`,
@@ -168,14 +153,11 @@ export async function settleAcrossEnvironments<T>(
 export async function readAcrossEnvironments<T>(
 	environments: EnvironmentRef[],
 	run: (scope: string, config: APIRequestConfig) => Promise<T>,
-	reportInline = environments.length > 1
-): Promise<{ value: T; failures: EnvironmentFailure[] }> {
+	reportInline = true
+): Promise<{ value: T; failures: EnvironmentFailure[]; excluded: EnvironmentRef[] }> {
 	if (environments.length === 0) throw new Error('readAcrossEnvironments needs at least one environment');
 	const limit = Number(settingsStore.current?.allEnvironmentsLimit) || 64;
 	const included = environments.slice(0, limit);
-	const excluded = environments
-		.slice(limit)
-		.map((environment) => ({ environment, message: m.all_environments_not_included({ limit }) }));
 	let reported: EnvironmentFailure[] = [];
 	const result = await tryCatch(
 		run(included.map((env) => env.id).join(','), {
@@ -196,7 +178,7 @@ export async function readAcrossEnvironments<T>(
 	if (failures.length > 0 && failures.length === included.length) {
 		throw new Error(failures.map(({ environment, message }) => `${environment.name}: ${message}`).join('\n'));
 	}
-	return { value: result.data, failures: [...failures, ...excluded] };
+	return { value: result.data, failures, excluded: environments.slice(limit) };
 }
 
 export function environmentRows<T extends object>(rows: T[], environments: EnvironmentRef[]): EnvironmentRow<T>[] {
@@ -204,13 +186,32 @@ export function environmentRows<T extends object>(rows: T[], environments: Envir
 	return rows.map((row) => ({ ...(row as EnvironmentRow<T>), environmentTagged: true }));
 }
 
-/** Count fields across environments, summed by the server; failing environments are reported, not counted. */
+export type EnvironmentSum<C> = C & {
+	failedEnvironments: EnvironmentFailure[];
+	excludedEnvironments: EnvironmentRef[];
+	byEnvironment: { environment: EnvironmentRef; data: C }[];
+};
+
 export async function sumAcrossEnvironments<C extends object>(
 	environments: EnvironmentRef[],
-	fetch: (scope: string, config: APIRequestConfig) => Promise<C>
-): Promise<C & { failedEnvironments: EnvironmentFailure[] }> {
-	const { value, failures } = await readAcrossEnvironments(environments, fetch);
-	return { ...value, failedEnvironments: failures };
+	fetch: (scope: string, config: APIRequestConfig) => Promise<C>,
+	empty: C
+): Promise<EnvironmentSum<C>> {
+	if (environments.length === 0) return { ...empty, failedEnvironments: [], excludedEnvironments: [], byEnvironment: [] };
+	let breakdown: { environment: EnvironmentRef; data: C }[] | undefined;
+	const { value, failures, excluded } = await readAcrossEnvironments(environments, (scope, config) =>
+		fetch(scope, {
+			...config,
+			onEnvironments: (entries) => {
+				breakdown = entries.map(({ environment, data }) => ({
+					environment: environments.find((env) => env.id === environment.id) ?? environment,
+					data: data as C
+				}));
+			}
+		})
+	);
+	const single = environments.length === 1 && failures.length === 0 ? [{ environment: environments[0]!, data: value }] : [];
+	return { ...value, failedEnvironments: failures, excludedEnvironments: excluded, byEnvironment: breakdown ?? single };
 }
 
 /** Adds failures from related reads, such as counts or tags, to a list's inline alert, once per environment. */
@@ -228,12 +229,6 @@ export function withFailedEnvironments<P extends { failedEnvironments?: Environm
 	};
 }
 
-/**
- * Runs a list request for several environments as one request, which the server fans out, merges, sorts
- * and pages, so rows of different environments interleave by the requested sort and same-named groups
- * merge. With one environment the request passes through. An `environment` filter narrows the
- * environments queried; sorting by environment is only sent when several are.
- */
 export async function fetchAcrossEnvironments<
 	P extends Page<T>,
 	O extends SearchPaginationSortRequest,
@@ -249,20 +244,20 @@ export async function fetchAcrossEnvironments<
 	const targets = picked.length > 0 ? environments.filter((env) => picked.includes(env.id)) : environments;
 	if (targets.length === 0) {
 		const pagination = { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: options.pagination?.limit ?? 0 };
-		return { data: [], pagination, failedEnvironments: [] } as unknown as EnvironmentPage<P>;
+		return { data: [], pagination, failedEnvironments: [], excludedEnvironments: [] } as unknown as EnvironmentPage<P>;
 	}
 	const sortsByEnvironment = options.sort?.column === ENVIRONMENT_FILTER && targets.length === 1;
 	const request: O = { ...options, filters: options.filters && filters, sort: sortsByEnvironment ? undefined : options.sort };
-	// Filtering to one of several environments still reports its failure the merged way.
-	const { value: page, failures } = await readAcrossEnvironments(
-		targets,
-		(scope, config) => fetch(scope, request, config),
-		environments.length > 1
-	);
+	const {
+		value: page,
+		failures,
+		excluded
+	} = await readAcrossEnvironments(targets, (scope, config) => fetch(scope, request, config));
 	return {
 		...page,
 		data: environmentRows(page.data, targets),
 		groups: page.groups?.map((group) => ({ ...group, items: environmentRows(group.items, targets) })),
-		failedEnvironments: failures
+		failedEnvironments: failures,
+		excludedEnvironments: excluded
 	};
 }

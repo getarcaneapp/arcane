@@ -24,8 +24,8 @@
 	import type { GitRepository } from '#lib/types/automation.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	type FieldVisibility = Record<string, boolean>;
@@ -47,7 +47,7 @@
 		testing: false
 	});
 
-	const canDeleteRepository = $derived(hasPermission('git-repositories:delete'));
+	const canDeleteRepository = $derived(hasShownPermission('git-repositories:delete'));
 
 	const bulkActions = $derived.by<BulkAction[]>(() => [
 		{

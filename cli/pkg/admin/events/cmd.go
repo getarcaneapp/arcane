@@ -16,9 +16,10 @@ import (
 // Command is the parent command for event operations
 func Command() *cobra.Command {
 	command := &cobra.Command{
-		Use:     "events",
-		Aliases: []string{"event", "evt"},
-		Short:   "Manage events",
+		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
+		Use:         "events",
+		Aliases:     []string{"event", "evt"},
+		Short:       "Manage events",
 	}
 	command.AddCommand(newListCmd())
 	command.AddCommand(newDeleteCmd())
@@ -76,7 +77,7 @@ func newListCmd() *cobra.Command {
 	command.Flags().IntVarP(&opts.limit, "limit", "n", 20, "Number of events to show")
 	command.Flags().IntVar(&opts.start, "start", 0, cmdutil.StartFlagUsage)
 	command.Flags().BoolVarP(&opts.all, "all", "a", false, cmdutil.AllFlagUsage)
-	command.Flags().BoolVar(&opts.envOnly, "environment", false, "Only list events for the current environment")
+	command.Flags().BoolVar(&opts.envOnly, "environment", false, "List each environment's events instead of global events")
 	return command
 }
 

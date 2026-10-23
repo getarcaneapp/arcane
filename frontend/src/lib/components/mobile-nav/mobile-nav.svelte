@@ -8,7 +8,6 @@
 		getSwarmNavigationItems
 	} from '#lib/config/navigation-config.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { PermissionsManifest, User } from '#lib/types/auth.js';
 	import type { PodmanStatus } from '#lib/types/podman.js';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
@@ -38,8 +37,7 @@
 
 	const navigation = getMobileNavigation();
 	const navigationSettings = $derived(navigation.settings);
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const swarmItems = $derived(getSwarmNavigationItems(swarmEnabled, currentEnvId));
+	const swarmItems = $derived(getSwarmNavigationItems(swarmEnabled));
 	const podmanItems = $derived(getPodmanNavigationItems(podmanStatuses));
 
 	const pinnedItems = $derived.by(() => {
@@ -48,7 +46,6 @@
 			swarmEnabled,
 			podmanStatuses,
 			user,
-			currentEnvId,
 			accessManifest: permissionsManifest
 		});
 		return navigationSettings.pinnedItems

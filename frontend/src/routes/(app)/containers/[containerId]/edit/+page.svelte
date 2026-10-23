@@ -82,7 +82,7 @@
 			/>
 			<div class="hidden h-4 w-px bg-border sm:block"></div>
 			<h1 class="truncate text-base font-semibold">{m.common_edit()} · {data.editConfig.name}</h1>
-			<EnvironmentCell value={data.envId} />
+			<EnvironmentCell value={data.envId} plain />
 		</div>
 	</div>
 

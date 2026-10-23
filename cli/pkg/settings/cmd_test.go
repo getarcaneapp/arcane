@@ -32,7 +32,7 @@ func TestSettingsSetSendsSingleKeyPatch(t *testing.T) {
 	defer srv.Close()
 
 	configPath := testutil.WriteConfig(t, srv.URL)
-	_, errOut, err := testutil.Execute(t, []string{"--config", configPath, "settings", "set", "dockerApiTimeout", "60"})
+	_, errOut, err := testutil.Execute(t, []string{"--config", configPath, "--env", "0", "settings", "set", "dockerApiTimeout", "60"})
 	require.NoError(t, err, "execute: %v (%s)", err, errOut)
 
 	mu.Lock()
@@ -55,6 +55,6 @@ func TestSettingsSetReturnsFieldErrorMessage(t *testing.T) {
 	defer srv.Close()
 
 	configPath := testutil.WriteConfig(t, srv.URL)
-	_, _, err := testutil.Execute(t, []string{"--config", configPath, "settings", "set", "dockerApiTimeout", "60"})
+	_, _, err := testutil.Execute(t, []string{"--config", configPath, "--env", "0", "settings", "set", "dockerApiTimeout", "60"})
 	require.EqualError(t, err, message)
 }

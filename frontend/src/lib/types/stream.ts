@@ -2,6 +2,18 @@ export type SSEEventBase = {
 	type?: string;
 };
 
+export interface EnvironmentChanges {
+	environmentId: string;
+	epoch: string;
+	kinds: Record<string, number>;
+}
+
+export interface EventStreamEvent {
+	type: 'changed';
+	timestamp: string;
+	changes: EnvironmentChanges[];
+}
+
 export interface SSEStreamConfig<TEvent extends SSEEventBase> {
 	/** Used in console warnings, e.g. 'Dashboard' / 'Activity' / 'Environment'. */
 	label: string;

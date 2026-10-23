@@ -339,7 +339,7 @@
 			<Badge variant="blue" minWidth="20">{m.networks_predefined()}</Badge>
 		{/if}
 		<Badge variant="purple" minWidth="20">{network?.driver ?? m.common_unknown()}</Badge>
-		<EnvironmentCell value={data.envId} />
+		<EnvironmentCell value={data.envId} plain />
 	{/snippet}
 
 	{#if errorMessage}

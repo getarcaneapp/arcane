@@ -125,7 +125,7 @@ func newUpdateCmd() *cobra.Command {
 			})
 		},
 	}
-	cmdutil.SetScope(cmdutil.ScopeFleet, cmd)
+	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
 	cmd.Flags().StringVar(&opts.environmentHealthInterval, "environment-health-interval", "", "Environment health job interval (cron expression)")
 	cmd.Flags().StringVar(&opts.eventCleanupInterval, "event-cleanup-interval", "", "Event cleanup job interval (cron expression)")
 	cmd.Flags().StringVar(&opts.expiredSessionsCleanupInterval, "expired-sessions-cleanup-interval", "", "Expired sessions cleanup job interval (cron expression)")

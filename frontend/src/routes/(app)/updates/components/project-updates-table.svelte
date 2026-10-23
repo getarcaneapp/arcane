@@ -148,7 +148,7 @@
 			title: m.updates_bulk_update_confirm_title({ count: ids.length }),
 			message: m.updates_bulk_update_confirm_message({ count: ids.length }),
 			confirmLabel: m.common_update(),
-			run: (id, environmentId) => applyScopedUpdate('project', id, environmentId).then(throwOnUpdateFailure),
+			runInEnvironment: (id, environmentId) => applyScopedUpdate('project', id, environmentId).then(throwOnUpdateFailure),
 			messages: {
 				success: (count) => m.updates_bulk_update_success({ count }),
 				partial: (success, total, failed) => m.updates_bulk_update_partial({ success, total, failed }),

@@ -21,9 +21,10 @@ import (
 // Command is the parent command for git repository operations.
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "repos",
-		Aliases: []string{"repo", "git-repositories", "git-repos"},
-		Short:   "Manage git repositories",
+		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
+		Use:         "repos",
+		Aliases:     []string{"repo", "git-repositories", "git-repos"},
+		Short:       "Manage git repositories",
 	}
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newCreateCmd())

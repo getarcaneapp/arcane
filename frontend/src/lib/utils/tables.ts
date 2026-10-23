@@ -149,13 +149,11 @@ export async function resolveListPageLoadContext(
 	limit = 20
 ) {
 	const parentData = (await parent()) as { queryClient: QueryClientLike };
-	const envId = await environmentStore.getCurrentEnvironmentId();
 	const environments = await environmentStore.getShownEnvironments();
 	const requestOptions = resolveInitialListPageRequest(persistKey, sort, limit);
 
 	return {
 		queryClient: parentData.queryClient,
-		envId,
 		environments,
 		scope: environmentStore.shownKey,
 		requestOptions

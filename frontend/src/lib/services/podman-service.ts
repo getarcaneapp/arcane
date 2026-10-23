@@ -1,4 +1,3 @@
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type {
 	PodmanAutoUpdateOptions,
 	PodmanAutoUpdateResult,
@@ -39,23 +38,16 @@ export type PodmanPodAction = 'start' | 'stop' | 'restart' | 'pause' | 'unpause'
 export type PodmanQuadletAction = 'start' | 'stop' | 'restart';
 
 class PodmanService extends BaseAPIService {
-	private async environmentId(environmentId?: string): Promise<string> {
-		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
+	async getStatus(environmentId: string, config?: APIRequestConfig): Promise<PodmanStatus> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/podman/status`, config));
 	}
 
-	async getStatus(environmentId?: string, config?: APIRequestConfig): Promise<PodmanStatus> {
-		const envId = await this.environmentId(environmentId);
-		return this.handleResponse(this.api.get(`/environments/${envId}/podman/status`, config));
+	async getInfo(environmentId: string, config?: APIRequestConfig): Promise<PodmanInfo> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/podman/info`, config));
 	}
 
-	async getInfo(environmentId?: string, config?: APIRequestConfig): Promise<PodmanInfo> {
-		const envId = await this.environmentId(environmentId);
-		return this.handleResponse(this.api.get(`/environments/${envId}/podman/info`, config));
-	}
-
-	async runAutoUpdate(options: PodmanAutoUpdateOptions = {}, environmentId?: string): Promise<PodmanAutoUpdateResult> {
-		const envId = await this.environmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/podman/autoupdate`, options));
+	async runAutoUpdate(options: PodmanAutoUpdateOptions = {}, environmentId: string): Promise<PodmanAutoUpdateResult> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/podman/autoupdate`, options));
 	}
 
 	async getPods(scope: string, options?: SearchPaginationSortRequest, config?: APIRequestConfig): Promise<Paginated<PodmanPod>> {
@@ -66,48 +58,41 @@ class PodmanService extends BaseAPIService {
 		return res.data;
 	}
 
-	async getPod(podId: string, environmentId?: string): Promise<PodmanPodInspect> {
-		const envId = await this.environmentId(environmentId);
-		return this.handleResponse(this.api.get(`/environments/${envId}/podman/pods/${encodeURIComponent(podId)}`));
+	async getPod(podId: string, environmentId: string): Promise<PodmanPodInspect> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/podman/pods/${encodeURIComponent(podId)}`));
 	}
 
-	async getPodStats(names: string[], environmentId?: string): Promise<PodmanPodStats[]> {
-		const envId = await this.environmentId(environmentId);
+	async getPodStats(names: string[], environmentId: string): Promise<PodmanPodStats[]> {
 		const params = names.length > 0 ? { names: names.join(',') } : undefined;
-		return this.handleResponse(this.api.get(`/environments/${envId}/podman/pods/stats`, { params }));
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/podman/pods/stats`, { params }));
 	}
 
-	async getPodTop(podId: string, environmentId?: string): Promise<PodmanPodTop> {
-		const envId = await this.environmentId(environmentId);
-		return this.handleResponse(this.api.get(`/environments/${envId}/podman/pods/${encodeURIComponent(podId)}/top`));
+	async getPodTop(podId: string, environmentId: string): Promise<PodmanPodTop> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/podman/pods/${encodeURIComponent(podId)}/top`));
 	}
 
-	async createPod(request: PodmanPodCreateRequest, environmentId?: string): Promise<PodmanPodCreateResponse> {
-		const envId = await this.environmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/podman/pods`, request));
+	async createPod(request: PodmanPodCreateRequest, environmentId: string): Promise<PodmanPodCreateResponse> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/podman/pods`, request));
 	}
 
-	async prunePods(environmentId?: string): Promise<PodmanPodPruneReport[]> {
-		const envId = await this.environmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/podman/pods/prune`, {}));
+	async prunePods(environmentId: string): Promise<PodmanPodPruneReport[]> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/podman/pods/prune`, {}));
 	}
 
 	async podAction(
 		podId: string,
 		action: PodmanPodAction,
-		environmentId?: string,
+		environmentId: string,
 		request: PodmanPodActionRequest = {}
 	): Promise<void> {
-		const envId = await this.environmentId(environmentId);
 		await this.handleResponse(
-			this.api.post(`/environments/${envId}/podman/pods/${encodeURIComponent(podId)}`, request, { params: { action } })
+			this.api.post(`/environments/${environmentId}/podman/pods/${encodeURIComponent(podId)}`, request, { params: { action } })
 		);
 	}
 
-	async removePod(podId: string, force = false, environmentId?: string): Promise<void> {
-		const envId = await this.environmentId(environmentId);
+	async removePod(podId: string, force = false, environmentId: string): Promise<void> {
 		await this.handleResponse(
-			this.api.delete(`/environments/${envId}/podman/pods/${encodeURIComponent(podId)}`, { params: { force } })
+			this.api.delete(`/environments/${environmentId}/podman/pods/${encodeURIComponent(podId)}`, { params: { force } })
 		);
 	}
 
@@ -123,55 +108,48 @@ class PodmanService extends BaseAPIService {
 		return res.data;
 	}
 
-	async getQuadlet(name: string, environmentId?: string): Promise<PodmanQuadletDetail> {
-		const envId = await this.environmentId(environmentId);
-		return this.handleResponse(this.api.get(`/environments/${envId}/podman/quadlets/${encodeURIComponent(name)}`));
+	async getQuadlet(name: string, environmentId: string): Promise<PodmanQuadletDetail> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/podman/quadlets/${encodeURIComponent(name)}`));
 	}
 
-	async getQuadletFile(name: string, environmentId?: string): Promise<PodmanQuadletFile> {
-		const envId = await this.environmentId(environmentId);
-		return this.handleResponse(this.api.get(`/environments/${envId}/podman/quadlets/${encodeURIComponent(name)}/file`));
+	async getQuadletFile(name: string, environmentId: string): Promise<PodmanQuadletFile> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/podman/quadlets/${encodeURIComponent(name)}/file`));
 	}
 
-	async installQuadlet(request: PodmanQuadletInstallRequest, environmentId?: string): Promise<PodmanQuadletInstallReport> {
-		const envId = await this.environmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/podman/quadlets`, request));
+	async installQuadlet(request: PodmanQuadletInstallRequest, environmentId: string): Promise<PodmanQuadletInstallReport> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/podman/quadlets`, request));
 	}
 
 	async updateQuadlet(
 		name: string,
 		request: PodmanQuadletUpdateRequest,
-		environmentId?: string
+		environmentId: string
 	): Promise<PodmanQuadletInstallReport> {
-		const envId = await this.environmentId(environmentId);
-		return this.handleResponse(this.api.put(`/environments/${envId}/podman/quadlets/${encodeURIComponent(name)}`, request));
-	}
-
-	async removeQuadlet(name: string, environmentId?: string): Promise<PodmanQuadletRemoveReport> {
-		const envId = await this.environmentId(environmentId);
-		return this.handleResponse(this.api.delete(`/environments/${envId}/podman/quadlets/${encodeURIComponent(name)}`));
-	}
-
-	async quadletAction(name: string, action: PodmanQuadletAction, environmentId?: string): Promise<PodmanUnitStatus> {
-		const envId = await this.environmentId(environmentId);
 		return this.handleResponse(
-			this.api.post(`/environments/${envId}/podman/quadlets/${encodeURIComponent(name)}`, {}, { params: { action } })
+			this.api.put(`/environments/${environmentId}/podman/quadlets/${encodeURIComponent(name)}`, request)
 		);
 	}
 
-	async kubePlay(request: PodmanKubePlayRequest, environmentId?: string): Promise<PodmanKubePlayReport> {
-		const envId = await this.environmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/podman/kube/play`, request));
+	async removeQuadlet(name: string, environmentId: string): Promise<PodmanQuadletRemoveReport> {
+		return this.handleResponse(this.api.delete(`/environments/${environmentId}/podman/quadlets/${encodeURIComponent(name)}`));
 	}
 
-	async kubeDown(request: PodmanKubeDownRequest, environmentId?: string): Promise<PodmanKubeDownReport> {
-		const envId = await this.environmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/podman/kube/down`, request));
+	async quadletAction(name: string, action: PodmanQuadletAction, environmentId: string): Promise<PodmanUnitStatus> {
+		return this.handleResponse(
+			this.api.post(`/environments/${environmentId}/podman/quadlets/${encodeURIComponent(name)}`, {}, { params: { action } })
+		);
 	}
 
-	async kubeGenerate(request: PodmanKubeGenerateRequest, environmentId?: string): Promise<PodmanKubeGenerateResponse> {
-		const envId = await this.environmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/podman/kube/generate`, request));
+	async kubePlay(request: PodmanKubePlayRequest, environmentId: string): Promise<PodmanKubePlayReport> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/podman/kube/play`, request));
+	}
+
+	async kubeDown(request: PodmanKubeDownRequest, environmentId: string): Promise<PodmanKubeDownReport> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/podman/kube/down`, request));
+	}
+
+	async kubeGenerate(request: PodmanKubeGenerateRequest, environmentId: string): Promise<PodmanKubeGenerateResponse> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/podman/kube/generate`, request));
 	}
 
 	async getSecrets(
@@ -186,24 +164,22 @@ class PodmanService extends BaseAPIService {
 		return res.data;
 	}
 
-	async getSecret(name: string, environmentId?: string): Promise<PodmanSecret> {
-		const envId = await this.environmentId(environmentId);
-		return this.handleResponse(this.api.get(`/environments/${envId}/podman/secrets/${encodeURIComponent(name)}`));
+	async getSecret(name: string, environmentId: string): Promise<PodmanSecret> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/podman/secrets/${encodeURIComponent(name)}`));
 	}
 
-	async createSecret(request: PodmanSecretCreateRequest, environmentId?: string): Promise<PodmanSecretCreateResponse> {
-		const envId = await this.environmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/podman/secrets`, request));
+	async createSecret(request: PodmanSecretCreateRequest, environmentId: string): Promise<PodmanSecretCreateResponse> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/podman/secrets`, request));
 	}
 
-	async updateSecret(name: string, request: PodmanSecretUpdateRequest, environmentId?: string): Promise<PodmanSecret> {
-		const envId = await this.environmentId(environmentId);
-		return this.handleResponse(this.api.put(`/environments/${envId}/podman/secrets/${encodeURIComponent(name)}`, request));
+	async updateSecret(name: string, request: PodmanSecretUpdateRequest, environmentId: string): Promise<PodmanSecret> {
+		return this.handleResponse(
+			this.api.put(`/environments/${environmentId}/podman/secrets/${encodeURIComponent(name)}`, request)
+		);
 	}
 
-	async removeSecret(secretId: string, environmentId?: string): Promise<void> {
-		const envId = await this.environmentId(environmentId);
-		await this.handleResponse(this.api.delete(`/environments/${envId}/podman/secrets/${encodeURIComponent(secretId)}`));
+	async removeSecret(secretId: string, environmentId: string): Promise<void> {
+		await this.handleResponse(this.api.delete(`/environments/${environmentId}/podman/secrets/${encodeURIComponent(secretId)}`));
 	}
 }
 

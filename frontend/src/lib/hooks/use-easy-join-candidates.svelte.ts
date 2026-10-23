@@ -4,25 +4,30 @@ import { queryKeys } from '#lib/query/query-keys.js';
 import { swarmService } from '#lib/services/swarm-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
-import type { SwarmJoinCandidate } from '#lib/types/swarm.js';
 import { userHasPermission } from '#lib/utils/auth.js';
+import { tryCatch } from '#lib/utils/try-catch.js';
 
 export function useEasyJoinCandidates() {
 	const user = userStore;
-	const managerEnvironmentId = $derived(environmentStore.selected?.id ?? null);
-	const canDiscover = $derived(
-		managerEnvironmentId !== null && userHasPermission(user.current, 'swarm:join', managerEnvironmentId)
+	const managerEnvironmentIds = $derived(
+		environmentStore.shown.map((env) => env.id).filter((id) => userHasPermission(user.current, 'swarm:join', id))
 	);
 	const candidatesQuery = createQuery(() => {
-		const environmentId = managerEnvironmentId;
+		const environmentIds = managerEnvironmentIds;
 		return {
-			queryKey: queryKeys.swarm.joinCandidates(environmentId, user.current),
-			enabled: canDiscover,
-			queryFn: async ({ signal }): Promise<SwarmJoinCandidate[]> => {
-				await environmentStore.ready;
+			queryKey: queryKeys.swarm.joinCandidates(environmentIds.join(','), user.current),
+			enabled: environmentIds.length > 0,
+			queryFn: async ({ signal }): Promise<Record<string, string>> => {
+				const managers = await Promise.all(
+					environmentIds.map(async (managerId) => {
+						const result = await tryCatch(
+							swarmService.getSwarmJoinCandidates(managerId, { signal, suppressAccessDeniedToast: true })
+						);
+						return (result.data ?? []).map((candidate) => [candidate.environmentId, managerId] as const);
+					})
+				);
 				signal.throwIfAborted();
-				if (!environmentId) return [];
-				return swarmService.getSwarmJoinCandidates(environmentId, { signal, suppressAccessDeniedToast: true });
+				return Object.fromEntries(managers.flat());
 			},
 			retry: false,
 			throwOnError: false,
@@ -31,20 +36,20 @@ export function useEasyJoinCandidates() {
 			gcTime: 0
 		};
 	});
-	const candidates = $derived.by(() => {
-		if (!canDiscover || candidatesQuery.isError) return [];
-		return candidatesQuery.data ?? [];
+	const managerByCandidate = $derived.by((): Record<string, string> => {
+		if (managerEnvironmentIds.length === 0 || candidatesQuery.isError) return {};
+		return candidatesQuery.data ?? {};
 	});
 
 	return {
-		get managerEnvironmentId() {
-			return managerEnvironmentId;
+		managerFor(environmentId: string): string | undefined {
+			return managerByCandidate[environmentId];
 		},
 		isCandidate(environmentId: string) {
-			return candidates.some((candidate) => candidate.environmentId === environmentId);
+			return managerByCandidate[environmentId] !== undefined;
 		},
 		async refresh() {
-			if (canDiscover) await candidatesQuery.refetch();
+			if (managerEnvironmentIds.length > 0) await candidatesQuery.refetch();
 		}
 	};
 }

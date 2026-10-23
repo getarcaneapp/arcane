@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net/url"
 	"path"
 	"path/filepath"
 	"strconv"
@@ -43,6 +44,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/tracing"
 )
 
@@ -386,6 +389,54 @@ func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, environmentID
 	}
 
 	return out, paginationResp, counts, nil
+}
+
+func (s *GitOpsSyncService) AggregateSyncs(ctx context.Context, params pagination.QueryParams) (types.PaginatedWithCounts[types.GitOpsSync, types.GitOpsSyncCounts], error) {
+	collection, err := httpx.CollectEnvironments[types.PaginatedWithCounts[types.GitOpsSync, types.GitOpsSyncCounts]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return types.PaginatedWithCounts[types.GitOpsSync, types.GitOpsSyncCounts]{}, err
+	}
+
+	pages := make([]pagination.EnvironmentPage[types.GitOpsSync], 0, len(collection.Results))
+	var counts types.GitOpsSyncCounts
+	for _, result := range collection.Results {
+		pages = append(pages, pagination.EnvironmentPage[types.GitOpsSync]{
+			Environment:    result.Environment,
+			Items:          result.Value.Data,
+			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
+		})
+		counts = types.GitOpsSyncCounts{
+			TotalSyncs:      counts.TotalSyncs + result.Value.Counts.TotalSyncs,
+			ActiveSyncs:     counts.ActiveSyncs + result.Value.Counts.ActiveSyncs,
+			SuccessfulSyncs: counts.SuccessfulSyncs + result.Value.Counts.SuccessfulSyncs,
+			DeploySyncs:     counts.DeploySyncs + result.Value.Counts.DeploySyncs,
+			BackupSyncs:     counts.BackupSyncs + result.Value.Counts.BackupSyncs,
+		}
+	}
+	data, resp := pagination.MergeEnvironmentPages(pagination.Config[types.GitOpsSync]{
+		SortBindings: []pagination.SortBinding[types.GitOpsSync]{
+			{Key: "name", Fn: func(a, b types.GitOpsSync) int { return strings.Compare(a.Name, b.Name) }},
+			{Key: "repositoryId", Fn: func(a, b types.GitOpsSync) int { return strings.Compare(a.RepositoryID, b.RepositoryID) }},
+			{Key: "branch", Fn: func(a, b types.GitOpsSync) int { return strings.Compare(a.Branch, b.Branch) }},
+			{Key: "composePath", Fn: func(a, b types.GitOpsSync) int { return strings.Compare(a.ComposePath, b.ComposePath) }},
+			{Key: "projectName", Fn: func(a, b types.GitOpsSync) int { return strings.Compare(a.ProjectName, b.ProjectName) }},
+			{Key: "syncInterval", Fn: func(a, b types.GitOpsSync) int { return cmp.Compare(a.SyncInterval, b.SyncInterval) }},
+			{Key: "autoSync", Fn: func(a, b types.GitOpsSync) int {
+				return cmp.Compare(kit.Ternary(a.AutoSync, 1, 0), kit.Ternary(b.AutoSync, 1, 0))
+			}},
+			{Key: "lastSyncAt", Fn: func(a, b types.GitOpsSync) int {
+				return kit.FromPtr(a.LastSyncAt).Compare(kit.FromPtr(b.LastSyncAt))
+			}},
+		},
+	}, pages, params)
+
+	return types.PaginatedWithCounts[types.GitOpsSync, types.GitOpsSyncCounts]{
+		Success:            true,
+		Data:               data,
+		Counts:             counts,
+		Pagination:         handlerutil.PaginationResponse(resp),
+		FailedEnvironments: collection.Failures,
+	}, nil
 }
 
 func (s *GitOpsSyncService) GetSyncByID(ctx context.Context, environmentID, id string) (*projectpkg.GitOpsSync, error) {

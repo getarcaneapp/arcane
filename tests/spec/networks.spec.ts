@@ -110,7 +110,7 @@ test.describe('Networks Page', () => {
 			);
 			expect(response.ok()).toBe(true);
 
-			await page.goto(`/networks/${encodeURIComponent(networkId)}`);
+			await page.goto(`/networks/${encodeURIComponent(networkId)}?env=0`);
 			await expect(page.getByRole('heading', { name: networkName, level: 1 })).toBeVisible();
 			await page.getByRole('button', { name: 'Remove', exact: true }).click();
 			await page.getByRole('dialog').getByRole('button', { name: 'Remove', exact: true }).click();
@@ -136,7 +136,7 @@ test.describe('Networks Page', () => {
 		const networkName = `e2e-inspect-network-${Date.now()}`;
 		try {
 			await createNetworkViaApi(page, networkName);
-			await page.goto(`/networks/${encodeURIComponent(networkName)}`);
+			await page.goto(`/networks/${encodeURIComponent(networkName)}?env=0`);
 			await expect(page).toHaveURL(/\/networks\/.+/);
 			await expect(page.getByRole('heading', { level: 1, name: networkName })).toBeVisible();
 		} finally {
@@ -150,7 +150,7 @@ test.describe('Networks Page', () => {
 	test('Remove Network from details page', async ({ page }) => {
 		const networkName = `test-remove-network-${Date.now()}`;
 		await createNetworkViaApi(page, networkName);
-		await page.goto(`/networks/${encodeURIComponent(networkName)}`);
+		await page.goto(`/networks/${encodeURIComponent(networkName)}?env=0`);
 		await expect(page).toHaveURL(/\/networks\/.+/);
 		await page.getByRole('button', { name: 'Remove', exact: true }).click();
 		await page.getByRole('button', { name: 'Remove', exact: true }).last().click();
@@ -207,7 +207,7 @@ test.describe('Networks Page', () => {
 			const inspected = await inspect.json();
 			expect(inspected.data.ipam.config[0]).toMatchObject({ subnet, ipRange, gateway });
 
-			await page.goto(`/networks/${encodeURIComponent(networkName)}`);
+			await page.goto(`/networks/${encodeURIComponent(networkName)}?env=0`);
 			await expect(page.getByRole('heading', { level: 1, name: networkName })).toBeVisible();
 			await expect(page.getByText(ipRange, { exact: true })).toBeVisible();
 		} finally {
@@ -308,7 +308,7 @@ test.describe('Networks Page', () => {
 		const networkName = `e2e-badge-network-${Date.now()}`;
 		try {
 			await createNetworkViaApi(page, networkName);
-			await page.goto(`/networks/${encodeURIComponent(networkName)}`);
+			await page.goto(`/networks/${encodeURIComponent(networkName)}?env=0`);
 			await page.waitForLoadState('load');
 
 			await expect(page.getByText('Unused').first()).toBeVisible();

@@ -127,3 +127,65 @@ func TestAggregateNetworksMergesEnvironments(t *testing.T) {
 		require.Len(t, body.FailedEnvironments, 3)
 	})
 }
+
+func TestAggregateNetworkCountsSumsEnvironments(t *testing.T) {
+	ctx, _ := networkScopeContext(t, "/api/environments/a,b,c/networks/counts", map[string]any{
+		"a": types.ApiResponse[types.NetworkUsageCounts]{
+			Success: true,
+			Data: types.NetworkUsageCounts{
+				Inuse:  1,
+				Unused: 1,
+				Total:  2,
+			},
+		},
+		"b": types.ApiResponse[types.NetworkUsageCounts]{
+			Success: true,
+			Data: types.NetworkUsageCounts{
+				Inuse: 3,
+				Total: 3,
+			},
+		},
+	})
+
+	body, err := (&NetworkService{}).AggregateNetworkCounts(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, types.NetworkUsageCounts{
+		Inuse:  4,
+		Unused: 1,
+		Total:  5,
+	}, body.Data)
+	require.Len(t, body.Environments, 2)
+	require.Len(t, body.FailedEnvironments, 1)
+}
+
+func TestAggregateNetworkTopologyPrefixesNodeIDs(t *testing.T) {
+	topology := types.ApiResponse[types.NetworkTopology]{
+		Success: true,
+		Data: types.NetworkTopology{
+			Nodes: []types.NetworkTopologyNode{
+				{ID: "net", Name: "bridge", Type: types.NetworkTopologyNodeTypeNetwork},
+				{ID: "ctr", Name: "web", Type: types.NetworkTopologyNodeTypeContainer},
+			},
+			Edges: []types.NetworkTopologyEdge{{ID: "net:ctr", Source: "net", Target: "ctr"}},
+		},
+	}
+	ctx, _ := networkScopeContext(t, "/api/environments/a,b,c/networks/topology", map[string]any{
+		"a": topology,
+		"b": topology,
+	})
+
+	body, err := (&NetworkService{}).AggregateNetworkTopology(ctx)
+	require.NoError(t, err)
+
+	require.Len(t, body.Data.Nodes, 4)
+	require.Equal(t, "a/net", body.Data.Nodes[0].ID)
+	require.Equal(t, "Env a", body.Data.Nodes[0].EnvironmentName)
+	require.Equal(t, "b/ctr", body.Data.Nodes[3].ID)
+	require.Equal(t, "b", body.Data.Nodes[3].EnvironmentID)
+	require.Equal(t, []types.NetworkTopologyEdge{
+		{ID: "a/net:ctr", Source: "a/net", Target: "a/ctr"},
+		{ID: "b/net:ctr", Source: "b/net", Target: "b/ctr"},
+	}, body.Data.Edges)
+	require.Len(t, body.FailedEnvironments, 1)
+}

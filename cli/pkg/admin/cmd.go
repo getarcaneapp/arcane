@@ -3,6 +3,7 @@ package admin
 import (
 	"github.com/spf13/cobra"
 
+	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin/apikeys"
 	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin/events"
 	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin/federatedcredentials"
@@ -16,9 +17,10 @@ import (
 // Command is the parent command for administrative operations.
 func Command() *cobra.Command {
 	command := &cobra.Command{
-		Use:     "admin",
-		Aliases: []string{"adm"},
-		Short:   "Administration & platform management",
+		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
+		Use:         "admin",
+		Aliases:     []string{"adm"},
+		Short:       "Administration & platform management",
 	}
 	command.AddCommand(backups.Command())
 	command.AddCommand(users.Command())

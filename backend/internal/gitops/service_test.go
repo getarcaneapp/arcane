@@ -3,10 +3,14 @@ package gitops
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -37,11 +41,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/gitutil"
 	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/entityjobs"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow/flowtest"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 var testDockerService = (&dockerInternal.DockerClientService{}).WithClient(func() *mobyclient.Client {
@@ -100,7 +106,7 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T) (*GitOpsSyncService, *dat
 	projectsDir := t.TempDir()
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, loadTestConfig(t), nil, nil)
+	eventService := event.NewEventService(db, loadTestConfig(t), nil)
 	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, testDockerService, nil, nil, nil, loadTestConfig(t), nil, nil)
 
 	return NewGitOpsSyncService(db, nil, projectService, nil, eventService, settingsService), db, projectsDir
@@ -157,7 +163,7 @@ func setupGitOpsSyncRemoteTestService(t *testing.T, files map[string]string) (*G
 	projectsDir := t.TempDir()
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, loadTestConfig(t), nil, nil)
+	eventService := event.NewEventService(db, loadTestConfig(t), nil)
 	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, testDockerService, nil, nil, nil, loadTestConfig(t), nil, nil)
 	repoService := gitrepo.NewGitRepositoryService(db, t.TempDir(), eventService, settingsService)
 
@@ -1121,7 +1127,7 @@ func setupGitOpsBackupTestService(t *testing.T) *backupTestEnv {
 	projectsDir := t.TempDir()
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
-	eventService := event.NewEventService(db, loadTestConfig(t), nil, nil)
+	eventService := event.NewEventService(db, loadTestConfig(t), nil)
 	projectService := projectpkg.NewProjectService(db, settingsService, eventService, nil, testDockerService, nil, nil, nil, loadTestConfig(t), nil, nil)
 	repoService := gitrepo.NewGitRepositoryService(db, t.TempDir(), eventService, settingsService)
 
@@ -1709,4 +1715,65 @@ func TestGitOpsImport_ForwardsDeployAndLifecycleFields(t *testing.T) {
 	assert.Nil(t, plain.PreDeployScriptPath)
 	assert.Equal(t, 60, plain.PreDeployTimeoutSec)
 	assert.Equal(t, "none", plain.PreDeployNetworkMode)
+}
+
+func gitopsScopeContext(t *testing.T, target string, bodies map[string]any) context.Context {
+	t.Helper()
+	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(body)
+		}),
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	})
+}
+
+func TestAggregateSyncsSumsCounts(t *testing.T) {
+	ctx := gitopsScopeContext(t, "/api/environments/a,b,c/gitops/syncs", map[string]any{
+		"a": types.PaginatedWithCounts[types.GitOpsSync, types.GitOpsSyncCounts]{
+			Success: true,
+			Data:    []types.GitOpsSync{{ID: "s1", Name: "web"}},
+			Counts: types.GitOpsSyncCounts{
+				TotalSyncs:  1,
+				ActiveSyncs: 1,
+				DeploySyncs: 1,
+			},
+		},
+		"b": types.PaginatedWithCounts[types.GitOpsSync, types.GitOpsSyncCounts]{
+			Success: true,
+			Data:    []types.GitOpsSync{{ID: "s2", Name: "api"}},
+			Counts: types.GitOpsSyncCounts{
+				TotalSyncs:      1,
+				SuccessfulSyncs: 1,
+				BackupSyncs:     1,
+			},
+		},
+	})
+
+	body, err := (&GitOpsSyncService{}).AggregateSyncs(ctx, pagination.QueryParams{
+		SortParams: pagination.SortParams{Sort: "name", Order: pagination.SortAsc},
+		Params:     pagination.Params{Limit: 20},
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, types.GitOpsSyncCounts{
+		TotalSyncs:      2,
+		ActiveSyncs:     1,
+		SuccessfulSyncs: 1,
+		DeploySyncs:     1,
+		BackupSyncs:     1,
+	}, body.Counts)
+	require.Len(t, body.Data, 2)
+	require.Equal(t, "api", body.Data[0].Name)
+	require.Equal(t, types.EnvironmentRef{ID: "b", Name: "Env b"}, body.Data[0].Environment())
+	require.Len(t, body.FailedEnvironments, 1)
 }

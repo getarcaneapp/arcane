@@ -5,9 +5,9 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 
-	import type { StorageTabProps } from './tab-props';
+	import type { FormTabProps } from './tab-props';
 
-	let { formInputs = $bindable() }: StorageTabProps = $props();
+	let { formInputs = $bindable() }: FormTabProps = $props();
 </script>
 
 <div class="space-y-8">

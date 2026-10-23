@@ -10,16 +10,15 @@
 	import * as Card from '#lib/components/ui/card/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import { LayersIcon, DockIcon, JobsIcon, TrashIcon, EditIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { SwarmStackSource } from '#lib/types/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { environmentHref, fetchAcrossEnvironments } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import SwarmServicesTable from '../../services/components/services-table.svelte';
@@ -76,8 +75,8 @@
 
 	const stackName = $derived(stack?.name ?? data.stackName);
 	const hasLiveStack = $derived((stack?.services ?? 0) > 0);
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const canManageStacks = $derived(hasPermission('swarm:stacks', currentEnvId));
+	const envId = $derived(data.envId);
+	const canManageStacks = $derived(hasPermission('swarm:stacks', envId));
 	const canViewSource = $derived(canManageStacks && sourceState !== 'forbidden');
 	const tabItems = $derived<TabItem[]>([
 		...(hasLiveStack ? [{ value: 'services', label: m.services(), icon: DockIcon }] : []),
@@ -97,12 +96,16 @@
 			: m.swarm_stack_saved_source({ stackName })
 	);
 
-	async function fetchStackServices(options: typeof servicesRequestOptions) {
-		return swarmService.getStackServices(stackName, options);
+	function fetchStackServices(options: typeof servicesRequestOptions) {
+		return fetchAcrossEnvironments(data.environments, options, (id, request, config) =>
+			swarmService.getStackServices(stackName, request, id, config)
+		);
 	}
 
-	async function fetchStackTasks(options: typeof tasksRequestOptions) {
-		return swarmService.getStackTasks(stackName, options);
+	function fetchStackTasks(options: typeof tasksRequestOptions) {
+		return fetchAcrossEnvironments(data.environments, options, (id, request, config) =>
+			swarmService.getStackTasks(stackName, request, id, config)
+		);
 	}
 
 	async function refreshSource(showErrorToast = false) {
@@ -113,7 +116,7 @@
 		}
 		const operationResult = await tryCatch(
 			(async () => {
-				source = await swarmService.getStackSource(stackName);
+				source = await swarmService.getStackSource(stackName, envId);
 				sourceState = 'available';
 			})()
 		);
@@ -143,9 +146,9 @@
 		isLoading.refresh = true;
 		try {
 			const [stackResult, servicesResult, tasksResult] = await Promise.allSettled([
-				swarmService.getStack(stackName),
-				swarmService.getStackServices(stackName, servicesRequestOptions),
-				swarmService.getStackTasks(stackName, tasksRequestOptions)
+				swarmService.getStack(stackName, envId),
+				fetchStackServices(servicesRequestOptions),
+				fetchStackTasks(tasksRequestOptions)
 			]);
 
 			if (stackResult.status === 'fulfilled') {
@@ -173,8 +176,6 @@
 		}
 	}
 
-	useEnvironmentRefresh(refresh);
-
 	onMount(() => {
 		if (canManageStacks) {
 			void refreshSource();
@@ -191,7 +192,7 @@
 				action: async () => {
 					isLoading.remove = true;
 					await handleApiResultWithCallbacks({
-						result: await tryCatch(swarmService.removeStack(stackName)),
+						result: await tryCatch(swarmService.removeStack(stackName, envId)),
 						message: m.common_delete_failed({ resource: `${m.swarm_stack()} "${stackName}"` }),
 						setLoadingState: (v) => (isLoading.remove = v),
 						onSuccess: async () => {
@@ -213,7 +214,7 @@
 						placement: 'primary' as const,
 						label: m.common_edit(),
 						icon: EditIcon,
-						onclick: () => goto(`/swarm/stacks/new?fromStack=${encodeURIComponent(stackName)}`),
+						onclick: () => goto(environmentHref(`/swarm/stacks/new?fromStack=${encodeURIComponent(stackName)}`, envId)),
 						disabled: isLoading.remove
 					},
 					{
@@ -279,6 +280,7 @@
 						bind:requestOptions={servicesRequestOptions}
 						fetchServices={fetchStackServices}
 						persistKey={`arcane-swarm-stack-services-table-${stackName}`}
+						showEnvironment={false}
 					/>
 				</Tabs.Content>
 				<Tabs.Content value="tasks" class="min-h-0 flex-1">
@@ -287,6 +289,7 @@
 						bind:requestOptions={tasksRequestOptions}
 						fetchTasks={fetchStackTasks}
 						persistKey={`arcane-swarm-stack-tasks-table-${stackName}`}
+						showEnvironment={false}
 					/>
 				</Tabs.Content>
 				<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col">

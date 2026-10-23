@@ -229,7 +229,7 @@
 			title: m.updates_bulk_update_confirm_title({ count: ids.length }),
 			message: m.updates_bulk_update_confirm_message({ count: ids.length }),
 			confirmLabel: m.common_update(),
-			run: (id, environmentId) => containerService.updateContainer(id, environmentId),
+			runInEnvironment: (id, environmentId) => containerService.updateContainer(id, environmentId),
 			messages: {
 				success: (count) => m.containers_bulk_update_accepted({ count }),
 				partial: (success, total, failed) => m.containers_bulk_update_accept_partial({ success, total, failed }),

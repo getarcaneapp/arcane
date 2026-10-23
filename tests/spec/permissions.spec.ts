@@ -472,9 +472,7 @@ test('administers scoped identities and enforces their browser access immediatel
 			await page.request.post('/api/environments', {
 				data: {
 					name: remoteEnvironmentName,
-					apiUrl: 'http://rbac-remote.invalid:3552',
-					enabled: true,
-					isEdge: false
+					enabled: true
 				}
 			}),
 			`Create environment ${remoteEnvironmentName}`
@@ -569,9 +567,9 @@ test('administers scoped identities and enforces their browser access immediatel
 			await expect(
 				restrictedPage.getByRole('link', { name: 'Containers', exact: true })
 			).toBeVisible();
-			await expect(restrictedPage.getByRole('link', { name: 'Projects', exact: true })).toHaveCount(
-				0
-			);
+			await expect(
+				restrictedPage.getByRole('link', { name: 'Projects', exact: true })
+			).toBeVisible();
 			await expect(
 				restrictedPage.getByRole('link', { name: 'Dashboard', exact: true })
 			).toHaveCount(0);
@@ -599,8 +597,6 @@ test('administers scoped identities and enforces their browser access immediatel
 
 			await restrictedPage.goto('/settings/backups');
 			await expect(restrictedPage).toHaveURL('/containers');
-			await restrictedPage.goto('/projects');
-			await expect(restrictedPage).toHaveURL('/containers');
 
 			const currentUser = await readApiData<TestUser>(
 				await restrictedPage.request.get('/api/auth/me'),
@@ -614,28 +610,11 @@ test('administers scoped identities and enforces their browser access immediatel
 			);
 			expect(currentUser.permissionsByEnv.global ?? []).toEqual([]);
 
-			await restrictedPage
-				.getByRole('button')
-				.filter({ hasText: localEnvironment.name })
-				.first()
-				.click();
-			const environmentDialog = restrictedPage.getByRole('dialog', {
-				name: 'Select Environment'
-			});
-			await expect(environmentDialog).toBeVisible();
-			await environmentDialog
-				.getByRole('button')
-				.filter({ hasText: remoteEnvironment.name })
-				.first()
-				.click();
-
+			await restrictedPage.getByRole('link', { name: 'Projects', exact: true }).click();
 			await expect(restrictedPage).toHaveURL('/projects');
 			await expect(
-				restrictedPage.getByRole('link', { name: 'Projects', exact: true })
-			).toBeVisible();
-			await expect(
 				restrictedPage.getByRole('link', { name: 'Containers', exact: true })
-			).toHaveCount(0);
+			).toBeVisible();
 		} finally {
 			restrictedErrors.stop();
 			expect(
@@ -726,7 +705,7 @@ test('administers scoped identities and enforces their browser access immediatel
 			}
 			forbiddenResponses.forbidden.length = 0;
 
-			await environmentAdminPage.goto(`/containers/${targetContainer.id}`);
+			await environmentAdminPage.goto(`/containers/${targetContainer.id}?env=0`);
 			await expect(
 				environmentAdminPage.getByRole('tab', { name: 'Overview', exact: true })
 			).toBeVisible();
@@ -795,7 +774,7 @@ test('administers scoped identities and enforces their browser access immediatel
 			expect(optionalRequests).toEqual([]);
 
 			await environmentAdminPage.goto(
-				`/volumes/${encodeURIComponent(environmentAdminVolumeName)}?tab=backups`
+				`/volumes/${encodeURIComponent(environmentAdminVolumeName)}?tab=backups&env=0`
 			);
 			await expect(
 				environmentAdminPage.getByRole('button', { name: 'Add schedule', exact: true })

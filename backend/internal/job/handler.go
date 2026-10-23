@@ -91,9 +91,9 @@ func (h *JobSchedulesHandler) runJob(ctx context.Context, input *JobActionInput)
 		RunID:            cmp.Or(kit.FromPtr(input.Body).RunID, input.RequestID),
 		JobID:            input.JobID,
 		EnvironmentID:    input.ID,
-		Trigger:          kit.Ternary(h.jobService.cfg.AgentMode && userID == "agent", "remote", "manual"),
+		Trigger:          kit.Ternary(h.jobService.cfg.EdgeAgent && userID == "agent", "remote", "manual"),
 		RequestedWithKey: keyID,
-		RequestedBy:      kit.Ternary(h.jobService.cfg.AgentMode && userID == "agent", "", userID),
+		RequestedBy:      kit.Ternary(h.jobService.cfg.EdgeAgent && userID == "agent", "", userID),
 	})
 	if err != nil {
 		return nil, jobHTTPError(err)

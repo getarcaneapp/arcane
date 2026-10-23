@@ -210,6 +210,7 @@ func (
 			slog.WarnContext(ctx, "failed to update build history record", "error", updateErr)
 		}
 	}
+	s.eventService.PublishChange(environmentID, "build")
 
 	if err != nil {
 		s.logBuildFailureEvent(ctx, environmentID, req, serviceName, buildRecordID, err, user)

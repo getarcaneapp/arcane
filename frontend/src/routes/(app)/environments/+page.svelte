@@ -13,9 +13,11 @@
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import { simpleRefresh } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
 
 	import EnvironmentTable from './components/environment-table.svelte';
 
@@ -56,9 +58,9 @@
 		return () => clearTimeout(timer);
 	});
 
-	const canCreateEnvironment = $derived(hasPermission('environments:create'));
-	const canDeleteEnvironment = $derived(hasPermission('environments:delete'));
-	const canUpdateEnvironments = $derived(hasPermission('system:upgrade'));
+	const canCreateEnvironment = $derived(hasPermission('environments:create', GLOBAL_SCOPE));
+	const canDeleteEnvironment = $derived(hasPermission('environments:delete', GLOBAL_SCOPE));
+	const canUpdateEnvironments = $derived(hasShownPermission('system:upgrade'));
 
 	function handleBulkDelete(ids: string[] = selectedIds) {
 		if (ids.length === 0) return;
@@ -89,7 +91,7 @@
 	}
 
 	// Dev-only: `?updateAllDemo=1` opens the update-all dialog against a scripted fake
-	// fleet, so its progress and result states can be reviewed under `just dev` without
+	// set of environments, so its progress and result states can be reviewed under `just dev` without
 	// updating anything. `dev` is compiled out of production builds.
 	const updateAllDemo = $derived(dev && page.url.searchParams.get('updateAllDemo') === '1');
 	afterNavigate(() => {

@@ -189,7 +189,7 @@ export function createProjectActions({
 			message: config.message(ids.length),
 			confirmLabel: config.label,
 			destructive: config.destructive ?? false,
-			run: (id, environmentId) => config.run(id, environmentId),
+			runInEnvironment: (id, environmentId) => config.run(id, environmentId),
 			messages: {
 				success: config.success,
 				partial: config.partial,

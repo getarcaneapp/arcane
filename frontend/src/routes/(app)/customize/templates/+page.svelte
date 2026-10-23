@@ -12,7 +12,7 @@
 	import { templateService } from '#lib/services/template-service.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { TemplateRegistry, TemplateRegistryCreate, TemplateRegistryUpdate } from '#lib/types/swarm.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import RegistryManager from './components/registry-manager.svelte';
@@ -156,8 +156,8 @@
 		}
 	}
 
-	const canCreateTemplate = $derived(hasPermission('templates:create'));
-	const canUpdateTemplate = $derived(hasPermission('templates:update'));
+	const canCreateTemplate = $derived(hasShownPermission('templates:create'));
+	const canUpdateTemplate = $derived(hasShownPermission('templates:update'));
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];

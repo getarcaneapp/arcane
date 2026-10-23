@@ -2,8 +2,12 @@ package stacks
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/types/v3"
@@ -15,6 +19,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 func setupSwarmServiceTestDB(t *testing.T) *database.DB {
@@ -207,4 +213,80 @@ func TestService_UpdateStackSource_PrunesAndRestoresOnDeployFailure(t *testing.T
 	source, err := svc.GetStackSource(ctx, "0", "demo-stack")
 	require.NoError(t, err)
 	require.Equal(t, firstCompose, source.ComposeContent)
+}
+
+func stacksScopeContext(t *testing.T, target string, bodies map[string]any) context.Context {
+	t.Helper()
+	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(body)
+		}),
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	})
+}
+
+func TestAggregateMergesEnvironments(t *testing.T) {
+	ctx := stacksScopeContext(t, "/api/environments/a,b,c/swarm/stacks", map[string]any{
+		"a": types.Paginated[types.SwarmStackSummary]{
+			Success: true,
+			Data:    []types.SwarmStackSummary{{ID: "web", Name: "web"}},
+		},
+		"b": types.Paginated[types.SwarmStackSummary]{
+			Success: true,
+			Data:    []types.SwarmStackSummary{{ID: "api", Name: "api"}},
+		},
+	})
+
+	body, err := (&Service{}).Aggregate(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
+	require.NoError(t, err)
+
+	require.Len(t, body.Data, 2)
+	require.ElementsMatch(t, []string{"Env a", "Env b"}, []string{body.Data[0].Environment().Name, body.Data[1].Environment().Name})
+	require.EqualValues(t, 2, body.Pagination.TotalItems)
+	require.Len(t, body.FailedEnvironments, 1)
+	require.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
+}
+
+func TestAggregateKeepsSourceOwningManagerPerCluster(t *testing.T) {
+	ctx := stacksScopeContext(t, "/api/environments/a,b,c/swarm/stacks", map[string]any{
+		"a": types.Paginated[types.SwarmStackSummary]{
+			Success: true,
+			Data: []types.SwarmStackSummary{
+				{ID: "web", Name: "web", ClusterID: "cluster-1"},
+				{ID: "api", Name: "api", ClusterID: "cluster-1"},
+			},
+		},
+		"b": types.Paginated[types.SwarmStackSummary]{
+			Success: true,
+			Data: []types.SwarmStackSummary{
+				{ID: "web", Name: "web", ClusterID: "cluster-1", HasSource: true},
+				{ID: "api", Name: "api", ClusterID: "cluster-1"},
+				{ID: "saved", Name: "saved", HasSource: true},
+			},
+		},
+		"c": types.Paginated[types.SwarmStackSummary]{
+			Success: true,
+			Data:    []types.SwarmStackSummary{{ID: "web", Name: "web", ClusterID: "cluster-2"}},
+		},
+	})
+
+	body, err := (&Service{}).Aggregate(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
+	require.NoError(t, err)
+
+	rows := make([]string, 0, len(body.Data))
+	for _, item := range body.Data {
+		rows = append(rows, item.Environment().ID+"/"+item.Name)
+	}
+	require.ElementsMatch(t, []string{"a/api", "b/web", "b/saved", "c/web"}, rows)
+	require.EqualValues(t, 4, body.Pagination.TotalItems)
 }

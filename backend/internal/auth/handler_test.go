@@ -447,18 +447,10 @@ func TestNewHumaMiddleware_AgentAuthAppliesForwardedIconCatalog(t *testing.T) {
 	}
 
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
-	agentCfg := &config.Config{
-		AgentMode:  true,
+	api.UseMiddleware(NewHumaMiddleware(api, &AuthService{}, nil, nil, nil, &config.Config{
+		EdgeAgent:  true,
 		AgentToken: agentToken,
-	}
-	settingsEnv, err := settings.LoadEnv()
-	require.NoError(t, err)
-	settingsService, err := settings.NewSettingsService(t.Context(), setupAuthServiceTestDB(t), agentCfg, settingsEnv)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context())))
-	})
-	api.UseMiddleware(NewHumaMiddleware(api, &AuthService{settingsService: settingsService}, nil, nil, nil, agentCfg))
+	}))
 
 	huma.Register(api, huma.Operation{
 		OperationID: "secure-agent-icon-catalog",

@@ -1,9 +1,13 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import { toast } from 'svelte-sonner';
 
 	import CategoryIndexPage from '#lib/components/category-index-page.svelte';
 	import type { NormalizedCategory } from '#lib/components/category-index-page.types.js';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import SettingsSection from '#lib/components/settings/settings-section.svelte';
+	import { Input } from '#lib/components/ui/input/index.js';
 	import { filterByPermissions, getSettingsSubpageUrlsInNavOrder, navigationItems } from '#lib/config/navigation-config.js';
 	import { useCategorySearch } from '#lib/hooks/use-category-search.svelte.js';
 	import {
@@ -23,10 +27,10 @@
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { settingsSearchService } from '#lib/services/settings-search.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { SettingsCategory } from '#lib/types/shared.js';
-	import { canReachAccessSurfaceUrl } from '#lib/utils/access-policy.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { canReachAccessSurfaceUrl, isGlobalAdmin } from '#lib/utils/auth.js';
 	import { normalizeCategory, orderCategoriesByNav } from '#lib/utils/category-page.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -126,7 +130,28 @@
 	function isAccessibleCategory(category: SettingsCategory) {
 		if (category.id === 'systembackups' && !user?.isGlobalAdmin) return false;
 		if (!permissionsManifest?.accessSurfaces?.length) return true;
-		return canReachAccessSurfaceUrl(permissionsManifest, category.url, user, environmentStore.selected?.id);
+		return canReachAccessSurfaceUrl(permissionsManifest, category.url, user);
+	}
+
+	const environmentLimit = $derived(Number(settingsStore.current?.allEnvironmentsLimit) || 64);
+	let environmentLimitInput = $derived(String(environmentLimit));
+	let environmentLimitError = $state<string | null>(null);
+
+	async function commitEnvironmentLimit() {
+		const parsed = Number(environmentLimitInput);
+		if (!Number.isInteger(parsed) || parsed < 2 || parsed > 256) {
+			environmentLimitError = m.all_environments_limit_help();
+			return;
+		}
+		environmentLimitError = null;
+		if (parsed === environmentLimit) return;
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(settingsStore.save({ allEnvironmentsLimit: parsed })),
+			message: m.common_update_failed({ resource: m.settings() }),
+			onSuccess: () => {
+				toast.success(m.common_update_success({ resource: m.settings() }));
+			}
+		});
 	}
 
 	function normalize(category: SettingsCategory): NormalizedCategory {
@@ -155,7 +180,6 @@
 		filterByPermissions(
 			navigationItems.settingsItems.find((item) => item.url === '/settings')?.items,
 			user ?? null,
-			environmentStore.selected?.id,
 			permissionsManifest
 		).flatMap((item): NormalizedCategory[] => {
 			const description = navOnlyCardDescriptions[item.url];
@@ -213,3 +237,26 @@
 		{m.count_more({ count })}
 	{/snippet}
 </CategoryIndexPage>
+
+{#if isGlobalAdmin()}
+	<SettingsSection title={m.environments_title()}>
+		<SettingsRow
+			for="settings-all-environments-limit"
+			label={m.all_environments_limit()}
+			description={m.all_environments_limit_description()}
+			helpText={m.all_environments_limit_help()}
+			error={environmentLimitError}
+		>
+			<Input
+				id="settings-all-environments-limit"
+				type="number"
+				min="2"
+				max="256"
+				bind:value={environmentLimitInput}
+				placeholder="64"
+				aria-invalid={Boolean(environmentLimitError)}
+				onblur={() => void commitEnvironmentLimit()}
+			/>
+		</SettingsRow>
+	</SettingsSection>
+{/if}

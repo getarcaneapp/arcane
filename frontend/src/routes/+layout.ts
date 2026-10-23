@@ -1,7 +1,7 @@
 import { browser } from '$app/env';
 import { invalidate } from '$app/navigation';
-import { navigating, page } from '$app/state';
-import { error, redirect } from '@sveltejs/kit';
+import { page } from '$app/state';
+import { redirect } from '@sveltejs/kit';
 import { QueryClient } from '@tanstack/svelte-query';
 
 import { queryKeys } from '#lib/query/query-keys.js';
@@ -13,17 +13,21 @@ import { roleService } from '#lib/services/role-service.js';
 import { settingsService } from '#lib/services/settings-service.js';
 import { swarmService } from '#lib/services/swarm-service.js';
 import versionService, { toAppVersionInformation } from '#lib/services/version-service.js';
+import { clientStream } from '#lib/stores/client-stream.svelte.js';
 import settingsStore from '#lib/stores/config-store.svelte.js';
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 import { versionStore } from '#lib/stores/version.store.svelte.js';
 import type { PermissionsManifest, SessionBootstrap, User } from '#lib/types/auth.js';
 import type { Environment } from '#lib/types/environment.js';
-import type { PodmanStatus } from '#lib/types/podman.js';
+import { PODMAN_STATUS_DEPENDENCY, type PodmanStatus } from '#lib/types/podman.js';
 import type { AppVersionInformation, ResolvedSettings } from '#lib/types/settings.js';
+import type { SwarmRuntimeStatus } from '#lib/types/swarm.js';
 import { extractApiErrorStatus, isAuthRejectionError } from '#lib/utils/api.js';
-import { getAuthRedirectPath, shownEnvironmentForRoute, userHasPermission } from '#lib/utils/auth.js';
+import { getAuthRedirectPath, userHasPermission } from '#lib/utils/auth.js';
+import { isEnvironmentOnline } from '#lib/utils/docker.js';
+import { readableEnvironments, sumAcrossEnvironments } from '#lib/utils/environments.js';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 import { setTelemetry } from '#lib/utils/telemetry.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -32,19 +36,14 @@ import type { LayoutLoad } from './$types';
 
 export const ssr = false;
 
-const spansEnvironments = ({ queryKey }: { queryKey: readonly unknown[] }) =>
-	environmentStore.shown.length > 1 && queryKey.includes(environmentStore.shownKey);
-
 const queryClient = new QueryClient({
 	defaultOptions: {
 		queries: {
 			enabled: browser,
-			// Covers the gap between a page loader's fetch and the component's
-			// mount so the same query isn't fetched twice in one navigation.
-			staleTime: (query) => (spansEnvironments(query) ? 15_000 : 2_000),
+			staleTime: 15_000,
 			gcTime: 60 * 1000,
 			refetchOnMount: true,
-			refetchOnWindowFocus: (query) => (spansEnvironments(query) ? true : 'always'),
+			refetchOnWindowFocus: true,
 			refetchOnReconnect: 'always',
 			retry: (failureCount, error) => {
 				const status = extractApiErrorStatus(error, 0);
@@ -55,16 +54,23 @@ const queryClient = new QueryClient({
 });
 
 let authenticatedUserId: string | null | undefined;
-// Whether a signed-in page has loaded; later loads without a navigation to their path are preloads.
-let opened = false;
 let telemetryAwaited = false;
 
 // Navigations reuse root data for this long; a refresh of the page on screen always refetches.
 const ROOT_STALE_TIME = 30_000;
 const SECONDARY_DISCOVERY_TIMEOUT = 1_500;
-const PODMAN_STATUS_DEPENDENCY = 'app:podman-status';
 const ENVIRONMENT_LIST_OPTIONS = { pagination: { page: 1, limit: -1 } };
-const slowPodmanStatuses = new Map<string, PodmanStatus>();
+const EMPTY_SWARM_STATUS: SwarmRuntimeStatus = { enabled: false };
+const EMPTY_PODMAN_STATUS: PodmanStatus = {
+	detected: false,
+	podCount: 0,
+	rootless: false,
+	quadletsSupported: false,
+	quadletAppsSupported: false,
+	autoUpdateMode: 'unavailable',
+	systemdAvailable: false
+};
+let knownPodmanStatuses: Record<string, PodmanStatus> = {};
 // Query results last pushed into the stores, so a cached repeat never overwrites newer local or streamed state.
 let appliedUser: User | undefined;
 let appliedEnvironments: Environment[] | undefined;
@@ -76,18 +82,11 @@ function dataOrNull<T>(promise: Promise<T>): Promise<T | null> {
 	return tryCatch(promise).then((result) => (result.error ? null : result.data));
 }
 
-export const load: LayoutLoad = async (event) => {
-	// With several environments shown this load may switch environments for the route, and child loads start
-	// alongside it, so their environment lookups wait until it has chosen.
-	const releaseSelection = environmentStore.shown.length > 1 ? environmentStore.holdSelection() : undefined;
-	try {
-		return await loadRoot(event, releaseSelection);
-	} finally {
-		releaseSelection?.();
-	}
-};
+function afterDiscoveryTimeout(): Promise<undefined> {
+	return new Promise((resolve) => setTimeout(() => resolve(undefined), SECONDARY_DISCOVERY_TIMEOUT));
+}
 
-async function loadRoot({ url, depends }: Parameters<LayoutLoad>[0], releaseSelection: (() => void) | undefined) {
+export const load: LayoutLoad = async ({ url, depends }) => {
 	depends(PODMAN_STATUS_DEPENDENCY);
 	// Logout must not wait on, or be triggered by, authenticated requests; preloading runs this too.
 	if (url.pathname === '/logout') {
@@ -99,7 +98,6 @@ async function loadRoot({ url, depends }: Parameters<LayoutLoad>[0], releaseSele
 			versionInformation: versionStore.current ?? toAppVersionInformation({}),
 			queryClient,
 			swarmEnabled: undefined,
-			podmanStatus: null,
 			podmanStatuses: {}
 		};
 	}
@@ -167,14 +165,10 @@ async function loadRoot({ url, depends }: Parameters<LayoutLoad>[0], releaseSele
 
 	let settings = null;
 	let swarmEnabled: boolean | undefined;
-	let podmanStatus: PodmanStatus | null = null;
 	let podmanStatuses: Record<string, PodmanStatus> = {};
 	let permissionsManifest: PermissionsManifest | null = null;
 	let permissionsManifestLoadFailed = false;
 	if (user) {
-		const opening = !opened;
-		opened = true;
-		// Initialize environment store (required for settings service)
 		const environmentsRequest = tryCatch(
 			bootstrap
 				? Promise.resolve(bootstrap.environments)
@@ -198,126 +192,95 @@ async function loadRoot({ url, depends }: Parameters<LayoutLoad>[0], releaseSele
 			// The live environment stream keeps the store newer than a cached list.
 			if (environments.data.data !== appliedEnvironments) await environmentStore.initialize(environments.data.data);
 			appliedEnvironments = environments.data.data;
-		} else if (!environmentStore.isInitialized()) {
-			// A failed refetch on an already-initialised store keeps the current
-			// selection; re-initialising with [] would drop it to "No Environment".
-			await environmentStore.initialize([]);
+		} else {
+			await environmentStore.initialize(environmentStore.available);
 		}
-
-		// With the preview on, a page only another shown environment allows opens there instead of failing.
-		if (environmentStore.shown.length > 1) {
-			const reachable = shownEnvironmentForRoute(
-				url.pathname,
-				user,
-				environmentStore.selected?.id,
-				await permissionsManifestRequest
-			);
-			const environment = environmentStore.available.find((env) => env.id === reachable?.id);
-			// Switch only when opening, reloading or navigating to the page on screen. A hover preload of another page
-			// must not retarget this one, so it is stopped instead; SvelteKit then drops it and the click loads afresh.
-			const forPageOnScreen = opening || navigating.to?.url.pathname === url.pathname || page.url.pathname === url.pathname;
-			if (environment && !forPageOnScreen) error(403);
-			if (environment) await environmentStore.setEnvironment(environment, { navigate: false });
-		}
-		releaseSelection?.();
 
 		featureStore.connect(queryClient);
-		const currentEnvironmentId = await environmentStore.getCurrentEnvironmentId();
-		const settingsRequest = (
-			userHasPermission(user, 'settings:read')
-				? dataOrNull(
-						queryClient.query({
-							...rootQuery,
-							queryKey: queryKeys.settings.byEnvironment(currentEnvironmentId),
-							queryFn: () => settingsService.getSettingsForEnvironmentMerged(currentEnvironmentId)
-						})
-					)
-				: Promise.resolve(null)
-		).then(
-			(loaded) =>
-				loaded ??
-				dataOrNull(
-					queryClient.query({
-						...rootQuery,
-						queryKey: queryKeys.settings.public(currentEnvironmentId),
-						queryFn: () => settingsService.getPublicSettings(currentEnvironmentId)
-					})
-				)
-		);
-		const featuresRequest = featureStore.load(currentEnvironmentId, rootQuery.staleTime === 0);
-		// The all environments preview shows navigation for features in any shown environment. The others load
-		// in the background, so an unreachable environment never stalls navigation.
-		for (const env of environmentStore.shown) {
-			if (env.id !== currentEnvironmentId) void featureStore.load(env.id);
-		}
-		// Optional discovery: skip it without swarm:read and never toast a denial.
-		const swarmStatusRequest = userHasPermission(user, 'swarm:read', currentEnvironmentId)
+		clientStream.connect(queryClient);
+		const settingsRequest = userHasPermission(user, 'settings:read')
 			? dataOrNull(
 					queryClient.query({
 						...rootQuery,
-						queryKey: queryKeys.swarm.status(currentEnvironmentId),
-						queryFn: () => swarmService.getSwarmStatus(currentEnvironmentId, { suppressAccessDeniedToast: true })
+						queryKey: queryKeys.settings.byEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID),
+						queryFn: () => settingsService.getSettingsForEnvironmentMerged(LOCAL_DOCKER_ENVIRONMENT_ID)
 					})
 				)
 			: Promise.resolve(null);
-		const podmanEnvironmentIds = [...new Set([currentEnvironmentId, ...environmentStore.shown.map((env) => env.id)])].filter(
-			(id) => userHasPermission(user, 'podman:read', id)
+		const featuresRequest = Promise.race([
+			Promise.all(
+				environmentStore.available
+					.filter((env) => env.enabled)
+					.map((env) =>
+						isEnvironmentOnline(env) ? featureStore.load(env.id, rootQuery.staleTime === 0) : featureStore.markUnavailable(env.id)
+					)
+			),
+			afterDiscoveryTimeout()
+		]);
+		const swarmEnvironments = readableEnvironments('swarm:read');
+		const swarmStatusRequest =
+			swarmEnvironments.length > 0
+				? dataOrNull(
+						queryClient.query({
+							...rootQuery,
+							queryKey: queryKeys.swarm.status(swarmEnvironments.map((env) => env.id).join(',')),
+							queryFn: () =>
+								sumAcrossEnvironments(
+									swarmEnvironments,
+									(scope, config) => swarmService.getSwarmStatus(scope, config),
+									EMPTY_SWARM_STATUS
+								)
+						})
+					)
+				: Promise.resolve(null);
+		const podmanEnvironments = readableEnvironments('podman:read');
+		const podmanStatusRequest = (
+			podmanEnvironments.length > 0
+				? dataOrNull(
+						queryClient.query({
+							...rootQuery,
+							queryKey: queryKeys.podman.status(podmanEnvironments.map((env) => env.id).join(',')),
+							queryFn: () =>
+								sumAcrossEnvironments(
+									podmanEnvironments,
+									(scope, config) => podmanService.getStatus(scope, config),
+									EMPTY_PODMAN_STATUS
+								)
+						})
+					)
+				: Promise.resolve(null)
+		).then((loaded) =>
+			Object.fromEntries(
+				(loaded?.byEnvironment ?? []).flatMap(({ environment, data }) => (data.detected ? [[environment.id, data] as const] : []))
+			)
 		);
-		const podmanStatusRequest = Promise.all(
-			podmanEnvironmentIds.map(async (id) => {
-				const request = dataOrNull(
-					queryClient.query({
-						...rootQuery,
-						queryKey: queryKeys.podman.status(id),
-						queryFn: () => podmanService.getStatus(id, { suppressAccessDeniedToast: true })
-					})
-				);
-				if (id === currentEnvironmentId) return [id, await request] as const;
-				const known = slowPodmanStatuses.get(id);
-				if (known) {
-					void request.then((refreshed) => {
-						if (JSON.stringify(refreshed) === JSON.stringify(known)) return;
-						if (refreshed?.detected) slowPodmanStatuses.set(id, refreshed);
-						else slowPodmanStatuses.delete(id);
-						void invalidate(PODMAN_STATUS_DEPENDENCY);
-					});
-					return [id, known] as const;
-				}
-				const status = await Promise.race([
-					request,
-					new Promise<'pending'>((resolve) => setTimeout(() => resolve('pending'), SECONDARY_DISCOVERY_TIMEOUT))
-				]);
-				if (status !== 'pending') return [id, status] as const;
-				void request.then((discovered) => {
-					if (!discovered?.detected) return;
-					slowPodmanStatuses.set(id, discovered);
-					void invalidate(PODMAN_STATUS_DEPENDENCY);
-				});
-				return [id, null] as const;
-			})
-		);
-		const [loadedSettings, loadedSwarmStatus, loadedPodmanStatuses, loadedPermissionsManifest] = await Promise.all([
+		const podmanStatusDiscovery = Promise.race([podmanStatusRequest, afterDiscoveryTimeout()]);
+		const [loadedSettings, loadedSwarmStatus, discoveredPodmanStatuses, loadedPermissionsManifest] = await Promise.all([
 			settingsRequest,
 			swarmStatusRequest,
-			podmanStatusRequest,
+			podmanStatusDiscovery,
 			permissionsManifestRequest
 		]);
-		// Keep recovery/settings pages reachable while a selected agent is offline.
+		if (discoveredPodmanStatuses === undefined) {
+			void podmanStatusRequest.then((statuses) => {
+				if (JSON.stringify(statuses) === JSON.stringify(knownPodmanStatuses)) return;
+				knownPodmanStatuses = statuses;
+				void invalidate(PODMAN_STATUS_DEPENDENCY);
+			});
+		}
 		settings =
 			loadedSettings ??
 			(await dataOrNull(
 				queryClient.query({
 					...rootQuery,
-					queryKey: queryKeys.settings.public('0'),
+					queryKey: queryKeys.settings.public(LOCAL_DOCKER_ENVIRONMENT_ID),
 					queryFn: () => settingsService.getPublicSettings()
 				})
 			));
 		await featuresRequest;
 		swarmEnabled = loadedSwarmStatus?.enabled;
-		podmanStatuses = Object.fromEntries(
-			loadedPodmanStatuses.filter((entry): entry is readonly [string, PodmanStatus] => entry[1]?.detected === true)
-		);
-		podmanStatus = podmanStatuses[currentEnvironmentId] ?? null;
+		podmanStatuses = discoveredPodmanStatuses ?? knownPodmanStatuses;
+		knownPodmanStatuses = podmanStatuses;
 		permissionsManifest = loadedPermissionsManifest;
 		permissionsManifestLoadFailed = loadedPermissionsManifest === null;
 	} else {
@@ -328,7 +291,7 @@ async function loadRoot({ url, depends }: Parameters<LayoutLoad>[0], releaseSele
 		settings = await dataOrNull(
 			queryClient.query({
 				...rootQuery,
-				queryKey: queryKeys.settings.public('0'),
+				queryKey: queryKeys.settings.public(LOCAL_DOCKER_ENVIRONMENT_ID),
 				queryFn: () => settingsService.getPublicSettings()
 			})
 		);
@@ -363,7 +326,6 @@ async function loadRoot({ url, depends }: Parameters<LayoutLoad>[0], releaseSele
 	const redirectPath = getAuthRedirectPath(
 		url.pathname,
 		user,
-		environmentStore.selected?.id || '0',
 		permissionsManifest,
 		permissionsManifestLoadFailed,
 		getEffectiveLandingPage()
@@ -381,7 +343,6 @@ async function loadRoot({ url, depends }: Parameters<LayoutLoad>[0], releaseSele
 		versionInformation,
 		queryClient,
 		swarmEnabled,
-		podmanStatus,
 		podmanStatuses
 	};
-}
+};

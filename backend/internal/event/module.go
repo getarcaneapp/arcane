@@ -43,7 +43,7 @@ func (m *Module) RegisterRoutes(api huma.API) {
 	RegisterEvents(api, m.service)
 }
 
-// RegisterAgentRoutes mounts the token-authenticated direct-agent ingestion endpoint.
+// RegisterAgentRoutes mounts the token-authenticated edge-agent event ingestion endpoint.
 func (m *Module) RegisterAgentRoutes(group *echo.Group, resolveEnvironment func(context.Context, string) (string, error)) {
 	if m == nil {
 		RegisterAgentEventIngestion(group, nil, nil)
@@ -52,8 +52,8 @@ func (m *Module) RegisterAgentRoutes(group *echo.Group, resolveEnvironment func(
 	RegisterAgentEventIngestion(group, m.service, resolveEnvironment)
 }
 
-// RegisterAgentEventIngestion registers the manager ingestion endpoint used by
-// direct agents when no edge tunnel is active. This route is not part of the
+// RegisterAgentEventIngestion registers the manager ingestion endpoint edge
+// agents fall back to over HTTP when no tunnel is active. This route is not part of the
 // Huma/OpenAPI surface and authenticates with the originating environment token.
 func RegisterAgentEventIngestion(g *echo.Group, eventService *EventService, resolveEnvironment func(context.Context, string) (string, error)) {
 	g.POST("/events", func(c *echo.Context) error {
@@ -155,4 +155,14 @@ func RegisterEvents(api huma.API, eventService *EventService) {
 		Security:    handlerutil.DefaultOperationSecurity(),
 		Middlewares: middleware.RequirePermission(api, authz.PermEventsRead),
 	}, h.GetEventsByEnvironment)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "waitForEnvironmentChanges",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/events/changes",
+		Summary:     "Wait for environment changes",
+		Description: "Long-poll the latest revision of each changed resource kind in an environment",
+		Tags:        []string{"Events"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermEventsRead, h.WaitForEnvironmentChanges)
 }

@@ -12,7 +12,7 @@
 	import { authService } from '#lib/services/auth-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type { AuthenticationResponse, MFAChallenge as MFAChallengeData, User } from '#lib/types/auth.js';
 	import { getAuthRedirectPath, normalizeAuthenticationError } from '#lib/utils/auth.js';
 	import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
@@ -56,8 +56,8 @@
 		const operationResult = await tryCatch(
 			(async () => {
 				const settings = await queryClient.query({
-					queryKey: queryKeys.settings.global(),
-					queryFn: () => settingsService.getSettings()
+					queryKey: queryKeys.settings.byEnvironment(LOCAL_DOCKER_ENVIRONMENT_ID),
+					queryFn: () => settingsService.getSettingsForEnvironmentMerged(LOCAL_DOCKER_ENVIRONMENT_ID)
 				});
 				settingsStore.set(settings);
 			})()
@@ -80,7 +80,6 @@
 			getAuthRedirectPath(
 				requestedTarget,
 				landingUser,
-				environmentStore.selected?.id,
 				page.data['permissionsManifest'],
 				page.data['permissionsManifestLoadFailed'] ?? false,
 				landingPage

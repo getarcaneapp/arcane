@@ -21,7 +21,6 @@
 	import type { Snippet } from 'svelte';
 
 	import { ActionButtonGroup } from '#lib/components/action-button-group/index.js';
-	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import StatCard from '#lib/components/stat-card.svelte';
 	import type { IconType } from '#lib/icons/index.js';
 	import { cn } from '#lib/utils.js';
@@ -34,8 +33,6 @@
 		statCards?: StatCardConfig[];
 		mainContent: Snippet;
 		additionalContent?: Snippet;
-		/** The page shows one environment at a time; while several are shown it picks the selected one. */
-		environmentPicker?: boolean;
 		class?: string;
 	}
 
@@ -47,7 +44,6 @@
 		statCards = [],
 		mainContent,
 		additionalContent,
-		environmentPicker = false,
 		class: className = ''
 	}: Props = $props();
 </script>
@@ -90,9 +86,6 @@
 		</div>
 
 		<div class="flex min-w-0 items-center justify-end gap-2">
-			{#if environmentPicker}
-				<EnvironmentDestinationSelect />
-			{/if}
 			<ActionButtonGroup buttons={actionButtons} />
 		</div>
 	</header>

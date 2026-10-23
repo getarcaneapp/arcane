@@ -25,7 +25,6 @@ type tableOutput struct {
 	summary     TableSummary
 }
 
-// PrintTable renders rows and an optional summary, collecting them during an environment preview.
 func PrintTable(cmd *cobra.Command, headers []string, rows [][]string, summaries ...TableSummary) error {
 	var summary TableSummary
 	if len(summaries) > 0 {

@@ -24,15 +24,15 @@ func (input confirmationInput) Fd() uintptr { return input.terminal.Fd() }
 
 func TestConfirmOrCancel(t *testing.T) {
 	for _, tt := range []struct {
-		name                                                     string
-		force, yes, json, terminal, fleet, runtimeYes, confirmed bool
-		answer, wantErr                                          string
+		name                                                   string
+		force, yes, json, terminal, all, runtimeYes, confirmed bool
+		answer, wantErr                                        string
 	}{
 		{name: "force", force: true, json: true, confirmed: true},
 		{name: "global yes", yes: true, confirmed: true},
 		{name: "global yes in JSON", yes: true, json: true, confirmed: true},
 		{name: "runtime yes", runtimeYes: true, confirmed: true},
-		{name: "fleet consent", fleet: true, confirmed: true},
+		{name: "all environments consent", all: true, confirmed: true},
 		{name: "JSON refuses prompt", json: true, wantErr: "confirmation required: re-run with --yes"},
 		{name: "piped yes is not consent", answer: "yes\n", wantErr: "confirmation required: re-run with --yes"},
 		{name: "terminal yes", terminal: true, answer: "yes\n", confirmed: true},
@@ -44,7 +44,7 @@ func TestConfirmOrCancel(t *testing.T) {
 			input := strings.NewReader(tt.answer)
 			cmd := &cobra.Command{Use: "delete"}
 			cmd.SetContext(context.WithValue(t.Context(), runtime.AppContextKey, &runtime.AppContext{
-				Options: runtime.Options{AssumeYes: tt.runtimeYes}, FleetConfirmed: tt.fleet,
+				Options: runtime.Options{AssumeYes: tt.runtimeYes}, AllConfirmed: tt.all,
 			}))
 			cmd.SetOut(&stdout)
 			cmd.SetErr(&stderr)

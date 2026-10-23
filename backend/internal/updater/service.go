@@ -53,6 +53,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/jobcontext"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
@@ -755,6 +756,28 @@ func (s *UpdaterService) GetHistory(ctx context.Context, limit int) ([]AutoUpdat
 		return nil, fmt.Errorf("get history: %w", err)
 	}
 	return records, nil
+}
+
+func (s *UpdaterService) AggregateHistory(ctx context.Context, limit int) (types.ApiResponse[[]types.AutoUpdateRecord], error) {
+	collection, err := httpx.CollectEnvironments[types.ApiResponse[[]types.AutoUpdateRecord]](ctx, nil)
+	if err != nil {
+		return types.ApiResponse[[]types.AutoUpdateRecord]{}, err
+	}
+	records := make([]types.AutoUpdateRecord, 0)
+	for _, result := range collection.Results {
+		for _, record := range result.Value.Data {
+			record.SetEnvironment(result.Environment)
+			records = append(records, record)
+		}
+	}
+	slices.SortStableFunc(records, func(a, b types.AutoUpdateRecord) int {
+		return b.StartTime.Compare(a.StartTime)
+	})
+	return types.ApiResponse[[]types.AutoUpdateRecord]{
+		Success:            true,
+		Data:               records[:min(len(records), limit)],
+		FailedEnvironments: collection.Failures,
+	}, nil
 }
 
 // RestartContainersUsingOldIDs restarts containers matching old image IDs or refs.

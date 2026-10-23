@@ -42,6 +42,9 @@ type HTTPServerParams struct {
 
 // NewHTTPServer builds the shared HTTP/gRPC server and registers its lifecycle.
 func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
+	if p.Config.EdgeAgent {
+		return &http.Server{Handler: p.Router}, nil
+	}
 	listenAddr := p.Config.ListenAddr()
 	useTLS, tlsCertFile, tlsKeyFile, edgeCfg, err := prepareServerTLS(p.AppCtx, p.Config)
 	if err != nil {
@@ -54,7 +57,7 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 	// Managers serve the gRPC edge tunnel on the shared listener.
 	var httpHandler http.Handler = p.Router
 	var grpcServer *grpc.Server
-	if !p.Config.AgentMode && p.TunnelServer != nil {
+	if p.TunnelServer != nil {
 		//nolint:contextcheck // Stream interceptors receive request-scoped context from grpc.ServerStream.
 		grpcServer = grpc.NewServer(p.TunnelServer.GRPCServerOptions()...)
 		tunnelpb.RegisterTunnelServiceServer(grpcServer, p.TunnelServer)
@@ -172,10 +175,6 @@ func prepareServerTLS(ctx context.Context, cfg *config.Config) (bool, string, st
 	edgeCfg := buildEdgeRuntimeConfig(cfg, "")
 	if useTLS && (tlsCertFile == "" || tlsKeyFile == "") {
 		return false, "", "", nil, errors.New("ARCANE_TLS_ENABLED requires both ARCANE_TLS_CERT_FILE and ARCANE_TLS_KEY_FILE")
-	}
-
-	if cfg.AgentMode {
-		return useTLS, tlsCertFile, tlsKeyFile, edgeCfg, nil
 	}
 
 	if err := edge.PrepareManagerMTLSAssetsWithContext(ctx, edgeCfg); err != nil {

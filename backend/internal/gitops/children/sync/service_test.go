@@ -56,7 +56,7 @@ func setupSyncTestService(t *testing.T) (*Service, *database.DB, string) {
 
 	cfg, err := config.Load()
 	require.NoError(t, err)
-	eventService := event.NewEventService(arcaneDB, cfg, nil, nil)
+	eventService := event.NewEventService(arcaneDB, cfg, nil)
 	projectService := projectpkg.NewProjectService(arcaneDB, settingsService, eventService, nil, testDockerService, nil, nil, nil, cfg, nil, nil)
 
 	limits := func(_ context.Context, sync *projectpkg.GitOpsSync) (int, int64, int64) {

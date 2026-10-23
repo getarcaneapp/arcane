@@ -52,6 +52,7 @@ func RegisterActivities(api huma.API, h *ActivityHandler) {
 		Description: "Get current and recent background activities for an environment",
 		Tags:        []string{"Activities"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermActivitiesRead, h.ListActivities)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

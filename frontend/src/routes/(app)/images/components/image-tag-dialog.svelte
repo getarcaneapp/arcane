@@ -13,7 +13,7 @@
 	type Props = {
 		open: boolean;
 		imageId: string;
-		environmentId?: string;
+		environmentId: string;
 		defaultRepository?: string;
 		onOpenChange?: (open: boolean) => void;
 		onTagged?: () => Promise<void> | void;

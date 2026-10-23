@@ -34,9 +34,15 @@ func (m *Module) RegisterRoutes(api huma.API) {
 	}
 
 	h := &Handler{service: m.service, eventService: m.event}
-	handlerutil.RegisterSecured(api,
-		handlerutil.Operation("get-podman-status", http.MethodGet, podmanPath+"/status", "Get Podman status", "Report whether the environment runs Podman and which Podman features it supports", podmanTag),
-		authz.PermPodmanRead, h.GetStatus)
+	handlerutil.RegisterSecured(api, huma.Operation{
+		OperationID: "get-podman-status",
+		Method:      http.MethodGet,
+		Path:        podmanPath + "/status",
+		Summary:     "Get Podman status",
+		Description: "Report whether the environment runs Podman and which Podman features it supports",
+		Tags:        []string{podmanTag},
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
+	}, authz.PermPodmanRead, h.GetStatus)
 	handlerutil.RegisterSecured(api,
 		handlerutil.Operation("get-podman-info", http.MethodGet, podmanPath+"/info", "Get Podman info", "", podmanTag),
 		authz.PermPodmanRead, h.GetInfo)

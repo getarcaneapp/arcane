@@ -38,8 +38,8 @@ func TestFieldVisibleForSettingVisibility(t *testing.T) {
 	require.Contains(t, nonAdminKeys, "oidcMergeAccounts")
 	require.Contains(t, nonAdminKeys, "enableGravatar")
 	require.Contains(t, nonAdminKeys, "avatarMaxUploadSizeMb")
-	require.NotContains(t, nonAdminKeys, "baseServerUrl")
-	require.NotContains(t, nonAdminKeys, "defaultShell")
+	require.Contains(t, nonAdminKeys, "baseServerUrl")
+	require.Contains(t, nonAdminKeys, "defaultShell")
 	require.NotContains(t, nonAdminKeys, "oidcClientSecret")
 
 	require.Contains(t, visibleKeys(SettingVisibilityAll), "oidcClientSecret")

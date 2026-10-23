@@ -2,7 +2,7 @@ import { queryKeys } from '#lib/query/query-keys.js';
 import { imageService } from '#lib/services/image-service.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
-import { fetchAcrossEnvironments, sumAcrossEnvironments } from '#lib/utils/environments.js';
+import { fetchAcrossEnvironments, readableEnvironments, sumAcrossEnvironments } from '#lib/utils/environments.js';
 import { resolveListPageLoadContext } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -11,13 +11,13 @@ import type { PageLoad } from './$types';
 export const load: PageLoad = async ({ parent }) => {
 	const {
 		queryClient,
-		environments,
 		scope,
 		requestOptions: imageRequestOptions
 	} = await resolveListPageLoadContext(parent, 'arcane-image-table', {
 		column: 'created',
 		direction: 'desc'
 	});
+	const environments = readableEnvironments('images:list');
 	await Promise.all(environments.map((env) => featureStore.load(env.id)));
 	let images;
 	let imageUsageCounts;
@@ -34,7 +34,12 @@ export const load: PageLoad = async ({ parent }) => {
 				queryClient.query({
 					queryKey: queryKeys.images.usageCounts(scope),
 					queryFn: () =>
-						sumAcrossEnvironments(environments, (id, config) => imageService.getImageUsageCountsForEnvironment(id, config))
+						sumAcrossEnvironments(environments, (id, config) => imageService.getImageUsageCountsForEnvironment(id, config), {
+							imagesInuse: 0,
+							imagesUnused: 0,
+							totalImages: 0,
+							totalImageSize: 0
+						})
 				})
 			]))()
 	);

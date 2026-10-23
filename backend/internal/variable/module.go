@@ -28,7 +28,7 @@ func (m *Module) Service() *VariableService {
 }
 
 func (m *Module) RegisterRoutes(api huma.API, cfg *config.Config) {
-	if cfg != nil && cfg.AgentMode {
+	if cfg != nil && cfg.EdgeAgent {
 		if m == nil {
 			RegisterMaterializedVariables(api, nil, nil)
 			return

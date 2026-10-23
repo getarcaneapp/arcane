@@ -5,7 +5,6 @@
 
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import CreatePodSheet from '#lib/components/sheets/create-pod-sheet.svelte';
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { BoxIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -66,10 +65,6 @@
 			message: m.common_refresh_failed({ resource: m.podman_pods_title() })
 		});
 	}
-
-	useEnvironmentRefresh(() => {
-		pageState.isCreateDialogOpen = false;
-	});
 
 	async function handleCreate(request: PodmanPodCreateRequest, environmentId: string) {
 		isLoading.create = true;

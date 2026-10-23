@@ -180,7 +180,7 @@ func setupVolumeBackupLifecycleTest(t *testing.T, handler http.Handler) *Service
 	require.NoError(t, gormDB.AutoMigrate(&event.Event{}))
 	db := &database.DB{DB: gormDB}
 	dockerService := (&docker.DockerClientService{}).WithClient(dockerClient)
-	eventService := event.NewEventService(db, &config.Config{}, nil, nil)
+	eventService := event.NewEventService(db, &config.Config{}, nil)
 	containerService := containerdomain.NewContainerService(eventService, dockerService, nil, nil, nil, nil, podman.NewService(podman.Config{Engine: dockerService.Engine}))
 	return NewService(Dependencies{
 		Docker:         dockerService,

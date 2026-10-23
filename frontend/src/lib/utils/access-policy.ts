@@ -10,24 +10,13 @@ export function canReachAccessSurface(
 	manifest: PermissionsManifest | null | undefined,
 	surfaceId: string | undefined,
 	user: User | null | undefined,
-	selectedEnvId?: string
+	envId?: string
 ): boolean {
 	if (!surfaceId || !user) return false;
 	const surfaces = manifest?.accessSurfaces;
 	if (!surfaces?.length) return false;
 
-	return canReachSurfaceInternal(getSurfaceIndexInternal(surfaces), surfaceId, user, selectedEnvId, new Set());
-}
-
-export function canReachAccessSurfaceUrl(
-	manifest: PermissionsManifest | null | undefined,
-	url: string,
-	user: User | null | undefined,
-	selectedEnvId?: string
-): boolean {
-	const surface = manifest?.accessSurfaces?.find((entry) => entry.url === url);
-	if (!surface) return false;
-	return canReachAccessSurface(manifest, surface.id, user, selectedEnvId);
+	return canReachSurfaceInternal(getSurfaceIndexInternal(surfaces), surfaceId, user, envId, new Set());
 }
 
 export function getRouteAccessSurfaces(manifest: PermissionsManifest | null | undefined): AccessSurface[] {
@@ -72,7 +61,7 @@ function canReachSurfaceInternal(
 	surfaces: SurfaceIndex,
 	surfaceId: string,
 	user: User,
-	selectedEnvId: string | undefined,
+	envId: string | undefined,
 	visiting: Set<string>
 ): boolean {
 	if (visiting.has(surfaceId)) return false;
@@ -83,7 +72,7 @@ function canReachSurfaceInternal(
 	if (surface.accessMode === 'any-child') {
 		visiting.add(surfaceId);
 		const reachable = (surface.children ?? []).some((childId) =>
-			canReachSurfaceInternal(surfaces, childId, user, selectedEnvId, visiting)
+			canReachSurfaceInternal(surfaces, childId, user, envId, visiting)
 		);
 		visiting.delete(surfaceId);
 		return reachable;
@@ -93,17 +82,17 @@ function canReachSurfaceInternal(
 	if (permissions.length === 0) return false;
 
 	if (surface.matchMode === 'all-of') {
-		return permissions.every((permission) => hasPermissionForScopeInternal(user, permission, surface.scopeMode, selectedEnvId));
+		return permissions.every((permission) => hasPermissionForScopeInternal(user, permission, surface.scopeMode, envId));
 	}
 
-	return permissions.some((permission) => hasPermissionForScopeInternal(user, permission, surface.scopeMode, selectedEnvId));
+	return permissions.some((permission) => hasPermissionForScopeInternal(user, permission, surface.scopeMode, envId));
 }
 
 function hasPermissionForScopeInternal(
 	user: User,
 	permission: string,
 	scopeMode: AccessSurface['scopeMode'],
-	selectedEnvId: string | undefined
+	envId: string | undefined
 ): boolean {
 	const global = user.permissionsByEnv?.[GLOBAL_SCOPE] ?? [];
 	if (global.includes(SUDO_PERMISSION)) return true;
@@ -111,8 +100,8 @@ function hasPermissionForScopeInternal(
 	switch (scopeMode) {
 		case 'global-only':
 			return global.includes(permission);
-		case 'selected-env-plus-global':
-			return permissionsForEnvInternal(user, selectedEnvId).has(permission);
+		case 'env-plus-global':
+			return permissionsForEnvInternal(user, envId).has(permission);
 		case 'any-effective-scope':
 			return Object.values(user.permissionsByEnv ?? {}).some((permissions) => permissions.includes(permission));
 		default:

@@ -243,7 +243,7 @@ func newClearCmd() *cobra.Command {
 			})
 		},
 	}
-	cmdutil.SetScope(cmdutil.ScopeFleet, cmd)
+	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
 	cmd.Flags().BoolVarP(&opts.force, "force", "f", false, "Clear without confirmation")
 	return cmd
 }

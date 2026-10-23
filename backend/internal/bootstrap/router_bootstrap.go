@@ -248,18 +248,18 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	))
 	handlerAppCtx := handlerutil.NewActivityAppContext(ctx)
 
-	envResolver := func(ctx context.Context, id string) (string, *string, bool, error) {
+	envResolver := func(ctx context.Context, id string) (*string, bool, error) {
 		env, err := deps.Environment.Service().GetEnvironmentByIDCached(ctx, id)
-		if err != nil || env == nil {
-			return "", nil, false, err
+		if err != nil {
+			return nil, false, err
 		}
-		return env.ApiUrl, env.AccessToken, env.Enabled, nil
+		return env.AccessToken, env.Enabled, nil
 	}
 
 	// Register public webhook trigger endpoint before auth middleware (token in URL is the sole auth)
 	api.RegisterWebhookTrigger(apiGroup, deps.Webhook.Service(), handlerAppCtx)
 	federated.RegisterFederatedTokenExchange(apiGroup, deps.Federated)
-	if !cfg.AgentMode {
+	if !cfg.EdgeAgent {
 		telemetry.RegisterRoutes(apiGroup, telemetry.NewService())
 	}
 	deps.Event.RegisterAgentRoutes(apiGroup, func(ctx context.Context, token string) (string, error) {
@@ -311,7 +311,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 
 	// Managers accept agent connections on the edge tunnel endpoint.
 	var tunnelServer *edge.TunnelServer
-	if !cfg.AgentMode {
+	if !cfg.EdgeAgent {
 		tunnelServer = registerEdgeTunnelRoutes(ctx, p.Lifecycle, cfg, apiGroup, deps.Environment.Service(), deps.Event.Service(), deps.Notification.Service(), p.TunnelRegistry)
 	}
 

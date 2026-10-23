@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
@@ -259,8 +258,8 @@ func TestCopyBodyWithFlush_DoesNotRequireFlusher(t *testing.T) {
 	require.Equal(t, "abc", w.buf.String())
 }
 
-func newTestRemenvClient(timeout time.Duration) *remenv.Client {
-	return remenv.NewClient(&http.Client{Timeout: timeout}, remenv.TunnelTransportFuncs{
+func newTestRemenvClient() *remenv.Client {
+	return remenv.NewClient(remenv.TunnelTransportFuncs{
 		EnsureAvailableFunc: func(ctx context.Context, envID string) error {
 			if HasActiveTunnel(envID) {
 				return nil
@@ -307,13 +306,11 @@ func TestRemenvClient_EdgeWithTunnel(t *testing.T) {
 	GetRegistry().Register(envID, tunnel)
 	defer GetRegistry().Unregister(envID)
 
-	client := newTestRemenvClient(1 * time.Second)
+	client := newTestRemenvClient()
 
 	resp, err := client.Do(t.Context(), remenv.Request{
 		EnvironmentID: envID,
-		IsEdge:        true,
 		Method:        http.MethodGet,
-		URL:           "http://ignored/api/health",
 		Path:          "/api/health",
 		Headers:       map[string]string{"X-H": "v"},
 	})
@@ -324,13 +321,11 @@ func TestRemenvClient_EdgeWithTunnel(t *testing.T) {
 }
 
 func TestRemenvClient_EdgeNoTunnel(t *testing.T) {
-	client := newTestRemenvClient(1 * time.Second)
+	client := newTestRemenvClient()
 
 	_, err := client.Do(t.Context(), remenv.Request{
 		EnvironmentID: "env-edge-missing",
-		IsEdge:        true,
 		Method:        http.MethodGet,
-		URL:           "http://ignored/api/health",
 		Path:          "/api/health",
 	})
 

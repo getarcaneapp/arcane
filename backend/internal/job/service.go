@@ -250,7 +250,7 @@ func (s *JobService) RescheduleJobsForSettingKeys(ctx context.Context, changedKe
 		if !affected {
 			continue
 		}
-		if s.cfg.AgentMode && jobMeta.ManagerOnly {
+		if s.cfg.EdgeAgent && jobMeta.ManagerOnly {
 			slog.DebugContext(ctx, "Skipping manager-only job reschedule in agent mode", "job", jobID)
 			continue
 		}
@@ -359,7 +359,7 @@ func (s *JobService) ListJobs(ctx context.Context) (*types.JobListResponse, erro
 
 	return &types.JobListResponse{
 		Jobs:        statuses,
-		IsAgent:     s.cfg.AgentMode,
+		IsAgent:     s.cfg.EdgeAgent,
 		DurableRuns: true,
 		ObservedAt:  time.Now().UTC(),
 	}, nil
@@ -475,7 +475,7 @@ func (s *JobService) Submit(ctx context.Context, request types.SchedulerRequest)
 		RequestedBy:      request.RequestedBy,
 	}
 	if request.EnvironmentID != "0" {
-		if s.cfg.AgentMode {
+		if s.cfg.EdgeAgent {
 			return types.SchedulerRun{}, errors.New("agents cannot queue work for another environment")
 		}
 		env, err := s.environment.GetEnvironmentByID(ctx, request.EnvironmentID)
@@ -511,7 +511,7 @@ func (s *JobService) validateLocalJob(ctx context.Context, jobID string) error {
 		if !metadata.CanRunManually {
 			return errors.New("job cannot be run manually")
 		}
-		if s.cfg.AgentMode && metadata.ManagerOnly {
+		if s.cfg.EdgeAgent && metadata.ManagerOnly {
 			return errors.New("job is manager-only")
 		}
 		if !s.isJobEnabled(ctx, metadata) {
@@ -536,7 +536,7 @@ func (s *JobService) validateLocalJob(ctx context.Context, jobID string) error {
 
 func (s *JobService) authorizeRun(ctx context.Context, run types.SchedulerRun) error {
 	if run.RequestedBy == "" {
-		if run.Trigger == "manual" && !s.cfg.AgentMode {
+		if run.Trigger == "manual" && !s.cfg.EdgeAgent {
 			return errors.New("requesting user unavailable")
 		}
 		return nil
@@ -582,7 +582,7 @@ func (s *JobService) executeRun(ctx context.Context, run types.SchedulerRun) (re
 	}
 	if slices.Contains([]string{"auto-update", "auto-patch", "auto-heal", "scheduled-prune", "vulnerability-scan", "image-polling"}, run.JobID) ||
 		strings.HasPrefix(run.JobID, "gitops-sync:") || strings.HasPrefix(run.JobID, "volume-backup:") || strings.HasPrefix(run.JobID, "system-backup:") {
-		status, err := s.environment.TestConnection(ctx, "0", nil)
+		status, err := s.environment.TestConnection(ctx, "0")
 		if err != nil || status != "online" {
 			return types.SchedulerOutcome{Status: types.RunStatusWaiting, Message: "Waiting for Docker"}, err
 		}

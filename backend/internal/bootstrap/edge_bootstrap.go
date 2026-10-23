@@ -120,7 +120,7 @@ func registerEdgeTunnelRoutes(
 	apiGroup.GET("/tunnel/connect", server.HandleConnect, middleware.PerIPRateLimit(60, 30), middleware.PerAgentTokenRateLimit(10, 3))
 	slog.InfoContext(ctx, "Configured edge tunnel server",
 		"pollEnabled", true,
-		"grpcEnabled", !cfg.AgentMode,
+		"grpcEnabled", !cfg.EdgeAgent,
 		"websocketEnabled", true,
 	)
 	return server

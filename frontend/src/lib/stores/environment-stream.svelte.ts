@@ -32,7 +32,7 @@ export function streamErrorMessage(error: unknown): string | undefined {
 }
 
 export interface EnvStreamCoreConfig<TState extends StreamEnvStateBase, TEvent extends StreamEventBase> {
-	/** Used in console warnings, e.g. 'Dashboard' / 'Activity'. */
+	/** Used in console warnings, e.g. 'Activity'. */
 	label: string;
 	createEnvironmentState(environment: Pick<Environment, 'id' | 'name'>): TState;
 	/** Channel to subscribe to on the shared client stream. */
@@ -50,7 +50,6 @@ export interface EnvStreamCoreConfig<TState extends StreamEnvStateBase, TEvent e
 	onEnvironmentRemoved?(environmentId: string): void;
 	/** Replaces the default rename handling (which just updates state.name). */
 	onEnvironmentRenamed?(environmentId: string, name: string): void;
-	onSelectedEnvironment?(environment: Pick<Environment, 'id' | 'name'> | null | undefined): void;
 	/** Extra fields reset whenever a per-environment error is cleared (e.g. { errorCode: undefined }). */
 	clearErrorExtra?: Partial<TState>;
 }
@@ -149,12 +148,7 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 		// Track only enabled environments — they are the ones the aggregated
 		// stream serves; a disabled environment would never leave "loading".
 		const included = (environment: Pick<Environment, 'id' | 'name'>) => config.includeEnvironment?.(environment) ?? true;
-		const available = environmentStore.available.filter((environment) => environment.enabled && included(environment));
-		const selectedFallback = {
-			id: environmentStore.selected?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID,
-			name: environmentStore.selected?.name ?? 'Local'
-		};
-		const environments = available.length > 0 ? available : included(selectedFallback) ? [selectedFallback] : [];
+		const environments = environmentStore.available.filter((environment) => environment.enabled && included(environment));
 		const targetIds = new Set(environments.map((environment) => environment.id || LOCAL_DOCKER_ENVIRONMENT_ID));
 
 		for (const environmentId of Object.keys(_environmentStates)) {
@@ -232,7 +226,6 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 			if (generation !== lifecycleGeneration) {
 				return;
 			}
-			config.onSelectedEnvironment?.(environmentStore.selected);
 			// refresh reconciles synchronously, so states exist before the channel subscribes.
 			if (config.refreshOnStart) {
 				void refresh(generation);
@@ -240,10 +233,7 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 				reconcileEnvironments();
 			}
 			unsubscribeChannel = clientStream.subscribe(config.channel, channelHandlers);
-			unsubscribeEnvironment = environmentStore.subscribeSelected((environment) => {
-				config.onSelectedEnvironment?.(environment);
-				reconcileEnvironments();
-			});
+			unsubscribeEnvironment = environmentStore.subscribeAvailable(() => reconcileEnvironments());
 			unsubscribeEnvironmentFilter = config.subscribeEnvironmentFilter?.(reconcileEnvironments) ?? null;
 		},
 		stop(options?: { resetState?: boolean; resetStreamFailed?: boolean }) {

@@ -18,6 +18,7 @@ import (
 // Command displays CLI and server versions.
 func Command() *cobra.Command {
 	return &cobra.Command{
+		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
 		Use:          "version",
 		Short:        "Show CLI and Arcane server versions",
 		Args:         cobra.NoArgs,

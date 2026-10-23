@@ -4,7 +4,6 @@
 	import { toast } from 'svelte-sonner';
 
 	import CreateNetworkSheet from '#lib/components/sheets/create-network-sheet.svelte';
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { NetworksIcon, ConnectionIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -14,7 +13,7 @@
 	import type { NetworkCreateOptions, NetworkUsageCounts } from '#lib/types/docker.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
-	import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
+	import { fetchAcrossEnvironments, readableEnvironments } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -29,7 +28,7 @@
 	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
 	const networksQuery = createQuery(() => {
 		const queryScope = pageState.scope;
-		const environments = environmentStore.shown;
+		const environments = readableEnvironments('networks:list');
 		const options = pageState.requestOptions;
 		return {
 			queryKey: queryKeys.networks.list(queryScope, options),
@@ -48,7 +47,7 @@
 	const networks = $derived(networksQuery.data?.value ?? data.networks);
 
 	const createNetworkMutation = createMutation(() => ({
-		mutationKey: ['networks', 'create', pageState.envId],
+		mutationKey: ['networks', 'create', pageState.scope],
 		mutationFn: ({ name, options, requestedEnvId }: { name: string; options: NetworkCreateOptions; requestedEnvId: string }) =>
 			networkService.createNetwork(name, options, requestedEnvId),
 		onSuccess: async (data, variables) => {
@@ -68,17 +67,12 @@
 		}
 	}));
 
-	useEnvironmentRefresh(() => {
-		pageState.selectedIds = [];
-		pageState.isCreateDialogOpen = false;
-	});
-
 	async function handleCreate(name: string, options: NetworkCreateOptions, environmentId: string) {
 		await tryCatch(createNetworkMutation.mutateAsync({ name, options, requestedEnvId: environmentId }));
 	}
 
 	async function loadNetworks(options = pageState.requestOptions, requestedScope = pageState.scope) {
-		const environments = environmentStore.shown;
+		const environments = readableEnvironments('networks:list');
 		pageState.requestOptions = options;
 		await queryClient.query({
 			queryKey: queryKeys.networks.list(requestedScope, options),

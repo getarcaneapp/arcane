@@ -12,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 // GitOpsSyncHandler handles GitOps sync management endpoints.
@@ -150,6 +151,14 @@ func (h *GitOpsSyncHandler) ListSyncs(ctx context.Context, input *ListGitOpsSync
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	for key, value := range map[string]string{"mode": input.Mode, "projectId": input.ProjectID, "repositoryId": input.RepositoryID, "autoSync": input.AutoSync} {
 		params.Filters[key] = cmp.Or(value, params.Filters[key])
+	}
+
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.syncService.AggregateSyncs(ctx, params)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to list GitOps syncs: " + err.Error())
+		}
+		return &ListGitOpsSyncsOutput{Body: body}, nil
 	}
 
 	syncs, paginationResp, counts, err := h.syncService.GetSyncsPaginated(ctx, input.EnvironmentID, params)

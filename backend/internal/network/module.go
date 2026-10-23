@@ -38,6 +38,7 @@ func RegisterNetworks(api huma.API, networkSvc *NetworkService, dockerSvc *docke
 		Summary:     "Network counts",
 		Tags:        []string{"Networks"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermNetworksList, h.GetNetworkCounts)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
@@ -56,6 +57,7 @@ func RegisterNetworks(api huma.API, networkSvc *NetworkService, dockerSvc *docke
 		Summary:     "Get network topology",
 		Tags:        []string{"Networks"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermNetworksRead, h.GetNetworkTopology)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

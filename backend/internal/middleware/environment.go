@@ -22,7 +22,6 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"go.getarcane.app/kit/pkg"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
@@ -34,8 +33,6 @@ const (
 	apiEnvironmentsPrefix  = "/api/environments/"
 	environmentsPathMarker = "/environments/"
 
-	proxyDialTimeout = 5 * time.Second
-
 	maxProxiedWorkspaceManifestBytes = 1024 * 1024
 	maxProxiedWorkspacePrefixBytes   = 16 * 1024 * 1024
 	maxProxiedGitOpsSyncBodyBytes    = 1024 * 1024
@@ -46,18 +43,16 @@ var errProxiedBodyTooLarge = errors.New("proxied request body is too large")
 // managementEndpointSet contains paths handled locally and never proxied to remote environments.
 var managementEndpointSet = map[string]struct{}{
 	"/test":       {},
-	"/heartbeat":  {},
 	"/sync":       {},
 	"/deployment": {},
-	"/agent/pair": {},
 	"/version":    {},
 	"/settings":   {},
 	"/jobs":       {},
 }
 
 // EnvResolver resolves an environment ID to its connection details.
-// Returns: apiURL, accessToken, enabled, error
-type EnvResolver func(ctx context.Context, id string) (string, *string, bool, error)
+// Returns: accessToken, enabled, error
+type EnvResolver func(ctx context.Context, id string) (*string, bool, error)
 
 // AuthValidator authenticates a request and returns the caller's permission set and user (nil for non-user callers).
 // Sudo permission sets (internal agent proxies) bypass authorization.
@@ -69,7 +64,6 @@ type EnvironmentMiddleware struct {
 	paramName     string
 	resolver      EnvResolver
 	authValidator AuthValidator
-	httpClient    *http.Client
 	registry      *edge.TunnelRegistry
 	matcher       *authz.PermissionMatcher
 	// checkOrigin is the local WebSocket Origin validator, so proxied upgrades cannot ride a cross-origin session.
@@ -90,20 +84,11 @@ func NewEnvProxyMiddlewareWithParamAndRegistry(
 		registry = edge.NewTunnelRegistry()
 	}
 
-	// Traced so direct agents continue the manager's trace.
-	httpClient := httpx.NewHTTPClient(types.HTTPClientOptions{
-		TLSHandshakeTimeout:   10 * time.Second,
-		DialTimeout:           proxyDialTimeout,
-		ResponseHeaderTimeout: edge.ProxyResponseHeaderTimeout,
-	})
-	httpClient.Transport = otelhttp.NewTransport(httpClient.Transport)
-
 	m := &EnvironmentMiddleware{
 		localID:       localID,
 		paramName:     paramName,
 		resolver:      resolver,
 		authValidator: authValidator,
-		httpClient:    httpClient,
 		registry:      registry,
 		matcher:       matcher,
 		checkOrigin:   checkOrigin,
@@ -166,8 +151,8 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		}
 	}
 
-	apiURL, accessToken, enabled, err := m.resolver(ctx, envID)
-	if err != nil || apiURL == "" {
+	accessToken, enabled, err := m.resolver(ctx, envID)
+	if err != nil {
 		return writeProxyError(c, http.StatusNotFound, "Environment not found")
 	}
 	if !enabled {
@@ -189,21 +174,14 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		return writeProxyError(c, status, "Invalid request body")
 	}
 
-	tunnel, unavailable := m.activeTunnel(ctx, envID, apiURL)
+	tunnel, unavailable := m.activeTunnel(ctx, envID)
 	if unavailable {
 		return writeProxyError(c, http.StatusServiceUnavailable, "Edge agent is not connected")
 	}
 
-	proxyPath := path.Join(apiEnvironmentsPrefix, m.localID) + suffix
-	client := m.httpClient
-	if tunnel != nil {
-		slog.DebugContext(ctx, "Routing request through edge tunnel", "environmentId", envID, "path", req.URL.Path)
-		// A multiplexed tunnel carries plain HTTP, so it shares the direct-agent path below.
-		apiURL = edge.MuxAgentBaseURL
-		client = tunnel.HTTPClient()
-	}
-
-	target := strings.TrimRight(apiURL, "/") + proxyPath
+	slog.DebugContext(ctx, "Routing request through edge tunnel", "environmentId", envID, "path", req.URL.Path)
+	client := tunnel.HTTPClient()
+	target := edge.MuxAgentBaseURL + path.Join(apiEnvironmentsPrefix, m.localID) + suffix
 	if req.URL.RawQuery != "" {
 		target += "?" + req.URL.RawQuery
 	}
@@ -280,11 +258,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 
 // activeTunnel returns the environment's live tunnel, if any. Edge environments refresh poll demand on every
 // request and wait briefly only for an agent with a fresh poll check-in; unavailable reports an offline edge agent.
-func (m *EnvironmentMiddleware) activeTunnel(ctx context.Context, envID, apiURL string) (tunnel *edge.AgentTunnel, unavailable bool) {
-	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(apiURL)), "edge://") {
-		tunnel, _ = m.registry.Active(envID).Get()
-		return tunnel, false
-	}
+func (m *EnvironmentMiddleware) activeTunnel(ctx context.Context, envID string) (tunnel *edge.AgentTunnel, unavailable bool) {
 	edge.TouchTunnelDemand(envID, edge.DefaultTunnelDemandTTL)
 	if active, ok := m.registry.Active(envID).Get(); ok {
 		return active, false

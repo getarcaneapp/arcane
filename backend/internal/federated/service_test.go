@@ -145,7 +145,7 @@ func setupFederatedCredentialService(t *testing.T, issuer *federatedTestIssuer) 
 	sessionSvc := session.NewSessionService(db)
 	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
-	eventSvc := event.NewEventService(db, &config.Config{}, nil, nil)
+	eventSvc := event.NewEventService(db, &config.Config{}, nil)
 	signingKey, err := mldsa.GenerateKey(mldsa.MLDSA87())
 	require.NoError(t, err)
 	authSvc := auth.NewAuthService(userSvc, settingsSvc, eventSvc, sessionSvc, roleSvc, nil, nil, &config.Config{

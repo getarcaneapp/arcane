@@ -22,7 +22,6 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ImageUpdateData, ImageUpdateInfoDto } from '#lib/types/docker.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { instantEpochMilliseconds, nowInstantString } from '#lib/utils/formatting.js';
@@ -33,8 +32,7 @@
 		isLoadingInBackground?: boolean;
 		imageId?: string;
 		containerId?: string;
-		/** Environment that owns the image; defaults to the selected one. */
-		environmentId?: string;
+		environmentId: string;
 		tagUpdates?: boolean;
 		/** Image reference for ref-scoped checks when no local image ID exists (e.g. not-pulled refs) */
 		imageRef?: string;
@@ -53,7 +51,7 @@
 		isLoadingInBackground = false,
 		imageId,
 		containerId,
-		environmentId: rowEnvironmentId,
+		environmentId,
 		tagUpdates = false,
 		imageRef,
 		repo,
@@ -70,7 +68,6 @@
 	}
 
 	const imageUpdateQuery = createQuery<ImageUpdateData>(() => {
-		const environmentId = rowEnvironmentId ?? (environmentStore.selected?.id || '0');
 		const target = { imageId, containerId, imageRef, tagUpdates };
 		let key = target.imageId || target.imageRef || '';
 		if (target.containerId) key = `container:${target.containerId}`;

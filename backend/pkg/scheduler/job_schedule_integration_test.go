@@ -42,7 +42,7 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 		appConfig,
 		jobCoordinator,
 		role.NewRoleService(db),
-		environment.NewEnvironmentService(db, nil, nil, nil, nil, nil),
+		environment.NewEnvironmentService(db, nil, nil, nil, nil),
 		activity.NewActivityService(db, settingsService),
 	)
 	jobService.SetScheduler(lifecycleCtx, jobScheduler)
@@ -93,7 +93,7 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 		appConfig,
 		restartCoordinator,
 		role.NewRoleService(restartDB),
-		environment.NewEnvironmentService(restartDB, nil, nil, nil, nil, nil),
+		environment.NewEnvironmentService(restartDB, nil, nil, nil, nil),
 		activity.NewActivityService(restartDB, restartSettingsService),
 	)
 	restartJobService.SetScheduler(restartLifecycleCtx, restartScheduler)

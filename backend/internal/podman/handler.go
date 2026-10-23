@@ -15,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 type Handler struct {
@@ -28,6 +29,13 @@ type RunPodmanAutoUpdateInput struct {
 }
 
 func (h *Handler) GetStatus(ctx context.Context, _ *types.EnvironmentInput) (*handlerutil.Out[types.PodmanStatus], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.service.AggregateStatus(ctx)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to get Podman status: " + err.Error())
+		}
+		return &handlerutil.Out[types.PodmanStatus]{Body: body}, nil
+	}
 	return &handlerutil.Out[types.PodmanStatus]{Body: types.ApiResponse[types.PodmanStatus]{Success: true, Data: h.service.Status(ctx)}}, nil
 }
 

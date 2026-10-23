@@ -7,14 +7,12 @@
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import DeployOptionsMenuItems from '#lib/components/deploy-split-button/deploy-options-menu-items.svelte';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { TerminalIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { projectService } from '#lib/services/project-service.js';
-	import { settingsService } from '#lib/services/settings-service.js';
-	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { deployOptionsStore } from '#lib/stores/deploy-options.store.svelte.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { operationWatchStore } from '#lib/stores/operation-watch.store.svelte.js';
 	import type { ContainerDetailsDto } from '#lib/types/docker.js';
 	import type { DeployProjectOptions } from '#lib/types/project-deployment.js';
@@ -64,8 +62,7 @@
 		onSaveChanges
 	}: {
 		id: string;
-		/** Environment that owns the resource; defaults to the selected one. */
-		environmentId?: string;
+		environmentId: string;
 		name?: string;
 		type?: TargetType;
 		itemState?: string;
@@ -84,6 +81,8 @@
 		hasUnsavedChanges?: boolean;
 		onSaveChanges?: () => Promise<boolean>;
 	} = $props();
+
+	const environmentSettings = useEnvironmentSettings(() => environmentId);
 
 	let isLoading = $state<LoadingStates>({
 		start: false,
@@ -122,8 +121,8 @@
 		mutationFn: () =>
 			tryCatch(
 				type === 'container'
-					? containerService.startContainer(id, currentEnvId)
-					: projectService.deployProject(id, 'up', deployOptionsStore.takeRequestOptions(), currentEnvId)
+					? containerService.startContainer(id, environmentId)
+					: projectService.deployProject(id, 'up', deployOptionsStore.takeRequestOptions(), environmentId)
 			),
 		onMutate: () => setLoading('start', true),
 		onSettled: () => setLoading('start', false)
@@ -146,8 +145,8 @@
 		mutationFn: () =>
 			tryCatch(
 				type === 'container'
-					? containerService.restartContainer(id, currentEnvId)
-					: projectService.restartProject(id, undefined, currentEnvId)
+					? containerService.restartContainer(id, environmentId)
+					: projectService.restartProject(id, undefined, environmentId)
 			),
 		onMutate: () => setLoading('restart', true),
 		onSettled: () => setLoading('restart', false)
@@ -211,30 +210,29 @@
 	const projectHasBuildDirective = $derived(type === 'project' && hasBuildDirective);
 
 	// Per-action RBAC gating. Each button hides if the caller lacks the
-	// corresponding permission on the currently-selected environment. Project
+	// corresponding permission on the resource's environment. Project
 	// pull / build / redeploy all share the `projects:deploy` permission since
 	// they're stages of the deploy flow.
-	const currentEnvId = $derived(environmentId ?? environmentStore.selected?.id);
 	// Captured when an action starts: a confirmation or watch can outlive navigation to another resource.
-	type ActionTarget = { id: string; environmentId: string | undefined };
-	const actionTarget = (): ActionTarget => ({ id, environmentId: currentEnvId });
+	type ActionTarget = { id: string; environmentId: string };
+	const actionTarget = (): ActionTarget => ({ id, environmentId });
 	const canStart = $derived(
-		type === 'container' ? hasPermission('containers:start', currentEnvId) : hasPermission('projects:deploy', currentEnvId)
+		type === 'container' ? hasPermission('containers:start', environmentId) : hasPermission('projects:deploy', environmentId)
 	);
 	const canStop = $derived(
-		type === 'container' ? hasPermission('containers:stop', currentEnvId) : hasPermission('projects:down', currentEnvId)
+		type === 'container' ? hasPermission('containers:stop', environmentId) : hasPermission('projects:down', environmentId)
 	);
 	const canRestart = $derived(
-		type === 'container' ? hasPermission('containers:restart', currentEnvId) : hasPermission('projects:restart', currentEnvId)
+		type === 'container' ? hasPermission('containers:restart', environmentId) : hasPermission('projects:restart', environmentId)
 	);
 	const canRedeploy = $derived(
-		type === 'container' ? hasPermission('containers:redeploy', currentEnvId) : hasPermission('projects:deploy', currentEnvId)
+		type === 'container' ? hasPermission('containers:redeploy', environmentId) : hasPermission('projects:deploy', environmentId)
 	);
 	const canRemove = $derived(
-		type === 'container' ? hasPermission('containers:delete', currentEnvId) : hasPermission('projects:delete', currentEnvId)
+		type === 'container' ? hasPermission('containers:delete', environmentId) : hasPermission('projects:delete', environmentId)
 	);
-	const canPull = $derived(type === 'project' && hasPermission('projects:deploy', currentEnvId));
-	const canBuild = $derived(type === 'project' && hasPermission('projects:deploy', currentEnvId));
+	const canPull = $derived(type === 'project' && hasPermission('projects:deploy', environmentId));
+	const canBuild = $derived(type === 'project' && hasPermission('projects:deploy', environmentId));
 	const deployButtonLabel = $derived(projectHasBuildDirective ? m.compose_build_and_deploy() : m.common_up());
 
 	async function handleRefresh() {
@@ -331,8 +329,6 @@
 
 	async function handleRedeploy(watch: boolean, target: ActionTarget) {
 		const operationStartedAt = Math.floor(Temporal.Now.instant().epochMilliseconds / 1000);
-		// Follow-ups stay in the environment the redeploy ran in.
-		const operationEnvId = target.environmentId;
 		if (watch) {
 			operationWatchStore.start(`${m.common_redeploy()} — ${name ?? id}`);
 		}
@@ -358,7 +354,7 @@
 				const containerData = data as ContainerDetailsDto;
 				if (type === 'container' && containerData?.id) {
 					const path = `/containers/${containerData.id}`;
-					goto(operationEnvId ? environmentHref(path, operationEnvId) : path);
+					goto(environmentHref(path, target.environmentId));
 				} else if (type === 'container') {
 					goto('/containers');
 				} else {
@@ -487,7 +483,7 @@
 					await projectService.pullProjectImages(
 						id,
 						watch ? (frame: unknown) => operationWatchStore.onLine(frame) : () => {},
-						currentEnvId
+						environmentId
 					);
 					await refreshAll();
 					onActionComplete(itemState);
@@ -514,11 +510,7 @@
 		try {
 			const operationResult3 = await tryCatch(
 				(async () => {
-					// A project in another environment builds with that environment's provider settings.
-					const settings =
-						currentEnvId && currentEnvId !== environmentStore.selected?.id
-							? await settingsService.getReadableSettings(currentEnvId)
-							: settingsStore.resolved;
+					const settings = environmentSettings.current;
 					const configuredProvider = (settings?.values.buildProvider as 'local' | 'depot') ?? 'local';
 					const buildProvider = configuredProvider === 'depot' && isDepotBuildAvailable(settings) ? 'depot' : 'local';
 					await projectService.buildProjectImages(
@@ -529,7 +521,7 @@
 							load: buildProvider !== 'depot'
 						},
 						() => {},
-						currentEnvId
+						environmentId
 					);
 					await refreshAll();
 				})()

@@ -1681,6 +1681,66 @@ func (s *ContainerService) ListContainersPaginated(
 	}, nil
 }
 
+func (s *ContainerService) GetContainerStatusCounts(ctx context.Context, includeInternal, includeHidden bool) (types.ContainerStatusCounts, error) {
+	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
+	if err != nil {
+		return types.ContainerStatusCounts{}, err
+	}
+	containers = FilterExcludedContainers(containers, includeInternal, includeHidden)
+	running := 0
+	standalone := make([]container.Summary, 0, len(containers))
+	for _, c := range containers {
+		if c.State == "running" {
+			running++
+		}
+		if docker.ComposeProjectLabel(c.Labels) == "" {
+			standalone = append(standalone, c)
+		}
+	}
+	updates, updatesErr := s.CountPendingUpdates(ctx, standalone)
+	if updatesErr != nil {
+		slog.WarnContext(ctx, "Failed to count pending container updates", "error", updatesErr)
+	}
+	return types.ContainerStatusCounts{
+		RunningContainers: running,
+		StoppedContainers: len(containers) - running,
+		TotalContainers:   len(containers),
+		UpdatesAvailable:  updates,
+	}, nil
+}
+
+func (s *ContainerService) CountPendingUpdates(ctx context.Context, containers []container.Summary) (int, error) {
+	if len(containers) == 0 {
+		return 0, nil
+	}
+	updates, err := s.imageService.GetUpdateInfoByContainers(ctx, containers)
+	if err != nil {
+		return 0, fmt.Errorf("failed to resolve pending container updates: %w", err)
+	}
+	count := 0
+	for _, info := range updates {
+		if info != nil && info.HasUpdate {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (s *ContainerService) AggregateContainerCounts(ctx context.Context) (types.ApiResponse[types.ContainerStatusCounts], error) {
+	return httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[types.ContainerStatusCounts]) types.ContainerStatusCounts {
+		var counts types.ContainerStatusCounts
+		for _, environment := range environments {
+			counts = types.ContainerStatusCounts{
+				RunningContainers: counts.RunningContainers + environment.Data.RunningContainers,
+				StoppedContainers: counts.StoppedContainers + environment.Data.StoppedContainers,
+				TotalContainers:   counts.TotalContainers + environment.Data.TotalContainers,
+				UpdatesAvailable:  counts.UpdatesAvailable + environment.Data.UpdatesAvailable,
+			}
+		}
+		return counts
+	})
+}
+
 func (s *ContainerService) AggregateContainers(ctx context.Context, params pagination.QueryParams, groupBy string) (ContainerPaginatedResponse, error) {
 	collection, err := httpx.CollectEnvironments[ContainerPaginatedResponse](ctx, url.Values{"start": {"0"}, "limit": {"-1"}, "groupBy": nil})
 	if err != nil {

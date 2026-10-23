@@ -31,6 +31,7 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { confirmAndRun } from '#lib/utils/bulk-actions.js';
+	import { environmentHref } from '#lib/utils/environments.js';
 	import { formatDateTimeShort, formatRelativeTime } from '#lib/utils/formatting.js';
 	import { syncedPaths } from '#lib/utils/gitops.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -89,7 +90,7 @@
 	const backupState = $derived<GitOpsBackupState>(sync?.backupState ?? 'never');
 	const needsAttention = $derived(backupState === 'needs_attention');
 	const showError = $derived(!!sync?.lastSyncError && (backupState === 'failed' || needsAttention));
-	const createHref = $derived(`/environments/${environmentId}/gitops?action=create&mode=backup&projectId=${projectId}`);
+	const createHref = $derived(environmentHref(`/gitops?action=create&mode=backup&projectId=${projectId}`, environmentId));
 	const destination = $derived.by(() => {
 		if (!sync) return '';
 		const repository = sync.repository?.name ?? sync.repositoryId;
@@ -220,7 +221,7 @@
 						</DropdownMenu.Item>
 
 						{#if canEdit}
-							<DropdownMenu.Item onclick={() => goto(`/environments/${environmentId}/gitops?action=edit&syncId=${sync.id}`)}>
+							<DropdownMenu.Item onclick={() => goto(environmentHref(`/gitops?action=edit&syncId=${sync.id}`, environmentId))}>
 								<SettingsIcon class="size-4" />
 								{m.settings()}
 							</DropdownMenu.Item>

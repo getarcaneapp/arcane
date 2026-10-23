@@ -461,6 +461,59 @@ func (s *NetworkService) AggregateNetworks(ctx context.Context, params paginatio
 	}, nil
 }
 
+func (s *NetworkService) AggregateNetworkTopology(ctx context.Context) (types.ApiResponse[types.NetworkTopology], error) {
+	collection, err := httpx.CollectEnvironments[types.ApiResponse[types.NetworkTopology]](ctx, nil)
+	if err != nil {
+		return types.ApiResponse[types.NetworkTopology]{}, err
+	}
+	nodes := make([]types.NetworkTopologyNode, 0)
+	edges := make([]types.NetworkTopologyEdge, 0)
+	for _, result := range collection.Results {
+		prefix := result.Environment.ID + "/"
+		for _, node := range result.Value.Data.Nodes {
+			nodes = append(nodes, types.NetworkTopologyNode{
+				EnvironmentID:   result.Environment.ID,
+				EnvironmentName: result.Environment.Name,
+				ID:              prefix + node.ID,
+				Name:            node.Name,
+				Type:            node.Type,
+				Metadata:        node.Metadata,
+			})
+		}
+		for _, edge := range result.Value.Data.Edges {
+			edges = append(edges, types.NetworkTopologyEdge{
+				ID:          prefix + edge.ID,
+				Source:      prefix + edge.Source,
+				Target:      prefix + edge.Target,
+				IPv4Address: edge.IPv4Address,
+				IPv6Address: edge.IPv6Address,
+			})
+		}
+	}
+	return types.ApiResponse[types.NetworkTopology]{
+		Success: true,
+		Data: types.NetworkTopology{
+			Nodes: nodes,
+			Edges: edges,
+		},
+		FailedEnvironments: collection.Failures,
+	}, nil
+}
+
+func (s *NetworkService) AggregateNetworkCounts(ctx context.Context) (types.ApiResponse[types.NetworkUsageCounts], error) {
+	return httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[types.NetworkUsageCounts]) types.NetworkUsageCounts {
+		var counts types.NetworkUsageCounts
+		for _, environment := range environments {
+			counts = types.NetworkUsageCounts{
+				Inuse:  counts.Inuse + environment.Data.Inuse,
+				Unused: counts.Unused + environment.Data.Unused,
+				Total:  counts.Total + environment.Data.Total,
+			}
+		}
+		return counts
+	})
+}
+
 func (s *NetworkService) buildNetworkPaginationConfig() pagination.Config[types.NetworkSummary] {
 	return pagination.Config[types.NetworkSummary]{
 		SearchAccessors: []pagination.SearchAccessor[types.NetworkSummary]{

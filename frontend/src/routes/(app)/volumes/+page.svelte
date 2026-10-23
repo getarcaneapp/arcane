@@ -4,7 +4,6 @@
 	import { toast } from 'svelte-sonner';
 
 	import CreateVolumeSheet from '#lib/components/sheets/create-volume-sheet.svelte';
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	// fallow-ignore-file code-duplication -- volume and network pages share ResourceListPageState lifecycle wiring but retain domain-specific queries and mutations
 	import { VolumesIcon, VolumeUnusedIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
@@ -15,7 +14,7 @@
 	import type { VolumeCreate, VolumeUsageCounts } from '#lib/types/docker.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
-	import { fetchAcrossEnvironments, hasShownPermission } from '#lib/utils/environments.js';
+	import { fetchAcrossEnvironments, hasShownPermission, readableEnvironments } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 
 	import VolumeTable from './components/volume-table.svelte';
@@ -29,7 +28,7 @@
 	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
 	const volumesQuery = createQuery(() => {
 		const queryScope = pageState.scope;
-		const environments = environmentStore.shown;
+		const environments = readableEnvironments('volumes:list');
 		const options = pageState.requestOptions;
 		return {
 			queryKey: queryKeys.volumes.table(queryScope, options),
@@ -49,7 +48,7 @@
 	const volumes = $derived(volumesQuery.data?.value ?? data.volumes);
 
 	const createVolumeMutation = createMutation(() => ({
-		mutationKey: ['volumes', 'create', pageState.envId],
+		mutationKey: ['volumes', 'create', pageState.scope],
 		mutationFn: ({ options, requestedEnvId }: { options: VolumeCreate; requestedEnvId: string }) =>
 			volumeService.createVolume(options, requestedEnvId),
 		onSuccess: async (data, options) => {
@@ -71,17 +70,12 @@
 		}
 	}));
 
-	useEnvironmentRefresh(() => {
-		pageState.selectedIds = [];
-		pageState.isCreateDialogOpen = false;
-	});
-
 	async function handleCreate(options: VolumeCreate, environmentId: string) {
 		await createVolumeMutation.mutateAsync({ options, requestedEnvId: environmentId });
 	}
 
 	async function loadVolumes(options = pageState.requestOptions, requestedScope = pageState.scope) {
-		const environments = environmentStore.shown;
+		const environments = readableEnvironments('volumes:list');
 		pageState.requestOptions = options;
 		await queryClient.query({
 			queryKey: queryKeys.volumes.table(requestedScope, options),

@@ -53,10 +53,7 @@ func TestLoadReturnsDefaultsWhenFileMissing(t *testing.T) {
 	require.Equal(t, "http://localhost:3552", cfg.ServerURL,
 		"ServerURL=%q, want %q", cfg.ServerURL, "http://localhost:3552")
 
-	require.False(t, cfg.Previews.AllEnvironments)
 	require.False(t, cfg.Previews.NewSelfUpdater)
-	require.Equal(t, "0", cfg.DefaultEnvironment,
-		"DefaultEnvironment=%q, want %q", cfg.DefaultEnvironment, "0")
 
 	require.Equal(t, "info", cfg.LogLevel,
 		"LogLevel=%q, want %q", cfg.LogLevel, "info")
@@ -79,7 +76,6 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 			require.NoError(t, SetConfigPath(path))
 
 			cfg := DefaultConfig()
-			cfg.Previews.AllEnvironments = true
 			cfg.Previews.NewSelfUpdater = true
 			cfg.APIKey = "k_test"
 			cfg.FederatedAudience = "audience_test"
@@ -107,8 +103,7 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 			require.Contains(t, text, "gitops-syncs:")
 			require.NotContains(t, text, "GitOps:")
 
-			require.Contains(t, text, "previews:\n    allEnvironments: true")
-			require.Contains(t, text, "newSelfUpdater: true")
+			require.Contains(t, text, "previews:\n    newSelfUpdater: true")
 			require.Contains(t, text, "pagination:",
 				"expected saved YAML to include pagination block:\n%s", text)
 
@@ -133,7 +128,6 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 			cfg.SetResourceLimit("images", 99)
 			cached, cacheErr := Load()
 			require.NoError(t, cacheErr)
-			require.True(t, cached.Previews.AllEnvironments)
 			require.True(t, cached.Previews.NewSelfUpdater)
 			require.Equal(t, "k_test", cached.APIKey)
 			require.Equal(t, 17, cached.LimitFor("images"))
@@ -163,7 +157,6 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 
 			require.Equal(t, "next", loaded.CLIUpdateChannel,
 				"CLIUpdateChannel=%q, want next", loaded.CLIUpdateChannel)
-			require.True(t, loaded.Previews.AllEnvironments)
 			require.True(t, loaded.Previews.NewSelfUpdater)
 			require.Equal(t, "k_test", loaded.APIKey)
 			require.Equal(t, "audience_test", loaded.FederatedAudience)
@@ -180,7 +173,7 @@ func TestSaveAndLoadRoundTripPagination(t *testing.T) {
 			}))
 			omittedRaw, omittedErr := os.ReadFile(path)
 			require.NoError(t, omittedErr)
-			require.Equal(t, "server_url: https://short.test\npreviews:\n    allEnvironments: false\n    newSelfUpdater: false\n", string(omittedRaw))
+			require.Equal(t, "server_url: https://short.test\npreviews:\n    newSelfUpdater: false\n", string(omittedRaw))
 			securedInfo, securedErr := os.Stat(path)
 			require.NoError(t, securedErr)
 			require.Equal(t, os.FileMode(0o600), securedInfo.Mode().Perm())
@@ -240,16 +233,15 @@ pagination:
 		name          string
 		content       string
 		serverURL     string
-		environment   string
 		logLevel      string
 		limit         int
 		resourceLimit int
 		errorText     string
 	}{
-		{name: "partial defaults", content: "api_key: partial\n", serverURL: "http://localhost:3552", environment: "0", logLevel: "info"},
-		{name: "empty document", content: "", serverURL: "http://localhost:3552", environment: "0", logLevel: "info"},
-		{name: "null document", content: "null\n", serverURL: "http://localhost:3552", environment: "0", logLevel: "info"},
-		{name: "dotted keys are unknown", content: "pagination.default.limit: 13\n", serverURL: "http://localhost:3552", environment: "0", logLevel: "info"},
+		{name: "partial defaults", content: "api_key: partial\n", serverURL: "http://localhost:3552", logLevel: "info"},
+		{name: "empty document", content: "", serverURL: "http://localhost:3552", logLevel: "info"},
+		{name: "null document", content: "null\n", serverURL: "http://localhost:3552", logLevel: "info"},
+		{name: "dotted keys are unknown", content: "pagination.default.limit: 13\n", serverURL: "http://localhost:3552", logLevel: "info"},
 		{name: "keys are case sensitive", content: `SERVER_URL: https://mixed.test
 Default_Environment: 2
 LOG_LEVEL: debug
@@ -259,8 +251,8 @@ PAGINATION:
   RESOURCES:
     NETWORKS:
       LIMIT: 4
-`, serverURL: "http://localhost:3552", environment: "0", logLevel: "info"},
-		{name: "numeric environment and unknown keys", content: `default_environment: 2
+`, serverURL: "http://localhost:3552", logLevel: "info"},
+		{name: "legacy environment and unknown keys", content: `default_environment: 2
 pagination:
   default:
     limit: 13
@@ -269,7 +261,7 @@ pagination:
     networks:
       limit: 4
 unknown_key: ignored
-`, serverURL: "http://localhost:3552", environment: "2", logLevel: "info", limit: 13, resourceLimit: 4},
+`, serverURL: "http://localhost:3552", logLevel: "info", limit: 13, resourceLimit: 4},
 		{name: "explicit empty and zero", content: `server_url: ""
 default_environment: ""
 log_level: ""
@@ -289,7 +281,7 @@ pagination:
   resources:
     networks:
       limit: null
-`, serverURL: "http://localhost:3552", environment: "0", logLevel: "info"},
+`, serverURL: "http://localhost:3552", logLevel: "info"},
 		{name: "malformed yaml", content: "pagination: [\n", errorText: "failed to parse config file"},
 		{name: "invalid limit", content: "pagination:\n  default:\n    limit: invalid\n", errorText: "failed to parse config file"},
 		{name: "quoted limit", content: "pagination:\n  default:\n    limit: \"13\"\n", errorText: "failed to parse config file"},
@@ -309,7 +301,6 @@ pagination:
 			}
 			require.NoError(t, loadErr)
 			require.Equal(t, tc.serverURL, loaded.ServerURL)
-			require.Equal(t, tc.environment, loaded.DefaultEnvironment)
 			require.Equal(t, tc.logLevel, loaded.LogLevel)
 			require.Equal(t, tc.limit, loaded.Pagination.Default.Limit)
 			require.Equal(t, tc.resourceLimit, loaded.LimitFor("networks"))
@@ -339,7 +330,7 @@ func TestInitDefaultFileCreatesTemplate(t *testing.T) {
 		"failed to read config file: %v", err)
 
 	text := string(raw)
-	require.Contains(t, text, "previews:\n    allEnvironments: false")
+	require.Contains(t, text, "previews:\n    newSelfUpdater: false")
 	var values map[string]any
 	require.NoError(t, yaml.Unmarshal(raw, &values))
 	for _, key := range []string{"api_key", "federated_audience"} {
@@ -357,7 +348,6 @@ func TestInitDefaultFileCreatesTemplate(t *testing.T) {
 	requiredKeys := []string{
 		"server_url:",
 		"api_key:",
-		"default_environment:",
 		"log_level:",
 		"pagination:",
 	}
@@ -526,7 +516,7 @@ func TestAuthTokens(t *testing.T) {
 	session.JWTToken, session.RefreshToken = "a_jwt", "a_refresh"
 	require.NoError(t, SaveTokens(t.Context(), session))
 
-	session.DefaultEnvironment = "1"
+	session.LogLevel = "debug"
 	require.NoError(t, Save(t.Context(), session))
 	loadedSession, err := Load()
 	require.NoError(t, err)
@@ -569,7 +559,7 @@ func TestAuthTokens(t *testing.T) {
 	require.NoError(t, SaveTokens(t.Context(), refreshed))
 	waitingPath := path + ".waiting"
 	require.NoError(t, SetConfigPath(waitingPath))
-	stale.DefaultEnvironment = "2"
+	stale.LogLevel = "warn"
 	require.NoError(t, Save(t.Context(), stale))
 	auth, err = loadAuth()
 	require.NoError(t, err)
@@ -578,7 +568,7 @@ func TestAuthTokens(t *testing.T) {
 	loaded, err = Load()
 	require.NoError(t, err)
 	require.Equal(t, "refreshed_jwt", loaded.JWTToken)
-	require.Equal(t, "2", loaded.DefaultEnvironment)
+	require.Equal(t, "warn", loaded.LogLevel)
 
 	require.NoError(t, SetConfigPath(path))
 	require.NoError(t, ClearTokens(t.Context(), apiKeyConfig))

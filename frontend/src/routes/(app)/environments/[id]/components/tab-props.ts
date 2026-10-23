@@ -1,5 +1,6 @@
 import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
 import type { FormInputs } from '#lib/types/form.js';
+import type { ResolvedSettings, SettingKey, SettingState } from '#lib/types/settings.js';
 
 import type { EnvironmentFormValues } from './environment-form-schema';
 
@@ -13,8 +14,21 @@ export interface ConnectionEdgeTabProps {
 	onRegenerateApiKey: () => void;
 }
 
-export interface StorageTabProps {
+export interface FormTabProps {
 	formInputs: EnvironmentFormInputs;
+}
+
+export interface LockableFormTabProps extends FormTabProps {
+	lock: (key: SettingKey) => SettingState | undefined;
+}
+
+export interface BuildsTabProps extends LockableFormTabProps {
+	settings: ResolvedSettings;
+}
+
+export interface NotificationsTabProps {
+	environmentId: string;
+	disabled: boolean;
 }
 
 export interface DockerTabProps {

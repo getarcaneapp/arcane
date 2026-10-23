@@ -24,9 +24,10 @@ import (
 // Command is the parent command for authentication operations
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "auth",
-		Aliases: []string{"authentication"},
-		Short:   "Authentication operations",
+		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
+		Use:         "auth",
+		Aliases:     []string{"authentication"},
+		Short:       "Authentication operations",
 	}
 	cmd.AddCommand(newFederatedCmd(), newLoginCmd(), newLogoutCmd(), newMeCmd(), newPasswordCmd(), newRefreshCmd(), newOidcStatusCmd(), newAPIKeysCmd())
 	return cmd

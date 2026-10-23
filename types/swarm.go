@@ -9,7 +9,8 @@ import (
 )
 
 type SwarmRuntimeStatus struct {
-	Enabled bool `json:"enabled"`
+	Enabled   bool   `json:"enabled"`
+	ClusterID string `json:"clusterId,omitempty" doc:"Swarm cluster ID when the environment is a swarm manager"`
 }
 
 type SwarmInfo struct {
@@ -58,6 +59,8 @@ func NewSwarmInfo(s swarm.Swarm) SwarmInfo {
 }
 
 type SwarmConfig struct {
+	EnvironmentTag
+
 	ID        string           `json:"id" readOnly:"true"`
 	Version   swarm.Version    `json:"version" readOnly:"true"`
 	CreatedAt time.Time        `json:"createdAt" readOnly:"true"`
@@ -66,6 +69,8 @@ type SwarmConfig struct {
 }
 
 type SwarmSecret struct {
+	EnvironmentTag
+
 	ID        string           `json:"id" readOnly:"true"`
 	Version   swarm.Version    `json:"version" readOnly:"true"`
 	CreatedAt time.Time        `json:"createdAt" readOnly:"true"`
@@ -278,6 +283,8 @@ type NodeAgentStatus struct {
 }
 
 type SwarmNode struct {
+	EnvironmentTag
+
 	// ID is the unique identifier of the node.
 	//
 	// Required: true
@@ -463,6 +470,8 @@ type SwarmServiceMount struct {
 }
 
 type SwarmServiceSummary struct {
+	EnvironmentTag
+
 	// ID is the unique identifier of the service.
 	//
 	// Required: true
@@ -851,6 +860,8 @@ func NewSwarmServiceInspect(service swarm.Service) SwarmServiceInspect {
 }
 
 type SwarmStackSummary struct {
+	EnvironmentTag
+
 	// ID is the unique identifier for the stack (uses namespace).
 	//
 	// Required: true
@@ -880,6 +891,9 @@ type SwarmStackSummary struct {
 	//
 	// Required: true
 	UpdatedAt time.Time `json:"updatedAt"`
+
+	ClusterID string `json:"clusterId,omitempty" doc:"Swarm cluster ID of the manager that listed the stack"`
+	HasSource bool   `json:"hasSource" doc:"Whether this environment stores the stack's saved source files"`
 }
 
 type SwarmStackInspect struct {
@@ -1076,6 +1090,8 @@ type SwarmStackDeployResponse struct {
 }
 
 type SwarmTaskSummary struct {
+	EnvironmentTag
+
 	// ID is the unique identifier of the task.
 	//
 	// Required: true

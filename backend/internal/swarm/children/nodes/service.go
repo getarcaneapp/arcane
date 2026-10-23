@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -28,6 +29,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 const (
@@ -613,7 +616,7 @@ func (s *Service) buildNodeAgentStatus(nodeID string, env *environment.Environme
 		BindingKind:      new(kit.Ternary(env.Hidden, types.NodeAgentBindingKindDedicated, types.NodeAgentBindingKindEnvironment)),
 		EnvironmentID:    &env.ID,
 		EnvironmentName:  &env.Name,
-		EnvironmentType:  new(kit.Ternary(env.IsEdge, "edge", "direct")),
+		EnvironmentType:  new("edge"),
 		Connected:        &live,
 		LastHeartbeat:    runtime.lastHeartbeat,
 		LastPollAt:       runtime.lastPollAt,
@@ -684,6 +687,30 @@ func (s *Service) ListNodeTasksPaginated(ctx context.Context, nodeID string, par
 	return s.listTasks(ctx, filters, params)
 }
 
+func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.SwarmNode], error) {
+	collection, err := httpx.CollectEnvironments[types.Paginated[types.SwarmNode]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return types.Paginated[types.SwarmNode]{}, err
+	}
+
+	pages := make([]pagination.EnvironmentPage[types.SwarmNode], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		pages = append(pages, pagination.EnvironmentPage[types.SwarmNode]{
+			Environment:    result.Environment,
+			Items:          result.Value.Data,
+			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
+		})
+	}
+	data, resp := pagination.MergeEnvironmentPages(s.buildNodePaginationConfig(), pages, params)
+
+	return types.Paginated[types.SwarmNode]{
+		Success:            true,
+		Data:               data,
+		Pagination:         handlerutil.PaginationResponse(resp),
+		FailedEnvironments: collection.Failures,
+	}, nil
+}
+
 func (s *Service) buildNodePaginationConfig() pagination.Config[types.SwarmNode] {
 	return pagination.Config[types.SwarmNode]{
 		SearchAccessors: []pagination.SearchAccessor[types.SwarmNode]{
@@ -746,11 +773,10 @@ func (s *Service) GetJoinCandidates(ctx context.Context, environmentID string) (
 		if _, bound := boundEnvironmentIDs[candidate.ID]; bound {
 			continue
 		}
-		environmentType := kit.Ternary(candidate.IsEdge, "edge", "direct")
 		candidates = append(candidates, types.SwarmJoinCandidate{
 			EnvironmentID:   candidate.ID,
 			EnvironmentName: candidate.Name,
-			EnvironmentType: environmentType,
+			EnvironmentType: "edge",
 			Status:          candidate.Status,
 		})
 	}
@@ -809,11 +835,10 @@ func selectSwarmManagerAddresses(explicit []string, nodes []types.SwarmNode) ([]
 func buildNodeAgentCandidates(environments []environment.Environment) []types.NodeAgentCandidate {
 	candidates := make([]types.NodeAgentCandidate, 0, len(environments))
 	for _, environment := range environments {
-		environmentType := kit.Ternary(environment.IsEdge, "edge", "direct")
 		candidates = append(candidates, types.NodeAgentCandidate{
 			EnvironmentID:   environment.ID,
 			EnvironmentName: environment.Name,
-			EnvironmentType: environmentType,
+			EnvironmentType: "edge",
 		})
 	}
 	return candidates

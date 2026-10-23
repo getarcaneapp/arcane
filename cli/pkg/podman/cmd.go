@@ -1,13 +1,17 @@
 package podman
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
+	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
 	internaltypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
@@ -134,6 +138,19 @@ func newAutoUpdateCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false, "Report pending updates without applying them")
 	cmd.Flags().BoolVarP(&opts.force, "force", "f", false, "Skip the confirmation prompt")
-	cmdutil.SetScope(cmdutil.ScopeFleet, cmd)
+	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
 	return cmd
+}
+
+func searchPodman[S any](ctx context.Context, c *client.Client, path string, matches func(S) bool) ([]S, error) {
+	result, err := c.GetJSON[[]S](ctx, fmt.Sprintf("%s?limit=%d", path, cmdutil.ShowAllLimit))
+	if statusErr, ok := errors.AsType[*client.StatusError](err); ok && statusErr.StatusCode == http.StatusBadRequest {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(result.Data, func(item S) bool {
+		return !matches(item)
+	}), nil
 }

@@ -2,6 +2,7 @@ import { error } from '@sveltejs/kit';
 
 import { swarmService } from '#lib/services/swarm-service.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+import { environmentName, fetchAcrossEnvironments, resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -9,8 +10,10 @@ import type { PageLoad } from './$types';
 
 type StackSourceState = 'loading' | 'available' | 'missing' | 'forbidden' | 'error';
 
-export const load: PageLoad = async ({ params }) => {
+export const load: PageLoad = async ({ params, url }) => {
 	const stackName = decodeURIComponent(params.name);
+	const envId = await resolveDetailEnvironmentId(url);
+	const environments = [{ id: envId, name: environmentName(envId) }];
 	const servicesRequestOptions = resolveInitialTableRequest(`arcane-swarm-stack-services-table-${stackName}`, {
 		pagination: {
 			page: 1,
@@ -35,12 +38,18 @@ export const load: PageLoad = async ({ params }) => {
 	const operationResult = await tryCatch(
 		(async () => {
 			const [stack, services, tasks] = await Promise.all([
-				swarmService.getStack(stackName),
-				swarmService.getStackServices(stackName, servicesRequestOptions),
-				swarmService.getStackTasks(stackName, tasksRequestOptions)
+				swarmService.getStack(stackName, envId),
+				fetchAcrossEnvironments(environments, servicesRequestOptions, (id, request, config) =>
+					swarmService.getStackServices(stackName, request, id, config)
+				),
+				fetchAcrossEnvironments(environments, tasksRequestOptions, (id, request, config) =>
+					swarmService.getStackTasks(stackName, request, id, config)
+				)
 			]);
 
 			return {
+				envId,
+				environments,
 				stack,
 				stackName,
 				services,

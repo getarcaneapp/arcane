@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -23,7 +24,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
 )
 
@@ -39,6 +42,8 @@ type EnvironmentDependencies struct {
 	GetActiveRemoteEnvironment     func(string) mo.Option[environment.Environment]
 	ProxyJSONRequestForEnvironment func(context.Context, environment.Environment, string, string, []byte, any) error
 	ResolveEnvironmentName         func(context.Context, string) string
+	Changes                        *concurrency.Signal[types.EnvironmentChanges]
+	EnvironmentChanges             func(string) types.EnvironmentChanges
 }
 
 type ListActivitiesInput struct {
@@ -66,7 +71,7 @@ type StreamAllActivitiesInput struct {
 
 const (
 	activityStreamHeartbeatInterval    = 15 * time.Second
-	activityStreamRemotePollInterval   = 5 * time.Second
+	activityStreamRemoteRetryInterval  = 30 * time.Second
 	activityStreamEnvReconcileInterval = 30 * time.Second
 	activityStreamRemotePollTimeout    = 15 * time.Second
 )
@@ -87,6 +92,13 @@ func NewHandler(activityService *ActivityService, localEnvironment EnvironmentDe
 }
 
 func (h *ActivityHandler) ListActivities(ctx context.Context, input *ListActivitiesInput) (*handlerutil.Page[types.Activity], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.activityService.AggregateActivities(ctx, activityListParams(input))
+		if err != nil {
+			return nil, huma.Error500InternalServerError(err.Error())
+		}
+		return &handlerutil.Page[types.Activity]{Body: body}, nil
+	}
 	if input.EnvironmentID != "0" {
 		unavailable := false
 		out, err := h.listRemoteActivities(ctx, input, func(path string) (*types.Paginated[types.Activity], error) {
@@ -314,17 +326,17 @@ func (h *ActivityHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz.
 		func(environment environment.Environment) string {
 			return environment.ID
 		},
-		activityStreamEnvironmentVersion,
+		environment.ConnectionKey,
 		activityStreamEnvReconcileInterval,
 		"activity stream",
-		func(pollCtx context.Context, environment environment.Environment) {
+		func(pollCtx context.Context, remoteEnvironment environment.Environment) {
 			// One shared poller per environment (and snapshot limit) serves
 			// every connected client; this subscriber only forwards its
 			// events onto this client's stream.
-			key := activityStreamEnvironmentVersion(environment) + ":" + strconv.Itoa(resolveActivityStreamLimit(limit))
+			key := environment.ConnectionKey(remoteEnvironment) + ":" + strconv.Itoa(resolveActivityStreamLimit(limit))
 			h.remoteStreamHub.Subscribe(pollCtx, key,
 				func(runCtx context.Context, publish func(types.ActivityStreamEvent)) {
-					h.runRemoteActivityStreamPoller(runCtx, environment, limit, publish)
+					h.runRemoteActivityStreamPoller(runCtx, remoteEnvironment, limit, publish)
 				},
 				func(event types.ActivityStreamEvent) bool {
 					return agg.Send(pollCtx, events, event)
@@ -332,24 +344,17 @@ func (h *ActivityHandler) RunRemoteStreamPollers(ctx context.Context, ps *authz.
 		})
 }
 
-func activityStreamEnvironmentVersion(localEnvironment environment.Environment) string {
-	if localEnvironment.UpdatedAt == nil {
-		return localEnvironment.ID
-	}
-	return localEnvironment.ID + ":" + localEnvironment.UpdatedAt.UTC().Format(time.RFC3339Nano)
-}
-
 func (h *ActivityHandler) runRemoteActivityStreamPoller(ctx context.Context, localEnvironment environment.Environment, limit int, publish func(types.ActivityStreamEvent)) {
 	environmentID := localEnvironment.ID
 	lastFingerprint := ""
 
-	poll := func() {
+	poll := func() bool {
 		currentEnvironment := localEnvironment
 		if h.environment.GetActiveRemoteEnvironment != nil {
 			var ok bool
 			currentEnvironment, ok = h.environment.GetActiveRemoteEnvironment(environmentID).Get()
 			if !ok {
-				return
+				return true
 			}
 		}
 
@@ -367,7 +372,7 @@ func (h *ActivityHandler) runRemoteActivityStreamPoller(ctx context.Context, loc
 			return &out, nil
 		})
 		if err != nil && ctx.Err() != nil {
-			return
+			return true
 		}
 		activities := kit.FromPtr(output).Body.Data
 		sourceID := cmp.Or(currentEnvironment.ID, environment.LocalEnvironmentID)
@@ -383,7 +388,7 @@ func (h *ActivityHandler) runRemoteActivityStreamPoller(ctx context.Context, loc
 		}()
 		fingerprint := strconv.FormatUint(kit.Fingerprint(activities), 16) + "|" + errMessage
 		if fingerprint == lastFingerprint {
-			return
+			return err == nil
 		}
 		lastFingerprint = fingerprint
 		publish(types.ActivityStreamEvent{
@@ -393,19 +398,39 @@ func (h *ActivityHandler) runRemoteActivityStreamPoller(ctx context.Context, loc
 			Error:         errMessage,
 			Timestamp:     time.Now(),
 		})
+		return err == nil
 	}
 
-	poll()
+	wake := make(chan struct{}, 1)
+	var seen atomic.Uint64
+	current := h.environment.EnvironmentChanges(environmentID)
+	seen.Store(max(current.Kinds["activity"], current.Kinds["all"]))
+	unsubscribe := h.environment.Changes.Subscribe(func(changes types.EnvironmentChanges) {
+		revision := max(changes.Kinds["activity"], changes.Kinds["all"])
+		if changes.EnvironmentID != environmentID || revision <= seen.Load() {
+			return
+		}
+		seen.Store(revision)
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
+	})
+	defer unsubscribe()
 
-	ticker := time.NewTicker(activityStreamRemotePollInterval)
-	defer ticker.Stop()
-
+	retry := time.NewTimer(activityStreamRemoteRetryInterval)
+	defer retry.Stop()
 	for {
+		if poll() {
+			retry.Stop()
+		} else {
+			retry.Reset(activityStreamRemoteRetryInterval)
+		}
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			poll()
+		case <-wake:
+		case <-retry.C:
 		}
 	}
 }

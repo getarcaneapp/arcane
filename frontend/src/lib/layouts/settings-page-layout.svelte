@@ -5,7 +5,6 @@
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { SettingLock } from '#lib/components/badges/index.js';
-	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import StatCard from '#lib/components/stat-card.svelte';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { getSettingsFormContext, hasSettingsFormContext } from '#lib/hooks/settings-form-context.js';
@@ -25,8 +24,6 @@
 		statCards?: SettingsStatCard[];
 		mainContent: Snippet;
 		additionalContent?: Snippet;
-		/** Per-environment settings; while several environments are shown it picks the selected one. */
-		environmentPicker?: boolean;
 		class?: string;
 	}
 
@@ -40,7 +37,6 @@
 		statCards = [],
 		mainContent,
 		additionalContent,
-		environmentPicker = false,
 		class: className = ''
 	}: Props = $props();
 
@@ -86,10 +82,6 @@
 			</div>
 
 			<div class="flex flex-1 items-center justify-end gap-2">
-				{#if environmentPicker}
-					<EnvironmentDestinationSelect size={pageType === 'form' ? 'sm' : 'default'} />
-				{/if}
-
 				{#if showReadOnlyTag}
 					<SettingLock />
 				{/if}
