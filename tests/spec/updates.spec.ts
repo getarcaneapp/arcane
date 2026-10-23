@@ -403,22 +403,6 @@ test.describe('Arcane upgrades', () => {
 		};
 	}
 
-	function dashboardSnapshot() {
-		const pagination = { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 };
-		return {
-			containers: {
-				data: [],
-				pagination,
-				counts: { runningContainers: 0, stoppedContainers: 0, totalContainers: 0 }
-			},
-			images: { data: [], pagination },
-			imageUsageCounts: { imagesInuse: 0, imagesUnused: 0, totalImages: 0, totalImageSize: 0 },
-			actionItems: { items: [] },
-			settings: {},
-			versionInfo: versionInfo('1.0.0')
-		};
-	}
-
 	function registerReloadCounter(page: Page) {
 		reloadCounts.set(page, 0);
 		page.on('domcontentloaded', () => {
@@ -671,8 +655,6 @@ test.describe('Arcane upgrades', () => {
 					timeout: 10_000
 				}
 			);
-			// A hard reload here would re-run every load function while the agents are still
-			// reconnecting, briefly rendering the whole fleet as offline.
 			await expect.poll(() => currentReloadCount(page)).toBe(1);
 
 			// Closing refreshes through SvelteKit, which reloads data but not the document.
@@ -705,30 +687,13 @@ test.describe('Arcane upgrades', () => {
 			page
 		}) => {
 			registerReloadCounter(page);
-			const snapshot = dashboardSnapshot();
 			let upgradeTriggered = false;
 
-			await page.route(/\/api\/stream(?:\?.*)?$/, async (route) => {
-				const channels =
-					new URL(route.request().url()).searchParams.get('channels')?.split(',') ?? [];
-				const timestamp = new Date().toISOString();
-				await route.fulfill({
-					status: 200,
-					contentType: 'text/event-stream',
-					body: channels.includes('dashboard')
-						? `data: ${JSON.stringify({
-								channel: 'dashboard',
-								dashboard: { type: 'snapshot', environmentId: '0', snapshot, timestamp },
-								timestamp
-							})}\n\n`
-						: ''
-				});
-			});
-			await page.route(/\/api\/environments\/0\/dashboard(?:\?.*)?$/, async (route) => {
+			await page.route(/\/api\/environments\/0\/version(?:\?.*)?$/, async (route) => {
 				await route.fulfill({
 					status: 200,
 					contentType: 'application/json',
-					body: JSON.stringify({ success: true, data: snapshot })
+					body: JSON.stringify({ success: true, data: versionInfo('1.0.0') })
 				});
 			});
 			await page.route(/\/api\/environments\/0\/system\/upgrade\/check$/, async (route) => {
@@ -840,7 +805,7 @@ test.describe('Arcane upgrades', () => {
 					body: JSON.stringify({
 						success: true,
 						data: {
-							token: 'mocked-access-token',
+							token: 'mocked-session-token',
 							refreshToken: 'mocked-refresh-token',
 							expiresAt: new Date(Date.now() + 3_600_000).toISOString()
 						}
@@ -919,7 +884,7 @@ test.describe('Arcane upgrades', () => {
 					body: JSON.stringify({
 						success: true,
 						data: {
-							token: 'mocked-access-token',
+							token: 'mocked-session-token',
 							refreshToken: 'mocked-refresh-token',
 							expiresAt: new Date(Date.now() + 3_600_000).toISOString()
 						}

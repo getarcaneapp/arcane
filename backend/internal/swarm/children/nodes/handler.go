@@ -14,6 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 // Handler serves the swarm node endpoints.
@@ -58,7 +59,7 @@ type GetSwarmNodeAgentDeploymentInput struct {
 }
 
 type SwarmNodeAgentDeployment struct {
-	environment.DeploymentSnippet
+	types.DeploymentSnippet
 
 	EnvironmentID string                `json:"environmentId"`
 	Agent         types.NodeAgentStatus `json:"agent"`
@@ -132,6 +133,13 @@ type JoinSwarmEnvironmentsInput struct {
 // Returns a mapped HTTP error when node enumeration fails.
 func (h *Handler) ListNodes(ctx context.Context, input *ListSwarmNodesInput) (*handlerutil.Page[types.SwarmNode], error) {
 	params := handlerutil.PaginationParams(input.Start, input.Limit, input.Sort, input.Order, input.Search)
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.service.Aggregate(ctx, params)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to list swarm nodes: " + err.Error())
+		}
+		return &handlerutil.Page[types.SwarmNode]{Body: body}, nil
+	}
 	items, paginationResp, err := h.service.ListNodesPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
 		return nil, h.mapError(err, "Failed to list swarm nodes: "+err.Error())
@@ -209,17 +217,12 @@ func (h *Handler) GetNodeAgentDeployment(ctx context.Context, input *GetSwarmNod
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	var snippets *environment.DeploymentSnippets
-	if env.IsEdge {
-		snippets, err = h.environmentService.GenerateEdgeDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), apiKey, &edge.Config{
-			EdgeMTLSMode:      h.cfg.EdgeMTLSMode,
-			EdgeMTLSCAFile:    h.cfg.EdgeMTLSCAFile,
-			EdgeMTLSAssetsDir: h.cfg.EdgeMTLSAssetsDir,
-			AppURL:            h.cfg.GetAppURL(),
-		})
-	} else {
-		snippets, err = h.environmentService.GenerateDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), env.ApiUrl, apiKey)
-	}
+	snippets, err := h.environmentService.GenerateEdgeDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), apiKey, &edge.Config{
+		EdgeMTLSMode:      h.cfg.EdgeMTLSMode,
+		EdgeMTLSCAFile:    h.cfg.EdgeMTLSCAFile,
+		EdgeMTLSAssetsDir: h.cfg.EdgeMTLSAssetsDir,
+		AppURL:            h.cfg.GetAppURL(),
+	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
@@ -233,7 +236,7 @@ func (h *Handler) GetNodeAgentDeployment(ctx context.Context, input *GetSwarmNod
 		Body: types.ApiResponse[SwarmNodeAgentDeployment]{
 			Success: true,
 			Data: SwarmNodeAgentDeployment{
-				DeploymentSnippet: environment.DeploymentSnippet{
+				DeploymentSnippet: types.DeploymentSnippet{
 					DockerRun:     snippets.DockerRun,
 					DockerCompose: snippets.DockerCompose,
 				},

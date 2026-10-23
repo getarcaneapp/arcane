@@ -20,17 +20,12 @@ func TestAccessSurfaceRegistryDefinesSettingsCustomizeAndLandingSemantics(t *tes
 	require.Equal(t, "/settings/webhooks", webhooks.URL)
 	require.Equal(t, authz.AccessModePermissions, webhooks.AccessMode)
 	require.Equal(t, authz.AccessMatchModeAnyOf, webhooks.MatchMode)
-	require.Equal(t, authz.AccessScopeModeSelectedEnvPlusGlobal, webhooks.ScopeMode)
+	require.Equal(t, authz.AccessScopeModeEnvPlusGlobal, webhooks.ScopeMode)
 	require.ElementsMatch(t, []string{authz.PermWebhooksList}, webhooks.Permissions)
 
 	apiKeys := requireAccessSurfaceInternal(t, "settings.category.apikeys")
 	require.Equal(t, authz.AccessScopeModeGlobalOnly, apiKeys.ScopeMode)
 	require.ElementsMatch(t, []string{authz.PermApiKeysList, authz.PermApiKeysRead}, apiKeys.Permissions)
-
-	jobSchedule := requireAccessSurfaceInternal(t, "settings.category.jobschedule")
-	require.Equal(t, authz.AccessScopeModeSelectedEnvPlusGlobal, jobSchedule.ScopeMode)
-	require.Equal(t, "/settings/jobs", jobSchedule.URL)
-	require.ElementsMatch(t, []string{authz.PermJobsManage}, jobSchedule.Permissions)
 
 	notifications := requireAccessSurfaceInternal(t, "settings.category.notifications")
 	require.Equal(t, authz.AccessScopeModeGlobalOnly, notifications.ScopeMode)
@@ -67,7 +62,6 @@ func TestAccessSurfaceRegistryDefinesSettingsCustomizeAndLandingSemantics(t *tes
 	require.Equal(t, authz.AccessModeAnyChild, settingsLanding.AccessMode)
 	require.Contains(t, settingsLanding.Children, "settings.category.webhooks")
 	require.Contains(t, settingsLanding.Children, "settings.category.apikeys")
-	require.Contains(t, settingsLanding.Children, "settings.category.jobschedule")
 
 	dashboard := requireAccessSurfaceInternal(t, "route.dashboard")
 	require.Equal(t, authz.AccessSurfaceKindRoute, dashboard.Kind)
@@ -87,12 +81,6 @@ func TestCanAccessSurfaceEvaluatesScopeModesAndLandingChildren(t *testing.T) {
 	ps.AddGlobal(authz.PermApiKeysRead)
 	require.True(t, authz.CanAccessSurface(ps, "settings.category.apikeys", "env-b"))
 	require.True(t, authz.CanAccessSurface(ps, "landing.settings", "env-b"))
-
-	jobsPS := authz.NewPermissionSet()
-	jobsPS.AddEnv("env-a", authz.PermJobsManage)
-	require.True(t, authz.CanAccessSurface(jobsPS, "settings.category.jobschedule", "env-a"))
-	require.True(t, authz.CanAccessSurface(jobsPS, "landing.settings", "env-a"))
-	require.False(t, authz.CanAccessSurface(jobsPS, "settings.category.jobschedule", "env-b"))
 
 	notificationPS := authz.NewPermissionSet()
 	notificationPS.AddEnv("env-a", authz.PermNotificationsManage)
@@ -158,7 +146,11 @@ func TestAccessSurfaceRegistryIsDefensiveAndInternallyConsistent(t *testing.T) {
 
 func TestAccessSurfaceCategoryRegistryCoversBackendCategories(t *testing.T) {
 	hiddenSettingsCategories := map[string]struct{}{
-		"security": {},
+		"activity":    {},
+		"build":       {},
+		"jobschedule": {},
+		"security":    {},
+		"timeouts":    {},
 	}
 
 	for _, category := range settings.NewSettingsSearchService().GetSettingsCategories() {

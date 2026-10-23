@@ -68,10 +68,8 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
 
 ENV ARCANE_ENVIRONMENT=production \
     ARCANE_IN_CONTAINER=true \
-    ARCANE_AGENT_MODE=true \
-    ARCANE_PORT=3553
+    ARCANE_EDGE_AGENT=true
 
-EXPOSE 3553
 VOLUME ["/app/data"]
 
 LABEL com.getarcaneapp.arcane.agent="true"

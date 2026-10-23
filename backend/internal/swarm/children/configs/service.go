@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/getarcaneapp/arcane/types/v3"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 // Service manages swarm configs.
@@ -65,6 +68,30 @@ func (s *Service) ListConfigs(ctx context.Context, params pagination.QueryParams
 	}
 	result := configPagination.SearchOrderAndPaginate(items, params)
 	return result.Items, pagination.BuildResponse(result.TotalCount, result.TotalAvailable, params), nil
+}
+
+func (s *Service) Aggregate(ctx context.Context, params pagination.QueryParams) (types.Paginated[types.SwarmConfig], error) {
+	collection, err := httpx.CollectEnvironments[types.Paginated[types.SwarmConfig]](ctx, url.Values{"start": {"0"}, "limit": {"-1"}})
+	if err != nil {
+		return types.Paginated[types.SwarmConfig]{}, err
+	}
+
+	pages := make([]pagination.EnvironmentPage[types.SwarmConfig], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		pages = append(pages, pagination.EnvironmentPage[types.SwarmConfig]{
+			Environment:    result.Environment,
+			Items:          result.Value.Data,
+			TotalAvailable: cmp.Or(result.Value.Pagination.GrandTotalItems, result.Value.Pagination.TotalItems),
+		})
+	}
+	data, resp := pagination.MergeEnvironmentPages(configPagination, pages, params)
+
+	return types.Paginated[types.SwarmConfig]{
+		Success:            true,
+		Data:               data,
+		Pagination:         handlerutil.PaginationResponse(resp),
+		FailedEnvironments: collection.Failures,
+	}, nil
 }
 
 func (s *Service) GetConfig(ctx context.Context, configID string) (*types.SwarmConfig, error) {

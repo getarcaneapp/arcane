@@ -90,6 +90,7 @@ func RegisterContainers(
 		Summary:     "Container status counts",
 		Tags:        []string{"Containers"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermContainersList, h.GetContainerStatusCounts)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

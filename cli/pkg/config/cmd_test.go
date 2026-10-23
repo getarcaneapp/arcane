@@ -22,7 +22,6 @@ func TestApplyConfigSetArgs(t *testing.T) {
 	err := applyConfigSetArgs(t.Context(), cfg, []string{
 		"server-url", "http://localhost:3552",
 		"api-key", "arc_test_12345678",
-		"previews.allEnvironments", "true",
 		"previews.newSelfUpdater", "true",
 		"default-limit", "25",
 		"pagination.resources.images.limit", "100",
@@ -41,18 +40,10 @@ func TestApplyConfigSetArgs(t *testing.T) {
 	require.Empty(t, cfg.JWTToken,
 		"JWTToken = %q, want empty", cfg.JWTToken)
 
-	require.True(t, cfg.Previews.AllEnvironments)
 	require.True(t, cfg.Previews.NewSelfUpdater)
-	for _, value := range []string{"false", "true", "invalid"} {
-		setErr := applyConfigSetArg(t.Context(), cfg, "previews.allEnvironments", value, io.Discard)
-		if value == "invalid" {
-			require.Error(t, setErr)
-			continue
-		}
-		require.NoError(t, setErr)
-		require.Equal(t, value == "true", cfg.Previews.AllEnvironments)
+	for _, key := range []string{"previews.allEnvironments", "environment", "default-environment", "default_environment"} {
+		require.ErrorContains(t, applyConfigSetArg(t.Context(), cfg, key, "true", io.Discard), "unknown config key")
 	}
-	require.True(t, cfg.Previews.NewSelfUpdater)
 	require.Equal(t, 25, cfg.Pagination.Default.Limit,
 		"Pagination.Default.Limit = %d, want 25", cfg.Pagination.Default.Limit)
 	{
@@ -101,7 +92,7 @@ func TestNewSelfUpdaterPreview(t *testing.T) {
 	var stdout bytes.Buffer
 	output.Configure(&stdout, io.Discard, false, true, "")
 	t.Cleanup(func() { output.Configure(nil, nil, true, false, "") })
-	require.NoError(t, config.Save(t.Context(), &types.Config{Previews: types.PreviewsConfig{AllEnvironments: true}}))
+	require.NoError(t, config.Save(t.Context(), &types.Config{LogLevel: "warn"}))
 	for _, value := range []string{"true", "false"} {
 		stdout.Reset()
 		cmd := newConfigSetCmd()
@@ -112,7 +103,7 @@ func TestNewSelfUpdaterPreview(t *testing.T) {
 		loaded, err := config.Load()
 		require.NoError(t, err)
 		require.Equal(t, value == "true", loaded.Previews.NewSelfUpdater)
-		require.True(t, loaded.Previews.AllEnvironments)
+		require.Equal(t, "warn", loaded.LogLevel)
 		stdout.Reset()
 		require.NoError(t, newConfigShowCmd().ExecuteContext(t.Context()))
 		require.Regexp(t, `(?m)^\s*newSelfUpdater\s+`+value+`\s*$`, stdout.String())
@@ -121,7 +112,7 @@ func TestNewSelfUpdaterPreview(t *testing.T) {
 	require.NoError(t, err)
 	require.ErrorContains(t, applyConfigSetArg(t.Context(), cfg, "previews.newSelfUpdater", "invalid", io.Discard), "invalid previews.newSelfUpdater")
 	require.False(t, cfg.Previews.NewSelfUpdater)
-	require.True(t, cfg.Previews.AllEnvironments)
+	require.Equal(t, "warn", cfg.LogLevel)
 	require.Contains(t, newConfigSetCmd().Long, "arcane config set previews.newSelfUpdater true")
 }
 

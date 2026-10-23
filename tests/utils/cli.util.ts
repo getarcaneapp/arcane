@@ -54,11 +54,7 @@ export async function buildCLI(): Promise<string> {
 	return buildPromise;
 }
 
-export async function createCLIConfig(
-	serverURL: string,
-	apiKey: string,
-	environment = '0'
-): Promise<CLIConfig> {
+export async function createCLIConfig(serverURL: string, apiKey: string): Promise<CLIConfig> {
 	const configDir = path.join(reportDirectory, 'cli');
 	await fs.mkdir(configDir, { recursive: true });
 	const dir = await fs.mkdtemp(path.join(configDir, 'config-'));
@@ -66,7 +62,6 @@ export async function createCLIConfig(
 	const content = [
 		`server_url: ${quoteYAMLString(serverURL)}`,
 		`api_key: ${quoteYAMLString(apiKey)}`,
-		`default_environment: "${environment}"`,
 		'log_level: info',
 		''
 	].join('\n');

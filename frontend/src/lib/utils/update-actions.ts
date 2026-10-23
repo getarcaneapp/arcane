@@ -20,7 +20,7 @@ import { tryCatch } from '#lib/utils/try-catch.js';
 export function applyScopedUpdate(
 	type: Extract<AutoUpdateResourceType, 'container' | 'project'>,
 	id: string,
-	environmentId?: string
+	environmentId: string
 ) {
 	return imageService.runAutoUpdate({ type, resourceIds: [id] }, environmentId);
 }

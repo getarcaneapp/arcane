@@ -420,15 +420,12 @@ export function getStatusVariant(status?: string | null): StatusVariant {
 
 // --- Environment status resolution ---
 
-type RuntimeEnvironmentState = Pick<Environment, 'isEdge' | 'connected' | 'status' | 'lastPollAt'>;
+type RuntimeEnvironmentState = Pick<Environment, 'id' | 'connected' | 'status' | 'lastPollAt'>;
 
-export function resolveEnvironmentStatus(
-	environment: RuntimeEnvironmentState,
-	overrideStatus?: EnvironmentStatus | null
-): EnvironmentStatus {
-	const status = overrideStatus ?? environment.status;
+export function resolveEnvironmentStatus(environment: RuntimeEnvironmentState): EnvironmentStatus {
+	const status = environment.status;
 
-	if (!environment.isEdge) {
+	if (environment.id === '0') {
 		return status;
 	}
 
@@ -455,8 +452,8 @@ export function resolveEnvironmentStatus(
 	return status;
 }
 
-export function isEnvironmentOnline(environment: RuntimeEnvironmentState, overrideStatus?: EnvironmentStatus | null): boolean {
-	const resolved = resolveEnvironmentStatus(environment, overrideStatus);
+export function isEnvironmentOnline(environment: RuntimeEnvironmentState): boolean {
+	const resolved = resolveEnvironmentStatus(environment);
 	return resolved === 'online' || resolved === 'standby';
 }
 

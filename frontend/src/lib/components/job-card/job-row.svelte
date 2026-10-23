@@ -17,7 +17,7 @@
 
 	let {
 		job,
-		environmentId = '0',
+		environmentId,
 		isAgent = false,
 		durableRuns = false,
 		enabledOverride,
@@ -26,7 +26,7 @@
 		onScheduleUpdate
 	}: {
 		job: JobStatus;
-		environmentId?: string;
+		environmentId: string;
 		isAgent?: boolean;
 		durableRuns?: boolean;
 		enabledOverride?: boolean;

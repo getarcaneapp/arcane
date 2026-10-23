@@ -22,6 +22,8 @@ import (
 
 type AppEnvironment string
 
+var ErrDirectAgentRemoved = errors.New("direct agents were removed in v3; set ARCANE_EDGE_AGENT=true and ARCANE_MANAGER_API_URL, then re-enroll from the manager")
+
 const (
 	AppEnvironmentProduction  AppEnvironment = "production"
 	AppEnvironmentDevelopment AppEnvironment = "development"
@@ -60,7 +62,6 @@ type Config struct {
 	InContainer             bool   `env:"ARCANE_IN_CONTAINER" default:"false"`
 	LogJson                 bool   `env:"ARCANE_LOG_JSON" default:"false"`
 	LogLevel                string `env:"ARCANE_LOG_LEVEL" default:"info" options:"toLower"`
-	AgentMode               bool   `env:"ARCANE_AGENT_MODE" default:"false"`
 	AgentToken              string `env:"ARCANE_AGENT_TOKEN" default:"" options:"file"`
 	ManagerApiUrl           string `env:"ARCANE_MANAGER_API_URL" default:""`
 	UIConfigurationDisabled bool   `env:"ARCANE_UI_CONFIGURATION_DISABLED" default:"false"`
@@ -93,11 +94,10 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	applyOptions(cfg)
-	cfg.AgentMode = cfg.AgentMode || cfg.EdgeAgent
 	applyProxyDefaults(cfg)
 
 	key := strings.TrimSpace(cfg.EncryptionKey)
-	if cfg.Environment.IsProdEnvironment() && !cfg.AgentMode && key != "" &&
+	if cfg.Environment.IsProdEnvironment() && !cfg.EdgeAgent && key != "" &&
 		!strings.HasPrefix(key, "hex:") && !strings.HasPrefix(key, "base64:") && len(strings.TrimPrefix(key, "raw:")) < 32 {
 		return nil, errors.New("ARCANE_ENCRYPTION_KEY passphrase must be at least 32 characters in production (or use a hex:/base64: encoded 32-byte key)")
 	}
@@ -304,6 +304,23 @@ func (c *Config) ListenAddr() string {
 	return net.JoinHostPort(host, port)
 }
 
+func (c *Config) Validate() error {
+	if DirectAgentRequested(os.Getenv) && !c.EdgeAgent {
+		return ErrDirectAgentRemoved
+	}
+	if c.EdgeAgent && (c.ManagerApiUrl == "" || c.AgentToken == "") {
+		return errors.New("ARCANE_EDGE_AGENT=true requires ARCANE_MANAGER_API_URL and ARCANE_AGENT_TOKEN")
+	}
+	return nil
+}
+
+func DirectAgentRequested(getenv func(string) string) bool {
+	return slices.ContainsFunc([]string{"ARCANE_AGENT_MODE", "AGENT_MODE"}, func(name string) bool {
+		enabled, _ := strconv.ParseBool(kit.TrimQuotes(getenv(name)))
+		return enabled
+	})
+}
+
 // GetLocation returns the timezone location for cron scheduling.
 // It parses the Timezone config (TZ env var) into a *time.Location.
 // Returns the system's local timezone if Timezone is "Local".
@@ -324,5 +341,5 @@ func (c *Config) GetLocation() *time.Location {
 
 // GetAppURL returns the effective application URL.
 func (c *Config) GetAppURL() string {
-	return cmp.Or(c.AppUrl, kit.Ternary(c.AgentMode, httpx.ManagerBaseURL(c.ManagerApiUrl), ""), "http://localhost:"+c.Port)
+	return cmp.Or(c.AppUrl, kit.Ternary(c.EdgeAgent, httpx.ManagerBaseURL(c.ManagerApiUrl), ""), "http://localhost:"+c.Port)
 }

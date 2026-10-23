@@ -2,13 +2,16 @@ package nodes
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
+	"github.com/labstack/echo/v5"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,7 +22,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 func setupSwarmServiceTestDB(t *testing.T) *database.DB {
@@ -39,7 +45,7 @@ func newSettingsServiceForSwarmTest(t testing.TB, ctx context.Context, db *datab
 	return svc, err
 }
 
-func createSwarmTestEnvironment(t *testing.T, db *database.DB, id, apiURL, status string, isEdge bool, accessToken *string) {
+func createSwarmTestEnvironment(t *testing.T, db *database.DB, id, apiURL, status string, accessToken *string) {
 	t.Helper()
 	now := time.Now()
 	require.NoError(t, db.Create(&environment.Environment{
@@ -48,7 +54,6 @@ func createSwarmTestEnvironment(t *testing.T, db *database.DB, id, apiURL, statu
 		ApiUrl:      apiURL,
 		Status:      status,
 		Enabled:     true,
-		IsEdge:      isEdge,
 		AccessToken: accessToken,
 	}).Error)
 }
@@ -104,10 +109,10 @@ func TestService_FetchSwarmNodeIdentityViaEdge_UsesEnvironmentAccessToken(t *tes
 	db := setupSwarmServiceTestDB(t)
 	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
 	require.NoError(t, err)
-	envSvc := environment.NewEnvironmentService(db, nil, nil, nil, settingsSvc, nil)
+	envSvc := environment.NewEnvironmentService(db, nil, nil, settingsSvc, nil)
 
 	accessToken := "token-123"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	agent := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !assert.Equal(t, http.MethodGet, r.Method) {
 			return
 		}
@@ -123,16 +128,30 @@ func TestService_FetchSwarmNodeIdentityViaEdge_UsesEnvironmentAccessToken(t *tes
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"data":{"swarmNodeId":"node-1","hostname":"worker-1","role":"worker","engineVersion":"29.3.1","swarmActive":true}}`))
-	}))
-	defer server.Close()
+	})
+	manager := echo.New()
+	manager.GET("/api/tunnel/connect", edge.NewTunnelServerWithRegistry(edge.GetRegistry(), func(context.Context, string) (string, error) {
+		return "env-1", nil
+	}, nil).HandleConnect)
+	managerServer := httptest.NewServer(manager)
+	defer managerServer.Close()
+	agentCtx, cancelAgent := context.WithCancel(t.Context())
+	defer cancelAgent()
+	defer edge.GetRegistry().Unregister("env-1")
+	go edge.NewTunnelClient(&edge.Config{
+		EdgeAgent:     true,
+		EdgeTransport: edge.EdgeTransportWebSocket,
+		ManagerApiUrl: managerServer.URL,
+		AgentToken:    "agent-token",
+	}, agent).StartWithErrorChan(agentCtx, nil)
+	require.True(t, edge.GetRegistry().WaitForActive(t.Context(), "env-1", 5*time.Second).IsPresent())
 
 	createSwarmTestEnvironment(
 		t,
 		db,
 		"env-1",
-		server.URL,
+		"edge://env-1",
 		string(environment.EnvironmentStatusOnline),
-		false,
 		&accessToken,
 	)
 
@@ -201,4 +220,46 @@ func TestService_BuildNodeAgentStatus(t *testing.T) {
 			require.Equal(t, tt.want, got.State)
 		})
 	}
+}
+
+func nodesScopeContext(t *testing.T, target string, bodies map[string]any) context.Context {
+	t.Helper()
+	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(body)
+		}),
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	})
+}
+
+func TestAggregateMergesEnvironments(t *testing.T) {
+	ctx := nodesScopeContext(t, "/api/environments/a,b,c/swarm/nodes", map[string]any{
+		"a": types.Paginated[types.SwarmNode]{
+			Success: true,
+			Data:    []types.SwarmNode{{ID: "n1", Hostname: "one"}},
+		},
+		"b": types.Paginated[types.SwarmNode]{
+			Success: true,
+			Data:    []types.SwarmNode{{ID: "n2", Hostname: "two"}},
+		},
+	})
+
+	body, err := (&Service{}).Aggregate(ctx, pagination.QueryParams{Params: pagination.Params{Limit: 20}})
+	require.NoError(t, err)
+
+	require.Len(t, body.Data, 2)
+	require.ElementsMatch(t, []string{"Env a", "Env b"}, []string{body.Data[0].Environment().Name, body.Data[1].Environment().Name})
+	require.EqualValues(t, 2, body.Pagination.TotalItems)
+	require.Len(t, body.FailedEnvironments, 1)
+	require.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
 }

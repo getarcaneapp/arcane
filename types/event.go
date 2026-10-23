@@ -96,5 +96,12 @@ type EventStreamEvent struct {
 	// Type is "changed"; clients reload their current event query.
 	Type string `json:"type"`
 	// Timestamp is when the invalidation was emitted.
-	Timestamp time.Time `json:"timestamp"`
+	Timestamp time.Time            `json:"timestamp"`
+	Changes   []EnvironmentChanges `json:"changes"`
+}
+
+type EnvironmentChanges struct {
+	EnvironmentID string            `json:"environmentId"`
+	Epoch         string            `json:"epoch"`
+	Kinds         map[string]uint64 `json:"kinds"`
 }

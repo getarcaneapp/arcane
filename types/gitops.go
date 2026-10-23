@@ -229,6 +229,8 @@ type GitOpsSync struct {
 	// Required: true
 	EnvironmentID string `json:"environmentId" readOnly:"true"`
 
+	EnvironmentName string `json:"environmentName,omitempty" readOnly:"true" doc:"Display name of the environment the sync belongs to"`
+
 	// RepositoryID is the ID of the git repository to sync from.
 	//
 	// Required: false
@@ -347,6 +349,14 @@ type GitOpsSync struct {
 	//
 	// Required: true
 	BackupPending bool `json:"backupPending" readOnly:"true"`
+}
+
+func (s GitOpsSync) Environment() EnvironmentRef {
+	return EnvironmentRef{ID: s.EnvironmentID, Name: s.EnvironmentName}
+}
+
+func (s *GitOpsSync) SetEnvironment(ref EnvironmentRef) {
+	s.EnvironmentID, s.EnvironmentName = ref.ID, ref.Name
 }
 
 // GitOpsSyncCounts contains counts of syncs by status within the current filtered set.

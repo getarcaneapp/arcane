@@ -29,9 +29,10 @@ import (
 // Command is the parent command for template operations
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "templates",
-		Aliases: []string{"template", "tpl"},
-		Short:   "Manage Docker Compose templates",
+		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
+		Use:         "templates",
+		Aliases:     []string{"template", "tpl"},
+		Short:       "Manage Docker Compose templates",
 	}
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newDefaultCmd())

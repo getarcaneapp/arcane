@@ -1,7 +1,7 @@
 import { queryKeys } from '#lib/query/query-keys.js';
 import { networkService } from '#lib/services/network-service.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
-import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
+import { fetchAcrossEnvironments, readableEnvironments } from '#lib/utils/environments.js';
 import { resolveListPageLoadContext } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -10,13 +10,13 @@ import type { PageLoad } from './$types';
 export const load: PageLoad = async ({ parent }) => {
 	const {
 		queryClient,
-		environments,
 		scope,
 		requestOptions: networkRequestOptions
 	} = await resolveListPageLoadContext(parent, 'arcane-networks-table', {
 		column: 'name',
 		direction: 'asc'
 	});
+	const environments = readableEnvironments('networks:list');
 
 	// Single API call - counts are included in the response
 	let networks;

@@ -4,7 +4,6 @@
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 
 	type ImagePatchFormValues = {
@@ -23,9 +22,8 @@
 		[K in keyof ImagePatchFormValues]: FormField<ImagePatchFormValues[K]>;
 	};
 
-	let { formInputs = $bindable(), environmentId }: { formInputs: ImagePatchFormInputs; environmentId?: string } = $props();
-	const targetEnvironmentId = $derived(environmentId ?? environmentStore.selected?.id ?? '0');
-	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', targetEnvironmentId));
+	let { formInputs = $bindable(), environmentId }: { formInputs: ImagePatchFormInputs; environmentId: string } = $props();
+	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', environmentId));
 </script>
 
 <SettingsSection title={m.security_image_patching_heading()}>

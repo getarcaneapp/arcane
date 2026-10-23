@@ -3,7 +3,7 @@ import { projectService } from '#lib/services/project-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
-import { fetchAcrossEnvironments, sumAcrossEnvironments } from '#lib/utils/environments.js';
+import { fetchAcrossEnvironments, readableEnvironments, sumAcrossEnvironments } from '#lib/utils/environments.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -12,7 +12,8 @@ import { fetchProjectTags } from './projects-table.helpers';
 
 export const load: PageLoad = async ({ parent, url }) => {
 	const { queryClient } = await parent();
-	const environments = await environmentStore.getShownEnvironments();
+	await environmentStore.ready;
+	const environments = readableEnvironments('projects:list');
 	const scope = environmentStore.shownKey;
 	const showArchived = url.searchParams.get('archived') === 'true';
 
@@ -50,7 +51,13 @@ export const load: PageLoad = async ({ parent, url }) => {
 				queryClient.query({
 					queryKey: queryKeys.projects.statusCounts(scope),
 					queryFn: () =>
-						sumAcrossEnvironments(environments, (id, config) => projectService.getProjectStatusCountsForEnvironment(id, config))
+						sumAcrossEnvironments(environments, (id, config) => projectService.getProjectStatusCountsForEnvironment(id, config), {
+							runningProjects: 0,
+							stoppedProjects: 0,
+							totalProjects: 0,
+							archivedProjects: 0,
+							updatesAvailable: 0
+						})
 				}),
 				queryClient.query({
 					queryKey: queryKeys.projects.tags(scope),

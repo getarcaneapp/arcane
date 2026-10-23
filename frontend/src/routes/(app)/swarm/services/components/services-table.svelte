@@ -3,6 +3,7 @@
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
@@ -12,24 +13,30 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { DockIcon, GlobeIcon, TrashIcon, NetworksIcon, InspectIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { swarmService } from '#lib/services/swarm-service.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { swarmService, type SwarmServicesPaginatedResponse } from '#lib/services/swarm-service.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { SwarmServiceSummary, SwarmServicePort } from '#lib/types/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { getSwarmServiceModeLabel, getSwarmServiceModeVariant } from '#lib/utils/docker.js';
+	import { environmentHref, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	let {
 		services = $bindable(),
 		requestOptions = $bindable(),
-		fetchServices = (options: SearchPaginationSortRequest) => swarmService.getServices(options),
-		persistKey = 'arcane-swarm-services-table'
+		fetchServices,
+		persistKey = 'arcane-swarm-services-table',
+		showEnvironment = true
 	}: {
-		services: Paginated<SwarmServiceSummary>;
+		services: ServicePage;
 		requestOptions: SearchPaginationSortRequest;
-		fetchServices?: (options: SearchPaginationSortRequest) => Promise<Paginated<SwarmServiceSummary>>;
+		fetchServices: (options: SearchPaginationSortRequest) => Promise<ServicePage>;
 		persistKey?: string;
+		showEnvironment?: boolean;
 	} = $props();
+
+	type ServiceRow = EnvironmentRow<SwarmServiceSummary>;
+	type ServicePage = EnvironmentPage<SwarmServicesPaginatedResponse>;
 
 	const MAX_OVERFLOW_ITEMS = 3;
 
@@ -65,11 +72,11 @@
 
 	const isAnyLoading = $derived(Object.values(isLoading).some(Boolean));
 
-	function inspectService(service: SwarmServiceSummary) {
-		goto(`/swarm/services/${service.id}`);
+	function inspectService(service: ServiceRow) {
+		goto(environmentHref(`/swarm/services/${service.id}`, service.environmentId));
 	}
 
-	function handleDelete(service: SwarmServiceSummary) {
+	function handleDelete(service: ServiceRow) {
 		openConfirmDialog({
 			title: m.common_delete_title({ resource: m.swarm_service() }),
 			message: m.common_delete_confirm({ resource: m.swarm_service() }),
@@ -79,7 +86,7 @@
 				action: async () => {
 					isLoading.remove = true;
 					await handleApiResultWithCallbacks({
-						result: await tryCatch(swarmService.removeService(service.id)),
+						result: await tryCatch(swarmService.removeService(service.id, service.environmentId)),
 						message: m.common_delete_failed({ resource: `${m.swarm_service()} "${service.name}"` }),
 						setLoadingState: (v) => (isLoading.remove = v),
 						onSuccess: async () => {
@@ -92,26 +99,27 @@
 		});
 	}
 
-	const columns = [
+	const columns = $derived([
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
+		...(showEnvironment ? environmentColumns<ServiceRow>() : []),
 		{ accessorKey: 'stackName', title: m.swarm_stack(), sortable: true, cell: StackCell },
 		{ accessorKey: 'name', title: m.swarm_service(), sortable: true, cell: NameCell },
 		{ accessorKey: 'mode', title: m.swarm_mode(), sortable: true, cell: ModeCell },
 		{ accessorKey: 'replicas', title: m.swarm_replicas(), sortable: true, cell: ReplicasCell },
 		{
 			id: 'nodes',
-			accessorFn: (item: SwarmServiceSummary) => item.nodes,
+			accessorFn: (item: ServiceRow) => item.nodes,
 			title: m.nodes(),
 			cell: NodesCell
 		},
 		{
 			id: 'networks',
-			accessorFn: (item: SwarmServiceSummary) => item.networks,
+			accessorFn: (item: ServiceRow) => item.networks,
 			title: m.resource_networks_cap(),
 			cell: NetworksCell
 		},
 		{ accessorKey: 'ports', title: m.common_ports(), cell: PortsCell }
-	] satisfies ColumnSpec<SwarmServiceSummary>[];
+	] satisfies ColumnSpec<ServiceRow>[]);
 
 	const mobileFields = [
 		{ id: 'stackName', label: m.swarm_stack(), defaultVisible: true },
@@ -125,8 +133,11 @@
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
 
-{#snippet NameCell({ item }: { item: SwarmServiceSummary })}
-	<a href="/swarm/services/{item.id}" class="text-sm font-medium text-primary hover:underline">
+{#snippet NameCell({ item }: { item: ServiceRow })}
+	<a
+		href={environmentHref(`/swarm/services/${item.id}`, item.environmentId)}
+		class="text-sm font-medium text-primary hover:underline"
+	>
 		{getShortName(item.name, item.stackName)}
 	</a>
 {/snippet}
@@ -145,7 +156,7 @@
 	{/if}
 {/snippet}
 
-{#snippet ReplicasCell({ item }: { item: SwarmServiceSummary })}
+{#snippet ReplicasCell({ item }: { item: ServiceRow })}
 	<span class="font-mono text-sm">{item.runningReplicas} / {item.replicas}</span>
 {/snippet}
 
@@ -166,15 +177,15 @@
 	{/if}
 {/snippet}
 
-{#snippet NodesCell({ item }: { item: SwarmServiceSummary })}
+{#snippet NodesCell({ item }: { item: ServiceRow })}
 	{@render OverflowCell({ items: item.nodes })}
 {/snippet}
 
-{#snippet NetworksCell({ item }: { item: SwarmServiceSummary })}
+{#snippet NetworksCell({ item }: { item: ServiceRow })}
 	{@render OverflowCell({ items: item.networks })}
 {/snippet}
 
-{#snippet PortsCell({ item }: { item: SwarmServiceSummary })}
+{#snippet PortsCell({ item }: { item: ServiceRow })}
 	{@render OverflowCell({ items: formatPortsList(item.ports) })}
 {/snippet}
 
@@ -182,7 +193,7 @@
 	item,
 	mobileFieldVisibility
 }: {
-	item: SwarmServiceSummary;
+	item: ServiceRow;
 	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
@@ -191,10 +202,10 @@
 			component: DockIcon,
 			variant: modeIconVariant(item.mode)
 		})}
-		title={(item: SwarmServiceSummary) => getShortName(item.name, item.stackName)}
-		subtitle={(item: SwarmServiceSummary) => ((mobileFieldVisibility['stackName'] ?? true) ? (item.stackName ?? null) : null)}
+		title={(item: ServiceRow) => getShortName(item.name, item.stackName)}
+		subtitle={(item: ServiceRow) => ((mobileFieldVisibility['stackName'] ?? true) ? (item.stackName ?? null) : null)}
 		badges={[
-			(item: SwarmServiceSummary) =>
+			(item: ServiceRow) =>
 				(mobileFieldVisibility['mode'] ?? true)
 					? { variant: getSwarmServiceModeVariant(item.mode), text: getSwarmServiceModeLabel(item.mode) }
 					: null
@@ -202,14 +213,14 @@
 		fields={[
 			{
 				label: m.swarm_replicas(),
-				getValue: (item: SwarmServiceSummary) => `${item.runningReplicas} / ${item.replicas}`,
+				getValue: (item: ServiceRow) => `${item.runningReplicas} / ${item.replicas}`,
 				icon: GlobeIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['replicas'] ?? true
 			},
 			{
 				label: m.nodes(),
-				getValue: (item: SwarmServiceSummary) =>
+				getValue: (item: ServiceRow) =>
 					item.nodes?.length
 						? item.nodes.slice(0, 3).join(', ') + (item.nodes.length > 3 ? ` +${item.nodes.length - 3}` : '')
 						: m.common_na(),
@@ -219,14 +230,14 @@
 			},
 			{
 				label: m.resource_networks_cap(),
-				getValue: (item: SwarmServiceSummary) => (item.networks?.length ? item.networks.join(', ') : m.common_na()),
+				getValue: (item: ServiceRow) => (item.networks?.length ? item.networks.join(', ') : m.common_na()),
 				icon: NetworksIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['networks'] ?? false
 			},
 			{
 				label: m.common_ports(),
-				getValue: (item: SwarmServiceSummary) => formatPortsList(item.ports).join(', ') || m.common_na(),
+				getValue: (item: ServiceRow) => formatPortsList(item.ports).join(', ') || m.common_na(),
 				icon: GlobeIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['ports'] ?? false
@@ -236,14 +247,14 @@
 	/>
 {/snippet}
 
-{#snippet RowActions({ item }: { item: SwarmServiceSummary })}
+{#snippet RowActions({ item }: { item: ServiceRow })}
 	<RowActionsMenu triggerClass="relative size-8 p-0" iconClass="">
 		<DropdownMenu.Item onclick={() => inspectService(item)}>
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
 		</DropdownMenu.Item>
 		<DropdownMenu.Separator />
-		<IfPermitted perm="swarm:services">
+		<IfPermitted perm="swarm:services" envId={item.environmentId}>
 			<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)} disabled={isAnyLoading}>
 				<TrashIcon class="size-4" />
 				{m.common_delete()}

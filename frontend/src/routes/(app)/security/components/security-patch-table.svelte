@@ -46,10 +46,12 @@
 
 	let {
 		targets = $bindable(),
-		requestOptions = $bindable()
+		requestOptions = $bindable(),
+		onRefreshData
 	}: {
 		targets: PatchTargetPage;
 		requestOptions: SearchPaginationSortRequest;
+		onRefreshData: (options: SearchPaginationSortRequest) => Promise<PatchTargetPage>;
 	} = $props();
 
 	// Track the user store: hasPermission reads it non-reactively, so without
@@ -65,7 +67,7 @@
 		if (vulnerabilityEnvironments().length === 0) return targets;
 		const requestedScope = environmentStore.shownKey;
 		const request = ++latestRequest;
-		const response = await fetchPatchTargets(options);
+		const response = await onRefreshData(options);
 		if (vulnerabilityEnvironments().length === 0 || requestedScope !== environmentStore.shownKey || request !== latestRequest) {
 			return targets;
 		}

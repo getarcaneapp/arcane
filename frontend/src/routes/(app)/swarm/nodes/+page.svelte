@@ -1,66 +1,82 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { onMount, untrack } from 'svelte';
 
+	import { swarmEnvironmentsQueryOptions, type SwarmEnvironments } from '#lib/components/swarm/swarm-environments.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { AlertTriangleIcon, UsersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import { simpleRefresh } from '#lib/utils/api.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { fetchAcrossEnvironments, withFailedEnvironments } from '#lib/utils/environments.js';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import SwarmNodesTable from './components/nodes-table.svelte';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
-	let nodes = $derived(data.nodes);
-	let requestOptions = $derived(data.requestOptions);
-	let isLoading = $state({ refresh: false });
+	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
+	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm:read'));
+	const swarm = $derived(swarmQuery.data ?? data.swarm);
 
-	const currentEnvironmentId = $derived(environmentStore.selected?.id ?? null);
-
-	async function refresh() {
-		const environmentId = await environmentStore.getCurrentEnvironmentId();
-		await simpleRefresh(
-			() => swarmService.getNodes(requestOptions),
-			(data) => {
-				if (environmentId === currentEnvironmentId) nodes = data;
-			},
-			m.common_refresh_failed({ resource: m.nodes() }),
-			(loading) => (isLoading.refresh = loading)
-		);
+	function nodesQueryOptions(options: SearchPaginationSortRequest, current: SwarmEnvironments = swarm) {
+		const { environments, failedEnvironments, scope } = current;
+		return {
+			queryKey: queryKeys.swarm.nodes(scope, options),
+			queryFn: async () =>
+				withFailedEnvironments(
+					await fetchAcrossEnvironments(environments, options, (id, request, config) =>
+						swarmService.getNodes(request, id, config)
+					),
+					failedEnvironments
+				)
+		};
 	}
 
-	useEnvironmentRefresh(refresh);
+	const nodesQuery = createQuery(() => ({
+		...nodesQueryOptions(requestOptions),
+		placeholderData: (previous) => previous
+	}));
+	let nodes = $derived(nodesQuery.data ?? data.nodes);
+	const isRefreshing = $derived(nodesQuery.isFetching && !nodesQuery.isPending);
+
+	function fetchNodes(options: SearchPaginationSortRequest, current: SwarmEnvironments = swarm) {
+		requestOptions = options;
+		return queryClient.query({ ...nodesQueryOptions(options, current), staleTime: 0 });
+	}
+
+	async function refresh() {
+		const discovered = await swarmQuery.refetch();
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(fetchNodes(requestOptions, discovered.data ?? swarm)),
+			message: m.common_refresh_failed({ resource: m.nodes() })
+		});
+	}
 
 	onMount(() => {
 		let active = true;
-		let reconciledEnvironmentId: string | null = null;
-		async function reconcileSelectedEnvironment() {
-			await environmentStore.ready;
-			const environmentId = environmentStore.selected?.id;
-			if (!active || !environmentId || !hasPermission('swarm:nodes', environmentId) || reconciledEnvironmentId === environmentId)
-				return;
-			reconciledEnvironmentId = environmentId;
-			const result = await tryCatch(swarmService.reconcileNodeAgents());
-			if (!active || environmentId !== environmentStore.selected?.id || result.error !== null) return;
+		const reconciled = new Set<string>();
+		async function reconcileEnvironments() {
+			const pending = swarm.managers.filter((env) => !reconciled.has(env.id) && hasPermission('swarm:nodes', env.id));
+			if (pending.length === 0) return;
+			for (const env of pending) reconciled.add(env.id);
+			const results = await Promise.all(pending.map((env) => tryCatch(swarmService.reconcileNodeAgents(env.id))));
+			if (!active || results.every((result) => result.error !== null)) return;
 			await refresh();
 		}
 		const unsubscribeUser = userStore.onChange(() => {
-			void reconcileSelectedEnvironment();
-		});
-		const unsubscribeEnvironment = environmentStore.subscribeSelected(() => {
-			void reconcileSelectedEnvironment();
+			void reconcileEnvironments();
 		});
 		return () => {
 			active = false;
 			unsubscribeUser();
-			unsubscribeEnvironment();
 		};
 	});
 
@@ -74,7 +90,7 @@
 		createRefreshActionButtons({
 			refreshLabel: m.common_refresh(),
 			onRefresh: refresh,
-			refreshing: isLoading.refresh
+			refreshing: isRefreshing
 		})
 	);
 
@@ -88,7 +104,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.nodes()} subtitle={m.swarm_nodes_subtitle()} {actionButtons} {statCards} environmentPicker>
+<ResourcePageLayout title={m.nodes()} subtitle={m.swarm_nodes_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<div class="space-y-4">
 			{#if uncoveredNodeCount > 0}
@@ -99,7 +115,7 @@
 				</Alert.Root>
 			{/if}
 
-			<SwarmNodesTable bind:nodes bind:requestOptions />
+			<SwarmNodesTable bind:nodes bind:requestOptions {fetchNodes} />
 		</div>
 	{/snippet}
 </ResourcePageLayout>

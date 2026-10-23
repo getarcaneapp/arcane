@@ -90,7 +90,7 @@ func TestAnalyticsJob_Run_AgentPayload(t *testing.T) {
 	server, bodyCh, _ := newHeartbeatServer(t)
 	defer server.Close()
 
-	cfg := &config.Config{AgentMode: true, Environment: config.AppEnvironmentProduction}
+	cfg := &config.Config{EdgeAgent: true, Environment: config.AppEnvironmentProduction}
 	job := NewAnalyticsJob(settingsService, kvService, server.Client(), cfg)
 	job.heartbeatURL = server.URL
 

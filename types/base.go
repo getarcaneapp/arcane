@@ -15,6 +15,11 @@ type EnvironmentRef struct {
 	Name string `json:"name" doc:"Environment display name"`
 }
 
+type EnvironmentData[T any] struct {
+	Environment EnvironmentRef `json:"environment" doc:"Environment the data came from"`
+	Data        T              `json:"data" doc:"Data reported by the environment"`
+}
+
 type EnvironmentFailure struct {
 	Environment EnvironmentRef `json:"environment" doc:"Environment that failed"`
 	Message     string         `json:"message" doc:"Why the environment's results are missing"`
@@ -105,6 +110,7 @@ type PaginationResponse struct {
 type ApiResponse[T any] struct {
 	Success            bool                 `json:"success" doc:"Whether the request was successful"`
 	Data               T                    `json:"data" doc:"Response data"`
+	Environments       []EnvironmentData[T] `json:"environments,omitempty" doc:"Per-environment data behind a multi-environment response"`
 	FailedEnvironments []EnvironmentFailure `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
 }
 

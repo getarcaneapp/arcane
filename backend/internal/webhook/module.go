@@ -53,6 +53,7 @@ func RegisterWebhooks(api huma.API, webhookService *WebhookService) {
 		Description: "List all webhooks configured for this environment",
 		Tags:        []string{"Webhooks"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermWebhooksList, h.ListWebhooks)
 
 	middleware.RegisterWithPermission(api, huma.Operation{

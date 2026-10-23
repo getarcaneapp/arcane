@@ -3,10 +3,9 @@ import { test, expect, type Page } from '../fixtures/test.fixture';
 const remoteEnvironment = {
 	id: 'remote-preview-test',
 	name: 'Remote Preview',
-	apiUrl: 'https://remote-preview.example.invalid',
+	apiUrl: 'edge://remote-preview-test',
 	status: 'online',
-	enabled: true,
-	isEdge: false
+	enabled: true
 };
 
 const remoteContainer = {
@@ -75,10 +74,7 @@ async function mockRemoteEnvironment(page: Page, preferences: Preferences = {}) 
 	const remote: { failure?: string } = {};
 	const local = await page.request.get('/api/environments/0');
 	const localEnvironment = (await local.json()).data;
-	await withPreferences(page, () => ({ allEnvironmentsPreview: true, ...preferences }), [
-		localEnvironment,
-		remoteEnvironment
-	]);
+	await withPreferences(page, () => preferences, [localEnvironment, remoteEnvironment]);
 	await page.route(/\/api\/stream(?:\?.*)?$/, (route) => route.abort());
 	await page.route(/\/api\/environments(?:\?.*)?$/, (route) =>
 		route.fulfill({ json: paginated([localEnvironment, remoteEnvironment]) })
@@ -138,8 +134,8 @@ async function mockRemoteEnvironment(page: Page, preferences: Preferences = {}) 
 	return remote;
 }
 
-test.describe('All environments preview', () => {
-	test('the preview toggle is saved to the user preferences', async ({ page }) => {
+test.describe('All environments', () => {
+	test('the environment label style is saved to the user preferences', async ({ page }) => {
 		let saved: Preferences = {};
 		await withPreferences(page, () => saved);
 		await page.route(/\/api\/auth\/me\/profile(?:\?.*)?$/, async (route) => {
@@ -153,16 +149,16 @@ test.describe('All environments preview', () => {
 			});
 		});
 
-		await page.goto('/account?tab=previews');
-		const toggle = page.getByRole('switch', { name: 'All environments (preview)' });
-		await expect(toggle).not.toBeChecked();
+		await page.goto('/account?tab=preferences');
+		const labelStyle = page.locator('#account-environment-label-style');
+		await expect(labelStyle).toContainText('Name');
 
-		await toggle.click();
-		await expect(toggle).toBeChecked();
-		expect(saved.allEnvironmentsPreview).toBe(true);
+		await labelStyle.click();
+		await page.getByRole('option', { name: 'Color dot', exact: true }).click();
+		await expect.poll(() => saved.environmentLabelStyle).toBe('dot');
 
 		await page.reload();
-		await expect(page.getByRole('switch', { name: 'All environments (preview)' })).toBeChecked();
+		await expect(page.locator('#account-environment-label-style')).toContainText('Color dot');
 	});
 
 	test('lists rows from every environment and links details to their environment', async ({

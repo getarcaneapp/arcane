@@ -19,7 +19,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/dashboard"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
@@ -42,7 +41,6 @@ const (
 // StreamHandler multiplexes every live feed onto one connection.
 type StreamHandler struct {
 	events      *event.EventService
-	dashboard   *dashboard.DashboardHandler
 	activity    *activity.ActivityHandler
 	environment *environment.EnvironmentHandler
 	version     *version.VersionService
@@ -50,15 +48,13 @@ type StreamHandler struct {
 }
 
 type StreamClientInput struct {
-	Channels     string `query:"channels" doc:"Comma-separated channels to subscribe to: environments, dashboard, activities, events, version, arcane-upgrade"`
-	DebugAllGood bool   `query:"debugAllGood" default:"false" doc:"Debug mode for the dashboard channel: force an empty action item list"`
-	Limit        int    `query:"limit" default:"0" doc:"Maximum activities to include in each activities-channel snapshot"`
+	Channels string `query:"channels" doc:"Comma-separated channels to subscribe to: environments, activities, events, version, arcane-upgrade"`
+	Limit    int    `query:"limit" default:"0" doc:"Maximum activities to include in each activities-channel snapshot"`
 }
 
 // RegisterStream registers the multiplexed client stream, reusing each domain's producer for its channel.
 func RegisterStream(
 	api huma.API,
-	dashboardHandler *dashboard.DashboardHandler,
 	activityHandler *activity.ActivityHandler,
 	environmentHandler *environment.EnvironmentHandler,
 	eventService *event.EventService,
@@ -67,7 +63,6 @@ func RegisterStream(
 ) {
 	h := &StreamHandler{
 		events:      eventService,
-		dashboard:   dashboardHandler,
 		activity:    activityHandler,
 		environment: environmentHandler,
 		version:     versionService,
@@ -86,7 +81,7 @@ func RegisterStream(
 		Method:      http.MethodGet,
 		Path:        "/stream",
 		Summary:     "Multiplexed client stream",
-		Description: "Streams the requested channels (environments, dashboard, activities, events, version, arcane-upgrade) as JSON envelopes over a single Server-Sent Events connection",
+		Description: "Streams the requested channels (environments, activities, events, version, arcane-upgrade) as JSON envelopes over a single Server-Sent Events connection",
 		Tags:        []string{"Stream"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 		Middlewares: huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
@@ -148,28 +143,6 @@ func (h *StreamHandler) StreamClient(ctx context.Context, input *StreamClientInp
 		))
 	}
 
-	if requested[types.StreamChannelDashboard] {
-		wrapDashboard := func(channel string, event types.DashboardStreamEvent) types.StreamEvent {
-			return types.StreamEvent{Channel: channel, Dashboard: &event, Timestamp: event.Timestamp}
-		}
-		if ps.Allows(authz.PermDashboardRead, environment.LocalEnvironmentID) {
-			producers = append(producers, forwardStreamChannel(
-				types.StreamChannelDashboard, wrapDashboard,
-				func(producerCtx context.Context, events chan<- types.DashboardStreamEvent) {
-					h.dashboard.RunLocalStreamProducer(producerCtx, input.DebugAllGood, events)
-				},
-			))
-		}
-		if ps.AllowsAny(authz.PermDashboardRead) {
-			producers = append(producers, forwardStreamChannel(
-				types.StreamChannelDashboard, wrapDashboard,
-				func(producerCtx context.Context, events chan<- types.DashboardStreamEvent) {
-					h.dashboard.RunRemoteStreamPollers(producerCtx, ps, input.DebugAllGood, events)
-				},
-			))
-		}
-	}
-
 	if requested[types.StreamChannelActivities] {
 		wrapActivity := func(channel string, event types.ActivityStreamEvent) types.StreamEvent {
 			return types.StreamEvent{Channel: channel, Activity: &event, Timestamp: event.Timestamp}
@@ -192,14 +165,22 @@ func (h *StreamHandler) StreamClient(ctx context.Context, input *StreamClientInp
 		}
 	}
 
-	if requested[types.StreamChannelEvents] && ps.Allows(authz.PermEventsRead, "") {
+	if requested[types.StreamChannelEvents] {
 		producers = append(producers, forwardStreamChannel(
 			types.StreamChannelEvents,
 			func(channel string, event types.EventStreamEvent) types.StreamEvent {
 				return types.StreamEvent{Channel: channel, EventLog: &event, Timestamp: event.Timestamp}
 			},
-			h.events.RunStreamProducer,
+			func(producerCtx context.Context, events chan<- types.EventStreamEvent) {
+				h.events.RunStreamProducer(producerCtx, ps, events)
+			},
 		))
+	}
+
+	if requested[types.StreamChannelEvents] || requested[types.StreamChannelActivities] {
+		producers = append(producers, func(producerCtx context.Context, _ chan<- types.StreamEvent) {
+			h.environment.RunRemoteChangePollers(producerCtx, ps)
+		})
 	}
 
 	if requested[types.StreamChannelVersion] {

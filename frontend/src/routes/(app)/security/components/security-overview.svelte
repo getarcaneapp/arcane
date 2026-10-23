@@ -1,13 +1,17 @@
 <script lang="ts">
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import * as StatStrip from '#lib/components/stat-strip/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import RiskGauge from '#lib/components/vulnerability/risk-gauge.svelte';
 	import RiskTrendChart from '#lib/components/vulnerability/risk-trend-chart.svelte';
 	import ShareBar from '#lib/components/vulnerability/share-bar.svelte';
-	import { ArrowDownIcon, ArrowUpIcon, InfoIcon, ScanIcon } from '#lib/icons/index.js';
+	import { AlertTriangleIcon, ArrowDownIcon, ArrowUpIcon, InfoIcon, ScanIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { VulnerabilityRiskDrivers, VulnerabilityRiskImage, VulnerabilityRiskOverview } from '#lib/types/environment.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
+	import type { VulnerabilityRiskDrivers, VulnerabilityRiskImage } from '#lib/types/environment.js';
 	import { environmentHref } from '#lib/utils/environments.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';
 	import {
@@ -15,16 +19,17 @@
 		getSeverityBarClass,
 		getSeverityLabel,
 		getSeveritySegments,
+		type RiskOverview,
 		type ShareBarSegment
 	} from '#lib/utils/vulnerability.js';
 
 	interface Props {
-		overview: VulnerabilityRiskOverview;
-		environmentId: string;
+		overview: RiskOverview;
+		onRetry: () => Promise<void>;
 		onSelectVulnerability: (vulnerabilityId: string) => void;
 	}
 
-	let { overview, environmentId, onSelectVulnerability }: Props = $props();
+	let { overview, onRetry, onSelectVulnerability }: Props = $props();
 
 	let trendDays = $state('30');
 	let findingRank = $state<'risk' | 'prevalence'>('risk');
@@ -167,6 +172,32 @@
 	</ArcaneTooltip.Root>
 {/snippet}
 
+{#if overview.failedEnvironments.length > 0}
+	<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon}>
+		<div class="flex flex-wrap items-center justify-between gap-2">
+			<Alert.Description>
+				{m.all_environments_unavailable({
+					environments: overview.failedEnvironments
+						.map(({ environment, message }) => `${environment.name} (${message})`)
+						.join(', ')
+				})}
+			</Alert.Description>
+			<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onClickPromise={onRetry} />
+		</div>
+	</Alert.Root>
+{/if}
+
+{#if overview.excludedEnvironments.length > 0}
+	<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon} class="mt-3">
+		<Alert.Description>
+			{m.all_environments_excluded({
+				count: overview.excludedEnvironments.length,
+				limit: settingsStore.current?.allEnvironmentsLimit ?? 0
+			})}
+		</Alert.Description>
+	</Alert.Root>
+{/if}
+
 {#if overview.drivers.imagesScanned === 0}
 	<div class="flex flex-col items-center gap-3 py-16 text-center">
 		<ScanIcon class="size-10 text-muted-foreground/50" />
@@ -293,7 +324,7 @@
 					<p class="py-6 text-sm text-muted-foreground">{m.vuln_no_vulnerabilities()}</p>
 				{:else}
 					<ol class="divide-y divide-border/40">
-						{#each topFindings as finding, index (finding.vulnerabilityId)}
+						{#each topFindings as finding, index (`${finding.environmentId}:${finding.vulnerabilityId}`)}
 							<li>
 								<button
 									type="button"
@@ -318,6 +349,7 @@
 												<Badge variant="gray" size="xs">{m.vuln_epss_value({ value: Math.round(finding.epss * 100) })}</Badge>
 											{/if}
 										</span>
+										<EnvironmentCell value={finding.environmentId} />
 										<span class="block truncate font-mono text-xs text-muted-foreground">
 											{finding.pkgName} → {finding.fixedVersion || m.vuln_no_fix()}
 											<span class="font-sans">
@@ -348,15 +380,16 @@
 			<section class="min-w-0">
 				<h3 class="mb-3 text-sm font-medium">{m.security_riskiest_images()}</h3>
 				<ul class="divide-y divide-border/40">
-					{#each overview.riskiestImages as image (image.imageId)}
+					{#each overview.riskiestImages as image (`${image.environmentId}:${image.imageId}`)}
 						{@const band = getRiskBandDisplay(image.riskBand, image.scoreStatus)}
 						<li>
 							<a
-								href={environmentHref(`/images/${image.imageId}?tab=vulnerabilities`, environmentId)}
+								href={environmentHref(`/images/${image.imageId}?tab=vulnerabilities`, image.environmentId)}
 								class="-mx-2 grid grid-cols-content-action items-center gap-4 rounded-md px-2 py-3 transition-colors hover:bg-muted/40"
 							>
 								<span class="min-w-0 space-y-1">
 									<span class="block truncate text-sm font-medium">{image.imageName}</span>
+									<EnvironmentCell value={image.environmentId} />
 									<span class="block truncate text-xs text-muted-foreground tabular-nums">
 										{imageUsageLabel(image)} · {m.security_findings_count({
 											count: image.findings

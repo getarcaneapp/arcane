@@ -24,7 +24,7 @@ import (
 const (
 	ScopeRead        = "read"
 	ScopeMerged      = "merged"
-	ScopeFleet       = "fleet"
+	ScopeAll         = "all"
 	ScopeDestination = "destination"
 	ScopeResource    = "resource"
 	ScopeGlobal      = "global"
@@ -55,7 +55,7 @@ func SetResource[D, S any](ref ResourceRef[D, S], commands ...*cobra.Command) {
 		run := cmd.RunE
 		cmd.RunE = func(command *cobra.Command, args []string) error {
 			app, _ := runtime.From(command.Context())
-			if !app.PreviewEnabled() {
+			if !app.AllEnvironments() {
 				return run(command, args)
 			}
 			defer app.SelectEnvironment("")
@@ -76,7 +76,6 @@ func SetResource[D, S any](ref ResourceRef[D, S], commands ...*cobra.Command) {
 	}
 }
 
-// SetScope declares how commands behave when all-environments preview is enabled.
 func SetScope(scope string, commands ...*cobra.Command) {
 	for _, cmd := range commands {
 		if cmd.Annotations == nil {
@@ -86,17 +85,24 @@ func SetScope(scope string, commands ...*cobra.Command) {
 	}
 }
 
+func Scope(cmd *cobra.Command) string {
+	for current := cmd; current != nil; current = current.Parent() {
+		if scope := current.Annotations["arcane:scope"]; scope != "" {
+			return scope
+		}
+	}
+	return ""
+}
+
 // RunScoped reuses the command's requests and rendering for each selected environment.
 func RunScoped(cmd *cobra.Command, args []string, run func(*cobra.Command, []string) error) error {
-	app, ok := runtime.From(cmd.Context())
-	if !ok || !app.PreviewEnabled() {
-		return run(cmd, args)
+	scope := Scope(cmd)
+	if scope == "" {
+		return fmt.Errorf("%s has no environment scope", cmd.CommandPath())
 	}
-	var scope string
-	for current := cmd; current != nil; current = current.Parent() {
-		if scope = current.Annotations["arcane:scope"]; scope != "" {
-			break
-		}
+	app, ok := runtime.From(cmd.Context())
+	if !ok || !app.AllEnvironments() {
+		return run(cmd, args)
 	}
 	if flag := cmd.Annotations["arcane:scope-flag"]; flag != "" {
 		enabled, _ := cmd.Flags().GetBool(flag)
@@ -104,7 +110,7 @@ func RunScoped(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 			return run(cmd, args)
 		}
 	}
-	if scope == "" || scope == ScopeGlobal {
+	if scope == ScopeGlobal {
 		return run(cmd, args)
 	}
 	if scope == ScopeResource {
@@ -114,7 +120,7 @@ func RunScoped(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 		return RunMerged(cmd, args, run)
 	}
 	if scope != ScopeDestination {
-		return RunEnvironments(cmd, args, run, scope == ScopeFleet)
+		return RunEnvironments(cmd, args, run, scope == ScopeAll)
 	}
 	environments, err := app.Environments(cmd.Context())
 	if err != nil {
@@ -199,7 +205,7 @@ func RunMerged(cmd *cobra.Command, args []string, run func(*cobra.Command, []str
 // RunEnvironments executes a command sequentially and reports each environment's result.
 func RunEnvironments(cmd *cobra.Command, args []string, run func(*cobra.Command, []string) error, mutation bool) error {
 	app, _ := runtime.From(cmd.Context())
-	if !app.PreviewEnabled() {
+	if !app.AllEnvironments() {
 		return run(cmd, args)
 	}
 	environments, discoveryErr := app.Environments(cmd.Context())
@@ -211,11 +217,7 @@ func RunEnvironments(cmd *cobra.Command, args []string, run func(*cobra.Command,
 	}
 	skip, _ := cmd.Flags().GetBool("force")
 	if mutation && !skip {
-		labels := make([]string, len(environments))
-		for i, env := range environments {
-			labels[i] = cmp.Or(env.Name, env.ID)
-		}
-		confirmed, confirmErr := Confirm(cmd, fmt.Sprintf("%s across %d environments: %s?", cmd.Short, len(labels), strings.Join(labels, ", ")))
+		confirmed, confirmErr := Confirm(cmd, fmt.Sprintf("%s in all %d environments?", cmd.Short, len(environments)))
 		if confirmErr != nil {
 			return confirmErr
 		}
@@ -224,8 +226,8 @@ func RunEnvironments(cmd *cobra.Command, args []string, run func(*cobra.Command,
 		}
 	}
 	if mutation {
-		app.FleetConfirmed = true
-		defer func() { app.FleetConfirmed = false }()
+		app.AllConfirmed = true
+		defer func() { app.AllConfirmed = false }()
 	}
 	jsonMode := JSONOutputEnabled(cmd)
 	combined := &tableOutput{}

@@ -10,7 +10,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
@@ -27,15 +26,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-// Service sends requests to remote environment agents over HTTP or edge
-// tunnels and pushes manager-owned configuration to them.
 type Service struct {
 	db              *database.DB
 	client          *remenv.Client
-	streamClient    *http.Client
 	settingsService *settings.SettingsService
 	syncGate        *utils.SyncGate
 	syncLocks       utils.KeyedMutex
@@ -45,17 +40,15 @@ type Service struct {
 type Target struct {
 	id          string
 	name        string
-	isEdge      bool
 	accessToken *string
-	targetURL   string
 }
 
 // New builds the remote transport. syncGate is owned by the parent so it can
 // forget delivery state when an environment reconnects.
-func New(db *database.DB, httpClient *http.Client, settingsService *settings.SettingsService, syncGate *utils.SyncGate) *Service {
+func New(db *database.DB, settingsService *settings.SettingsService, syncGate *utils.SyncGate) *Service {
 	return &Service{
 		db: db,
-		client: remenv.NewClient(httpClient, remenv.TunnelTransportFuncs{
+		client: remenv.NewClient(remenv.TunnelTransportFuncs{
 			EnsureAvailableFunc: func(ctx context.Context, envID string) error {
 				if edge.HasActiveTunnel(envID) {
 					return nil
@@ -89,34 +82,20 @@ func New(db *database.DB, httpClient *http.Client, settingsService *settings.Set
 				}, nil
 			},
 		}),
-		streamClient:    &http.Client{Transport: kit.FromPtr(httpClient).Transport},
 		settingsService: settingsService,
 		syncGate:        syncGate,
 	}
 }
 
-// NewTarget validates a remote environment's endpoint. The local environment
-// is never a proxy target.
-func NewTarget(id, name, apiURL string, isEdge bool, accessToken *string) (*Target, error) {
+func NewTarget(id, name string, accessToken *string) (*Target, error) {
 	if id == "0" {
 		return nil, errors.New("cannot proxy request to local environment")
-	}
-
-	targetURL := strings.TrimRight(apiURL, "/")
-	if !isEdge {
-		validatedTargetURL, err := httpx.NormalizeBaseURL(apiURL)
-		if err != nil {
-			return nil, fmt.Errorf("invalid environment API URL: %w", err)
-		}
-		targetURL = validatedTargetURL
 	}
 
 	return &Target{
 		id:          id,
 		name:        name,
-		isEdge:      isEdge,
 		accessToken: accessToken,
-		targetURL:   targetURL,
 	}, nil
 }
 
@@ -146,9 +125,7 @@ func (s *Service) Execute(
 
 	resp, err := s.client.Do(ctx, remenv.Request{
 		EnvironmentID: target.id,
-		IsEdge:        target.isEdge,
 		Method:        method,
-		URL:           target.targetURL + path,
 		Path:          path,
 		Headers:       requestHeaders,
 		Body:          body,
@@ -161,21 +138,17 @@ func (s *Service) Execute(
 }
 
 func (s *Service) Stream(ctx context.Context, target *Target, path string) (*http.Response, error) {
-	baseURL, httpClient := target.targetURL, s.streamClient
-	if target.isEdge {
-		tunnel, ok := edge.RequestTunnelAndWait(ctx, target.id, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()).Get()
-		if !ok {
-			return nil, &remenv.TransportError{Err: remenv.ErrEnvironmentUnavailable}
-		}
-		baseURL, httpClient = edge.MuxAgentBaseURL, tunnel.HTTPClient()
+	tunnel, ok := edge.RequestTunnelAndWait(ctx, target.id, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()).Get()
+	if !ok {
+		return nil, &remenv.TransportError{Err: remenv.ErrEnvironmentUnavailable}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+path, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, edge.MuxAgentBaseURL+path, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("create stream request: %w", err)
 	}
 	req.Header.Set("Accept", "text/event-stream")
 	remenv.ApplyAgentTokenHeaders(req.Header, target.accessToken)
-	resp, err := httpClient.Do(req)
+	resp, err := tunnel.HTTPClient().Do(req)
 	if err != nil {
 		return nil, &remenv.TransportError{Err: err}
 	}
@@ -374,12 +347,12 @@ func (s *Service) fanOutSyncToEnvironment[Model, Item, Request any](
 	delivered := false
 	defer func() { finishDelivery(delivered) }()
 
-	slog.InfoContext(ctx, "Starting sync to environment", "kind", kind, "environmentId", target.id, "environmentName", target.name, "apiUrl", target.targetURL)
+	slog.InfoContext(ctx, "Starting sync to environment", "kind", kind, "environmentId", target.id, "environmentName", target.name)
 
 	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	slog.InfoContext(ctx, "Sending sync request to agent", "kind", kind, "url", target.targetURL+path, "count", len(syncItems), "isEdge", target.isEdge)
+	slog.InfoContext(ctx, "Sending sync request to agent", "kind", kind, "path", path, "count", len(syncItems))
 
 	var result struct {
 		Success bool `json:"success"`

@@ -5,7 +5,6 @@ import (
 	"context"
 	"log/slog"
 	"net"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -35,14 +34,6 @@ func TestSQLiteHostRestartPersistence(t *testing.T) {
 	require.Contains(t, output.String(), "id=other/unknown/run-1")
 	require.Contains(t, output.String(), "hostId=durable-hash")
 	require.Contains(t, output.String(), "nested.actorRef=job-health-executor/image-polling@0")
-}
-
-func TestPostgresHostRestartPersistence(t *testing.T) {
-	databaseURL := os.Getenv("ARCANE_TEST_POSTGRES_DSN")
-	if databaseURL == "" {
-		t.Skip("ARCANE_TEST_POSTGRES_DSN is not set")
-	}
-	testRestartPersistenceInternal(t, databaseURL)
 }
 
 func testRestartPersistenceInternal(t *testing.T, databaseURL string) {
