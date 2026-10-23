@@ -46,7 +46,7 @@ func TestAdminEventsListEnvSendsLimitAndStart(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	_, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "admin", "events", "list", "--environment", "--json", "--limit", "3", "--start", "6"},
+		[]string{"--config", configPath, "--env", "0", "admin", "events", "list", "--environment", "--json", "--limit", "3", "--start", "6"},
 	)
 
 	require.NoError(t, err,

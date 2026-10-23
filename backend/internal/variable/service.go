@@ -406,7 +406,7 @@ func (s *VariableService) syncEnvironments(ctx context.Context, targets []enviro
 		wg.Go(func() {
 			syncCtx, cancel := context.WithTimeout(ctx, variableSyncTimeout)
 			defer cancel()
-			if target.IsEdge && !edge.HasActiveTunnel(target.ID) {
+			if target.ID != environment.LocalEnvironmentID && !edge.HasActiveTunnel(target.ID) {
 				if _, ok := edge.RequestTunnelAndWait(syncCtx, target.ID, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()).Get(); !ok {
 					s.recordSyncPending(target.ID)
 					return

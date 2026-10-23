@@ -90,7 +90,7 @@ func newJobScheduler(
 			}
 			// Standalone tasks wait until upgrade job recovery has read its job, so a resumed step's new checkpoint
 			// is never mistaken for one the previous process left.
-			if !cfg.AgentMode && systemService != nil {
+			if !cfg.EdgeAgent && systemService != nil {
 				resumeDone = make(chan struct{})
 				go func() {
 					defer close(resumeDone)
@@ -328,7 +328,7 @@ func registerDynamicJobs(params dynamicJobsParams) error {
 		}
 		params.Volume.RegisterBackupJobsOnStartup(params.AppCtx)
 	}
-	if !params.Config.AgentMode && params.System != nil {
+	if !params.Config.EdgeAgent && params.System != nil {
 		if err := params.System.SetBackupScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
 			return err
 		}
@@ -344,7 +344,7 @@ func registerDynamicJobs(params dynamicJobsParams) error {
 	// Environment health: one job per enabled environment (manager only). The Jobs
 	// UI still addresses "environment-health" by ID, so bridge its reschedule and
 	// run-now back to EnvironmentService.
-	if !params.Config.AgentMode && params.Environment != nil {
+	if !params.Config.EdgeAgent && params.Environment != nil {
 		if err := params.Environment.SetScheduler(params.AppCtx, params.Scheduler, params.Admission); err != nil {
 			return err
 		}
@@ -497,7 +497,7 @@ func (w *timeoutSyncWorker) Stop(ctx context.Context) error {
 }
 
 func setupTimeoutSettingsSubscription(params settingsSubscriptionsParams, subscribe func([]string, func([]libarcane.SettingUpdate))) (*timeoutSyncWorker, context.CancelFunc) {
-	if params.Config.AgentMode {
+	if params.Config.EdgeAgent {
 		return nil, nil
 	}
 	ctx, cancel := context.WithCancel(params.LifecycleCtx)

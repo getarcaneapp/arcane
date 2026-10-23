@@ -207,31 +207,55 @@ test.describe('Diagnostics', () => {
 	});
 });
 
+test.describe('Environment settings tabs', () => {
+	test('opens the environment-scoped settings as tabs on the environment page', async ({
+		page
+	}) => {
+		for (const [tab, name] of [
+			['timeouts', 'Timeouts'],
+			['activity', 'Activity'],
+			['builds', 'Builds'],
+			['jobs', 'Automations'],
+			['notifications', 'Notifications']
+		]) {
+			await page.goto(`/environments/0?tab=${tab}`);
+			await expect(page.getByRole('tab', { name, exact: true })).toHaveAttribute(
+				'data-state',
+				'active'
+			);
+			expect(new URL(page.url()).searchParams.get('tab')).toBe(tab);
+		}
+	});
+});
+
 test.describe('Notifications', () => {
 	test.describe('Notification settings', () => {
+		const notificationsPanel = (page: Page) =>
+			page.getByRole('tabpanel').filter({ visible: true }).first();
+
+		const providerPanel = (page: Page) =>
+			page.getByRole('tabpanel').filter({ visible: true }).last();
+
 		const openProviderTab = async (page: Page, name: string) => {
 			const tab = page.getByRole('tab', { name });
 			await tab.scrollIntoViewIfNeeded();
 			await expect(tab).toBeVisible();
 			await tab.click();
-			await expect(page.getByRole('tabpanel').filter({ visible: true })).toBeVisible();
+			await expect(providerPanel(page)).toBeVisible();
 		};
 
 		const enableCurrentProvider = async (page: Page) => {
-			const providerPanel = page.getByRole('tabpanel').filter({ visible: true });
-			const toggle = providerPanel.getByRole('switch').first();
+			const panel = providerPanel(page);
+			const toggle = panel.getByRole('switch').first();
 			await expect(toggle).toBeVisible();
 			await toggle.click();
-			await expect(providerPanel.locator('[data-dropdown-menu-trigger]')).toBeVisible({
+			await expect(panel.locator('[data-dropdown-menu-trigger]')).toBeVisible({
 				timeout: 10000
 			});
 		};
 
 		const openTestMenu = async (page: Page) => {
-			const trigger = page
-				.getByRole('tabpanel')
-				.filter({ visible: true })
-				.locator('[data-dropdown-menu-trigger]');
+			const trigger = providerPanel(page).locator('[data-dropdown-menu-trigger]');
 			await expect(trigger).toBeVisible({ timeout: 10000 });
 			await trigger.click();
 		};
@@ -324,7 +348,7 @@ test.describe('Notifications', () => {
 				}
 			);
 
-			await page.goto('/settings/notifications');
+			await page.goto('/environments/0?tab=notifications');
 			await page.waitForLoadState('load');
 			await expect(page.getByRole('tab', { name: 'Email' })).toBeVisible();
 
@@ -390,7 +414,10 @@ test.describe('Notifications', () => {
 			await page.getByPlaceholder('notifications@example.com').fill('notifications@example.com');
 			await page.getByPlaceholder('user1@example.com, user2@example.com').fill('user1@example.com');
 
-			const saveButton = page.getByRole('button', { name: 'Save', exact: true });
+			const saveButton = notificationsPanel(page).getByRole('button', {
+				name: 'Save',
+				exact: true
+			});
 			await saveButton.click();
 			await expect.poll(getAttemptedProviders).toEqual(['email', 'discord']);
 			await expect.poll(getSavedProviders).toEqual(['discord']);
@@ -399,21 +426,6 @@ test.describe('Notifications', () => {
 
 			await saveButton.click();
 			await expect.poll(getAttemptedProviders).toEqual(['email', 'discord', 'email']);
-		});
-
-		test('should persist the selected provider tab in the URL', async ({ page }) => {
-			await setupNotificationTest(page, 'discord');
-			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('email');
-
-			await openProviderTab(page, 'Discord');
-			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('discord');
-
-			await page.reload();
-			await expect(page.getByRole('tab', { name: 'Discord' })).toHaveAttribute(
-				'data-state',
-				'active'
-			);
-			await expect(page.getByRole('tabpanel', { name: 'Discord', exact: true })).toBeVisible();
 		});
 
 		test('should allow testing email notifications without state_unsafe_mutation errors', async ({
@@ -517,8 +529,11 @@ test.describe('Notifications', () => {
 			);
 
 			await openProviderTab(page, 'Telegram');
-			const saveButton = page.getByRole('button', { name: 'Save', exact: true });
-			const panel = page.getByRole('tabpanel').filter({ visible: true });
+			const saveButton = notificationsPanel(page).getByRole('button', {
+				name: 'Save',
+				exact: true
+			});
+			const panel = providerPanel(page);
 
 			// Existing chats and chatId:topicId entries load into separate fields.
 			await expect(telegramRow(page, 0).chatId).toHaveValue('@channel');
@@ -558,7 +573,7 @@ test.describe('Notifications', () => {
 			// Clearing a topic marks the form dirty and Reset restores the baseline.
 			await telegramRow(page, 1).topicId.fill('');
 			await expect(saveButton).toBeEnabled();
-			await page.getByRole('button', { name: 'Reset', exact: true }).click();
+			await notificationsPanel(page).getByRole('button', { name: 'Reset', exact: true }).click();
 			await expect(telegramRow(page, 1).topicId).toHaveValue('42');
 			await expect(saveButton).toBeDisabled();
 
@@ -586,8 +601,11 @@ test.describe('Notifications', () => {
 				.getByPlaceholder('123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11')
 				.fill('123456:TEST-TOKEN');
 
-			const saveButton = page.getByRole('button', { name: 'Save', exact: true });
-			const panel = page.getByRole('tabpanel').filter({ visible: true });
+			const saveButton = notificationsPanel(page).getByRole('button', {
+				name: 'Save',
+				exact: true
+			});
+			const panel = providerPanel(page);
 
 			// Non-numeric and non-positive topics are rejected.
 			await telegramRow(page, 0).chatId.fill('-1001234567890');

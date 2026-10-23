@@ -57,7 +57,7 @@ func RegisterSettings(api huma.API, settingsService *SettingsService, settingsSe
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/settings/public",
 		Summary:     "Get public settings",
-		Description: "Get all public settings for an environment",
+		Description: "Get the settings the UI needs for an environment. Anonymous callers receive public settings; signed-in callers of any role also receive the non-admin settings",
 		Tags:        []string{"Settings"},
 		Security:    []map[string][]string{},
 	}, h.GetPublicSettings)

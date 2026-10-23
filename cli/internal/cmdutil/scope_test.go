@@ -79,7 +79,7 @@ func TestRunScopedMerged(t *testing.T) {
 			require.NoError(t, config.SetConfigPath(filepath.Join(t.TempDir(), "arcanecli.yml")))
 			t.Cleanup(func() { require.NoError(t, config.SetConfigPath("")) })
 			cfg := config.DefaultConfig()
-			cfg.ServerURL, cfg.APIKey, cfg.Previews.AllEnvironments = server.URL, "test-key", true
+			cfg.ServerURL, cfg.APIKey = server.URL, "test-key"
 			require.NoError(t, config.Save(t.Context(), cfg))
 			app, appErr := runtime.New(runtime.Options{})
 			require.NoError(t, appErr)
@@ -110,7 +110,51 @@ func TestRunScopedMerged(t *testing.T) {
 			for _, want := range tt.wantOut {
 				require.Contains(t, stdout.String(), want)
 			}
-			require.Equal(t, cfg.DefaultEnvironment, app.EnvID(), "selection is restored")
+			require.True(t, app.AllEnvironments(), "selection is restored")
+		})
+	}
+}
+
+func TestRunScopedRefusals(t *testing.T) {
+	for _, tt := range []struct {
+		name, scope, status, wantErr string
+	}{
+		{name: "missing scope", wantErr: "list has no environment scope"},
+		{name: "forbidden discovery", scope: ScopeRead, status: "403", wantErr: "pass --env <id>"},
+		{name: "mutation confirms without names", scope: ScopeAll, status: "200", wantErr: "(List rows in all 2 environments?)"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if tt.status == "403" {
+					w.WriteHeader(http.StatusForbidden)
+					return
+				}
+				_, _ = fmt.Fprint(w, `{"success":true,"data":[{"id":"0","name":"Alpha","enabled":true},{"id":"b","name":"Beta","enabled":true}]}`)
+			}))
+			defer server.Close()
+			t.Setenv("HOME", t.TempDir())
+			require.NoError(t, config.SetConfigPath(filepath.Join(t.TempDir(), "arcanecli.yml")))
+			t.Cleanup(func() { require.NoError(t, config.SetConfigPath("")) })
+			require.NoError(t, config.Save(t.Context(), &clitypes.Config{
+				ServerURL: server.URL,
+				APIKey:    "test-key",
+			}))
+			app, appErr := runtime.New(runtime.Options{OutputMode: runtime.OutputModeJSON})
+			require.NoError(t, appErr)
+			cmd := &cobra.Command{Use: "list", Short: "List rows"}
+			if tt.scope != "" {
+				SetScope(tt.scope, cmd)
+			}
+			cmd.Flags().Bool("json", true, "")
+			cmd.SetContext(context.WithValue(t.Context(), runtime.AppContextKey, app))
+			ran := false
+			runErr := RunScoped(cmd, nil, func(*cobra.Command, []string) error {
+				ran = true
+				return nil
+			})
+			require.ErrorContains(t, runErr, tt.wantErr)
+			require.NotContains(t, runErr.Error(), "Alpha")
+			require.False(t, ran)
 		})
 	}
 }

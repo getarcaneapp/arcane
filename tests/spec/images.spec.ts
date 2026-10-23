@@ -313,7 +313,7 @@ test.describe('Management', () => {
 
 			const row = page
 				.getByRole('row')
-				.filter({ has: page.locator(`a[href="/images/${fixtures.data[0].id}"]`) });
+				.filter({ has: page.locator(`a[href^="/images/${fixtures.data[0].id}?"]`) });
 			const menu = await openRowActionsMenu(page, row);
 			const responsePromise = page.waitForResponse(
 				(response) =>
@@ -393,7 +393,7 @@ test.describe('Management', () => {
 			await search.press('Enter');
 
 			const imageRow = getImageRows(page).filter({
-				has: page.locator(`a[href="/images/${removableImage.id}"]`)
+				has: page.locator(`a[href^="/images/${removableImage.id}?"]`)
 			});
 			const menu = await openRowActionsMenu(page, imageRow);
 			await menu.getByRole('menuitem', { name: 'Remove', exact: true }).click();
@@ -724,7 +724,7 @@ test.describe('Update checks', () => {
 			await expect(page.getByRole('table').locator('tbody tr')).toHaveCount(1);
 			const row = page
 				.getByRole('row')
-				.filter({ has: page.locator(`a[href="/images/${testImage.id}"]`) });
+				.filter({ has: page.locator(`a[href^="/images/${testImage.id}?"]`) });
 			const trigger = row.getByTestId('image-update-trigger');
 			await expect(trigger).toBeVisible();
 			const responsePromise = page.waitForResponse(

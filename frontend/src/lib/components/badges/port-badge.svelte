@@ -3,8 +3,8 @@
 
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import { badgeVariants } from '#lib/components/ui/badge/index.js';
+	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { ContainerPorts } from '#lib/types/docker.js';
 	import type { ServicePort } from '#lib/types/swarm.js';
 	import { cn } from '#lib/utils.js';
@@ -12,12 +12,14 @@
 
 	let {
 		ports = [] as PortBadgePort[],
+		environmentId,
 		collapsible = true,
 		maxVisible = 3,
 		hideExposed = false,
 		wrap = true
 	}: {
 		ports?: PortBadgePort[];
+		environmentId: string;
 		collapsible?: boolean;
 		maxVisible?: number;
 		hideExposed?: boolean;
@@ -26,7 +28,8 @@
 
 	let expanded = $state(false);
 
-	const baseServerUrl = $derived(settingsStore.current?.baseServerUrl ?? 'http://localhost');
+	const environmentSettings = useEnvironmentSettings(() => environmentId);
+	const baseServerUrl = $derived(environmentSettings.current?.values.baseServerUrl ?? 'http://localhost');
 	type PortBadgePort = ContainerPorts | ServicePort;
 
 	type NormalizedPort = {

@@ -2,15 +2,11 @@ package environment
 
 import (
 	"hash/maphash"
-	"maps"
-	"slices"
 	"strings"
 	"sync"
 
 	"github.com/samber/hot"
 	"go.getarcane.app/kit/pkg"
-
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 )
 
 // edgeTokenCache maps agent tokens to environment IDs; the reverse index drops
@@ -121,20 +117,4 @@ func (c *remoteEnvSnapshotCache) put(env Environment) {
 		delete(c.envs, env.ID)
 	}
 	c.revision++
-}
-
-// accessibleEnvironmentIDs returns nil when the caller may list every environment,
-// otherwise the sorted IDs it holds at least one permission on.
-func accessibleEnvironmentIDs(ps *authz.PermissionSet) []string {
-	switch {
-	case ps == nil:
-		return []string{}
-	case ps.Allows(authz.PermEnvironmentsList, ""):
-		return nil
-	default:
-		// Never nil: callers treat nil as unrestricted, so a user without grants must get an empty list.
-		ids := slices.AppendSeq(make([]string, 0, len(ps.PerEnv)), maps.Keys(ps.PerEnv))
-		slices.Sort(ids)
-		return ids
-	}
 }

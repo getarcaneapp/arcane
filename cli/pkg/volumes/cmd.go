@@ -235,7 +235,7 @@ func newPruneCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVarP(&opts.forceFlag, "force", "f", false, "Force prune without confirmation")
-	cmdutil.SetScope(cmdutil.ScopeFleet, cmd)
+	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
 	return cmd
 }
 

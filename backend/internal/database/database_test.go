@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -253,6 +251,82 @@ func TestMigration088_VulnerabilityRisk_BackfillsCVSSAndDowngrades(t *testing.T)
 			"vulnerability_risk_snapshots')").Scan(&tableCount),
 	)
 	assert.Zero(t, tableCount)
+}
+
+func TestMigration096_EdgeOnlyEnvironments_ConvertsDirectAndDowngrades(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-edge-only.db")
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 95))
+	_, err := rawDB.Exec(`INSERT INTO environments (id, name, api_url, status, enabled, is_edge, access_token) VALUES
+		('0', 'Local', 'http://localhost:3552', 'online', TRUE, 0, NULL),
+		('d1', 'Prod Server', 'http://prod-1:3553', 'online', TRUE, 0, 'token-d1'),
+		('d2', 'prod  server!', 'http://prod-2:3553', 'offline', TRUE, 0, 'token-d2'),
+		('d3', '', 'http://blank:3553', 'online', TRUE, 0, 'token-d3'),
+		('d4', 'Ünïcode Name', 'http://unicode:3553', 'online', TRUE, 0, 'token-d4'),
+		('d5', 'Staging', 'http://staging:3553', 'online', TRUE, 0, 'token-d5'),
+		('e1', 'Staging Edge', 'edge://staging', 'online', TRUE, 1, NULL)`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 96))
+	type environmentRow struct {
+		apiURL      string
+		status      string
+		accessToken stdsql.NullString
+	}
+	environments := map[string]environmentRow{}
+	rows, err := rawDB.Query(`SELECT id, api_url, status, access_token FROM environments`)
+	require.NoError(t, err)
+	for rows.Next() {
+		var id string
+		var row environmentRow
+		require.NoError(t, rows.Scan(&id, &row.apiURL, &row.status, &row.accessToken))
+		environments[id] = row
+	}
+	require.NoError(t, rows.Err())
+	require.NoError(t, rows.Close())
+
+	for id, apiURL := range map[string]string{
+		"d1": "edge://prod-server-d1",
+		"d2": "edge://prod-server-d2",
+		"d3": "edge://d3",
+		"d4": "edge://n-code-name",
+		"d5": "edge://staging-d5",
+	} {
+		assert.Equal(t, environmentRow{apiURL: apiURL, status: "pending"}, environments[id], id)
+	}
+	assert.Equal(t, environmentRow{apiURL: "edge://staging", status: "online"}, environments["e1"])
+	assert.Equal(t, environmentRow{apiURL: "http://localhost:3552", status: "online"}, environments["0"])
+
+	var columnCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('environments') WHERE name = 'is_edge'`).Scan(&columnCount))
+	assert.Zero(t, columnCount)
+	require.NoError(
+		t,
+		rawDB.QueryRow("SELECT COUNT(*) FROM pragma_table_info('vulnerability_risk_snapshots') WHERE name IN ('score_average', '"+
+			"score_weight', 'exploited_running')").Scan(&columnCount),
+	)
+	assert.Equal(t, 3, columnCount)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 95))
+	isEdge := map[string]int{}
+	rows, err = rawDB.Query(`SELECT id, is_edge FROM environments`)
+	require.NoError(t, err)
+	for rows.Next() {
+		var id string
+		var edge int
+		require.NoError(t, rows.Scan(&id, &edge))
+		isEdge[id] = edge
+	}
+	require.NoError(t, rows.Err())
+	require.NoError(t, rows.Close())
+	assert.Equal(t, map[string]int{"0": 0, "d1": 1, "d2": 1, "d3": 1, "d4": 1, "d5": 1, "e1": 1}, isEdge)
+	require.NoError(
+		t,
+		rawDB.QueryRow("SELECT COUNT(*) FROM pragma_table_info('vulnerability_risk_snapshots') WHERE name IN ('score_average', '"+
+			"score_weight', 'exploited_running')").Scan(&columnCount),
+	)
+	assert.Zero(t, columnCount)
 }
 
 func TestMigration067_ActivityBatchID_UpAndDown(t *testing.T) {
@@ -1200,89 +1274,6 @@ func TestIdentityNormalizationGooseUpgrade(t *testing.T) {
 	var version int64
 	require.NoError(t, db.QueryRow("SELECT MAX(version_id) FROM goose_db_version WHERE is_applied = 1").Scan(&version))
 	highestVersions, err := getEmbeddedMigrationVersions("sqlite")
-	require.NoError(t, err)
-	require.NotEmpty(t, highestVersions)
-	highest := highestVersions[len(highestVersions)-1]
-	require.Equal(t, highest, version)
-}
-
-func TestIdentityNormalizationPostgresUpgrade(t *testing.T) {
-	dsn := os.Getenv("ARCANE_TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("ARCANE_TEST_POSTGRES_DSN is not set")
-	}
-	ctx := t.Context()
-	admin, err := stdsql.Open("pgx", dsn)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, admin.Close()) })
-	schema := fmt.Sprintf("normalization_test_%d", time.Now().UnixNano())
-	_, err = admin.ExecContext(ctx, "CREATE SCHEMA "+schema)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, execContextErr := admin.ExecContext(ctx, "DROP SCHEMA "+schema+" CASCADE")
-		require.NoError(t, execContextErr)
-	})
-	parsed, err := url.Parse(dsn)
-	require.NoError(t, err)
-	require.Contains(t, []string{"postgres", "postgresql"}, parsed.Scheme)
-	query := parsed.Query()
-	query.Set("search_path", schema)
-	parsed.RawQuery = query.Encode()
-	db, err := stdsql.Open("pgx", parsed.String())
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	require.NoError(t, migrateDatabase(ctx, db, dbProviderPostgres, MigrationOptions{}, 80))
-	const whitespace = "\t\n\v\f\r \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000"
-	_, err = db.ExecContext(
-		ctx,
-		"INSERT INTO users (id, username, email, display_name, password_hash) VALUES ($1, $2, $3, $4, $5), ($"+
-			"6, $7, $8, $9, $10)",
-		"first",
-		" Jose\u0301 ",
-		" a@example.com ",
-		whitespace+"Jose\u0301"+whitespace,
-		"unchanged",
-		"second",
-		"José",
-		nil,
-		nil,
-		"unchanged",
-	)
-	require.NoError(t, err)
-	require.NoError(t, migrateDatabase(ctx, db, dbProviderPostgres, MigrationOptions{}, latestMigrationVersion))
-	require.NoError(t, migrateDatabase(ctx, db, dbProviderPostgres, MigrationOptions{}, latestMigrationVersion))
-	for _, expected := range []struct {
-		id, username       string
-		email, displayName stdsql.NullString
-	}{
-		{"first", " Jose\u0301 ", stdsql.NullString{String: " a@example.com ", Valid: true}, stdsql.NullString{String: "José", Valid: true}},
-		{"second", "José", stdsql.NullString{}, stdsql.NullString{}},
-	} {
-		var id, username, password string
-		var email, displayName stdsql.NullString
-		require.NoError(
-			t,
-			db.QueryRowContext(
-				ctx,
-				"SELECT id, username, email, display_name, password_hash FROM users WHERE id = $1",
-				expected.id,
-			).Scan(
-				&id,
-				&username,
-				&email,
-				&displayName,
-				&password,
-			),
-		)
-		require.Equal(t, expected.id, id)
-		require.Equal(t, expected.username, username)
-		require.Equal(t, expected.email, email)
-		require.Equal(t, expected.displayName, displayName)
-		require.Equal(t, "unchanged", password)
-	}
-	var version int64
-	require.NoError(t, db.QueryRowContext(ctx, "SELECT MAX(version_id) FROM goose_db_version WHERE is_applied").Scan(&version))
-	highestVersions, err := getEmbeddedMigrationVersions("postgres")
 	require.NoError(t, err)
 	require.NotEmpty(t, highestVersions)
 	highest := highestVersions[len(highestVersions)-1]

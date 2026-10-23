@@ -18,8 +18,8 @@
 	import type { ContainerRegistry, ContainerRegistryPullUsage } from '#lib/types/docker.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { getRegistryDisplayName } from '#lib/utils/registry.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -42,8 +42,8 @@
 	let removingId = $state<string | null>(null);
 	let testingId = $state<string | null>(null);
 
-	const canDeleteRegistry = $derived(hasPermission('registries:delete'));
-	const canBrowseRegistry = $derived(hasPermission('registries:read') && hasPermission('registries:browse'));
+	const canDeleteRegistry = $derived(hasShownPermission('registries:delete'));
+	const canBrowseRegistry = $derived(hasShownPermission('registries:read') && hasShownPermission('registries:browse'));
 
 	function maskAccessKeyId(keyId: string | undefined): string {
 		if (!keyId) return m.registries_aws_iam_role();

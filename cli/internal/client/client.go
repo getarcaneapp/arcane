@@ -42,6 +42,15 @@ var retryableStatusCodes = map[int]struct{}{
 	http.StatusGatewayTimeout:     {},
 }
 
+type StatusError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("request failed with status %d: %s", e.StatusCode, e.Body)
+}
+
 // Client provides authenticated requests, token refresh, and response decoding for the Arcane API.
 type Client struct {
 	baseURL       string
@@ -100,7 +109,7 @@ func NewUnauthenticated(cfg *clitypes.Config) (*Client, error) {
 	return &Client{
 		baseURL:       cfg.ServerURL,
 		baseURLParsed: parsedURL,
-		envID:         cmp.Or(cfg.DefaultEnvironment, defaultEnvID),
+		envID:         defaultEnvID,
 		refreshToken:  cfg.RefreshToken,
 		httpClient:    httpClient,
 		maxAttempts:   3,
@@ -115,14 +124,12 @@ func NewFromConfig() (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
-	state := runstate.Get()
-	if strings.TrimSpace(state.EnvOverride) != "" {
-		cfg.DefaultEnvironment = strings.TrimSpace(state.EnvOverride)
-	}
 	c, err := New(cfg)
 	if err != nil {
 		return nil, err
 	}
+	state := runstate.Get()
+	c.SetEnvironment(cmp.Or(strings.TrimSpace(state.EnvOverride), defaultEnvID))
 	if state.RequestTimeout > 0 {
 		c.SetTimeout(state.RequestTimeout)
 	}
@@ -135,14 +142,12 @@ func NewFromConfigUnauthenticated() (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
-	state := runstate.Get()
-	if strings.TrimSpace(state.EnvOverride) != "" {
-		cfg.DefaultEnvironment = strings.TrimSpace(state.EnvOverride)
-	}
 	c, err := NewUnauthenticated(cfg)
 	if err != nil {
 		return nil, err
 	}
+	state := runstate.Get()
+	c.SetEnvironment(cmp.Or(strings.TrimSpace(state.EnvOverride), defaultEnvID))
 	if state.RequestTimeout > 0 {
 		c.SetTimeout(state.RequestTimeout)
 	}
@@ -504,7 +509,7 @@ func (c *Client) DoJSON[T any](ctx context.Context, method, path string, body an
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return out, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return out, &StatusError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(b))}
 	}
 
 	if unmarshalReadErr := json.UnmarshalRead(resp.Body, &out); unmarshalReadErr != nil {
@@ -549,7 +554,7 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, body any) ([]by
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		return nil, &StatusError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(b))}
 	}
 
 	b, err := io.ReadAll(resp.Body)
@@ -575,7 +580,7 @@ func (c *Client) DeleteJSON[T any](ctx context.Context, path string) (*types.Api
 func decodeResponseStrict[T any](resp *http.Response) (*types.ApiResponse[T], error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, &StatusError{StatusCode: resp.StatusCode, Body: strings.TrimSpace(string(body))}
 	}
 
 	body, err := io.ReadAll(resp.Body)

@@ -2,11 +2,13 @@
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { EmptyState } from '#lib/components/states/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
@@ -16,19 +18,25 @@
 	import type { Webhook } from '#lib/types/environment.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import type { EnvironmentPage, EnvironmentRow } from '#lib/utils/environments.js';
 	import { formatDateTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
+	type WebhookRow = EnvironmentRow<Webhook>;
+
 	let {
-		webhooks = $bindable(),
+		webhooks,
+		requestOptions = $bindable(),
+		onRefresh,
 		onWebhooksChanged
 	}: {
-		webhooks: Webhook[];
+		webhooks: EnvironmentPage<Paginated<Webhook>>;
+		requestOptions: SearchPaginationSortRequest;
+		onRefresh: (options: SearchPaginationSortRequest) => Promise<EnvironmentPage<Paginated<Webhook>>>;
 		onWebhooksChanged: () => Promise<void>;
 	} = $props();
 
 	let isLoading = $state({ removing: false, toggling: false });
-	let requestOptions = $state<SearchPaginationSortRequest>({ pagination: { page: 1, limit: 20 } });
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
 
 	function formatDate(dateString?: string): string {
@@ -88,26 +96,12 @@
 		return webhook.enabled ? 'green' : 'gray';
 	}
 
-	function buildWebhookTableData(items: Webhook[]): Paginated<Webhook> {
-		return {
-			data: items,
-			pagination: {
-				totalPages: 1,
-				totalItems: items.length,
-				currentPage: 1,
-				itemsPerPage: Math.max(items.length, 1)
-			}
-		};
-	}
-
-	const tableData = $derived(buildWebhookTableData(webhooks));
-
-	async function handleToggleWebhook(webhook: Webhook) {
+	async function handleToggleWebhook(webhook: WebhookRow) {
 		const name = webhook.name;
 		const enabling = !webhook.enabled;
 		isLoading.toggling = true;
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(webhookService.update(webhook.id, { enabled: enabling })),
+			result: await tryCatch(webhookService.update(webhook.id, { enabled: enabling }, webhook.environmentId)),
 			message: enabling ? m.webhook_enable_failed({ name }) : m.webhook_disable_failed({ name }),
 			setLoadingState: (value) => (isLoading.toggling = value),
 			onSuccess: async () => {
@@ -117,7 +111,8 @@
 		});
 	}
 
-	async function handleDeleteWebhook(webhookId: string, name: string) {
+	async function handleDeleteWebhook(webhook: WebhookRow) {
+		const name = webhook.name;
 		openConfirmDialog({
 			title: m.webhook_delete_title({ name }),
 			message: m.webhook_delete_message({ name }),
@@ -127,7 +122,7 @@
 				action: async () => {
 					isLoading.removing = true;
 					await handleApiResultWithCallbacks({
-						result: await tryCatch(webhookService.delete(webhookId)),
+						result: await tryCatch(webhookService.delete(webhook.id, webhook.environmentId)),
 						message: m.webhook_delete_failed({ name }),
 						setLoadingState: (value) => (isLoading.removing = value),
 						onSuccess: async () => {
@@ -142,6 +137,7 @@
 
 	const columns = [
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
+		...environmentColumns<WebhookRow>(),
 		{ accessorKey: 'enabled', title: m.common_status(), sortable: true, cell: StatusCell },
 		{ accessorKey: 'tokenPrefix', title: m.webhook_col_token_prefix(), sortable: true, cell: TokenPrefixCell },
 		{ accessorKey: 'targetType', title: m.target_type(), sortable: true, cell: TargetTypeCell },
@@ -149,7 +145,7 @@
 		{ accessorKey: 'targetName', title: m.target(), sortable: true, cell: TargetNameCell },
 		{ accessorKey: 'lastTriggeredAt', title: m.webhook_col_last_triggered(), sortable: true, cell: LastTriggeredCell },
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell }
-	] satisfies ColumnSpec<Webhook>[];
+	] satisfies ColumnSpec<WebhookRow>[];
 
 	const mobileFields = [
 		{ id: 'enabled', label: m.common_status(), defaultVisible: true },
@@ -162,64 +158,57 @@
 	];
 </script>
 
-{#if webhooks.length === 0}
-	<div class="flex flex-col items-center justify-center py-12 text-sm text-muted-foreground">
-		<GlobeIcon class="mb-3 size-10 opacity-40" />
-		<p>{m.webhook_empty_title()}</p>
-		<p class="mt-1">{m.webhook_empty_description()}</p>
-	</div>
-{:else}
-	<ArcaneTable
-		persistKey="arcane-webhooks-table"
-		items={tableData}
-		bind:requestOptions
-		bind:mobileFieldVisibility
-		selectionDisabled={true}
-		withoutSearch
-		withoutPagination
-		onRefresh={async () => {
-			await onWebhooksChanged();
-			return buildWebhookTableData(webhooks);
-		}}
-		{columns}
-		{mobileFields}
-		rowActions={RowActions}
-		mobileCard={WebhookMobileCardSnippet}
-	/>
-{/if}
+<ArcaneTable
+	persistKey="arcane-webhooks-table"
+	items={webhooks}
+	bind:requestOptions
+	bind:mobileFieldVisibility
+	selectionDisabled={true}
+	withoutSearch
+	withoutPagination
+	{onRefresh}
+	{columns}
+	{mobileFields}
+	rowActions={RowActions}
+	mobileCard={WebhookMobileCardSnippet}
+>
+	{#snippet emptyState()}
+		<EmptyState variant="plain" icon={GlobeIcon} title={m.webhook_empty_title()} description={m.webhook_empty_description()} />
+	{/snippet}
+</ArcaneTable>
 
-{#snippet NameCell({ item }: { item: Webhook })}
+{#snippet NameCell({ item }: { item: WebhookRow })}
 	<span class="font-medium">{item.name}</span>
 {/snippet}
 
-{#snippet StatusCell({ item }: { item: Webhook })}
+{#snippet StatusCell({ item }: { item: WebhookRow })}
 	<Badge variant={webhookStatusVariant(item)} minWidth="20">{webhookStatusLabel(item)}</Badge>
 {/snippet}
 
-{#snippet TokenPrefixCell({ item }: { item: Webhook })}
+{#snippet TokenPrefixCell({ item }: { item: WebhookRow })}
 	<div class="flex items-center gap-2">
 		<code class="rounded bg-muted px-2 py-1 text-xs">{item.tokenPrefix}...</code>
 		<CopyButton text={item.tokenPrefix} class="size-6" />
 	</div>
 {/snippet}
 
-{#snippet TargetTypeCell({ item }: { item: Webhook })}
+{#snippet TargetTypeCell({ item }: { item: WebhookRow })}
 	<span class="rounded bg-muted px-2 py-1 text-xs font-medium">{targetTypeLabel(item.targetType)}</span>
 {/snippet}
 
-{#snippet ActionTypeCell({ item }: { item: Webhook })}
+{#snippet ActionTypeCell({ item }: { item: WebhookRow })}
 	<span class="rounded bg-muted px-2 py-1 text-xs font-medium">{actionTypeLabel(item.actionType)}</span>
 {/snippet}
 
-{#snippet TargetNameCell({ item }: { item: Webhook })}
+{#snippet TargetNameCell({ item }: { item: WebhookRow })}
 	<span class="text-muted-foreground">{targetNameLabel(item)}</span>
 {/snippet}
 
-{#snippet LastTriggeredCell({ item }: { item: Webhook })}
+{#snippet LastTriggeredCell({ item }: { item: WebhookRow })}
 	<span class="text-muted-foreground">{formatDate(item.lastTriggeredAt)}</span>
 {/snippet}
 
-{#snippet CreatedCell({ item }: { item: Webhook })}
+{#snippet CreatedCell({ item }: { item: WebhookRow })}
 	<span class="text-muted-foreground">{formatDate(item.createdAt)}</span>
 {/snippet}
 
@@ -227,7 +216,7 @@
 	item,
 	mobileFieldVisibility
 }: {
-	item: Webhook;
+	item: WebhookRow;
 	mobileFieldVisibility: MobileFieldVisibility;
 })}
 	<UniversalMobileCard
@@ -289,16 +278,16 @@
 	/>
 {/snippet}
 
-{#snippet RowActions({ item }: { item: Webhook })}
+{#snippet RowActions({ item }: { item: WebhookRow })}
 	<RowActionsMenu>
-		<IfPermitted perm="webhooks:update">
+		<IfPermitted perm="webhooks:update" envId={item.environmentId}>
 			<DropdownMenu.Item onclick={() => handleToggleWebhook(item)} disabled={isLoading.toggling}>
 				{item.enabled ? m.common_disable() : m.common_enable()}
 			</DropdownMenu.Item>
 		</IfPermitted>
 		<DropdownMenu.Separator />
-		<IfPermitted perm="webhooks:delete">
-			<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteWebhook(item.id, item.name)}>
+		<IfPermitted perm="webhooks:delete" envId={item.environmentId}>
+			<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteWebhook(item)}>
 				<TrashIcon class="size-4" />
 				{m.common_delete()}
 			</DropdownMenu.Item>

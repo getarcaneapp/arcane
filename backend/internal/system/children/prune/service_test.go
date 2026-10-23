@@ -69,7 +69,7 @@ func TestPruneVolumesSkipsBackupVolume(t *testing.T) {
 	db := &database.DB{DB: gormDB}
 
 	dockerService := (&docker.DockerClientService{}).WithClient(dockerClient)
-	volumeService := volume.NewVolumeService(db, dockerService, event.NewEventService(db, nil, nil, nil), nil, nil, nil, nil, nil, nil, nil)
+	volumeService := volume.NewVolumeService(db, dockerService, event.NewEventService(db, nil, nil), nil, nil, nil, nil, nil, nil, nil)
 	service := NewService(time.UTC, dockerService, nil, nil, volumeService, nil)
 
 	result, err := service.pruneVolumes(t.Context(), types.PruneVolumesOptions{Mode: types.PruneVolumeModeAll})

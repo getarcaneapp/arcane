@@ -27,7 +27,7 @@
 	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { BackupFileProvider, BackupFileRootLoadState } from '#lib/types/backup.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -38,13 +38,13 @@
 		SystemVolumeBackupSelectionMode
 	} from '#lib/types/system-backup.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
-	import { hasPermission } from '#lib/utils/auth.js';
 	import {
 		backupDestinationOptions,
 		backupPolicyDestinationDisplay,
 		runAutomaticBackupDiscovery,
 		s3DestinationOptions
 	} from '#lib/utils/backups.js';
+	import { environmentHref, hasShownPermission } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import SystemBackupScheduleDialog from './components/system-backup-schedule-dialog.svelte';
@@ -93,7 +93,7 @@
 	let restoreFilesLoaded = $state(false);
 	let restoringFiles = $state(false);
 	const isReadOnly = $derived(settingsStore.readOnly);
-	const canManageRecoveryKey = $derived(hasPermission('system-backups:recovery-key'));
+	const canManageRecoveryKey = $derived(hasShownPermission('system-backups:recovery-key'));
 	const destinationOptions = $derived(backupDestinationOptions(data.destinations.length > 0));
 	const s3Options = $derived(s3DestinationOptions(data.destinations));
 	const backupTypeOptions = $derived([
@@ -374,27 +374,14 @@
 	}
 
 	async function openVolumeBackups(backup: BackupHistoryEntry) {
-		const localEnvironment = environmentStore.getLocalEnvironment();
-		if (!localEnvironment) return;
-		const operationResult = await tryCatch(
-			(async () => {
-				await environmentStore.setEnvironment(localEnvironment);
-			})()
-		);
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
-
-			toast.error(error instanceof Error ? error.message : m.environments_connect_error());
-			return;
-		}
-		await goto(`/volumes/${encodeURIComponent(backup.resourceName)}?tab=backups`);
+		await goto(environmentHref(`/volumes/${encodeURIComponent(backup.resourceName)}?tab=backups`, LOCAL_DOCKER_ENVIRONMENT_ID));
 	}
 
 	let autoDiscovered = false;
 	let mounted = false;
 	async function discoverStoredBackups() {
 		if (!mounted || autoDiscovered || !policyCollection.recoveryKeyStored || !data.destinations.length) return;
-		if (!hasPermission('system-backups:manage')) return;
+		if (!hasShownPermission('system-backups:manage')) return;
 		autoDiscovered = true;
 		const found = await runAutomaticBackupDiscovery(data.destinations);
 		if (mounted && found) await refresh();
@@ -421,7 +408,7 @@
 				action: async () => {
 					const operationResult = await tryCatch(
 						(async () => {
-							const result = await volumeBackupService.restoreBackup(backup.resourceName, backup.id);
+							const result = await volumeBackupService.restoreBackup(backup.resourceName, backup.id, LOCAL_DOCKER_ENVIRONMENT_ID);
 							toast.success(m.volumes_backup_restore_success(), activityToastOptions(extractActivityId(result)));
 						})()
 					);

@@ -27,7 +27,7 @@ func EnsureInstanceID(ctx context.Context, db *database.DB) (string, error) {
 }
 
 func ResolveEncryptionKey(ctx context.Context, db *database.DB, cfg *config.Config) (string, error) {
-	if !cfg.AgentMode && cfg.Environment.IsProdEnvironment() {
+	if !cfg.EdgeAgent && cfg.Environment.IsProdEnvironment() {
 		return cfg.EncryptionKey, nil
 	}
 	var stored SettingVariable

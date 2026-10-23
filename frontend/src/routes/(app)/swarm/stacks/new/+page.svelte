@@ -17,11 +17,10 @@
 	import * as Select from '#lib/components/ui/select/index.js';
 	import { WorkspaceDraftState } from '#lib/components/workspace-editor/workspace-draft-state.svelte.js';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
+	import { useEnvironmentSettings } from '#lib/hooks/use-environment-settings.svelte.js';
 	import { ArrowLeftIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import settingsStore from '#lib/stores/config-store.svelte.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { SwarmStackSourceUpdate, SwarmStackSourceWritable, SwarmSyncFile } from '#lib/types/swarm.js';
 	import {
 		createComposeEditorSchema,
@@ -29,6 +28,7 @@
 		submitComposeResourceForm,
 		templateNameSlug
 	} from '#lib/utils/compose-flow.js';
+	import { environmentHref } from '#lib/utils/environments.js';
 	import { changedFields } from '#lib/utils/payload.js';
 	import { preventDefault, createForm } from '#lib/utils/settings.svelte.js';
 	import { globalVariablesToMap } from '#lib/utils/template-load.js';
@@ -44,7 +44,9 @@
 	import EditableName from '../../../projects/components/editable-name.svelte';
 
 	let { data } = $props();
-	const workspaceMaxFileSizeMb = $derived(settingsStore.current?.projectWorkspaceMaxFileSizeMb ?? 10);
+	let destinationId = $state(untrack(() => data.envId));
+	const destinationSettings = useEnvironmentSettings(() => destinationId);
+	const workspaceMaxFileSizeMb = $derived(destinationSettings.current?.values.projectWorkspaceMaxFileSizeMb ?? 10);
 
 	let ui = $state({
 		saving: false,
@@ -77,7 +79,9 @@
 	}
 
 	const initialName = $derived(getInitialName());
-	const backHref = $derived(isEditMode ? `/swarm/stacks/${encodeURIComponent(initialName)}` : '/swarm/stacks');
+	const backHref = $derived(
+		isEditMode ? environmentHref(`/swarm/stacks/${encodeURIComponent(initialName)}`, destinationId) : '/swarm/stacks'
+	);
 	const submitLabel = $derived(isEditMode ? m.common_save() : m.common_create_button({ resource: m.swarm_stack() }));
 	const submitLoadingLabel = $derived(isEditMode ? m.common_saving() : m.common_action_creating());
 
@@ -210,16 +214,19 @@
 			validate: form.validate,
 			setLoading: (value) => (ui.saving = value),
 			submit: ({ name, composeContent, envContent }) =>
-				swarmService.deployStack({
-					name,
-					composeContent,
-					overrideContent,
-					envContent,
-					files: buildStackFilePayload(),
-					prune: deployOptions.prune,
-					withRegistryAuth: deployOptions.withRegistryAuth,
-					resolveImage: deployOptions.resolveImage
-				}),
+				swarmService.deployStack(
+					{
+						name,
+						composeContent,
+						overrideContent,
+						envContent,
+						files: buildStackFilePayload(),
+						prune: deployOptions.prune,
+						withRegistryAuth: deployOptions.withRegistryAuth,
+						resolveImage: deployOptions.resolveImage
+					},
+					destinationId
+				),
 			failureMessage: (name) => m.common_create_failed({ resource: `${m.swarm_stack()} "${name}"` }),
 			onSuccess: async (_result, { name }) => {
 				toast.success(m.common_create_success({ resource: `${m.swarm_stack()} "${name}"` }));
@@ -248,12 +255,13 @@
 							envContent,
 							files: buildStackFilePayload()
 						}
-					)
+					),
+					destinationId
 				),
 			failureMessage: (name) => m.common_update_failed({ resource: `${m.swarm_stack()} "${name}"` }),
 			onSuccess: async (_result, { name }) => {
 				toast.success(m.common_update_success({ resource: `${m.swarm_stack()} "${name}"` }));
-				goto(`/swarm/stacks/${encodeURIComponent(name)}`, { refreshAll: true });
+				goto(environmentHref(`/swarm/stacks/${encodeURIComponent(name)}`, destinationId), { refreshAll: true });
 			}
 		});
 	}
@@ -301,7 +309,7 @@
 
 			<div class="flex items-center gap-2">
 				{#if !isEditMode}
-					<EnvironmentDestinationSelect />
+					<EnvironmentDestinationSelect bind:value={destinationId} permission="swarm:stacks" environments={data.environments} />
 				{/if}
 				<ComposeCreateMenu
 					tooltipOpen={!inputs.name.value && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent ? undefined : false}
@@ -320,8 +328,7 @@
 					convertLabel={m.compose_convert_from_docker_run()}
 					onConvert={() => (ui.showConverterDialog = true)}
 					fromGitLabel={m.git_from_git_repo()}
-					onFromGit={async () =>
-						goto(`/environments/${await environmentStore.getCurrentEnvironmentId()}/gitops?action=create&targetType=swarm_stack`)}
+					onFromGit={() => goto(environmentHref('/gitops?action=create&targetType=swarm_stack', destinationId))}
 					createTemplateLabel={m.templates_create_template()}
 					createTemplateDisabled={!canSubmit || ui.creatingTemplate}
 					createTemplateLoading={ui.creatingTemplate}
@@ -519,6 +526,7 @@
 
 <DockerRunConverterDialog
 	bind:open={ui.showConverterDialog}
+	environmentId={destinationId}
 	bind:converting={ui.converting}
 	onConverted={composeHandlers.handleDockerRunConverted}
 />

@@ -4,376 +4,44 @@ import (
 	"cmp"
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
-	"sort"
-	"strconv"
-	"sync/atomic"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v3"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
-	"go.getarcane.app/docker"
-	"go.getarcane.app/kit/pkg"
-	"go.getarcane.app/sys/cgroup"
-	"go.getarcane.app/updater/labels"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
-	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/singleflight"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/podman"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/version"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/vulnerability"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/iconcatalog"
 )
 
-const (
-	defaultDashboardAPIKeyExpiryWindow = 14 * 24 * time.Hour
-	dashboardSnapshotPreloadLimit      = 50
-	dashboardSnapshotCacheTTL          = 5 * time.Second
-	dashboardSnapshotBuildTimeout      = 30 * time.Second
-	dashboardInventoryCollectTimeout   = 15 * time.Second
-)
+const dashboardInventoryCollectTimeout = 15 * time.Second
 
 type DashboardService struct {
-	db                   *database.DB
-	dockerService        *dockerInternal.DockerClientService
-	containerService     *container.ContainerService
-	projectService       *project.ProjectService
-	imageService         *image.ImageService
-	settingsService      *settings.SettingsService
-	vulnerabilityService *vulnerability.VulnerabilityService
-	environmentService   *environment.EnvironmentService
-	versionService       *version.VersionService
-	volumeService        *volume.VolumeService
-	podmanService        *podman.Service
-
-	// Shared, immutable snapshot builds indexed by [includeTables][debugAllGood][iconCatalog];
-	// full snapshots resolve icons per catalog, so each catalog gets its own entry.
-	snapshotFlight singleflight.Group
-	snapshotCache  [2][2][2]atomic.Pointer[dashboardSnapshotCacheEntry]
-}
-
-type dashboardSnapshotCacheEntry struct {
-	snapshot *types.DashboardSnapshot
-	builtAt  time.Time
-}
-
-type DashboardActionItemsOptions struct {
-	DebugAllGood bool
+	dockerService  *dockerInternal.DockerClientService
+	projectService *project.ProjectService
+	volumeService  *volume.VolumeService
+	podmanService  *podman.Service
 }
 
 func NewDashboardService(
-	db *database.DB,
 	dockerService *dockerInternal.DockerClientService,
-	containerService *container.ContainerService,
 	projectService *project.ProjectService,
-	imageService *image.ImageService,
-	settingsService *settings.SettingsService,
-	vulnerabilityService *vulnerability.VulnerabilityService,
-	environmentService *environment.EnvironmentService,
-	versionService *version.VersionService,
 	volumeService *volume.VolumeService,
 	podmanService *podman.Service,
 ) *DashboardService {
 	return &DashboardService{
-		db:                   db,
-		dockerService:        dockerService,
-		containerService:     containerService,
-		projectService:       projectService,
-		imageService:         imageService,
-		settingsService:      settingsService,
-		vulnerabilityService: vulnerabilityService,
-		environmentService:   environmentService,
-		versionService:       versionService,
-		volumeService:        volumeService,
-		podmanService:        podmanService,
+		dockerService:  dockerService,
+		projectService: projectService,
+		volumeService:  volumeService,
+		podmanService:  podmanService,
 	}
-}
-
-// GetSnapshot returns a short-TTL cached snapshot shared by all consumers; it must not be mutated.
-// includeTables builds the first-page tables; stream subscribers pass false and read only counters.
-func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardActionItemsOptions, includeTables bool) (*types.DashboardSnapshot, error) {
-	// Trimmed snapshots skip icon resolution, so every consumer shares one entry.
-	catalog := iconcatalog.DefaultCatalog
-	if includeTables {
-		catalog = iconcatalog.Normalize(project.IconCatalogForContext(ctx))
-	}
-
-	tables := kit.Ternary(includeTables, 1, 0)
-	debug := kit.Ternary(options.DebugAllGood, 1, 0)
-	icons := kit.Ternary(catalog == iconcatalog.CatalogDashboardIcons, 1, 0)
-	slot := &s.snapshotCache[tables][debug][icons]
-	if entry := slot.Load(); entry != nil && time.Since(entry.builtAt) < dashboardSnapshotCacheTTL {
-		return entry.snapshot, nil
-	}
-
-	key := strconv.FormatBool(includeTables) + ":" + strconv.FormatBool(options.DebugAllGood) + ":" + catalog
-	result, err, _ := s.snapshotFlight.Do(key, func() (any, error) {
-		// Re-check so a caller queued behind the winner reuses its fresh entry.
-		if entry := slot.Load(); entry != nil && time.Since(entry.builtAt) < dashboardSnapshotCacheTTL {
-			return entry.snapshot, nil
-		}
-
-		buildCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dashboardSnapshotBuildTimeout)
-		defer cancel()
-
-		snapshot, err := s.buildSnapshot(buildCtx, options, includeTables)
-		if err != nil {
-			return nil, err
-		}
-		slot.Store(&dashboardSnapshotCacheEntry{snapshot: snapshot, builtAt: time.Now()})
-		return snapshot, nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	snapshot, ok := result.(*types.DashboardSnapshot)
-	if !ok {
-		return nil, errors.New("dashboard snapshot cache returned unexpected type")
-	}
-	return snapshot, nil
-}
-
-func (s *DashboardService) buildSnapshot(ctx context.Context, options DashboardActionItemsOptions, includeTables bool) (*types.DashboardSnapshot, error) {
-	if s.dockerService == nil {
-		return nil, errors.New("docker service not available")
-	}
-
-	dockerSnapshot, err := s.dockerService.GetSnapshot(ctx, environment.LocalEnvironmentID)
-	if err != nil {
-		return nil, err
-	}
-	dockerContainers := dockerSnapshot.Containers
-	dockerImages := dockerSnapshot.Images
-
-	filteredContainers := container.FilterExcludedContainers(dockerContainers, false, false)
-	imageConsumers := container.FilterExcludedContainers(dockerContainers, false, true)
-
-	containerCounts := types.ContainerStatusCounts{TotalContainers: len(filteredContainers)}
-	for _, c := range filteredContainers {
-		if c.State == "running" {
-			containerCounts.RunningContainers++
-		} else {
-			containerCounts.StoppedContainers++
-		}
-	}
-
-	var containerPage []types.ContainerSummary
-	var imagePage []types.ImageSummary
-	if includeTables {
-		containerItems := make([]types.ContainerSummary, 0, len(filteredContainers))
-		currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-		if s.containerService != nil {
-			containerItems = s.containerService.BuildSummaries(ctx, filteredContainers, nil, currentContainerID, currentContainerErr)
-		} else {
-			var excluded map[string]bool
-			if s.settingsService != nil {
-				excluded = docker.ExcludedContainerNameSet(s.settingsService.GetStringSetting(ctx, "autoUpdateExcludedContainers"))
-			}
-			for _, container := range filteredContainers {
-				summary := types.NewContainerSummary(container)
-				summary.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
-				summary.AutoUpdateEnabled = !labels.IsUpdateDisabled(container.Labels) && !docker.ContainerNameExcluded(container.Names, excluded)
-				containerItems = append(containerItems, summary)
-			}
-		}
-
-		sort.Slice(containerItems, func(i, j int) bool {
-			if containerItems[i].Created == containerItems[j].Created {
-				return containerItems[i].ID < containerItems[j].ID
-			}
-			return containerItems[i].Created > containerItems[j].Created
-		})
-		containerPage = containerItems[:min(dashboardSnapshotPreloadLimit, len(containerItems))]
-		if s.containerService != nil {
-			s.containerService.ApplySummaryIcons(ctx, containerPage, nil)
-		}
-
-		var projectIDByName map[string]string
-		if s.imageService != nil {
-			projectIDByName = s.imageService.BuildProjectIDMap(ctx, imageConsumers)
-		} else {
-			projectIDByName = map[string]string{}
-		}
-		imageUsageMap := image.BuildVolumeUsageMap(imageConsumers, projectIDByName)
-		imageItems := image.MapDockerImagesToDTOs(dockerImages, dockerContainers, imageUsageMap, nil, nil)
-		sort.Slice(imageItems, func(i, j int) bool {
-			if imageItems[i].Size == imageItems[j].Size {
-				return imageItems[i].ID < imageItems[j].ID
-			}
-			return imageItems[i].Size > imageItems[j].Size
-		})
-		imagePage = imageItems[:min(dashboardSnapshotPreloadLimit, len(imageItems))]
-	}
-
-	imageUsageCounts := dockerInternal.CountImageUsage(dockerImages, imageConsumers)
-
-	// Unfiltered containers keep volumes mounted only by internal containers in use, matching the volumes page.
-	var volumeUsageCounts *types.VolumeUsageCounts
-	if s.volumeService != nil && dockerSnapshot.Volumes != nil {
-		counts := s.volumeService.CountUsageFromSnapshot(dockerSnapshot.Volumes.Items, dockerContainers)
-		volumeUsageCounts = &counts
-	}
-
-	actionItems, err := s.buildActionItems(ctx, options, containerCounts.StoppedContainers, dockerContainers)
-	if err != nil {
-		return nil, err
-	}
-
-	var versionInfo *types.VersionInfo
-	if s.versionService != nil {
-		versionInfo = s.versionService.GetAppVersionInfo(ctx)
-	}
-
-	preloadParams := pagination.QueryParams{Params: pagination.Params{Limit: dashboardSnapshotPreloadLimit}}
-
-	return &types.DashboardSnapshot{
-		Containers: types.DashboardSnapshotContainers{
-			Data:       containerPage,
-			Counts:     containerCounts,
-			Pagination: handlerutil.PaginationResponse(pagination.BuildResponse(int64(len(filteredContainers)), int64(len(filteredContainers)), preloadParams)),
-		},
-		Images: types.DashboardSnapshotImages{
-			Data:       imagePage,
-			Pagination: handlerutil.PaginationResponse(pagination.BuildResponse(int64(len(dockerImages)), int64(len(dockerImages)), preloadParams)),
-		},
-		ImageUsageCounts:  imageUsageCounts,
-		VolumeUsageCounts: volumeUsageCounts,
-		ActionItems:       *actionItems,
-		Settings:          types.DashboardSnapshotSettings{},
-		VersionInfo:       versionInfo,
-		PodCount:          s.podmanService.PodCount(ctx).ToPointer(),
-	}, nil
-}
-
-// buildActionItems derives the dashboard's action badges; allContainers is the raw snapshot
-// list, reused so the update count need not re-list containers.
-func (s *DashboardService) buildActionItems(
-	ctx context.Context,
-	options DashboardActionItemsOptions,
-	stoppedContainers int,
-	allContainers []dockercontainer.Summary,
-) (*types.DashboardActionItems, error) {
-	if options.DebugAllGood {
-		return &types.DashboardActionItems{Items: []types.DashboardActionItem{}}, nil
-	}
-
-	var (
-		pendingResourceUpdates    int
-		actionableVulnerabilities int
-		expiringAPIKeys           int
-	)
-
-	g, groupCtx := errgroup.WithContext(ctx)
-
-	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "dashboard action item worker")
-
-		if s.db == nil || s.dockerService == nil {
-			return nil
-		}
-		standaloneContainers := make([]dockercontainer.Summary, 0, len(allContainers))
-		for _, c := range container.FilterExcludedContainers(allContainers, false, false) {
-			if docker.ComposeProjectLabel(c.Labels) == "" {
-				standaloneContainers = append(standaloneContainers, c)
-			}
-		}
-		containerCount, err := s.getPendingContainerUpdatesCount(groupCtx, standaloneContainers)
-		if err != nil {
-			return err
-		}
-		// Hidden service identities stay so project counting can exclude their Compose and cached image records.
-		projectCount := 0
-		if s.projectService != nil {
-			if projectCount, err = s.projectService.CountProjectsWithPendingUpdates(groupCtx, allContainers); err != nil {
-				return fmt.Errorf("failed to count projects with updates: %w", err)
-			}
-		}
-		pendingResourceUpdates = containerCount + projectCount
-		return nil
-	})
-
-	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "dashboard action item worker")
-
-		if s.vulnerabilityService == nil {
-			return nil
-		}
-		actionableVulnerabilities, workerErr = s.vulnerabilityService.ActionableCountExcludingIgnored(groupCtx)
-		return workerErr
-	})
-
-	g.Go(func() (workerErr error) {
-		defer utils.RecoverToError(&workerErr, "dashboard action item worker")
-
-		if s.db == nil {
-			return nil
-		}
-		var count int64
-		err := s.db.WithContext(groupCtx).
-			Model(&apikey.ApiKey{}).
-			Where("expires_at IS NOT NULL").
-			Where("expires_at <= ?", time.Now().Add(defaultDashboardAPIKeyExpiryWindow)).
-			Count(&count).Error
-		if err != nil {
-			return fmt.Errorf("failed to count expiring API keys: %w", err)
-		}
-		expiringAPIKeys = int(count)
-		return nil
-	})
-
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
-
-	candidates := []types.DashboardActionItem{
-		{Kind: types.DashboardActionItemKindStoppedContainers, Count: stoppedContainers, Severity: types.DashboardActionItemSeverityWarning},
-		{Kind: types.DashboardActionItemKindImageUpdates, Count: pendingResourceUpdates, Severity: types.DashboardActionItemSeverityWarning},
-		{Kind: types.DashboardActionItemKindActionableVulnerabilities, Count: actionableVulnerabilities, Severity: types.DashboardActionItemSeverityCritical},
-		{Kind: types.DashboardActionItemKindExpiringKeys, Count: expiringAPIKeys, Severity: types.DashboardActionItemSeverityWarning},
-	}
-	items := make([]types.DashboardActionItem, 0, len(candidates))
-	for _, item := range candidates {
-		if item.Count > 0 {
-			items = append(items, item)
-		}
-	}
-	return &types.DashboardActionItems{Items: items}, nil
-}
-
-// getPendingContainerUpdatesCount counts standalone containers whose stored check reports an
-// update, using the container list's lookup. Containers sharing one image each count once.
-func (s *DashboardService) getPendingContainerUpdatesCount(ctx context.Context, containers []dockercontainer.Summary) (int, error) {
-	if s.imageService == nil || len(containers) == 0 {
-		return 0, nil
-	}
-	updates, err := s.imageService.GetUpdateInfoByContainers(ctx, containers)
-	if err != nil {
-		return 0, fmt.Errorf("failed to resolve pending container updates: %w", err)
-	}
-	count := 0
-	for _, info := range updates {
-		if info != nil && info.HasUpdate {
-			count++
-		}
-	}
-	return count, nil
 }
 
 type inventoryGauges struct {

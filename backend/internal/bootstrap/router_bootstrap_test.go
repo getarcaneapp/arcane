@@ -30,7 +30,7 @@ import (
 
 func TestNewRouter_DecodesPathParams(t *testing.T) {
 	cfg := &config.Config{
-		AgentMode:   true,
+		EdgeAgent:   true,
 		AppUrl:      "http://localhost:3552",
 		Environment: config.AppEnvironmentTest,
 	}
@@ -151,7 +151,7 @@ func TestProxiedEnvironmentRoutesAreEdgeRoutable(t *testing.T) {
 		}
 	}
 
-	cfg := &config.Config{AgentMode: true, AppUrl: "http://localhost:3552", Environment: config.AppEnvironmentTest}
+	cfg := &config.Config{EdgeAgent: true, AppUrl: "http://localhost:3552", Environment: config.AppEnvironmentTest}
 	router, _ := newRouter(RouterParams{
 		Context: t.Context(),
 		Config:  cfg,

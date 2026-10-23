@@ -20,9 +20,10 @@ import (
 // Command is the parent command for global variable operations.
 func Command() *cobra.Command {
 	command := &cobra.Command{
-		Use:     "variables",
-		Aliases: []string{"variable", "vars"},
-		Short:   "Manage global variables",
+		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
+		Use:         "variables",
+		Aliases:     []string{"variable", "vars"},
+		Short:       "Manage global variables",
 	}
 	command.AddCommand(newListCmd())
 	command.AddCommand(newCreateCmd())

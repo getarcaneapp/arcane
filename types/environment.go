@@ -16,14 +16,6 @@ type EnvironmentTest struct {
 	Message *string `json:"message,omitempty"`
 }
 
-// EnvironmentTestConnectionRequest is the request body for testing a connection.
-type EnvironmentTestConnectionRequest struct {
-	// ApiUrl is an optional URL to test instead of the saved one.
-	//
-	// Required: false
-	ApiUrl *string `json:"apiUrl,omitempty"`
-}
-
 type EdgeMTLSCertificate struct {
 	// CommonName is the certificate subject common name.
 	//
@@ -66,7 +58,7 @@ type Environment struct {
 	// ApiUrl is the URL of the environment API.
 	//
 	// Required: false
-	ApiUrl string `json:"apiUrl" required:"false"`
+	ApiUrl string `json:"apiUrl" readOnly:"true"`
 
 	// Status of the environment.
 	//
@@ -77,11 +69,6 @@ type Environment struct {
 	//
 	// Required: false
 	Enabled bool `json:"enabled" required:"false"`
-
-	// IsEdge indicates if this is an edge agent that connects outbound.
-	//
-	// Required: false
-	IsEdge bool `json:"isEdge" required:"false"`
 
 	// LastSeen is the last successful manager-side health/contact timestamp.
 	//
@@ -164,16 +151,6 @@ type Environment struct {
 	// Required: false
 	ApiKey *string `json:"apiKey,omitempty" readOnly:"true"`
 
-	// AccessToken for authentication with the environment.
-	//
-	// Required: false
-	AccessToken string `json:"accessToken,omitempty" writeOnly:"true" copier:"-"`
-
-	// UseApiKey indicates if an API key should be generated for pairing on create.
-	//
-	// Required: false
-	UseApiKey bool `json:"useApiKey,omitempty" writeOnly:"true"`
-
 	// RegenerateApiKey indicates whether to regenerate the API key on update.
 	//
 	// Required: false
@@ -202,22 +179,6 @@ type EnvironmentStreamEvent struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// AgentPairRequest is the request body for pairing with an agent.
-type AgentPairRequest struct {
-	// Rotate indicates if the token should be rotated.
-	//
-	// Required: false
-	Rotate *bool `json:"rotate,omitempty"`
-}
-
-// AgentPairResponse is the response from pairing with an agent.
-type AgentPairResponse struct {
-	// Token is the pairing token.
-	//
-	// Required: true
-	Token string `json:"token"`
-}
-
 // SwarmBindingCandidate is the binding-relevant state of an environment being attached to a node.
 type SwarmBindingCandidate struct {
 	Hidden              bool
@@ -227,3 +188,25 @@ type SwarmBindingCandidate struct {
 }
 
 const LocalDockerEnvironmentID = "0"
+
+type DeploymentSnippet struct {
+	DockerRun     string                 `json:"dockerRun" doc:"Docker run command snippet"`
+	DockerCompose string                 `json:"dockerCompose" doc:"Docker compose YAML snippet"`
+	MTLS          *DeploymentSnippetMTLS `json:"mtls,omitempty" doc:"Optional Arcane-generated mTLS deployment assets for edge agents"`
+}
+
+type DeploymentSnippetMTLS struct {
+	DockerRun     string                  `json:"dockerRun" doc:"Docker run snippet using Arcane-generated mTLS assets"`
+	DockerCompose string                  `json:"dockerCompose" doc:"Docker compose snippet using Arcane-generated mTLS assets"`
+	Files         []DeploymentSnippetFile `json:"files" doc:"Generated PEM files to place on the edge host"`
+	HostDirHint   string                  `json:"hostDirHint" doc:"Suggested host directory containing the generated PEM files"`
+}
+
+type DeploymentSnippetFile struct {
+	Name          string `json:"name" doc:"Suggested filename"`
+	Content       string `json:"content,omitempty" doc:"PEM file contents. Omitted for sensitive files such as private keys; use downloadUrl instead."`
+	DownloadURL   string `json:"downloadUrl,omitempty" doc:"Pairing-permission endpoint to download this file when content is withheld"`
+	Sensitive     bool   `json:"sensitive,omitempty" doc:"True when this file is sensitive and must be fetched via downloadUrl"`
+	ContainerPath string `json:"containerPath" doc:"Container mount path expected by the mTLS snippet"`
+	Permissions   string `json:"permissions" doc:"Suggested file mode"`
+}

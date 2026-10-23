@@ -47,17 +47,13 @@ func setupTelemetry(ctx context.Context, cfg *config.Config, errorLogger *slog.L
 		return nil, errors.Join(err, tel.Shutdown(context.WithoutCancel(ctx)))
 	}
 
-	mode := "manager"
-	if cfg.AgentMode {
-		mode = kit.Ternary(cfg.EdgeAgent, "edge", "agent")
-	}
 	// OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES may override the defaults, but never the
 	// persisted instance ID or mode that identify this installation.
 	res, err := resource.New(ctx,
 		resource.WithTelemetrySDK(),
 		resource.WithAttributes(semconv.ServiceName("arcane"), semconv.ServiceVersion(config.Version)),
 		resource.WithFromEnv(),
-		resource.WithAttributes(semconv.ServiceInstanceID(instanceID), attribute.String("arcane.mode", mode)),
+		resource.WithAttributes(semconv.ServiceInstanceID(instanceID), attribute.String("arcane.mode", kit.Ternary(cfg.EdgeAgent, "edge", "manager"))),
 	)
 	if err != nil {
 		return fail(fmt.Errorf("create telemetry resource: %w", err))

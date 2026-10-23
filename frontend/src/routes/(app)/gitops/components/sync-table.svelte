@@ -3,7 +3,8 @@
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import RemoveMenuItem from '#lib/components/arcane-table/cells/remove-menu-item.svelte';
-	import type { ColumnSpec, BulkAction, ArcaneRow } from '#lib/components/arcane-table/index.js';
+	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
+	import type { ColumnSpec, BulkAction } from '#lib/components/arcane-table/index.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import BackupHistoryDialog from '#lib/components/gitops/backup-history-dialog.svelte';
@@ -28,36 +29,39 @@
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
-	import type { GitOpsSync } from '#lib/types/automation.js';
+	import type { GitOpsSync, GitOpsSyncCounts } from '#lib/types/automation.js';
 	import type { FilterMap, Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
+	import { environmentHref, rowKey, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { toGitRouteUrl } from '#lib/utils/navigation.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	type FieldVisibility = Record<string, boolean>;
+	type SyncRow = EnvironmentRow<GitOpsSync>;
+	type SyncPage = EnvironmentPage<Paginated<GitOpsSync, GitOpsSyncCounts>>;
 
 	let {
-		environmentId,
-		syncs = $bindable(),
+		syncs,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
+		onRefresh,
 		onEditSync
 	}: {
-		environmentId: string;
-		syncs: Paginated<GitOpsSync>;
+		syncs: SyncPage;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
+		onRefresh: (options: SearchPaginationSortRequest) => Promise<SyncPage>;
 		onEditSync: (sync: GitOpsSync) => void;
 	} = $props();
 
-	const canDelete = $derived(hasPermission('gitops:delete', environmentId));
-	const canBackup = $derived(hasPermission('gitops:backup', environmentId));
-	const canRunBackup = $derived(canBackup && hasPermission('gitops:sync', environmentId));
-	const canEditBackup = $derived(canBackup && hasPermission('gitops:update', environmentId));
+	const canDelete = (sync: SyncRow) => hasPermission('gitops:delete', sync.environmentId);
+	const canBackup = (sync: SyncRow) => hasPermission('gitops:backup', sync.environmentId);
+	const canRunBackup = (sync: SyncRow) => canBackup(sync) && hasPermission('gitops:sync', sync.environmentId);
+	const canEditBackup = (sync: SyncRow) => canBackup(sync) && hasPermission('gitops:update', sync.environmentId);
 
 	let isLoading = $state({
 		removing: false,
@@ -66,7 +70,7 @@
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 	let backupHistoryOpen = $state(false);
 	let backupResolveOpen = $state(false);
-	let backupDialogSync = $state<GitOpsSync | null>(null);
+	let backupDialogSync = $state<SyncRow | null>(null);
 
 	const modeOptions = [
 		{ value: '', label: m.common_all() },
@@ -76,14 +80,12 @@
 
 	const activeMode = $derived(String(requestOptions?.filters?.['mode'] ?? ''));
 
-	async function reloadSyncs() {
+	async function reloadSyncs(options: SearchPaginationSortRequest = requestOptions) {
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(gitOpsSyncService.getSyncs(environmentId, requestOptions)),
+			result: await tryCatch(onRefresh(options)),
 			message: m.common_refresh_failed({ resource: m.git_syncs_title() }),
 			setLoadingState: () => {},
-			onSuccess: (next) => {
-				syncs = next;
-			}
+			onSuccess: () => {}
 		});
 	}
 
@@ -92,33 +94,27 @@
 		if (mode) filters['mode'] = mode;
 		else delete filters['mode'];
 
-		requestOptions = {
+		await reloadSyncs({
 			...requestOptions,
 			filters: Object.keys(filters).length > 0 ? filters : undefined,
 			pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? 20 }
-		};
-		await reloadSyncs();
+		});
 	}
 
-	function getProjectDetailsUrl(projectId: string): string {
-		const params = new URLSearchParams({
-			from: 'gitops',
-			environmentId
-		});
-
-		return `/projects/${projectId}?${params.toString()}`;
+	function getProjectDetailsUrl(sync: SyncRow, projectId: string): string {
+		return environmentHref(`/projects/${projectId}?from=gitops`, sync.environmentId);
 	}
 
 	function isBackup(sync: GitOpsSync): boolean {
 		return sync.mode === 'backup';
 	}
 
-	function openBackupHistory(sync: GitOpsSync) {
+	function openBackupHistory(sync: SyncRow) {
 		backupDialogSync = sync;
 		backupHistoryOpen = true;
 	}
 
-	function openBackupResolve(sync: GitOpsSync) {
+	function openBackupResolve(sync: SyncRow) {
 		backupDialogSync = sync;
 		backupResolveOpen = true;
 	}
@@ -130,52 +126,50 @@
 			message: m.common_remove_message({ resource: `${ids.length} ${m.resource_sync()}(s)` }),
 			confirmLabel: m.common_remove(),
 			destructive: true,
-			run: (id) => gitOpsSyncService.deleteSync(environmentId, id),
+			runInEnvironment: (id, environmentId) => gitOpsSyncService.deleteSync(environmentId, id),
 			messages: {
 				success: (count) => m.common_delete_success({ resource: `${count} ${m.resource_sync()}(s)` }),
 				partial: (_success, _total, failed) => m.common_delete_failed({ resource: `${failed} items` }),
 				failure: () => m.common_delete_failed({ resource: `${ids.length} items` })
 			},
 			setLoading: (loading) => (isLoading.removing = loading),
-			onItemFailure: (id) => {
-				const sync = syncs.data.find((item) => item.id === id);
+			onItemFailure: (key) => {
+				const sync = syncs.data.find((item) => rowKey(item) === key);
 				toast.error(m.common_delete_failed({ resource: sync?.name ?? m.common_unknown() }));
 			},
 			onComplete: async (result) => {
-				if (result.success > 0) {
-					syncs = await gitOpsSyncService.getSyncs(environmentId, requestOptions);
-				}
+				if (result.success > 0) await reloadSyncs();
 			},
 			clearSelection: () => (selectedIds = []),
 			sequential: true
 		});
 	}
 
-	async function handleDeleteOne(id: string, name: string) {
-		const safeName = name ?? m.common_unknown();
+	async function handleDeleteOne(sync: SyncRow) {
+		const safeName = sync.name ?? m.common_unknown();
 		confirmAndRun({
 			title: m.git_sync_remove_confirm(),
 			message: m.git_sync_remove_message(),
 			confirmLabel: m.common_remove(),
 			destructive: true,
 			setLoading: (loading) => (isLoading.removing = loading),
-			run: () => gitOpsSyncService.deleteSync(environmentId, id),
+			run: () => gitOpsSyncService.deleteSync(sync.environmentId, sync.id),
 			failureMessage: m.common_delete_failed({ resource: safeName }),
 			onSuccess: async () => {
 				toast.success(m.common_delete_success({ resource: `${m.resource_sync()} "${safeName}"` }));
-				syncs = await gitOpsSyncService.getSyncs(environmentId, requestOptions);
+				await reloadSyncs();
 			}
 		});
 	}
 
-	async function handleDisconnectBackup(sync: GitOpsSync) {
+	async function handleDisconnectBackup(sync: SyncRow) {
 		confirmAndRun({
 			title: m.disconnect_backup_title({ name: sync.projectName || sync.name }),
 			message: m.disconnect_backup_message(),
 			confirmLabel: m.common_disconnect(),
 			destructive: true,
 			setLoading: (loading) => (isLoading.removing = loading),
-			run: () => gitOpsSyncService.deleteSync(environmentId, sync.id),
+			run: () => gitOpsSyncService.deleteSync(sync.environmentId, sync.id),
 			failureMessage: m.disconnect_backup_failed(),
 			onSuccess: async () => {
 				toast.success(m.disconnect_backup_success());
@@ -184,9 +178,9 @@
 		});
 	}
 
-	async function handlePerformSync(sync: GitOpsSync) {
+	async function handlePerformSync(sync: SyncRow) {
 		isLoading.syncing = true;
-		const result = await tryCatch(gitOpsSyncService.performSync(environmentId, sync.id));
+		const result = await tryCatch(gitOpsSyncService.performSync(sync.environmentId, sync.id));
 		await handleApiResultWithCallbacks({
 			result,
 			message: isBackup(sync) ? m.backup_failed() : m.git_sync_failed(),
@@ -199,7 +193,7 @@
 		isLoading.syncing = false;
 	}
 
-	const columns = [
+	const columns = $derived([
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
 		{
 			accessorKey: 'name',
@@ -207,6 +201,7 @@
 			sortable: true,
 			cell: NameCell
 		},
+		...environmentColumns<SyncRow>(),
 		{
 			accessorKey: 'mode',
 			title: m.direction(),
@@ -249,7 +244,7 @@
 			sortable: true,
 			cell: LastSyncCell
 		}
-	] satisfies ColumnSpec<GitOpsSync>[];
+	] satisfies ColumnSpec<SyncRow>[]);
 
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
@@ -277,20 +272,20 @@
 	]);
 </script>
 
-{#snippet NameCell({ item, value }: { item: GitOpsSync; value: any; row: ArcaneRow<GitOpsSync> })}
+{#snippet NameCell({ item }: { item: SyncRow })}
 	<span class="inline-flex items-center gap-1.5">
 		{#if item.projectId}
-			<a class="font-medium hover:underline" href={getProjectDetailsUrl(item.projectId)}>
-				{value}
+			<a class="font-medium hover:underline" href={getProjectDetailsUrl(item, item.projectId)}>
+				{item.name}
 			</a>
 		{:else}
-			<span class="font-medium">{value}</span>
+			<span class="font-medium">{item.name}</span>
 		{/if}
 		<LifecycleIndicator scriptPath={item.preDeployScriptPath} />
 	</span>
 {/snippet}
 
-{#snippet DirectionCell({ item }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
+{#snippet DirectionCell({ item }: { item: SyncRow })}
 	<span class="inline-flex items-center gap-1.5 text-sm">
 		{#if isBackup(item)}
 			<UploadIcon class="size-3.5 text-muted-foreground" />
@@ -302,15 +297,15 @@
 	</span>
 {/snippet}
 
-{#snippet BranchCell({ value }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
+{#snippet BranchCell({ item }: { item: SyncRow })}
 	<div class="flex items-center gap-1.5">
 		<GitBranchIcon class="size-3.5 text-muted-foreground" />
-		<code class="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{value}</code>
+		<code class="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{item.branch}</code>
 	</div>
 {/snippet}
 
-{#snippet PathCell({ value, item }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
-	{@const path = isBackup(item) ? (item.backupDirectory ?? '') : String(value ?? '')}
+{#snippet PathCell({ item }: { item: SyncRow })}
+	{@const path = isBackup(item) ? (item.backupDirectory ?? '') : item.composePath}
 	{@const route = isBackup(item) ? 'tree' : 'blob'}
 	{@const fileUrl = item.repository?.url && path ? toGitRouteUrl(item.repository.url, route, item.branch, path) : null}
 	<div class="flex items-center gap-1.5">
@@ -332,27 +327,28 @@
 	</div>
 {/snippet}
 
-{#snippet AutoSyncCell({ value }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
-	<Badge variant={value ? 'blue' : 'gray'} minWidth="20">{value ? m.common_enabled() : m.common_disabled()}</Badge>
+{#snippet AutoSyncCell({ item }: { item: SyncRow })}
+	<Badge variant={item.autoSync ? 'blue' : 'gray'} minWidth="20">{item.autoSync ? m.common_enabled() : m.common_disabled()}</Badge
+	>
 {/snippet}
 
-{#snippet StatusCell({ value, item }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
+{#snippet StatusCell({ item }: { item: SyncRow })}
 	{#if isBackup(item)}
 		<BackupStateBadge sync={item} />
-	{:else if value === 'success'}
+	{:else if item.lastSyncStatus === 'success'}
 		<Badge variant="green" minWidth="20">{m.common_success()}</Badge>
-	{:else if value === 'failed'}
+	{:else if item.lastSyncStatus === 'failed'}
 		<Badge variant="red" minWidth="20">{m.common_failed()}</Badge>
-	{:else if value === 'pending'}
+	{:else if item.lastSyncStatus === 'pending'}
 		<Badge variant="amber" minWidth="20">{m.common_pending()}</Badge>
 	{:else}
 		<Badge variant="gray" minWidth="20">{m.common_na()}</Badge>
 	{/if}
 {/snippet}
 
-{#snippet CommitCell({ value, item }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
-	{#if value}
-		{@const commitUrl = item.repository?.url ? toGitRouteUrl(item.repository.url, 'commit', String(value)) : null}
+{#snippet CommitCell({ item }: { item: SyncRow })}
+	{#if item.lastSyncCommit}
+		{@const commitUrl = item.repository?.url ? toGitRouteUrl(item.repository.url, 'commit', item.lastSyncCommit) : null}
 		<div class="flex items-center gap-1.5">
 			<HashIcon class="size-3.5 text-muted-foreground" />
 			{#if commitUrl}
@@ -361,11 +357,11 @@
 					target="_blank"
 					class="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
 				>
-					{value}
+					{item.lastSyncCommit}
 				</a>
 			{:else}
 				<code class="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
-					{value}
+					{item.lastSyncCommit}
 				</code>
 			{/if}
 		</div>
@@ -374,8 +370,8 @@
 	{/if}
 {/snippet}
 
-{#snippet LastSyncCell({ value, item }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
-	{@const timestamp = isBackup(item) ? item.lastBackupAt : value}
+{#snippet LastSyncCell({ item }: { item: SyncRow })}
+	{@const timestamp = isBackup(item) ? item.lastBackupAt : item.lastSyncAt}
 	<span class="text-sm">{timestamp ? formatDateTimeShort(timestamp) : m.common_never()}</span>
 {/snippet}
 
@@ -401,11 +397,11 @@
 	</div>
 {/snippet}
 
-{#snippet BackupStateField(value: GitOpsSync)}
+{#snippet BackupStateField(value: SyncRow)}
 	<BackupStateBadge sync={value} />
 {/snippet}
 
-{#snippet SyncMobileCardSnippet({ item, mobileFieldVisibility }: { item: GitOpsSync; mobileFieldVisibility: FieldVisibility })}
+{#snippet SyncMobileCardSnippet({ item, mobileFieldVisibility }: { item: SyncRow; mobileFieldVisibility: FieldVisibility })}
 	<UniversalMobileCard
 		{item}
 		icon={{ component: RefreshCwIcon, variant: 'purple' as const }}
@@ -415,28 +411,28 @@
 		fields={[
 			{
 				label: m.direction(),
-				getValue: (item: GitOpsSync) => (isBackup(item) ? m.push() : m.pull()),
+				getValue: (item: SyncRow) => (isBackup(item) ? m.push() : m.pull()),
 				icon: isBackup(item) ? UploadIcon : DownloadIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['mode'] ?? true
 			},
 			{
 				label: m.git_sync_branch(),
-				getValue: (item: GitOpsSync) => item.branch,
+				getValue: (item: SyncRow) => item.branch,
 				icon: GitBranchIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['branch'] ?? true
 			},
 			{
 				label: m.repository_path(),
-				getValue: (item: GitOpsSync) => (isBackup(item) ? (item.backupDirectory ?? m.common_na()) : item.composePath),
+				getValue: (item: SyncRow) => (isBackup(item) ? (item.backupDirectory ?? m.common_na()) : item.composePath),
 				icon: FolderIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['composePath'] ?? true
 			},
 			{
 				label: m.backup_state(),
-				getValue: (item: GitOpsSync) => item,
+				getValue: (item: SyncRow) => item,
 				type: 'component' as const,
 				component: BackupStateField,
 				icon: UploadIcon,
@@ -448,32 +444,32 @@
 	/>
 {/snippet}
 
-{#snippet RowActions({ item }: { item: GitOpsSync })}
+{#snippet RowActions({ item }: { item: SyncRow })}
 	<RowActionsMenu>
 		{#if isBackup(item)}
-			<DropdownMenu.Item onclick={() => handlePerformSync(item)} disabled={isLoading.syncing || !canRunBackup}>
+			<DropdownMenu.Item onclick={() => handlePerformSync(item)} disabled={isLoading.syncing || !canRunBackup(item)}>
 				<UploadIcon class="size-4" />
 				{m.back_up_now()}
 			</DropdownMenu.Item>
 
-			<DropdownMenu.Item onclick={() => openBackupHistory(item)} disabled={!canBackup}>
+			<DropdownMenu.Item onclick={() => openBackupHistory(item)} disabled={!canBackup(item)}>
 				<ClockIcon class="size-4" />
 				{m.history()}
 			</DropdownMenu.Item>
 
-			{#if item.backupState === 'needs_attention' && canBackup}
+			{#if item.backupState === 'needs_attention' && canBackup(item)}
 				<DropdownMenu.Item onclick={() => openBackupResolve(item)}>
 					<AlertTriangleIcon class="size-4" />
 					{m.resolve()}
 				</DropdownMenu.Item>
 			{/if}
 
-			<DropdownMenu.Item onclick={() => onEditSync(item)} disabled={!canEditBackup}>
+			<DropdownMenu.Item onclick={() => onEditSync(item)} disabled={!canEditBackup(item)}>
 				<SettingsIcon class="size-4" />
 				{m.settings()}
 			</DropdownMenu.Item>
 
-			{#if canDelete && canBackup}
+			{#if canDelete(item) && canBackup(item)}
 				<RemoveMenuItem
 					onclick={() => handleDisconnectBackup(item)}
 					disabled={isLoading.removing}
@@ -491,8 +487,8 @@
 				{m.common_edit()}
 			</DropdownMenu.Item>
 
-			{#if canDelete}
-				<RemoveMenuItem onclick={() => handleDeleteOne(item.id, item.name)} disabled={isLoading.removing} />
+			{#if canDelete(item)}
+				<RemoveMenuItem onclick={() => handleDeleteOne(item)} disabled={isLoading.removing} />
 			{/if}
 		{/if}
 	</RowActionsMenu>
@@ -505,7 +501,7 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
-	onRefresh={async (options) => (syncs = await gitOpsSyncService.getSyncs(environmentId, options))}
+	{onRefresh}
 	{columns}
 	{mobileFields}
 	customToolbarActions={ModeFilter}
@@ -513,6 +509,13 @@
 	mobileCard={SyncMobileCardSnippet}
 />
 
-<BackupHistoryDialog bind:open={backupHistoryOpen} {environmentId} sync={backupDialogSync} />
+{#if backupDialogSync}
+	<BackupHistoryDialog bind:open={backupHistoryOpen} environmentId={backupDialogSync.environmentId} sync={backupDialogSync} />
 
-<BackupResolveDialog bind:open={backupResolveOpen} {environmentId} sync={backupDialogSync} onResolved={reloadSyncs} />
+	<BackupResolveDialog
+		bind:open={backupResolveOpen}
+		environmentId={backupDialogSync.environmentId}
+		sync={backupDialogSync}
+		onResolved={() => reloadSyncs()}
+	/>
+{/if}

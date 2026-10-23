@@ -13,7 +13,7 @@
 	import type { ContainerRegistry, ContainerRegistryPullUsage } from '#lib/types/docker.js';
 	import type { ContainerRegistryCreate, ContainerRegistryUpdate } from '#lib/types/docker.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import RegistryTable from './components/registry-table.svelte';
@@ -100,7 +100,7 @@
 		}
 	}
 
-	const canCreateRegistry = $derived(hasPermission('registries:create'));
+	const canCreateRegistry = $derived(hasShownPermission('registries:create'));
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [

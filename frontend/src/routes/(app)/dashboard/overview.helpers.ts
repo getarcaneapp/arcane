@@ -1,5 +1,6 @@
 import * as m from '#lib/paraglide/messages.js';
 import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
+import type { ContainerStatusCounts, ImageUsageCounts, VolumeUsageCounts } from '#lib/types/docker.js';
 import type { Environment } from '#lib/types/environment.js';
 import type { DashboardEnvironmentOverview, DashboardOverviewSummary, SystemStats } from '#lib/types/shared.js';
 import { isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker.js';
@@ -12,31 +13,34 @@ export function shouldLoadEnvironment(environment: Environment): boolean {
 export function createBaseEnvironmentOverview(environment: Environment): DashboardEnvironmentOverview {
 	return {
 		environment,
-		containers: { runningContainers: 0, stoppedContainers: 0, totalContainers: 0 },
+		containers: { runningContainers: 0, stoppedContainers: 0, totalContainers: 0, updatesAvailable: 0 },
 		imageUsageCounts: { imagesInuse: 0, imagesUnused: 0, totalImages: 0, totalImageSize: 0 },
-		actionItems: { items: [] },
-		settings: {},
-		snapshotState: 'skipped'
+		updates: 0,
+		vulnerabilities: 0,
+		actionItemCount: 0
 	};
 }
 
-export function buildOverviewSummary(items: DashboardEnvironmentOverview[]): DashboardOverviewSummary {
+export function buildOverviewSummary(
+	items: DashboardEnvironmentOverview[],
+	totals: { containers: ContainerStatusCounts; images: ImageUsageCounts; volumes: VolumeUsageCounts; pods: number }
+): DashboardOverviewSummary {
 	return {
 		totalEnvironments: items.length,
 		reachableEnvironments: items.filter((item) => item.environment.enabled && isEnvironmentOnline(item.environment)).length,
 		unavailableEnvironments: items.filter((item) => item.environment.enabled && !isEnvironmentOnline(item.environment)).length,
 		disabledEnvironments: items.filter((item) => !item.environment.enabled).length,
-		totalContainers: items.reduce((total, item) => total + item.containers.totalContainers, 0),
-		runningContainers: items.reduce((total, item) => total + item.containers.runningContainers, 0),
-		stoppedContainers: items.reduce((total, item) => total + item.containers.stoppedContainers, 0),
-		totalImages: items.reduce((total, item) => total + item.imageUsageCounts.totalImages, 0),
-		imagesInUse: items.reduce((total, item) => total + item.imageUsageCounts.imagesInuse, 0),
-		imagesUnused: items.reduce((total, item) => total + item.imageUsageCounts.imagesUnused, 0),
-		totalVolumes: items.reduce((total, item) => total + (item.volumeUsageCounts?.total ?? 0), 0),
-		volumesInUse: items.reduce((total, item) => total + (item.volumeUsageCounts?.inuse ?? 0), 0),
-		volumesUnused: items.reduce((total, item) => total + (item.volumeUsageCounts?.unused ?? 0), 0),
+		totalContainers: totals.containers.totalContainers,
+		runningContainers: totals.containers.runningContainers,
+		stoppedContainers: totals.containers.stoppedContainers,
+		totalImages: totals.images.totalImages,
+		imagesInUse: totals.images.imagesInuse,
+		imagesUnused: totals.images.imagesUnused,
+		totalVolumes: totals.volumes.total,
+		volumesInUse: totals.volumes.inuse,
+		volumesUnused: totals.volumes.unused,
 		podmanEnvironments: items.filter((item) => item.podCount !== undefined).length,
-		totalPods: items.reduce((total, item) => total + (item.podCount ?? 0), 0)
+		totalPods: totals.pods
 	};
 }
 
@@ -58,6 +62,32 @@ export function getResolvedStatusLabel(environment: Environment): string {
 			return m.common_error();
 		default:
 			return m.common_offline();
+	}
+}
+
+export function getEdgeTransportLabel(environment: Environment): string {
+	const transport = environment.connected ? environment.edgeTransport : undefined;
+	if (!transport && environment.lastPollAt) return m.environments_edge_mode_polling();
+	switch (transport ?? environment.lastEdgeTransport) {
+		case 'websocket':
+			return m.environments_edge_websocket_label();
+		case 'grpc':
+			return m.environments_edge_grpc_label();
+		default:
+			return m.environments_edge_label();
+	}
+}
+
+export function getEdgeConnectionStateLabel(environment: Environment): string {
+	switch (resolveEnvironmentStatus(environment)) {
+		case 'online':
+			return m.environments_edge_status_connected();
+		case 'standby':
+			return m.environments_edge_status_standby();
+		case 'pending':
+			return m.environments_edge_status_connecting();
+		default:
+			return m.disconnected();
 	}
 }
 

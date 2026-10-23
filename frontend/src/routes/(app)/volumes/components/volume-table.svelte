@@ -19,7 +19,6 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { volumeService, type VolumesPaginatedResponse } from '#lib/services/volume-service.js';
-	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { VolumeSizeInfo, Volume } from '#lib/types/docker.js';
@@ -31,15 +30,16 @@
 	import {
 		collectAcrossEnvironments,
 		environmentHref,
+		type EnvironmentPage,
+		type EnvironmentRow,
 		environmentRows,
 		fetchAcrossEnvironments,
 		hasShownPermission,
 		parseRowKey,
+		readableEnvironments,
 		readAcrossEnvironments,
 		rowKey,
-		withFailedEnvironments,
-		type EnvironmentPage,
-		type EnvironmentRow
+		withFailedEnvironments
 	} from '#lib/utils/environments.js';
 	import { formatDateTimeShort, truncateString } from '#lib/utils/formatting.js';
 	import { bytes } from '#lib/utils/formatting.js';
@@ -92,7 +92,7 @@
 		if (onRefreshData) {
 			await onRefreshData(options);
 		} else {
-			volumes = await fetchAcrossEnvironments(environmentStore.shown, options, (id, request, config) =>
+			volumes = await fetchAcrossEnvironments(readableEnvironments('volumes:list'), options, (id, request, config) =>
 				volumeService.getVolumesForEnvironment(id, request, config)
 			);
 		}
@@ -129,15 +129,12 @@
 	let tablePreferencesReady = $state(false);
 	const queryClient = useQueryClient();
 
-	// Each environment names its own backup volume; other shown environments' names come from their settings.
 	const backupVolumeNamesQuery = createQuery(() => {
-		const selectedId = environmentStore.selected?.id;
-		const others = environmentStore.shown.filter((env) => env.id !== selectedId);
+		const environments = readableEnvironments('volumes:list');
 		return {
-			// The selected environment is left out, so it is part of the key.
-			queryKey: queryKeys.volumes.backupVolumeNames(`${scope}|${selectedId}`),
+			queryKey: queryKeys.volumes.backupVolumeNames(scope),
 			queryFn: async () => {
-				const { values, failures } = await collectAcrossEnvironments(others, (id) =>
+				const { values, failures } = await collectAcrossEnvironments(environments, (id) =>
 					queryClient.ensureQueryData({
 						queryKey: queryKeys.settings.byEnvironment(id),
 						queryFn: () => settingsService.getReadableSettings(id)
@@ -148,31 +145,22 @@
 				);
 				return { names, failures };
 			},
-			enabled: others.length > 0,
+			enabled: environments.length > 0,
 			refetchOnWindowFocus: false
 		};
 	});
-	const isBackupVolumeName = (name: string, environmentId = environmentStore.selected?.id) => {
-		if (environmentId === environmentStore.selected?.id) {
-			return name === (settingsStore.runtime.backupVolumeName || 'arcane-backups');
-		}
-		// Until another environment's backup volume name is known, none of its volumes can be removed or renamed.
-		const configured = backupVolumeNamesQuery.data?.names.get(environmentId ?? '');
+	const isBackupVolumeName = (name: string, environmentId: string) => {
+		const configured = backupVolumeNamesQuery.data?.names.get(environmentId);
 		return configured === undefined || name === configured;
 	};
 	const isBackupVolume = (item: VolumeRow) => isBackupVolumeName(item.name, item.environmentId);
 	const sizesEnabled = $derived.by(() => {
 		userStore.current;
-		return (
-			tablePreferencesReady &&
-			!!environmentStore.selected?.id &&
-			columnVisibility['size'] !== false &&
-			hasShownPermission('volumes:read')
-		);
+		return tablePreferencesReady && columnVisibility['size'] !== false && hasShownPermission('volumes:read');
 	});
 	const sizesQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = environmentStore.shown;
+		const environments = readableEnvironments('volumes:list');
 		return {
 			queryKey: queryKeys.volumes.sizes(queryScope),
 			queryFn: async () => {
@@ -264,7 +252,7 @@
 		// would break for selections carried across pages.
 		const idsToDelete = ids.filter((key) => {
 			const { environmentId, id } = parseRowKey(key);
-			return !isBackupVolumeName(id, environmentId);
+			return environmentId !== undefined && !isBackupVolumeName(id, environmentId);
 		});
 
 		bulkConfirmAndRun({
@@ -273,7 +261,7 @@
 			message: m.volumes_remove_selected_message({ count: idsToDelete.length }),
 			confirmLabel: m.common_remove(),
 			destructive: true,
-			run: (id, environmentId) => volumeService.deleteVolume(id, environmentId),
+			runInEnvironment: (id, environmentId) => volumeService.deleteVolume(id, environmentId),
 			messages: {
 				success: (count) => m.common_bulk_remove_success({ count, resource: m.resource_volumes_cap() }),
 				partial: (success, total, failed) =>
@@ -310,7 +298,7 @@
 	const deletableSelectedIds = $derived(
 		(selectedIds ?? []).filter((key) => {
 			const { environmentId, id } = parseRowKey(key);
-			return !isBackupVolumeName(id, environmentId);
+			return environmentId !== undefined && !isBackupVolumeName(id, environmentId);
 		})
 	);
 
