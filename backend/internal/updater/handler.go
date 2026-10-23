@@ -13,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 // UpdaterHandler provides Huma-based updater management endpoints.
@@ -77,6 +78,13 @@ func (h *UpdaterHandler) GetUpdaterStatus(ctx context.Context, input *types.Envi
 
 // GetUpdaterHistory returns the history of update operations.
 func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdaterHistoryInput) (*handlerutil.Out[[]types.AutoUpdateRecord], error) {
+	if _, ok := httpx.EnvironmentScopeFromContext(ctx); ok {
+		body, err := h.updaterService.AggregateHistory(ctx, cmp.Or(max(input.Limit, 0), 50))
+		if err != nil {
+			return nil, huma.Error500InternalServerError("Failed to get updater history: " + err.Error())
+		}
+		return &handlerutil.Out[[]types.AutoUpdateRecord]{Body: body}, nil
+	}
 	history, err := h.updaterService.GetHistory(ctx, cmp.Or(max(input.Limit, 0), 50))
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get updater history: " + err.Error())

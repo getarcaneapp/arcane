@@ -1,8 +1,11 @@
 import { error } from '@sveltejs/kit';
 
+import { loadSwarmEnvironments } from '#lib/components/swarm/swarm-environments.js';
 import { swarmService } from '#lib/services/swarm-service.js';
 import { templateService } from '#lib/services/template-service.js';
 import { variableService } from '#lib/services/variable-service.js';
+import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
+import { destinationEnvironmentId, environmentName, resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
@@ -13,8 +16,18 @@ export const load: PageLoad = async ({ url }) => {
 	const sourceStackName = fromStack ? decodeURIComponent(fromStack) : null;
 	const isEditMode = sourceStackName !== null;
 
+	let envId: string;
+	let environments: EnvironmentRef[];
+	if (isEditMode) {
+		envId = await resolveDetailEnvironmentId(url);
+		environments = [{ id: envId, name: environmentName(envId) }];
+	} else {
+		environments = (await loadSwarmEnvironments('swarm:stacks')).managers;
+		envId = destinationEnvironmentId(url.searchParams.get('env') ?? '', 'swarm:stacks', environments);
+	}
+
 	const sourceStackPromise = sourceStackName
-		? tryCatch(swarmService.getStackSource(sourceStackName)).then((result) => {
+		? tryCatch(swarmService.getStackSource(sourceStackName, envId)).then((result) => {
 				if (result.error) {
 					const err: any = result.error;
 
@@ -71,6 +84,8 @@ export const load: PageLoad = async ({ url }) => {
 	]);
 
 	return {
+		envId,
+		environments,
 		composeTemplates: allTemplates,
 		envTemplate: isEditMode
 			? (sourceStack?.envContent ?? '')

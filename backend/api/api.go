@@ -21,7 +21,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/build"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v3/internal/dashboard"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/diagnostics"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
@@ -137,7 +136,6 @@ type HandlerDeps struct {
 	GitOpsSync        *gitops.Module
 	Webhook           *webhook.Module
 	Vulnerability     *vulnerability.Module
-	Dashboard         *dashboard.Module
 	Role              *role.Module
 	Variable          *variable.Module
 	Upload            *upload.Module
@@ -230,8 +228,7 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityApp
 	deps.GitOpsSync.RegisterRoutes(api)
 	deps.Webhook.RegisterRoutes(api)
 	deps.Vulnerability.RegisterRoutes(api, appCtx)
-	deps.Dashboard.RegisterRoutes(api)
-	handlers.RegisterStream(api, deps.Dashboard.Handler(), deps.Activity.Handler(), deps.Environment.Handler(), deps.Event.Service(), deps.Version, deps.System.Service())
+	handlers.RegisterStream(api, deps.Activity.Handler(), deps.Environment.Handler(), deps.Event.Service(), deps.Version, deps.System.Service())
 
 	apiGroup.GET("/docs", func(c *echo.Context) error {
 		return c.HTML(http.StatusOK, scalarDocsHTML)

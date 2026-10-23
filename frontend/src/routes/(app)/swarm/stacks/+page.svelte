@@ -1,39 +1,65 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { untrack } from 'svelte';
 
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
+	import { swarmEnvironmentsQueryOptions, type SwarmEnvironments } from '#lib/components/swarm/swarm-environments.js';
 	import { LayersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import { simpleRefresh } from '#lib/utils/api.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { fetchAcrossEnvironments, withFailedEnvironments } from '#lib/utils/environments.js';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
+	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import SwarmStacksTable from './components/stacks-table.svelte';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
-	let stacks = $derived(data.stacks);
-	let requestOptions = $derived(data.requestOptions);
-	let isLoading = $state({ refresh: false });
+	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
+	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm:read'));
+	const swarm = $derived(swarmQuery.data ?? data.swarm);
 
-	async function refresh() {
-		await simpleRefresh(
-			() => swarmService.getStacks(requestOptions),
-			(data) => (stacks = data),
-			m.common_refresh_failed({ resource: m.swarm_stacks_title() }),
-			(loading) => (isLoading.refresh = loading)
-		);
+	function stacksQueryOptions(options: SearchPaginationSortRequest, current: SwarmEnvironments = swarm) {
+		const { managers, failedEnvironments } = current;
+		return {
+			queryKey: queryKeys.swarm.stacks(managers.map((env) => env.id).join(','), options),
+			queryFn: async () =>
+				withFailedEnvironments(
+					await fetchAcrossEnvironments(managers, options, (id, request, config) => swarmService.getStacks(request, id, config)),
+					failedEnvironments
+				)
+		};
 	}
 
-	useEnvironmentRefresh(refresh);
+	const stacksQuery = createQuery(() => ({
+		...stacksQueryOptions(requestOptions),
+		placeholderData: (previous) => previous
+	}));
+	let stacks = $derived(stacksQuery.data ?? data.stacks);
+	const isRefreshing = $derived(stacksQuery.isFetching && !stacksQuery.isPending);
+
+	function fetchStacks(options: SearchPaginationSortRequest, current: SwarmEnvironments = swarm) {
+		requestOptions = options;
+		return queryClient.query({ ...stacksQueryOptions(options, current), staleTime: 0 });
+	}
+
+	async function refresh() {
+		const discovered = await swarmQuery.refetch();
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(fetchStacks(requestOptions, discovered.data ?? swarm)),
+			message: m.common_refresh_failed({ resource: m.swarm_stacks_title() })
+		});
+	}
 
 	const totalStacks = $derived(stacks?.pagination?.totalItems ?? stacks?.data?.length ?? 0);
 
-	const currentEnvId = $derived(environmentStore.selected?.id);
-	const canCreateStack = $derived(hasPermission('swarm:stacks', currentEnvId));
+	const canCreateStack = $derived(swarm.managers.some((env) => hasPermission('swarm:stacks', env.id)));
 
 	const actionButtons = $derived.by(() =>
 		createRefreshActionButtons({
@@ -44,7 +70,7 @@
 			},
 			refreshLabel: m.common_refresh(),
 			onRefresh: refresh,
-			refreshing: isLoading.refresh
+			refreshing: isRefreshing
 		})
 	);
 
@@ -58,14 +84,8 @@
 	]);
 </script>
 
-<ResourcePageLayout
-	title={m.swarm_stacks_title()}
-	subtitle={m.swarm_stacks_subtitle()}
-	{actionButtons}
-	{statCards}
-	environmentPicker
->
+<ResourcePageLayout title={m.swarm_stacks_title()} subtitle={m.swarm_stacks_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<SwarmStacksTable bind:stacks bind:requestOptions />
+		<SwarmStacksTable bind:stacks bind:requestOptions {fetchStacks} />
 	{/snippet}
 </ResourcePageLayout>

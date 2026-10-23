@@ -1,21 +1,8 @@
-<!--
-	IfPermitted — conditionally renders its children based on the current
-	user's RBAC permissions in the active (or explicitly supplied) environment.
-
-	The check is wrapped in `$derived.by`, which reads
-	`environmentStore.selected?.id` as part of the computation. That makes the
-	guard reactive to environment switches: when the user picks a different env,
-	this component re-evaluates and shows/hides its children without a remount.
-
-	Permission logic lives in `#lib/utils/auth` — this component is
-	a thin presentational wrapper around `hasPermission`, `hasAnyPermission`,
-	and `isGlobalAdmin`.
--->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import { hasPermission, hasAnyPermission, isGlobalAdmin } from '#lib/utils/auth.js';
+	import { hasAnyPermission, isGlobalAdmin } from '#lib/utils/auth.js';
 
 	let {
 		perm,
@@ -32,13 +19,11 @@
 	} = $props();
 
 	const allowed = $derived.by(() => {
-		// Touch the selected env id so the derived re-runs when it changes.
-		const activeEnvId = envId ?? environmentStore.selected?.id;
-
 		if (adminOnly) return isGlobalAdmin();
 		if (perm === undefined) return true;
-		if (typeof perm === 'string') return hasPermission(perm, activeEnvId);
-		return hasAnyPermission(perm, activeEnvId);
+		const perms = typeof perm === 'string' ? [perm] : perm;
+		const envIds = envId === undefined ? environmentStore.shown.map((env) => env.id) : [envId];
+		return envIds.some((id) => hasAnyPermission(perms, id));
 	});
 </script>
 

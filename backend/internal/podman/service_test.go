@@ -2,6 +2,7 @@ package podman
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	libpodman "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/podman"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
 )
 
@@ -403,4 +405,52 @@ func TestServiceContainerUnitActionOnDocker(t *testing.T) {
 	handled, err := svc.ContainerUnitAction(t.Context(), "abc123", libpodman.Systemd.Start)
 	require.NoError(t, err)
 	assert.False(t, handled)
+}
+
+func podmanScopeContext(t *testing.T, target string, bodies map[string]any) context.Context {
+	t.Helper()
+	return httpx.WithEnvironmentScope(t.Context(), &httpx.EnvironmentScope{
+		IDs:     []string{"a", "b", "c"},
+		Request: httptest.NewRequest(http.MethodGet, target, http.NoBody),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, ok := bodies[strings.Split(strings.TrimPrefix(r.URL.Path, "/api/environments/"), "/")[0]]
+			if !ok {
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte(`{"detail":"environment offline"}`))
+				return
+			}
+			_ = json.NewEncoder(w).Encode(body)
+		}),
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		},
+	})
+}
+
+func TestAggregateStatusSumsPods(t *testing.T) {
+	ctx := podmanScopeContext(t, "/api/environments/a,b,c/podman/status", map[string]any{
+		"a": types.ApiResponse[types.PodmanStatus]{
+			Success: true,
+			Data: types.PodmanStatus{
+				Detected:       true,
+				AutoUpdateMode: types.PodmanAutoUpdateModeUnavailable,
+				PodCount:       2,
+			},
+		},
+		"b": types.ApiResponse[types.PodmanStatus]{
+			Success: true,
+			Data: types.PodmanStatus{
+				AutoUpdateMode: types.PodmanAutoUpdateModeUnavailable,
+			},
+		},
+	})
+
+	body, err := (&Service{}).AggregateStatus(ctx)
+	require.NoError(t, err)
+
+	require.True(t, body.Data.Detected)
+	require.Equal(t, 2, body.Data.PodCount)
+	require.Len(t, body.Environments, 2)
+	require.Equal(t, 2, body.Environments[0].Data.PodCount)
+	require.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
 }

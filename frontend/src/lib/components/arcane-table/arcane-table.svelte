@@ -12,6 +12,8 @@
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { AlertTriangleIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import settingsStore from '#lib/stores/config-store.svelte.js';
+	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { rowKey, type EnvironmentFailure } from '#lib/utils/environments.js';
@@ -89,7 +91,7 @@
 		emptyState
 	}: {
 		/** Merged lists carry the environments that could not be loaded. */
-		items: Paginated<TData> & { failedEnvironments?: EnvironmentFailure[] };
+		items: Paginated<TData> & { failedEnvironments?: EnvironmentFailure[]; excludedEnvironments?: EnvironmentRef[] };
 		requestOptions: SearchPaginationSortRequest;
 		withoutSearch?: boolean;
 		withoutFilters?: boolean;
@@ -860,6 +862,19 @@
 								handleApiResultWithCallbacks({ result: await tryCatch(onRefresh(requestOptions)), message: m.common_failed() })}
 						/>
 					</div>
+				</Alert.Root>
+			</div>
+		{/if}
+
+		{#if items.excludedEnvironments?.length}
+			<div class="shrink-0 px-3 pt-3">
+				<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon}>
+					<Alert.Description>
+						{m.all_environments_excluded({
+							count: items.excludedEnvironments.length,
+							limit: settingsStore.current?.allEnvironmentsLimit ?? 0
+						})}
+					</Alert.Description>
 				</Alert.Root>
 			</div>
 		{/if}

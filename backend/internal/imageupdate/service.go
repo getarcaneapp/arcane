@@ -841,9 +841,13 @@ func savePreparedUpdateResultWithTx(tx *gorm.DB, imageID, repo, tag string, resu
 }
 
 func (s *ImageUpdateService) savePreparedUpdateResult(ctx context.Context, imageID, repo, tag string, result *types.ImageUpdateResponse) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		return savePreparedUpdateResultWithTx(tx, imageID, repo, tag, result)
-	})
+	}); err != nil {
+		return err
+	}
+	s.eventService.PublishChange("0", "image_update")
+	return nil
 }
 
 func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, imageRef string) error {
@@ -892,7 +896,7 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 	if err != nil {
 		return err
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if hasLookup && len(repositoryCandidates) > 0 {
 			// Only clear synthetic ref:: records, not real sha256 image ID records.
 			// Clearing sha256 records would incorrectly mark containers that are still
@@ -948,7 +952,11 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 		}
 
 		return nil
-	})
+	}); transactionErr != nil {
+		return transactionErr
+	}
+	s.eventService.PublishChange("0", "image_update")
+	return nil
 }
 
 func (s *ImageUpdateService) StoredUpdateByImageID(ctx context.Context, imageID string) (*ImageUpdateRecord, bool, error) {
@@ -1780,7 +1788,7 @@ func (s *ImageUpdateService) saveContainerTagResult(ctx context.Context, cnt con
 	if err != nil {
 		return err
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if transactionErr := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// A previous good result must not survive a rate limit under a different policy.
 		if deleteStaleUpdatesErr := tx.Where("id = ? AND policy_key <> ?", "container::"+cnt.ID, imageref.UpdatePolicyKey(cnt.Image, cnt.Labels)).
 			Delete(&ImageUpdateRecord{}).Error; deleteStaleUpdatesErr != nil {
@@ -1800,5 +1808,9 @@ func (s *ImageUpdateService) saveContainerTagResult(ctx context.Context, cnt con
 			"image_id":     cnt.ImageID,
 			"policy_key":   imageref.UpdatePolicyKey(cnt.Image, cnt.Labels),
 		}).Error
-	})
+	}); transactionErr != nil {
+		return transactionErr
+	}
+	s.eventService.PublishChange("0", "image_update")
+	return nil
 }

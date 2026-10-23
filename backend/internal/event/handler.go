@@ -40,6 +40,13 @@ type GetEventsByEnvironmentInput struct {
 	IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
 }
 
+type WaitForEnvironmentChangesInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Epoch         string `query:"epoch" doc:"Epoch from the previous response; a different epoch returns immediately"`
+	Since         uint64 `query:"since" doc:"Highest kind revision already seen; waits until a newer revision exists"`
+	Wait          uint64 `query:"wait" doc:"Maximum seconds to wait for a newer revision; capped at the server limit"`
+}
+
 type DeleteEventInput struct {
 	EventID string `path:"eventId" doc:"Event ID"`
 }
@@ -126,4 +133,13 @@ func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput)
 	}
 
 	return handlerutil.MessageOutput("Event deleted successfully", ""), nil
+}
+
+func (h *EventHandler) WaitForEnvironmentChanges(ctx context.Context, input *WaitForEnvironmentChangesInput) (*handlerutil.Out[types.EnvironmentChanges], error) {
+	return &handlerutil.Out[types.EnvironmentChanges]{
+		Body: types.ApiResponse[types.EnvironmentChanges]{
+			Success: true,
+			Data:    h.eventService.WaitForChanges(ctx, input.EnvironmentID, input.Epoch, input.Since, input.Wait),
+		},
+	}, nil
 }

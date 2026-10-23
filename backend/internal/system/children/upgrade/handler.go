@@ -113,7 +113,7 @@ func (h *Handler) TriggerUpgrade(ctx context.Context, input *TriggerUpgradeInput
 
 // StartUpgradeJob starts an upgrade job: each requested remote agent in turn, then the manager last when requested.
 func (h *Handler) StartUpgradeJob(ctx context.Context, input *StartUpgradeJobInput) (*handlerutil.Out[types.UpgradeJob], error) {
-	if h.cfg.AgentMode {
+	if h.cfg.EdgeAgent {
 		return nil, huma.Error400BadRequest("upgrade jobs are managed on the Arcane manager")
 	}
 
@@ -143,7 +143,7 @@ func (h *Handler) StartUpgradeJob(ctx context.Context, input *StartUpgradeJobInp
 
 // GetCurrentUpgradeJob returns the latest upgrade job.
 func (h *Handler) GetCurrentUpgradeJob(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.UpgradeJob], error) {
-	if h.cfg.AgentMode {
+	if h.cfg.EdgeAgent {
 		return nil, huma.Error400BadRequest("upgrade jobs are managed on the Arcane manager")
 	}
 

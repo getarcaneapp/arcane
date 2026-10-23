@@ -1,9 +1,5 @@
-import { goto, refreshAll } from '$app/navigation';
-import { page } from '$app/state';
-import { replaceEqualDeep } from '@tanstack/svelte-query';
-import { PersistedState } from 'runed';
+import { untrack } from 'svelte';
 
-import userStore from '#lib/stores/user-store.svelte.js';
 import type { Environment } from '#lib/types/environment.js';
 import { isEnvironmentOnline } from '#lib/utils/docker.js';
 
@@ -11,45 +7,12 @@ export const LOCAL_DOCKER_ENVIRONMENT_ID = '0';
 
 export type EnvironmentRef = Pick<Environment, 'id' | 'name'>;
 
-// Preview: resource lists show and act on every enabled environment, like the CLI's previews.allEnvironments.
-// Saved in the user's preferences, so it follows them across browsers.
-export const allEnvironmentsPreview = {
-	get current(): boolean {
-		return userStore.current?.preferences?.allEnvironmentsPreview ?? false;
-	}
-};
-
-function getResourceListPage(): string | null {
-	const routeId = page.route?.id;
-	if (!routeId) return null;
-
-	// Check if route has a dynamic segment (contains [...] pattern)
-	// and is a resource detail page (not settings, environments management, etc.)
-	const resourcePrefixes = ['/containers', '/images', '/projects', '/networks', '/volumes', '/podman/pods', '/podman/quadlets'];
-
-	for (const prefix of resourcePrefixes) {
-		// Match routes like /containers/[containerId] or /(app)/containers/[containerId]
-		// but not /containers or /containers/components/...
-		const pattern = prefix + '/[';
-		if (routeId.includes(pattern) && !routeId.includes('/components/')) {
-			return prefix;
-		}
-	}
-
-	return null;
-}
-
 function createEnvironmentManagementStore() {
-	const selectedEnvironmentId = new PersistedState<string | null>('selectedEnvironmentId', null);
-
-	let _selectedEnvironment = $state<Environment | null>(null);
 	let _availableEnvironments = $state<Environment[]>([]);
 	let _initialized = false;
-	let _initializedWithData = false;
-	const _selectedSubscribers = new Set<(environment: Environment | null) => void>();
+	const _availableListeners = new Set<(environments: Environment[]) => void>();
 
 	let _resolveReadyPromiseFunction: () => void;
-	let _selectionHold: Promise<void> | null = null;
 	const _readyPromise = new Promise<void>((resolve) => {
 		_resolveReadyPromiseFunction = resolve;
 	});
@@ -61,203 +24,47 @@ function createEnvironmentManagementStore() {
 			return 0;
 		});
 		_availableEnvironments = sorted;
+		untrack(() => {
+			for (const listener of _availableListeners) listener(sorted);
+		});
 		return sorted;
 	}
 
-	function _notifySelectedSubscribers() {
-		for (const subscriber of _selectedSubscribers) {
-			subscriber(_selectedEnvironment);
-		}
-	}
-
-	// Toggling the preview changes the shown environments, so selected subscribers refresh.
-	let _lastPreview = allEnvironmentsPreview.current;
-	userStore.onChange(() => {
-		if (allEnvironmentsPreview.current === _lastPreview) return;
-		_lastPreview = allEnvironmentsPreview.current;
-		_notifySelectedSubscribers();
-	});
-
-	function _isAutoSelectableEnvironment(environment: Environment): boolean {
-		if (!environment.enabled) return false;
-		if (environment.id === LOCAL_DOCKER_ENVIRONMENT_ID) return true;
-		return isEnvironmentOnline(environment);
-	}
-
-	function _assignSelectedEnvironment(environment: Environment | null): Environment | null {
-		_selectedEnvironment = environment;
-		selectedEnvironmentId.current = environment?.id ?? null;
-		_notifySelectedSubscribers();
-		return environment;
-	}
-
-	function _setSelectedEnvironment(environment: Environment): Environment {
-		return _assignSelectedEnvironment(environment) as Environment;
-	}
-
-	function _selectInitialEnvironment(available: Environment[]): Environment | null {
-		const savedId = selectedEnvironmentId.current;
-
-		if (savedId) {
-			const found = available.find((env) => env.id === savedId);
-			if (found && _isAutoSelectableEnvironment(found)) {
-				return _setSelectedEnvironment(found);
-			}
-		}
-
-		const localEnv = available.find((env) => env.id === LOCAL_DOCKER_ENVIRONMENT_ID);
-		if (localEnv && _isAutoSelectableEnvironment(localEnv)) {
-			return _setSelectedEnvironment(localEnv);
-		}
-
-		const firstReachable = available.find((env) => _isAutoSelectableEnvironment(env));
-		if (firstReachable) {
-			return _setSelectedEnvironment(firstReachable);
-		}
-
-		// Last resort: nothing is auto-selectable (e.g. an environment-scoped user
-		// whose only environment is a currently-offline remote agent). Select the
-		// first available enabled environment so a valid environment stays in scope
-		// instead of leaving it null — which would make the app fall back to local
-		// ('0'), an environment the user may have no access to. The backend already
-		// filters the list to the caller's accessible environments.
-		const firstEnabled = available.find((env) => env.enabled);
-		if (firstEnabled) {
-			return _setSelectedEnvironment(firstEnabled);
-		}
-
-		_assignSelectedEnvironment(null);
-		return null;
-	}
-
 	return {
-		get selected(): Environment | null {
-			return _selectedEnvironment;
-		},
 		get available(): Environment[] {
 			return _availableEnvironments;
 		},
-		// Environments that resource lists show: the selected one, or every enabled one with the preview on.
 		get shown(): EnvironmentRef[] {
-			const enabled = allEnvironmentsPreview.current ? _availableEnvironments.filter((env) => env.enabled) : [];
-			if (enabled.length > 0) return enabled.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
-			return [_selectedEnvironment ?? { id: LOCAL_DOCKER_ENVIRONMENT_ID, name: '' }];
+			return _availableEnvironments
+				.filter((env) => env.enabled)
+				.sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
 		},
-		// Query-key scope for the shown environments.
 		get shownKey(): string {
 			return this.shown.map((env) => env.id).join(',');
 		},
 		initialize: async (environmentsData: Environment[]) => {
-			const previousShownKey = environmentStore.shownKey;
-			const available = _updateAvailable(environmentsData);
-			const hasRealEnvironments = environmentsData.length > 0;
-
-			if (!_initialized) {
-				_selectInitialEnvironment(available);
-				_initialized = true;
-				if (hasRealEnvironments) _initializedWithData = true;
-				_resolveReadyPromiseFunction();
-				return;
-			}
-			if (hasRealEnvironments && !_initializedWithData) {
-				_selectInitialEnvironment(available);
-				_initializedWithData = true;
-				return;
-			}
-			if (!_selectedEnvironment) {
-				if (available.length > 0) _selectInitialEnvironment(available);
-				return;
-			}
-			const updated = available.find((env) => env.id === _selectedEnvironment!.id);
-			// Like useEnvironmentRefresh's scope key: an unchanged selection and shown set needs no notify.
-			const unchanged =
-				updated?.enabled &&
-				replaceEqualDeep(_selectedEnvironment, updated) === _selectedEnvironment &&
-				previousShownKey === environmentStore.shownKey;
-			if (unchanged) return;
-			if (updated) _assignSelectedEnvironment(updated);
-			if (!updated?.enabled) _selectInitialEnvironment(available);
+			_updateAvailable(environmentsData);
+			if (_initialized) return;
+			_initialized = true;
+			_resolveReadyPromiseFunction();
 		},
-		// Applies a live environment list pushed by the backend stream.
-		//
-		// Edge liveness is process-local state on the manager, so a list fetched
-		// once goes stale the moment an agent reconnects — after a fleet update
-		// that leaves every agent stuck rendering as offline. This replaces the
-		// records wholesale rather than merging runtime fields, which keeps
-		// renames and enable toggles live too. Unlike initialize() it never
-		// re-runs initial selection: switching the user's environment out from
-		// under them because of a transient blip would be worse than the blip.
-		applyLiveEnvironments: (environments: Environment[]) => {
-			const available = _updateAvailable(environments);
-			if (!_selectedEnvironment) {
-				return;
-			}
-			const updated = available.find((env) => env.id === _selectedEnvironment!.id);
-			if (updated) {
-				_assignSelectedEnvironment(updated);
-			} else {
-				// The selection stays, but the shown environments changed, so subscribers still refresh.
-				_notifySelectedSubscribers();
-			}
+		applyLiveEnvironments: (environments: Environment[]): string[] => {
+			const wasOffline = new Set(_availableEnvironments.filter((env) => !isEnvironmentOnline(env)).map((env) => env.id));
+			return _updateAvailable(environments)
+				.filter((env) => wasOffline.has(env.id) && isEnvironmentOnline(env))
+				.map((env) => env.id);
 		},
-		// `navigate: false` only selects, for callers that are already loading the page that needs it.
-		setEnvironment: async (environment: Environment, { navigate = true }: { navigate?: boolean } = {}) => {
-			if (!environment.enabled) return;
-			if (_selectedEnvironment?.id !== environment.id) {
-				_assignSelectedEnvironment(environment);
-				if (!navigate) return;
-
-				// Check if we're on a resource detail page (e.g., /containers/abc123)
-				// These pages show environment-specific resources that won't exist in the new environment
-				// Navigate to the corresponding list page to avoid 500 errors
-				const listPage = getResourceListPage();
-				if (listPage) {
-					await goto(listPage);
-					return;
-				}
-
-				// Environment-scoped routes read params.id in load(), so a refresh keeps the old environment.
-				const routeEnvironmentId = page.params?.id;
-				if (routeEnvironmentId && page.route?.id?.includes('/environments/[id]')) {
-					const pathname = page.url.pathname.replace(
-						`/environments/${encodeURIComponent(routeEnvironmentId)}`,
-						`/environments/${encodeURIComponent(environment.id)}`
-					);
-					await goto(`${pathname}${page.url.search}${page.url.hash}`, { refreshAll: true });
-					return;
-				}
-
-				await refreshAll();
-			}
-		},
-		subscribeSelected: (subscriber: (environment: Environment | null) => void) => {
-			_selectedSubscribers.add(subscriber);
+		subscribeAvailable(listener: (environments: Environment[]) => void): () => void {
+			_availableListeners.add(listener);
 			return () => {
-				_selectedSubscribers.delete(subscriber);
+				_availableListeners.delete(listener);
 			};
 		},
-		isInitialized: () => _initialized,
 		getLocalEnvironment: () => _availableEnvironments.find((env) => env.id === LOCAL_DOCKER_ENVIRONMENT_ID) || null,
 		ready: _readyPromise,
-		// The root load can switch environments for the route it loads; lookups wait until it has chosen.
-		holdSelection: (): (() => void) => {
-			let release!: () => void;
-			const hold = new Promise<void>((resolve) => (release = resolve));
-			_selectionHold = hold;
-			return () => {
-				if (_selectionHold === hold) _selectionHold = null;
-				release();
-			};
-		},
 		getShownEnvironments: async (): Promise<EnvironmentRef[]> => {
 			await _readyPromise;
-			await _selectionHold;
 			return environmentStore.shown;
-		},
-		getCurrentEnvironmentId: async (): Promise<string> => {
-			await _readyPromise;
-			await _selectionHold;
-			return _selectedEnvironment ? _selectedEnvironment.id : LOCAL_DOCKER_ENVIRONMENT_ID;
 		}
 	};
 }

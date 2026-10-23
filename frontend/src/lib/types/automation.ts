@@ -140,6 +140,7 @@ export interface GitOpsSync {
 	id: string;
 	name: string;
 	environmentId: string;
+	environmentName?: string;
 	repositoryId: string;
 	repository?: GitRepository;
 	branch: string;

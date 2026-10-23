@@ -59,13 +59,10 @@ test.describe('Workspace restore', () => {
 		};
 		const environments = {
 			success: true,
-			data: [
-				{ id: '0', name: 'Local', apiUrl: '', status: 'online', enabled: true, isEdge: false }
-			],
+			data: [{ id: '0', name: 'Local', apiUrl: '', status: 'online', enabled: true }],
 			pagination: { currentPage: 1, totalPages: 1, totalItems: 1, itemsPerPage: 1000 }
 		};
 		const version = { currentVersion: 'e2e', displayVersion: 'e2e', enabledFeatures: [] };
-		await page.addInitScript(() => localStorage.removeItem('selectedEnvironmentId'));
 		await page.route(/\/api\/auth\/bootstrap(?:\?.*)?$/, async (route) => {
 			const bootstrap = await route.fetch();
 			const body = await bootstrap.json();
@@ -181,7 +178,7 @@ test.describe('Workspace restore', () => {
 			}
 		);
 
-		await page.goto(`/volumes/${encodedVolume}?tab=backups`);
+		await page.goto(`/volumes/${encodedVolume}?tab=backups&env=0`);
 		await openVolumeRestoreFilesDialog(page);
 	}
 
@@ -644,7 +641,7 @@ test.describe('Workspace restore', () => {
 			const restoreBodies: Array<Record<string, unknown>> = [];
 			await mockProjectWorkspacePage(page, () => workspaceState);
 
-			await page.goto(`/projects/${PROJECT_ID}?tab=compose`);
+			await page.goto(`/projects/${PROJECT_ID}?tab=compose&env=0`);
 			await page
 				.locator('[data-path="workspace.txt"]')
 				.getByRole('button', { name: 'workspace.txt', exact: true })
@@ -685,7 +682,7 @@ test.describe('Workspace restore', () => {
 			await dialog.getByRole('button', { name: 'Restore files' }).click();
 			await expect.poll(() => restoreBodies.length).toBe(1);
 
-			await navigateInApp(page, `/projects/${PROJECT_ID}?tab=compose`);
+			await navigateInApp(page, `/projects/${PROJECT_ID}?tab=compose&env=0`);
 			await page
 				.locator('[data-path="workspace.txt"]')
 				.getByRole('button', { name: 'workspace.txt', exact: true })

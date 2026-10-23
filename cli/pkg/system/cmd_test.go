@@ -28,7 +28,7 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 	configPath := testutil.WriteConfig(t, srv.URL)
 	outBuf, errOut, err := testutil.Execute(
 		t,
-		[]string{"--config", configPath, "system", "containers", "start"},
+		[]string{"--config", configPath, "--env", "0", "system", "containers", "start"},
 	)
 
 	require.Error(t, err,
@@ -44,7 +44,7 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 		partial bool
 		cancel  bool
 	}{
-		{name: "fleet succeeds"}, {name: "fleet continues after failure", partial: true}, {name: "fleet requires consent without a terminal", cancel: true},
+		{name: "all environments succeed"}, {name: "continues after failure", partial: true}, {name: "requires consent without a terminal", cancel: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var mu sync.Mutex
@@ -66,7 +66,7 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 				_, _ = w.Write([]byte(`{"success":true,"data":{"message":"started"}}`))
 			}))
 			defer server.Close()
-			path := testutil.WriteConfig(t, server.URL, true)
+			path := testutil.WriteConfig(t, server.URL)
 			args := []string{"--config", path, "--json"}
 			if !tc.cancel {
 				args = append(args, "--yes")
@@ -79,7 +79,8 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 				require.ErrorContains(t, runErr, "re-run with --yes")
 				require.Empty(t, paths)
 				require.Empty(t, out)
-				require.Contains(t, diagnostics, "Local, Remote")
+				require.ErrorContains(t, runErr, "in all 2 environments?")
+				require.NotContains(t, runErr.Error(), "Local")
 				return
 			}
 			require.Equal(t, []string{"/api/environments/0/system/containers?action=startall", "/api/environments/remote/system/containers?action=startall"}, paths)

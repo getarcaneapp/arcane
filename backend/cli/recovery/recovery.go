@@ -132,6 +132,12 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 		return errors.New("unsupported or incomplete Arcane recovery manifest")
 	}
 	manifest.Environment = schema.ManifestEnvironment(manifest)
+	if config.DirectAgentRequested(func(name string) string {
+		return manifest.Environment[name]
+	}) && manifest.Environment["ARCANE_EDGE_AGENT"] != "true" {
+		restart()
+		return fmt.Errorf("refusing to recover Arcane container: %w", config.ErrDirectAgentRemoved)
+	}
 	// Projects were restored into the current directory, so the recovered
 	// configuration must keep pointing there rather than at the backup-time path.
 	manifest.Environment[settings.EnvName("projectsDirectory", "")] = cmp.Or(request.ProjectsSetting, manifest.Environment[settings.EnvName("projectsDirectory", "")])
@@ -166,7 +172,7 @@ func finalizeRestoredBackup(ctx context.Context, environment map[string]string, 
 	encryptionKey, err := settings.ResolveEncryptionKey(ctx, &database.DB{DB: db}, &config.Config{
 		EncryptionKey: environment["ARCANE_ENCRYPTION_KEY"],
 		Environment:   config.AppEnvironment(environment["ARCANE_ENVIRONMENT"]),
-		AgentMode:     environment["ARCANE_AGENT_MODE"] == "true",
+		EdgeAgent:     environment["ARCANE_EDGE_AGENT"] == "true",
 	})
 	if err != nil {
 		return err
@@ -174,7 +180,7 @@ func finalizeRestoredBackup(ctx context.Context, environment map[string]string, 
 	crypto.InitEncryption(&crypto.Config{
 		EncryptionKey: encryptionKey,
 		Environment:   environment["ARCANE_ENVIRONMENT"],
-		AgentMode:     environment["ARCANE_AGENT_MODE"] == "true",
+		AgentMode:     environment["ARCANE_EDGE_AGENT"] == "true",
 	})
 	if finalizeRestoredRunErr := finalizeRestoredRun(db, manifestBackupID, request); finalizeRestoredRunErr != nil {
 		return finalizeRestoredRunErr

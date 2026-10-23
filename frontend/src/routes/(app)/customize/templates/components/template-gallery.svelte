@@ -16,7 +16,7 @@
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { Template } from '#lib/types/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { debounced } from '#lib/utils/ws.js';
 
@@ -42,7 +42,7 @@
 	const totalItems = $derived(templates.pagination?.totalItems ?? 0);
 	const pageSize = $derived(requestOptions.pagination?.limit ?? templates.pagination?.itemsPerPage ?? 20);
 	const hasActiveQuery = $derived(!!requestOptions.search || requestOptions.filters?.['type'] !== undefined);
-	const canCreateTemplate = $derived(hasPermission('templates:create'));
+	const canCreateTemplate = $derived(hasShownPermission('templates:create'));
 
 	const typeFilterLabel = $derived(templateTypeFilters.find((f) => f.value === typeFilter)?.label ?? m.common_all());
 

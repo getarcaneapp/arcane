@@ -29,7 +29,6 @@
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type {
 		RawServiceNetworkAttachment,
 		RawServiceVirtualIP,
@@ -177,7 +176,7 @@
 	const showNetworkTab = $derived(hasPorts || hasNetworks);
 	const hasMounts = $derived(mounts.length > 0);
 
-	const envId = $derived(environmentStore.selected?.id || '0');
+	const envId = $derived(data.envId);
 	const canManageServices = $derived(hasPermission('swarm:services', envId));
 	const canScaleService = $derived(canManageServices && showsReplicas);
 
@@ -267,7 +266,7 @@
 		if (!service?.id) return;
 		isLoading.update = true;
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(swarmService.updateService(service.id, { version: editVersion, ...payload })),
+			result: await tryCatch(swarmService.updateService(service.id, { version: editVersion, ...payload }, envId)),
 			message: m.common_update_failed({ resource: `${m.swarm_service()} "${serviceName}"` }),
 			setLoadingState: (v) => (isLoading.update = v),
 			onSuccess: async () => {
@@ -288,7 +287,7 @@
 				action: async () => {
 					isLoading.rollback = true;
 					await handleApiResultWithCallbacks({
-						result: await tryCatch(swarmService.rollbackService(service.id)),
+						result: await tryCatch(swarmService.rollbackService(service.id, envId)),
 						message: m.swarm_service_rollback_failed({ name: serviceName }),
 						setLoadingState: (v) => (isLoading.rollback = v),
 						onSuccess: async () => {
@@ -311,7 +310,7 @@
 				action: async () => {
 					isLoading.remove = true;
 					await handleApiResultWithCallbacks({
-						result: await tryCatch(swarmService.removeService(service.id)),
+						result: await tryCatch(swarmService.removeService(service.id, envId)),
 						message: m.common_delete_failed({ resource: `${m.swarm_service()} "${serviceName}"` }),
 						setLoadingState: (v) => (isLoading.remove = v),
 						onSuccess: async () => {
@@ -329,7 +328,7 @@
 		const replicas = Math.max(0, Number(scaleReplicas) || 0);
 		isLoading.scale = true;
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(swarmService.scaleService(service.id, { replicas })),
+			result: await tryCatch(swarmService.scaleService(service.id, { replicas }, envId)),
 			message: m.common_update_failed({ resource: `${m.swarm_service()} "${serviceName}"` }),
 			setLoadingState: (v) => (isLoading.scale = v),
 			onSuccess: async () => {
@@ -374,13 +373,13 @@
 
 			<Tabs.Content value="logs" class="h-full">
 				{#if selectedTab === 'logs'}
-					<ServiceLogsPanel serviceId={service.id} />
+					<ServiceLogsPanel environmentId={envId} serviceId={service.id} />
 				{/if}
 			</Tabs.Content>
 
 			<Tabs.Content value="tasks" class="h-full">
 				{#if selectedTab === 'tasks'}
-					<ServiceTasksPanel {serviceName} serviceId={service.id} />
+					<ServiceTasksPanel environmentId={envId} {serviceName} serviceId={service.id} />
 				{/if}
 			</Tabs.Content>
 

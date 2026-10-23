@@ -69,7 +69,7 @@ func newUpdateCmd() *cobra.Command {
 			return runSettingsUpdate(cmd, req)
 		},
 	}
-	cmdutil.SetScope(cmdutil.ScopeFleet, cmd)
+	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
 	cmd.Flags().StringVarP(&opts.file, "file", "f", "", "Settings JSON file")
 	_ = cmd.MarkFlagRequired("file")
 	return cmd
@@ -85,7 +85,7 @@ func newSetCmd() *cobra.Command {
 			return runSettingsUpdate(cmd, types.SettingsUpdate{args[0]: args[1]})
 		},
 	}
-	cmdutil.SetScope(cmdutil.ScopeFleet, cmd)
+	cmdutil.SetScope(cmdutil.ScopeAll, cmd)
 	return cmd
 }
 

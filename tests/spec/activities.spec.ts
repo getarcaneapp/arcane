@@ -8,7 +8,6 @@ type MockEnvironment = {
 	apiUrl: string;
 	status: 'online' | 'standby' | 'offline' | 'error' | 'pending';
 	enabled: boolean;
-	isEdge: boolean;
 };
 
 type MockActivity = {
@@ -41,17 +40,15 @@ const localEnvironment: MockEnvironment = {
 	name: 'Local',
 	apiUrl: 'unix:///var/run/docker.sock',
 	status: 'online',
-	enabled: true,
-	isEdge: false
+	enabled: true
 };
 
 const remoteEnvironment: MockEnvironment = {
 	id: 'remote-activity-test',
 	name: 'Remote Lab',
-	apiUrl: 'https://remote.example.invalid',
+	apiUrl: 'edge://remote-activity-test',
 	status: 'offline',
-	enabled: true,
-	isEdge: false
+	enabled: true
 };
 
 function paginated<T>(data: T[]) {
@@ -96,12 +93,6 @@ function activity(
 function activityEnvironmentIdFromPath(pathname: string): string | null {
 	const match = pathname.match(/^\/api\/environments\/([^/]+)\/activities$/);
 	return match ? decodeURIComponent(match[1]) : null;
-}
-
-async function preserveLocalEnvironmentSelection(page: Page) {
-	await page.addInitScript(() => {
-		localStorage.removeItem('selectedEnvironmentId');
-	});
 }
 
 async function mockSession(
@@ -329,20 +320,19 @@ function waitForActivityStream(page: Page) {
 }
 
 test.describe('Activity Center', () => {
-	test('scopes aggregate activity and dashboard work to permitted environments', async ({
+	test('scopes aggregate activity and dashboard counts to permitted environments', async ({
 		page
 	}) => {
 		const onlineRemoteEnvironment = { ...remoteEnvironment, status: 'online' as const };
 		const scopedUser = user('scoped-stream-user', {
 			global: [],
-			'0': ['dashboard:read'],
+			'0': ['dashboard:read', 'containers:list'],
 			'remote-activity-test': ['activities:read']
 		});
 		const activityReads: string[] = [];
-		const dashboardRequests: string[] = [];
+		const countRequests: string[] = [];
 		const statsSockets: string[] = [];
 
-		await preserveLocalEnvironmentSelection(page);
 		await mockSession(page, {
 			environments: [localEnvironment, onlineRemoteEnvironment],
 			resolveUser: () => scopedUser
@@ -361,8 +351,8 @@ test.describe('Activity Center', () => {
 		);
 		page.on('request', (request) => {
 			const pathname = new URL(request.url()).pathname;
-			if (/^\/api\/environments\/[^/]+\/dashboard$/.test(pathname)) {
-				dashboardRequests.push(pathname);
+			if (/^\/api\/environments\/[^/]+\/containers\/counts$/.test(pathname)) {
+				countRequests.push(pathname);
 			}
 		});
 		page.on('websocket', (socket) => statsSockets.push(new URL(socket.url()).pathname));
@@ -377,15 +367,14 @@ test.describe('Activity Center', () => {
 		await expect(activityRow(activityCenter, 'local-network')).toHaveCount(0);
 		await expect.poll(() => activityReads).toContain('remote-activity-test');
 		expect(activityReads).not.toContain('0');
-		await expect.poll(() => dashboardRequests).toContain('/api/environments/0/dashboard');
-		expect(dashboardRequests).not.toContain('/api/environments/remote-activity-test/dashboard');
+		await expect.poll(() => countRequests).toContain('/api/environments/0/containers/counts');
+		expect(countRequests.some((pathname) => pathname.includes('remote-activity-test'))).toBe(false);
 		expect(statsSockets).not.toContain('/api/environments/remote-activity-test/ws/system/stats');
 	});
 
 	test('does not mount the activity center without an effective read scope', async ({ page }) => {
 		const streamChannels: string[][] = [];
 
-		await preserveLocalEnvironmentSelection(page);
 		await mockSession(page, {
 			environments: [localEnvironment],
 			resolveUser: () =>
@@ -405,65 +394,9 @@ test.describe('Activity Center', () => {
 		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Open activity center' })).toHaveCount(0);
 		await expect
-			.poll(() => streamChannels.some((channels) => channels.includes('dashboard')))
+			.poll(() => streamChannels.some((channels) => channels.includes('version')))
 			.toBe(true);
 		expect(streamChannels.some((channels) => channels.includes('activities'))).toBe(false);
-	});
-
-	test('keeps an in-flight activity snapshot when the dashboard channel restarts the stream', async ({
-		page
-	}) => {
-		const snapshotActivity = activity('delayed-activity', '0', 'Local', 'delayed-network', 1);
-		let markSnapshotRequested!: () => void;
-		const snapshotRequested = new Promise<void>((resolve) => {
-			markSnapshotRequested = resolve;
-		});
-		let releaseSnapshot!: () => void;
-		const snapshotReleased = new Promise<void>((resolve) => {
-			releaseSnapshot = resolve;
-		});
-
-		await preserveLocalEnvironmentSelection(page);
-		await mockSession(page, {
-			environments: [localEnvironment],
-			resolveUser: () => user('snapshot-generation-user', { global: ['*'] })
-		});
-		await page.context().route(/\/api\/stream(?:\?.*)?$/, async (route) => {
-			await route.fulfill({ status: 503, contentType: 'application/json', body: '{}' });
-		});
-		await page.context().route(/\/api\/environments\/0\/activities(?:\?.*)?$/, async (route) => {
-			markSnapshotRequested();
-			await snapshotReleased;
-			await route.fulfill({
-				status: 200,
-				contentType: 'application/json',
-				body: JSON.stringify(paginated([snapshotActivity]))
-			});
-		});
-
-		await page.goto('/containers');
-		await snapshotRequested;
-		const dashboardStream = page.waitForRequest((request) => {
-			const url = new URL(request.url());
-			const channels = url.searchParams.get('channels')?.split(',') ?? [];
-			return (
-				url.pathname === '/api/stream' &&
-				channels.includes('activities') &&
-				channels.includes('dashboard')
-			);
-		});
-		try {
-			await Promise.all([
-				dashboardStream,
-				page.getByRole('link', { name: 'Dashboard', exact: true }).click()
-			]);
-			releaseSnapshot();
-
-			const activityCenter = await openActivityCenter(page);
-			await expect(activityRow(activityCenter, 'delayed-network')).toBeVisible();
-		} finally {
-			releaseSnapshot();
-		}
 	});
 
 	test('clears activity state when the authenticated user changes', async ({ page }) => {
@@ -471,7 +404,6 @@ test.describe('Activity Center', () => {
 		const streamedUsers: string[] = [];
 		const permissions = { global: ['*'] };
 
-		await preserveLocalEnvironmentSelection(page);
 		await mockSession(page, {
 			environments: [localEnvironment],
 			resolveUser: () => user(activeUserId, permissions)
@@ -543,7 +475,6 @@ test.describe('Activity Center', () => {
 	});
 
 	test('shows activity from every configured environment', async ({ page }) => {
-		await preserveLocalEnvironmentSelection(page);
 		await mockSession(page, { environments: [localEnvironment, remoteEnvironment] });
 		await mockActivityReads(page, {
 			'0': [activity('local-activity', '0', 'Local', 'local-network', 5)],
@@ -563,11 +494,9 @@ test.describe('Activity Center', () => {
 		await expect(activityRow(activityCenter, 'remote-network')).toBeVisible();
 		await expect(activityCenter.getByText('Local').first()).toBeVisible();
 		await expect(activityCenter.getByText('Remote Lab').first()).toBeVisible();
-		await expect(page.getByRole('button', { name: 'Local', exact: false }).first()).toBeVisible();
 	});
 
 	test('keeps reachable activity visible when a configured environment fails', async ({ page }) => {
-		await preserveLocalEnvironmentSelection(page);
 		await mockSession(page, { environments: [localEnvironment, remoteEnvironment] });
 		await mockActivityReads(
 			page,
@@ -601,7 +530,6 @@ test.describe('Activity Center', () => {
 	test('clears history for every configured environment and reports partial failures', async ({
 		page
 	}) => {
-		await preserveLocalEnvironmentSelection(page);
 		await mockSession(page, { environments: [localEnvironment, remoteEnvironment] });
 		await mockActivityReads(page, {
 			'0': [activity('local-activity', '0', 'Local', 'local-network', 5)],
@@ -652,8 +580,6 @@ test.describe('Activity Center', () => {
 	test('shows completed activity details for UI-triggered work', async ({ page }) => {
 		const networkName = `e2e-activity-network-${Date.now()}`;
 		let networkId: string | undefined;
-
-		await preserveLocalEnvironmentSelection(page);
 
 		try {
 			const created = await createNetworkViaUI(page, networkName);

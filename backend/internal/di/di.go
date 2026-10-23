@@ -190,7 +190,6 @@ var ServiceOptions = fx.Options(
 		environment.New,
 		image.New,
 		container.New,
-		dashboard.New,
 		swarm.New,
 		podman.New,
 		system.New,
@@ -206,13 +205,15 @@ var ServiceOptions = fx.Options(
 		upload.New,
 		search.New,
 		health.New,
-		func(service *activity.ActivityService, localEnvironment *environment.EnvironmentService) *activity.Module {
+		func(service *activity.ActivityService, localEnvironment *environment.EnvironmentService, eventService *event.EventService) *activity.Module {
 			return activity.New(service, activity.EnvironmentDependencies{
 				ProxyJSONRequest:               localEnvironment.ProxyJSONRequest,
 				ListActiveRemoteEnvironments:   localEnvironment.ListActiveRemoteEnvironments,
 				GetActiveRemoteEnvironment:     localEnvironment.GetActiveRemoteEnvironmentSnapshot,
 				ProxyJSONRequestForEnvironment: localEnvironment.ProxyJSONRequestForEnvironment,
 				ResolveEnvironmentName:         localEnvironment.ResolveEnvironmentName,
+				Changes:                        eventService.Changes,
+				EnvironmentChanges:             eventService.EnvironmentChanges,
 			})
 		},
 		func(service *imageupdate.ImageUpdateService, imageService *image.ImageService) *imageupdate.Module {

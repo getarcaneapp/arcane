@@ -2,6 +2,7 @@
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import KeyValueEditor from '#lib/components/form/key-value-editor.svelte';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
@@ -12,6 +13,7 @@
 	import { InfoIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
+	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type { SwarmKvSummary } from '#lib/types/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -24,13 +26,15 @@
 	let {
 		open = $bindable(false),
 		resource,
-		environmentId,
+		environmentId = $bindable(),
+		environments,
 		existing,
 		onSaved
 	}: {
 		open: boolean;
 		resource: SwarmKvResource;
 		environmentId: string;
+		environments?: EnvironmentRef[];
 		existing: SwarmKvSummary | null;
 		onSaved: () => Promise<void>;
 	} = $props();
@@ -122,6 +126,14 @@
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
+			{#if !existing}
+				<EnvironmentDestinationSelect
+					bind:value={environmentId}
+					permission={resource.permission}
+					{environments}
+					variant="field"
+				/>
+			{/if}
 			<TextInputWithLabel
 				id="swarm-kv-name"
 				label={m.common_name()}

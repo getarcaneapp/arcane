@@ -5,6 +5,7 @@ import { swarmService } from '#lib/services/swarm-service.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import { userHasPermission } from '#lib/utils/auth.js';
 import { isEnvironmentOnline } from '#lib/utils/docker.js';
+import { sumAcrossEnvironments } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
@@ -28,7 +29,12 @@ export const load: PageLoad = async ({ params, parent }) => {
 				? tryCatch(
 						queryClient.query({
 							queryKey: queryKeys.swarm.status(params.id),
-							queryFn: () => swarmService.getSwarmStatus(params.id)
+							queryFn: () =>
+								sumAcrossEnvironments(
+									[{ id: params.id, name: environment.name }],
+									(scope, config) => swarmService.getSwarmStatus(scope, config),
+									{ enabled: false }
+								)
 						})
 					).then((result) => result.data?.enabled === true)
 				: Promise.resolve(false);

@@ -480,6 +480,7 @@ type PodmanStatus struct {
 	SystemdAvailable     bool                 `json:"systemdAvailable"`
 	SystemdScope         PodmanSystemdScope   `json:"systemdScope,omitempty"`
 	SystemdReason        string               `json:"systemdReason,omitempty"`
+	PodCount             int                  `json:"podCount" doc:"Number of Podman pods"`
 }
 
 type PodmanSystemdAvailability struct {

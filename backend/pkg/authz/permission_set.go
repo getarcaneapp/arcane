@@ -1,6 +1,10 @@
 package authz
 
-import "strings"
+import (
+	"maps"
+	"slices"
+	"strings"
+)
 
 // PermissionSet is the effective permission set for one caller in one request.
 // Built once by the auth bridge and stashed in the request context.
@@ -54,6 +58,22 @@ func (ps *PermissionSet) AllowsAny(perm string) bool {
 		}
 	}
 	return false
+}
+
+// AccessibleEnvironmentIDs returns nil when the caller may list every environment,
+// otherwise the sorted IDs it holds at least one permission on.
+func (ps *PermissionSet) AccessibleEnvironmentIDs() []string {
+	switch {
+	case ps == nil:
+		return []string{}
+	case ps.Allows(PermEnvironmentsList, ""):
+		return nil
+	default:
+		// Never nil: callers treat nil as unrestricted, so a user without grants must get an empty list.
+		ids := slices.AppendSeq(make([]string, 0, len(ps.PerEnv)), maps.Keys(ps.PerEnv))
+		slices.Sort(ids)
+		return ids
+	}
 }
 
 // IsGlobalAdmin reports whether the caller holds enough global permissions to

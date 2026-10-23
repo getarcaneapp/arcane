@@ -208,7 +208,7 @@ func newTestSettingsModule(t *testing.T, cfg *config.Config) *settings.Module {
 
 func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 	cfg := &config.Config{
-		AgentMode:   true,
+		EdgeAgent:   true,
 		AppUrl:      "http://localhost:3552",
 		Environment: config.AppEnvironmentTest,
 	}
@@ -342,9 +342,8 @@ func TestHTTPServerStopCancelsStreamingRequestContexts(t *testing.T) {
 	})
 
 	cfg := &config.Config{
-		AgentMode: true,
-		Listen:    "127.0.0.1",
-		Port:      "0",
+		Listen: "127.0.0.1",
+		Port:   "0",
 	}
 	lifecycle := fxtest.NewLifecycle(t)
 	srv, err := NewHTTPServer(lifecycle, HTTPServerParams{
@@ -369,7 +368,6 @@ func TestHTTPServerStopCancelsStreamingRequestContexts(t *testing.T) {
 
 func TestNewHTTPServerRejectsInvalidTLSCertificate(t *testing.T) {
 	cfg := &config.Config{
-		AgentMode:   true,
 		TLSEnabled:  true,
 		TLSCertFile: t.TempDir() + "/missing.crt",
 		TLSKeyFile:  t.TempDir() + "/missing.key",
@@ -430,7 +428,7 @@ func TestJobSchedulerStopCancelsItsPrivateContext(t *testing.T) {
 		&config.Config{},
 		coordinator,
 		role.NewRoleService(&database.DB{DB: db}),
-		environment.NewEnvironmentService(&database.DB{DB: db}, nil, nil, nil, nil, nil),
+		environment.NewEnvironmentService(&database.DB{DB: db}, nil, nil, nil, nil),
 		activity.NewActivityService(&database.DB{DB: db}, nil),
 	)
 	gitopsSync := gitops.NewGitOpsSyncService(&database.DB{DB: db}, nil, nil, nil, nil, nil)
@@ -492,22 +490,6 @@ func TestApplicationOptionsValidate(t *testing.T) {
 		cancelApp,
 	))
 	require.NoError(t, err)
-}
-
-func TestPrepareServerTLS_AgentModeSkipsManagerMTLSValidation(t *testing.T) {
-	cfg := &config.Config{
-		AgentMode:     true,
-		EdgeMTLSMode:  "required",
-		ManagerApiUrl: "https://127.0.0.1:3552",
-	}
-
-	useTLS, tlsCertFile, tlsKeyFile, edgeCfg, err := prepareServerTLS(t.Context(), cfg)
-	require.NoError(t, err)
-	assert.False(t, useTLS)
-	assert.Empty(t, tlsCertFile)
-	assert.Empty(t, tlsKeyFile)
-	require.NotNil(t, edgeCfg)
-	assert.Equal(t, "required", edgeCfg.EdgeMTLSMode)
 }
 
 func TestPrepareServerTLS_AllowsExternalMTLSTermination(t *testing.T) {

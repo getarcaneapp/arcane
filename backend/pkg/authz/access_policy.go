@@ -12,9 +12,9 @@ const (
 	AccessMatchModeAnyOf = "any-of"
 	AccessMatchModeAllOf = "all-of"
 
-	AccessScopeModeGlobalOnly            = "global-only"
-	AccessScopeModeSelectedEnvPlusGlobal = "selected-env-plus-global"
-	AccessScopeModeAnyEffectiveScope     = "any-effective-scope"
+	AccessScopeModeGlobalOnly        = "global-only"
+	AccessScopeModeEnvPlusGlobal     = "env-plus-global"
+	AccessScopeModeAnyEffectiveScope = "any-effective-scope"
 )
 
 // AccessSurface describes one frontend-visible surface whose reachability is
@@ -41,60 +41,56 @@ var accessSurfacesInternal = []AccessSurface{
 		"customize.category.git-repositories",
 	}, 40),
 	landingSurfaceInternal("landing.settings", "/settings", "Settings", []string{
-		"settings.category.activity",
 		"settings.category.apikeys",
 		"settings.category.authentication",
-		"settings.category.build",
-		"settings.category.jobschedule",
 		"settings.category.notifications",
 		"settings.category.roles",
 		"settings.category.s3destinations",
 		"settings.category.systembackups",
-		"settings.category.timeouts",
 		"settings.category.users",
 		"settings.category.webhooks",
 		"settings.category.diagnostics",
 	}, 120),
 
-	routeSurfaceInternal("route.dashboard", "/dashboard", "Dashboard", AccessScopeModeSelectedEnvPlusGlobal, []string{PermDashboardRead}, 10),
-	routeSurfaceInternal("route.projects", "/projects", "Projects", AccessScopeModeSelectedEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead}, 30),
-	routeSurfaceInternal("route.projects.new", "/projects/new", "Create project", AccessScopeModeSelectedEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead, PermProjectsCreate}, 0),
-	routeSurfaceInternal("route.projects.detail", "/projects/{projectId}", "Project", AccessScopeModeSelectedEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead}, 0),
+	routeSurfaceInternal("route.dashboard", "/dashboard", "Dashboard", AccessScopeModeEnvPlusGlobal, []string{PermDashboardRead}, 10),
+	routeSurfaceInternal("route.projects", "/projects", "Projects", AccessScopeModeEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead}, 30),
+	routeSurfaceInternal("route.projects.new", "/projects/new", "Create project", AccessScopeModeEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead, PermProjectsCreate}, 0),
+	routeSurfaceInternal("route.projects.detail", "/projects/{projectId}", "Project", AccessScopeModeEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead}, 0),
 	routeSurfaceInternal("route.environments", "/environments", "Environments", AccessScopeModeGlobalOnly, []string{PermEnvironmentsList, PermEnvironmentsRead}, 130),
 	routeSurfaceInternal("route.environments.detail", "/environments/{id}", "Environment", AccessScopeModeGlobalOnly, []string{PermEnvironmentsList, PermEnvironmentsRead}, 0),
-	routeSurfaceInternal("route.environments.gitops", "/environments/{id}/gitops", "GitOps Syncs", AccessScopeModeSelectedEnvPlusGlobal, []string{PermGitOpsList, PermGitOpsRead}, 0),
-	routeSurfaceInternal("route.containers", "/containers", "Containers", AccessScopeModeSelectedEnvPlusGlobal, []string{PermContainersList, PermContainersRead}, 20),
-	routeSurfaceInternal("route.containers.detail", "/containers/{containerId}", "Container", AccessScopeModeSelectedEnvPlusGlobal, []string{PermContainersList, PermContainersRead}, 0),
-	routeSurfaceInternal("route.images", "/images", "Images", AccessScopeModeSelectedEnvPlusGlobal, []string{PermImagesList, PermImagesRead}, 50),
-	routeSurfaceInternal("route.images.detail", "/images/{imageId}", "Image", AccessScopeModeSelectedEnvPlusGlobal, []string{PermImagesList, PermImagesRead}, 0),
-	routeSurfaceInternal("route.images.builds", "/images/builds", "Builds", AccessScopeModeSelectedEnvPlusGlobal, []string{PermImagesBuild}, 0),
+	routeSurfaceInternal("route.gitops", "/gitops", "GitOps Syncs", AccessScopeModeEnvPlusGlobal, []string{PermGitOpsList, PermGitOpsRead}, 0),
+	routeSurfaceInternal("route.containers", "/containers", "Containers", AccessScopeModeEnvPlusGlobal, []string{PermContainersList, PermContainersRead}, 20),
+	routeSurfaceInternal("route.containers.detail", "/containers/{containerId}", "Container", AccessScopeModeEnvPlusGlobal, []string{PermContainersList, PermContainersRead}, 0),
+	routeSurfaceInternal("route.images", "/images", "Images", AccessScopeModeEnvPlusGlobal, []string{PermImagesList, PermImagesRead}, 50),
+	routeSurfaceInternal("route.images.detail", "/images/{imageId}", "Image", AccessScopeModeEnvPlusGlobal, []string{PermImagesList, PermImagesRead}, 0),
+	routeSurfaceInternal("route.images.builds", "/images/builds", "Builds", AccessScopeModeEnvPlusGlobal, []string{PermImagesBuild}, 0),
 	// The security page moved from /images/vulnerabilities; the surface ID stays
 	// stable so saved role access scopes keep working.
-	routeSurfaceInternal("route.images.vulnerabilities", "/security", "Security", AccessScopeModeSelectedEnvPlusGlobal, []string{PermVulnsRead}, 55),
-	routeSurfaceInternal("route.updates", "/updates", "Image Updates", AccessScopeModeSelectedEnvPlusGlobal, []string{PermImageUpdatesRead}, 0),
-	routeSurfaceInternal("route.networks", "/networks", "Networks", AccessScopeModeSelectedEnvPlusGlobal, []string{PermNetworksList, PermNetworksRead}, 70),
-	routeSurfaceInternal("route.networks.detail", "/networks/{networkId}", "Network", AccessScopeModeSelectedEnvPlusGlobal, []string{PermNetworksList, PermNetworksRead}, 0),
-	routeSurfaceInternal("route.ports", "/networks/ports", "Ports", AccessScopeModeSelectedEnvPlusGlobal, []string{PermContainersList}, 0),
-	routeSurfaceInternal("route.networks.topology", "/networks/topology", "Network Topology", AccessScopeModeSelectedEnvPlusGlobal, []string{PermNetworksRead}, 0),
-	routeSurfaceInternal("route.volumes", "/volumes", "Volumes", AccessScopeModeSelectedEnvPlusGlobal, []string{PermVolumesList, PermVolumesRead}, 60),
-	routeSurfaceInternal("route.volumes.detail", "/volumes/{volumeName}", "Volume", AccessScopeModeSelectedEnvPlusGlobal, []string{PermVolumesList, PermVolumesRead}, 0),
-	routeSurfaceInternal("route.swarm", "/swarm", "Swarm", AccessScopeModeSelectedEnvPlusGlobal, []string{PermSwarmRead}, 0),
-	routeSurfaceInternal("route.swarm.services", "/swarm/services", "Services", AccessScopeModeSelectedEnvPlusGlobal, []string{PermSwarmRead}, 80),
-	routeSurfaceInternal("route.swarm.services.detail", "/swarm/services/{serviceId}", "Service", AccessScopeModeSelectedEnvPlusGlobal, []string{PermSwarmRead}, 0),
-	routeSurfaceInternal("route.swarm.nodes", "/swarm/nodes", "Nodes", AccessScopeModeSelectedEnvPlusGlobal, []string{PermSwarmRead}, 0),
-	routeSurfaceInternal("route.swarm.tasks", "/swarm/tasks", "Tasks", AccessScopeModeSelectedEnvPlusGlobal, []string{PermSwarmRead}, 0),
-	routeSurfaceInternal("route.swarm.stacks", "/swarm/stacks", "Stacks", AccessScopeModeSelectedEnvPlusGlobal, []string{PermSwarmRead}, 90),
-	routeSurfaceInternal("route.swarm.stacks.new", "/swarm/stacks/new", "Create stack", AccessScopeModeSelectedEnvPlusGlobal, []string{PermSwarmStacks}, 0),
-	routeSurfaceInternal("route.swarm.stacks.detail", "/swarm/stacks/{name}", "Stack", AccessScopeModeSelectedEnvPlusGlobal, []string{PermSwarmRead}, 0),
-	routeSurfaceInternal("route.swarm.cluster", "/swarm/cluster", "Cluster", AccessScopeModeSelectedEnvPlusGlobal, []string{PermSwarmRead}, 100),
-	routeSurfaceInternal("route.swarm.configs", "/swarm/configs", "Configs", AccessScopeModeSelectedEnvPlusGlobal, []string{PermSwarmRead}, 0),
-	routeSurfaceInternal("route.swarm.secrets", "/swarm/secrets", "Secrets", AccessScopeModeSelectedEnvPlusGlobal, []string{PermSwarmRead}, 0),
-	routeSurfaceInternal("route.podman", "/podman/pods", "Podman", AccessScopeModeSelectedEnvPlusGlobal, []string{PermPodmanRead}, 0),
-	routeSurfaceInternal("route.podman.quadlets", "/podman/quadlets", "Quadlets", AccessScopeModeSelectedEnvPlusGlobal, []string{PermPodmanRead}, 0),
-	allOfRouteSurfaceInternal("route.podman.quadlets.new", "/podman/quadlets/new", "Install quadlet", AccessScopeModeSelectedEnvPlusGlobal, []string{PermPodmanRead, PermPodmanQuadlets}),
-	allOfRouteSurfaceInternal("route.podman.kube", "/podman/kube", "Kube", AccessScopeModeSelectedEnvPlusGlobal, []string{PermPodmanRead, PermPodmanKube}),
-	routeSurfaceInternal("route.podman.secrets", "/podman/secrets", "Podman secrets", AccessScopeModeSelectedEnvPlusGlobal, []string{PermPodmanRead}, 0),
-	allOfRouteSurfaceInternal("route.podman.autoupdate", "/podman/autoupdate", "Podman auto-update", AccessScopeModeSelectedEnvPlusGlobal, []string{PermPodmanRead, PermPodmanAutoUpdate}),
+	routeSurfaceInternal("route.images.vulnerabilities", "/security", "Security", AccessScopeModeEnvPlusGlobal, []string{PermVulnsRead}, 55),
+	routeSurfaceInternal("route.updates", "/updates", "Image Updates", AccessScopeModeEnvPlusGlobal, []string{PermImageUpdatesRead}, 0),
+	routeSurfaceInternal("route.networks", "/networks", "Networks", AccessScopeModeEnvPlusGlobal, []string{PermNetworksList, PermNetworksRead}, 70),
+	routeSurfaceInternal("route.networks.detail", "/networks/{networkId}", "Network", AccessScopeModeEnvPlusGlobal, []string{PermNetworksList, PermNetworksRead}, 0),
+	routeSurfaceInternal("route.ports", "/networks/ports", "Ports", AccessScopeModeEnvPlusGlobal, []string{PermContainersList}, 0),
+	routeSurfaceInternal("route.networks.topology", "/networks/topology", "Network Topology", AccessScopeModeEnvPlusGlobal, []string{PermNetworksRead}, 0),
+	routeSurfaceInternal("route.volumes", "/volumes", "Volumes", AccessScopeModeEnvPlusGlobal, []string{PermVolumesList, PermVolumesRead}, 60),
+	routeSurfaceInternal("route.volumes.detail", "/volumes/{volumeName}", "Volume", AccessScopeModeEnvPlusGlobal, []string{PermVolumesList, PermVolumesRead}, 0),
+	routeSurfaceInternal("route.swarm", "/swarm", "Swarm", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
+	routeSurfaceInternal("route.swarm.services", "/swarm/services", "Services", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 80),
+	routeSurfaceInternal("route.swarm.services.detail", "/swarm/services/{serviceId}", "Service", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
+	routeSurfaceInternal("route.swarm.nodes", "/swarm/nodes", "Nodes", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
+	routeSurfaceInternal("route.swarm.tasks", "/swarm/tasks", "Tasks", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
+	routeSurfaceInternal("route.swarm.stacks", "/swarm/stacks", "Stacks", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 90),
+	routeSurfaceInternal("route.swarm.stacks.new", "/swarm/stacks/new", "Create stack", AccessScopeModeEnvPlusGlobal, []string{PermSwarmStacks}, 0),
+	routeSurfaceInternal("route.swarm.stacks.detail", "/swarm/stacks/{name}", "Stack", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
+	routeSurfaceInternal("route.swarm.cluster", "/swarm/cluster", "Cluster", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 100),
+	routeSurfaceInternal("route.swarm.configs", "/swarm/configs", "Configs", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
+	routeSurfaceInternal("route.swarm.secrets", "/swarm/secrets", "Secrets", AccessScopeModeEnvPlusGlobal, []string{PermSwarmRead}, 0),
+	routeSurfaceInternal("route.podman", "/podman/pods", "Podman", AccessScopeModeEnvPlusGlobal, []string{PermPodmanRead}, 0),
+	routeSurfaceInternal("route.podman.quadlets", "/podman/quadlets", "Quadlets", AccessScopeModeEnvPlusGlobal, []string{PermPodmanRead}, 0),
+	allOfRouteSurfaceInternal("route.podman.quadlets.new", "/podman/quadlets/new", "Install quadlet", AccessScopeModeEnvPlusGlobal, []string{PermPodmanRead, PermPodmanQuadlets}),
+	allOfRouteSurfaceInternal("route.podman.kube", "/podman/kube", "Kube", AccessScopeModeEnvPlusGlobal, []string{PermPodmanRead, PermPodmanKube}),
+	routeSurfaceInternal("route.podman.secrets", "/podman/secrets", "Podman secrets", AccessScopeModeEnvPlusGlobal, []string{PermPodmanRead}, 0),
+	allOfRouteSurfaceInternal("route.podman.autoupdate", "/podman/autoupdate", "Podman auto-update", AccessScopeModeEnvPlusGlobal, []string{PermPodmanRead, PermPodmanAutoUpdate}),
 	routeSurfaceInternal("route.events", "/events", "Events", AccessScopeModeGlobalOnly, []string{PermEventsRead}, 110),
 	routeSurfaceInternal("route.activities", "", "Activities", AccessScopeModeAnyEffectiveScope, []string{PermActivitiesRead}, 0),
 	allOfRouteSurfaceInternal("route.oidc-role-mappings", "", "OIDC Role Mappings", AccessScopeModeGlobalOnly, AllPermissions()),
@@ -123,20 +119,16 @@ var accessSurfacesInternal = []AccessSurface{
 	routeSurfaceInternal("route.customize.templates.detail", "/customize/templates/{id}", "Template", AccessScopeModeGlobalOnly, []string{PermCustomizeManage, PermTemplatesList, PermTemplatesRead}, 0),
 	allOfRouteSurfaceInternal("route.customize.registries.browse", "/customize/registries/{id}", "Registry browser", AccessScopeModeGlobalOnly, []string{PermRegistriesRead, PermRegistriesBrowse}),
 
-	settingsCategorySurfaceInternal("activity", "/settings/activity", "Activity", AccessScopeModeGlobalOnly, []string{PermSettingsRead}),
 	settingsCategorySurfaceInternal("apikeys", "/settings/api-keys", "API Keys", AccessScopeModeGlobalOnly, []string{PermApiKeysList, PermApiKeysRead}),
 	settingsCategorySurfaceInternal("authentication", "/settings/authentication", "Authentication", AccessScopeModeGlobalOnly, []string{PermSettingsRead}),
-	settingsCategorySurfaceInternal("build", "/settings/builds", "Builds", AccessScopeModeGlobalOnly, []string{PermSettingsRead}),
-	settingsCategorySurfaceInternal("jobschedule", "/settings/jobs", "Automations", AccessScopeModeSelectedEnvPlusGlobal, []string{PermJobsManage}),
 	settingsCategorySurfaceInternal("notifications", "/settings/notifications", "Notifications", AccessScopeModeGlobalOnly, []string{PermNotificationsManage}),
 	settingsCategorySurfaceInternal("roles", "/settings/roles", "Roles", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}),
 	settingsCategorySurfaceInternal("s3destinations", "/settings/backups/s3", "S3 Destinations", AccessScopeModeGlobalOnly, []string{PermS3DestinationsList, PermS3DestinationsRead}),
 	globalAdminSettingsCategorySurfaceInternal("systembackups", "/settings/backups", "Backups"),
 	routeSurfaceInternal("route.settings.roles.new", "/settings/roles/new", "Create role", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}, 0),
 	routeSurfaceInternal("route.settings.roles.detail", "/settings/roles/{id}", "Role", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}, 0),
-	settingsCategorySurfaceInternal("timeouts", "/settings/timeouts", "Timeouts", AccessScopeModeGlobalOnly, []string{PermSettingsRead}),
 	settingsCategorySurfaceInternal("users", "/settings/users", "Users", AccessScopeModeGlobalOnly, []string{PermUsersList, PermUsersRead}),
-	settingsCategorySurfaceInternal("webhooks", "/settings/webhooks", "Webhooks", AccessScopeModeSelectedEnvPlusGlobal, []string{PermWebhooksList}),
+	settingsCategorySurfaceInternal("webhooks", "/settings/webhooks", "Webhooks", AccessScopeModeEnvPlusGlobal, []string{PermWebhooksList}),
 	settingsCategorySurfaceInternal("diagnostics", "/settings/diagnostics", "Diagnostics", AccessScopeModeGlobalOnly, []string{PermDiagnosticsRead}),
 
 	customizeCategorySurfaceInternal("templates", "/customize/templates", "Templates", []string{PermCustomizeManage, PermTemplatesList, PermTemplatesRead}),
@@ -160,22 +152,22 @@ func AccessSurfaces() []AccessSurface {
 // CanAccessSurface evaluates backend-owned UI reachability metadata for the
 // caller. It is for advisory UX only; middleware and handlers still enforce
 // permissions on actual API requests.
-func CanAccessSurface(ps *PermissionSet, surfaceID, selectedEnvID string) bool {
-	return canAccessSurfaceInternal(ps, surfaceID, selectedEnvID, make(map[string]struct{}))
+func CanAccessSurface(ps *PermissionSet, surfaceID, envID string) bool {
+	return canAccessSurfaceInternal(ps, surfaceID, envID, make(map[string]struct{}))
 }
 
 // CanAccessSettingsCategory reports whether a settings category is reachable
 // for the selected environment.
-func CanAccessSettingsCategory(ps *PermissionSet, categoryID, selectedEnvID string) bool {
-	return CanAccessSurface(ps, "settings.category."+categoryID, selectedEnvID)
+func CanAccessSettingsCategory(ps *PermissionSet, categoryID, envID string) bool {
+	return CanAccessSurface(ps, "settings.category."+categoryID, envID)
 }
 
 // CanAccessCustomizeCategory reports whether a customize category is reachable.
-func CanAccessCustomizeCategory(ps *PermissionSet, categoryID, selectedEnvID string) bool {
-	return CanAccessSurface(ps, "customize.category."+categoryID, selectedEnvID)
+func CanAccessCustomizeCategory(ps *PermissionSet, categoryID, envID string) bool {
+	return CanAccessSurface(ps, "customize.category."+categoryID, envID)
 }
 
-func canAccessSurfaceInternal(ps *PermissionSet, surfaceID, selectedEnvID string, visiting map[string]struct{}) bool {
+func canAccessSurfaceInternal(ps *PermissionSet, surfaceID, envID string, visiting map[string]struct{}) bool {
 	if ps == nil {
 		return false
 	}
@@ -192,19 +184,19 @@ func canAccessSurfaceInternal(ps *PermissionSet, surfaceID, selectedEnvID string
 		visiting[surfaceID] = struct{}{}
 		defer delete(visiting, surfaceID)
 		for _, childID := range surface.Children {
-			if canAccessSurfaceInternal(ps, childID, selectedEnvID, visiting) {
+			if canAccessSurfaceInternal(ps, childID, envID, visiting) {
 				return true
 			}
 		}
 		return false
 	case AccessModePermissions:
-		return allowsSurfacePermissionsInternal(ps, surface, selectedEnvID)
+		return allowsSurfacePermissionsInternal(ps, surface, envID)
 	default:
 		return false
 	}
 }
 
-func allowsSurfacePermissionsInternal(ps *PermissionSet, surface AccessSurface, selectedEnvID string) bool {
+func allowsSurfacePermissionsInternal(ps *PermissionSet, surface AccessSurface, envID string) bool {
 	if len(surface.Permissions) == 0 {
 		return false
 	}
@@ -212,14 +204,14 @@ func allowsSurfacePermissionsInternal(ps *PermissionSet, surface AccessSurface, 
 	switch surface.MatchMode {
 	case AccessMatchModeAllOf:
 		for _, perm := range surface.Permissions {
-			if !allowsPermissionForScopeModeInternal(ps, perm, surface.ScopeMode, selectedEnvID) {
+			if !allowsPermissionForScopeModeInternal(ps, perm, surface.ScopeMode, envID) {
 				return false
 			}
 		}
 		return true
 	case AccessMatchModeAnyOf:
 		for _, perm := range surface.Permissions {
-			if allowsPermissionForScopeModeInternal(ps, perm, surface.ScopeMode, selectedEnvID) {
+			if allowsPermissionForScopeModeInternal(ps, perm, surface.ScopeMode, envID) {
 				return true
 			}
 		}
@@ -229,12 +221,12 @@ func allowsSurfacePermissionsInternal(ps *PermissionSet, surface AccessSurface, 
 	}
 }
 
-func allowsPermissionForScopeModeInternal(ps *PermissionSet, perm, scopeMode, selectedEnvID string) bool {
+func allowsPermissionForScopeModeInternal(ps *PermissionSet, perm, scopeMode, envID string) bool {
 	switch scopeMode {
 	case AccessScopeModeGlobalOnly:
 		return ps.Allows(perm, "")
-	case AccessScopeModeSelectedEnvPlusGlobal:
-		return ps.Allows(perm, selectedEnvID)
+	case AccessScopeModeEnvPlusGlobal:
+		return ps.Allows(perm, envID)
 	case AccessScopeModeAnyEffectiveScope:
 		return ps.AllowsAny(perm)
 	default:
@@ -318,7 +310,7 @@ func landingSurfaceInternal(id, url, label string, children []string, fallbackOr
 		Label:         label,
 		AccessMode:    AccessModeAnyChild,
 		MatchMode:     AccessMatchModeAnyOf,
-		ScopeMode:     AccessScopeModeSelectedEnvPlusGlobal,
+		ScopeMode:     AccessScopeModeEnvPlusGlobal,
 		Children:      append([]string(nil), children...),
 		FallbackOrder: fallbackOrder,
 	}

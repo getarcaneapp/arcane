@@ -1,4 +1,3 @@
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { FileEntry, FileContentResponse } from '#lib/types/shared.js';
 import { downloadBlob, filenameFromPath } from '#lib/utils/browser-download.js';
 
@@ -6,29 +5,22 @@ import BaseAPIService from './api-service';
 import { uploadService, type UploadProgressCallback } from './upload-service';
 
 class BuildWorkspaceService extends BaseAPIService {
-	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
-		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
-	}
-
-	async listDirectory(path: string = '/', environmentId?: string): Promise<FileEntry[]> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		const res = await this.api.get(`/environments/${envId}/builds/browse`, {
+	async listDirectory(path: string = '/', environmentId: string): Promise<FileEntry[]> {
+		const res = await this.api.get(`/environments/${environmentId}/builds/browse`, {
 			params: { path }
 		});
 		return res.data.data;
 	}
 
-	async getFileContent(path: string, environmentId?: string): Promise<FileContentResponse> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		const res = await this.api.get(`/environments/${envId}/builds/browse/content`, {
+	async getFileContent(path: string, environmentId: string): Promise<FileContentResponse> {
+		const res = await this.api.get(`/environments/${environmentId}/builds/browse/content`, {
 			params: { path }
 		});
 		return res.data.data;
 	}
 
-	async downloadFile(path: string, environmentId?: string): Promise<void> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		const res = await this.api.get(`/environments/${envId}/builds/browse/download`, {
+	async downloadFile(path: string, environmentId: string): Promise<void> {
+		const res = await this.api.get(`/environments/${environmentId}/builds/browse/download`, {
 			params: { path },
 			responseType: 'blob'
 		});
@@ -36,12 +28,16 @@ class BuildWorkspaceService extends BaseAPIService {
 		downloadBlob(res.data, filenameFromPath(path));
 	}
 
-	async uploadFile(path: string, file: File, onProgress?: UploadProgressCallback, environmentId?: string): Promise<void> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		const uploadId = await uploadService.uploadFile(envId, 'build-workspace', file, onProgress);
+	async uploadFile(
+		path: string,
+		file: File,
+		onProgress: UploadProgressCallback | undefined,
+		environmentId: string
+	): Promise<void> {
+		const uploadId = await uploadService.uploadFile(environmentId, 'build-workspace', file, onProgress);
 		return this.handleResponse(
 			this.api.post(
-				`/environments/${envId}/builds/browse/upload`,
+				`/environments/${environmentId}/builds/browse/upload`,
 				{ uploadId },
 				{
 					params: { path }
@@ -50,19 +46,17 @@ class BuildWorkspaceService extends BaseAPIService {
 		);
 	}
 
-	async createDirectory(path: string, environmentId?: string): Promise<void> {
-		const envId = await this.resolveEnvironmentId(environmentId);
+	async createDirectory(path: string, environmentId: string): Promise<void> {
 		return this.handleResponse(
-			this.api.post(`/environments/${envId}/builds/browse/mkdir`, null, {
+			this.api.post(`/environments/${environmentId}/builds/browse/mkdir`, null, {
 				params: { path }
 			})
 		);
 	}
 
-	async deleteFile(path: string, environmentId?: string): Promise<void> {
-		const envId = await this.resolveEnvironmentId(environmentId);
+	async deleteFile(path: string, environmentId: string): Promise<void> {
 		return this.handleResponse(
-			this.api.delete(`/environments/${envId}/builds/browse`, {
+			this.api.delete(`/environments/${environmentId}/builds/browse`, {
 				params: { path }
 			})
 		);

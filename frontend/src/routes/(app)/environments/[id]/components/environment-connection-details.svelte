@@ -5,7 +5,6 @@
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
 	import {
 		ArrowDownIcon,
-		ConnectionIcon,
 		EnvironmentsIcon,
 		type IconType,
 		LockIcon,
@@ -46,9 +45,7 @@
 		return nowInstantString();
 	});
 
-	// Edge agents are live while their tunnel is up; direct agents while the manager can reach them.
-	let live = $derived(environment.isEdge ? Boolean(environment.connected) : currentStatus === 'online');
-	let directSecure = $derived(environment.apiUrl.startsWith('https://'));
+	let live = $derived(Boolean(environment.connected));
 
 	let status = $derived.by((): { label: string; dot: string; description?: string } => {
 		if (live) {
@@ -62,7 +59,11 @@
 			};
 		}
 		if (currentStatus === 'pending') {
-			return { label: m.environments_edge_status_connecting(), dot: 'bg-warning' };
+			return {
+				label: m.environments_edge_status_connecting(),
+				dot: 'bg-warning',
+				description: m.environments_edge_pending_description()
+			};
 		}
 		return { label: m.disconnected(), dot: 'bg-destructive', description: m.environments_edge_disconnected_description() };
 	});
@@ -144,25 +145,19 @@
 		{/if}
 	</div>
 
-	<div class={cn('flex items-start gap-3', environment.isEdge ? 'flow-edge' : 'flow-direct')}>
+	<div class="flow-edge flex items-start gap-3">
 		{@render endpoint(EnvironmentsIcon, window.location.host)}
 		<div class={cn('flow-track flow-track-manager mt-4 min-w-6 flex-1', live && 'flow-track-live')}></div>
 		<div class="flex shrink-0 flex-col items-center gap-1.5">
 			<div class="flex size-9 items-center justify-center rounded-md border border-border">
 				{#if environment.edgeSecurityMode === 'mtls'}
 					<ShieldCheckIcon class="size-4" />
-				{:else if environment.isEdge || directSecure}
-					<LockIcon class="size-4" />
 				{:else}
-					<ConnectionIcon class="size-4" />
+					<LockIcon class="size-4" />
 				{/if}
 			</div>
 			<span class="text-xs whitespace-nowrap text-muted-foreground">
-				{#if environment.isEdge}
-					{pathCaption || securityLabel}
-				{:else}
-					{directSecure ? m.environments_edge_https_label() : m.environments_edge_http_label()}
-				{/if}
+				{pathCaption || securityLabel}
 			</span>
 		</div>
 		<div class={cn('flow-track flow-track-agent mt-4 min-w-6 flex-1', live && 'flow-track-live')}></div>
@@ -218,19 +213,9 @@
 			</Collapsible.Content>
 		</Collapsible.Root>
 	{/if}
-
-	{#if !environment.isEdge}
-		<div class="grid grid-cols-2 gap-x-6 gap-y-5 border-t border-border/50 pt-5 lg:grid-cols-4">
-			{@render stat(m.environments_api_url(), environment.apiUrl)}
-			{#if environment.lastSeen}
-				{@render stat(m.dashboard_all_last_seen(), formatRelativeTime(environment.lastSeen, { base: now }))}
-			{/if}
-		</div>
-	{/if}
 </div>
 
 <style>
-	/* A live tunnel carries a packet: edge agents send it agent → manager; direct agents bounce it manager → agent → manager. */
 	.flow-track {
 		position: relative;
 		height: 2px;
@@ -264,12 +249,6 @@
 	.flow-edge .flow-track-live.flow-track-manager::after {
 		animation: edge-manager-leg 2.4s ease-in-out infinite;
 	}
-	.flow-direct .flow-track-live.flow-track-manager::after {
-		animation: direct-manager-leg 4.8s ease-in-out infinite;
-	}
-	.flow-direct .flow-track-live.flow-track-agent::after {
-		animation: direct-agent-leg 4.8s ease-in-out infinite;
-	}
 	/* Edge: the agent leg runs first (right → left), then the manager leg. */
 	@keyframes edge-agent-leg {
 		0% {
@@ -297,59 +276,6 @@
 			opacity: 1;
 		}
 		97%,
-		100% {
-			left: 0;
-			opacity: 0;
-		}
-	}
-	/* Direct: out along the manager leg then the agent leg, and back the same way. */
-	@keyframes direct-manager-leg {
-		0% {
-			left: 0;
-			opacity: 0;
-		}
-		3%,
-		19% {
-			opacity: 1;
-		}
-		22% {
-			left: 100%;
-			opacity: 0;
-		}
-		75% {
-			left: 100%;
-			opacity: 0;
-		}
-		78%,
-		94% {
-			opacity: 1;
-		}
-		97%,
-		100% {
-			left: 0;
-			opacity: 0;
-		}
-	}
-	@keyframes direct-agent-leg {
-		0%,
-		25% {
-			left: 0;
-			opacity: 0;
-		}
-		28%,
-		44% {
-			opacity: 1;
-		}
-		47%,
-		50% {
-			left: 100%;
-			opacity: 0;
-		}
-		53%,
-		69% {
-			opacity: 1;
-		}
-		72%,
 		100% {
 			left: 0;
 			opacity: 0;

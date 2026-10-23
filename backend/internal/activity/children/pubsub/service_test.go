@@ -6,10 +6,12 @@ import (
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
+
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
 )
 
 func TestSubscribeMarksMissedEventsWhenBufferFull(t *testing.T) {
-	service := NewService()
+	service := NewService(concurrency.NewSignal[string]())
 
 	events, missedEvents, unsubscribe := service.Subscribe("0")
 	defer unsubscribe()
@@ -26,7 +28,7 @@ func TestSubscribeMarksMissedEventsWhenBufferFull(t *testing.T) {
 }
 
 func TestSubscriberCoalescesProgressEvents(t *testing.T) {
-	service := NewService()
+	service := NewService(concurrency.NewSignal[string]())
 
 	events, missedEvents, unsubscribe := service.Subscribe("0")
 	defer unsubscribe()
@@ -67,7 +69,7 @@ func TestSubscriberCoalescesProgressEvents(t *testing.T) {
 // it — is dropped instead of reverting subscribers to a running state no later
 // event would correct.
 func TestDropsStaleSnapshotAfterTerminalPublish(t *testing.T) {
-	service := NewService()
+	service := NewService(concurrency.NewSignal[string]())
 
 	stale := types.Activity{
 		ID:            "act-1",

@@ -170,3 +170,42 @@ func TestCollectEnvironmentsRecoversAbortedHandler(t *testing.T) {
 	require.Equal(t, "aborted", collection.Failures[0].Environment.ID)
 	require.Contains(t, collection.Failures[0].Message, http.ErrAbortHandler.Error())
 }
+
+func TestCollectEnvironmentDataKeepsBreakdown(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch aggregateEnvironmentID(r) {
+		case "a":
+			_, _ = w.Write([]byte(`{"success":true,"data":2}`))
+		case "b":
+			_, _ = w.Write([]byte(`{"success":true,"data":3}`))
+		default:
+			w.WriteHeader(http.StatusBadGateway)
+		}
+	})
+
+	body, err := CollectEnvironmentData(aggregateContext(t, handler, "a", "b", "c"), nil, func(environments []types.EnvironmentData[int]) int {
+		total := 0
+		for _, environment := range environments {
+			total += environment.Data
+		}
+		return total
+	})
+
+	require.NoError(t, err)
+	require.True(t, body.Success)
+	require.Equal(t, 5, body.Data)
+	require.Equal(t, []types.EnvironmentData[int]{
+		{Environment: types.EnvironmentRef{ID: "a", Name: "Env a"}, Data: 2},
+		{Environment: types.EnvironmentRef{ID: "b", Name: "Env b"}, Data: 3},
+	}, body.Environments)
+	require.Equal(t, []types.EnvironmentFailure{
+		{Environment: types.EnvironmentRef{ID: "c", Name: "c"}, Message: "Bad Gateway"},
+	}, body.FailedEnvironments)
+}
+
+func TestCollectEnvironmentDataRequiresScope(t *testing.T) {
+	_, err := CollectEnvironmentData(t.Context(), nil, func([]types.EnvironmentData[int]) int {
+		return 0
+	})
+	require.Error(t, err)
+}

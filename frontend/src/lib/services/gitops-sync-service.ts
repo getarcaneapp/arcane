@@ -16,12 +16,16 @@ import type {
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
-import BaseAPIService from './api-service';
+import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 class GitOpsSyncService extends BaseAPIService {
-	async getSyncs(environmentId: string, options?: SearchPaginationSortRequest): Promise<Paginated<GitOpsSync, GitOpsSyncCounts>> {
+	async getSyncs(
+		environmentId: string,
+		options?: SearchPaginationSortRequest,
+		config?: APIRequestConfig
+	): Promise<Paginated<GitOpsSync, GitOpsSyncCounts>> {
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${environmentId}/gitops/syncs`, { params });
+		const res = await this.api.get(`/environments/${environmentId}/gitops/syncs`, { ...config, params });
 		return res.data;
 	}
 

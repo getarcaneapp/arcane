@@ -184,7 +184,7 @@ func newSettingsSetCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmdutil.SetScope(cmdutil.ScopeFleet, command)
+	cmdutil.SetScope(cmdutil.ScopeAll, command)
 	cmdutil.EnumVarP(command, command.Flags(), &opts.provider, "provider", "", "", "Notification provider",
 		types.NotificationProviderDiscord, types.NotificationProviderEmail, types.NotificationProviderTelegram,
 		types.NotificationProviderSignal, types.NotificationProviderSlack, types.NotificationProviderNtfy,

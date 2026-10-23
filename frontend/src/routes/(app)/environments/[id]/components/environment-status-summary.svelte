@@ -111,7 +111,7 @@
 			<span>{m.common_offline()}</span>
 		{/if}
 	</div>
-	{#if environment.isEdge && environment.lastHeartbeat}
+	{#if environment.id !== '0' && environment.lastHeartbeat}
 		<div class="flex items-center gap-1.5 text-xs text-muted-foreground" title={m.environments_edge_last_heartbeat_label()}>
 			<HealthIcon class="size-3.5 shrink-0" />
 			<span>{heartbeatRelative}</span>

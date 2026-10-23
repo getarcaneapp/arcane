@@ -65,11 +65,10 @@ func AllowPrompt(cmd *cobra.Command) bool {
 	return !JSONOutputEnabled(cmd) && prompt.IsInteractive()
 }
 
-// ConfirmOrCancel accepts force, --yes, or fleet consent; otherwise it requires text mode and terminal input.
 // Declining prints Cancelled to stderr and returns false without an error.
 func ConfirmOrCancel(cmd *cobra.Command, force bool, label string) (bool, error) {
 	app, _ := runtime.From(cmd.Context())
-	if force || AssumeYes(cmd) || app != nil && app.FleetConfirmed {
+	if force || AssumeYes(cmd) || app != nil && app.AllConfirmed {
 		return true, nil
 	}
 	if JSONOutputEnabled(cmd) {

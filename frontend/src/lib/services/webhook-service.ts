@@ -1,32 +1,23 @@
-import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { Webhook, WebhookCreated, WebhookCreate, WebhookUpdate } from '#lib/types/environment.js';
 
-import BaseAPIService from './api-service';
+import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 class WebhookAPIService extends BaseAPIService {
-	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
-		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
-	}
-
-	async getWebhooks(environmentId?: string): Promise<Webhook[]> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		const res = await this.api.get(`/environments/${envId}/webhooks`);
+	async getWebhooks(environmentId: string, config?: APIRequestConfig): Promise<Webhook[]> {
+		const res = await this.api.get(`/environments/${environmentId}/webhooks`, config);
 		return res.data.data;
 	}
 
-	async create(webhook: WebhookCreate, environmentId?: string): Promise<WebhookCreated> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.post(`/environments/${envId}/webhooks`, webhook)) as Promise<WebhookCreated>;
+	async create(webhook: WebhookCreate, environmentId: string): Promise<WebhookCreated> {
+		return this.handleResponse(this.api.post(`/environments/${environmentId}/webhooks`, webhook)) as Promise<WebhookCreated>;
 	}
 
-	async update(webhookId: string, data: WebhookUpdate, environmentId?: string): Promise<Webhook> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.patch(`/environments/${envId}/webhooks/${webhookId}`, data)) as Promise<Webhook>;
+	async update(webhookId: string, data: WebhookUpdate, environmentId: string): Promise<Webhook> {
+		return this.handleResponse(this.api.patch(`/environments/${environmentId}/webhooks/${webhookId}`, data)) as Promise<Webhook>;
 	}
 
-	async delete(webhookId: string, environmentId?: string): Promise<void> {
-		const envId = await this.resolveEnvironmentId(environmentId);
-		return this.handleResponse(this.api.delete(`/environments/${envId}/webhooks/${webhookId}`)) as Promise<void>;
+	async delete(webhookId: string, environmentId: string): Promise<void> {
+		return this.handleResponse(this.api.delete(`/environments/${environmentId}/webhooks/${webhookId}`)) as Promise<void>;
 	}
 }
 

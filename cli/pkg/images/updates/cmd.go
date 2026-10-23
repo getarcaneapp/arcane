@@ -34,7 +34,7 @@ func newCheckCmd() *cobra.Command {
 		all bool
 	}
 	command := &cobra.Command{
-		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeFleet},
+		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeAll},
 		Use:         "check [image-ref...]",
 		Short:       "Check image references for updates",
 		Long: "Check image references for updates.\n\nWith a single reference the update status is checked directly; with " +
@@ -80,7 +80,7 @@ func newCheckCmd() *cobra.Command {
 			if decodeErr := json.Unmarshal(result.Data, &data); decodeErr != nil {
 				return fmt.Errorf("failed to parse response: %w", decodeErr)
 			}
-			if app, ok := runtime.From(cmd.Context()); ok && app != nil && app.FleetConfirmed && data.Error != "" {
+			if app, ok := runtime.From(cmd.Context()); ok && app != nil && app.AllConfirmed && data.Error != "" {
 				return fmt.Errorf("failed to check updates: %s", data.Error)
 			}
 			if cmdutil.JSONOutputEnabled(cmd) {
@@ -95,7 +95,7 @@ func newCheckCmd() *cobra.Command {
 
 func newCheckAllCmd() *cobra.Command {
 	return &cobra.Command{
-		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeFleet},
+		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeAll},
 		Use:          "check-all",
 		Hidden:       true,
 		Short:        "Check all images for updates",
@@ -177,7 +177,7 @@ func printBatchResults(cmd *cobra.Command, raw jsontext.Value) error {
 	if decodeErr := json.Unmarshal(raw, &result); decodeErr != nil {
 		return fmt.Errorf("failed to parse response: %w", decodeErr)
 	}
-	if app, ok := runtime.From(cmd.Context()); ok && app != nil && app.FleetConfirmed {
+	if app, ok := runtime.From(cmd.Context()); ok && app != nil && app.AllConfirmed {
 		for ref, update := range result {
 			if update == nil {
 				return fmt.Errorf("image update check failed for %s: no result", ref)

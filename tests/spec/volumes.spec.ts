@@ -85,7 +85,7 @@ async function gotoVolumeDetail(page: Page, volumeName: string) {
 		return request.method() === 'GET' && new URL(response.url()).pathname === volumePath;
 	});
 
-	await page.goto(`/volumes/${encodeURIComponent(volumeName)}`);
+	await page.goto(`/volumes/${encodeURIComponent(volumeName)}?env=0`);
 	const response = await detailResponse;
 	expect(response.ok(), `Expected successful GET ${volumePath}`).toBeTruthy();
 	await expect(page).toHaveURL(new RegExp(`/volumes/.+`));
@@ -193,7 +193,7 @@ test.describe('Volumes Page', () => {
 	test('Remove Volume', async ({ page }) => {
 		const volumeName = `test-remove-volume-${Date.now()}`;
 		await createVolumeViaApi(page, volumeName);
-		await page.goto(`/volumes/${encodeURIComponent(volumeName)}`);
+		await page.goto(`/volumes/${encodeURIComponent(volumeName)}?env=0`);
 		await page.waitForLoadState('load');
 
 		await expect(page).toHaveURL(new RegExp(`/volumes/.+`));
@@ -348,12 +348,14 @@ async function mockVolumeList(page: Page, volumesByEnv: Record<string, MockVolum
 	await page.context().route(/\/api\/environments\/[^/]+\/volumes(?:\?.*)?$/, async (route) => {
 		const request = route.request();
 		const url = new URL(request.url());
-		const envId = url.pathname.split('/')[3];
-		const volumes = volumesByEnv[envId];
-		if (request.method() !== 'GET' || !volumes) {
+		const environmentIds = decodeURIComponent(url.pathname.split('/')[3]).split(',');
+		if (request.method() !== 'GET' || environmentIds.some((id) => !volumesByEnv[id])) {
 			await route.continue();
 			return;
 		}
+		const volumes = environmentIds.flatMap((environmentId) =>
+			volumesByEnv[environmentId].map((volume) => ({ ...volume, environmentId }))
+		);
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -396,7 +398,6 @@ function removeSelectedButton(page: Page, count: number) {
 async function openShiftSelectVolumes(page: Page, count = 12) {
 	const volumes = Array.from({ length: count }, (_, index) => mockVolume(index + 1));
 	await page.addInitScript(() => {
-		localStorage.removeItem('selectedEnvironmentId');
 		localStorage.removeItem('arcane-volumes-table');
 	});
 	await mockVolumeList(page, { '0': volumes });
@@ -546,22 +547,20 @@ test.describe('Volumes shift-select', () => {
 		await expect(removeSelectedButton(page, 5)).toBeVisible();
 	});
 
-	test('switching environments resets the anchor', async ({ page }) => {
+	test('changing the environment filter resets the anchor', async ({ page }) => {
 		const localEnvironment = {
 			id: '0',
 			name: 'Local Test',
 			apiUrl: 'unix:///var/run/docker.sock',
 			status: 'online',
-			enabled: true,
-			isEdge: false
+			enabled: true
 		};
 		const remoteEnvironment = {
 			id: 'remote-shift-test',
 			name: 'Remote Test',
-			apiUrl: 'https://remote.example.invalid',
+			apiUrl: 'edge://remote-shift-test',
 			status: 'online',
-			enabled: true,
-			isEdge: false
+			enabled: true
 		};
 		const environments = [localEnvironment, remoteEnvironment];
 		const environmentList = {
@@ -613,7 +612,6 @@ test.describe('Volumes shift-select', () => {
 			});
 		const remoteVolumes = Array.from({ length: 8 }, (_, index) => mockVolume(index + 101));
 		await page.addInitScript(() => {
-			localStorage.removeItem('selectedEnvironmentId');
 			localStorage.removeItem('arcane-volumes-table');
 		});
 		await mockVolumeList(page, {
@@ -623,24 +621,24 @@ test.describe('Volumes shift-select', () => {
 		await page.goto('/volumes');
 		await expect(page.getByRole('link', { name: mockVolume(1).name, exact: true })).toBeVisible();
 
-		await rowCheckbox(page, 2).click();
-		await page.getByRole('button').filter({ hasText: localEnvironment.name }).first().click();
-		const dialog = page.getByRole('dialog', { name: 'Select Environment' });
-		await expect(dialog).toBeVisible();
-		await dialog.getByRole('button').filter({ hasText: remoteEnvironment.name }).first().click();
 		await expect(page.getByRole('link', { name: mockVolume(101).name, exact: true })).toBeVisible();
+
+		await rowCheckbox(page, 2).click();
+		await page.getByTestId('facet-environment-trigger').click();
+		await page.getByTestId(`facet-environment-option-${remoteEnvironment.id}`).click();
+		await page.keyboard.press('Escape');
 		await expect(page.getByRole('link', { name: mockVolume(1).name, exact: true })).toHaveCount(0);
+		await expect(page.getByRole('link', { name: mockVolume(101).name, exact: true })).toBeVisible();
 
 		await rowCheckbox(page, 105).click({ modifiers: ['Shift'] });
 		await expectSelected(page, [105], true);
 		await expectSelected(page, [101, 102, 103, 104], false);
-		await expect(removeSelectedButton(page, 1)).toBeVisible();
+		await expect(removeSelectedButton(page, 2)).toBeVisible();
 	});
 
 	test('ranges span a virtualized list larger than 100 rows', async ({ page }) => {
 		const volumes = Array.from({ length: 150 }, (_, index) => mockVolume(index + 1));
 		await page.addInitScript(() => {
-			localStorage.removeItem('selectedEnvironmentId');
 			localStorage.setItem('arcane-volumes-table', JSON.stringify({ v: [], f: [], g: '', l: -1 }));
 		});
 		await mockVolumeList(page, { '0': volumes });

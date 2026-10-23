@@ -924,6 +924,20 @@ func (s *VolumeService) AggregateVolumes(ctx context.Context, params pagination.
 	}, nil
 }
 
+func (s *VolumeService) AggregateVolumeCounts(ctx context.Context) (types.ApiResponse[VolumeUsageCountsData], error) {
+	return httpx.CollectEnvironmentData(ctx, nil, func(environments []types.EnvironmentData[VolumeUsageCountsData]) VolumeUsageCountsData {
+		var counts VolumeUsageCountsData
+		for _, environment := range environments {
+			counts = VolumeUsageCountsData{
+				Inuse:  counts.Inuse + environment.Data.Inuse,
+				Unused: counts.Unused + environment.Data.Unused,
+				Total:  counts.Total + environment.Data.Total,
+			}
+		}
+		return counts
+	})
+}
+
 func (s *VolumeService) AggregateVolumeSizes(ctx context.Context) (types.ApiResponse[[]VolumeSizeInfo], error) {
 	collection, err := httpx.CollectEnvironments[types.ApiResponse[[]VolumeSizeInfo]](ctx, nil)
 	if err != nil {

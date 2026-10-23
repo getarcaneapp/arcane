@@ -420,7 +420,7 @@
 
 <ResourceDetailLayout backUrl="/images" backLabel={m.images()} title={detailTitle} {actions}>
 	{#snippet badges()}
-		<EnvironmentCell value={currentEnvId} />
+		<EnvironmentCell value={currentEnvId} plain />
 	{/snippet}
 
 	{#if image}
