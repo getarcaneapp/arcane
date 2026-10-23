@@ -18,7 +18,13 @@
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '#lib/utils/docker.js';
-	import { actionEnvironments, fetchAcrossEnvironments, listScopes, settleAcrossEnvironments } from '#lib/utils/environments.js';
+	import {
+		actionEnvironments,
+		fetchAcrossEnvironments,
+		listScopes,
+		readableEnvironments,
+		settleAcrossEnvironments
+	} from '#lib/utils/environments.js';
 	import { confirmAndApplyAllUpdates } from '#lib/utils/update-actions.js';
 
 	import ContainerUpdatesTable from './components/container-updates-table.svelte';
@@ -36,7 +42,7 @@
 	// tagged with their environment so a switch never shows another's rows.
 	const containersQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = environmentStore.shown;
+		const environments = readableEnvironments('containers:list');
 		const options = ensureStandaloneContainerUpdatesFilter(containerRequestOptions);
 		return {
 			queryKey: queryKeys.containers.list(queryScope, options),
@@ -55,7 +61,7 @@
 
 	const projectsQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = environmentStore.shown;
+		const environments = readableEnvironments('projects:list');
 		const options = ensureUpdatesFilter(projectRequestOptions);
 		return {
 			queryKey: queryKeys.projects.list(queryScope, options),
@@ -81,7 +87,7 @@
 	// the query's error state also renders inline.
 	async function refreshContainers(options: ContainerListRequestOptions) {
 		const requestedScope = scope;
-		const environments = environmentStore.shown;
+		const environments = readableEnvironments('containers:list');
 		const requestedOptions = ensureStandaloneContainerUpdatesFilter(options);
 		await queryClient.fetchQuery({
 			queryKey: queryKeys.containers.list(requestedScope, requestedOptions),
@@ -94,7 +100,7 @@
 
 	async function refreshProjects(options: SearchPaginationSortRequest) {
 		const requestedScope = scope;
-		const environments = environmentStore.shown;
+		const environments = readableEnvironments('projects:list');
 		const requestedOptions = ensureUpdatesFilter(options);
 		await queryClient.fetchQuery({
 			queryKey: queryKeys.projects.list(requestedScope, requestedOptions),

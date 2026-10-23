@@ -1,8 +1,8 @@
-module github.com/getarcaneapp/arcane/cli/v2
+module github.com/getarcaneapp/arcane/cli/v3
 
 go 1.27.3
 
-replace github.com/getarcaneapp/arcane/types/v2 => ../types
+replace github.com/getarcaneapp/arcane/types/v3 => ../types
 
 require (
 	charm.land/bubbles/v2 v2.2.1
@@ -16,7 +16,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/docker/go-connections v0.8.2
 	github.com/docker/go-units v0.5.0
-	github.com/getarcaneapp/arcane/types/v2 v2.14.0
+	github.com/getarcaneapp/arcane/types/v3 v3.0.0
 	github.com/gofrs/flock v0.13.1
 	github.com/mattn/go-runewidth v0.0.31
 	github.com/muesli/cancelreader v0.2.2
@@ -45,10 +45,9 @@ require (
 	github.com/Microsoft/go-winio v0.6.3 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
-	github.com/aws/aws-sdk-go-v2 v1.47.3 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.33.9 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.20.9 // indirect
-	github.com/aws/smithy-go v1.28.6 // indirect
+	github.com/aws/aws-sdk-go-v2 v1.47.4 // indirect
+	github.com/aws/aws-sdk-go-v2/config v1.33.10 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.20.10 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect

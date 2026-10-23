@@ -17,39 +17,39 @@ import (
 	"github.com/spf13/cobra"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/logger"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/runstate"
-	runtimectx "github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/activities"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/admin"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/auth"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/completion"
-	configClient "github.com/getarcaneapp/arcane/cli/v2/pkg/config"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/containers"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/doctor"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/environments"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/gitops"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/images"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/jobs"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/networks"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/podman"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/registries"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/repos"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/selfupdate"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/settings"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/system"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/templates"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/updater"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/variables"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/version"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/volumes"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/vulnerabilities"
-	"github.com/getarcaneapp/arcane/cli/v2/pkg/webhooks"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/config"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/logger"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/runstate"
+	runtimectx "github.com/getarcaneapp/arcane/cli/v3/internal/runtime"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/activities"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/admin"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/auth"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/completion"
+	configClient "github.com/getarcaneapp/arcane/cli/v3/pkg/config"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/containers"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/doctor"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/environments"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/generate"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/gitops"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/images"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/jobs"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/networks"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/podman"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/projects"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/registries"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/repos"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/selfupdate"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/settings"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/system"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/templates"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/updater"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/variables"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/version"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/volumes"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/vulnerabilities"
+	"github.com/getarcaneapp/arcane/cli/v3/pkg/webhooks"
 )
 
 type rootOptions struct {
@@ -116,7 +116,7 @@ func NewRootCommand() *cobra.Command {
 	cmdutil.EnumVarP(root, flags, &opts.logLevel, "log-level", "", "info", "Log level", "debug", "info", "warn", "error", "fatal")
 	flags.StringVarP(&opts.configPath, "config", "c", "", "Path to config file (default ~/.config/arcanecli.yml)")
 	cmdutil.EnumVarP(root, flags, &opts.outputMode, "output", "", "text", "Output mode", "text", "json")
-	flags.StringVar(&opts.envOverride, "env", "", "Override default environment ID for this invocation")
+	flags.StringVar(&opts.envOverride, "env", "", "Limit this invocation to one environment ID (default: all environments)")
 	flags.BoolVarP(&opts.assumeYes, "yes", "y", false, "Automatic yes to prompts")
 	flags.BoolVar(&opts.noColor, "no-color", false, "Disable colored output")
 	flags.DurationVar(&opts.requestTimeout, "request-timeout", 0, "HTTP request timeout override (e.g. 30s, 2m)")
@@ -200,6 +200,9 @@ func instrumentCommandTree(cmd *cobra.Command) {
 		originalRunE := cmd.RunE
 		cmd.RunE = func(command *cobra.Command, args []string) error {
 			logger.GetLogger().Debug(action, "command", command.CommandPath(), "arg_count", len(args))
+			if !command.HasParent() {
+				return originalRunE(command, args)
+			}
 			return cmdutil.RunScoped(command, args, originalRunE)
 		}
 	}

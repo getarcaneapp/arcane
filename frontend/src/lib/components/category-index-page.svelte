@@ -2,7 +2,7 @@
 	import type { Component, Snippet } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import { UiConfigDisabledTag } from '#lib/components/badges/index.js';
+	import { SettingLock } from '#lib/components/badges/index.js';
 	import HeaderCard from '#lib/components/header-card.svelte';
 	import { Card } from '#lib/components/ui/card/index.js';
 	import * as InputGroup from '#lib/components/ui/input-group/index.js';
@@ -85,7 +85,7 @@
 				</div>
 			</div>
 			<div class="flex items-center gap-3">
-				<UiConfigDisabledTag />
+				<SettingLock />
 			</div>
 		</div>
 

@@ -15,9 +15,7 @@ import (
 	"time"
 
 	"github.com/distribution/reference"
-	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
-	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/pkg/authconfig"
 	"github.com/moby/moby/api/types/container"
@@ -34,21 +32,21 @@ import (
 	"go.getarcane.app/updater/labels"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/notification"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow/flowtest"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/notification"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow/flowtest"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/notifications"
 )
 
 // autoLabels opts a test container into tag-based update checks.
@@ -401,7 +399,7 @@ func newComposeBuildImageUpdateService(t *testing.T) (*ImageUpdateService, *atom
 		}, nil
 	}, nil, nil)
 
-	dockerService := &docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, dockerServer)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer))
 	eventService := event.NewEventService(db, nil, nil)
 	return NewImageUpdateService(db, nil, registryService, dockerService, eventService, notification.NewNotificationService(db, nil, nil, nil, nil), nil), &registryCalls
 }
@@ -468,7 +466,7 @@ func TestImageUpdateService_CheckImages_ComposeBuildMissingLocallySkipsRegistry(
 		}, nil
 	}, nil, nil)
 
-	dockerService := &docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, dockerServer)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer))
 	eventService := event.NewEventService(db, nil, nil)
 	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, notification.NewNotificationService(db, nil, nil, nil, nil), nil)
 
@@ -521,7 +519,7 @@ func newArcaneLocalImageUpdateService(t *testing.T, imageExists bool) (*ImageUpd
 		}, nil
 	}, nil, nil)
 
-	dockerService := &docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, dockerServer)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer))
 	eventService := event.NewEventService(db, nil, nil)
 	return NewImageUpdateService(db, nil, registryService, dockerService, eventService, notification.NewNotificationService(db, nil, nil, nil, nil), nil), &registryCalls
 }
@@ -600,7 +598,7 @@ func TestImageUpdateService_InspectLocalImageSnapshot_NoRepoDigestsRemainsLocal(
 	}))
 	t.Cleanup(server.Close)
 
-	svc := &ImageUpdateService{dockerService: &docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)}}
+	svc := &ImageUpdateService{dockerService: (&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server))}
 	snapshot, err := svc.inspectLocalImageSnapshot(t.Context(), "local-only:latest", map[string]struct{}{})
 	require.NoError(t, err)
 	assert.True(t, snapshot.IsLocalBuild)
@@ -760,7 +758,7 @@ func TestImageUpdateService_GetImageRefByID_UsesContainerFallback(t *testing.T) 
 			defer server.Close()
 
 			svc := &ImageUpdateService{
-				dockerService: &docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)},
+				dockerService: (&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server)),
 			}
 
 			imageRef, err := svc.getImageRefByID(t.Context(), imageID)
@@ -856,7 +854,7 @@ func TestImageUpdateService_CheckImages_DigestPinnedTagPreservedWhenLocalImageHa
 	repository := serverURL.Host + "/valkey/valkey"
 	imageRef := repository + ":9@" + pinnedDigest
 
-	dockerService := &docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server))
 	svc := NewImageUpdateService(db, nil, nil, dockerService, nil, notification.NewNotificationService(db, nil, nil, nil, nil), nil)
 
 	results, err := checkImages(t, t.Context(), svc, imageRef)
@@ -917,7 +915,7 @@ func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) 
 		}, nil
 	}, nil, nil, server.Client())
 
-	dockerService := &docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server))
 	eventService := event.NewEventService(db, nil, nil)
 	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, notification.NewNotificationService(db, nil, nil, nil, nil), nil)
 
@@ -957,7 +955,7 @@ func TestImageUpdateService_CheckImages_UsesRegistryFallback(t *testing.T) {
 		}, nil
 	}, nil, nil, server.Client())
 
-	dockerService := &docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server))
 	eventService := event.NewEventService(db, nil, nil)
 	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, notification.NewNotificationService(db, nil, nil, nil, nil), nil)
 
@@ -993,13 +991,13 @@ func TestImageUpdateService_CheckImagesCompletesActivityAfterRequestContextCance
 	ctx, cancel := context.WithCancel(t.Context())
 	errCh := make(chan error, 1)
 	go func() {
-		_, err := svc.CheckImages(ctx, imageupdate.CheckRequest{ImageRefs: []string{"nginx:latest"}}, nil)
+		_, err := svc.CheckImages(ctx, types.ImageUpdateCheckRequest{ImageRefs: []string{"nginx:latest"}}, nil)
 		errCh <- err
 	}()
 
 	var localActivity activity.Activity
 	require.Eventually(t, func() bool {
-		return db.Where("type = ?", activitytypes.TypeImageUpdateCheck).First(&localActivity).Error == nil
+		return db.Where("type = ?", types.ActivityTypeImageUpdateCheck).First(&localActivity).Error == nil
 	}, 5*time.Second, 10*time.Millisecond)
 
 	cancel()
@@ -1019,7 +1017,7 @@ func TestImageUpdateService_CheckImagesCompletesActivityAfterRequestContextCance
 		if err := db.First(&localActivity, "id = ?", localActivity.ID).Error; err != nil {
 			return false
 		}
-		return localActivity.Status == activitytypes.StatusFailed
+		return localActivity.Status == types.ActivityStatusFailed
 	}, 15*time.Second, 10*time.Millisecond)
 	assert.NotNil(t, localActivity.EndedAt)
 }
@@ -1049,10 +1047,10 @@ func TestImageUpdateService_CheckImagesRetriesStalledRegistryCheck(t *testing.T)
 		db,
 		settingsService,
 		registryService,
-		&docker.DockerClientService{Client: newImageUpdateTestDockerClient(
+		(&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(
 			t,
 			dockerServer,
-		)},
+		)),
 		nil,
 		notification.NewNotificationService(db, nil, nil, nil, nil),
 		activityService,
@@ -1071,9 +1069,9 @@ func TestImageUpdateService_CheckImagesRetriesStalledRegistryCheck(t *testing.T)
 
 	var localActivity activity.Activity
 	require.Eventually(t, func() bool {
-		return db.Where("type = ?", activitytypes.TypeImageUpdateCheck).First(&localActivity).Error == nil && localActivity.EndedAt != nil
+		return db.Where("type = ?", types.ActivityTypeImageUpdateCheck).First(&localActivity).Error == nil && localActivity.EndedAt != nil
 	}, 5*time.Second, 10*time.Millisecond)
-	require.Equal(t, activitytypes.StatusFailed, localActivity.Status)
+	require.Equal(t, types.ActivityStatusFailed, localActivity.Status)
 	require.NotNil(t, localActivity.DurationMs)
 	require.Contains(t, localActivity.LatestMessage, "1 checked, 1 errors")
 }
@@ -1098,10 +1096,10 @@ func TestImageUpdateService_CheckImagesPanicFailsOnlyThatImage(t *testing.T) {
 		db,
 		settingsService,
 		registryService,
-		&docker.DockerClientService{Client: newImageUpdateTestDockerClient(
+		(&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(
 			t,
 			dockerServer,
-		)},
+		)),
 		nil,
 		notification.NewNotificationService(db, nil, nil, nil, nil),
 		activityService,
@@ -1113,9 +1111,9 @@ func TestImageUpdateService_CheckImagesPanicFailsOnlyThatImage(t *testing.T) {
 
 	var localActivity activity.Activity
 	require.Eventually(t, func() bool {
-		return db.Where("type = ?", activitytypes.TypeImageUpdateCheck).First(&localActivity).Error == nil && localActivity.EndedAt != nil
+		return db.Where("type = ?", types.ActivityTypeImageUpdateCheck).First(&localActivity).Error == nil && localActivity.EndedAt != nil
 	}, 5*time.Second, 10*time.Millisecond)
-	require.Equal(t, activitytypes.StatusFailed, localActivity.Status)
+	require.Equal(t, types.ActivityStatusFailed, localActivity.Status)
 	require.Contains(t, localActivity.LatestMessage, "1 errors")
 }
 
@@ -1127,7 +1125,7 @@ func TestImageUpdateService_GetAllImageRefsUsesDockerAPITimeout(t *testing.T) {
 		db,
 		settingsService,
 		nil,
-		docker.NewDockerClientService(t.Context(), nil, nil, settingsService).WithClient(newImageUpdateTestDockerClient(t, server)),
+		docker.NewDockerClientService(t.Context(), nil, settingsService).WithClient(newImageUpdateTestDockerClient(t, server)),
 		nil,
 		notification.NewNotificationService(db, nil, nil, nil, nil),
 		nil,
@@ -1153,7 +1151,7 @@ func TestImageUpdateService_InspectLocalImageSnapshotUsesDockerAPITimeout(t *tes
 		db,
 		settingsService,
 		nil,
-		docker.NewDockerClientService(t.Context(), nil, nil, settingsService).WithClient(newImageUpdateTestDockerClient(t, server)),
+		docker.NewDockerClientService(t.Context(), nil, settingsService).WithClient(newImageUpdateTestDockerClient(t, server)),
 		nil,
 		notification.NewNotificationService(db, nil, nil, nil, nil),
 		nil,
@@ -1203,7 +1201,7 @@ func TestImageUpdateService_CheckImages_UsesDockerHubCredentialsOnFirstAttempt(t
 		}, nil
 	}, nil, nil)
 
-	dockerService := &docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server))
 	eventService := event.NewEventService(db, nil, nil)
 	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, notification.NewNotificationService(db, nil, nil, nil, nil), nil)
 
@@ -1242,7 +1240,7 @@ func TestImageUpdateService_CheckImages_ReportsNotPulledWhenLocalImageMissing(t 
 		}, nil
 	}, nil, nil, server.Client())
 
-	dockerService := &docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server))
 	eventService := event.NewEventService(db, nil, nil)
 	svc := NewImageUpdateService(db, nil, registryService, dockerService, eventService, notification.NewNotificationService(db, nil, nil, nil, nil), nil)
 
@@ -1276,8 +1274,16 @@ func TestImageUpdateService_SaveUpdateResultWithSnapshot_PersistsRegistryOnlySuc
 	require.NoError(t, err)
 	imageRef := serverURL.Host + "/library/nginx:alpine"
 
-	svc := NewImageUpdateService(db, nil, nil, &docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)}, nil, notification.NewNotificationService(db, nil, nil, nil, nil), nil)
-	result := &imageupdate.Response{
+	svc := NewImageUpdateService(
+		db,
+		nil,
+		nil,
+		(&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server)),
+		nil,
+		notification.NewNotificationService(db, nil, nil, nil, nil),
+		nil,
+	)
+	result := &types.ImageUpdateResponse{
 		HasUpdate:      true,
 		UpdateType:     "digest",
 		CurrentVersion: "alpine",
@@ -1400,7 +1406,15 @@ func TestImageUpdateService_MarkImageRefUpToDateAfterPull_ClearsMatchingRecordsA
 		CheckTime:   now,
 	}).Error)
 
-	svc := NewImageUpdateService(db, nil, nil, &docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)}, nil, notification.NewNotificationService(db, nil, nil, nil, nil), nil)
+	svc := NewImageUpdateService(
+		db,
+		nil,
+		nil,
+		(&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server)),
+		nil,
+		notification.NewNotificationService(db, nil, nil, nil, nil),
+		nil,
+	)
 
 	require.NoError(t, svc.MarkImageRefUpToDateAfterPull(t.Context(), imageRef))
 
@@ -1461,7 +1475,7 @@ func TestImageUpdateService_NotificationSentLogic(t *testing.T) {
 	tag := "latest"
 
 	t.Run("new record starts with notification_sent=false", func(t *testing.T) {
-		result := &imageupdate.Response{
+		result := &types.ImageUpdateResponse{
 			HasUpdate:      true,
 			UpdateType:     "digest",
 			CurrentVersion: "1.0",
@@ -1499,7 +1513,7 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 	tests := []struct {
 		name             string
 		existingRecord   *ImageUpdateRecord
-		newResult        *imageupdate.Response
+		newResult        *types.ImageUpdateResponse
 		expectNotifReset bool
 		reason           string
 	}{
@@ -1515,7 +1529,7 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 				LatestDigest:     new("sha256:old"),
 				NotificationSent: true,
 			},
-			newResult: &imageupdate.Response{
+			newResult: &types.ImageUpdateResponse{
 				HasUpdate:      true,
 				UpdateType:     "digest",
 				CurrentVersion: "7.0",
@@ -1538,7 +1552,7 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 				LatestVersion:    new("7.0.1"),
 				NotificationSent: true,
 			},
-			newResult: &imageupdate.Response{
+			newResult: &types.ImageUpdateResponse{
 				HasUpdate:      true,
 				UpdateType:     "tag",
 				CurrentVersion: "7.0",
@@ -1560,7 +1574,7 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 				CurrentVersion:   "7.0",
 				NotificationSent: true,
 			},
-			newResult: &imageupdate.Response{
+			newResult: &types.ImageUpdateResponse{
 				HasUpdate:      true,
 				UpdateType:     "digest",
 				CurrentVersion: "7.0",
@@ -1583,7 +1597,7 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 				LatestVersion:    new("7.0.1"),
 				NotificationSent: true,
 			},
-			newResult: &imageupdate.Response{
+			newResult: &types.ImageUpdateResponse{
 				HasUpdate:      true,
 				UpdateType:     "digest",
 				CurrentVersion: "7.0",
@@ -1669,7 +1683,7 @@ func TestImageUpdateService_RateLimitErrorPreservesPreviousResult(t *testing.T) 
 			}
 			require.NoError(t, db.Create(existing).Error)
 
-			result := &imageupdate.Response{
+			result := &types.ImageUpdateResponse{
 				Error:     tt.resultError,
 				CheckTime: time.Now(),
 			}
@@ -1698,7 +1712,7 @@ func TestSavePreparedUpdateResult_TracksLatestSeenAt(t *testing.T) {
 	firstSeen := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	save := func(checkTime time.Time, hasUpdate bool, latestDigest, checkErr string) ImageUpdateRecord {
 		t.Helper()
-		require.NoError(t, savePreparedUpdateResultWithTx(db.DB, imageID, repo, tag, &imageupdate.Response{
+		require.NoError(t, savePreparedUpdateResultWithTx(db.DB, imageID, repo, tag, &types.ImageUpdateResponse{
 			HasUpdate:     hasUpdate,
 			UpdateType:    UpdateTypeDigest,
 			CurrentDigest: "sha256:current",
@@ -1857,7 +1871,7 @@ func TestImageUpdateService_CleanupOrphanedRecordsKeepsRefRecords(t *testing.T) 
 	t.Cleanup(server.Close)
 	svc := &ImageUpdateService{
 		db:            db,
-		dockerService: &docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)},
+		dockerService: (&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server)),
 	}
 	for _, id := range []string{"sha256:present", "sha256:gone", "ref::docker.io/library/nginx@latest"} {
 		require.NoError(t, db.Create(&ImageUpdateRecord{
@@ -1884,7 +1898,7 @@ func newImageUpdateNotificationDockerService(t *testing.T, containers []containe
 	t.Helper()
 	server := newImageUpdateDiscoveryServer(t, nil, containers)
 	t.Cleanup(server.Close)
-	return &docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)}
+	return (&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server))
 }
 
 func newImageUpdateGenericWebhookProvider(t *testing.T, db *database.DB) *atomic.Int32 {
@@ -1993,7 +2007,7 @@ func TestImageUpdateService_SendBatchNotifications_UnresolvedEligibilityLeavesUn
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	t.Cleanup(server.Close)
-	svc := NewImageUpdateService(db, nil, nil, &docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)}, nil, notif, nil)
+	svc := NewImageUpdateService(db, nil, nil, (&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server)), nil, notif, nil)
 	require.NoError(t, db.Create(&ImageUpdateRecord{ID: "sha256:img", Repository: "test/repo", Tag: "latest", HasUpdate: true}).Error)
 
 	require.ErrorContains(t, svc.SendBatchUpdateNotifications(t.Context()), "list containers for update-check eligibility")
@@ -2219,14 +2233,16 @@ func TestImageUpdateService_ParseAndGroupImages_DedupesNormalizedRefs(t *testing
 
 func newImageUpdateTestSettingsService(t *testing.T, registryTimeout, dockerAPITimeout string) *settings.SettingsService {
 	t.Helper()
-	t.Setenv("REGISTRY_TIMEOUT", registryTimeout)
-	t.Setenv("DOCKER_API_TIMEOUT", dockerAPITimeout)
+	t.Setenv("ARCANE_REGISTRY_TIMEOUT", registryTimeout)
+	t.Setenv("ARCANE_DOCKER_API_TIMEOUT", dockerAPITimeout)
 	ctx := t.Context()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
 	dbWrap := &database.DB{DB: db}
-	service, err := settings.NewSettingsService(ctx, dbWrap, &config.Config{})
+	settingsEnv, err := settings.LoadEnv()
+	require.NoError(t, err)
+	service, err := settings.NewSettingsService(ctx, dbWrap, &config.Config{}, settingsEnv)
 	if err == nil {
 		t.Cleanup(func() { require.NoError(t, service.Stop(context.WithoutCancel(t.Context()))) })
 	}
@@ -2339,7 +2355,7 @@ func TestImageUpdateService_GetAllImageRefsHonorsExclusiveContainerOptOut(t *tes
 		nil,
 		nil,
 		nil,
-		&docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)},
+		(&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server)),
 		nil,
 		nil,
 		nil,
@@ -2384,7 +2400,7 @@ func TestImageUpdateService_GetAllImageRefsAppliesLimitAfterOptOutFiltering(t *t
 		nil,
 		nil,
 		nil,
-		&docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)},
+		(&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server)),
 		nil,
 		nil,
 		nil,
@@ -2438,7 +2454,7 @@ func TestImageUpdateService_GetAllImageRefsExcludesAliasesOfOptedOutImage(t *tes
 		nil,
 		nil,
 		nil,
-		&docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)},
+		(&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server)),
 		nil,
 		nil,
 		nil,
@@ -2486,7 +2502,7 @@ func TestImageUpdateService_GetAllImageRefsKeepsImageSharedByEligibleContainer(t
 		nil,
 		nil,
 		nil,
-		&docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)},
+		(&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server)),
 		nil,
 		nil,
 		nil,
@@ -2524,7 +2540,7 @@ func TestImageUpdateService_GetAllImageRefsFallsBackToRefWhenImageIDsDiffer(t *t
 		nil,
 		nil,
 		nil,
-		&docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)},
+		(&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server)),
 		nil,
 		nil,
 		nil,
@@ -2569,7 +2585,7 @@ func TestImageUpdateService_GetAllImageRefsMergesIDAndReferenceEligibility(t *te
 		nil,
 		nil,
 		nil,
-		&docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)},
+		(&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server)),
 		nil,
 		nil,
 		nil,
@@ -2609,7 +2625,7 @@ func TestImageUpdateService_GetAllImageRefsFallsBackWhenContainerDiscoveryFails(
 		nil,
 		nil,
 		nil,
-		&docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)},
+		(&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server)),
 		nil,
 		nil,
 		nil,
@@ -2752,7 +2768,7 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 		db,
 		nil,
 		registryService,
-		&docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, dockerServer)},
+		(&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
 		event.NewEventService(db, nil, nil),
 		notification.NewNotificationService(db, nil, nil, nil, nil),
 		nil,
@@ -2790,7 +2806,7 @@ func TestContainerTagChecksPersistIndependentPolicies(t *testing.T) {
 	require.NoError(t, db.Order("container_id").Find(&records).Error)
 	require.False(t, records[0].HasUpdate)
 	require.True(t, records[1].HasUpdate)
-	limited := &imageupdate.Response{UpdateType: UpdateTypeTag, Error: "registry status: 429", CheckTime: time.Now().UTC()}
+	limited := &types.ImageUpdateResponse{UpdateType: UpdateTypeTag, Error: "registry status: 429", CheckTime: time.Now().UTC()}
 	current := container.Summary{ID: "two", Image: imageRef, ImageID: imageID, Labels: values["two"]}
 	require.NoError(t, svc.saveContainerTagResult(t.Context(), current, limited))
 	var retained ImageUpdateRecord
@@ -2883,7 +2899,7 @@ func TestContainerTagChecksSeparateMonitoringFromInstallation(t *testing.T) {
 		db,
 		settingsService,
 		registryService,
-		&docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, dockerServer)},
+		(&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
 		nil,
 		notification.NewNotificationService(db, nil, nil, nil, nil),
 		nil,
@@ -2941,7 +2957,7 @@ func TestContainerTagChecksUseRegistryTagTimeout(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			db := setupImageUpdateRegistryTestDB(t)
-			t.Setenv("REGISTRY_TAG_TIMEOUT", tt.tagTimeout)
+			t.Setenv("ARCANE_REGISTRY_TAG_TIMEOUT", tt.tagTimeout)
 			settingsService := newImageUpdateTestSettingsService(t, "1", "30")
 			registryServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if registryPing(w, r) {
@@ -2997,7 +3013,7 @@ func TestContainerTagChecksUseRegistryTagTimeout(t *testing.T) {
 				db,
 				settingsService,
 				registryService,
-				&docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, dockerServer)},
+				(&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
 				nil,
 				notification.NewNotificationService(db, nil, nil, nil, nil),
 				nil,
@@ -3022,7 +3038,7 @@ func TestContainerTagChecksUseRegistryTagTimeout(t *testing.T) {
 
 func TestContainerTagChecksPersistResultsFinishedBeforeScanDeadline(t *testing.T) {
 	db := setupImageUpdateRegistryTestDB(t)
-	t.Setenv("REGISTRY_TAG_TIMEOUT", "30")
+	t.Setenv("ARCANE_REGISTRY_TAG_TIMEOUT", "30")
 	settingsService := newImageUpdateTestSettingsService(t, "30", "30")
 	registryServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -3090,7 +3106,7 @@ func TestContainerTagChecksPersistResultsFinishedBeforeScanDeadline(t *testing.T
 		db,
 		settingsService,
 		registryService,
-		&docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, dockerServer)},
+		(&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, dockerServer)),
 		nil,
 		notification.NewNotificationService(db, nil, nil, nil, nil),
 		nil,
@@ -3128,7 +3144,7 @@ func TestImageUpdateService_RunImageCheckExhaustedRateLimitKeepsPreviousResult(t
 	if svc.engine == nil {
 		startCheckWorkflow(t, svc)
 	}
-	outcome, err := svc.RunImageCheck(t.Context(), imageupdate.CheckRequest{ImageRefs: []string{imageRef}})
+	outcome, err := svc.RunImageCheck(t.Context(), types.ImageUpdateCheckRequest{ImageRefs: []string{imageRef}})
 	require.NoError(t, err)
 	require.Len(t, outcome.Targets, 1)
 	require.Contains(t, outcome.Targets[0].Message, "toomanyrequests")
@@ -3154,13 +3170,13 @@ func TestImageUpdateService_RunImageCheckReportsPartialFailure(t *testing.T) {
 	harness := startCheckWorkflow(t, svc)
 	flowtest.AssertDefinitions(t, harness)
 
-	request := imageupdate.CheckRequest{ImageRefs: []string{okRef, deniedRef}}
+	request := types.ImageUpdateCheckRequest{ImageRefs: []string{okRef, deniedRef}}
 	outcome, err := svc.RunImageCheck(t.Context(), request)
 	require.NoError(t, err)
-	require.Equal(t, scheduler.Partial, outcome.Status)
+	require.Equal(t, types.RunStatusPartial, outcome.Status)
 	require.Len(t, outcome.Targets, 1)
 	assert.Equal(t, deniedRef, outcome.Targets[0].ID)
-	assert.Equal(t, scheduler.Failed, outcome.Targets[0].Status)
+	assert.Equal(t, types.RunStatusFailed, outcome.Targets[0].Status)
 	require.Len(t, outcome.Steps, 5)
 
 	results, err := svc.CheckImages(t.Context(), request, nil)
@@ -3185,12 +3201,12 @@ func startCheckWorkflow(t *testing.T, svc *ImageUpdateService) *flowtest.Harness
 }
 
 // checkImages runs refs through the image-check workflow.
-func checkImages(t *testing.T, ctx context.Context, svc *ImageUpdateService, imageRefs ...string) (imageupdate.BatchResponse, error) {
+func checkImages(t *testing.T, ctx context.Context, svc *ImageUpdateService, imageRefs ...string) (types.ImageUpdateBatchResponse, error) {
 	t.Helper()
 	if svc.engine == nil {
 		startCheckWorkflow(t, svc)
 	}
-	return svc.CheckImages(ctx, imageupdate.CheckRequest{ImageRefs: imageRefs}, nil)
+	return svc.CheckImages(ctx, types.ImageUpdateCheckRequest{ImageRefs: imageRefs}, nil)
 }
 
 // newWorkflowCheckService serves one local image per repository named in
@@ -3229,7 +3245,7 @@ func newWorkflowCheckService(
 			},
 		}, nil
 	}, nil, nil)
-	dockerService := &docker.DockerClientService{Client: newImageUpdateTestDockerClient(t, server)}
+	dockerService := (&docker.DockerClientService{}).WithClient(newImageUpdateTestDockerClient(t, server))
 	return NewImageUpdateService(db, nil, registryService, dockerService, event.NewEventService(db, nil, nil), notification.NewNotificationService(db, nil, nil, nil, nil), nil), db
 }
 
@@ -3240,26 +3256,26 @@ func shortenImageCheckRetryBackoff(t *testing.T) {
 	t.Cleanup(func() { imageCheckRetryBackoff, imageCheckRetryBackoffMax = initial, maximum })
 }
 
-func (noopActivities) StartActivity(_ context.Context, req activitylib.StartRequest) (*activitytypes.Activity, error) {
-	return &activitytypes.Activity{ID: req.ID}, nil
+func (noopActivities) StartActivity(_ context.Context, req activitylib.StartRequest) (*types.Activity, error) {
+	return &types.Activity{ID: req.ID}, nil
 }
 
-func (noopActivities) CompleteActivity(_ context.Context, activityID string, status activitytypes.Status, _ string, _ *string, _ ...string) (*activitytypes.Activity, error) {
-	return &activitytypes.Activity{ID: activityID, Status: status}, nil
+func (noopActivities) CompleteActivity(_ context.Context, activityID string, status types.ActivityStatus, _ string, _ *string, _ ...string) (*types.Activity, error) {
+	return &types.Activity{ID: activityID, Status: status}, nil
 }
 
-func (noopActivities) AppendMessage(context.Context, string, activitylib.AppendMessageRequest) (*activitytypes.Message, error) {
-	return &activitytypes.Message{}, nil
+func (noopActivities) AppendMessage(context.Context, string, activitylib.AppendMessageRequest) (*types.ActivityMessage, error) {
+	return &types.ActivityMessage{}, nil
 }
 
-func (noopActivities) AppendMessages(context.Context, string, []activitylib.AppendMessageRequest) ([]activitytypes.Message, error) {
+func (noopActivities) AppendMessages(context.Context, string, []activitylib.AppendMessageRequest) ([]types.ActivityMessage, error) {
 	return nil, nil
 }
 
 func (noopActivities) Track(ctx context.Context, _ string) context.Context { return ctx }
 
-func (noopActivities) UpdateActivity(_ context.Context, activityID string, _ activitylib.UpdateRequest) (*activitytypes.Activity, error) {
-	return &activitytypes.Activity{ID: activityID}, nil
+func (noopActivities) UpdateActivity(_ context.Context, activityID string, _ activitylib.UpdateRequest) (*types.Activity, error) {
+	return &types.Activity{ID: activityID}, nil
 }
 
 func (noopActivities) AwaitActivitySlotBounded(context.Context, string, string) error {

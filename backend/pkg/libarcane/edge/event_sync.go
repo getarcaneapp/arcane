@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"uuid"
 
 	"go.getarcane.app/kit/pkg"
 )
@@ -28,12 +27,9 @@ const (
 // ErrNoActiveAgentTunnel is returned when no active agent tunnel exists for outbound event sync.
 var ErrNoActiveAgentTunnel = errors.New("no active edge agent tunnel")
 
-// agentEventSink is where the agent's live tunnel session accepts events: a multiplexed
-// session's client, or a legacy connection.
+// agentEventSink is where the agent's live multiplexed session accepts events.
 type agentEventSink struct {
 	client *http.Client
-	// Deprecated: legacy edge message protocol; remove in v3.
-	conn TunnelConnection
 }
 
 var activeAgentEvents struct {
@@ -64,17 +60,8 @@ func PublishEventToManager(ctx context.Context, event *TunnelEvent) error {
 	activeAgentEvents.mu.RLock()
 	sink := activeAgentEvents.sink
 	activeAgentEvents.mu.RUnlock()
-	switch {
-	case sink == nil:
+	if sink == nil {
 		return ErrNoActiveAgentTunnel
-	case sink.conn != nil:
-		if sink.conn.IsClosed() {
-			return ErrNoActiveAgentTunnel
-		}
-		if err := sink.conn.Send(&TunnelMessage{ID: uuid.New().String(), Type: MessageTypeEvent, Event: event}); err != nil {
-			return kit.Ternary(errors.Is(err, ErrTunnelConnectionClosed), fmt.Errorf("%w: %w", ErrNoActiveAgentTunnel, err), err)
-		}
-		return nil
 	}
 
 	body, err := json.Marshal(event)

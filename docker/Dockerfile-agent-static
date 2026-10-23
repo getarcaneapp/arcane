@@ -7,14 +7,11 @@ WORKDIR /app
 
 COPY ${TARGETPLATFORM}/arcane-agent ./arcane-agent
 
-ENV ENVIRONMENT=production \
-    AGENT_MODE=true \
-    GIN_MODE=release \
-    PORT=3553
+ENV ARCANE_ENVIRONMENT=production \
+    ARCANE_EDGE_AGENT=true
 
 # The container starts as "root", but arcane drops to the requetsed PUID and PGID after the runtime is initialized 
 USER 0:0
-EXPOSE 3553
 VOLUME ["/app/data"]
 
 CMD ["./arcane-agent"]

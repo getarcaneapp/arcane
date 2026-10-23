@@ -13,21 +13,20 @@ import (
 	"strings"
 	"time"
 
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
-	"github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"go.getarcane.app/docker"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/backup"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 )
 
 const (
@@ -112,7 +111,7 @@ func (s *Service) StorageMount(ctx context.Context, dockerClient *client.Client,
 	return mount.Mount{Type: mount.TypeVolume, Source: s.deps.BackupVolumeName, Target: target, ReadOnly: readOnly}, nil
 }
 
-func (s *Service) stopRunningContainersForBackup(ctx context.Context, volumeName string, user usertypes.Actor, refuseArcaneWriters bool) ([]container.Summary, error) {
+func (s *Service) stopRunningContainersForBackup(ctx context.Context, volumeName string, user types.Actor, refuseArcaneWriters bool) ([]container.Summary, error) {
 	if s.deps.StopContainer == nil || s.deps.StartContainer == nil {
 		return nil, errors.New("container service is unavailable")
 	}
@@ -160,20 +159,18 @@ func (s *Service) stopRunningContainersForBackup(ctx context.Context, volumeName
 }
 
 //nolint:gocognit // recovery retries must reconcile IDs, names, and Compose identities in one bounded loop
-func (s *Service) startContainersAfterBackup(ctx context.Context, stoppedContainers []container.Summary, user usertypes.Actor) ([]container.Summary, error) {
+func (s *Service) startContainersAfterBackup(ctx context.Context, stoppedContainers []container.Summary, user types.Actor) ([]container.Summary, error) {
 	recoveryCtx, cancel := context.WithTimeout(ctx, volumeBackupContainerRecoveryTimeout)
 	defer cancel()
 
 	remaining := append([]container.Summary(nil), stoppedContainers...)
 	lastErrors := make(map[string]error, len(stoppedContainers))
 	for len(remaining) > 0 {
-		currentContainers, listErr := s.deps.Docker.Call(recoveryCtx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-			return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
-		})
+		currentContainers, listErr := s.deps.Docker.ListContainers(recoveryCtx)
 		if listErr == nil {
-			currentByID := make(map[string]container.Summary, len(currentContainers.Items))
-			currentByName := make(map[string]container.Summary, len(currentContainers.Items))
-			for _, current := range currentContainers.Items {
+			currentByID := make(map[string]container.Summary, len(currentContainers))
+			currentByName := make(map[string]container.Summary, len(currentContainers))
+			for _, current := range currentContainers {
 				currentByID[current.ID] = current
 				if name := docker.ContainerNameFromNames(current.Names); name != "" {
 					currentByName[name] = current
@@ -188,7 +185,7 @@ func (s *Service) startContainersAfterBackup(ctx context.Context, stoppedContain
 					current, found = currentByName[name]
 				}
 				if !found {
-					current, found = projects.FindComposeReplica(currentContainers.Items, stopped.Labels)
+					current, found = projects.FindComposeReplica(currentContainers, stopped.Labels)
 				}
 				if !found {
 					nextRemaining = append(nextRemaining, stopped)
@@ -337,20 +334,20 @@ func (s *Service) acquireVolumeRun(ctx context.Context, volumeName string) (*run
 }
 
 // backupDestination names the destination that holds a backup's local and remote copies.
-func backupDestination(local, remote bool) volume.BackupDestination {
+func backupDestination(local, remote bool) types.VolumeBackupDestination {
 	switch {
 	case local && remote:
-		return volume.BackupDestinationLocalS3
+		return types.VolumeBackupDestinationLocalS3
 	case remote:
-		return volume.BackupDestinationS3
+		return types.VolumeBackupDestinationS3
 	default:
-		return volume.BackupDestinationLocal
+		return types.VolumeBackupDestinationLocal
 	}
 }
 
 // logBackupEvent records a volume backup event; a nil user logs as the system user.
-func (s *Service) logBackupEvent(ctx context.Context, eventType event.EventType, volumeName string, user *usertypes.Actor, metadata database.JSON) {
-	actor := cmp.Or(user, &usertypes.SystemUser)
+func (s *Service) logBackupEvent(ctx context.Context, eventType event.EventType, volumeName string, user *types.Actor, metadata database.JSON) {
+	actor := cmp.Or(user, &types.SystemUser)
 	if err := s.deps.Events.LogVolumeEvent(ctx, eventType, volumeName, volumeName, actor.ID, actor.Username, "0", metadata); err != nil {
 		slog.WarnContext(ctx, "could not log volume backup event", "volume", volumeName, "action", metadata["action"], "error", err)
 	}

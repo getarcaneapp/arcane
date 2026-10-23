@@ -26,12 +26,13 @@ import (
 	"gorm.io/gorm/logger"
 	"gorm.io/plugin/opentelemetry/metrics"
 
-	sqliteutil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/sqlite"
-	"github.com/getarcaneapp/arcane/backend/v2/resources"
+	sqliteutil "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/sqlite"
+	"github.com/getarcaneapp/arcane/backend/v3/resources"
 )
 
 type DB struct {
 	*gorm.DB
+	reader *sql.DB
 }
 
 type MigrationOptions struct {
@@ -42,7 +43,6 @@ const (
 	dbProviderSQLite             = "sqlite"
 	dbProviderPostgres           = "postgres"
 	gooseVersionTable            = "goose_db_version"
-	legacyVersionTable           = "schema_migrations"
 	latestMigrationVersion int64 = -1
 
 	// Bound prepared statements so variable SQL does not retain an unbounded cache.
@@ -59,6 +59,7 @@ func SetGormLogger(l logger.Interface) {
 func Initialize(ctx context.Context, databaseURL string, options MigrationOptions) (database *DB, err error) {
 	var dialector gorm.Dialector
 	var dbProvider string
+	var readDSN string
 	switch {
 	case strings.HasPrefix(databaseURL, "file:"):
 		dbProvider = dbProviderSQLite
@@ -85,6 +86,7 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 				break
 			}
 		}
+		readDSN = sqliteReadDSN(connString)
 		dialector = sqlite.Open(connString)
 	case strings.HasPrefix(databaseURL, "postgres"):
 		dbProvider = dbProviderPostgres
@@ -110,6 +112,7 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 			PrepareStmt:                      true,
 			PrepareStmtMaxSize:               preparedStmtMaxSize,
 			PrepareStmtTTL:                   preparedStmtTTL,
+			SkipDefaultTransaction:           true,
 			IgnoreRelationshipsWhenMigrating: true,
 		})
 		if err == nil {
@@ -172,8 +175,8 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 		sqlDB.SetConnMaxLifetime(5 * time.Minute)
 		sqlDB.SetConnMaxIdleTime(3 * time.Minute)
 	} else {
-		sqlDB.SetMaxIdleConns(10)
-		sqlDB.SetMaxOpenConns(10)
+		sqlDB.SetMaxIdleConns(kit.Ternary(readDSN == "", 10, sqliteWriteConns))
+		sqlDB.SetMaxOpenConns(kit.Ternary(readDSN == "", 10, sqliteWriteConns))
 		sqlDB.SetConnMaxLifetime(0)
 		sqlDB.SetConnMaxIdleTime(0)
 	}
@@ -182,7 +185,17 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 		slog.ErrorContext(ctx, "Failed to run migrations", "error", migrationErr)
 		return nil, fmt.Errorf("failed to run migrations: %w", migrationErr)
 	}
-	return db, nil
+	if readDSN == "" {
+		return db, nil
+	}
+	reader, err := attachSQLiteReadPool(gormDB, sqlDB, readDSN)
+	if err != nil {
+		return nil, err
+	}
+	return &DB{
+		DB:     gormDB,
+		reader: reader,
+	}, nil
 }
 
 // latestMigrationVersion selects the latest embedded migration.
@@ -196,10 +209,6 @@ func migrateDatabase(ctx context.Context, db *sql.DB, dbProvider string, options
 			return fmt.Errorf("failed to determine target migration version for %s: no embedded migrations found for %s", dbProvider, dbProvider)
 		}
 		requiredVersion = versions[len(versions)-1]
-	}
-
-	if err := adoptLegacyMigrationState(ctx, db, dbProvider, options); err != nil {
-		return err
 	}
 
 	migrationsFS, err := fs.Sub(resources.FS, "migrations/"+dbProvider)
@@ -240,7 +249,7 @@ func migrateDatabase(ctx context.Context, db *sql.DB, dbProvider string, options
 		if !options.AllowDowngrade {
 			return fmt.Errorf(
 				"database schema version %d is newer than this Arcane binary supports (target %d for %s); downgrade "+
-					"requires ALLOW_DOWNGRADE=true and a database backup before startup",
+					"requires ARCANE_ALLOW_DOWNGRADE=true and a database backup before startup",
 				currentVersion,
 				requiredVersion,
 				dbProvider,
@@ -278,7 +287,7 @@ func migrateDatabase(ctx context.Context, db *sql.DB, dbProvider string, options
 		if len(missingVersions) > 0 {
 			return fmt.Errorf("cannot downgrade database from version %d to %d for %s: embedded Goose migrations are missing for "+
 				"applied version(s) %v, so the rollback SQL is unavailable in this Arcane binary; "+
-				"ALLOW_DOWNGRADE=true is not sufficient, restore the database from a backup taken before the newer "+
+				"ARCANE_ALLOW_DOWNGRADE=true is not sufficient, restore the database from a backup taken before the newer "+
 				"schema was applied",
 				currentVersion,
 				requiredVersion,
@@ -305,121 +314,6 @@ func migrateDatabase(ctx context.Context, db *sql.DB, dbProvider string, options
 	}
 
 	slog.InfoContext(ctx, "Database migrations completed successfully", "provider", dbProvider, "targetVersion", requiredVersion)
-	return nil
-}
-
-// Remove in v3
-func adoptLegacyMigrationState(ctx context.Context, db *sql.DB, dbProvider string, options MigrationOptions) error {
-	if dbProvider != dbProviderSQLite && dbProvider != dbProviderPostgres {
-		return fmt.Errorf("unsupported database provider: %s", dbProvider)
-	}
-	tableQuery := kit.Ternary(dbProvider == dbProviderPostgres,
-		"SELECT to_regclass($1) IS NOT NULL",
-		"SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?)",
-	)
-	var legacyVersion int64
-	var dirty bool
-	for _, table := range []string{legacyVersionTable, gooseVersionTable} {
-		var exists bool
-		if err := db.QueryRowContext(ctx, tableQuery, table).Scan(&exists); err != nil {
-			label := kit.Ternary(table == legacyVersionTable, "legacy migration table", "Goose version table")
-			return fmt.Errorf("failed to check %s for %s: %w", label, dbProvider, err)
-		}
-		if table == gooseVersionTable {
-			if !exists {
-				break
-			}
-			var version int64
-			applied := kit.Ternary(dbProvider == dbProviderPostgres, "true", "1")
-			query := fmt.Sprintf("SELECT COALESCE(MAX(version_id), 0) FROM %s WHERE is_applied = %s", table, applied)
-			if err := db.QueryRowContext(ctx, query).Scan(&version); err != nil {
-				return fmt.Errorf("failed to read Goose migration state for %s: %w", dbProvider, err)
-			}
-			if version > 0 {
-				return nil
-			}
-			continue
-		}
-		if !exists {
-			return nil
-		}
-		query := "SELECT version, dirty FROM " + table + " ORDER BY version DESC LIMIT 1"
-		err := db.QueryRowContext(ctx, query).Scan(&legacyVersion, &dirty)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("failed to read legacy migration state for %s: %w", dbProvider, err)
-		}
-		if dirty {
-			if !options.AllowDowngrade {
-				return fmt.Errorf(
-					"database schema version %d is dirty in legacy %s table; resolve it manually or set "+
-						"ALLOW_DOWNGRADE=true after verifying the database state",
-					legacyVersion,
-					legacyVersionTable,
-				)
-			}
-			placeholder := kit.Ternary(dbProvider == dbProviderPostgres, "$1", "?")
-			query = "UPDATE " + table + " SET dirty = false WHERE version = " + placeholder
-			if _, err = db.ExecContext(ctx, query, legacyVersion); err != nil {
-				return fmt.Errorf("failed to clear legacy dirty migration state for %s version %d: %w", dbProvider, legacyVersion, err)
-			}
-			slog.WarnContext(ctx, "Cleared dirty legacy migration state because ALLOW_DOWNGRADE=true", "provider", dbProvider, "version", legacyVersion)
-		}
-	}
-
-	versions, err := getEmbeddedMigrationVersions(dbProvider)
-	if err != nil {
-		return err
-	}
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to start legacy migration adoption transaction for %s: %w", dbProvider, err)
-	}
-	defer func() {
-		_ = tx.Rollback()
-	}()
-	versionDDL := fmt.Sprintf(kit.Ternary(dbProvider == dbProviderPostgres,
-		`CREATE TABLE IF NOT EXISTS %s (
-	id integer PRIMARY KEY GENERATED BY DEFAULT AS IDENTITY,
-	version_id bigint NOT NULL,
-	is_applied boolean NOT NULL,
-	tstamp timestamp NOT NULL DEFAULT now()
-)`,
-		`CREATE TABLE IF NOT EXISTS %s (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	version_id INTEGER NOT NULL,
-	is_applied INTEGER NOT NULL,
-	tstamp TIMESTAMP DEFAULT (datetime('now'))
-)`,
-	), gooseVersionTable)
-	if _, createErr := tx.ExecContext(ctx, versionDDL); createErr != nil {
-		return fmt.Errorf("failed to create Goose version table for %s: %w", dbProvider, createErr)
-	}
-	if _, err = tx.ExecContext(ctx, "DELETE FROM "+gooseVersionTable); err != nil {
-		return fmt.Errorf("failed to clear Goose version table for %s: %w", dbProvider, err)
-	}
-
-	if end := slices.IndexFunc(versions, func(version int64) bool { return version > legacyVersion }); end >= 0 {
-		versions = versions[:end]
-	}
-	appliedVersions := append([]int64{0}, versions...)
-	if !slices.Contains(appliedVersions, legacyVersion) {
-		appliedVersions = append(appliedVersions, legacyVersion)
-	}
-	first := kit.Ternary(dbProvider == dbProviderPostgres, "$1", "?")
-	second := kit.Ternary(dbProvider == dbProviderPostgres, "$2", "?")
-	insertQuery := fmt.Sprintf("INSERT INTO %s (version_id, is_applied) VALUES (%s, %s)", gooseVersionTable, first, second)
-	for _, version := range appliedVersions {
-		if _, insertErr := tx.ExecContext(ctx, insertQuery, version, true); insertErr != nil {
-			return fmt.Errorf("failed to insert Goose migration version %d for %s: %w", version, dbProvider, insertErr)
-		}
-	}
-	if err = tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit legacy migration adoption for %s: %w", dbProvider, err)
-	}
-	slog.InfoContext(ctx, "Adopted legacy migration state into Goose", "provider", dbProvider, "legacyVersion", legacyVersion)
 	return nil
 }
 
@@ -473,6 +367,12 @@ func ParseSQLiteConnectionString(connString string) (string, error) {
 		if !sqliteutil.HasPragma(qs, "synchronous") {
 			qs.Add("_pragma", "synchronous(NORMAL)")
 		}
+		if !sqliteutil.HasPragma(qs, "cache_size") {
+			qs.Add("_pragma", "cache_size(-8000)")
+		}
+		if !sqliteutil.HasPragma(qs, "temp_store") {
+			qs.Add("_pragma", "temp_store(MEMORY)")
+		}
 		if qs.Get("_txlock") == "" {
 			qs.Set("_txlock", "immediate")
 		}
@@ -512,7 +412,10 @@ func (db *DB) Close() error {
 	if err != nil {
 		return err
 	}
-	return sqlDB.Close()
+	if db.reader == nil {
+		return sqlDB.Close()
+	}
+	return errors.Join(db.reader.Close(), sqlDB.Close())
 }
 
 func (db *DB) SQLDB() (*sql.DB, error) {

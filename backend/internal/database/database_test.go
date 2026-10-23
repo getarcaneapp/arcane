@@ -5,18 +5,16 @@ import (
 	"fmt"
 	"io/fs"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	sqliteutil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/sqlite"
-	"github.com/getarcaneapp/arcane/backend/v2/resources"
+	sqliteutil "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/sqlite"
+	"github.com/getarcaneapp/arcane/backend/v3/resources"
 )
 
 func TestGetEmbeddedMigrationVersions_ProvidersMatch(t *testing.T) {
@@ -49,7 +47,7 @@ func TestMigrateDatabase_BlocksDowngradeWithoutFlag(t *testing.T) {
 
 	err := migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, targetVersion)
 	require.Error(t, err)
-	require.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
+	require.ErrorContains(t, err, "ARCANE_ALLOW_DOWNGRADE=true")
 	require.ErrorContains(t, err, "newer than this Arcane binary supports")
 
 	highestVersionVersions, err := getEmbeddedMigrationVersions("sqlite")
@@ -253,6 +251,82 @@ func TestMigration088_VulnerabilityRisk_BackfillsCVSSAndDowngrades(t *testing.T)
 			"vulnerability_risk_snapshots')").Scan(&tableCount),
 	)
 	assert.Zero(t, tableCount)
+}
+
+func TestMigration096_EdgeOnlyEnvironments_ConvertsDirectAndDowngrades(t *testing.T) {
+	ctx := t.Context()
+	rawDB, _ := newSQLiteSQLDB(t, t.TempDir(), "arcane-edge-only.db")
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 95))
+	_, err := rawDB.Exec(`INSERT INTO environments (id, name, api_url, status, enabled, is_edge, access_token) VALUES
+		('0', 'Local', 'http://localhost:3552', 'online', TRUE, 0, NULL),
+		('d1', 'Prod Server', 'http://prod-1:3553', 'online', TRUE, 0, 'token-d1'),
+		('d2', 'prod  server!', 'http://prod-2:3553', 'offline', TRUE, 0, 'token-d2'),
+		('d3', '', 'http://blank:3553', 'online', TRUE, 0, 'token-d3'),
+		('d4', 'Ünïcode Name', 'http://unicode:3553', 'online', TRUE, 0, 'token-d4'),
+		('d5', 'Staging', 'http://staging:3553', 'online', TRUE, 0, 'token-d5'),
+		('e1', 'Staging Edge', 'edge://staging', 'online', TRUE, 1, NULL)`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 96))
+	type environmentRow struct {
+		apiURL      string
+		status      string
+		accessToken stdsql.NullString
+	}
+	environments := map[string]environmentRow{}
+	rows, err := rawDB.Query(`SELECT id, api_url, status, access_token FROM environments`)
+	require.NoError(t, err)
+	for rows.Next() {
+		var id string
+		var row environmentRow
+		require.NoError(t, rows.Scan(&id, &row.apiURL, &row.status, &row.accessToken))
+		environments[id] = row
+	}
+	require.NoError(t, rows.Err())
+	require.NoError(t, rows.Close())
+
+	for id, apiURL := range map[string]string{
+		"d1": "edge://prod-server-d1",
+		"d2": "edge://prod-server-d2",
+		"d3": "edge://d3",
+		"d4": "edge://n-code-name",
+		"d5": "edge://staging-d5",
+	} {
+		assert.Equal(t, environmentRow{apiURL: apiURL, status: "pending"}, environments[id], id)
+	}
+	assert.Equal(t, environmentRow{apiURL: "edge://staging", status: "online"}, environments["e1"])
+	assert.Equal(t, environmentRow{apiURL: "http://localhost:3552", status: "online"}, environments["0"])
+
+	var columnCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('environments') WHERE name = 'is_edge'`).Scan(&columnCount))
+	assert.Zero(t, columnCount)
+	require.NoError(
+		t,
+		rawDB.QueryRow("SELECT COUNT(*) FROM pragma_table_info('vulnerability_risk_snapshots') WHERE name IN ('score_average', '"+
+			"score_weight', 'exploited_running')").Scan(&columnCount),
+	)
+	assert.Equal(t, 3, columnCount)
+
+	require.NoError(t, migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 95))
+	isEdge := map[string]int{}
+	rows, err = rawDB.Query(`SELECT id, is_edge FROM environments`)
+	require.NoError(t, err)
+	for rows.Next() {
+		var id string
+		var edge int
+		require.NoError(t, rows.Scan(&id, &edge))
+		isEdge[id] = edge
+	}
+	require.NoError(t, rows.Err())
+	require.NoError(t, rows.Close())
+	assert.Equal(t, map[string]int{"0": 0, "d1": 1, "d2": 1, "d3": 1, "d4": 1, "d5": 1, "e1": 1}, isEdge)
+	require.NoError(
+		t,
+		rawDB.QueryRow("SELECT COUNT(*) FROM pragma_table_info('vulnerability_risk_snapshots') WHERE name IN ('score_average', '"+
+			"score_weight', 'exploited_running')").Scan(&columnCount),
+	)
+	assert.Zero(t, columnCount)
 }
 
 func TestMigration067_ActivityBatchID_UpAndDown(t *testing.T) {
@@ -522,43 +596,10 @@ func TestMigrateDatabase_BlocksDowngradeWhenEmbeddedMigrationMissing(t *testing.
 
 	err = migrateDatabase(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, latestMigrationVersion)
 	require.Error(t, err)
-	require.ErrorContains(t, err, "ALLOW_DOWNGRADE=true is not sufficient")
+	require.ErrorContains(t, err, "ARCANE_ALLOW_DOWNGRADE=true is not sufficient")
 	require.ErrorContains(t, err, "restore the database from a backup")
 	require.ErrorContains(t, err, strconv.FormatInt(highestVersion+1, 10))
 	assert.Equal(t, highestVersion+1, readGooseSQLiteVersion(t, dsn))
-}
-
-func TestAdoptLegacyMigrationState_DirtyVersions(t *testing.T) {
-	highestVersions, err := getEmbeddedMigrationVersions(dbProviderSQLite)
-	require.NoError(t, err)
-	require.NotEmpty(t, highestVersions)
-	highest := highestVersions[len(highestVersions)-1]
-	for _, tc := range []struct {
-		name    string
-		version int64
-	}{
-		{name: "current version", version: highest},
-		{name: "older version", version: downgradeTargetVersion(t)},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			ctx := t.Context()
-			db, dsn := newSQLiteSQLDB(t, t.TempDir(), "legacy-dirty.db")
-			require.NoError(t, migrateDatabase(ctx, db, dbProviderSQLite, MigrationOptions{}, latestMigrationVersion))
-			require.NoError(t, migrateDatabase(ctx, db, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, tc.version))
-			_, clearErr := db.ExecContext(ctx, "DELETE FROM "+gooseVersionTable)
-			require.NoError(t, clearErr)
-			seedLegacyMigrationState(t, dsn, tc.version, true)
-
-			adoptionErr := adoptLegacyMigrationState(ctx, db, dbProviderSQLite, MigrationOptions{})
-			require.ErrorContains(t, adoptionErr, "is dirty")
-			require.ErrorContains(t, adoptionErr, "ALLOW_DOWNGRADE=true")
-			require.NoError(t, adoptLegacyMigrationState(ctx, db, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}))
-			assert.Equal(t, tc.version, readGooseSQLiteVersion(t, dsn))
-			assertLegacyMigrationClean(t, dsn)
-			require.NoError(t, migrateDatabase(ctx, db, dbProviderSQLite, MigrationOptions{}, latestMigrationVersion))
-			assert.Equal(t, highest, readGooseSQLiteVersion(t, dsn))
-		})
-	}
 }
 
 func downgradeTargetVersion(t *testing.T) int64 {
@@ -747,8 +788,8 @@ func TestInitialize_RecordsGooseVersionOnFreshSQLite(t *testing.T) {
 		t.Run(phase+" pool enforces foreign keys", func(t *testing.T) {
 			sqlDB, poolErr := db.SQLDB()
 			require.NoError(t, poolErr)
-			connections := make([]*stdsql.Conn, 0, 3)
-			for range 3 {
+			connections := make([]*stdsql.Conn, 0, sqliteWriteConns)
+			for range sqliteWriteConns {
 				conn, connErr := sqlDB.Conn(ctx)
 				require.NoError(t, connErr)
 				connections = append(connections, conn)
@@ -824,92 +865,6 @@ func TestInitialize_RecordsGooseVersionOnFreshSQLite(t *testing.T) {
 			require.Zero(t, violations)
 		})
 	}
-}
-
-func TestInitialize_AdoptsCleanLegacyMigrationState(t *testing.T) {
-	ctx := t.Context()
-	dsn := "file:" + filepath.Join(t.TempDir(), "arcane-legacy-clean.db")
-	highestVersions, err := getEmbeddedMigrationVersions("sqlite")
-	require.NoError(t, err)
-	require.NotEmpty(t, highestVersions)
-	highest := highestVersions[len(highestVersions)-1]
-	seedLegacyMigrationState(t, dsn, highest, false)
-
-	db, err := Initialize(ctx, dsn, MigrationOptions{})
-	require.NoError(t, err)
-	require.NotNil(t, db)
-	t.Cleanup(func() {
-		require.NoError(t, db.Close())
-	})
-
-	assert.Equal(t, highest, readGooseSQLiteVersion(t, dsn))
-	assertLegacyMigrationClean(t, dsn)
-}
-
-func TestInitialize_RollsBackFailedLegacyMigrationAdoption(t *testing.T) {
-	ctx := t.Context()
-	rawDB, dsn := newSQLiteSQLDB(t, t.TempDir(), "arcane-legacy-rollback.db")
-	highestVersions, err := getEmbeddedMigrationVersions("sqlite")
-	require.NoError(t, err)
-	require.NotEmpty(t, highestVersions)
-	highest := highestVersions[len(highestVersions)-1]
-	seedLegacyMigrationState(t, dsn, highest, false)
-
-	_, err = rawDB.Exec(`
-CREATE TABLE goose_db_version (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	version_id INTEGER NOT NULL,
-	is_applied INTEGER NOT NULL CHECK (is_applied = 0),
-	tstamp TIMESTAMP DEFAULT (datetime('now'))
-)`)
-	require.NoError(t, err)
-	_, err = rawDB.Exec(`INSERT INTO goose_db_version (version_id, is_applied) VALUES (?, ?)`, 0, 0)
-	require.NoError(t, err)
-
-	err = adoptLegacyMigrationState(ctx, rawDB, dbProviderSQLite, MigrationOptions{})
-	require.Error(t, err)
-	require.ErrorContains(t, err, "failed to insert Goose migration version")
-
-	var rowCount int
-	err = rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM goose_db_version WHERE version_id = 0 AND is_applied = 0`).Scan(&rowCount)
-	require.NoError(t, err)
-	assert.Equal(t, 1, rowCount)
-}
-
-func TestInitialize_BlocksDirtyLegacyMigrationState(t *testing.T) {
-	ctx := t.Context()
-	dsn := "file:" + filepath.Join(t.TempDir(), "arcane-legacy-dirty.db")
-	highestVersions, err := getEmbeddedMigrationVersions("sqlite")
-	require.NoError(t, err)
-	require.NotEmpty(t, highestVersions)
-	highest := highestVersions[len(highestVersions)-1]
-	seedLegacyMigrationState(t, dsn, highest, true)
-
-	db, err := Initialize(ctx, dsn, MigrationOptions{})
-	require.Error(t, err)
-	require.Nil(t, db)
-	require.ErrorContains(t, err, "dirty")
-	assert.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
-}
-
-func TestInitialize_ClearsDirtyLegacyMigrationStateWhenAllowed(t *testing.T) {
-	ctx := t.Context()
-	dsn := "file:" + filepath.Join(t.TempDir(), "arcane-legacy-dirty-allowed.db")
-	highestVersions, err := getEmbeddedMigrationVersions("sqlite")
-	require.NoError(t, err)
-	require.NotEmpty(t, highestVersions)
-	highest := highestVersions[len(highestVersions)-1]
-	seedLegacyMigrationState(t, dsn, highest, true)
-
-	db, err := Initialize(ctx, dsn, MigrationOptions{AllowDowngrade: true})
-	require.NoError(t, err)
-	require.NotNil(t, db)
-	t.Cleanup(func() {
-		require.NoError(t, db.Close())
-	})
-
-	assert.Equal(t, highest, readGooseSQLiteVersion(t, dsn))
-	assertLegacyMigrationClean(t, dsn)
 }
 
 func TestInitialize_CreatesQueryPerformanceIndexes(t *testing.T) {
@@ -996,26 +951,6 @@ func assertSQLiteIndexMissing(t *testing.T, db *DB, indexName string) {
 	assert.Zero(t, count, "expected index %s to be removed", indexName)
 }
 
-func seedLegacyMigrationState(t *testing.T, dsn string, version int64, dirty bool) {
-	t.Helper()
-
-	rawDB, err := stdsql.Open("sqlite", dsn)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, rawDB.Close())
-	})
-
-	_, err = rawDB.Exec(`
-CREATE TABLE schema_migrations (
-	version INTEGER NOT NULL PRIMARY KEY,
-	dirty BOOLEAN NOT NULL
-)`)
-	require.NoError(t, err)
-
-	_, err = rawDB.Exec(`INSERT INTO schema_migrations (version, dirty) VALUES (?, ?)`, version, dirty)
-	require.NoError(t, err)
-}
-
 func readGooseSQLiteVersion(t *testing.T, dsn string) int64 {
 	t.Helper()
 
@@ -1029,21 +964,6 @@ func readGooseSQLiteVersion(t *testing.T, dsn string) int64 {
 	err = rawDB.QueryRow(`SELECT COALESCE(MAX(version_id), 0) FROM goose_db_version WHERE is_applied = 1`).Scan(&version)
 	require.NoError(t, err)
 	return version
-}
-
-func assertLegacyMigrationClean(t *testing.T, dsn string) {
-	t.Helper()
-
-	rawDB, err := stdsql.Open("sqlite", dsn)
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, rawDB.Close())
-	}()
-
-	var dirty bool
-	err = rawDB.QueryRow(`SELECT dirty FROM schema_migrations ORDER BY version DESC LIMIT 1`).Scan(&dirty)
-	require.NoError(t, err)
-	assert.False(t, dirty)
 }
 
 func TestSQLiteMigrations_ColumnAddsAreReversible(t *testing.T) {
@@ -1360,89 +1280,6 @@ func TestIdentityNormalizationGooseUpgrade(t *testing.T) {
 	require.Equal(t, highest, version)
 }
 
-func TestIdentityNormalizationPostgresUpgrade(t *testing.T) {
-	dsn := os.Getenv("ARCANE_TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("ARCANE_TEST_POSTGRES_DSN is not set")
-	}
-	ctx := t.Context()
-	admin, err := stdsql.Open("pgx", dsn)
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, admin.Close()) })
-	schema := fmt.Sprintf("normalization_test_%d", time.Now().UnixNano())
-	_, err = admin.ExecContext(ctx, "CREATE SCHEMA "+schema)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, execContextErr := admin.ExecContext(ctx, "DROP SCHEMA "+schema+" CASCADE")
-		require.NoError(t, execContextErr)
-	})
-	parsed, err := url.Parse(dsn)
-	require.NoError(t, err)
-	require.Contains(t, []string{"postgres", "postgresql"}, parsed.Scheme)
-	query := parsed.Query()
-	query.Set("search_path", schema)
-	parsed.RawQuery = query.Encode()
-	db, err := stdsql.Open("pgx", parsed.String())
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, db.Close()) })
-	require.NoError(t, migrateDatabase(ctx, db, dbProviderPostgres, MigrationOptions{}, 80))
-	const whitespace = "\t\n\v\f\r \u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000"
-	_, err = db.ExecContext(
-		ctx,
-		"INSERT INTO users (id, username, email, display_name, password_hash) VALUES ($1, $2, $3, $4, $5), ($"+
-			"6, $7, $8, $9, $10)",
-		"first",
-		" Jose\u0301 ",
-		" a@example.com ",
-		whitespace+"Jose\u0301"+whitespace,
-		"unchanged",
-		"second",
-		"José",
-		nil,
-		nil,
-		"unchanged",
-	)
-	require.NoError(t, err)
-	require.NoError(t, migrateDatabase(ctx, db, dbProviderPostgres, MigrationOptions{}, latestMigrationVersion))
-	require.NoError(t, migrateDatabase(ctx, db, dbProviderPostgres, MigrationOptions{}, latestMigrationVersion))
-	for _, expected := range []struct {
-		id, username       string
-		email, displayName stdsql.NullString
-	}{
-		{"first", " Jose\u0301 ", stdsql.NullString{String: " a@example.com ", Valid: true}, stdsql.NullString{String: "José", Valid: true}},
-		{"second", "José", stdsql.NullString{}, stdsql.NullString{}},
-	} {
-		var id, username, password string
-		var email, displayName stdsql.NullString
-		require.NoError(
-			t,
-			db.QueryRowContext(
-				ctx,
-				"SELECT id, username, email, display_name, password_hash FROM users WHERE id = $1",
-				expected.id,
-			).Scan(
-				&id,
-				&username,
-				&email,
-				&displayName,
-				&password,
-			),
-		)
-		require.Equal(t, expected.id, id)
-		require.Equal(t, expected.username, username)
-		require.Equal(t, expected.email, email)
-		require.Equal(t, expected.displayName, displayName)
-		require.Equal(t, "unchanged", password)
-	}
-	var version int64
-	require.NoError(t, db.QueryRowContext(ctx, "SELECT MAX(version_id) FROM goose_db_version WHERE is_applied").Scan(&version))
-	highestVersions, err := getEmbeddedMigrationVersions("postgres")
-	require.NoError(t, err)
-	require.NotEmpty(t, highestVersions)
-	highest := highestVersions[len(highestVersions)-1]
-	require.Equal(t, highest, version)
-}
-
 func TestSQLiteDSN(t *testing.T) {
 	for name, foreignKeys := range map[string]string{
 		"missing":          "",
@@ -1464,7 +1301,7 @@ func TestSQLiteDSN(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, "immediate", parsed.Query().Get("_txlock"))
 			require.Equal(t, "shared", parsed.Query().Get("cache"))
-			require.ElementsMatch(t, []string{"foreign_keys(1)", "synchronous(NORMAL)", "busy_timeout(2500)", "journal_mode(WAL)"}, parsed.Query()["_pragma"])
+			require.ElementsMatch(t, []string{"foreign_keys(1)", "synchronous(NORMAL)", "busy_timeout(2500)", "journal_mode(WAL)", "cache_size(-8000)", "temp_store(MEMORY)"}, parsed.Query()["_pragma"])
 			require.Empty(t, parsed.Query().Get("_fk"))
 			require.Empty(t, parsed.Query().Get("_foreign_keys"))
 			require.Empty(t, parsed.Query().Get("_busy_timeout"))
@@ -1482,19 +1319,19 @@ func TestSQLiteDSN_ConcurrencyDefaults(t *testing.T) {
 		{
 			name:    "defaults added",
 			input:   "file:arcane.db",
-			pragmas: []string{"foreign_keys(1)", "busy_timeout(10000)", "journal_mode(WAL)", "synchronous(NORMAL)"},
+			pragmas: []string{"foreign_keys(1)", "busy_timeout(10000)", "journal_mode(WAL)", "synchronous(NORMAL)", "cache_size(-8000)", "temp_store(MEMORY)"},
 			txlock:  "immediate",
 		},
 		{
 			name:    "explicit values kept",
 			input:   "file:arcane.db?_journal_mode=DELETE&_timeout=500&_txlock=deferred",
-			pragmas: []string{"foreign_keys(1)", "busy_timeout(500)", "journal_mode(DELETE)", "synchronous(NORMAL)"},
+			pragmas: []string{"foreign_keys(1)", "busy_timeout(500)", "journal_mode(DELETE)", "synchronous(NORMAL)", "cache_size(-8000)", "temp_store(MEMORY)"},
 			txlock:  "deferred",
 		},
 		{
 			name:    "explicit pragmas kept",
 			input:   "file:arcane.db?_pragma=journal_mode(TRUNCATE)&_pragma=busy_timeout(2000)",
-			pragmas: []string{"foreign_keys(1)", "busy_timeout(2000)", "journal_mode(TRUNCATE)", "synchronous(NORMAL)"},
+			pragmas: []string{"foreign_keys(1)", "busy_timeout(2000)", "journal_mode(TRUNCATE)", "synchronous(NORMAL)", "cache_size(-8000)", "temp_store(MEMORY)"},
 			txlock:  "immediate",
 		},
 		{

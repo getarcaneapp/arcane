@@ -6,16 +6,16 @@ import (
 	"context"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/version"
+	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
 type Module struct {
@@ -52,7 +52,7 @@ func (m *Module) Handler() *EnvironmentHandler {
 }
 
 // RegisterRoutes registers the environment endpoints; localVersion answers version requests for the local environment.
-func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext, localVersion func(context.Context) *version.Info) {
+func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext, localVersion func(context.Context) *types.VersionInfo) {
 	if m == nil {
 		RegisterEnvironments(api, NewHandler(nil, nil, nil, nil, nil, nil))
 		return
@@ -64,6 +64,8 @@ func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppCont
 		eventService:       m.handler.eventService,
 		cfg:                m.handler.cfg,
 		streamHub:          m.handler.streamHub,
+		changeHub:          m.handler.changeHub,
+		changeCursors:      m.handler.changeCursors,
 		activityService:    m.handler.activityService,
 		appCtx:             appCtx.Context(),
 		localVersion:       localVersion,
@@ -111,7 +113,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 
 	huma.Register(api, huma.Operation{
 		OperationID: "updateEnvironment",
-		Method:      "PUT",
+		Method:      "PATCH",
 		Path:        "/environments/{id}",
 		Summary:     "Update an environment",
 		Description: "Update a Docker environment",
@@ -140,26 +142,6 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 		Tags:        []string{"Environments"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermEnvironmentsRead, h.TestConnection)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "updateHeartbeat",
-		Method:      "POST",
-		Path:        "/environments/{id}/heartbeat",
-		Summary:     "Update environment heartbeat",
-		Description: "Update the heartbeat timestamp for an environment",
-		Tags:        []string{"Environments"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermEnvironmentsSync, h.UpdateHeartbeat)
-
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "pairAgent",
-		Method:      "POST",
-		Path:        "/environments/{id}/agent/pair",
-		Summary:     "Pair with local agent",
-		Description: "Generate or rotate the local agent pairing token",
-		Tags:        []string{"Environments"},
-		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermEnvironmentsPair, h.PairAgent)
 
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "syncEnvironment",
@@ -220,12 +202,13 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 		Description: "Get the version of a remote environment",
 		Tags:        []string{"Environments"},
 		Security:    handlerutil.DefaultOperationSecurity(),
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
 	}, authz.PermEnvironmentsRead, h.GetEnvironmentVersion)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "downloadEdgeMTLSCA",
 		Method:      "GET",
-		Path:        "/edge-mtls/ca",
+		Path:        "/edge/mtls/ca",
 		Summary:     "Download Arcane-generated edge mTLS CA",
 		Description: "Download the Arcane-managed certificate authority used for generated edge mTLS client certificates",
 		Tags:        []string{"Environments"},

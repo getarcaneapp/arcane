@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 )
 
 func TestValidateCredentialTargetChange(t *testing.T) {
@@ -100,7 +100,7 @@ func TestValidateCredentialTargetChange(t *testing.T) {
 			switch {
 			case tt.wantField != "":
 				require.ErrorIs(t, err, common.ErrValidation)
-				fieldErr, ok := errors.AsType[*base.FieldError](err)
+				fieldErr, ok := errors.AsType[*types.FieldError](err)
 				require.True(t, ok)
 				assert.Equal(t, tt.wantField, fieldErr.Field)
 				assert.Equal(t, "Changing credential target requires re-entering the token", err.Error())

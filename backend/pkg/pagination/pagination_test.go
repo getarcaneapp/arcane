@@ -74,6 +74,7 @@ func TestBuildResponse(t *testing.T) {
 				CurrentPage:     1,
 				ItemsPerPage:    10,
 				GrandTotalItems: 100,
+				HasNextPage:     true,
 			},
 		},
 		{
@@ -95,6 +96,7 @@ func TestBuildResponse(t *testing.T) {
 				CurrentPage:     2,
 				ItemsPerPage:    10,
 				GrandTotalItems: 100,
+				HasNextPage:     true,
 			},
 		},
 		{

@@ -10,31 +10,29 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	usertypes "github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo-otel/v5"
 	"github.com/labstack/echo/v5"
 	echomiddleware "github.com/labstack/echo/v5/middleware"
 	"github.com/samber/slog-echo/v2"
 	"go.uber.org/fx"
 
-	"github.com/getarcaneapp/arcane/backend/v2/api"
-	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
-	"github.com/getarcaneapp/arcane/backend/v2/frontend"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/apikey"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/federated"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/telemetry"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/api"
+	"github.com/getarcaneapp/arcane/backend/v3/api/ws"
+	"github.com/getarcaneapp/arcane/backend/v3/frontend"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/apikey"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/federated"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/telemetry"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/cookie"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 var (
@@ -56,12 +54,12 @@ var loggerSkipPatterns = []string{
 	"GET /img",
 	"GET /api/health",
 	"HEAD /api/health",
-	"GET /api/app-images/*",
+	"GET /api/app/images/*",
 	"PUT /api/environments/*/uploads/*/*/chunks/*",
 }
 
 func createAuthValidator(deps api.HandlerDeps) middleware.AuthValidator {
-	resolveUser := func(ctx context.Context, user *usertypes.Actor) *authz.PermissionSet {
+	resolveUser := func(ctx context.Context, user *types.Actor) *authz.PermissionSet {
 		ps, err := deps.Role.Service().ResolvePermissions(ctx, user.ID)
 		if err != nil || ps == nil {
 			slog.WarnContext(ctx, "failed to resolve user permissions for env proxy", "error", err)
@@ -77,7 +75,7 @@ func createAuthValidator(deps api.HandlerDeps) middleware.AuthValidator {
 		}
 		return ps
 	}
-	return func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *usertypes.Actor, bool) {
+	return func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *types.Actor, bool) {
 		req := c.Request()
 		// Check for API key authentication
 		if apiKey := req.Header.Get(middleware.HeaderApiKey); apiKey != "" {
@@ -153,14 +151,14 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		}
 		_, ipnet, err := net.ParseCIDR(cidr)
 		if err != nil {
-			slog.WarnContext(ctx, "invalid TRUSTED_PROXIES CIDR, ignoring", "cidr", cidr, "error", err)
+			slog.WarnContext(ctx, "invalid ARCANE_TRUSTED_PROXIES CIDR, ignoring", "cidr", cidr, "error", err)
 			continue
 		}
 		trustedProxyNets = append(trustedProxyNets, ipnet)
 		trustOpts = append(trustOpts, echo.TrustIPRange(ipnet))
 	}
 	if cfg.TrustedProxies != "" && len(trustedProxyNets) == 0 {
-		slog.WarnContext(ctx, "TRUSTED_PROXIES set but no valid CIDRs found; falling back to direct IP extraction")
+		slog.WarnContext(ctx, "ARCANE_TRUSTED_PROXIES set but no valid CIDRs found; falling back to direct IP extraction")
 	}
 	if len(trustedProxyNets) == 0 {
 		e.IPExtractor = echo.ExtractIPDirect()
@@ -197,13 +195,9 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		WithTraceID:   true,
 		WithSpanID:    true,
 	})
-	// Internal edge tunnel requests are never logged.
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		logged := requestLogger(next)
 		return func(c *echo.Context) error {
-			if edge.IsInternalTunnelRequest(c.Request().Context()) {
-				return next(c)
-			}
 			if c.Request().Body == nil {
 				c.Request().Body = http.NoBody
 			}
@@ -254,18 +248,18 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	))
 	handlerAppCtx := handlerutil.NewActivityAppContext(ctx)
 
-	envResolver := func(ctx context.Context, id string) (string, *string, bool, error) {
+	envResolver := func(ctx context.Context, id string) (*string, bool, error) {
 		env, err := deps.Environment.Service().GetEnvironmentByIDCached(ctx, id)
-		if err != nil || env == nil {
-			return "", nil, false, err
+		if err != nil {
+			return nil, false, err
 		}
-		return env.ApiUrl, env.AccessToken, env.Enabled, nil
+		return env.AccessToken, env.Enabled, nil
 	}
 
 	// Register public webhook trigger endpoint before auth middleware (token in URL is the sole auth)
 	api.RegisterWebhookTrigger(apiGroup, deps.Webhook.Service(), handlerAppCtx)
 	federated.RegisterFederatedTokenExchange(apiGroup, deps.Federated)
-	if !cfg.AgentMode {
+	if !cfg.EdgeAgent {
 		telemetry.RegisterRoutes(apiGroup, telemetry.NewService())
 	}
 	deps.Event.RegisterAgentRoutes(apiGroup, func(ctx context.Context, token string) (string, error) {
@@ -290,14 +284,14 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		p.TunnelRegistry,
 		httpx.ValidateWebSocketOrigin(cfg.GetAppURL()),
 	)
-	apiGroup.Use(middleware.NewEnvironmentScopeMiddleware(func(ctx context.Context, id string) (base.EnvironmentRef, error) {
+	apiGroup.Use(middleware.NewEnvironmentScopeMiddleware(func(ctx context.Context, id string) (types.EnvironmentRef, error) {
 		env, err := deps.Environment.Service().GetEnvironmentByIDCached(ctx, id)
 		if err != nil {
-			return base.EnvironmentRef{}, err
+			return types.EnvironmentRef{}, err
 		}
-		return base.EnvironmentRef{ID: id, Name: environment.DisplayName(id, env.Name)}, nil
+		return types.EnvironmentRef{ID: id, Name: environment.DisplayName(id, env.Name)}, nil
 	}, permissionMatcher, func(ctx context.Context) int {
-		return deps.Settings.Service().GetIntSetting(ctx, "allEnvironmentsLimit", 64)
+		return deps.Settings.Service().GetIntSetting(ctx, "allEnvironmentsLimit")
 	}))
 	apiGroup.Use(envProxyMiddleware)
 
@@ -313,11 +307,11 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	}
 
 	// Remaining echo handlers (WebSocket/streaming)
-	ws.NewWebSocketHandler(ctx, apiGroup, deps.Project.Service(), deps.Container.Service(), deps.Swarm.Service(), deps.System.Service(), deps.Diagnostics, authMiddleware, cfg)
+	ws.NewWebSocketHandler(ctx, apiGroup, deps.Project.Service(), deps.Container.Service(), deps.Swarm.Service(), deps.System.Service(), deps.Diagnostics, authMiddleware, deps.Settings.Service(), cfg)
 
 	// Managers accept agent connections on the edge tunnel endpoint.
 	var tunnelServer *edge.TunnelServer
-	if !cfg.AgentMode {
+	if !cfg.EdgeAgent {
 		tunnelServer = registerEdgeTunnelRoutes(ctx, p.Lifecycle, cfg, apiGroup, deps.Environment.Service(), deps.Event.Service(), deps.Notification.Service(), p.TunnelRegistry)
 	}
 

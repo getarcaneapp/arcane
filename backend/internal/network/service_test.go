@@ -10,12 +10,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	networktypes "github.com/getarcaneapp/arcane/types/v2/network"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 func networkScopeContext(t *testing.T, target string, bodies map[string]any) (context.Context, *sync.Map) {
@@ -35,17 +34,17 @@ func networkScopeContext(t *testing.T, target string, bodies map[string]any) (co
 			}
 			_ = json.NewEncoder(w).Encode(body)
 		}),
-		Resolve: func(_ context.Context, id string) (base.EnvironmentRef, error) {
-			return base.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
 		},
 	}), &queries
 }
 
 func TestAggregateNetworksMergesEnvironments(t *testing.T) {
 	bodies := map[string]any{
-		"a": base.PaginatedWithCounts[networktypes.Summary, networktypes.UsageCounts]{
+		"a": types.PaginatedWithCounts[types.NetworkSummary, types.NetworkUsageCounts]{
 			Success: true,
-			Data: []networktypes.Summary{
+			Data: []types.NetworkSummary{
 				{
 					ID:    "a1",
 					Name:  "bridge",
@@ -53,16 +52,16 @@ func TestAggregateNetworksMergesEnvironments(t *testing.T) {
 				},
 				{ID: "a2", Name: "frontend"},
 			},
-			Counts: networktypes.UsageCounts{
+			Counts: types.NetworkUsageCounts{
 				Inuse:  1,
 				Unused: 1,
 				Total:  2,
 			},
-			Pagination: base.PaginationResponse{TotalItems: 2, GrandTotalItems: 3},
+			Pagination: types.PaginationResponse{TotalItems: 2, GrandTotalItems: 3},
 		},
-		"b": base.PaginatedWithCounts[networktypes.Summary, networktypes.UsageCounts]{
+		"b": types.PaginatedWithCounts[types.NetworkSummary, types.NetworkUsageCounts]{
 			Success: true,
-			Data: []networktypes.Summary{
+			Data: []types.NetworkSummary{
 				{
 					ID:    "b1",
 					Name:  "backend",
@@ -74,11 +73,11 @@ func TestAggregateNetworksMergesEnvironments(t *testing.T) {
 					InUse: true,
 				},
 			},
-			Counts:     networktypes.UsageCounts{Inuse: 2, Total: 2},
-			Pagination: base.PaginationResponse{TotalItems: 2},
+			Counts:     types.NetworkUsageCounts{Inuse: 2, Total: 2},
+			Pagination: types.PaginationResponse{TotalItems: 2},
 		},
 	}
-	rowLabels := func(items []networktypes.Summary) []string {
+	rowLabels := func(items []types.NetworkSummary) []string {
 		out := make([]string, 0, len(items))
 		for _, item := range items {
 			out = append(out, item.EnvironmentID+"/"+item.Name)
@@ -99,12 +98,12 @@ func TestAggregateNetworksMergesEnvironments(t *testing.T) {
 		require.Equal(t, int64(5), body.Pagination.GrandTotalItems)
 		require.Equal(t, int64(2), body.Pagination.TotalPages)
 		require.Equal(t, 2, body.Pagination.CurrentPage)
-		require.Equal(t, networktypes.UsageCounts{
+		require.Equal(t, types.NetworkUsageCounts{
 			Inuse:  3,
 			Unused: 1,
 			Total:  4,
 		}, body.Counts)
-		require.Equal(t, []base.EnvironmentFailure{{Environment: base.EnvironmentRef{ID: "c", Name: "c"}, Message: "environment offline"}}, body.FailedEnvironments)
+		require.Equal(t, []types.EnvironmentFailure{{Environment: types.EnvironmentRef{ID: "c", Name: "c"}, Message: "environment offline"}}, body.FailedEnvironments)
 		for _, id := range []string{"a", "b"} {
 			stored, ok := queries.Load(id)
 			require.True(t, ok)
@@ -127,4 +126,66 @@ func TestAggregateNetworksMergesEnvironments(t *testing.T) {
 		require.Empty(t, body.Data)
 		require.Len(t, body.FailedEnvironments, 3)
 	})
+}
+
+func TestAggregateNetworkCountsSumsEnvironments(t *testing.T) {
+	ctx, _ := networkScopeContext(t, "/api/environments/a,b,c/networks/counts", map[string]any{
+		"a": types.ApiResponse[types.NetworkUsageCounts]{
+			Success: true,
+			Data: types.NetworkUsageCounts{
+				Inuse:  1,
+				Unused: 1,
+				Total:  2,
+			},
+		},
+		"b": types.ApiResponse[types.NetworkUsageCounts]{
+			Success: true,
+			Data: types.NetworkUsageCounts{
+				Inuse: 3,
+				Total: 3,
+			},
+		},
+	})
+
+	body, err := (&NetworkService{}).AggregateNetworkCounts(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, types.NetworkUsageCounts{
+		Inuse:  4,
+		Unused: 1,
+		Total:  5,
+	}, body.Data)
+	require.Len(t, body.Environments, 2)
+	require.Len(t, body.FailedEnvironments, 1)
+}
+
+func TestAggregateNetworkTopologyPrefixesNodeIDs(t *testing.T) {
+	topology := types.ApiResponse[types.NetworkTopology]{
+		Success: true,
+		Data: types.NetworkTopology{
+			Nodes: []types.NetworkTopologyNode{
+				{ID: "net", Name: "bridge", Type: types.NetworkTopologyNodeTypeNetwork},
+				{ID: "ctr", Name: "web", Type: types.NetworkTopologyNodeTypeContainer},
+			},
+			Edges: []types.NetworkTopologyEdge{{ID: "net:ctr", Source: "net", Target: "ctr"}},
+		},
+	}
+	ctx, _ := networkScopeContext(t, "/api/environments/a,b,c/networks/topology", map[string]any{
+		"a": topology,
+		"b": topology,
+	})
+
+	body, err := (&NetworkService{}).AggregateNetworkTopology(ctx)
+	require.NoError(t, err)
+
+	require.Len(t, body.Data.Nodes, 4)
+	require.Equal(t, "a/net", body.Data.Nodes[0].ID)
+	require.Equal(t, "Env a", body.Data.Nodes[0].EnvironmentName)
+	require.Equal(t, "b/ctr", body.Data.Nodes[3].ID)
+	require.Equal(t, "b", body.Data.Nodes[3].EnvironmentID)
+	require.Equal(t, []types.NetworkTopologyEdge{
+		{ID: "a/net:ctr", Source: "a/net", Target: "a/ctr"},
+		{ID: "b/net:ctr", Source: "b/net", Target: "b/ctr"},
+	}, body.Data.Edges)
+	require.Len(t, body.FailedEnvironments, 1)
 }

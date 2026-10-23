@@ -17,15 +17,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/project"
-	"github.com/getarcaneapp/arcane/types/v2/workspace"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
 func Command() *cobra.Command {
@@ -122,8 +120,8 @@ func newDestroyCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.forceFlag,
 				Prompt:         fmt.Sprintf("Are you sure you want to destroy project %s? This will remove all containers!", cmp.Or(resolved.Name, resolved.ID)),
-				Path:           types.ProjectDestroy(c.EnvID(), resolved.ID),
-				Body:           project.Destroy{RemoveFiles: &opts.destroyRemoveFiles, RemoveVolumes: opts.destroyRemoveVolumes},
+				Path:           clitypes.Project(c.EnvID(), resolved.ID),
+				Body:           types.ProjectDestroy{RemoveFiles: &opts.destroyRemoveFiles, RemoveVolumes: opts.destroyRemoveVolumes},
 				FailureMessage: "failed to destroy project",
 				SuccessMessage: fmt.Sprintf("Project %s destroyed successfully", resolved.Name),
 			})
@@ -176,7 +174,9 @@ func newUpCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runProjectStreamAction(cmd, args[0], projectStreamActionConfig{
-				endpoint:       types.ProjectUp,
+				endpoint: func(envID, projectID string) string {
+					return clitypes.ProjectDeploy(envID, projectID, "up")
+				},
 				failureMessage: "failed to start project",
 				successMessage: "Project %s started successfully",
 			})
@@ -201,11 +201,11 @@ func newDownCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           types.ProjectDown(c.EnvID(), resolved.ID),
+				Path:           clitypes.ProjectAction(c.EnvID(), resolved.ID, "down", nil),
 				FailureMessage: "failed to stop project",
-				Render: func(base.MessageResponse) error {
+				Render: func(types.MessageResponse) error {
 					output.Success("%s", fmt.Sprintf("Project %s stopped successfully", resolved.Name))
 					return nil
 				},
@@ -231,11 +231,11 @@ func newRestartCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           types.ProjectRestart(c.EnvID(), resolved.ID),
+				Path:           clitypes.ProjectAction(c.EnvID(), resolved.ID, "restart", nil),
 				FailureMessage: "failed to restart project",
-				Render: func(base.MessageResponse) error {
+				Render: func(types.MessageResponse) error {
 					output.Success("%s", fmt.Sprintf("Project %s restarted successfully", resolved.Name))
 					return nil
 				},
@@ -252,7 +252,9 @@ func newRedeployCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runProjectStreamAction(cmd, args[0], projectStreamActionConfig{
-				endpoint:       types.ProjectRedeploy,
+				endpoint: func(envID, projectID string) string {
+					return clitypes.ProjectDeploy(envID, projectID, "redeploy")
+				},
 				failureMessage: "failed to redeploy project",
 				successMessage: "Project %s redeployed successfully",
 			})
@@ -268,7 +270,9 @@ func newPullCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runProjectStreamAction(cmd, args[0], projectStreamActionConfig{
-				endpoint:       types.ProjectPull,
+				endpoint: func(envID, projectID string) string {
+					return clitypes.ProjectDeploy(envID, projectID, "pull")
+				},
 				failureMessage: "failed to pull images",
 				successMessage: "Images pulled successfully for project %s",
 			})
@@ -374,7 +378,7 @@ func newCreateCmd() *cobra.Command {
 				return fmt.Errorf("failed to read compose file: %w", err)
 			}
 
-			body := project.CreateProject{
+			body := types.CreateProject{
 				Name:           opts.createName,
 				ComposeContent: string(composeBytes),
 			}
@@ -394,7 +398,7 @@ func newCreateCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("failed to encode project configuration: %w", err)
 			}
-			manifestJSON, err := json.Marshal(project.CreateProjectWorkspaceManifest{FileChanges: []project.WorkspaceFileChange{}})
+			manifestJSON, err := json.Marshal(types.CreateProjectWorkspaceManifest{FileChanges: []types.WorkspaceFileChange{}})
 			if err != nil {
 				return fmt.Errorf("failed to encode project workspace manifest: %w", err)
 			}
@@ -410,7 +414,7 @@ func newCreateCmd() *cobra.Command {
 				return fmt.Errorf("failed to finalize project request: %w", closeErr)
 			}
 
-			resp, err := c.RequestRaw(cmd.Context(), http.MethodPost, types.Projects(c.EnvID()), &requestBody, map[string]string{"Content-Type": writer.FormDataContentType()})
+			resp, err := c.RequestRaw(cmd.Context(), http.MethodPost, clitypes.Projects(c.EnvID()), &requestBody, map[string]string{"Content-Type": writer.FormDataContentType()})
 			if err != nil {
 				return fmt.Errorf("failed to create project: %w", err)
 			}
@@ -419,14 +423,14 @@ func newCreateCmd() *cobra.Command {
 			if readErr != nil {
 				return fmt.Errorf("failed to create project: %w", readErr)
 			}
-			var result base.ApiResponse[jsontext.Value]
+			var result types.ApiResponse[jsontext.Value]
 			if decodeErr := json.Unmarshal(responseBody, &result); decodeErr != nil {
 				return fmt.Errorf("failed to parse response: %w", decodeErr)
 			}
 			if cmdutil.JSONOutputEnabled(cmd) {
 				return cmdutil.PrintJSON(result.Data)
 			}
-			var data project.CreateReponse
+			var data types.CreateProjectResponse
 			if decodeErr := json.Unmarshal(result.Data, &data); decodeErr != nil {
 				return fmt.Errorf("failed to parse response: %w", decodeErr)
 			}
@@ -471,34 +475,31 @@ func newUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			var composeContent, envContent *string
-
+			req := map[string]any{}
+			if cmd.Flags().Changed("name") {
+				req["name"] = opts.updateName
+			}
 			if cmd.Flags().Changed("file") {
 				composeBytes, readFileErr := os.ReadFile(opts.updateFile)
 				if readFileErr != nil {
 					return fmt.Errorf("failed to read compose file: %w", readFileErr)
 				}
-				composeContent = new(string(composeBytes))
+				req["composeContent"] = string(composeBytes)
 			}
-
 			if cmd.Flags().Changed("env-file") {
 				envBytes, readEnvFileErr := os.ReadFile(opts.updateEnvFile)
 				if readEnvFileErr != nil {
 					return fmt.Errorf("failed to read env file: %w", readEnvFileErr)
 				}
-				envContent = new(string(envBytes))
+				req["envContent"] = string(envBytes)
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[project.Details]{
-				Method: http.MethodPut,
-				Path:   types.Project(c.EnvID(), resolved.ID),
-				Body: project.UpdateProject{
-					Name:           kit.Ternary(cmd.Flags().Changed("name"), &opts.updateName, nil),
-					ComposeContent: composeContent,
-					EnvContent:     envContent,
-				},
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.Project]{
+				Method:         http.MethodPatch,
+				Path:           clitypes.Project(c.EnvID(), resolved.ID),
+				Body:           req,
 				FailureMessage: "failed to update project",
-				Render: func(project.Details) error {
+				Render: func(types.Project) error {
 					output.Success("Project %s updated successfully", resolved.Name)
 					return nil
 				},
@@ -537,22 +538,22 @@ func newUpdateIncludesCmd() *cobra.Command {
 				return fmt.Errorf("failed to read include file: %w", err)
 			}
 
-			current, err := c.GetJSON[workspace.Workspace](cmd.Context(), types.ProjectWorkspace(c.EnvID(), resolved.ID))
+			current, err := c.GetJSON[types.Workspace](cmd.Context(), clitypes.ProjectWorkspace(c.EnvID(), resolved.ID))
 			if err != nil {
 				return fmt.Errorf("failed to get project workspace: %w", err)
 			}
 
 			relativePath := filepath.ToSlash(filepath.Base(opts.includesFile))
-			operation := project.FileOpCreateFile
-			if slices.ContainsFunc(current.Data.Files, func(entry workspace.FileEntry) bool {
+			operation := types.FileOpCreateFile
+			if slices.ContainsFunc(current.Data.Files, func(entry types.WorkspaceFileEntry) bool {
 				return entry.RelativePath == relativePath && !entry.IsDirectory
 			}) {
-				operation = project.FileOpUpdateFile
+				operation = types.FileOpUpdateFile
 			}
 			uploadIndex := 0
-			manifest := project.WorkspaceUpdateManifest{
+			manifest := types.ProjectWorkspaceUpdateManifest{
 				FileTreeRevision: current.Data.FileTreeRevision,
-				FileChanges:      []project.WorkspaceFileChange{{Operation: operation, RelativePath: relativePath, UploadIndex: &uploadIndex}},
+				FileChanges:      []types.WorkspaceFileChange{{Operation: operation, RelativePath: relativePath, UploadIndex: &uploadIndex}},
 			}
 			manifestJSON, err := json.Marshal(manifest)
 			if err != nil {
@@ -574,7 +575,7 @@ func newUpdateIncludesCmd() *cobra.Command {
 				return fmt.Errorf("failed to finalize workspace upload: %w", closeErr)
 			}
 
-			resp, err := c.RequestRaw(cmd.Context(), http.MethodPut, types.ProjectWorkspace(c.EnvID(), resolved.ID), &requestBody, map[string]string{"Content-Type": writer.FormDataContentType()})
+			resp, err := c.RequestRaw(cmd.Context(), http.MethodPatch, clitypes.ProjectWorkspace(c.EnvID(), resolved.ID), &requestBody, map[string]string{"Content-Type": writer.FormDataContentType()})
 			if err != nil {
 				return fmt.Errorf("failed to update include file: %w", err)
 			}
@@ -583,7 +584,7 @@ func newUpdateIncludesCmd() *cobra.Command {
 			if readErr != nil {
 				return fmt.Errorf("failed to update include file: %w", readErr)
 			}
-			var result base.ApiResponse[jsontext.Value]
+			var result types.ApiResponse[jsontext.Value]
 			if decodeErr := json.Unmarshal(responseBody, &result); decodeErr != nil {
 				return fmt.Errorf("failed to parse response: %w", decodeErr)
 			}
@@ -614,7 +615,7 @@ func newCountsCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[map[string]any]{
 				Method:         http.MethodGet,
-				Path:           types.ProjectsCounts(c.EnvID()),
+				Path:           clitypes.ProjectsCounts(c.EnvID()),
 				FailureMessage: "failed to get project counts",
 				Render: func(data map[string]any) error {
 					output.Header("Project Counts")
@@ -630,24 +631,24 @@ func newCountsCmd() *cobra.Command {
 	return cmd
 }
 
-var projectRef = cmdutil.ResourceRef[project.Details, project.Details]{
+var projectRef = cmdutil.ResourceRef[types.Project, types.Project]{
 	EnvironmentScoped: true,
 	Singular:          "project",
 	Plural:            "projects",
 	IDHint:            "the project ID",
 	ListCmd:           "arcane projects list",
-	GetPath:           types.Project,
-	IdentifierOf:      func(data project.Details) string { return data.ID },
-	ListPath:          types.Projects,
-	Matches: func(item project.Details, identifierLower, original string) bool {
+	GetPath:           clitypes.Project,
+	IdentifierOf:      func(data types.Project) string { return data.ID },
+	ListPath:          clitypes.Projects,
+	Matches: func(item types.Project, identifierLower, original string) bool {
 		return strings.Contains(strings.ToLower(item.ID), identifierLower) ||
 			strings.Contains(strings.ToLower(item.Name), identifierLower) || strings.EqualFold(item.Name, original) ||
 			strings.Contains(strings.ToLower(item.Path), identifierLower)
 	},
-	Label: func(match project.Details) string {
+	Label: func(match types.Project) string {
 		return fmt.Sprintf("%s (%s, %s)", match.Name, match.ID, match.Status)
 	},
-	Promote: func(match project.Details) *project.Details { return &match },
+	Promote: func(match types.Project) *types.Project { return &match },
 }
 
 type projectListOptions struct {
@@ -690,13 +691,13 @@ func runProjectList(cmd *cobra.Command, opts projectListOptions) error {
 		output.Header("Project Updates")
 	}
 
-	return cmdutil.RunList(cmd, c, cmdutil.ListSpec[project.Details]{
+	return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.Project]{
 		Resource: "projects",
-		Endpoint: types.Projects(c.EnvID()),
+		Endpoint: clitypes.Projects(c.EnvID()),
 		Params:   cmdutil.ListParams{Resource: "projects", Limit: opts.limitFlag, FallbackDefault: 20, Start: opts.startFlag, All: opts.allFlag},
 		Query:    query,
 		Headers:  kit.Ternary(updatesFilter != "", []string{"ID", "NAME", "STATUS", "UPDATES", "IMAGES", "UPDATED"}, []string{"ID", "NAME", "STATUS", "SERVICES", "RUNNING", "CREATED"}),
-		Row: func(proj project.Details) []string {
+		Row: func(proj types.Project) []string {
 			if updatesFilter == "" {
 				return []string{
 					proj.ID,

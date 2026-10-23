@@ -5,11 +5,10 @@
 	import UpdateAllDialog from '#lib/components/dialogs/update-all-dialog.svelte';
 	import UpdateAvailableBanner from '#lib/components/sidebar/update-available-banner.svelte';
 	import * as Drawer from '#lib/components/ui/drawer/index.js';
-	import { navigationItems, getManagementItems, filterByPermissions } from '#lib/config/navigation-config.js';
+	import { navigationItems, filterByPermissions } from '#lib/config/navigation-config.js';
 	import type { NavigationItem } from '#lib/config/navigation-config.js';
 	import { useUpgradeCheck } from '#lib/hooks/use-upgrade-check.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { PermissionsManifest, User } from '#lib/types/auth.js';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
@@ -37,20 +36,12 @@
 
 	const currentPath = $derived(page.url.pathname);
 	const memoizedUser = $derived(user ?? userStore.current);
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const managementItemsRaw = $derived(getManagementItems(currentEnvId));
 	const managementItems = $derived(
-		filterByPermissions(managementItemsRaw, memoizedUser ?? null, currentEnvId, permissionsManifest)
+		filterByPermissions(navigationItems.managementItems, memoizedUser ?? null, permissionsManifest)
 	);
-	const resourceItems = $derived(
-		filterByPermissions(navigationItems.resourceItems, memoizedUser ?? null, currentEnvId, permissionsManifest)
-	);
-	const permittedPodmanItems = $derived(
-		filterByPermissions(podmanItems, memoizedUser ?? null, currentEnvId, permissionsManifest)
-	);
-	const settingsItems = $derived(
-		filterByPermissions(navigationItems.settingsItems, memoizedUser ?? null, currentEnvId, permissionsManifest)
-	);
+	const resourceItems = $derived(filterByPermissions(navigationItems.resourceItems, memoizedUser ?? null, permissionsManifest));
+	const permittedPodmanItems = $derived(filterByPermissions(podmanItems, memoizedUser ?? null, permissionsManifest));
+	const settingsItems = $derived(filterByPermissions(navigationItems.settingsItems, memoizedUser ?? null, permissionsManifest));
 
 	const upgradeCheck = useUpgradeCheck({
 		queryScope: 'mobile-nav',

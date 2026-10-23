@@ -5,7 +5,6 @@
 
 	export interface EnvironmentTableRow {
 		environment: Environment;
-		isCurrent: boolean;
 		online: boolean;
 		loading: boolean;
 		running: number;
@@ -20,20 +19,18 @@
 		statsStatus: DashboardLiveStatsStatus;
 		versionText: string | null;
 		updateAvailable: boolean;
-		useButton?: ActionButton;
 		menuButtons: ActionButton[];
 	}
 </script>
 
 <script lang="ts">
-	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import MetricRing, { type MetricRingVariant } from '#lib/components/metric-ring.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
-	import { EnvironmentsIcon, ShieldAlertIcon, UpdateIcon, VerifiedCheckIcon, type IconType } from '#lib/icons/index.js';
+	import { ShieldAlertIcon, UpdateIcon, VerifiedCheckIcon, type IconType } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { cn } from '#lib/utils.js';
@@ -61,18 +58,19 @@
 
 {#snippet metric(value: number | null, variant: MetricRingVariant, status: DashboardLiveStatsStatus)}
 	{#if status === 'loading'}
-		<Skeleton class="ml-auto h-4 w-12" />
+		<div class="ml-auto size-9.5 animate-pulse rounded-full bg-muted"></div>
 	{:else if status === 'denied'}
 		<span class="text-xs text-muted-foreground" title={m.common_access_denied()}>—</span>
 	{:else if value === null || Number.isNaN(value)}
 		<span class="text-xs text-muted-foreground" title={status === 'unavailable' ? m.stats_unavailable() : undefined}>—</span>
 	{:else}
 		<span
-			class={cn('flex items-center justify-end gap-2', status === 'stale' && 'opacity-60')}
+			class={cn('flex justify-end', status === 'stale' && 'opacity-60')}
 			title={status === 'stale' ? m.stats_stale() : undefined}
 		>
-			<MetricRing percent={value} {variant} />
-			<span class="text-xs font-medium text-foreground tabular-nums">{Math.round(value)}%</span>
+			<MetricRing percent={value} {variant} size={38} stroke={3}>
+				<span class="text-2xs font-medium text-foreground tabular-nums">{Math.round(value)}%</span>
+			</MetricRing>
 		</span>
 	{/if}
 {/snippet}
@@ -82,6 +80,7 @@
 		<Table.Header>
 			<Table.Row>
 				<Table.Head>{m.common_name()}</Table.Head>
+				<Table.Head>{m.common_version()}</Table.Head>
 				<Table.Head>{m.common_status()}</Table.Head>
 				<Table.Head>{m.containers()}</Table.Head>
 				<Table.Head>{m.images()}</Table.Head>
@@ -96,7 +95,7 @@
 		</Table.Header>
 		<Table.Body>
 			{#each rows as row (row.environment.id)}
-				<Table.Row data-state={row.isCurrent ? 'selected' : undefined}>
+				<Table.Row>
 					<Table.Cell>
 						<div class="flex min-w-0 items-center gap-2">
 							<a class="truncate font-medium hover:underline" href="/environments/{row.environment.id}">
@@ -105,15 +104,21 @@
 							{#if row.podCount !== null}
 								<Badge variant="purple" size="sm">{m.podman()}</Badge>
 							{/if}
-							{#if row.versionText}
-								<Badge variant="gray" size="sm" mono>
-									{row.versionText}
-									{#if row.updateAvailable}
-										<span class="ml-1.5 inline-flex h-2 w-2 rounded-full bg-warning"></span>
-									{/if}
-								</Badge>
-							{/if}
 						</div>
+					</Table.Cell>
+					<Table.Cell>
+						{#if row.versionText}
+							<Badge variant="gray" size="sm" mono>
+								{row.versionText}
+								{#if row.updateAvailable}
+									<span class="ml-1.5 inline-flex h-2 w-2 rounded-full bg-warning"></span>
+								{/if}
+							</Badge>
+						{:else if row.loading}
+							<Skeleton class="h-4 w-20" />
+						{:else}
+							<span class="text-xs text-muted-foreground">—</span>
+						{/if}
 					</Table.Cell>
 					<Table.Cell>
 						<span class="flex items-center gap-2">
@@ -151,19 +156,6 @@
 					{/if}
 					<Table.Cell class="text-right">
 						<div class="flex items-center justify-end gap-1">
-							{#if row.useButton}
-								<ArcaneButton
-									action="base"
-									size="sm"
-									tone="ghost"
-									icon={EnvironmentsIcon}
-									customLabel={row.isCurrent ? m.common_current() : row.useButton.label}
-									loading={row.useButton.loading}
-									disabled={row.useButton.disabled}
-									onclick={row.useButton.onclick}
-									class={cn(row.isCurrent && 'disabled:opacity-100 [&_svg]:text-primary!')}
-								/>
-							{/if}
 							<RowActionsMenu>
 								{#each row.menuButtons as btn (btn.id)}
 									<DropdownMenu.Item

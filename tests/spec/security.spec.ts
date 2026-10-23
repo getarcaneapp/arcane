@@ -68,14 +68,17 @@ async function mockRiskOverview(page: Page) {
 async function mockSecurityPageData(page: Page, imageNames: string[]) {
 	await mockRiskOverview(page);
 	await page.route(
-		/\/api\/environments\/[^/]+\/vulnerabilities\/image-options(?:\?.*)?$/,
+		/\/api\/environments\/[^/]+\/vulnerabilities\/images(?:\?.*)?$/,
 		async (route) => {
 			await route.fulfill({ json: { success: true, data: imageNames } });
 		}
 	);
-	await page.route(/\/api\/environments\/[^/]+\/images\/patch-targets(?:\?.*)?$/, async (route) => {
-		await route.fulfill({ json: paginated([]) });
-	});
+	await page.route(
+		/\/api\/environments\/[^/]+\/images\/patches\/targets(?:\?.*)?$/,
+		async (route) => {
+			await route.fulfill({ json: paginated([]) });
+		}
+	);
 }
 
 const EXPORT_FILENAME = 'vulnerabilities-0-2026-09-13T10-00-00Z.csv';
@@ -217,16 +220,16 @@ test.describe('Security Page', () => {
 					: [];
 			await route.fulfill({ json: paginated(rows) });
 		});
+		await page.route(/\/api\/environments\/0\/vulnerabilities\/images(?:\?.*)?$/, async (route) => {
+			await route.fulfill({ json: { success: true, data: [vulnerability.imageName] } });
+		});
 		await page.route(
-			/\/api\/environments\/0\/vulnerabilities\/image-options(?:\?.*)?$/,
+			/\/api\/environments\/0\/images\/patches\/targets(?:\?.*)?$/,
 			async (route) => {
-				await route.fulfill({ json: { success: true, data: [vulnerability.imageName] } });
+				await route.fulfill({ json: paginated([]) });
 			}
 		);
-		await page.route(/\/api\/environments\/0\/images\/patch-targets(?:\?.*)?$/, async (route) => {
-			await route.fulfill({ json: paginated([]) });
-		});
-		await page.route(/\/api\/environments\/0\/vulnerabilities\/ignore$/, async (route) => {
+		await page.route(/\/api\/environments\/0\/vulnerabilities\/ignored$/, async (route) => {
 			ignorePayload = route.request().postDataJSON();
 			ignored = true;
 			await route.fulfill({
@@ -237,7 +240,7 @@ test.describe('Security Page', () => {
 			});
 		});
 		await page.route(
-			/\/api\/environments\/0\/vulnerabilities\/ignore\/ignore-1$/,
+			/\/api\/environments\/0\/vulnerabilities\/ignored\/ignore-1$/,
 			async (route) => {
 				expect(route.request().method()).toBe('DELETE');
 				unignoreRequestCount += 1;
@@ -447,69 +450,16 @@ test.describe('Security Page', () => {
 		await exportCsv(page, testInfo);
 	});
 
-	test('discards an export that finishes after switching environments', async ({ page }) => {
-		const localEnvironment = {
-			id: '0',
-			name: 'Local Test',
-			apiUrl: 'unix:///var/run/docker.sock',
-			status: 'online',
-			enabled: true,
-			isEdge: false
-		};
-		const remoteEnvironment = {
-			id: 'remote-export-test',
-			name: 'Remote Test',
-			apiUrl: 'https://remote.example.invalid',
-			status: 'online',
-			enabled: true,
-			isEdge: false
-		};
+	test('discards an export that finishes after leaving the page', async ({ page }) => {
 		let releaseExport = () => {};
 		const held = new Promise<void>((resolve) => {
 			releaseExport = resolve;
 		});
 
-		await page.addInitScript(() => {
-			localStorage.removeItem('selectedEnvironmentId');
-		});
-		await page.route(/\/api\/environments(?:\?.*)?$/, async (route) => {
-			await route.fulfill({ json: paginated([localEnvironment, remoteEnvironment]) });
-		});
-		await page.route(/\/api\/stream(?:\?.*)?$/, async (route) => {
-			const channels =
-				new URL(route.request().url()).searchParams.get('channels')?.split(',') ?? [];
-			const timestamp = new Date().toISOString();
-			await route.fulfill({
-				status: 200,
-				contentType: 'text/event-stream',
-				body: channels.includes('environments')
-					? `data: ${JSON.stringify({
-							channel: 'environments',
-							environment: {
-								type: 'snapshot',
-								environments: [localEnvironment, remoteEnvironment],
-								timestamp
-							},
-							timestamp
-						})}\n\n`
-					: ''
-			});
-		});
-		await page.route(
-			/\/api\/environments\/remote-export-test\/settings(?:\/public)?$/,
-			async (route) => {
-				await route.fulfill({
-					json: [{ key: 'featureVulnerabilityManagementEnabled', value: 'true' }]
-				});
-			}
-		);
 		await mockSecurityPageData(page, []);
-		await page.route(
-			/\/api\/environments\/[^/]+\/vulnerabilities\/all(?:\?.*)?$/,
-			async (route) => {
-				await route.fulfill({ json: paginated([]) });
-			}
-		);
+		await page.route(/\/api\/environments\/0\/vulnerabilities\/all(?:\?.*)?$/, async (route) => {
+			await route.fulfill({ json: paginated([]) });
+		});
 		await page.route(/\/api\/environments\/0\/vulnerabilities\/export(?:\?.*)?$/, async (route) => {
 			await held;
 			await fulfillExport(route);
@@ -518,13 +468,8 @@ test.describe('Security Page', () => {
 		await navigateToSecurity(page);
 		await exportButton(page).click();
 
-		await page.getByRole('button').filter({ hasText: localEnvironment.name }).first().click();
-		const dialog = page.getByRole('dialog', { name: 'Select Environment' });
-		await expect(dialog).toBeVisible();
-		await dialog.getByRole('button').filter({ hasText: remoteEnvironment.name }).first().click();
-		await expect(
-			page.getByRole('button').filter({ hasText: remoteEnvironment.name }).first()
-		).toBeVisible();
+		await page.getByRole('link', { name: 'Dashboard', exact: true }).click();
+		await expect(page).toHaveURL('/dashboard');
 
 		const downloadPromise = page.waitForEvent('download', { timeout: 1500 }).catch(() => null);
 		releaseExport();
@@ -579,9 +524,12 @@ test.describe('Security Page', () => {
 			}
 		];
 
-		await page.route(/\/api\/environments\/0\/images\/patch-targets(?:\?.*)?$/, async (route) => {
-			await route.fulfill({ json: paginated(targets()) });
-		});
+		await page.route(
+			/\/api\/environments\/0\/images\/patches\/targets(?:\?.*)?$/,
+			async (route) => {
+				await route.fulfill({ json: paginated(targets()) });
+			}
+		);
 		await page.route(/\/api\/environments\/0\/images\/remote-image\/patch$/, async (route) => {
 			patchPayload = route.request().postDataJSON();
 			patchStarted = true;
@@ -638,7 +586,23 @@ test.describe('Disabled vulnerability management', () => {
 	test.beforeEach(async ({ page }) => {
 		await page.route(/\/api\/environments\/[^/]+\/settings\/public$/, async (route) => {
 			await route.fulfill({
-				json: [{ key: 'featureVulnerabilityManagementEnabled', value: 'false' }]
+				json: {
+					settings: [
+						{
+							key: 'featureVulnerabilityManagementEnabled',
+							value: 'false',
+							type: 'boolean',
+							default: 'true',
+							source: 'db',
+							locked: false,
+							sensitive: false,
+							scope: 'environment',
+							envName: 'ARCANE_FEATURE_VULNERABILITY_MANAGEMENT_ENABLED'
+						}
+					],
+					runtime: {},
+					readOnly: false
+				}
 			});
 		});
 	});

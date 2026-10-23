@@ -15,26 +15,33 @@ import (
 	"time"
 	"uuid"
 
-	"github.com/getarcaneapp/arcane/types/v2/auth"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/lestrrat-go/jwx/v4/jwa"
 	"github.com/lestrrat-go/jwx/v4/jwt"
 	"github.com/samber/hot"
 	"go.getarcane.app/kit/normalization"
 	"go.getarcane.app/kit/pkg"
+	"golang.org/x/sync/errgroup"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/session"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/jwtclaims"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/session"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/version"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/cookie"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/jwtclaims"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
 )
+
+const sessionBootstrapVersionTimeout = 2 * time.Second
 
 var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
@@ -67,21 +74,23 @@ type verifiedTokenEntry struct {
 }
 
 type AuthService struct {
-	userService       *user.UserService
-	settingsService   *settings.SettingsService
-	eventService      *event.EventService
-	sessionService    *session.SessionService
-	roleService       *role.RoleService
-	signingKeyMu      sync.Mutex
-	signingKey        *mldsa.PrivateKey
-	browserSigningKey []byte
-	refreshExpiry     time.Duration
-	config            *config.Config
-	tokenCache        *hot.HotCache[string, verifiedTokenEntry]
-	cacheGen          atomic.Uint64
-	cacheFillMu       sync.Mutex
-	dummyMu           sync.Mutex
-	dummyHash         string
+	userService        *user.UserService
+	settingsService    *settings.SettingsService
+	eventService       *event.EventService
+	sessionService     *session.SessionService
+	roleService        *role.RoleService
+	environmentService *environment.EnvironmentService
+	versionService     *version.VersionService
+	signingKeyMu       sync.Mutex
+	signingKey         *mldsa.PrivateKey
+	browserSigningKey  []byte
+	refreshExpiry      time.Duration
+	config             *config.Config
+	tokenCache         *hot.HotCache[string, verifiedTokenEntry]
+	cacheGen           atomic.Uint64
+	cacheFillMu        sync.Mutex
+	dummyMu            sync.Mutex
+	dummyHash          string
 }
 
 func (s *AuthService) dummyPasswordHash(ctx context.Context) (string, error) {
@@ -104,16 +113,20 @@ func NewAuthService(
 	eventService *event.EventService,
 	sessionService *session.SessionService,
 	roleService *role.RoleService,
+	environmentService *environment.EnvironmentService,
+	versionService *version.VersionService,
 	cfg *config.Config,
 ) *AuthService {
 	return &AuthService{
-		userService:     userService,
-		settingsService: settingsService,
-		eventService:    eventService,
-		sessionService:  sessionService,
-		roleService:     roleService,
-		refreshExpiry:   cfg.JWTRefreshExpiry,
-		config:          cfg,
+		userService:        userService,
+		settingsService:    settingsService,
+		eventService:       eventService,
+		sessionService:     sessionService,
+		roleService:        roleService,
+		environmentService: environmentService,
+		versionService:     versionService,
+		refreshExpiry:      cfg.JWTRefreshExpiry,
+		config:             cfg,
 		tokenCache: hot.NewHotCache[string, verifiedTokenEntry](hot.LRU, 4096).
 			WithTTL(60 * time.Second).
 			WithJanitor().
@@ -121,42 +134,56 @@ func NewAuthService(
 	}
 }
 
-func (s *AuthService) GetOidcConfigurationStatus(ctx context.Context) (*auth.OidcStatusInfo, error) {
-	oidcEnvForced := s.settingsService != nil && s.settingsService.IsEnvOverrideActive("oidcEnabled")
-
-	mergeAccounts := false
-	providerName := ""
-	providerLogoUrl := ""
-	if s.settingsService != nil {
-		func() {
-			defer func() {
-				// In tests, a zero-valued settings.SettingsService may panic; treat as merge disabled
-				_ = recover()
-			}()
-			if localSettings, err := s.settingsService.GetSettings(ctx); err == nil {
-				mergeAccounts = localSettings.OidcMergeAccounts.IsTrue()
-				providerName = localSettings.OidcProviderName.Value
-				providerLogoUrl = localSettings.OidcProviderLogoUrl.Value
-			}
-		}()
-	}
-
-	status := &auth.OidcStatusInfo{
-		EnvForced:       oidcEnvForced,
-		MergeAccounts:   mergeAccounts,
-		ProviderName:    providerName,
-		ProviderLogoUrl: providerLogoUrl,
-	}
-	if oidcEnvForced {
-		status.EnvConfigured = s.config.OidcClientID != "" && s.config.OidcIssuerURL != ""
-		if status.ProviderName == "" {
-			status.ProviderName = s.config.OidcProviderName
+func (s *AuthService) GetSessionBootstrap(ctx context.Context, userID string, ps *authz.PermissionSet) (*types.SessionBootstrap, error) {
+	var (
+		currentUser  types.User
+		versionInfo  *types.VersionInfo
+		environments types.Paginated[types.Environment]
+	)
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.Go(func() error {
+		userModel, err := s.userService.GetUser(groupCtx, userID)
+		if err != nil {
+			return fmt.Errorf("failed to get user: %w", err)
 		}
-		if status.ProviderLogoUrl == "" {
-			status.ProviderLogoUrl = s.config.OidcProviderLogoUrl
+		currentUser, err = s.userService.ToUserResponseDto(groupCtx, *userModel)
+		if err != nil {
+			return fmt.Errorf("failed to map user: %w", err)
 		}
+		return nil
+	})
+	group.Go(func() error {
+		versionCtx, cancel := context.WithTimeout(groupCtx, sessionBootstrapVersionTimeout)
+		defer cancel()
+		versionInfo = s.versionService.GetAppVersionInfo(versionCtx)
+		return nil
+	})
+	group.Go(func() error {
+		var err error
+		environments, err = s.environmentService.ListAccessibleEnvironments(groupCtx, ps, pagination.QueryParams{Limit: -1})
+		if err != nil {
+			return fmt.Errorf("failed to list environments: %w", err)
+		}
+		return nil
+	})
+	if err := group.Wait(); err != nil {
+		return nil, err
 	}
-	return status, nil
+	return &types.SessionBootstrap{
+		User:                currentUser,
+		Version:             *versionInfo,
+		Environments:        environments,
+		PermissionsManifest: role.BuildPermissionsManifest(),
+	}, nil
+}
+
+func (s *AuthService) GetOidcConfigurationStatus(_ context.Context) (*types.OidcStatusInfo, error) {
+	localSettings := s.settingsService.GetSettingsConfig()
+	return &types.OidcStatusInfo{
+		MergeAccounts:   localSettings.OidcMergeAccounts.IsTrue(),
+		ProviderName:    localSettings.OidcProviderName.Value,
+		ProviderLogoUrl: localSettings.OidcProviderLogoUrl.Value,
+	}, nil
 }
 
 func (s *AuthService) GetSessionTimeout(ctx context.Context) (int, error) {
@@ -290,7 +317,7 @@ func (s *AuthService) AuthenticateLocalPrimary(ctx context.Context, username, pa
 // PrepareOidcLogin reconciles the provider identity without creating a
 // session. The caller must complete passkey MFA, when enabled, before issuing
 // tokens.
-func (s *AuthService) PrepareOidcLogin(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) (*user.User, bool, error) {
+func (s *AuthService) PrepareOidcLogin(ctx context.Context, userInfo types.OidcUserInfo, tokenResp *types.OidcTokenResponse) (*user.User, bool, error) {
 	if userInfo.Subject == "" {
 		return nil, false, errors.New("missing OIDC subject identifier")
 	}
@@ -299,7 +326,7 @@ func (s *AuthService) PrepareOidcLogin(ctx context.Context, userInfo auth.OidcUs
 
 // CompleteLogin creates the authenticated session after all required factors
 // have succeeded. Source is server-selected and is persisted with the session.
-func (s *AuthService) CompleteLogin(ctx context.Context, localUser *user.User, meta auth.SessionMeta, source, mfaMethod string, eventMetadata ...database.JSON) (*TokenPair, error) {
+func (s *AuthService) CompleteLogin(ctx context.Context, localUser *user.User, meta types.SessionMeta, source, mfaMethod string, eventMetadata ...database.JSON) (*TokenPair, error) {
 	if localUser == nil {
 		return nil, common.ErrUserNotFound
 	}
@@ -347,7 +374,7 @@ func (s *AuthService) CompleteLogin(ctx context.Context, localUser *user.User, m
 	return tokenPair, nil
 }
 
-func (s *AuthService) Login(ctx context.Context, username, password string, meta auth.SessionMeta) (*user.User, *TokenPair, error) {
+func (s *AuthService) Login(ctx context.Context, username, password string, meta types.SessionMeta) (*user.User, *TokenPair, error) {
 	localUser, err := s.AuthenticateLocalPrimary(ctx, username, password)
 	if err != nil {
 		return nil, nil, err
@@ -362,7 +389,7 @@ func (s *AuthService) Login(ctx context.Context, username, password string, meta
 	return localUser, tokenPair, nil
 }
 
-func (s *AuthService) OidcLogin(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse, meta auth.SessionMeta) (*user.User, *TokenPair, error) {
+func (s *AuthService) OidcLogin(ctx context.Context, userInfo types.OidcUserInfo, tokenResp *types.OidcTokenResponse, meta types.SessionMeta) (*user.User, *TokenPair, error) {
 	localUser, isNewUser, err := s.PrepareOidcLogin(ctx, userInfo, tokenResp)
 	if err != nil {
 		return nil, nil, err
@@ -396,7 +423,7 @@ func (s *AuthService) LogLogout(ctx context.Context, localUser *user.User) {
 	})
 }
 
-func (s *AuthService) findOrCreateOidcUser(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) (*user.User, bool, error) {
+func (s *AuthService) findOrCreateOidcUser(ctx context.Context, userInfo types.OidcUserInfo, tokenResp *types.OidcTokenResponse) (*user.User, bool, error) {
 	if err := normalization.Normalize(&userInfo); err != nil {
 		return nil, false, err
 	}
@@ -455,7 +482,7 @@ func (s *AuthService) findOrCreateOidcUser(ctx context.Context, userInfo auth.Oi
 	return created, true, nil
 }
 
-func (s *AuthService) createOidcUser(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) (*user.User, error) {
+func (s *AuthService) createOidcUser(ctx context.Context, userInfo types.OidcUserInfo, tokenResp *types.OidcTokenResponse) (*user.User, error) {
 	username, err := s.resolveOidcUsername(ctx, userInfo)
 	if err != nil {
 		return nil, err
@@ -508,7 +535,7 @@ func (s *AuthService) createOidcUser(ctx context.Context, userInfo auth.OidcUser
 // resolveOidcUsername returns the preferred username for a new OIDC
 // user, or a currently unclaimed collision-free candidate when an existing
 // account already owns it.
-func (s *AuthService) resolveOidcUsername(ctx context.Context, userInfo auth.OidcUserInfo) (string, error) {
+func (s *AuthService) resolveOidcUsername(ctx context.Context, userInfo types.OidcUserInfo) (string, error) {
 	var username string
 	if userInfo.PreferredUsername == "" {
 		username = generateUsernameFromEmail(userInfo.Email, userInfo.Subject)
@@ -541,7 +568,7 @@ func (s *AuthService) resolveOidcUsername(ctx context.Context, userInfo auth.Oid
 	}
 }
 
-func (s *AuthService) updateOidcUser(ctx context.Context, localUser *user.User, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) (*user.User, error) {
+func (s *AuthService) updateOidcUser(ctx context.Context, localUser *user.User, userInfo types.OidcUserInfo, tokenResp *types.OidcTokenResponse) (*user.User, error) {
 	updated, err := s.userService.AttachOidcSubjectTransactional(ctx, localUser.ID, userInfo.Subject, func(u *user.User) {
 		if userInfo.Name != "" && u.DisplayName == nil {
 			u.DisplayName = new(userInfo.Name)
@@ -564,7 +591,7 @@ func (s *AuthService) updateOidcUser(ctx context.Context, localUser *user.User, 
 // syncOidcRoleAssignments rebuilds the user's `source='oidc'` role assignments
 // based on the OIDC group claim and the configured OidcRoleMapping rows.
 // Manual assignments are untouched.
-func (s *AuthService) syncOidcRoleAssignments(ctx context.Context, localUser *user.User, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) error {
+func (s *AuthService) syncOidcRoleAssignments(ctx context.Context, localUser *user.User, userInfo types.OidcUserInfo, tokenResp *types.OidcTokenResponse) error {
 	if s.roleService == nil || localUser == nil {
 		return nil
 	}
@@ -612,7 +639,7 @@ func (s *AuthService) syncOidcRoleAssignments(ctx context.Context, localUser *us
 // and ID token, using the claim path configured in OidcGroupsClaim (defaults
 // to "groups"). Falls back to userInfo.Groups if no value is found at the
 // configured path.
-func (s *AuthService) extractOidcGroups(ctx context.Context, userInfo auth.OidcUserInfo, tokenResp *auth.OidcTokenResponse) []string {
+func (s *AuthService) extractOidcGroups(ctx context.Context, userInfo types.OidcUserInfo, tokenResp *types.OidcTokenResponse) []string {
 	claim := "groups"
 	if localSettings, err := s.settingsService.GetSettings(ctx); err == nil {
 		claim = cmp.Or(strings.TrimSpace(localSettings.OidcGroupsClaim.Value), "groups")
@@ -636,7 +663,7 @@ func (s *AuthService) extractOidcGroups(ctx context.Context, userInfo auth.OidcU
 	return userInfo.Groups
 }
 
-func (s *AuthService) persistOidcTokens(localUser *user.User, tokenResp *auth.OidcTokenResponse) {
+func (s *AuthService) persistOidcTokens(localUser *user.User, tokenResp *types.OidcTokenResponse) {
 	if tokenResp == nil {
 		return
 	}
@@ -708,7 +735,7 @@ func (s *AuthService) parseAnyRefreshToken(ctx context.Context, refreshToken str
 	return parseRefreshToken(ctx, refreshToken, refreshTokenSubject, jwt.WithKey(jwa.MLDSA87(), signingKey.PublicKey()))
 }
 
-func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string, meta auth.SessionMeta) (*TokenPair, error) {
+func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string, meta types.SessionMeta) (*TokenPair, error) {
 	claims, err := s.parseAnyRefreshToken(ctx, refreshToken)
 	if err != nil {
 		return nil, err
@@ -876,7 +903,7 @@ func (s *AuthService) passwordPolicy(ctx context.Context) string {
 	if s.settingsService == nil {
 		return validation.PasswordPolicyStrong
 	}
-	return s.settingsService.GetStringSetting(ctx, "authPasswordPolicy", validation.PasswordPolicyStrong)
+	return s.settingsService.GetStringSetting(ctx, "authPasswordPolicy")
 }
 
 // InvalidateUserTokenCache purges all cached token verifications for a user.

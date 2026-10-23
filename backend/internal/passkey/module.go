@@ -5,8 +5,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
 )
 
 func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService *auth.AuthService, userService *user.UserService) {
@@ -25,7 +25,7 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 			ctx.SetHeader("Cache-Control", "no-store")
 			next(ctx)
 		}},
-	}, h.getLoginAvailabilityInternal)
+	}, h.getLoginAvailability)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "begin-passkey-login",
@@ -126,7 +126,7 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 	}, h.FinishRegistration)
 	huma.Register(api, huma.Operation{
 		OperationID: "rename-my-passkey",
-		Method:      http.MethodPut,
+		Method:      http.MethodPatch,
 		Path:        "/auth/me/passkeys/{id}",
 		Summary:     "Rename my passkey",
 		Tags:        []string{"Auth", "Passkeys"},
@@ -192,7 +192,7 @@ func RegisterPasskeys(api huma.API, passkeyService *PasskeyService, authService 
 	huma.Register(api, huma.Operation{
 		OperationID: "regenerate-passkey-recovery-codes",
 		Method:      http.MethodPost,
-		Path:        "/auth/me/mfa/recovery-codes/regenerate",
+		Path:        "/auth/me/mfa/recovery",
 		Summary:     "Regenerate MFA recovery codes",
 		Tags:        []string{"Auth", "MFA"},
 		Security:    interactive,

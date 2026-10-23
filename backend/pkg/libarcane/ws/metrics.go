@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 )
@@ -19,35 +19,35 @@ type WebSocketMetrics struct {
 	counters    map[string]*atomic.Int64
 	seq         atomic.Uint64
 	mu          sync.RWMutex
-	connections map[string]systemtypes.WebSocketConnectionInfo
+	connections map[string]types.WebSocketConnectionInfo
 }
 
 // NewWebSocketMetrics creates a new WebSocketMetrics instance.
 func NewWebSocketMetrics() *WebSocketMetrics {
 	return &WebSocketMetrics{
 		counters: map[string]*atomic.Int64{
-			systemtypes.WSKindProjectLogs:    {},
-			systemtypes.WSKindContainerLogs:  {},
-			systemtypes.WSKindContainerStats: {},
-			systemtypes.WSKindContainerExec:  {},
-			systemtypes.WSKindSystemStats:    {},
-			systemtypes.WSKindServiceLogs:    {},
-			systemtypes.WSKindDiagnostics:    {},
+			types.WSKindProjectLogs:    {},
+			types.WSKindContainerLogs:  {},
+			types.WSKindContainerStats: {},
+			types.WSKindContainerExec:  {},
+			types.WSKindSystemStats:    {},
+			types.WSKindServiceLogs:    {},
+			types.WSKindDiagnostics:    {},
 		},
-		connections: make(map[string]systemtypes.WebSocketConnectionInfo),
+		connections: make(map[string]types.WebSocketConnectionInfo),
 	}
 }
 
 // Snapshot returns a point-in-time copy of the active connection counts.
-func (m *WebSocketMetrics) Snapshot() systemtypes.WebSocketMetricsSnapshot {
-	return systemtypes.WebSocketMetricsSnapshot{
-		ProjectLogsActive:   m.counters[systemtypes.WSKindProjectLogs].Load(),
-		ContainerLogsActive: m.counters[systemtypes.WSKindContainerLogs].Load(),
-		ContainerStats:      m.counters[systemtypes.WSKindContainerStats].Load(),
-		ContainerExec:       m.counters[systemtypes.WSKindContainerExec].Load(),
-		SystemStats:         m.counters[systemtypes.WSKindSystemStats].Load(),
-		ServiceLogsActive:   m.counters[systemtypes.WSKindServiceLogs].Load(),
-		DiagnosticsActive:   m.counters[systemtypes.WSKindDiagnostics].Load(),
+func (m *WebSocketMetrics) Snapshot() types.WebSocketMetricsSnapshot {
+	return types.WebSocketMetricsSnapshot{
+		ProjectLogsActive:   m.counters[types.WSKindProjectLogs].Load(),
+		ContainerLogsActive: m.counters[types.WSKindContainerLogs].Load(),
+		ContainerStats:      m.counters[types.WSKindContainerStats].Load(),
+		ContainerExec:       m.counters[types.WSKindContainerExec].Load(),
+		SystemStats:         m.counters[types.WSKindSystemStats].Load(),
+		ServiceLogsActive:   m.counters[types.WSKindServiceLogs].Load(),
+		DiagnosticsActive:   m.counters[types.WSKindDiagnostics].Load(),
 	}
 }
 
@@ -70,15 +70,15 @@ func (m *WebSocketMetrics) ObserveConnections(meter metric.Meter) error {
 }
 
 // Connections returns a snapshot of all tracked WebSocket connections.
-func (m *WebSocketMetrics) Connections() []systemtypes.WebSocketConnectionInfo {
+func (m *WebSocketMetrics) Connections() []types.WebSocketConnectionInfo {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return slices.AppendSeq(make([]systemtypes.WebSocketConnectionInfo, 0, len(m.connections)), maps.Values(m.connections))
+	return slices.AppendSeq(make([]types.WebSocketConnectionInfo, 0, len(m.connections)), maps.Values(m.connections))
 }
 
 // RegisterConnection adds a connection to the tracker and increments its kind counter.
 // Returns the assigned connection ID.
-func (m *WebSocketMetrics) RegisterConnection(info systemtypes.WebSocketConnectionInfo) string {
+func (m *WebSocketMetrics) RegisterConnection(info types.WebSocketConnectionInfo) string {
 	if info.ID == "" {
 		info.ID = "ws-" + strconv.FormatUint(m.seq.Add(1), 10)
 	}

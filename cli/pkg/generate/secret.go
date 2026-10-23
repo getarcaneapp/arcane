@@ -22,7 +22,7 @@ func newSecretCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "secret",
 		Short: "Generate cryptographic secrets",
-		Long:  `Generate a secure cryptographic secret for ENCRYPTION_KEY.`,
+		Long:  `Generate a secure cryptographic secret for ARCANE_ENCRYPTION_KEY.`,
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return generateSecrets(cmd, opts.format, opts.length)
@@ -57,20 +57,20 @@ func generateSecrets(cmd *cobra.Command, secretFormat string, secretLength int) 
 	case "base64":
 		_, _ = fmt.Fprintln(w, "BASE64")
 		_, _ = fmt.Fprintln(w, "------")
-		_, _ = fmt.Fprintf(w, "ENCRYPTION_KEY=%s\n", base64.StdEncoding.EncodeToString(encryptionKey))
+		_, _ = fmt.Fprintf(w, "ARCANE_ENCRYPTION_KEY=%s\n", base64.StdEncoding.EncodeToString(encryptionKey))
 	case "hex":
 		_, _ = fmt.Fprintln(w, "HEX")
 		_, _ = fmt.Fprintln(w, "---")
-		_, _ = fmt.Fprintf(w, "ENCRYPTION_KEY=%s\n", hex.EncodeToString(encryptionKey))
+		_, _ = fmt.Fprintf(w, "ARCANE_ENCRYPTION_KEY=%s\n", hex.EncodeToString(encryptionKey))
 	case "env":
 		_, _ = fmt.Fprintln(w, "ENV (.env) FORMAT")
 		_, _ = fmt.Fprintln(w, "-------------------")
-		_, _ = fmt.Fprintf(w, "ENCRYPTION_KEY=%s\n", base64.StdEncoding.EncodeToString(encryptionKey))
+		_, _ = fmt.Fprintf(w, "ARCANE_ENCRYPTION_KEY=%s\n", base64.StdEncoding.EncodeToString(encryptionKey))
 	case "docker":
 		_, _ = fmt.Fprintln(w, "DOCKER COMPOSE ENVIRONMENT")
 		_, _ = fmt.Fprintln(w, "--------------------------")
 		_, _ = fmt.Fprintln(w, "environment:")
-		_, _ = fmt.Fprintf(w, "  - ENCRYPTION_KEY=%s\n", base64.StdEncoding.EncodeToString(encryptionKey))
+		_, _ = fmt.Fprintf(w, "  - ARCANE_ENCRYPTION_KEY=%s\n", base64.StdEncoding.EncodeToString(encryptionKey))
 	case "all":
 		_, _ = fmt.Fprintln(w, "Arcane cryptographic secrets")
 		_, _ = fmt.Fprintln(w, "===========================")
@@ -78,18 +78,18 @@ func generateSecrets(cmd *cobra.Command, secretFormat string, secretLength int) 
 
 		_, _ = fmt.Fprintln(w, "ENV (.env) - recommended")
 		_, _ = fmt.Fprintln(w, "------------------------")
-		_, _ = fmt.Fprintf(w, "ENCRYPTION_KEY=%s\n", base64.StdEncoding.EncodeToString(encryptionKey))
+		_, _ = fmt.Fprintf(w, "ARCANE_ENCRYPTION_KEY=%s\n", base64.StdEncoding.EncodeToString(encryptionKey))
 		_, _ = fmt.Fprintln(w)
 
 		_, _ = fmt.Fprintln(w, "Docker Compose (environment block)")
 		_, _ = fmt.Fprintln(w, "-------------------------------")
 		_, _ = fmt.Fprintln(w, "environment:")
-		_, _ = fmt.Fprintf(w, "  - ENCRYPTION_KEY=%s\n", base64.StdEncoding.EncodeToString(encryptionKey))
+		_, _ = fmt.Fprintf(w, "  - ARCANE_ENCRYPTION_KEY=%s\n", base64.StdEncoding.EncodeToString(encryptionKey))
 		_, _ = fmt.Fprintln(w)
 
 		_, _ = fmt.Fprintln(w, "HEX")
 		_, _ = fmt.Fprintln(w, "---")
-		_, _ = fmt.Fprintf(w, "ENCRYPTION_KEY=%s\n", hex.EncodeToString(encryptionKey))
+		_, _ = fmt.Fprintf(w, "ARCANE_ENCRYPTION_KEY=%s\n", hex.EncodeToString(encryptionKey))
 		_, _ = fmt.Fprintln(w)
 	}
 

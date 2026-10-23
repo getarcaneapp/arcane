@@ -16,7 +16,7 @@ import (
 	"github.com/lestrrat-go/httprc/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/oidcjwk"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/oidcjwk"
 )
 
 func signCompactInternal(t *testing.T, sk *mldsa.PrivateKey, alg, kid string, claims map[string]any) string {

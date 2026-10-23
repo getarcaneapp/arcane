@@ -243,7 +243,7 @@ func WarnUntrustedForwardedFor(trustedProxyNets []*net.IPNet) echo.MiddlewareFun
 			if ip == nil || !slices.ContainsFunc(trustedProxyNets, func(n *net.IPNet) bool { return n.Contains(ip) }) {
 				once.Do(func() {
 					slog.WarnContext(req.Context(),
-						"X-Forwarded-For received from an untrusted peer; clients behind this proxy share one rate-limit bucket. Set TRUSTED_PROXIES to the proxy's address range.",
+						"X-Forwarded-For received from an untrusted peer; clients behind this proxy share one rate-limit bucket. Set ARCANE_TRUSTED_PROXIES to the proxy's address range.",
 						"peer", req.RemoteAddr)
 				})
 			}

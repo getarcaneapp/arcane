@@ -14,45 +14,44 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/project"
-	workspacetypes "github.com/getarcaneapp/arcane/types/v2/workspace"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/acfs"
-	"go.getarcane.app/acfs/types"
+	acfstypes "go.getarcane.app/acfs/types"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	acfsutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/acfs"
-	workspacepkg "github.com/getarcaneapp/arcane/backend/v2/pkg/workspace"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
+	acfsutils "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/acfs"
+	workspacepkg "github.com/getarcaneapp/arcane/backend/v3/pkg/workspace"
 )
 
 // Service reads and edits a project directory as a bounded workspace.
 type Service struct {
-	config *config.Config
+	settingsService *settings.SettingsService
 }
 
-func New(cfg *config.Config) *Service {
-	return &Service{config: cfg}
+func New(settingsService *settings.SettingsService) *Service {
+	return &Service{settingsService: settingsService}
 }
 
 // Read lists the workspace files, marking GitOps-owned paths read-only.
-func (s *Service) Read(ctx context.Context, projectPath, composeFileName string, owned map[string]struct{}) (*workspacetypes.Workspace, error) {
+func (s *Service) Read(ctx context.Context, projectPath, composeFileName string, owned map[string]struct{}) (*types.Workspace, error) {
 	files, revision, truncated, err := projects.ReadProjectWorkspace(
 		ctx,
 		projectPath,
-		s.config.ProjectWorkspaceMaxDepth,
-		s.config.ProjectScanSkipDirs,
+		s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxDepth"),
+		s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
 		composeFileName,
-		s.config.ProjectWorkspaceMaxEntries,
-		workspacepkg.MaxFileSizeBytes(s.config.ProjectWorkspaceMaxFileSizeMB),
+		s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxEntries"),
+		workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("read project workspace: %w", err)
 	}
 	for i := range files {
 		if _, ok := owned[files[i].RelativePath]; ok {
-			files[i] = workspacetypes.FileEntry{ //exhaustruct:enforce
+			files[i] = types.WorkspaceFileEntry{ //exhaustruct:enforce
 				ModTime:        files[i].ModTime,
 				Name:           files[i].Name,
 				Path:           files[i].Path,
@@ -63,11 +62,11 @@ func (s *Service) Read(ctx context.Context, projectPath, composeFileName string,
 				IsDirectory:    files[i].IsDirectory,
 				IsSymlink:      files[i].IsSymlink,
 				Editable:       false,
-				ReadOnlyReason: workspacetypes.FileReadOnlyGitOpsManaged,
+				ReadOnlyReason: types.FileReadOnlyGitOpsManaged,
 			}
 		}
 	}
-	return &workspacetypes.Workspace{
+	return &types.Workspace{
 		Files:             files,
 		FileTreeRevision:  revision,
 		FileTreeTruncated: truncated,
@@ -75,13 +74,13 @@ func (s *Service) Read(ctx context.Context, projectPath, composeFileName string,
 }
 
 // File returns one workspace file's content and whether it may be edited.
-func (s *Service) File(ctx context.Context, projectPath, composeFileName, relativePath string, owned map[string]struct{}) (*workspacetypes.FileContent, error) {
+func (s *Service) File(ctx context.Context, projectPath, composeFileName, relativePath string, owned map[string]struct{}) (*types.WorkspaceFileContent, error) {
 	rel, fullPath, entry, err := resolvePath(ctx, projectPath, composeFileName, relativePath)
 	if err != nil {
 		return nil, err
 	}
-	response := func(readOnlyReason, mimeType, content string) *workspacetypes.FileContent {
-		return &workspacetypes.FileContent{
+	response := func(readOnlyReason, mimeType, content string) *types.WorkspaceFileContent {
+		return &types.WorkspaceFileContent{
 			Path:           fullPath,
 			RelativePath:   rel,
 			Name:           entry.Name,
@@ -96,15 +95,16 @@ func (s *Service) File(ctx context.Context, projectPath, composeFileName, relati
 		return nil, common.Classify(common.ErrProjectWorkspaceBadRequest, errors.New("workspace path is a directory"))
 	}
 	if entry.IsSymlink {
-		return response(workspacetypes.FileReadOnlySymlink, "", ""), nil
+		return response(types.FileReadOnlySymlink, "", ""), nil
 	}
 	if !acfsutils.IsRegular(entry) {
-		return response(workspacetypes.FileReadOnlySpecial, "", ""), nil
+		return response(types.FileReadOnlySpecial, "", ""), nil
 	}
-	if entry.Size > workspacepkg.MaxFileSizeBytes(s.config.ProjectWorkspaceMaxFileSizeMB) {
-		return response(workspacetypes.FileReadOnlyTooLarge, "", ""), nil
+	maxFileSizeBytes := workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb"))
+	if entry.Size > maxFileSizeBytes {
+		return response(types.FileReadOnlyTooLarge, "", ""), nil
 	}
-	reader, _, err := acfs.OpenRead(ctx, projectPath, "/"+rel, workspacepkg.MaxFileSizeBytes(s.config.ProjectWorkspaceMaxFileSizeMB))
+	reader, _, err := acfs.OpenRead(ctx, projectPath, "/"+rel, maxFileSizeBytes)
 	if err != nil {
 		return nil, classifyACFSError(err, "read project workspace file")
 	}
@@ -114,11 +114,11 @@ func (s *Service) File(ctx context.Context, projectPath, composeFileName, relati
 		return nil, fmt.Errorf("read project workspace file: %w", err)
 	}
 	if !workspacepkg.IsTextContent(content) {
-		return response(workspacetypes.FileReadOnlyBinary, http.DetectContentType(content), ""), nil
+		return response(types.FileReadOnlyBinary, http.DetectContentType(content), ""), nil
 	}
 	if _, ok := owned[rel]; ok {
 		// Sync-owned files stay viewable but read-only: git is their source of truth (#3634).
-		return response(workspacetypes.FileReadOnlyGitOpsManaged, http.DetectContentType(content), string(content)), nil
+		return response(types.FileReadOnlyGitOpsManaged, http.DetectContentType(content), string(content)), nil
 	}
 	return response("", http.DetectContentType(content), string(content)), nil
 }
@@ -144,7 +144,7 @@ func (s *Service) Download(ctx context.Context, projectPath, composeFileName, re
 func (s *Service) Apply(
 	ctx context.Context,
 	projectsDirectory, projectPath, composeFileName string,
-	manifest project.WorkspaceUpdateManifest,
+	manifest types.ProjectWorkspaceUpdateManifest,
 	uploads map[int][]byte,
 ) error {
 	var paths []string
@@ -159,10 +159,10 @@ func (s *Service) Apply(
 
 	if applyErr := projects.ApplyProjectWorkspaceChanges(ctx, projectPath, manifest.FileChanges, uploads, projects.ProjectWorkspaceApplyOptions{
 		ExpectedRevision: strings.TrimSpace(manifest.FileTreeRevision),
-		MaxDepth:         s.config.ProjectWorkspaceMaxDepth,
-		MaxEntries:       s.config.ProjectWorkspaceMaxEntries,
-		MaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(s.config.ProjectWorkspaceMaxFileSizeMB),
-		SkipDirectories:  s.config.ProjectScanSkipDirs,
+		MaxDepth:         s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxDepth"),
+		MaxEntries:       s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxEntries"),
+		MaxFileSizeBytes: workspacepkg.MaxFileSizeBytes(s.settingsService.GetIntSetting(ctx, "projectWorkspaceMaxFileSizeMb")),
+		SkipDirectories:  s.settingsService.GetStringSetting(ctx, "projectScanSkipDirs"),
 		ComposeFileName:  composeFileName,
 	}); applyErr != nil {
 		if restoreErr := projects.RestoreProjectUpdateBackup(ctx, projectPath, backup); restoreErr != nil {
@@ -198,23 +198,23 @@ func OwnedPaths(syncedFiles *string, composePath string) (map[string]struct{}, e
 }
 
 // resolvePath validates a workspace path outside protected config and stats it.
-func resolvePath(ctx context.Context, projectPath, composeFileName, relativePath string) (string, string, types.Entry, error) {
+func resolvePath(ctx context.Context, projectPath, composeFileName, relativePath string) (string, string, acfstypes.Entry, error) {
 	rel, err := kit.NormalizeRelativePath(relativePath)
 	if err != nil {
-		return "", "", types.Entry{}, common.Classify(common.ErrProjectWorkspaceForbidden, fmt.Errorf("invalid project workspace path: %w", err))
+		return "", "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceForbidden, fmt.Errorf("invalid project workspace path: %w", err))
 	}
 	rootName, _, _ := strings.Cut(rel, "/")
 	protected := projects.ProtectedProjectPaths(projectPath, composeFileName)
 	if protected[rel] || protected[rootName] {
-		return "", "", types.Entry{}, common.Classify(common.ErrProjectWorkspaceForbidden, errors.New("project configuration is not part of the workspace"))
+		return "", "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceForbidden, errors.New("project configuration is not part of the workspace"))
 	}
 	fullPath := filepath.Join(projectPath, filepath.FromSlash(rel))
 	entry, err := acfs.Stat(ctx, projectPath, "/"+rel, false)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", "", types.Entry{}, common.Classify(common.ErrProjectWorkspaceNotFound, errors.New("project workspace file not found"))
+			return "", "", acfstypes.Entry{}, common.Classify(common.ErrProjectWorkspaceNotFound, errors.New("project workspace file not found"))
 		}
-		return "", "", types.Entry{}, classifyACFSError(err, "inspect project workspace file")
+		return "", "", acfstypes.Entry{}, classifyACFSError(err, "inspect project workspace file")
 	}
 	return rel, fullPath, entry, nil
 }
@@ -245,7 +245,7 @@ func WrapProjectWorkspaceError(err error) error {
 
 // ValidateWorkspaceChangesAgainstGitOps rejects changes that touch a sync-owned
 // path, directly or by deleting/renaming a folder that still holds one.
-func ValidateWorkspaceChangesAgainstGitOps(changes []project.WorkspaceFileChange, owned map[string]struct{}) error {
+func ValidateWorkspaceChangesAgainstGitOps(changes []types.WorkspaceFileChange, owned map[string]struct{}) error {
 	if len(owned) == 0 {
 		return nil
 	}
@@ -273,18 +273,18 @@ func ValidateWorkspaceChangesAgainstGitOps(changes []project.WorkspaceFileChange
 
 // ChangeTargetPaths lists every normalized path a change can create, overwrite or delete.
 // Backup scope and GitOps ownership share it so they cannot diverge.
-func ChangeTargetPaths(change project.WorkspaceFileChange) []string {
+func ChangeTargetPaths(change types.WorkspaceFileChange) []string {
 	rel, err := kit.NormalizeRelativePath(change.RelativePath)
 	if err != nil {
 		return nil
 	}
 	paths := []string{rel}
 	switch change.Operation {
-	case project.FileOpRename:
+	case types.FileOpRename:
 		if newName, nameErr := kit.ValidateFileName(change.NewName); nameErr == nil {
 			paths = append(paths, filepath.ToSlash(filepath.Join(filepath.Dir(rel), newName)))
 		}
-	case project.FileOpMove:
+	case types.FileOpMove:
 		if parent, parentErr := projects.NormalizeProjectParentPath(change.NewParentPath); parentErr == nil {
 			paths = append(paths, path.Join(parent, path.Base(rel)))
 		}

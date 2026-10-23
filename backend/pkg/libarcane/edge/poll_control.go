@@ -10,7 +10,7 @@ import (
 	"github.com/samber/mo"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
 )
 
 const (

@@ -6,18 +6,16 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
 )
 
 const (
 	DeploymentSnippetsDataPath = "/app/data"
 	DeploymentSnippetsMTLSPath = "/app/data/edge-mtls-agent"
-	AgentContainerPort         = "3553"
 )
 
 // Service issues edge mTLS assets and records their audit events.
@@ -29,46 +27,6 @@ func New(eventService *event.EventService) *Service {
 	return &Service{eventService: eventService}
 }
 
-// Direct renders docker run and compose snippets for a direct agent.
-func Direct(managerURL, agentURL, apiKey string) (string, string) {
-	portMapping := fmt.Sprintf("%s:%s", AgentHostPort(agentURL), AgentContainerPort)
-
-	dockerRun := strings.Join([]string{
-		"docker run -d \\",
-		"  --name arcane-agent \\",
-		"  --restart unless-stopped \\",
-		"  -e AGENT_MODE=true \\",
-		fmt.Sprintf("  -e AGENT_TOKEN=%s \\", apiKey),
-		fmt.Sprintf("  -e MANAGER_API_URL=%s \\", managerURL),
-		fmt.Sprintf("  -p %s \\", portMapping),
-		"  -v /var/run/docker.sock:/var/run/docker.sock \\",
-		fmt.Sprintf("  -v arcane-data:%s \\", DeploymentSnippetsDataPath),
-		"  ghcr.io/getarcaneapp/agent:latest",
-	}, "\n")
-
-	dockerCompose := strings.Join([]string{
-		"services:",
-		"  arcane-agent:",
-		"    image: ghcr.io/getarcaneapp/agent:latest",
-		"    container_name: arcane-agent",
-		"    restart: unless-stopped",
-		"    environment:",
-		"      - AGENT_MODE=true",
-		"      - AGENT_TOKEN=" + apiKey,
-		"      - MANAGER_API_URL=" + managerURL,
-		"    ports:",
-		fmt.Sprintf("      - %q", portMapping),
-		"    volumes:",
-		"      - /var/run/docker.sock:/var/run/docker.sock",
-		"      - arcane-data:" + DeploymentSnippetsDataPath,
-		"",
-		"volumes:",
-		"  arcane-data:",
-	}, "\n")
-
-	return dockerRun, dockerCompose
-}
-
 // Edge renders docker run and compose snippets for an edge agent, which
 // connects outbound and needs no exposed ports.
 func Edge(managerURL, apiKey string) (string, string) {
@@ -76,10 +34,10 @@ func Edge(managerURL, apiKey string) (string, string) {
 		"docker run -d \\",
 		"  --name arcane-edge-agent \\",
 		"  --restart unless-stopped \\",
-		"  -e EDGE_AGENT=true \\",
-		"  -e EDGE_TRANSPORT=auto \\",
-		fmt.Sprintf("  -e AGENT_TOKEN=%s \\", apiKey),
-		fmt.Sprintf("  -e MANAGER_API_URL=%s \\", managerURL),
+		"  -e ARCANE_EDGE_AGENT=true \\",
+		"  -e ARCANE_EDGE_TRANSPORT=auto \\",
+		fmt.Sprintf("  -e ARCANE_AGENT_TOKEN=%s \\", apiKey),
+		fmt.Sprintf("  -e ARCANE_MANAGER_API_URL=%s \\", managerURL),
 		"  -v /var/run/docker.sock:/var/run/docker.sock \\",
 		fmt.Sprintf("  -v arcane-data:%s \\", DeploymentSnippetsDataPath),
 		"  ghcr.io/getarcaneapp/agent:latest",
@@ -93,10 +51,10 @@ func Edge(managerURL, apiKey string) (string, string) {
 		"    container_name: arcane-edge-agent",
 		"    restart: unless-stopped",
 		"    environment:",
-		"      - EDGE_AGENT=true",
-		"      - EDGE_TRANSPORT=auto",
-		"      - AGENT_TOKEN=" + apiKey,
-		"      - MANAGER_API_URL=" + managerURL,
+		"      - ARCANE_EDGE_AGENT=true",
+		"      - ARCANE_EDGE_TRANSPORT=auto",
+		"      - ARCANE_AGENT_TOKEN=" + apiKey,
+		"      - ARCANE_MANAGER_API_URL=" + managerURL,
 		"    volumes:",
 		"      - /var/run/docker.sock:/var/run/docker.sock",
 		"      - arcane-data:" + DeploymentSnippetsDataPath,
@@ -150,12 +108,12 @@ func (s *Service) GenerateMTLS(ctx context.Context, edgeCfg *edge.Config, envID,
 		"docker run -d \\",
 		"  --name arcane-edge-agent \\",
 		"  --restart unless-stopped \\",
-		"  -e EDGE_AGENT=true \\",
-		"  -e EDGE_TRANSPORT=auto \\",
-		"  -e EDGE_MTLS_MODE=required \\",
-		fmt.Sprintf("  -e EDGE_MTLS_ASSETS_DIR=%s \\", DeploymentSnippetsMTLSPath),
-		fmt.Sprintf("  -e AGENT_TOKEN=%s \\", apiKey),
-		fmt.Sprintf("  -e MANAGER_API_URL=%s \\", managerURL),
+		"  -e ARCANE_EDGE_AGENT=true \\",
+		"  -e ARCANE_EDGE_TRANSPORT=auto \\",
+		"  -e ARCANE_EDGE_MTLS_MODE=required \\",
+		fmt.Sprintf("  -e ARCANE_EDGE_MTLS_ASSETS_DIR=%s \\", DeploymentSnippetsMTLSPath),
+		fmt.Sprintf("  -e ARCANE_AGENT_TOKEN=%s \\", apiKey),
+		fmt.Sprintf("  -e ARCANE_MANAGER_API_URL=%s \\", managerURL),
 		"  -v /var/run/docker.sock:/var/run/docker.sock \\",
 		fmt.Sprintf("  -v arcane-data:%s \\", DeploymentSnippetsDataPath),
 		"  ghcr.io/getarcaneapp/agent:latest",
@@ -169,12 +127,12 @@ func (s *Service) GenerateMTLS(ctx context.Context, edgeCfg *edge.Config, envID,
 		"    container_name: arcane-edge-agent",
 		"    restart: unless-stopped",
 		"    environment:",
-		"      - EDGE_AGENT=true",
-		"      - EDGE_TRANSPORT=auto",
-		"      - EDGE_MTLS_MODE=required",
-		"      - EDGE_MTLS_ASSETS_DIR=" + DeploymentSnippetsMTLSPath,
-		"      - AGENT_TOKEN=" + apiKey,
-		"      - MANAGER_API_URL=" + managerURL,
+		"      - ARCANE_EDGE_AGENT=true",
+		"      - ARCANE_EDGE_TRANSPORT=auto",
+		"      - ARCANE_EDGE_MTLS_MODE=required",
+		"      - ARCANE_EDGE_MTLS_ASSETS_DIR=" + DeploymentSnippetsMTLSPath,
+		"      - ARCANE_AGENT_TOKEN=" + apiKey,
+		"      - ARCANE_MANAGER_API_URL=" + managerURL,
 		"    volumes:",
 		"      - /var/run/docker.sock:/var/run/docker.sock",
 		"      - arcane-data:" + DeploymentSnippetsDataPath,
@@ -184,23 +142,4 @@ func (s *Service) GenerateMTLS(ctx context.Context, edgeCfg *edge.Config, envID,
 	}, "\n")
 
 	return generatedAssets, mtlsDockerRun, mtlsDockerCompose
-}
-
-func AgentHostPort(agentURL string) string {
-	parsed, err := url.Parse(strings.TrimSpace(agentURL))
-	if err != nil || parsed.Host == "" {
-		return AgentContainerPort
-	}
-	if port := parsed.Port(); port != "" {
-		return port
-	}
-
-	switch strings.ToLower(parsed.Scheme) {
-	case "https":
-		return "443"
-	case "http":
-		return "80"
-	default:
-		return AgentContainerPort
-	}
 }

@@ -1,14 +1,12 @@
 import { goto, refreshAll } from '$app/navigation';
 import type { QueryClient } from '@tanstack/svelte-query';
-import { Temporal } from 'temporal-polyfill';
 
 import { activityStore } from '#lib/stores/activity.store.svelte.js';
-import { dashboardStore } from '#lib/stores/dashboard.store.svelte.js';
 import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import userStore from '#lib/stores/user-store.svelte.js';
 import { versionStore } from '#lib/stores/version.store.svelte.js';
-import type { User, MFAChallenge, AuthenticationResponse } from '#lib/types/auth.js';
+import type { User, MFAChallenge, AuthenticationResponse, SessionBootstrap } from '#lib/types/auth.js';
 import type { LoginCredentials, AutoLoginConfig } from '#lib/types/auth.js';
 import type { OidcStatusInfo } from '#lib/types/settings.js';
 import { parseInstant } from '#lib/utils/formatting.js';
@@ -272,6 +270,10 @@ class AuthService extends BaseAPIService {
 		return this.handleResponse(this.api.get('/oidc/status'));
 	}
 
+	async getSessionBootstrap(): Promise<SessionBootstrap> {
+		return this.handleResponse<SessionBootstrap>(this.api.get('/auth/bootstrap'));
+	}
+
 	async changePassword(currentPassword: string, newPassword: string): Promise<void> {
 		await this.handleResponse(
 			this.api.post('/auth/password', {
@@ -285,14 +287,12 @@ class AuthService extends BaseAPIService {
 		queryClient.clear();
 		featureStore.clear();
 		const restartActivityStore = activityStore.stop({ resetState: true });
-		const restartDashboardStore = dashboardStore.stop({ resetState: true });
 		const restartEnvironmentStatusStore = environmentStatusStore.stop();
 		const restartVersionStore = versionStore.stop();
 		userStore.clearUser();
 
 		if (options?.restartMountedStores) {
 			if (restartActivityStore) void activityStore.start();
-			if (restartDashboardStore) void dashboardStore.start();
 			if (restartEnvironmentStatusStore) void environmentStatusStore.start();
 			if (restartVersionStore) versionStore.start();
 		}
@@ -324,7 +324,7 @@ class AuthService extends BaseAPIService {
 	 * @returns The auto-login config, or null if the request fails
 	 */
 	async getAutoLoginConfig(): Promise<AutoLoginConfig | null> {
-		const result = await tryCatch(this.handleResponse<AutoLoginConfig>(this.api.get('/auth/auto-login-config')));
+		const result = await tryCatch(this.handleResponse<AutoLoginConfig>(this.api.get('/auth/autologin')));
 		// Silently fail - auto-login is optional.
 		return result.data;
 	}
@@ -335,7 +335,7 @@ class AuthService extends BaseAPIService {
 	 * @returns The user if login succeeded, null otherwise
 	 */
 	async attemptAutoLogin(): Promise<User | null> {
-		const result = await tryCatch(this.handleResponse<AuthenticationResponse>(this.api.post('/auth/auto-login')));
+		const result = await tryCatch(this.handleResponse<AuthenticationResponse>(this.api.post('/auth/autologin')));
 		// Silently fail - fall back to normal login flow.
 		if (result.error !== null || result.data.status === 'mfa_required') return null;
 		return this.completeAuthentication(result.data);

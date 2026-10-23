@@ -12,16 +12,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
 )
 
 func TestPruneVolumesSkipsBackupVolume(t *testing.T) {
@@ -68,11 +68,11 @@ func TestPruneVolumesSkipsBackupVolume(t *testing.T) {
 	require.NoError(t, gormDB.AutoMigrate(&event.Event{}))
 	db := &database.DB{DB: gormDB}
 
-	dockerService := docker.NewDockerClientService(t.Context(), nil, nil, nil).WithClient(dockerClient)
+	dockerService := (&docker.DockerClientService{}).WithClient(dockerClient)
 	volumeService := volume.NewVolumeService(db, dockerService, event.NewEventService(db, nil, nil), nil, nil, nil, nil, nil, nil, nil)
 	service := NewService(time.UTC, dockerService, nil, nil, volumeService, nil)
 
-	result, err := service.pruneVolumes(t.Context(), system.PruneVolumesOptions{Mode: system.PruneVolumeModeAll})
+	result, err := service.pruneVolumes(t.Context(), types.PruneVolumesOptions{Mode: types.PruneVolumeModeAll})
 	require.NoError(t, err)
 	require.Equal(t, []string{"orphan"}, result.VolumesDeleted)
 	require.EqualValues(t, 100, result.VolumeSpaceReclaimed)

@@ -5,15 +5,15 @@ services:
     ports:
       - '3553:3553'
     environment:
-      - AGENT_MODE=true
-      - AGENT_TOKEN=arc_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-      - MANAGER_API_URL=http://10.1.1.4:3552
+      - ARCANE_AGENT_MODE=true
+      - ARCANE_AGENT_TOKEN=arc_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+      - ARCANE_MANAGER_API_URL=http://10.1.1.4:3552
       # Optional: run the agent as a specific host UID/GID instead of the default runtime user.
       # When using the mounted Docker socket, Arcane will map the socket group automatically.
       # - PUID=1000
       # - PGID=1000
       # Optional gRPC tunnel setting:
-      - EDGE_TRANSPORT=websocket
+      - ARCANE_EDGE_TRANSPORT=websocket
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - agent-data:/app/data

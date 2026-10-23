@@ -6,19 +6,35 @@ import (
 	"cmp"
 	"embed"
 	"fmt"
+	"io"
 	"io/fs"
 	"mime"
+	"net/http"
 	"path"
+	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
+	kit "go.getarcane.app/kit/pkg"
 )
 
 //go:embed all:dist
 var frontendFS embed.FS
 
 const indexHtmlFileConstant = "index.html"
+
+type precompressedVariant struct {
+	encoding  string
+	extension string
+}
+
+var precompressedVariants = []precompressedVariant{
+	{encoding: "br", extension: ".br"},
+	{encoding: "gzip", extension: ".gz"},
+}
 
 // RegisterFrontend serves embedded assets and the SPA fallback outside /api.
 func RegisterFrontend(e *echo.Echo) error {
@@ -38,20 +54,6 @@ func RegisterFrontend(e *echo.Echo) error {
 	skipAPI := func(c *echo.Context) bool {
 		return strings.HasPrefix(c.Request().URL.Path, "/api")
 	}
-
-	e.Use(middleware.GzipWithConfig(middleware.GzipConfig{
-		MinLength: 1024,
-		Skipper: func(c *echo.Context) bool {
-			if skipAPI(c) {
-				return true
-			}
-			switch strings.ToLower(path.Ext(c.Request().URL.Path)) {
-			case ".woff2", ".woff", ".png", ".jpg", ".jpeg", ".webp", ".avif", ".ico", ".gz":
-				return true
-			}
-			return false
-		},
-	}))
 
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
@@ -75,6 +77,11 @@ func RegisterFrontend(e *echo.Echo) error {
 			default:
 				header.Set("Cache-Control", "public, max-age=86400")
 			}
+
+			method := c.Request().Method
+			if (method == http.MethodGet || method == http.MethodHead) && serveEncoded(c, distFS, p) {
+				return nil
+			}
 			return next(c)
 		}
 	})
@@ -91,4 +98,67 @@ func RegisterFrontend(e *echo.Echo) error {
 	}))
 
 	return nil
+}
+
+func serveEncoded(c *echo.Context, distFS fs.FS, p string) bool {
+	contentType := mime.TypeByExtension(path.Ext(p))
+	available := slices.DeleteFunc(slices.Clone(precompressedVariants), func(variant precompressedVariant) bool {
+		_, err := fs.Stat(distFS, p+variant.extension)
+		return err != nil
+	})
+	if contentType == "" || len(available) == 0 {
+		return false
+	}
+
+	header := c.Response().Header()
+	header.Add("Vary", "Accept-Encoding")
+
+	accepted := acceptedEncodings(c.Request().Header.Get("Accept-Encoding"))
+	idx := slices.IndexFunc(available, func(variant precompressedVariant) bool {
+		return slices.Contains(accepted, variant.encoding)
+	})
+	if idx < 0 {
+		return false
+	}
+
+	file, err := distFS.Open(p + available[idx].extension)
+	if err != nil {
+		return false
+	}
+	defer func() {
+		_ = file.Close()
+	}()
+
+	content, ok := file.(io.ReadSeeker)
+	if !ok {
+		return false
+	}
+
+	header.Set("Content-Encoding", available[idx].encoding)
+	header.Set("Content-Type", contentType)
+	http.ServeContent(c.Response(), c.Request(), p, time.Time{}, content)
+	return true
+}
+
+func acceptedEncodings(acceptEncoding string) []string {
+	weights := map[string]float64{}
+	for part := range strings.SplitSeq(acceptEncoding, ",") {
+		name, params, _ := strings.Cut(part, ";")
+		weight := 1.0
+		for param := range strings.SplitSeq(params, ";") {
+			if value, found := strings.CutPrefix(strings.TrimSpace(param), "q="); found {
+				parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+				weight = kit.Ternary(err == nil, parsed, 0)
+			}
+		}
+		weights[strings.ToLower(strings.TrimSpace(name))] = weight
+	}
+
+	return slices.DeleteFunc([]string{"br", "gzip"}, func(encoding string) bool {
+		weight, found := weights[encoding]
+		if !found {
+			weight, found = weights["*"]
+		}
+		return !found || weight <= 0
+	})
 }

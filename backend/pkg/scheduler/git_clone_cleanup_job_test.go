@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitrepo"
-	git "github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/gitrepo"
+	git "github.com/getarcaneapp/arcane/backend/v3/pkg/gitutil"
 )
 
 func TestGitCloneCleanupJob_NameAndSchedule(t *testing.T) {

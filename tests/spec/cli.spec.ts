@@ -86,7 +86,7 @@ async function arcaneAPI<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 async function deleteFederatedCredential(id: string): Promise<void> {
-	const response = await fetch(new URL(`/api/federated-credentials/${id}`, baseURL), {
+	const response = await fetch(new URL(`/api/federated/credentials/${id}`, baseURL), {
 		method: 'DELETE',
 		headers: { 'X-API-KEY': apiKey }
 	});
@@ -162,14 +162,26 @@ const readOnlyJsonCommands: JsonReadOnlyCommand[] = [
 		name: 'settings list',
 		args: ['settings', 'list', '--json'],
 		expectation: (value) => {
-			expect(value).toEqual(expect.any(Array));
+			expect(value).toEqual(
+				expect.objectContaining({
+					settings: expect.any(Array),
+					runtime: expect.any(Object),
+					readOnly: expect.any(Boolean)
+				})
+			);
 		}
 	},
 	{
 		name: 'settings public',
 		args: ['settings', 'public', '--json'],
 		expectation: (value) => {
-			expect(value).toEqual(expect.any(Array));
+			expect(value).toEqual(
+				expect.objectContaining({
+					settings: expect.any(Array),
+					runtime: expect.any(Object),
+					readOnly: expect.any(Boolean)
+				})
+			);
 		}
 	},
 	{
@@ -340,22 +352,13 @@ test.describe('arcane-cli e2e', () => {
 	test('config set and show use an isolated config file', async () => {
 		const config = await createCLIConfig('', '');
 		try {
-			await runCLI(config.configPath, [
-				'config',
-				'set',
-				'server-url',
-				baseURL,
-				'api-key',
-				apiKey,
-				'environment',
-				'0'
-			]);
+			await runCLI(config.configPath, ['config', 'set', 'server-url', baseURL, 'api-key', apiKey]);
 
 			const show = await runCLI(config.configPath, ['config', 'show']);
 			const showOutput = show.stdout.replace(/[ \t]+/g, ' ');
 			expect(showOutput).toContain(`Server URL ${baseURL}`);
 			expect(showOutput).toContain('API key arc_');
-			expect(showOutput).toContain('Environment 0');
+			expect(showOutput).toContain('Log level info');
 		} finally {
 			await config.cleanup();
 		}
@@ -368,7 +371,7 @@ test.describe('arcane-cli e2e', () => {
 			const show = await runCLI(config.configPath, ['config', 'show']);
 			const showOutput = show.stdout.replace(/[ \t]+/g, ' ');
 			expect(showOutput).toContain(`Server URL ${serverURL}`);
-			expect(showOutput).toContain('Environment 0');
+			expect(showOutput).toContain('Log level info');
 		} finally {
 			await config.cleanup();
 		}
@@ -424,7 +427,7 @@ test.describe('arcane-cli e2e', () => {
 			expect(viewerRole).toBeTruthy();
 
 			const created = await arcaneAPI<PlaywrightFederatedCredentialResponse>(
-				'/api/playwright/create-test-federated-credential',
+				'/api/playwright/federated',
 				{
 					method: 'POST',
 					body: JSON.stringify({
@@ -474,6 +477,8 @@ test.describe('arcane-cli e2e', () => {
 			expect(exchange.expiresIn).toBeGreaterThan(0);
 
 			const projects = await runCLIJSON<PaginatedResponse<{ id: string }>>(config.configPath, [
+				'--env',
+				'0',
 				'projects',
 				'list',
 				'--limit',
@@ -509,7 +514,7 @@ test.describe('arcane-cli e2e', () => {
 		});
 	});
 
-	test('containers list uses the configured environment', async () => {
+	test('containers list without --env reads every environment', async () => {
 		await withConfig(async (config) => {
 			const containers = await runCLIJSON<PaginatedResponse<{ id: string; name?: string }>>(
 				config.configPath,
@@ -527,7 +532,11 @@ test.describe('arcane-cli e2e', () => {
 	for (const command of readOnlyJsonCommands) {
 		test(`${command.name} returns JSON`, async () => {
 			await withConfig(async (config) => {
-				const result = await runCommandJSON<unknown>(config.configPath, command.args);
+				const result = await runCommandJSON<unknown>(config.configPath, [
+					'--env',
+					'0',
+					...command.args
+				]);
 				command.expectation(result);
 			});
 		});
@@ -646,11 +655,8 @@ test.describe('arcane-cli remote environment RBAC', () => {
 		return fetch(new URL(path, baseURL), { ...init, headers });
 	}
 
-	async function withAdminConfig<T>(
-		environment: string,
-		fn: (config: CLIConfig) => Promise<T>
-	): Promise<T> {
-		const config = await createCLIConfig(baseURL, adminKey, environment);
+	async function withAdminConfig<T>(fn: (config: CLIConfig) => Promise<T>): Promise<T> {
+		const config = await createCLIConfig(baseURL, adminKey);
 		try {
 			return await fn(config);
 		} finally {
@@ -658,11 +664,8 @@ test.describe('arcane-cli remote environment RBAC', () => {
 		}
 	}
 
-	async function withReadonlyConfig<T>(
-		environment: string,
-		fn: (config: CLIConfig) => Promise<T>
-	): Promise<T> {
-		const config = await createCLIConfig(baseURL, readonlyKey, environment);
+	async function withReadonlyConfig<T>(fn: (config: CLIConfig) => Promise<T>): Promise<T> {
+		const config = await createCLIConfig(baseURL, readonlyKey);
 		try {
 			return await fn(config);
 		} finally {
@@ -697,8 +700,6 @@ test.describe('arcane-cli remote environment RBAC', () => {
 			method: 'POST',
 			body: JSON.stringify({
 				name: `cli-rbac-${suffix}`,
-				apiUrl: `edge://cli-rbac-${suffix}`,
-				isEdge: true,
 				enabled: true
 			})
 		});
@@ -712,7 +713,7 @@ test.describe('arcane-cli remote environment RBAC', () => {
 
 		// Create a read-only scoped API key via the CLI: it can read volumes but
 		// has no volumes:create grant, so the proxy must reject writes with it.
-		await withAdminConfig('0', async (config) => {
+		await withAdminConfig(async (config) => {
 			const created = await runCLIJSON<CreatedApiKey>(config.configPath, [
 				'admin',
 				'api-keys',
@@ -736,7 +737,7 @@ test.describe('arcane-cli remote environment RBAC', () => {
 	test.afterAll(async () => {
 		if (readonlyKeyId) {
 			try {
-				const response = await adminFetch(`/api/api-keys/${readonlyKeyId}`, { method: 'DELETE' });
+				const response = await adminFetch(`/api/apikeys/${readonlyKeyId}`, { method: 'DELETE' });
 				expect
 					.soft(
 						response.ok || response.status === 404,
@@ -766,8 +767,10 @@ test.describe('arcane-cli remote environment RBAC', () => {
 	});
 
 	test('denies a remote write for a read-only key (403)', async () => {
-		await withReadonlyConfig(remoteEnvId, async (config) => {
+		await withReadonlyConfig(async (config) => {
 			const error = await runExpectingFailure(config.configPath, [
+				'--env',
+				remoteEnvId,
 				'volumes',
 				'create',
 				'--name',
@@ -778,8 +781,10 @@ test.describe('arcane-cli remote environment RBAC', () => {
 	});
 
 	test('authorizes a remote write for an admin key, reaching the disconnected agent (503, not 403)', async () => {
-		await withAdminConfig(remoteEnvId, async (config) => {
+		await withAdminConfig(async (config) => {
 			const error = await runExpectingFailure(config.configPath, [
+				'--env',
+				remoteEnvId,
 				'volumes',
 				'create',
 				'--name',
@@ -793,8 +798,10 @@ test.describe('arcane-cli remote environment RBAC', () => {
 	});
 
 	test('leaves the local environment unaffected for a read-only key', async () => {
-		await withReadonlyConfig('0', async (config) => {
+		await withReadonlyConfig(async (config) => {
 			const volumes = await runCLIJSON<{ data: unknown[] }>(config.configPath, [
+				'--env',
+				'0',
 				'volumes',
 				'list',
 				'--limit',

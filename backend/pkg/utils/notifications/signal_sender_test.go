@@ -25,9 +25,7 @@ func TestBuildSignalURL(t *testing.T) {
 				Recipients: []string{"+0987654321"},
 			},
 			check: func(url string) bool {
-				return assert.Contains(t, url, "signal://admin:secret@signal.example.com:8080") &&
-					assert.Contains(t, url, "source=%2B1234567890") &&
-					assert.Contains(t, url, "recipients=%2B0987654321")
+				return assert.Contains(t, url, "signal://admin:secret@signal.example.com:8080/+1234567890/+0987654321")
 			},
 		},
 		{
@@ -40,9 +38,8 @@ func TestBuildSignalURL(t *testing.T) {
 				Recipients: []string{"+0987654321"},
 			},
 			check: func(url string) bool {
-				return assert.Contains(t, url, "signal://signal.example.com:8080") &&
-					assert.Contains(t, url, "token=auth-token-123") &&
-					assert.Contains(t, url, "source=%2B1234567890")
+				return assert.Contains(t, url, "signal://signal.example.com:8080/+1234567890/+0987654321") &&
+					assert.Contains(t, url, "token=auth-token-123")
 			},
 		},
 		{
@@ -55,7 +52,7 @@ func TestBuildSignalURL(t *testing.T) {
 				Recipients: []string{"+2222222222", "+3333333333", "+4444444444"},
 			},
 			check: func(url string) bool {
-				return assert.Contains(t, url, "recipients=%2B2222222222%2C%2B3333333333%2C%2B4444444444")
+				return assert.Contains(t, url, "/+1111111111/+2222222222/+3333333333/+4444444444")
 			},
 		},
 		{
@@ -83,8 +80,7 @@ func TestBuildSignalURL(t *testing.T) {
 				Recipients: []string{"+0987654321"},
 			},
 			check: func(url string) bool {
-				return assert.Contains(t, url, "signal://user:pass@signal-api.local:9443") &&
-					assert.Contains(t, url, "port=9443")
+				return assert.Contains(t, url, "signal://user:pass@signal-api.local:9443/+1234567890/+0987654321")
 			},
 		},
 		{
@@ -204,9 +200,8 @@ func TestBuildSignalURL_PhoneNumberEncoding(t *testing.T) {
 	gotURL, err := BuildSignalURL(config)
 	require.NoError(t, err)
 
-	// Phone numbers should be in the URL path and query params
-	assert.Contains(t, gotURL, "source=")
-	assert.Contains(t, gotURL, "recipients=")
+	// Phone numbers should be in the URL path
+	assert.Contains(t, gotURL, "/+1%20%28555%29%20123-4567/+1%20%28555%29%20987-6543")
 }
 
 func TestSendSignal_Validation(t *testing.T) {

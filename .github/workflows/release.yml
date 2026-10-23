@@ -113,7 +113,7 @@ jobs:
 
           git add .arcane.json frontend/package.json CHANGELOG.md
           git commit -m "release: $VERSION"
-          for tag in "$RELEASE_TAG" "cli/$RELEASE_TAG" "types/$RELEASE_TAG" "backend/$RELEASE_TAG"; do
+          for tag in "$RELEASE_TAG" "cli/$RELEASE_TAG" "backend/$RELEASE_TAG"; do
             git tag -a "$tag" -m "$VERSION"
           done
 
@@ -121,7 +121,6 @@ jobs:
           git push --atomic origin HEAD:refs/heads/main \
             "refs/tags/$RELEASE_TAG" \
             "refs/tags/cli/$RELEASE_TAG" \
-            "refs/tags/types/$RELEASE_TAG" \
             "refs/tags/backend/$RELEASE_TAG"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
@@ -154,7 +153,9 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Just
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: just
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
@@ -328,41 +329,9 @@ jobs:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
 
-  attest-aliases:
-    name: Attest GHCR aliases
-    needs: [prepare, build, publish-images]
-    runs-on: depot-ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      artifact-metadata: write
-      id-token: write
-    steps:
-      - name: Login to GHCR
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Container image attestation (manager alias)
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: ghcr.io/getarcaneapp/arcane
-          subject-digest: ${{ needs.build.outputs.manager-digest }}
-          push-to-registry: true
-
-      - name: Container image attestation (agent alias)
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: ghcr.io/getarcaneapp/arcane-headless
-          subject-digest: ${{ needs.build.outputs.agent-digest }}
-          push-to-registry: true
-
   publish:
     name: Publish release
-    needs: [prepare, build, publish-images, attest-aliases]
+    needs: [prepare, build, publish-images]
     runs-on: depot-ubuntu-latest
 
     steps:

@@ -7,6 +7,7 @@
 
 	import FileBrowserDialog from '#lib/components/dialogs/file-browser-dialog.svelte';
 	import GitopsDialogFooter from '#lib/components/dialogs/gitops-dialog-footer.svelte';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import FormInput from '#lib/components/form/form-input.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -29,9 +30,10 @@
 	import type {
 		FileTreeNode,
 		GitOpsSync,
-		GitOpsSyncCreateDto,
+		GitOpsSyncCreate,
 		GitOpsSyncMode,
-		GitOpsSyncUpdateDto,
+		GitOpsSyncUpdate,
+		GitOpsSyncWritable,
 		GitRepository,
 		BranchInfo
 	} from '#lib/types/automation.js';
@@ -39,6 +41,7 @@
 	import type { Project } from '#lib/types/swarm.js';
 	import type { WorkspaceFileEntry } from '#lib/types/workspace.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 	import type { WorkspaceDisplayEntry } from '#lib/utils/workspace-files.js';
 
@@ -49,14 +52,14 @@
 		targetType?: string;
 		mode?: GitOpsSyncMode;
 		projectId?: string;
-		onSubmit: (detail: { sync: GitOpsSyncCreateDto | GitOpsSyncUpdateDto; isEditMode: boolean }) => void;
+		onSubmit: (detail: { sync: GitOpsSyncCreate | GitOpsSyncUpdate; isEditMode: boolean }) => void;
 		isLoading: boolean;
 	};
 
 	let {
 		open = $bindable(false),
 		syncToEdit = $bindable(),
-		environmentId,
+		environmentId = $bindable(),
 		targetType,
 		mode,
 		projectId,
@@ -176,16 +179,16 @@
 			refetchOnMount: 'always'
 		};
 	});
-	const lifecycleEnabled = $derived(settingsQuery.data?.lifecycleEnabled ?? false);
-	const lifecycleDefaultRunnerImage = $derived(settingsQuery.data?.lifecycleDefaultRunnerImage?.trim() || 'alpine:latest');
+	const lifecycleEnabled = $derived(settingsQuery.data?.values.lifecycleEnabled ?? false);
+	const lifecycleDefaultRunnerImage = $derived(settingsQuery.data?.values.lifecycleDefaultRunnerImage?.trim() || 'alpine:latest');
 
 	const formData = $derived.by(() => {
 		// New drafts use the first settings response; later refreshes preserve edits.
 		if (!untrack(() => isEditMode)) settingsQuery.isFetchedAfterMount;
 		return untrack(() => {
-			let maxSyncFiles = settingsQuery.data?.gitSyncMaxFiles ?? 0;
-			let maxSyncTotalSizeMb = settingsQuery.data?.gitSyncMaxTotalSizeMb ?? 0;
-			let maxSyncBinarySizeMb = settingsQuery.data?.gitSyncMaxBinarySizeMb ?? 0;
+			let maxSyncFiles = settingsQuery.data?.values.gitSyncMaxFiles ?? 0;
+			let maxSyncTotalSizeMb = settingsQuery.data?.values.gitSyncMaxTotalSizeMb ?? 0;
+			let maxSyncBinarySizeMb = settingsQuery.data?.values.gitSyncMaxBinarySizeMb ?? 0;
 			let preDeployRunnerImage = lifecycleDefaultRunnerImage;
 			if (syncToEdit) {
 				maxSyncFiles = syncToEdit.maxSyncFiles ?? 0;
@@ -414,12 +417,7 @@
 	);
 	const showBackupSummary = $derived(!!selectedProject && !!selectedRepository && backupPaths.length > 0);
 
-	function backupPathsChangedInternal(): boolean {
-		const existing = [...(syncToEdit?.backupPaths ?? [])].sort((a, b) => a.localeCompare(b));
-		return existing.length !== backupPaths.length || existing.some((path, index) => path !== backupPaths[index]);
-	}
-
-	function buildBackupPayloadInternal(data: z.infer<typeof formSchema>): GitOpsSyncCreateDto | GitOpsSyncUpdateDto {
+	function buildBackupPayloadInternal(data: z.infer<typeof formSchema>): GitOpsSyncCreate | GitOpsSyncUpdate {
 		const name = data.name.trim() || backupNamePlaceholder;
 		const repositoryId = selectedRepository?.value || data.repositoryId;
 
@@ -438,15 +436,18 @@
 			};
 		}
 
-		const update: GitOpsSyncUpdateDto = {};
-		if (name !== syncToEdit.name) update.name = name;
-		if (repositoryId !== syncToEdit.repositoryId) update.repositoryId = repositoryId;
-		if (data.branch !== syncToEdit.branch) update.branch = data.branch;
-		if (data.autoSync !== syncToEdit.autoSync) update.autoSync = data.autoSync;
-		if (data.syncInterval !== syncToEdit.syncInterval) update.syncInterval = data.syncInterval;
-		if (data.backupOnSave !== syncToEdit.backupOnSave) update.backupOnSave = data.backupOnSave;
-		if (backupPathsChangedInternal()) update.backupPaths = backupPaths;
-		return update;
+		return changedFields(
+			{ ...syncToEdit, backupPaths: [...(syncToEdit.backupPaths ?? [])].sort((a, b) => a.localeCompare(b)) },
+			{
+				name,
+				repositoryId,
+				branch: data.branch,
+				autoSync: data.autoSync,
+				syncInterval: data.syncInterval,
+				backupOnSave: data.backupOnSave,
+				backupPaths
+			}
+		);
 	}
 
 	function handleSubmit() {
@@ -463,7 +464,7 @@
 			return;
 		}
 
-		const payload: GitOpsSyncCreateDto | GitOpsSyncUpdateDto = {
+		const fields: GitOpsSyncCreate = {
 			name: data.name,
 			repositoryId: selectedRepository?.value || data.repositoryId,
 			branch: data.branch,
@@ -480,9 +481,10 @@
 			syncInterval: data.syncInterval
 		};
 
-		if (!isEditMode && data.projectId) {
-			(payload as GitOpsSyncCreateDto).projectId = data.projectId;
-		}
+		const payload: GitOpsSyncCreate | GitOpsSyncUpdate =
+			isEditMode && syncToEdit
+				? changedFields<GitOpsSyncUpdate, GitOpsSyncWritable>(syncToEdit, fields)
+				: { ...fields, ...(data.projectId ? { projectId: data.projectId } : {}) };
 
 		if (shouldSubmitLifecycleFieldsInternal(data)) {
 			payload.preDeployScriptPath = data.preDeployScriptPath.trim();
@@ -639,6 +641,9 @@
 			</div>
 		{:else}
 			<form id="sync-form" onsubmit={preventDefault(handleSubmit)} class="grid gap-5 py-2">
+				{#if !isEditMode}
+					<EnvironmentDestinationSelect bind:value={environmentId} permission="gitops:create" variant="field" />
+				{/if}
 				{#if isEditMode}
 					<p class="text-xs text-muted-foreground">
 						<span class="font-medium text-foreground">{isBackupMode ? m.push() : m.pull()}</span>

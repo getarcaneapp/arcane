@@ -1,37 +1,51 @@
 <script lang="ts">
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { onMount, onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import FeatureDisabled from '#lib/components/features/feature-disabled.svelte';
-	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { BULK_FETCH_MAX_ITEMS, BULK_FETCH_PAGE_SIZE } from '#lib/constants/table-pagination.js';
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
-	import { ActivityIcon, ImagesIcon, InspectIcon, ScanIcon, ShieldAlertIcon, ShieldCheckIcon } from '#lib/icons/index.js';
+	import {
+		ActivityIcon,
+		AlertTriangleIcon,
+		ImagesIcon,
+		InspectIcon,
+		ScanIcon,
+		ShieldAlertIcon,
+		ShieldCheckIcon
+	} from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import type { VulnerabilityRiskOverview } from '#lib/types/environment.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { extractApiErrorMessage, parallelRefresh } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { fetchAcrossEnvironments, withFailedEnvironments } from '#lib/utils/environments.js';
+	import {
+		destinationEnvironmentId,
+		fetchAcrossEnvironments,
+		hasShownPermission,
+		withFailedEnvironments
+	} from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import {
+		fetchRiskOverview,
 		getSeveritySegments,
 		mapVulnerabilityPage,
 		mapVulnerabilityRequest,
 		vulnerabilityEnvironments,
-		vulnerabilityOverviewEnvironment,
-		vulnerabilityOverviewEnvironments,
 		withVulnerabilityToggles,
+		type RiskOverview,
 		type VulnerabilityRow
 	} from '#lib/utils/vulnerability.js';
 
@@ -40,17 +54,60 @@
 	import SecurityVulnerabilityTable from './components/security-vulnerability-table.svelte';
 
 	let { data } = $props();
-	let displayedEnvId = $derived(data.envId);
-	// Rows carry their environment, so they are cleared when the shown environments change too.
-	let displayedShownKey = environmentStore.shownKey;
+	const queryClient = useQueryClient();
+	const scope = $derived(environmentStore.shownKey);
+	const emptyPage = () => ({
+		data: [],
+		pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 }
+	});
 
-	let overview = $derived<VulnerabilityRiskOverview | null>(data.overview);
+	const vulnerabilityManagementEnabled = $derived(vulnerabilityEnvironments().length > 0);
+	const overviewQuery = createQuery(() => ({
+		queryKey: queryKeys.vulnerabilities.overviewByEnvironment(environmentStore.shownKey),
+		queryFn: fetchRiskOverview,
+		enabled: vulnerabilityManagementEnabled
+	}));
+	const overview = $derived<RiskOverview | null>(overviewQuery.data ?? null);
 
-	let vulnerabilities = $derived<Paginated<VulnerabilityRow>>(data.vulnerabilities);
 	let requestOptions = $derived<SearchPaginationSortRequest>(data.vulnerabilityRequestOptions);
 	let selectedVulnerabilityIds = $state<string[]>([]);
 	let showIgnored = $state(false);
 	let fixAvailable = $state(false);
+
+	function vulnerabilityRequest(options: SearchPaginationSortRequest): SearchPaginationSortRequest {
+		return mapVulnerabilityRequest(withVulnerabilityToggles(options, { showIgnored, fixAvailable }));
+	}
+
+	async function fetchVulnerabilities(request: SearchPaginationSortRequest): Promise<Paginated<VulnerabilityRow>> {
+		return mapVulnerabilityPage(
+			await fetchAcrossEnvironments(vulnerabilityEnvironments(), request, (id, request, config) =>
+				vulnerabilityService.getAllVulnerabilitiesForEnvironment(id, request, config)
+			),
+			request
+		);
+	}
+
+	const vulnerabilitiesQuery = createQuery(() => {
+		const queryScope = scope;
+		const request = vulnerabilityRequest(requestOptions);
+		return {
+			queryKey: queryKeys.vulnerabilities.allByEnvironment(queryScope, request),
+			queryFn: () => fetchVulnerabilities(request),
+			placeholderData: (previous, query) => (query?.queryKey[1] === queryScope ? previous : undefined),
+			enabled: vulnerabilityManagementEnabled
+		};
+	});
+	const vulnerabilities = $derived<Paginated<VulnerabilityRow>>(vulnerabilitiesQuery.data ?? emptyPage());
+
+	async function loadVulnerabilities(options: SearchPaginationSortRequest, requestedScope = scope) {
+		requestOptions = options;
+		const request = vulnerabilityRequest(options);
+		return queryClient.fetchQuery({
+			queryKey: queryKeys.vulnerabilities.allByEnvironment(requestedScope, request),
+			queryFn: () => fetchVulnerabilities(request),
+			staleTime: 0
+		});
+	}
 
 	function toggleIgnored(next: boolean) {
 		showIgnored = next;
@@ -73,31 +130,35 @@
 		{ value: 'patches', label: m.patches(), icon: ShieldCheckIcon }
 	];
 	const activeTab = $derived(urlTab.value);
-	let scanPollTimeout: ReturnType<typeof setTimeout> | null = null;
-	// Set once on destroy so an in-flight poll tick can't re-arm a timer on a dead component.
 	let destroyed = false;
-	let refreshGeneration = 0;
 
-	// Patch targets, loaded when the tab is first opened
-	let patchTargets = $state<PatchTargetPage>({
-		data: [],
-		pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 }
-	});
 	let patchRequestOptions = $derived<SearchPaginationSortRequest>(data.patchRequestOptions);
+	const patchTargetsQuery = createQuery(() => {
+		const queryScope = scope;
+		const options = patchRequestOptions;
+		return {
+			queryKey: queryKeys.images.patchTargets(queryScope, options),
+			queryFn: () => fetchPatchTargets(options),
+			placeholderData: (previous, query) => (query?.queryKey[1] === queryScope ? previous : undefined),
+			enabled: vulnerabilityManagementEnabled
+		};
+	});
+	const patchTargets = $derived<PatchTargetPage>(patchTargetsQuery.data ?? emptyPage());
+
+	async function loadPatchTargets(options: SearchPaginationSortRequest, requestedScope = scope) {
+		patchRequestOptions = options;
+		return queryClient.fetchQuery({
+			queryKey: queryKeys.images.patchTargets(requestedScope, options),
+			queryFn: () => fetchPatchTargets(options),
+			staleTime: 0
+		});
+	}
+
 	async function loadPatches() {
 		if (!vulnerabilityManagementEnabled) return;
-		const requestedScope = scopeKey();
-		const operationResult = await tryCatch(
-			(async () => {
-				const response = await fetchPatchTargets(patchRequestOptions);
-				if (destroyed || !vulnerabilityManagementEnabled || requestedScope !== scopeKey()) return;
-				patchTargets = response;
-			})()
-		);
-		if (operationResult.error !== null) {
-			const error = operationResult.error;
-
-			console.error('Failed to load image patch targets:', error);
+		const result = await patchTargetsQuery.refetch();
+		if (result.error) {
+			console.error('Failed to load image patch targets:', result.error);
 			toast.error(m.common_refresh_failed({ resource: m.patches() }));
 		}
 	}
@@ -105,13 +166,11 @@
 	const severityItems = $derived(getSeveritySegments(overview?.summary));
 
 	async function refreshOverview() {
-		const requestedScope = scopeKey();
-		const result = await tryCatch(vulnerabilityService.getRiskOverviewForEnvironment(overviewEnvironmentId));
-		if (result.error !== null) {
+		if (!vulnerabilityManagementEnabled) return;
+		const result = await overviewQuery.refetch();
+		if (result.error) {
 			toast.error(m.common_refresh_failed({ resource: m.security() }), { description: extractApiErrorMessage(result.error) });
-			return;
 		}
-		if (!destroyed && vulnerabilityManagementEnabled && requestedScope === scopeKey()) overview = result.data;
 	}
 
 	async function showVulnerability(vulnerabilityId: string) {
@@ -128,116 +187,42 @@
 
 	// reset drops retained data first so a failed reload leaves the page empty rather than stale.
 	async function refreshAll(reset = false) {
-		const requestedEnvId = currentEnvId;
 		const requestedScope = scopeKey();
-		// A newer refresh wins, so an older one finishing last cannot put removed environments back.
-		const generation = ++refreshGeneration;
-		const stillCurrent = () =>
-			!destroyed && vulnerabilityManagementEnabled && requestedScope === scopeKey() && generation === refreshGeneration;
 		selectedVulnerabilityIds = [];
-		if (reset || displayedEnvId !== requestedEnvId || displayedShownKey !== environmentStore.shownKey) {
-			overview = null;
-			vulnerabilities = { data: [], pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 } };
-			patchTargets = { data: [], pagination: { totalPages: 0, totalItems: 0, currentPage: 1, itemsPerPage: 20 } };
-			displayedEnvId = requestedEnvId;
-			displayedShownKey = environmentStore.shownKey;
-		}
 		await Promise.all(environmentStore.shown.map((env) => featureStore.refresh(env.id)));
-		if (!stillCurrent()) return;
-		const requestForApi = mapVulnerabilityRequest(withVulnerabilityToggles(requestOptions, { showIgnored, fixAvailable }));
+		if (destroyed || !vulnerabilityManagementEnabled || requestedScope !== scopeKey()) return;
+		const overviewRefresh = refreshOverview();
 		await parallelRefresh(
 			{
-				overview: {
-					fetch: () => vulnerabilityService.getRiskOverviewForEnvironment(overviewEnvironmentId),
-					onSuccess: (data) => {
-						if (stillCurrent()) overview = data;
-					},
-					errorMessage: m.common_refresh_failed({ resource: m.security() })
-				},
 				vulnerabilities: {
 					fetch: () =>
-						fetchAcrossEnvironments(vulnerabilityEnvironments(), requestForApi, (id, request, config) =>
-							vulnerabilityService.getAllVulnerabilitiesForEnvironment(id, request, config)
-						),
-					onSuccess: (data) => {
-						if (stillCurrent()) vulnerabilities = mapVulnerabilityPage(data, requestOptions);
-					},
+						reset
+							? queryClient.resetQueries(
+									{
+										queryKey: queryKeys.vulnerabilities.allByEnvironment(requestedScope, vulnerabilityRequest(requestOptions)),
+										exact: true
+									},
+									{ throwOnError: true }
+								)
+							: vulnerabilitiesQuery.refetch({ throwOnError: true }),
+					onSuccess: () => {},
 					errorMessage: m.common_refresh_failed({ resource: m.vuln_title() })
 				},
 				patches: {
-					fetch: () => fetchPatchTargets(patchRequestOptions),
-					onSuccess: (data) => {
-						if (stillCurrent()) patchTargets = data;
-					},
+					fetch: () =>
+						reset
+							? queryClient.resetQueries(
+									{ queryKey: queryKeys.images.patchTargets(requestedScope, patchRequestOptions), exact: true },
+									{ throwOnError: true }
+								)
+							: patchTargetsQuery.refetch({ throwOnError: true }),
+					onSuccess: () => {},
 					errorMessage: m.common_refresh_failed({ resource: m.patches() })
 				}
 			},
 			(v) => (isLoading.refreshing = v)
 		);
-	}
-
-	function stopScanPolling() {
-		if (scanPollTimeout) {
-			clearTimeout(scanPollTimeout);
-			scanPollTimeout = null;
-		}
-	}
-
-	function startScanPolling(targetTotal: number) {
-		const POLL_INTERVAL_MS = 5000;
-		const MAX_ATTEMPTS = 24;
-		const MAX_IDLE_TICKS = 3;
-		let attempts = 0;
-		let idleTicks = 0;
-		let lastScanned = overview?.drivers.imagesScanned ?? 0;
-
-		stopScanPolling();
-
-		const tick = async () => {
-			if (destroyed || !vulnerabilityManagementEnabled) return;
-			// Hidden tabs skip the refresh without spending an attempt.
-			if (document.hidden) {
-				scanPollTimeout = setTimeout(tick, POLL_INTERVAL_MS);
-				return;
-			}
-			if (attempts >= MAX_ATTEMPTS) {
-				stopScanPolling();
-				return;
-			}
-			attempts++;
-
-			if (isLoading.refreshing) {
-				scanPollTimeout = setTimeout(tick, POLL_INTERVAL_MS);
-				return;
-			}
-
-			await refreshAll();
-			if (destroyed || !vulnerabilityManagementEnabled) return;
-
-			const currentScanned = overview?.drivers.imagesScanned ?? 0;
-			const currentTotal = overview?.drivers.imagesTotal ?? targetTotal;
-
-			if (currentTotal > 0 && currentScanned >= currentTotal) {
-				stopScanPolling();
-				return;
-			}
-
-			if (currentScanned === lastScanned) {
-				idleTicks++;
-			} else {
-				idleTicks = 0;
-				lastScanned = currentScanned;
-			}
-
-			if (idleTicks >= MAX_IDLE_TICKS) {
-				stopScanPolling();
-				return;
-			}
-
-			scanPollTimeout = setTimeout(tick, POLL_INTERVAL_MS);
-		};
-
-		scanPollTimeout = setTimeout(tick, POLL_INTERVAL_MS);
+		await overviewRefresh;
 	}
 
 	function handleTabChange(value: string) {
@@ -245,12 +230,6 @@
 		// Ignores made in the table change the overview.
 		if (value === 'overview') void refreshOverview();
 	}
-
-	onMount(() => {
-		void loadPatches();
-	});
-
-	useEnvironmentRefresh(refreshAll);
 
 	onMount(() => {
 		// Activity ID to type for the patches and scans still running.
@@ -263,7 +242,7 @@
 				activities
 					.filter(
 						(activity) =>
-							environmentIds.includes(activity.sourceEnvironmentId || activity.environmentId || '0') &&
+							environmentIds.includes(activity.sourceEnvironmentId || activity.environmentId) &&
 							(activity.type === 'image_patch' || activity.type === 'vulnerability_scan') &&
 							(activity.status === 'queued' || activity.status === 'running')
 					)
@@ -273,15 +252,13 @@
 			const finished = observedScope === scope ? [...activeActivities].filter(([id]) => !active.has(id)) : [];
 			observedScope = scope;
 			activeActivities = active;
-			// Scan polling follows one environment's overview, so with several shown a finished scan refreshes findings.
-			if (environmentIds.length > 1 && finished.some(([, type]) => type === 'vulnerability_scan')) void refreshAll();
+			if (finished.some(([, type]) => type === 'vulnerability_scan')) void refreshAll();
 			else if (finished.length > 0 && environmentIds.some((id) => hasPermission('images:read', id))) void loadPatches();
 		});
 	});
 
 	onDestroy(() => {
 		destroyed = true;
-		stopScanPolling();
 	});
 
 	async function scanAllImages() {
@@ -375,9 +352,7 @@
 						toast.warning(m.security_scan_all_partial({ succeeded, failed }));
 					}
 
-					// Refresh the vulnerability data and keep polling for updates as scans complete
 					await refreshAll();
-					startScanPolling(images.length);
 				})()
 			);
 			if (operationResult.error !== null) {
@@ -391,18 +366,12 @@
 		}
 	}
 
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	// Reads cover every shown environment, so a result is stale once the selection or the shown set changes.
-	const scopeKey = () => `${currentEnvId}|${environmentStore.shownKey}`;
-	const vulnerabilityManagementEnabled = $derived(vulnerabilityEnvironments().length > 0);
-	const overviewEnvironmentId = $derived(vulnerabilityOverviewEnvironment()?.id ?? currentEnvId);
+	const scopeKey = () => environmentStore.shownKey;
 	let wasFeatureEnabled = true;
 	$effect(() => {
 		const enabled = vulnerabilityManagementEnabled;
 		// Disabled content is hidden by the template; re-enabling reloads it.
-		if (!enabled) {
-			stopScanPolling();
-		} else if (!wasFeatureEnabled) {
+		if (enabled && !wasFeatureEnabled) {
 			untrack(() => void refreshAll(true));
 		}
 		wasFeatureEnabled = enabled;
@@ -446,7 +415,7 @@
 			icon={ImagesIcon}
 			title={m.security_no_images_to_scan()}
 			description={m.security_no_images_description()}
-			actionLabel={hasPermission('images:pull', currentEnvId) ? m.images_pull_image() : undefined}
+			actionLabel={hasShownPermission('images:pull') ? m.images_pull_image() : undefined}
 			actionHref="/images"
 		/>
 	{:else if overview?.drivers.imagesScanned === 0}
@@ -477,18 +446,22 @@
 >
 	{#snippet mainContent()}
 		{#if !vulnerabilityManagementEnabled}
-			<FeatureDisabled />
+			<FeatureDisabled environmentId={destinationEnvironmentId('', 'vulnerabilities:read')} />
 		{:else}
 			<Tabs.Root value={activeTab}>
 				<div class="flex flex-wrap items-center justify-between gap-2">
 					<TabBar items={securityTabItems} value={activeTab} onValueChange={handleTabChange} />
-					{#if activeTab === 'overview' || (activeTab === 'vulnerabilities' && overview)}
-						<EnvironmentDestinationSelect environments={vulnerabilityOverviewEnvironments()} />
-					{/if}
 				</div>
 				<Tabs.Content value="overview" class="mt-4">
 					{#if overview}
-						<SecurityOverview {overview} environmentId={overviewEnvironmentId} onSelectVulnerability={showVulnerability} />
+						<SecurityOverview {overview} onRetry={refreshOverview} onSelectVulnerability={showVulnerability} />
+					{:else if overviewQuery.error}
+						<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon}>
+							<div class="flex flex-wrap items-center justify-between gap-2">
+								<Alert.Description>{extractApiErrorMessage(overviewQuery.error)}</Alert.Description>
+								<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onClickPromise={refreshOverview} />
+							</div>
+						</Alert.Root>
 					{/if}
 				</Tabs.Content>
 				<Tabs.Content value="vulnerabilities" class="mt-4">
@@ -512,19 +485,42 @@
 					<div class="rounded-xl border border-border/60">
 						<SecurityVulnerabilityTable
 							emptyState={vulnerabilitiesEmptyState}
-							bind:vulnerabilities
+							bind:vulnerabilities={
+								() => vulnerabilities,
+								(value) =>
+									queryClient.setQueryData(
+										queryKeys.vulnerabilities.allByEnvironment(scope, vulnerabilityRequest(requestOptions)),
+										value
+									)
+							}
 							bind:requestOptions
 							bind:selectedIds={selectedVulnerabilityIds}
 							{showIgnored}
 							onToggleIgnored={toggleIgnored}
 							{fixAvailable}
 							onToggleFixAvailable={toggleFixAvailable}
+							onRefreshData={(options) => loadVulnerabilities(options)}
 						/>
 					</div>
 				</Tabs.Content>
 				<Tabs.Content value="patches" class="mt-4">
+					{#if patchTargetsQuery.error}
+						<Alert.Root variant="warning-subtle" size="sm" icon={AlertTriangleIcon} class="mb-3">
+							<div class="flex flex-wrap items-center justify-between gap-2">
+								<Alert.Description>{extractApiErrorMessage(patchTargetsQuery.error)}</Alert.Description>
+								<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onClickPromise={loadPatches} />
+							</div>
+						</Alert.Root>
+					{/if}
 					<div class="rounded-xl border border-border/60">
-						<SecurityPatchTable bind:targets={patchTargets} bind:requestOptions={patchRequestOptions} />
+						<SecurityPatchTable
+							bind:targets={
+								() => patchTargets,
+								(value) => queryClient.setQueryData(queryKeys.images.patchTargets(scope, patchRequestOptions), value)
+							}
+							bind:requestOptions={patchRequestOptions}
+							onRefreshData={(options) => loadPatchTargets(options)}
+						/>
 					</div>
 				</Tabs.Content>
 			</Tabs.Root>

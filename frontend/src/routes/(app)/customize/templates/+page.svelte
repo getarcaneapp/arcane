@@ -11,8 +11,8 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { templateService } from '#lib/services/template-service.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import type { TemplateRegistry } from '#lib/types/swarm.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import type { TemplateRegistry, TemplateRegistryCreate, TemplateRegistryUpdate } from '#lib/types/swarm.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import RegistryManager from './components/registry-manager.svelte';
@@ -49,7 +49,7 @@
 
 	let showAddRegistrySheet = $state(false);
 
-	async function updateRegistry(id: string, updates: { enabled?: boolean }) {
+	async function updateRegistry(id: string, updates: TemplateRegistryUpdate) {
 		if (isLoading.updating[id]) return;
 		isLoading.updating[id] = true;
 
@@ -63,12 +63,7 @@
 						return;
 					}
 
-					await templateService.updateRegistry(id, {
-						name: registry.name,
-						url: registry.url,
-						description: registry.description,
-						enabled: updates.enabled ?? registry.enabled
-					});
+					await templateService.updateRegistry(id, updates);
 
 					registries = await templateService.getRegistries();
 					templates = await templateService.getTemplates(requestOptions);
@@ -130,7 +125,7 @@
 		}
 	}
 
-	async function handleRegistrySubmit(registry: { name: string; url: string; description?: string; enabled: boolean }) {
+	async function handleRegistrySubmit(registry: TemplateRegistryCreate) {
 		isLoading.addingRegistry = true;
 
 		try {
@@ -161,8 +156,8 @@
 		}
 	}
 
-	const canCreateTemplate = $derived(hasPermission('templates:create'));
-	const canUpdateTemplate = $derived(hasPermission('templates:update'));
+	const canCreateTemplate = $derived(hasShownPermission('templates:create'));
+	const canUpdateTemplate = $derived(hasShownPermission('templates:update'));
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	httpxtypes "github.com/getarcaneapp/arcane/types/v2/httpx"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 )
 
@@ -145,7 +145,7 @@ func GetClientBaseURL(origin, forwardedHost, forwardedProto, host, appURL string
 }
 
 // NewHTTPClient builds a client with its own transport and the supplied timeouts.
-func NewHTTPClient(options httpxtypes.ClientOptions) *http.Client {
+func NewHTTPClient(options types.HTTPClientOptions) *http.Client {
 	transport := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		DialContext:           kit.Ternary(options.DialTimeout > 0, (&net.Dialer{Timeout: options.DialTimeout, KeepAlive: 30 * time.Second}).DialContext, nil),

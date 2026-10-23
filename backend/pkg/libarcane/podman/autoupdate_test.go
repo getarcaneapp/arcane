@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	podmantypes "github.com/getarcaneapp/arcane/types/v2/podman"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,16 +25,16 @@ func TestClientAutoUpdate(t *testing.T) {
 		}`))
 	})
 
-	result, err := client.AutoUpdate(t.Context(), podmantypes.AutoUpdateOptions{
+	result, err := client.AutoUpdate(t.Context(), types.PodmanAutoUpdateOptions{
 		DryRun:   true,
 		Rollback: new(false),
 		Authfile: "/run/auth.json",
 		Filters:  map[string][]string{"label": {"app=web"}},
 	})
 	require.NoError(t, err)
-	assert.Equal(t, podmantypes.AutoUpdateResult{
-		Mode: podmantypes.AutoUpdateModeREST,
-		Reports: []podmantypes.AutoUpdateReport{
+	assert.Equal(t, types.PodmanAutoUpdateResult{
+		Mode: types.PodmanAutoUpdateModeREST,
+		Reports: []types.PodmanAutoUpdateReport{
 			{
 				ContainerID:   "abc",
 				ContainerName: "web",

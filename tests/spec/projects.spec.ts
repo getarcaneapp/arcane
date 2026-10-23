@@ -14,7 +14,6 @@ import { getCodeMirrorValue, setCodeMirrorValue } from '../utils/playwright.util
 const ROUTES = {
 	page: '/projects',
 	apiProjects: '/api/environments/0/projects',
-	apiImageUpdatesCheckAll: '/api/environments/0/image-updates/check-all',
 	apiUpdaterRun: '/api/environments/0/updater/run',
 	newProject: '/projects/new'
 };
@@ -112,6 +111,14 @@ async function expectProjectDeployActivitySucceeded(
 
 function getPathname(url: string): string {
 	return url.replace(/^[a-z]+:\/\/[^/]+/i, '').split(/[?#]/)[0] || '/';
+}
+
+function isProjectDeployAction(url: string, action: 'up' | 'redeploy'): boolean {
+	const parsed = new URL(url, 'http://localhost');
+	return (
+		/\/api\/environments\/[^/]+\/projects\/[^/]+\/deploy$/.test(parsed.pathname) &&
+		parsed.searchParams.get('action') === action
+	);
 }
 
 function getProjectIdFromPageUrl(url: string): string {
@@ -219,15 +226,11 @@ async function destroyProjectByIdViaAPI(page: Page, projectId: string) {
 		return;
 	}
 
-	await removeApiResource(
-		page,
-		`/api/environments/0/projects/${encodeURIComponent(projectId)}/destroy`,
-		{
-			data: {
-				removeVolumes: true
-			}
+	await removeApiResource(page, `/api/environments/0/projects/${encodeURIComponent(projectId)}`, {
+		data: {
+			removeVolumes: true
 		}
-	);
+	});
 }
 
 async function expectProjectStopped(page: Page, projectId: string) {
@@ -262,8 +265,7 @@ async function createExitedMarkerProject(page: Page, projectName: string) {
 
 	const deployResponsePromise = page.waitForResponse(
 		(response) =>
-			response.request().method() === 'POST' &&
-			/\/api\/environments\/[^/]+\/projects\/[^/]+\/up$/.test(getPathname(response.url()))
+			response.request().method() === 'POST' && isProjectDeployAction(response.url(), 'up')
 	);
 	await page
 		.getByRole('button', { name: 'Up', exact: true })
@@ -401,14 +403,18 @@ test.describe('Projects Page', () => {
 		let checkAllRequests = 0;
 		let updaterRunRequests = 0;
 
-		await page.route('**/api/environments/*/image-updates/check-all', async (route) => {
-			checkAllRequests += 1;
-			await route.fulfill({
-				status: 200,
-				contentType: 'application/json',
-				body: JSON.stringify({ success: true, data: {} })
-			});
-		});
+		await page.route(
+			(url) =>
+				url.pathname.endsWith('/images/updates/check') && url.searchParams.get('action') === 'all',
+			async (route) => {
+				checkAllRequests += 1;
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({ success: true, data: {} })
+				});
+			}
+		);
 
 		await page.route('**/api/environments/*/updater/run', async (route) => {
 			updaterRunRequests += 1;
@@ -637,10 +643,13 @@ test.describe('New Compose Project Page', () => {
 				.filter({ visible: true });
 			await expect(serviceNameWhenStopped.or(emptyServicesState).first()).toBeVisible();
 
-			await page.route('**/api/environments/*/projects/*/pull', async (route) => {
-				projectPullRequestCount += 1;
-				await route.continue();
-			});
+			await page.route(
+				/\/api\/environments\/[^/]+\/projects\/[^/]+\/deploy\?action=pull/,
+				async (route) => {
+					projectPullRequestCount += 1;
+					await route.continue();
+				}
+			);
 
 			const deployButton = page
 				.getByRole('button', { name: 'Up', exact: true })
@@ -648,8 +657,7 @@ test.describe('New Compose Project Page', () => {
 				.first();
 			const deployResponsePromise = page.waitForResponse(
 				(response) =>
-					response.request().method() === 'POST' &&
-					/\/api\/environments\/[^/]+\/projects\/[^/]+\/up$/.test(getPathname(response.url()))
+					response.request().method() === 'POST' && isProjectDeployAction(response.url(), 'up')
 			);
 			await deployButton.click();
 
@@ -692,13 +700,16 @@ test.describe('New Compose Project Page', () => {
 			// Reset scroll so the floating header doesn't appear from stale scroll state
 			await page.mouse.wheel(0, -100000);
 
-			await page.route('**/api/environments/*/projects/*/up', async (route) => {
-				await route.fulfill({
-					status: 200,
-					contentType: 'application/x-json-stream',
-					body: DEPLOY_STREAM_SUCCESS
-				});
-			});
+			await page.route(
+				/\/api\/environments\/[^/]+\/projects\/[^/]+\/deploy\?action=up/,
+				async (route) => {
+					await route.fulfill({
+						status: 200,
+						contentType: 'application/x-json-stream',
+						body: DEPLOY_STREAM_SUCCESS
+					});
+				}
+			);
 
 			const deployButtonGroup = page
 				.getByRole('group')
@@ -736,7 +747,7 @@ test.describe('New Compose Project Page', () => {
 			// Set up request listener right before clicking to minimize timeout window
 			const deployRequestPromise = page.waitForRequest((request) => {
 				if (request.method() !== 'POST') return false;
-				return /\/api\/environments\/[^/]+\/projects\/[^/]+\/up$/.test(getPathname(request.url()));
+				return isProjectDeployAction(request.url(), 'up');
 			});
 
 			await page.getByRole('button', { name: 'Up', exact: true }).click();
@@ -777,13 +788,16 @@ test.describe('New Compose Project Page', () => {
 			// Reset scroll so the floating header doesn't appear from stale scroll state
 			await page.mouse.wheel(0, -100000);
 
-			await page.route('**/api/environments/*/projects/*/redeploy', async (route) => {
-				await route.fulfill({
-					status: 200,
-					contentType: 'application/x-json-stream',
-					body: DEPLOY_STREAM_SUCCESS
-				});
-			});
+			await page.route(
+				/\/api\/environments\/[^/]+\/projects\/[^/]+\/deploy\?action=redeploy/,
+				async (route) => {
+					await route.fulfill({
+						status: 200,
+						contentType: 'application/x-json-stream',
+						body: DEPLOY_STREAM_SUCCESS
+					});
+				}
+			);
 
 			const redeployButtonGroup = page
 				.getByRole('group')
@@ -821,9 +835,7 @@ test.describe('New Compose Project Page', () => {
 			// Set up request listener right before confirming to minimize timeout window
 			const redeployRequestPromise = page.waitForRequest((request) => {
 				if (request.method() !== 'POST') return false;
-				return /\/api\/environments\/[^/]+\/projects\/[^/]+\/redeploy$/.test(
-					getPathname(request.url())
-				);
+				return isProjectDeployAction(request.url(), 'redeploy');
 			});
 
 			await page.getByRole('button', { name: 'Redeploy', exact: true }).click();
@@ -865,7 +877,6 @@ test.describe('New Compose Project Page', () => {
 		const redeployReleased = new Promise<void>((resolve) => {
 			releaseRedeploy = resolve;
 		});
-		const redeployPathPattern = /\/api\/environments\/[^/]+\/projects\/[^/]+\/redeploy$/;
 
 		try {
 			await createProjectViaUI(page, projectName);
@@ -873,7 +884,7 @@ test.describe('New Compose Project Page', () => {
 			await page.waitForLoadState('load');
 
 			await page.route(
-				(url) => redeployPathPattern.test(url.pathname),
+				(url) => isProjectDeployAction(url.href, 'redeploy'),
 				async (route) => {
 					if (route.request().method() !== 'POST') {
 						await route.continue();
@@ -912,8 +923,7 @@ test.describe('New Compose Project Page', () => {
 			});
 			await expect(redeployMenuItem).toBeVisible();
 			const redeployRequestPromise = page.waitForRequest(
-				(request) =>
-					request.method() === 'POST' && redeployPathPattern.test(getPathname(request.url()))
+				(request) => request.method() === 'POST' && isProjectDeployAction(request.url(), 'redeploy')
 			);
 			await redeployMenuItem.click();
 			await redeployRequestPromise;
@@ -960,7 +970,7 @@ test.describe('GitOps Managed Project', () => {
 	test('should navigate back to gitops when opened from the git syncs page', async ({ page }) => {
 		const gitOpsProject = getRequiredGitOpsProject();
 
-		await page.goto('/environments/0/gitops');
+		await page.goto('/gitops');
 		await page.waitForLoadState('load');
 
 		const projectLink = page.locator(`a[href^='/projects/${gitOpsProject.id}?from=gitops']`);
@@ -973,14 +983,14 @@ test.describe('GitOps Managed Project', () => {
 		await expect(backLink).toBeVisible();
 		await backLink.click();
 
-		await page.waitForURL('/environments/0/gitops', { timeout: 10000 });
-		await expect(page).toHaveURL('/environments/0/gitops');
+		await page.waitForURL('/gitops', { timeout: 10000 });
+		await expect(page).toHaveURL('/gitops');
 	});
 
 	test('should show read-only alert when project is GitOps managed', async ({ page }) => {
 		const gitOpsProject = getRequiredGitOpsProject();
 
-		await page.goto(`/projects/${gitOpsProject.id}`);
+		await page.goto(`/projects/${gitOpsProject.id}?env=0`);
 		await page.waitForLoadState('load');
 
 		// Navigate to Configuration tab
@@ -1001,7 +1011,7 @@ test.describe('GitOps Managed Project', () => {
 	test('should display Sync from Git button when GitOps managed', async ({ page }) => {
 		const gitOpsProject = getRequiredGitOpsProject();
 
-		await page.goto(`/projects/${gitOpsProject.id}`);
+		await page.goto(`/projects/${gitOpsProject.id}?env=0`);
 		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
@@ -1017,7 +1027,7 @@ test.describe('GitOps Managed Project', () => {
 		const projectDetail = await fetchProjectDetail(page, gitOpsProject.id);
 		expect(projectDetail?.lastSyncCommit, 'GitOps setup must record a sync commit').toBeTruthy();
 
-		await page.goto(`/projects/${gitOpsProject.id}`);
+		await page.goto(`/projects/${gitOpsProject.id}?env=0`);
 		await page.waitForLoadState('load');
 
 		// The commit hash should be visible somewhere on the page
@@ -1028,7 +1038,7 @@ test.describe('GitOps Managed Project', () => {
 	test('should disable name editing when GitOps managed', async ({ page }) => {
 		const gitOpsProject = getRequiredGitOpsProject();
 
-		await page.goto(`/projects/${gitOpsProject.id}`);
+		await page.goto(`/projects/${gitOpsProject.id}?env=0`);
 		await page.waitForLoadState('load');
 
 		// The name button should be disabled for GitOps-managed projects
@@ -1039,7 +1049,7 @@ test.describe('GitOps Managed Project', () => {
 	test('should have compose editor in read-only mode when GitOps managed', async ({ page }) => {
 		const gitOpsProject = getRequiredGitOpsProject();
 
-		await page.goto(`/projects/${gitOpsProject.id}`);
+		await page.goto(`/projects/${gitOpsProject.id}?env=0`);
 		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
@@ -1059,7 +1069,7 @@ test.describe('GitOps Managed Project', () => {
 	}) => {
 		const gitOpsProject = getRequiredGitOpsProject();
 
-		await page.goto(`/projects/${gitOpsProject.id}`);
+		await page.goto(`/projects/${gitOpsProject.id}?env=0`);
 		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
@@ -1110,7 +1120,7 @@ test.describe('GitOps Managed Project', () => {
 		const regularProject = realProjects.find((p) => !p.gitOpsManagedBy && p.status === 'stopped');
 		expect(regularProject, 'No regular (non-GitOps) stopped projects found').toBeTruthy();
 
-		await page.goto(`/projects/${regularProject!.id}`);
+		await page.goto(`/projects/${regularProject!.id}?env=0`);
 		await page.waitForLoadState('load');
 
 		// The name button should be enabled for regular projects that are stopped
@@ -1135,7 +1145,7 @@ test.describe('GitOps Managed Project', () => {
 		const regularProject = realProjects.find((p) => !p.gitOpsManagedBy);
 		expect(regularProject, 'No regular (non-GitOps) projects found').toBeTruthy();
 
-		await page.goto(`/projects/${regularProject!.id}`);
+		await page.goto(`/projects/${regularProject!.id}?env=0`);
 		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
@@ -1160,7 +1170,7 @@ test.describe('Project Detail Page', () => {
 		);
 
 		const firstProject = realProjects[0];
-		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
+		await page.goto(`/projects/${firstProject.id || firstProject.name}?env=0`);
 		await page.waitForLoadState('load');
 
 		const backLink = page.getByRole('link', { name: 'Back', exact: true }).first();
@@ -1175,7 +1185,7 @@ test.describe('Project Detail Page', () => {
 		expect(realProjects.length, 'No projects available for detail page test').toBeGreaterThan(0);
 
 		const firstProject = realProjects[0];
-		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
+		await page.goto(`/projects/${firstProject.id || firstProject.name}?env=0`);
 		await page.waitForLoadState('load');
 
 		await expect(page.getByRole('button', { name: firstProject.name, exact: true })).toBeVisible();
@@ -1225,7 +1235,7 @@ test.describe('Project Detail Page', () => {
 			});
 		});
 
-		await page.goto(`/projects/${projectID}`);
+		await page.goto(`/projects/${projectID}?env=0`);
 		await page.waitForLoadState('load');
 
 		const clicked = await clickProjectDetailUpdateAction(page);
@@ -1278,7 +1288,7 @@ test.describe('Project Detail Page', () => {
 		expect(realProjects.length, 'No projects available for configuration test').toBeGreaterThan(0);
 
 		const firstProject = realProjects[0];
-		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
+		await page.goto(`/projects/${firstProject.id || firstProject.name}?env=0`);
 		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
@@ -1341,13 +1351,13 @@ test.describe('Project Detail Page', () => {
 			preferences?: { defaultProjectEditorLayout?: 'auto' | 'classic' | 'tree' };
 		}>(await page.request.get('/api/auth/me'), 'Get original editor preference');
 		const setDefaultLayout = async (layout: 'auto' | 'classic' | 'tree') => {
-			const response = await page.request.put('/api/auth/me/profile', {
+			const response = await page.request.patch('/api/auth/me/profile', {
 				data: { preferences: { defaultProjectEditorLayout: layout } }
 			});
 			expect(response.ok(), `set default project editor layout to ${layout}`).toBeTruthy();
 		};
 		const openConfiguration = async () => {
-			await page.goto(`/projects/${regularProject!.id || regularProject!.name}`);
+			await page.goto(`/projects/${regularProject!.id || regularProject!.name}?env=0`);
 			await page.waitForLoadState('load');
 			await page.getByRole('tab', { name: 'Configuration', exact: true }).click();
 		};
@@ -1383,7 +1393,7 @@ test.describe('Project Detail Page', () => {
 		const regularProject = realProjects.find((p) => !p.gitOpsManagedBy);
 		expect(regularProject, 'No regular (non-GitOps) projects found').toBeTruthy();
 
-		await page.goto(`/projects/${regularProject!.id || regularProject!.name}`);
+		await page.goto(`/projects/${regularProject!.id || regularProject!.name}?env=0`);
 		await page.waitForLoadState('load');
 
 		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
@@ -1539,7 +1549,7 @@ test.describe('Project Detail Page', () => {
 				}
 			});
 
-			await page.goto(`/projects/${projectId}?tab=services`);
+			await page.goto(`/projects/${projectId}?tab=services&env=0`);
 			await page.waitForLoadState('load');
 			await expect(page.getByText('Real-time project logs', { exact: true })).toBeVisible();
 			await expect(logViewer).toHaveAttribute('data-is-streaming', 'false');
@@ -1586,7 +1596,7 @@ test.describe('Project Detail Page', () => {
 			const created = await createExitedMarkerProject(page, projectName);
 			projectId = created.projectId;
 
-			await page.goto(`/projects/${projectId}?tab=services`);
+			await page.goto(`/projects/${projectId}?tab=services&env=0`);
 			await page.waitForLoadState('load');
 
 			const logViewer = page.getByRole('log');
@@ -1624,7 +1634,7 @@ test.describe('Project Detail Page', () => {
 			void ws.close({ code: 1013, reason: 'forced failure' });
 		});
 
-		await page.goto(`/projects/${targetProject.id || targetProject.name}?tab=services`);
+		await page.goto(`/projects/${targetProject.id || targetProject.name}?tab=services&env=0`);
 		await page.waitForLoadState('load');
 
 		await page

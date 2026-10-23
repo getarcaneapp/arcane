@@ -15,13 +15,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 )
 
-func setupAnalyticsStateServicesInternal(t *testing.T) (*database.DB, *settings.SettingsService, *kv.KVService) {
+func setupAnalyticsStateServices(t *testing.T) (*database.DB, *settings.SettingsService, *kv.KVService) {
 	t.Helper()
 	ctx := t.Context()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -30,7 +30,7 @@ func setupAnalyticsStateServicesInternal(t *testing.T) (*database.DB, *settings.
 	require.NoError(t, db.AutoMigrate(&kv.KVEntry{}))
 
 	wrappedDB := &database.DB{DB: db}
-	settingsService, err := newSettingsServiceForTestInternal(t, ctx, wrappedDB)
+	settingsService, err := newSettingsServiceForTest(t, ctx, wrappedDB)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "instanceId", "test-instance"))
 
@@ -58,7 +58,7 @@ func newHeartbeatServer(t *testing.T) (*httptest.Server, <-chan []byte, *atomic.
 
 func TestAnalyticsJob_Run_ManagerPayload(t *testing.T) {
 	ctx := t.Context()
-	_, settingsService, kvService := setupAnalyticsStateServicesInternal(t)
+	_, settingsService, kvService := setupAnalyticsStateServices(t)
 	server, bodyCh, _ := newHeartbeatServer(t)
 	defer server.Close()
 
@@ -86,11 +86,11 @@ func TestAnalyticsJob_Run_ManagerPayload(t *testing.T) {
 
 func TestAnalyticsJob_Run_AgentPayload(t *testing.T) {
 	ctx := t.Context()
-	_, settingsService, kvService := setupAnalyticsStateServicesInternal(t)
+	_, settingsService, kvService := setupAnalyticsStateServices(t)
 	server, bodyCh, _ := newHeartbeatServer(t)
 	defer server.Close()
 
-	cfg := &config.Config{AgentMode: true, Environment: config.AppEnvironmentProduction}
+	cfg := &config.Config{EdgeAgent: true, Environment: config.AppEnvironmentProduction}
 	job := NewAnalyticsJob(settingsService, kvService, server.Client(), cfg)
 	job.heartbeatURL = server.URL
 
@@ -112,12 +112,12 @@ func TestAnalyticsJob_Run_AgentPayload(t *testing.T) {
 
 func TestAnalyticsJob_Run_SkipsWhenDisabled(t *testing.T) {
 	ctx := t.Context()
-	_, settingsService, kvService := setupAnalyticsStateServicesInternal(t)
+	_, settingsService, kvService := setupAnalyticsStateServices(t)
 	server, bodyCh, _ := newHeartbeatServer(t)
 	defer server.Close()
 
-	cfg := &config.Config{AnalyticsDisabled: true, Environment: config.AppEnvironmentProduction}
-	job := NewAnalyticsJob(settingsService, kvService, server.Client(), cfg)
+	require.NoError(t, settingsService.SetBoolSetting(ctx, "analyticsEnabled", false))
+	job := NewAnalyticsJob(settingsService, kvService, server.Client(), &config.Config{Environment: config.AppEnvironmentProduction})
 	job.heartbeatURL = server.URL
 
 	if _, err := job.Run(ctx); !assert.NoError(t, err) {
@@ -133,7 +133,7 @@ func TestAnalyticsJob_Run_SkipsWhenDisabled(t *testing.T) {
 
 func TestAnalyticsJob_Run_SkipsWhenTestEnv(t *testing.T) {
 	ctx := t.Context()
-	_, settingsService, kvService := setupAnalyticsStateServicesInternal(t)
+	_, settingsService, kvService := setupAnalyticsStateServices(t)
 	server, bodyCh, _ := newHeartbeatServer(t)
 	defer server.Close()
 
@@ -154,7 +154,7 @@ func TestAnalyticsJob_Run_SkipsWhenTestEnv(t *testing.T) {
 
 func TestAnalyticsJob_Run_SkipsWithinHeartbeatWindowAfterRestart(t *testing.T) {
 	ctx := t.Context()
-	wrappedDB, settingsService, kvService := setupAnalyticsStateServicesInternal(t)
+	wrappedDB, settingsService, kvService := setupAnalyticsStateServices(t)
 	server, _, requestCount := newHeartbeatServer(t)
 	defer server.Close()
 
@@ -168,7 +168,7 @@ func TestAnalyticsJob_Run_SkipsWithinHeartbeatWindowAfterRestart(t *testing.T) {
 		return
 	}
 
-	reloadedSettingsService, err := newSettingsServiceForTestInternal(t, ctx, wrappedDB)
+	reloadedSettingsService, err := newSettingsServiceForTest(t, ctx, wrappedDB)
 	require.NoError(t, err)
 	restartedJob := NewAnalyticsJob(reloadedSettingsService, kv.NewKVService(wrappedDB), server.Client(), cfg)
 	restartedJob.heartbeatURL = server.URL
@@ -182,7 +182,7 @@ func TestAnalyticsJob_Run_SkipsWithinHeartbeatWindowAfterRestart(t *testing.T) {
 
 func TestAnalyticsJob_Run_AllowsSendAfterHeartbeatWindow(t *testing.T) {
 	ctx := t.Context()
-	_, settingsService, kvService := setupAnalyticsStateServicesInternal(t)
+	_, settingsService, kvService := setupAnalyticsStateServices(t)
 	server, _, requestCount := newHeartbeatServer(t)
 	defer server.Close()
 
@@ -208,7 +208,7 @@ func TestAnalyticsJob_Run_AllowsSendAfterHeartbeatWindow(t *testing.T) {
 
 func TestAnalyticsJob_Run_ConcurrentRunsSendOnce(t *testing.T) {
 	ctx := t.Context()
-	_, settingsService, kvService := setupAnalyticsStateServicesInternal(t)
+	_, settingsService, kvService := setupAnalyticsStateServices(t)
 	server, _, requestCount := newHeartbeatServer(t)
 	defer server.Close()
 
@@ -237,7 +237,7 @@ func TestAnalyticsJob_Run_ConcurrentRunsSendOnce(t *testing.T) {
 }
 
 func TestAnalyticsJob_Schedule_UsesFixedHourlyCheck(t *testing.T) {
-	_, settingsService, kvService := setupAnalyticsStateServicesInternal(t)
+	_, settingsService, kvService := setupAnalyticsStateServices(t)
 	job := NewAnalyticsJob(settingsService, kvService, nil, &config.Config{Environment: config.AppEnvironmentProduction})
 
 	require.Equal(t, analyticsHeartbeatCheckSchedule, job.Schedule(t.Context()))

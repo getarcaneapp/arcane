@@ -2,22 +2,23 @@ package bootstrap
 
 import (
 	"context"
+	"encoding/json/v2"
+	"net/http"
 	"slices"
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/features"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx/fxtest"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/vulnerability"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
 )
 
 type settingsSubscriptionStubInternal struct {
@@ -27,7 +28,7 @@ type settingsSubscriptionStubInternal struct {
 }
 
 func (s *settingsSubscriptionStubInternal) SubscribeSettingsChanges(keys []string, callback func([]libarcane.SettingUpdate)) func() {
-	if slices.Contains(keys, features.VulnerabilityManagementSettingKey) {
+	if slices.Contains(keys, types.FeatureVulnerabilityManagementSettingKey) {
 		s.featureCallbacks = append(s.featureCallbacks, callback)
 	}
 	if slices.Contains(keys, "pollingEnabled") {
@@ -44,7 +45,7 @@ type settingsSubscriptionSchedulerStubInternal struct {
 	jobs        []string
 }
 
-func (s *settingsSubscriptionSchedulerStubInternal) RescheduleJob(_ context.Context, job schedulertypes.Job) error {
+func (s *settingsSubscriptionSchedulerStubInternal) RescheduleJob(_ context.Context, job types.SchedulerJob) error {
 	if job != nil {
 		s.jobs = append(s.jobs, job.Name())
 	}
@@ -75,6 +76,54 @@ func (s *timeoutSyncEnvironmentStubInternal) ProxyRequest(ctx context.Context, _
 	}
 	<-ctx.Done()
 	return nil, 0, ctx.Err()
+}
+
+type agentSettingsSyncStub struct {
+	snapshots map[string][]byte
+	patches   map[string]types.SettingsUpdate
+}
+
+func (s *agentSettingsSyncStub) ListRemoteEnvironments(context.Context) ([]environment.Environment, error) {
+	return []environment.Environment{
+		{ID: "current", Name: "current"},
+		{ID: "legacy", Name: "legacy"},
+	}, nil
+}
+
+func (s *agentSettingsSyncStub) ProxyRequest(_ context.Context, envID, method, _ string, body []byte) ([]byte, int, error) {
+	if method == http.MethodGet {
+		return s.snapshots[envID], http.StatusOK, nil
+	}
+	var update types.SettingsUpdate
+	if err := json.Unmarshal(body, &update); err != nil {
+		return nil, 0, err
+	}
+	s.patches[envID] = update
+	return []byte(`{}`), http.StatusOK, nil
+}
+
+func TestSyncTimeoutSettingsToAgentsSkipsLockedKeysAndMismatchedAgents(t *testing.T) {
+	currentSnapshot, err := json.Marshal(types.SettingsSnapshot{
+		Settings: []types.SettingState{
+			{Key: "dockerApiTimeout", Locked: true, LockReason: "env"},
+			{Key: "buildTimeout"},
+		},
+	})
+	require.NoError(t, err)
+	stub := &agentSettingsSyncStub{
+		snapshots: map[string][]byte{
+			"current": currentSnapshot,
+			"legacy":  []byte(`[{"key":"dockerApiTimeout","type":"string","value":"30"}]`),
+		},
+		patches: map[string]types.SettingsUpdate{},
+	}
+
+	syncTimeoutSettingsToAgents(t.Context(), stub, map[string]string{
+		"dockerApiTimeout": "60",
+		"buildTimeout":     "900",
+	})
+
+	require.Equal(t, map[string]types.SettingsUpdate{"current": {"buildTimeout": "900"}}, stub.patches)
 }
 
 func TestSettingsTimeoutSyncDoesNotBlockOtherEffects(t *testing.T) {
@@ -139,7 +188,7 @@ func TestFeatureChangeReschedulesScanAndPatchJobs(t *testing.T) {
 	}))
 	require.Len(t, settings.featureCallbacks, 3)
 	for _, callback := range settings.featureCallbacks {
-		callback([]libarcane.SettingUpdate{{Key: features.VulnerabilityManagementSettingKey, Value: "false"}})
+		callback([]libarcane.SettingUpdate{{Key: types.FeatureVulnerabilityManagementSettingKey, Value: "false"}})
 	}
 	require.ElementsMatch(t, []string{scheduler.VulnerabilityScanJobName, scheduler.VulnerabilityRiskJobName, scheduler.AutoPatchJobName}, schedulerStub.jobs)
 	stopCtx, cancel := context.WithTimeout(t.Context(), time.Second)

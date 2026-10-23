@@ -3,28 +3,25 @@
 	import { goto, afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
+	import { toast } from 'svelte-sonner';
 
 	import ActivityCenter from '#lib/components/activity/activity-center.svelte';
 	import MobileNav from '#lib/components/mobile-nav/mobile-nav.svelte';
 	import OperationWatchDialog from '#lib/components/operation-watch-dialog.svelte';
 	import AppSidebar from '#lib/components/sidebar/sidebar.svelte';
 	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
-	import {
-		navigationItems,
-		getManagementItems,
-		filterByPermissions,
-		type NavigationItem
-	} from '#lib/config/navigation-config.js';
+	import { navigationItems, filterByPermissions, type NavigationItem } from '#lib/config/navigation-config.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
+	import { m } from '#lib/paraglide/messages.js';
+	import BaseAPIService from '#lib/services/api-service.js';
 	import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
+	import { upgradeJobStore } from '#lib/stores/upgrade-job.store.svelte.js';
 	import userStore, { userHasPermissionInAnyEnvironment } from '#lib/stores/user-store.svelte.js';
 	import { versionStore } from '#lib/stores/version.store.svelte.js';
 	import { cn } from '#lib/utils.js';
 	import { getAuthRedirectPath } from '#lib/utils/auth.js';
-	import { isEnvironmentOnline } from '#lib/utils/docker.js';
 	import { getEffectiveLandingPage, getEffectiveNavigationSettings, setMobileNavigation } from '#lib/utils/navigation.js';
 	import { isEditableTarget, matchesShortcutEvent } from '#lib/utils/navigation.js';
 
@@ -61,31 +58,12 @@
 			hiddenNavigationSettings = value ? undefined : navigationSettings;
 		}
 	});
-	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	const managementItemsRaw = $derived(getManagementItems(currentEnvId));
-	const managementItems = $derived(filterByPermissions(managementItemsRaw, user ?? null, currentEnvId, permissionsManifest));
-	const resourceItems = $derived(
-		filterByPermissions(navigationItems.resourceItems, user ?? null, currentEnvId, permissionsManifest)
-	);
-	const settingsShortcutItems = $derived(
-		filterByPermissions(navigationItems.settingsItems, user ?? null, currentEnvId, permissionsManifest)
-	);
+	const managementItems = $derived(filterByPermissions(navigationItems.managementItems, user ?? null, permissionsManifest));
+	const resourceItems = $derived(filterByPermissions(navigationItems.resourceItems, user ?? null, permissionsManifest));
+	const settingsShortcutItems = $derived(filterByPermissions(navigationItems.settingsItems, user ?? null, permissionsManifest));
 	const shortcutItems = $derived.by(() => {
 		const items: NavigationItem[] = [...managementItems, ...resourceItems, ...settingsShortcutItems];
 		return flattenNavigationItems(items).filter((item) => item.shortcut?.length);
-	});
-
-	let previousConnections = new Map<string, boolean>();
-	$effect(() => {
-		const connections = new Map(
-			environmentStore.available.map((environment) => [environment.id, isEnvironmentOnline(environment)])
-		);
-		untrack(() => {
-			for (const [environmentId, online] of connections) {
-				if (online && previousConnections.get(environmentId) === false) void featureStore.refresh(environmentId);
-			}
-			previousConnections = connections;
-		});
 	});
 
 	$effect(() => {
@@ -100,15 +78,27 @@
 		};
 	});
 
+	$effect(() => {
+		if (!versionStore.buildChanged) return;
+		untrack(() => {
+			if (upgradeJobStore.reloadsOnBuildChange) {
+				void BaseAPIService.reloadForNewBuild();
+				return;
+			}
+			toast.info(m.upgrade_build_changed_title(), {
+				id: 'arcane-build-changed',
+				description: m.upgrade_build_changed_description(),
+				duration: Number.POSITIVE_INFINITY,
+				action: {
+					label: m.update_center_step_reload(),
+					onClick: () => void BaseAPIService.reloadForNewBuild()
+				}
+			});
+		});
+	});
+
 	const authRedirectPath = $derived(
-		getAuthRedirectPath(
-			page.url.pathname,
-			user,
-			currentEnvId,
-			permissionsManifest,
-			permissionsManifestLoadFailed,
-			getEffectiveLandingPage()
-		)
+		getAuthRedirectPath(page.url.pathname, user, permissionsManifest, permissionsManifestLoadFailed, getEffectiveLandingPage())
 	);
 
 	$effect(() => {

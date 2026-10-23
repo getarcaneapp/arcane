@@ -6,10 +6,10 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
 type Module struct {
@@ -79,14 +79,16 @@ func RegisterNotifications(api huma.API, notificationSvc *NotificationService, c
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermNotificationsManage, h.DeleteNotificationSettings)
 
-	middleware.RegisterWithPermission(api, huma.Operation{
-		OperationID: "test-notification",
+	middleware.RegisterWithActionPermissions(api, huma.Operation{
+		OperationID: "notification-settings-action",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/notifications/test/{provider}",
+		Path:        "/environments/{id}/notifications/settings/{provider}",
 		Summary:     "Test notification",
 		Tags:        []string{"Notifications"},
 		Security:    handlerutil.DefaultOperationSecurity(),
-	}, authz.PermNotificationsManage, h.TestNotification)
+	}, "action", map[string]string{
+		"test": authz.PermNotificationsManage,
+	}, h.TestNotification)
 
 	// Environment tokens are authenticated by ApiKeyAuth and revalidated by the
 	// handler. RBAC middleware cannot scope this route because it has no environment ID.

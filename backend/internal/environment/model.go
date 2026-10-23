@@ -3,7 +3,7 @@ package environment
 import (
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 )
 
 type Environment struct {
@@ -13,7 +13,6 @@ type Environment struct {
 	ApiUrl              string     `json:"apiUrl" gorm:"column:api_url" sortable:"true"`
 	Status              string     `json:"status" sortable:"true"`
 	Enabled             bool       `json:"enabled" sortable:"true"`
-	IsEdge              bool       `json:"isEdge" gorm:"column:is_edge;default:false"`
 	Hidden              bool       `json:"hidden" gorm:"column:hidden;default:false"`
 	LastSeen            *time.Time `json:"lastSeen" gorm:"column:last_seen"`
 	LastEdgeTransport   *string    `json:"lastEdgeTransport" gorm:"column:last_edge_transport"`

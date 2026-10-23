@@ -18,7 +18,7 @@ import (
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	kit "go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
 )
 
 const (

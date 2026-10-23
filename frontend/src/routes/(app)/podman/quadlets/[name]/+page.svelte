@@ -170,7 +170,7 @@
 				{quadlet.name}
 			</h1>
 			<Badge variant={podmanStateVariant(quadlet.status)} minWidth="20">{quadlet.status}</Badge>
-			<EnvironmentCell value={envId} />
+			<EnvironmentCell value={envId} plain />
 			{#if quadlet.template}
 				<Badge variant="gray" size="sm">{m.podman_quadlet_template()}</Badge>
 			{/if}

@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/client"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis"
 )
 
 const (
@@ -37,10 +37,10 @@ func NewService(db *database.DB, dockerService *docker.DockerClientService, acto
 }
 
 // Ready pings the database and local Docker daemon; it is never ready while shutting down.
-func (s *Service) Ready(ctx context.Context) system.ReadinessResponse {
+func (s *Service) Ready(ctx context.Context) types.ReadinessResponse {
 	select {
 	case <-s.shutdown:
-		return system.ReadinessResponse{
+		return types.ReadinessResponse{
 			Status: notReadyStatus,
 			Checks: map[string]string{"shutdown": "in progress"},
 		}
@@ -75,8 +75,8 @@ func (s *Service) Ready(ctx context.Context) system.ReadinessResponse {
 	}
 	for _, result := range checks {
 		if result != checkOK {
-			return system.ReadinessResponse{Status: notReadyStatus, Checks: checks}
+			return types.ReadinessResponse{Status: notReadyStatus, Checks: checks}
 		}
 	}
-	return system.ReadinessResponse{Status: readyStatus, Checks: checks}
+	return types.ReadinessResponse{Status: readyStatus, Checks: checks}
 }

@@ -8,7 +8,6 @@
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import { EmptyState } from '#lib/components/states/index.js';
 	import { TABLE_PAGE_SIZE_ALL } from '#lib/constants/table-pagination.js';
-	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { BoxIcon, ProjectsIcon, StartIcon, StopIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -25,6 +24,7 @@
 		fetchAcrossEnvironments,
 		hasShownPermission,
 		listScopes,
+		readableEnvironments,
 		settleAcrossEnvironments,
 		sumAcrossEnvironments,
 		withFailedEnvironments
@@ -60,13 +60,14 @@
 		runningProjects: 0,
 		stoppedProjects: 0,
 		totalProjects: 0,
-		archivedProjects: 0
+		archivedProjects: 0,
+		updatesAvailable: 0
 	};
 
 	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
 	const projectsQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = environmentStore.shown;
+		const environments = readableEnvironments('projects:list');
 		const options = projectRequestOptions;
 		return {
 			queryKey: queryKeys.projects.list(queryScope, options),
@@ -86,11 +87,15 @@
 
 	const projectStatusCountsQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = environmentStore.shown;
+		const environments = readableEnvironments('projects:list');
 		return {
 			queryKey: queryKeys.projects.statusCounts(queryScope),
 			queryFn: () =>
-				sumAcrossEnvironments(environments, (id, config) => projectService.getProjectStatusCountsForEnvironment(id, config)),
+				sumAcrossEnvironments(
+					environments,
+					(id, config) => projectService.getProjectStatusCountsForEnvironment(id, config),
+					countsFallback
+				),
 			initialData: data.scope === queryScope ? data.projectStatusCounts : undefined,
 			select: (value) => ({ envId: queryScope, value }),
 			refetchOnMount: false
@@ -98,7 +103,7 @@
 	});
 	const projectTagsQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = environmentStore.shown;
+		const environments = readableEnvironments('projects:list');
 		return {
 			queryKey: queryKeys.projects.tags(queryScope),
 			queryFn: () => fetchProjectTags(environments),
@@ -117,11 +122,6 @@
 	// Tags change rarely, so a refresh reloads them only after an environment failed to return them.
 	const refetchFailedTags = () =>
 		projectTagsQuery.isError || projectTagsQuery.data?.value.failedEnvironments.length ? projectTagsQuery.refetch() : undefined;
-
-	useEnvironmentRefresh(() => {
-		selectedIds = [];
-		isManualRefreshing = false;
-	});
 
 	async function updateEnvironmentProjects(requestedEnvId: string) {
 		// Refresh update info for all images, then redeploy only the projects the

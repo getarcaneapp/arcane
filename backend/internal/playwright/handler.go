@@ -7,7 +7,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/federated"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/federated"
 )
 
 type playwrightHandlerInternal struct {
@@ -32,10 +32,10 @@ func SetupRoutes(api *echo.Group, service *PlaywrightService, federatedService *
 	group := api.Group("/playwright")
 	handler := &playwrightHandlerInternal{service: service, federated: federatedService}
 
-	group.POST("/create-test-gitops-project", handler.createTestGitOpsProjectInternal)
-	group.POST("/create-test-api-keys", handler.createTestAPIKeysInternal)
-	group.POST("/delete-test-api-keys", handler.deleteTestAPIKeysInternal)
-	group.POST("/create-test-federated-credential", handler.createTestFederatedCredentialInternal)
+	group.POST("/gitops", handler.createTestGitOpsProjectInternal)
+	group.POST("/apikeys", handler.createTestAPIKeysInternal)
+	group.DELETE("/apikeys", handler.deleteTestAPIKeysInternal)
+	group.POST("/federated", handler.createTestFederatedCredentialInternal)
 }
 
 func (h *playwrightHandlerInternal) createTestAPIKeysInternal(c *echo.Context) error {

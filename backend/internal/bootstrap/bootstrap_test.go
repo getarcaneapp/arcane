@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -20,27 +20,28 @@ import (
 	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/api"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/gitops"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/health"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/job"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/project"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/swarm"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/system"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/runs"
-	francistest "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/francis/testing"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
+	"github.com/getarcaneapp/arcane/backend/v3/api"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/gitops"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/health"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/job"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
+	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1"
 )
 
 type blockingBusWatcher struct {
@@ -188,9 +189,26 @@ func TestConfigureHTTPProtocols(t *testing.T) {
 	})
 }
 
+func newTestSettingsModule(t *testing.T, cfg *config.Config) *settings.Module {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	settingsService, err := settings.NewSettingsService(t.Context(), &database.DB{DB: db}, cfg, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context())))
+	})
+	return settings.New(settingsService, nil, nil, cfg)
+}
+
 func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 	cfg := &config.Config{
-		AgentMode:   true,
+		EdgeAgent:   true,
 		AppUrl:      "http://localhost:3552",
 		Environment: config.AppEnvironmentTest,
 	}
@@ -203,6 +221,7 @@ func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 			Swarm:     swarm.New(&swarm.SwarmService{}, nil, nil, nil),
 			System:    system.New(&system.SystemService{}, nil, nil),
 			Health:    health.New(&health.Service{}),
+			Settings:  newTestSettingsModule(t, cfg),
 		},
 		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
 		TunnelRegistry: edge.NewTunnelRegistry(),
@@ -323,9 +342,8 @@ func TestHTTPServerStopCancelsStreamingRequestContexts(t *testing.T) {
 	})
 
 	cfg := &config.Config{
-		AgentMode: true,
-		Listen:    "127.0.0.1",
-		Port:      "0",
+		Listen: "127.0.0.1",
+		Port:   "0",
 	}
 	lifecycle := fxtest.NewLifecycle(t)
 	srv, err := NewHTTPServer(lifecycle, HTTPServerParams{
@@ -350,7 +368,6 @@ func TestHTTPServerStopCancelsStreamingRequestContexts(t *testing.T) {
 
 func TestNewHTTPServerRejectsInvalidTLSCertificate(t *testing.T) {
 	cfg := &config.Config{
-		AgentMode:   true,
 		TLSEnabled:  true,
 		TLSCertFile: t.TempDir() + "/missing.crt",
 		TLSKeyFile:  t.TempDir() + "/missing.key",
@@ -411,22 +428,22 @@ func TestJobSchedulerStopCancelsItsPrivateContext(t *testing.T) {
 		&config.Config{},
 		coordinator,
 		role.NewRoleService(&database.DB{DB: db}),
-		environment.NewEnvironmentService(&database.DB{DB: db}, nil, nil, nil, nil, nil),
+		environment.NewEnvironmentService(&database.DB{DB: db}, nil, nil, nil, nil),
 		activity.NewActivityService(&database.DB{DB: db}, nil),
 	)
 	gitopsSync := gitops.NewGitOpsSyncService(&database.DB{DB: db}, nil, nil, nil, nil, nil)
 	require.NoError(t, db.Create(&environment.Environment{ID: "0", Name: "Local", Enabled: true}).Error)
 	require.NoError(t, db.Create(&project.GitOpsSync{ID: "overdue", EnvironmentID: "0", AutoSync: true, SyncInterval: 1}).Error)
-	jobScheduler, err := newJobScheduler(appCtx, lifecycle, &config.Config{}, coordinator, admission, nil, nil, nil, jobService, workflows, nil, gitopsSync, runtime)
+	jobScheduler, err := newJobScheduler(appCtx, lifecycle, &config.Config{}, coordinator, admission, nil, nil, nil, jobService, workflows, nil, gitopsSync)
 	require.NoError(t, err)
 	require.NoError(t, registerDynamicJobs(dynamicJobsParams{
 		AppCtx: appCtx, Config: &config.Config{}, Scheduler: jobScheduler,
 		GitOpsSync: gitopsSync, Admission: admission,
 	}))
-	executed := make(chan schedulertypes.Run, 1)
-	coordinator.SetExecutor(func(_ context.Context, run schedulertypes.Run) (schedulertypes.Outcome, error) {
+	executed := make(chan types.SchedulerRun, 1)
+	coordinator.SetExecutor(func(_ context.Context, run types.SchedulerRun) (types.SchedulerOutcome, error) {
 		executed <- run
-		return schedulertypes.Outcome{Status: schedulertypes.Succeeded}, nil
+		return types.SchedulerOutcome{Status: types.RunStatusSucceeded}, nil
 	}, nil)
 	watcher := &blockingBusWatcher{
 		started: make(chan struct{}),
@@ -467,26 +484,12 @@ func TestApplicationOptionsValidate(t *testing.T) {
 	err := fx.ValidateApp(applicationOptions(
 		appCtx,
 		&config.Config{},
+		settings.Env{},
 		(*database.DB)(nil),
+		"test-encryption-key",
 		cancelApp,
 	))
 	require.NoError(t, err)
-}
-
-func TestPrepareServerTLS_AgentModeSkipsManagerMTLSValidation(t *testing.T) {
-	cfg := &config.Config{
-		AgentMode:     true,
-		EdgeMTLSMode:  "required",
-		ManagerApiUrl: "https://127.0.0.1:3552",
-	}
-
-	useTLS, tlsCertFile, tlsKeyFile, edgeCfg, err := prepareServerTLS(t.Context(), cfg)
-	require.NoError(t, err)
-	assert.False(t, useTLS)
-	assert.Empty(t, tlsCertFile)
-	assert.Empty(t, tlsKeyFile)
-	require.NotNil(t, edgeCfg)
-	assert.Equal(t, "required", edgeCfg.EdgeMTLSMode)
 }
 
 func TestPrepareServerTLS_AllowsExternalMTLSTermination(t *testing.T) {
@@ -513,11 +516,4 @@ func TestPrepareServerTLS_AllowsExternalMTLSTermination(t *testing.T) {
 	require.FileExists(t, edgeCfg.EdgeMTLSCAFile)
 	require.FileExists(t, assetsDir+"/ca.crt")
 	require.FileExists(t, assetsDir+"/ca.key")
-}
-
-func TestIsWeakProductionEncryptionKey(t *testing.T) {
-	assert.True(t, isWeakProductionEncryptionKey("short", "production", false))
-	assert.False(t, isWeakProductionEncryptionKey("test-encryption-key-for-edge-mtls-32bytes-min", "production", false))
-	assert.False(t, isWeakProductionEncryptionKey("hex:abc", "production", false))
-	assert.False(t, isWeakProductionEncryptionKey("short", "development", false))
 }

@@ -1,4 +1,5 @@
 import type { ImageUpdateData } from './docker';
+import type { CreateRequest, UpdateRequest } from './shared';
 
 // --- Swarm services, ports, mounts ---
 
@@ -66,6 +67,7 @@ export interface ServiceVirtualIP {
 
 export interface SwarmRuntimeStatus {
 	enabled: boolean;
+	clusterId?: string;
 }
 
 export interface RawServiceVirtualIP {
@@ -77,6 +79,8 @@ export interface RawServiceVirtualIP {
 
 export interface SwarmServiceSummary {
 	id: string;
+	environmentId?: string;
+	environmentName?: string;
 	name: string;
 	image: string;
 	mode: SwarmServiceModeName;
@@ -230,6 +234,8 @@ export interface SwarmServiceUpdateResponse {
 
 export interface SwarmTaskSummary {
 	id: string;
+	environmentId?: string;
+	environmentName?: string;
 	name: string;
 	serviceId: string;
 	serviceName: string;
@@ -245,8 +251,12 @@ export interface SwarmTaskSummary {
 	updatedAt: string;
 }
 
-export interface SwarmNodeSummary {
+export interface SwarmNode {
 	id: string;
+	environmentId?: string;
+	environmentName?: string;
+	name?: string;
+	version?: number;
 	hostname: string;
 	role: string;
 	availability: string;
@@ -311,21 +321,21 @@ export interface SwarmNodeAgentReconcileResponse {
 	results: SwarmNodeAgentReconcileResult[];
 }
 
-export interface SwarmNodeUpdateRequest {
-	version?: number;
-	name?: string;
-	labels?: Record<string, string>;
-	role?: 'manager' | 'worker';
-	availability?: 'active' | 'pause' | 'drain';
-}
+export type SwarmNodeWritable = 'name' | 'version' | 'labels' | 'role' | 'availability';
+
+export type SwarmNodeUpdate = UpdateRequest<SwarmNode, SwarmNodeWritable>;
 
 export interface SwarmStackSummary {
 	id: string;
+	environmentId?: string;
+	environmentName?: string;
 	name: string;
 	namespace: string;
 	services: number;
 	createdAt: string;
 	updatedAt: string;
+	clusterId?: string;
+	hasSource: boolean;
 }
 
 export interface SwarmStackInspect {
@@ -382,12 +392,9 @@ export interface SwarmStackSource {
 	files?: SwarmSyncFile[];
 }
 
-export interface SwarmStackSourceUpdateRequest {
-	composeContent: string;
-	overrideContent?: string;
-	envContent?: string;
-	files?: SwarmSyncFile[];
-}
+export type SwarmStackSourceWritable = 'composeContent' | 'overrideContent' | 'envContent' | 'files';
+
+export type SwarmStackSourceUpdate = UpdateRequest<SwarmStackSource, SwarmStackSourceWritable>;
 
 export interface SwarmInfo {
 	id: string;
@@ -499,6 +506,8 @@ export interface SwarmKvSpec {
 
 export interface SwarmKvSummary {
 	id: string;
+	environmentId?: string;
+	environmentName?: string;
 	version: { Index?: number };
 	createdAt: string;
 	updatedAt: string;
@@ -650,11 +659,16 @@ export interface Project {
 	includeFiles?: IncludeFile[];
 }
 
+export type ProjectWritable = 'name' | 'composeContent' | 'envContent' | 'overrideContent';
+
+export type ProjectUpdate = UpdateRequest<Project, ProjectWritable>;
+
 export interface ProjectStatusCounts {
 	runningProjects: number;
 	stoppedProjects: number;
 	totalProjects: number;
 	archivedProjects: number;
+	updatesAvailable: number;
 }
 
 // --- Compose templates ---
@@ -665,10 +679,14 @@ export interface TemplateRegistry {
 	url: string;
 	enabled: boolean;
 	description: string;
-	createdAt?: string;
-	updatedAt?: string;
 	lastFetchError?: string;
 }
+
+export type TemplateRegistryWritable = 'name' | 'description' | 'url' | 'enabled';
+
+export type TemplateRegistryCreate = CreateRequest<TemplateRegistry, TemplateRegistryWritable, 'name' | 'url'>;
+
+export type TemplateRegistryUpdate = UpdateRequest<TemplateRegistry, TemplateRegistryWritable>;
 
 export interface Template {
 	id: string;
@@ -690,9 +708,13 @@ export interface Template {
 		iconUrl?: string;
 		updatedAt?: string;
 	};
-	createdAt: string;
-	updatedAt: string;
 }
+
+export type TemplateWritable = 'name' | 'description' | 'content' | 'envContent';
+
+export type TemplateCreate = CreateRequest<Template, TemplateWritable, 'name' | 'content'>;
+
+export type TemplateUpdate = UpdateRequest<Template, TemplateWritable>;
 
 export interface EnvVariable {
 	key: string;

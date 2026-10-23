@@ -2,45 +2,6 @@ import { z } from 'zod/v4';
 
 import type { FormInputs } from '#lib/types/form.js';
 
-const LOCAL_SETTING_KEYS = new Set([
-	'avatarMaxUploadSizeMb',
-	'allEnvironmentsLimit',
-	'authLocalEnabled',
-	'authSessionTimeout',
-	'authPasswordPolicy',
-	'authOidcConfig',
-	'oidcEnabled',
-	'oidcAutoRedirectToProvider',
-	'oidcMergeAccounts',
-	'oidcSkipTlsVerify',
-	'oidcClientId',
-	'oidcClientSecret',
-	'oidcIssuerUrl',
-	'oidcScopes',
-	'oidcGroupsClaim',
-	'oidcProviderName',
-	'oidcProviderLogoUrl',
-	'edgeMTLSManagerCAAvailable',
-	'frontendTracingEnabled',
-	'frontendMetricsEnabled',
-	'frontendLogsEnabled',
-	'experimentalFeaturesEnabled',
-	'developmentBrandingEnabled',
-	'apnsEnabled'
-]);
-
-export function isLocalSetting(key: string): boolean {
-	return LOCAL_SETTING_KEYS.has(key);
-}
-
-export function extractLocalSettings<T extends object>(settings: T): Partial<T> {
-	return Object.fromEntries(Object.entries(settings).filter(([key]) => isLocalSetting(key))) as Partial<T>;
-}
-
-export function extractEnvironmentSettings<T extends object>(settings: T): Partial<T> {
-	return Object.fromEntries(Object.entries(settings).filter(([key]) => !isLocalSetting(key))) as Partial<T>;
-}
-
 export function preventDefault<T extends Event>(fn: (event: T) => unknown) {
 	return (event: T) => {
 		event.preventDefault();

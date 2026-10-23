@@ -26,8 +26,9 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { templateService } from '#lib/services/template-service.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
+	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
 	import {
 		createNamedTemplateSchema,
@@ -96,12 +97,18 @@
 			validationState,
 			validate: form.validate,
 			save: (validated) =>
-				templateService.updateTemplate(template.id, {
-					name: validated.name,
-					description: validated.description,
-					content: validated.composeContent,
-					envContent: validated.envContent
-				}),
+				templateService.updateTemplate(
+					template.id,
+					changedFields(
+						{ name: originalName, description: originalDescription, content: originalCompose, envContent: originalEnv },
+						{
+							name: validated.name,
+							description: validated.description,
+							content: validated.composeContent,
+							envContent: validated.envContent
+						}
+					)
+				),
 			failureMessage: m.templates_save_template_failed(),
 			setLoading: (value) => (status.saving = value),
 			onSuccess: async (validated) => {
@@ -150,7 +157,7 @@
 		return data.allTemplates.find((t) => !t.isRemote && t.metadata?.remoteUrl === template.metadata?.remoteUrl);
 	});
 
-	const canDownload = $derived(template.isRemote && !localVersionOfRemote && hasPermission('templates:create'));
+	const canDownload = $derived(template.isRemote && !localVersionOfRemote && hasShownPermission('templates:create'));
 
 	async function handleDownload() {
 		if (status.isDownloading || !canDownload) return;

@@ -8,8 +8,8 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { ExternalLinkIcon, GithubIcon, BookOpenIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { settingsService } from '#lib/services/settings-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
+	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type { AppVersionInformation, Settings } from '#lib/types/settings.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -48,17 +48,16 @@
 	const developmentBranding = $derived(usesDevelopmentBranding());
 	const logoUrl = $derived(getApplicationLogo(false, logoColor, logoColor, { development: developmentBranding }));
 
-	const canToggleSettings = $derived(hasPermission('settings:write'));
+	const canToggleSettings = $derived(hasPermission('settings:write', LOCAL_DOCKER_ENVIRONMENT_ID));
 	let savingSetting = $state(false);
 
 	async function updateSetting(update: Partial<Settings>) {
 		savingSetting = true;
-		await handleApiResultWithCallbacks<Settings>({
-			result: await tryCatch(settingsService.updateSettings(update)),
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(settingsStore.save(update)),
 			message: m.common_update_failed({ resource: m.settings() }),
 			setLoadingState: (value) => (savingSetting = value),
-			onSuccess: async (updated) => {
-				settingsStore.set(updated);
+			onSuccess: async () => {
 				toast.success(m.common_update_success({ resource: m.settings() }));
 			}
 		});

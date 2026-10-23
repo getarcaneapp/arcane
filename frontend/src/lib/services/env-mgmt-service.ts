@@ -1,12 +1,12 @@
-import type { CreateEnvironmentDTO, DeploymentSnippets, Environment, UpdateEnvironmentDTO } from '#lib/types/environment.js';
+import type { DeploymentSnippets, Environment, EnvironmentCreate, EnvironmentUpdate } from '#lib/types/environment.js';
 import type { AppVersionInformation } from '#lib/types/settings.js';
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
-import BaseAPIService from './api-service';
+import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 class EnvironmentManagementService extends BaseAPIService {
-	async create(dto: CreateEnvironmentDTO): Promise<Environment> {
+	async create(dto: EnvironmentCreate): Promise<Environment> {
 		const res = await this.api.post('/environments', dto);
 		return res.data.data as Environment;
 	}
@@ -22,8 +22,8 @@ class EnvironmentManagementService extends BaseAPIService {
 		return res.data.data as Environment;
 	}
 
-	async update(environmentId: string, dto: UpdateEnvironmentDTO): Promise<Environment> {
-		const res = await this.api.put(`/environments/${environmentId}`, dto);
+	async update(environmentId: string, dto: EnvironmentUpdate): Promise<Environment> {
+		const res = await this.api.patch(`/environments/${environmentId}`, dto);
 		return res.data.data as Environment;
 	}
 
@@ -31,8 +31,8 @@ class EnvironmentManagementService extends BaseAPIService {
 		await this.api.delete(`/environments/${environmentId}`);
 	}
 
-	async testConnection(environmentId: string, apiUrl?: string): Promise<{ status: 'online' | 'offline'; message?: string }> {
-		const res = await this.api.post(`/environments/${environmentId}/test`, apiUrl ? { apiUrl } : undefined);
+	async testConnection(environmentId: string): Promise<{ status: 'online' | 'offline'; message?: string }> {
+		const res = await this.api.post(`/environments/${environmentId}/test`);
 		return res.data.data as { status: 'online' | 'offline'; message?: string };
 	}
 
@@ -45,8 +45,8 @@ class EnvironmentManagementService extends BaseAPIService {
 		return res.data.data as DeploymentSnippets;
 	}
 
-	async getVersion(environmentId: string): Promise<AppVersionInformation> {
-		const res = await this.api.get(`/environments/${environmentId}/version`);
+	async getVersion(environmentId: string, config?: APIRequestConfig): Promise<AppVersionInformation> {
+		const res = await this.api.get(`/environments/${environmentId}/version`, config);
 		return res.data.data as AppVersionInformation;
 	}
 }

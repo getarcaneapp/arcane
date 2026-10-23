@@ -5,14 +5,14 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 )
 
 // SetObserver connects activity projection before accepting work.
-func (q *Coordinator) SetObserver(observer scheduler.RunObserver) { q.observer = observer }
+func (q *Coordinator) SetObserver(observer types.RunObserver) { q.observer = observer }
 
-func (q *Coordinator) associateActivity(run *scheduler.Run) {
+func (q *Coordinator) associateActivity(run *types.SchedulerRun) {
 	if q.observer != nil && run.ActivityID == "" {
 		run.ActivityID = q.observer.ActivityID(*run)
 	}
@@ -21,7 +21,7 @@ func (q *Coordinator) associateActivity(run *scheduler.Run) {
 	}
 }
 
-func (q *Coordinator) observeRun(ctx context.Context, run scheduler.Run) bool {
+func (q *Coordinator) observeRun(ctx context.Context, run types.SchedulerRun) bool {
 	if q.observer == nil {
 		return false
 	}
@@ -29,10 +29,10 @@ func (q *Coordinator) observeRun(ctx context.Context, run scheduler.Run) bool {
 	return q.syncActivity(ctx, run)
 }
 
-func (q *Coordinator) syncActivity(ctx context.Context, run scheduler.Run) bool {
+func (q *Coordinator) syncActivity(ctx context.Context, run types.SchedulerRun) bool {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	var state scheduler.CoordinatorState
+	var state types.SchedulerCoordinatorState
 	id := kit.SHA256Hex(run.EnvironmentID + "\x00" + run.JobID)
 	if err := q.service.GetState(ctx, coordinatorType, id, &state); err != nil {
 		return true
@@ -46,7 +46,7 @@ func (q *Coordinator) syncActivity(ctx context.Context, run scheduler.Run) bool 
 		err = q.observer.SyncRunActivity(ctx, current)
 	}
 	if err == nil {
-		_, err = q.service.Invoke(ctx, coordinatorType, id, "activity-synced", scheduler.ActivitySyncCommand{RunID: run.ID, UpdatedAt: version})
+		_, err = q.service.Invoke(ctx, coordinatorType, id, "activity-synced", types.SchedulerActivitySyncCommand{RunID: run.ID, UpdatedAt: version})
 	}
 	if err != nil {
 		slog.ErrorContext(ctx, "Job activity synchronization failed; will retry", "runId", run.ID, "error", err)
@@ -55,14 +55,14 @@ func (q *Coordinator) syncActivity(ctx context.Context, run scheduler.Run) bool 
 	return false
 }
 
-func (q *Coordinator) retryActivitySync(ctx context.Context, states []scheduler.CoordinatorState) bool {
+func (q *Coordinator) retryActivitySync(ctx context.Context, states []types.SchedulerCoordinatorState) bool {
 	pending := false
 	for _, state := range states {
 		for runID := range state.PendingActivitySync {
 			if ctx.Err() != nil {
 				return true
 			}
-			pending = q.observeRun(ctx, scheduler.Run{ID: runID, EnvironmentID: state.Record.EnvironmentID, JobID: state.Record.JobID}) || pending
+			pending = q.observeRun(ctx, types.SchedulerRun{ID: runID, EnvironmentID: state.Record.EnvironmentID, JobID: state.Record.JobID}) || pending
 		}
 	}
 	return pending

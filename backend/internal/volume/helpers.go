@@ -14,18 +14,18 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
-	"go.getarcane.app/acfs/types"
+	acfstypes "go.getarcane.app/acfs/types"
 	"go.getarcane.app/docker"
 	"go.getarcane.app/docker/compat"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/volumehelper"
 )
 
 // volumeHelper tracks a reused helper container and its last use for idle reaping.
@@ -40,7 +40,7 @@ type volumeHelper struct {
 func (s *VolumeService) requireVolumeHelperACFS(ctx context.Context, volumeName, containerID string) error {
 	s.helperMu.Lock()
 	helper := s.helperByVolume[volumeName]
-	if helper != nil && helper.id == containerID && helper.protocol >= types.ProtocolVersion {
+	if helper != nil && helper.id == containerID && helper.protocol >= acfstypes.ProtocolVersion {
 		s.helperMu.Unlock()
 		return nil
 	}
@@ -50,12 +50,12 @@ func (s *VolumeService) requireVolumeHelperACFS(ctx context.Context, volumeName,
 	if err != nil {
 		return fmt.Errorf("%s: %w", "volume workspace requires an ACFS-capable tools image: "+strings.TrimSpace(stderr), err)
 	}
-	var response types.VersionResponse
+	var response acfstypes.VersionResponse
 	if unmarshalErr := json.Unmarshal([]byte(stdout), &response); unmarshalErr != nil {
 		return fmt.Errorf("parse ACFS tools-image capability: %w", unmarshalErr)
 	}
-	if response.Protocol < types.ProtocolVersion {
-		return fmt.Errorf("volume workspace requires ACFS protocol %d, tools image provides protocol %d", types.ProtocolVersion, response.Protocol)
+	if response.Protocol < acfstypes.ProtocolVersion {
+		return fmt.Errorf("volume workspace requires ACFS protocol %d, tools image provides protocol %d", acfstypes.ProtocolVersion, response.Protocol)
 	}
 
 	s.helperMu.Lock()
@@ -105,7 +105,7 @@ func (s *VolumeService) getVolumeHelperImage(ctx context.Context) (string, error
 
 	var pullErr error
 	if s.imageService != nil {
-		pullImageErr := s.imageService.PullImage(ctx, toolsImage, io.Discard, user.SystemUser, nil)
+		pullImageErr := s.imageService.PullImage(ctx, toolsImage, io.Discard, types.SystemUser, nil)
 		if pullImageErr == nil {
 			slog.InfoContext(ctx, "volume service: helper image strategy selected", "strategy", "tools-pulled", "image", toolsImage)
 			return toolsImage, nil
@@ -408,15 +408,13 @@ func (s *VolumeService) takeHelperID(volumeName string) string {
 func (s *VolumeService) CleanupOrphanedVolumeHelpers(ctx context.Context) (int, error) {
 	slog.DebugContext(ctx, "volume service: cleanup orphaned volume helper containers")
 
-	containers, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
-		return dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
-	})
+	containers, err := s.dockerService.ListContainers(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list containers for orphan helper cleanup: %w", err)
 	}
 
 	removedCount := 0
-	for _, c := range containers.Items {
+	for _, c := range containers {
 		if !isVolumeHelperContainer(c) {
 			continue
 		}

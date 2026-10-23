@@ -3,10 +3,10 @@ package imageupdate
 import (
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/image"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/samber/mo"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 )
 
 type ImageUpdateRecord struct {
@@ -71,8 +71,8 @@ func (i *ImageUpdateRecord) IsTagUpdate() bool {
 }
 
 // UpdateInfo returns the public status of this check.
-func (i *ImageUpdateRecord) UpdateInfo() *image.UpdateInfo {
-	return &image.UpdateInfo{
+func (i *ImageUpdateRecord) UpdateInfo() *types.ImageUpdateInfo {
+	return &types.ImageUpdateInfo{
 		HasUpdate:      i.HasUpdate,
 		UpdateType:     i.UpdateType,
 		CurrentVersion: i.CurrentVersion,

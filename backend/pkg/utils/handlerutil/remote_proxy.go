@@ -8,7 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
 )
 
 // RemoteJSONProxy is the remote environment transport operation used by domain handlers.

@@ -18,6 +18,10 @@ const (
 
 	MetaEnvironmentAggregate = "arcane:environmentAggregate"
 
+	MetaActionParam = "arcane:actionParam"
+
+	MetaActionPermissions = "arcane:actionPermissions"
+
 	envPathPrefixInternal = "/environments/{id}"
 )
 
@@ -51,6 +55,12 @@ func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {
 					m.aggregates = map[string]struct{}{}
 				}
 				m.aggregates[method+" "+suffix] = struct{}{}
+			}
+			param, hasParam := op.Metadata[MetaActionParam].(string)
+			perms, hasPerms := op.Metadata[MetaActionPermissions].(map[string]string)
+			if hasParam && hasPerms {
+				m.AddActions(method, suffix, param, perms)
+				continue
 			}
 			if perm, localOk := requiredPermissionInternal(op).Get(); localOk {
 				m.Add(method, suffix, perm)

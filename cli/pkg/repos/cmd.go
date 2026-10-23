@@ -8,23 +8,23 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/gitops"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
 // Command is the parent command for git repository operations.
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "repos",
-		Aliases: []string{"repo", "git-repositories", "git-repos"},
-		Short:   "Manage git repositories",
+		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
+		Use:         "repos",
+		Aliases:     []string{"repo", "git-repositories", "git-repos"},
+		Short:       "Manage git repositories",
 	}
 	cmd.AddCommand(newListCmd())
 	cmd.AddCommand(newCreateCmd())
@@ -55,12 +55,12 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[gitops.GitRepository]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.GitRepository]{
 				Resource: "repositories",
-				Endpoint: types.GitRepositories(),
+				Endpoint: clitypes.GitRepositories(),
 				Params:   cmdutil.ListParams{Resource: "repos", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
 				Headers:  []string{"ID", "NAME", "URL", "AUTH TYPE", "ENABLED", "CREATED"},
-				Row: func(repo gitops.GitRepository) []string {
+				Row: func(repo types.GitRepository) []string {
 					return []string{
 						repo.ID,
 						repo.Name,
@@ -123,7 +123,7 @@ func newCreateCmd() *cobra.Command {
 				signingKey = string(signingKeyData)
 			}
 
-			req := gitops.CreateRepositoryRequest{
+			req := types.GitRepository{
 				Name:                   opts.name,
 				URL:                    opts.url,
 				AuthType:               opts.authType,
@@ -134,17 +134,17 @@ func newCreateCmd() *cobra.Command {
 				CommitAuthorEmail:      opts.authorEmail,
 				SigningKeyPassphrase:   opts.signingKeyPass,
 				Description:            kit.Ternary(cmd.Flags().Changed("description"), &opts.description, nil),
-				Enabled:                kit.Ternary(cmd.Flags().Changed("enabled"), &opts.enabled, nil),
+				Enabled:                opts.enabled,
 				SSHKey:                 sshKey,
 				SigningKey:             signingKey,
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[gitops.GitRepository]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.GitRepository]{
 				Method:         http.MethodPost,
-				Path:           types.GitRepositories(),
+				Path:           clitypes.GitRepositories(),
 				Body:           req,
 				FailureMessage: "failed to create repository",
-				Render: func(data gitops.GitRepository) error {
+				Render: func(data types.GitRepository) error {
 					output.Success("Repository created successfully")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Name", data.Name)
@@ -254,49 +254,54 @@ func newUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			var sshKey *string
+			var sshKey string
 			if cmd.Flags().Changed("ssh-key") {
 				sshKeyData, readFileErr := os.ReadFile(opts.sshKey)
 				if readFileErr != nil {
 					return fmt.Errorf("failed to read SSH key file: %w", readFileErr)
 				}
-				sshKey = new(string(sshKeyData))
+				sshKey = string(sshKeyData)
 			}
-			var signingKey *string
-			if cmd.Flags().Changed("signing-key") {
-				signingKeyValue := ""
-				if opts.signingKey != "" {
-					signingKeyData, readSigningKeyErr := os.ReadFile(opts.signingKey)
-					if readSigningKeyErr != nil {
-						return fmt.Errorf("failed to read signing key file: %w", readSigningKeyErr)
-					}
-					signingKeyValue = string(signingKeyData)
+			var signingKey string
+			if cmd.Flags().Changed("signing-key") && opts.signingKey != "" {
+				signingKeyData, readSigningKeyErr := os.ReadFile(opts.signingKey)
+				if readSigningKeyErr != nil {
+					return fmt.Errorf("failed to read signing key file: %w", readSigningKeyErr)
 				}
-				signingKey = &signingKeyValue
+				signingKey = string(signingKeyData)
 			}
 
-			req := gitops.UpdateRepositoryRequest{
-				Name:                   kit.Ternary(cmd.Flags().Changed("name"), &opts.name, nil),
-				URL:                    kit.Ternary(cmd.Flags().Changed("url"), &opts.url, nil),
-				AuthType:               kit.Ternary(cmd.Flags().Changed("auth-type"), &opts.authType, nil),
-				Token:                  kit.Ternary(cmd.Flags().Changed("token"), &opts.token, nil),
-				Username:               kit.Ternary(cmd.Flags().Changed("username"), &opts.username, nil),
-				SSHHostKeyVerification: kit.Ternary(cmd.Flags().Changed("ssh-host-key-verification"), &opts.sshHostKeyVerify, nil),
-				CommitAuthorName:       kit.Ternary(cmd.Flags().Changed("author-name"), &opts.authorName, nil),
-				CommitAuthorEmail:      kit.Ternary(cmd.Flags().Changed("author-email"), &opts.authorEmail, nil),
-				SigningKeyPassphrase:   kit.Ternary(cmd.Flags().Changed("signing-key-passphrase"), &opts.signingKeyPass, nil),
-				Description:            kit.Ternary(cmd.Flags().Changed("description"), &opts.description, nil),
-				Enabled:                kit.Ternary(cmd.Flags().Changed("enabled"), &opts.enabled, nil),
-				SSHKey:                 sshKey,
-				SigningKey:             signingKey,
+			req := map[string]any{}
+			for _, field := range []struct {
+				flag  string
+				key   string
+				value any
+			}{
+				{flag: "name", key: "name", value: opts.name},
+				{flag: "url", key: "url", value: opts.url},
+				{flag: "auth-type", key: "authType", value: opts.authType},
+				{flag: "token", key: "token", value: opts.token},
+				{flag: "username", key: "username", value: opts.username},
+				{flag: "ssh-key", key: "sshKey", value: sshKey},
+				{flag: "ssh-host-key-verification", key: "sshHostKeyVerification", value: opts.sshHostKeyVerify},
+				{flag: "author-name", key: "commitAuthorName", value: opts.authorName},
+				{flag: "author-email", key: "commitAuthorEmail", value: opts.authorEmail},
+				{flag: "signing-key", key: "signingKey", value: signingKey},
+				{flag: "signing-key-passphrase", key: "signingKeyPassphrase", value: opts.signingKeyPass},
+				{flag: "description", key: "description", value: opts.description},
+				{flag: "enabled", key: "enabled", value: opts.enabled},
+			} {
+				if cmd.Flags().Changed(field.flag) {
+					req[field.key] = field.value
+				}
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[gitops.GitRepository]{
-				Method:         http.MethodPut,
-				Path:           types.GitRepository(resolved.ID),
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.GitRepository]{
+				Method:         http.MethodPatch,
+				Path:           clitypes.GitRepository(resolved.ID),
 				Body:           req,
 				FailureMessage: "failed to update repository",
-				Render: func(data gitops.GitRepository) error {
+				Render: func(data types.GitRepository) error {
 					output.Success("Repository updated successfully")
 					output.KeyValue("ID", data.ID)
 					output.KeyValue("Name", data.Name)
@@ -348,7 +353,7 @@ func newDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete repository %s (%s)?", resolved.Name, resolved.ID),
-				Path:           types.GitRepository(resolved.ID),
+				Path:           clitypes.GitRepository(resolved.ID),
 				Body:           nil,
 				FailureMessage: "failed to delete repository",
 				SuccessMessage: "Repository deleted successfully",
@@ -376,11 +381,11 @@ func newTestCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           types.GitRepositoryTest(resolved.ID),
+				Path:           clitypes.GitRepositoryAction(resolved.ID, "test"),
 				FailureMessage: "repository connection test failed",
-				Render: func(base.MessageResponse) error {
+				Render: func(types.MessageResponse) error {
 					output.Success("%s", "Repository connection test successful")
 					return nil
 				},
@@ -406,11 +411,11 @@ func newBranchesCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[gitops.BranchesResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.GitBranchesResponse]{
 				Method:         http.MethodGet,
-				Path:           types.GitRepositoryBranches(resolved.ID),
+				Path:           clitypes.GitRepositoryBranches(resolved.ID),
 				FailureMessage: "failed to list branches",
-				Render: func(data gitops.BranchesResponse) error {
+				Render: func(data types.GitBranchesResponse) error {
 					headers := []string{"BRANCH", "DEFAULT"}
 					rows := make([][]string, len(data.Branches))
 					for i, branch := range data.Branches {
@@ -456,7 +461,7 @@ func newFilesCmd() *cobra.Command {
 				return err
 			}
 
-			path := types.GitRepositoryFiles(resolved.ID)
+			path := clitypes.GitRepositoryFiles(resolved.ID)
 			params := url.Values{}
 			if opts.branch != "" {
 				params.Set("branch", opts.branch)
@@ -468,17 +473,17 @@ func newFilesCmd() *cobra.Command {
 				path = cmdutil.AppendQuery(path, params)
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[gitops.BrowseResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.GitOpsBrowseResponse]{
 				Method:         http.MethodGet,
 				Path:           path,
 				FailureMessage: "failed to list files",
-				Render: func(data gitops.BrowseResponse) error {
+				Render: func(data types.GitOpsBrowseResponse) error {
 					files := data.Files
 					headers := []string{"NAME", "TYPE", "PATH", "SIZE"}
 					rows := make([][]string, len(files))
 					for i, node := range files {
 						size := ""
-						if node.Type == gitops.FileTreeNodeTypeFile {
+						if node.Type == types.FileTreeNodeTypeFile {
 							size = strconv.FormatInt(node.Size, 10)
 						}
 						rows[i] = []string{
@@ -504,22 +509,22 @@ func newFilesCmd() *cobra.Command {
 	return cmd
 }
 
-var repoRef = cmdutil.ResourceRef[gitops.GitRepository, gitops.GitRepository]{
+var repoRef = cmdutil.ResourceRef[types.GitRepository, types.GitRepository]{
 	Singular: "repository",
 	Plural:   "repositories",
 	IDHint:   "the repository ID",
 	ListCmd:  "arcane repos list",
-	GetPath:  func(_, identifier string) string { return types.GitRepository(identifier) },
-	ListPath: func(string) string { return types.GitRepositories() },
-	Matches: func(item gitops.GitRepository, identifierLower, original string) bool {
+	GetPath:  func(_, identifier string) string { return clitypes.GitRepository(identifier) },
+	ListPath: func(string) string { return clitypes.GitRepositories() },
+	Matches: func(item types.GitRepository, identifierLower, original string) bool {
 		return strings.EqualFold(item.Name, original) || strings.EqualFold(item.ID, original) ||
 			strings.HasPrefix(strings.ToLower(item.ID), identifierLower) || strings.Contains(strings.ToLower(item.Name), identifierLower)
 	},
-	Label: func(match gitops.GitRepository) string {
+	Label: func(match types.GitRepository) string {
 		return fmt.Sprintf("%s (%s)", match.Name, match.ID)
 	},
-	Promote: func(match gitops.GitRepository) *gitops.GitRepository { return &match },
-	Exact: func(item gitops.GitRepository, _, original string) bool {
+	Promote: func(match types.GitRepository) *types.GitRepository { return &match },
+	Exact: func(item types.GitRepository, _, original string) bool {
 		return strings.EqualFold(item.Name, original) || strings.EqualFold(item.ID, original)
 	},
 }

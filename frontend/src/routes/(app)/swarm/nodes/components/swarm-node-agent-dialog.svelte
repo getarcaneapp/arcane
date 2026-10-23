@@ -9,15 +9,14 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { AlertTriangleIcon, EdgeConnectionIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { SwarmNodeAgentDeployment, SwarmNodeSummary } from '#lib/types/swarm.js';
+	import type { SwarmNodeAgentDeployment, SwarmNode } from '#lib/types/swarm.js';
 	import { hasAnyPermission } from '#lib/utils/auth.js';
 
 	import { getSwarmNodeAgentLabel, getSwarmNodeAgentVariant } from '../agent-status';
 
 	type SwarmNodeAgentDialogProps = {
 		open: boolean;
-		node: SwarmNodeSummary | null;
+		node: SwarmNode | null;
 		deployment: SwarmNodeAgentDeployment | null;
 		errorMessage?: string;
 		isLoading?: boolean;
@@ -66,9 +65,6 @@
 	async function navigateToResource(path: string, permissions: string[]) {
 		const environmentId = agentStatus.environmentId;
 		if (!environmentId || !hasAnyPermission(permissions, environmentId)) return;
-		const environment = environmentStore.available.find((candidate) => candidate.id === environmentId);
-		if (!environment) return;
-		await environmentStore.setEnvironment(environment);
 		await goto(path);
 		open = false;
 	}

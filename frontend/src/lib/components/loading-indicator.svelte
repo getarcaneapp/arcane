@@ -44,57 +44,53 @@
 		aria-busy="true"
 		aria-label={m.common_loading()}
 	>
-		<div class="relative h-full w-full overflow-hidden">
-			<div class="absolute inset-0 bg-primary/25"></div>
-
-			<div class="bar absolute inset-y-0 left-0 w-1/3">
-				<div class="peg absolute top-0 right-0 h-full w-3"></div>
-			</div>
-
-			<div class="bar bar-offset absolute inset-y-0 left-0 w-1/3">
-				<div class="peg absolute top-0 right-0 h-full w-3"></div>
-			</div>
-
-			<span class="sr-only">{m.common_loading()}</span>
-		</div>
+		<div class="track absolute inset-0"></div>
+		<div class="packet absolute inset-y-0"></div>
+		<span class="sr-only">{m.common_loading()}</span>
 	</div>
 {/if}
 
 <style>
-	.bar {
-		background: var(--primary);
-		animation: arcane-slide 2s linear infinite;
-		box-shadow:
-			0 0 12px var(--primary),
-			0 0 2px var(--primary);
-		opacity: 0.95;
+	.track {
+		background: color-mix(in oklab, var(--primary) 18%, transparent);
+		backdrop-filter: blur(6px);
 	}
 
-	.bar-offset {
-		animation-delay: -1s;
-	}
-
-	.peg {
+	.packet {
+		--packet-width: max(6rem, 22%);
+		left: 0;
+		width: var(--packet-width);
+		border-radius: 9999px;
 		background: linear-gradient(
 			to right,
 			color-mix(in oklab, var(--primary) 0%, transparent),
-			color-mix(in oklab, var(--primary) 90%, transparent)
+			color-mix(in oklab, var(--primary) 90%, transparent) 30%,
+			color-mix(in oklab, var(--primary) 90%, transparent) 70%,
+			color-mix(in oklab, var(--primary) 0%, transparent)
 		);
-		filter: blur(2px);
+		box-shadow:
+			0 0 10px color-mix(in oklab, var(--primary) 55%, transparent),
+			0 2px 18px color-mix(in oklab, var(--primary) 30%, transparent);
+		animation: arcane-bounce 1.8s cubic-bezier(0.15, 0.6, 0.85, 0.4) infinite alternate;
 	}
 
-	@keyframes arcane-slide {
+	@keyframes arcane-bounce {
 		0% {
-			transform: translateX(-100%);
+			left: 0;
+			transform: scaleX(0.55);
+		}
+		50% {
+			transform: scaleX(1.1);
 		}
 		100% {
-			transform: translateX(300%);
+			left: calc(100% - var(--packet-width));
+			transform: scaleX(0.55);
 		}
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.bar {
-			animation-duration: 4s;
+		.packet {
+			animation-duration: 3s;
 		}
 	}
 </style>

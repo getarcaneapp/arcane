@@ -8,13 +8,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/federated"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 	"go.getarcane.app/kit/pkg"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
 // Command is the parent command for federated credential operations.
@@ -50,12 +50,12 @@ func newListCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[federated.FederatedCredential]{
+			return cmdutil.RunList(cmd, c, cmdutil.ListSpec[types.FederatedCredential]{
 				Resource: "federated credentials",
-				Endpoint: types.FederatedCredentials(),
+				Endpoint: clitypes.FederatedCredentials(),
 				Params:   cmdutil.ListParams{Resource: "federated-credentials", Limit: opts.limit, FallbackDefault: 20, Start: opts.start, All: opts.all},
 				Headers:  []string{"ID", "NAME", "ISSUER", "SUBJECT", "ROLE", "ENABLED"},
-				Row: func(cred federated.FederatedCredential) []string {
+				Row: func(cred types.FederatedCredential) []string {
 					return []string{cred.ID, cred.Name, cred.IssuerURL, cred.SubjectMatch, cmp.Or(cred.RoleName, cred.RoleID), strconv.FormatBool(cred.Enabled)}
 				},
 			})
@@ -79,11 +79,11 @@ func newGetCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[federated.FederatedCredential]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.FederatedCredential]{
 				Method:         http.MethodGet,
-				Path:           types.FederatedCredential(args[0]),
+				Path:           clitypes.FederatedCredential(args[0]),
 				FailureMessage: "failed to get federated credential",
-				Render: func(data federated.FederatedCredential) error {
+				Render: func(data types.FederatedCredential) error {
 					printCredential(data)
 					return nil
 				},
@@ -96,7 +96,7 @@ func newCreateCmd() *cobra.Command {
 	var opts struct {
 		name         string
 		description  string
-		disabled     bool
+		enabled      bool
 		issuerURL    string
 		audiences    []string
 		subjectClaim string
@@ -129,14 +129,13 @@ func newCreateCmd() *cobra.Command {
 				expiresAt = &parsed
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[federated.FederatedCredential]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.FederatedCredential]{
 				Method:         http.MethodPost,
-				Path:           types.FederatedCredentials(),
+				Path:           clitypes.FederatedCredentials(),
 				FailureMessage: "failed to create federated credential",
-				Body: federated.CreateFederatedCredential{
-					Name: opts.name,
-					// TODO(v3): drop the deprecated flag handling.
-					Enabled:         !opts.disabled,
+				Body: types.FederatedCredential{
+					Name:            opts.name,
+					Enabled:         opts.enabled,
 					IssuerURL:       opts.issuerURL,
 					Audiences:       opts.audiences,
 					SubjectClaim:    opts.subjectClaim,
@@ -148,7 +147,7 @@ func newCreateCmd() *cobra.Command {
 					TokenTTLSeconds: kit.Ternary(cmd.Flags().Changed("token-ttl"), opts.tokenTTL, 0),
 					ExpiresAt:       expiresAt,
 				},
-				Render: func(data federated.FederatedCredential) error {
+				Render: func(data types.FederatedCredential) error {
 					output.Success("Federated credential created")
 					printCredential(data)
 					return nil
@@ -158,13 +157,13 @@ func newCreateCmd() *cobra.Command {
 	}
 	command.Flags().StringVar(&opts.name, "name", "", "Display name (required)")
 	command.Flags().StringVar(&opts.description, "description", "", "Description")
-	command.Flags().BoolVar(&opts.disabled, "disabled", false, "Create the trust rule in disabled state")
+	command.Flags().BoolVar(&opts.enabled, "enabled", true, "Enable the trust rule")
 	command.Flags().StringVar(&opts.issuerURL, "issuer-url", "", "Trusted external OIDC issuer URL (required)")
 	command.Flags().StringArrayVar(&opts.audiences, "audience", nil, "Allowed external token audience (repeatable, required)")
 	command.Flags().StringVar(&opts.subjectClaim, "subject-claim", "", "Claim path to match against (defaults to sub)")
 	command.Flags().StringVar(&opts.subjectMatch, "subject-match", "", "Exact subject or anchored glob pattern (required)")
 	cmdutil.EnumVarP(command, command.Flags(), &opts.matchType, "match-type", "", "", "Subject match strategy",
-		federated.MatchTypeExact, federated.MatchTypeGlob)
+		types.FederatedMatchTypeExact, types.FederatedMatchTypeGlob)
 	command.Flags().StringVar(&opts.roleID, "role", "", "Role ID to map exchanged tokens to (required)")
 	command.Flags().StringVar(&opts.environment, "environment", "", "Scope the role assignment to one environment (omit for global)")
 	command.Flags().IntVar(&opts.tokenTTL, "token-ttl", 0, "Issued token lifetime in seconds (60-3600)")
@@ -182,7 +181,6 @@ func newUpdateCmd() *cobra.Command {
 		name         string
 		description  string
 		enabled      bool
-		disabled     bool
 		issuerURL    string
 		audiences    []string
 		subjectClaim string
@@ -198,48 +196,51 @@ func newUpdateCmd() *cobra.Command {
 		Short:        "Update a federated credential",
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
-		PreRunE: func(cmd *cobra.Command, _ []string) error {
-			// TODO(v3): drop the deprecated flag handling.
-			return cmdutil.ExclusiveFlags(cmd, "enabled", "disabled")
-		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := cmdutil.ClientFromCommand(cmd)
 			if err != nil {
 				return err
 			}
 
-			var environmentID *string
-			if cmd.Flags().Changed("environment") {
-				environmentID = kit.Ternary(opts.environment != "", &opts.environment, nil)
-			}
 			var expiresAt *time.Time
-			if cmd.Flags().Changed("expires-at") && opts.expiresAt != "" {
+			if opts.expiresAt != "" {
 				parsed, parseErr := time.Parse(time.RFC3339, opts.expiresAt)
 				if parseErr != nil {
 					return fmt.Errorf("invalid --expires-at format (use RFC3339): %w", parseErr)
 				}
 				expiresAt = &parsed
 			}
-			return cmdutil.Run(cmd, c, cmdutil.Spec[federated.FederatedCredential]{
-				Method:         http.MethodPut,
-				Path:           types.FederatedCredential(args[0]),
+
+			body := map[string]any{}
+			for _, field := range []struct {
+				changed bool
+				key     string
+				value   any
+			}{
+				{changed: cmd.Flags().Changed("name"), key: "name", value: opts.name},
+				{changed: cmd.Flags().Changed("description"), key: "description", value: opts.description},
+				{changed: cmd.Flags().Changed("enabled"), key: "enabled", value: opts.enabled},
+				{changed: cmd.Flags().Changed("issuer-url"), key: "issuerUrl", value: opts.issuerURL},
+				{changed: cmd.Flags().Changed("audience"), key: "audiences", value: opts.audiences},
+				{changed: cmd.Flags().Changed("subject-claim"), key: "subjectClaim", value: opts.subjectClaim},
+				{changed: cmd.Flags().Changed("subject-match"), key: "subjectMatch", value: opts.subjectMatch},
+				{changed: cmd.Flags().Changed("match-type"), key: "matchType", value: opts.matchType},
+				{changed: cmd.Flags().Changed("role"), key: "roleId", value: opts.roleID},
+				{changed: cmd.Flags().Changed("environment"), key: "environmentId", value: kit.Ternary[any](opts.environment == "", nil, opts.environment)},
+				{changed: cmd.Flags().Changed("token-ttl"), key: "tokenTtlSeconds", value: opts.tokenTTL},
+				{changed: cmd.Flags().Changed("expires-at"), key: "expiresAt", value: expiresAt},
+			} {
+				if field.changed {
+					body[field.key] = field.value
+				}
+			}
+
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.FederatedCredential]{
+				Method:         http.MethodPatch,
+				Path:           clitypes.FederatedCredential(args[0]),
 				FailureMessage: "failed to update federated credential",
-				Body: federated.UpdateFederatedCredential{
-					Name:        kit.Ternary(cmd.Flags().Changed("name"), &opts.name, nil),
-					Description: kit.Ternary(cmd.Flags().Changed("description"), &opts.description, nil),
-					// TODO(v3): drop the deprecated flag handling.
-					Enabled:         kit.Ternary(cmd.Flags().Changed("enabled") || cmd.Flags().Changed("disabled"), new(opts.enabled && !opts.disabled), nil),
-					IssuerURL:       kit.Ternary(cmd.Flags().Changed("issuer-url"), &opts.issuerURL, nil),
-					Audiences:       kit.Ternary(cmd.Flags().Changed("audience"), opts.audiences, nil),
-					SubjectClaim:    kit.Ternary(cmd.Flags().Changed("subject-claim"), &opts.subjectClaim, nil),
-					SubjectMatch:    kit.Ternary(cmd.Flags().Changed("subject-match"), &opts.subjectMatch, nil),
-					MatchType:       kit.Ternary(cmd.Flags().Changed("match-type"), &opts.matchType, nil),
-					RoleID:          kit.Ternary(cmd.Flags().Changed("role"), &opts.roleID, nil),
-					EnvironmentID:   environmentID,
-					TokenTTLSeconds: kit.Ternary(cmd.Flags().Changed("token-ttl"), &opts.tokenTTL, nil),
-					ExpiresAt:       expiresAt,
-				},
-				Render: func(data federated.FederatedCredential) error {
+				Body:           body,
+				Render: func(data types.FederatedCredential) error {
 					output.Success("Federated credential updated")
 					printCredential(data)
 					return nil
@@ -250,15 +251,12 @@ func newUpdateCmd() *cobra.Command {
 	command.Flags().StringVar(&opts.name, "name", "", "New display name")
 	command.Flags().StringVar(&opts.description, "description", "", "New description")
 	command.Flags().BoolVar(&opts.enabled, "enabled", false, "Enable the trust rule")
-	command.Flags().BoolVar(&opts.disabled, "disabled", false, "Disable the trust rule")
-	// TODO(v3): remove the deprecated --disabled flag.
-	_ = command.Flags().MarkDeprecated("disabled", "use --enabled=false")
 	command.Flags().StringVar(&opts.issuerURL, "issuer-url", "", "New issuer URL")
 	command.Flags().StringArrayVar(&opts.audiences, "audience", nil, "Replace allowed audiences (repeatable)")
 	command.Flags().StringVar(&opts.subjectClaim, "subject-claim", "", "New claim path to match against")
 	command.Flags().StringVar(&opts.subjectMatch, "subject-match", "", "New subject match pattern")
 	cmdutil.EnumVarP(command, command.Flags(), &opts.matchType, "match-type", "", "", "New match strategy",
-		federated.MatchTypeExact, federated.MatchTypeGlob)
+		types.FederatedMatchTypeExact, types.FederatedMatchTypeGlob)
 	command.Flags().StringVar(&opts.roleID, "role", "", "New role ID")
 	command.Flags().StringVar(&opts.environment, "environment", "", "New environment scope")
 	command.Flags().IntVar(&opts.tokenTTL, "token-ttl", 0, "New issued token lifetime in seconds (60-3600)")
@@ -284,7 +282,7 @@ func newDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Delete federated credential %s and its service user?", args[0]),
-				Path:           types.FederatedCredential(args[0]),
+				Path:           clitypes.FederatedCredential(args[0]),
 				FailureMessage: "failed to delete federated credential",
 				SuccessMessage: "Federated credential deleted",
 			})
@@ -294,7 +292,7 @@ func newDeleteCmd() *cobra.Command {
 	return command
 }
 
-func printCredential(cred federated.FederatedCredential) {
+func printCredential(cred types.FederatedCredential) {
 	output.KeyValue("ID", cred.ID)
 	output.KeyValue("Name", cred.Name)
 	if cred.Description != nil && *cred.Description != "" {

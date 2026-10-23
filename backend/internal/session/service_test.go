@@ -4,17 +4,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/auth"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/kit/pkg"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/role"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/user"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/role"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/user"
 )
 
 func TestSessionService_RotateRefreshTokenRequiresCurrentHash(t *testing.T) {
@@ -26,16 +26,16 @@ func TestSessionService_RotateRefreshTokenRequiresCurrentHash(t *testing.T) {
 	}).Error)
 
 	sessionSvc := NewSessionService(db)
-	session, refreshJTI, err := sessionSvc.CreateSession(ctx, "u-session", time.Now().Add(time.Hour), auth.SessionMeta{})
+	session, refreshJTI, err := sessionSvc.CreateSession(ctx, "u-session", time.Now().Add(time.Hour), types.SessionMeta{})
 	require.NoError(t, err)
 
-	rotated, newJTI, err := sessionSvc.RotateRefreshToken(ctx, session.ID, refreshJTI, auth.SessionMeta{})
+	rotated, newJTI, err := sessionSvc.RotateRefreshToken(ctx, session.ID, refreshJTI, types.SessionMeta{})
 	require.NoError(t, err)
 	require.NotEmpty(t, newJTI)
 	require.NotEqual(t, refreshJTI, newJTI)
 	require.Equal(t, kit.SHA256Hex(newJTI), rotated.RefreshTokenHash)
 
-	_, _, err = sessionSvc.RotateRefreshToken(ctx, session.ID, refreshJTI, auth.SessionMeta{})
+	_, _, err = sessionSvc.RotateRefreshToken(ctx, session.ID, refreshJTI, types.SessionMeta{})
 	require.ErrorIs(t, err, common.ErrInvalidToken)
 }
 
@@ -48,11 +48,11 @@ func TestSessionService_DeleteExpiredSessions(t *testing.T) {
 	}).Error)
 
 	sessionSvc := NewSessionService(db)
-	expired, _, err := sessionSvc.CreateSession(ctx, "u-cleanup", time.Now().Add(-time.Hour), auth.SessionMeta{})
+	expired, _, err := sessionSvc.CreateSession(ctx, "u-cleanup", time.Now().Add(-time.Hour), types.SessionMeta{})
 	require.NoError(t, err)
-	oldRevoked, _, err := sessionSvc.CreateSession(ctx, "u-cleanup", time.Now().Add(time.Hour), auth.SessionMeta{})
+	oldRevoked, _, err := sessionSvc.CreateSession(ctx, "u-cleanup", time.Now().Add(time.Hour), types.SessionMeta{})
 	require.NoError(t, err)
-	active, _, err := sessionSvc.CreateSession(ctx, "u-cleanup", time.Now().Add(time.Hour), auth.SessionMeta{})
+	active, _, err := sessionSvc.CreateSession(ctx, "u-cleanup", time.Now().Add(time.Hour), types.SessionMeta{})
 	require.NoError(t, err)
 
 	oldRevokedAt := time.Now().Add(-8 * 24 * time.Hour)
@@ -94,7 +94,7 @@ func setupAuthServiceTestDB(t *testing.T) *database.DB {
 	require.NoError(
 		t,
 		db.Exec("CREATE TABLE IF NOT EXISTS environments (id text PRIMARY KEY, created_at datetime, updated_at dateti"+
-			"me, name text, api_url text, status text, enabled numeric, is_edge numeric, hidden numeric, last_see"+
+			"me, name text, api_url text, status text, enabled numeric, hidden numeric, last_see"+
 			"n datetime, last_edge_transport text, access_token text, api_key_id text, parent_environment_id text"+
 			", swarm_node_id text)").Error,
 	)

@@ -16,10 +16,9 @@
 	import { isSessionCancelledError, withSessionSignal } from '#lib/services/api-service.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
-	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ImageBuildRecord } from '#lib/types/docker.js';
-	import type { Settings } from '#lib/types/settings.js';
+	import type { ResolvedSettings } from '#lib/types/settings.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { isDepotBuildAvailable } from '#lib/utils/build-provider.js';
@@ -45,12 +44,12 @@
 		isGitBuildContextSource
 	} from './image-build-history';
 
-	// The builds directory and providers come from the destination, which may differ from the selected environment.
 	const buildSettingsOptions = (environmentId: string) => ({
 		queryKey: queryKeys.settings.byEnvironment(environmentId),
 		queryFn: () => settingsService.getReadableSettings(environmentId)
 	});
-	const buildsRootOf = (settings: Settings | undefined) => (settings?.buildsDirectory ?? '/builds').trim() || '/builds';
+	const buildsRootOf = (settings: ResolvedSettings | undefined) =>
+		(settings?.values.buildsDirectory ?? '/builds').trim() || '/builds';
 	let pickedEnvironmentId = $state('');
 	const buildEnvironmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'images:build'));
 	const queryClient = useQueryClient();
@@ -152,7 +151,7 @@
 		platforms: '',
 		noCache: false,
 		pull: false,
-		provider: (settingsStore.current?.buildProvider as 'local' | 'depot') ?? 'local',
+		provider: (buildSettingsQuery.data?.values.buildProvider as 'local' | 'depot' | undefined) ?? 'local',
 		push: false,
 		load: true
 	});
@@ -175,7 +174,6 @@
 	let rightPanelTab = $state<'config' | 'output'>('config');
 	let showAdvanced = $state(false);
 
-	const selectedEnvId = $derived(environmentStore.selected?.id || '0');
 	const resolvedProvider = $derived(depotAvailable ? inputs.provider.value : 'local');
 	const isPushMode = $derived(resolvedProvider === 'depot' ? true : inputs.push.value);
 
@@ -280,7 +278,7 @@
 	}
 
 	const buildMutation = createMutation(() => ({
-		mutationKey: queryKeys.images.buildRun(selectedEnvId),
+		mutationKey: queryKeys.images.buildRun(buildEnvironmentId),
 		mutationFn: async (request: ImageBuildRequest) => {
 			const { envId, ...payload } = request;
 			const response = await fetch(`/api/environments/${envId}/images/build`, {

@@ -44,8 +44,7 @@
 	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
 	import { volumeService } from '#lib/services/volume-service.js';
 	import { volumeWorkspaceService } from '#lib/services/volume-workspace-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { VolumeDetailDto } from '#lib/types/docker.js';
+	import type { Volume } from '#lib/types/docker.js';
 	import type { BackupEntry } from '#lib/types/shared.js';
 	import type { VolumeWorkspaceFileChange, VolumeWorkspaceFileContent } from '#lib/types/volume-workspace.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
@@ -83,7 +82,7 @@
 	const currentEnvId = $derived(data.envId);
 	// A volume opened from another environment follows that environment's settings.
 	const environmentSettings = useEnvironmentSettings(() => currentEnvId);
-	const volumeSettings = $derived(environmentSettings.current);
+	const volumeSettings = $derived(environmentSettings.current?.runtime);
 	// Until the backup volume name is known, the volume cannot be removed.
 	const backupVolumeName = $derived(volumeSettings ? volumeSettings.backupVolumeName || 'arcane-backups' : undefined);
 	const isBackupVolume = $derived(!backupVolumeName || volume?.name === backupVolumeName);
@@ -92,7 +91,7 @@
 	const canReadVolume = $derived(hasPermission('volumes:read', currentEnvId));
 	const canUploadVolume = $derived(hasPermission('volumes:upload', currentEnvId));
 	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
-	const volumeWorkspaceMaxFileSizeMb = $derived(volumeSettings?.volumeWorkspaceMaxFileSizeMb ?? 10);
+	const volumeWorkspaceMaxFileSizeMb = $derived(environmentSettings.current?.values.volumeWorkspaceMaxFileSizeMb ?? 10);
 
 	let isLoading = $state({ remove: false, save: false });
 	const createdDate = $derived(volume?.createdAt ? formatDateTimeShort(volume.createdAt) : m.common_unknown());
@@ -414,15 +413,11 @@
 				void loadAfterUpdate();
 			}
 		});
-		const unsubscribeEnvironment = environmentStore.subscribeSelected(() => {
-			void loadAfterUpdate();
-		});
 		void loadAfterUpdate();
 		notifyWorkspaceBackupError(workspaceBackupPathQuery.error);
 		return () => {
 			active = false;
 			unsubscribe();
-			unsubscribeEnvironment();
 		};
 	});
 
@@ -823,7 +818,7 @@
 	}
 </script>
 
-{#snippet volumeContainers(volume: VolumeDetailDto)}
+{#snippet volumeContainers(volume: Volume)}
 	<DetailSection title={m.volumes_containers_using_title()} icon={ContainersIcon}>
 		{#if containersDetailed.length > 0}
 			<div class="divide-y rounded-lg border">
@@ -867,7 +862,7 @@
 	</DetailSection>
 {/snippet}
 
-{#snippet volumeWorkspaceFileEditor(volume: VolumeDetailDto, relativePath: string)}
+{#snippet volumeWorkspaceFileEditor(volume: Volume, relativePath: string)}
 	{#if workspaceFileLoadErrors[relativePath]}
 		<div class="flex h-full items-center justify-center px-4 text-sm text-destructive">
 			{workspaceFileLoadErrors[relativePath]}
@@ -994,7 +989,7 @@
 	</div>
 {/snippet}
 
-{#snippet volumeWorkspace(volume: VolumeDetailDto)}
+{#snippet volumeWorkspace(volume: Volume)}
 	{#if !canReadVolume}
 		<div class="flex min-h-96 items-center justify-center rounded-lg border text-sm text-muted-foreground">
 			{m.common_access_denied()}
@@ -1057,7 +1052,7 @@
 	{/if}
 {/snippet}
 
-{#snippet volumeOverview(volume: VolumeDetailDto)}
+{#snippet volumeOverview(volume: Volume)}
 	<DetailMetaStrip
 		items={[
 			{ icon: VolumesIcon, label: m.common_driver(), value: volume.driver ?? m.common_unknown() },
@@ -1107,7 +1102,7 @@
 					{#if volume.scope}
 						<Badge variant="purple" minWidth="20">{volume.scope}</Badge>
 					{/if}
-					<EnvironmentCell value={currentEnvId} />
+					<EnvironmentCell value={currentEnvId} plain />
 				</div>
 			</div>
 		{/snippet}

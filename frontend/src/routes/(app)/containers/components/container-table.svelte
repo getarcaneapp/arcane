@@ -4,7 +4,6 @@
 	import { mode } from 'mode-watcher';
 	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';
-	import { Temporal } from 'temporal-polyfill';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -61,12 +60,13 @@
 	import { COMPOSE_PROJECT_LABEL, getContainerIpAddresses, getThemedIconUrl, parseImageRef } from '#lib/utils/docker.js';
 	import {
 		environmentHref,
+		type EnvironmentPage,
+		type EnvironmentRow,
 		fetchAcrossEnvironments,
 		hasShownPermission,
 		listScopes,
-		rowKey,
-		type EnvironmentPage,
-		type EnvironmentRow
+		readableEnvironments,
+		rowKey
 	} from '#lib/utils/environments.js';
 	import { formatDateTimeShort, truncateImageDigest } from '#lib/utils/formatting.js';
 	import { quadletUnitHref } from '#lib/utils/podman.js';
@@ -164,7 +164,7 @@
 	async function fetchContainers(request: ContainerListRequestOptions): Promise<ContainerPage> {
 		return onRefreshData
 			? onRefreshData(request)
-			: fetchAcrossEnvironments(environmentStore.shown, request, (id, request, config) =>
+			: fetchAcrossEnvironments(readableEnvironments('containers:list'), request, (id, request, config) =>
 					containerService.getContainersForEnvironment(id, request, config)
 				);
 	}
@@ -295,6 +295,19 @@
 	});
 
 	const resourcesCurrent = $derived(scope === environmentStore.shownKey);
+
+	const activeUpdateKeys = $derived(
+		new Set(
+			activityStore.activities
+				.filter(
+					(activity) =>
+						activity.type === 'auto_update' &&
+						activity.resourceType === 'container' &&
+						(activity.status === 'queued' || activity.status === 'running')
+				)
+				.map((activity) => `${activity.sourceEnvironmentId || activity.environmentId}:${activity.resourceId}`)
+		)
+	);
 
 	// Only the on/off state is tracked here. The callback reads requestOptions when
 	// it runs, so pagination or filter changes do not restart the poll cycle.
@@ -671,8 +684,8 @@
 	{/if}
 {/snippet}
 
-{#snippet PortsCell({ item }: { item: ContainerSummaryDto })}
-	<PortBadge ports={item.ports ?? []} hideExposed={hideExposedPorts} wrap={false} />
+{#snippet PortsCell({ item }: { item: ContainerRow })}
+	<PortBadge ports={item.ports ?? []} environmentId={item.environmentId} hideExposed={hideExposedPorts} wrap={false} />
 {/snippet}
 
 {#snippet NameCell({ item }: { item: ContainerRow })}
@@ -708,9 +721,11 @@
 {/snippet}
 
 {#snippet StateCell({ item }: { item: ContainerRow })}
-	{@const status = actionStatus[rowKey(item)]}
+	{@const status = actionStatus[rowKey(item)] || (activeUpdateKeys.has(`${item.environmentId}:${item.id}`) ? 'updating' : '')}
 	<div class="flex items-center gap-2">
-		{#if status}
+		{#if status === 'updating'}
+			<Badge variant="primary" minWidth="20" beam>{getActionStatusMessage(status)}</Badge>
+		{:else if status}
 			<div class="flex items-center gap-1.5">
 				<Spinner class="size-3.5" />
 				<span class="text-xs font-medium text-muted-foreground">
@@ -910,7 +925,7 @@
 								{m.common_ports()}
 							</div>
 							<div class="mt-1">
-								<PortBadge ports={item.ports} hideExposed={hideExposedPorts} />
+								<PortBadge ports={item.ports} environmentId={item.environmentId} hideExposed={hideExposedPorts} />
 							</div>
 						</div>
 					</div>

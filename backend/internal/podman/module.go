@@ -5,13 +5,13 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman/children/kube"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman/children/pods"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman/children/quadlets"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/podman/children/secrets"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/kube"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/pods"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/quadlets"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/podman/children/secrets"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
 const (
@@ -34,9 +34,15 @@ func (m *Module) RegisterRoutes(api huma.API) {
 	}
 
 	h := &Handler{service: m.service, eventService: m.event}
-	handlerutil.RegisterSecured(api,
-		handlerutil.Operation("get-podman-status", http.MethodGet, podmanPath+"/status", "Get Podman status", "Report whether the environment runs Podman and which Podman features it supports", podmanTag),
-		authz.PermPodmanRead, h.GetStatus)
+	handlerutil.RegisterSecured(api, huma.Operation{
+		OperationID: "get-podman-status",
+		Method:      http.MethodGet,
+		Path:        podmanPath + "/status",
+		Summary:     "Get Podman status",
+		Description: "Report whether the environment runs Podman and which Podman features it supports",
+		Tags:        []string{podmanTag},
+		Metadata:    map[string]any{authz.MetaEnvironmentAggregate: true},
+	}, authz.PermPodmanRead, h.GetStatus)
 	handlerutil.RegisterSecured(api,
 		handlerutil.Operation("get-podman-info", http.MethodGet, podmanPath+"/info", "Get Podman info", "", podmanTag),
 		authz.PermPodmanRead, h.GetInfo)

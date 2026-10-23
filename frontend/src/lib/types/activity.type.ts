@@ -28,6 +28,7 @@ export type ActivityMessageLevel = 'info' | 'warning' | 'error' | 'success';
 export interface Activity {
 	id: string;
 	environmentId: string;
+	environmentName?: string;
 	batchId?: string;
 	sourceEnvironmentId?: string;
 	sourceEnvironmentName?: string;

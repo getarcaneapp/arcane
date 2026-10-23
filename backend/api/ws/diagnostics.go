@@ -11,15 +11,15 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 	"go.getarcane.app/streams/logs"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/auth"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/diagnostics"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/diagnostics"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	wshub "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
 )
 
 const (
@@ -39,13 +39,13 @@ const (
 
 // buildDiagnostics assembles a snapshot: runtime/memory/GC from the
 // DiagnosticsService plus this package's WebSocket metrics and worker-goroutine count.
-func buildDiagnostics(diag *diagnostics.DiagnosticsService) systemtypes.Diagnostics {
-	d := systemtypes.Diagnostics{Timestamp: time.Now().UTC()}
+func buildDiagnostics(diag *diagnostics.DiagnosticsService) types.Diagnostics {
+	d := types.Diagnostics{Timestamp: time.Now().UTC()}
 	if diag != nil {
 		d.Runtime, d.Memory, d.GC = diag.Collect()
 	}
 	d.Runtime.WSWorkerGoroutines = wshub.CountWorkerGoroutines()
-	d.WebSocket = systemtypes.WebSocketDiagnostics{
+	d.WebSocket = types.WebSocketDiagnostics{
 		Snapshot:    defaultWebSocketMetrics.Snapshot(),
 		Connections: defaultWebSocketMetrics.Connections(),
 	}
@@ -87,13 +87,13 @@ func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
 	ps, _ := c.Get(string(middleware.ContextKeyUserPermissions)).(*authz.PermissionSet)
 	snapshot := func(context.Context) any {
 		d := buildDiagnostics(h.diagnosticsService)
-		return systemtypes.DiagnosticsMessage{Type: "snapshot", Snapshot: &d}
+		return types.DiagnosticsMessage{Type: "snapshot", Snapshot: &d}
 	}
-	return h.streamSnapshots(c, diagnosticsStreamInterval, snapshot, func(ctx context.Context, cmd systemtypes.DiagnosticsCommand) any {
+	return h.streamSnapshots(c, diagnosticsStreamInterval, snapshot, func(ctx context.Context, cmd types.DiagnosticsCommand) any {
 		if cmd.Type == "refresh" {
 			return snapshot(ctx)
 		}
-		result := systemtypes.DiagnosticsMessage{Type: "result", ID: cmd.ID}
+		result := types.DiagnosticsMessage{Type: "result", ID: cmd.ID}
 		var err error
 		switch cmd.Type {
 		case "leakScan":
@@ -131,8 +131,8 @@ func (h *WebSocketHandler) ActorDiagnosticsStream(c *echo.Context) error {
 
 // streamSnapshots writes build's result on connect and every interval until
 // the client disconnects. A non-nil handle answers client commands concurrently.
-func (h *WebSocketHandler) streamSnapshots(c *echo.Context, interval time.Duration, build func(context.Context) any, handle func(context.Context, systemtypes.DiagnosticsCommand) any) error {
-	conn, unregister, accepted := h.acceptWS(c, systemtypes.WSKindDiagnostics, c.Request().URL.Path)
+func (h *WebSocketHandler) streamSnapshots(c *echo.Context, interval time.Duration, build func(context.Context) any, handle func(context.Context, types.DiagnosticsCommand) any) error {
+	conn, unregister, accepted := h.acceptWS(c, types.WSKindDiagnostics, c.Request().URL.Path)
 	if !accepted {
 		return nil
 	}
@@ -155,7 +155,7 @@ func (h *WebSocketHandler) streamSnapshots(c *echo.Context, interval time.Durati
 	}
 	var onMessage func([]byte)
 	if handle != nil {
-		commands := make(chan systemtypes.DiagnosticsCommand, 1)
+		commands := make(chan types.DiagnosticsCommand, 1)
 		go func() {
 			for {
 				select {
@@ -167,14 +167,14 @@ func (h *WebSocketHandler) streamSnapshots(c *echo.Context, interval time.Durati
 			}
 		}()
 		onMessage = func(b []byte) {
-			var cmd systemtypes.DiagnosticsCommand
+			var cmd types.DiagnosticsCommand
 			if json.Unmarshal(b, &cmd) != nil {
 				return
 			}
 			select {
 			case commands <- cmd:
 			default:
-				write(systemtypes.DiagnosticsMessage{
+				write(types.DiagnosticsMessage{
 					Type:  "result",
 					ID:    cmd.ID,
 					Error: "busy",
@@ -209,7 +209,7 @@ func (h *WebSocketHandler) streamSnapshots(c *echo.Context, interval time.Durati
 
 // ServerLogsStream replays the recent backend log backlog then streams new entries live.
 func (h *WebSocketHandler) ServerLogsStream(c *echo.Context) error {
-	conn, unregister, accepted := h.acceptWS(c, systemtypes.WSKindDiagnostics, c.Request().URL.Path)
+	conn, unregister, accepted := h.acceptWS(c, types.WSKindDiagnostics, c.Request().URL.Path)
 	if !accepted {
 		return nil
 	}

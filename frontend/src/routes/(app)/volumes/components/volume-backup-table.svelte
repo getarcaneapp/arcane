@@ -167,7 +167,7 @@
 			return async (environmentId) => {
 				const ids: string[] = [];
 				let page = 1;
-				let totalPages = 1;
+				let hasNextPage = false;
 				do {
 					const result = await volumeBackupService.listBackups(
 						name,
@@ -178,9 +178,9 @@
 						environmentId
 					);
 					ids.push(...result.data.filter((backup) => backup.status === 'running').map((backup) => backup.id));
-					totalPages = result.pagination.totalPages;
+					hasNextPage = result.pagination.hasNextPage ?? false;
 					page++;
-				} while (page <= totalPages);
+				} while (hasNextPage);
 				return ids;
 			};
 		}
@@ -663,7 +663,7 @@
 						action="inspect"
 						size="sm"
 						customLabel={m.activity_view_activity()}
-						onclick={() => activityStore.openCenter(activityId)}
+						onclick={() => activityStore.openCenter(activityId, undefined, currentEnvId)}
 					/>
 				{/if}
 			</Alert.Description></Alert.Root

@@ -5,9 +5,9 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
 // RegisterRoutes registers the swarm stack endpoints.
@@ -23,6 +23,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 				"Swarm",
 			},
 			Security: handlerutil.DefaultOperationSecurity(),
+			Metadata: map[string]any{authz.MetaEnvironmentAggregate: true},
 		},
 		authz.PermSwarmRead,
 		h.ListStacks,
@@ -76,7 +77,7 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		api,
 		huma.Operation{
 			OperationID: "update-swarm-stack-source",
-			Method:      http.MethodPut,
+			Method:      http.MethodPatch,
 			Path:        "/environments/{id}/swarm/stacks/{name}/source",
 			Summary:     "Update swarm stack source",
 			Tags: []string{

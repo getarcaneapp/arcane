@@ -14,10 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
-	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/pkg/authconfig"
 	"github.com/moby/moby/api/types/container"
@@ -29,18 +26,18 @@ import (
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/event"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/imageupdate"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/kv"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/registry"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler/flow/flowtest"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/imageref"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow/flowtest"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/imageref"
 )
 
 var imageDockerAPIVersionPrefix = regexp.MustCompile(`^/v\d+\.\d+`)
@@ -220,7 +217,7 @@ func TestImageService_GetImageDetail_EnrichesPinnedReferences(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, &docker.DockerClientService{Client: newTestDockerClient(t, server)}, nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil)
+	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
 
 	detail, err := imageSvc.GetImageDetail(t.Context(), pinnedID)
 	require.NoError(t, err)
@@ -253,7 +250,7 @@ func TestImageService_GetImageDetail_ContainerFailureDoesNotBreakInspection(t *t
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, &docker.DockerClientService{Client: newTestDockerClient(t, server)}, nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil)
+	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
 
 	detail, err := imageSvc.GetImageDetail(t.Context(), testID)
 	require.NoError(t, err)
@@ -263,22 +260,22 @@ func TestImageService_GetImageDetail_ContainerFailureDoesNotBreakInspection(t *t
 }
 
 func TestImagePaginationConfig_SearchesPinnedReferences(t *testing.T) {
-	localConfig := NewImageService(nil, nil, nil, nil, nil, nil, nil, nil).getImagePaginationConfig()
+	localConfig := NewImageService(nil, nil, nil, nil, nil, nil, nil, nil, nil).getImagePaginationConfig()
 
-	item := imagetypes.Summary{
+	item := types.ImageSummary{
 		ID:               "sha256:syncthing",
 		Repo:             "ghcr.io/syncthing/syncthing",
 		Tag:              "<none>",
 		PinnedReferences: []string{"ghcr.io/syncthing/syncthing:2.1.3@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0"},
 	}
 
-	res := localConfig.SearchOrderAndPaginate([]imagetypes.Summary{item}, pagination.QueryParams{
+	res := localConfig.SearchOrderAndPaginate([]types.ImageSummary{item}, pagination.QueryParams{
 		Search: "8c8ff37",
 		Limit:  10,
 	})
 	require.Len(t, res.Items, 1)
 
-	resTag := localConfig.SearchOrderAndPaginate([]imagetypes.Summary{item}, pagination.QueryParams{
+	resTag := localConfig.SearchOrderAndPaginate([]types.ImageSummary{item}, pagination.QueryParams{
 		Search: "2.1.3",
 		Limit:  10,
 	})
@@ -290,7 +287,7 @@ func TestImageService_GetUpdateInfoByImageRefs_MatchesCanonicalAndFamiliarRepos(
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}))
 
-	svc := NewImageService(&database.DB{DB: db}, nil, nil, nil, nil, nil, nil, nil)
+	svc := NewImageService(&database.DB{DB: db}, nil, nil, nil, nil, nil, nil, nil, nil)
 	now := time.Now().UTC()
 
 	records := []imageupdate.ImageUpdateRecord{
@@ -346,7 +343,7 @@ func setupImageServiceAuthTest(t *testing.T) (*ImageService, *database.DB) {
 	})
 
 	dbWrap := &database.DB{DB: db}
-	return NewImageService(nil, nil, registry.NewContainerRegistryService(dbWrap, nil, kv.NewKVService(dbWrap), nil), nil, nil, nil, nil, nil), dbWrap
+	return NewImageService(nil, nil, registry.NewContainerRegistryService(dbWrap, nil, kv.NewKVService(dbWrap), nil), nil, nil, nil, nil, nil, nil), dbWrap
 }
 
 func createTestPullRegistry(t *testing.T, db *database.DB, localUrl, username, token string) {
@@ -401,7 +398,7 @@ func TestGetPullOptionsWithAuth_ExternalCredentialsOverrideDBRegistry(t *testing
 	svc, db := setupImageServiceAuthTest(t)
 	createTestPullRegistry(t, db, "https://registry.example.com", "db-user", "db-token")
 
-	pullOptions, err := svc.PullOptionsWithAuth(t.Context(), "registry.example.com/team/app:latest", []containerregistry.Credential{
+	pullOptions, err := svc.PullOptionsWithAuth(t.Context(), "registry.example.com/team/app:latest", []types.ContainerRegistryCredential{
 		{
 			URL:      "https://registry.example.com",
 			Username: "external-user",
@@ -438,10 +435,10 @@ func TestImageServicePullImageRetriesAnonymouslyAfterAuthRejected(t *testing.T) 
 	}))
 	t.Cleanup(server.Close)
 
-	dockerService := &docker.DockerClientService{Client: newTestDockerClient(t, server)}
-	imageSvc := NewImageService(db, dockerService, nil, nil, nil, eventService, nil, nil)
+	dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
+	imageSvc := NewImageService(db, dockerService, nil, nil, nil, eventService, nil, nil, nil)
 
-	err := imageSvc.PullImage(t.Context(), "registry.example.com/team/app:latest", io.Discard, user.SystemUser, []containerregistry.Credential{
+	err := imageSvc.PullImage(t.Context(), "registry.example.com/team/app:latest", io.Discard, types.SystemUser, []types.ContainerRegistryCredential{
 		{
 			URL:      "https://registry.example.com",
 			Username: "external-user",
@@ -471,9 +468,9 @@ func TestImageServiceTagImageCallsDockerAPI(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, &docker.DockerClientService{Client: newTestDockerClient(t, server)}, nil, nil, nil, eventService, nil, nil)
+	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, eventService, nil, nil, nil)
 
-	err := imageSvc.TagImage(t.Context(), "source:latest", imagetypes.TagRequest{Repository: "registry.example.com/team/app", Tag: "v2"}, user.SystemUser)
+	err := imageSvc.TagImage(t.Context(), "source:latest", types.ImageTagRequest{Repository: "registry.example.com/team/app", Tag: "v2"}, types.SystemUser)
 	require.NoError(t, err)
 	assert.Equal(t, "registry.example.com/team/app", gotRepo)
 	assert.Equal(t, "v2", gotTag)
@@ -497,7 +494,7 @@ func TestImageServiceGetImageHistoryCallsDockerAPI(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, &docker.DockerClientService{Client: newTestDockerClient(t, server)}, nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil)
+	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
 
 	history, err := imageSvc.GetImageHistory(t.Context(), "source:latest")
 	require.NoError(t, err)
@@ -507,7 +504,7 @@ func TestImageServiceGetImageHistoryCallsDockerAPI(t *testing.T) {
 }
 
 func TestImageServiceSearchImagesRequiresTerm(t *testing.T) {
-	imageSvc := NewImageService(nil, &docker.DockerClientService{}, nil, nil, nil, nil, nil, nil)
+	imageSvc := NewImageService(nil, &docker.DockerClientService{}, nil, nil, nil, nil, nil, nil, nil)
 
 	_, err := imageSvc.SearchImages(t.Context(), " ")
 	require.Error(t, err)
@@ -529,7 +526,7 @@ func TestImageServiceExportImageReturnsTarStream(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, &docker.DockerClientService{Client: newTestDockerClient(t, server)}, nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil)
+	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
 
 	reader, err := imageSvc.ExportImage(t.Context(), "source:latest")
 	require.NoError(t, err)
@@ -559,7 +556,7 @@ func TestImageServiceSearchImagesCallsDockerAPI(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	imageSvc := NewImageService(db, &docker.DockerClientService{Client: newTestDockerClient(t, server)}, nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil)
+	imageSvc := NewImageService(db, (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server)), nil, nil, nil, event.NewEventService(db, nil, nil), nil, nil, nil)
 
 	results, err := imageSvc.SearchImages(t.Context(), "nginx")
 	require.NoError(t, err)
@@ -617,7 +614,7 @@ func TestImageServiceContainerTagUpdatesStayScoped(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}))
-	svc := NewImageService(&database.DB{DB: db}, nil, nil, nil, nil, nil, nil, nil)
+	svc := NewImageService(&database.DB{DB: db}, nil, nil, nil, nil, nil, nil, nil, nil)
 	now := time.Now().UTC()
 	firstLabels := map[string]string{
 		"com.getarcaneapp.arcane.updater.strategy":   "tag",
@@ -814,7 +811,7 @@ func TestImageServiceContainerTagUpdatesStayScoped(t *testing.T) {
 
 func TestPatchWorkflowDefinitions(t *testing.T) {
 	harness := flowtest.New(t, nil)
-	require.NoError(t, NewImageService(nil, nil, nil, nil, nil, nil, nil, nil).RegisterWorkflows(harness.Engine))
+	require.NoError(t, NewImageService(nil, nil, nil, nil, nil, nil, nil, nil, nil).RegisterWorkflows(harness.Engine))
 	harness.Start(t)
 	flowtest.AssertDefinitions(t, harness)
 }
@@ -836,17 +833,17 @@ func imageScopeContext(t *testing.T, target string, bodies map[string]any) (cont
 			}
 			_ = json.NewEncoder(w).Encode(body)
 		}),
-		Resolve: func(_ context.Context, id string) (base.EnvironmentRef, error) {
-			return base.EnvironmentRef{ID: id, Name: "Env " + id}, nil
+		Resolve: func(_ context.Context, id string) (types.EnvironmentRef, error) {
+			return types.EnvironmentRef{ID: id, Name: "Env " + id}, nil
 		},
 	}), &queries
 }
 
 func TestAggregateImagesMergesEnvironments(t *testing.T) {
 	bodies := map[string]any{
-		"a": imagetypes.ListResponse{
+		"a": types.ImageListResponse{
 			Success: true,
-			Data: []imagetypes.Summary{
+			Data: []types.ImageSummary{
 				{
 					ID:   "a1",
 					Repo: "nginx",
@@ -858,30 +855,30 @@ func TestAggregateImagesMergesEnvironments(t *testing.T) {
 					Tag:  "7",
 				},
 			},
-			Pagination:         base.PaginationResponse{TotalItems: 2, GrandTotalItems: 4},
+			Pagination:         types.PaginationResponse{TotalItems: 2, GrandTotalItems: 4},
 			MaxImageUploadSize: 500,
 		},
-		"b": imagetypes.ListResponse{
+		"b": types.ImageListResponse{
 			Success: true,
-			Data: []imagetypes.Summary{
+			Data: []types.ImageSummary{
 				{
 					ID:   "b1",
 					Repo: "postgres",
 					Tag:  "16",
 				},
 			},
-			Pagination:         base.PaginationResponse{TotalItems: 1},
+			Pagination:         types.PaginationResponse{TotalItems: 1},
 			MaxImageUploadSize: 100,
 		},
 	}
-	rowLabels := func(items []imagetypes.Summary) []string {
+	rowLabels := func(items []types.ImageSummary) []string {
 		out := make([]string, 0, len(items))
 		for _, item := range items {
 			out = append(out, item.EnvironmentID+"/"+item.Repo)
 		}
 		return out
 	}
-	svc := NewImageService(nil, nil, nil, nil, nil, nil, nil, nil)
+	svc := NewImageService(nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	t.Run("sorts by repo across environments and pages", func(t *testing.T) {
 		ctx, queries := imageScopeContext(t, "/api/environments/a,b,c/images?start=0&limit=2&sort=repo&order=asc", bodies)
@@ -932,18 +929,18 @@ func TestAggregateImagesMergesEnvironments(t *testing.T) {
 
 func TestAggregateImageCountsSumsEnvironments(t *testing.T) {
 	ctx, _ := imageScopeContext(t, "/api/environments/a,b,c/images/counts", map[string]any{
-		"a": base.ApiResponse[imagetypes.UsageCounts]{
+		"a": types.ApiResponse[types.ImageUsageCounts]{
 			Success: true,
-			Data: imagetypes.UsageCounts{
+			Data: types.ImageUsageCounts{
 				Inuse:     1,
 				Unused:    2,
 				Total:     3,
 				TotalSize: 100,
 			},
 		},
-		"b": base.ApiResponse[imagetypes.UsageCounts]{
+		"b": types.ApiResponse[types.ImageUsageCounts]{
 			Success: true,
-			Data: imagetypes.UsageCounts{
+			Data: types.ImageUsageCounts{
 				Inuse:     2,
 				Total:     2,
 				TotalSize: 50,
@@ -951,16 +948,18 @@ func TestAggregateImageCountsSumsEnvironments(t *testing.T) {
 		},
 	})
 
-	body, err := NewImageService(nil, nil, nil, nil, nil, nil, nil, nil).AggregateImageCounts(ctx)
+	body, err := NewImageService(nil, nil, nil, nil, nil, nil, nil, nil, nil).AggregateImageCounts(ctx)
 	require.NoError(t, err)
 
 	assert.True(t, body.Success)
-	assert.Equal(t, imagetypes.UsageCounts{
+	assert.Equal(t, types.ImageUsageCounts{
 		Inuse:     3,
 		Unused:    2,
 		Total:     5,
 		TotalSize: 150,
 	}, body.Data)
+	require.Len(t, body.Environments, 2)
+	assert.Equal(t, int64(50), body.Environments[1].Data.TotalSize)
 	require.Len(t, body.FailedEnvironments, 1)
 	assert.Equal(t, "c", body.FailedEnvironments[0].Environment.ID)
 }

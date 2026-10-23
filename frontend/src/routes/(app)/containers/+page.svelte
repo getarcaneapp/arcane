@@ -1,39 +1,43 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { untrack } from 'svelte';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 
 	import { BoxIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import type { ContainerListRequestOptions } from '#lib/services/container-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ContainerStatusCounts } from '#lib/types/docker.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import { fetchAcrossEnvironments, hasShownPermission } from '#lib/utils/environments.js';
+	import {
+		ENVIRONMENT_FILTER,
+		environmentFilterIds,
+		fetchAcrossEnvironments,
+		hasShownPermission,
+		readableEnvironments
+	} from '#lib/utils/environments.js';
 	import { confirmAndApplyAllUpdates } from '#lib/utils/update-actions.js';
 
 	import ContainerEnvironmentSync from './components/container-environment-sync.svelte';
 	import ContainerTable from './components/container-table.svelte';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
 	let requestOptions = $derived(data.containerRequestOptions);
 	let selectedIds = $state<string[]>([]);
-	let containers = $derived(data.containers);
 	const scope = $derived(environmentStore.shownKey);
-	let displayedScope = $state<string | null>(untrack(() => (data.scope === scope ? data.scope : null)));
-	let isRefreshing = $state(false);
-	let refreshGeneration = 0;
 	let groupByProject = $state(false);
 	let hasSeenEnvironmentSync = $state(false);
 	let isApplyingUpdates = $state(false);
-	const resourcesReady = $derived(displayedScope === scope);
 
 	const countsFallback: ContainerStatusCounts = {
 		runningContainers: 0,
 		stoppedContainers: 0,
-		totalContainers: 0
+		totalContainers: 0,
+		updatesAvailable: 0
 	};
 
 	function buildRequestOptions(options: SearchPaginationSortRequest = requestOptions): ContainerListRequestOptions {
@@ -43,53 +47,56 @@
 		};
 	}
 
+	const containersQuery = createQuery(() => {
+		const queryScope = scope;
+		const environments = readableEnvironments('containers:list');
+		const options = buildRequestOptions();
+		return {
+			queryKey: queryKeys.containers.list(queryScope, options),
+			queryFn: () =>
+				fetchAcrossEnvironments(environments, options, (id, request, config) =>
+					containerService.getContainersForEnvironment(id, request, config)
+				),
+			placeholderData: (previous, query) => {
+				if (query?.queryKey[1] !== queryScope || !previous) return undefined;
+				const picked = environmentFilterIds(options.filters?.[ENVIRONMENT_FILTER]);
+				if (picked.length === 0 || previous.data.every((row) => picked.includes(row.environmentId))) return previous;
+				return { ...previous, data: [], groups: [] };
+			},
+			select: (value) => ({ envId: queryScope, value })
+		};
+	});
+
+	const containers = $derived(containersQuery.data?.value ?? data.containers);
+	const resourcesReady = $derived(containersQuery.data?.envId === scope);
+	const isRefreshing = $derived(containersQuery.isFetching && !containersQuery.isPending);
+
 	async function refreshContainers(options: ContainerListRequestOptions = buildRequestOptions(), requestedScope = scope) {
-		const generation = ++refreshGeneration;
-		if (requestedScope === scope) {
-			isRefreshing = true;
-		}
-		try {
-			const next = await fetchAcrossEnvironments(environmentStore.shown, options, (id, request, config) =>
-				containerService.getContainersForEnvironment(id, request, config)
-			);
-			if (requestedScope !== scope || generation !== refreshGeneration) {
-				return containers;
-			}
-			containers = next;
-			displayedScope = requestedScope;
-			return next;
-		} finally {
-			if (requestedScope === scope && generation === refreshGeneration) {
-				isRefreshing = false;
-			}
-		}
+		const environments = readableEnvironments('containers:list');
+		return queryClient.fetchQuery({
+			queryKey: queryKeys.containers.list(requestedScope, options),
+			queryFn: () =>
+				fetchAcrossEnvironments(environments, options, (id, request, config) =>
+					containerService.getContainersForEnvironment(id, request, config)
+				),
+			staleTime: 0
+		});
 	}
 
 	function handleEnvironmentChange() {
 		if (!hasSeenEnvironmentSync) {
 			hasSeenEnvironmentSync = true;
-			if (data.scope === scope) {
-				return;
-			}
+			return;
 		}
 
-		refreshGeneration += 1;
-		isRefreshing = false;
-		displayedScope = null;
 		selectedIds = [];
-
-		const nextOptions: SearchPaginationSortRequest = {
+		requestOptions = {
 			...requestOptions,
 			pagination: {
 				page: 1,
 				limit: requestOptions.pagination?.limit ?? containers.pagination?.itemsPerPage ?? 20
 			}
 		};
-		requestOptions = nextOptions;
-		if (!hasShownPermission('containers:list')) {
-			return;
-		}
-		return refreshContainers(buildRequestOptions(nextOptions), scope);
 	}
 
 	async function refresh() {
@@ -170,8 +177,10 @@
 	{#snippet mainContent()}
 		{#if resourcesReady}
 			<ContainerTable
-				scope={displayedScope!}
-				bind:containers
+				{scope}
+				bind:containers={
+					() => containers, (value) => queryClient.setQueryData(queryKeys.containers.list(scope, buildRequestOptions()), value)
+				}
 				bind:selectedIds
 				bind:requestOptions
 				bind:groupByProject
@@ -185,7 +194,7 @@
 						includeInternal: options.includeInternal,
 						includeHidden: options.includeHidden
 					};
-					return refreshContainers(options, requestedScope);
+					return refreshContainers(buildRequestOptions(), requestedScope);
 				}}
 			/>
 		{/if}

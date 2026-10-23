@@ -4,12 +4,12 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/types/v2/federated"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
 // RegisterFederatedTokenExchange registers the public RFC 8693 token exchange
@@ -31,7 +31,7 @@ func RegisterFederatedTokenExchange(g *echo.Group, federatedCredentialService *F
 		}
 
 		form := c.Request().Form
-		resp, err := federatedCredentialService.ExchangeToken(c.Request().Context(), federated.TokenExchangeRequest{
+		resp, err := federatedCredentialService.ExchangeToken(c.Request().Context(), types.TokenExchangeRequest{
 			GrantType:          form.Get("grant_type"),
 			SubjectToken:       form.Get("subject_token"),
 			SubjectTokenType:   form.Get("subject_token_type"),
@@ -40,7 +40,7 @@ func RegisterFederatedTokenExchange(g *echo.Group, federatedCredentialService *F
 			RequestedTokenType: form.Get("requested_token_type"),
 		})
 		if err != nil {
-			return writeFederatedTokenExchangeErrorInternal(c, err)
+			return writeFederatedTokenExchangeError(c, err)
 		}
 		return c.JSON(http.StatusOK, resp)
 	})
@@ -55,7 +55,7 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 	huma.Register(api, huma.Operation{
 		OperationID: "list-federated-credentials",
 		Method:      http.MethodGet,
-		Path:        "/federated-credentials",
+		Path:        "/federated/credentials",
 		Summary:     "List federated credentials",
 		Description: "Get a paginated list of workload identity federation trust rules",
 		Tags:        []string{"Federated Credentials"},
@@ -66,7 +66,7 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 	huma.Register(api, huma.Operation{
 		OperationID: "create-federated-credential",
 		Method:      http.MethodPost,
-		Path:        "/federated-credentials",
+		Path:        "/federated/credentials",
 		Summary:     "Create a federated credential",
 		Description: "Create a workload identity federation trust rule",
 		Tags:        []string{"Federated Credentials"},
@@ -77,7 +77,7 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 	huma.Register(api, huma.Operation{
 		OperationID: "get-federated-credential",
 		Method:      http.MethodGet,
-		Path:        "/federated-credentials/{id}",
+		Path:        "/federated/credentials/{id}",
 		Summary:     "Get a federated credential",
 		Description: "Get details of a workload identity federation trust rule",
 		Tags:        []string{"Federated Credentials"},
@@ -87,8 +87,8 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 
 	huma.Register(api, huma.Operation{
 		OperationID: "update-federated-credential",
-		Method:      http.MethodPut,
-		Path:        "/federated-credentials/{id}",
+		Method:      http.MethodPatch,
+		Path:        "/federated/credentials/{id}",
 		Summary:     "Update a federated credential",
 		Description: "Update a workload identity federation trust rule",
 		Tags:        []string{"Federated Credentials"},
@@ -99,7 +99,7 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *Fede
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-federated-credential",
 		Method:      http.MethodDelete,
-		Path:        "/federated-credentials/{id}",
+		Path:        "/federated/credentials/{id}",
 		Summary:     "Delete a federated credential",
 		Description: "Delete a workload identity federation trust rule and its service user",
 		Tags:        []string{"Federated Credentials"},

@@ -27,5 +27,6 @@ export function isSwarmFeatureEnabled(state: EnvironmentFeatures | undefined, sw
 }
 
 export function isVulnerabilityQuery(queryKey: readonly unknown[], environmentId: string): boolean {
-	return queryKey[0] === 'vulnerabilities' && queryKey[2] === environmentId;
+	const [domain, scope] = queryKey;
+	return domain === 'vulnerabilities' && typeof scope === 'string' && scope.split(',').includes(environmentId);
 }

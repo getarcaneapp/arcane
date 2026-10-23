@@ -11,24 +11,23 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/auth"
-	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
-	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/client"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/cmdutil"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/config"
+	"github.com/getarcaneapp/arcane/cli/v3/internal/output"
+	clitypes "github.com/getarcaneapp/arcane/cli/v3/internal/types"
 )
 
 // Command is the parent command for authentication operations
 func Command() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "auth",
-		Aliases: []string{"authentication"},
-		Short:   "Authentication operations",
+		Annotations: map[string]string{"arcane:scope": cmdutil.ScopeGlobal},
+		Use:         "auth",
+		Aliases:     []string{"authentication"},
+		Short:       "Authentication operations",
 	}
 	cmd.AddCommand(newFederatedCmd(), newLoginCmd(), newLogoutCmd(), newMeCmd(), newPasswordCmd(), newRefreshCmd(), newOidcStatusCmd(), newAPIKeysCmd())
 	return cmd
@@ -46,12 +45,12 @@ func newLoginCmd() *cobra.Command {
 				return err
 			}
 
-			reqBody, err := json.Marshal(auth.OidcDeviceAuthRequest{})
+			reqBody, err := json.Marshal(types.OidcDeviceAuthRequest{})
 			if err != nil {
 				return fmt.Errorf("failed to marshal request: %w", err)
 			}
 
-			resp, err := c.Post(cmd.Context(), types.OIDCDeviceCode(), reqBody)
+			resp, err := c.Post(cmd.Context(), clitypes.OIDCDeviceCode(), reqBody)
 			if err != nil {
 				return fmt.Errorf("device authorization failed: %w", err)
 			}
@@ -66,7 +65,7 @@ func newLoginCmd() *cobra.Command {
 				return fmt.Errorf("device authorization failed (status %d): %s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
 			}
 
-			var deviceAuth auth.OidcDeviceAuthResponse
+			var deviceAuth types.OidcDeviceAuthResponse
 			if unmarshalErr := json.Unmarshal(bodyBytes, &deviceAuth); unmarshalErr != nil {
 				return fmt.Errorf("failed to parse response: %w", unmarshalErr)
 			}
@@ -127,7 +126,7 @@ func newLogoutCmd() *cobra.Command {
 				return err
 			}
 
-			result, err := c.PostJSON[base.MessageResponse](cmd.Context(), types.AuthLogout(), nil)
+			result, err := c.PostJSON[types.MessageResponse](cmd.Context(), clitypes.AuthLogout(), nil)
 			if err != nil {
 				return fmt.Errorf("logout failed: %w", err)
 			}
@@ -165,11 +164,11 @@ func newMeCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[user.User]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.User]{
 				Method:         http.MethodGet,
-				Path:           types.AuthMe(),
+				Path:           clitypes.AuthMe(),
 				FailureMessage: "failed to get user info",
-				Render: func(data user.User) error {
+				Render: func(data types.User) error {
 					output.Header("Current User")
 					return cmdutil.PrintJSON(data)
 				},
@@ -211,12 +210,12 @@ func newPasswordCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[base.MessageResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.MessageResponse]{
 				Method:         http.MethodPost,
-				Path:           types.AuthPassword(),
-				Body:           auth.PasswordChange{CurrentPassword: currentPassword, NewPassword: newPassword},
+				Path:           clitypes.AuthPassword(),
+				Body:           types.PasswordChange{CurrentPassword: currentPassword, NewPassword: newPassword},
 				FailureMessage: "password change failed",
-				Render: func(base.MessageResponse) error {
+				Render: func(types.MessageResponse) error {
 					output.Success("Password changed successfully")
 					return nil
 				},
@@ -257,12 +256,12 @@ func newRefreshCmd() *cobra.Command {
 				return err
 			}
 
-			return cmdutil.Run(cmd, c, cmdutil.Spec[auth.TokenRefreshResponse]{
+			return cmdutil.Run(cmd, c, cmdutil.Spec[types.TokenRefreshResponse]{
 				Method:         http.MethodPost,
-				Path:           types.AuthRefresh(),
-				Body:           auth.Refresh{RefreshToken: refreshToken},
+				Path:           clitypes.AuthRefresh(),
+				Body:           types.AuthRefresh{RefreshToken: refreshToken},
 				FailureMessage: "token refresh failed",
-				Render: func(data auth.TokenRefreshResponse) error {
+				Render: func(data types.TokenRefreshResponse) error {
 					cfg.JWTToken = data.Token
 					cfg.APIKey = ""
 					cfg.RefreshToken = cmp.Or(data.RefreshToken, cfg.RefreshToken)
@@ -294,7 +293,7 @@ func newOidcStatusCmd() *cobra.Command {
 				return err
 			}
 
-			result, err := c.DoJSON[auth.OidcStatusInfo](cmd.Context(), http.MethodGet, types.OIDCStatus(), nil)
+			result, err := c.DoJSON[types.OidcStatusInfo](cmd.Context(), http.MethodGet, clitypes.OIDCStatus(), nil)
 			if err != nil {
 				return fmt.Errorf("failed to get OIDC status: %w", err)
 			}
@@ -304,24 +303,22 @@ func newOidcStatusCmd() *cobra.Command {
 			}
 
 			output.Header("OIDC Status")
-			output.KeyValue("Environment Forced", strconv.FormatBool(result.EnvForced))
-			output.KeyValue("Environment Configured", strconv.FormatBool(result.EnvConfigured))
 			output.KeyValue("Merge Accounts", strconv.FormatBool(result.MergeAccounts))
 			return nil
 		},
 	}
 }
 
-func pollDeviceToken(cmd *cobra.Command, c *client.Client, deviceAuth auth.OidcDeviceAuthResponse) (auth.AuthenticationResponse, error) {
+func pollDeviceToken(cmd *cobra.Command, c *client.Client, deviceAuth types.OidcDeviceAuthResponse) (types.AuthenticationResponse, error) {
 	pollInterval := time.Duration(deviceAuth.Interval) * time.Second
 	if pollInterval <= 0 {
 		pollInterval = 5 * time.Second
 	}
 	expiresAt := time.Now().Add(time.Duration(deviceAuth.ExpiresIn) * time.Second)
 
-	tokenReqBody, err := json.Marshal(auth.OidcDeviceTokenRequest{DeviceCode: deviceAuth.DeviceCode})
+	tokenReqBody, err := json.Marshal(types.OidcDeviceTokenRequest{DeviceCode: deviceAuth.DeviceCode})
 	if err != nil {
-		return auth.AuthenticationResponse{}, fmt.Errorf("failed to marshal token request: %w", err)
+		return types.AuthenticationResponse{}, fmt.Errorf("failed to marshal token request: %w", err)
 	}
 
 	ticker := time.NewTicker(pollInterval)
@@ -329,24 +326,24 @@ func pollDeviceToken(cmd *cobra.Command, c *client.Client, deviceAuth auth.OidcD
 
 	for {
 		if time.Now().After(expiresAt) {
-			return auth.AuthenticationResponse{}, errors.New("device authorization expired; run login again")
+			return types.AuthenticationResponse{}, errors.New("device authorization expired; run login again")
 		}
 
 		select {
 		case <-ticker.C:
 		case <-cmd.Context().Done():
-			return auth.AuthenticationResponse{}, cmd.Context().Err()
+			return types.AuthenticationResponse{}, cmd.Context().Err()
 		}
 
-		tokenResp, postErr := c.Post(cmd.Context(), types.OIDCDeviceToken(), tokenReqBody)
+		tokenResp, postErr := c.Post(cmd.Context(), clitypes.OIDCDeviceToken(), tokenReqBody)
 		if postErr != nil {
-			return auth.AuthenticationResponse{}, fmt.Errorf("device token exchange failed: %w", postErr)
+			return types.AuthenticationResponse{}, fmt.Errorf("device token exchange failed: %w", postErr)
 		}
 
 		tokenBody, postErr := io.ReadAll(tokenResp.Body)
 		_ = tokenResp.Body.Close()
 		if postErr != nil {
-			return auth.AuthenticationResponse{}, fmt.Errorf("failed to read token response: %w", postErr)
+			return types.AuthenticationResponse{}, fmt.Errorf("failed to read token response: %w", postErr)
 		}
 
 		if tokenResp.StatusCode < 200 || tokenResp.StatusCode >= 300 {
@@ -369,23 +366,23 @@ func pollDeviceToken(cmd *cobra.Command, c *client.Client, deviceAuth auth.OidcD
 				ticker.Reset(pollInterval)
 				continue
 			case strings.Contains(lower, "expired_token"):
-				return auth.AuthenticationResponse{}, errors.New("device authorization expired; run login again")
+				return types.AuthenticationResponse{}, errors.New("device authorization expired; run login again")
 			case strings.Contains(lower, "access_denied"):
-				return auth.AuthenticationResponse{}, errors.New("device authorization denied")
+				return types.AuthenticationResponse{}, errors.New("device authorization denied")
 			case strings.Contains(lower, "mfa_required"):
-				return auth.AuthenticationResponse{}, errors.New("this account has MFA enabled, which browser-based CLI login cannot complete; create a personal API key in " +
+				return types.AuthenticationResponse{}, errors.New("this account has MFA enabled, which browser-based CLI login cannot complete; create a personal API key in " +
 					"Arcane (Account -> API keys) and run: arcane config set api-key <key>")
 			default:
-				return auth.AuthenticationResponse{}, fmt.Errorf("device token exchange failed (status %d): %s", tokenResp.StatusCode, strings.TrimSpace(string(tokenBody)))
+				return types.AuthenticationResponse{}, fmt.Errorf("device token exchange failed (status %d): %s", tokenResp.StatusCode, strings.TrimSpace(string(tokenBody)))
 			}
 		}
 
-		var tokenResult auth.AuthenticationResponse
+		var tokenResult types.AuthenticationResponse
 		if decodeTokenResponseErr := json.Unmarshal(tokenBody, &tokenResult); decodeTokenResponseErr != nil {
-			return auth.AuthenticationResponse{}, fmt.Errorf("failed to parse token response: %w", decodeTokenResponseErr)
+			return types.AuthenticationResponse{}, fmt.Errorf("failed to parse token response: %w", decodeTokenResponseErr)
 		}
 		if !tokenResult.Success || tokenResult.Token == "" {
-			return auth.AuthenticationResponse{}, errors.New("device token exchange failed: unexpected response from server")
+			return types.AuthenticationResponse{}, errors.New("device token exchange failed: unexpected response from server")
 		}
 
 		return tokenResult, nil

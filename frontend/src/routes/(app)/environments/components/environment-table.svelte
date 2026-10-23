@@ -25,6 +25,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -33,7 +34,6 @@
 	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker.js';
 	import { capitalizeFirstLetter } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
-	import { applyEnvironmentUpgrade } from '#lib/utils/update-actions.js';
 
 	import EasyJoinDialog from '../../swarm/cluster/components/easy-join-dialog.svelte';
 	import EnvironmentUpgradeMenuItem from './environment-upgrade-menu-item.svelte';
@@ -54,7 +54,6 @@
 	} = $props();
 
 	let isLoading = $state({ removing: false, testing: false, upgrading: false, toggling: false });
-	let upgradingEnvironmentId = $state<string | null>(null);
 	let showUpgradeDialog = $state(false);
 	let selectedEnvironmentForUpgrade = $state<Environment | null>(null);
 	let selectedVersionInfoForUpgrade = $state<AppVersionInformation | null>(null);
@@ -63,10 +62,9 @@
 	let easyJoinTarget = $state<Environment | null>(null);
 	const easyJoinCandidates = useEasyJoinCandidates();
 
-	const canInstallUpdates = $derived(hasPermission('environments:update'));
+	const canInstallUpdates = $derived(hasPermission('environments:update', GLOBAL_SCOPE));
 
 	const environmentTypeFilters: FilterOption[] = [
-		{ value: 'http', label: m.environments_edge_http_label(), icon: EnvironmentsIcon },
 		{ value: 'edge', label: m.environments_edge_label(), icon: EnvironmentsIcon },
 		{ value: 'websocket', label: m.environments_edge_websocket_label(), icon: EnvironmentsIcon },
 		{ value: 'grpc', label: m.environments_edge_grpc_label(), icon: EnvironmentsIcon }
@@ -79,11 +77,17 @@
 	}
 
 	function getEnvironmentTypeLabel(item: Environment): string {
-		if (!item.isEdge) return m.environments_edge_http_label();
+		if (item.id === '0') return m.local();
 		const transport = resolveEnvironmentTransport(item);
 		if (!transport) return m.environments_edge_label();
 		if (transport === 'websocket') return m.environments_edge_websocket_label();
 		return m.environments_edge_grpc_label();
+	}
+
+	function getEnvironmentTypeVariant(item: Environment): 'gray' | 'purple' | 'blue' {
+		const transport = resolveEnvironmentTransport(item);
+		if (item.id === '0' || !transport) return 'gray';
+		return transport === 'websocket' ? 'purple' : 'blue';
 	}
 
 	function canEasyJoin(item: Environment): boolean {
@@ -145,15 +149,6 @@
 		selectedEnvironmentForUpgrade = environment;
 		selectedVersionInfoForUpgrade = versionInfo;
 		showUpgradeDialog = true;
-	}
-
-	async function handleConfirmUpgrade() {
-		if (!selectedEnvironmentForUpgrade) return;
-
-		const envId = selectedEnvironmentForUpgrade.id;
-		upgradingEnvironmentId = envId;
-
-		return applyEnvironmentUpgrade(envId, () => m.upgrade_failed({ error: m.common_unknown() }));
 	}
 
 	async function handleToggleEnabled(environment: Environment) {
@@ -256,11 +251,6 @@
 							: 'bg-destructive'}"
 			></div>
 		</div>
-		{#if environmentStore.selected?.id === item.id}
-			<Badge variant="blue">
-				{m.common_current()}
-			</Badge>
-		{/if}
 		<div class="flex flex-col gap-0.5 leading-tight">
 			<button
 				class="h-auto min-h-0 cursor-pointer p-0 text-left text-sm leading-tight font-medium text-foreground hover:underline"
@@ -281,10 +271,7 @@
 
 {#snippet TypeCell({ value }: { value: unknown })}
 	{@const env = value as Environment}
-	{@const typeLabel = getEnvironmentTypeLabel(env)}
-	{@const transport = resolveEnvironmentTransport(env)}
-	{@const typeVariant = !env.isEdge || !transport ? 'gray' : transport === 'websocket' ? 'purple' : 'blue'}
-	<Badge variant={typeVariant} minWidth="20">{typeLabel}</Badge>
+	<Badge variant={getEnvironmentTypeVariant(env)} minWidth="20">{getEnvironmentTypeLabel(env)}</Badge>
 {/snippet}
 
 {#snippet VersionCell({ item }: { item: Environment })}
@@ -307,10 +294,7 @@
 		icon={{ component: StatsIcon, variant: 'emerald' }}
 		title={(item: Environment) => item.name || item.id}
 		subtitle={(item: Environment) => ((mobileFieldVisibility['id'] ?? true) ? item.id : null)}
-		badges={[
-			{ variant: 'green', text: m.resource_environment_cap() },
-			...(environmentStore.selected?.id === item.id ? [{ variant: 'blue' as const, text: m.common_current() }] : [])
-		]}
+		badges={[{ variant: 'green', text: m.resource_environment_cap() }]}
 		fields={[
 			{
 				label: m.common_status(),
@@ -341,26 +325,6 @@
 
 {#snippet RowActions({ item }: { item: Environment })}
 	<RowActionsMenu>
-		<DropdownMenu.Item
-			onclick={async () => {
-				if (!item.enabled) {
-					toast.error(m.environments_cannot_switch_disabled());
-					return;
-				}
-				await handleApiResultWithCallbacks({
-					result: await tryCatch(environmentStore.setEnvironment(item)),
-					message: m.environments_connect_error(),
-					onSuccess: () => {
-						toast.success(m.environments_switched_to({ name: item.name }));
-					}
-				});
-			}}
-			disabled={!item.enabled || environmentStore.selected?.id === item.id}
-		>
-			<EnvironmentsIcon class="size-4" />
-			{environmentStore.selected?.id === item.id ? m.environments_current_environment() : m.environments_use_environment()}
-		</DropdownMenu.Item>
-
 		<DropdownMenu.Item onclick={() => goto(`/environments/${item.id}`)}>
 			<InspectIcon class="size-4" />
 			{m.common_view_details()}
@@ -385,7 +349,7 @@
 				environment={item}
 				isOnline={isEnvironmentOnline(item)}
 				disabled={isLoading.upgrading}
-				isUpgradingThis={upgradingEnvironmentId === item.id}
+				isUpgradingThis={isLoading.upgrading && selectedEnvironmentForUpgrade?.id === item.id}
 				onSelect={handleUpgradeSelected}
 			/>
 
@@ -428,14 +392,11 @@
 />
 
 <UpdateCenterDialog
-	bind:open={
-		() => showUpgradeDialog,
-		(open) => {
-			showUpgradeDialog = open;
-			if (!open) upgradingEnvironmentId = null;
-		}
-	}
-	onConfirm={handleConfirmUpgrade}
+	bind:open={showUpgradeDialog}
+	onFinished={async () => {
+		environments = await environmentManagementService.getEnvironments(requestOptions);
+		await environmentStore.initialize(environments.data);
+	}}
 	versionInformation={selectedVersionInfoForUpgrade ?? undefined}
 	canInstall={canInstallUpdates}
 	environmentName={selectedEnvironmentForUpgrade?.name}
@@ -443,10 +404,10 @@
 	bind:upgrading={isLoading.upgrading}
 />
 
-{#key `${easyJoinSession}:${easyJoinCandidates.managerEnvironmentId}`}
+{#key `${easyJoinSession}:${easyJoinTarget ? easyJoinCandidates.managerFor(easyJoinTarget.id) : ''}`}
 	<EasyJoinDialog
 		bind:open={easyJoinDialogOpen}
-		managerEnvironmentId={easyJoinCandidates.managerEnvironmentId ?? undefined}
+		managerEnvironmentId={easyJoinTarget ? easyJoinCandidates.managerFor(easyJoinTarget.id) : undefined}
 		targetEnvironmentId={easyJoinTarget?.id}
 		onComplete={easyJoinCandidates.refresh}
 	/>

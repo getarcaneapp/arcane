@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v3"
 	kit "go.getarcane.app/kit/pkg"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 const (
@@ -29,7 +29,7 @@ const (
 
 var errEnvironmentResponseTooLarge = errors.New("response too large")
 
-type EnvironmentResolver func(ctx context.Context, id string) (base.EnvironmentRef, error)
+type EnvironmentResolver func(ctx context.Context, id string) (types.EnvironmentRef, error)
 
 type EnvironmentScope struct {
 	IDs     []string
@@ -39,13 +39,13 @@ type EnvironmentScope struct {
 }
 
 type EnvironmentResult[R any] struct {
-	Environment base.EnvironmentRef
+	Environment types.EnvironmentRef
 	Value       R
 }
 
 type EnvironmentCollection[R any] struct {
 	Results  []EnvironmentResult[R]
-	Failures []base.EnvironmentFailure
+	Failures []types.EnvironmentFailure
 }
 
 type environmentScopeKey struct{}
@@ -89,10 +89,10 @@ func CollectEnvironments[R any](ctx context.Context, overrides url.Values) (Envi
 	for i, id := range scope.IDs {
 		outcome := outcomes[i]
 		if outcome.err != nil {
-			collection.Failures = append(collection.Failures, base.EnvironmentFailure{Environment: base.EnvironmentRef{ID: id, Name: id}, Message: outcome.err.Error()})
+			collection.Failures = append(collection.Failures, types.EnvironmentFailure{Environment: types.EnvironmentRef{ID: id, Name: id}, Message: outcome.err.Error()})
 			continue
 		}
-		ref := base.EnvironmentRef{ID: id, Name: id}
+		ref := types.EnvironmentRef{ID: id, Name: id}
 		if scope.Resolve != nil {
 			if resolved, err := scope.Resolve(ctx, id); err == nil {
 				ref = resolved
@@ -101,6 +101,26 @@ func CollectEnvironments[R any](ctx context.Context, overrides url.Values) (Envi
 		collection.Results = append(collection.Results, EnvironmentResult[R]{Environment: ref, Value: outcome.value})
 	}
 	return collection, nil
+}
+
+func CollectEnvironmentData[T any](ctx context.Context, overrides url.Values, merge func([]types.EnvironmentData[T]) T) (types.ApiResponse[T], error) {
+	collection, err := CollectEnvironments[types.ApiResponse[T]](ctx, overrides)
+	if err != nil {
+		return types.ApiResponse[T]{}, err
+	}
+	environments := make([]types.EnvironmentData[T], 0, len(collection.Results))
+	for _, result := range collection.Results {
+		environments = append(environments, types.EnvironmentData[T]{
+			Environment: result.Environment,
+			Data:        result.Value.Data,
+		})
+	}
+	return types.ApiResponse[T]{
+		Success:            true,
+		Data:               merge(environments),
+		Environments:       environments,
+		FailedEnvironments: collection.Failures,
+	}, nil
 }
 
 func dispatchEnvironment[R any](ctx context.Context, scope *EnvironmentScope, id string, overrides url.Values) (R, error) {

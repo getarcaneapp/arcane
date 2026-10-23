@@ -28,7 +28,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { templateService } from '#lib/services/template-service.js';
 	import type { Template } from '#lib/types/swarm.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	interface Props {
@@ -42,7 +42,7 @@
 	void open;
 
 	const loadingStates = new SvelteSet<string>();
-	const canCreateTemplate = $derived(hasPermission('templates:create'));
+	const canCreateTemplate = $derived(hasShownPermission('templates:create'));
 	let sortBy = $state<'name-asc' | 'name-desc'>('name-asc');
 	let groupByRegistry = $state(true);
 	let searchQuery = $state('');

@@ -5,17 +5,15 @@ set working-directory := '..'
 list:
     @{{ just_executable() }} --justfile {{ justfile() }} --list test
 
-all: e2e backend cli types
+all: e2e backend cli
 
 # Playwright E2E tests
 e2e:
     vp -C tests run test
 
-backend: (_go 'backend' '-tags=exclude_frontend,buildables' '-ldflags=-X github.com/getarcaneapp/arcane/backend/v2/buildables.EnabledFeatures=autologin')
+backend: (_go 'backend' '-tags=exclude_frontend,buildables' '-ldflags=-X github.com/getarcaneapp/arcane/backend/v3/buildables.EnabledFeatures=autologin')
 
 cli: (_go 'cli')
-
-types: (_go 'types')
 
 [positional-arguments]
 [script('bash')]

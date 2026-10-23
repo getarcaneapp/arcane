@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
 
 func TestLoadEnvironment(t *testing.T) {
@@ -291,7 +291,7 @@ func TestFormatEnvMapInternal_RoundTripsValues(t *testing.T) {
 
 	for _, value := range values {
 		t.Run(value, func(t *testing.T) {
-			content := formatEnvMapInternal(EnvMap{"VALUE": value})
+			content := formatEnvMap(EnvMap{"VALUE": value})
 			parsed, err := ParseProjectEnvContent(content, nil)
 			require.NoError(t, err)
 			assert.Equal(t, value, parsed["VALUE"])

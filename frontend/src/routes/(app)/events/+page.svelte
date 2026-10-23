@@ -1,14 +1,13 @@
 <script lang="ts">
 	import { createQuery, keepPreviousData } from '@tanstack/svelte-query';
-	import { onMount, tick } from 'svelte';
+	import { tick } from 'svelte';
 
 	import { AlertIcon, CheckIcon, CloseIcon, EventsIcon, InfoIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { eventService } from '#lib/services/event-service.js';
-	import { STREAM_CHANNEL_EVENTS } from '#lib/services/stream-service.js';
-	import { clientStream } from '#lib/stores/client-stream.svelte.js';
+	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 
@@ -43,45 +42,6 @@
 	async function refresh() {
 		await Promise.all([eventsQuery.refetch(), statsQuery.refetch()]);
 	}
-
-	onMount(() => {
-		let disposed = false;
-		let refreshing = false;
-		let refreshPending = false;
-
-		async function refreshFromStream() {
-			if (disposed) return;
-			refreshPending = true;
-			if (refreshing) return;
-			refreshing = true;
-			let alreadyFetching = eventsQuery.isFetching || statsQuery.isFetching;
-			try {
-				while (refreshPending && !disposed) {
-					refreshPending = false;
-					// An existing request may predate the notification; follow it with a fresh request.
-					await Promise.all([eventsQuery.refetch({ cancelRefetch: false }), statsQuery.refetch({ cancelRefetch: false })]);
-					refreshPending ||= alreadyFetching;
-					alreadyFetching = false;
-				}
-			} finally {
-				refreshing = false;
-			}
-		}
-
-		const unsubscribe = clientStream.subscribe(STREAM_CHANNEL_EVENTS, {
-			onConnected: () => void refreshFromStream(),
-			onEvent: (event) => {
-				if (typeof event === 'object' && event !== null && 'type' in event && event.type === 'changed') {
-					void refreshFromStream();
-				}
-			}
-		});
-
-		return () => {
-			disposed = true;
-			unsubscribe();
-		};
-	});
 
 	const activeSeverities = $derived.by(() => {
 		const value = requestOptions.filters?.['severity'];
@@ -133,7 +93,7 @@
 		});
 	}
 
-	const canManageEvents = $derived(hasPermission('events:delete'));
+	const canManageEvents = $derived(hasPermission('events:delete', GLOBAL_SCOPE));
 
 	const actionButtons: ActionButton[] = $derived([
 		...(selectedIds.length > 0 && canManageEvents

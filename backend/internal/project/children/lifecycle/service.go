@@ -18,8 +18,7 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
-	lifecycletype "github.com/getarcaneapp/arcane/types/v2/lifecycle"
-	"github.com/getarcaneapp/arcane/types/v2/user"
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -29,10 +28,10 @@ import (
 	"go.getarcane.app/kit/pkg"
 	"go.getarcane.app/kit/pkg/capture"
 
-	dockerInternal "github.com/getarcaneapp/arcane/backend/v2/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/image"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 )
 
 // Service runs pre-deploy scripts in throwaway runner containers.
@@ -143,10 +142,10 @@ func (s *Service) RunScript(
 	projectPath string,
 	scriptPath string,
 	hookEnv map[string]string,
-	extraMounts []lifecycletype.ExtraMount,
+	extraMounts []types.LifecycleExtraMount,
 	networkMode string,
 	timeout time.Duration,
-	actor user.Actor,
+	actor types.Actor,
 ) (stdoutContent, stderrContent string, exitCode int64, err error) {
 	// Pull a missing runner image through the image service so credentials and the pull timeout apply.
 	if _, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
