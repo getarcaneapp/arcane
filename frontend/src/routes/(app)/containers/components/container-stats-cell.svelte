@@ -32,24 +32,15 @@
 {:else if unavailable && value === undefined}
 	<div class="text-xs text-muted-foreground">{m.common_unavailable()}</div>
 {:else if loading}
-	<div class="flex items-center gap-2">
-		<div class="size-6.5 shrink-0 animate-pulse rounded-full bg-muted"></div>
-		<div class="h-3 w-16 animate-pulse rounded bg-muted"></div>
-	</div>
-{:else if type === 'memory' && memoryFormatted}
-	<div class="flex items-center gap-2">
-		<MetricRing {percent} variant={type} />
-		<span class="text-xs font-medium text-foreground tabular-nums">
-			{memoryFormatted}
-		</span>
-	</div>
-{:else if type === 'cpu' && value !== undefined}
-	<div class="flex items-center gap-2">
-		<MetricRing {percent} variant={type} />
-		<span class="text-xs font-medium text-foreground tabular-nums">
-			{value.toFixed(1)}%
-		</span>
-	</div>
+	<div class="size-9.5 shrink-0 animate-pulse rounded-full bg-muted"></div>
+{:else if percent !== undefined}
+	<span class="inline-flex" title={memoryFormatted}>
+		<MetricRing {percent} variant={type} size={38} stroke={3}>
+			<span class="text-2xs font-medium text-foreground tabular-nums">{Math.round(percent)}%</span>
+		</MetricRing>
+	</span>
+{:else if memoryFormatted}
+	<div class="text-xs font-medium text-foreground tabular-nums">{memoryFormatted}</div>
 {:else}
 	<div class="text-xs text-muted-foreground">—</div>
 {/if}
