@@ -3738,6 +3738,7 @@
   "system_volume_backups_ignore_anonymous": "Anonieme volumes negeren",
   "system_volume_backups_ignore_anonymous_description": "Anonieme Docker-volumes blijven hierboven zichtbaar, maar worden tijdens back-upbewerkingen overgeslagen.",
   "jobs_run_queued": "In de wachtrij geplaatst",
+  "jobs_save_before_run": "Sla de taakinstellingen op voordat u deze taak uitvoert.",
   "jobs_submitting": "Wachtrij…",
   "jobs_run_history": "Loopgeschiedenis",
   "jobs_run_attempts": "Pogingen",
