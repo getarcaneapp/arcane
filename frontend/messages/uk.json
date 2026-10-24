@@ -3738,6 +3738,7 @@
   "system_volume_backups_ignore_anonymous": "Ігнорувати анонімні томи",
   "system_volume_backups_ignore_anonymous_description": "Анонімні томи Docker залишаються видимими у списку вище, але пропускаються під час виконання резервного копіювання.",
   "jobs_run_queued": "Виконати завдання з черги",
+  "jobs_save_before_run": "Збережіть налаштування завдання перед його запуском.",
   "jobs_submitting": "Черги…",
   "jobs_run_history": "Історія запусків",
   "jobs_run_attempts": "Спроби",
