@@ -3738,6 +3738,7 @@
   "system_volume_backups_ignore_anonymous": "忽略匿名卷",
   "system_volume_backups_ignore_anonymous_description": "匿名 Docker 卷在上方仍可見，但在備份執行期間會被跳過。",
   "jobs_run_queued": "執行排程中",
+  "jobs_save_before_run": "在執行此工作之前，請先儲存工作設定。",
   "jobs_submitting": "排隊…",
   "jobs_run_history": "執行紀錄",
   "jobs_run_attempts": "嘗試",
