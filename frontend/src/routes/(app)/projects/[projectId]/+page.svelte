@@ -284,9 +284,10 @@
 	// The compose file's top-level `name:` is authoritative; surface it as the
 	// effective name without writing to form state reactively.
 	const effectiveName = $derived(composeYamlName ?? inputs.name.value);
+	const nameHasChanges = $derived(!composeYamlName && inputs.name.value !== serverName);
 
 	let hasChanges = $derived(
-		effectiveName !== serverName ||
+		nameHasChanges ||
 			inputs.composeContent.value !== serverComposeContent ||
 			inputs.overrideContent.value !== serverOverrideContent ||
 			(!configurationError && inputs.envContent.value !== serverEnvContent) ||
@@ -828,7 +829,7 @@
 
 	function saveNameIfChanged() {
 		if (project?.isArchived) return;
-		if (effectiveName === serverName) return;
+		if (!nameHasChanges) return;
 		const validated = form.validate();
 		if (!validated) return;
 		handleSaveChanges();

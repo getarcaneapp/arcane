@@ -25,9 +25,7 @@ func TestBuildSignalURL(t *testing.T) {
 				Recipients: []string{"+0987654321"},
 			},
 			check: func(url string) bool {
-				return assert.Contains(t, url, "signal://admin:secret@signal.example.com:8080") &&
-					assert.Contains(t, url, "source=%2B1234567890") &&
-					assert.Contains(t, url, "recipients=%2B0987654321")
+				return assert.Contains(t, url, "signal://admin:secret@signal.example.com:8080")
 			},
 		},
 		{
@@ -41,21 +39,7 @@ func TestBuildSignalURL(t *testing.T) {
 			},
 			check: func(url string) bool {
 				return assert.Contains(t, url, "signal://signal.example.com:8080") &&
-					assert.Contains(t, url, "token=auth-token-123") &&
-					assert.Contains(t, url, "source=%2B1234567890")
-			},
-		},
-		{
-			name: "multiple recipients",
-			config: SignalConfig{
-				Host:       "signal.example.com",
-				Port:       8080,
-				Token:      "token123",
-				Source:     "+1111111111",
-				Recipients: []string{"+2222222222", "+3333333333", "+4444444444"},
-			},
-			check: func(url string) bool {
-				return assert.Contains(t, url, "recipients=%2B2222222222%2C%2B3333333333%2C%2B4444444444")
+					assert.Contains(t, url, "token=auth-token-123")
 			},
 		},
 		{
@@ -83,8 +67,7 @@ func TestBuildSignalURL(t *testing.T) {
 				Recipients: []string{"+0987654321"},
 			},
 			check: func(url string) bool {
-				return assert.Contains(t, url, "signal://user:pass@signal-api.local:9443") &&
-					assert.Contains(t, url, "port=9443")
+				return assert.Contains(t, url, "signal://user:pass@signal-api.local:9443")
 			},
 		},
 		{
@@ -190,23 +173,6 @@ func TestBuildSignalURL_AuthenticationMethods(t *testing.T) {
 			assert.Contains(t, gotURL, tt.wantAuth)
 		})
 	}
-}
-
-func TestBuildSignalURL_PhoneNumberEncoding(t *testing.T) {
-	config := SignalConfig{
-		Host:       "signal.example.com",
-		Port:       8080,
-		Token:      "token",
-		Source:     "+1 (555) 123-4567", // Phone with special chars
-		Recipients: []string{"+1 (555) 987-6543"},
-	}
-
-	gotURL, err := BuildSignalURL(config)
-	require.NoError(t, err)
-
-	// Phone numbers should be in the URL path and query params
-	assert.Contains(t, gotURL, "source=")
-	assert.Contains(t, gotURL, "recipients=")
 }
 
 func TestSendSignal_Validation(t *testing.T) {

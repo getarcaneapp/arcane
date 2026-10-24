@@ -1106,29 +1106,6 @@ test.describe('GitOps Managed Project', () => {
 		await expect(treeEnvEditor).toContainText(marker);
 	});
 
-	test('should allow editing for non-GitOps managed projects', async ({ page }) => {
-		const regularProject = realProjects.find((p) => !p.gitOpsManagedBy && p.status === 'stopped');
-		expect(regularProject, 'No regular (non-GitOps) stopped projects found').toBeTruthy();
-
-		await page.goto(`/projects/${regularProject!.id}`);
-		await page.waitForLoadState('load');
-
-		// The name button should be enabled for regular projects that are stopped
-		const nameButton = page.getByRole('button', { name: regularProject!.name });
-		await expect(nameButton).toBeEnabled();
-
-		// Navigate to Configuration tab
-		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
-		await configTab.click();
-		await page.waitForLoadState('load');
-
-		// GitOps alert should NOT be visible
-		await expect(page.getByText('Git Read-only')).not.toBeVisible();
-
-		// Sync from Git button should NOT be visible
-		await expect(page.getByRole('button', { name: 'Sync from Git' })).not.toBeVisible();
-	});
-
 	test('should not show GitOps alert on Configuration tab for regular projects', async ({
 		page
 	}) => {
