@@ -3738,6 +3738,7 @@
   "system_volume_backups_ignore_anonymous": "Ignoru anonimajn volumojn",
   "system_volume_backups_ignore_anonymous_description": "Anonimaj Docker-volumoj restas videblaj supre, sed estas preterlasataj dum sekurkopiaj rundoj.",
   "jobs_run_queued": "Ruli vicigite",
+  "jobs_save_before_run": "Konservu la agordojn de la tasko antaŭ ol ruli ĉi tiun taskon.",
   "jobs_submitting": "Vicado…",
   "jobs_run_history": "Kurohistorio",
   "jobs_run_attempts": "Provoj",
