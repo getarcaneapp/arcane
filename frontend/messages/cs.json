@@ -3738,6 +3738,7 @@
   "system_volume_backups_ignore_anonymous": "Ignorovat anonymní svazky",
   "system_volume_backups_ignore_anonymous_description": "Anonymní svazky Dockeru zůstávají viditelné výše, ale při zálohování se přeskočí.",
   "jobs_run_queued": "Spustit úlohu ve frontě",
+  "jobs_save_before_run": "Před spuštěním této úlohy uložte její nastavení.",
   "jobs_submitting": "… pro zpracování front",
   "jobs_run_history": "Historie běhů",
   "jobs_run_attempts": "Pokusy",
