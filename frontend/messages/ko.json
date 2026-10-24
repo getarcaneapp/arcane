@@ -3738,6 +3738,7 @@
   "system_volume_backups_ignore_anonymous": "익명 볼륨 무시하기",
   "system_volume_backups_ignore_anonymous_description": "위 목록에는 익명의 Docker 볼륨이 계속 표시되지만, 백업 실행 시에는 건너뜁니다.",
   "jobs_run_queued": "대기 중인 작업 실행",
+  "jobs_save_before_run": "이 작업을 실행하기 전에 작업 설정을 저장하십시오.",
   "jobs_submitting": "… 대기열",
   "jobs_run_history": "실행 내역",
   "jobs_run_attempts": "시도",
