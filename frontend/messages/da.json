@@ -3738,6 +3738,7 @@
   "system_volume_backups_ignore_anonymous": "Ignorer anonyme diskenheder",
   "system_volume_backups_ignore_anonymous_description": "Anonyme Docker-volumener vises stadig ovenfor, men springes over under sikkerhedskopieringskørsler.",
   "jobs_run_queued": "Kør i kø",
+  "jobs_save_before_run": "Gem jobindstillingerne, før du kører dette job.",
   "jobs_submitting": "… om køer",
   "jobs_run_history": "Kørselshistorik",
   "jobs_run_attempts": "Forsøg",
