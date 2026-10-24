@@ -3738,6 +3738,7 @@
   "system_volume_backups_ignore_anonymous": "Ignorar volumes anônimos",
   "system_volume_backups_ignore_anonymous_description": "Os volumes anônimos do Docker continuam visíveis acima, mas são ignorados durante as execuções de backup.",
   "jobs_run_queued": "Executar em fila",
+  "jobs_save_before_run": "Salve as configurações da tarefa antes de executá-la.",
   "jobs_submitting": "Fila…",
   "jobs_run_history": "Histórico de execuções",
   "jobs_run_attempts": "Tentativas",
