@@ -3738,6 +3738,7 @@
   "system_volume_backups_ignore_anonymous": "Ignoruj woluminy anonimowe",
   "system_volume_backups_ignore_anonymous_description": "Anonimowe woluminy Docker są nadal widoczne powyżej, ale są pomijane podczas tworzenia kopii zapasowych.",
   "jobs_run_queued": "Uruchom z kolejki",
+  "jobs_save_before_run": "Przed uruchomieniem tego zadania należy zapisać jego ustawienia.",
   "jobs_submitting": "Kolejkowanie…",
   "jobs_run_history": "Historia uruchomień",
   "jobs_run_attempts": "Próby",
