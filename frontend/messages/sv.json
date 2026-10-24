@@ -3738,6 +3738,7 @@
   "system_volume_backups_ignore_anonymous": "Bortse från anonyma volymer",
   "system_volume_backups_ignore_anonymous_description": "Anonyma Docker-volymer visas fortfarande ovan, men hoppas över vid säkerhetskopiering.",
   "jobs_run_queued": "Kör i kö",
+  "jobs_save_before_run": "Spara jobbinställningarna innan du kör det här jobbet.",
   "jobs_submitting": "Köhanter…",
   "jobs_run_history": "Körhistorik",
   "jobs_run_attempts": "Försök",
