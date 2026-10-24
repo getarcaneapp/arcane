@@ -3738,6 +3738,7 @@
   "system_volume_backups_ignore_anonymous": "匿名ボリュームを無視する",
   "system_volume_backups_ignore_anonymous_description": "匿名の Docker ボリュームは上記に表示されたままですが、バックアップの実行時にはスキップされます。",
   "jobs_run_queued": "キューに追加された実行",
+  "jobs_save_before_run": "このジョブを実行する前に、ジョブ設定を保存してください。",
   "jobs_submitting": "… のキューイング",
   "jobs_run_history": "実行履歴",
   "jobs_run_attempts": "試み",
