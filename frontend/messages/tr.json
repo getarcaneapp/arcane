@@ -3738,6 +3738,7 @@
   "system_volume_backups_ignore_anonymous": "Anonim birimlere aldırma",
   "system_volume_backups_ignore_anonymous_description": "Anonim Docker birimleri yukarıda görünür halde kalır, ancak yedekleme işlemleri sırasında atlanır.",
   "jobs_run_queued": "Kuyrukta bekleyen işleri çalıştır",
+  "jobs_save_before_run": "Bu işi çalıştırmadan önce iş ayarlarını kaydedin.",
   "jobs_submitting": "… 'da kuyruk oluşturma",
   "jobs_run_history": "Çalıştırma geçmişi",
   "jobs_run_attempts": "Girişimler",
