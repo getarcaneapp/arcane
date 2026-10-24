@@ -3738,6 +3738,7 @@
   "system_volume_backups_ignore_anonymous": "A névtelen kötetek figyelmen kívül hagyása",
   "system_volume_backups_ignore_anonymous_description": "A névtelen Docker-kötetek a fenti listában továbbra is láthatók, de a biztonsági mentés során kihagyásra kerülnek.",
   "jobs_run_queued": "Sorba állított futtatás",
+  "jobs_save_before_run": "A feladat futtatása előtt mentse el a feladatbeállításokat.",
   "jobs_submitting": "… sorbaállítása",
   "jobs_run_history": "Futtatási előzmények",
   "jobs_run_attempts": "Kísérletek",
