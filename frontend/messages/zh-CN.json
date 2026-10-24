@@ -3738,6 +3738,7 @@
   "system_volume_backups_ignore_anonymous": "忽略匿名卷",
   "system_volume_backups_ignore_anonymous_description": "匿名 Docker 卷仍会显示在上方列表中，但备份运行时会跳过它们。",
   "jobs_run_queued": "运行已排队",
+  "jobs_save_before_run": "在运行此作业之前，请先保存作业设置。",
   "jobs_submitting": "正在排队…",
   "jobs_run_history": "运行历史记录",
   "jobs_run_attempts": "尝试次数",
