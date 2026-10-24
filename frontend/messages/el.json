@@ -3738,6 +3738,7 @@
   "system_volume_backups_ignore_anonymous": "Παράβλεψη ανώνυμων τόμων",
   "system_volume_backups_ignore_anonymous_description": "Οι ανώνυμοι τόμοι του Docker εξακολουθούν να εμφανίζονται παραπάνω, αλλά παραλείπονται κατά τη διάρκεια των διαδικασιών δημιουργίας αντιγράφων ασφαλείας.",
   "jobs_run_queued": "Εκτέλεση σε ουρά",
+  "jobs_save_before_run": "Αποθηκεύστε τις ρυθμίσεις της εργασίας πριν εκτελέσετε αυτήν την εργασία.",
   "jobs_submitting": "Ουρά…",
   "jobs_run_history": "Ιστορικό εκτελέσεων",
   "jobs_run_attempts": "Προσπάθειες",
