@@ -3738,6 +3738,7 @@
   "system_volume_backups_ignore_anonymous": "Anonyme Datenträger ignorieren",
   "system_volume_backups_ignore_anonymous_description": "Anonyme Docker-Volumes bleiben zwar oben sichtbar, werden aber bei Sicherungsläufen übersprungen.",
   "jobs_run_queued": "In der Warteschlange ausführen",
+  "jobs_save_before_run": "Speichern Sie die Auftragseinstellungen, bevor Sie diesen Auftrag ausführen.",
   "jobs_submitting": "Warteschlangen-…",
   "jobs_run_history": "Verlauf",
   "jobs_run_attempts": "Versuche",
