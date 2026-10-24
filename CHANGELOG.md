@@ -66,6 +66,7 @@
 - inline notification email templates in Go ([\#4517](https://github.com/getarcaneapp/arcane/pull/4517) by @kmendell)
 
 **Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.16.1...v2.17.0
+
 ## v2.16.1
 
 ### Bug fixes

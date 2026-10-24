@@ -37,15 +37,18 @@ export function useJobActions(getOptions: () => JobActionOptions) {
 	const options = $derived(getOptions());
 	const run = $derived(options.job.currentRun ?? options.job.lastRun);
 	const isEnabled = $derived(options.enabledOverride ?? options.job.enabled);
+	const requiresSave = $derived(isEnabled && !options.job.enabled);
 	const managerLocked = $derived(options.isAgent && options.job.managerOnly);
 	const canRun = $derived(
-		options.durableRuns && isEnabled && options.job.canRunManually && !runMutation.isPending && !managerLocked
+		options.durableRuns && isEnabled && !requiresSave && options.job.canRunManually && !runMutation.isPending && !managerLocked
 	);
 	const canEditSchedule = $derived(isEnabled && !!options.job.settingsKey && !managerLocked);
 	const canRestartWorker = $derived(options.durableRuns && options.job.isContinuous && isEnabled);
-	const description = $derived(
-		options.job.id.startsWith('environment-health:') ? m.jobs_health_scope_description() : options.job.description
-	);
+	const description = $derived.by(() => {
+		if (requiresSave) return m.jobs_save_before_run();
+		if (options.job.id.startsWith('environment-health:')) return m.jobs_health_scope_description();
+		return options.job.description;
+	});
 
 	return {
 		runMutation,
