@@ -3738,6 +3738,7 @@
   "system_volume_backups_ignore_anonymous": "Bỏ qua các khối lượng ẩn danh",
   "system_volume_backups_ignore_anonymous_description": "Các khối lượng Docker ẩn danh vẫn hiển thị ở trên nhưng sẽ bị bỏ qua trong quá trình sao lưu.",
   "jobs_run_queued": "Chạy các tác vụ đang chờ xử lý",
+  "jobs_save_before_run": "Hãy lưu cài đặt công việc trước khi chạy công việc này.",
   "jobs_submitting": "Xử lý hàng đợi…",
   "jobs_run_history": "Lịch sử chạy",
   "jobs_run_attempts": "Những nỗ lực",
