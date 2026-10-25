@@ -370,7 +370,7 @@ func (h *TemplateHandler) CreateRegistry(ctx context.Context, input *CreateTempl
 		Enabled:     input.Body.Enabled,
 	}
 	if err := h.templateService.CreateRegistry(ctx, registry); err != nil {
-		return nil, huma.Error500InternalServerError("Failed to create registry: " + err.Error())
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), "Failed to create registry: "+err.Error())
 	}
 
 	var out template.TemplateRegistry

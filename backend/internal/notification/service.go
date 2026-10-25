@@ -26,6 +26,7 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/sync/errgroup"
+	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/apns"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -277,27 +278,27 @@ func (s *NotificationService) deliverForTarget(ctx context.Context, target Notif
 	switch payload.Kind {
 	case notification.DispatchKindImageUpdate:
 		if payload.ImageUpdate == nil {
-			return 0, errors.New("image update payload is required")
+			return 0, common.Classify(common.ErrValidation, errors.New("image update payload is required"))
 		}
 		logManagerDispatchNotification(ctx, target, payload.Kind)
 		imageUpdate := payload.ImageUpdate
 		return s.sendImageUpdateNotificationForTarget(ctx, target, imageUpdate.ImageRef, &imageUpdate.UpdateInfo, notifications.NotificationEventImageUpdate)
 	case notification.DispatchKindBatchImageUpdate:
 		if payload.BatchImageUpdate == nil {
-			return 0, errors.New("batch image update payload is required")
+			return 0, common.Classify(common.ErrValidation, errors.New("batch image update payload is required"))
 		}
 		logManagerDispatchNotification(ctx, target, payload.Kind)
 		return s.sendBatchImageUpdateNotificationForTarget(ctx, target, payload.BatchImageUpdate.Updates)
 	case notification.DispatchKindContainerUpdate:
 		if payload.ContainerUpdate == nil {
-			return 0, errors.New("container update payload is required")
+			return 0, common.Classify(common.ErrValidation, errors.New("container update payload is required"))
 		}
 		logManagerDispatchNotification(ctx, target, payload.Kind)
 		update := payload.ContainerUpdate
 		return s.sendContainerUpdateNotificationForTarget(ctx, target, update.ContainerName, update.ImageRef, update.OldDigest, update.NewDigest)
 	case notification.DispatchKindBatchContainerUpdate:
 		if payload.BatchContainerUpdate == nil {
-			return 0, errors.New("batch container update payload is required")
+			return 0, common.Classify(common.ErrValidation, errors.New("batch container update payload is required"))
 		}
 		logManagerDispatchNotification(ctx, target, payload.Kind)
 		entries := make([]notifications.ContainerUpdateBatchEntry, 0, len(payload.BatchContainerUpdate.Updates))
@@ -312,19 +313,19 @@ func (s *NotificationService) deliverForTarget(ctx context.Context, target Notif
 		return s.sendBatchContainerUpdateNotificationForTarget(ctx, target, entries)
 	case notification.DispatchKindVulnerabilityFound:
 		if payload.VulnerabilityFound == nil {
-			return 0, errors.New("vulnerability payload is required")
+			return 0, common.Classify(common.ErrValidation, errors.New("vulnerability payload is required"))
 		}
 		logManagerDispatchNotification(ctx, target, payload.Kind)
 		return s.sendVulnerabilityNotificationForTarget(ctx, target, VulnerabilityNotificationPayload(*payload.VulnerabilityFound))
 	case notification.DispatchKindPruneReport:
 		if payload.PruneReport == nil {
-			return 0, errors.New("prune report payload is required")
+			return 0, common.Classify(common.ErrValidation, errors.New("prune report payload is required"))
 		}
 		logManagerDispatchNotification(ctx, target, payload.Kind)
 		return s.sendPruneReportNotificationForTarget(ctx, target, &payload.PruneReport.Result)
 	case notification.DispatchKindAutoHeal:
 		if payload.AutoHeal == nil {
-			return 0, errors.New("auto-heal payload is required")
+			return 0, common.Classify(common.ErrValidation, errors.New("auto-heal payload is required"))
 		}
 		logManagerDispatchNotification(ctx, target, payload.Kind)
 		return s.sendAutoHealNotificationForTarget(ctx, target, payload.AutoHeal.ContainerName, payload.AutoHeal.ContainerID)
@@ -992,6 +993,9 @@ func (s *NotificationService) sendAutoHealNotificationForTarget(ctx context.Cont
 // and returns a warning when a real notification of the tested kind would not send.
 func (s *NotificationService) TestNotification(ctx context.Context, environmentID string, provider notifications.NotificationProvider, testType string) (string, error) {
 	setting, err := s.GetSettingsByProvider(ctx, provider)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", common.Classify(common.ErrBadRequest, fmt.Errorf("please save your %s settings before testing", provider))
+	}
 	if err != nil {
 		return "", fmt.Errorf("please save your %s settings before testing", provider)
 	}

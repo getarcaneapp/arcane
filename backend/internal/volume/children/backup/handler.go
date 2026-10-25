@@ -16,6 +16,7 @@ import (
 	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
@@ -94,7 +95,7 @@ func (h *Handler) DownloadBackup(ctx context.Context, input *DownloadBackupInput
 	user, _ := userctx.CurrentUserFromContext(ctx)
 	reader, size, err := h.service.DownloadBackup(ctx, input.BackupID, user)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
 
 	return &huma.StreamResponse{
@@ -183,7 +184,7 @@ func (h *Handler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*
 		return nil, huma.Error409Conflict(err.Error())
 	}
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
 	return handlerutil.MessageOutput("Backup deleted successfully", activityID), nil
 }
@@ -235,7 +236,7 @@ func (h *Handler) UploadBackup(ctx context.Context, input *UploadBackupInput) (*
 		return nil, huma.Error409Conflict(err.Error())
 	}
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
 	uploaded.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 	return &handlerutil.Out[*volume.Backup]{Body: base.ApiResponse[*volume.Backup]{Success: true, Data: uploaded}}, nil

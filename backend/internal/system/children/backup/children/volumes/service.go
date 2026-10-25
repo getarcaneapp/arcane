@@ -23,6 +23,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/settings"
@@ -347,19 +348,19 @@ func (s *Service) ListOptions(ctx context.Context) ([]backuptypes.SystemVolumeBa
 // prepareSystemVolumeBackups resolves the requested policy, takes the system admission, and selects the live volumes.
 func (s *Service) prepareSystemVolumeBackups(ctx context.Context, request backuptypes.RunSystemVolumeBackupsRequest) (selectionInput, *runs.Lease, error) {
 	if request.PolicyID != "" && request.Custom != nil {
-		return selectionInput{}, nil, errors.New("select a saved policy or custom configuration, not both")
+		return selectionInput{}, nil, common.Classify(common.ErrValidation, errors.New("select a saved policy or custom configuration, not both"))
 	}
 	if request.Custom != nil && !slices.Contains(
 		[]backuptypes.SystemBackupDestination{backuptypes.SystemBackupDestinationLocal, backuptypes.SystemBackupDestinationS3, backuptypes.SystemBackupDestinationLocalS3},
 		request.Custom.Destination,
 	) {
-		return selectionInput{}, nil, errors.New("destination must be local, s3, or local_s3")
+		return selectionInput{}, nil, common.Classify(common.ErrValidation, errors.New("destination must be local, s3, or local_s3"))
 	}
 	policy, err := func() (*backuptypes.SystemVolumeBackupPolicy, error) {
 		if request.PolicyID != "" {
 			stored, loadErr := s.systemVolumeBackupPolicy(request.PolicyID)
 			if loadErr == nil && stored == nil {
-				return nil, errors.New("system-managed volume backup policy not found")
+				return nil, common.Classify(common.ErrNotFound, errors.New("system-managed volume backup policy not found"))
 			}
 			return stored, loadErr
 		}

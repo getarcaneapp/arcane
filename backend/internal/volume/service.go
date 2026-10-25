@@ -246,6 +246,9 @@ func (s *VolumeService) backupStore() volumebackup.Store {
 		Run: func(ctx context.Context, backupID string) (*volumetypes.Backup, error) {
 			var entry VolumeBackup
 			if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&entry).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil, common.Classify(common.ErrNotFound, errors.New("volume backup not found"))
+				}
 				return nil, err
 			}
 			return entry.recordInternal(), nil

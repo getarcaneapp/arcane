@@ -51,7 +51,7 @@ func (h *Handler) BackupHasPath(ctx context.Context, input *BackupHasPathInput) 
 
 	exists, err := h.service.BackupHasPath(ctx, input.BackupID, input.Path)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
 
 	return &handlerutil.Out[BackupHasPathResponse]{
@@ -65,7 +65,7 @@ func (h *Handler) BackupHasPath(ctx context.Context, input *BackupHasPathInput) 
 func (h *Handler) ListBackupFiles(ctx context.Context, input *ListBackupFilesInput) (*handlerutil.Out[[]string], error) {
 	files, err := h.service.ListBackupFiles(ctx, input.BackupID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
 
 	return &handlerutil.Out[[]string]{
@@ -83,7 +83,7 @@ func (h *Handler) BrowseBackupFiles(ctx context.Context, input *BrowseBackupFile
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
 	return &handlerutil.Page[backup.BackupFileEntry]{Body: base.Paginated[backup.BackupFileEntry]{
 		Success: true, Data: items, Pagination: handlerutil.PaginationResponse(page),

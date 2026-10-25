@@ -28,6 +28,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/event/children/correlation"
@@ -382,7 +383,7 @@ func (s *EventService) DeleteEvent(ctx context.Context, eventID string) error {
 			return fmt.Errorf("failed to delete event: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
-			return errors.New("event not found")
+			return common.Classify(common.ErrNotFound, errors.New("event not found"))
 		}
 		return nil
 	})

@@ -7,6 +7,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/event"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
 
@@ -118,7 +119,7 @@ func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput)
 	}
 
 	if err := h.eventService.DeleteEvent(ctx, input.EventID); err != nil {
-		return nil, huma.Error500InternalServerError("Failed to delete event: " + err.Error())
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), "Failed to delete event: "+err.Error())
 	}
 
 	return handlerutil.MessageOutput("Event deleted successfully", ""), nil

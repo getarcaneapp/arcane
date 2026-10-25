@@ -553,7 +553,7 @@ func (s *Service) UploadBackup(ctx context.Context, backupID, s3DestinationID st
 		return nil, errors.New("volume backup has already been uploaded")
 	}
 	if strings.TrimSpace(s3DestinationID) == "" {
-		return nil, errors.New("select an S3 destination for the upload")
+		return nil, common.Classify(common.ErrValidation, errors.New("select an S3 destination for the upload"))
 	}
 	remoteRepository, err := s.remoteRusticRepository(ctx, s3DestinationID, "")
 	if err != nil {

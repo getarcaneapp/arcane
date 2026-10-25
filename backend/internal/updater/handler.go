@@ -134,7 +134,8 @@ func (h *UpdaterHandler) updateContainer(ctx context.Context, input *UpdateConta
 func (h *UpdaterHandler) CheckProjectUpdates(ctx context.Context, input *updater.CheckProjectInput) (*handlerutil.Out[*project.UpdateInfo], error) {
 	result, err := h.updaterService.CheckProjectUpdates(ctx, input.ProjectID)
 	if err != nil {
-		return nil, err
+		apiErr := common.ToAPIError(err)
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to check project updates: "+apiErr.Message)
 	}
 	return &handlerutil.Out[*project.UpdateInfo]{
 		Body: base.ApiResponse[*project.UpdateInfo]{

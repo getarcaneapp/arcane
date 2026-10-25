@@ -74,7 +74,7 @@ func (h *Handler) RestoreBackup(ctx context.Context, input *RestoreBackupInput) 
 		return h.service.RestoreBackup(runtimeCtx, input.VolumeName, input.BackupID, *user)
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
 	return handlerutil.MessageOutput("Restore initiated successfully", activityID), nil
 }
@@ -110,7 +110,7 @@ func (h *Handler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFi
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
 
 	return handlerutil.MessageOutput("Restore initiated successfully", activityID), nil

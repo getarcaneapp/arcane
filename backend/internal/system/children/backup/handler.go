@@ -241,7 +241,7 @@ func (h *Handler) Restore(ctx context.Context, input *RestoreSystemBackupInput) 
 		return h.service.RestoreBackup(activityCtx, input.ID, input.Body.RecoveryKey)
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
 	return handlerutil.MessageOutput("Arcane system restore started", activityID), nil
 }
@@ -294,7 +294,7 @@ func (h *Handler) Upload(ctx context.Context, input *UploadSystemBackupInput) (*
 		return e
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
 	return &SystemBackupOutput{Body: *run}, nil
 }
@@ -312,7 +312,7 @@ func (h *Handler) Delete(ctx context.Context, input *DeleteSystemBackupInput) (*
 		return h.service.DeleteBackup(activityCtx, input.ID, input.Body.RecoveryKey)
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
 	return handlerutil.MessageOutput("Arcane system backup deleted successfully", activityID), nil
 }

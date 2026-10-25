@@ -213,6 +213,9 @@ func (h *NotificationHandler) DispatchNotification(ctx context.Context, input *D
 		if errors.Is(err, ErrUnauthorizedNotificationDispatch) {
 			return nil, huma.Error401Unauthorized("unauthorized")
 		}
+		if errors.Is(err, common.ErrValidation) {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
 		return nil, huma.Error500InternalServerError("dispatch failed")
 	}
 

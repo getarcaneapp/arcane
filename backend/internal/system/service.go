@@ -34,6 +34,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/backup"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/container"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -553,6 +554,9 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 		Run: func(ctx context.Context, id string) (*backuptypes.SystemBackupRun, error) {
 			var run SystemBackupRun
 			if err := s.db.WithContext(ctx).Where("id = ?", id).First(&run).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil, common.Classify(common.ErrNotFound, errors.New("system backup not found"))
+				}
 				return nil, err
 			}
 			return new(run.ToDTO()), nil

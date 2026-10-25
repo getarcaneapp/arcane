@@ -65,7 +65,7 @@ func (s *GitRepositoryService) GetRepositoryByID(ctx context.Context, id string)
 	var repository GitRepository
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&repository).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("repository not found")
+			return nil, common.Classify(common.ErrNotFound, errors.New("repository not found"))
 		}
 		return nil, fmt.Errorf("failed to get repository: %w", err)
 	}
@@ -76,7 +76,7 @@ func (s *GitRepositoryService) GetRepositoryByName(ctx context.Context, name str
 	var repository GitRepository
 	if err := s.db.WithContext(ctx).Where("name = ?", name).First(&repository).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("repository not found")
+			return nil, common.Classify(common.ErrNotFound, errors.New("repository not found"))
 		}
 		return nil, fmt.Errorf("failed to get repository: %w", err)
 	}
@@ -305,7 +305,7 @@ func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string, 
 	}
 
 	if count > 0 {
-		return fmt.Errorf("repository is used by %d sync configuration(s)", count)
+		return common.Classify(common.ErrConflict, fmt.Errorf("repository is used by %d sync configuration(s)", count))
 	}
 
 	// Get repository info before deleting
