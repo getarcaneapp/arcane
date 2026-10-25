@@ -2420,7 +2420,7 @@
   "build_time": "Build Time",
   "version_info_digest": "Image Digest",
   "version_info_view_release": "View Release",
-  "sidebar_management": "Management",
+  "sidebar_overview": "Overview",
   "resources": "Resources",
   "sidebar_administration": "Administration",
   "quick_actions_start_all": "Start All Stopped",
