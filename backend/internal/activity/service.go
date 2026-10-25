@@ -1209,6 +1209,87 @@ func (s *ActivityService) SyncJobRun(ctx context.Context, run scheduler.Run, nam
 	return nil
 }
 
+func (s *ActivityService) ResolveOrphanedJobRuns(ctx context.Context, finished map[string]scheduler.Run, protectedIDs ...string) (int64, error) {
+	if err := s.checkInit(); err != nil {
+		return 0, err
+	}
+	candidates, err := s.sweeps.OrphanedJobRuns(ctx, protectedIDs)
+	if err != nil {
+		return 0, fmt.Errorf("find orphaned job run activities: %w", err)
+	}
+	var resolved int64
+	var errs []error
+	for _, candidate := range candidates {
+		finalized, resolveErr := s.resolveOrphanedJobRun(ctx, candidate.ID, finished)
+		if resolveErr != nil {
+			errs = append(errs, fmt.Errorf("finalize orphaned job run activity %s: %w", candidate.ID, resolveErr))
+			continue
+		}
+		if finalized {
+			resolved++
+		}
+	}
+	return resolved, errors.Join(errs...)
+}
+
+func (s *ActivityService) resolveOrphanedJobRun(ctx context.Context, activityID string, finished map[string]scheduler.Run) (bool, error) {
+	lock := s.publishLock(activityID)
+	lock.Lock()
+	defer lock.Unlock()
+	var model Activity
+	var affected int64
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing Activity
+		if err := tx.First(&existing, "id = ?", activityID).Error; err != nil {
+			return err
+		}
+		run, found := finished[activityID]
+		if !found {
+			trigger, _ := existing.Metadata["trigger"].(string)
+			domainActivityID, _ := existing.Metadata["domainActivityId"].(string)
+			run = scheduler.Run{
+				ActivityID:    existing.ID,
+				ID:            kit.FromPtr(existing.BatchID),
+				JobID:         kit.FromPtr(existing.ResourceID),
+				EnvironmentID: existing.EnvironmentID,
+				Trigger:       trigger,
+				RequestedBy:   kit.FromPtr(existing.StartedByUserID),
+				Status:        scheduler.Failed,
+				CreatedAt:     existing.StartedAt,
+				UpdatedAt:     time.Now().UTC(),
+				Outcome: scheduler.Outcome{
+					Status:     scheduler.Failed,
+					Message:    "Job run no longer exists; its result was not recorded",
+					ActivityID: domainActivityID,
+				},
+			}
+		}
+		model = jobActivity(run, kit.FromPtr(existing.ResourceName))
+		result := tx.Table("activities").
+			Where("id = ? AND status IN ?", activityID, []activity.Status{activity.StatusQueued, activity.StatusRunning}).
+			Updates(map[string]any{
+				"environment_id": model.EnvironmentID,
+				"status":         model.Status,
+				"step":           model.Step,
+				"latest_message": model.LatestMessage,
+				"ended_at":       model.EndedAt,
+				"duration_ms":    model.DurationMs,
+				"error":          model.Error,
+				"metadata":       model.Metadata,
+				"updated_at":     model.UpdatedAt,
+			})
+		affected = result.RowsAffected
+		return result.Error
+	}); err != nil {
+		return false, err
+	}
+	if affected == 0 {
+		return false, nil
+	}
+	s.pubsub.PublishActivity(activityToDTO(&model))
+	return true, nil
+}
+
 func jobActivity(run scheduler.Run, name string) Activity {
 	status := activity.StatusQueued
 	switch run.Status {

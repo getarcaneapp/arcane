@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"slices"
 	"strings"
@@ -436,9 +437,13 @@ func (s *JobService) ReconcileStartupActivities(ctx context.Context, extraProtec
 		return err
 	}
 	protected := append([]string(nil), extraProtectedIDs...)
+	finished := map[string]scheduler.Run{}
 	for _, record := range records {
-		for _, run := range record.Runs {
+		for _, run := range slices.Concat(record.Runs, slices.Collect(maps.Values(record.Receipts))) {
 			if run.Status.Terminal() {
+				if run.ActivityID != "" {
+					finished[run.ActivityID] = runtime.ProjectRunOutcome(run)
+				}
 				continue
 			}
 			if run.ActivityID != "" {
@@ -463,7 +468,10 @@ func (s *JobService) ReconcileStartupActivities(ctx context.Context, extraProtec
 	if _, resolveStaleAutoUpdateActivitiesErr := s.activity.ResolveStaleAutoUpdateActivities(ctx, protected...); resolveStaleAutoUpdateActivitiesErr != nil {
 		return resolveStaleAutoUpdateActivitiesErr
 	}
-	_, err = s.activity.ResolveOrphanedQueuedActivities(ctx, protected...)
+	if _, resolveOrphanedQueuedActivitiesErr := s.activity.ResolveOrphanedQueuedActivities(ctx, protected...); resolveOrphanedQueuedActivitiesErr != nil {
+		return resolveOrphanedQueuedActivitiesErr
+	}
+	_, err = s.activity.ResolveOrphanedJobRuns(ctx, finished, protected...)
 	return err
 }
 

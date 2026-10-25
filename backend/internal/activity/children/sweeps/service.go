@@ -89,6 +89,16 @@ func (s *Service) OrphanedQueued(ctx context.Context, protectedIDs []string) ([]
 	return rows, err
 }
 
+func (s *Service) OrphanedJobRuns(ctx context.Context, protectedIDs []string) ([]Candidate, error) {
+	var rows []Candidate
+	err := s.activities(ctx).
+		Select("id").
+		Where("type = ? AND status IN ?", activity.TypeJobRun, []activity.Status{activity.StatusQueued, activity.StatusRunning}).
+		Where("id NOT IN ?", append(protectedIDs, "")).
+		Find(&rows).Error
+	return rows, err
+}
+
 // StaleAutoUpdates returns running auto-update activities outside protectedIDs.
 func (s *Service) StaleAutoUpdates(ctx context.Context, protectedIDs []string) ([]Candidate, error) {
 	var rows []Candidate
