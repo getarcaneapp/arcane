@@ -195,7 +195,7 @@
 {#snippet UrlCell({ item }: { item: ContainerRegistry })}
 	<div class="flex flex-col">
 		{#if canBrowseRegistry}
-			<a class="font-medium hover:underline" href={withBase(`/customize/registries/{item.id}`)}>{item.url || 'docker.io'}</a>
+			<a class="font-medium hover:underline" href={withBase(`/customize/registries/${item.id}`)}>{item.url || 'docker.io'}</a>
 		{:else}
 			<span class="font-medium">{item.url || 'docker.io'}</span>
 		{/if}

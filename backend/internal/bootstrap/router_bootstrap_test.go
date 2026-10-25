@@ -34,7 +34,7 @@ func TestNewRouter_DecodesPathParams(t *testing.T) {
 		AppUrl:      "http://localhost:3552",
 		Environment: config.AppEnvironmentTest,
 	}
-	router, _ := newRouter(RouterParams{
+	router, _, err := newRouter(RouterParams{
 		Context: t.Context(),
 		Config:  cfg,
 		HandlerDeps: api.HandlerDeps{
@@ -47,6 +47,7 @@ func TestNewRouter_DecodesPathParams(t *testing.T) {
 		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
 		TunnelRegistry: edge.NewTunnelRegistry(),
 	})
+	require.NoError(t, err)
 	humaAPI := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))
 
 	var got string
@@ -151,7 +152,7 @@ func TestProxiedEnvironmentRoutesAreEdgeRoutable(t *testing.T) {
 	}
 
 	cfg := &config.Config{AgentMode: true, AppUrl: "http://localhost:3552", Environment: config.AppEnvironmentTest}
-	router, _ := newRouter(RouterParams{
+	router, _, err := newRouter(RouterParams{
 		Context: t.Context(),
 		Config:  cfg,
 		HandlerDeps: api.HandlerDeps{
@@ -164,6 +165,7 @@ func TestProxiedEnvironmentRoutesAreEdgeRoutable(t *testing.T) {
 		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
 		TunnelRegistry: edge.NewTunnelRegistry(),
 	})
+	require.NoError(t, err)
 	for _, route := range router.Router().Routes() {
 		if strings.HasPrefix(route.Path, "/api/environments/:id/ws/") && !strings.HasSuffix(route.Path, "*") {
 			routes = append(routes, proxiedRoute{method: route.Method, path: strings.TrimPrefix(route.Path, "/api"), stream: true})

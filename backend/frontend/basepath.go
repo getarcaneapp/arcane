@@ -2,7 +2,6 @@ package frontend
 
 import (
 	"bytes"
-	"errors"
 	"regexp"
 )
 
@@ -23,7 +22,7 @@ func rewriteIndexForBasePath(html []byte, basePath string) ([]byte, error) {
 		return html, nil
 	}
 	if !indexKitBasePattern.Match(html) {
-		return nil, errors.New("index.html: SvelteKit base not found; cannot serve under a base path")
+		return nil, ErrIndexNotRecognized
 	}
 	out := indexKitBasePattern.ReplaceAll(html, []byte(`${1}"`+basePath+`"`))
 	out = indexRootURLPattern.ReplaceAll(out, []byte(`${1}`+basePath+`/${2}`))

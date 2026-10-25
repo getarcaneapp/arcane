@@ -48,7 +48,7 @@
 		/>
 		<div class="min-w-0 flex-1">
 			<a
-				href={withBase(`/customize/templates/{template.id}`)}
+				href={withBase(`/customize/templates/${template.id}`)}
 				class="block truncate font-medium after:absolute after:inset-0 hover:underline"
 			>
 				{template.name}

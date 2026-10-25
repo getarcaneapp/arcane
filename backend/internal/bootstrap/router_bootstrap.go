@@ -133,7 +133,7 @@ type RouterParams struct {
 	TunnelRegistry *edge.TunnelRegistry
 }
 
-func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
+func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer, error) {
 	ctx := p.Context
 	cfg := p.Config
 	deps := p.HandlerDeps
@@ -345,14 +345,18 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 
 	//nolint:staticcheck,nolintlint // SA4023 only under exclude_frontend: the stub always returns ErrFrontendNotIncluded
 	if err := frontend.RegisterFrontend(e, basePath); err != nil {
-		if errors.Is(err, frontend.ErrFrontendNotIncluded) {
+		switch {
+		case errors.Is(err, frontend.ErrFrontendNotIncluded):
 			slog.DebugContext(ctx, "Frontend not included in this build; skipping frontend registration")
-		} else {
+		case errors.Is(err, frontend.ErrIndexNotRecognized):
+			// Serving the API without a UI under the base path would look like a broken proxy.
+			return nil, nil, err
+		default:
 			slog.ErrorContext(ctx, "Failed to register frontend", "error", err)
 		}
 	}
 
-	return e, tunnelServer
+	return e, tunnelServer, nil
 }
 
 // basePathMiddleware strips the base path Arcane is served under (see config.Config.BasePath)

@@ -326,7 +326,7 @@
 	<div class="flex items-center gap-2">
 		{#if item.gitOpsManagedBy}
 			<GitBranchIcon class="size-4" />
-			<a class="font-medium hover:underline" href={withBase(`/environments/{item.environmentId}/gitops`)}>
+			<a class="font-medium hover:underline" href={withBase(`/environments/${item.environmentId}/gitops`)}>
 				{m.git()}
 			</a>
 		{:else}

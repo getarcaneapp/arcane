@@ -100,7 +100,7 @@
 				<Table.Row data-state={row.isCurrent ? 'selected' : undefined}>
 					<Table.Cell>
 						<div class="flex min-w-0 items-center gap-2">
-							<a class="truncate font-medium hover:underline" href={withBase(`/environments/{row.environment.id}`)}>
+							<a class="truncate font-medium hover:underline" href={withBase(`/environments/${row.environment.id}`)}>
 								{row.environment.name}
 							</a>
 							{#if row.podCount !== null}

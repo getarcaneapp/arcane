@@ -92,10 +92,17 @@ func refreshCookieName(secure bool) string {
 }
 
 func GetTokenCookie(r *http.Request) (string, error) {
-	if value, err := readTokenCookieInternal(r, TokenCookieName); err == nil {
+	names := []string{TokenCookieName, InsecureTokenCookieName}
+	if BasePath() != "" {
+		// Under a base path the session cookie is "token". A root-scoped __Host-token left by
+		// an earlier deployment at "/" is still sent and must not shadow the current session.
+		names = []string{InsecureTokenCookieName, TokenCookieName}
+	}
+	value, err := readTokenCookieInternal(r, names[0])
+	if err == nil {
 		return value, nil
 	}
-	return readTokenCookieInternal(r, InsecureTokenCookieName)
+	return readTokenCookieInternal(r, names[1])
 }
 
 func readTokenCookieInternal(r *http.Request, base string) (string, error) {

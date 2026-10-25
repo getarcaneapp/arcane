@@ -27,6 +27,11 @@ func TestCookiesUnderBasePath(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "value", got)
 
+	// A root-scoped __Host-token from an earlier deployment at "/" does not shadow it.
+	got, err = GetTokenCookieFromHeader(TokenCookieName + "=stale; token=value")
+	require.NoError(t, err)
+	assert.Equal(t, "value", got)
+
 	// Logging out also clears cookies left by a deployment served from the root.
 	cleared := strings.Join(BuildClearTokenCookieStringsFor(true), "\n")
 	assert.Contains(t, cleared, "Path=/arcane/")

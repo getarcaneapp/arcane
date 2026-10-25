@@ -73,7 +73,7 @@
 </script>
 
 {#snippet NameCell({ item }: { item: SwarmStackSummary })}
-	<a href={withBase(`/swarm/stacks/{encodeURIComponent(item.name)}`)} class="text-sm font-medium text-primary hover:underline">
+	<a href={withBase(`/swarm/stacks/${encodeURIComponent(item.name)}`)} class="text-sm font-medium text-primary hover:underline">
 		{item.name}
 	</a>
 {/snippet}

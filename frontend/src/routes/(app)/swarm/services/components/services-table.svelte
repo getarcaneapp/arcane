@@ -126,7 +126,7 @@
 </script>
 
 {#snippet NameCell({ item }: { item: SwarmServiceSummary })}
-	<a href={withBase(`/swarm/services/{item.id}`)} class="text-sm font-medium text-primary hover:underline">
+	<a href={withBase(`/swarm/services/${item.id}`)} class="text-sm font-medium text-primary hover:underline">
 		{getShortName(item.name, item.stackName)}
 	</a>
 {/snippet}
