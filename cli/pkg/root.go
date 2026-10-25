@@ -126,8 +126,10 @@ func NewRootCommand() *cobra.Command {
 
 	imagesCmd := images.Command()
 	imagesCmd.AddCommand(vulnerabilities.Command())
+	generateCmd := generate.Command()
+	cmdutil.SetScope(cmdutil.ScopeGlobal, generateCmd)
 	root.AddCommand(
-		configClient.Command(), completion.NewCommand(root), doctor.Command(), generate.Command(), version.Command(), auth.Command(),
+		configClient.Command(), completion.NewCommand(root), doctor.Command(), generateCmd, version.Command(), auth.Command(),
 		containers.Command(), imagesCmd, volumes.Command(), networks.Command(), projects.Command(), environments.Command(),
 		registries.Command(), repos.Command(), templates.Command(), settings.Command(), jobs.Command(), system.Command(),
 		updater.Command(), selfupdate.Command(), admin.Command(), gitops.Command(), variables.Command(), activities.Command(),

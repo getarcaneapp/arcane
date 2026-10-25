@@ -13,7 +13,7 @@ COPY --chown=vp:vp --parents pnpm-lock.yaml pnpm-workspace.yaml package.json \
 RUN --mount=type=cache,id=arcane-pnpm-v3,target=/home/vp/.local/share/pnpm/store,sharing=locked,uid=1000,gid=1000 \
     vp install --frozen-lockfile --prefer-offline --filter ./frontend...
 
-RUN printf 'NODE_VERSION=%s\nSVELTEKIT_VERSION=%s\n' \
+RUN printf 'NODE_VERSION=%s\nSVELTEKIT_VERSION=v%s\n' \
     "$(vp node --version)" \
     "$(vp -C frontend node -p 'require("@sveltejs/kit/package.json").version')" \
     > /tmp/arcane-frontend-build.env
