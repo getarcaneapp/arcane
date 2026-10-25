@@ -69,7 +69,7 @@ require (
 	github.com/digitorus/timestamp v0.0.0-20231217203849-220c5c2851b7 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
-	github.com/go-chi/chi/v5 v5.3.1 // indirect
+	github.com/go-chi/chi/v5 v5.4.0 // indirect
 	github.com/go-logfmt/logfmt v0.6.1 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
