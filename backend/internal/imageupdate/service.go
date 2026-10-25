@@ -535,7 +535,7 @@ func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string
 		return imageRef, nil
 	}
 
-	return "", fmt.Errorf("image not found: no local image or running container found for %s", imageID)
+	return "", common.Classify(common.ErrNotFound, fmt.Errorf("image not found: no local image or running container found for %s", imageID))
 }
 
 func (s *ImageUpdateService) getAllImageRefs(ctx context.Context, limit int) ([]string, error) {

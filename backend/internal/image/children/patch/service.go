@@ -179,7 +179,7 @@ func (s *Service) startPatch(
 		return dockerClient.ImageInspect(ctx, imageID)
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to inspect image: %w", err)
+		return nil, nil, common.ClassifyDockerError(fmt.Errorf("failed to inspect image: %w", err))
 	}
 	if len(imageInspect.RepoTags) == 0 {
 		return nil, nil, common.ErrImageUntagged

@@ -547,7 +547,7 @@ func (h *ContainerHandler) CommitContainer(ctx context.Context, input *CommitCon
 
 	out, err := h.containerService.CommitContainer(ctx, input.ContainerID, input.Body, *user)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to commit container: %v", err))
+		return nil, huma.NewError(common.ToAPIError(common.ClassifyDockerError(err)).HTTPStatus(), fmt.Sprintf("failed to commit container: %v", err))
 	}
 
 	return &handlerutil.Out[container.CommitResult]{

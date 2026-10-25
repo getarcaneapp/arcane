@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/types/v2"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	updatertypes "github.com/getarcaneapp/arcane/types/v2/updater"
@@ -768,6 +769,9 @@ func (s *WebhookService) resolveContainerWebhookTargetRefInternal(ctx context.Co
 	}
 
 	containerName, err := s.containerService.GetContainerNameByReference(ctx, targetID)
+	if errdefs.IsNotFound(err) {
+		return "", common.Classify(common.ErrBadRequest, fmt.Errorf("target container not found: %w", err))
+	}
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve container target reference: %w", err)
 	}

@@ -213,7 +213,7 @@ func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*han
 	}
 
 	if tagImageErr := h.imageService.TagImage(ctx, imageName, input.Body, *user); tagImageErr != nil {
-		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to tag image: %v", tagImageErr))
+		return nil, huma.NewError(common.ToAPIError(common.ClassifyDockerError(tagImageErr)).HTTPStatus(), fmt.Sprintf("failed to tag image: %v", tagImageErr))
 	}
 
 	return handlerutil.MessageOutput("Image tagged successfully", ""), nil
@@ -228,7 +228,7 @@ func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHisto
 
 	history, err := h.imageService.GetImageHistory(ctx, imageName)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to get image history: %v", err))
+		return nil, huma.NewError(common.ToAPIError(common.ClassifyDockerError(err)).HTTPStatus(), fmt.Sprintf("failed to get image history: %v", err))
 	}
 	if history == nil {
 		history = []image.HistoryItem{}
@@ -272,7 +272,7 @@ func (h *ImageHandler) ExportImage(ctx context.Context, input *ExportImageInput)
 
 	reader, err := h.imageService.ExportImage(ctx, imageName)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to export image: %v", err))
+		return nil, huma.NewError(common.ToAPIError(common.ClassifyDockerError(err)).HTTPStatus(), fmt.Sprintf("failed to export image: %v", err))
 	}
 
 	return &huma.StreamResponse{

@@ -9,6 +9,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/getarcaneapp/arcane/types/v2/webhook"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/userctx"
@@ -87,6 +88,9 @@ func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhook
 		}
 		if errors.Is(err, ErrWebhookInvalidAction) {
 			return nil, huma.Error400BadRequest("invalid action type for target type")
+		}
+		if errors.Is(err, common.ErrBadRequest) {
+			return nil, huma.Error400BadRequest(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to create webhook")
 	}

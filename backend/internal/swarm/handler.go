@@ -425,7 +425,7 @@ func mapSwarmServiceErrorInternal(err error, fallback string) error {
 	if errdefs.IsInvalidArgument(err) {
 		return huma.Error400BadRequest(err.Error())
 	}
-	if errdefs.IsConflict(err) {
+	if errdefs.IsConflict(err) || errors.Is(err, common.ErrConflict) {
 		return huma.Error409Conflict(err.Error())
 	}
 	if remoteStatus, ok := errors.AsType[*remenv.StatusError](err); ok && remoteStatus.StatusCode >= 400 && remoteStatus.StatusCode <= 599 {

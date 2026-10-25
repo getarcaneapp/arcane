@@ -171,7 +171,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 		return createErr
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to create network: " + err.Error())
+		return nil, huma.NewError(common.ToAPIError(common.ClassifyDockerError(err)).HTTPStatus(), "Failed to create network: "+err.Error())
 	}
 
 	out, err := mapping.MapOne[network.CreateResponse, networktypes.CreateResponse](*response)

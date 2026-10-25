@@ -214,7 +214,7 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 		return createErr
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to create volume: " + err.Error())
+		return nil, huma.NewError(common.ToAPIError(common.ClassifyDockerError(err)).HTTPStatus(), "Failed to create volume: "+err.Error())
 	}
 	response.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
@@ -315,7 +315,7 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 		return h.volumeService.DeleteVolume(runtimeCtx, input.VolumeName, input.Force, *user)
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to delete volume: " + err.Error())
+		return nil, huma.NewError(common.ToAPIError(common.ClassifyDockerError(err)).HTTPStatus(), "Failed to delete volume: "+err.Error())
 	}
 
 	return handlerutil.MessageOutput("Volume removed successfully", activityID), nil
@@ -358,7 +358,7 @@ func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInp
 func (h *VolumeHandler) GetVolumeUsage(ctx context.Context, input *GetVolumeUsageInput) (*handlerutil.Out[VolumeUsageResponse], error) {
 	inUse, containers, err := h.volumeService.GetVolumeUsage(ctx, input.VolumeName)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to get volume usage: " + err.Error())
+		return nil, huma.NewError(common.ToAPIError(common.ClassifyDockerError(err)).HTTPStatus(), "Failed to get volume usage: "+err.Error())
 	}
 
 	return &handlerutil.Out[VolumeUsageResponse]{

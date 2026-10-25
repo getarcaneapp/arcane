@@ -733,6 +733,9 @@ func (s *UpdaterService) runSingleContainerUpdate(ctx context.Context, container
 		out = resultFromModule(moduleResult)
 		s.logResultItems(ctx, out)
 	}
+	if errors.Is(err, updater.ErrContainerNotFound) {
+		err = common.Classify(common.ErrNotFound, err)
+	}
 	return out, err
 }
 

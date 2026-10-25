@@ -10,6 +10,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	"go.getarcane.app/kit/pkg"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
@@ -76,7 +77,7 @@ func (h *ImageUpdateHandler) CheckImageUpdateByID(ctx context.Context, input *Ch
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	result, err := h.imageUpdateService.CheckImageUpdateByID(runtimeCtx, input.ImageID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to check image update: " + err.Error())
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), "Failed to check image update: "+err.Error())
 	}
 
 	return &handlerutil.Out[imageupdate.Response]{
