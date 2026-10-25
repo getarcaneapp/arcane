@@ -1361,21 +1361,21 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgrade(
 	assert.Empty(t, projectUpdater.calls, "legacy Arcane server should not be updated through project services")
 }
 
-func TestUpdateLabelPolicyDisablesQuadletContainers(t *testing.T) {
+func TestUpdateLabelPolicyMarksQuadletContainersUnmanaged(t *testing.T) {
 	tests := []struct {
-		name   string
-		labels map[string]string
-		want   bool
+		name      string
+		labels    map[string]string
+		unmanaged bool
 	}{
 		{name: "unlabelled", labels: map[string]string{}},
-		{name: "quadlet unit", labels: map[string]string{podman.SystemdUnitLabel: "web.service"}, want: true},
+		{name: "quadlet unit", labels: map[string]string{podman.SystemdUnitLabel: "web.service"}, unmanaged: true},
 		{name: "empty quadlet unit", labels: map[string]string{podman.SystemdUnitLabel: ""}},
-		{name: "updater opt out", labels: map[string]string{labels.LabelUpdater: "false"}, want: true},
+		{name: "updater opt out", labels: map[string]string{labels.LabelUpdater: "false"}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, updateLabelPolicy.IsUpdateDisabled(tt.labels))
+			assert.Equal(t, tt.unmanaged, updateLabelPolicy.UnmanagedReason(tt.labels) != "")
 		})
 	}
 }

@@ -76,8 +76,8 @@ var (
 	}
 
 	updateLabelPolicy = updater.LabelPolicy{
-		IsUpdateDisabledFunc: func(l map[string]string) bool {
-			return labels.IsUpdateDisabled(l) || podman.QuadletUnit(l) != ""
+		UnmanagedReasonFunc: func(l map[string]string) string {
+			return kit.Ternary(podman.QuadletUnit(l) != "", "managed by a Podman quadlet; updates run through Podman auto-update", "")
 		},
 	}
 )
@@ -127,6 +127,7 @@ type (
 	updateAdmissionKey             struct{}
 	updateProgressKey              struct{}
 	scopedPendingKey               struct{}
+	ignoreSettingsExclusionsKey    struct{}
 
 	updateProgress struct {
 		mu            sync.Mutex
@@ -311,7 +312,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options arcaneupdater
 // as one batch, capped by a whole-run timeout.
 func (s *UpdaterService) applyBatch(ctx context.Context, options arcaneupdater.Options, out *arcaneupdater.Result) error {
 	batch := &containerUpdateBatch{}
-	ctx = context.WithValue(ctx, containerUpdateBatchContextKey{}, batch)
+	ctx = context.WithValue(context.WithValue(ctx, containerUpdateBatchContextKey{}, batch), ignoreSettingsExclusionsKey{}, options.IgnoreSettingsExclusions)
 	defer func() {
 		batch.Lock()
 		entries := batch.entries
@@ -344,7 +345,11 @@ func (s *UpdaterService) applyBatch(ctx context.Context, options arcaneupdater.O
 			return applyErr
 		}
 	} else {
-		moduleResult, engineErr := s.engine.ApplyPending(runCtx, updater.Options{Force: options.ForceUpdate, DryRun: options.DryRun})
+		moduleResult, engineErr := s.engine.ApplyPending(runCtx, updater.Options{
+			Force:                    options.ForceUpdate,
+			DryRun:                   options.DryRun,
+			IgnoreSettingsExclusions: options.IgnoreSettingsExclusions,
+		})
 		if moduleResult == nil {
 			return cmp.Or(engineErr, errors.New("updater returned no batch result"))
 		}
@@ -552,7 +557,10 @@ func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options arcaneu
 	}
 
 	if len(scoped) > 0 {
-		moduleResult, engineErr := s.engine.ApplyPending(context.WithValue(ctx, scopedPendingKey{}, scoped), updater.Options{DryRun: options.DryRun})
+		moduleResult, engineErr := s.engine.ApplyPending(context.WithValue(ctx, scopedPendingKey{}, scoped), updater.Options{
+			DryRun:                   options.DryRun,
+			IgnoreSettingsExclusions: options.IgnoreSettingsExclusions,
+		})
 		if moduleResult == nil {
 			return cmp.Or(engineErr, errors.New("updater returned no batch result"))
 		}
@@ -596,7 +604,11 @@ func (s *UpdaterService) applyScopedUpdates(ctx context.Context, options arcaneu
 		}); progressErr != nil {
 			return progressErr
 		}
-		moduleResult, engineErr := s.engine.UpdateContainer(ctx, containerID, updater.Options{Force: options.ForceUpdate, DryRun: options.DryRun})
+		moduleResult, engineErr := s.engine.UpdateContainer(ctx, containerID, updater.Options{
+			Force:                    options.ForceUpdate,
+			DryRun:                   options.DryRun,
+			IgnoreSettingsExclusions: options.IgnoreSettingsExclusions,
+		})
 		partial := resultFromModule(moduleResult)
 		checked += partial.Checked
 		updated += partial.Updated
@@ -1500,6 +1512,7 @@ func (s *UpdaterService) CollectUsedImages(ctx context.Context) (map[string]stru
 
 func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, out map[string]struct{}) error {
 	excludedContainers := docker.ExcludedContainerNameSet(s.deps.Settings.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""))
+	ignoreOptOuts, _ := ctx.Value(ignoreSettingsExclusionsKey{}).(bool)
 	listResult, err := s.deps.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ContainerListResult, error) {
 		return dockerClient.ContainerList(ctx, client.ContainerListOptions{})
 	})
@@ -1510,12 +1523,12 @@ func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, ou
 	// Containers sharing an image add the same tags, so each image is inspected once.
 	inspectedImages := map[string]struct{}{}
 	for _, summary := range listResult.Items {
-		if labels.IsUpdateDisabled(summary.Labels) {
+		if !ignoreOptOuts && labels.IsUpdateDisabled(summary.Labels) {
 			slog.DebugContext(ctx, "collectUsedImagesFromContainers: container opted out by labels", "containerId", summary.ID)
 			continue
 		}
 
-		if docker.ContainerNameExcluded(summary.Names, excludedContainers) {
+		if !ignoreOptOuts && docker.ContainerNameExcluded(summary.Names, excludedContainers) {
 			slog.DebugContext(ctx, "collectUsedImagesFromContainers: skipping excluded container", "containerId", summary.ID, "names", summary.Names)
 			continue
 		}
@@ -1534,7 +1547,7 @@ func (s *UpdaterService) collectUsedImagesFromContainers(ctx context.Context, ou
 			slog.DebugContext(ctx, "collectUsedImagesFromContainers: container inspect failed", "containerId", summary.ID, "error", inspectErr)
 			continue
 		}
-		if labels.IsUpdateDisabled(kit.FromPtr(inspectResult.Container.Config).Labels) {
+		if !ignoreOptOuts && labels.IsUpdateDisabled(kit.FromPtr(inspectResult.Container.Config).Labels) {
 			slog.DebugContext(ctx, "collectUsedImagesFromContainers: container inspect labels opted out", "containerId", summary.ID)
 			continue
 		}
@@ -1587,8 +1600,9 @@ func (s *UpdaterService) collectUsedImagesFromProjects(ctx context.Context, out 
 		return err
 	}
 
+	ignoreOptOuts, _ := ctx.Value(ignoreSettingsExclusionsKey{}).(bool)
 	for _, summary := range composeContainers {
-		if _, isActive := activeProjectNames[docker.ComposeProjectLabel(summary.Labels)]; !isActive || labels.IsUpdateDisabled(summary.Labels) {
+		if _, isActive := activeProjectNames[docker.ComposeProjectLabel(summary.Labels)]; !isActive || (!ignoreOptOuts && labels.IsUpdateDisabled(summary.Labels)) {
 			continue
 		}
 		imageRef := strings.TrimSpace(summary.Image)

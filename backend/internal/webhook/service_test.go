@@ -798,7 +798,7 @@ func TestRemoteWebhookRequestInternal(t *testing.T) {
 			wh:         Webhook{TargetType: WebhookTargetTypeUpdater},
 			actionType: WebhookActionTypeRun,
 			wantMethod: "POST",
-			wantPath:   "/api/environments/0/updater/run",
+			wantPath:   "/api/environments/0/updater/run?automatic=true",
 			wantResult: true,
 		},
 		{

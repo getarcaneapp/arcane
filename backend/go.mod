@@ -75,7 +75,7 @@ require (
 	go.getarcane.app/streams v0.4.6
 	go.getarcane.app/sys/cgroup v0.2.5
 	go.getarcane.app/sys/crypto v0.3.3
-	go.getarcane.app/updater v0.11.12
+	go.getarcane.app/updater v0.11.13
 	go.opentelemetry.io/contrib/bridges/otelslog v0.21.0
 	go.opentelemetry.io/contrib/exporters/autoexport v0.72.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0

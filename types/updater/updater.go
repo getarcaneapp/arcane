@@ -50,6 +50,8 @@ type Options struct {
 
 	// DryRun performs a dry run without applying updates
 	DryRun bool `json:"dryRun,omitempty"`
+
+	IgnoreSettingsExclusions bool `json:"-"`
 }
 
 // ResourceResult represents the result of an update operation on a single resource.

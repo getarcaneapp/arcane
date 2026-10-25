@@ -686,7 +686,7 @@ func remoteWebhookRequestInternal(wh *Webhook, actionType string) (method, path 
 		if actionType != WebhookActionTypeRun {
 			return "", "", false, ErrWebhookInvalidAction
 		}
-		return http.MethodPost, apiPrefix + "/updater/run", true, nil
+		return http.MethodPost, apiPrefix + "/updater/run?automatic=true", true, nil
 	case WebhookTargetTypeGitOps:
 		if actionType != WebhookActionTypeSync {
 			return "", "", false, ErrWebhookInvalidAction

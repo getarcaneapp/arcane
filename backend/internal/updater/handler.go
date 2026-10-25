@@ -25,6 +25,7 @@ type UpdaterHandler struct {
 
 type RunUpdaterInput struct {
 	EnvironmentID string           `path:"id" doc:"Environment ID"`
+	Automatic     bool             `query:"automatic" doc:"Honor updater opt-out labels and excluded containers, as automatic runs do"`
 	Body          *updater.Options `doc:"Updater run options"`
 }
 
@@ -50,7 +51,13 @@ type GetUpdaterHistoryInput struct {
 
 // RunUpdater applies pending container updates.
 func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput) (*handlerutil.Out[*updater.Result], error) {
-	out, err := h.updaterService.ApplyPending(utils.ActivityRuntimeContext(ctx, h.appCtx), kit.FromPtr(input.Body))
+	out, err := h.updaterService.ApplyPending(utils.ActivityRuntimeContext(ctx, h.appCtx), updater.Options{
+		Type:                     kit.FromPtr(input.Body).Type,
+		ResourceIds:              kit.FromPtr(input.Body).ResourceIds,
+		ForceUpdate:              kit.FromPtr(input.Body).ForceUpdate,
+		DryRun:                   kit.FromPtr(input.Body).DryRun,
+		IgnoreSettingsExclusions: !input.Automatic,
+	})
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to run updater: "+apiErr.Message)
