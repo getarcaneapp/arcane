@@ -135,17 +135,19 @@ func TestCollectPinnedReferencesByImageID(t *testing.T) {
 
 func TestMapDockerImagesToDTOs_PopulatesPinnedReferences(t *testing.T) {
 	pinnedRef := "ghcr.io/syncthing/syncthing:2.1.3@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0"
+	const pinnedDigest = "ghcr.io/syncthing/syncthing@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0"
+	const regularDigest = "nginx@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0"
 	dockerImages := []image.Summary{
 		{
 			ID:          "sha256:pinned-image",
-			RepoTags:    []string{},
-			RepoDigests: []string{"ghcr.io/syncthing/syncthing@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0"},
+			RepoTags:    []string{pinnedDigest},
+			RepoDigests: []string{pinnedDigest},
 			Size:        12345,
 		},
 		{
 			ID:          "sha256:regular-image",
-			RepoTags:    []string{"nginx:alpine"},
-			RepoDigests: []string{"nginx@sha256:abcdef"},
+			RepoTags:    []string{regularDigest, "nginx:alpine"},
+			RepoDigests: []string{regularDigest},
 			Size:        67890,
 		},
 	}
@@ -173,6 +175,7 @@ func TestMapDockerImagesToDTOs_PopulatesPinnedReferences(t *testing.T) {
 	assert.Equal(t, "ghcr.io/syncthing/syncthing", items[0].Repo)
 	assert.Equal(t, "<none>", items[0].Tag)
 	assert.Empty(t, items[0].RepoTags)
+	assert.Equal(t, []string{pinnedDigest}, items[0].RepoDigests)
 	assert.Equal(t, []string{pinnedRef}, items[0].PinnedReferences)
 	assert.True(t, items[0].InUse)
 
@@ -180,6 +183,7 @@ func TestMapDockerImagesToDTOs_PopulatesPinnedReferences(t *testing.T) {
 	assert.Equal(t, "nginx", items[1].Repo)
 	assert.Equal(t, "alpine", items[1].Tag)
 	assert.Equal(t, []string{"nginx:alpine"}, items[1].RepoTags)
+	assert.Equal(t, []string{regularDigest}, items[1].RepoDigests)
 	assert.Nil(t, items[1].PinnedReferences)
 	assert.True(t, items[1].InUse)
 }
@@ -188,6 +192,7 @@ func TestImageService_GetImageDetail_EnrichesPinnedReferences(t *testing.T) {
 	db := setupImageProjectTestDB(t)
 	const pinnedID = "sha256:test-pinned-detail"
 	pinnedRef := "ghcr.io/syncthing/syncthing:2.1.3@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0"
+	const pinnedDigest = "ghcr.io/syncthing/syncthing@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0"
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -198,10 +203,9 @@ func TestImageService_GetImageDetail_EnrichesPinnedReferences(t *testing.T) {
 			})
 		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			_ = json.NewEncoder(w).Encode(image.InspectResponse{
-				ID:          pinnedID,
-				RepoTags:    []string{},
-				RepoDigests: []string{"ghcr.io/syncthing/syncthing@sha256:8c8ff37ab6aa8be23b700648a90fa9412e214852e9fd6ea8477c8334792daec0"},
-				Size:        2048,
+				ID:       pinnedID,
+				RepoTags: []string{pinnedDigest},
+				Size:     2048,
 			})
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			_ = json.NewEncoder(w).Encode([]container.Summary{
@@ -223,6 +227,8 @@ func TestImageService_GetImageDetail_EnrichesPinnedReferences(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, detail)
 	assert.Equal(t, pinnedID, detail.ID)
+	assert.Empty(t, detail.RepoTags)
+	assert.Equal(t, []string{pinnedDigest}, detail.RepoDigests)
 	assert.Equal(t, []string{pinnedRef}, detail.PinnedReferences)
 }
 
