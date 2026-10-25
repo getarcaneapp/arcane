@@ -58,11 +58,12 @@
 			hiddenNavigationSettings = value ? undefined : navigationSettings;
 		}
 	});
-	const managementItems = $derived(filterByPermissions(navigationItems.managementItems, user ?? null, permissionsManifest));
+	const overviewItems = $derived(filterByPermissions(navigationItems.overviewItems, user ?? null, permissionsManifest));
+	const deployItems = $derived(filterByPermissions(navigationItems.deployItems, user ?? null, permissionsManifest));
 	const resourceItems = $derived(filterByPermissions(navigationItems.resourceItems, user ?? null, permissionsManifest));
-	const settingsShortcutItems = $derived(filterByPermissions(navigationItems.settingsItems, user ?? null, permissionsManifest));
+	const adminItems = $derived(filterByPermissions(navigationItems.adminItems, user ?? null, permissionsManifest));
 	const shortcutItems = $derived.by(() => {
-		const items: NavigationItem[] = [...managementItems, ...resourceItems, ...settingsShortcutItems];
+		const items: NavigationItem[] = [...overviewItems, ...deployItems, ...resourceItems, ...adminItems];
 		return flattenNavigationItems(items).filter((item) => item.shortcut?.length);
 	});
 
