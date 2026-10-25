@@ -242,7 +242,27 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.Im
 		if inspectImageErr != nil {
 			return fmt.Errorf("inspect not found: %w", inspectImageErr)
 		}
-		inspect = inspectResult.InspectResponse
+		repoTags, repoDigests := imageref.SplitRepositoryReferences(inspectResult.RepoTags, inspectResult.RepoDigests)
+		inspect = image.InspectResponse{ //exhaustruct:enforce
+			ID:           inspectResult.ID,
+			RepoTags:     repoTags,
+			RepoDigests:  repoDigests,
+			Comment:      inspectResult.Comment,
+			Created:      inspectResult.Created,
+			Author:       inspectResult.Author,
+			Config:       inspectResult.Config,
+			Architecture: inspectResult.Architecture,
+			Variant:      inspectResult.Variant,
+			Os:           inspectResult.Os,
+			OsVersion:    inspectResult.OsVersion,
+			Size:         inspectResult.Size,
+			GraphDriver:  inspectResult.GraphDriver,
+			RootFS:       inspectResult.RootFS,
+			Metadata:     inspectResult.Metadata,
+			Descriptor:   inspectResult.Descriptor,
+			Manifests:    inspectResult.Manifests,
+			Identity:     inspectResult.Identity,
+		}
 		return nil
 	})
 
@@ -1235,20 +1255,21 @@ func MapDockerImagesToDTOs(
 	pinnedRefsByImageID := collectPinnedReferencesByImageID(containers)
 	items := make([]types.ImageSummary, 0, len(dockerImages))
 	for _, di := range dockerImages {
+		repoTags, repoDigests := imageref.SplitRepositoryReferences(di.RepoTags, di.RepoDigests)
 		repo, tag := func() (string, string) {
-			if len(di.RepoTags) > 0 {
-				if named, err := reference.ParseNormalizedNamed(di.RepoTags[0]); err == nil {
+			if len(repoTags) > 0 {
+				if named, err := reference.ParseNormalizedNamed(repoTags[0]); err == nil {
 					if tagged, ok := named.(reference.NamedTagged); ok {
 						return reference.FamiliarName(named), tagged.Tag()
 					}
 					return reference.FamiliarName(named), "latest"
 				}
-				if before, after, found := strings.CutLast(di.RepoTags[0], ":"); found {
+				if before, after, found := strings.CutLast(repoTags[0], ":"); found {
 					return before, after
 				}
-				return di.RepoTags[0], "latest"
+				return repoTags[0], "latest"
 			}
-			if candidateRepo, found := imageref.RepoDigestRepository(di.RepoDigests); found {
+			if candidateRepo, found := imageref.RepoDigestRepository(repoDigests); found {
 				return candidateRepo, "<none>"
 			}
 			return "<none>", "<none>"
@@ -1259,8 +1280,8 @@ func MapDockerImagesToDTOs(
 			ID:               di.ID,
 			Repo:             repo,
 			Tag:              tag,
-			RepoTags:         di.RepoTags,
-			RepoDigests:      di.RepoDigests,
+			RepoTags:         repoTags,
+			RepoDigests:      repoDigests,
 			PinnedReferences: pinnedRefsByImageID[di.ID],
 			Created:          di.Created,
 			Size:             di.Size,
