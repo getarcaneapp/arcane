@@ -129,6 +129,9 @@ func (h *Handler) UpdateBackupPolicy(ctx context.Context, input *UpdateVolumeBac
 			)
 			if proxyErr != nil {
 				errorStatus = http.StatusBadGateway
+				if statusErr, ok := errors.AsType[huma.StatusError](proxyErr); ok && statusErr.GetStatus() == http.StatusNotFound {
+					errorStatus = http.StatusNotFound
+				}
 			}
 			return proxyErr
 		}
@@ -140,8 +143,8 @@ func (h *Handler) UpdateBackupPolicy(ctx context.Context, input *UpdateVolumeBac
 		if errorStatus == http.StatusInternalServerError {
 			return nil, huma.Error500InternalServerError(err.Error())
 		}
-		if errorStatus == http.StatusBadGateway {
-			return nil, huma.NewError(http.StatusBadGateway, err.Error())
+		if errorStatus == http.StatusBadGateway || errorStatus == http.StatusNotFound {
+			return nil, huma.NewError(errorStatus, err.Error())
 		}
 		return nil, huma.Error400BadRequest(err.Error())
 	}

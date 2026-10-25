@@ -773,6 +773,9 @@ func (s *EnvironmentService) GetEnabledRegistryCredentials(ctx context.Context) 
 
 // SyncResourcesToEnvironment tracks a manual sync and attempts every resource group.
 func (s *EnvironmentService) SyncResourcesToEnvironment(ctx context.Context, environmentID string, user *usertypes.Actor, activityService activity.Service) (string, error) {
+	if _, err := s.GetEnvironmentByID(ctx, environmentID); err != nil {
+		return "", err
+	}
 	return activity.RunHandlerActivity(ctx, activityService, activity.HandlerOptions{
 		EnvironmentID:  environmentID,
 		Type:           activitytypes.TypeResourceAction,

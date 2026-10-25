@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 )
 
@@ -63,5 +64,5 @@ func TranslateRemoteProxyError(err error) error {
 		return huma.Error500InternalServerError("failed to decode environment response: " + decodeErr.Error())
 	}
 
-	return huma.Error500InternalServerError("failed to proxy request to environment: " + err.Error())
+	return huma.NewError(common.ToAPIError(err).HTTPStatus(), "failed to proxy request to environment: "+err.Error())
 }

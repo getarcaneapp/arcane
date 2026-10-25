@@ -419,7 +419,7 @@ func mapSwarmServiceErrorInternal(err error, fallback string) error {
 	if errors.Is(err, common.ErrBadRequest) {
 		return huma.Error400BadRequest(err.Error())
 	}
-	if errdefs.IsNotFound(err) {
+	if errdefs.IsNotFound(err) || errors.Is(err, common.ErrNotFound) {
 		return huma.Error404NotFound(err.Error())
 	}
 	if errdefs.IsInvalidArgument(err) {

@@ -540,6 +540,9 @@ func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConn
 			},
 		}, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
+	if errors.Is(err, ErrEnvironmentNotFound) {
+		return nil, huma.Error404NotFound(err.Error())
+	}
 	if err != nil {
 		return &handlerutil.Out[environment.Test]{
 			Body: base.ApiResponse[environment.Test]{
@@ -603,7 +606,7 @@ func (h *EnvironmentHandler) SyncEnvironment(ctx context.Context, input *SyncEnv
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := h.environmentService.SyncResourcesToEnvironment(runtimeCtx, input.ID, user, h.activityService)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.NewError(common.ToAPIError(err).HTTPStatus(), err.Error())
 	}
 
 	return handlerutil.MessageOutput("Environment synced successfully", activityID), nil
