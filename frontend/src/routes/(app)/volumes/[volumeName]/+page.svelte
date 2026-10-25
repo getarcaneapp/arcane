@@ -390,27 +390,25 @@
 
 	onMount(() => {
 		const cache = queryClient.getQueryCache();
+		const environmentId = currentEnvId;
+		const volumeName = volume?.name;
 		const loadAfterUpdate = async () => {
-			const environmentId = currentEnvId;
-			const volumeName = volume?.name;
 			await tick();
-			if (!active || !volumeName || environmentId !== currentEnvId || volumeName !== volume?.name) return;
+			if (!active || !volumeName) return;
 			initializeVolumePreferences();
 			loadSelectedWorkspaceFile();
 		};
 		const unsubscribe = cache.subscribe((event) => {
-			if (!active || (event.type !== 'updated' && event.type !== 'observerResultsUpdated')) return;
-			const volumeName = volume?.name;
-			if (!volumeName) return;
+			if (!active || !volumeName || (event.type !== 'updated' && event.type !== 'observerResultsUpdated')) return;
 			const backupPath = cache.find({
-				queryKey: queryKeys.volumes.backupHasPath(currentEnvId, volumeName, selectedWorkspaceBackupId, workspaceRestorePath),
+				queryKey: queryKeys.volumes.backupHasPath(environmentId, volumeName, selectedWorkspaceBackupId, workspaceRestorePath),
 				exact: true
 			});
 			if (event.query === backupPath) {
 				notifyWorkspaceBackupError(event.query.state.error);
 			}
 			if (event.type !== 'updated' || event.action.type !== 'success') return;
-			if (event.query === cache.find({ queryKey: queryKeys.volumes.workspace(currentEnvId, volumeName), exact: true })) {
+			if (event.query === cache.find({ queryKey: queryKeys.volumes.workspace(environmentId, volumeName), exact: true })) {
 				void loadAfterUpdate();
 			}
 		});
