@@ -55,9 +55,8 @@
 	const effectiveUser = $derived(storeUser.current ?? user);
 
 	const isCollapsed = $derived(sidebar.state === 'collapsed' && !(sidebar.hoverExpansionEnabled && sidebar.isHovered));
-	const managementItems = $derived(
-		filterByPermissions(navigationItems.managementItems, effectiveUser ?? null, permissionsManifest)
-	);
+	const overviewItems = $derived(filterByPermissions(navigationItems.overviewItems, effectiveUser ?? null, permissionsManifest));
+	const deployItems = $derived(filterByPermissions(navigationItems.deployItems, effectiveUser ?? null, permissionsManifest));
 	const resourceItems = $derived(filterByPermissions(navigationItems.resourceItems, effectiveUser ?? null, permissionsManifest));
 	const swarmItems = $derived(
 		filterByPermissions(getSwarmNavigationItems(swarmEnabled), effectiveUser ?? null, permissionsManifest)
@@ -65,7 +64,7 @@
 	const podmanItems = $derived(
 		filterByPermissions(getPodmanNavigationItems(podmanStatuses), effectiveUser ?? null, permissionsManifest)
 	);
-	const settingsItems = $derived(filterByPermissions(navigationItems.settingsItems, effectiveUser ?? null, permissionsManifest));
+	const adminItems = $derived(filterByPermissions(navigationItems.adminItems, effectiveUser ?? null, permissionsManifest));
 </script>
 
 <VersionInfoDialog
@@ -105,8 +104,11 @@
 		{/if}
 	</Sidebar.Header>
 	<Sidebar.Content class={!isCollapsed ? '-mt-2' : ''}>
-		{#if managementItems.length > 0}
-			<SidebarItemGroup label={m.sidebar_management()} items={managementItems} />
+		{#if overviewItems.length > 0}
+			<SidebarItemGroup label={m.sidebar_overview()} items={overviewItems} />
+		{/if}
+		{#if deployItems.length > 0}
+			<SidebarItemGroup label={m.deploy()} items={deployItems} />
 		{/if}
 		{#if resourceItems.length > 0}
 			<SidebarItemGroup label={m.resources()} items={resourceItems} />
@@ -117,8 +119,8 @@
 		{#if podmanItems.length > 0}
 			<SidebarItemGroup label={m.podman()} items={podmanItems} />
 		{/if}
-		{#if settingsItems.length > 0}
-			<SidebarItemGroup label={m.sidebar_administration()} items={settingsItems} />
+		{#if adminItems.length > 0}
+			<SidebarItemGroup label={m.sidebar_administration()} items={adminItems} />
 		{/if}
 	</Sidebar.Content>
 	<Sidebar.Footer>
