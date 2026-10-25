@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte.js';
 	import { LayersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
@@ -9,6 +7,7 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { simpleRefresh } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
 
 	import SwarmStacksTable from './components/stacks-table.svelte';

@@ -9,6 +9,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import { COMPOSE_PROJECT_LABEL, COMPOSE_SERVICE_LABEL } from '#lib/utils/docker.js';
 
 	let {
@@ -42,7 +43,7 @@
 		if (!containerId || !selectedShell) return '';
 		let protocol = 'ws:';
 		if (page.url.protocol === 'https:') protocol = 'wss:';
-		return `${protocol}//${page.url.host}/api/environments/${environmentId}/ws/containers/${containerId}/terminal?shell=${encodeURIComponent(selectedShell)}`;
+		return `${protocol}//${page.url.host}${withBase(`/api/environments/${environmentId}/ws/containers/${containerId}/terminal?shell=${encodeURIComponent(selectedShell)}`)}`;
 	});
 
 	function handleShellChange(shell: string) {

@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import EnvironmentSwitcherDialog from '#lib/components/dialogs/environment-switcher-dialog.svelte';
 	import * as Empty from '#lib/components/ui/empty/index.js';
@@ -8,6 +6,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { goto } from '#lib/utils/base-path.js';
 
 	let {
 		message,

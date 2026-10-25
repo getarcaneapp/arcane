@@ -7,6 +7,7 @@
 	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
 	import { ArrowRightIcon } from '#lib/icons/index.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
+	import { stripBase, withBase } from '#lib/utils/base-path.js';
 	import type { ShortcutKey } from '#lib/utils/navigation.js';
 
 	import SidebarCollapsibleItem from './sidebar-collapsible-item.svelte';
@@ -34,11 +35,12 @@
 	const sidebar = useSidebar();
 
 	function isActiveItem(url: string): boolean {
+		const pathname = stripBase(page.url.pathname);
 		// Special case: Don't highlight "Environments" when on GitOps page
-		if (url === '/environments' && page.url.pathname.includes('/gitops')) {
+		if (url === '/environments' && pathname.includes('/gitops')) {
 			return false;
 		}
-		return page.url.pathname === url || (page.url.pathname.startsWith(url) && url !== '/');
+		return pathname === url || (pathname.startsWith(url) && url !== '/');
 	}
 
 	function hasActiveChild(items?: { url: string }[]): boolean {
@@ -79,7 +81,7 @@
 
 {#snippet itemAnchor(entry: { title: string; url: string; icon?: typeof ArrowRightIcon }, props: Record<string, unknown>)}
 	{@const Icon = entry.icon}
-	<a href={entry.url} {...props}>
+	<a href={withBase(entry.url)} {...props}>
 		{#if entry.icon}
 			<Icon />
 		{/if}

@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
@@ -12,6 +10,7 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { PortMappingDto } from '#lib/types/docker.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import {
 		environmentHref,
 		fetchAcrossEnvironments,

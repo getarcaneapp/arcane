@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { browser } from '$app/env';
-	import { goto } from '$app/navigation';
 	import {
 		Background,
 		BackgroundVariant,
@@ -23,6 +22,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import type { NetworkTopologyDto, TopologyEdgeDto, TopologyNodeDto } from '#lib/types/docker.js';
 	import { cn } from '#lib/utils.js';
+	import { goto } from '#lib/utils/base-path.js';
 
 	import '@xyflow/svelte/dist/style.css';
 

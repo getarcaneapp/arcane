@@ -5,6 +5,7 @@
 	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
 	import { ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import type { ShortcutKey } from '#lib/utils/navigation.js';
 
 	import SidebarItemTooltipContent from './sidebar-item-tooltip-content.svelte';
@@ -45,7 +46,7 @@
 			class="group-data-[collapsible=icon]:mx-auto"
 		>
 			{#snippet child({ props })}
-				<a href={item.url} {...props}>
+				<a href={withBase(item.url)} {...props}>
 					{#if item.icon}
 						<Icon />
 					{/if}

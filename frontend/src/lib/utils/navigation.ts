@@ -9,6 +9,7 @@ import {
 	type MobileNavigationSettings
 } from '#lib/config/navigation-config.js';
 import userStore from '#lib/stores/user-store.svelte.js';
+import { withBase } from '#lib/utils/base-path.js';
 
 // --- Mobile nav state ---
 
@@ -40,6 +41,11 @@ export function getEffectiveLandingPage(): string {
 	const candidate = userStore.current?.preferences?.defaultLandingPage ?? DEFAULT_LANDING_PAGE;
 
 	return getLandingPageNavItems().some((item) => item.url === candidate) ? candidate : DEFAULT_LANDING_PAGE;
+}
+
+/** {@link getEffectiveLandingPage} as a browser href, base path included. */
+export function landingPageHref(): string {
+	return withBase(getEffectiveLandingPage());
 }
 
 // --- Keyboard shortcuts ---

@@ -2,7 +2,7 @@ import { browser } from '$app/env';
 import { error as httpError, redirect } from '@sveltejs/kit';
 
 import { passkeyService } from '#lib/services/passkey-service.js';
-import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
+import { landingPageHref } from '#lib/utils/navigation.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
@@ -22,7 +22,7 @@ export const load: PageLoad = async ({ parent, url, params }) => {
 	const redirectTo = rawRedirect?.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '';
 
 	if (data.user) {
-		throw redirect(302, redirectTo || getEffectiveLandingPage());
+		throw redirect(302, redirectTo || landingPageHref());
 	}
 
 	const passkeyAvailability = await tryCatch(passkeyService.getLoginAvailability()).then((result) =>

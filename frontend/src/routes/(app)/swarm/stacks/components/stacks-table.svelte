@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -15,6 +14,7 @@
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { SwarmStackSummary } from '#lib/types/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { withBase, goto } from '#lib/utils/base-path.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -73,7 +73,7 @@
 </script>
 
 {#snippet NameCell({ item }: { item: SwarmStackSummary })}
-	<a href="/swarm/stacks/{encodeURIComponent(item.name)}" class="text-sm font-medium text-primary hover:underline">
+	<a href={withBase(`/swarm/stacks/{encodeURIComponent(item.name)}`)} class="text-sm font-medium text-primary hover:underline">
 		{item.name}
 	</a>
 {/snippet}

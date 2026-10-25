@@ -3,6 +3,7 @@
 	import type { HTMLAnchorAttributes, HTMLButtonAttributes } from 'svelte/elements';
 
 	import type { IconType } from '#lib/icons/index.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import type { ShortcutKey } from '#lib/utils/navigation.js';
 
 	import type { ArcaneButtonSize, Action, ArcaneButtonHoverEffect, ActionConfig, ArcaneButtonTone } from './variants';
@@ -107,7 +108,7 @@
 	data-slot="arcane-button"
 	data-action={action}
 	type={href ? undefined : type}
-	href={href && !disabled ? href : undefined}
+	href={href && !disabled ? withBase(href) : undefined}
 	disabled={href ? undefined : disabled || loading}
 	aria-disabled={href ? disabled : undefined}
 	role={href && disabled ? 'link' : role}

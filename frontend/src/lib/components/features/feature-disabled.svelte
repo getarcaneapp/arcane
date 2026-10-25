@@ -1,11 +1,10 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { hasAnyPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 
 	let { environmentId: targetEnvironmentId }: { environmentId?: string } = $props();
 	const environmentId = $derived(targetEnvironmentId ?? environmentStore.selected?.id ?? '0');

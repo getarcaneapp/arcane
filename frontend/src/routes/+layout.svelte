@@ -20,6 +20,7 @@
 	import { isAuthPagePath } from '#lib/services/api-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
+	import { base } from '#lib/utils/base-path.js';
 	import { environmentName } from '#lib/utils/environments.js';
 	import { finishNavigation, startPageView } from '#lib/utils/telemetry.js';
 
@@ -31,7 +32,7 @@
 
 	onMount(() => {
 		if (!dev && 'serviceWorker' in navigator) {
-			navigator.serviceWorker.register('/service-worker.js', { type: 'module' });
+			navigator.serviceWorker.register(`${base}/service-worker.js`, { type: 'module' });
 		}
 	});
 

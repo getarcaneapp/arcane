@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { untrack } from 'svelte';
 
 	import { BoxIcon } from '#lib/icons/index.js';
@@ -10,6 +9,7 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ContainerStatusCounts } from '#lib/types/docker.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { fetchAcrossEnvironments, hasShownPermission } from '#lib/utils/environments.js';
 	import { confirmAndApplyAllUpdates } from '#lib/utils/update-actions.js';
 

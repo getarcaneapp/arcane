@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 
 	import CategoryIndexPage from '#lib/components/category-index-page.svelte';
@@ -13,6 +12,7 @@
 	import type { CustomizeCategory } from '#lib/types/shared.js';
 	import { canReachAccessSurfaceUrl } from '#lib/utils/access-policy.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { normalizeCategory, orderCategoriesByNav } from '#lib/utils/category-page.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 

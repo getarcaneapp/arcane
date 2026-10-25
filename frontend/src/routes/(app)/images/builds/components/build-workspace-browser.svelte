@@ -22,6 +22,7 @@
 	import type { FileEntry } from '#lib/types/shared.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	let {
@@ -248,7 +249,12 @@
 			<div class="flex flex-wrap justify-center gap-2">
 				<ArcaneButton action="refresh" customLabel={m.common_retry()} onclick={() => filesQuery.refetch()} />
 				{#if canOpenBuildSettings}
-					<ArcaneButton action="base" tone="outline" customLabel={m.build_workspace_open_settings()} href="/settings/builds" />
+					<ArcaneButton
+						action="base"
+						tone="outline"
+						customLabel={m.build_workspace_open_settings()}
+						href={withBase('/settings/builds')}
+					/>
 				{:else}
 					<p class="text-xs text-muted-foreground">{m.build_workspace_ask_admin()}</p>
 				{/if}

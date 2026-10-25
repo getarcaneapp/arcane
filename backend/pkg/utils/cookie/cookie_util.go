@@ -65,15 +65,30 @@ func GetTokenCookieFromHeader(cookieHeader string) (string, error) {
 }
 
 func BuildRefreshCookieStringFor(maxAgeInSeconds int, value string, secure bool) string {
-	return buildCookieString(kit.Ternary(secure, RefreshCookieName, InsecureRefreshCookieName), RefreshCookiePath, value, max(maxAgeInSeconds, 0), secure, http.SameSiteStrictMode)
+	return buildCookieString(refreshCookieName(secure), RefreshCookiePathFor(BasePath()), value, max(maxAgeInSeconds, 0), secure, http.SameSiteStrictMode)
 }
 
 func BuildClearRefreshCookieStringsFor(secure bool) []string {
-	headers := []string{buildCookieString(InsecureRefreshCookieName, RefreshCookiePath, "", -1, false, http.SameSiteStrictMode)}
+	headers := []string{buildCookieString(InsecureRefreshCookieName, RefreshCookiePathFor(BasePath()), "", -1, false, http.SameSiteStrictMode)}
 	if secure {
-		headers = append(headers, buildCookieString(RefreshCookieName, RefreshCookiePath, "", -1, true, http.SameSiteStrictMode))
+		headers = append(headers, buildCookieString(RefreshCookieName, RefreshCookiePathFor(BasePath()), "", -1, true, http.SameSiteStrictMode))
+	}
+	if base := BasePath(); base != "" {
+		// Also clear the root-scoped cookies so sessions from a deployment without a base
+		// path (or from re-deploying with a different one) do not linger forever.
+		headers = append(headers,
+			buildCookieString(InsecureRefreshCookieName, RefreshCookiePath, "", -1, false, http.SameSiteStrictMode),
+			buildCookieString(RefreshCookieName, RefreshCookiePath, "", -1, true, http.SameSiteStrictMode),
+		)
 	}
 	return headers
+}
+
+func refreshCookieName(secure bool) string {
+	if secure {
+		return SecureCookieName(RefreshCookieName, BasePath())
+	}
+	return InsecureRefreshCookieName
 }
 
 func GetTokenCookie(r *http.Request) (string, error) {
@@ -115,7 +130,8 @@ func BuildTokenCookieStringFor(maxAgeInSeconds int, token string, secure bool) [
 	if maxAgeInSeconds < 0 {
 		maxAgeInSeconds = 0
 	}
-	base := kit.Ternary(secure, TokenCookieName, InsecureTokenCookieName)
+	base := kit.Ternary(secure, SecureCookieName(TokenCookieName, BasePath()), InsecureTokenCookieName)
+	path := CookiePath(BasePath())
 
 	var chunks []string
 	for len(token) > tokenCookieChunkSize {
@@ -129,7 +145,7 @@ func BuildTokenCookieStringFor(maxAgeInSeconds int, token string, secure bool) [
 		cookie := &http.Cookie{ // #nosec G124: Secure mirrors the trusted request context so the cookie can round-trip through HTTPS reverse proxies.
 			Name:     tokenCookieChunkNameInternal(base, i),
 			Value:    chunk,
-			Path:     "/",
+			Path:     path,
 			MaxAge:   maxAgeInSeconds,
 			HttpOnly: true,
 			Secure:   secure,
@@ -138,7 +154,7 @@ func BuildTokenCookieStringFor(maxAgeInSeconds int, token string, secure bool) [
 		headers = append(headers, cookie.String())
 	}
 	for i := len(chunks); i < tokenCookieMaxChunks; i++ {
-		headers = append(headers, buildCookieString(tokenCookieChunkNameInternal(base, i), "/", "", -1, secure, http.SameSiteLaxMode))
+		headers = append(headers, buildCookieString(tokenCookieChunkNameInternal(base, i), path, "", -1, secure, http.SameSiteLaxMode))
 	}
 	return headers
 }
@@ -149,10 +165,21 @@ func BuildTokenCookieStringFor(maxAgeInSeconds int, token string, secure bool) [
 // flushed instead of being re-presented forever.
 func BuildClearTokenCookieStringsFor(secure bool) []string {
 	var headers []string
+	path := CookiePath(BasePath())
 	for i := range tokenCookieMaxChunks {
-		headers = append(headers, buildCookieString(tokenCookieChunkNameInternal(InsecureTokenCookieName, i), "/", "", -1, false, http.SameSiteLaxMode))
+		headers = append(headers, buildCookieString(tokenCookieChunkNameInternal(InsecureTokenCookieName, i), path, "", -1, false, http.SameSiteLaxMode))
 		if secure {
-			headers = append(headers, buildCookieString(tokenCookieChunkNameInternal(TokenCookieName, i), "/", "", -1, true, http.SameSiteLaxMode))
+			headers = append(headers, buildCookieString(tokenCookieChunkNameInternal(SecureCookieName(TokenCookieName, BasePath()), i), path, "", -1, true, http.SameSiteLaxMode))
+		}
+	}
+	if base := BasePath(); base != "" {
+		// Also clear the root-scoped cookies so sessions from a deployment without a base
+		// path (or from re-deploying with a different one) do not linger forever.
+		for i := range tokenCookieMaxChunks {
+			headers = append(headers, buildCookieString(tokenCookieChunkNameInternal(InsecureTokenCookieName, i), "/", "", -1, false, http.SameSiteLaxMode))
+			if secure {
+				headers = append(headers, buildCookieString(tokenCookieChunkNameInternal(TokenCookieName, i), "/", "", -1, true, http.SameSiteLaxMode))
+			}
 		}
 	}
 	return headers
@@ -179,7 +206,7 @@ func BuildOidcStateCookieString(value string, maxAgeInSeconds int, secure bool) 
 	cookie := &http.Cookie{ // #nosec G124: secure is provided by the caller based on request context.
 		Name:     OidcStateCookieName,
 		Value:    value,
-		Path:     "/",
+		Path:     CookiePath(BasePath()),
 		MaxAge:   maxAgeInSeconds,
 		HttpOnly: true,
 		Secure:   secure,
@@ -193,7 +220,7 @@ func BuildClearOidcStateCookieString(secure bool) string {
 	cookie := &http.Cookie{ // #nosec G124: secure is provided by the caller based on request context.
 		Name:     OidcStateCookieName,
 		Value:    "",
-		Path:     "/",
+		Path:     CookiePath(BasePath()),
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   secure,

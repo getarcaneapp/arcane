@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -12,12 +11,13 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { SettingsFormContext, SettingsFormState } from '#lib/types/settings-form.js';
 	import { cn } from '#lib/utils.js';
+	import { stripBase, goto } from '#lib/utils/base-path.js';
 
 	import type { LayoutProps } from './$types';
 
 	let { children, data }: LayoutProps = $props();
 
-	let isSubPage = $derived(page.url.pathname !== '/settings');
+	let isSubPage = $derived(stripBase(page.url.pathname) !== '/settings');
 	let currentPageName = $derived(page.url.pathname.split('/').pop() || 'settings');
 
 	const isMobile = new IsMobile();

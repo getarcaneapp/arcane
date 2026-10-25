@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { NavigationItem } from '#lib/config/navigation-config.js';
 	import { cn } from '#lib/utils.js';
+	import { withBase } from '#lib/utils/base-path.js';
 
 	let {
 		item,
@@ -18,7 +19,7 @@
 </script>
 
 <a
-	href={item.url}
+	href={withBase(item.url)}
 	aria-label={`${item.title}${active ? ' (current page)' : ''}`}
 	aria-current={active ? 'page' : undefined}
 	class={cn(

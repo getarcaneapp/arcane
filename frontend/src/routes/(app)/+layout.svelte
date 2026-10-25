@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/env';
-	import { goto, afterNavigate } from '$app/navigation';
+	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 
@@ -24,6 +24,7 @@
 	import { versionStore } from '#lib/stores/version.store.svelte.js';
 	import { cn } from '#lib/utils.js';
 	import { getAuthRedirectPath } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { isEnvironmentOnline } from '#lib/utils/docker.js';
 	import { getEffectiveLandingPage, getEffectiveNavigationSettings, setMobileNavigation } from '#lib/utils/navigation.js';
 	import { isEditableTarget, matchesShortcutEvent } from '#lib/utils/navigation.js';

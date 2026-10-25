@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, refreshAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { PersistedState } from 'runed';
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -47,6 +47,7 @@
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasAnyPermission, hasPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { isEnvironmentOnline } from '#lib/utils/docker.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { createStatsWebSocket, type ReconnectingWebSocket } from '#lib/utils/ws.js';

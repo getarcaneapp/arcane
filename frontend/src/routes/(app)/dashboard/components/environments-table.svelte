@@ -37,6 +37,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { cn } from '#lib/utils.js';
+	import { withBase } from '#lib/utils/base-path.js';
 
 	let { rows }: { rows: EnvironmentTableRow[] } = $props();
 	const showVulnerabilities = $derived(rows.some((row) => featureStore.isEnabled('vulnerabilityManagement', row.environment.id)));
@@ -99,7 +100,7 @@
 				<Table.Row data-state={row.isCurrent ? 'selected' : undefined}>
 					<Table.Cell>
 						<div class="flex min-w-0 items-center gap-2">
-							<a class="truncate font-medium hover:underline" href="/environments/{row.environment.id}">
+							<a class="truncate font-medium hover:underline" href={withBase(`/environments/{row.environment.id}`)}>
 								{row.environment.name}
 							</a>
 							{#if row.podCount !== null}

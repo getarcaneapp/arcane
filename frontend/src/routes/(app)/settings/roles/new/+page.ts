@@ -3,6 +3,7 @@ import { redirect } from '@sveltejs/kit';
 import { queryKeys } from '#lib/query/query-keys.js';
 import { roleService } from '#lib/services/role-service.js';
 import { userIsGlobalAdmin } from '#lib/utils/auth.js';
+import { withBase } from '#lib/utils/base-path.js';
 
 import type { PageLoad } from './$types';
 
@@ -13,7 +14,7 @@ export const load: PageLoad = async ({ parent }) => {
 	// on POST /roles). Guard here so non-admins are bounced before the
 	// permissions manifest is fetched.
 	if (!userIsGlobalAdmin(user)) {
-		throw redirect(302, '/settings/roles');
+		throw redirect(302, withBase('/settings/roles'));
 	}
 
 	const permissionsManifest = await queryClient.query({

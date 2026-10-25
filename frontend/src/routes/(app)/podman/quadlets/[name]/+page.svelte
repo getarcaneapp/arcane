@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -22,6 +21,7 @@
 	import { podmanService, type PodmanQuadletAction } from '#lib/services/podman-service.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { environmentHref } from '#lib/utils/environments.js';
 	import { podmanStateVariant } from '#lib/utils/podman.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';

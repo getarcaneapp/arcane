@@ -33,6 +33,7 @@
 	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { toGitRouteUrl } from '#lib/utils/navigation.js';
@@ -106,7 +107,7 @@
 			environmentId
 		});
 
-		return `/projects/${projectId}?${params.toString()}`;
+		return withBase(`/projects/${projectId}?${params.toString()}`);
 	}
 
 	function isBackup(sync: GitOpsSync): boolean {

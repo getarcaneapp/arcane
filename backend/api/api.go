@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/json/v2"
+	"fmt"
 	"io"
 	"maps"
 	"net/http"
@@ -80,7 +81,7 @@ const (
   <body>
     <script
       id="api-reference"
-      data-url="/api/openapi.json"
+      data-url="%[1]s/api/openapi.json"
       data-configuration='{
         "theme": "purple",
         "darkMode": true,
@@ -92,6 +93,13 @@ const (
   </body>
 </html>`
 )
+
+// docsHTML points the Scalar docs page at the OpenAPI document under the base path (see
+// config.Config.BasePath; an invalid APP_URL path is logged at startup and served from the root).
+func docsHTML(cfg *config.Config) string {
+	basePath, _ := cfg.BasePath()
+	return fmt.Sprintf(scalarDocsHTML, basePath)
+}
 
 var dockerSchemaPrefixes = map[string]string{
 	"types":     "DockerTypes",
@@ -320,7 +328,7 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityApp
 	handlers.RegisterStream(api, deps.Dashboard.Handler(), deps.Activity.Handler(), deps.Environment.Handler(), deps.Event.Service(), deps.Version)
 
 	apiGroup.GET("/docs", func(c *echo.Context) error {
-		return c.HTML(http.StatusOK, scalarDocsHTML)
+		return c.HTML(http.StatusOK, docsHTML(cfg))
 	})
 
 	return api

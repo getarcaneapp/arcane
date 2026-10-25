@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import IconImage from '#lib/components/icon-image.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
@@ -11,6 +9,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Template } from '#lib/types/swarm.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { withBase, goto } from '#lib/utils/base-path.js';
 
 	let {
 		template,
@@ -49,7 +48,7 @@
 		/>
 		<div class="min-w-0 flex-1">
 			<a
-				href="/customize/templates/{template.id}"
+				href={withBase(`/customize/templates/{template.id}`)}
 				class="block truncate font-medium after:absolute after:inset-0 hover:underline"
 			>
 				{template.name}

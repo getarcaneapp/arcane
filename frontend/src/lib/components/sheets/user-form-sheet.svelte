@@ -11,6 +11,7 @@
 	import type { User } from '#lib/types/auth.js';
 	import type { Role } from '#lib/types/auth.js';
 	import type { Environment } from '#lib/types/environment.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import { isValidUserEmail } from '#lib/utils/formatting.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
@@ -219,7 +220,9 @@
 						<div class="mb-3">
 							<p class="text-xs text-muted-foreground">
 								{m.oidc_synced_role_assignments()}
-								<a href="/settings/authentication" class="ml-1 text-primary underline">{m.users_role_assignments_oidc_link()}</a>
+								<a href={withBase('/settings/authentication')} class="ml-1 text-primary underline"
+									>{m.users_role_assignments_oidc_link()}</a
+								>
 							</p>
 							<div class="mt-2 flex flex-wrap gap-2">
 								{#each oidcAssignments as assignment (`${assignment.roleId}-${assignment.environmentId ?? 'global'}`)}

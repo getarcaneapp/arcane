@@ -25,6 +25,7 @@ import type { PodmanStatus } from '#lib/types/podman.js';
 import type { AppVersionInformation, Settings } from '#lib/types/settings.js';
 import { isAuthRejectionError } from '#lib/utils/api.js';
 import { getAuthRedirectPath, shownEnvironmentForRoute, userHasPermission } from '#lib/utils/auth.js';
+import { stripBase } from '#lib/utils/base-path.js';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 import { setTelemetry } from '#lib/utils/telemetry.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -85,7 +86,7 @@ export const load: LayoutLoad = async (event) => {
 async function loadRoot({ url, depends }: Parameters<LayoutLoad>[0], releaseSelection: (() => void) | undefined) {
 	depends(PODMAN_STATUS_DEPENDENCY);
 	// Logout must not wait on, or be triggered by, authenticated requests; preloading runs this too.
-	if (url.pathname === '/logout') {
+	if (stripBase(url.pathname) === '/logout') {
 		return {
 			user: null,
 			settings: settingsStore.current ?? null,

@@ -13,6 +13,7 @@ import {
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { extractApiErrorMessage } from '#lib/utils/api.js';
 import { hasPermission } from '#lib/utils/auth.js';
+import { withBase } from '#lib/utils/base-path.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 /** A row tagged by environment; `environmentTagged` tells it apart from DTOs that carry an environment. */
@@ -75,8 +76,8 @@ export function hasShownPermission(permission: string): boolean {
 
 /** Link to a resource detail page; `?env=` is added only for an environment other than the selected one. */
 export function environmentHref(path: string, environmentId: string): string {
-	if (environmentId === (environmentStore.selected?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID)) return path;
-	return `${path}${path.includes('?') ? '&' : '?'}env=${encodeURIComponent(environmentId)}`;
+	if (environmentId === (environmentStore.selected?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID)) return withBase(path);
+	return withBase(`${path}${path.includes('?') ? '&' : '?'}env=${encodeURIComponent(environmentId)}`);
 }
 
 /**

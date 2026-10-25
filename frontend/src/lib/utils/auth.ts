@@ -10,6 +10,7 @@ import {
 	getRouteAccessSurfaces,
 	pathMatchesAccessSurface
 } from '#lib/utils/access-policy.js';
+import { stripBase, withBase } from '#lib/utils/base-path.js';
 import { isEnvironmentOnline } from '#lib/utils/docker.js';
 
 export function normalizeAuthenticationError(error: unknown, fallback: string): { kind: 'proxy' | 'other'; message: string } {
@@ -163,44 +164,48 @@ function pickFallbackRoute(
 }
 
 export function getAuthRedirectPath(
-	path: string,
+	rawPath: string,
 	user: User | null,
 	envId?: string,
 	accessManifest?: PermissionsManifest | null,
 	accessManifestLoadFailed = false,
 	landingPath: string = '/dashboard'
 ): string | null {
+	// Route prefixes are configured without the base path, so compare against the
+	// stripped path and prefix anything returned to the browser.
+	const path = stripBase(rawPath);
+	const target = (redirect: string) => withBase(redirect);
 	if (path === '/') {
-		return user ? landingPath : '/login';
+		return user ? target(landingPath) : target('/login');
 	}
 
 	if (matchesAny(path, AUTH_CALLBACK_PREFIXES)) {
 		return null;
 	}
 
-	if (!user) return matchesAny(path, PROTECTED_PREFIXES) ? '/login' : null;
-	if (matchesAny(path, UNAUTHENTICATED_ONLY_PREFIXES)) return landingPath;
+	if (!user) return matchesAny(path, PROTECTED_PREFIXES) ? target('/login') : null;
+	if (matchesAny(path, UNAUTHENTICATED_ONLY_PREFIXES)) return target(landingPath);
 	if (
 		!accessManifestLoadFailed &&
 		path !== '/no-access' &&
 		!accessManifest?.accessSurfaces?.length &&
 		matchesAny(path, PROTECTED_PREFIXES)
 	) {
-		return '/no-access';
+		return target('/no-access');
 	}
 
 	if (path !== '/no-access' && !userHasAnyAccess(user)) {
-		return '/no-access';
+		return target('/no-access');
 	}
 
 	if (isAdminOnlyRoute(path) && !isUserGlobalAdmin(user)) {
-		return '/settings/roles';
+		return target('/settings/roles');
 	}
 
 	const surface = getRouteAccessSurfaces(accessManifest).find((candidate) => pathMatchesAccessSurface(path, candidate));
 	if (surface && !canReachShownAccessSurface(accessManifest, surface.id, user, envId)) {
 		const fallback = pickFallbackRoute(user, envId, accessManifest);
-		return fallback === path ? '/no-access' : fallback;
+		return fallback === path ? target('/no-access') : target(fallback);
 	}
 
 	return null;

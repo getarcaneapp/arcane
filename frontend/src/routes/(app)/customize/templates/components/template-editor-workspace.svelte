@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import type { Snippet } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -9,6 +8,7 @@
 	import { ArrowLeftIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { FormInputs } from '#lib/types/form.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { preventDefault } from '#lib/utils/settings.svelte.js';
 
 	import EditableName from '../../../projects/components/editable-name.svelte';

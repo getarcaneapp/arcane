@@ -189,3 +189,64 @@ func TestProxiedEnvironmentRoutesAreEdgeRoutable(t *testing.T) {
 	assert.Empty(t, slices.Compact(missing),
 		"proxied environment routes missing from the edge command allowlist; add them to pkg/libarcane/edge/commands.go or classify them in middleware.IsManagerLocalPath")
 }
+
+func TestBasePathMiddleware(t *testing.T) {
+	tests := []struct {
+		name           string
+		target         string
+		wantPath       string
+		wantRawPath    string
+		wantRequestURI string
+	}{
+		{name: "prefixed", target: "/arcane/api/health?x=1", wantPath: "/api/health", wantRequestURI: "/api/health?x=1"},
+		{name: "base only", target: "/arcane", wantPath: "/", wantRequestURI: "/"},
+		{name: "base with slash", target: "/arcane/", wantPath: "/", wantRequestURI: "/"},
+		{name: "base with query", target: "/arcane?x=1", wantPath: "/", wantRequestURI: "/?x=1"},
+		{name: "unprefixed passes through", target: "/api/health", wantPath: "/api/health", wantRequestURI: "/api/health"},
+		{name: "similar prefix is not the base", target: "/arcane2/api", wantPath: "/arcane2/api", wantRequestURI: "/arcane2/api"},
+		{name: "encoded percent is not decoded twice", target: "/arcane/api/volumes/a%252Fb", wantPath: "/api/volumes/a%2Fb", wantRequestURI: "/api/volumes/a%252Fb"},
+		{name: "encoded slash keeps its raw form", target: "/arcane/api/volumes/a%2Fb", wantPath: "/api/volumes/a/b", wantRawPath: "/api/volumes/a%2Fb", wantRequestURI: "/api/volumes/a%2Fb"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := echo.New()
+			e.Pre(basePathMiddleware("/arcane"))
+			var got *http.Request
+			e.Any("/*", func(c *echo.Context) error {
+				got = c.Request()
+				return c.NoContent(http.StatusNoContent)
+			})
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tt.target, http.NoBody))
+			require.NotNil(t, got)
+			assert.Equal(t, tt.wantPath, got.URL.Path)
+			assert.Equal(t, tt.wantRawPath, got.URL.RawPath)
+			assert.Equal(t, tt.wantRequestURI, got.RequestURI)
+		})
+	}
+}
+
+// The CSRF middleware runs after the base path is stripped, so its public bypass patterns
+// keep matching and cross-site requests stay blocked under a base path.
+func TestBasePathMiddlewareWithCSRF(t *testing.T) {
+	cfg := &config.Config{Environment: "production", AppUrl: "https://example.com/arcane"}
+	e := echo.New()
+	e.Pre(basePathMiddleware("/arcane"))
+	e.Use(middleware.NewCSRFMiddleware(cfg).Add())
+	e.POST("/api/test", func(c *echo.Context) error { return c.NoContent(http.StatusOK) })
+	e.POST("/api/webhooks/trigger/:token", func(c *echo.Context) error { return c.NoContent(http.StatusOK) })
+
+	post := func(target, site string) int {
+		req := httptest.NewRequest(http.MethodPost, target, http.NoBody)
+		req.Header.Set("Sec-Fetch-Site", site)
+		if site == "cross-site" {
+			req.Header.Set("Origin", "https://evil.example.com")
+		}
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	assert.Equal(t, http.StatusForbidden, post("/arcane/api/test", "cross-site"))
+	assert.Equal(t, http.StatusOK, post("/arcane/api/test", "same-origin"))
+	assert.Equal(t, http.StatusOK, post("/arcane/api/webhooks/trigger/abc", "cross-site"))
+}

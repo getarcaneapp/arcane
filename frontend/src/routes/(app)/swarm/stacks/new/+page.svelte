@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, refreshAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -23,6 +23,7 @@
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { SwarmSyncFile } from '#lib/types/swarm.js';
+	import { withBase, goto } from '#lib/utils/base-path.js';
 	import {
 		createComposeEditorSchema,
 		createComposeTemplateDialogFlow,
@@ -309,7 +310,11 @@
 					onConvert={() => (ui.showConverterDialog = true)}
 					fromGitLabel={m.git_from_git_repo()}
 					onFromGit={async () =>
-						goto(`/environments/${await environmentStore.getCurrentEnvironmentId()}/gitops?action=create&targetType=swarm_stack`)}
+						goto(
+							withBase(
+								`/environments/${await environmentStore.getCurrentEnvironmentId()}/gitops?action=create&targetType=swarm_stack`
+							)
+						)}
 					createTemplateLabel={m.templates_create_template()}
 					createTemplateDisabled={!canSubmit || ui.creatingTemplate}
 					createTemplateLoading={ui.creatingTemplate}

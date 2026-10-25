@@ -39,6 +39,7 @@
 	import type { Project } from '#lib/types/swarm.js';
 	import type { WorkspaceFileEntry } from '#lib/types/workspace.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 	import type { WorkspaceDisplayEntry } from '#lib/utils/workspace-files.js';
 
@@ -1033,7 +1034,7 @@
 
 					<p class="text-xs text-muted-foreground">
 						{m.webhook_hint_description()}
-						<a href="/settings/webhooks" class="text-foreground underline">{m.webhook_page_title()}</a>
+						<a href={withBase('/settings/webhooks')} class="text-foreground underline">{m.webhook_page_title()}</a>
 						{m.git_sync_webhook_hint_suffix()}
 					</p>
 				{/if}

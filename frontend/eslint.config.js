@@ -32,6 +32,25 @@ export default defineConfig([
 		rules: shadcnRules
 	},
 	{
+		// Navigation must resolve paths against the base path the app is served under.
+		files: ['src/**/*.svelte', 'src/**/*.ts'],
+		ignores: ['src/lib/utils/base-path.ts'],
+		rules: {
+			'no-restricted-imports': [
+				'error',
+				{
+					paths: [
+						{
+							name: '$app/navigation',
+							importNames: ['goto'],
+							message: "Use goto from '#lib/utils/base-path.js', which resolves paths against the base path."
+						}
+					]
+				}
+			]
+		}
+	},
+	{
 		// Components own their styles.
 		files: ['src/lib/components/ui/**'],
 		rules: {

@@ -29,6 +29,7 @@
 	import type { Settings } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import { createSettingsForm } from '#lib/utils/settings-form.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -199,7 +200,7 @@
 		})
 	);
 
-	const redirectUri = $derived(`${globalThis?.location?.origin ?? ''}/auth/oidc/callback`);
+	const redirectUri = $derived(`${globalThis?.location?.origin ?? ''}${withBase('/auth/oidc/callback')}`);
 	const isOidcEnvForced = $derived(data.oidcStatus.envForced);
 	const isOidcForcedEnabled = $derived(isOidcEnvForced && currentSettings.oidcEnabled);
 	const isOidcForcedDisabled = $derived(isOidcEnvForced && !currentSettings.oidcEnabled);

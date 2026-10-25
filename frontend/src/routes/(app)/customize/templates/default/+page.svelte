@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -10,6 +9,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { templateService } from '#lib/services/template-service.js';
 	import type { Template } from '#lib/types/swarm.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
 	import {
 		createTemplateContentSchema,

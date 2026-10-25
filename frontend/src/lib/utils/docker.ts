@@ -7,6 +7,7 @@ import type { VulnerabilityScanSummary } from '#lib/types/environment.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import type { ProjectUpdateInfo } from '#lib/types/swarm.js';
 import type { SwarmServiceModeName, SwarmServiceModeSpec } from '#lib/types/swarm.js';
+import { withBase } from '#lib/utils/base-path.js';
 import { instantEpochMilliseconds } from '#lib/utils/formatting.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -392,11 +393,11 @@ export function getApplicationLogo(
 	}
 
 	const query = params.toString();
-	return query ? `/api/app-images/logo?${query}` : '/api/app-images/logo';
+	return query ? `${withBase('/api')}/app-images/logo?${query}` : withBase('/api/app-images/logo');
 }
 
 export function getDefaultProfilePicture(): string {
-	return '/api/app-images/profile';
+	return withBase('/api/app-images/profile');
 }
 
 // --- Status variants ---

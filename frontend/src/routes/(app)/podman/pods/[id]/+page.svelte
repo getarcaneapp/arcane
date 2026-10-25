@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 
 	import ActionButtonGroup from '#lib/components/action-button-group/action-button-group.svelte';
@@ -26,6 +25,7 @@
 	import { podmanService, type PodmanPodAction } from '#lib/services/podman-service.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { podmanStateVariant } from '#lib/utils/podman.js';
 
 	import PodContainers from '../components/pod-containers.svelte';

@@ -242,6 +242,13 @@ func (s *OidcService) GetOidcRedirectURL(origin string) string {
 	if baseUrl == "" {
 		baseUrl = strings.TrimSuffix(s.config.GetAppURL(), "/")
 	}
+	// The callback is a frontend route, so it sits under the base path. An origin taken from
+	// request headers has no path; APP_URL already carries the base path.
+	if base, err := s.config.BasePath(); err == nil && base != "" {
+		if u, parseErr := url.Parse(baseUrl); parseErr == nil && strings.Trim(u.Path, "/") == "" {
+			baseUrl = strings.TrimSuffix(baseUrl, "/") + base
+		}
+	}
 	return baseUrl + "/auth/oidc/callback"
 }
 

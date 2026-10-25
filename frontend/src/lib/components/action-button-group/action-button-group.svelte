@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { flushSync } from 'svelte';
 
 	import {
@@ -16,6 +15,7 @@
 	import { ArrowDownIcon, EllipsisIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { cn } from '#lib/utils.js';
+	import { goto } from '#lib/utils/base-path.js';
 
 	import type { ActionButton, ActionGroup } from './types.js';
 

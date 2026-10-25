@@ -3,6 +3,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { DownloadIcon, ResetIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 
 	import EnvironmentConnectionDetails from './environment-connection-details.svelte';
@@ -10,9 +11,9 @@
 
 	let { environment, currentStatus, showMTLSDownloads, isRegeneratingKey, onRegenerateApiKey }: ConnectionEdgeTabProps = $props();
 
-	let mtlsBundleDownloadHref = $derived(`/api/environments/${environment.id}/deployment/mtls/bundle`);
-	let mtlsCertificateDownloadHref = $derived(`/api/environments/${environment.id}/deployment/mtls/agent.crt`);
-	let mtlsKeyDownloadHref = $derived(`/api/environments/${environment.id}/deployment/mtls/agent.key`);
+	let mtlsBundleDownloadHref = $derived(`${withBase('/api')}/environments/${environment.id}/deployment/mtls/bundle`);
+	let mtlsCertificateDownloadHref = $derived(`${withBase('/api')}/environments/${environment.id}/deployment/mtls/agent.crt`);
+	let mtlsKeyDownloadHref = $derived(`${withBase('/api')}/environments/${environment.id}/deployment/mtls/agent.key`);
 
 	let mtlsCertificateBadge = $derived.by((): { text: string; variant: 'green' | 'amber' | 'red' } | null => {
 		const cert = environment.edgeMTLSCertificate;

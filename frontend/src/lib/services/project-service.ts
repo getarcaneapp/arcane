@@ -11,6 +11,7 @@ import type {
 	ProjectTagColor,
 	ProjectTagOption
 } from '#lib/types/swarm.js';
+import { withBase } from '#lib/utils/base-path.js';
 import { readNdjsonStream } from '#lib/utils/streaming.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
@@ -61,7 +62,7 @@ class ProjectService extends BaseAPIService {
 			? (optionsOrEnvironmentId as DeployProjectOptions | undefined)
 			: (onLineOrOptions as DeployProjectOptions);
 		const envId = await this.resolveEnvironmentId(onLine ? maybeEnvironmentId : (optionsOrEnvironmentId as string | undefined));
-		const url = `/api/environments/${envId}/projects/${projectId}/${mode}`;
+		const url = `${withBase('/api')}/environments/${envId}/projects/${projectId}/${mode}`;
 
 		await this.postProjectStream(url, options ?? {}, onLine, {
 			startFailed: (status) => m.progress_deploy_failed_to_start({ status }),
@@ -259,7 +260,7 @@ class ProjectService extends BaseAPIService {
 
 	private async streamProjectPull(projectId: string, onLine?: (data: any) => void, environmentId?: string): Promise<void> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		const url = `/api/environments/${envId}/projects/${projectId}/pull`;
+		const url = `${withBase('/api')}/environments/${envId}/projects/${projectId}/pull`;
 
 		const res = await fetch(url, { method: 'POST', signal: withSessionSignal() });
 		if (!res.ok || !res.body) {
@@ -291,7 +292,7 @@ class ProjectService extends BaseAPIService {
 		environmentId?: string
 	): Promise<void> {
 		const envId = await this.resolveEnvironmentId(environmentId);
-		const url = `/api/environments/${envId}/projects/${projectId}/build`;
+		const url = `${withBase('/api')}/environments/${envId}/projects/${projectId}/build`;
 
 		await this.postProjectStream(url, options || {}, onLine, {
 			startFailed: (status) => `Failed to start project build (${status})`,

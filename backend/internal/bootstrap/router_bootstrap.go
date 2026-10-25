@@ -168,6 +168,13 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		e.IPExtractor = echo.ExtractIPFromXFFHeader(trustOpts...)
 	}
 
+	// An invalid APP_URL path is logged by config.Load; serve from the root in that case.
+	basePath, _ := cfg.BasePath()
+	cookie.SetBasePath(basePath)
+	if basePath != "" {
+		e.Pre(basePathMiddleware(basePath))
+	}
+
 	e.Use(echomiddleware.Recover())
 	e.Use(echomiddleware.RequestID())
 	// Trace REST API calls only, skipping long-lived streams, tunnels, health probes, and the browser trace relay.
@@ -337,7 +344,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	apiGroup.RouteNotFound("/*", apiNotFound)
 
 	//nolint:staticcheck,nolintlint // SA4023 only under exclude_frontend: the stub always returns ErrFrontendNotIncluded
-	if err := frontend.RegisterFrontend(e); err != nil {
+	if err := frontend.RegisterFrontend(e, basePath); err != nil {
 		if errors.Is(err, frontend.ErrFrontendNotIncluded) {
 			slog.DebugContext(ctx, "Frontend not included in this build; skipping frontend registration")
 		} else {
@@ -346,6 +353,41 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	}
 
 	return e, tunnelServer
+}
+
+// basePathMiddleware strips the base path Arcane is served under (see config.Config.BasePath)
+// before routing, so every route stays registered on its canonical path. The prefix is
+// optional: requests without it are routed unchanged, so reverse proxies that strip the
+// prefix keep working as well as those that forward it.
+func basePathMiddleware(basePath string) echo.MiddlewareFunc {
+	prefix := basePath + "/"
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			req := c.Request()
+			switch {
+			case req.URL.Path == basePath:
+				req.URL.Path, req.URL.RawPath = "/", ""
+			case strings.HasPrefix(req.URL.Path, prefix):
+				req.URL.Path = req.URL.Path[len(basePath):]
+				if strings.HasPrefix(req.URL.RawPath, prefix) {
+					req.URL.RawPath = req.URL.RawPath[len(basePath):]
+				} else {
+					req.URL.RawPath = ""
+				}
+			default:
+				return next(c)
+			}
+			// The environment proxy forwards upgraded connections using RequestURI, so keep it
+			// consistent with the stripped path.
+			if rest, ok := strings.CutPrefix(req.RequestURI, basePath); ok && (rest == "" || rest[0] == '/' || rest[0] == '?') {
+				if rest == "" || rest[0] == '?' {
+					rest = "/" + rest
+				}
+				req.RequestURI = rest
+			}
+			return next(c)
+		}
+	}
 }
 
 // secureCookieContextMiddleware marks requests as HTTPS for cookies. X-Forwarded-Proto is

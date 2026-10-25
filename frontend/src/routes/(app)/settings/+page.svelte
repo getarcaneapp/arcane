@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 
 	import CategoryIndexPage from '#lib/components/category-index-page.svelte';
@@ -27,6 +26,7 @@
 	import type { SettingsCategory } from '#lib/types/shared.js';
 	import { canReachAccessSurfaceUrl } from '#lib/utils/access-policy.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { stripBase, withBase, goto } from '#lib/utils/base-path.js';
 	import { normalizeCategory, orderCategoriesByNav } from '#lib/utils/category-page.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -143,7 +143,7 @@
 		title: m.account_preferences(),
 		description: m.account_preferences_desc(),
 		icon: UserIcon,
-		href: '/account?tab=preferences'
+		href: withBase('/account?tab=preferences')
 	};
 
 	// Roles and Diagnostics have no backend settings fields, so their cards reuse the gated sidebar entries.
@@ -158,7 +158,7 @@
 			environmentStore.selected?.id,
 			permissionsManifest
 		).flatMap((item): NormalizedCategory[] => {
-			const description = navOnlyCardDescriptions[item.url];
+			const description = navOnlyCardDescriptions[stripBase(item.url)];
 			if (!description) return [];
 			return [{ id: item.url, title: item.title, description: description(), icon: item.icon, href: item.url }];
 		})

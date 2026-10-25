@@ -628,6 +628,41 @@ func TestConfig_TrustedProxies(t *testing.T) {
 	})
 }
 
+func TestConfig_BasePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		appURL  string
+		agent   bool
+		want    string
+		wantErr bool
+	}{
+		{name: "default", appURL: "", want: ""},
+		{name: "host only", appURL: "https://example.com", want: ""},
+		{name: "root slash", appURL: "https://example.com/", want: ""},
+		{name: "path", appURL: "https://example.com/arcane", want: "/arcane"},
+		{name: "trailing slash", appURL: "https://example.com/arcane/", want: "/arcane"},
+		{name: "nested path", appURL: "https://example.com/tools/arcane", want: "/tools/arcane"},
+		{name: "no scheme", appURL: "example.com/arcane", want: "/arcane"},
+		{name: "agent ignores path", appURL: "https://manager.example.com/arcane", agent: true, want: ""},
+		{name: "unsafe characters", appURL: "https://example.com/a%22b", wantErr: true},
+		{name: "collides with the API", appURL: "https://example.com/api", wantErr: true},
+		{name: "collides with the assets", appURL: "https://example.com/_app/x", wantErr: true},
+		{name: "api only as a later segment", appURL: "https://example.com/tools/api", want: "/tools/api"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{AppUrl: tt.appURL, AgentMode: tt.agent}
+			got, err := cfg.BasePath()
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func restoreEnv(key, value string) {
 	if value == "" {
 		_ = os.Unsetenv(key)

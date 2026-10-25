@@ -1,10 +1,11 @@
-import { goto, refreshAll } from '$app/navigation';
+import { refreshAll } from '$app/navigation';
 import { page } from '$app/state';
 import { replaceEqualDeep } from '@tanstack/svelte-query';
 import { PersistedState } from 'runed';
 
 import userStore from '#lib/stores/user-store.svelte.js';
 import type { Environment } from '#lib/types/environment.js';
+import { goto } from '#lib/utils/base-path.js';
 import { isEnvironmentOnline } from '#lib/utils/docker.js';
 
 export const LOCAL_DOCKER_ENVIRONMENT_ID = '0';

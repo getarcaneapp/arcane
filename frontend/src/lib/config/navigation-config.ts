@@ -37,6 +37,7 @@ import type { PermissionsManifest, User } from '#lib/types/auth.js';
 import type { FeatureID } from '#lib/types/features.js';
 import type { PodmanStatus } from '#lib/types/podman.js';
 import { canReachShownAccessSurface } from '#lib/utils/auth.js';
+import { stripBase } from '#lib/utils/base-path.js';
 import type { ShortcutKey } from '#lib/utils/navigation.js';
 
 export type NavigationItem = {
@@ -354,7 +355,8 @@ function canSeeItem(
 }
 
 /** Returns the title of the navigation item whose URL is the longest prefix of `pathname`. */
-export function getNavigationTitleForPath(pathname: string): string | undefined {
+export function getNavigationTitleForPath(rawPathname: string): string | undefined {
+	const pathname = stripBase(rawPathname);
 	let title: string | undefined;
 	let bestLength = 0;
 	const visit = (items: NavigationItem[]) => {

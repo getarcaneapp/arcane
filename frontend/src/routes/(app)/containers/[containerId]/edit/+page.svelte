@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -22,6 +21,7 @@
 	import type { ContainerEditRequest } from '#lib/types/docker.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { environmentHref } from '#lib/utils/environments.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
 

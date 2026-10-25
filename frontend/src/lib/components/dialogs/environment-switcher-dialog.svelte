@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { tick, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -19,6 +18,7 @@
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { saveUserPreferences } from '#lib/utils/user-preferences.js';
 	import { debounced } from '#lib/utils/ws.js';

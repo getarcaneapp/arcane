@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { Select as SelectPrimitive } from 'bits-ui';
 
@@ -12,6 +11,7 @@
 	import { environmentColor } from '#lib/stores/environment-colors.store.svelte.js';
 	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 
 	// Picks one environment while several are shown. A bound `value` is a create's destination and never changes
 	// the selected environment; callers derive it with destinationEnvironmentId, so it is always a permitted option.

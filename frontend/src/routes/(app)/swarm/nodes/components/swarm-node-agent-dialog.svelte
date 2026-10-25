@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-
 	import AgentCommandBlock from '#lib/components/agent-command-block.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -12,6 +10,7 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { SwarmNodeAgentDeployment, SwarmNodeSummary } from '#lib/types/swarm.js';
 	import { hasAnyPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 
 	import { getSwarmNodeAgentLabel, getSwarmNodeAgentVariant } from '../agent-status';
 

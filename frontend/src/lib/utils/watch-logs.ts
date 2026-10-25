@@ -1,5 +1,6 @@
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { operationWatchStore } from '#lib/stores/operation-watch.store.svelte.js';
+import { withBase } from '#lib/utils/base-path.js';
 import { ReconnectingWebSocket } from '#lib/utils/ws.js';
 
 /**
@@ -22,7 +23,7 @@ export function attachProjectLogsToWatch(
 			// The project's own environment; the selected one only when none is given.
 			const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
 			const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-			return `${protocol}://${window.location.host}/api/environments/${envId}/ws/projects/${projectId}/logs?follow=true&tail=all&since=${sinceEpochSeconds}&timestamps=false&format=json&batched=true`;
+			return `${protocol}://${window.location.host}${withBase(`/api/environments/${envId}/ws/projects/${projectId}/logs?follow=true&tail=all&since=${sinceEpochSeconds}&timestamps=false&format=json&batched=true`)}`;
 		},
 		parseMessage: (evt) => {
 			if (typeof evt.data !== 'string') return null;

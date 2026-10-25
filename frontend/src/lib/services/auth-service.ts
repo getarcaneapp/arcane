@@ -1,4 +1,4 @@
-import { goto, refreshAll } from '$app/navigation';
+import { refreshAll } from '$app/navigation';
 import type { QueryClient } from '@tanstack/svelte-query';
 import { Temporal } from 'temporal-polyfill';
 
@@ -11,8 +11,9 @@ import { versionStore } from '#lib/stores/version.store.svelte.js';
 import type { User, MFAChallenge, AuthenticationResponse } from '#lib/types/auth.js';
 import type { LoginCredentials, AutoLoginConfig } from '#lib/types/auth.js';
 import type { OidcStatusInfo } from '#lib/types/settings.js';
+import { goto } from '#lib/utils/base-path.js';
 import { parseInstant } from '#lib/utils/formatting.js';
-import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
+import { landingPageHref } from '#lib/utils/navigation.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import BaseAPIService, { APIError, SessionCancelledError, currentSessionSignal } from './api-service';
@@ -219,7 +220,7 @@ class AuthService extends BaseAPIService {
 
 		const user = await this.completeAuthentication(data);
 		await refreshAll();
-		goto(getEffectiveLandingPage());
+		goto(landingPageHref());
 
 		return user;
 	}

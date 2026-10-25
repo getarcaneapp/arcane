@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, refreshAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import {
 		browserSupportsWebAuthn,
 		startAuthentication,
@@ -25,9 +25,10 @@
 	import type { AuthenticationResponse, MFAChallenge as MFAChallengeData } from '#lib/types/auth.js';
 	import { cn } from '#lib/utils.js';
 	import { normalizeAuthenticationError } from '#lib/utils/auth.js';
+	import { withBase, stripBase, goto } from '#lib/utils/base-path.js';
 	import { usesDevelopmentBranding } from '#lib/utils/branding.js';
 	import { getApplicationLogo } from '#lib/utils/docker.js';
-	import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
+	import { landingPageHref } from '#lib/utils/navigation.js';
 	import { resolveLogoColor } from '#lib/utils/theme.svelte.js';
 
 	import type { PageProps } from './$types';
@@ -68,7 +69,11 @@
 	// Only an explicit redirect is handed to the OIDC flow. Resolving the account
 	// landing page here would bake the signed-out default into the OIDC round
 	// trip, where it would then outrank the user's saved preference.
-	const oidcLoginHref = $derived(data.redirectTo ? `/oidc/login?redirect=${encodeURIComponent(data.redirectTo)}` : '/oidc/login');
+	const oidcLoginHref = $derived(
+		data.redirectTo
+			? `${withBase('/oidc/login')}?redirect=${encodeURIComponent(stripBase(data.redirectTo))}`
+			: withBase('/oidc/login')
+	);
 
 	const oidcLoginMutation = createMutation(() => ({
 		mutationFn: async () => {
@@ -84,7 +89,7 @@
 			await queryClient.invalidateQueries({
 				queryKey: queryKeys.auth.all
 			});
-			const redirectTo = data.redirectTo || getEffectiveLandingPage();
+			const redirectTo = data.redirectTo || landingPageHref();
 			await goto(redirectTo, { replace: true });
 		},
 		onError: (err) => {
@@ -115,7 +120,7 @@
 			await queryClient.invalidateQueries({
 				queryKey: queryKeys.auth.all
 			});
-			await goto(data.redirectTo || getEffectiveLandingPage(), {
+			await goto(data.redirectTo || landingPageHref(), {
 				replace: true
 			});
 		},
@@ -168,7 +173,7 @@
 		await authService.completeAuthentication(response);
 		await refreshAll();
 		await queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });
-		await goto(data.redirectTo || getEffectiveLandingPage(), {
+		await goto(data.redirectTo || landingPageHref(), {
 			replace: true
 		});
 	}

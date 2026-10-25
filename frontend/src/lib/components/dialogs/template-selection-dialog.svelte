@@ -29,6 +29,7 @@
 	import { templateService } from '#lib/services/template-service.js';
 	import type { Template } from '#lib/types/swarm.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	interface Props {
@@ -349,7 +350,8 @@
 						<p class="mb-2">{m.templates_no_templates()}</p>
 						<p class="text-sm">
 							{m.templates_add_registry_prompt_part1()}
-							<a href="/customize/templates" class="text-primary hover:underline">{m.templates_template_settings()}</a>
+							<a href={withBase('/customize/templates')} class="text-primary hover:underline">{m.templates_template_settings()}</a
+							>
 							{m.templates_add_registry_prompt_part2()}
 						</p>
 					</div>

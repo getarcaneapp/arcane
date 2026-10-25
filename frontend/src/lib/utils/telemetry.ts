@@ -4,6 +4,8 @@ import type { LogRecord } from '@opentelemetry/api';
 import type { Resource } from '@opentelemetry/resources';
 import type { Metric } from 'web-vitals';
 
+import { withBase } from '#lib/utils/base-path.js';
+
 type Signal = 'traces' | 'metrics' | 'logs';
 
 const SERVICE_NAME = 'arcane-frontend';
@@ -64,7 +66,7 @@ const initializers: Record<Signal, (resource: Resource) => Promise<void>> = {
 					shutdown: () => Promise.resolve()
 				},
 				new sdk.BatchSpanProcessor({
-					exporter: new exporter.OTLPTraceExporter({ url: '/api/telemetry/traces' }),
+					exporter: new exporter.OTLPTraceExporter({ url: withBase('/api/telemetry/traces') }),
 					maxExportBatchSize: MAX_EXPORT_BATCH_SIZE
 				})
 			]
@@ -106,7 +108,7 @@ const initializers: Record<Signal, (resource: Resource) => Promise<void>> = {
 			resource,
 			readers: [
 				new sdk.PeriodicExportingMetricReader({
-					exporter: new exporter.OTLPMetricExporter({ url: '/api/telemetry/metrics' }),
+					exporter: new exporter.OTLPMetricExporter({ url: withBase('/api/telemetry/metrics') }),
 					exportIntervalMillis: 60_000
 				})
 			]
@@ -147,7 +149,7 @@ const initializers: Record<Signal, (resource: Resource) => Promise<void>> = {
 			resource,
 			processors: [
 				new sdk.BatchLogRecordProcessor({
-					exporter: new exporter.OTLPLogExporter({ url: '/api/telemetry/logs' }),
+					exporter: new exporter.OTLPLogExporter({ url: withBase('/api/telemetry/logs') }),
 					maxExportBatchSize: MAX_EXPORT_BATCH_SIZE
 				})
 			]

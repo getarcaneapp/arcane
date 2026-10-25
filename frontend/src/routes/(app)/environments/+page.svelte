@@ -13,6 +13,7 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { simpleRefresh } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 
 	import EnvironmentTable from './components/environment-table.svelte';
@@ -118,7 +119,7 @@
 						id: 'download-edge-ca',
 						action: 'save' as const,
 						label: m.environments_download_edge_ca(),
-						href: '/api/edge-mtls/ca',
+						href: withBase('/api/edge-mtls/ca'),
 						rel: 'external',
 						icon: DownloadIcon
 					}

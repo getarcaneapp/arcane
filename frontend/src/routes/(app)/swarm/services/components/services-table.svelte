@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -16,6 +15,7 @@
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { SwarmServiceSummary, SwarmServicePort } from '#lib/types/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { withBase, goto } from '#lib/utils/base-path.js';
 	import { getSwarmServiceModeLabel, getSwarmServiceModeVariant } from '#lib/utils/docker.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -126,7 +126,7 @@
 </script>
 
 {#snippet NameCell({ item }: { item: SwarmServiceSummary })}
-	<a href="/swarm/services/{item.id}" class="text-sm font-medium text-primary hover:underline">
+	<a href={withBase(`/swarm/services/{item.id}`)} class="text-sm font-medium text-primary hover:underline">
 		{getShortName(item.name, item.stackName)}
 	</a>
 {/snippet}

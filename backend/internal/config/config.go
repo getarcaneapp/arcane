@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 	"os"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -120,6 +122,12 @@ func Load() *Config {
 	cfg.AgentMode = cfg.AgentMode || cfg.EdgeAgent
 	applyProxyDefaults(cfg)
 	applyWorkspaceDefaults(cfg)
+	// Startup logging runs before any request context exists.
+	if basePath, err := cfg.BasePath(); err != nil {
+		slog.WarnContext(context.Background(), "Ignoring the APP_URL path, serving from the root", "appUrl", cfg.AppUrl, "error", err) //nolint:forbidigo
+	} else if basePath != "" {
+		slog.InfoContext(context.Background(), "Serving Arcane under a base path", "basePath", basePath) //nolint:forbidigo
+	}
 
 	// Set global file permissions
 	utils.FilePerm = cfg.FilePerm
@@ -420,6 +428,43 @@ func (c *Config) GetAppURL() string {
 
 	return c.AppUrl
 }
+
+// BasePath returns the URL path prefix the application is served under, derived from the
+// path of APP_URL (e.g. APP_URL=https://example.com/arcane gives "/arcane"). It returns ""
+// when APP_URL has no path, which keeps the behaviour of serving from the root of the host.
+// Agents serve no web UI, so they never use a base path (their APP_URL may fall back to the
+// manager's URL, whose path belongs to the manager).
+func (c *Config) BasePath() (string, error) {
+	if c.AgentMode {
+		return "", nil
+	}
+	appURL := strings.TrimSpace(c.AppUrl)
+	if appURL == "" {
+		return "", nil
+	}
+	if !strings.HasPrefix(appURL, "http://") && !strings.HasPrefix(appURL, "https://") {
+		appURL = "https://" + appURL
+	}
+
+	parsed, err := url.Parse(appURL)
+	if err != nil {
+		return "", fmt.Errorf("invalid APP_URL %q: %w", c.AppUrl, err)
+	}
+
+	base := strings.TrimRight(parsed.EscapedPath(), "/")
+	if base == "" {
+		return "", nil
+	}
+	if !basePathPattern.MatchString(base) {
+		return "", fmt.Errorf("APP_URL %q: the path may only contain letters, digits and - . _ ~ / characters", c.AppUrl)
+	}
+	if first, _, _ := strings.Cut(base[1:], "/"); first == "api" || first == "_app" {
+		return "", fmt.Errorf("APP_URL %q: the path must not start with /%s, which Arcane uses itself", c.AppUrl, first)
+	}
+	return base, nil
+}
+
+var basePathPattern = regexp.MustCompile(`^(/[A-Za-z0-9._~-]+)+$`)
 
 // MaskSensitive returns a copy of the config with sensitive fields masked.
 // Useful for logging configuration without exposing secrets.

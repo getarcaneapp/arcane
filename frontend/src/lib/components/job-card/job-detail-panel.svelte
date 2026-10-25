@@ -13,6 +13,7 @@
 	import { AlertTriangleIcon, CheckIcon, ClockIcon, CloseIcon, EditIcon, RestartIcon, StartIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { JobStatus } from '#lib/types/settings.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import { formatDateTimeShort, formatRelativeTime } from '#lib/utils/formatting.js';
 
 	import JobRunHistory from './job-run-history.svelte';
@@ -227,7 +228,11 @@
 									<CloseIcon class="size-4 shrink-0 text-destructive" aria-label={m.jobs_prerequisite_unmet()} />
 								{/if}
 								{#if prereq.settingsUrl && !prereq.isMet}
-									<a href={prereq.settingsUrl} class="underline-offset-4 hover:underline" onclick={() => (open = false)}>
+									<a
+										href={withBase(prereq.settingsUrl)}
+										class="underline-offset-4 hover:underline"
+										onclick={() => (open = false)}
+									>
 										{prereq.label}
 									</a>
 								{:else}
