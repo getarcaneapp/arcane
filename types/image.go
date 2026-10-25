@@ -116,7 +116,7 @@ type ImageSummary struct {
 	// Required: true
 	ID string `json:"id" sortable:"true"`
 
-	// RepoTags is a list of tags referring to this image.
+	// RepoTags is a list of tag references, excluding digest-pinned names.
 	//
 	// Required: true
 	RepoTags []string `json:"repoTags"`
@@ -311,7 +311,7 @@ type ImageDetailSummary struct {
 	// Required: true
 	ID string `json:"id"`
 
-	// RepoTags is a list of tags referring to this image.
+	// RepoTags is a list of tag references, excluding digest-pinned names.
 	//
 	// Required: true
 	RepoTags []string `json:"repoTags"`
