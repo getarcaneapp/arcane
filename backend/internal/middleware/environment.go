@@ -263,6 +263,12 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	edge.SetAgentToken(proxyReq, accessToken)
 	edge.SetForwardedHeaders(proxyReq, c.RealIP(), req.Host)
 
+	if requestBody != nil {
+		if fullDuplexErr := http.NewResponseController(c.Response()).EnableFullDuplex(); fullDuplexErr != nil {
+			slog.DebugContext(ctx, "Failed to enable full duplex for proxied request", "error", fullDuplexErr)
+		}
+	}
+
 	resp, err := client.Do(proxyReq)
 	if err != nil {
 		netErr, isNetErr := errors.AsType[net.Error](err)
