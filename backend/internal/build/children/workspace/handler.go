@@ -9,6 +9,7 @@ import (
 	uploadtypes "github.com/getarcaneapp/arcane/types/v2/upload"
 	"github.com/getarcaneapp/arcane/types/v2/workspace"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/upload"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 )
@@ -56,10 +57,15 @@ type DeleteBuildFileInput struct {
 	Path          string `query:"path" doc:"File or directory path to delete"`
 }
 
+func workspaceHTTPErrorInternal(err error) error {
+	apiErr := common.ToAPIError(err)
+	return huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+}
+
 func (h *Handler) BrowseDirectory(ctx context.Context, input *BrowseBuildsInput) (*handlerutil.Out[[]workspace.FileEntry], error) {
 	entries, err := h.service.ListDirectory(ctx, input.Path)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, workspaceHTTPErrorInternal(err)
 	}
 	return &handlerutil.Out[[]workspace.FileEntry]{Body: base.ApiResponse[[]workspace.FileEntry]{Success: true, Data: entries}}, nil
 }
@@ -67,7 +73,7 @@ func (h *Handler) BrowseDirectory(ctx context.Context, input *BrowseBuildsInput)
 func (h *Handler) GetFileContent(ctx context.Context, input *GetBuildFileContentInput) (*handlerutil.Out[BuildFileContentResponse], error) {
 	content, mimeType, err := h.service.GetFileContent(ctx, input.Path, input.MaxBytes)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, workspaceHTTPErrorInternal(err)
 	}
 	return &handlerutil.Out[BuildFileContentResponse]{Body: base.ApiResponse[BuildFileContentResponse]{
 		Success: true,
@@ -78,7 +84,7 @@ func (h *Handler) GetFileContent(ctx context.Context, input *GetBuildFileContent
 func (h *Handler) DownloadFile(ctx context.Context, input *DownloadBuildFileInput) (*huma.StreamResponse, error) {
 	reader, size, err := h.service.DownloadFile(ctx, input.Path)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, workspaceHTTPErrorInternal(err)
 	}
 	return handlerutil.DownloadResponse(reader, size, path.Base(input.Path)), nil
 }
@@ -94,7 +100,7 @@ func (h *Handler) UploadFile(ctx context.Context, input *UploadBuildFileInput) (
 	defer cleanup()
 
 	if uploadFileErr := h.service.UploadFile(ctx, input.Path, file, session.Filename, session.Size); uploadFileErr != nil {
-		return nil, huma.Error500InternalServerError(uploadFileErr.Error())
+		return nil, workspaceHTTPErrorInternal(uploadFileErr)
 	}
 	return &base.ApiResponse[base.MessageResponse]{
 		Success: true,
@@ -104,7 +110,7 @@ func (h *Handler) UploadFile(ctx context.Context, input *UploadBuildFileInput) (
 
 func (h *Handler) CreateDirectory(ctx context.Context, input *CreateBuildDirectoryInput) (*base.ApiResponse[base.MessageResponse], error) {
 	if err := h.service.CreateDirectory(ctx, input.Path); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, workspaceHTTPErrorInternal(err)
 	}
 	return &base.ApiResponse[base.MessageResponse]{
 		Success: true,
@@ -114,7 +120,7 @@ func (h *Handler) CreateDirectory(ctx context.Context, input *CreateBuildDirecto
 
 func (h *Handler) DeleteFile(ctx context.Context, input *DeleteBuildFileInput) (*base.ApiResponse[base.MessageResponse], error) {
 	if err := h.service.DeleteFile(ctx, input.Path); err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, workspaceHTTPErrorInternal(err)
 	}
 	return &base.ApiResponse[base.MessageResponse]{
 		Success: true,
