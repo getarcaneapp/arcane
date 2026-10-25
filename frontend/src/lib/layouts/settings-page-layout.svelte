@@ -45,7 +45,7 @@
 	const isMobile = new IsMobile();
 </script>
 
-<div class={cn('px-2 py-4 pb-5 sm:px-6 sm:py-6 sm:pb-10 lg:px-8', className)}>
+<div class={cn('pt-3 pb-5 sm:pb-10 md:pt-5', className)}>
 	<div class="border-b border-border/50 pb-4 sm:pb-6">
 		<div class="flex flex-wrap items-center justify-between gap-4">
 			<div class="flex flex-1 items-start gap-3 sm:gap-4">
