@@ -178,7 +178,7 @@
 	};
 	const navOnlyCategories = $derived(
 		filterByPermissions(
-			navigationItems.settingsItems.find((item) => item.url === '/settings')?.items,
+			navigationItems.adminItems.find((item) => item.url === '/settings')?.items,
 			user ?? null,
 			permissionsManifest
 		).flatMap((item): NormalizedCategory[] => {

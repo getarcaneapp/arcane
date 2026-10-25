@@ -6,7 +6,6 @@ import {
 	DashboardIcon,
 	ProjectsIcon,
 	EnvironmentsIcon,
-	CustomizeIcon,
 	RegistryIcon,
 	ContainersIcon,
 	ImagesIcon,
@@ -55,15 +54,16 @@ export type NavigationItem = {
 };
 
 export type NavigationSections = {
-	managementItems: NavigationItem[];
+	overviewItems: NavigationItem[];
+	deployItems: NavigationItem[];
 	resourceItems: NavigationItem[];
 	swarmItems: NavigationItem[];
 	podmanItems: NavigationItem[];
-	settingsItems: NavigationItem[];
+	adminItems: NavigationItem[];
 };
 
 export const navigationItems: NavigationSections = {
-	managementItems: [
+	overviewItems: [
 		{
 			title: m.dashboard_title(),
 			url: '/dashboard',
@@ -86,25 +86,49 @@ export const navigationItems: NavigationSections = {
 			accessSurfaceId: 'route.images.vulnerabilities'
 		},
 		{
+			title: m.events_title(),
+			url: '/events',
+			icon: EventsIcon,
+			shortcut: ['mod', '9'],
+			accessSurfaceId: 'route.events'
+		}
+	],
+	deployItems: [
+		{
 			title: m.projects_title(),
 			url: '/projects',
 			icon: ProjectsIcon,
 			shortcut: ['mod', '2'],
-			accessSurfaceId: 'route.projects'
-		},
-		{
-			title: m.environments_title(),
-			url: '/environments',
-			icon: EnvironmentsIcon,
-			shortcut: ['mod', '3'],
-			accessSurfaceId: 'route.environments'
+			accessSurfaceId: 'route.projects',
+			items: [
+				{
+					title: m.templates_title(),
+					url: '/customize/templates',
+					icon: TemplateIcon,
+					accessSurfaceId: 'customize.category.templates'
+				},
+				{
+					title: m.variables_title(),
+					url: '/customize/variables',
+					icon: VariableIcon,
+					accessSurfaceId: 'customize.category.variables'
+				}
+			]
 		},
 		{
 			title: m.git_syncs_title(),
 			url: '/gitops',
 			icon: GitBranchIcon,
 			shortcut: ['mod', 'g'],
-			accessSurfaceId: 'route.gitops'
+			accessSurfaceId: 'route.gitops',
+			items: [
+				{
+					title: m.git_repositories_title(),
+					url: '/customize/git-repositories',
+					icon: GitBranchIcon,
+					accessSurfaceId: 'customize.category.git-repositories'
+				}
+			]
 		}
 	],
 	resourceItems: [
@@ -121,7 +145,15 @@ export const navigationItems: NavigationSections = {
 			icon: ImagesIcon,
 			shortcut: ['mod', '6'],
 			accessSurfaceId: 'route.images',
-			items: [{ title: m.builds(), url: '/images/builds', icon: HammerIcon, accessSurfaceId: 'route.images.builds' }]
+			items: [
+				{ title: m.builds(), url: '/images/builds', icon: HammerIcon, accessSurfaceId: 'route.images.builds' },
+				{
+					title: m.registries_title(),
+					url: '/customize/registries',
+					icon: RegistryIcon,
+					accessSurfaceId: 'customize.category.registries'
+				}
+			]
 		},
 		{
 			title: m.resource_networks_cap(),
@@ -168,46 +200,13 @@ export const navigationItems: NavigationSections = {
 			accessSurfaceId: 'route.podman.autoupdate'
 		}
 	],
-	settingsItems: [
+	adminItems: [
 		{
-			title: m.events_title(),
-			url: '/events',
-			icon: EventsIcon,
-			shortcut: ['mod', '9'],
-			accessSurfaceId: 'route.events'
-		},
-		{
-			title: m.customize_title(),
-			url: '/customize',
-			icon: CustomizeIcon,
-			shortcut: ['mod', '4'],
-			accessSurfaceId: 'landing.customize',
-			items: [
-				{
-					title: m.templates_title(),
-					url: '/customize/templates',
-					icon: TemplateIcon,
-					accessSurfaceId: 'customize.category.templates'
-				},
-				{
-					title: m.registries_title(),
-					url: '/customize/registries',
-					icon: RegistryIcon,
-					accessSurfaceId: 'customize.category.registries'
-				},
-				{
-					title: m.variables_title(),
-					url: '/customize/variables',
-					icon: VariableIcon,
-					accessSurfaceId: 'customize.category.variables'
-				},
-				{
-					title: m.git_repositories_title(),
-					url: '/customize/git-repositories',
-					icon: GitBranchIcon,
-					accessSurfaceId: 'customize.category.git-repositories'
-				}
-			]
+			title: m.environments_title(),
+			url: '/environments',
+			icon: EnvironmentsIcon,
+			shortcut: ['mod', '3'],
+			accessSurfaceId: 'route.environments'
 		},
 		{
 			title: m.settings(),
@@ -278,7 +277,7 @@ export const navigationItems: NavigationSections = {
 // entries are declared in the literal above. The sidebar and mobile nav render it;
 // the settings landing page uses it for card order and for Roles/Diagnostics cards.
 {
-	const settingsParent = navigationItems.settingsItems.find((item) => item.url === '/settings');
+	const settingsParent = navigationItems.adminItems.find((item) => item.url === '/settings');
 	if (settingsParent?.items) {
 		settingsParent.items.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
 	}
@@ -307,10 +306,9 @@ export function filterByPermissions(
 		if (!canSeeItem(item, user, accessManifest)) continue;
 		if (item.items && item.items.length > 0) {
 			const filteredChildren = filterByPermissions(item.items, user, accessManifest);
-			// Drop a parent group only when it has children declared but none
-			// survived the filter. A parent with NO children declared (a leaf
-			// link that happens to have an empty items array) stays.
-			if (filteredChildren.length === 0 && item.items.length > 0) continue;
+			// Drop a parent group only when none of its children survived the
+			// filter and it has no access surface of its own to link to.
+			if (filteredChildren.length === 0 && !item.accessSurfaceId) continue;
 			out.push({ ...item, items: filteredChildren });
 		} else {
 			out.push(item);
@@ -350,18 +348,23 @@ export function getNavigationTitleForPath(pathname: string): string | undefined 
 }
 
 export function getSettingsSubpageUrlsInNavOrder(): string[] {
-	const entry = navigationItems.settingsItems.find((item) => item.url === '/settings');
+	const entry = navigationItems.adminItems.find((item) => item.url === '/settings');
 	return entry?.items?.map((item) => item.url) ?? [];
 }
 
 export function getCustomizeSubpageUrlsInNavOrder(): string[] {
-	const entry = navigationItems.settingsItems.find((item) => item.url === '/customize');
-	return entry?.items?.map((item) => item.url) ?? [];
+	return Object.values(navigationItems)
+		.flat()
+		.flatMap((item) => item.items ?? [])
+		.map((item) => item.url)
+		.filter((url) => url.startsWith('/customize/'));
 }
 
-const defaultMobilePinnedItems: NavigationItem[] = [...navigationItems.managementItems, ...navigationItems.resourceItems].filter(
-	(item) => ['/dashboard', '/projects', '/containers', '/images'].includes(item.url)
-);
+const defaultMobilePinnedItems: NavigationItem[] = [
+	...navigationItems.overviewItems,
+	...navigationItems.deployItems,
+	...navigationItems.resourceItems
+].filter((item) => ['/dashboard', '/projects', '/containers', '/images'].includes(item.url));
 
 export function getSwarmNavigationItems(swarmEnabled: boolean | undefined): NavigationItem[] {
 	if (swarmEnabled) {
@@ -386,12 +389,16 @@ export const DEFAULT_LANDING_PAGE = '/dashboard';
 
 /**
  * Top-level pages selectable as the post-login landing page. Derived from the
- * sidebar sections so the option list stays in sync with the nav. /customize
- * lives under settingsItems and is not selectable (category landing, not a
- * resource page).
+ * sidebar sections so the option list stays in sync with the nav. /settings
+ * is not selectable (category landing, not a resource page).
  */
 export function getLandingPageNavItems(): NavigationItem[] {
-	return [...navigationItems.managementItems, ...navigationItems.resourceItems];
+	return [
+		...navigationItems.overviewItems,
+		...navigationItems.deployItems,
+		...navigationItems.resourceItems,
+		...navigationItems.adminItems.filter((item) => !item.items)
+	];
 }
 
 export type MobileNavigationSettings = {
@@ -408,13 +415,7 @@ export function getAvailableMobileNavItems(options?: {
 	accessManifest?: PermissionsManifest | null;
 }): NavigationItem[] {
 	const flatItems: NavigationItem[] = [];
-	if (navigationItems.managementItems) {
-		flatItems.push(...navigationItems.managementItems);
-	}
-
-	if (navigationItems.resourceItems) {
-		flatItems.push(...navigationItems.resourceItems);
-	}
+	flatItems.push(...navigationItems.overviewItems, ...navigationItems.deployItems, ...navigationItems.resourceItems);
 
 	const swarmItems = getSwarmNavigationItems(options?.swarmEnabled);
 	if (swarmItems.length > 0) {
@@ -423,13 +424,7 @@ export function getAvailableMobileNavItems(options?: {
 
 	flatItems.push(...getPodmanNavigationItems(options?.podmanStatuses ?? {}));
 
-	if (navigationItems.settingsItems) {
-		const settingsTopLevel = navigationItems.settingsItems.filter((item) => !item.items);
-		flatItems.push(...settingsTopLevel);
-
-		const settingsParents = navigationItems.settingsItems.filter((item) => item.items);
-		flatItems.push(...settingsParents);
-	}
+	flatItems.push(...navigationItems.adminItems);
 
 	if (options?.user === null) return [];
 	if (!options?.user) return flatItems;

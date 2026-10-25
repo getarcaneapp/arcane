@@ -36,12 +36,11 @@
 
 	const currentPath = $derived(page.url.pathname);
 	const memoizedUser = $derived(user ?? userStore.current);
-	const managementItems = $derived(
-		filterByPermissions(navigationItems.managementItems, memoizedUser ?? null, permissionsManifest)
-	);
+	const overviewItems = $derived(filterByPermissions(navigationItems.overviewItems, memoizedUser ?? null, permissionsManifest));
+	const deployItems = $derived(filterByPermissions(navigationItems.deployItems, memoizedUser ?? null, permissionsManifest));
 	const resourceItems = $derived(filterByPermissions(navigationItems.resourceItems, memoizedUser ?? null, permissionsManifest));
 	const permittedPodmanItems = $derived(filterByPermissions(podmanItems, memoizedUser ?? null, permissionsManifest));
-	const settingsItems = $derived(filterByPermissions(navigationItems.settingsItems, memoizedUser ?? null, permissionsManifest));
+	const adminItems = $derived(filterByPermissions(navigationItems.adminItems, memoizedUser ?? null, permissionsManifest));
 
 	const upgradeCheck = useUpgradeCheck({
 		queryScope: 'mobile-nav',
@@ -128,9 +127,16 @@
 			<div class="space-y-8">
 				<section>
 					<h4 class="mb-4 px-3 text-2xs font-semibold tracking-widest text-muted-foreground/70 uppercase">
-						{m.sidebar_management()}
+						{m.sidebar_overview()}
 					</h4>
-					{@render navItems(managementItems, true)}
+					{@render navItems(overviewItems, true)}
+				</section>
+
+				<section>
+					<h4 class="mb-4 px-3 text-2xs font-semibold tracking-widest text-muted-foreground/70 uppercase">
+						{m.deploy()}
+					</h4>
+					{@render navItems(deployItems, true)}
 				</section>
 
 				<section>
@@ -166,12 +172,12 @@
 					</section>
 				{/if}
 
-				{#if settingsItems.length > 0}
+				{#if adminItems.length > 0}
 					<section>
 						<h4 class="mb-4 px-3 text-2xs font-semibold tracking-widest text-muted-foreground/70 uppercase">
 							{m.sidebar_administration()}
 						</h4>
-						{@render navItems(settingsItems, false)}
+						{@render navItems(adminItems, false)}
 					</section>
 				{/if}
 			</div>
