@@ -50,8 +50,8 @@ func New(
 
 // Snapshot is the compose container listing shared by every row of one list request, grouped by project.
 type Snapshot struct {
+	ContainerIndex
 	Containers          []container.Summary
-	byProject           map[string][]container.Summary
 	Err                 error
 	currentContainerID  string
 	currentContainerErr error
@@ -66,43 +66,43 @@ func (s *Service) Snapshot(ctx context.Context) Snapshot {
 	}
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 	return Snapshot{
+		ContainerIndex:      IndexComposeContainers(containers),
 		Containers:          containers,
-		byProject:           GroupComposeContainersByProject(containers),
 		currentContainerID:  currentContainerID,
 		currentContainerErr: currentContainerErr,
 	}
 }
 
-// ProjectContainers matches project names first, then the working directory if it identifies one Compose project.
-func ProjectContainers(p types.ProjectRecord, containersByProject map[string][]container.Summary) []container.Summary {
+type ContainerIndex struct {
+	byProject map[string][]container.Summary
+	byPath    map[string]projectPathContainers
+}
+
+type projectPathContainers struct {
+	projectName string
+	containers  []container.Summary
+	ambiguous   bool
+}
+
+// ProjectContainers matches names first, then an unambiguous working directory.
+func (index ContainerIndex) ProjectContainers(p types.ProjectRecord) []container.Summary {
 	normName := projects.NormalizeProjectName(p.Name)
-	if c := containersByProject[normName]; len(c) > 0 {
+	if c := index.byProject[normName]; len(c) > 0 {
 		return c
 	}
 	if kit.FromPtr(p.ComposeProjectName) != normName {
-		if c := containersByProject[kit.FromPtr(p.ComposeProjectName)]; len(c) > 0 {
+		if c := index.byProject[kit.FromPtr(p.ComposeProjectName)]; len(c) > 0 {
 			return c
 		}
 	}
 	if p.Path == "" {
 		return nil
 	}
-	projectPath := filepath.Clean(p.Path)
-	var matched []container.Summary
-	var matchedProjectName string
-	for projectName, containers := range containersByProject {
-		for _, c := range containers {
-			workingDir := c.Labels[api.WorkingDirLabel]
-			if workingDir != "" && filepath.Clean(workingDir) == projectPath {
-				if matched != nil && matchedProjectName != projectName {
-					return nil
-				}
-				matchedProjectName = projectName
-				matched = append(matched, c)
-			}
-		}
+	matched := index.byPath[filepath.Clean(p.Path)]
+	if matched.ambiguous {
+		return nil
 	}
-	return matched
+	return matched.containers
 }
 
 // RuntimeServiceFromContainer derives service state from a labeled container.
@@ -176,12 +176,7 @@ func ProjectStatus(services []types.ProjectRuntimeService) string {
 
 // StatusCounts totals archived, running and stopped projects from live
 // containers, falling back to stored status when Docker is unavailable.
-func (s *Service) StatusCounts(ctx context.Context, records []types.ProjectRecord) types.ProjectStatusCounts {
-	containers, err := s.containers(ctx)
-	if err != nil {
-		slog.ErrorContext(ctx, "Failed to list global compose containers for counts", "error", err)
-	}
-	containersByProject := GroupComposeContainersByProject(containers)
+func StatusCounts(records []types.ProjectRecord, snapshot Snapshot) types.ProjectStatusCounts {
 	var archived, running, stopped int
 	for _, p := range records {
 		if p.IsArchived {
@@ -189,11 +184,11 @@ func (s *Service) StatusCounts(ctx context.Context, records []types.ProjectRecor
 			continue
 		}
 		switch func() string {
-			if err != nil || p.Status == types.ProjectStatusDeploying || p.Status == types.ProjectStatusRestarting {
+			if snapshot.Err != nil || p.Status == types.ProjectStatusDeploying || p.Status == types.ProjectStatusRestarting {
 				return p.Status
 			}
 			var services []types.ProjectRuntimeService
-			for _, c := range ProjectContainers(p, containersByProject) {
+			for _, c := range snapshot.ProjectContainers(p) {
 				services = append(services, types.ProjectRuntimeService{Status: string(c.State)})
 			}
 			return kit.Ternary(len(services) > 0, ProjectStatus(services), types.ProjectStatusStopped)
@@ -232,7 +227,7 @@ func (s *Service) ReconcileStatuses(ctx context.Context, records []types.Project
 	changed := make(map[string]string)
 	for _, p := range records {
 		var services []types.ProjectRuntimeService
-		for _, c := range ProjectContainers(p, snapshot.byProject) {
+		for _, c := range snapshot.ProjectContainers(p) {
 			services = append(services, types.ProjectRuntimeService{Status: string(c.State)})
 		}
 		if status := LiveStatus(p.Status, nil, services); status != p.Status {
@@ -255,7 +250,7 @@ func RelativePath(projectsDir, projectPath string) string {
 // columns and the container snapshot; compose metadata is left for ApplyPresentation.
 func row(projectsDir, catalog string, p types.ProjectRecord, snapshot Snapshot, tags []types.ProjectTag) types.Project {
 	var services []types.ProjectRuntimeService
-	for _, c := range ProjectContainers(p, snapshot.byProject) {
+	for _, c := range snapshot.ProjectContainers(p) {
 		services = append(services, RuntimeServiceFromContainer(catalog, c, projects.ArcaneComposeMetadata{}, snapshot.currentContainerID, snapshot.currentContainerErr))
 	}
 	_, runningCount := ServiceCounts(services)
@@ -508,15 +503,33 @@ func ApplyProjectTagsDBFilter(query *gorm.DB, filterValue string) *gorm.DB {
 	return query.Where("EXISTS (SELECT 1 FROM project_tags WHERE project_tags.project_id = projects.id AND project_tags.name IN ?)", names)
 }
 
-func GroupComposeContainersByProject(containers []container.Summary) map[string][]container.Summary {
-	containersByProject := make(map[string][]container.Summary)
+func IndexComposeContainers(containers []container.Summary) ContainerIndex {
+	index := ContainerIndex{
+		byProject: make(map[string][]container.Summary),
+		byPath:    make(map[string]projectPathContainers),
+	}
 	for _, c := range containers {
 		projectName := docker.ComposeProjectLabel(c.Labels)
-		if projectName != "" {
-			containersByProject[projectName] = append(containersByProject[projectName], c)
+		if projectName == "" {
+			continue
+		}
+		index.byProject[projectName] = append(index.byProject[projectName], c)
+		if workingDir := c.Labels[api.WorkingDirLabel]; workingDir != "" {
+			key := filepath.Clean(workingDir)
+			entry, exists := index.byPath[key]
+			if entry.ambiguous {
+				continue
+			}
+			if exists && entry.projectName != projectName {
+				index.byPath[key] = projectPathContainers{ambiguous: true}
+				continue
+			}
+			entry.projectName = projectName
+			entry.containers = append(entry.containers, c)
+			index.byPath[key] = entry
 		}
 	}
-	return containersByProject
+	return index
 }
 
 func PaginationConfig() pagination.Config[types.Project] {

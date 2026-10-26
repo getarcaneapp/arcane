@@ -1659,7 +1659,7 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		slog.WarnContext(ctx, "could not list compose containers to check self-redeploy guard; skipping guard", "error", listErr)
 	} else {
 		currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-		projectContainers := listing.ProjectContainers(projectRecord(*proj), listing.GroupComposeContainersByProject(containers))
+		projectContainers := listing.IndexComposeContainers(containers).ProjectContainers(projectRecord(*proj))
 		if slices.ContainsFunc(projectContainers, func(c container.Summary) bool {
 			return labels.ShouldDisableArcaneServerRedeploy(c.Labels, c.ID, currentContainerID, currentContainerErr)
 		}) {
@@ -2449,25 +2449,8 @@ func (s *ProjectService) ListProjects(ctx context.Context, params pagination.Que
 }
 
 // CountProjectsWithPendingUpdates counts active projects and untracked compose
-// projects with a pending update, without the full list pipeline. A nil
-// allContainers is fetched here.
-func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, allContainers []container.Summary) (int, error) {
-	if allContainers == nil {
-		listed, err := s.details.ComposeContainers(ctx)
-		if err != nil {
-			return 0, fmt.Errorf("failed to list containers for project update count: %w", err)
-		}
-		allContainers = listed
-	}
-
-	// One full scan: archived projects are excluded from the update count but
-	// still mark their compose stacks as known during discovery, so loading
-	// everything here saves the known-name pass its own table scan.
-	var allProjects []Project
-	if err := s.db.WithContext(ctx).Find(&allProjects).Error; err != nil {
-		return 0, fmt.Errorf("failed to list projects for update count: %w", err)
-	}
-
+// projects with a pending update from the caller's inventory snapshot.
+func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, allContainers []container.Summary, allProjects []Project) int {
 	activeProjects := make([]Project, 0, len(allProjects))
 	for _, proj := range allProjects {
 		if !proj.IsArchived {
@@ -2477,10 +2460,10 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 
 	// Runtime container IDs keep tag-policy updates scoped to their project.
 	details := make([]types.Project, 0, len(activeProjects))
-	containersByProject := listing.GroupComposeContainersByProject(allContainers)
+	containerIndex := listing.IndexComposeContainers(allContainers)
 	for _, proj := range activeProjects {
 		var runtimeServices []types.ProjectRuntimeService
-		for _, c := range listing.ProjectContainers(projectRecord(proj), containersByProject) {
+		for _, c := range containerIndex.ProjectContainers(projectRecord(proj)) {
 			runtimeServices = append(runtimeServices, types.ProjectRuntimeService{
 				Name:            docker.ComposeServiceLabel(c.Labels),
 				ContainerID:     c.ID,
@@ -2508,7 +2491,7 @@ func (s *ProjectService) CountProjectsWithPendingUpdates(ctx context.Context, al
 	// Untracked compose projects with a pending update count too, so the
 	// dashboard badge matches the projects table.
 	known := listing.KnownComposeProjectNames(projectRecords(allProjects))
-	return count + s.listing.CountDiscoveredUpdates(ctx, visibleContainers, known, IconCatalogForContext(ctx)), nil
+	return count + s.listing.CountDiscoveredUpdates(ctx, visibleContainers, known, IconCatalogForContext(ctx))
 }
 
 // ProjectMetadata resolves a project's icon sets and service URLs, cached until
@@ -3500,7 +3483,7 @@ func (s *ProjectService) projectServices(ctx context.Context, projectID string) 
 	}
 
 	containers, listErr := s.details.ComposeContainers(ctx)
-	matched := listing.ProjectContainers(projectRecord(*projectFromDb), listing.GroupComposeContainersByProject(containers))
+	matched := listing.IndexComposeContainers(containers).ProjectContainers(projectRecord(*projectFromDb))
 	composeProject, derr := s.getCachedComposeProject(ctx, projectFromDb, nil)
 	if errors.Is(derr, common.ErrProjectEnvUnreadable) {
 		// The Compose file cannot be loaded, so derive services from labeled containers.
@@ -3534,21 +3517,21 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 	if listErr != nil {
 		slog.WarnContext(ctx, "failed to list containers for project log stream", "projectId", projectID, "error", listErr)
 	}
-	matched := listing.ProjectContainers(projectRecord(*proj), listing.GroupComposeContainersByProject(containers))
+	matched := listing.IndexComposeContainers(containers).ProjectContainers(projectRecord(*proj))
 	return projectdetails.Logs(ctx, s.dockerService.DockerHost(), projectdetails.RuntimeProjectName(proj.Name, matched), logsChan, follow, tail, since, timestamps)
 }
 
 func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (types.ProjectStatusCounts, error) {
-	// Runtime status comes from containers, so only the matching and fallback columns are read.
 	var projectsList []Project
-	if listProjectsErr := s.db.WithContext(ctx).Select("id", "name", "path", "status", "compose_project_name", "is_archived").Find(&projectsList).Error; listProjectsErr != nil {
+	if listProjectsErr := s.db.WithContext(ctx).Find(&projectsList).Error; listProjectsErr != nil {
 		return types.ProjectStatusCounts{}, fmt.Errorf("failed to list projects: %w", listProjectsErr)
 	}
-	updates, err := s.CountProjectsWithPendingUpdates(ctx, nil)
-	if err != nil {
-		return types.ProjectStatusCounts{}, err
+	snapshot := s.listing.Snapshot(ctx)
+	if snapshot.Err != nil {
+		return types.ProjectStatusCounts{}, fmt.Errorf("failed to list containers for project update count: %w", snapshot.Err)
 	}
-	counts := s.listing.StatusCounts(ctx, projectRecords(projectsList))
+	updates := s.CountProjectsWithPendingUpdates(ctx, snapshot.Containers, projectsList)
+	counts := listing.StatusCounts(projectRecords(projectsList), snapshot)
 	return types.ProjectStatusCounts{
 		RunningProjects:  counts.RunningProjects,
 		StoppedProjects:  counts.StoppedProjects,
