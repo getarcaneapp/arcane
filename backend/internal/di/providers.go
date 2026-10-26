@@ -44,7 +44,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/vulnerability"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
@@ -56,7 +56,7 @@ import (
 func provideBackupEngine(lc fx.Lifecycle, admission *runs.Admission, imageService *image.ImageService, roles *role.RoleService, cfg *config.Config) *backup.Engine {
 	engine := backup.NewEngine(admission, imageService)
 	engine.SetAuthorize(func(ctx context.Context, requester types.BackupRequester) error {
-		if cfg.EdgeAgent && requester.UserID == "agent" && requester.APIKeyID == "" {
+		if cfg.AgentEnabled && requester.UserID == "agent" && requester.APIKeyID == "" {
 			return nil
 		}
 		if requester.UserID == "" {
@@ -129,11 +129,11 @@ func provideAdmissionGate(runtime *francis.Runtime) (*runs.Admission, error) {
 	return admission, nil
 }
 
-func provideTunnelRegistry(lc fx.Lifecycle) *edge.TunnelRegistry {
-	localRegistry := edge.NewTunnelRegistry()
-	edge.SetDefaultRegistry(localRegistry)
+func provideTunnelRegistry(lc fx.Lifecycle) *agent.TunnelRegistry {
+	localRegistry := agent.NewTunnelRegistry()
+	agent.SetDefaultRegistry(localRegistry)
 	lc.Append(fx.Hook{OnStop: func(ctx context.Context) error {
-		defer edge.ClearDefaultRegistry(localRegistry)
+		defer agent.ClearDefaultRegistry(localRegistry)
 		stopCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 		return localRegistry.Stop(stopCtx)

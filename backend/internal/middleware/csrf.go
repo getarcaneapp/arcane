@@ -39,9 +39,9 @@ func NewCSRFMiddleware(cfg *config.Config) *CSRFMiddleware {
 }
 
 func (m *CSRFMiddleware) Add() echo.MiddlewareFunc {
-	// Edge Agent mode: skip. The agent only receives server-to-server requests
-	// through the edge tunnel from the manager — never from browsers. Mirrors CORSMiddleware.
-	if m.cfg != nil && m.cfg.EdgeAgent {
+	// Agent mode: skip. The agent only receives server-to-server requests
+	// through the agent tunnel from the manager — never from browsers. Mirrors CORSMiddleware.
+	if m.cfg != nil && m.cfg.AgentEnabled {
 		return func(next echo.HandlerFunc) echo.HandlerFunc {
 			return func(c *echo.Context) error { return next(c) }
 		}

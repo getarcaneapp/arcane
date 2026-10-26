@@ -33,7 +33,7 @@ cli:
 types:
     cd types && golangci-lint run -c ../.golangci.yml ./...
 
-# Edge tunnel protobuf definitions
+# Agent tunnel protobuf definitions
 proto:
     GOBIN="$PWD/backend/.bin" go install github.com/bufbuild/buf/cmd/buf@latest
-    cd {{ edge_proto_dir }} && ../.bin/buf lint
+    cd {{ tunnel_proto_dir }} && ../.bin/buf lint

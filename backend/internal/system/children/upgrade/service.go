@@ -1274,7 +1274,7 @@ func upsertPendingResult(job *UpgradeJob, envID, envName string) int {
 }
 
 // upgradeJobAgentFailureStatus classifies a failed agent pre-check: a reached environment whose request failed or timed
-// out (poll-mode tunnels connect on demand) is a failure; only a never-reachable one is an offline skip.
+// out is a failure; only a never-reachable one is an offline skip.
 func upgradeJobAgentFailureStatus(err error) UpgradeResultStatus {
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return UpgradeResultStatusFailed

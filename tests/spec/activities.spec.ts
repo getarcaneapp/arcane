@@ -6,7 +6,7 @@ type MockEnvironment = {
 	id: string;
 	name: string;
 	apiUrl: string;
-	status: 'online' | 'standby' | 'offline' | 'error' | 'pending';
+	status: 'online' | 'offline' | 'error' | 'pending';
 	enabled: boolean;
 };
 
@@ -46,7 +46,7 @@ const localEnvironment: MockEnvironment = {
 const remoteEnvironment: MockEnvironment = {
 	id: 'remote-activity-test',
 	name: 'Remote Lab',
-	apiUrl: 'edge://remote-activity-test',
+	apiUrl: 'agent://remote-activity-test',
 	status: 'offline',
 	enabled: true
 };

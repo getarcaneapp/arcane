@@ -131,7 +131,7 @@ func PerIPRateLimit(perMinute, burst int) echo.MiddlewareFunc {
 }
 
 // PerAgentTokenRateLimit returns an Echo middleware that limits requests per
-// edge agent token to the given rate and burst.
+// agent token to the given rate and burst.
 func PerAgentTokenRateLimit(perMinute, burst int) echo.MiddlewareFunc {
 	if perMinute <= 0 {
 		perMinute = 10

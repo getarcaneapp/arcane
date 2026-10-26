@@ -12,7 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
@@ -217,11 +217,11 @@ func (h *Handler) GetNodeAgentDeployment(ctx context.Context, input *GetSwarmNod
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	snippets, err := h.environmentService.GenerateEdgeDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), apiKey, &edge.Config{
-		EdgeMTLSMode:      h.cfg.EdgeMTLSMode,
-		EdgeMTLSCAFile:    h.cfg.EdgeMTLSCAFile,
-		EdgeMTLSAssetsDir: h.cfg.EdgeMTLSAssetsDir,
-		AppURL:            h.cfg.GetAppURL(),
+	snippets, err := h.environmentService.GenerateAgentDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), apiKey, &agent.Config{
+		AgentMTLSMode:      h.cfg.AgentMTLSMode,
+		AgentMTLSCAFile:    h.cfg.AgentMTLSCAFile,
+		AgentMTLSAssetsDir: h.cfg.AgentMTLSAssetsDir,
+		AppURL:             h.cfg.GetAppURL(),
 	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -312,7 +312,7 @@ func (h *Handler) DeleteNodeAgentDeployment(ctx context.Context, input *DeleteSw
 
 // GetNodeIdentity returns the swarm identity of the node serving the current request.
 //
-// It is used by edge agents and local nodes to report their swarm node ID,
+// It is used by agents and local nodes to report their swarm node ID,
 // hostname, role, engine version, and swarm participation state.
 //
 // ctx carries request-scoped cancellation and auth context.

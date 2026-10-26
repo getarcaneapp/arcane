@@ -64,8 +64,8 @@ func ClearReadDeadline(ctx context.Context) {
 // is.
 //
 // It is deliberately scoped to one connection rather than the listener: the
-// same listener carries edge tunnel gRPC streams, which tolerate up to
-// edge.TunnelStaleTimeout of silence and would be reset by a shared timeout.
+// same listener carries agent tunnel gRPC streams, which tolerate up to
+// agent.TunnelStaleTimeout of silence and would be reset by a shared timeout.
 //
 // The release function is always safe to call, including when acquisition
 // failed or the request never passed through WithConn.

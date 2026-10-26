@@ -30,7 +30,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/kv"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 )
@@ -406,8 +406,8 @@ func (s *VariableService) syncEnvironments(ctx context.Context, targets []enviro
 		wg.Go(func() {
 			syncCtx, cancel := context.WithTimeout(ctx, variableSyncTimeout)
 			defer cancel()
-			if target.ID != environment.LocalEnvironmentID && !edge.HasActiveTunnel(target.ID) {
-				if _, ok := edge.RequestTunnelAndWait(syncCtx, target.ID, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()).Get(); !ok {
+			if target.ID != environment.LocalEnvironmentID && !agent.HasActiveTunnel(target.ID) {
+				if _, ok := agent.WaitForActiveTunnel(syncCtx, target.ID, agent.DefaultTunnelAcquireTimeout).Get(); !ok {
 					s.recordSyncPending(target.ID)
 					return
 				}

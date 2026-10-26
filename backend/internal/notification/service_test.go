@@ -45,7 +45,7 @@ func setupNotificationTestDB(t *testing.T) *database.DB {
 	crypto.InitEncryption(&crypto.Config{
 		EncryptionKey: testCfg.EncryptionKey,
 		Environment:   string(testCfg.Environment),
-		AgentMode:     testCfg.EdgeAgent,
+		AgentMode:     testCfg.AgentEnabled,
 	})
 
 	return &database.DB{DB: db}
@@ -136,7 +136,7 @@ func TestNotificationService_DispatchNotification_UnsupportedKindReturnsSentinel
 	now := time.Now()
 	require.NoError(t, db.WithContext(ctx).Create(&environment.Environment{
 		ID: "env-remote", CreatedAt: now, UpdatedAt: &now,
-		Name:        "Remote Edge",
+		Name:        "Remote Agent",
 		ApiUrl:      "http://remote.example",
 		Enabled:     true,
 		Status:      string(environment.EnvironmentStatusOnline),
@@ -163,7 +163,7 @@ func TestNotificationService_DispatchNotification_LogsManagerDispatchForAgent(t 
 	now := time.Now()
 	require.NoError(t, db.WithContext(ctx).Create(&environment.Environment{
 		ID: "env-remote", CreatedAt: now, UpdatedAt: &now,
-		Name:        "Remote Edge",
+		Name:        "Remote Agent",
 		ApiUrl:      "http://remote.example",
 		Enabled:     true,
 		Status:      string(environment.EnvironmentStatusOnline),
@@ -184,7 +184,7 @@ func TestNotificationService_DispatchNotification_LogsManagerDispatchForAgent(t 
 	logs := logBuffer.String()
 	require.Contains(t, logs, "Manager dispatching notification on behalf of agent")
 	require.Contains(t, logs, "environmentId=env-remote")
-	require.Contains(t, logs, "environmentName=\"Remote Edge\"")
+	require.Contains(t, logs, "environmentName=\"Remote Agent\"")
 	require.Contains(t, logs, "kind=image_update")
 }
 
@@ -223,7 +223,7 @@ func TestNotificationService_SendImageUpdateNotification_AgentModeDispatchesToMa
 
 	svc := NewNotificationService(db, &config.Config{
 		AppUrl:        "http://localhost:3552",
-		EdgeAgent:     true,
+		AgentEnabled:  true,
 		AgentToken:    "agent-token",
 		ManagerApiUrl: server.URL,
 	}, envSvc, nil, nil)
@@ -270,7 +270,7 @@ func TestNotificationService_SendBatchImageUpdateNotification_AgentModeUsesManag
 
 	svc := NewNotificationService(db, &config.Config{
 		AppUrl:        "http://localhost:3552",
-		EdgeAgent:     true,
+		AgentEnabled:  true,
 		AgentToken:    "agent-token",
 		ManagerApiUrl: server.URL,
 	}, envSvc, nil, nil)
@@ -291,8 +291,8 @@ func TestNotificationService_SendImageUpdateNotification_AgentModeRequiresUpdate
 	envSvc := environment.NewEnvironmentService(db, nil, nil, nil, nil)
 
 	svc := NewNotificationService(db, &config.Config{
-		AppUrl:    "http://localhost:3552",
-		EdgeAgent: true,
+		AppUrl:       "http://localhost:3552",
+		AgentEnabled: true,
 	}, envSvc, nil, nil)
 
 	_, err := svc.SendImageUpdateNotification(ctx, "nginx:latest", nil, notifications.NotificationEventImageUpdate)
@@ -314,7 +314,7 @@ func TestNotificationService_SendBatchImageUpdateNotification_AgentModeSkipsNoOp
 
 	svc := NewNotificationService(db, &config.Config{
 		AppUrl:        "http://localhost:3552",
-		EdgeAgent:     true,
+		AgentEnabled:  true,
 		AgentToken:    "agent-token",
 		ManagerApiUrl: server.URL,
 	}, envSvc, nil, nil)
@@ -735,14 +735,14 @@ func TestNotificationService_DispatchNotificationForEnvironment_ResolvesTunnelSe
 
 	now := time.Now()
 	require.NoError(t, db.WithContext(ctx).Create(&environment.Environment{
-		ID: "env-edge", CreatedAt: now, UpdatedAt: &now,
-		Name:    "edge-env",
-		ApiUrl:  "http://edge:3553",
+		ID: "env-agent", CreatedAt: now, UpdatedAt: &now,
+		Name:    "agent-env",
+		ApiUrl:  "http://agent:3553",
 		Enabled: true,
 	}).Error)
 
 	// No access token involved: the environment comes from the tunnel session (#3002).
-	resp, err := svc.DispatchNotificationForEnvironment(ctx, "env-edge", types.NotificationDispatchRequest{
+	resp, err := svc.DispatchNotificationForEnvironment(ctx, "env-agent", types.NotificationDispatchRequest{
 		Kind: types.NotificationDispatchKindImageUpdate,
 		ImageUpdate: &types.NotificationDispatchImageUpdate{
 			ImageRef:   "nginx:latest",
@@ -752,14 +752,14 @@ func TestNotificationService_DispatchNotificationForEnvironment_ResolvesTunnelSe
 	require.NoError(t, err)
 	require.Equal(t, "Notification dispatched successfully", resp.Message)
 
-	_, err = svc.DispatchNotificationForEnvironment(ctx, "env-edge", types.NotificationDispatchRequest{Kind: "bogus"})
+	_, err = svc.DispatchNotificationForEnvironment(ctx, "env-agent", types.NotificationDispatchRequest{Kind: "bogus"})
 	require.ErrorIs(t, err, ErrUnsupportedDispatchKind)
 }
 
 func TestNotificationService_AgentDispatchWithoutHTTPConfigFallsBackToTunnel(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
-	svc := NewNotificationService(db, &config.Config{EdgeAgent: true}, nil, event.NewEventService(db, &config.Config{EdgeAgent: true}, nil), nil)
+	svc := NewNotificationService(db, &config.Config{AgentEnabled: true}, nil, event.NewEventService(db, &config.Config{AgentEnabled: true}, nil), nil)
 
 	// No MANAGER_API_URL/AGENT_TOKEN and no active tunnel: the error must point
 	// at both options instead of only the HTTP env vars (#3002).
@@ -771,13 +771,13 @@ func TestNotificationService_AgentDispatchWithoutHTTPConfigFallsBackToTunnel(t *
 		},
 	})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "connected edge tunnel")
+	require.Contains(t, err.Error(), "connected agent tunnel")
 }
 
 func TestNotificationService_AgentDispatchHTTPFailureFallsBackToTunnel(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
-	cfg := &config.Config{EdgeAgent: true, ManagerApiUrl: "http://127.0.0.1:0", AgentToken: "token"}
+	cfg := &config.Config{AgentEnabled: true, ManagerApiUrl: "http://127.0.0.1:0", AgentToken: "token"}
 	svc := NewNotificationService(db, cfg, nil, event.NewEventService(db, cfg, nil), nil)
 
 	// HTTP dispatch fails and no tunnel is connected either: the fallback must

@@ -35,7 +35,7 @@
 			'cannot connect to the docker daemon',
 			'failed to connect to docker',
 			'error during connect:',
-			'edge agent is not connected',
+			'agent is not connected',
 			'no active tunnel for environment',
 			'tunnel connection closed',
 			'proxy request failed'

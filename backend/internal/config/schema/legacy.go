@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ var (
 		"ARCANE_UPGRADE_KEEP_CONTAINER",
 		"ARCANE_ANALYTICS_ENABLED",
 		"ARCANE_UPDATE_CHECK_ENABLED",
+		"ARCANE_AGENT",
 	}
 )
 
@@ -33,6 +35,10 @@ func RenamedEnv() map[string]string {
 	for _, name := range slices.Concat(config.EnvNames(), settings.EnvNames(), []string{"ARCANE_AUTO_LOGIN_USERNAME", "ARCANE_AUTO_LOGIN_PASSWORD"}) {
 		if legacy, ok := strings.CutPrefix(name, "ARCANE_"); ok && !slices.Contains(alreadyPrefixedEnv, name) {
 			renamed[legacy] = name
+		}
+		if suffix, ok := strings.CutPrefix(name, "ARCANE_AGENT"); ok && name != "ARCANE_AGENT_TOKEN" {
+			renamed["EDGE"+cmp.Or(suffix, "_AGENT")] = name
+			renamed["ARCANE_EDGE"+cmp.Or(suffix, "_AGENT")] = name
 		}
 	}
 	return renamed
