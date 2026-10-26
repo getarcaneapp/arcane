@@ -3545,7 +3545,7 @@
   "backups_s3_region_required": "Bei der Nutzung von AWS S3 ist die Angabe einer Region erforderlich.",
   "backups_s3_access_key_required": "Die Zugriffsschlüssel-ID ist erforderlich, wenn der S3-Upload aktiviert ist.",
   "backups_s3_secret_key_required": "Wenn das Hochladen auf S3 aktiviert ist, ist ein geheimer Zugangsschlüssel erforderlich.",
-  "backups_trigger_manual": "Handbuch",
+  "backups_trigger_manual": "Manuell",
   "backups_trigger_scheduled": "Geplant",
   "backups_trigger_safety": "Sicherheitsmaßnahmen vor der Wiederherstellung",
   "backups_destination_s3": "S3",
