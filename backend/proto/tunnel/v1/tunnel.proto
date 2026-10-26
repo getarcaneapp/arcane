@@ -4,7 +4,7 @@ package tunnel.v1;
 
 option go_package = "github.com/getarcaneapp/arcane/backend/v3/proto/tunnel/v1;tunnelpb";
 
-// TunnelService is the reverse tunnel between an edge agent and manager.
+// TunnelService is the reverse tunnel between an Arcane agent and manager.
 service TunnelService {
   // Agent opens a persistent bidi stream to manager.
   rpc Connect(stream AgentMessage) returns (stream ManagerMessage);

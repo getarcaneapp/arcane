@@ -58,12 +58,12 @@ func TestService_RenderBatchEmailTemplate_IncludesEnvironment(t *testing.T) {
 		},
 	}
 
-	_, htmlBody, err := svc.BatchImageUpdate("Edge Cluster A", updates).RenderEmail()
+	_, htmlBody, err := svc.BatchImageUpdate("Agent Cluster A", updates).RenderEmail()
 	require.NoError(t, err)
-	require.Contains(t, htmlBody, "Edge Cluster A")
+	require.Contains(t, htmlBody, "Agent Cluster A")
 
-	subject := notifications.BuildEmailSubject("Edge Cluster A", "2 Container Image Updates Available")
-	require.Equal(t, "[Edge Cluster A] 2 Container Image Updates Available", subject)
+	subject := notifications.BuildEmailSubject("Agent Cluster A", "2 Container Image Updates Available")
+	require.Equal(t, "[Agent Cluster A] 2 Container Image Updates Available", subject)
 }
 
 func TestService_RenderVulnerabilitySummaryEmailTemplate_IncludesEnvironment(t *testing.T) {

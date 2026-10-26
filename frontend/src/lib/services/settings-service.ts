@@ -91,7 +91,7 @@ class SettingsService extends BaseAPIService {
 				frontendTracingEnabled: main.runtime.frontendTracingEnabled,
 				frontendMetricsEnabled: main.runtime.frontendMetricsEnabled,
 				frontendLogsEnabled: main.runtime.frontendLogsEnabled,
-				edgeMTLSManagerCAAvailable: main.runtime.edgeMTLSManagerCAAvailable
+				agentMTLSManagerCAAvailable: main.runtime.agentMTLSManagerCAAvailable
 			},
 			readOnly: main.readOnly || environment.readOnly
 		});

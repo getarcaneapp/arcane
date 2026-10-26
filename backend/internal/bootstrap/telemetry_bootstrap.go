@@ -53,7 +53,7 @@ func setupTelemetry(ctx context.Context, cfg *config.Config, errorLogger *slog.L
 		resource.WithTelemetrySDK(),
 		resource.WithAttributes(semconv.ServiceName("arcane"), semconv.ServiceVersion(config.Version)),
 		resource.WithFromEnv(),
-		resource.WithAttributes(semconv.ServiceInstanceID(instanceID), attribute.String("arcane.mode", kit.Ternary(cfg.EdgeAgent, "edge", "manager"))),
+		resource.WithAttributes(semconv.ServiceInstanceID(instanceID), attribute.String("arcane.mode", kit.Ternary(cfg.AgentEnabled, "agent", "manager"))),
 	)
 	if err != nil {
 		return fail(fmt.Errorf("create telemetry resource: %w", err))

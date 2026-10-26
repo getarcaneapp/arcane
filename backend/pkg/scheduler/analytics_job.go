@@ -110,7 +110,7 @@ func (j *AnalyticsJob) Run(ctx context.Context) (types.SchedulerOutcome, error) 
 	}{
 		Version:    getAnalyticsVersion(),
 		InstanceID: instanceID,
-		ServerType: kit.Ternary(j.cfg.EdgeAgent, "agent", "manager"),
+		ServerType: kit.Ternary(j.cfg.AgentEnabled, "agent", "manager"),
 	}
 
 	body, err := json.Marshal(payload)

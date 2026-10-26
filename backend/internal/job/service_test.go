@@ -468,14 +468,14 @@ func TestJobService_UpdateJobSchedules_RestoresPreviousScheduleWhenRescheduleFai
 	require.Equal(t, "0 0 0 * * *", persisted.Value)
 }
 
-func TestJobService_UpdateJobSchedules_SkipsManagerOnlyJobsOnEdgeAgent(t *testing.T) {
+func TestJobService_UpdateJobSchedules_SkipsManagerOnlyJobsOnAgent(t *testing.T) {
 	ctx := t.Context()
 	db := setupSettingsTestDB(t)
 
 	settingsSvc, err := newSettingsServiceForTest(t, ctx, db)
 	require.NoError(t, err)
 
-	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{EdgeAgent: true})
+	jobSvc := newJobServiceForTest(t, db, settingsSvc, &config.Config{AgentEnabled: true})
 	fakeScheduler := newFakeJobScheduler("environment-health")
 	jobSvc.SetScheduler(ctx, fakeScheduler)
 

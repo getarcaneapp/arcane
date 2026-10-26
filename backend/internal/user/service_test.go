@@ -42,7 +42,7 @@ func setupAuthServiceTestDB(t *testing.T) *database.DB {
 		t,
 		db.Exec("CREATE TABLE IF NOT EXISTS environments (id text PRIMARY KEY, created_at datetime, updated_at dateti"+
 			"me, name text, api_url text, status text, enabled numeric, hidden numeric, last_see"+
-			"n datetime, last_edge_transport text, access_token text, api_key_id text, parent_environment_id text"+
+			"n datetime, last_agent_transport text, access_token text, api_key_id text, parent_environment_id text"+
 			", swarm_node_id text)").Error,
 	)
 	require.NoError(

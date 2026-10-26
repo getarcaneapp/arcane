@@ -15,7 +15,7 @@ type Environment struct {
 	Enabled             bool       `json:"enabled" sortable:"true"`
 	Hidden              bool       `json:"hidden" gorm:"column:hidden;default:false"`
 	LastSeen            *time.Time `json:"lastSeen" gorm:"column:last_seen"`
-	LastEdgeTransport   *string    `json:"lastEdgeTransport" gorm:"column:last_edge_transport"`
+	LastAgentTransport  *string    `json:"lastAgentTransport" gorm:"column:last_agent_transport"`
 	AccessToken         *string    `json:"-" gorm:"column:access_token"`
 	ApiKeyID            *string    `json:"-" gorm:"column:api_key_id"`
 	ParentEnvironmentID *string    `json:"-" gorm:"column:parent_environment_id"`
@@ -28,7 +28,6 @@ type EnvironmentStatus string
 
 const (
 	EnvironmentStatusOnline  EnvironmentStatus = "online"
-	EnvironmentStatusStandby EnvironmentStatus = "standby"
 	EnvironmentStatusOffline EnvironmentStatus = "offline"
 	EnvironmentStatusError   EnvironmentStatus = "error"
 	EnvironmentStatusPending EnvironmentStatus = "pending"
