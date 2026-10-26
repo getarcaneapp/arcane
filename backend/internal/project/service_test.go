@@ -9135,12 +9135,12 @@ func TestCountProjectsWithPendingTagUpdatesUsesRuntimeContainers(t *testing.T) {
 		},
 		{ID: "second-container", Image: "example:3.1.0", ImageID: "shared", Labels: map[string]string{"com.docker.compose.project": "second", "com.docker.compose.service": "web"}},
 	}
-	count, err := service.CountProjectsWithPendingUpdates(t.Context(), containers)
+	allProjects, err := service.ListAllProjects(t.Context())
 	require.NoError(t, err)
+	count := service.CountProjectsWithPendingUpdates(t.Context(), containers, allProjects)
 	require.Equal(t, 1, count)
 	containers[0].Labels[libarcane.HiddenResourceLabel] = "true"
-	count, err = service.CountProjectsWithPendingUpdates(t.Context(), containers)
-	require.NoError(t, err)
+	count = service.CountProjectsWithPendingUpdates(t.Context(), containers, allProjects)
 	require.Zero(t, count)
 
 	// A digest check stored under another local tag of the running image marks
@@ -9160,13 +9160,13 @@ func TestCountProjectsWithPendingTagUpdatesUsesRuntimeContainers(t *testing.T) {
 			},
 		},
 	)
-	count, err = service.CountProjectsWithPendingUpdates(t.Context(), containers)
+	allProjects, err = service.ListAllProjects(t.Context())
 	require.NoError(t, err)
+	count = service.CountProjectsWithPendingUpdates(t.Context(), containers, allProjects)
 	require.Equal(t, 1, count)
 	containers[2].Labels[imageref.UpdateCheckLabel] = "false"
 	containers[3].Labels[imageref.UpdateCheckLabel] = "false"
-	count, err = service.CountProjectsWithPendingUpdates(t.Context(), containers)
-	require.NoError(t, err)
+	count = service.CountProjectsWithPendingUpdates(t.Context(), containers, allProjects)
 	require.Zero(t, count, "disabling update checks on every replica suppresses the project")
 }
 
@@ -9406,8 +9406,7 @@ func TestStoppedProjectTagPolicyNeverInheritsSharedDigestCheck(t *testing.T) {
 	require.Equal(t, target, detail.UpdateInfo.ServiceUpdates["app"].UpdateInfo.LatestVersion)
 	list = service.enrichProjectsWithUpdateInfo(t.Context(), []Project{*projectRecord}, list, true, nil)
 	require.Equal(t, "has_update", list[0].UpdateInfo.Status)
-	count, err := service.CountProjectsWithPendingUpdates(t.Context(), []container.Summary{})
-	require.NoError(t, err)
+	count := service.CountProjectsWithPendingUpdates(t.Context(), []container.Summary{}, []Project{*projectRecord})
 	require.Zero(t, count, "hidden configured services must not contribute to the dashboard badge")
 }
 

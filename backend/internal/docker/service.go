@@ -500,18 +500,28 @@ func CountImageUsage(images []image.Summary, containers []container.Summary) typ
 }
 
 func (s *DockerClientService) GetAllNetworks(ctx context.Context) ([]network.Summary, int, int, int, error) {
-	containers, err := s.ListContainers(ctx)
-	if err != nil {
-		return nil, 0, 0, 0, err
-	}
-	networks, err := s.Call(ctx, func(ctx context.Context, dockerClient *client.Client) ([]network.Summary, error) {
-		networkList, listErr := compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
-		if listErr != nil {
-			return nil, fmt.Errorf("failed to list Docker networks: %w", listErr)
-		}
-		return networkList.Items, nil
+	g, groupCtx := errgroup.WithContext(ctx)
+	var containers []container.Summary
+	var networks []network.Summary
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "network container list worker")
+		var err error
+		containers, err = s.ListContainers(groupCtx)
+		return err
 	})
-	if err != nil {
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "network list worker")
+		var err error
+		networks, err = s.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) ([]network.Summary, error) {
+			networkList, listErr := compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
+			if listErr != nil {
+				return nil, fmt.Errorf("failed to list Docker networks: %w", listErr)
+			}
+			return networkList.Items, nil
+		})
+		return err
+	})
+	if err := g.Wait(); err != nil {
 		return nil, 0, 0, 0, err
 	}
 	_, unused, total := CountNetworkUsage(networks, containers)

@@ -69,9 +69,6 @@
 		formatContainerOverviewLabel,
 		formatImageOverviewLabel,
 		formatVolumeOverviewLabel,
-		getCpuMetric,
-		getDiskMetric,
-		getMemoryMetric,
 		shouldLoadEnvironment
 	} from '../overview.helpers';
 	import EnvironmentCard from './environment-card.svelte';
@@ -653,7 +650,6 @@
 	const environmentTableRows = $derived.by((): EnvironmentTableRow[] => {
 		return environmentCards.map(({ environment }) => {
 			const loadedItem = overviewById.get(environment.id) ?? createBaseEnvironmentOverview(environment);
-			const stats = getLiveStatsState(environment.id)?.stats ?? null;
 			const vInfo = loadedItem.versionInfo;
 			return {
 				environment,
@@ -665,10 +661,6 @@
 				podCount: loadedItem.podCount ?? null,
 				updates: loadedItem.updates,
 				vulnerabilities: loadedItem.vulnerabilities,
-				cpu: getCpuMetric(stats),
-				memory: getMemoryMetric(stats),
-				disk: getDiskMetric(stats),
-				statsStatus: getLiveStatsStatus(environment),
 				versionText: vInfo ? vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown' : null,
 				updateAvailable: !!vInfo?.updateAvailable,
 				menuButtons: getEnvironmentActionButtons(loadedItem)
@@ -921,7 +913,7 @@
 			</div>
 		{:else if boardView === 'table'}
 			<div class="min-h-0 flex-1 overflow-y-auto pb-2">
-				<EnvironmentsTable rows={environmentTableRows} />
+				<EnvironmentsTable rows={environmentTableRows} {getLiveStatsState} {getLiveStatsStatus} />
 			</div>
 		{:else}
 			<div class="min-h-0 flex-1 overflow-y-auto pb-2">
