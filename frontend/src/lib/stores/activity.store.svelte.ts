@@ -103,11 +103,12 @@ function groupActivitiesInternal(items: Activity[]): ActivityGroup[] {
 		groups.push(group);
 	}
 
-	for (const group of batches.values()) {
+	for (let index = 0; index < groups.length; index++) {
+		const group = groups[index]!;
+		if (group.kind !== 'batch') continue;
 		// A "batch" of one renders as a plain activity row.
 		const only = group.items.length === 1 ? group.items[0] : undefined;
 		if (only) {
-			const index = groups.indexOf(group);
 			groups[index] = { kind: 'single', activity: only };
 			continue;
 		}
@@ -360,11 +361,17 @@ function createActivityStore() {
 		noteActivityStatusInternal(normalized);
 		const currentActivities = _environmentActivities[environmentId] ?? core.environmentState(environmentId)?.activities ?? [];
 		const index = currentActivities.findIndex((item) => item.id === normalized.id);
-		const activities = sortActivitiesInternal(
+		const previous = index >= 0 ? currentActivities[index] : undefined;
+		const orderingUnchanged =
+			previous !== undefined &&
+			isActiveStatusInternal(previous.status) === isActiveStatusInternal(normalized.status) &&
+			getActivitySortTimeInternal(previous) === getActivitySortTimeInternal(normalized);
+		let activities =
 			index >= 0
 				? [...currentActivities.slice(0, index), normalized, ...currentActivities.slice(index + 1)]
-				: [normalized, ...currentActivities]
-		).slice(0, ACTIVITY_LIST_LIMIT);
+				: [normalized, ...currentActivities];
+		if (!orderingUnchanged) activities = sortActivitiesInternal(activities);
+		activities = activities.slice(0, ACTIVITY_LIST_LIMIT);
 		_environmentActivities = {
 			..._environmentActivities,
 			[environmentId]: activities
@@ -377,7 +384,16 @@ function createActivityStore() {
 				errorMessage: undefined
 			};
 		});
-		rebuildActivitiesInternal();
+		const globalIndex =
+			orderingUnchanged && activities.length === currentActivities.length
+				? _activities.findIndex((item) => item.id === normalized.id)
+				: -1;
+		if (globalIndex >= 0) {
+			_activities = [..._activities.slice(0, globalIndex), normalized, ..._activities.slice(globalIndex + 1)];
+			for (const subscriber of activitySubscribers) subscriber(_activities);
+		} else {
+			rebuildActivitiesInternal();
+		}
 
 		const existingDetail = _details[normalized.id];
 		if (existingDetail) {
@@ -537,9 +553,10 @@ function createActivityStore() {
 		return true;
 	}
 
-	function filteredGroupsInternal(): ActivityGroup[] {
-		return groupActivitiesInternal(_activities.filter(matchesFiltersInternal));
-	}
+	const filteredGroups = $derived(groupActivitiesInternal(_activities.filter(matchesFiltersInternal)));
+	const runningGroups = $derived(filteredGroups.filter(groupStatusIsActiveInternal));
+	const historyGroups = $derived(filteredGroups.filter((group) => !groupStatusIsActiveInternal(group)));
+	const activeCount = $derived(_activities.filter((activity) => isActiveStatusInternal(activity.status)).length);
 
 	return {
 		acceptActivity: (activity: Activity) => {
@@ -566,13 +583,13 @@ function createActivityStore() {
 		// A batch containing any active member renders once, in the running
 		// section, so completing members never duplicate into history early.
 		get runningGroups(): ActivityGroup[] {
-			return filteredGroupsInternal().filter(groupStatusIsActiveInternal);
+			return runningGroups;
 		},
 		get historyGroups(): ActivityGroup[] {
-			return filteredGroupsInternal().filter((group) => !groupStatusIsActiveInternal(group));
+			return historyGroups;
 		},
 		get activeCount(): number {
-			return _activities.filter((activity) => isActiveStatusInternal(activity.status)).length;
+			return activeCount;
 		},
 		get searchTerm(): string {
 			return _searchTerm;

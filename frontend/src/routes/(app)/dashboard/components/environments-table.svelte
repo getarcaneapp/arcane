@@ -1,7 +1,7 @@
 <script lang="ts" module>
 	import type { ActionButton } from '#lib/components/action-button-group/index.js';
 	import type { Environment } from '#lib/types/environment.js';
-	import type { DashboardLiveStatsStatus } from '#lib/types/shared.js';
+	import type { DashboardLiveStatsStatus, SystemStats } from '#lib/types/shared.js';
 
 	export interface EnvironmentTableRow {
 		environment: Environment;
@@ -13,10 +13,6 @@
 		podCount: number | null;
 		updates: number;
 		vulnerabilities: number;
-		cpu: number | null;
-		memory: number | null;
-		disk: number | null;
-		statsStatus: DashboardLiveStatsStatus;
 		versionText: string | null;
 		updateAvailable: boolean;
 		menuButtons: ActionButton[];
@@ -35,7 +31,17 @@
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { cn } from '#lib/utils.js';
 
-	let { rows }: { rows: EnvironmentTableRow[] } = $props();
+	import { getCpuMetric, getDiskMetric, getMemoryMetric } from '../overview.helpers';
+
+	let {
+		rows,
+		getLiveStatsState,
+		getLiveStatsStatus
+	}: {
+		rows: EnvironmentTableRow[];
+		getLiveStatsState: (environmentId: string) => { stats: SystemStats | null } | null;
+		getLiveStatsStatus: (environment: Environment) => DashboardLiveStatsStatus;
+	} = $props();
 	const showVulnerabilities = $derived(rows.some((row) => featureStore.isEnabled('vulnerabilityManagement', row.environment.id)));
 	const showPods = $derived(rows.some((row) => row.podCount !== null));
 </script>
@@ -95,6 +101,8 @@
 		</Table.Header>
 		<Table.Body>
 			{#each rows as row (row.environment.id)}
+				{@const stats = getLiveStatsState(row.environment.id)?.stats ?? null}
+				{@const statsStatus = getLiveStatsStatus(row.environment)}
 				<Table.Row>
 					<Table.Cell>
 						<div class="flex min-w-0 items-center gap-2">
@@ -150,9 +158,9 @@
 								{/if}
 							</Table.Cell>
 						{/if}
-						<Table.Cell class="text-right">{@render metric(row.cpu, 'cpu', row.statsStatus)}</Table.Cell>
-						<Table.Cell class="text-right">{@render metric(row.memory, 'memory', row.statsStatus)}</Table.Cell>
-						<Table.Cell class="text-right">{@render metric(row.disk, 'disk', row.statsStatus)}</Table.Cell>
+						<Table.Cell class="text-right">{@render metric(getCpuMetric(stats), 'cpu', statsStatus)}</Table.Cell>
+						<Table.Cell class="text-right">{@render metric(getMemoryMetric(stats), 'memory', statsStatus)}</Table.Cell>
+						<Table.Cell class="text-right">{@render metric(getDiskMetric(stats), 'disk', statsStatus)}</Table.Cell>
 					{/if}
 					<Table.Cell class="text-right">
 						<div class="flex items-center justify-end gap-1">

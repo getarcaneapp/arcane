@@ -65,12 +65,12 @@ func TestCalculateProjectStatus(t *testing.T) {
 func TestStatusCounts_FallsBackToStoredStatus(t *testing.T) {
 	svc := New(func(context.Context) ([]container.Summary, error) { return nil, errors.New("docker unavailable") }, nil, nil)
 
-	counts := svc.StatusCounts(t.Context(), []types.ProjectRecord{
+	counts := StatusCounts([]types.ProjectRecord{
 		{Status: types.ProjectStatusRunning},
 		{Status: types.ProjectStatusStopped},
 		{Status: types.ProjectStatusUnknown},
 		{Status: types.ProjectStatusRunning, IsArchived: true},
-	})
+	}, svc.Snapshot(t.Context()))
 
 	assert.Equal(t, types.ProjectStatusCounts{TotalProjects: 4, ArchivedProjects: 1, RunningProjects: 1, StoppedProjects: 1}, counts)
 }
@@ -159,26 +159,24 @@ func TestMapProjectToDto_SetsRedeployDisabledFromRuntimeServices(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.labels[api.WorkingDirLabel] = projectPath
-			details := row(filepath.Dir(projectPath), iconcatalog.DefaultCatalog, proj, Snapshot{byProject: map[string][]container.Summary{
-				"arcane": {
-					{
-						ID:     tt.containerID,
-						Image:  "ghcr.io/getarcaneapp/arcane:latest",
-						State:  "running",
-						Status: "Up",
-						Names:  []string{"/arcane-server"},
-						Labels: tt.labels,
-					},
-					{
-						ID: "unrelated-container",
-						Labels: map[string]string{
-							api.ProjectLabel:    "arcane",
-							api.WorkingDirLabel: filepath.Join(filepath.Dir(projectPath), "unrelated"),
-							api.ServiceLabel:    "other",
-						},
+			details := row(filepath.Dir(projectPath), iconcatalog.DefaultCatalog, proj, Snapshot{ContainerIndex: IndexComposeContainers([]container.Summary{
+				{
+					ID:     tt.containerID,
+					Image:  "ghcr.io/getarcaneapp/arcane:latest",
+					State:  "running",
+					Status: "Up",
+					Names:  []string{"/arcane-server"},
+					Labels: tt.labels,
+				},
+				{
+					ID: "unrelated-container",
+					Labels: map[string]string{
+						api.ProjectLabel:    "arcane",
+						api.WorkingDirLabel: filepath.Join(filepath.Dir(projectPath), "unrelated"),
+						api.ServiceLabel:    "other",
 					},
 				},
-			}, currentContainerID: tt.currentContainerID, currentContainerErr: tt.currentErr}, nil)
+			}), currentContainerID: tt.currentContainerID, currentContainerErr: tt.currentErr}, nil)
 
 			require.Equal(t, tt.wantProject, details.RedeployDisabled)
 			require.Len(t, details.RuntimeServices, 1)

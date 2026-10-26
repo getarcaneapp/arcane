@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	sqliteutil "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/sqlite"
 	"github.com/getarcaneapp/arcane/backend/v3/resources"
@@ -804,6 +805,12 @@ func TestInitialize_RecordsGooseVersionOnFreshSQLite(t *testing.T) {
 				require.ErrorContains(t, insertErr, "FOREIGN KEY constraint failed")
 			}
 		})
+		require.NoError(t, db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var queryOnly int
+			require.NoError(t, tx.Raw("PRAGMA query_only").Scan(&queryOnly).Error)
+			require.Equal(t, 1, queryOnly, "read-only transactions must use the deferred reader pool")
+			return nil
+		}, &stdsql.TxOptions{Isolation: stdsql.LevelRepeatableRead, ReadOnly: true}))
 		if phase == "fresh" {
 			require.NoError(t, db.Close())
 			db, err = Initialize(ctx, dsn+"?_pragma=foreign_keys(0)", MigrationOptions{})

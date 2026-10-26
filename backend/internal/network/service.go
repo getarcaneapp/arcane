@@ -389,20 +389,34 @@ func (s *NetworkService) PruneNetworks(ctx context.Context) (*network.PruneRepor
 }
 
 func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagination.QueryParams) ([]types.NetworkSummary, pagination.Response, types.NetworkUsageCounts, error) {
-	containers, err := s.dockerService.ListContainers(ctx)
-	if err != nil {
-		return nil, pagination.Response{}, types.NetworkUsageCounts{}, fmt.Errorf("failed to list containers: %w", err)
+	g, groupCtx := errgroup.WithContext(ctx)
+	var containers []container.Summary
+	var networkList client.NetworkListResult
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "network container list worker")
+		var err error
+		containers, err = s.dockerService.ListContainers(groupCtx)
+		if err != nil {
+			return fmt.Errorf("failed to list containers: %w", err)
+		}
+		return nil
+	})
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "network list worker")
+		var err error
+		networkList, err = s.dockerService.Call(groupCtx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkListResult, error) {
+			return compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
+		})
+		if err != nil {
+			return fmt.Errorf("failed to list Docker networks: %w", err)
+		}
+		return nil
+	})
+	if err := g.Wait(); err != nil {
+		return nil, pagination.Response{}, types.NetworkUsageCounts{}, err
 	}
 
 	inUseByID, inUseByName := docker.BuildNetworkUsageMaps(containers)
-
-	networkList, err := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.NetworkListResult, error) {
-		return compat.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
-	})
-	if err != nil {
-		return nil, pagination.Response{}, types.NetworkUsageCounts{}, fmt.Errorf("failed to list Docker networks: %w", err)
-	}
-
 	items := make([]types.NetworkSummary, 0, len(networkList.Items))
 	inUse := 0
 	for _, n := range networkList.Items {

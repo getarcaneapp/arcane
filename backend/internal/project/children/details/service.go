@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/docker/compose/v5/pkg/api"
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/moby/moby/api/types/container"
 	"go.getarcane.app/docker"
@@ -52,13 +53,19 @@ func New(db *database.DB, dockerService *dockerInternal.DockerClientService, ima
 	}
 }
 
-// ComposeContainers lists global compose containers through the shared Docker client, avoiding a fresh docker CLI per call.
+// ComposeContainers derives Compose containers from the coalesced full inventory.
 func (s *Service) ComposeContainers(ctx context.Context) ([]container.Summary, error) {
-	cli, err := s.dockerService.GetClient(ctx)
+	containers, err := s.dockerService.ListContainers(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return projects.ListGlobalComposeContainers(ctx, cli, s.dockerService.DockerHost())
+	composeContainers := make([]container.Summary, 0, len(containers))
+	for _, c := range containers {
+		if _, compose := c.Labels[api.ProjectLabel]; compose {
+			composeContainers = append(composeContainers, c)
+		}
+	}
+	return composeContainers, nil
 }
 
 func RuntimeProjectName(fallback string, runtimeContainers []container.Summary) string {
