@@ -37,18 +37,18 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event/children/correlation"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/concurrency"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
-// maxConcurrentEdgeSyncs bounds in-flight event forwards to the manager.
+// maxConcurrentAgentSyncs bounds in-flight event forwards to the manager.
 const (
-	maxConcurrentEdgeSyncs = 16
-	edgeSyncQueueTimeout   = time.Minute
-	edgeSyncPublishTimeout = 10 * time.Second
+	maxConcurrentAgentSyncs = 16
+	agentSyncQueueTimeout   = time.Minute
+	agentSyncPublishTimeout = 10 * time.Second
 )
 
 const (
@@ -90,7 +90,7 @@ type EventService struct {
 	db             *database.DB
 	cfg            *config.Config
 	httpClient     *http.Client
-	edgeSyncs      *semaphore.Weighted
+	agentSyncs     *semaphore.Weighted
 	// Daemon events are persisted in batches by a writer started on first use.
 	daemonQueue   chan CreateEventRequest
 	daemonStart   sync.Once
@@ -113,7 +113,7 @@ func NewEventService(db *database.DB, cfg *config.Config, httpClient *http.Clien
 		db:          db,
 		cfg:         cfg,
 		httpClient:  httpClient,
-		edgeSyncs:   semaphore.NewWeighted(maxConcurrentEdgeSyncs),
+		agentSyncs:  semaphore.NewWeighted(maxConcurrentAgentSyncs),
 		daemonQueue: make(chan CreateEventRequest, daemonEventQueueSize),
 		daemonDone:  make(chan struct{}),
 	}
@@ -205,11 +205,11 @@ func (s *EventService) IngestAgentEvent(ctx context.Context, environmentID strin
 }
 
 func (s *EventService) forwardEventToManager(ctx context.Context, eventModel *Event) {
-	if s.cfg == nil || !s.cfg.EdgeAgent {
+	if s.cfg == nil || !s.cfg.AgentEnabled {
 		return
 	}
 
-	evt := &edge.TunnelEvent{
+	evt := &agent.TunnelEvent{
 		Type:         string(eventModel.Type),
 		Severity:     string(eventModel.Severity),
 		Title:        eventModel.Title,
@@ -225,29 +225,29 @@ func (s *EventService) forwardEventToManager(ctx context.Context, eventModel *Ev
 			}
 			metadataBytes, err := json.Marshal(map[string]any(eventModel.Metadata))
 			if err != nil {
-				slog.WarnContext(ctx, "Failed to marshal event metadata for edge sync", "type", eventModel.Type, "error", err)
+				slog.WarnContext(ctx, "Failed to marshal event metadata for agent sync", "type", eventModel.Type, "error", err)
 			}
 			return metadataBytes
 		}(),
 	}
 
-	go func(parentCtx context.Context, outgoing *edge.TunnelEvent) {
+	go func(parentCtx context.Context, outgoing *agent.TunnelEvent) {
 		baseCtx := context.WithoutCancel(parentCtx)
-		acquireCtx, cancelAcquire := context.WithTimeout(baseCtx, edgeSyncQueueTimeout)
-		acquireErr := s.edgeSyncs.Acquire(acquireCtx, 1)
+		acquireCtx, cancelAcquire := context.WithTimeout(baseCtx, agentSyncQueueTimeout)
+		acquireErr := s.agentSyncs.Acquire(acquireCtx, 1)
 		cancelAcquire()
 		if acquireErr != nil {
 			slog.WarnContext(baseCtx, "Dropped event sync to manager; too many in flight", "type", outgoing.Type, "error", acquireErr)
 			return
 		}
-		defer s.edgeSyncs.Release(1)
+		defer s.agentSyncs.Release(1)
 
-		syncCtx, cancel := context.WithTimeout(baseCtx, edgeSyncPublishTimeout)
+		syncCtx, cancel := context.WithTimeout(baseCtx, agentSyncPublishTimeout)
 		defer cancel()
 
-		if err := edge.PublishEventToManager(syncCtx, outgoing); err != nil {
-			if !errors.Is(err, edge.ErrNoActiveAgentTunnel) {
-				slog.WarnContext(syncCtx, "Failed to sync event to manager over edge tunnel", "type", outgoing.Type, "error", err)
+		if err := agent.PublishEventToManager(syncCtx, outgoing); err != nil {
+			if !errors.Is(err, agent.ErrNoActiveAgentTunnel) {
+				slog.WarnContext(syncCtx, "Failed to sync event to manager over agent tunnel", "type", outgoing.Type, "error", err)
 				return
 			}
 			if strings.TrimSpace(s.cfg.AgentToken) == "" || strings.TrimSpace(httpx.ManagerBaseURL(s.cfg.ManagerApiUrl)) == "" {

@@ -8,7 +8,7 @@ WORKDIR /app
 COPY ${TARGETPLATFORM}/arcane-agent ./arcane-agent
 
 ENV ARCANE_ENVIRONMENT=production \
-    ARCANE_EDGE_AGENT=true
+    ARCANE_AGENT=true
 
 # The container starts as "root", but arcane drops to the requetsed PUID and PGID after the runtime is initialized 
 USER 0:0

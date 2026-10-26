@@ -1,5 +1,5 @@
 // Package proxy owns the transport to remote environment agents: request
-// building, edge tunnel routing, JSON decoding and configuration pushes.
+// building, agent tunnel routing, JSON decoding and configuration pushes.
 package proxy
 
 import (
@@ -22,7 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/s3"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
@@ -50,16 +50,16 @@ func New(db *database.DB, settingsService *settings.SettingsService, syncGate *u
 		db: db,
 		client: remenv.NewClient(remenv.TunnelTransportFuncs{
 			EnsureAvailableFunc: func(ctx context.Context, envID string) error {
-				if edge.HasActiveTunnel(envID) {
+				if agent.HasActiveTunnel(envID) {
 					return nil
 				}
-				if _, ok := edge.RequestTunnelAndWait(ctx, envID, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()).Get(); ok {
+				if _, ok := agent.WaitForActiveTunnel(ctx, envID, agent.DefaultTunnelAcquireTimeout).Get(); ok {
 					return nil
 				}
 				return remenv.ErrEnvironmentUnavailable
 			},
 			DoFunc: func(ctx context.Context, envID, method, path string, headers map[string]string, body []byte) (*remenv.Response, error) {
-				tunnel, ok := edge.GetRegistry().Get(envID).Get()
+				tunnel, ok := agent.GetRegistry().Get(envID).Get()
 				if !ok {
 					return nil, fmt.Errorf("no active tunnel for environment %s: %w", envID, remenv.ErrEnvironmentUnavailable)
 				}
@@ -67,9 +67,9 @@ func New(db *database.DB, settingsService *settings.SettingsService, syncGate *u
 					return nil, fmt.Errorf("tunnel for environment %s is closed: %w", envID, remenv.ErrEnvironmentUnavailable)
 				}
 
-				statusCode, respHeaders, respBody, err := edge.ProxyRequest(ctx, tunnel, method, path, "", headers, body)
+				statusCode, respHeaders, respBody, err := agent.ProxyRequest(ctx, tunnel, method, path, "", headers, body)
 				if err != nil {
-					if errors.Is(err, edge.ErrTunnelConnectionClosed) {
+					if errors.Is(err, agent.ErrTunnelConnectionClosed) {
 						err = errors.Join(remenv.ErrEnvironmentUnavailable, err)
 					}
 					return nil, fmt.Errorf("tunnel request failed: %w", err)
@@ -138,17 +138,17 @@ func (s *Service) Execute(
 }
 
 func (s *Service) Stream(ctx context.Context, target *Target, path string) (*http.Response, error) {
-	tunnel, ok := edge.RequestTunnelAndWait(ctx, target.id, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()).Get()
+	tunnel, ok := agent.WaitForActiveTunnel(ctx, target.id, agent.DefaultTunnelAcquireTimeout).Get()
 	if !ok {
 		return nil, &remenv.TransportError{Err: remenv.ErrEnvironmentUnavailable}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, edge.MuxAgentBaseURL+path, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, agent.MuxAgentBaseURL+path, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("create stream request: %w", err)
 	}
 	req.Header.Set("Accept", "text/event-stream")
 	remenv.ApplyAgentTokenHeaders(req.Header, target.accessToken)
-	resp, err := tunnel.HTTPClient().Do(req)
+	resp, err := tunnel.HTTPClient.Do(req)
 	if err != nil {
 		return nil, &remenv.TransportError{Err: err}
 	}

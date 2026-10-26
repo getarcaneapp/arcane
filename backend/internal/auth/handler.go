@@ -738,7 +738,7 @@ func NewHumaMiddleware(
 // tryAgentAuth authenticates an agent-mode request presenting the
 // agent token as an agent token or API key header.
 func tryAgentAuth(ctx huma.Context, cfg *config.Config) (huma.Context, bool) {
-	if !cfg.EdgeAgent {
+	if !cfg.AgentEnabled {
 		return ctx, false
 	}
 	if !AgentTokenMatches(ctx.Header(middleware.HeaderAgentToken), cfg.AgentToken) &&
@@ -957,7 +957,7 @@ func (m *AuthMiddleware) Add() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			reqCtx := c.Request().Context()
-			if m.cfg.EdgeAgent {
+			if m.cfg.AgentEnabled {
 				return m.agentAuth(reqCtx, c, next)
 			}
 			return m.managerAuth(reqCtx, c, next)

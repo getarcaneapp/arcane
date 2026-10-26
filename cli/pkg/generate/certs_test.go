@@ -35,8 +35,8 @@ func TestGenerateMTLSCommandWritesMLDSA87Assets(t *testing.T) {
 	assertMLDSA87Certificate(t, filepath.Join(outDir, "ca.crt"))
 	cert := assertMLDSA87Certificate(t, filepath.Join(outDir, "agent.crt"))
 
-	require.False(t, len(cert.URIs) == 0 || cert.URIs[0].String() != "spiffe://manager.example.com/edge/env-123",
-		"expected edge SPIFFE URI SAN, got %v", cert.URIs)
+	require.False(t, len(cert.URIs) == 0 || cert.URIs[0].String() != "spiffe://manager.example.com/agent/env-123",
+		"expected agent SPIFFE URI SAN, got %v", cert.URIs)
 }
 
 func TestGenerateTLSCommandWritesECDSAP384ServerCert(t *testing.T) {

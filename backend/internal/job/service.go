@@ -250,7 +250,7 @@ func (s *JobService) RescheduleJobsForSettingKeys(ctx context.Context, changedKe
 		if !affected {
 			continue
 		}
-		if s.cfg.EdgeAgent && jobMeta.ManagerOnly {
+		if s.cfg.AgentEnabled && jobMeta.ManagerOnly {
 			slog.DebugContext(ctx, "Skipping manager-only job reschedule in agent mode", "job", jobID)
 			continue
 		}
@@ -359,7 +359,7 @@ func (s *JobService) ListJobs(ctx context.Context) (*types.JobListResponse, erro
 
 	return &types.JobListResponse{
 		Jobs:        statuses,
-		IsAgent:     s.cfg.EdgeAgent,
+		IsAgent:     s.cfg.AgentEnabled,
 		DurableRuns: true,
 		ObservedAt:  time.Now().UTC(),
 	}, nil
@@ -475,7 +475,7 @@ func (s *JobService) Submit(ctx context.Context, request types.SchedulerRequest)
 		RequestedBy:      request.RequestedBy,
 	}
 	if request.EnvironmentID != "0" {
-		if s.cfg.EdgeAgent {
+		if s.cfg.AgentEnabled {
 			return types.SchedulerRun{}, errors.New("agents cannot queue work for another environment")
 		}
 		env, err := s.environment.GetEnvironmentByID(ctx, request.EnvironmentID)
@@ -511,7 +511,7 @@ func (s *JobService) validateLocalJob(ctx context.Context, jobID string) error {
 		if !metadata.CanRunManually {
 			return errors.New("job cannot be run manually")
 		}
-		if s.cfg.EdgeAgent && metadata.ManagerOnly {
+		if s.cfg.AgentEnabled && metadata.ManagerOnly {
 			return errors.New("job is manager-only")
 		}
 		if !s.isJobEnabled(ctx, metadata) {
@@ -536,7 +536,7 @@ func (s *JobService) validateLocalJob(ctx context.Context, jobID string) error {
 
 func (s *JobService) authorizeRun(ctx context.Context, run types.SchedulerRun) error {
 	if run.RequestedBy == "" {
-		if run.Trigger == "manual" && !s.cfg.EdgeAgent {
+		if run.Trigger == "manual" && !s.cfg.AgentEnabled {
 			return errors.New("requesting user unavailable")
 		}
 		return nil

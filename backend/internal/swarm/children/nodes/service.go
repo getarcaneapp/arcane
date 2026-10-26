@@ -25,7 +25,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	dockerInternal "github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
@@ -79,7 +79,6 @@ type SwarmNodeIdentity struct {
 type swarmNodeAgentRuntime struct {
 	connected     bool
 	lastHeartbeat *time.Time
-	lastPollAt    *time.Time
 	identity      *SwarmNodeIdentity
 }
 
@@ -393,7 +392,7 @@ func (s *Service) resolveSwarmNodeAgentRuntime(ctx context.Context, env *environ
 
 	identity, found, _ := s.identityCache.Get(env.ID)
 	if !found {
-		if fetched, err := s.fetchSwarmNodeIdentityViaEdge(ctx, env.ID); err != nil {
+		if fetched, err := s.fetchSwarmNodeIdentityViaAgent(ctx, env.ID); err != nil {
 			slog.DebugContext(ctx, "failed to probe swarm node identity", "environmentId", env.ID, "error", err.Error())
 		} else {
 			identity, found = *fetched, true
@@ -401,9 +400,8 @@ func (s *Service) resolveSwarmNodeAgentRuntime(ctx context.Context, env *environ
 		}
 	}
 	return swarmNodeAgentRuntime{
-		connected:     found || edge.HasActiveTunnel(env.ID),
-		lastHeartbeat: kit.FromPtr(edge.GetTunnelRuntimeState(env.ID).OrEmpty()).LastHeartbeat,
-		lastPollAt:    edge.GetPollRuntimeRegistry().Get(env.ID, time.Now()).OrEmpty().LastPollAt,
+		connected:     found || agent.HasActiveTunnel(env.ID),
+		lastHeartbeat: kit.FromPtr(agent.GetTunnelRuntimeState(env.ID).OrEmpty()).LastHeartbeat,
 		identity:      kit.Ternary(found, &identity, nil),
 	}
 }
@@ -566,7 +564,7 @@ func (s *Service) joinEnvironment(
 	return result(types.SwarmJoinEnvironmentResultJoinedUnverified, "", "")
 }
 
-func (s *Service) fetchSwarmNodeIdentityViaEdge(ctx context.Context, environmentID string) (*SwarmNodeIdentity, error) {
+func (s *Service) fetchSwarmNodeIdentityViaAgent(ctx context.Context, environmentID string) (*SwarmNodeIdentity, error) {
 	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
@@ -589,9 +587,8 @@ func (s *Service) buildNodeAgentStatus(nodeID string, env *environment.Environme
 		return types.NodeAgentStatus{State: types.NodeAgentStateNone}
 	}
 
-	// Live means an open tunnel or a fresh poll check-in; the runtime registries only hold fresh activity,
-	// unlike env.Status, which poll-mode agents never advance out of "pending".
-	live := runtime.connected || runtime.lastHeartbeat != nil || runtime.lastPollAt != nil
+	// Live means an open tunnel; the runtime registry only holds fresh activity, unlike env.Status.
+	live := runtime.connected || runtime.lastHeartbeat != nil
 	identity := kit.FromPtr(runtime.identity)
 	reportedNodeID := strings.TrimSpace(identity.SwarmNodeID)
 	reportedHostname := strings.TrimSpace(identity.Hostname)
@@ -616,10 +613,9 @@ func (s *Service) buildNodeAgentStatus(nodeID string, env *environment.Environme
 		BindingKind:      new(kit.Ternary(env.Hidden, types.NodeAgentBindingKindDedicated, types.NodeAgentBindingKindEnvironment)),
 		EnvironmentID:    &env.ID,
 		EnvironmentName:  &env.Name,
-		EnvironmentType:  new("edge"),
+		EnvironmentType:  new("agent"),
 		Connected:        &live,
 		LastHeartbeat:    runtime.lastHeartbeat,
-		LastPollAt:       runtime.lastPollAt,
 		ReportedNodeID:   kit.Ternary(reportedNodeID == "", nil, &reportedNodeID),
 		ReportedHostname: kit.Ternary(reportedHostname == "", nil, &reportedHostname),
 	}
@@ -738,7 +734,7 @@ func (s *Service) GetJoinCandidates(ctx context.Context, environmentID string) (
 	if environmentID == environment.LocalEnvironmentID {
 		identity, err = s.GetLocalNodeIdentity(ctx)
 	} else {
-		identity, err = s.fetchSwarmNodeIdentityViaEdge(ctx, environmentID)
+		identity, err = s.fetchSwarmNodeIdentityViaAgent(ctx, environmentID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect Easy Join manager: %w", err)
@@ -776,7 +772,7 @@ func (s *Service) GetJoinCandidates(ctx context.Context, environmentID string) (
 		candidates = append(candidates, types.SwarmJoinCandidate{
 			EnvironmentID:   candidate.ID,
 			EnvironmentName: candidate.Name,
-			EnvironmentType: "edge",
+			EnvironmentType: "agent",
 			Status:          candidate.Status,
 		})
 	}
@@ -838,7 +834,7 @@ func buildNodeAgentCandidates(environments []environment.Environment) []types.No
 		candidates = append(candidates, types.NodeAgentCandidate{
 			EnvironmentID:   environment.ID,
 			EnvironmentName: environment.Name,
-			EnvironmentType: "edge",
+			EnvironmentType: "agent",
 		})
 	}
 	return candidates

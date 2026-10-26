@@ -7,7 +7,7 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { AlertTriangleIcon, EdgeConnectionIcon } from '#lib/icons/index.js';
+	import { AlertTriangleIcon, AgentConnectionIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { SwarmNodeAgentDeployment, SwarmNode } from '#lib/types/swarm.js';
 	import { hasAnyPermission } from '#lib/utils/auth.js';
@@ -79,7 +79,7 @@
 >
 	<div class="space-y-5 px-6 py-6">
 		<Alert.Root variant="primary-subtle">
-			<EdgeConnectionIcon class="size-4" />
+			<AgentConnectionIcon class="size-4" />
 			<Alert.Title>{m.swarm_node_agent_dialog_blurb_title()}</Alert.Title>
 			<Alert.Description>{m.swarm_node_agent_dialog_blurb_description()}</Alert.Description>
 		</Alert.Root>

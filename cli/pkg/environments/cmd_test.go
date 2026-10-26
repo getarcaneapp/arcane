@@ -19,7 +19,7 @@ func TestEnvironmentsCreatePrintsAPIKeyAndInstallCommands(t *testing.T) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/environments":
 			assert.NoError(t, json.NewDecoder(r.Body).Decode(&createBody))
-			_, _ = w.Write([]byte(`{"success":true,"data":{"id":"env-1","name":"Edge One","apiUrl":"edge://edge-one","status":"pending","enabled":true,"apiKey":"arc_secret"}}`))
+			_, _ = w.Write([]byte(`{"success":true,"data":{"id":"env-1","name":"Agent One","apiUrl":"agent://agent-one","status":"pending","enabled":true,"apiKey":"arc_secret"}}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/api/environments/env-1/deployment":
 			_, _ = w.Write([]byte(`{"success":true,"data":{"dockerRun":"docker run arcane-agent","dockerCompose":"services:\n  arcane-agent: {}"}}`))
 		default:
@@ -29,10 +29,10 @@ func TestEnvironmentsCreatePrintsAPIKeyAndInstallCommands(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	out, errOut, err := testutil.Execute(t, []string{"--config", testutil.WriteConfig(t, srv.URL), "environments", "create", "--name", "Edge One"})
+	out, errOut, err := testutil.Execute(t, []string{"--config", testutil.WriteConfig(t, srv.URL), "environments", "create", "--name", "Agent One"})
 	require.NoError(t, err, "stdout=%s\nstderr=%s", out, errOut)
 
-	require.Equal(t, map[string]any{"name": "Edge One", "enabled": true}, createBody)
+	require.Equal(t, map[string]any{"name": "Agent One", "enabled": true}, createBody)
 	require.Contains(t, out, "arc_secret")
 	require.Contains(t, out, "docker run arcane-agent")
 	require.Contains(t, out, "arcane-agent: {}")

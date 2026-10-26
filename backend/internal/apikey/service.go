@@ -480,7 +480,7 @@ func isStaticAPIKey(ak ApiKey) bool {
 // isEnvironmentReferencedApiKey reports whether an environment
 // currently references keyID as its pairing key (environments.api_key_id).
 // Referenced keys are the live environment bootstrap credentials: editing or
-// deleting one would silently break the paired edge agent the next time it
+// deleting one would silently break the paired agent the next time it
 // authenticates, so they are protected. Keys orphaned by regeneration are no
 // longer referenced and may be edited or deleted normally. Cascade-delete
 // still applies when the environment row itself is removed.

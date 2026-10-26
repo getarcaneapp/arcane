@@ -34,35 +34,35 @@ func TestRedactedTokenFingerprint(t *testing.T) {
 	require.Equal(t, "123456...cdef", RedactedTokenFingerprint(" 1234567890abcdef "))
 }
 
-func TestClientDo_EdgeUsesTunnelTransport(t *testing.T) {
+func TestClientDo_AgentUsesTunnelTransport(t *testing.T) {
 	var ensured bool
 	client := NewClient(TunnelTransportFuncs{
 		EnsureAvailableFunc: func(ctx context.Context, envID string) error {
 			ensured = true
-			require.Equal(t, "env-edge-1", envID)
+			require.Equal(t, "env-agent-1", envID)
 			return nil
 		},
 		DoFunc: func(ctx context.Context, envID, method, path string, headers map[string]string, body []byte) (*Response, error) {
-			require.Equal(t, "env-edge-1", envID)
+			require.Equal(t, "env-agent-1", envID)
 			require.Equal(t, http.MethodGet, method)
 			require.Equal(t, "/api/health", path)
 			return &Response{
 				StatusCode: http.StatusOK,
-				Body:       []byte(`{"edge":true}`),
+				Body:       []byte(`{"agent":true}`),
 				Headers:    map[string]string{"Content-Type": "application/json"},
 			}, nil
 		},
 	})
 
 	resp, err := client.Do(t.Context(), Request{
-		EnvironmentID: "env-edge-1",
+		EnvironmentID: "env-agent-1",
 		Method:        http.MethodGet,
 		Path:          "/api/health",
 	})
 	require.NoError(t, err)
 	require.True(t, ensured)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	require.Equal(t, `{"edge":true}`, string(resp.Body))
+	require.Equal(t, `{"agent":true}`, string(resp.Body))
 }
 
 func TestClientDo_WrapsTransportErrors(t *testing.T) {
@@ -73,7 +73,7 @@ func TestClientDo_WrapsTransportErrors(t *testing.T) {
 	})
 
 	_, err := client.Do(t.Context(), Request{
-		EnvironmentID: "env-edge-2",
+		EnvironmentID: "env-agent-2",
 		Method:        http.MethodGet,
 		Path:          "/api/health",
 	})

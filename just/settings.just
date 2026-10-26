@@ -1,1 +1,1 @@
-edge_proto_dir := 'backend/proto'
+tunnel_proto_dir := 'backend/proto'
