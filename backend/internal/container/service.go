@@ -1541,9 +1541,12 @@ const ResourceSampleLimit = 500
 // SampleResources samples the running containers among the first ResourceSampleLimit ids,
 // refetching samples older than maxAge. Blank, stopped and unknown IDs are omitted.
 func (s *ContainerService) SampleResources(ctx context.Context, ids []string, maxAge time.Duration) (map[string]*types.ContainerResourceSample, error) {
-	requested := slices.DeleteFunc(slices.Clone(ids[:min(len(ids), ResourceSampleLimit)]), func(id string) bool {
-		return strings.TrimSpace(id) == ""
-	})
+	requested := make(map[string]struct{}, min(len(ids), ResourceSampleLimit))
+	for _, id := range ids[:min(len(ids), ResourceSampleLimit)] {
+		if strings.TrimSpace(id) != "" {
+			requested[id] = struct{}{}
+		}
+	}
 	if len(requested) == 0 {
 		return map[string]*types.ContainerResourceSample{}, nil
 	}
@@ -1554,7 +1557,7 @@ func (s *ContainerService) SampleResources(ctx context.Context, ids []string, ma
 	}
 	matched := make([]types.ContainerSummary, 0, len(requested))
 	for _, dc := range dockerContainers {
-		if dc.State == container.StateRunning && slices.Contains(requested, dc.ID) {
+		if _, wanted := requested[dc.ID]; wanted && dc.State == container.StateRunning {
 			matched = append(matched, types.ContainerSummary{ID: dc.ID, State: string(dc.State)})
 		}
 	}

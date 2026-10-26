@@ -32,6 +32,13 @@ func (r *sqliteReadRouter) QueryRowContext(ctx context.Context, query string, ar
 	return r.route(query).QueryRowContext(ctx, query, args...)
 }
 
+func (r *sqliteReadRouter) BeginTx(ctx context.Context, opts *sql.TxOptions) (gorm.ConnPool, error) {
+	if opts != nil && opts.ReadOnly {
+		return r.reader.BeginTx(ctx, opts)
+	}
+	return r.PreparedStmtDB.BeginTx(ctx, opts)
+}
+
 func (r *sqliteReadRouter) route(query string) *gorm.PreparedStmtDB {
 	trimmed := strings.TrimLeft(query, " \t\r\n(")
 	if len(trimmed) >= len("select") && strings.EqualFold(trimmed[:len("select")], "select") {
