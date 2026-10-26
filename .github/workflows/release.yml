@@ -113,7 +113,7 @@ jobs:
 
           git add .arcane.json frontend/package.json CHANGELOG.md
           git commit -m "release: $VERSION"
-          for tag in "$RELEASE_TAG" "cli/$RELEASE_TAG" "backend/$RELEASE_TAG"; do
+          for tag in "$RELEASE_TAG" "cli/$RELEASE_TAG" "types/$RELEASE_TAG" "backend/$RELEASE_TAG"; do
             git tag -a "$tag" -m "$VERSION"
           done
 
@@ -121,6 +121,7 @@ jobs:
           git push --atomic origin HEAD:refs/heads/main \
             "refs/tags/$RELEASE_TAG" \
             "refs/tags/cli/$RELEASE_TAG" \
+            "refs/tags/types/$RELEASE_TAG" \
             "refs/tags/backend/$RELEASE_TAG"
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
