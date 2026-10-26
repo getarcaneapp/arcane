@@ -90,7 +90,7 @@ func TestCollectEnvironmentsMapsFailures(t *testing.T) {
 	}{
 		"huma":      {status: http.StatusUnprocessableEntity, body: `{"title":"Unprocessable Entity","detail":"invalid sort"}`},
 		"api":       {status: http.StatusInternalServerError, body: `{"message":"docker unavailable"}`},
-		"proxy":     {status: http.StatusBadGateway, body: `{"success":false,"data":{"error":"Edge agent is not connected"}}`},
+		"proxy":     {status: http.StatusBadGateway, body: `{"success":false,"data":{"error":"Agent is not connected"}}`},
 		"forbidden": {status: http.StatusForbidden, body: `{"success":false,"data":{"error":"denied"}}`},
 		"empty":     {status: http.StatusServiceUnavailable},
 		"ok":        {status: http.StatusOK, body: `{"id":"ok"}`},
@@ -108,7 +108,7 @@ func TestCollectEnvironmentsMapsFailures(t *testing.T) {
 	require.Equal(t, []types.EnvironmentFailure{
 		{Environment: types.EnvironmentRef{ID: "huma", Name: "huma"}, Message: "invalid sort"},
 		{Environment: types.EnvironmentRef{ID: "api", Name: "api"}, Message: "docker unavailable"},
-		{Environment: types.EnvironmentRef{ID: "proxy", Name: "proxy"}, Message: "Edge agent is not connected"},
+		{Environment: types.EnvironmentRef{ID: "proxy", Name: "proxy"}, Message: "Agent is not connected"},
 		{Environment: types.EnvironmentRef{ID: "forbidden", Name: "forbidden"}, Message: "denied"},
 		{Environment: types.EnvironmentRef{ID: "empty", Name: "empty"}, Message: "Service Unavailable"},
 	}, collection.Failures)

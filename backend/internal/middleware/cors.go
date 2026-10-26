@@ -8,7 +8,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 )
@@ -23,9 +23,9 @@ func NewCORSMiddleware(cfg *config.Config) *CORSMiddleware {
 }
 
 func (m *CORSMiddleware) Add() echo.MiddlewareFunc {
-	// Edge Agent mode: skip CORS entirely. The agent only receives server-to-server
-	// requests through the edge tunnel from the manager — never from browsers.
-	if m.cfg != nil && m.cfg.EdgeAgent {
+	// Agent mode: skip CORS entirely. The agent only receives server-to-server
+	// requests through the agent tunnel from the manager — never from browsers.
+	if m.cfg.AgentEnabled {
 		return func(next echo.HandlerFunc) echo.HandlerFunc {
 			return func(c *echo.Context) error { return next(c) }
 		}

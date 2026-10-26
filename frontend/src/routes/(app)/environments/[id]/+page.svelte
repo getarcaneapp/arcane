@@ -59,7 +59,7 @@
 	import EasyJoinDialog from '../../swarm/cluster/components/easy-join-dialog.svelte';
 	import ActivityTab from './components/activity-tab.svelte';
 	import BuildsTab from './components/builds-tab.svelte';
-	import ConnectionEdgeTab from './components/connection-edge-tab.svelte';
+	import ConnectionAgentTab from './components/connection-agent-tab.svelte';
 	import DockerTab from './components/docker-tab.svelte';
 	import {
 		environmentFormSchema,
@@ -79,12 +79,12 @@
 	let lastEnvironment: Environment | undefined;
 	let loadedEnvironment = $derived((lastEnvironment = data.environment ?? lastEnvironment));
 	let environment = $derived(loadedEnvironment);
-	// Edge reachability only reaches the browser through the live environment stream; the certificate is detail-only.
+	// Agent reachability only reaches the browser through the live environment stream; the certificate is detail-only.
 	const liveEnvironment = $derived(
 		environment.id === '0' ? undefined : environmentStore.available.find((env) => env.id === environment.id)
 	);
 	let runtimeEnvironment: Environment = $derived(
-		liveEnvironment ? { ...liveEnvironment, edgeMTLSCertificate: environment.edgeMTLSCertificate } : environment
+		liveEnvironment ? { ...liveEnvironment, agentMTLSCertificate: environment.agentMTLSCertificate } : environment
 	);
 	const queryClient = useQueryClient();
 
@@ -115,16 +115,15 @@
 	const remoteVersion = $derived(versionQuery.data ?? null);
 	const isLoadingVersion = $derived(versionQuery.isFetching);
 
-	let isCurrentlyStandby = $derived(currentStatus === 'standby');
 	// Settings tabs stay listed while offline so the selected tab survives a temporary outage.
 	let showSettingsTabs = $derived(runtimeEnvironment.enabled && hasPermission('settings:read', environment.id));
 	let settingsAvailable = $derived(isCurrentlyOnline && settings !== null);
 	let showJobsTab = $derived(showSettingsTabs && hasPermission('jobs:manage', environment.id));
 	let showNotificationsTab = $derived(runtimeEnvironment.enabled && hasPermission('notifications:manage', environment.id));
-	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.edgeMTLSCertificate));
+	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.agentMTLSCertificate));
 	let canPairEnvironments = $derived(hasPermission('environments:pair', environment.id));
 	let showMTLSDownloads = $derived(
-		canPairEnvironments && runtimeEnvironment.id !== '0' && (runtimeEnvironment.edgeSecurityMode === 'mtls' || hasMTLSAssets)
+		canPairEnvironments && runtimeEnvironment.id !== '0' && (runtimeEnvironment.agentSecurityMode === 'mtls' || hasMTLSAssets)
 	);
 	let canEasyJoin = $derived(
 		runtimeEnvironment.id !== '0' &&
@@ -206,7 +205,7 @@
 		if (runtimeEnvironment.id !== '0') {
 			items.push({
 				value: 'connection',
-				label: m.connection_edge(),
+				label: m.connection_agent(),
 				icon: ConnectionIcon
 			});
 		}
@@ -610,14 +609,7 @@
 {/snippet}
 
 {#snippet environmentSubHeader()}
-	{#if environment.enabled && settings && isCurrentlyStandby}
-		<div class="flex items-start gap-3 rounded-lg border border-info/30 bg-info/10 p-4 text-info">
-			<AlertIcon class="mt-0.5 size-5 shrink-0 text-info" />
-			<div class="flex-1 space-y-1">
-				<p class="text-sm font-medium">{m.common_status()}: {m.common_standby()}</p>
-			</div>
-		</div>
-	{:else if !environment.enabled || !isCurrentlyOnline || !settings}
+	{#if !environment.enabled || !isCurrentlyOnline || !settings}
 		<div class="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/10 p-4 text-warning">
 			<AlertIcon class="mt-0.5 size-5 shrink-0 text-warning" />
 			<div class="flex-1 space-y-1">
@@ -745,7 +737,7 @@
 
 		{#if runtimeEnvironment.id !== '0'}
 			<Tabs.Content value="connection">
-				<ConnectionEdgeTab
+				<ConnectionAgentTab
 					environment={runtimeEnvironment}
 					{currentStatus}
 					{showMTLSDownloads}

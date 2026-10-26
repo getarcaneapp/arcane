@@ -41,9 +41,7 @@
 	}
 
 	const connectivityFingerprint = $derived(
-		environmentStore.available
-			.map((environment) => `${environment.id}:${environment.status}:${environment.connected}:${!!environment.lastPollAt}`)
-			.join('|')
+		environmentStore.available.map((environment) => `${environment.id}:${environment.status}:${environment.connected}`).join('|')
 	);
 	let lastConnectivityFingerprint: string | undefined;
 	$effect(() => {
@@ -134,13 +132,13 @@
 					}
 				]
 			: []),
-		...(canCreateEnvironment && settingsStore.runtime.edgeMTLSManagerCAAvailable
+		...(canCreateEnvironment && settingsStore.runtime.agentMTLSManagerCAAvailable
 			? [
 					{
-						id: 'download-edge-ca',
+						id: 'download-agent-ca',
 						action: 'save' as const,
-						label: m.environments_download_edge_ca(),
-						href: '/api/edge/mtls/ca',
+						label: m.environments_download_agent_ca(),
+						href: '/api/agent/mtls/ca',
 						rel: 'external',
 						icon: DownloadIcon
 					}

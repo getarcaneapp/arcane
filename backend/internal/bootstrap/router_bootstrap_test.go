@@ -24,15 +24,15 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/project"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/cookie"
 )
 
 func TestNewRouter_DecodesPathParams(t *testing.T) {
 	cfg := &config.Config{
-		EdgeAgent:   true,
-		AppUrl:      "http://localhost:3552",
-		Environment: config.AppEnvironmentTest,
+		AgentEnabled: true,
+		AppUrl:       "http://localhost:3552",
+		Environment:  config.AppEnvironmentTest,
 	}
 	router, _ := newRouter(RouterParams{
 		Context: t.Context(),
@@ -46,7 +46,7 @@ func TestNewRouter_DecodesPathParams(t *testing.T) {
 			Settings:  newTestSettingsModule(t, cfg),
 		},
 		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
-		TunnelRegistry: edge.NewTunnelRegistry(),
+		TunnelRegistry: agent.NewTunnelRegistry(),
 	})
 	humaAPI := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))
 
@@ -130,9 +130,9 @@ func TestSecureCookieContextMiddleware_TrustGating(t *testing.T) {
 	})
 }
 
-// TestProxiedEnvironmentRoutesAreEdgeRoutable fails when a route the manager forwards to remote environments is
-// missing from the edge command allowlist, so edge environments cannot silently lose an endpoint.
-func TestProxiedEnvironmentRoutesAreEdgeRoutable(t *testing.T) {
+// TestProxiedEnvironmentRoutesAreAgentRoutable fails when a route the manager forwards to remote environments is
+// missing from the agent command allowlist, so agent environments cannot silently lose an endpoint.
+func TestProxiedEnvironmentRoutesAreAgentRoutable(t *testing.T) {
 	type proxiedRoute struct {
 		method string
 		path   string
@@ -151,7 +151,7 @@ func TestProxiedEnvironmentRoutesAreEdgeRoutable(t *testing.T) {
 		}
 	}
 
-	cfg := &config.Config{EdgeAgent: true, AppUrl: "http://localhost:3552", Environment: config.AppEnvironmentTest}
+	cfg := &config.Config{AgentEnabled: true, AppUrl: "http://localhost:3552", Environment: config.AppEnvironmentTest}
 	router, _ := newRouter(RouterParams{
 		Context: t.Context(),
 		Config:  cfg,
@@ -164,7 +164,7 @@ func TestProxiedEnvironmentRoutesAreEdgeRoutable(t *testing.T) {
 			Settings:  newTestSettingsModule(t, cfg),
 		},
 		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
-		TunnelRegistry: edge.NewTunnelRegistry(),
+		TunnelRegistry: agent.NewTunnelRegistry(),
 	})
 	for _, route := range router.Router().Routes() {
 		if strings.HasPrefix(route.Path, "/api/environments/:id/ws/") && !strings.HasSuffix(route.Path, "*") {
@@ -182,12 +182,12 @@ func TestProxiedEnvironmentRoutesAreEdgeRoutable(t *testing.T) {
 		if !ok || suffix == "" || middleware.IsManagerLocalPath(route.method, suffix) {
 			continue
 		}
-		if edge.ResolveEdgeCommandName(route.method, "/api/environments/0"+concrete.Replace(suffix), route.stream).IsAbsent() {
+		if agent.ResolveCommandName(route.method, "/api/environments/0"+concrete.Replace(suffix), route.stream).IsAbsent() {
 			missing = append(missing, route.method+" /api/environments/{id}"+suffix)
 		}
 	}
 
 	slices.Sort(missing)
 	assert.Empty(t, slices.Compact(missing),
-		"proxied environment routes missing from the edge command allowlist; add them to pkg/libarcane/edge/commands.go or classify them in middleware.IsManagerLocalPath")
+		"proxied environment routes missing from the agent command allowlist; add them to pkg/libarcane/agent/commands.go or classify them in middleware.IsManagerLocalPath")
 }

@@ -13,31 +13,30 @@ frontend:
 backend:
     cd backend && air
 
-# Local edge agent against a running manager (requires ARCANE_AGENT_TOKEN)
+# Local Arcane agent against a running manager (requires ARCANE_AGENT_TOKEN)
 [script('bash')]
 agent:
     set -euo pipefail
 
     if [ -z "${ARCANE_AGENT_TOKEN:-}" ]; then
-        echo "ARCANE_AGENT_TOKEN is required. Run: ARCANE_AGENT_TOKEN=<edge-environment-token> just dev agent"
+        echo "ARCANE_AGENT_TOKEN is required. Run: ARCANE_AGENT_TOKEN=<agent-environment-token> just dev agent"
         exit 1
     fi
 
     manager_api_url="${ARCANE_MANAGER_API_URL:-https://localhost:3552}"
-    edge_mtls_assets_dir="${ARCANE_EDGE_MTLS_ASSETS_DIR:-./.tmp/edge-test-agent/edge-mtls-agent}"
-    edge_mtls_ca_file="${ARCANE_EDGE_MTLS_CA_FILE:-./backend/local-manager.crt}"
-    database_url="${ARCANE_DATABASE_URL:-file:./.tmp/edge-test-agent/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_txlock=immediate}"
-    projects_directory="${ARCANE_PROJECTS_DIRECTORY:-./.tmp/edge-test-agent/projects}"
-    git_work_dir="${ARCANE_GIT_WORK_DIR:-./.tmp/edge-test-agent/git}"
-    encryption_key="${ARCANE_ENCRYPTION_KEY:-local-edge-test-encryption-key-32}"
+    agent_mtls_assets_dir="${ARCANE_AGENT_MTLS_ASSETS_DIR:-./.tmp/test-agent/agent-mtls-client}"
+    agent_mtls_ca_file="${ARCANE_AGENT_MTLS_CA_FILE:-./backend/local-manager.crt}"
+    database_url="${ARCANE_DATABASE_URL:-file:./.tmp/test-agent/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_txlock=immediate}"
+    projects_directory="${ARCANE_PROJECTS_DIRECTORY:-./.tmp/test-agent/projects}"
+    git_work_dir="${ARCANE_GIT_WORK_DIR:-./.tmp/test-agent/git}"
+    encryption_key="${ARCANE_ENCRYPTION_KEY:-local-agent-test-encryption-key-32}"
 
-    mkdir -p "${projects_directory}" "${git_work_dir}" "${edge_mtls_assets_dir}"
+    mkdir -p "${projects_directory}" "${git_work_dir}" "${agent_mtls_assets_dir}"
 
-    ARCANE_EDGE_AGENT=true \
-    ARCANE_EDGE_TRANSPORT=poll \
-    ARCANE_EDGE_MTLS_MODE=required \
-    ARCANE_EDGE_MTLS_ASSETS_DIR="${edge_mtls_assets_dir}" \
-    ARCANE_EDGE_MTLS_CA_FILE="${edge_mtls_ca_file}" \
+    ARCANE_AGENT=true \
+    ARCANE_AGENT_MTLS_MODE=required \
+    ARCANE_AGENT_MTLS_ASSETS_DIR="${agent_mtls_assets_dir}" \
+    ARCANE_AGENT_MTLS_CA_FILE="${agent_mtls_ca_file}" \
     ARCANE_AGENT_TOKEN="${ARCANE_AGENT_TOKEN}" \
     ARCANE_MANAGER_API_URL="${manager_api_url}" \
     ARCANE_DATABASE_URL="${database_url}" \

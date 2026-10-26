@@ -448,8 +448,8 @@ func TestNewHumaMiddleware_AgentAuthAppliesForwardedIconCatalog(t *testing.T) {
 
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
 	api.UseMiddleware(NewHumaMiddleware(api, &AuthService{}, nil, nil, nil, &config.Config{
-		EdgeAgent:  true,
-		AgentToken: agentToken,
+		AgentEnabled: true,
+		AgentToken:   agentToken,
 	}))
 
 	huma.Register(api, huma.Operation{

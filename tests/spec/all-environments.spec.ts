@@ -3,7 +3,7 @@ import { test, expect, type Page } from '../fixtures/test.fixture';
 const remoteEnvironment = {
 	id: 'remote-preview-test',
 	name: 'Remote Preview',
-	apiUrl: 'edge://remote-preview-test',
+	apiUrl: 'agent://remote-preview-test',
 	status: 'online',
 	enabled: true
 };

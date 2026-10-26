@@ -65,23 +65,23 @@
 	const canInstallUpdates = $derived(hasPermission('environments:update', GLOBAL_SCOPE));
 
 	const environmentTypeFilters: FilterOption[] = [
-		{ value: 'edge', label: m.environments_edge_label(), icon: EnvironmentsIcon },
-		{ value: 'websocket', label: m.environments_edge_websocket_label(), icon: EnvironmentsIcon },
-		{ value: 'grpc', label: m.environments_edge_grpc_label(), icon: EnvironmentsIcon }
+		{ value: 'agent', label: m.environments_agent_label(), icon: EnvironmentsIcon },
+		{ value: 'websocket', label: m.environments_agent_websocket_label(), icon: EnvironmentsIcon },
+		{ value: 'grpc', label: m.environments_agent_grpc_label(), icon: EnvironmentsIcon }
 	];
 
 	function resolveEnvironmentTransport(item: Environment): 'grpc' | 'websocket' | undefined {
 		// Prefer the live tunnel transport; fall back to the last one used so
-		// disconnected or poll-only agents still show what they connect with.
-		return (item.connected ? item.edgeTransport : undefined) ?? item.lastEdgeTransport;
+		// disconnected agents still show what they connect with.
+		return (item.connected ? item.agentTransport : undefined) ?? item.lastAgentTransport;
 	}
 
 	function getEnvironmentTypeLabel(item: Environment): string {
 		if (item.id === '0') return m.local();
 		const transport = resolveEnvironmentTransport(item);
-		if (!transport) return m.environments_edge_label();
-		if (transport === 'websocket') return m.environments_edge_websocket_label();
-		return m.environments_edge_grpc_label();
+		if (!transport) return m.environments_agent_label();
+		if (transport === 'websocket') return m.environments_agent_websocket_label();
+		return m.environments_agent_grpc_label();
 	}
 
 	function getEnvironmentTypeVariant(item: Environment): 'gray' | 'purple' | 'blue' {
@@ -244,11 +244,9 @@
 			<div
 				class="absolute -top-1 -right-1 size-3 rounded-full border-2 border-background {statusValue === 'online'
 					? 'bg-success'
-					: statusValue === 'standby'
-						? 'bg-info'
-						: statusValue === 'pending'
-							? 'bg-warning'
-							: 'bg-destructive'}"
+					: statusValue === 'pending'
+						? 'bg-warning'
+						: 'bg-destructive'}"
 			></div>
 		</div>
 		<div class="flex flex-col gap-0.5 leading-tight">

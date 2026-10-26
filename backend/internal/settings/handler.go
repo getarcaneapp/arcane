@@ -17,7 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/search"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/telemetry"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
@@ -52,27 +52,27 @@ type GetCategoriesOutput struct {
 
 func (h *SettingsHandler) runtimeSettings(authenticated bool) types.SettingsRuntime {
 	telemetryRuntime := types.SettingsRuntime{
-		FrontendTracingEnabled: !h.cfg.EdgeAgent && telemetry.Endpoint("traces") != "",
-		FrontendMetricsEnabled: !h.cfg.EdgeAgent && telemetry.Endpoint("metrics") != "",
-		FrontendLogsEnabled:    !h.cfg.EdgeAgent && telemetry.Endpoint("logs") != "",
+		FrontendTracingEnabled: !h.cfg.AgentEnabled && telemetry.Endpoint("traces") != "",
+		FrontendMetricsEnabled: !h.cfg.AgentEnabled && telemetry.Endpoint("metrics") != "",
+		FrontendLogsEnabled:    !h.cfg.AgentEnabled && telemetry.Endpoint("logs") != "",
 	}
 	if !authenticated {
 		return telemetryRuntime
 	}
 
-	_, edgeMTLSCAErr := edge.AvailableManagerMTLSCAPath(&edge.Config{
-		EdgeMTLSMode:      h.cfg.EdgeMTLSMode,
-		EdgeMTLSCAFile:    h.cfg.EdgeMTLSCAFile,
-		EdgeMTLSAssetsDir: h.cfg.EdgeMTLSAssetsDir,
+	_, agentMTLSCAErr := agent.AvailableManagerMTLSCAPath(&agent.Config{
+		AgentMTLSMode:      h.cfg.AgentMTLSMode,
+		AgentMTLSCAFile:    h.cfg.AgentMTLSCAFile,
+		AgentMTLSAssetsDir: h.cfg.AgentMTLSAssetsDir,
 	})
 	settingsCfg := h.settingsService.GetSettingsConfig()
 	return types.SettingsRuntime{
-		FrontendTracingEnabled:     telemetryRuntime.FrontendTracingEnabled,
-		FrontendMetricsEnabled:     telemetryRuntime.FrontendMetricsEnabled,
-		FrontendLogsEnabled:        telemetryRuntime.FrontendLogsEnabled,
-		BackupVolumeName:           kit.Ternary(strings.TrimSpace(h.cfg.BackupVolumeName) != "", h.cfg.BackupVolumeName, "arcane-backups"),
-		EdgeMTLSManagerCAAvailable: edgeMTLSCAErr == nil,
-		DepotConfigured:            strings.TrimSpace(settingsCfg.DepotProjectId.Value) != "" && strings.TrimSpace(settingsCfg.DepotToken.Value) != "",
+		FrontendTracingEnabled:      telemetryRuntime.FrontendTracingEnabled,
+		FrontendMetricsEnabled:      telemetryRuntime.FrontendMetricsEnabled,
+		FrontendLogsEnabled:         telemetryRuntime.FrontendLogsEnabled,
+		BackupVolumeName:            kit.Ternary(strings.TrimSpace(h.cfg.BackupVolumeName) != "", h.cfg.BackupVolumeName, "arcane-backups"),
+		AgentMTLSManagerCAAvailable: agentMTLSCAErr == nil,
+		DepotConfigured:             strings.TrimSpace(settingsCfg.DepotProjectId.Value) != "" && strings.TrimSpace(settingsCfg.DepotToken.Value) != "",
 	}
 }
 

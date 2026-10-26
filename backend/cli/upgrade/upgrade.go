@@ -106,7 +106,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	}
 	if config.DirectAgentRequested(func(name string) string {
 		return env[name]
-	}) && !strings.EqualFold(cmp.Or(env["ARCANE_EDGE_AGENT"], env["EDGE_AGENT"]), "true") {
+	}) && !strings.EqualFold(env["ARCANE_AGENT"], "true") {
 		return fmt.Errorf("refusing to upgrade container %s: %w", containerName, config.ErrDirectAgentRemoved)
 	}
 

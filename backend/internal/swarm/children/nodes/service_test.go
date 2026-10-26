@@ -22,7 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
@@ -98,13 +98,13 @@ func TestDescribeSwarmJoinFailure(t *testing.T) {
 	require.Equal(t, "swarm join failed with HTTP 502 from the target agent", describeSwarmJoinFailure(statusErr(502, "<html>bad gateway</html>"), token))
 	require.Equal(t, "swarm join failed with HTTP 404 from the target agent", describeSwarmJoinFailure(statusErr(404, ""), token))
 	require.Equal(t,
-		"failed to send request to environment edge: dial tcp 10.0.0.9:3552: connect: connection refused",
-		describeSwarmJoinFailure(errors.New("failed to send request to environment edge: dial tcp 10.0.0.9:3552: connect: connection refused"), token),
+		"failed to send request to environment agent: dial tcp 10.0.0.9:3552: connect: connection refused",
+		describeSwarmJoinFailure(errors.New("failed to send request to environment agent: dial tcp 10.0.0.9:3552: connect: connection refused"), token),
 	)
 	require.Equal(t, "token [redacted] rejected", describeSwarmJoinFailure(errors.New("token "+token+" rejected"), token))
 }
 
-func TestService_FetchSwarmNodeIdentityViaEdge_UsesEnvironmentAccessToken(t *testing.T) {
+func TestService_FetchSwarmNodeIdentityViaAgent_UsesEnvironmentAccessToken(t *testing.T) {
 	ctx := t.Context()
 	db := setupSwarmServiceTestDB(t)
 	settingsSvc, err := newSettingsServiceForSwarmTest(t, ctx, db)
@@ -112,7 +112,7 @@ func TestService_FetchSwarmNodeIdentityViaEdge_UsesEnvironmentAccessToken(t *tes
 	envSvc := environment.NewEnvironmentService(db, nil, nil, settingsSvc, nil)
 
 	accessToken := "token-123"
-	agent := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	agentHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !assert.Equal(t, http.MethodGet, r.Method) {
 			return
 		}
@@ -130,34 +130,37 @@ func TestService_FetchSwarmNodeIdentityViaEdge_UsesEnvironmentAccessToken(t *tes
 		_, _ = w.Write([]byte(`{"success":true,"data":{"swarmNodeId":"node-1","hostname":"worker-1","role":"worker","engineVersion":"29.3.1","swarmActive":true}}`))
 	})
 	manager := echo.New()
-	manager.GET("/api/tunnel/connect", edge.NewTunnelServerWithRegistry(edge.GetRegistry(), func(context.Context, string) (string, error) {
-		return "env-1", nil
-	}, nil).HandleConnect)
+	manager.GET("/api/tunnel/connect", agent.NewTunnelServer(agent.TunnelServerOptions{
+		Registry: agent.GetRegistry(),
+		Resolver: func(context.Context, string) (string, error) {
+			return "env-1", nil
+		},
+	}).HandleConnect)
 	managerServer := httptest.NewServer(manager)
 	defer managerServer.Close()
 	agentCtx, cancelAgent := context.WithCancel(t.Context())
 	defer cancelAgent()
-	defer edge.GetRegistry().Unregister("env-1")
-	go edge.NewTunnelClient(&edge.Config{
-		EdgeAgent:     true,
-		EdgeTransport: edge.EdgeTransportWebSocket,
-		ManagerApiUrl: managerServer.URL,
-		AgentToken:    "agent-token",
-	}, agent).StartWithErrorChan(agentCtx, nil)
-	require.True(t, edge.GetRegistry().WaitForActive(t.Context(), "env-1", 5*time.Second).IsPresent())
+	defer agent.GetRegistry().Unregister("env-1")
+	go agent.NewTunnelClient(&agent.Config{
+		AgentEnabled:   true,
+		AgentTransport: agent.TransportWebSocket,
+		ManagerApiUrl:  managerServer.URL,
+		AgentToken:     "agent-token",
+	}, agentHandler).StartWithErrorChan(agentCtx, nil)
+	require.True(t, agent.GetRegistry().WaitForActive(t.Context(), "env-1", 5*time.Second).IsPresent())
 
 	createSwarmTestEnvironment(
 		t,
 		db,
 		"env-1",
-		"edge://env-1",
+		"agent://env-1",
 		string(environment.EnvironmentStatusOnline),
 		&accessToken,
 	)
 
 	svc := NewService(nil, nil, nil, nil, envSvc)
 
-	identity, err := svc.fetchSwarmNodeIdentityViaEdge(ctx, "env-1")
+	identity, err := svc.fetchSwarmNodeIdentityViaAgent(ctx, "env-1")
 	require.NoError(t, err)
 	require.NotNil(t, identity)
 	require.Equal(t, "node-1", identity.SwarmNodeID)
@@ -168,9 +171,6 @@ func TestService_FetchSwarmNodeIdentityViaEdge_UsesEnvironmentAccessToken(t *tes
 }
 
 // TestService_BuildNodeAgentStatus covers the state classification.
-// The regression case is a poll-mode agent: its persisted env.Status never leaves
-// "pending" (HandlePoll only updates the in-memory poll registry), so a fresh
-// lastPollAt must still resolve to "connected" rather than "pending".
 func TestService_BuildNodeAgentStatus(t *testing.T) {
 	const nodeID = "node-abc"
 	now := time.Now()
@@ -182,12 +182,6 @@ func TestService_BuildNodeAgentStatus(t *testing.T) {
 		runtime swarmNodeAgentRuntime
 		want    types.NodeAgentState
 	}{
-		{
-			name:    "poll-mode check-in reports connected despite stale pending status",
-			env:     &environment.Environment{Status: string(environment.EnvironmentStatusPending)},
-			runtime: swarmNodeAgentRuntime{lastPollAt: &now},
-			want:    types.NodeAgentStateConnected,
-		},
 		{
 			name:    "no runtime activity and never paired stays pending",
 			env:     &environment.Environment{Status: string(environment.EnvironmentStatusPending)},

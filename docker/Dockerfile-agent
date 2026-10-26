@@ -68,7 +68,7 @@ ENV NVIDIA_VISIBLE_DEVICES=all \
 
 ENV ARCANE_ENVIRONMENT=production \
     ARCANE_IN_CONTAINER=true \
-    ARCANE_EDGE_AGENT=true
+    ARCANE_AGENT=true
 
 VOLUME ["/app/data"]
 

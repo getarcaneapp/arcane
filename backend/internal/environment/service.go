@@ -46,7 +46,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/entityjobs"
@@ -64,7 +64,7 @@ type EnvironmentService struct {
 	dockerService    *docker.DockerClientService
 	eventService     *event.EventService
 	settingsService  *settings.SettingsService
-	edgeTokens       *edgeTokenCache
+	agentTokens      *agentTokenCache
 	remoteEnvs       *remoteEnvSnapshotCache
 	environmentCache *hot.HotCache[environmentCacheKey, Environment]
 	environmentGens  [environmentCacheStripes]atomic.Uint64
@@ -99,7 +99,7 @@ var (
 	ErrInvalidEnvironmentAccessToken  = errors.New("invalid environment access token")
 	ErrEnvironmentNotFound            = common.Classify(common.ErrNotFound, errors.New("environment not found"))
 
-	edgeSlugPattern = regexp.MustCompile(`[^a-z0-9]+`)
+	agentSlugPattern = regexp.MustCompile(`[^a-z0-9]+`)
 )
 
 // VariableSyncer pushes the effective global-variable set to one environment.
@@ -142,8 +142,8 @@ func NewEnvironmentService(
 		dockerService:   dockerService,
 		eventService:    eventService,
 		settingsService: settingsService,
-		edgeTokens: &edgeTokenCache{
-			byToken: hot.NewHotCache[string, string](hot.LRU, 1024).WithTTL(edgeTokenCacheTTL).WithJanitor().Build(),
+		agentTokens: &agentTokenCache{
+			byToken: hot.NewHotCache[string, string](hot.LRU, 1024).WithTTL(agentTokenCacheTTL).WithJanitor().Build(),
 			byEnvID: make(map[string]string),
 		},
 		remoteEnvs: &remoteEnvSnapshotCache{envs: make(map[string]Environment)},
@@ -194,7 +194,6 @@ func (s *EnvironmentService) RegisterMetrics() {
 			// Known statuses report zero so their series drop instead of going stale.
 			counts := map[string]int64{
 				string(EnvironmentStatusOnline):  0,
-				string(EnvironmentStatusStandby): 0,
 				string(EnvironmentStatusOffline): 0,
 				string(EnvironmentStatusError):   0,
 				string(EnvironmentStatusPending): 0,
@@ -222,30 +221,30 @@ func (s *EnvironmentService) SetUserInvalidator(invalidate func(userID string)) 
 	s.invalidateUser = invalidate
 }
 
-func (s *EnvironmentService) ResolveEdgeEnvironmentByToken(ctx context.Context, token string) (string, error) {
+func (s *EnvironmentService) ResolveAgentEnvironmentByToken(ctx context.Context, token string) (string, error) {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return "", errors.New("agent token required")
 	}
 
-	staleEnvironmentID, wasCached := s.edgeTokens.byToken.Peek(token)
-	if envID, ok, _ := s.edgeTokens.byToken.Get(token); ok {
+	staleEnvironmentID, wasCached := s.agentTokens.byToken.Peek(token)
+	if envID, ok, _ := s.agentTokens.byToken.Get(token); ok {
 		cached, err := s.GetEnvironmentByIDCached(ctx, envID)
 		if err != nil {
-			return "", fmt.Errorf("failed to resolve cached edge environment: %w", err)
+			return "", fmt.Errorf("failed to resolve cached agent environment: %w", err)
 		}
 		if cached.Enabled {
 			return envID, nil
 		}
-		s.edgeTokens.sync(envID, "")
+		s.agentTokens.sync(envID, "")
 		return "", errors.New("invalid agent token")
 	}
 	if wasCached {
-		s.edgeTokens.mu.Lock()
-		if currentToken, indexed := s.edgeTokens.byEnvID[staleEnvironmentID]; indexed && currentToken == token {
-			delete(s.edgeTokens.byEnvID, staleEnvironmentID)
+		s.agentTokens.mu.Lock()
+		if currentToken, indexed := s.agentTokens.byEnvID[staleEnvironmentID]; indexed && currentToken == token {
+			delete(s.agentTokens.byEnvID, staleEnvironmentID)
 		}
-		s.edgeTokens.mu.Unlock()
+		s.agentTokens.mu.Unlock()
 	}
 
 	var env Environment
@@ -256,35 +255,35 @@ func (s *EnvironmentService) ResolveEdgeEnvironmentByToken(ctx context.Context, 
 		Where("access_token = ?", token).
 		First(&env).Error; err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", fmt.Errorf("failed to resolve edge environment by token: %w", err)
+			return "", fmt.Errorf("failed to resolve agent environment by token: %w", err)
 		}
-		// Log edge environment counts so a miss can be diagnosed; only the token's
+		// Log agent environment counts so a miss can be diagnosed; only the token's
 		// length and irreversible fingerprint are logged.
 		if slog.Default().Enabled(ctx, slog.LevelDebug) {
-			var totalEdgeEnvs int64
-			var edgeEnvsWithToken int64
-			totalEdgeEnvsErr := s.db.WithContext(ctx).Model(&Environment{}).Where("id <> ?", LocalEnvironmentID).Count(&totalEdgeEnvs).Error
-			edgeEnvsWithTokenErr := s.db.WithContext(ctx).Model(&Environment{}).
+			var totalAgentEnvs int64
+			var agentEnvsWithToken int64
+			totalAgentEnvsErr := s.db.WithContext(ctx).Model(&Environment{}).Where("id <> ?", LocalEnvironmentID).Count(&totalAgentEnvs).Error
+			agentEnvsWithTokenErr := s.db.WithContext(ctx).Model(&Environment{}).
 				Where("id <> ?", LocalEnvironmentID).
 				Where("access_token IS NOT NULL AND access_token != ?", "").
-				Count(&edgeEnvsWithToken).Error
+				Count(&agentEnvsWithToken).Error
 
 			args := []any{
 				"token_length", len(token),
 				"token_fingerprint", remenv.RedactedTokenFingerprint(token),
 			}
-			if totalEdgeEnvsErr == nil {
-				args = append(args, "edge_envs_total", totalEdgeEnvs)
+			if totalAgentEnvsErr == nil {
+				args = append(args, "agent_envs_total", totalAgentEnvs)
 			}
-			if edgeEnvsWithTokenErr == nil {
-				args = append(args, "edge_envs_with_access_token", edgeEnvsWithToken)
+			if agentEnvsWithTokenErr == nil {
+				args = append(args, "agent_envs_with_access_token", agentEnvsWithToken)
 			}
-			slog.DebugContext(ctx, "Edge agent token did not match any environment", args...)
+			slog.DebugContext(ctx, "Agent token did not match any environment", args...)
 		}
 		return "", errors.New("invalid agent token")
 	}
 
-	s.edgeTokens.sync(env.ID, token)
+	s.agentTokens.sync(env.ID, token)
 	return env.ID, nil
 }
 
@@ -363,7 +362,7 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, env *Environ
 	}
 	id := uuid.New().String()
 	now := time.Now()
-	apiURL := cmp.Or(env.ApiUrl, "edge://"+cmp.Or(strings.Trim(edgeSlugPattern.ReplaceAllString(strings.ToLower(env.Name), "-"), "-"), id))
+	apiURL := cmp.Or(env.ApiUrl, "agent://"+cmp.Or(strings.Trim(agentSlugPattern.ReplaceAllString(strings.ToLower(env.Name), "-"), "-"), id))
 	var apiURLTaken int64
 	if err := s.db.WithContext(ctx).Model(&Environment{}).Where("lower(api_url) = ?", strings.ToLower(apiURL)).Count(&apiURLTaken).Error; err != nil {
 		return nil, fmt.Errorf("failed to check environment api url: %w", err)
@@ -381,7 +380,7 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, env *Environ
 		Enabled:             env.Enabled,
 		Hidden:              env.Hidden,
 		LastSeen:            env.LastSeen,
-		LastEdgeTransport:   env.LastEdgeTransport,
+		LastAgentTransport:  env.LastAgentTransport,
 		AccessToken:         env.AccessToken,
 		ApiKeyID:            env.ApiKeyID,
 		ParentEnvironmentID: env.ParentEnvironmentID,
@@ -440,7 +439,7 @@ func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, u
 	s.remoteEnvs.put(*updated)
 
 	if _, ok := updates["access_token"]; ok {
-		s.edgeTokens.sync(id, "")
+		s.agentTokens.sync(id, "")
 		s.accessTokenIndex.sync(id, kit.FromPtr(updated.AccessToken))
 	}
 
@@ -451,8 +450,8 @@ func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, u
 				s.registerHealthJob(ctx, id)
 			} else {
 				s.jobs.Unregister(ctx, id)
-				s.edgeTokens.sync(id, "")
-				edge.GetRegistry().Unregister(id)
+				s.agentTokens.sync(id, "")
+				agent.GetRegistry().Unregister(id)
 			}
 		}
 	}
@@ -540,9 +539,9 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 		}
 	}
 
-	s.edgeTokens.sync(id, "")
+	s.agentTokens.sync(id, "")
 	s.accessTokenIndex.sync(id, "")
-	edge.GetRegistry().Unregister(id)
+	agent.GetRegistry().Unregister(id)
 	s.ForgetSyncState(id)
 	s.remoteEnvs.mu.Lock()
 	delete(s.remoteEnvs.envs, id)
@@ -611,7 +610,7 @@ func (s *EnvironmentService) linkEnvironmentApiKey(ctx context.Context, envID, n
 	s.invalidateEnvironmentCache(envID)
 	s.NotifyRuntimeStateChanged()
 
-	s.edgeTokens.sync(envID, "")
+	s.agentTokens.sync(envID, "")
 	s.accessTokenIndex.sync(envID, apiKey)
 	s.remoteEnvs.mu.Lock()
 	s.remoteEnvs.revision++
@@ -628,7 +627,7 @@ func (s *EnvironmentService) linkEnvironmentApiKey(ctx context.Context, envID, n
 			Enabled:             envRecord.Enabled,
 			Hidden:              envRecord.Hidden,
 			LastSeen:            nil,
-			LastEdgeTransport:   envRecord.LastEdgeTransport,
+			LastAgentTransport:  envRecord.LastAgentTransport,
 			AccessToken:         &apiKey,
 			ApiKeyID:            &newApiKeyID,
 			ParentEnvironmentID: envRecord.ParentEnvironmentID,
@@ -636,7 +635,7 @@ func (s *EnvironmentService) linkEnvironmentApiKey(ctx context.Context, envID, n
 		}
 	}
 	s.remoteEnvs.mu.Unlock()
-	edge.GetRegistry().Unregister(envID)
+	agent.GetRegistry().Unregister(envID)
 
 	s.createEnvironmentEvent(ctx, envID, envName, event.EventTypeEnvironmentApiKeyRegenerated,
 		"API Key Regenerated", "Environment API key was regenerated and status set to pending", event.EventSeverityInfo, new(userID), new(username))
@@ -785,7 +784,7 @@ func DisplayName(environmentID, storedName string) string {
 }
 
 const (
-	edgeTokenCacheTTL    = time.Minute
+	agentTokenCacheTTL   = time.Minute
 	environmentCacheTTL  = 30 * time.Second
 	remoteSyncTimeout    = time.Minute
 	maxAccessTokenLength = 128
@@ -965,18 +964,15 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 						if item.ID == LocalEnvironmentID {
 							return false
 						}
-						if strings.ToLower(strings.TrimSpace(filterValue)) == "polling" {
-							return item.LastPollAt != nil
-						}
-						// Disconnected or poll-only agents classify by the transport they last used.
-						switch strings.ToLower(strings.TrimSpace(kit.Ternary(kit.FromPtr(item.Connected) && item.EdgeTransport != nil,
-							kit.FromPtr(item.EdgeTransport), kit.FromPtr(item.LastEdgeTransport)))) {
-						case edge.EdgeTransportWebSocket:
+						// Disconnected agents classify by the transport they last used.
+						switch strings.ToLower(strings.TrimSpace(kit.Ternary(kit.FromPtr(item.Connected) && item.AgentTransport != nil,
+							kit.FromPtr(item.AgentTransport), kit.FromPtr(item.LastAgentTransport)))) {
+						case agent.TransportWebSocket:
 							return strings.ToLower(strings.TrimSpace(filterValue)) == "websocket"
-						case edge.EdgeTransportGRPC:
+						case agent.TransportGRPC:
 							return strings.ToLower(strings.TrimSpace(filterValue)) == "grpc"
 						default:
-							return strings.ToLower(strings.TrimSpace(filterValue)) == "edge"
+							return strings.ToLower(strings.TrimSpace(filterValue)) == "agent"
 						}
 					},
 				},
@@ -1352,7 +1348,7 @@ func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id 
 	now := time.Now()
 
 	// Throttle unchanged online status to one write every 30 seconds; this doubles as the notify throttle.
-	// Pending edge environments pair only through the agent's tunnel, as in updateEnvironmentStatus.
+	// Pending agent environments pair only through the agent's tunnel, as in updateEnvironmentStatus.
 	result := s.db.WithContext(ctx).Exec(`
 		UPDATE environments
 		SET last_seen = ?, status = ?, updated_at = ?
@@ -1375,7 +1371,7 @@ func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id 
 	return err
 }
 
-// UpdateEnvironmentConnectionState records an edge tunnel connect or disconnect
+// UpdateEnvironmentConnectionState records an agent tunnel connect or disconnect
 // without emitting an "environment updated" event.
 func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Context, id string, connected bool) error {
 	now := time.Now()
@@ -1386,9 +1382,9 @@ func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Contex
 	if connected {
 		updates["status"] = string(EnvironmentStatusOnline)
 		updates["last_seen"] = &now
-		// Remember the transport so the UI can show it after the tunnel drops or while poll-only.
-		if state, ok := edge.GetTunnelRuntimeState(id).Get(); ok && state.Transport != "" {
-			updates["last_edge_transport"] = state.Transport
+		// Remember the transport so the UI can show it after the tunnel drops.
+		if state, ok := agent.GetTunnelRuntimeState(id).Get(); ok && state.Transport != "" {
+			updates["last_agent_transport"] = state.Transport
 		}
 	} else {
 		updates["status"] = string(EnvironmentStatusOffline)
@@ -1407,15 +1403,14 @@ func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Contex
 	return nil
 }
 
-// ApplyEnvironmentRuntimeState overlays in-memory tunnel and poll state onto an
-// edge environment without mutating persisted state.
+// ApplyEnvironmentRuntimeState overlays in-memory tunnel state onto an
+// agent environment without mutating persisted state.
 func ApplyEnvironmentRuntimeState(env types.Environment) types.Environment {
 	if env.ID == LocalEnvironmentID {
 		return env
 	}
 
-	pollState, _ := edge.GetPollRuntimeRegistry().Get(env.ID, time.Now()).Get()
-	runtimeState, connected := edge.GetTunnelRuntimeState(env.ID).Get()
+	runtimeState, connected := agent.GetTunnelRuntimeState(env.ID).Get()
 	return types.Environment{ //exhaustruct:enforce
 		ID:     env.ID,
 		Name:   env.Name,
@@ -1424,38 +1419,35 @@ func ApplyEnvironmentRuntimeState(env types.Environment) types.Environment {
 			switch {
 			case connected:
 				return string(EnvironmentStatusOnline)
-			case pollState.LastPollAt != nil:
-				return string(EnvironmentStatusStandby)
 			case env.Status != string(EnvironmentStatusPending):
 				return string(EnvironmentStatusOffline)
 			default:
 				return env.Status
 			}
 		}(),
-		Enabled:           env.Enabled,
-		LastSeen:          env.LastSeen,
-		EdgeTransport:     kit.Ternary(kit.FromPtr(runtimeState).Transport != "", new(kit.FromPtr(runtimeState).Transport), nil),
-		LastEdgeTransport: env.LastEdgeTransport,
-		EdgeSecurityMode:  kit.Ternary(kit.FromPtr(runtimeState).SecurityMode != "", new(kit.FromPtr(runtimeState).SecurityMode), nil),
-		EdgeSessionID:     kit.Ternary(kit.FromPtr(runtimeState).SessionID != "", new(kit.FromPtr(runtimeState).SessionID), nil),
-		EdgeAgentInstance: kit.Ternary(kit.FromPtr(runtimeState).AgentInstance != "", new(kit.FromPtr(runtimeState).AgentInstance), nil),
-		EdgeCapabilities:  kit.Ternary(len(kit.FromPtr(runtimeState).Capabilities) > 0, slices.Clone(kit.FromPtr(runtimeState).Capabilities), nil),
-		EdgeRoundTripMs: kit.Ternary(kit.FromPtr(runtimeState).RoundTripTime != nil,
+		Enabled:            env.Enabled,
+		LastSeen:           env.LastSeen,
+		AgentTransport:     kit.Ternary(kit.FromPtr(runtimeState).Transport != "", new(kit.FromPtr(runtimeState).Transport), nil),
+		LastAgentTransport: env.LastAgentTransport,
+		AgentSecurityMode:  kit.Ternary(kit.FromPtr(runtimeState).SecurityMode != "", new(kit.FromPtr(runtimeState).SecurityMode), nil),
+		AgentSessionID:     kit.Ternary(kit.FromPtr(runtimeState).SessionID != "", new(kit.FromPtr(runtimeState).SessionID), nil),
+		AgentInstance:      kit.Ternary(kit.FromPtr(runtimeState).AgentInstance != "", new(kit.FromPtr(runtimeState).AgentInstance), nil),
+		AgentCapabilities:  kit.Ternary(len(kit.FromPtr(runtimeState).Capabilities) > 0, slices.Clone(kit.FromPtr(runtimeState).Capabilities), nil),
+		AgentRoundTripMs: kit.Ternary(kit.FromPtr(runtimeState).RoundTripTime != nil,
 			new(float64(kit.FromPtr(kit.FromPtr(runtimeState).RoundTripTime).Microseconds())/1000), nil),
-		EdgeOpenStreams:     kit.Ternary(connected, new(kit.FromPtr(runtimeState).OpenStreams), nil),
-		Connected:           new(connected),
-		ConnectedAt:         kit.FromPtr(runtimeState).ConnectedAt,
-		LastHeartbeat:       kit.FromPtr(runtimeState).LastHeartbeat,
-		LastPollAt:          pollState.LastPollAt,
-		EdgeMTLSCertificate: env.EdgeMTLSCertificate,
-		ApiKey:              env.ApiKey,
-		RegenerateApiKey:    false,
+		AgentOpenStreams:     kit.Ternary(connected, new(kit.FromPtr(runtimeState).OpenStreams), nil),
+		Connected:            new(connected),
+		ConnectedAt:          kit.FromPtr(runtimeState).ConnectedAt,
+		LastHeartbeat:        kit.FromPtr(runtimeState).LastHeartbeat,
+		AgentMTLSCertificate: env.AgentMTLSCertificate,
+		ApiKey:               env.ApiKey,
+		RegenerateApiKey:     false,
 	}
 }
 
-// ReconcileEdgeStatusesOnStartup marks non-pending edge environments offline at
+// ReconcileAgentStatusesOnStartup marks non-pending agent environments offline at
 // startup, since tunnels are process-local and persisted "online" flags are stale.
-func (s *EnvironmentService) ReconcileEdgeStatusesOnStartup(ctx context.Context) error {
+func (s *EnvironmentService) ReconcileAgentStatusesOnStartup(ctx context.Context) error {
 	var awaitingEnrollment []string
 	if err := s.db.WithContext(ctx).Model(&Environment{}).
 		Where("id <> ?", LocalEnvironmentID).
@@ -1466,7 +1458,7 @@ func (s *EnvironmentService) ReconcileEdgeStatusesOnStartup(ctx context.Context)
 		return fmt.Errorf("failed to list environments awaiting enrollment: %w", err)
 	}
 	if len(awaitingEnrollment) > 0 {
-		slog.WarnContext(ctx, "Environments need re-enrollment as edge agents; regenerate their API key and redeploy the agent with ARCANE_EDGE_AGENT=true",
+		slog.WarnContext(ctx, "Environments need re-enrollment as agents; regenerate their API key and redeploy the agent with ARCANE_AGENT=true",
 			"count", len(awaitingEnrollment), "environments", awaitingEnrollment)
 	}
 
@@ -1479,11 +1471,11 @@ func (s *EnvironmentService) ReconcileEdgeStatusesOnStartup(ctx context.Context)
 			"updated_at": new(time.Now()),
 		})
 	if result.Error != nil {
-		return fmt.Errorf("failed to reconcile edge environment statuses: %w", result.Error)
+		return fmt.Errorf("failed to reconcile agent environment statuses: %w", result.Error)
 	}
 
 	if result.RowsAffected > 0 {
-		slog.InfoContext(ctx, "Reconciled stale edge environment statuses on startup", "count", result.RowsAffected)
+		slog.InfoContext(ctx, "Reconciled stale agent environment statuses on startup", "count", result.RowsAffected)
 	}
 
 	return nil
@@ -1644,31 +1636,31 @@ func (s *EnvironmentService) ProxyRequest(ctx context.Context, envID, method, pa
 	return resp.Body, resp.StatusCode, nil
 }
 
-// GenerateEdgeDeploymentSnippets generates Docker deployment snippets for an
-// edge agent, which dials the manager and exposes no ports.
-func (s *EnvironmentService) GenerateEdgeDeploymentSnippets(ctx context.Context, envID, managerURL, apiKey string, edgeCfg *edge.Config) (*DeploymentSnippets, error) {
+// GenerateAgentDeploymentSnippets generates Docker deployment snippets for an
+// agent, which dials the manager and exposes no ports.
+func (s *EnvironmentService) GenerateAgentDeploymentSnippets(ctx context.Context, envID, managerURL, apiKey string, agentCfg *agent.Config) (*DeploymentSnippets, error) {
 	managerURL = strings.TrimRight(managerURL, "/")
-	dockerRun, dockerCompose := snippets.Edge(managerURL, apiKey)
+	dockerRun, dockerCompose := snippets.Agent(managerURL, apiKey)
 	generatedAssets, mtlsDockerRun, mtlsDockerCompose := s.snippets.GenerateMTLS(ctx,
-		func() *edge.Config {
-			if edgeCfg == nil {
+		func() *agent.Config {
+			if agentCfg == nil {
 				return nil
 			}
-			return &edge.Config{ //exhaustruct:enforce
-				EdgeAgent:             edgeCfg.EdgeAgent,
-				EdgeTransport:         edgeCfg.EdgeTransport,
-				EdgeReconnectInterval: edgeCfg.EdgeReconnectInterval,
-				EdgeMTLSMode:          edgeCfg.EdgeMTLSMode,
-				EdgeMTLSCAFile:        edgeCfg.EdgeMTLSCAFile,
-				EdgeMTLSCertFile:      edgeCfg.EdgeMTLSCertFile,
-				EdgeMTLSKeyFile:       edgeCfg.EdgeMTLSKeyFile,
-				EdgeMTLSServerName:    edgeCfg.EdgeMTLSServerName,
-				EdgeMTLSAssetsDir:     edgeCfg.EdgeMTLSAssetsDir,
-				AppURL:                kit.Ternary(strings.TrimSpace(edgeCfg.AppURL) == "", managerURL, edgeCfg.AppURL),
-				ManagerApiUrl:         edgeCfg.ManagerApiUrl,
-				AgentToken:            edgeCfg.AgentToken,
-				Port:                  edgeCfg.Port,
-				Listen:                edgeCfg.Listen,
+			return &agent.Config{ //exhaustruct:enforce
+				AgentEnabled:           agentCfg.AgentEnabled,
+				AgentTransport:         agentCfg.AgentTransport,
+				AgentReconnectInterval: agentCfg.AgentReconnectInterval,
+				AgentMTLSMode:          agentCfg.AgentMTLSMode,
+				AgentMTLSCAFile:        agentCfg.AgentMTLSCAFile,
+				AgentMTLSCertFile:      agentCfg.AgentMTLSCertFile,
+				AgentMTLSKeyFile:       agentCfg.AgentMTLSKeyFile,
+				AgentMTLSServerName:    agentCfg.AgentMTLSServerName,
+				AgentMTLSAssetsDir:     agentCfg.AgentMTLSAssetsDir,
+				AppURL:                 kit.Ternary(strings.TrimSpace(agentCfg.AppURL) == "", managerURL, agentCfg.AppURL),
+				ManagerApiUrl:          agentCfg.ManagerApiUrl,
+				AgentToken:             agentCfg.AgentToken,
+				Port:                   agentCfg.Port,
+				Listen:                 agentCfg.Listen,
 			}
 		}(),
 		envID,

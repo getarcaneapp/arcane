@@ -52,7 +52,7 @@ services:
     environment:
       - ARCANE_ENVIRONMENT=development
       - ARCANE_PORT=3552
-      - ARCANE_EDGE_TRANSPORT=websocket
+      - ARCANE_AGENT_TRANSPORT=websocket
       - ARCANE_LOG_LEVEL=debug
       - ARCANE_APP_URL=http://localhost:3000
       - PUID=1000
@@ -81,10 +81,10 @@ services:
     environment:
       - ARCANE_ENVIRONMENT=development
       - ARCANE_LOG_LEVEL=debug
-      - ARCANE_EDGE_AGENT=true
+      - ARCANE_AGENT=true
       - ARCANE_AGENT_TOKEN=arc_Xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
       - ARCANE_MANAGER_API_URL=http://backend:3552
-      - ARCANE_EDGE_TRANSPORT=websocket
+      - ARCANE_AGENT_TRANSPORT=websocket
       - ARCANE_ENCRYPTION_KEY=dev-encryption-key-replace-in-production-must-be-32-chars
       - ARCANE_DATABASE_URL=file:/app/data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_txlock=immediate
     volumes:

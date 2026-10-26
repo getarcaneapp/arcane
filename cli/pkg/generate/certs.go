@@ -36,16 +36,16 @@ func newMTLSCmd() *cobra.Command {
 	}
 	cmd := &cobra.Command{
 		Use:   "mtls",
-		Short: "Generate Arcane edge mTLS assets",
-		Long:  `Generate an Arcane-managed edge mTLS CA and agent client certificate bundle using ML-DSA-87.`,
+		Short: "Generate Arcane agent mTLS assets",
+		Long:  `Generate an Arcane-managed agent mTLS CA and agent client certificate bundle using ML-DSA-87.`,
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return generateMTLSOutput(cmd, opts.outDir, opts.envID, opts.appURL)
 		},
 	}
-	cmd.Flags().StringVar(&opts.outDir, "out-dir", "./edge-mtls", "directory to write generated edge mTLS assets")
-	cmd.Flags().StringVar(&opts.envID, "env-id", "local-edge", "environment identifier to embed in the generated edge agent certificate")
-	cmd.Flags().StringVar(&opts.appURL, "app-url", "http://localhost:3552", "Arcane manager app URL to embed as the edge mTLS SPIFFE trust domain")
+	cmd.Flags().StringVar(&opts.outDir, "out-dir", "./agent-mtls", "directory to write generated agent mTLS assets")
+	cmd.Flags().StringVar(&opts.envID, "env-id", "local-agent", "environment identifier to embed in the generated agent certificate")
+	cmd.Flags().StringVar(&opts.appURL, "app-url", "http://localhost:3552", "Arcane manager app URL to embed as the agent mTLS SPIFFE trust domain")
 	return cmd
 }
 
@@ -81,7 +81,7 @@ func generateMTLSOutput(cmd *cobra.Command, mtlsOutDir, mtlsEnvID, mtlsAppURL st
 		return fmt.Errorf("failed to resolve output directory: %w", err)
 	}
 
-	paths, err := generateEdgeMTLSBundle(outDir, strings.TrimSpace(mtlsEnvID), strings.TrimSpace(mtlsAppURL))
+	paths, err := generateAgentMTLSBundle(outDir, strings.TrimSpace(mtlsEnvID), strings.TrimSpace(mtlsAppURL))
 	if err != nil {
 		return err
 	}
@@ -89,17 +89,17 @@ func generateMTLSOutput(cmd *cobra.Command, mtlsOutDir, mtlsEnvID, mtlsAppURL st
 	if jsonOutput(cmd) {
 		return printJSON(cmd, paths)
 	}
-	_, _ = fmt.Fprintln(w, "Generated Arcane edge mTLS assets (ML-DSA-87)")
+	_, _ = fmt.Fprintln(w, "Generated Arcane agent mTLS assets (ML-DSA-87)")
 	_, _ = fmt.Fprintf(w, "CA cert: %s\n", paths.CACertPath)
 	_, _ = fmt.Fprintf(w, "CA key: %s\n", paths.CAKeyPath)
 	_, _ = fmt.Fprintf(w, "Agent cert: %s\n", paths.ClientCertPath)
 	_, _ = fmt.Fprintf(w, "Agent key: %s\n", paths.ClientKeyPath)
 	_, _ = fmt.Fprintln(w)
 	_, _ = fmt.Fprintln(w, "Manager env")
-	_, _ = fmt.Fprintf(w, "ARCANE_EDGE_MTLS_MODE=required\nARCANE_EDGE_MTLS_CA_FILE=%s\n", paths.CACertPath)
+	_, _ = fmt.Fprintf(w, "ARCANE_AGENT_MTLS_MODE=required\nARCANE_AGENT_MTLS_CA_FILE=%s\n", paths.CACertPath)
 	_, _ = fmt.Fprintln(w)
 	_, _ = fmt.Fprintln(w, "Agent env")
-	_, _ = fmt.Fprintf(w, "ARCANE_EDGE_MTLS_MODE=required\nARCANE_EDGE_MTLS_CA_FILE=%s\nARCANE_EDGE_MTLS_CERT_FILE=%s\nARCANE_EDGE_MTLS_KEY_FILE=%s\n",
+	_, _ = fmt.Fprintf(w, "ARCANE_AGENT_MTLS_MODE=required\nARCANE_AGENT_MTLS_CA_FILE=%s\nARCANE_AGENT_MTLS_CERT_FILE=%s\nARCANE_AGENT_MTLS_KEY_FILE=%s\n",
 		paths.CACertPath, paths.ClientCertPath, paths.ClientKeyPath)
 	return nil
 }
@@ -128,7 +128,7 @@ func generateTLSOutput(cmd *cobra.Command, tlsOutDir, tlsCommonName string, tlsH
 	return nil
 }
 
-type edgeMTLSPaths struct {
+type agentMTLSPaths struct {
 	CACertPath     string `json:"cACertPath"`
 	CAKeyPath      string `json:"cAKeyPath"`
 	ClientCertPath string `json:"clientCertPath"`
@@ -140,7 +140,7 @@ type serverTLSPaths struct {
 	KeyPath  string `json:"keyPath"`
 }
 
-func generateEdgeMTLSBundle(outDir, envID, appURL string) (*edgeMTLSPaths, error) {
+func generateAgentMTLSBundle(outDir, envID, appURL string) (*agentMTLSPaths, error) {
 	if envID == "" {
 		return nil, errors.New("env ID is required")
 	}
@@ -152,7 +152,7 @@ func generateEdgeMTLSBundle(outDir, envID, appURL string) (*edgeMTLSPaths, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate CA private key: %w", err)
 	}
-	caTemplate, err := NewEdgeMTLSCATemplate()
+	caTemplate, err := NewAgentMTLSCATemplate()
 	if err != nil {
 		return nil, err
 	}
@@ -166,12 +166,12 @@ func generateEdgeMTLSBundle(outDir, envID, appURL string) (*edgeMTLSPaths, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate client private key: %w", err)
 	}
-	trustDomain := EdgeMTLSTrustDomain(appURL)
+	trustDomain := AgentMTLSTrustDomain(appURL)
 	dnsSANs := []string{"arcane-agent"}
 	if trustDomain != "" {
 		dnsSANs = append(dnsSANs, "arcane-agent."+trustDomain)
 	}
-	clientTemplate, err := NewEdgeMTLSClientTemplate("arcane-edge-"+envID, BuildEdgeMTLSURISAN(appURL, envID), dnsSANs)
+	clientTemplate, err := NewAgentMTLSClientTemplate("arcane-agent-"+envID, BuildAgentMTLSURISAN(appURL, envID), dnsSANs)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +185,7 @@ func generateEdgeMTLSBundle(outDir, envID, appURL string) (*edgeMTLSPaths, error
 		return nil, fmt.Errorf("failed to create client certificate: %w", err)
 	}
 
-	paths := &edgeMTLSPaths{
+	paths := &agentMTLSPaths{
 		CACertPath:     filepath.Join(outDir, "ca.crt"),
 		CAKeyPath:      filepath.Join(outDir, "ca.key"),
 		ClientCertPath: filepath.Join(outDir, "agent.crt"),
@@ -252,13 +252,13 @@ func GenerateMLDSA87PrivateKey() (*mldsa.PrivateKey, error) {
 	return mldsa.GenerateKey(mldsa.MLDSA87())
 }
 
-// NewEdgeMTLSCATemplate builds Arcane's edge mTLS CA certificate template.
-func NewEdgeMTLSCATemplate() (*x509.Certificate, error) {
-	template, err := newCertificateTemplate("Arcane Edge mTLS CA")
+// NewAgentMTLSCATemplate builds Arcane's agent mTLS CA certificate template.
+func NewAgentMTLSCATemplate() (*x509.Certificate, error) {
+	template, err := newCertificateTemplate("Arcane Agent mTLS CA")
 	if err != nil {
 		return nil, err
 	}
-	template.Subject = pkix.Name{CommonName: "Arcane Edge mTLS CA", Organization: []string{"Arcane"}}
+	template.Subject = pkix.Name{CommonName: "Arcane Agent mTLS CA", Organization: []string{"Arcane"}}
 	template.IsCA = true
 	template.BasicConstraintsValid = true
 	template.MaxPathLen = 1
@@ -266,8 +266,8 @@ func NewEdgeMTLSCATemplate() (*x509.Certificate, error) {
 	return template, nil
 }
 
-// NewEdgeMTLSClientTemplate builds an edge-agent client certificate template.
-func NewEdgeMTLSClientTemplate(commonName string, uriSAN *url.URL, dnsSANs []string) (*x509.Certificate, error) {
+// NewAgentMTLSClientTemplate builds an agent client certificate template.
+func NewAgentMTLSClientTemplate(commonName string, uriSAN *url.URL, dnsSANs []string) (*x509.Certificate, error) {
 	commonName = strings.TrimSpace(commonName)
 	if commonName == "" {
 		return nil, errors.New("common name is required")
@@ -279,7 +279,7 @@ func NewEdgeMTLSClientTemplate(commonName string, uriSAN *url.URL, dnsSANs []str
 	template.NotBefore = time.Now().UTC().Add(-24 * time.Hour)
 	template.Subject = pkix.Name{
 		CommonName:   commonName,
-		Organization: []string{"Arcane Edge Agents"},
+		Organization: []string{"Arcane Agents"},
 	}
 	template.ExtKeyUsage = []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}
 	template.KeyUsage = x509.KeyUsageDigitalSignature
@@ -317,8 +317,8 @@ func NewServerTLSTemplate(commonName string, hosts []string) (*x509.Certificate,
 	return template, nil
 }
 
-// EdgeMTLSTrustDomain returns the SPIFFE trust domain derived from an Arcane app URL.
-func EdgeMTLSTrustDomain(appURL string) string {
+// AgentMTLSTrustDomain returns the SPIFFE trust domain derived from an Arcane app URL.
+func AgentMTLSTrustDomain(appURL string) string {
 	appURL = strings.TrimSpace(appURL)
 	if appURL == "" {
 		return ""
@@ -336,14 +336,14 @@ func EdgeMTLSTrustDomain(appURL string) string {
 	return strings.ToLower(strings.TrimSuffix(appURL, "."))
 }
 
-// BuildEdgeMTLSURISAN returns the SPIFFE URI SAN for an edge environment ID.
-func BuildEdgeMTLSURISAN(appURL, envID string) *url.URL {
-	trustDomain := EdgeMTLSTrustDomain(appURL)
+// BuildAgentMTLSURISAN returns the SPIFFE URI SAN for an agent environment ID.
+func BuildAgentMTLSURISAN(appURL, envID string) *url.URL {
+	trustDomain := AgentMTLSTrustDomain(appURL)
 	envID = strings.TrimSpace(envID)
 	if trustDomain == "" || envID == "" {
 		return nil
 	}
-	return &url.URL{Scheme: "spiffe", Host: trustDomain, Path: "/edge/" + envID}
+	return &url.URL{Scheme: "spiffe", Host: trustDomain, Path: "/agent/" + envID}
 }
 
 func newCertificateTemplate(commonName string) (*x509.Certificate, error) {

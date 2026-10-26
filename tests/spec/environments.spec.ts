@@ -33,7 +33,7 @@ test.describe('Settings', () => {
 		await expect(environmentTitleButton(page)).toHaveText(newName);
 	}
 
-	async function createEdgeEnvironmentViaUI(
+	async function createAgentEnvironmentViaUI(
 		page: Page,
 		environmentName: string,
 		environmentIds: Set<string>
@@ -54,7 +54,7 @@ test.describe('Settings', () => {
 		);
 		await page.getByRole('button', { name: 'Generate Agent Configuration', exact: true }).click();
 		const createResponse = await createResponsePromise;
-		expect(createResponse.ok(), 'Create edge environment').toBeTruthy();
+		expect(createResponse.ok(), 'Create agent environment').toBeTruthy();
 		expect(createResponse.request().postDataJSON()).toEqual({ name: environmentName });
 		const created: { data: { id: string; apiKey?: string } } = await createResponse.json();
 		environmentIds.add(created.data.id);
@@ -66,7 +66,7 @@ test.describe('Settings', () => {
 		).toBeVisible();
 		await expect(dialog.getByText(created.data.apiKey, { exact: true })).toBeVisible();
 		await expect(
-			dialog.locator('pre code').filter({ hasText: 'ARCANE_EDGE_AGENT=true' }).first()
+			dialog.locator('pre code').filter({ hasText: 'ARCANE_AGENT=true' }).first()
 		).toBeVisible();
 		await page.getByRole('button', { name: 'Done', exact: true }).click();
 		await expect(page.getByRole('button', { name: environmentName, exact: true })).toBeVisible();
@@ -218,7 +218,7 @@ test.describe('Settings', () => {
 			const environmentIds = new Set<string>();
 
 			registerCleanup(() => removeCreatedEnvironments(page, environmentIds, envName));
-			const { id: environmentId, apiKey } = await createEdgeEnvironmentViaUI(
+			const { id: environmentId, apiKey } = await createAgentEnvironmentViaUI(
 				page,
 				envName,
 				environmentIds
@@ -229,7 +229,7 @@ test.describe('Settings', () => {
 			await expect(page).toHaveURL('/environments');
 			await page.getByRole('button', { name: envName, exact: true }).click();
 			await expect(page).toHaveURL(/\/environments\/[^/?]+\?tab=[a-z]+$/);
-			await expect(page.getByText(/^edge:\/\/settings-ui-/).first()).toBeVisible();
+			await expect(page.getByText(/^agent:\/\/settings-ui-/).first()).toBeVisible();
 
 			await renameEnvironmentInHeader(page, updatedName);
 			const nameRequest = await saveAndWaitForPatch(page, environmentPath);
@@ -238,7 +238,7 @@ test.describe('Settings', () => {
 			await page.reload();
 			await expect(environmentTitleButton(page)).toHaveText(updatedName);
 
-			await page.getByRole('tab', { name: 'Connection & Edge', exact: true }).click();
+			await page.getByRole('tab', { name: 'Connection & Agent', exact: true }).click();
 			await page.getByRole('button', { name: 'Regenerate API Key', exact: true }).click();
 			const regenerateDialog = page.getByRole('alertdialog');
 			await expect(
@@ -261,9 +261,7 @@ test.describe('Settings', () => {
 
 			await expect(page.getByText('New API Key', { exact: true })).toBeVisible();
 			await expect(page.getByText(regenerated.data.apiKey, { exact: true })).toBeVisible();
-			const regeneratedSnippet = page
-				.locator('pre code')
-				.filter({ hasText: 'ARCANE_EDGE_AGENT=true' });
+			const regeneratedSnippet = page.locator('pre code').filter({ hasText: 'ARCANE_AGENT=true' });
 			await expect(regeneratedSnippet.first()).toBeVisible();
 			await page.getByRole('button', { name: 'Dismiss', exact: true }).click();
 			await expect(page.getByText('New API Key', { exact: true })).toBeHidden();
@@ -365,7 +363,11 @@ test.describe('Settings', () => {
 			const envName = `settings-reset-${Date.now().toString().slice(-5)}`;
 			const environmentIds = new Set<string>();
 			registerCleanup(() => removeCreatedEnvironments(page, environmentIds, envName));
-			const { id: environmentId } = await createEdgeEnvironmentViaUI(page, envName, environmentIds);
+			const { id: environmentId } = await createAgentEnvironmentViaUI(
+				page,
+				envName,
+				environmentIds
+			);
 			await openEnvironment(page, environmentId);
 			const titleButton = environmentTitleButton(page);
 			await renameEnvironmentInHeader(page, `${envName}-pending`);
@@ -558,7 +560,7 @@ test.describe('Environment filter', () => {
 	const remoteEnvironment = {
 		id: 'remote-switch-test',
 		name: 'Remote Test',
-		apiUrl: 'edge://remote-switch-test',
+		apiUrl: 'agent://remote-switch-test',
 		status: 'online',
 		enabled: true
 	};
@@ -882,7 +884,7 @@ test.describe('Environment filter', () => {
 	});
 });
 
-test.describe('Edge agents', () => {
+test.describe('Agents', () => {
 	const ROUTES = {
 		environments: '/environments'
 	};
@@ -899,8 +901,8 @@ test.describe('Edge agents', () => {
 		await expect(page.getByText('Agent connects outbound to the manager.')).toBeVisible();
 	}
 
-	test.describe('Edge Agent Environment', () => {
-		test('should require a name before creating an edge environment', async ({ page }) => {
+	test.describe('Agent Environment', () => {
+		test('should require a name before creating an agent environment', async ({ page }) => {
 			await openNewEnvironmentSheet(page);
 			let createRequests = 0;
 
@@ -915,11 +917,11 @@ test.describe('Edge agents', () => {
 			await expect.poll(() => createRequests).toBe(0);
 		});
 
-		test('should create an edge agent environment and show deployment snippets', async ({
+		test('should create an agent environment and show deployment snippets', async ({
 			page,
 			registerCleanup
 		}) => {
-			const environmentName = `edge-agent-${Date.now().toString().slice(-6)}`;
+			const environmentName = `agent-${Date.now().toString().slice(-6)}`;
 			let createdEnvironmentId: string | null = null;
 			const environmentIds = new Set<string>();
 			registerCleanup(() => removeCreatedEnvironments(page, environmentIds, environmentName));
@@ -940,7 +942,7 @@ test.describe('Edge agents', () => {
 					const response = await route.fetch();
 					const environment = await readApiData<{ id: string }>(
 						response,
-						'Create edge environment'
+						'Create agent environment'
 					);
 					createdEnvironmentId = environment.id;
 					environmentIds.add(environment.id);
@@ -963,17 +965,17 @@ test.describe('Edge agents', () => {
 			const sheetTitle = page.locator('[data-slot="sheet-title"]');
 			await expect(sheetTitle).toContainText('Environment Created');
 			await expect(
-				page.getByText('Edge agent - connects outbound to manager', { exact: true })
+				page.getByText('Arcane Agent - connects outbound to manager', { exact: true })
 			).toBeVisible();
 			await expect(page.getByText('API Key', { exact: true })).toBeVisible();
 			await expect(page.getByText('Docker Run Command', { exact: true })).toBeVisible();
 			await expect(page.getByText('Docker Compose', { exact: true })).toBeVisible();
 
-			const snippetBlocks = page.locator('pre code').filter({ hasText: 'ARCANE_EDGE_AGENT=true' });
+			const snippetBlocks = page.locator('pre code').filter({ hasText: 'ARCANE_AGENT=true' });
 			await expect(snippetBlocks.first()).toBeVisible();
 
 			const dockerRunSnippet = snippetBlocks.first();
-			await expect(dockerRunSnippet).toContainText('arcane-edge-agent');
+			await expect(dockerRunSnippet).toContainText('arcane-agent');
 			await expect(dockerRunSnippet).not.toContainText('-p 3553:3553');
 
 			await page.getByRole('button', { name: 'Done', exact: true }).click();
@@ -982,20 +984,20 @@ test.describe('Edge agents', () => {
 			const environmentRow = page.locator('tr').filter({
 				has: page.getByRole('button', { name: environmentName, exact: true })
 			});
-			await expect(environmentRow.getByText('edge://edge-agent-').first()).toBeVisible();
-			await expect(environmentRow.getByText('Edge', { exact: true })).toBeVisible();
+			await expect(environmentRow.getByText('agent://agent-').first()).toBeVisible();
+			await expect(environmentRow.getByText('Agent', { exact: true })).toBeVisible();
 
 			await page.getByRole('button', { name: environmentName, exact: true }).click();
 			if (createdEnvironmentId) {
 				await expect(page).toHaveURL(new RegExp(`/environments/${createdEnvironmentId}`));
 			}
 
-			await expect(page.getByText(/^edge:\/\/edge-agent-/).first()).toBeVisible();
-			// A new edge environment waits for its agent, and the connection view opens by default.
+			await expect(page.getByText(/^agent:\/\/agent-/).first()).toBeVisible();
+			// A new agent environment waits for its agent, and the connection view opens by default.
 			await expect(page.getByText('Connecting', { exact: true })).toBeVisible();
 			await expect(page.getByRole('heading', { name: 'Security', exact: true })).toBeVisible();
 			await expect(
-				page.getByRole('tab', { name: 'Connection & Edge', exact: true })
+				page.getByRole('tab', { name: 'Connection & Agent', exact: true })
 			).toHaveAttribute('data-state', 'active');
 			expect(agentSettingsRequests).toEqual([]);
 		});
