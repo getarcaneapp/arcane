@@ -16,6 +16,7 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/moby/moby/client"
 	"github.com/subosito/gotenv"
+	kit "go.getarcane.app/kit/pkg"
 	"go.getarcane.app/sys/crypto"
 	"go.opentelemetry.io/contrib/bridges/otelslog"
 	"go.uber.org/fx"
@@ -39,6 +40,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/variable"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/vulnerability"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
@@ -316,6 +318,15 @@ func initializeStartupState(p initializeStartupStateParams) {
 			return struct{}{}, nil
 		})
 		return err
+	})
+	startup.WarnDeprecatedImage(dockerCtx, func(ctx context.Context) (string, error) {
+		return p.Docker.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
+			self, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
+			if err != nil {
+				return "", err
+			}
+			return kit.FromPtr(self.Config).Image, nil
+		})
 	})
 	if err := p.Swarm.SyncSwarmEnabledState(dockerCtx); err != nil {
 		slog.WarnContext(appCtx, "Failed to persist swarm enabled state", "error", err)

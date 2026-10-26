@@ -6,6 +6,7 @@ import (
 	"os"
 	"runtime/debug"
 
+	"github.com/distribution/reference"
 	"go.getarcane.app/sys/cgroup"
 
 	"github.com/getarcaneapp/arcane/backend/v2/buildables"
@@ -91,6 +92,28 @@ func CleanupUnknownSettings(ctx context.Context, settingsMgr SettingsPruner) {
 func TestDockerConnection(ctx context.Context, testFunc func(context.Context) error) {
 	if err := testFunc(ctx); err != nil {
 		slog.WarnContext(ctx, "Docker connection failed during init, local Docker features may be unavailable", "error", err.Error())
+	}
+}
+
+var deprecatedImageReplacements = map[string]string{
+	"ghcr.io/getarcaneapp/arcane":          "ghcr.io/getarcaneapp/manager",
+	"ghcr.io/getarcaneapp/arcane-headless": "ghcr.io/getarcaneapp/agent",
+}
+
+func WarnDeprecatedImage(ctx context.Context, imageFunc func(context.Context) (string, error)) {
+	imageRef, err := imageFunc(ctx)
+	if err != nil {
+		slog.DebugContext(ctx, "Could not detect Arcane container image for deprecation check", "error", err)
+		return
+	}
+
+	named, err := reference.ParseNormalizedNamed(imageRef)
+	if err != nil {
+		return
+	}
+
+	if replacement, ok := deprecatedImageReplacements[named.Name()]; ok {
+		slog.WarnContext(ctx, "This Arcane image is deprecated and will be removed in v3; switch to the replacement image", "image", imageRef, "replacement", replacement)
 	}
 }
 
