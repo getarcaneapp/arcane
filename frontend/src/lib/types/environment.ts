@@ -161,7 +161,9 @@ export type VulnerabilityExposure = 'running' | 'stopped' | 'unused' | 'unknown'
 export interface VulnerabilityRiskScoreBasis {
 	score: number;
 	weight: number;
-	exploitedRunning: boolean;
+	peak: number;
+	exploitedRunningImages: number;
+	overdueExploitedRunningImages: number;
 }
 
 export interface VulnerabilityRiskTrendPoint {
