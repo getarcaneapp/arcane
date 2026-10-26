@@ -24,6 +24,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitRepositoryService } from '#lib/services/git-repository-service.js';
+	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
 	import { projectService } from '#lib/services/project-service.js';
 	import { projectWorkspaceService } from '#lib/services/project-workspace-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
@@ -229,7 +230,8 @@
 	let inputs = $derived(form.inputs);
 
 	const selectedRepository = $derived.by(() => {
-		const repository = repositories.find((item) => item.id === inputs.repositoryId.value);
+		let repository = repositories.find((item) => item.id === inputs.repositoryId.value);
+		if (!repository && !isEditMode && repositories.length === 1) repository = repositories[0];
 		if (!repository) return undefined;
 		return { value: repository.id, label: repository.name };
 	});
@@ -296,8 +298,10 @@
 	}
 
 	const selectedBranch = $derived.by(() => {
-		if (inputs.branch.value || isEditMode) return inputs.branch.value;
-		return branches.find((branch) => branch.isDefault)?.name ?? '';
+		const value = inputs.branch.value;
+		if (isEditMode || branches.length === 0 || branches.some((branch) => branch.name === value)) return value;
+		const fallback = branches.find((branch) => branch.isDefault) ?? (branches.length === 1 ? branches[0] : undefined);
+		return fallback?.name ?? value;
 	});
 
 	const selectedMode = $derived<GitOpsSyncMode>(inputs.mode.value as GitOpsSyncMode);
@@ -321,12 +325,34 @@
 		enabled: open,
 		staleTime: 0
 	}));
+	const backupSyncListOptions: SearchPaginationSortRequest = {
+		pagination: { page: 1, limit: -1 },
+		filters: { mode: 'backup' }
+	};
+
+	const backupSyncsQuery = createQuery(() => ({
+		queryKey: queryKeys.gitOpsSyncs.list(environmentId, backupSyncListOptions),
+		queryFn: () => gitOpsSyncService.getSyncs(environmentId, backupSyncListOptions),
+		enabled: open && isBackupMode && !isEditMode,
+		staleTime: 0
+	}));
+	const backedUpProjectIds = $derived(
+		new Set((backupSyncsQuery.data?.data ?? []).map((sync) => sync.projectId).filter((id): id is string => !!id))
+	);
+
 	const projects = $derived<Project[]>(projectsQuery.data?.data ?? []);
-	const selectedProjectId = $derived(inputs.projectId.value);
-	const selectedProject = $derived(projects.find((project) => project.id === selectedProjectId));
 	const newProjectOption = '__new__';
 	const projectOptions = $derived(projects.map((project) => ({ value: project.id, label: project.name })));
+	const backupProjectOptions = $derived(
+		isEditMode ? projectOptions : projectOptions.filter((option) => !backedUpProjectIds.has(option.value))
+	);
 	const deployProjectOptions = $derived([{ value: newProjectOption, label: m.create_new_project() }, ...projectOptions]);
+	const selectedProjectId = $derived.by(() => {
+		const value = inputs.projectId.value;
+		if (!isBackupMode || isEditMode || backupProjectOptions.some((option) => option.value === value)) return value;
+		return backupProjectOptions.length === 1 ? (backupProjectOptions[0]?.value ?? '') : '';
+	});
+	const selectedProject = $derived(projects.find((project) => project.id === selectedProjectId));
 
 	function slugifyInternal(value: string): string {
 		return value.trim().replace(/[\s/]+/g, '-');
@@ -451,7 +477,9 @@
 	}
 
 	function handleSubmit() {
+		if (selectedRepository) inputs.repositoryId.value = selectedRepository.value;
 		inputs.branch.value = selectedBranch;
+		if (isBackupMode) inputs.projectId.value = selectedProjectId;
 		inputs.backupPaths.value = backupPaths;
 		if (!isEditMode && isBackupMode && !inputs.backupDirectory.value.trim()) {
 			inputs.backupDirectory.value = suggestedBackupDirectory;
@@ -677,12 +705,12 @@
 							id="backupProject"
 							label={m.project()}
 							value={selectedProjectId}
-							options={projectOptions}
+							options={backupProjectOptions}
 							disabled={isEditMode}
 							error={inputs.projectId.error}
 							onValueChange={(value) => {
 								if (!value) return;
-								if (value !== inputs.projectId.value) inputs.includeEnvFile.value = false;
+								if (value !== selectedProjectId) inputs.includeEnvFile.value = false;
 								inputs.projectId.value = value;
 							}}
 						/>
