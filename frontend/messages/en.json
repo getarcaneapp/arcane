@@ -1047,7 +1047,7 @@
   "security_driver_overdue_kev_help": "Known exploited CVEs past the remediation due date set by CISA.",
   "security_driver_unavailable": "Unavailable until threat data has synced",
   "security_score_driver": "Highest-priority fix: {cve} in {image}",
-  "security_patch_priority_help": "Patch priority across scanned images, from 0 to 100. Image scores are averaged with running images counting most, and the environment stays at least High while a fixable, known-exploited vulnerability is running. It falls as findings are fixed.",
+  "security_patch_priority_help": "Patch priority across scanned images, from 0 to 100. Image scores are averaged with running images counting most, then pulled toward the riskiest image. While fixable, known-exploited vulnerabilities are running, the score stays at least High, rising with each affected image and once any is past its CISA due date. It falls as findings are fixed.",
   "security_severity_breakdown": "Findings by severity",
   "security_exposure_breakdown": "Findings by exposure",
   "security_exposure_breakdown_help": "Findings in images used by running containers carry full weight; images used only by stopped containers, or by none, count less.",

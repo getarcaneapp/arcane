@@ -54,10 +54,6 @@ mod bench 'just/bench.just'
 [group('release')]
 mod release 'just/release.just'
 
-# Types module release: check <version> [github-output], verify, publish <version> [previous_tag]
-[group('release')]
-mod types 'just/types.just'
-
 # Repository maintenance: clean
 [group('maintenance')]
 mod repo 'just/repo.just'
