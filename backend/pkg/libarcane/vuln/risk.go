@@ -13,7 +13,7 @@ import (
 
 const (
 	// ScoringVersion tags risk snapshots; trends only read the current formula.
-	ScoringVersion = 3
+	ScoringVersion = 4
 	// TopPackageInsightLimit caps the packages listed in scan insights.
 	TopPackageInsightLimit = 5
 
@@ -26,8 +26,14 @@ const (
 	// exposureWeight*Internal set how much a scanned image counts in the environment average; unused and unknown images count once.
 	exposureWeightRunningInternal = 3
 	exposureWeightStoppedInternal = 2
-	// exploitedRunningFloorInternal is the lowest environment score while a fixable known-exploited finding is running.
-	exploitedRunningFloorInternal = 70
+	// peakShareInternal is how far the environment score moves from the image average toward the riskiest image.
+	peakShareInternal = 0.6
+	// exploitedFloor*Internal set the lowest environment score while fixable known-exploited findings are running:
+	// the base for one image, a step per additional image, a bump once any is past its KEV due date, and a cap.
+	exploitedFloorBaseInternal     = 70
+	exploitedFloorPerImageInternal = 4
+	exploitedFloorOverdueInternal  = 10
+	exploitedFloorMaxInternal      = 95
 )
 
 // rankWeightsInternal is the share of each of an image's worst fixable findings that enters its score, worst first.
@@ -36,7 +42,9 @@ var rankWeightsInternal = [...]float64{0.70, 0.15, 0.05, 0.02}
 // ThreatIntel is the exploitation evidence known for one CVE.
 type ThreatIntel struct {
 	KnownExploited bool
-	EPSS           *float64
+	// KEVOverdue reports a known-exploited CVE past its CISA KEV due date.
+	KEVOverdue bool
+	EPSS       *float64
 }
 
 // CVSSScore returns the CVSS v3 score, else v2, else 0.
@@ -143,8 +151,12 @@ type RiskScore struct {
 	scores   map[string]float64
 	weights  map[string]float64
 	unscored map[string]struct{}
-	// exploitedRunning records a fixable known-exploited finding on a running (or unknown) image.
-	exploitedRunning bool
+	// peak is the highest image score recorded for an environment.
+	peak float64
+	// exploitedRunning counts members with a fixable known-exploited finding on a running (or unknown) image;
+	// overdueExploitedRunning counts those past their KEV due date. For an image they are 0 or 1.
+	exploitedRunning        int
+	overdueExploitedRunning int
 }
 
 // AddFinding scores one finding occurrence, records it when fixable, and returns its 0-100 priority.
@@ -157,13 +169,16 @@ func (r *RiskScore) AddFinding(vulnerabilityID string, fixable bool, base float6
 	status := kit.Ternary(priority <= 0, types.VulnerabilityScoreStatusUnavailable, types.VulnerabilityScoreStatusComplete)
 	r.addScore(vulnerabilityID, priority, 1, status)
 	if intel.KnownExploited && (exposure == types.ImageExposureRunning || exposure == types.ImageExposureUnknown) {
-		r.exploitedRunning = true
+		r.exploitedRunning = 1
+		if intel.KEVOverdue {
+			r.overdueExploitedRunning = 1
+		}
 	}
 	return priority
 }
 
-// AddImage records a scanned image's score for the environment, weighted by how exposed the image is.
-func (r *RiskScore) AddImage(imageID string, score float64, status types.VulnerabilityScoreStatus, exposure types.ImageExposure, exploitedRunning bool) {
+// AddImage records a scanned image's findings score for the environment, weighted by how exposed the image is.
+func (r *RiskScore) AddImage(imageID string, image *RiskScore, exposure types.ImageExposure) {
 	weight := 1.0
 	switch exposure {
 	case types.ImageExposureRunning:
@@ -172,8 +187,13 @@ func (r *RiskScore) AddImage(imageID string, score float64, status types.Vulnera
 		weight = exposureWeightStoppedInternal
 	case types.ImageExposureUnused, types.ImageExposureUnknown:
 	}
-	r.addScore(imageID, score, weight, status)
-	r.exploitedRunning = r.exploitedRunning || exploitedRunning
+	score, priority := image.ImageScore()
+	r.addScore(imageID, score, weight, priority.ScoreStatus)
+	if priority.ScoreStatus != types.VulnerabilityScoreStatusUnavailable {
+		r.peak = max(r.peak, score)
+	}
+	r.exploitedRunning += image.exploitedRunning
+	r.overdueExploitedRunning += image.overdueExploitedRunning
 }
 
 // addScore records a member's score; the highest score per ID wins and unavailable members stay out of the total.
@@ -199,11 +219,6 @@ func (r *RiskScore) Scored() int {
 	return len(r.scores)
 }
 
-// ExploitedRunning reports whether a fixable known-exploited finding was recorded on a running image.
-func (r *RiskScore) ExploitedRunning() bool {
-	return r.exploitedRunning
-}
-
 // ImageScore returns an image's unrounded 0-100 score and the rounded API score.
 // Modeled on the RS³ security risk: the worst findings count with shrinking weights and the fixable count adds a little on top.
 func (r *RiskScore) ImageScore() (float64, types.VulnerabilityPatchPriority) {
@@ -220,16 +235,22 @@ func (r *RiskScore) ImageScore() (float64, types.VulnerabilityPatchPriority) {
 }
 
 // EnvironmentScore returns the environment's unrounded 0-100 score and the rounded API score.
-// Modeled on the overall RS³: an exposure-weighted average of image scores that stays in the High band while a fixable known-exploited finding is running.
+// Modeled on the overall RS³: the exposure-weighted image average pulled toward the riskiest image, held at a
+// known-exploited floor that rises with each running image carrying a fixable KEV and once any is overdue.
 func (r *RiskScore) EnvironmentScore() (float64, types.VulnerabilityPatchPriority) {
 	basis := r.Basis()
-	total := basis.Score
-	if basis.ExploitedRunning {
-		total = max(total, exploitedRunningFloorInternal)
+	total := basis.Score + peakShareInternal*max(0, basis.Peak-basis.Score)
+	if basis.ExploitedRunningImages > 0 {
+		floor := exploitedFloorBaseInternal + exploitedFloorPerImageInternal*float64(basis.ExploitedRunningImages-1)
+		if basis.OverdueExploitedRunningImages > 0 {
+			floor += exploitedFloorOverdueInternal
+		}
+		total = max(total, min(floor, exploitedFloorMaxInternal))
 	}
 	return total, r.result(total)
 }
 
+// Basis returns the mergeable data behind EnvironmentScore.
 func (r *RiskScore) Basis() types.RiskScoreBasis {
 	sum, weight := 0.0, 0.0
 	for id, score := range r.scores {
@@ -241,17 +262,22 @@ func (r *RiskScore) Basis() types.RiskScoreBasis {
 		average = sum / weight
 	}
 	return types.RiskScoreBasis{
-		Score:            average,
-		Weight:           weight,
-		ExploitedRunning: r.exploitedRunning,
+		Score:                         average,
+		Weight:                        weight,
+		Peak:                          r.peak,
+		ExploitedRunningImages:        r.exploitedRunning,
+		OverdueExploitedRunningImages: r.overdueExploitedRunning,
 	}
 }
 
+// AddEnvironment merges another environment's basis into this score.
 func (r *RiskScore) AddEnvironment(environmentID string, basis types.RiskScoreBasis) {
 	if basis.Weight > 0 {
 		r.addScore(environmentID, basis.Score, basis.Weight, types.VulnerabilityScoreStatusComplete)
 	}
-	r.exploitedRunning = r.exploitedRunning || basis.ExploitedRunning
+	r.peak = max(r.peak, basis.Peak)
+	r.exploitedRunning += basis.ExploitedRunningImages
+	r.overdueExploitedRunning += basis.OverdueExploitedRunningImages
 }
 
 // result rounds a score into the API shape; only unscorable members make it unavailable.
