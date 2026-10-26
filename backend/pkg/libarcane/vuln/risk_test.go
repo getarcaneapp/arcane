@@ -99,6 +99,53 @@ func TestBuildScanInsights_VolumeSaturatesWithDiminishingReturns(t *testing.T) {
 	require.Len(t, many.TopPackages, TopPackageInsightLimit)
 }
 
+func TestRiskScore_EnvironmentScore(t *testing.T) {
+	image := func(cvss float64, intel ThreatIntel, exposure types.ImageExposure) *RiskScore {
+		var findings RiskScore
+		if cvss > 0 {
+			findings.AddFinding("CVE-1", true, cvss, intel, exposure)
+		}
+		return &findings
+	}
+	kev := ThreatIntel{KnownExploited: true}
+	overdue := ThreatIntel{KnownExploited: true, KEVOverdue: true}
+	type scanned struct {
+		cvss     float64
+		intel    ThreatIntel
+		exposure types.ImageExposure
+		count    int
+	}
+	running, stopped := types.ImageExposureRunning, types.ImageExposureStopped
+	clean := scanned{exposure: running, count: 20}
+	tests := []struct {
+		name   string
+		images []scanned
+		want   int
+	}{
+		// One critical (image score ~48) among nine clean images averages ~5; the riskiest image pulls it to 31.
+		{name: "riskiest image outweighs clean ones", images: []scanned{{cvss: 9.8, exposure: running, count: 1}, {exposure: running, count: 9}}, want: 31},
+		{name: "one running KEV holds the High floor", images: []scanned{{cvss: 5, intel: kev, exposure: running, count: 1}, clean}, want: 70},
+		{name: "each running KEV image raises the floor", images: []scanned{{cvss: 5, intel: kev, exposure: running, count: 3}, clean}, want: 78},
+		{name: "an overdue KEV bumps the floor", images: []scanned{{cvss: 5, intel: kev, exposure: running, count: 2}, {cvss: 5, intel: overdue, exposure: running, count: 1}, clean}, want: 88},
+		{name: "the floor is capped", images: []scanned{{cvss: 5, intel: overdue, exposure: running, count: 10}, clean}, want: 95},
+		{name: "a stopped KEV image does not set the floor", images: []scanned{{cvss: 5, intel: overdue, exposure: stopped, count: 1}, clean}, want: 34},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var environment RiskScore
+			n := 0
+			for _, img := range tt.images {
+				for range img.count {
+					environment.AddImage(fmt.Sprintf("sha256:%d", n), image(img.cvss, img.intel, img.exposure), img.exposure)
+					n++
+				}
+			}
+			_, priority := environment.EnvironmentScore()
+			require.Equal(t, tt.want, priority.RiskScore)
+		})
+	}
+}
+
 func TestBuildScanInsights_NoFixableFindings(t *testing.T) {
 	vulns := []types.Vulnerability{
 		{VulnerabilityID: "CVE-KEV", PkgName: "openssl", Severity: types.VulnerabilitySeverityCritical, CVSS: &types.CVSSInfo{V3Score: 9.8}},
