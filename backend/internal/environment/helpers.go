@@ -9,9 +9,9 @@ import (
 	"go.getarcane.app/kit/pkg"
 )
 
-// edgeTokenCache maps agent tokens to environment IDs; the reverse index drops
+// agentTokenCache maps agent tokens to environment IDs; the reverse index drops
 // an environment's entry when its token rotates.
-type edgeTokenCache struct {
+type agentTokenCache struct {
 	mu      sync.RWMutex
 	byToken *hot.HotCache[string, string]
 	byEnvID map[string]string
@@ -59,7 +59,7 @@ type runtimeWatchers struct {
 }
 
 // sync replaces an environment's cached token, dropping it when the new token is blank.
-func (c *edgeTokenCache) sync(envID, token string) {
+func (c *agentTokenCache) sync(envID, token string) {
 	if envID == "" {
 		return
 	}

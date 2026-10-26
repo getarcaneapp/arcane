@@ -16,7 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 )
 
 func TestSettingsHandlerRuntimeSettings(t *testing.T) {
@@ -36,22 +36,22 @@ func TestSettingsHandlerRuntimeSettings(t *testing.T) {
 
 	authenticatedRuntime := handler.runtimeSettings(true)
 	require.Equal(t, "custom-backups", authenticatedRuntime.BackupVolumeName)
-	require.False(t, authenticatedRuntime.EdgeMTLSManagerCAAvailable)
+	require.False(t, authenticatedRuntime.AgentMTLSManagerCAAvailable)
 }
 
-func TestSettingsHandlerRuntimeSettingsDoesNotGenerateEdgeMTLSCA(t *testing.T) {
+func TestSettingsHandlerRuntimeSettingsDoesNotGenerateAgentMTLSCA(t *testing.T) {
 	settingsService, err := newSettingsServiceForTest(t, t.Context(), setupSettingsTestDB(t))
 	require.NoError(t, err)
 	assetsDir := t.TempDir()
 	handler := &SettingsHandler{
 		settingsService: settingsService,
 		cfg: &config.Config{
-			EdgeMTLSMode:      edge.EdgeMTLSModeRequired,
-			EdgeMTLSAssetsDir: assetsDir,
+			AgentMTLSMode:      agent.MTLSModeRequired,
+			AgentMTLSAssetsDir: assetsDir,
 		},
 	}
 
-	require.False(t, handler.runtimeSettings(true).EdgeMTLSManagerCAAvailable)
+	require.False(t, handler.runtimeSettings(true).AgentMTLSManagerCAAvailable)
 	require.NoFileExists(t, filepath.Join(assetsDir, "ca.crt"))
 	require.NoFileExists(t, filepath.Join(assetsDir, "ca.key"))
 }

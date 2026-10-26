@@ -179,7 +179,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 		Method:      "GET",
 		Path:        "/environments/{id}/deployment/mtls/bundle",
 		Summary:     "Download environment mTLS bundle",
-		Description: "Download the generated mTLS client certificate bundle for an edge environment",
+		Description: "Download the generated mTLS client certificate bundle for an agent environment",
 		Tags:        []string{"Environments"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermEnvironmentsPair, h.DownloadEnvironmentMTLSBundle)
@@ -189,7 +189,7 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 		Method:      "GET",
 		Path:        "/environments/{id}/deployment/mtls/{fileName}",
 		Summary:     "Download environment mTLS asset",
-		Description: "Download an individual generated mTLS client certificate asset for an edge environment",
+		Description: "Download an individual generated mTLS client certificate asset for an agent environment",
 		Tags:        []string{"Environments"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermEnvironmentsPair, h.DownloadEnvironmentMTLSFile)
@@ -206,13 +206,13 @@ func RegisterEnvironments(api huma.API, h *EnvironmentHandler) {
 	}, authz.PermEnvironmentsRead, h.GetEnvironmentVersion)
 
 	huma.Register(api, huma.Operation{
-		OperationID: "downloadEdgeMTLSCA",
+		OperationID: "downloadAgentMTLSCA",
 		Method:      "GET",
-		Path:        "/edge/mtls/ca",
-		Summary:     "Download Arcane-generated edge mTLS CA",
-		Description: "Download the Arcane-managed certificate authority used for generated edge mTLS client certificates",
+		Path:        "/agent/mtls/ca",
+		Summary:     "Download Arcane-generated agent mTLS CA",
+		Description: "Download the Arcane-managed certificate authority used for generated agent mTLS client certificates",
 		Tags:        []string{"Environments"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 		Middlewares: middleware.RequirePermission(api, authz.PermEnvironmentsPair),
-	}, h.DownloadEdgeMTLSCA)
+	}, h.DownloadAgentMTLSCA)
 }

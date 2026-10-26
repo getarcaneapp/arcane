@@ -17,14 +17,13 @@ import (
 	"path"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/labstack/echo/v5"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/ws"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
@@ -64,7 +63,7 @@ type EnvironmentMiddleware struct {
 	paramName     string
 	resolver      EnvResolver
 	authValidator AuthValidator
-	registry      *edge.TunnelRegistry
+	registry      *agent.TunnelRegistry
 	matcher       *authz.PermissionMatcher
 	// checkOrigin is the local WebSocket Origin validator, so proxied upgrades cannot ride a cross-origin session.
 	checkOrigin func(*http.Request) bool
@@ -77,11 +76,11 @@ func NewEnvProxyMiddlewareWithParamAndRegistry(
 	resolver EnvResolver,
 	authValidator AuthValidator,
 	matcher *authz.PermissionMatcher,
-	registry *edge.TunnelRegistry,
+	registry *agent.TunnelRegistry,
 	checkOrigin func(*http.Request) bool,
 ) echo.MiddlewareFunc {
 	if registry == nil {
-		registry = edge.NewTunnelRegistry()
+		registry = agent.NewTunnelRegistry()
 	}
 
 	m := &EnvironmentMiddleware{
@@ -176,17 +175,16 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 
 	tunnel, unavailable := m.activeTunnel(ctx, envID)
 	if unavailable {
-		return writeProxyError(c, http.StatusServiceUnavailable, "Edge agent is not connected")
+		return writeProxyError(c, http.StatusServiceUnavailable, "Agent is not connected")
 	}
 
-	slog.DebugContext(ctx, "Routing request through edge tunnel", "environmentId", envID, "path", req.URL.Path)
-	client := tunnel.HTTPClient()
-	target := edge.MuxAgentBaseURL + path.Join(apiEnvironmentsPrefix, m.localID) + suffix
+	slog.DebugContext(ctx, "Routing request through agent tunnel", "environmentId", envID, "path", req.URL.Path)
+	target := agent.MuxAgentBaseURL + path.Join(apiEnvironmentsPrefix, m.localID) + suffix
 	if req.URL.RawQuery != "" {
 		target += "?" + req.URL.RawQuery
 	}
 	if httpx.IsWebSocketUpgradeRequest(req) {
-		if proxyErr := ws.ProxyHTTP(c.Response(), req, edge.HTTPToWebSocketURL(target), edge.BuildWebSocketHeaders(c, accessToken), m.checkOrigin, client); proxyErr != nil {
+		if proxyErr := ws.ProxyHTTP(c.Response(), req, agent.HTTPToWebSocketURL(target), agent.BuildWebSocketHeaders(c, accessToken), m.checkOrigin, tunnel.HTTPClient); proxyErr != nil {
 			slog.ErrorContext(ctx, "websocket proxy failed", "err", proxyErr)
 		}
 		return nil
@@ -220,10 +218,10 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		ContentLength: contentLength,
 	}).WithContext(ctx)
 
-	edge.CopyRequestHeaders(req.Header, proxyReq.Header)
-	edge.SetAuthHeader(proxyReq, c)
-	edge.SetAgentToken(proxyReq, accessToken)
-	edge.SetForwardedHeaders(proxyReq, c.RealIP(), req.Host)
+	agent.CopyRequestHeaders(req.Header, proxyReq.Header)
+	agent.SetAuthHeader(proxyReq, c)
+	agent.SetAgentToken(proxyReq, accessToken)
+	agent.SetForwardedHeaders(proxyReq, c.RealIP(), req.Host)
 
 	if requestBody != nil {
 		if fullDuplexErr := http.NewResponseController(c.Response()).EnableFullDuplex(); fullDuplexErr != nil {
@@ -231,7 +229,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		}
 	}
 
-	resp, err := client.Do(proxyReq)
+	resp, err := tunnel.HTTPClient.Do(proxyReq)
 	if err != nil {
 		netErr, isNetErr := errors.AsType[net.Error](err)
 		return writeProxyError(c, kit.Ternary(isNetErr && netErr.Timeout(), http.StatusGatewayTimeout, http.StatusBadGateway), "Proxy request failed: "+err.Error())
@@ -244,10 +242,10 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		return writeProxyError(c, http.StatusBadGateway, "Remote environment rejected the manager's credentials")
 	}
 	w := c.Response()
-	edge.CopyResponseHeaders(resp.Header, w.Header(), edge.BuildHopByHopHeaders(resp.Header))
+	agent.CopyResponseHeaders(resp.Header, w.Header(), agent.BuildHopByHopHeaders(resp.Header))
 	w.WriteHeader(resp.StatusCode)
 	if req.Method != http.MethodHead {
-		if copyErr := edge.CopyBodyWithFlush(w, resp.Body); copyErr != nil {
+		if copyErr := agent.CopyBodyWithFlush(w, resp.Body); copyErr != nil {
 			slog.WarnContext(ctx, "Proxied response ended early", "environmentId", envID, "error", copyErr)
 			// Headers are already sent, so abort the connection instead of ending a truncated response as complete.
 			panic(http.ErrAbortHandler)
@@ -256,24 +254,13 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	return nil
 }
 
-// activeTunnel returns the environment's live tunnel, if any. Edge environments refresh poll demand on every
-// request and wait briefly only for an agent with a fresh poll check-in; unavailable reports an offline edge agent.
-func (m *EnvironmentMiddleware) activeTunnel(ctx context.Context, envID string) (tunnel *edge.AgentTunnel, unavailable bool) {
-	edge.TouchTunnelDemand(envID, edge.DefaultTunnelDemandTTL)
+// activeTunnel returns the environment's live tunnel, if any; unavailable reports an offline agent.
+func (m *EnvironmentMiddleware) activeTunnel(ctx context.Context, envID string) (tunnel *agent.AgentTunnel, unavailable bool) {
 	if active, ok := m.registry.Active(envID).Get(); ok {
 		return active, false
 	}
-	if edge.GetPollRuntimeRegistry().Get(envID, time.Now()).IsAbsent() {
-		slog.WarnContext(ctx, "No active edge tunnel or recent poll check-in for environment", "environmentId", envID)
-		return nil, true
-	}
-	tunnel, ok := m.registry.WaitForActive(ctx, envID, edge.DefaultTunnelAcquireTimeout()).Get()
-	if !ok {
-		slog.WarnContext(ctx, "No active edge tunnel for environment", "environmentId", envID)
-		return nil, true
-	}
-	slog.InfoContext(ctx, "Recovered edge tunnel during request", "environmentId", envID)
-	return tunnel, false
+	slog.WarnContext(ctx, "No active agent tunnel for environment", "environmentId", envID)
+	return nil, true
 }
 
 // proxyPermissionStatus returns http.StatusOK when the caller may perform the proxied request, mirroring local

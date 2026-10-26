@@ -134,7 +134,7 @@ func runRestore(cmd *cobra.Command, _ []string) error {
 	manifest.Environment = schema.ManifestEnvironment(manifest)
 	if config.DirectAgentRequested(func(name string) string {
 		return manifest.Environment[name]
-	}) && manifest.Environment["ARCANE_EDGE_AGENT"] != "true" {
+	}) && manifest.Environment["ARCANE_AGENT"] != "true" {
 		restart()
 		return fmt.Errorf("refusing to recover Arcane container: %w", config.ErrDirectAgentRemoved)
 	}
@@ -172,7 +172,7 @@ func finalizeRestoredBackup(ctx context.Context, environment map[string]string, 
 	encryptionKey, err := settings.ResolveEncryptionKey(ctx, &database.DB{DB: db}, &config.Config{
 		EncryptionKey: environment["ARCANE_ENCRYPTION_KEY"],
 		Environment:   config.AppEnvironment(environment["ARCANE_ENVIRONMENT"]),
-		EdgeAgent:     environment["ARCANE_EDGE_AGENT"] == "true",
+		AgentEnabled:  environment["ARCANE_AGENT"] == "true",
 	})
 	if err != nil {
 		return err
@@ -180,7 +180,7 @@ func finalizeRestoredBackup(ctx context.Context, environment map[string]string, 
 	crypto.InitEncryption(&crypto.Config{
 		EncryptionKey: encryptionKey,
 		Environment:   environment["ARCANE_ENVIRONMENT"],
-		AgentMode:     environment["ARCANE_EDGE_AGENT"] == "true",
+		AgentMode:     environment["ARCANE_AGENT"] == "true",
 	})
 	if finalizeRestoredRunErr := finalizeRestoredRun(db, manifestBackupID, request); finalizeRestoredRunErr != nil {
 		return finalizeRestoredRunErr

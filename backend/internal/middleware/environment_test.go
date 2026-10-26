@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
@@ -34,7 +34,7 @@ func newTestEnvironmentMiddleware() *EnvironmentMiddleware {
 			_ = c
 			return authz.SudoPermissionSet(), nil, true
 		},
-		registry: edge.NewTunnelRegistry(),
+		registry: agent.NewTunnelRegistry(),
 	}
 }
 
@@ -48,7 +48,7 @@ func attachMiddleware(router *echo.Echo, mw *EnvironmentMiddleware) *echo.Group 
 	return api
 }
 
-func TestEnvironmentMiddleware_ReturnsServiceUnavailableForEdgeResourcesWithoutTunnel(t *testing.T) {
+func TestEnvironmentMiddleware_ReturnsServiceUnavailableForAgentResourcesWithoutTunnel(t *testing.T) {
 	middleware := newTestEnvironmentMiddleware()
 	router := echo.New()
 	api := attachMiddleware(router, middleware)
@@ -59,13 +59,13 @@ func TestEnvironmentMiddleware_ReturnsServiceUnavailableForEdgeResourcesWithoutT
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/containers", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-agent/containers", http.NoBody)
 	recorder := httptest.NewRecorder()
 
 	router.ServeHTTP(recorder, req)
 
 	assert.Equal(t, http.StatusServiceUnavailable, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), "Edge agent is not connected")
+	assert.Contains(t, recorder.Body.String(), "Agent is not connected")
 	assert.False(t, localHandlerHit)
 }
 
@@ -80,17 +80,17 @@ func TestEnvironmentMiddleware_ProxiesDashboardResourcesForRemoteEnvironments(t 
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/dashboard", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-agent/dashboard", http.NoBody)
 	recorder := httptest.NewRecorder()
 
 	router.ServeHTTP(recorder, req)
 
 	assert.Equal(t, http.StatusServiceUnavailable, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), "Edge agent is not connected")
+	assert.Contains(t, recorder.Body.String(), "Agent is not connected")
 	assert.False(t, localHandlerHit)
 }
 
-func TestEnvironmentMiddleware_KeepsEdgeManagementEndpointsLocal(t *testing.T) {
+func TestEnvironmentMiddleware_KeepsAgentManagementEndpointsLocal(t *testing.T) {
 	middleware := newTestEnvironmentMiddleware()
 	router := echo.New()
 	api := attachMiddleware(router, middleware)
@@ -101,7 +101,7 @@ func TestEnvironmentMiddleware_KeepsEdgeManagementEndpointsLocal(t *testing.T) {
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/settings", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-agent/settings", http.NoBody)
 	recorder := httptest.NewRecorder()
 
 	router.ServeHTTP(recorder, req)
@@ -111,7 +111,7 @@ func TestEnvironmentMiddleware_KeepsEdgeManagementEndpointsLocal(t *testing.T) {
 	assert.True(t, localHandlerHit)
 }
 
-func TestEnvironmentMiddleware_KeepsEdgeMTLSDownloadEndpointsLocal(t *testing.T) {
+func TestEnvironmentMiddleware_KeepsAgentMTLSDownloadEndpointsLocal(t *testing.T) {
 	middleware := newTestEnvironmentMiddleware()
 	router := echo.New()
 	api := attachMiddleware(router, middleware)
@@ -122,7 +122,7 @@ func TestEnvironmentMiddleware_KeepsEdgeMTLSDownloadEndpointsLocal(t *testing.T)
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/deployment/mtls/bundle", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-agent/deployment/mtls/bundle", http.NoBody)
 	recorder := httptest.NewRecorder()
 
 	router.ServeHTTP(recorder, req)
@@ -143,7 +143,7 @@ func TestEnvironmentMiddleware_KeepsNotificationEndpointsLocal(t *testing.T) {
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/notifications/settings", http.NoBody)
+	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-agent/notifications/settings", http.NoBody)
 	recorder := httptest.NewRecorder()
 
 	router.ServeHTTP(recorder, req)
@@ -164,13 +164,13 @@ func TestEnvironmentMiddleware_KeepsWebhookEndpointsLocal(t *testing.T) {
 			name:   "list webhooks",
 			method: http.MethodGet,
 			route:  "/environments/:id/webhooks",
-			path:   "/api/environments/env-edge/webhooks",
+			path:   "/api/environments/env-agent/webhooks",
 		},
 		{
 			name:   "delete webhook",
 			method: http.MethodDelete,
 			route:  "/environments/:id/webhooks/:webhookId",
-			path:   "/api/environments/env-edge/webhooks/wh-1",
+			path:   "/api/environments/env-agent/webhooks/wh-1",
 		},
 	}
 
@@ -209,7 +209,7 @@ func TestEnvironmentMiddleware_KeepsActivityEndpointsLocal(t *testing.T) {
 			name:   "list activities",
 			method: http.MethodGet,
 			route:  "/environments/:id/activities",
-			path:   "/api/environments/env-edge/activities?limit=50",
+			path:   "/api/environments/env-agent/activities?limit=50",
 		},
 	}
 
@@ -256,7 +256,7 @@ func TestEnvironmentMiddleware_LocalEnvironmentSkipsProxyPermissionCheck(t *test
 			_ = c
 			return authz.NewPermissionSet(), nil, true
 		},
-		registry: edge.NewTunnelRegistry(),
+		registry: agent.NewTunnelRegistry(),
 	}
 
 	router := echo.New()
@@ -287,7 +287,7 @@ func TestEnvironmentMiddleware_KeepsNodeAgentDeploymentCreationLocal(t *testing.
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/environments/env-edge/swarm/nodes/node-1/agent/deployment", http.NoBody)
+	req := httptest.NewRequest(http.MethodPost, "/api/environments/env-agent/swarm/nodes/node-1/agent/deployment", http.NoBody)
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, req)
 
@@ -315,20 +315,23 @@ func TestEnvironmentMiddleware_ForwardsResolvedIconCatalogHeaderOnly(t *testing.
 			var forwarded string
 			var forwardedInitiator string
 			var forwardedName string
-			registry := edge.NewTunnelRegistry()
+			registry := agent.NewTunnelRegistry()
 			manager := echo.New()
-			manager.GET("/api/tunnel/connect", edge.NewTunnelServerWithRegistry(registry, func(context.Context, string) (string, error) {
-				return "env-remote", nil
-			}, nil).HandleConnect)
+			manager.GET("/api/tunnel/connect", agent.NewTunnelServer(agent.TunnelServerOptions{
+				Registry: registry,
+				Resolver: func(context.Context, string) (string, error) {
+					return "env-remote", nil
+				},
+			}).HandleConnect)
 			managerServer := httptest.NewServer(manager)
 			defer managerServer.Close()
 			agentCtx, cancelAgent := context.WithCancel(t.Context())
 			defer cancelAgent()
-			go edge.NewTunnelClient(&edge.Config{
-				EdgeAgent:     true,
-				EdgeTransport: edge.EdgeTransportWebSocket,
-				ManagerApiUrl: managerServer.URL,
-				AgentToken:    "agent-token",
+			go agent.NewTunnelClient(&agent.Config{
+				AgentEnabled:   true,
+				AgentTransport: agent.TransportWebSocket,
+				ManagerApiUrl:  managerServer.URL,
+				AgentToken:     "agent-token",
 			}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				forwarded = r.Header.Get(HeaderIconCatalog)
 				forwardedInitiator = r.Header.Get(HeaderUpdateInitiatorID)
@@ -628,7 +631,7 @@ func TestEnvironmentMiddleware_ServesMultiEnvironmentScopeLocally(t *testing.T) 
 	router.Pre(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			req := c.Request()
-			c.SetRequest(req.WithContext(httpx.WithEnvironmentScope(req.Context(), &httpx.EnvironmentScope{IDs: []string{"env-edge", "0"}})))
+			c.SetRequest(req.WithContext(httpx.WithEnvironmentScope(req.Context(), &httpx.EnvironmentScope{IDs: []string{"env-agent", "0"}})))
 			return next(c)
 		}
 	})
@@ -641,7 +644,7 @@ func TestEnvironmentMiddleware_ServesMultiEnvironmentScopeLocally(t *testing.T) 
 	})
 
 	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/environments/env-edge/containers", http.NoBody))
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/environments/env-agent/containers", http.NoBody))
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.True(t, localHandlerHit)

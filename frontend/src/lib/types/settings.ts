@@ -157,7 +157,7 @@ export interface SettingsRuntime {
 	frontendMetricsEnabled?: boolean;
 	frontendLogsEnabled?: boolean;
 	backupVolumeName?: string;
-	edgeMTLSManagerCAAvailable?: boolean;
+	agentMTLSManagerCAAvailable?: boolean;
 	depotConfigured?: boolean;
 }
 

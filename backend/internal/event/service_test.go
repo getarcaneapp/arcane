@@ -192,7 +192,7 @@ func TestEventService_LogErrorEvent_DoesNotMutateInputMetadata(t *testing.T) {
 	require.Equal(t, "pull failed", saved.Metadata["error"])
 }
 
-func TestEventService_CreateEvent_ForwardsToManagerAPIOnEdgeAgent(t *testing.T) {
+func TestEventService_CreateEvent_ForwardsToManagerAPIOnAgent(t *testing.T) {
 	ctx := t.Context()
 	db := setupEventServiceTestDB(t)
 
@@ -224,7 +224,7 @@ func TestEventService_CreateEvent_ForwardsToManagerAPIOnEdgeAgent(t *testing.T) 
 	defer server.Close()
 
 	cfg := &config.Config{
-		EdgeAgent:     true,
+		AgentEnabled:  true,
 		AgentToken:    "test-agent-token",
 		ManagerApiUrl: server.URL,
 	}
@@ -425,7 +425,7 @@ func TestDaemonEventForwardingPreservesMetadata(t *testing.T) {
 	}))
 	defer server.Close()
 	db := setupEventServiceTestDB(t)
-	svc := NewEventService(db, &config.Config{EdgeAgent: true, AgentToken: "agent-token", ManagerApiUrl: server.URL}, server.Client())
+	svc := NewEventService(db, &config.Config{AgentEnabled: true, AgentToken: "agent-token", ManagerApiUrl: server.URL}, server.Client())
 	message := events.Message{
 		Type:     events.ContainerEventType,
 		Action:   events.ActionDie,

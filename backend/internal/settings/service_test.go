@@ -780,7 +780,7 @@ func TestResolveEncryptionKey(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, k1)
 
-	k2, err := ResolveEncryptionKey(ctx, db, &config.Config{EdgeAgent: true, Environment: config.AppEnvironmentProduction})
+	k2, err := ResolveEncryptionKey(ctx, db, &config.Config{AgentEnabled: true, Environment: config.AppEnvironmentProduction})
 	require.NoError(t, err)
 	require.Equal(t, k1, k2, "encryption key should be stable between calls")
 

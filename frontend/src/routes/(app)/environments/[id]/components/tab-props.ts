@@ -6,7 +6,7 @@ import type { EnvironmentFormValues } from './environment-form-schema';
 
 export type EnvironmentFormInputs = FormInputs<EnvironmentFormValues>;
 
-export interface ConnectionEdgeTabProps {
+export interface ConnectionAgentTabProps {
 	environment: Environment;
 	currentStatus: EnvironmentStatus;
 	showMTLSDownloads: boolean;

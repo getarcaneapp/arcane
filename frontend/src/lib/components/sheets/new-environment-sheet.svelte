@@ -10,7 +10,7 @@
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { EdgeConnectionIcon, DownloadIcon } from '#lib/icons/index.js';
+	import { AgentConnectionIcon, DownloadIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { isSessionCancelledError, withSessionSignal } from '#lib/services/api-service.js';
@@ -93,22 +93,22 @@
 	}));
 	const isSubmittingNewAgent = $derived(createEnvironmentMutation.isPending);
 
-	let edgeMTLSEnabled = $state(false);
+	let agentMTLSEnabled = $state(false);
 
-	const edgeFormSchema = z.object({
+	const agentFormSchema = z.object({
 		name: z.string().min(1, m.environments_name_required()).max(25, m.environments_name_too_long())
 	});
 
-	const edgeForm = createForm<typeof edgeFormSchema>(edgeFormSchema, {
+	const agentForm = createForm<typeof agentFormSchema>(agentFormSchema, {
 		name: ''
 	});
-	let edgeInputs = $derived(edgeForm.inputs);
+	let agentInputs = $derived(agentForm.inputs);
 
-	function handleEdgeSubmit() {
-		const data = edgeForm.validate();
+	function handleAgentSubmit() {
+		const data = agentForm.validate();
 		if (!data) return;
 
-		createEnvironmentMutation.mutate({ dto: { name: data.name }, useMTLS: edgeMTLSEnabled });
+		createEnvironmentMutation.mutate({ dto: { name: data.name }, useMTLS: agentMTLSEnabled });
 	}
 
 	function handleDone() {
@@ -171,8 +171,8 @@
 			{#if createdEnvironment}
 				<div class="space-y-4">
 					<div class="flex items-center gap-2 rounded-lg bg-primary/10 p-3 text-sm text-primary">
-						<EdgeConnectionIcon class="size-5" />
-						<span>{m.env_edge_agent_desc()}</span>
+						<AgentConnectionIcon class="size-5" />
+						<span>{m.env_agent_desc()}</span>
 					</div>
 
 					<div class="space-y-2">
@@ -236,17 +236,17 @@
 				</div>
 			{:else}
 				<p class="text-sm text-muted-foreground">
-					{m.environments_edge_desc()}
+					{m.environments_agent_desc()}
 				</p>
-				<form onsubmit={preventDefault(handleEdgeSubmit)} class="space-y-4">
-					<FormInput label={m.common_name()} placeholder={m.env_remote_docker_host()} bind:input={edgeInputs.name} />
+				<form onsubmit={preventDefault(handleAgentSubmit)} class="space-y-4">
+					<FormInput label={m.common_name()} placeholder={m.env_remote_docker_host()} bind:input={agentInputs.name} />
 
 					<LabeledSwitch
-						id="new-edge-agent-mtls"
-						label={m.environments_edge_mtls_enable()}
-						description={m.environments_edge_mtls_desc()}
-						checked={edgeMTLSEnabled}
-						onCheckedChange={(checked) => (edgeMTLSEnabled = checked)}
+						id="new-agent-mtls"
+						label={m.environments_agent_mtls_enable()}
+						description={m.environments_agent_mtls_desc()}
+						checked={agentMTLSEnabled}
+						onCheckedChange={(checked) => (agentMTLSEnabled = checked)}
 						disabled={isSubmittingNewAgent}
 					/>
 

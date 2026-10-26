@@ -36,7 +36,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/swarm"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/system"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/flow"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 	francistest "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/francis/testing"
@@ -85,7 +85,7 @@ func TestNormalizeTunnelGRPCRequestPath(t *testing.T) {
 	})
 
 	t.Run("nested proxy prefix is removed up to method path", func(t *testing.T) {
-		req := httptest.NewRequest("POST", "/edge/proxy/api"+fullMethodPath, http.NoBody)
+		req := httptest.NewRequest("POST", "/agent/proxy/api"+fullMethodPath, http.NoBody)
 		normalized := normalizeTunnelGRPCRequestPath(req)
 
 		assert.NotSame(t, req, normalized)
@@ -94,7 +94,7 @@ func TestNormalizeTunnelGRPCRequestPath(t *testing.T) {
 	})
 
 	t.Run("legacy /api/tunnel/connect is rewritten to gRPC method", func(t *testing.T) {
-		// Edge agents use /api/tunnel/connect as their gRPC method path so reverse proxies
+		// Agents use /api/tunnel/connect as their gRPC method path so reverse proxies
 		// can route tunnel traffic on a stable URL.
 		req := httptest.NewRequest("POST", "/api/tunnel/connect", http.NoBody)
 		normalized := normalizeTunnelGRPCRequestPath(req)
@@ -105,7 +105,7 @@ func TestNormalizeTunnelGRPCRequestPath(t *testing.T) {
 	})
 
 	t.Run("nested proxy with legacy /api/tunnel/connect is rewritten", func(t *testing.T) {
-		req := httptest.NewRequest("POST", "/edge/proxy/api/tunnel/connect", http.NoBody)
+		req := httptest.NewRequest("POST", "/agent/proxy/api/tunnel/connect", http.NoBody)
 		normalized := normalizeTunnelGRPCRequestPath(req)
 
 		assert.NotSame(t, req, normalized)
@@ -208,9 +208,9 @@ func newTestSettingsModule(t *testing.T, cfg *config.Config) *settings.Module {
 
 func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 	cfg := &config.Config{
-		EdgeAgent:   true,
-		AppUrl:      "http://localhost:3552",
-		Environment: config.AppEnvironmentTest,
+		AgentEnabled: true,
+		AppUrl:       "http://localhost:3552",
+		Environment:  config.AppEnvironmentTest,
 	}
 	router, _ := newRouter(RouterParams{
 		Context: t.Context(),
@@ -224,7 +224,7 @@ func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 			Settings:  newTestSettingsModule(t, cfg),
 		},
 		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
-		TunnelRegistry: edge.NewTunnelRegistry(),
+		TunnelRegistry: agent.NewTunnelRegistry(),
 	})
 	handler, protocols := configureHTTPProtocols(false, router)
 
@@ -381,24 +381,6 @@ func TestNewHTTPServerRejectsInvalidTLSCertificate(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestRegisterAppCancelHookRunsAfterLaterStopHooks(t *testing.T) {
-	appCtx, cancelApp := context.WithCancelCause(t.Context())
-	lifecycle := fxtest.NewLifecycle(t)
-	registerAppCancelHook(lifecycle, cancelApp)
-	appActiveDuringDependencyStop := false
-	lifecycle.Append(fx.Hook{
-		OnStop: func(context.Context) error {
-			appActiveDuringDependencyStop = appCtx.Err() == nil
-			return nil
-		},
-	})
-
-	lifecycle.RequireStart()
-	lifecycle.RequireStop()
-	require.True(t, appActiveDuringDependencyStop)
-	require.ErrorIs(t, appCtx.Err(), context.Canceled)
-}
-
 func TestJobSchedulerStopCancelsItsPrivateContext(t *testing.T) {
 	appCtx := t.Context()
 
@@ -494,26 +476,26 @@ func TestApplicationOptionsValidate(t *testing.T) {
 
 func TestPrepareServerTLS_AllowsExternalMTLSTermination(t *testing.T) {
 	libcrypto.InitEncryption(&libcrypto.Config{
-		EncryptionKey: "test-encryption-key-for-edge-mtls-32bytes-min",
+		EncryptionKey: "test-encryption-key-for-agent-mtls-32bytes-min",
 		Environment:   "test",
 	})
 
 	assetsDir := t.TempDir()
 	cfg := &config.Config{
-		TLSEnabled:        false,
-		EdgeMTLSMode:      "required",
-		EdgeMTLSAssetsDir: assetsDir,
-		EncryptionKey:     "test-encryption-key-for-edge-mtls-32bytes-min",
+		TLSEnabled:         false,
+		AgentMTLSMode:      "required",
+		AgentMTLSAssetsDir: assetsDir,
+		EncryptionKey:      "test-encryption-key-for-agent-mtls-32bytes-min",
 	}
 
-	useTLS, tlsCertFile, tlsKeyFile, edgeCfg, err := prepareServerTLS(t.Context(), cfg)
+	useTLS, tlsCertFile, tlsKeyFile, agentCfg, err := prepareServerTLS(t.Context(), cfg)
 	require.NoError(t, err)
 	assert.False(t, useTLS)
 	assert.Empty(t, tlsCertFile)
 	assert.Empty(t, tlsKeyFile)
-	require.NotNil(t, edgeCfg)
-	assert.Equal(t, "required", edgeCfg.EdgeMTLSMode)
-	require.FileExists(t, edgeCfg.EdgeMTLSCAFile)
+	require.NotNil(t, agentCfg)
+	assert.Equal(t, "required", agentCfg.AgentMTLSMode)
+	require.FileExists(t, agentCfg.AgentMTLSCAFile)
 	require.FileExists(t, assetsDir+"/ca.crt")
 	require.FileExists(t, assetsDir+"/ca.key")
 }

@@ -10,7 +10,7 @@ import (
 	"github.com/moby/moby/client"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 )
 
 // Service runs connectivity probes; the parent persists the resulting status.
@@ -34,11 +34,8 @@ func (s *Service) Probe(ctx context.Context, id string, authenticated func(conte
 		}
 		return "online", nil
 	}
-	if edge.GetPollRuntimeRegistry().Get(id, time.Now()).IsPresent() {
-		return "online", nil
-	}
-	if !edge.HasActiveTunnel(id) {
-		return "offline", errors.New("edge agent is not connected")
+	if !agent.HasActiveTunnel(id) {
+		return "offline", errors.New("agent is not connected")
 	}
 
 	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)

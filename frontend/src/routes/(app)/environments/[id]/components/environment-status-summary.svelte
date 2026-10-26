@@ -24,12 +24,10 @@
 		versionInformation: AppVersionInformation | null | undefined;
 	} = $props();
 
-	let statusBadge = $derived.by((): { text: string; variant: 'green' | 'blue' | 'amber' | 'red' } => {
+	let statusBadge = $derived.by((): { text: string; variant: 'green' | 'amber' | 'red' } => {
 		switch (currentStatus) {
 			case 'online':
 				return { text: m.common_online(), variant: 'green' };
-			case 'standby':
-				return { text: m.common_standby(), variant: 'blue' };
 			case 'pending':
 				return { text: m.common_pending(), variant: 'amber' };
 			case 'error':
@@ -43,8 +41,6 @@
 		switch (statusBadge.variant) {
 			case 'green':
 				return 'bg-success shadow-glow shadow-success';
-			case 'blue':
-				return 'bg-info';
 			case 'amber':
 				return 'bg-warning';
 			default:
@@ -75,7 +71,7 @@
 	});
 </script>
 
-<!-- Inline header chips: status, version, and (edge) heartbeat. -->
+<!-- Inline header chips: status, version, and agent heartbeat. -->
 <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
 	<Badge variant={statusBadge.variant} minWidth="20">
 		<span class={cn('size-1.5 rounded-full', statusDotClass)}></span>
@@ -105,14 +101,14 @@
 					</a>
 				{/if}
 			{/if}
-		{:else if currentStatus === 'online' || currentStatus === 'standby'}
+		{:else if currentStatus === 'online'}
 			<span>{m.environments_version_unavailable()}</span>
 		{:else}
 			<span>{m.common_offline()}</span>
 		{/if}
 	</div>
 	{#if environment.id !== '0' && environment.lastHeartbeat}
-		<div class="flex items-center gap-1.5 text-xs text-muted-foreground" title={m.environments_edge_last_heartbeat_label()}>
+		<div class="flex items-center gap-1.5 text-xs text-muted-foreground" title={m.environments_agent_last_heartbeat_label()}>
 			<HealthIcon class="size-3.5 shrink-0" />
 			<span>{heartbeatRelative}</span>
 		</div>

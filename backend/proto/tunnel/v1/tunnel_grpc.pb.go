@@ -26,7 +26,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// TunnelService is the reverse tunnel between an edge agent and manager.
+// TunnelService is the reverse tunnel between an Arcane agent and manager.
 type TunnelServiceClient interface {
 	// Agent opens a persistent bidi stream to manager.
 	Connect(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AgentMessage, ManagerMessage], error)
@@ -57,7 +57,7 @@ type TunnelService_ConnectClient = grpc.BidiStreamingClient[AgentMessage, Manage
 // All implementations should embed UnimplementedTunnelServiceServer
 // for forward compatibility.
 //
-// TunnelService is the reverse tunnel between an edge agent and manager.
+// TunnelService is the reverse tunnel between an Arcane agent and manager.
 type TunnelServiceServer interface {
 	// Agent opens a persistent bidi stream to manager.
 	Connect(grpc.BidiStreamingServer[AgentMessage, ManagerMessage]) error

@@ -5,7 +5,7 @@
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import { Label } from '#lib/components/ui/label/index.js';
 	import * as Select from '#lib/components/ui/select/index.js';
-	import { ArrowDownIcon, EdgeConnectionIcon, EnvironmentsIcon } from '#lib/icons/index.js';
+	import { ArrowDownIcon, AgentConnectionIcon, EnvironmentsIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentColor } from '#lib/stores/environment-colors.store.svelte.js';
 	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
@@ -38,7 +38,7 @@
 
 	function environmentIcon(environmentId: string) {
 		if (environmentId === LOCAL_DOCKER_ENVIRONMENT_ID) return EnvironmentsIcon;
-		return EdgeConnectionIcon;
+		return AgentConnectionIcon;
 	}
 </script>
 

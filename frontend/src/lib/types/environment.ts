@@ -2,9 +2,9 @@ import type { CreateRequest, UpdateRequest } from './shared';
 
 // --- Environments & deployment snippets ---
 
-export type EnvironmentStatus = 'online' | 'standby' | 'offline' | 'error' | 'pending';
+export type EnvironmentStatus = 'online' | 'offline' | 'error' | 'pending';
 
-export type EdgeMTLSCertificate = {
+export type AgentMTLSCertificate = {
 	commonName?: string;
 	expiresAt?: string;
 	daysRemaining?: number;
@@ -18,20 +18,19 @@ export type Environment = {
 	apiUrl: string;
 	status: EnvironmentStatus;
 	enabled: boolean;
-	edgeTransport?: 'grpc' | 'websocket';
-	lastEdgeTransport?: 'grpc' | 'websocket';
-	edgeSecurityMode?: 'token' | 'mtls';
-	edgeRoundTripMs?: number;
-	edgeOpenStreams?: number;
-	edgeSessionId?: string;
-	edgeAgentInstance?: string;
-	edgeCapabilities?: string[];
+	agentTransport?: 'grpc' | 'websocket';
+	lastAgentTransport?: 'grpc' | 'websocket';
+	agentSecurityMode?: 'token' | 'mtls';
+	agentRoundTripMs?: number;
+	agentOpenStreams?: number;
+	agentSessionId?: string;
+	agentInstance?: string;
+	agentCapabilities?: string[];
 	connected?: boolean;
 	connectedAt?: string;
 	lastHeartbeat?: string;
-	lastPollAt?: string;
 	lastSeen?: string;
-	edgeMTLSCertificate?: EdgeMTLSCertificate;
+	agentMTLSCertificate?: AgentMTLSCertificate;
 	apiKey?: string;
 	regenerateApiKey?: boolean;
 };

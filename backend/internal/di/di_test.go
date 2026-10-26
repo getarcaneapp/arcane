@@ -148,7 +148,7 @@ func TestOptionsValidate(t *testing.T) {
 }
 
 func TestDockerEventLifecycle(t *testing.T) {
-	for _, mode := range []string{"manager", "edge"} {
+	for _, mode := range []string{"manager", "agent"} {
 		t.Run(mode, func(t *testing.T) {
 			streamStopped := make(chan struct{})
 			var stopped sync.Once
@@ -189,7 +189,7 @@ func TestDockerEventLifecycle(t *testing.T) {
 			t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
 			require.NoError(t, db.AutoMigrate(&event.Event{}, &settings.SettingVariable{}))
 			databaseDB := &database.DB{DB: db}
-			cfg := &config.Config{EdgeAgent: mode == "edge"}
+			cfg := &config.Config{AgentEnabled: mode == "agent"}
 			settingsService, err := settings.NewSettingsService(t.Context(), databaseDB, cfg, settings.Env{"dockerHost": server.URL})
 			require.NoError(t, err)
 			lifecycle := fxtest.NewLifecycle(t)

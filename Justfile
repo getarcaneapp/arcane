@@ -46,7 +46,7 @@ mod docs 'just/docs.just'
 [group('generation')]
 mod i18n 'just/i18n.just'
 
-# Benchmark edge transports: edge [count] [benchtime], memory [profile] [benchtime]
+# Benchmark agent tunnel transports: tunnel [count] [benchtime], memory [profile] [benchtime]
 [group('performance')]
 mod bench 'just/bench.just'
 

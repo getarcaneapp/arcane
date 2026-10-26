@@ -12,7 +12,7 @@ const mockedStats = {
 	cpuCount: 7,
 	architecture: 'amd64',
 	platform: 'linux',
-	hostname: 'edge-client',
+	hostname: 'agent-client',
 	gpuCount: 0,
 	gpus: []
 };

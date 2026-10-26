@@ -14,8 +14,8 @@ type EnvironmentStreamEvent = {
 /**
  * Keeps environmentStore's records live for as long as the app shell is mounted.
  *
- * Whether an edge environment is reachable lives only in the manager's
- * in-memory tunnel and poll registries, so the browser can never work it out
+ * Whether an agent environment is reachable lives only in the manager's
+ * in-memory tunnel registry, so the browser can never work it out
  * on its own — it has to be told. Without this stream the environment list is
  * frozen at whatever the root layout load happened to see.
  */

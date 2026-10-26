@@ -82,10 +82,10 @@ type SettingsRuntime struct {
 	// Required: false
 	BackupVolumeName string `json:"backupVolumeName,omitzero"`
 
-	// EdgeMTLSManagerCAAvailable indicates the manager mTLS CA can be downloaded.
+	// AgentMTLSManagerCAAvailable indicates the manager mTLS CA can be downloaded.
 	//
 	// Required: false
-	EdgeMTLSManagerCAAvailable bool `json:"edgeMTLSManagerCAAvailable,omitzero"`
+	AgentMTLSManagerCAAvailable bool `json:"agentMTLSManagerCAAvailable,omitzero"`
 
 	// DepotConfigured indicates both the Depot project ID and token are set.
 	//

@@ -629,13 +629,13 @@ test.describe('arcane-cli e2e', () => {
 // forwarding — otherwise any authenticated user could perform write actions on a
 // remote environment regardless of role.
 //
-// These tests drive the real arcane-cli against a remote (edge) environment that
+// These tests drive the real arcane-cli against a remote agent environment that
 // has no connected agent. With no live tunnel, the outcome distinguishes the two
 // states cleanly:
 //   - a DENIED request returns 403 — the permission check runs before the tunnel
 //     lookup, so it short-circuits regardless of connectivity;
 //   - an AUTHORIZED request gets past the permission check and reaches the tunnel
-//     stage, which returns 503 ("Edge agent is not connected").
+//     stage, which returns 503 ("Agent is not connected").
 // The 403-vs-503 split is exactly what proves the permission is enforced per
 // environment and is not a blanket block. The local environment ("0") is served
 // directly (never proxied) and must remain unaffected.
@@ -693,8 +693,8 @@ test.describe('arcane-cli remote environment RBAC', () => {
 
 		const suffix = `${Date.now()}`.slice(-6);
 
-		// Create a remote edge environment. No agent will ever connect to it; it
-		// exists only so the proxy treats requests to it as remote (edge://) and
+		// Create a remote agent environment. No agent will ever connect to it; it
+		// exists only so the proxy treats requests to it as remote (agent://) and
 		// reaches either the permission check (403) or the tunnel lookup (503).
 		const envResponse = await adminFetch('/api/environments', {
 			method: 'POST',
@@ -791,7 +791,7 @@ test.describe('arcane-cli remote environment RBAC', () => {
 				`cli-rbac-vol-${Date.now()}`
 			]);
 			// The admin key passes the permission check, so the request reaches the
-			// edge tunnel stage and fails only because no agent is connected.
+			// agent tunnel stage and fails only because no agent is connected.
 			expect(error).toContain('status 503');
 			expect(error).not.toContain('status 403');
 		});

@@ -54,8 +54,6 @@ export function getResolvedStatusLabel(environment: Environment): string {
 	switch (resolveEnvironmentStatus(environment)) {
 		case 'online':
 			return m.common_online();
-		case 'standby':
-			return m.common_standby();
 		case 'pending':
 			return m.common_pending();
 		case 'error':
@@ -65,27 +63,24 @@ export function getResolvedStatusLabel(environment: Environment): string {
 	}
 }
 
-export function getEdgeTransportLabel(environment: Environment): string {
-	const transport = environment.connected ? environment.edgeTransport : undefined;
-	if (!transport && environment.lastPollAt) return m.environments_edge_mode_polling();
-	switch (transport ?? environment.lastEdgeTransport) {
+export function getAgentTransportLabel(environment: Environment): string {
+	const transport = environment.connected ? environment.agentTransport : undefined;
+	switch (transport ?? environment.lastAgentTransport) {
 		case 'websocket':
-			return m.environments_edge_websocket_label();
+			return m.environments_agent_websocket_label();
 		case 'grpc':
-			return m.environments_edge_grpc_label();
+			return m.environments_agent_grpc_label();
 		default:
-			return m.environments_edge_label();
+			return m.environments_agent_label();
 	}
 }
 
-export function getEdgeConnectionStateLabel(environment: Environment): string {
+export function getAgentConnectionStateLabel(environment: Environment): string {
 	switch (resolveEnvironmentStatus(environment)) {
 		case 'online':
-			return m.environments_edge_status_connected();
-		case 'standby':
-			return m.environments_edge_status_standby();
+			return m.environments_agent_status_connected();
 		case 'pending':
-			return m.environments_edge_status_connecting();
+			return m.environments_agent_status_connecting();
 		default:
 			return m.disconnected();
 	}
@@ -98,14 +93,12 @@ export function getActivityMeta(environment: Environment): { label: string; valu
 	}
 
 	const labelAndValue = environment.lastHeartbeat
-		? { label: m.environments_edge_last_heartbeat_label(), raw: environment.lastHeartbeat }
-		: environment.lastPollAt
-			? { label: m.environments_edge_last_poll_label(), raw: environment.lastPollAt }
-			: environment.connectedAt
-				? { label: m.environments_edge_connected_since_label(), raw: environment.connectedAt }
-				: environment.lastSeen
-					? { label: m.dashboard_all_last_seen(), raw: environment.lastSeen }
-					: null;
+		? { label: m.environments_agent_last_heartbeat_label(), raw: environment.lastHeartbeat }
+		: environment.connectedAt
+			? { label: m.environments_agent_connected_since_label(), raw: environment.connectedAt }
+			: environment.lastSeen
+				? { label: m.dashboard_all_last_seen(), raw: environment.lastSeen }
+				: null;
 
 	if (!labelAndValue?.raw) return { label: m.activity(), value: m.common_never(), title: m.common_never() };
 	const parsed = parseInstant(labelAndValue.raw);

@@ -276,7 +276,6 @@ type NodeAgentStatus struct {
 	EnvironmentType  *string               `json:"environmentType,omitempty"`
 	Connected        *bool                 `json:"connected,omitempty"`
 	LastHeartbeat    *time.Time            `json:"lastHeartbeat,omitempty"`
-	LastPollAt       *time.Time            `json:"lastPollAt,omitempty"`
 	ReportedNodeID   *string               `json:"reportedNodeId,omitempty"`
 	ReportedHostname *string               `json:"reportedHostname,omitempty"`
 	Candidates       []NodeAgentCandidate  `json:"candidates,omitempty"`

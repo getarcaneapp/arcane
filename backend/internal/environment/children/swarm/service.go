@@ -34,7 +34,7 @@ func (s *Service) AgentIdentity(parentEnvironmentID, nodeID, hostname string) (s
 	if strings.TrimSpace(nodeID) == "" {
 		return "", "", errors.New("swarm node ID is required")
 	}
-	return cmp.Or(strings.TrimSpace(hostname), "Swarm Node "+nodeID[:min(len(nodeID), 12)]), "edge://swarm-node-" + nodeID[:min(len(nodeID), 12)], nil
+	return cmp.Or(strings.TrimSpace(hostname), "Swarm Node "+nodeID[:min(len(nodeID), 12)]), "agent://swarm-node-" + nodeID[:min(len(nodeID), 12)], nil
 }
 
 // AuthorizeBinding rejects bindings that would silently move an environment or

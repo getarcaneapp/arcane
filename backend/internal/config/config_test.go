@@ -238,11 +238,11 @@ func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 
 func TestConfig_OptionsToLower(t *testing.T) {
 	origLogLevel := os.Getenv("ARCANE_LOG_LEVEL")
-	origEdgeTransport := os.Getenv("ARCANE_EDGE_TRANSPORT")
-	origEdgeMTLSMode := os.Getenv("ARCANE_EDGE_MTLS_MODE")
+	origAgentTransport := os.Getenv("ARCANE_AGENT_TRANSPORT")
+	origAgentMTLSMode := os.Getenv("ARCANE_AGENT_MTLS_MODE")
 	defer restoreEnv("ARCANE_LOG_LEVEL", origLogLevel)
-	defer restoreEnv("ARCANE_EDGE_TRANSPORT", origEdgeTransport)
-	defer restoreEnv("ARCANE_EDGE_MTLS_MODE", origEdgeMTLSMode)
+	defer restoreEnv("ARCANE_AGENT_TRANSPORT", origAgentTransport)
+	defer restoreEnv("ARCANE_AGENT_MTLS_MODE", origAgentMTLSMode)
 
 	t.Run("LogLevel is converted to lowercase", func(t *testing.T) {
 		setEnv(t, "ARCANE_LOG_LEVEL", "DEBUG")
@@ -258,32 +258,32 @@ func TestConfig_OptionsToLower(t *testing.T) {
 		assert.Equal(t, "warn", cfg.LogLevel)
 	})
 
-	t.Run("EdgeTransport is converted to lowercase", func(t *testing.T) {
-		setEnv(t, "ARCANE_EDGE_TRANSPORT", "GRPC")
+	t.Run("AgentTransport is converted to lowercase", func(t *testing.T) {
+		setEnv(t, "ARCANE_AGENT_TRANSPORT", "GRPC")
 
 		cfg := mustLoad(t)
-		assert.Equal(t, "grpc", cfg.EdgeTransport)
+		assert.Equal(t, "grpc", cfg.AgentTransport)
 	})
 
-	t.Run("EdgeTransport defaults to auto", func(t *testing.T) {
-		unsetEnv(t, "ARCANE_EDGE_TRANSPORT")
+	t.Run("AgentTransport defaults to auto", func(t *testing.T) {
+		unsetEnv(t, "ARCANE_AGENT_TRANSPORT")
 
 		cfg := mustLoad(t)
-		assert.Equal(t, "auto", cfg.EdgeTransport)
+		assert.Equal(t, "auto", cfg.AgentTransport)
 	})
 
-	t.Run("EdgeMTLSMode is converted to lowercase", func(t *testing.T) {
-		setEnv(t, "ARCANE_EDGE_MTLS_MODE", "REQUIRED")
+	t.Run("AgentMTLSMode is converted to lowercase", func(t *testing.T) {
+		setEnv(t, "ARCANE_AGENT_MTLS_MODE", "REQUIRED")
 
 		cfg := mustLoad(t)
-		assert.Equal(t, "required", cfg.EdgeMTLSMode)
+		assert.Equal(t, "required", cfg.AgentMTLSMode)
 	})
 
-	t.Run("EdgeMTLSMode defaults to disabled", func(t *testing.T) {
-		unsetEnv(t, "ARCANE_EDGE_MTLS_MODE")
+	t.Run("AgentMTLSMode defaults to disabled", func(t *testing.T) {
+		unsetEnv(t, "ARCANE_AGENT_MTLS_MODE")
 
 		cfg := mustLoad(t)
-		assert.Equal(t, "disabled", cfg.EdgeMTLSMode)
+		assert.Equal(t, "disabled", cfg.AgentMTLSMode)
 	})
 }
 
@@ -307,25 +307,25 @@ func TestConfig_AllowDowngrade(t *testing.T) {
 }
 
 func TestConfig_ValidateRejectsLegacyDirectAgent(t *testing.T) {
-	t.Setenv("ARCANE_EDGE_AGENT", "")
+	t.Setenv("ARCANE_AGENT", "")
 
 	for _, name := range []string{"AGENT_MODE", "ARCANE_AGENT_MODE"} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv(name, "true")
 
-			require.EqualError(t, mustLoad(t).Validate(), "direct agents were removed in v3; set ARCANE_EDGE_AGENT=true and ARCANE_MANAGER_API_URL, then re-enroll from the manager")
+			require.EqualError(t, mustLoad(t).Validate(), "direct agents were removed in v3; set ARCANE_AGENT=true and ARCANE_MANAGER_API_URL, then re-enroll from the manager")
 		})
 	}
 }
 
-func TestConfig_ValidateRequiresEdgeAgentManagerAndToken(t *testing.T) {
+func TestConfig_ValidateRequiresAgentManagerAndToken(t *testing.T) {
 	t.Setenv("AGENT_MODE", "")
 	t.Setenv("ARCANE_AGENT_MODE", "")
-	t.Setenv("ARCANE_EDGE_AGENT", "true")
+	t.Setenv("ARCANE_AGENT", "true")
 	t.Setenv("ARCANE_MANAGER_API_URL", "https://manager.example.com")
 	t.Setenv("ARCANE_AGENT_TOKEN", "")
 
-	require.EqualError(t, mustLoad(t).Validate(), "ARCANE_EDGE_AGENT=true requires ARCANE_MANAGER_API_URL and ARCANE_AGENT_TOKEN")
+	require.EqualError(t, mustLoad(t).Validate(), "ARCANE_AGENT=true requires ARCANE_MANAGER_API_URL and ARCANE_AGENT_TOKEN")
 
 	t.Setenv("ARCANE_AGENT_TOKEN", "agent-token")
 	require.NoError(t, mustLoad(t).Validate())
@@ -522,14 +522,14 @@ func TestConfig_JWTRefreshExpiry(t *testing.T) {
 
 func TestConfig_LoadJoinsParseErrors(t *testing.T) {
 	t.Setenv("ARCANE_TLS_ENABLED", "maybe")
-	t.Setenv("ARCANE_EDGE_RECONNECT_INTERVAL", "soon")
+	t.Setenv("ARCANE_AGENT_RECONNECT_INTERVAL", "soon")
 	t.Setenv("ARCANE_FILE_PERM", "rw-r--r--")
 	t.Setenv("ARCANE_JWT_REFRESH_EXPIRY", "forever")
 
 	cfg, err := Load()
 	require.Error(t, err)
 	assert.Nil(t, cfg)
-	for _, envName := range []string{"ARCANE_TLS_ENABLED", "ARCANE_EDGE_RECONNECT_INTERVAL", "ARCANE_FILE_PERM", "ARCANE_JWT_REFRESH_EXPIRY"} {
+	for _, envName := range []string{"ARCANE_TLS_ENABLED", "ARCANE_AGENT_RECONNECT_INTERVAL", "ARCANE_FILE_PERM", "ARCANE_JWT_REFRESH_EXPIRY"} {
 		assert.ErrorContains(t, err, envName)
 	}
 }

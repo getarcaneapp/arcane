@@ -36,7 +36,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
@@ -47,7 +47,7 @@ import (
 )
 
 const (
-	// Re-applies runtime state to cached rows to cover poll-mode TTL expiry.
+	// Re-applies runtime state to cached rows so live tunnel metrics stay current.
 	environmentStreamRuntimeInterval = 5 * time.Second
 	// Safety net for writes that bypass the runtime-change signal.
 	environmentStreamReloadInterval = 60 * time.Second
@@ -82,7 +82,7 @@ type ListEnvironmentsInput struct {
 	Order  string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
 	Start  int    `query:"start" default:"0" doc:"Start index for pagination"`
 	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
-	Type   string `query:"type" doc:"Filter by environment type (comma-separated: http,edge,websocket,grpc,polling)"`
+	Type   string `query:"type" doc:"Filter by environment type (comma-separated: http,agent,websocket,grpc)"`
 }
 
 type CreateEnvironmentInput struct {
@@ -122,7 +122,7 @@ type GetEnvironmentVersionInput struct {
 	ID string `path:"id" doc:"Environment ID"`
 }
 
-type DownloadEdgeMTLSCAInput struct{}
+type DownloadAgentMTLSCAInput struct{}
 
 type DownloadEnvironmentMTLSBundleInput struct {
 	ID string `path:"id" doc:"Environment ID"`
@@ -428,12 +428,12 @@ func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvir
 	}
 	out = ApplyEnvironmentRuntimeState(out)
 	if env.ID != LocalEnvironmentID {
-		out.EdgeMTLSCertificate = func() *types.EdgeMTLSCertificate { // keep: optional field on a 22-field mapped DTO
-			edgeCfg := h.edgeMTLSConfig()
-			if edge.NormalizeEdgeMTLSMode(edgeCfg.EdgeMTLSMode) == edge.EdgeMTLSModeDisabled {
+		out.AgentMTLSCertificate = func() *types.AgentMTLSCertificate { // keep: optional field on a 22-field mapped DTO
+			agentCfg := h.agentMTLSConfig()
+			if agent.NormalizeMTLSMode(agentCfg.AgentMTLSMode) == agent.MTLSModeDisabled {
 				return nil
 			}
-			certPath, pathErr := edge.GeneratedManagerClientMTLSCertPath(edgeCfg, env.ID)
+			certPath, pathErr := agent.GeneratedManagerClientMTLSCertPath(agentCfg, env.ID)
 			if pathErr != nil {
 				return nil
 			}
@@ -453,12 +453,12 @@ func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvir
 
 			expiresAt := cert.NotAfter.UTC()
 			now := time.Now().UTC()
-			return &types.EdgeMTLSCertificate{
+			return &types.AgentMTLSCertificate{
 				CommonName:    kit.Ternary(strings.TrimSpace(cert.Subject.CommonName) != "", new(strings.TrimSpace(cert.Subject.CommonName)), nil),
 				ExpiresAt:     &expiresAt,
 				DaysRemaining: new(int(math.Ceil(max(expiresAt.Sub(now), 0).Hours() / 24))),
 				Expired:       now.After(expiresAt),
-				ExpiringSoon:  now.Before(expiresAt) && expiresAt.Sub(now) <= edgeMTLSCertificateExpiryWarningWindow,
+				ExpiringSoon:  now.Before(expiresAt) && expiresAt.Sub(now) <= agentMTLSCertificateExpiryWarningWindow,
 			}
 		}()
 	}
@@ -619,7 +619,7 @@ func (h *EnvironmentHandler) triggerEnvironmentResourceSync(ctx context.Context,
 
 	for _, resource := range h.environmentService.resourceSyncs() {
 		go func() {
-			syncCtx, cancel := context.WithTimeout(detachedCtx, edge.DefaultProxyTimeout)
+			syncCtx, cancel := context.WithTimeout(detachedCtx, agent.DefaultProxyTimeout)
 			defer cancel()
 			if err := resource.sync(syncCtx, environmentID); err != nil {
 				slog.WarnContext(syncCtx, "Failed to sync resources to environment",
@@ -685,7 +685,7 @@ func (h *EnvironmentHandler) GetDeploymentSnippets(ctx context.Context, input *G
 		return nil, huma.Error400BadRequest("Environment is missing access token")
 	}
 
-	snippets, err := h.environmentService.GenerateEdgeDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), *env.AccessToken, h.edgeMTLSConfig())
+	snippets, err := h.environmentService.GenerateAgentDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), *env.AccessToken, h.agentMTLSConfig())
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to generate deployment snippets", "environmentId", input.ID, "error", err.Error())
 		return nil, huma.Error500InternalServerError("Failed to generate deployment snippets")
@@ -763,23 +763,23 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 	}, nil
 }
 
-// DownloadEdgeMTLSCA downloads the Arcane-managed edge mTLS CA certificate.
-func (h *EnvironmentHandler) DownloadEdgeMTLSCA(ctx context.Context, _ *DownloadEdgeMTLSCAInput) (*huma.StreamResponse, error) {
-	caPath, err := edge.AvailableManagerMTLSCAPath(h.edgeMTLSConfig())
+// DownloadAgentMTLSCA downloads the Arcane-managed agent mTLS CA certificate.
+func (h *EnvironmentHandler) DownloadAgentMTLSCA(ctx context.Context, _ *DownloadAgentMTLSCAInput) (*huma.StreamResponse, error) {
+	caPath, err := agent.AvailableManagerMTLSCAPath(h.agentMTLSConfig())
 	if err != nil {
-		return nil, huma.Error404NotFound("Arcane-managed edge mTLS CA is not available")
+		return nil, huma.Error404NotFound("Arcane-managed agent mTLS CA is not available")
 	}
 
 	// os rather than acfs: the CA path may be configured anywhere on the host.
 	caPEM, err := os.ReadFile(caPath)
 	if err != nil {
-		slog.ErrorContext(ctx, "Failed to read generated edge mTLS CA", "path", caPath, "error", err.Error())
-		return nil, huma.Error500InternalServerError("Failed to read Arcane-generated edge mTLS CA")
+		slog.ErrorContext(ctx, "Failed to read generated agent mTLS CA", "path", caPath, "error", err.Error())
+		return nil, huma.Error500InternalServerError("Failed to read Arcane-generated agent mTLS CA")
 	}
 
 	fileName := cmp.Or(strings.TrimSpace(filepath.Base(caPath)), "ca.crt")
 	return h.mtlsDownloadResponse(nil, "application/x-pem-file", fileName, caPEM,
-		"mTLS CA downloaded", fmt.Sprintf("Administrator downloaded edge mTLS CA %q", fileName),
+		"mTLS CA downloaded", fmt.Sprintf("Administrator downloaded agent mTLS CA %q", fileName),
 		database.JSON{"fileName": fileName, "kind": "ca"}), nil
 }
 
@@ -824,7 +824,7 @@ func (h *EnvironmentHandler) DownloadEnvironmentMTLSBundle(ctx context.Context, 
 
 	fileName := environmentMTLSDownloadBaseName(env) + "-mtls.zip"
 	return h.mtlsDownloadResponse(env, "application/zip", fileName, archive.Bytes(),
-		"mTLS bundle downloaded", fmt.Sprintf("Administrator downloaded edge mTLS bundle %q (%d files)", fileName, len(files)),
+		"mTLS bundle downloaded", fmt.Sprintf("Administrator downloaded agent mTLS bundle %q (%d files)", fileName, len(files)),
 		database.JSON{"fileName": fileName, "kind": "bundle", "fileCount": len(files)}), nil
 }
 
@@ -840,17 +840,17 @@ func (h *EnvironmentHandler) DownloadEnvironmentMTLSFile(ctx context.Context, in
 	file := files[index]
 
 	return h.mtlsDownloadResponse(env, "application/x-pem-file", environmentMTLSAssetDownloadName(env, file.Name), []byte(file.Content),
-		"mTLS asset downloaded", fmt.Sprintf("Administrator downloaded edge mTLS asset %q", file.Name),
+		"mTLS asset downloaded", fmt.Sprintf("Administrator downloaded agent mTLS asset %q", file.Name),
 		database.JSON{"fileName": file.Name, "kind": "file", "sensitive": isSensitiveMTLSAssetName(file.Name)}), nil
 }
 
-// edgeMTLSConfig maps the handler config to edge mTLS settings, or nil without config.
-func (h *EnvironmentHandler) edgeMTLSConfig() *edge.Config {
-	return &edge.Config{
-		EdgeMTLSMode:      h.cfg.EdgeMTLSMode,
-		EdgeMTLSCAFile:    h.cfg.EdgeMTLSCAFile,
-		EdgeMTLSAssetsDir: h.cfg.EdgeMTLSAssetsDir,
-		AppURL:            h.cfg.GetAppURL(),
+// agentMTLSConfig maps the handler config to agent mTLS settings, or nil without config.
+func (h *EnvironmentHandler) agentMTLSConfig() *agent.Config {
+	return &agent.Config{
+		AgentMTLSMode:      h.cfg.AgentMTLSMode,
+		AgentMTLSCAFile:    h.cfg.AgentMTLSCAFile,
+		AgentMTLSAssetsDir: h.cfg.AgentMTLSAssetsDir,
+		AppURL:             h.cfg.GetAppURL(),
 	}
 }
 
@@ -860,7 +860,7 @@ func (h *EnvironmentHandler) loadEnvironmentMTLSFiles(ctx context.Context, envir
 		return nil, nil, huma.Error404NotFound("Environment not found")
 	}
 	if env.ID == LocalEnvironmentID {
-		return nil, nil, huma.Error400BadRequest("Environment is not an edge agent")
+		return nil, nil, huma.Error400BadRequest("Environment is not an agent")
 	}
 	if env.ApiKeyID == nil {
 		return nil, nil, huma.Error400BadRequest("Environment does not have an API key configured")
@@ -869,7 +869,7 @@ func (h *EnvironmentHandler) loadEnvironmentMTLSFiles(ctx context.Context, envir
 		return nil, nil, huma.Error400BadRequest("Environment is missing access token")
 	}
 
-	snippets, err := h.environmentService.GenerateEdgeDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), *env.AccessToken, h.edgeMTLSConfig())
+	snippets, err := h.environmentService.GenerateAgentDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), *env.AccessToken, h.agentMTLSConfig())
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to generate environment mTLS assets", "environmentId", environmentID, "error", err.Error())
 		return nil, nil, huma.Error500InternalServerError("Failed to generate environment mTLS assets")
@@ -893,7 +893,7 @@ func (h *EnvironmentHandler) mtlsDownloadResponse(env *Environment, contentType,
 			humaCtx.SetHeader("Content-Length", strconv.Itoa(len(content)))
 
 			if written, writeErr := humaCtx.BodyWriter().Write(content); writeErr != nil || written != len(content) {
-				slog.WarnContext(ctx, "Failed to stream edge mTLS download", "fileName", fileName, "bytesWritten", written, "bytesExpected", len(content), "error", writeErr)
+				slog.WarnContext(ctx, "Failed to stream agent mTLS download", "fileName", fileName, "bytesWritten", written, "bytesExpected", len(content), "error", writeErr)
 				return
 			}
 
@@ -950,4 +950,4 @@ func environmentMTLSAssetDownloadName(env *Environment, fileName string) string 
 	}
 }
 
-const edgeMTLSCertificateExpiryWarningWindow = 30 * 24 * time.Hour
+const agentMTLSCertificateExpiryWarningWindow = 30 * 24 * time.Hour

@@ -252,13 +252,13 @@ type capturedVariableSyncRequestInternal struct {
 	Body    []byte
 }
 
-func TestSyncEnvironment_EdgeMaterializesSecretsThroughAgentRoute(t *testing.T) {
+func TestSyncEnvironment_AgentMaterializesSecretsThroughAgentRoute(t *testing.T) {
 	service, db, _ := setupVariableServiceTest(t)
-	token := "edge-agent-token"
+	token := "agent-token"
 	require.NoError(t, db.Create(&environment.Environment{
-		ID:          "env-edge",
-		Name:        "Edge",
-		ApiUrl:      "edge://env-edge",
+		ID:          "env-agent",
+		Name:        "Agent",
+		ApiUrl:      "agent://env-agent",
 		Status:      string(environment.EnvironmentStatusOnline),
 		Enabled:     true,
 		AccessToken: &token,
@@ -267,7 +267,7 @@ func TestSyncEnvironment_EdgeMaterializesSecretsThroughAgentRoute(t *testing.T) 
 	var requestMu sync.Mutex
 	requests := make([]capturedVariableSyncRequestInternal, 0, 2)
 	service.proxyEnvironmentJSON = func(_ context.Context, environmentID, method, path string, body []byte, response any) error {
-		require.Equal(t, "env-edge", environmentID)
+		require.Equal(t, "env-agent", environmentID)
 		requestMu.Lock()
 		requests = append(requests, capturedVariableSyncRequestInternal{
 			Method: method,
@@ -286,7 +286,7 @@ func TestSyncEnvironment_EdgeMaterializesSecretsThroughAgentRoute(t *testing.T) 
 	}
 	createMaterializedSecretVariable(t, service)
 
-	require.NoError(t, service.SyncEnvironment(t.Context(), "env-edge"))
+	require.NoError(t, service.SyncEnvironment(t.Context(), "env-agent"))
 	requestMu.Lock()
 	captured := append([]capturedVariableSyncRequestInternal(nil), requests...)
 	requestMu.Unlock()

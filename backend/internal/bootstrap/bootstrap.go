@@ -45,7 +45,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/variable"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/volume"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
@@ -113,7 +113,7 @@ func Bootstrap(ctx context.Context) error {
 	crypto.InitEncryption(&crypto.Config{
 		EncryptionKey: encryptionKey,
 		Environment:   string(cfg.Environment),
-		AgentMode:     cfg.EdgeAgent,
+		AgentMode:     cfg.AgentEnabled,
 	})
 
 	// Telemetry identifies this installation by its persisted instance ID, so it starts once the
@@ -195,13 +195,99 @@ func applicationOptions(appCtx context.Context, cfg *config.Config, settingsEnv 
 		di.JobOptions,
 		serverOptions,
 		fx.Invoke(
-			registerAppCancelHook,
+			func(lc fx.Lifecycle) {
+				lc.Append(fx.Hook{
+					OnStop: func(context.Context) error {
+						cancelApp(nil)
+						return nil
+					},
+				})
+			},
 			initializeStartupState,
 			registerJobs,
-			startEdgeTunnelClient,
-			startGlobalVariableSync,
-			startBackgroundStartupTasks,
-			startProjectStatusWatcher,
+			func(lc fx.Lifecycle, router *echo.Echo, _ *http.Server) {
+				if !cfg.AgentEnabled {
+					return
+				}
+				var stop func(context.Context) error
+				lc.Append(fx.Hook{
+					OnStart: func(context.Context) error {
+						tunnelStop, err := agent.StartTunnelClient(appCtx, buildAgentRuntimeConfig(cfg, cfg.AgentToken), router)
+						if err != nil {
+							slog.ErrorContext(appCtx, "Failed to start agent tunnel client", "error", err)
+							return nil
+						}
+						stop = tunnelStop
+						slog.InfoContext(appCtx, "Agent tunnel client started", "managerUrl", cfg.ManagerApiUrl)
+						return nil
+					},
+					OnStop: func(ctx context.Context) error {
+						if stop == nil {
+							return nil
+						}
+						return stop(ctx)
+					},
+				})
+			},
+			func(lc fx.Lifecycle, variables *variable.VariableService, _ *http.Server) {
+				if cfg.AgentEnabled {
+					return
+				}
+				lc.Append(fx.Hook{OnStart: func(context.Context) error {
+					go variables.SyncAll(appCtx)
+					return nil
+				}})
+			},
+			func(lc fx.Lifecycle, dockerService *docker.DockerClientService, swarmService *swarm.SwarmService, _ *http.Server) {
+				lc.Append(fx.Hook{OnStart: func(context.Context) error {
+					go func() {
+						dockerCtx, cancelDocker := context.WithTimeout(appCtx, startupTaskTimeout)
+						defer cancelDocker()
+						startup.TestDockerConnection(dockerCtx, func(ctx context.Context) error {
+							_, err := dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
+								version, err := dockerClient.ServerVersion(ctx, client.ServerVersionOptions{})
+								if err != nil {
+									return struct{}{}, err
+								}
+
+								effectiveAPIVersion := cmp.Or(strings.TrimSpace(dockerClient.ClientVersion()), strings.TrimSpace(version.APIVersion))
+								slog.InfoContext(ctx, "Docker API versions detected", "clientApiVersion", dockerClient.ClientVersion(), "serverApiVersion", version.APIVersion, "effectiveApiVersion", effectiveAPIVersion)
+								return struct{}{}, nil
+							})
+							return err
+						})
+						startup.WarnDeprecatedImage(dockerCtx, func(ctx context.Context) (string, error) {
+							return dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
+								self, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
+								if err != nil {
+									return "", err
+								}
+								return kit.FromPtr(self.Config).Image, nil
+							})
+						})
+						if err := swarmService.SyncSwarmEnabledState(dockerCtx); err != nil {
+							slog.WarnContext(appCtx, "Failed to persist swarm enabled state", "error", err)
+						}
+					}()
+					return nil
+				}})
+			},
+			func(lc fx.Lifecycle, projectService *project.ProjectService, _ *http.Server) {
+				var stop func(context.Context) error
+				lc.Append(fx.Hook{
+					OnStart: func(context.Context) error {
+						var err error
+						stop, err = concurrency.StartSupervised(appCtx, "project status watcher", projectService.WatchStatuses)
+						return err
+					},
+					OnStop: func(stopCtx context.Context) error {
+						if stop == nil {
+							return nil
+						}
+						return stop(stopCtx)
+					},
+				})
+			},
 			func(dashboardService *dashboard.DashboardService) {
 				if err := dashboardService.ObserveInventory(otel.Meter(tracing.InstrumentationName)); err != nil {
 					otel.Handle(err)
@@ -244,14 +330,11 @@ type initializeStartupStateParams struct {
 const startupTaskTimeout = 30 * time.Second
 
 func initializeStartupState(p initializeStartupStateParams) {
-	appCtx := p.AppCtx
-	cfg := p.Config
-
 	p.Activity.Changes.Subscribe(func(environmentID string) {
 		p.Event.PublishChange(environmentID, "activity")
 	})
 
-	helperCtx, cancelHelpers := context.WithTimeout(appCtx, startupTaskTimeout)
+	helperCtx, cancelHelpers := context.WithTimeout(p.AppCtx, startupTaskTimeout)
 	startup.CleanupOrphanedVolumeHelpers(helperCtx, p.Volume.CleanupOrphanedVolumeHelpers)
 	cancelHelpers()
 
@@ -264,7 +347,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 		{name: "normalize builds directory", run: p.Settings.NormalizeBuildsDirectory},
 		{name: "encrypt stored sensitive settings", run: p.Settings.EncryptStoredSensitiveSettings},
 		{name: "ensure local environment", run: func(ctx context.Context) error {
-			return p.Environment.EnsureLocalEnvironment(ctx, cmp.Or(cfg.AppUrl, "http://localhost:"+cfg.Port))
+			return p.Environment.EnsureLocalEnvironment(ctx, cmp.Or(p.Config.AppUrl, "http://localhost:"+p.Config.Port))
 		}},
 		{name: "clean up orphaned GitOps syncs", run: p.GitOpsSync.CleanupOrphanedSyncsOnStartup},
 		{name: "clean up leaked GitOps scratch directories", run: p.GitOpsSync.CleanupLeakedScratchDirsOnStartup},
@@ -275,16 +358,16 @@ func initializeStartupState(p initializeStartupStateParams) {
 		{name: "recover stuck project statuses", run: p.Project.RecoverStuckProjectStatuses},
 		{name: "fail interrupted image patches", run: p.Image.RecoverInterruptedPatches},
 	} {
-		taskCtx, cancelTask := context.WithTimeout(appCtx, startupTaskTimeout)
+		taskCtx, cancelTask := context.WithTimeout(p.AppCtx, startupTaskTimeout)
 		if err := task.run(taskCtx); err != nil {
-			slog.WarnContext(appCtx, "Startup task failed", "task", task.name, "error", err)
+			slog.WarnContext(p.AppCtx, "Startup task failed", "task", task.name, "error", err)
 		}
 		cancelTask()
 	}
 
-	if !cfg.EdgeAgent {
-		if err := p.Environment.ReconcileEdgeStatusesOnStartup(appCtx); err != nil {
-			slog.WarnContext(appCtx, "Failed to reconcile edge environment statuses on startup", "error", err)
+	if !p.Config.AgentEnabled {
+		if err := p.Environment.ReconcileAgentStatusesOnStartup(p.AppCtx); err != nil {
+			slog.WarnContext(p.AppCtx, "Failed to reconcile agent environment statuses on startup", "error", err)
 		}
 		p.Environment.RegisterMetrics()
 
@@ -295,7 +378,7 @@ func initializeStartupState(p initializeStartupStateParams) {
 		})
 	}
 
-	startup.InitializeNonAgentFeatures(appCtx, cfg.EdgeAgent,
+	startup.InitializeNonAgentFeatures(p.AppCtx, p.Config.AgentEnabled,
 		p.Role.EnsureBuiltInRoles,
 		func(ctx context.Context) error {
 			// Backfill legacy users.roles first so CreateDefaultAdmin's zero-global-admin gate sees them;
@@ -306,138 +389,42 @@ func initializeStartupState(p initializeStartupStateParams) {
 			return p.User.CreateDefaultAdmin(ctx)
 		},
 		func(ctx context.Context) error {
-			return p.ApiKey.ReconcileDefaultAdminAPIKey(ctx, cfg.AdminStaticAPIKey)
+			return p.ApiKey.ReconcileDefaultAdminAPIKey(ctx, p.Config.AdminStaticAPIKey)
 		},
 		func(ctx context.Context) error {
-			startup.InitializeAutoLogin(ctx, cfg.AutoLoginUsername)
+			startup.InitializeAutoLogin(ctx, p.Config.AutoLoginUsername)
 			return nil
 		},
 	)
-	startup.CleanupUnknownSettings(appCtx, p.Settings)
+	startup.CleanupUnknownSettings(p.AppCtx, p.Settings)
 
-	if err := p.Role.EnsureBuiltInRoles(appCtx); err != nil {
-		slog.ErrorContext(appCtx, "Failed to reconcile built-in roles", "error", err)
+	if err := p.Role.EnsureBuiltInRoles(p.AppCtx); err != nil {
+		slog.ErrorContext(p.AppCtx, "Failed to reconcile built-in roles", "error", err)
 	}
 	// Runs after EnsureBuiltInRoles seeds role IDs and before the API key backfill and admin guard read assignments.
-	if err := p.Role.BackfillLegacyRoleAssignments(appCtx); err != nil {
-		slog.ErrorContext(appCtx, "Failed to backfill legacy users.roles into user_role_assignments", "error", err)
+	if err := p.Role.BackfillLegacyRoleAssignments(p.AppCtx); err != nil {
+		slog.ErrorContext(p.AppCtx, "Failed to backfill legacy users.roles into user_role_assignments", "error", err)
 	}
-	if err := p.ApiKey.BackfillApiKeyPermissions(appCtx); err != nil {
-		slog.WarnContext(appCtx, "Failed to backfill API key permissions", "error", err)
+	if err := p.ApiKey.BackfillApiKeyPermissions(p.AppCtx); err != nil {
+		slog.WarnContext(p.AppCtx, "Failed to backfill API key permissions", "error", err)
 	}
-	if err := p.Role.ReconcileEnvOidcMappings(appCtx, cfg.OidcRoleMappings); err != nil {
-		slog.ErrorContext(appCtx, "Failed to reconcile ARCANE_OIDC_ROLE_MAPPINGS", "error", err)
+	if err := p.Role.ReconcileEnvOidcMappings(p.AppCtx, p.Config.OidcRoleMappings); err != nil {
+		slog.ErrorContext(p.AppCtx, "Failed to reconcile ARCANE_OIDC_ROLE_MAPPINGS", "error", err)
 	}
-	if !cfg.EdgeAgent {
-		if err := p.Role.AssertGlobalAdminExists(appCtx, p.DB.WithContext(appCtx)); err != nil {
-			slog.ErrorContext(appCtx, "RBAC global admin guard failed", "error", err)
+	if !p.Config.AgentEnabled {
+		if err := p.Role.AssertGlobalAdminExists(p.AppCtx, p.DB.WithContext(p.AppCtx)); err != nil {
+			slog.ErrorContext(p.AppCtx, "RBAC global admin guard failed", "error", err)
 		}
 	}
 
-	if cfg.EdgeAgent {
+	if p.Config.AgentEnabled {
 		if config.DirectAgentRequested(os.Getenv) {
-			slog.WarnContext(appCtx, "ARCANE_AGENT_MODE is ignored", "guidance", config.ErrDirectAgentRemoved.Error())
+			slog.WarnContext(p.AppCtx, "ARCANE_AGENT_MODE is ignored", "guidance", config.ErrDirectAgentRemoved.Error())
 		}
-		if err := handleAgentBootstrapPairing(appCtx, cfg); err != nil {
-			slog.WarnContext(appCtx, "Failed to auto-pair agent with manager", "error", err)
+		if err := handleAgentBootstrapPairing(p.AppCtx, p.Config); err != nil {
+			slog.WarnContext(p.AppCtx, "Failed to auto-pair agent with manager", "error", err)
 		}
 	}
-}
-
-func startEdgeTunnelClient(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config, settingsService *settings.SettingsService, router *echo.Echo, _ *http.Server) {
-	var stop func(context.Context) error
-	lc.Append(fx.Hook{
-		OnStart: func(context.Context) error {
-			if !cfg.EdgeAgent {
-				return nil
-			}
-			tunnelStop, err := edge.StartTunnelClient(appCtx, buildEdgeRuntimeConfig(cfg, cfg.AgentToken), router)
-			if err != nil {
-				slog.ErrorContext(appCtx, "Failed to start edge tunnel client", "error", err)
-				return nil
-			}
-			stop = tunnelStop
-			slog.InfoContext(appCtx, "Edge tunnel client started", "managerUrl", cfg.ManagerApiUrl)
-			return nil
-		},
-		OnStop: func(ctx context.Context) error {
-			if stop == nil {
-				return nil
-			}
-			return stop(ctx)
-		},
-	})
-}
-
-func startGlobalVariableSync(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config, variables *variable.VariableService, _ *http.Server) {
-	if cfg.EdgeAgent {
-		return
-	}
-	lc.Append(fx.Hook{OnStart: func(context.Context) error {
-		go variables.SyncAll(appCtx)
-		return nil
-	}})
-}
-
-func startBackgroundStartupTasks(appCtx context.Context, lc fx.Lifecycle, dockerService *docker.DockerClientService, swarmService *swarm.SwarmService, _ *http.Server) {
-	lc.Append(fx.Hook{OnStart: func(context.Context) error {
-		go func() {
-			dockerCtx, cancelDocker := context.WithTimeout(appCtx, startupTaskTimeout)
-			defer cancelDocker()
-			startup.TestDockerConnection(dockerCtx, func(ctx context.Context) error {
-				_, err := dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (struct{}, error) {
-					version, err := dockerClient.ServerVersion(ctx, client.ServerVersionOptions{})
-					if err != nil {
-						return struct{}{}, err
-					}
-
-					effectiveAPIVersion := cmp.Or(strings.TrimSpace(dockerClient.ClientVersion()), strings.TrimSpace(version.APIVersion))
-					slog.InfoContext(ctx, "Docker API versions detected", "clientApiVersion", dockerClient.ClientVersion(), "serverApiVersion", version.APIVersion, "effectiveApiVersion", effectiveAPIVersion)
-					return struct{}{}, nil
-				})
-				return err
-			})
-			startup.WarnDeprecatedImage(dockerCtx, func(ctx context.Context) (string, error) {
-				return dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (string, error) {
-					self, err := libarcane.InspectCurrentArcaneContainer(ctx, dockerClient)
-					if err != nil {
-						return "", err
-					}
-					return kit.FromPtr(self.Config).Image, nil
-				})
-			})
-			if err := swarmService.SyncSwarmEnabledState(dockerCtx); err != nil {
-				slog.WarnContext(appCtx, "Failed to persist swarm enabled state", "error", err)
-			}
-		}()
-		return nil
-	}})
-}
-
-func startProjectStatusWatcher(appCtx context.Context, lc fx.Lifecycle, projectService *project.ProjectService, _ *http.Server) {
-	var stop func(context.Context) error
-	lc.Append(fx.Hook{
-		OnStart: func(context.Context) error {
-			var err error
-			stop, err = concurrency.StartSupervised(appCtx, "project status watcher", projectService.WatchStatuses)
-			return err
-		},
-		OnStop: func(stopCtx context.Context) error {
-			if stop == nil {
-				return nil
-			}
-			return stop(stopCtx)
-		},
-	})
-}
-
-func registerAppCancelHook(lc fx.Lifecycle, cancelApp context.CancelCauseFunc) {
-	lc.Append(fx.Hook{
-		OnStop: func(context.Context) error {
-			cancelApp(nil)
-			return nil
-		},
-	})
 }
 
 func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config) error {
@@ -455,9 +442,9 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config) error 
 
 	req.Header.Set("X-Api-Key", cfg.AgentToken)
 
-	httpClient, err := edge.NewManagerHTTPClient(buildEdgeRuntimeConfig(cfg, cfg.AgentToken), 10*time.Second)
+	httpClient, err := agent.NewManagerHTTPClient(buildAgentRuntimeConfig(cfg, cfg.AgentToken), 10*time.Second)
 	if err != nil {
-		return fmt.Errorf("failed to configure edge pairing client: %w", err)
+		return fmt.Errorf("failed to configure agent pairing client: %w", err)
 	}
 
 	resp, err := httpClient.Do(req)

@@ -197,7 +197,7 @@ func TestUpgradeJobAgentFailureStatus(t *testing.T) {
 		{"tunnel request timed out", tunnelTimeout, UpgradeResultStatusFailed},
 		{"request canceled mid-flight", fmt.Errorf("tunnel request failed: %w", context.Canceled), UpgradeResultStatusFailed},
 		{"non-success status from agent", &remenv.StatusError{StatusCode: 502}, UpgradeResultStatusFailed},
-		{"agent never connected", &remenv.TransportError{Err: errors.New("edge agent is not connected")}, UpgradeResultStatusSkippedOffline},
+		{"agent never connected", &remenv.TransportError{Err: errors.New("agent is not connected")}, UpgradeResultStatusSkippedOffline},
 	}
 
 	for _, tt := range tests {

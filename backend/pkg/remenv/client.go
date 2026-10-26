@@ -17,7 +17,7 @@ const (
 	bearerScheme        = "Bearer "
 )
 
-var ErrEnvironmentUnavailable = errors.New("edge agent is not connected")
+var ErrEnvironmentUnavailable = errors.New("agent is not connected")
 
 // ExtractBearerToken returns the trimmed token from an "Authorization: Bearer <token>" value,
 // or "" when the scheme (case-insensitive) is not Bearer.
@@ -67,14 +67,14 @@ type TunnelTransportFuncs struct {
 
 func (t TunnelTransportFuncs) EnsureAvailable(ctx context.Context, envID string) error {
 	if t.EnsureAvailableFunc == nil {
-		return errors.New("edge transport unavailable")
+		return errors.New("agent transport unavailable")
 	}
 	return t.EnsureAvailableFunc(ctx, envID)
 }
 
 func (t TunnelTransportFuncs) Do(ctx context.Context, envID, method, path string, headers map[string]string, body []byte) (*Response, error) {
 	if t.DoFunc == nil {
-		return nil, errors.New("edge transport unavailable")
+		return nil, errors.New("agent transport unavailable")
 	}
 	return t.DoFunc(ctx, envID, method, path, headers, body)
 }

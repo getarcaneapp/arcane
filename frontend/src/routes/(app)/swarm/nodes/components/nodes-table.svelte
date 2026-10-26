@@ -15,7 +15,7 @@
 		EnvironmentsIcon,
 		InspectIcon,
 		TrashIcon,
-		EdgeConnectionIcon,
+		AgentConnectionIcon,
 		AddIcon,
 		CloseIcon,
 		TagIcon
@@ -452,7 +452,7 @@
 			{
 				label: m.agent(),
 				getValue: (item: NodeRow) => getSwarmNodeAgentLabel(item.agent?.state),
-				icon: EdgeConnectionIcon,
+				icon: AgentConnectionIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['agent'] ?? true
 			}
@@ -469,7 +469,7 @@
 		</DropdownMenu.Item>
 		{#if canManageNode(item)}
 			<DropdownMenu.Item onclick={() => openAgentDialog(item)}>
-				<EdgeConnectionIcon class="size-4" />
+				<AgentConnectionIcon class="size-4" />
 				{getSwarmNodeAgentActionLabel(item.agent?.state)}
 			</DropdownMenu.Item>
 			<DropdownMenu.Separator />

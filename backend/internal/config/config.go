@@ -16,13 +16,14 @@ import (
 
 	kit "go.getarcane.app/kit/pkg"
 
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
 )
 
 type AppEnvironment string
 
-var ErrDirectAgentRemoved = errors.New("direct agents were removed in v3; set ARCANE_EDGE_AGENT=true and ARCANE_MANAGER_API_URL, then re-enroll from the manager")
+var ErrDirectAgentRemoved = errors.New("direct agents were removed in v3; set ARCANE_AGENT=true and ARCANE_MANAGER_API_URL, then re-enroll from the manager")
 
 const (
 	AppEnvironmentProduction  AppEnvironment = "production"
@@ -66,15 +67,15 @@ type Config struct {
 	ManagerApiUrl           string `env:"ARCANE_MANAGER_API_URL" default:""`
 	UIConfigurationDisabled bool   `env:"ARCANE_UI_CONFIGURATION_DISABLED" default:"false"`
 
-	EdgeAgent             bool   `env:"ARCANE_EDGE_AGENT" default:"false"`
-	EdgeTransport         string `env:"ARCANE_EDGE_TRANSPORT" default:"auto" options:"toLower"`
-	EdgeReconnectInterval int    `env:"ARCANE_EDGE_RECONNECT_INTERVAL" default:"5"` // seconds
-	EdgeMTLSMode          string `env:"ARCANE_EDGE_MTLS_MODE" default:"disabled" options:"toLower"`
-	EdgeMTLSCAFile        string `env:"ARCANE_EDGE_MTLS_CA_FILE" default:""`
-	EdgeMTLSCertFile      string `env:"ARCANE_EDGE_MTLS_CERT_FILE" default:""`
-	EdgeMTLSKeyFile       string `env:"ARCANE_EDGE_MTLS_KEY_FILE" default:""`
-	EdgeMTLSServerName    string `env:"ARCANE_EDGE_MTLS_SERVER_NAME" default:""`
-	EdgeMTLSAssetsDir     string `env:"ARCANE_EDGE_MTLS_ASSETS_DIR" default:""`
+	AgentEnabled           bool   `env:"ARCANE_AGENT" default:"false"`
+	AgentTransport         string `env:"ARCANE_AGENT_TRANSPORT" default:"auto" options:"toLower"`
+	AgentReconnectInterval int    `env:"ARCANE_AGENT_RECONNECT_INTERVAL" default:"5"` // seconds
+	AgentMTLSMode          string `env:"ARCANE_AGENT_MTLS_MODE" default:"disabled" options:"toLower"`
+	AgentMTLSCAFile        string `env:"ARCANE_AGENT_MTLS_CA_FILE" default:""`
+	AgentMTLSCertFile      string `env:"ARCANE_AGENT_MTLS_CERT_FILE" default:""`
+	AgentMTLSKeyFile       string `env:"ARCANE_AGENT_MTLS_KEY_FILE" default:""`
+	AgentMTLSServerName    string `env:"ARCANE_AGENT_MTLS_SERVER_NAME" default:""`
+	AgentMTLSAssetsDir     string `env:"ARCANE_AGENT_MTLS_ASSETS_DIR" default:""`
 
 	TrustedProxies       string      `env:"ARCANE_TRUSTED_PROXIES" default:""`
 	FilePerm             os.FileMode `env:"ARCANE_FILE_PERM" default:"0644"`
@@ -97,7 +98,7 @@ func Load() (*Config, error) {
 	applyProxyDefaults(cfg)
 
 	key := strings.TrimSpace(cfg.EncryptionKey)
-	if cfg.Environment.IsProdEnvironment() && !cfg.EdgeAgent && key != "" &&
+	if cfg.Environment.IsProdEnvironment() && !cfg.AgentEnabled && key != "" &&
 		!strings.HasPrefix(key, "hex:") && !strings.HasPrefix(key, "base64:") && len(strings.TrimPrefix(key, "raw:")) < 32 {
 		return nil, errors.New("ARCANE_ENCRYPTION_KEY passphrase must be at least 32 characters in production (or use a hex:/base64: encoded 32-byte key)")
 	}
@@ -305,11 +306,14 @@ func (c *Config) ListenAddr() string {
 }
 
 func (c *Config) Validate() error {
-	if DirectAgentRequested(os.Getenv) && !c.EdgeAgent {
+	if DirectAgentRequested(os.Getenv) && !c.AgentEnabled {
 		return ErrDirectAgentRemoved
 	}
-	if c.EdgeAgent && (c.ManagerApiUrl == "" || c.AgentToken == "") {
-		return errors.New("ARCANE_EDGE_AGENT=true requires ARCANE_MANAGER_API_URL and ARCANE_AGENT_TOKEN")
+	if c.AgentEnabled && (c.ManagerApiUrl == "" || c.AgentToken == "") {
+		return errors.New("ARCANE_AGENT=true requires ARCANE_MANAGER_API_URL and ARCANE_AGENT_TOKEN")
+	}
+	if !slices.Contains([]string{agent.TransportAuto, agent.TransportGRPC, agent.TransportWebSocket}, c.AgentTransport) {
+		return fmt.Errorf("unsupported ARCANE_AGENT_TRANSPORT %q: use auto, grpc, or websocket", c.AgentTransport)
 	}
 	return nil
 }
@@ -341,5 +345,5 @@ func (c *Config) GetLocation() *time.Location {
 
 // GetAppURL returns the effective application URL.
 func (c *Config) GetAppURL() string {
-	return cmp.Or(c.AppUrl, kit.Ternary(c.EdgeAgent, httpx.ManagerBaseURL(c.ManagerApiUrl), ""), "http://localhost:"+c.Port)
+	return cmp.Or(c.AppUrl, kit.Ternary(c.AgentEnabled, httpx.ManagerBaseURL(c.ManagerApiUrl), ""), "http://localhost:"+c.Port)
 }

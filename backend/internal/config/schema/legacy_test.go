@@ -15,7 +15,9 @@ func TestRenamedEnv(t *testing.T) {
 
 	assert.Equal(t, "ARCANE_PORT", renamed["PORT"])
 	assert.Equal(t, "ARCANE_ENCRYPTION_KEY", renamed["ENCRYPTION_KEY"])
-	assert.Equal(t, "ARCANE_EDGE_MTLS_MODE", renamed["EDGE_MTLS_MODE"])
+	assert.Equal(t, "ARCANE_AGENT_MTLS_MODE", renamed["EDGE_MTLS_MODE"])
+	assert.Equal(t, "ARCANE_AGENT_MTLS_MODE", renamed["ARCANE_EDGE_MTLS_MODE"])
+	assert.Equal(t, "ARCANE_AGENT", renamed["ARCANE_EDGE_AGENT"])
 	assert.Equal(t, "ARCANE_APNS_RELAY_URL", renamed["APNS_RELAY_URL"])
 	assert.Equal(t, "ARCANE_PROJECTS_DIRECTORY", renamed["PROJECTS_DIRECTORY"])
 	assert.Equal(t, "ARCANE_OIDC_CLIENT_SECRET", renamed["OIDC_CLIENT_SECRET"])

@@ -420,7 +420,7 @@ export function getStatusVariant(status?: string | null): StatusVariant {
 
 // --- Environment status resolution ---
 
-type RuntimeEnvironmentState = Pick<Environment, 'id' | 'connected' | 'status' | 'lastPollAt'>;
+type RuntimeEnvironmentState = Pick<Environment, 'id' | 'connected' | 'status'>;
 
 export function resolveEnvironmentStatus(environment: RuntimeEnvironmentState): EnvironmentStatus {
 	const status = environment.status;
@@ -433,16 +433,8 @@ export function resolveEnvironmentStatus(environment: RuntimeEnvironmentState): 
 		return 'online';
 	}
 
-	if (environment.lastPollAt) {
-		return 'standby';
-	}
-
 	if (status === 'pending') {
 		return 'pending';
-	}
-
-	if (status === 'standby') {
-		return 'standby';
 	}
 
 	if (environment.connected === false) {
@@ -453,16 +445,13 @@ export function resolveEnvironmentStatus(environment: RuntimeEnvironmentState): 
 }
 
 export function isEnvironmentOnline(environment: RuntimeEnvironmentState): boolean {
-	const resolved = resolveEnvironmentStatus(environment);
-	return resolved === 'online' || resolved === 'standby';
+	return resolveEnvironmentStatus(environment) === 'online';
 }
 
-export function getEnvironmentStatusVariant(status: EnvironmentStatus): 'green' | 'blue' | 'amber' | 'red' {
+export function getEnvironmentStatusVariant(status: EnvironmentStatus): 'green' | 'amber' | 'red' {
 	switch (status) {
 		case 'online':
 			return 'green';
-		case 'standby':
-			return 'blue';
 		case 'pending':
 			return 'amber';
 		default:

@@ -1,0 +1,584 @@
+package agent
+
+import (
+	"context"
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
+	"github.com/labstack/echo/v5"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+)
+
+func TestTunnelServer_HandleConnect(t *testing.T) {
+	resolver := func(ctx context.Context, token string) (string, error) {
+		if token == "valid-token" {
+			return "env-connected", nil
+		}
+		return "", errors.New("invalid token")
+	}
+
+	statusCallbackCalled := make(chan struct{}, 1)
+	callback := func(ctx context.Context, envID string, connected bool) {
+		if envID == "env-connected" && connected {
+			select {
+			case statusCallbackCalled <- struct{}{}:
+			default:
+			}
+		}
+	}
+
+	server := NewTunnelServer(TunnelServerOptions{
+		Registry:       GetRegistry(),
+		Resolver:       resolver,
+		StatusCallback: callback,
+	})
+
+	router := echo.New()
+	router.GET("/connect", server.HandleConnect)
+
+	ts := httptest.NewServer(router)
+	defer ts.Close()
+
+	// Test Success
+	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/connect"
+	headers := http.Header{}
+	headers.Set(HeaderAgentToken, "valid-token")
+
+	conn, resp, err := websocket.Dial(t.Context(), url, &websocket.DialOptions{HTTPHeader: headers})
+	require.NoError(t, err)
+	defer func() { _ = conn.CloseNow() }()
+
+	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+
+	err = wsjson.Write(t.Context(), conn, &TunnelMessage{
+		Type:          MessageTypeRegister,
+		AgentToken:    "valid-token",
+		AgentInstance: "agent-connected",
+		Capabilities:  []string{tunnelCapabilityMux},
+	})
+	require.NoError(t, err)
+
+	var registerResp TunnelMessage
+	err = wsjson.Read(t.Context(), conn, &registerResp)
+	require.NoError(t, err)
+	assert.Equal(t, MessageTypeRegisterResponse, registerResp.Type)
+	assert.True(t, registerResp.Accepted)
+	assert.Contains(t, registerResp.Capabilities, tunnelCapabilityMuxGrant)
+
+	// Check registry
+	reg := GetRegistry()
+	var tunnel *AgentTunnel
+	require.Eventually(t, func() bool {
+		var ok bool
+		tunnel, ok = reg.Get("env-connected").Get()
+		return ok && tunnel != nil && tunnel.SessionID != ""
+	}, time.Second, 10*time.Millisecond)
+	assert.Equal(t, "agent-connected", tunnel.AgentInstance)
+
+	select {
+	case <-statusCallbackCalled:
+		// callback observed
+	case <-time.After(1 * time.Second):
+		require.FailNow(t, "timeout waiting for status callback")
+	}
+
+	// Clean up; close the client first so the server-side close handshake
+	// does not wait on a peer that is no longer reading.
+	_ = conn.CloseNow()
+	reg.Unregister("env-connected")
+}
+
+func TestTunnelServer_HandleConnect_AcceptsTokenAfterProxyTerminatedMTLS(t *testing.T) {
+	server := NewTunnelServer(TunnelServerOptions{
+		Registry: GetRegistry(),
+		Resolver: func(ctx context.Context, token string) (string, error) {
+			if token == "valid-token" {
+				return "env-proxy-mtls", nil
+			}
+			return "", errors.New("invalid token")
+		},
+		Config: &Config{
+			AgentMTLSMode: MTLSModeRequired,
+			AppURL:        "https://manager.example.com",
+		},
+	})
+
+	router := echo.New()
+	router.GET("/connect", server.HandleConnect)
+
+	ts := httptest.NewServer(router)
+	defer ts.Close()
+
+	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/connect"
+	headers := http.Header{}
+	headers.Set(HeaderAgentToken, "valid-token")
+
+	conn, resp, err := websocket.Dial(t.Context(), url, &websocket.DialOptions{HTTPHeader: headers})
+	require.NoError(t, err)
+	defer func() { _ = conn.CloseNow() }()
+	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+
+	err = wsjson.Write(t.Context(), conn, &TunnelMessage{
+		Type:          MessageTypeRegister,
+		AgentToken:    "valid-token",
+		AgentInstance: "agent-proxy-mtls",
+		Capabilities:  []string{tunnelCapabilityMux},
+	})
+	require.NoError(t, err)
+
+	var registerResp TunnelMessage
+	err = wsjson.Read(t.Context(), conn, &registerResp)
+	require.NoError(t, err)
+	require.Equal(t, MessageTypeRegisterResponse, registerResp.Type)
+	require.True(t, registerResp.Accepted)
+	require.Equal(t, "token", registerResp.SecurityMode)
+
+	_ = conn.CloseNow()
+	GetRegistry().Unregister("env-proxy-mtls")
+}
+
+func TestTunnelServer_HandleConnect_InvalidToken(t *testing.T) {
+	resolver := func(ctx context.Context, token string) (string, error) {
+		return "", errors.New("invalid")
+	}
+
+	server := NewTunnelServer(TunnelServerOptions{Registry: GetRegistry(), Resolver: resolver})
+	router := echo.New()
+	router.GET("/connect", server.HandleConnect)
+
+	ts := httptest.NewServer(router)
+	defer ts.Close()
+
+	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/connect"
+	headers := http.Header{}
+	headers.Set(HeaderAgentToken, "bad-token")
+
+	conn, resp, err := websocket.Dial(t.Context(), url, &websocket.DialOptions{HTTPHeader: headers})
+	require.NoError(t, err)
+	defer func() { _ = conn.CloseNow() }()
+	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+
+	err = wsjson.Write(t.Context(), conn, &TunnelMessage{Type: MessageTypeRegister, AgentToken: "bad-token"})
+	require.NoError(t, err)
+
+	var registerResp TunnelMessage
+	err = wsjson.Read(t.Context(), conn, &registerResp)
+	require.NoError(t, err)
+	assert.Equal(t, MessageTypeRegisterResponse, registerResp.Type)
+	assert.False(t, registerResp.Accepted)
+	assert.Equal(t, "invalid agent token", registerResp.Error)
+}
+
+func TestTunnelServer_HandleConnect_PrefersHeaderTokenOverRegisterMessage(t *testing.T) {
+	var resolvedToken string
+	resolver := func(ctx context.Context, token string) (string, error) {
+		resolvedToken = token
+		if token == "valid-token" {
+			return "env-header-token", nil
+		}
+		return "", errors.New("invalid token")
+	}
+
+	server := NewTunnelServer(TunnelServerOptions{Registry: GetRegistry(), Resolver: resolver})
+	router := echo.New()
+	router.GET("/connect", server.HandleConnect)
+
+	ts := httptest.NewServer(router)
+	defer ts.Close()
+
+	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/connect"
+	headers := http.Header{}
+	headers.Set(HeaderAgentToken, "valid-token")
+
+	conn, resp, err := websocket.Dial(t.Context(), url, &websocket.DialOptions{HTTPHeader: headers})
+	require.NoError(t, err)
+	defer func() { _ = conn.CloseNow() }()
+	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+
+	err = wsjson.Write(t.Context(), conn, &TunnelMessage{Type: MessageTypeRegister, AgentToken: "bad-token", Capabilities: []string{tunnelCapabilityMux}})
+	require.NoError(t, err)
+
+	var registerResp TunnelMessage
+	err = wsjson.Read(t.Context(), conn, &registerResp)
+	require.NoError(t, err)
+	require.Equal(t, MessageTypeRegisterResponse, registerResp.Type)
+	require.True(t, registerResp.Accepted)
+	require.Equal(t, "valid-token", resolvedToken)
+
+	_ = conn.CloseNow()
+	GetRegistry().Unregister("env-header-token")
+}
+
+func TestTunnelServer_HandleConnect_NoToken(t *testing.T) {
+	server := NewTunnelServer(TunnelServerOptions{Registry: GetRegistry()})
+	router := echo.New()
+	router.GET("/connect", server.HandleConnect)
+
+	ts := httptest.NewServer(router)
+	defer ts.Close()
+
+	url := "ws" + strings.TrimPrefix(ts.URL, "http") + "/connect"
+
+	conn, resp, err := websocket.Dial(t.Context(), url, nil)
+	require.NoError(t, err)
+	defer func() { _ = conn.CloseNow() }()
+	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
+
+	err = wsjson.Write(t.Context(), conn, &TunnelMessage{Type: MessageTypeRegister})
+	require.NoError(t, err)
+
+	var registerResp TunnelMessage
+	err = wsjson.Read(t.Context(), conn, &registerResp)
+	require.NoError(t, err)
+	require.Equal(t, MessageTypeRegisterResponse, registerResp.Type)
+	require.False(t, registerResp.Accepted)
+	require.Equal(t, "agent token required", registerResp.Error)
+}
+
+func TestTunnelConnectRouteRegistration(t *testing.T) {
+	router := echo.New()
+	group := router.Group("/api")
+
+	server := NewTunnelServer(TunnelServerOptions{Registry: GetRegistry()})
+	group.GET("/tunnel/connect", server.HandleConnect)
+
+	// Verify route exists (simplistic check by trying to hit it)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/tunnel/connect", http.NoBody)
+	router.ServeHTTP(w, req)
+
+	// Plain HTTP requests hit the route but fail the websocket upgrade;
+	// coder/websocket responds with 426 Upgrade Required.
+	assert.Equal(t, http.StatusUpgradeRequired, w.Code)
+}
+
+func TestTunnelServer_HandleMTLSEnroll(t *testing.T) {
+	server := NewTunnelServer(TunnelServerOptions{
+		Registry: GetRegistry(),
+		Resolver: func(ctx context.Context, token string) (string, error) {
+			if token != "valid-token" {
+				return "", errors.New("invalid token")
+			}
+			return "env-mtls", nil
+		},
+		NameResolver: func(ctx context.Context, environmentID string) (string, error) {
+			require.Equal(t, "env-mtls", environmentID)
+			return "Lab Server", nil
+		},
+		Config: &Config{
+			AgentMTLSMode:      MTLSModeRequired,
+			AgentMTLSAssetsDir: t.TempDir(),
+		},
+	})
+
+	router := echo.New()
+	router.POST("/enroll", server.HandleMTLSEnroll)
+
+	req := httptest.NewRequest(http.MethodPost, "/enroll", http.NoBody)
+	req.Header.Set(HeaderAgentToken, "valid-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+	require.Equal(t, "no-cache", w.Header().Get("Pragma"))
+
+	var resp enrollMTLSResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp.Files, 3)
+	assert.Equal(t, "ca.crt", resp.Files[0].Name)
+	assert.Contains(t, resp.Files[0].Content, "BEGIN CERTIFICATE")
+	assert.Equal(t, "agent.key", resp.Files[2].Name)
+	assert.Contains(t, resp.Files[2].Content, "BEGIN PRIVATE KEY")
+
+	certBlock, _ := pem.Decode([]byte(resp.Files[1].Content))
+	require.NotNil(t, certBlock)
+
+	cert, err := x509.ParseCertificate(certBlock.Bytes)
+	require.NoError(t, err)
+	assert.Equal(t, "Lab-Server-env-mtls", cert.Subject.CommonName)
+}
+
+func TestTunnelServer_HandleMTLSEnroll_ServesCachedAssetsDuringCooldown(t *testing.T) {
+	server := NewTunnelServer(TunnelServerOptions{
+		Registry: GetRegistry(),
+		Resolver: func(ctx context.Context, token string) (string, error) {
+			if token != "valid-token" {
+				return "", errors.New("invalid token")
+			}
+			return "env-repeat", nil
+		},
+		Config: &Config{
+			AgentMTLSMode:      MTLSModeRequired,
+			AgentMTLSAssetsDir: t.TempDir(),
+		},
+	})
+
+	router := echo.New()
+	router.POST("/enroll", server.HandleMTLSEnroll)
+
+	req := httptest.NewRequest(http.MethodPost, "/enroll", http.NoBody)
+	req.Header.Set(HeaderAgentToken, "valid-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var firstResp enrollMTLSResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &firstResp))
+	require.Len(t, firstResp.Files, 3)
+
+	req = httptest.NewRequest(http.MethodPost, "/enroll", http.NoBody)
+	req.Header.Set(HeaderAgentToken, "valid-token")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var secondResp enrollMTLSResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &secondResp))
+	require.Equal(t, firstResp.Files, secondResp.Files)
+}
+
+func TestTunnelServer_HandleMTLSEnroll_AllowsRepeatAfterCooldownAndMarksReenrollment(t *testing.T) {
+	cfg := &Config{
+		AgentMTLSMode:      MTLSModeRequired,
+		AgentMTLSAssetsDir: t.TempDir(),
+	}
+	reenrolled := make(chan bool, 2)
+	server := NewTunnelServer(TunnelServerOptions{
+		Registry: GetRegistry(),
+		Resolver: func(ctx context.Context, token string) (string, error) {
+			if token != "valid-token" {
+				return "", errors.New("invalid token")
+			}
+			return "env-repeat-old", nil
+		},
+		Config: cfg,
+		EnrollmentCallback: func(ctx context.Context, environmentID, remoteAddr string, certIssued, caGenerated, wasReenrolled bool) {
+			require.Equal(t, "env-repeat-old", environmentID)
+			reenrolled <- wasReenrolled
+		},
+	})
+
+	router := echo.New()
+	router.POST("/enroll", server.HandleMTLSEnroll)
+
+	req := httptest.NewRequest(http.MethodPost, "/enroll", http.NoBody)
+	req.Header.Set(HeaderAgentToken, "valid-token")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.False(t, <-reenrolled)
+
+	markerPath := filepath.Join(cfg.AgentMTLSAssetsDir, generatedClientMTLSSubdir, "env-repeat-old", generatedMTLSEnrolledName)
+	oldEnrollment := time.Now().Add(-(managerMTLSReenrollCooldown + time.Minute)).UTC().Format(time.RFC3339Nano) + "\n"
+	require.NoError(t, os.WriteFile(markerPath, []byte(oldEnrollment), 0o600))
+
+	req = httptest.NewRequest(http.MethodPost, "/enroll", http.NoBody)
+	req.Header.Set(HeaderAgentToken, "valid-token")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.True(t, <-reenrolled)
+}
+
+func TestTunnelServer_CleanupLoop(t *testing.T) {
+	server := NewTunnelServer(TunnelServerOptions{Registry: GetRegistry()})
+	ctx, cancel := context.WithCancel(t.Context())
+
+	// Run cleanup loop
+	go server.StartCleanupLoop(ctx)
+
+	// Just ensure it doesn't panic and stops when ctx is cancelled
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+	time.Sleep(10 * time.Millisecond)
+}
+
+func TestTunnelServer_resolveEnvironment_TrimsToken(t *testing.T) {
+	var resolvedToken string
+	server := NewTunnelServer(TunnelServerOptions{
+		Registry: GetRegistry(),
+		Resolver: func(ctx context.Context, token string) (string, error) {
+			resolvedToken = token
+			return "env-trimmed", nil
+		},
+	})
+
+	envID, err := server.resolveEnvironment(t.Context(), "  valid-token  ")
+	require.NoError(t, err)
+	assert.Equal(t, "env-trimmed", envID)
+	assert.Equal(t, "valid-token", resolvedToken)
+}
+
+func TestTunnelServer_resolveEnvironment_Errors(t *testing.T) {
+	t.Run("missing resolver", func(t *testing.T) {
+		server := NewTunnelServer(TunnelServerOptions{Registry: GetRegistry()})
+		_, err := server.resolveEnvironment(t.Context(), "token")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "agent resolver is not configured")
+	})
+
+	t.Run("missing token", func(t *testing.T) {
+		server := NewTunnelServer(TunnelServerOptions{
+			Registry: GetRegistry(),
+			Resolver: func(ctx context.Context, token string) (string, error) {
+				return "env", nil
+			},
+		})
+
+		_, err := server.resolveEnvironment(t.Context(), "   ")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "agent token required")
+	})
+}
+
+func TestAgentToken(t *testing.T) {
+	t.Run("prefers agent token and trims whitespace", func(t *testing.T) {
+		md := metadata.Pairs(
+			strings.ToLower(HeaderAgentToken), "  agent-token  ",
+			strings.ToLower(HeaderAPIKey), "api-token",
+		)
+
+		token, source := agentToken(md.Get)
+		assert.Equal(t, "agent-token", token)
+		assert.Equal(t, HeaderAgentToken, source)
+	})
+
+	t.Run("falls back to api key", func(t *testing.T) {
+		md := metadata.Pairs(strings.ToLower(HeaderAPIKey), "api-token")
+
+		token, source := agentToken(md.Get)
+		assert.Equal(t, "api-token", token)
+		assert.Equal(t, HeaderAPIKey, source)
+	})
+
+	t.Run("returns empty when metadata missing", func(t *testing.T) {
+		var md metadata.MD
+		token, source := agentToken(md.Get)
+		assert.Empty(t, token)
+		assert.Empty(t, source)
+	})
+}
+
+func TestIsExpectedTunnelReceiveError(t *testing.T) {
+	t.Run("nil is not expected", func(t *testing.T) {
+		assert.False(t, isExpectedReceiveError(nil))
+	})
+
+	t.Run("io eof expected", func(t *testing.T) {
+		assert.True(t, isExpectedReceiveError(io.EOF))
+	})
+
+	t.Run("context canceled expected", func(t *testing.T) {
+		assert.True(t, isExpectedReceiveError(context.Canceled))
+	})
+
+	t.Run("context deadline expected", func(t *testing.T) {
+		assert.True(t, isExpectedReceiveError(context.DeadlineExceeded))
+	})
+
+	t.Run("grpc canceled expected", func(t *testing.T) {
+		err := status.Error(codes.Canceled, "context canceled")
+		assert.True(t, isExpectedReceiveError(err))
+	})
+
+	t.Run("grpc deadline exceeded expected", func(t *testing.T) {
+		err := status.Error(codes.DeadlineExceeded, "deadline exceeded")
+		assert.True(t, isExpectedReceiveError(err))
+	})
+
+	t.Run("unexpected error not expected", func(t *testing.T) {
+		assert.False(t, isExpectedReceiveError(errors.New("boom")))
+	})
+}
+
+type registerResponseOrderConn struct {
+	sendHook func(*TunnelMessage) error
+	recvErr  error
+}
+
+func (f *registerResponseOrderConn) Send(msg *TunnelMessage) error {
+	if f.sendHook != nil {
+		return f.sendHook(msg)
+	}
+	return nil
+}
+
+func (f *registerResponseOrderConn) Receive() (*TunnelMessage, error) {
+	if f.recvErr != nil {
+		return nil, f.recvErr
+	}
+	return nil, io.EOF
+}
+
+func (f *registerResponseOrderConn) muxConn(context.Context) io.ReadWriteCloser {
+	return newMuxConn(
+		func([]byte) error {
+			return nil
+		},
+		func() ([]byte, error) {
+			return nil, f.recvErr
+		},
+		f.Close,
+	)
+}
+
+func (f *registerResponseOrderConn) Close() error { return nil }
+
+func (f *registerResponseOrderConn) IsClosed() bool { return false }
+
+func (f *registerResponseOrderConn) Transport() string { return TransportGRPC }
+
+func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterResponse(t *testing.T) {
+	server := NewTunnelServer(TunnelServerOptions{Registry: GetRegistry()})
+	envID := "env-grpc-register-order"
+	server.registry.Unregister(envID)
+	t.Cleanup(func() { server.registry.Unregister(envID) })
+
+	conn := &registerResponseOrderConn{recvErr: io.EOF}
+	conn.sendHook = func(msg *TunnelMessage) error {
+		require.Equal(t, MessageTypeRegisterResponse, msg.Type)
+		_, ok := server.registry.Get(envID).Get()
+		assert.True(t, ok, "gRPC tunnel should already be registered when the register response is sent")
+		return nil
+	}
+
+	server.manageConnectedTunnel(t.Context(), envID, conn, &TunnelMessage{Type: MessageTypeRegister, Capabilities: []string{tunnelCapabilityMux}}, "token")
+
+	_, ok := server.registry.Get(envID).Get()
+	assert.False(t, ok)
+}
+
+func TestTunnelServer_ManageConnectedTunnel_UnregistersAfterConnectionContextCancellation(t *testing.T) {
+	registry := NewTunnelRegistry()
+	server := NewTunnelServer(TunnelServerOptions{Registry: registry})
+	envID := "env-cancelled-disconnect"
+	conn := &registerResponseOrderConn{recvErr: context.Canceled}
+
+	connectionCtx, cancelConnection := context.WithCancel(t.Context())
+	cancelConnection()
+	server.manageConnectedTunnel(connectionCtx, envID, conn, &TunnelMessage{Type: MessageTypeRegister, Capabilities: []string{tunnelCapabilityMux}}, "token")
+
+	_, ok := registry.Get(envID).Get()
+	require.False(t, ok)
+
+	stopCtx, cancelStop := context.WithTimeout(t.Context(), time.Second)
+	defer cancelStop()
+	require.NoError(t, registry.Stop(stopCtx))
+}

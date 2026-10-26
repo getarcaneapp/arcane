@@ -20,8 +20,8 @@
 		getCpuMetric,
 		getCpuMetricLabel,
 		getDiskMetric,
-		getEdgeConnectionStateLabel,
-		getEdgeTransportLabel,
+		getAgentConnectionStateLabel,
+		getAgentTransportLabel,
 		getGpuMetric,
 		getGpuMetricLabel,
 		getMemoryMetric,
@@ -134,9 +134,9 @@
 
 					<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-muted-foreground/70">
 						{#if environment.id !== '0'}
-							<span>{getEdgeTransportLabel(environment)}</span>
+							<span>{getAgentTransportLabel(environment)}</span>
 							<span>•</span>
-							<span>{getEdgeConnectionStateLabel(environment)}</span>
+							<span>{getAgentConnectionStateLabel(environment)}</span>
 							<span>•</span>
 						{/if}
 						<span title={activity.title}>{activity.label}: {activity.value}</span>

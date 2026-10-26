@@ -1,0 +1,166 @@
+package agent
+
+import (
+	"errors"
+	"io"
+	"maps"
+	"net/http"
+	"strings"
+
+	"github.com/labstack/echo/v5"
+
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/remenv"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/cookie"
+)
+
+const (
+	HeaderAPIKey           = "X-Api-Key" // #nosec G101: header name, not a credential
+	HeaderAuthorization    = "Authorization"
+	HeaderCookie           = "Cookie"
+	HeaderAgentToken       = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
+	HeaderUpgrade          = "Upgrade"
+	HeaderConnection       = "Connection"
+	ConnectionUpgradeToken = "upgrade"
+)
+
+var (
+	// hopByHopHeaders is shared and read-only; BuildHopByHopHeaders returns a private copy.
+	hopByHopHeaders = map[string]struct{}{
+		"Connection": {}, "Keep-Alive": {}, "Proxy-Authenticate": {}, "Proxy-Authorization": {},
+		"Te": {}, "Trailers": {}, "Trailer": {}, "Transfer-Encoding": {}, "Upgrade": {},
+	}
+	skipHeaders = map[string]struct{}{
+		"Host": {}, "Connection": {}, "Keep-Alive": {}, "Proxy-Authenticate": {},
+		"Proxy-Authorization": {}, "Te": {}, "Trailer": {}, "Transfer-Encoding": {},
+		"Upgrade": {}, "Content-Length": {}, "Accept-Encoding": {}, "Origin": {}, "Referer": {},
+		"Access-Control-Request-Method": {}, "Access-Control-Request-Headers": {}, "Cookie": {},
+	}
+)
+
+func CopyRequestHeaders(from, to http.Header) {
+	for k, vs := range from {
+		ck := http.CanonicalHeaderKey(k)
+		if _, ok := skipHeaders[ck]; ok || ck == http.CanonicalHeaderKey(HeaderAuthorization) || ck == http.CanonicalHeaderKey(HeaderAPIKey) {
+			continue
+		}
+		for _, v := range vs {
+			to.Add(k, v)
+		}
+	}
+}
+
+func SetAuthHeader(req *http.Request, c *echo.Context) {
+	// Forward API key header if present
+	if apiKey := c.Request().Header.Get(HeaderAPIKey); apiKey != "" {
+		req.Header.Set(HeaderAPIKey, apiKey)
+	}
+
+	// Forward Authorization header or cookie token
+	if auth := c.Request().Header.Get(HeaderAuthorization); auth != "" {
+		req.Header.Set(HeaderAuthorization, auth)
+	} else if token, err := cookie.GetTokenCookie(c.Request()); err == nil && token != "" {
+		req.Header.Set(HeaderAuthorization, "Bearer "+token)
+	}
+}
+
+func SetAgentToken(req *http.Request, accessToken *string) {
+	remenv.ApplyAgentTokenHeaders(req.Header, accessToken)
+}
+
+// BuildWebSocketHeaders constructs a header set for proxying WebSocket requests
+// to a remote environment, forwarding authentication in the same way as HTTP proxying.
+func BuildWebSocketHeaders(c *echo.Context, accessToken *string) http.Header {
+	headers := http.Header{}
+	req := c.Request()
+
+	// Forward API key if present
+	if apiKey := req.Header.Get(HeaderAPIKey); apiKey != "" {
+		headers.Set(HeaderAPIKey, apiKey)
+	}
+
+	// Forward authorization (header or cookie)
+	if auth := req.Header.Get(HeaderAuthorization); auth != "" {
+		headers.Set(HeaderAuthorization, auth)
+	} else if token, err := cookie.GetTokenCookie(req); err == nil && token != "" {
+		headers.Set(HeaderAuthorization, "Bearer "+token)
+	}
+
+	// Forward cookies if no other auth is present
+	if headers.Get(HeaderAuthorization) == "" && headers.Get(HeaderAPIKey) == "" {
+		if cookies := req.Header.Get(HeaderCookie); cookies != "" {
+			headers.Set(HeaderCookie, cookies)
+		}
+	}
+
+	// Set agent token for remote environment authentication
+	remenv.ApplyAgentTokenHeaders(headers, accessToken)
+
+	return headers
+}
+
+// HTTPToWebSocketURL converts an HTTP(S) URL to WS(S).
+func HTTPToWebSocketURL(url string) string {
+	switch {
+	case strings.HasPrefix(url, "https://"):
+		return "wss://" + strings.TrimPrefix(url, "https://")
+	case strings.HasPrefix(url, "http://"):
+		return "ws://" + strings.TrimPrefix(url, "http://")
+	default:
+		return url
+	}
+}
+
+// CopyBodyWithFlush streams body to w, flushing after each write when supported. It returns the first error
+// other than io.EOF, so a response cut short upstream is not mistaken for a complete one.
+func CopyBodyWithFlush(w http.ResponseWriter, body io.Reader) error {
+	buf := make([]byte, 32*1024)
+	flusher, canFlush := w.(http.Flusher)
+
+	for {
+		n, readErr := body.Read(buf)
+		if n > 0 {
+			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+				return writeErr
+			}
+			if canFlush {
+				flusher.Flush()
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			return nil
+		}
+		if readErr != nil {
+			return readErr
+		}
+	}
+}
+
+func SetForwardedHeaders(req *http.Request, clientIP, host string) {
+	req.Header.Set("X-Forwarded-For", clientIP)
+	req.Header.Set("X-Forwarded-Host", host)
+}
+
+func BuildHopByHopHeaders(respHeader http.Header) map[string]struct{} {
+	hop := maps.Clone(hopByHopHeaders)
+	for _, connVal := range respHeader.Values("Connection") {
+		for token := range strings.SplitSeq(connVal, ",") {
+			if t := strings.TrimSpace(token); t != "" {
+				hop[http.CanonicalHeaderKey(t)] = struct{}{}
+			}
+		}
+	}
+
+	return hop
+}
+
+func CopyResponseHeaders(from, to http.Header, hop map[string]struct{}) {
+	for k, vs := range from {
+		ck := http.CanonicalHeaderKey(k)
+		if _, ok := hop[ck]; ok {
+			continue
+		}
+		for _, v := range vs {
+			to.Add(k, v)
+		}
+	}
+}

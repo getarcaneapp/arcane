@@ -291,7 +291,6 @@ export interface SwarmNodeAgentStatus {
 	environmentType?: string | null;
 	connected?: boolean | null;
 	lastHeartbeat?: string | null;
-	lastPollAt?: string | null;
 	reportedNodeId?: string | null;
 	reportedHostname?: string | null;
 	candidates?: SwarmNodeAgentCandidate[];

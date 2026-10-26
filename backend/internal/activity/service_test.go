@@ -28,7 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/edge"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
@@ -924,7 +924,7 @@ func TestSyncResourcesToEnvironmentOutcomes(t *testing.T) {
 			crypto.InitEncryption(&crypto.Config{EncryptionKey: "test-encryption-key-for-testing-32bytes-min", Environment: "test"})
 			var mu sync.Mutex
 			var calls []string
-			agent := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			agentHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				mu.Lock()
 				calls = append(calls, r.URL.Path)
 				mu.Unlock()
@@ -940,22 +940,25 @@ func TestSyncResourcesToEnvironmentOutcomes(t *testing.T) {
 				}
 			})
 			manager := echo.New()
-			manager.GET("/api/tunnel/connect", edge.NewTunnelServerWithRegistry(edge.GetRegistry(), func(context.Context, string) (string, error) {
-				return "remote", nil
-			}, nil).HandleConnect)
+			manager.GET("/api/tunnel/connect", agent.NewTunnelServer(agent.TunnelServerOptions{
+				Registry: agent.GetRegistry(),
+				Resolver: func(context.Context, string) (string, error) {
+					return "remote", nil
+				},
+			}).HandleConnect)
 			managerServer := httptest.NewServer(manager)
 			defer managerServer.Close()
 			agentCtx, cancelAgent := context.WithCancel(t.Context())
 			defer cancelAgent()
-			defer edge.GetRegistry().Unregister("remote")
-			go edge.NewTunnelClient(&edge.Config{
-				EdgeAgent:     true,
-				EdgeTransport: edge.EdgeTransportWebSocket,
-				ManagerApiUrl: managerServer.URL,
-				AgentToken:    "agent-token",
-			}, agent).StartWithErrorChan(agentCtx, nil)
-			require.True(t, edge.GetRegistry().WaitForActive(t.Context(), "remote", 5*time.Second).IsPresent())
-			require.NoError(t, db.Create(&environment.Environment{ID: "remote", Name: "Remote", ApiUrl: "edge://remote", AccessToken: new("agent-token"), Enabled: true}).Error)
+			defer agent.GetRegistry().Unregister("remote")
+			go agent.NewTunnelClient(&agent.Config{
+				AgentEnabled:   true,
+				AgentTransport: agent.TransportWebSocket,
+				ManagerApiUrl:  managerServer.URL,
+				AgentToken:     "agent-token",
+			}, agentHandler).StartWithErrorChan(agentCtx, nil)
+			require.True(t, agent.GetRegistry().WaitForActive(t.Context(), "remote", 5*time.Second).IsPresent())
+			require.NoError(t, db.Create(&environment.Environment{ID: "remote", Name: "Remote", ApiUrl: "agent://remote", AccessToken: new("agent-token"), Enabled: true}).Error)
 			service := environment.NewEnvironmentService(db, nil, nil, nil, nil)
 			activityService := NewActivityService(db, nil)
 			id, err := service.SyncResourcesToEnvironment(t.Context(), "remote", &types.Actor{ID: "operator", Username: "operator"}, activityService)

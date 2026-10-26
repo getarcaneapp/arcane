@@ -558,7 +558,7 @@ test.describe('Volumes shift-select', () => {
 		const remoteEnvironment = {
 			id: 'remote-shift-test',
 			name: 'Remote Test',
-			apiUrl: 'edge://remote-shift-test',
+			apiUrl: 'agent://remote-shift-test',
 			status: 'online',
 			enabled: true
 		};
