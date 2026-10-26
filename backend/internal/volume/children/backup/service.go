@@ -61,6 +61,7 @@ type Store struct {
 	Latest            func(ctx context.Context, policyID string) (*volume.Backup, error)
 	List              func(ctx context.Context, volumeName string, params pagination.QueryParams) ([]volume.Backup, int64, error)
 	RemoteSnapshotIDs func(ctx context.Context, destinationID string) ([]string, error)
+	CountLocal        func(ctx context.Context) (int64, error)
 }
 
 // Dependencies are the persistence, runtime, and helper-container operations volume backups use.
@@ -692,7 +693,12 @@ func (s *Service) deleteRusticBackups(ctx context.Context, entries []*volume.Bac
 }
 
 // PruneLocalRepository frees the data of deleted local volume backups once Rustic's keep-delete window passes.
+// Without local backups there is nothing worth pruning, so no Rustic helper, image, or volume is created.
 func (s *Service) PruneLocalRepository(ctx context.Context) error {
+	localBackups, err := s.deps.Store.CountLocal(ctx)
+	if err != nil || localBackups == 0 {
+		return err
+	}
 	dockerClient, err := s.deps.Docker.GetClient(ctx)
 	if err != nil {
 		return err

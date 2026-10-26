@@ -82,6 +82,7 @@ type Store struct {
 	LatestPolicyRun           func(ctx context.Context, policyID string) (*backuptypes.SystemBackupRun, error)
 	RemoteSnapshotIDs         func(ctx context.Context, destinationID string) ([]string, error)
 	CountRuns                 func(ctx context.Context) (int64, error)
+	CountLocalRuns            func(ctx context.Context) (int64, error)
 	CountVolumeRepositoryRuns func(ctx context.Context) (int64, error)
 	CountRunningVolumeBackups func(ctx context.Context) (int64, error)
 	Policies                  func(ctx context.Context) ([]backuptypes.SystemBackupPolicy, error)
@@ -901,7 +902,12 @@ func (s *Service) deleteRuns(ctx context.Context, backupRuns []*backuptypes.Syst
 }
 
 // PruneLocalRepository frees the data of deleted local system backups once Rustic's keep-delete window passes.
+// Without local backups there is nothing worth pruning, so no Rustic helper, image, or volume is created.
 func (s *Service) PruneLocalRepository(ctx context.Context) error {
+	localBackups, err := s.store.CountLocalRuns(ctx)
+	if err != nil || localBackups == 0 {
+		return err
+	}
 	key, err := s.recoveryKeys.Get(ctx)
 	if errors.Is(err, backup.ErrRecoveryKeyNotConfigured) {
 		return nil

@@ -611,6 +611,11 @@ func (s *SystemService) backupStore(s3Destinations *s3.S3DestinationService) sys
 			err := s.db.WithContext(ctx).Model(&SystemBackupRun{}).Count(&count).Error
 			return count, err
 		},
+		CountLocalRuns: func(ctx context.Context) (int64, error) {
+			var count int64
+			err := s.db.WithContext(ctx).Model(&SystemBackupRun{}).Where("local_snapshot_id <> ''").Count(&count).Error
+			return count, err
+		},
 		CountVolumeRepositoryRuns: func(ctx context.Context) (int64, error) {
 			var count int64
 			err := s.db.WithContext(ctx).Model(&volume.VolumeBackup{}).Where("format = ?", volume.VolumeBackupFormatRustic).Count(&count).Error
