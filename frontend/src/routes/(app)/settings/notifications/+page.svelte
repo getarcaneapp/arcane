@@ -13,12 +13,16 @@
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type { ApnsDevice } from '#lib/types/apns.js';
+	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
+	import NotificationProviders from './components/notification-providers.svelte';
+
 	const isReadOnly = $derived(settingsStore.readOnly);
+	const canManageNotifications = $derived(hasPermission('notifications:manage', GLOBAL_SCOPE));
 	const canToggleMobilePush = $derived(hasPermission('settings:write', LOCAL_DOCKER_ENVIRONMENT_ID));
 	const mobilePushEnabled = $derived(settingsStore.current?.apnsEnabled === true);
 	let savingMobilePush = $state(false);
@@ -128,6 +132,16 @@
 					</SettingsRow>
 				{/if}
 			</SettingsSection>
+			{#if canManageNotifications}
+				<SettingsSection
+					title={m.notifications_providers_title()}
+					description={m.notifications_providers_description()}
+					variant="plain"
+					class="mt-6"
+				>
+					<NotificationProviders disabled={isReadOnly} />
+				</SettingsSection>
+			{/if}
 		</fieldset>
 	{/snippet}
 </SettingsPageLayout>

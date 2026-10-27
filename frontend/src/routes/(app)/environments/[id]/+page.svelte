@@ -33,8 +33,7 @@
 		CodeIcon,
 		SettingsIcon,
 		ClockIcon,
-		ActivityIcon,
-		NotificationsIcon
+		ActivityIcon
 	} from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
@@ -69,7 +68,6 @@
 	} from './components/environment-form-schema';
 	import EnvironmentStatusSummary from './components/environment-status-summary.svelte';
 	import JobsTab from './components/jobs-tab.svelte';
-	import NotificationsTab from './components/notifications-tab.svelte';
 	import StorageTab from './components/storage-tab.svelte';
 	import TimeoutsTab from './components/timeouts-tab.svelte';
 
@@ -119,7 +117,6 @@
 	let showSettingsTabs = $derived(runtimeEnvironment.enabled && hasPermission('settings:read', environment.id));
 	let settingsAvailable = $derived(isCurrentlyOnline && settings !== null);
 	let showJobsTab = $derived(showSettingsTabs && hasPermission('jobs:manage', environment.id));
-	let showNotificationsTab = $derived(runtimeEnvironment.enabled && hasPermission('notifications:manage', environment.id));
 	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.agentMTLSCertificate));
 	let canPairEnvironments = $derived(hasPermission('environments:pair', environment.id));
 	let showMTLSDownloads = $derived(
@@ -251,14 +248,6 @@
 				value: 'jobs',
 				label: m.automations(),
 				icon: JobsIcon
-			});
-		}
-
-		if (showNotificationsTab) {
-			items.push({
-				value: 'notifications',
-				label: m.notifications_title(),
-				icon: NotificationsIcon
 			});
 		}
 
@@ -804,18 +793,6 @@
 			</Tabs.Content>
 		{:else if showJobsTab}
 			<Tabs.Content value="jobs">
-				{@render settingsOffline()}
-			</Tabs.Content>
-		{/if}
-
-		{#if showNotificationsTab && isCurrentlyOnline}
-			<Tabs.Content value="notifications">
-				{#key environment.id}
-					<NotificationsTab environmentId={environment.id} disabled={settings?.readOnly ?? false} />
-				{/key}
-			</Tabs.Content>
-		{:else if showNotificationsTab}
-			<Tabs.Content value="notifications">
 				{@render settingsOffline()}
 			</Tabs.Content>
 		{/if}
