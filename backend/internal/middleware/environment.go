@@ -254,9 +254,9 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	return nil
 }
 
-// activeTunnel returns the environment's live tunnel, if any; unavailable reports an offline agent.
+// activeTunnel waits briefly for the environment's live tunnel; unavailable reports an offline agent.
 func (m *EnvironmentMiddleware) activeTunnel(ctx context.Context, envID string) (tunnel *agent.AgentTunnel, unavailable bool) {
-	if active, ok := m.registry.Active(envID).Get(); ok {
+	if active, ok := m.registry.WaitForActive(ctx, envID, agent.DefaultTunnelAcquireTimeout).Get(); ok {
 		return active, false
 	}
 	slog.WarnContext(ctx, "No active agent tunnel for environment", "environmentId", envID)

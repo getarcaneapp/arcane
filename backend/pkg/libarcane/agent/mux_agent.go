@@ -36,7 +36,7 @@ func (c *TunnelClient) serveMuxSession(ctx context.Context, rw io.ReadWriteClose
 			c.handler.ServeHTTP(w, r)
 		}),
 		ReadHeaderTimeout: 30 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		IdleTimeout:       180 * time.Second,
 		// Manager requests are logged by the agent's request logger, like any other API call.
 		BaseContext: func(net.Listener) context.Context { return ctx },
 		ConnContext: httpx.WithConn,
