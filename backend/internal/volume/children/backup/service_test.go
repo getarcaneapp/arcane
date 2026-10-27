@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
-	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -24,13 +22,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 )
 
-func applyVolumeBackupMigrations(t *testing.T, gormDB *gorm.DB) {
+func newVolumeBackupTestDB(t *testing.T, name string) *gorm.DB {
 	t.Helper()
-	for _, name := range []string{"032_add_volume_backups.sql", "073_add_backup_support.sql", "087_add_volume_backup_remote_instance.sql"} {
-		migration, err := os.ReadFile("../../../../resources/migrations/sqlite/" + name)
-		require.NoError(t, err)
-		require.NoError(t, gormDB.Exec(strings.Split(string(migration), "-- +goose Down")[0]).Error)
-	}
+	db, err := database.Initialize(t.Context(), "file:"+name+"?mode=memory&cache=shared", database.MigrationOptions{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	return db.DB
 }
 
 type volumeBackupPolicyScheduler struct {
@@ -56,9 +53,7 @@ func (s *volumeBackupPolicyScheduler) Submit(_ context.Context, request types.Sc
 }
 
 func TestVolumeBackupPolicy_RetentionCountsFailedRunsSeparately(t *testing.T) {
-	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-retention-failed?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	applyVolumeBackupMigrations(t, gormDB)
+	gormDB := newVolumeBackupTestDB(t, "volume-backup-retention-failed")
 
 	policyID := "policy-1"
 	require.NoError(t, gormDB.Exec(

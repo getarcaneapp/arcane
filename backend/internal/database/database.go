@@ -6,14 +6,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
-	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -26,8 +23,8 @@ import (
 	"gorm.io/gorm/logger"
 	"gorm.io/plugin/opentelemetry/metrics"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/database/migrations"
 	sqliteutil "github.com/getarcaneapp/arcane/backend/v3/pkg/utils/sqlite"
-	"github.com/getarcaneapp/arcane/backend/v3/resources"
 )
 
 type DB struct {
@@ -146,7 +143,7 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 	if cancellationErr := ctx.Err(); cancellationErr != nil {
 		return nil, cancellationErr
 	}
-	sqlDB, err := db.SQLDB()
+	sqlDB, err := db.DB.DB()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sql.DB: %w", err)
 	}
@@ -175,8 +172,9 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 		sqlDB.SetConnMaxLifetime(5 * time.Minute)
 		sqlDB.SetConnMaxIdleTime(3 * time.Minute)
 	} else {
-		sqlDB.SetMaxIdleConns(kit.Ternary(readDSN == "", 10, sqliteWriteConns))
-		sqlDB.SetMaxOpenConns(kit.Ternary(readDSN == "", 10, sqliteWriteConns))
+		conns := kit.Ternary(readDSN == "", 10, sqliteWriteConns)
+		sqlDB.SetMaxIdleConns(conns)
+		sqlDB.SetMaxOpenConns(conns)
 		sqlDB.SetConnMaxLifetime(0)
 		sqlDB.SetConnMaxIdleTime(0)
 	}
@@ -188,160 +186,103 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 	if readDSN == "" {
 		return db, nil
 	}
-	reader, err := attachSQLiteReadPool(gormDB, sqlDB, readDSN)
-	if err != nil {
+	if db.reader, err = attachSQLiteReadPool(gormDB, sqlDB, readDSN); err != nil {
 		return nil, err
 	}
-	return &DB{
-		DB:     gormDB,
-		reader: reader,
-	}, nil
+	return db, nil
 }
 
 // latestMigrationVersion selects the latest embedded migration.
 func migrateDatabase(ctx context.Context, db *sql.DB, dbProvider string, options MigrationOptions, requiredVersion int64) error {
-	if requiredVersion == latestMigrationVersion {
-		versions, err := getEmbeddedMigrationVersions(dbProvider)
-		if err != nil {
-			return fmt.Errorf("failed to determine target migration version for %s: %w", dbProvider, err)
-		}
-		if len(versions) == 0 {
-			return fmt.Errorf("failed to determine target migration version for %s: no embedded migrations found for %s", dbProvider, dbProvider)
-		}
-		requiredVersion = versions[len(versions)-1]
-	}
-
-	migrationsFS, err := fs.Sub(resources.FS, "migrations/"+dbProvider)
-	if err != nil {
-		return fmt.Errorf("failed to create goose provider for %s: failed to load embedded migrations for %s: %w", dbProvider, dbProvider, err)
-	}
-	var dialect goose.Dialect
-	switch dbProvider {
-	case dbProviderSQLite:
-		dialect = goose.DialectSQLite3
-	case dbProviderPostgres:
-		dialect = goose.DialectPostgres
-	default:
+	dialect, ok := map[string]goose.Dialect{
+		dbProviderSQLite:   goose.DialectSQLite3,
+		dbProviderPostgres: goose.DialectPostgres,
+	}[dbProvider]
+	if !ok {
 		return fmt.Errorf("failed to create goose provider for %s: unsupported database provider: %s", dbProvider, dbProvider)
 	}
+	migrations.Dialect = dialect
+
+	var providerOptions []goose.ProviderOption
 	// Serialize Postgres migrations across processes. SQLite already allows one writer.
-	providerOptions := []goose.ProviderOption{}
 	if dialect == goose.DialectPostgres {
-		sessionLocker, lockerErr := lock.NewPostgresSessionLocker()
-		if lockerErr != nil {
-			return fmt.Errorf("failed to create goose provider for %s: failed to create Postgres migration session locker: %w", dbProvider, lockerErr)
+		sessionLocker, err := lock.NewPostgresSessionLocker()
+		if err != nil {
+			return fmt.Errorf("failed to create goose provider for %s: failed to create Postgres migration session locker: %w", dbProvider, err)
 		}
 		providerOptions = append(providerOptions, goose.WithSessionLocker(sessionLocker))
 	}
-	provider, err := goose.NewProvider(dialect, db, migrationsFS, providerOptions...)
+	provider, err := goose.NewProvider(dialect, db, nil, providerOptions...)
 	if err != nil {
 		return fmt.Errorf("failed to create goose provider for %s: %w", dbProvider, err)
 	}
-
+	sources := provider.ListSources()
+	if requiredVersion == latestMigrationVersion {
+		requiredVersion = sources[len(sources)-1].Version
+	}
+	if requiredVersion < migrations.BaselineVersion {
+		return fmt.Errorf("migration target %d for %s is older than the Arcane v2.17.1 schema baseline %d", requiredVersion, dbProvider, migrations.BaselineVersion)
+	}
 	currentVersion, err := provider.GetDBVersion(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to determine current migration version for %s: %w", dbProvider, err)
 	}
-
 	slog.InfoContext(ctx, "Resolved database migration state", "provider", dbProvider, "currentVersion", currentVersion, "requiredVersion", requiredVersion)
 
-	if currentVersion > requiredVersion {
-		if !options.AllowDowngrade {
-			return fmt.Errorf(
-				"database schema version %d is newer than this Arcane binary supports (target %d for %s); downgrade "+
-					"requires ARCANE_ALLOW_DOWNGRADE=true and a database backup before startup",
-				currentVersion,
-				requiredVersion,
-				dbProvider,
-			)
-		}
-
-		embeddedVersions, versionsErr := getEmbeddedMigrationVersions(dbProvider)
-		if versionsErr != nil {
-			return versionsErr
-		}
-		applied := kit.Ternary(dbProvider == dbProviderPostgres, "true", "1")
-		placeholder := kit.Ternary(dbProvider == dbProviderPostgres, "$1", "?")
-		query := "SELECT DISTINCT version_id FROM " + gooseVersionTable +
-			" WHERE is_applied = " + applied + " AND version_id > " + placeholder + " ORDER BY version_id"
-		rows, queryErr := db.QueryContext(ctx, query, requiredVersion)
-		if queryErr != nil {
-			return fmt.Errorf("failed to read applied migration versions for %s: %w", dbProvider, queryErr)
-		}
-		defer func() {
-			_ = rows.Close()
-		}()
-		missingVersions := []int64{}
-		for rows.Next() {
-			var version int64
-			if scanErr := rows.Scan(&version); scanErr != nil {
-				return fmt.Errorf("failed to scan applied migration version for %s: %w", dbProvider, scanErr)
-			}
-			if !slices.Contains(embeddedVersions, version) {
-				missingVersions = append(missingVersions, version)
-			}
-		}
-		if iterateErr := rows.Err(); iterateErr != nil {
-			return fmt.Errorf("failed to iterate applied migration versions for %s: %w", dbProvider, iterateErr)
-		}
-		if len(missingVersions) > 0 {
-			return fmt.Errorf("cannot downgrade database from version %d to %d for %s: embedded Goose migrations are missing for "+
-				"applied version(s) %v, so the rollback SQL is unavailable in this Arcane binary; "+
-				"ARCANE_ALLOW_DOWNGRADE=true is not sufficient, restore the database from a backup taken before the newer "+
-				"schema was applied",
-				currentVersion,
-				requiredVersion,
-				dbProvider,
-				missingVersions,
-			)
-		}
-
-		if _, downToErr := provider.DownTo(ctx, requiredVersion); downToErr != nil {
-			return fmt.Errorf("failed to downgrade database from version %d to %d for %s using embedded Goose migrations: %w", currentVersion, requiredVersion, dbProvider, downToErr)
-		}
-
-		slog.InfoContext(ctx, "Database downgrade completed successfully", "provider", dbProvider, "fromVersion", currentVersion, "toVersion", requiredVersion)
-		return nil
-	}
-
-	if currentVersion == requiredVersion {
+	switch {
+	case currentVersion > 0 && currentVersion < migrations.BaselineVersion:
+		return fmt.Errorf(
+			"database schema version %d for %s predates the Arcane v2.17.1 schema baseline %d; upgrade to Arcane v2.17.1 first, then upgrade to v3",
+			currentVersion, dbProvider, migrations.BaselineVersion,
+		)
+	case currentVersion == requiredVersion:
 		slog.InfoContext(ctx, "Database schema is up to date", "provider", dbProvider, "migrationVersion", currentVersion)
 		return nil
+	case currentVersion < requiredVersion:
+		if _, err = provider.UpTo(ctx, requiredVersion); err != nil {
+			return fmt.Errorf("failed to apply embedded Goose migrations for %s: %w", dbProvider, err)
+		}
+		slog.InfoContext(ctx, "Database migrations completed successfully", "provider", dbProvider, "targetVersion", requiredVersion)
+		return nil
+	case !options.AllowDowngrade:
+		return fmt.Errorf(
+			"database schema version %d is newer than this Arcane binary supports (target %d for %s); downgrade "+
+				"requires ARCANE_ALLOW_DOWNGRADE=true and a database backup before startup",
+			currentVersion, requiredVersion, dbProvider,
+		)
 	}
 
-	if _, upToErr := provider.UpTo(ctx, requiredVersion); upToErr != nil {
-		return fmt.Errorf("failed to apply embedded Goose migrations for %s: %w", dbProvider, upToErr)
-	}
-
-	slog.InfoContext(ctx, "Database migrations completed successfully", "provider", dbProvider, "targetVersion", requiredVersion)
-	return nil
-}
-
-func getEmbeddedMigrationVersions(dbProvider string) ([]int64, error) {
-	entries, err := resources.FS.ReadDir("migrations/" + dbProvider)
+	rows, err := db.QueryContext(ctx, fmt.Sprintf("SELECT DISTINCT version_id FROM %s WHERE is_applied = TRUE AND version_id > %d ORDER BY version_id", gooseVersionTable, requiredVersion))
 	if err != nil {
-		return nil, fmt.Errorf("failed to read embedded migrations for %s: %w", dbProvider, err)
+		return fmt.Errorf("failed to read applied migration versions for %s: %w", dbProvider, err)
 	}
-
-	versionsMap := make(map[int64]struct{})
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
-			continue
+	defer func() { _ = rows.Close() }()
+	missingVersions := []int64{}
+	for rows.Next() {
+		var version int64
+		if err = rows.Scan(&version); err != nil {
+			return fmt.Errorf("failed to scan applied migration version for %s: %w", dbProvider, err)
 		}
-
-		versionText, _, found := strings.Cut(entry.Name(), "_")
-		if !found {
-			continue
+		if !slices.ContainsFunc(sources, func(source *goose.Source) bool { return source.Version == version }) {
+			missingVersions = append(missingVersions, version)
 		}
-		version, parseErr := strconv.ParseInt(versionText, 10, 64)
-		if parseErr != nil {
-			continue
-		}
-
-		versionsMap[version] = struct{}{}
 	}
-
-	return slices.Sorted(maps.Keys(versionsMap)), nil
+	if err = rows.Err(); err != nil {
+		return fmt.Errorf("failed to iterate applied migration versions for %s: %w", dbProvider, err)
+	}
+	if len(missingVersions) > 0 {
+		return fmt.Errorf("cannot downgrade database from version %d to %d for %s: embedded Goose migrations are missing for "+
+			"applied version(s) %v, so the rollback migrations are unavailable in this Arcane binary; "+
+			"ARCANE_ALLOW_DOWNGRADE=true is not sufficient, restore the database from a backup taken before the newer "+
+			"schema was applied",
+			currentVersion, requiredVersion, dbProvider, missingVersions,
+		)
+	}
+	if _, err = provider.DownTo(ctx, requiredVersion); err != nil {
+		return fmt.Errorf("failed to downgrade database from version %d to %d for %s using embedded Goose migrations: %w", currentVersion, requiredVersion, dbProvider, err)
+	}
+	slog.InfoContext(ctx, "Database downgrade completed successfully", "provider", dbProvider, "fromVersion", currentVersion, "toVersion", requiredVersion)
+	return nil
 }
 
 func ParseSQLiteConnectionString(connString string) (string, error) {
@@ -408,7 +349,7 @@ func (db *DB) FindEnvironmentIDByApiKey(ctx context.Context, apiKey string) (str
 }
 
 func (db *DB) Close() error {
-	sqlDB, err := db.SQLDB()
+	sqlDB, err := db.DB.DB()
 	if err != nil {
 		return err
 	}
@@ -416,8 +357,4 @@ func (db *DB) Close() error {
 		return sqlDB.Close()
 	}
 	return errors.Join(db.reader.Close(), sqlDB.Close())
-}
-
-func (db *DB) SQLDB() (*sql.DB, error) {
-	return db.DB.DB()
 }
