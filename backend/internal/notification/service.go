@@ -996,7 +996,7 @@ func (s *NotificationService) sendAutoHealNotificationForTarget(ctx context.Cont
 
 // TestNotification sends a test message even to a disabled provider (testing before enabling is legitimate)
 // and returns a warning when a real notification of the tested kind would not send.
-func (s *NotificationService) TestNotification(ctx context.Context, environmentID string, provider notifications.NotificationProvider, testType string) (string, error) {
+func (s *NotificationService) TestNotification(ctx context.Context, provider notifications.NotificationProvider, testType string) (string, error) {
 	setting, err := s.GetSettingsByProvider(ctx, provider)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return "", common.Classify(common.ErrBadRequest, fmt.Errorf("please save your %s settings before testing", provider))
@@ -1022,7 +1022,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, environmentI
 		warning = fmt.Sprintf("no events are subscribed for %s, so real notifications will not send", setting.Provider)
 	}
 
-	target, err := s.ResolveNotificationTarget(ctx, environmentID)
+	target, err := s.ResolveNotificationTarget(ctx, "0")
 	if err != nil {
 		return "", err
 	}

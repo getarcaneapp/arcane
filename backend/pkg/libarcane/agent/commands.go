@@ -178,12 +178,6 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/jobs/{jobId}/runs/{runId}", CommandName: "job.run.inspect"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/jobs/{jobId}/runs/{runId}", CommandName: "job.run.action"},
 
-	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/notifications/settings", CommandName: "notification.settings.list"},
-	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/notifications/settings/{provider}", CommandName: "notification.settings.get"},
-	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/notifications/settings", CommandName: "notification.settings.upsert"},
-	{Method: http.MethodDelete, PathPattern: "/api/environments/{id}/notifications/settings/{provider}", CommandName: "notification.settings.delete"},
-	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/notifications/settings/{provider}", CommandName: "notification.settings.action"},
-
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/events/changes", CommandName: "event.changes"},
 
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/updater/run", CommandName: "updater.run"},
