@@ -106,7 +106,7 @@ func NewSystemService(
 	s.backup = systembackup.NewService(systembackup.Dependencies{
 		Store:                 s.backupStore(s3Destinations),
 		DB:                    db,
-		SQLDB:                 db.SQLDB,
+		SQLDB:                 db.DB.DB,
 		ActorStore:            actors.Store,
 		Docker:                dockerService,
 		Volumes:               volumeService,

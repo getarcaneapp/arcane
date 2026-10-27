@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -111,19 +110,16 @@ func TestRenameVolumeRejectsInvalidAndProtectedNames(t *testing.T) {
 	require.ErrorIs(t, err, common.ErrVolumeRenameProtected)
 }
 
-func applyVolumeBackupMigrations(t *testing.T, gormDB *gorm.DB) {
+func newVolumeBackupTestDB(t *testing.T, name string) *gorm.DB {
 	t.Helper()
-	for _, name := range []string{"032_add_volume_backups.sql", "073_add_backup_support.sql", "087_add_volume_backup_remote_instance.sql"} {
-		migration, err := os.ReadFile("../../resources/migrations/sqlite/" + name)
-		require.NoError(t, err)
-		require.NoError(t, gormDB.Exec(strings.Split(string(migration), "-- +goose Down")[0]).Error)
-	}
+	db, err := database.Initialize(t.Context(), "file:"+name+"?mode=memory&cache=shared", database.MigrationOptions{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	return db.DB
 }
 
 func TestRenameVolumeMetadataPreservesPoliciesAndHistory(t *testing.T) {
-	gormDB, err := gorm.Open(sqlite.Open("file:volume-rename-metadata?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	applyVolumeBackupMigrations(t, gormDB)
+	gormDB := newVolumeBackupTestDB(t, "volume-rename-metadata")
 	require.NoError(t, gormDB.Exec("INSERT INTO volume_backup_policies (id, volume_name, schedule) VALUES (?, ?, ?)", "policy-1", "source-data", "0 0 2 * * *").Error)
 	require.NoError(t, gormDB.Create(&VolumeBackup{VolumeName: "source-data", PolicyID: "policy-1"}).Error)
 
@@ -452,9 +448,7 @@ func TestVolumeBackup_ListResolvesDestinationName(t *testing.T) {
 }
 
 func TestVolumeBackupPolicy_GetReturnsLastRunForEachPolicyFromStore(t *testing.T) {
-	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-last-runs-store?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	applyVolumeBackupMigrations(t, gormDB)
+	gormDB := newVolumeBackupTestDB(t, "volume-backup-last-runs-store")
 	require.NoError(t, gormDB.Create(&VolumeBackup{VolumeName: "app-data", PolicyID: "first-policy", Status: VolumeBackupStatusSucceeded}).Error)
 	require.NoError(t, gormDB.Create(&VolumeBackup{VolumeName: "app-data", PolicyID: "second-policy", Status: VolumeBackupStatusFailed}).Error)
 

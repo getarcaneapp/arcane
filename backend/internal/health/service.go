@@ -49,7 +49,7 @@ func (s *Service) Ready(ctx context.Context) types.ReadinessResponse {
 
 	checks := map[string]string{
 		"database": func() string {
-			sqlDB, err := s.db.SQLDB()
+			sqlDB, err := s.db.DB.DB()
 			if err != nil {
 				return fmt.Sprintf("get database handle: %v", err)
 			}
