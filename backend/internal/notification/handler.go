@@ -27,8 +27,7 @@ type GetAllNotificationSettingsOutput struct {
 }
 
 type GetNotificationSettingsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Provider      string `path:"provider" doc:"Provider"`
+	Provider string `path:"provider" doc:"Provider"`
 }
 
 type GetNotificationSettingsOutput struct {
@@ -36,7 +35,6 @@ type GetNotificationSettingsOutput struct {
 }
 
 type CreateOrUpdateNotificationSettingsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
 	types.Create[types.NotificationSettings]
 }
 
@@ -45,15 +43,13 @@ type CreateOrUpdateNotificationSettingsOutput struct {
 }
 
 type DeleteNotificationSettingsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Provider      string `path:"provider" doc:"Provider"`
+	Provider string `path:"provider" doc:"Provider"`
 }
 
 type NotificationSettingsActionInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Provider      string `path:"provider" doc:"Provider"`
-	Action        string `query:"action" required:"true" enum:"test" doc:"Notification settings action"`
-	Type          string `query:"type" default:"simple"`
+	Provider string `path:"provider" doc:"Provider"`
+	Action   string `query:"action" required:"true" enum:"test" doc:"Notification settings action"`
+	Type     string `query:"type" default:"simple"`
 }
 
 type DispatchNotificationInput struct {
@@ -78,7 +74,7 @@ func (h *NotificationHandler) rejectOnAgent() error {
 	return nil
 }
 
-func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, input *types.EnvironmentInput) (*GetAllNotificationSettingsOutput, error) {
+func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, _ *struct{}) (*GetAllNotificationSettingsOutput, error) {
 	if err := h.rejectOnAgent(); err != nil {
 		return nil, err
 	}
@@ -177,7 +173,7 @@ func (h *NotificationHandler) TestNotification(ctx context.Context, input *Notif
 		return nil, huma.Error400BadRequest("invalid notification test type")
 	}
 
-	warning, err := h.notificationService.TestNotification(ctx, input.EnvironmentID, provider, testType)
+	warning, err := h.notificationService.TestNotification(ctx, provider, testType)
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to send test notification: "+apiErr.Message)

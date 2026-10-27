@@ -26,11 +26,6 @@ export interface BuildsTabProps extends LockableFormTabProps {
 	settings: ResolvedSettings;
 }
 
-export interface NotificationsTabProps {
-	environmentId: string;
-	disabled: boolean;
-}
-
 export interface DockerTabProps {
 	formInputs: EnvironmentFormInputs;
 	environmentId: string;

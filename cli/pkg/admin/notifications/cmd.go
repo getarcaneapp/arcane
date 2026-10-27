@@ -53,7 +53,7 @@ func newSettingsGetCmd() *cobra.Command {
 				return err
 			}
 
-			body, err := c.DoRaw(cmd.Context(), http.MethodGet, clitypes.NotificationsSettings(c.EnvID()), nil)
+			body, err := c.DoRaw(cmd.Context(), http.MethodGet, clitypes.NotificationsSettings(), nil)
 			if err != nil {
 				return fmt.Errorf("failed to get settings: %w", err)
 			}
@@ -104,7 +104,7 @@ func newSettingsDeleteCmd() *cobra.Command {
 			return cmdutil.RunDelete(cmd, c, cmdutil.DeleteSpec{
 				Force:          opts.force,
 				Prompt:         fmt.Sprintf("Are you sure you want to delete notification settings for %s?", args[0]),
-				Path:           clitypes.NotificationSettingsProvider(c.EnvID(), args[0]),
+				Path:           clitypes.NotificationSettingsProvider(args[0]),
 				FailureMessage: "failed to delete notification settings",
 				SuccessMessage: fmt.Sprintf("Notification settings for %s deleted successfully", args[0]),
 			})
@@ -165,7 +165,7 @@ func newSettingsSetCmd() *cobra.Command {
 				return err
 			}
 
-			body, err := c.DoRaw(cmd.Context(), http.MethodPost, clitypes.NotificationsSettings(c.EnvID()), req)
+			body, err := c.DoRaw(cmd.Context(), http.MethodPost, clitypes.NotificationsSettings(), req)
 			if err != nil {
 				return fmt.Errorf("failed to save notification settings: %w", err)
 			}
@@ -210,7 +210,7 @@ func newTestProviderCmd() *cobra.Command {
 
 			return cmdutil.Run(cmd, c, cmdutil.Spec[types.NotificationTestResponse]{
 				Method:         http.MethodPost,
-				Path:           clitypes.NotificationSettingsProviderAction(c.EnvID(), args[0], "test"),
+				Path:           clitypes.NotificationSettingsProviderAction(args[0], "test"),
 				FailureMessage: "failed to test notification provider",
 				Render: func(types.NotificationTestResponse) error {
 					output.Success("%s", fmt.Sprintf("Notification test for %s successful", args[0]))
@@ -227,7 +227,8 @@ var providerRef = cmdutil.ResourceRef[types.NotificationSettings, types.Notifica
 	EnvironmentScoped: true,
 	Singular:          "provider", Plural: "providers",
 	IDHint: "the identifier", ListCmd: "arcane-cli admin notifications settings get",
-	GetPath: clitypes.NotificationSettingsProvider, ListPath: clitypes.NotificationsSettings,
+	GetPath:  func(_, identifier string) string { return clitypes.NotificationSettingsProvider(identifier) },
+	ListPath: func(string) string { return clitypes.NotificationsSettings() },
 	Matches: func(item types.NotificationSettings, lower, original string) bool {
 		return strings.EqualFold(string(item.Provider), original)
 	},
