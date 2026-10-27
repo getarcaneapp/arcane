@@ -83,6 +83,16 @@ linters:
               desc: Use stdlib uuid instead.
             - pkg: 'gopkg.in/yaml.v3'
               desc: Use go.yaml.in/yaml/v4 instead.
+        migrations:
+          files:
+            - '**/internal/database/migrations/**'
+          deny:
+            - pkg: gorm.io
+              desc: Go migrations must use raw SQL, not GORM models.
+            - pkg: github.com/getarcaneapp/arcane/backend/v3/internal
+              desc: Go migrations must not depend on application packages that change after the migration version.
+            - pkg: github.com/getarcaneapp/arcane/types
+              desc: Go migrations must not depend on shared contracts that change after the migration version.
 
     exhaustruct_v5:
       explicit-mode: true

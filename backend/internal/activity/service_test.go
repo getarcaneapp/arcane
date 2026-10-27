@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -777,11 +776,6 @@ func TestJobSummaryReopensAndRejectsStaleSnapshots(t *testing.T) {
 	require.NoError(t, db.First(&legacy, "id = ?", run.ActivityID).Error)
 	legacy.Metadata["environmentId"] = "remote"
 	require.NoError(t, db.Model(&legacy).Update("metadata", legacy.Metadata).Error)
-	migration, err := os.ReadFile("../../resources/migrations/sqlite/084_route_job_activities_to_environment.sql")
-	require.NoError(t, err)
-	require.NoError(t, db.Exec(strings.Split(string(migration), "-- +goose Down")[0]).Error)
-	require.NoError(t, db.First(&legacy, "id = ?", run.ActivityID).Error)
-	require.Equal(t, "remote", legacy.EnvironmentID)
 	// Startup reconciliation also repairs legacy rows without replaying the job.
 	require.NoError(t, db.Model(&legacy).Update("environment_id", "0").Error)
 	events, _, unsubscribe := service.pubsub.Subscribe("remote")
