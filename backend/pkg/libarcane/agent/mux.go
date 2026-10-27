@@ -26,7 +26,7 @@ const (
 	muxEventsPath     = "/api/tunnel/events"
 
 	muxStreamWindowSize = 4 << 20
-	muxMaxFrameSize     = 256 << 10
+	muxMaxFrameSize     = 1 << 20
 	muxMaxPendingWrite  = 1 << 20
 	muxWriteTimeout     = 30 * time.Second
 	// muxDialTimeout bounds a stream open on its own, because http.Transport detaches dials from request cancellation.
@@ -42,7 +42,8 @@ var (
 	errManagerMuxRequired = errors.New("manager did not grant the multiplexed data plane; upgrade the manager")
 )
 
-// newMuxConfig returns the yamux settings both peers use; only the agent sends keepalive pings.
+// newMuxConfig returns the yamux settings both peers use. Only the agent enables yamux keepalive; the manager
+// pings explicitly from serveMuxTunnel to record RTT and heartbeats.
 func newMuxConfig(keepAlive bool) *yamux.Config {
 	return &yamux.Config{
 		AcceptBacklog:          256,
@@ -65,7 +66,7 @@ func newMuxHTTPClient(dial func(ctx context.Context) (net.Conn, error)) *http.Cl
 			return dial(dialCtx)
 		},
 		// Stays below the agent server's IdleTimeout so a pooled stream is never reused as the server closes it.
-		IdleConnTimeout:       30 * time.Second,
+		IdleConnTimeout:       90 * time.Second,
 		MaxIdleConnsPerHost:   32,
 		ExpectContinueTimeout: time.Second,
 		ResponseHeaderTimeout: ProxyResponseHeaderTimeout,

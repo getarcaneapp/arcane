@@ -99,7 +99,12 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 		// Long-lived stream handlers tune dead-peer detection per connection; see handlerutil.SetDeadPeerTimeout.
 		ConnContext: httpx.WithConn,
 		// Agent gRPC tunnels are one long HTTP/2 stream, so the 1 MiB default window would cap agent throughput per RTT.
-		HTTP2: &http.HTTP2Config{MaxReceiveBufferPerStream: 8 << 20, MaxReceiveBufferPerConnection: 16 << 20},
+		HTTP2: &http.HTTP2Config{
+			MaxReceiveBufferPerStream:     8 << 20,
+			MaxReceiveBufferPerConnection: 16 << 20,
+			SendPingTimeout:               30 * time.Second,
+			PingTimeout:                   10 * time.Second,
+		},
 	}
 
 	lc.Append(fx.Hook{
