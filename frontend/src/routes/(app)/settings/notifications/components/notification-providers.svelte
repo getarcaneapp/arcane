@@ -25,9 +25,8 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import { BuiltInProviderForm } from './providers';
-	import type { NotificationsTabProps } from './tab-props';
 
-	let { environmentId, disabled }: NotificationsTabProps = $props();
+	let { disabled }: { disabled: boolean } = $props();
 
 	let isLoaded = $state(false);
 	let loadError = $state<string | null>(null);
@@ -63,7 +62,7 @@
 
 	async function loadSettings() {
 		loadError = null;
-		const result = await tryCatch(notificationService.getSettings(environmentId));
+		const result = await tryCatch(notificationService.getSettings());
 		if (result.error !== null) {
 			loadError = extractApiErrorMessage(result.error);
 			return;
@@ -88,7 +87,7 @@
 		const errors: string[] = [];
 		for (const provider of changedProviders) {
 			const settings = notificationProviderFormValuesToSettings(provider, providerValues[provider]);
-			const result = await tryCatch(notificationService.updateSettings(provider, settings, environmentId));
+			const result = await tryCatch(notificationService.updateSettings(settings));
 			if (result.error !== null) {
 				errors.push(
 					m.notifications_saved_failed({
@@ -125,7 +124,7 @@
 
 	async function executeTest(provider: NotificationProviderKey, testType: string = 'simple') {
 		isTesting = true;
-		const result = await tryCatch(notificationService.testNotification(provider, testType, environmentId));
+		const result = await tryCatch(notificationService.testNotification(provider, testType));
 		isTesting = false;
 		if (result.error !== null) {
 			toast.error(m.notifications_test_failed({ error: extractApiErrorMessage(result.error) }));

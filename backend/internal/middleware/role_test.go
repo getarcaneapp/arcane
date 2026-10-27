@@ -134,17 +134,14 @@ func TestRequirePermissionEnvironmentGrantCannotManageGlobalNotificationsInterna
 	huma.Register(api, huma.Operation{
 		OperationID: "guarded-global-notifications",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/notifications/settings",
+		Path:        "/notifications/settings",
 		Middlewares: RequirePermission(api, authz.PermNotificationsManage),
-	}, func(_ context.Context, _ *struct {
-		ID string `path:"id"`
-	},
-	) (*struct{}, error) {
+	}, func(_ context.Context, _ *struct{}) (*struct{}, error) {
 		require.FailNow(t, "handler must not run for an environment-scoped grant on global notification settings")
 		return nil, nil
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/environments/env-1/notifications/settings", http.NoBody)
+	req := httptest.NewRequest(http.MethodPost, "/api/notifications/settings", http.NoBody)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 

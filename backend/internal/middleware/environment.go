@@ -471,7 +471,7 @@ func IsManagerLocalPath(method, suffix string) bool {
 			return true
 		}
 	}
-	if strings.HasPrefix(suffix, "/notifications") || strings.HasPrefix(suffix, "/deployment/mtls/") {
+	if strings.HasPrefix(suffix, "/deployment/mtls/") {
 		return true
 	}
 

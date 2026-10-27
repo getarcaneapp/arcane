@@ -215,8 +215,7 @@ test.describe('Environment settings tabs', () => {
 			['timeouts', 'Timeouts'],
 			['activity', 'Activity'],
 			['builds', 'Builds'],
-			['jobs', 'Automations'],
-			['notifications', 'Notifications']
+			['jobs', 'Automations']
 		]) {
 			await page.goto(`/environments/0?tab=${tab}`);
 			await expect(page.getByRole('tab', { name, exact: true })).toHaveAttribute(
@@ -230,8 +229,7 @@ test.describe('Environment settings tabs', () => {
 
 test.describe('Notifications', () => {
 	test.describe('Notification settings', () => {
-		const notificationsPanel = (page: Page) =>
-			page.getByRole('tabpanel').filter({ visible: true }).first();
+		const notificationsPanel = (page: Page) => page.locator('main');
 
 		const providerPanel = (page: Page) =>
 			page.getByRole('tabpanel').filter({ visible: true }).last();
@@ -292,7 +290,7 @@ test.describe('Notifications', () => {
 			];
 			const savedPayloads: Array<Record<string, unknown>> = [];
 
-			await page.route('**/api/environments/*/notifications/settings', async (route) => {
+			await page.route('**/api/notifications/settings', async (route) => {
 				const req = route.request();
 				if (req.method() === 'GET') {
 					await route.fulfill({
@@ -336,19 +334,16 @@ test.describe('Notifications', () => {
 			});
 
 			// Stub the specific test endpoint
-			await page.route(
-				`**/api/environments/*/notifications/settings/${provider}?action=test**`,
-				async (route) => {
-					testEndpointCalled = true;
-					await route.fulfill({
-						status: 200,
-						contentType: 'application/json',
-						body: JSON.stringify({ success: true })
-					});
-				}
-			);
+			await page.route(`**/api/notifications/settings/${provider}?action=test**`, async (route) => {
+				testEndpointCalled = true;
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({ success: true })
+				});
+			});
 
-			await page.goto('/environments/0?tab=notifications');
+			await page.goto('/settings/notifications');
 			await page.waitForLoadState('load');
 			await expect(page.getByRole('tab', { name: 'Email' })).toBeVisible();
 

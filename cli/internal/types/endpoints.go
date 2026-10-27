@@ -378,16 +378,16 @@ func SettingsPublic(envID string) string {
 
 // Notification endpoints
 
-func NotificationsSettings(envID string) string {
-	return pathf("/api/environments/%s/notifications/settings", envID)
+func NotificationsSettings() string {
+	return "/api/notifications/settings"
 }
 
-func NotificationSettingsProvider(envID, provider string) string {
-	return pathf("/api/environments/%s/notifications/settings/%s", envID, provider)
+func NotificationSettingsProvider(provider string) string {
+	return pathf("/api/notifications/settings/%s", provider)
 }
 
-func NotificationSettingsProviderAction(envID, provider, action string) string {
-	return NotificationSettingsProvider(envID, provider) + "?" + url.Values{"action": {action}}.Encode()
+func NotificationSettingsProviderAction(provider, action string) string {
+	return NotificationSettingsProvider(provider) + "?" + url.Values{"action": {action}}.Encode()
 }
 
 // Container registry endpoints

@@ -132,27 +132,6 @@ func TestEnvironmentMiddleware_KeepsAgentMTLSDownloadEndpointsLocal(t *testing.T
 	assert.True(t, localHandlerHit)
 }
 
-func TestEnvironmentMiddleware_KeepsNotificationEndpointsLocal(t *testing.T) {
-	middleware := newTestEnvironmentMiddleware()
-	router := echo.New()
-	api := attachMiddleware(router, middleware)
-
-	localHandlerHit := false
-	api.GET("/environments/:id/notifications/settings", func(c *echo.Context) error {
-		localHandlerHit = true
-		return c.JSON(http.StatusOK, map[string]any{"success": true})
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/api/environments/env-agent/notifications/settings", http.NoBody)
-	recorder := httptest.NewRecorder()
-
-	router.ServeHTTP(recorder, req)
-
-	assert.Equal(t, http.StatusOK, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), "\"success\":true")
-	assert.True(t, localHandlerHit)
-}
-
 func TestEnvironmentMiddleware_KeepsWebhookEndpointsLocal(t *testing.T) {
 	tests := []struct {
 		name   string

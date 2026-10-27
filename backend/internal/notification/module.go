@@ -46,7 +46,7 @@ func RegisterNotifications(api huma.API, notificationSvc *NotificationService, c
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-all-notification-settings",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/notifications/settings",
+		Path:        "/notifications/settings",
 		Summary:     "Get all notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -55,7 +55,7 @@ func RegisterNotifications(api huma.API, notificationSvc *NotificationService, c
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-notification-settings",
 		Method:      http.MethodGet,
-		Path:        "/environments/{id}/notifications/settings/{provider}",
+		Path:        "/notifications/settings/{provider}",
 		Summary:     "Get notification settings by provider",
 		Tags:        []string{"Notifications"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -64,7 +64,7 @@ func RegisterNotifications(api huma.API, notificationSvc *NotificationService, c
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-or-update-notification-settings",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/notifications/settings",
+		Path:        "/notifications/settings",
 		Summary:     "Create or update notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -73,7 +73,7 @@ func RegisterNotifications(api huma.API, notificationSvc *NotificationService, c
 	middleware.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-notification-settings",
 		Method:      http.MethodDelete,
-		Path:        "/environments/{id}/notifications/settings/{provider}",
+		Path:        "/notifications/settings/{provider}",
 		Summary:     "Delete notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    handlerutil.DefaultOperationSecurity(),
@@ -82,7 +82,7 @@ func RegisterNotifications(api huma.API, notificationSvc *NotificationService, c
 	middleware.RegisterWithActionPermissions(api, huma.Operation{
 		OperationID: "notification-settings-action",
 		Method:      http.MethodPost,
-		Path:        "/environments/{id}/notifications/settings/{provider}",
+		Path:        "/notifications/settings/{provider}",
 		Summary:     "Test notification",
 		Tags:        []string{"Notifications"},
 		Security:    handlerutil.DefaultOperationSecurity(),
