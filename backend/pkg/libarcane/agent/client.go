@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"slices"
@@ -118,11 +119,15 @@ func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error)
 				}
 			}
 		}
+		var delay time.Duration
 		if time.Since(sessionStart) >= c.healthySessionDuration {
+			// Redial a dropped healthy session almost immediately, jittered to avoid a stampede.
 			reconnectBackoff.Reset()
+			delay = 100*time.Millisecond + rand.N(150*time.Millisecond)
+		} else {
+			delay = reconnectBackoff.NextBackOff()
 		}
 
-		delay := reconnectBackoff.NextBackOff()
 		select {
 		case <-ctx.Done():
 			return
