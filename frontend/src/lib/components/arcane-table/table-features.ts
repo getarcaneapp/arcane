@@ -11,7 +11,7 @@ import { metaHelper } from '@tanstack/table-core';
 import type { Cell, Column, ColumnDef, FilterFn, Row, RowData, Table } from '@tanstack/table-core';
 
 // Type-only cycle with arcane-table.types.svelte.ts (which imports only types from here) — erased at emit.
-import type { ColumnAlign, ColumnWidth, FilterOption } from './arcane-table.types.svelte';
+import type { CardSlot, ColumnAlign, ColumnWidth, FilterOption } from './arcane-table.types.svelte';
 
 /**
  * Presentation hints Arcane stows on each column's `meta`. Declared through the v9
@@ -24,6 +24,7 @@ export interface ArcaneColumnMeta {
 	width?: ColumnWidth;
 	align?: ColumnAlign;
 	truncate?: boolean;
+	card?: CardSlot;
 }
 
 /**

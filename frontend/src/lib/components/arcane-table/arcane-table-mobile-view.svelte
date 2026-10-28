@@ -184,9 +184,7 @@
 			</Card.Header>
 		</Card.Root>
 	{:else}
-		<div class="border-b border-border/30">
-			{@render mobileRow(entry.row)}
-		</div>
+		{@render mobileRow(entry.row)}
 	{/if}
 {/snippet}
 

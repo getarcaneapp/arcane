@@ -25,6 +25,8 @@ export type TableViewMode = 'list' | 'grid';
 
 export type ColumnWidth = 'auto' | 'min' | 'max' | number;
 export type ColumnAlign = 'left' | 'center' | 'right';
+/** Where a column renders on a grid card; inferred from the column id when unset. */
+export type CardSlot = 'badge' | 'field' | 'wide' | 'footer' | 'hidden';
 
 export type ColumnSpec<T extends RowData> = {
 	accessorKey?: keyof T & string;
@@ -48,6 +50,7 @@ export type ColumnSpec<T extends RowData> = {
 	width?: ColumnWidth;
 	align?: ColumnAlign;
 	truncate?: boolean;
+	card?: CardSlot;
 };
 
 // Compact persisted prefs to reduce JSON size

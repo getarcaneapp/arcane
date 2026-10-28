@@ -283,13 +283,7 @@
 
 		<div class="order-3 hidden shrink-0 md:order-none md:block">
 			{#if viewMode === 'grid'}
-				<DataTableViewOptions
-					{table}
-					fields={mobileFields.length > 0 && onToggleMobileField ? mobileFields : undefined}
-					onToggleField={onToggleMobileField}
-					{customViewOptions}
-					showSorting
-				/>
+				<DataTableViewOptions {table} {customViewOptions} showSorting />
 			{:else}
 				<DataTableViewOptions {table} {customViewOptions} {wrapText} {onToggleWrapText} />
 			{/if}
