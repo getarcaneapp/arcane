@@ -459,7 +459,8 @@
 					filterOptions: spec.filterOptions,
 					width: spec.width,
 					align: spec.align,
-					truncate: spec.truncate
+					truncate: spec.truncate,
+					card: spec.card
 				},
 				header: ({ column }) => {
 					if (spec.header) return renderSnippet(spec.header, { column, title: spec.title, class: spec.class });
@@ -906,8 +907,6 @@
 					initialScrollTop={scrollPositions.grid.top}
 					{rowIndex}
 					{table}
-					{mobileCard}
-					{mobileFieldVisibility}
 					{selectedIdSet}
 					{selectionDisabled}
 					onToggleRowSelection={(id, selected, modifiers) => onToggleRow(selected, id, modifiers)}

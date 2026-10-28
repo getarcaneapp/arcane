@@ -1,4 +1,5 @@
 <script lang="ts" generics="TData extends Record<string, any> & { id: string }">
+	import { FlexRender as FlexRenderBase } from '@tanstack/svelte-table';
 	import type { Snippet, Component } from 'svelte';
 
 	import Skeleton from '#lib/components/ui/skeleton/skeleton.svelte';
@@ -15,8 +16,11 @@
 		type GroupSelectionState,
 		type SelectionModifiers
 	} from './arcane-table.types.svelte';
-	import { getTableDisplayEntries } from './arcane-table.utils';
-	import type { ArcaneRow, ArcaneSvelteTable } from './table-features';
+	import { getCardSlot, getTableDisplayEntries } from './arcane-table.utils';
+	import ResourceCardField from './cards/resource-card-field.svelte';
+	import ResourceCardMeta from './cards/resource-card-meta.svelte';
+	import ResourceCard from './cards/resource-card.svelte';
+	import type { ArcaneCell, ArcaneFeatures, ArcaneRow, ArcaneSvelteTable } from './table-features';
 
 	type GridEntry =
 		| { kind: 'group'; key: string; group: GroupedData<TData> }
@@ -27,8 +31,6 @@
 	let {
 		table,
 		rowIndex,
-		mobileCard,
-		mobileFieldVisibility,
 		selectedIdSet,
 		selectionDisabled = false,
 		onToggleRowSelection,
@@ -48,8 +50,6 @@
 	}: {
 		table: ArcaneSvelteTable<TData>;
 		rowIndex: ReadonlyMap<string, { row: ArcaneRow<TData>; index: number }>;
-		mobileCard: Snippet<[{ row: ArcaneRow<TData>; item: TData; mobileFieldVisibility: Record<string, boolean> }]>;
-		mobileFieldVisibility: Record<string, boolean>;
 		selectedIdSet: ReadonlySet<string>;
 		selectionDisabled?: boolean;
 		onToggleRowSelection: (id: string, selected: boolean, modifiers?: SelectionModifiers) => void;
@@ -71,8 +71,36 @@
 
 	const hasExpand = $derived(!!expandedRowContent);
 	const hasSelection = $derived(selectedIdSet.size > 0);
+	// Pin FlexRender's generics, as in the desktop view.
+	const FlexRender = FlexRenderBase<ArcaneFeatures, TData, unknown>;
+	const CONTROL_COLUMNS = new Set(['select', 'actions']);
+
+	// Cards render the list's own cells: the first visible data column is the title, the rest go to their card slot.
+	function splitCells(row: ArcaneRow<TData>) {
+		const visible = row.getVisibleCells();
+		const cells = visible.filter((cell) => !CONTROL_COLUMNS.has(cell.column.id));
+		const slots = {
+			title: cells[0] as ArcaneCell<TData> | undefined,
+			actions: visible.find((cell) => cell.column.id === 'actions'),
+			badges: [] as ArcaneCell<TData>[],
+			fields: [] as { cell: ArcaneCell<TData>; wide: boolean }[],
+			footer: [] as ArcaneCell<TData>[]
+		};
+		for (const cell of cells.slice(1)) {
+			const slot = getCardSlot(cell.column.id, cell.column.columnDef.meta?.card);
+			if (slot === 'badge') slots.badges.push(cell);
+			else if (slot === 'footer') slots.footer.push(cell);
+			else if (slot !== 'hidden') slots.fields.push({ cell, wide: slot === 'wide' });
+		}
+		return slots;
+	}
+
+	function cellLabel(cell: ArcaneCell<TData>): string {
+		return cell.column.columnDef.meta?.title ?? cell.column.id;
+	}
 
 	let containerWidth = $state(0);
+	const fieldCount = $derived(Math.max(0, table.getVisibleLeafColumns().filter((c) => !CONTROL_COLUMNS.has(c.id)).length - 1));
 	const columnCount = $derived(Math.max(1, Math.floor(containerWidth / MIN_CARD_WIDTH)));
 	const gridColumnsStyle = $derived(`--grid-cols: repeat(${columnCount}, minmax(0, 1fr))`);
 
@@ -121,7 +149,7 @@
 	const rowVirtualizer = createVirtualizer<HTMLElement, HTMLDivElement>(() => ({
 		count: entries.length,
 		getScrollElement: () => scrollElement ?? null,
-		estimateSize: (index) => (entries[index]?.kind === 'group' ? 44 : 200),
+		estimateSize: (index) => (entries[index]?.kind === 'group' ? 48 : 140 + Math.ceil(fieldCount / 2) * 52),
 		overscan: 4,
 		getItemKey,
 		initialOffset: initialScrollTop,
@@ -132,7 +160,7 @@
 		if (!shouldVirtualize) return;
 		// Column count and field changes reflow every line, invalidating cached heights.
 		void columnCount;
-		JSON.stringify(mobileFieldVisibility);
+		void fieldCount;
 		rowVirtualizer.measure();
 	});
 
@@ -143,7 +171,7 @@
 </script>
 
 {#snippet gridSkeleton()}
-	<div class="grid grid-cols-(--grid-cols) gap-1 p-2" style={gridColumnsStyle}>
+	<div class="grid grid-cols-(--grid-cols) gap-3 p-3" style={gridColumnsStyle}>
 		{#each Array.from({ length: columnCount * 2 }, (_, i) => i) as r (r)}
 			<div class="space-y-3 rounded-xl border border-border/40 p-4">
 				<div class="flex items-center gap-3">
@@ -165,7 +193,7 @@
 	{@const selectionState = getGroupSelectionState?.(group.items) ?? 'none'}
 	{@const IconComponent = groupIcon?.(group.groupName)}
 	<div
-		class="mx-2 mt-2 flex cursor-pointer items-center gap-2 rounded-lg border border-border/40 bg-muted/30 px-3 py-2 text-sm font-medium select-none hover:bg-muted/50"
+		class="mx-3 mt-3 mb-1.5 flex cursor-pointer items-center gap-2 rounded-lg border border-border/40 bg-muted/30 px-3 py-2 text-sm font-medium select-none hover:bg-muted/50"
 		role="button"
 		tabindex={0}
 		aria-expanded={!isCollapsed}
@@ -204,41 +232,73 @@
 	{@const rowId = row.id}
 	{@const isSelected = selectedIdSet.has(rowId)}
 	{@const isExpanded = expandedRows?.has(rowId) ?? false}
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div
-		class={cn('group/grid-card relative min-w-0 rounded-xl', isSelected && 'bg-primary/5', hasExpand && 'cursor-pointer')}
-		data-state={isSelected ? 'selected' : undefined}
-		onclick={(e) => handleCardClick(e, rowId)}
-	>
-		{#if !selectionDisabled}
-			<div
-				class={cn(
-					'absolute top-0.5 left-1 z-10 flex rounded-md bg-background shadow-sm transition-opacity',
-					isSelected || hasSelection ? 'opacity-100' : 'opacity-0 group-hover/grid-card:opacity-100 focus-within:opacity-100'
-				)}
-			>
-				<TableCheckbox
-					checked={isSelected}
-					onCheckedChange={(value, modifiers) => onToggleRowSelection(rowId, value, modifiers)}
-					aria-label={m.common_select_row()}
-				/>
-			</div>
+	{@const cells = splitCells(row)}
+	{#snippet cardLeading()}
+		<div
+			class={cn(
+				'flex shrink-0 transition-opacity duration-150 group-hover/resource-card:opacity-100 focus-within:opacity-100',
+				isSelected || hasSelection ? 'opacity-100' : 'opacity-0'
+			)}
+		>
+			<TableCheckbox
+				checked={isSelected}
+				onCheckedChange={(value, modifiers) => onToggleRowSelection(rowId, value, modifiers)}
+				aria-label={m.common_select_row()}
+			/>
+		</div>
+	{/snippet}
+	{#snippet cardTitle()}
+		{#if cells.title}
+			<FlexRender cell={cells.title} />
 		{/if}
-		{@render mobileCard({ row, item: row.original, mobileFieldVisibility })}
+	{/snippet}
+	{#snippet cardActions()}
+		{#if cells.actions}
+			<FlexRender cell={cells.actions} />
+		{/if}
+	{/snippet}
+	{#snippet cardBadges()}
+		{#each cells.badges as cell (cell.id)}
+			<FlexRender {cell} />
+		{/each}
+	{/snippet}
+	{#snippet cardFields()}
+		{#each cells.fields as field (field.cell.id)}
+			<ResourceCardField label={cellLabel(field.cell)} wide={field.wide}>
+				<FlexRender cell={field.cell} />
+			</ResourceCardField>
+		{/each}
+	{/snippet}
+	{#snippet cardFooter()}
+		{#each cells.footer as cell (cell.id)}
+			<ResourceCardMeta label={cellLabel(cell)}>
+				<FlexRender {cell} />
+			</ResourceCardMeta>
+		{/each}
+	{/snippet}
+	<ResourceCard
+		selected={isSelected}
+		onclick={hasExpand ? (e) => handleCardClick(e, rowId) : undefined}
+		leading={selectionDisabled ? undefined : cardLeading}
+		title={cardTitle}
+		actions={cells.actions ? cardActions : undefined}
+		badges={cells.badges.length > 0 ? cardBadges : undefined}
+		fields={cells.fields.length > 0 ? cardFields : undefined}
+		footer={cells.footer.length > 0 ? cardFooter : undefined}
+	>
 		{#if hasExpand && isExpanded && expandedRowContent}
-			<div class="mx-3 mb-2 rounded-lg bg-muted/30 px-4 py-3">
+			<div class="border-t border-border/50 bg-muted/30 px-4 py-3">
 				{@render expandedRowContent({ row, item: row.original })}
 			</div>
 		{/if}
-	</div>
+	</ResourceCard>
 {/snippet}
 
 {#snippet gridEntry(entry: GridEntry)}
 	{#if entry.kind === 'group'}
 		{@render groupHeader(entry.group)}
 	{:else}
-		<div class="grid grid-cols-(--grid-cols) items-start px-1 py-0.5" style={gridColumnsStyle}>
+		<div class="grid grid-cols-(--grid-cols) items-stretch gap-3 px-3 py-1.5" style={gridColumnsStyle}>
 			{#each entry.rows as row (row.id)}
 				{@render gridCard(row)}
 			{/each}
