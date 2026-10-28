@@ -119,6 +119,7 @@ export function extractPersistedPreferences(
 		sort,
 		limit,
 		mobileVisibility: prefs.m,
+		viewMode: prefs.d,
 		customSettings: prefs.c
 	};
 }

@@ -3,9 +3,10 @@
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
+	import * as ButtonGroup from '#lib/components/ui/button-group/index.js';
 	import * as InputGroup from '#lib/components/ui/input-group/index.js';
 	import * as Popover from '#lib/components/ui/popover/index.js';
-	import { ResetIcon, SearchIcon, FilterIcon } from '#lib/icons/index.js';
+	import { ResetIcon, SearchIcon, FilterIcon, LayoutGridIcon, LayoutListIcon, type IconType } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { cn } from '#lib/utils.js';
@@ -15,7 +16,7 @@
 	import DataTableFacetedFilter from './arcane-table-filter.svelte';
 	import DataTableTextFilter from './arcane-table-text-filter.svelte';
 	import DataTableViewOptions from './arcane-table-view-options.svelte';
-	import type { BulkAction } from './arcane-table.types.svelte';
+	import type { BulkAction, TableViewMode } from './arcane-table.types.svelte';
 	import {
 		imageUpdateFilters,
 		usageFilters,
@@ -39,6 +40,8 @@
 		imageNameFilterOptions = [],
 		wrapText = false,
 		onToggleWrapText,
+		viewMode = 'list',
+		onViewModeChange,
 		isFiltered = false,
 		onResetFilters
 	}: {
@@ -55,6 +58,8 @@
 		imageNameFilterOptions?: string[];
 		wrapText?: boolean;
 		onToggleWrapText?: () => void;
+		viewMode?: TableViewMode;
+		onViewModeChange?: (mode: TableViewMode) => void;
 		isFiltered?: boolean;
 		onResetFilters?: () => void;
 	} = $props();
@@ -145,6 +150,30 @@
 	{#if statusColumn && serviceCountColumn}
 		<DataTableFacetedFilter column={statusColumn} title={m.common_status()} options={projectStatusFilters} />
 	{/if}
+{/snippet}
+
+{#snippet viewModeButton(mode: TableViewMode, Icon: IconType, label: string)}
+	<ArcaneTooltip.Root>
+		<ArcaneTooltip.Trigger>
+			{#snippet child({ props })}
+				<ArcaneButton
+					{...props}
+					action="base"
+					tone="ghost"
+					size="icon"
+					icon={Icon}
+					customLabel={label}
+					aria-pressed={viewMode === mode}
+					class={cn(
+						'size-9 border border-input',
+						viewMode === mode ? 'bg-accent text-accent-foreground' : 'text-muted-foreground'
+					)}
+					onclick={() => onViewModeChange?.(mode)}
+				/>
+			{/snippet}
+		</ArcaneTooltip.Trigger>
+		<ArcaneTooltip.Content side="bottom">{label}</ArcaneTooltip.Content>
+	</ArcaneTooltip.Root>
 {/snippet}
 
 {#snippet selectionActions()}
@@ -245,8 +274,25 @@
 			</div>
 		{/if}
 
+		{#if onViewModeChange}
+			<ButtonGroup.Root class="hidden shrink-0 md:flex">
+				{@render viewModeButton('list', LayoutListIcon, m.table_view_list())}
+				{@render viewModeButton('grid', LayoutGridIcon, m.table_view_grid())}
+			</ButtonGroup.Root>
+		{/if}
+
 		<div class="order-3 hidden shrink-0 md:order-none md:block">
-			<DataTableViewOptions {table} {customViewOptions} {wrapText} {onToggleWrapText} />
+			{#if viewMode === 'grid'}
+				<DataTableViewOptions
+					{table}
+					fields={mobileFields.length > 0 && onToggleMobileField ? mobileFields : undefined}
+					onToggleField={onToggleMobileField}
+					{customViewOptions}
+					showSorting
+				/>
+			{:else}
+				<DataTableViewOptions {table} {customViewOptions} {wrapText} {onToggleWrapText} />
+			{/if}
 		</div>
 		<div class="order-3 shrink-0 md:hidden">
 			{#if mobileFields.length > 0 && onToggleMobileField}
