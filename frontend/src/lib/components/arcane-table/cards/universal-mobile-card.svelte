@@ -3,7 +3,6 @@
 
 	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
-	import { m } from '#lib/paraglide/messages.js';
 	import { cn } from '#lib/utils.js';
 
 	import ResourceCardField from './resource-card-field.svelte';
@@ -81,12 +80,7 @@
 	);
 
 	const environmentId = $derived((item as { environmentId?: string }).environmentId);
-	const environmentField = $derived<FieldDefinition<T>[]>(
-		environmentId
-			? [{ label: m.resource_environment_cap(), getValue: () => environmentId, type: 'component', component: EnvironmentValue }]
-			: []
-	);
-	const visibleFields = $derived([...environmentField, ...fields.filter((f) => f.show !== false)]);
+	const visibleFields = $derived(fields.filter((f) => f.show !== false));
 	const subtitleValue = $derived(subtitle?.(item));
 	const footerValue = $derived(footer?.getValue(item));
 	const hasFields = $derived(visibleFields.some((field) => isPresent(field.getValue(item))));
@@ -124,10 +118,6 @@
 	}
 </script>
 
-{#snippet EnvironmentValue(value: string)}
-	<EnvironmentCell {value} />
-{/snippet}
-
 {#snippet FieldValue(field: FieldDefinition<T>, value: any)}
 	{#if field.type === 'badge' && field.badgeVariant}
 		<Badge variant={field.badgeVariant} size="sm" minWidth="20">{String(value)}</Badge>
@@ -146,7 +136,7 @@
 			{@const IconComponent = resolvedIcon.component}
 			<div
 				class={cn(
-					'flex size-9 shrink-0 items-center justify-center rounded-lg ring-1 ring-foreground/5 ring-inset',
+					'flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 ring-foreground/5 ring-inset',
 					getIconBgClass(resolvedIcon.variant)
 				)}
 			>
@@ -166,12 +156,16 @@
 			</div>
 		{/if}
 		<div class="min-w-0 flex-1">
-			<h3 class="truncate text-sm leading-tight font-semibold" title={title(item)}>{title(item)}</h3>
+			<h3 class="truncate text-sm leading-tight font-medium" title={title(item)}>{title(item)}</h3>
 			{#if subtitleValue}
 				<p class="mt-0.5 truncate font-mono text-xs font-normal text-muted-foreground">{subtitleValue}</p>
 			{/if}
 		</div>
 	</div>
+{/snippet}
+
+{#snippet cardContext()}
+	<EnvironmentCell value={environmentId} />
 {/snippet}
 
 {#snippet cardActions()}
@@ -211,13 +205,14 @@
 	<ResourceCard
 		onclick={onclick ? () => onclick(item) : undefined}
 		title={cardTitle}
+		context={environmentId ? cardContext : undefined}
 		actions={rowActions ? cardActions : undefined}
 		badges={resolvedBadges.length > 0 ? cardBadges : undefined}
 		fields={hasFields ? cardFields : undefined}
 		footer={footerValue ? cardFooter : undefined}
 	>
 		{#if children}
-			<div class="px-4 pb-4">
+			<div class="px-3.5 pb-3">
 				{@render children()}
 			</div>
 		{/if}
