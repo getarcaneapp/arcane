@@ -285,14 +285,14 @@
 			return;
 		}
 
-		const spec = structuredClone(form.baseSpec ?? {});
+		const spec: Record<string, unknown> = $state.snapshot(form.baseSpec);
 		spec['Name'] = form.name.value.trim();
 
 		const taskTemplate = ensureRecord(spec, 'TaskTemplate');
 		const containerSpec = ensureRecord(taskTemplate, 'ContainerSpec');
 		containerSpec['Image'] = form.image.value.trim();
 
-		const baseMode = asRecord(form.baseSpec['Mode']);
+		const baseMode = asRecord(spec['Mode']);
 		if (form.mode === 'replicated') {
 			spec['Mode'] = { Replicated: { Replicas: Math.max(0, parseInt(form.replicas.value, 10) || 1) } };
 		} else if (form.mode === 'global') {
