@@ -1,306 +1,94 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { toast } from 'svelte-sonner';
 
-	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
-	import IfPermitted from '#lib/components/if-permitted.svelte';
-	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import * as InputGroup from '#lib/components/ui/input-group/index.js';
-	import ResponsiveDialog from '#lib/components/ui/responsive-dialog/responsive-dialog.svelte';
-	import {
-		ActivityIcon,
-		AlertTriangleIcon,
-		CloseIcon,
-		EllipsisIcon,
-		RefreshIcon,
-		SearchIcon,
-		TrashIcon
-	} from '#lib/icons/index.js';
-	import { m } from '#lib/paraglide/messages.js';
+	import * as Dialog from '#lib/components/ui/dialog/index.js';
+	import * as Drawer from '#lib/components/ui/drawer/index.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
+	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
-	import type { Activity, ActivityGroup } from '#lib/types/activity.type.js';
-	import { cn } from '#lib/utils.js';
-	import { tryCatch } from '#lib/utils/try-catch.js';
 
-	import ActivityBatchItem from './activity-batch-item.svelte';
-	import { confirmCancelActivity } from './activity-cancel';
-	import { activityCompletionToastsEnabled } from './activity-completion-toasts';
-	import ActivityDetailPanel from './activity-detail-panel.svelte';
-	import ActivityFilterPopover from './activity-filter-popover.svelte';
-	import ActivityListItem from './activity-list-item.svelte';
+	import ActivityCenterInspector from './activity-center-inspector.svelte';
+	import ActivityCenterTray from './activity-center-tray.svelte';
+	import { activityCenterLayout } from './activity-layout';
+
+	type Anchor = HTMLElement | { getBoundingClientRect: () => DOMRect };
+
+	const TRIGGER_SELECTOR = '[data-activity-center-trigger]';
+	const TITLE_ID = 'activity-center-title';
+	// Used when no trigger is on screen (e.g. opened from a toast with the mobile nav closed).
+	const FALLBACK_ANCHOR: Anchor = { getBoundingClientRect: () => DOMRect.fromRect({ x: 12, y: 12, width: 0, height: 0 }) };
+
+	const isMobile = new IsMobile();
+
+	// "Open full view" from the tray shows the inspector until the center closes.
+	let expanded = $state(false);
+	let anchor = $state<Anchor>(FALLBACK_ANCHOR);
+
+	const layout = $derived.by(() => {
+		if (isMobile.current) return 'drawer';
+		if (expanded || activityCenterLayout.current === 'inspector') return 'inspector';
+		return 'tray';
+	});
 
 	onMount(() => {
 		void activityStore.start();
 		return () => activityStore.stop();
 	});
 
-	function handleOpenChangeInternal(open: boolean) {
+	$effect(() => {
+		if (!activityStore.open) {
+			expanded = false;
+			return;
+		}
+		anchor = visibleTriggerInternal() ?? FALLBACK_ANCHOR;
+	});
+
+	function visibleTriggerInternal(): HTMLElement | null {
+		for (const element of document.querySelectorAll<HTMLElement>(TRIGGER_SELECTOR)) {
+			if (element.getClientRects().length > 0) return element;
+		}
+		return null;
+	}
+
+	function setOpenInternal(open: boolean) {
 		activityStore.setOpen(open);
 	}
 
-	function clearHistoryInternal() {
-		openConfirmDialog({
-			title: m.activity_clear_history_title(),
-			message: m.activity_clear_history_message(),
-			confirm: {
-				label: m.activity_clear_history_confirm(),
-				destructive: true,
-				action: async () => {
-					const requestResult1 = await tryCatch(
-						(async () => {
-							const result = await activityStore.clearHistory();
-							if (result.failed.length > 0) {
-								toast.warning(
-									m.activity_clear_history_partial({
-										count: result.succeeded,
-										environments: result.failed.map((failure) => failure.environmentName).join(', ')
-									})
-								);
-								return;
-							}
-							toast.success(m.activity_clear_history_success());
-						})()
-					);
-					if (requestResult1.error !== null) {
-						const error = requestResult1.error;
-
-						console.error('Failed to clear activity history:', error);
-						toast.error(m.activity_clear_history_failed());
-					}
-				}
-			}
-		});
+	// The trigger toggles the tray itself; letting the outside-click close it first would reopen it.
+	function handleTrayInteractOutsideInternal(event: PointerEvent) {
+		if (event.target instanceof Element && event.target.closest(TRIGGER_SELECTOR)) {
+			event.preventDefault();
+		}
 	}
-
-	function groupKeyInternal(group: ActivityGroup): string {
-		return group.kind === 'batch' ? `batch:${group.batchId}` : group.activity.id;
-	}
-
-	const hasNoResults = $derived(
-		activityStore.activities.length > 0 &&
-			activityStore.hasActiveFilters &&
-			activityStore.runningGroups.length === 0 &&
-			activityStore.historyGroups.length === 0
-	);
 </script>
 
-{#snippet activityRow(activity: Activity, isChild: boolean)}
-	{@const expanded = activityStore.isExpanded(activity.id)}
-	{@const cancelable = activity.type !== 'job_run' && (activity.status === 'running' || activity.status === 'queued')}
-	<div class="group/activity relative">
-		<Collapsible.Root open={expanded} onOpenChange={(open) => activityStore.setActivityExpanded(activity.id, open)}>
-			<div class="relative">
-				<Collapsible.Trigger aria-label={m.activity_center_title()}>
-					{#snippet child({ props })}
-						<button
-							{...props}
-							type="button"
-							class="block w-full cursor-pointer appearance-none border-0 bg-transparent p-0 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden focus-visible:ring-inset"
-						>
-							<ActivityListItem {activity} {expanded} child={isChild} />
-						</button>
-					{/snippet}
-				</Collapsible.Trigger>
-				{#if cancelable}
-					<IfPermitted perm="activities:cancel">
-						<button
-							type="button"
-							onclick={() => confirmCancelActivity(activity.id)}
-							disabled={activityStore.isCancelling(activity.id)}
-							title={m.activity_cancel()}
-							aria-label={m.activity_cancel()}
-							class="absolute top-1/2 right-11 z-(--arcane-z-raised) flex size-7 -translate-y-1/2 items-center justify-center rounded-md bg-background/90 text-muted-foreground opacity-0 transition group-hover/activity:opacity-100 hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-40"
-						>
-							<CloseIcon class="size-4" aria-hidden="true" />
-						</button>
-					</IfPermitted>
-				{/if}
-			</div>
-			<Collapsible.Content class="overflow-hidden">
-				<ActivityDetailPanel {activity} />
-			</Collapsible.Content>
-		</Collapsible.Root>
-	</div>
-{/snippet}
-
-{#snippet groupRow(group: ActivityGroup)}
-	{#if group.kind === 'single'}
-		{@render activityRow(group.activity, false)}
-	{:else}
-		{@const expanded = activityStore.isBatchExpanded(group.batchId)}
-		{@const summary = group.items.find((item) => item.type === 'job_run')}
-		<Collapsible.Root open={expanded} onOpenChange={(open) => activityStore.setBatchExpanded(group.batchId, open)}>
-			<Collapsible.Trigger aria-label={m.activity_center_title()}>
-				{#snippet child({ props })}
-					<button
-						{...props}
-						type="button"
-						class="block w-full cursor-pointer appearance-none border-0 bg-transparent p-0 text-left focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden focus-visible:ring-inset"
-					>
-						<ActivityBatchItem {group} {expanded} />
-					</button>
-				{/snippet}
-			</Collapsible.Trigger>
-			<Collapsible.Content class="overflow-hidden">
-				{#if summary}<ActivityDetailPanel activity={summary} />{/if}
-				<div class="ml-6 border-l border-border/40">
-					{#each group.items.filter((item) => item.type !== 'job_run') as activity (activity.id)}
-						{@render activityRow(activity, true)}
-					{/each}
-				</div>
-			</Collapsible.Content>
-		</Collapsible.Root>
-	{/if}
-{/snippet}
-
-{#snippet sectionHeader(title: string, count: number)}
-	<div class="flex items-center gap-2 border-b border-border/50 bg-muted/20 px-4 py-1.5">
-		<span class="text-2xs font-medium tracking-wide text-muted-foreground uppercase">{title}</span>
-		<span class="text-2xs text-muted-foreground/70 tabular-nums">{count}</span>
-	</div>
-{/snippet}
-
-<ResponsiveDialog
-	open={activityStore.open}
-	onOpenChange={handleOpenChangeInternal}
-	variant="sheet"
-	title={m.activity_center_title()}
-	contentClass="w-(--width-panel) sm:max-w-190"
-	class="flex min-h-0 flex-1 flex-col"
->
-	<div class="flex min-h-0 flex-1 flex-col pt-3">
-		<div class="flex flex-wrap items-center gap-2 border-b border-border/60 px-4 py-3">
-			<InputGroup.Root class="h-8 min-w-40 flex-1">
-				<InputGroup.Addon>
-					<SearchIcon aria-hidden="true" />
-				</InputGroup.Addon>
-				<InputGroup.Input
-					type="search"
-					value={activityStore.searchTerm}
-					oninput={(event) => activityStore.setSearchTerm(event.currentTarget.value)}
-					placeholder={m.activity_search_placeholder()}
-					size="sm"
-				/>
-			</InputGroup.Root>
-
-			<div class="flex items-center gap-2">
-				{#if activityStore.activeCount > 0}
-					<span class="rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary tabular-nums">
-						{m.activity_active_count({ count: activityStore.activeCount })}
-					</span>
-				{/if}
-				<ActivityFilterPopover />
-				<button
-					type="button"
-					onclick={() => activityStore.refresh()}
-					title={m.common_refresh()}
-					aria-label={m.common_refresh()}
-					class="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
-				>
-					<RefreshIcon class={cn('size-4', activityStore.loading && 'animate-spin')} aria-hidden="true" />
-				</button>
-				<DropdownMenu.Root>
-					<DropdownMenu.Trigger title={m.activity_more_options()} aria-label={m.activity_more_options()}>
-						{#snippet child({ props })}
-							<button
-								{...props}
-								type="button"
-								class="flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden"
-							>
-								<EllipsisIcon class="size-4" aria-hidden="true" />
-							</button>
-						{/snippet}
-					</DropdownMenu.Trigger>
-					<DropdownMenu.Content align="end" class="w-56">
-						<DropdownMenu.CheckboxItem
-							checked={activityCompletionToastsEnabled.current}
-							onCheckedChange={(checked) => (activityCompletionToastsEnabled.current = checked)}
-							closeOnSelect={false}
-						>
-							{m.activity_completion_toasts_label()}
-						</DropdownMenu.CheckboxItem>
-						<IfPermitted perm="activities:delete">
-							<DropdownMenu.Separator />
-							<DropdownMenu.Item onclick={clearHistoryInternal} variant="destructive">
-								<TrashIcon class="size-4" aria-hidden="true" />
-								{m.activity_clear_history()}
-							</DropdownMenu.Item>
-						</IfPermitted>
-					</DropdownMenu.Content>
-				</DropdownMenu.Root>
-			</div>
-		</div>
-
-		<div class="min-h-screen-70 flex-1 overflow-y-auto">
-			{#if activityStore.environmentFailures.length > 0}
-				<div class="border-b border-border/60 bg-muted/25 px-4 py-3">
-					<div class="flex items-start gap-2 text-xs text-muted-foreground">
-						<AlertTriangleIcon class="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
-						<div class="min-w-0 flex-1 space-y-1">
-							{#each activityStore.environmentFailures as failure (failure.environmentId)}
-								<p class="leading-relaxed">
-									{m.activity_environment_load_failed({ environment: failure.environmentName })}
-								</p>
-							{/each}
-						</div>
-						<button
-							type="button"
-							onclick={() => activityStore.retryStream()}
-							class="shrink-0 text-xs font-medium text-primary underline hover:text-primary/80"
-						>
-							{m.common_retry()}
-						</button>
-					</div>
-				</div>
-			{/if}
-
-			{#if activityStore.loading && activityStore.activities.length === 0}
-				<div class="flex min-h-96 items-center justify-center p-6 text-center">
-					<div class="space-y-2">
-						<ActivityIcon class="mx-auto size-8 animate-pulse text-muted-foreground" aria-hidden="true" />
-						<p class="text-sm text-muted-foreground">{m.common_loading()}</p>
-					</div>
-				</div>
-			{:else if activityStore.activities.length === 0}
-				<div class="flex min-h-96 items-center justify-center p-6 text-center">
-					<div class="max-w-56 space-y-2">
-						<ActivityIcon class="mx-auto size-9 text-muted-foreground/50" aria-hidden="true" />
-						<h3 class="text-sm font-semibold">{m.activity_empty_title()}</h3>
-						<p class="text-xs leading-relaxed text-muted-foreground">{m.activity_empty_description()}</p>
-					</div>
-				</div>
-			{:else if hasNoResults}
-				<div class="flex min-h-96 items-center justify-center p-6 text-center">
-					<div class="max-w-56 space-y-2">
-						<SearchIcon class="mx-auto size-9 text-muted-foreground/50" aria-hidden="true" />
-						<h3 class="text-sm font-semibold">{m.activity_no_results_title()}</h3>
-						<p class="text-xs leading-relaxed text-muted-foreground">{m.activity_no_results_description()}</p>
-						<button
-							type="button"
-							onclick={() => activityStore.clearFilters()}
-							class="text-xs font-medium text-primary underline hover:text-primary/80"
-						>
-							{m.common_clear_filters()}
-						</button>
-					</div>
-				</div>
-			{:else}
-				<div>
-					{#if activityStore.runningGroups.length > 0}
-						{@render sectionHeader(m.activity_section_running(), activityStore.runningGroups.length)}
-						{#each activityStore.runningGroups as group (groupKeyInternal(group))}
-							{@render groupRow(group)}
-						{/each}
-					{/if}
-					{#if activityStore.historyGroups.length > 0}
-						{@render sectionHeader(m.activity_section_history(), activityStore.historyGroups.length)}
-						{#each activityStore.historyGroups as group (groupKeyInternal(group))}
-							{@render groupRow(group)}
-						{/each}
-					{/if}
-				</div>
-			{/if}
-		</div>
-	</div>
-</ResponsiveDialog>
+{#if layout === 'drawer'}
+	<Drawer.Root open={activityStore.open} onOpenChange={setOpenInternal}>
+		<Drawer.Content class="flex max-h-(--max-height-screen-85) flex-col overflow-hidden">
+			<ActivityCenterTray dialogTitle />
+		</Drawer.Content>
+	</Drawer.Root>
+{:else if layout === 'tray'}
+	<Popover.Root open={activityStore.open} onOpenChange={setOpenInternal}>
+		<Popover.Content
+			variant="panel"
+			role="dialog"
+			aria-labelledby={TITLE_ID}
+			customAnchor={anchor}
+			side="right"
+			align="start"
+			sideOffset={12}
+			collisionPadding={8}
+			onInteractOutside={handleTrayInteractOutsideInternal}
+			class="flex max-h-(--max-height-activity-tray) w-(--width-activity-tray) flex-col"
+		>
+			<ActivityCenterTray titleId={TITLE_ID} onExpand={() => (expanded = true)} />
+		</Popover.Content>
+	</Popover.Root>
+{:else}
+	<Dialog.Root open={activityStore.open} onOpenChange={setOpenInternal}>
+		<Dialog.Content variant="side-panel" showCloseButton={false} class="w-(--width-activity-inspector)">
+			<ActivityCenterInspector onClose={() => setOpenInternal(false)} />
+		</Dialog.Content>
+	</Dialog.Root>
+{/if}

@@ -16,6 +16,7 @@ import {
 import { m } from '#lib/paraglide/messages.js';
 import type { Activity } from '#lib/types/activity.type.js';
 import type { ActivityStatus, ActivityType } from '#lib/types/activity.type.js';
+import { parseInstant } from '#lib/utils/formatting.js';
 
 export type ActivityBadgeVariant = 'red' | 'green' | 'blue' | 'gray' | 'amber' | 'purple';
 
@@ -79,4 +80,25 @@ export function activityRunStatusLabel(activity: Activity): string {
 	return activity.type === 'job_run' && typeof activity.metadata?.['jobStatus'] === 'string'
 		? jobStatusLabel(activity.metadata['jobStatus'])
 		: activityStatusLabel(activity.status);
+}
+
+// Finished activities report durationMs; running ones measure against now.
+export function activityDurationLabel(activity: Activity | null | undefined): string {
+	const startedAt = parseInstant(activity?.startedAt);
+	const durationMs = activity?.durationMs ?? (startedAt ? startedAt.until(Temporal.Now.instant()).total('milliseconds') : 0);
+	if (!durationMs || Number.isNaN(durationMs)) {
+		return m.common_na();
+	}
+	if (durationMs < 1000) {
+		return m.activity_duration_ms({ ms: Math.max(0, Math.round(durationMs)) });
+	}
+
+	const totalSeconds = Math.round(durationMs / 1000);
+	if (totalSeconds < 60) {
+		return m.activity_duration_seconds({ seconds: totalSeconds });
+	}
+
+	const minutes = Math.floor(totalSeconds / 60);
+	const seconds = totalSeconds % 60;
+	return m.activity_duration_minutes({ minutes, seconds });
 }

@@ -59,11 +59,6 @@
 				</div>
 			{/if}
 		</div>
-		{#if badges}
-			<div class="flex max-w-1/2 shrink-0 flex-wrap items-center justify-end gap-1.5">
-				{@render badges()}
-			</div>
-		{/if}
 		{#if actions}
 			<div class="-mt-1 -mr-1.5 flex shrink-0 items-center" data-row-select-ignore>
 				{@render actions()}
@@ -71,15 +66,23 @@
 		{/if}
 	</header>
 
-	<dl class="flex flex-1 flex-col gap-1 px-3.5 pt-2.5 pb-3">
-		{@render fields?.()}
-	</dl>
+	{#if badges}
+		<div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 px-3.5 pt-2.5 *:max-w-full">
+			{@render badges()}
+		</div>
+	{/if}
+
+	{#if fields}
+		<dl class="mx-3.5 mt-3 flex flex-col gap-1.5 border-t border-border/40 pt-3 pb-3">
+			{@render fields()}
+		</dl>
+	{/if}
 
 	{@render children?.()}
 
 	{#if footer}
 		<footer
-			class="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border/40 px-3.5 py-2 text-xs text-muted-foreground tabular-nums"
+			class="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border/40 px-3.5 py-2 text-xs text-muted-foreground tabular-nums"
 		>
 			{@render footer()}
 		</footer>

@@ -299,8 +299,8 @@ export function isPastDate(value: InstantInput): boolean {
 	return instant ? Temporal.Instant.compare(instant, Temporal.Now.instant()) < 0 : false;
 }
 
-export function formatTime(value: InstantInput): string {
-	return formatAbsoluteDateTimeInternal(value, { includeSeconds: true }, true);
+export function formatTime(value: InstantInput, options: { includeSeconds?: boolean } = {}): string {
+	return formatAbsoluteDateTimeInternal(value, { includeSeconds: options.includeSeconds ?? true }, true);
 }
 
 function relativeTimeValueInternal(target: Temporal.Instant, base: Temporal.Instant): RelativeTimeValue {

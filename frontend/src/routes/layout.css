@@ -308,6 +308,9 @@ html.reduce-effects *::after {
 	--width-full-inset: calc(100% - 2rem);
 	--width-full-outset: calc(100% + 1rem);
 	--width-panel: min(94vw, 47.5rem);
+	--width-activity-tray: min(calc(100vw - 2rem), 26rem);
+	--width-activity-inspector: min(calc(100vw - 1rem), 62rem);
+	--max-height-activity-tray: min(calc(100vh - 2rem), 42rem);
 	--max-width-crumb: 28ch;
 	--max-width-7-10: 70%;
 	--max-width-tooltip: min(calc(100vw - 2rem), 20rem);
@@ -572,6 +575,12 @@ input:autofill:active {
 
 @utility transition-stroke-dashoffset {
 	transition-property: stroke-dashoffset;
+}
+
+/* Skips layout and paint for off-screen rows in long lists. */
+@utility content-visibility-auto {
+	content-visibility: auto;
+	contain-intrinsic-size: auto 4rem;
 }
 
 @property --border-beam-angle {

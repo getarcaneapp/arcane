@@ -159,6 +159,8 @@ function createActivityStore() {
 	let _statusFilters = $state<ActivityStatus[]>([]);
 	let _typeFilters = $state<ActivityType[]>([]);
 	let _open = $state(false);
+	// Group key (activity id or `batch:<id>`) whose detail the tray/inspector shows.
+	let _focusedKey = $state<string | null>(null);
 	let sessionGeneration = 0;
 	let requestedEnvironments: Record<string, string> = {};
 	// Last observed status per activity, for completion-toast transition
@@ -521,11 +523,19 @@ function createActivityStore() {
 		if (activityId && environmentId) requestedEnvironments[activityId] = environmentId;
 		_open = true;
 		discardPendingActivityToasts();
+		focusInternal(activityId ?? (batchId ? `batch:${batchId}` : null));
 		if (activityId) {
 			setActivityExpanded(activityId, true);
 		}
 		if (batchId) {
 			setBatchExpandedInternal(batchId, true);
+		}
+	}
+
+	function focusInternal(key: string | null) {
+		_focusedKey = key;
+		if (key && !key.startsWith('batch:')) {
+			void loadDetailInternal(key);
 		}
 	}
 
@@ -553,6 +563,7 @@ function createActivityStore() {
 		return true;
 	}
 
+	const allGroups = $derived(groupActivitiesInternal(_activities));
 	const filteredGroups = $derived(groupActivitiesInternal(_activities.filter(matchesFiltersInternal)));
 	const runningGroups = $derived(filteredGroups.filter(groupStatusIsActiveInternal));
 	const historyGroups = $derived(filteredGroups.filter((group) => !groupStatusIsActiveInternal(group)));
@@ -588,6 +599,14 @@ function createActivityStore() {
 		get historyGroups(): ActivityGroup[] {
 			return historyGroups;
 		},
+		// Ignores search and filters; for surfaces without filter controls.
+		get allGroups(): ActivityGroup[] {
+			return allGroups;
+		},
+		get focusedKey(): string | null {
+			return _focusedKey;
+		},
+		focus: focusInternal,
 		get activeCount(): number {
 			return activeCount;
 		},
@@ -668,6 +687,7 @@ function createActivityStore() {
 				_statusFilters = [];
 				_typeFilters = [];
 				_open = false;
+				_focusedKey = null;
 			}
 			return wasStarted;
 		},
@@ -754,6 +774,13 @@ function createActivityStore() {
 			}
 		},
 		openCenter: openCenterInternal,
+		toggleCenter: () => {
+			if (_open) {
+				_open = false;
+				return;
+			}
+			openCenterInternal();
+		},
 		retryLoadDetail: (activityId: string) => {
 			const nextErrors = { ..._detailErrorIds };
 			delete nextErrors[activityId];
