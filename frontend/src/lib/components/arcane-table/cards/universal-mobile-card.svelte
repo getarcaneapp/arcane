@@ -3,9 +3,12 @@
 
 	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as Card from '#lib/components/ui/card/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { cn } from '#lib/utils.js';
+
+	import ResourceCardField from './resource-card-field.svelte';
+	import ResourceCardMeta from './resource-card-meta.svelte';
+	import ResourceCard from './resource-card.svelte';
 
 	type IconVariant = 'emerald' | 'red' | 'amber' | 'blue' | 'purple' | 'gray' | 'sky' | 'orange';
 	type BadgeVariant = 'green' | 'red' | 'amber' | 'blue' | 'purple' | 'gray' | 'orange';
@@ -51,7 +54,6 @@
 		footer,
 		rowActions,
 		children,
-		compact = false,
 		class: className = '',
 		onclick
 	}: {
@@ -64,16 +66,9 @@
 		footer?: FooterConfig<T>;
 		rowActions?: Snippet<[{ item: T }]>;
 		children?: Snippet;
-		compact?: boolean;
 		class?: string;
 		onclick?: (item: T) => void;
 	} = $props();
-
-	const sizeClasses = $derived(
-		compact
-			? { iconContainer: 'size-10', image: 'size-5', icon: 'size-4', title: 'text-sm', subtitle: 'text-3xs' }
-			: { iconContainer: 'size-11', image: 'size-6', icon: 'size-5', title: 'text-base', subtitle: 'text-xs' }
-	);
 
 	const resolvedIcon = $derived(typeof icon === 'function' ? icon(item) : icon);
 	const resolvedBadges = $derived(
@@ -93,7 +88,12 @@
 	);
 	const visibleFields = $derived([...environmentField, ...fields.filter((f) => f.show !== false)]);
 	const subtitleValue = $derived(subtitle?.(item));
-	const hasSubtitle = $derived(!!subtitleValue);
+	const footerValue = $derived(footer?.getValue(item));
+	const hasFields = $derived(visibleFields.some((field) => isPresent(field.getValue(item))));
+
+	function isPresent(value: unknown): boolean {
+		return value !== null && value !== undefined;
+	}
 
 	function getIconBgClass(variant: IconVariant): string {
 		const map: Record<IconVariant, string> = {
@@ -128,39 +128,26 @@
 	<EnvironmentCell {value} />
 {/snippet}
 
-{#snippet FieldValue(field: FieldDefinition<T>, value: any, isCompact: boolean)}
+{#snippet FieldValue(field: FieldDefinition<T>, value: any)}
 	{#if field.type === 'badge' && field.badgeVariant}
 		<Badge variant={field.badgeVariant} size="sm" minWidth="20">{String(value)}</Badge>
 	{:else if field.type === 'mono'}
-		<span class={isCompact ? 'truncate font-mono text-xs leading-tight text-muted-foreground' : 'font-mono text-xs'}>{value}</span
-		>
+		<span class="truncate font-mono text-xs">{value}</span>
 	{:else if field.type === 'component' && field.component}
-		{#if isCompact}
-			<span class="min-w-0 flex-1 text-xs leading-tight text-muted-foreground">
-				{@render field.component(value)}
-			</span>
-		{:else}
-			{@render field.component(value)}
-		{/if}
-	{:else if isCompact}
-		<span class="min-w-0 flex-1 truncate text-xs leading-tight text-muted-foreground">
-			{value}
-		</span>
+		{@render field.component(value)}
 	{:else}
-		{value}
+		<span class="min-w-0 truncate">{value}</span>
 	{/if}
 {/snippet}
 
-{#snippet cardHeader()}
-	<div class={cn('flex gap-3', hasSubtitle ? 'items-start' : 'items-center')}>
+{#snippet cardTitle()}
+	<div class="flex min-w-0 items-center gap-3">
 		{#if resolvedIcon}
 			{@const IconComponent = resolvedIcon.component}
 			<div
 				class={cn(
-					'flex shrink-0 items-center justify-center rounded-xl ring-1 transition-transform duration-200 ring-inset group-hover:scale-105',
-					sizeClasses.iconContainer,
-					getIconBgClass(resolvedIcon.variant),
-					'ring-white/5'
+					'flex size-9 shrink-0 items-center justify-center rounded-lg ring-1 ring-foreground/5 ring-inset',
+					getIconBgClass(resolvedIcon.variant)
 				)}
 			>
 				{#if validImageUrl}
@@ -170,123 +157,69 @@
 						loading="lazy"
 						decoding="async"
 						referrerpolicy="no-referrer"
-						class={cn('object-contain', sizeClasses.image)}
+						class="size-5 object-contain"
 						onerror={() => (errorImageUrl = resolvedIcon?.imageUrl)}
 					/>
 				{:else}
-					<IconComponent class={cn(getIconTextClass(resolvedIcon.variant), sizeClasses.icon)} />
+					<IconComponent class={cn(getIconTextClass(resolvedIcon.variant), 'size-4.5')} />
 				{/if}
 			</div>
 		{/if}
 		<div class="min-w-0 flex-1">
-			<h3 class={cn('line-clamp-2 leading-tight font-semibold wrap-break-word', sizeClasses.title)} title={title(item)}>
-				{title(item)}
-			</h3>
-			{#if hasSubtitle}
-				<p class={cn('mt-0.5 truncate font-mono text-muted-foreground', sizeClasses.subtitle)}>
-					{subtitleValue}
-				</p>
+			<h3 class="truncate text-sm leading-tight font-semibold" title={title(item)}>{title(item)}</h3>
+			{#if subtitleValue}
+				<p class="mt-0.5 truncate font-mono text-xs font-normal text-muted-foreground">{subtitleValue}</p>
 			{/if}
 		</div>
-		{#if rowActions}
-			{@render rowActions({ item })}
-		{/if}
 	</div>
 {/snippet}
 
-{#snippet expandedField(field: FieldDefinition<T>)}
-	{@const value = field.getValue(item)}
-	{#if value !== null && value !== undefined}
-		<div class="flex min-w-0 flex-1 basis-35 items-center gap-2.5">
-			{#if field.icon}
-				{@const FieldIcon = field.icon}
-				<div
-					class={cn(
-						'flex size-7 shrink-0 items-center justify-center rounded-lg ring-1 ring-white/5 ring-inset',
-						field.iconVariant ? getIconBgClass(field.iconVariant) : 'bg-muted/40'
-					)}
-				>
-					<FieldIcon class={cn(field.iconVariant ? getIconTextClass(field.iconVariant) : 'text-muted-foreground', 'size-3.5')} />
-				</div>
-			{/if}
-			<div class="min-w-0 flex-1">
-				<div class="text-2xs font-medium tracking-wide text-muted-foreground uppercase">
-					{field.label}
-				</div>
-				<div class="truncate text-sm leading-snug font-medium">
-					{@render FieldValue(field, value, false)}
-				</div>
-			</div>
-		</div>
-	{/if}
+{#snippet cardActions()}
+	{@render rowActions?.({ item })}
 {/snippet}
 
-{#snippet additionalFields()}
-	<!-- Additional Fields -->
-	{#if visibleFields.length > 0}
-		{#if !compact}
-			<div class="flex flex-wrap gap-x-4 gap-y-2.5">
-				{#each visibleFields as field (field.label)}
-					{@render expandedField(field)}
-				{/each}
-			</div>
-		{:else}
-			{#each visibleFields as field (field.label)}
-				{@const value = field.getValue(item)}
-				{#if value !== null && value !== undefined}
-					<div class="flex items-baseline gap-2">
-						<span class="text-2xs font-semibold tracking-wide text-muted-foreground uppercase">{field.label}:</span>
-						{@render FieldValue(field, value, true)}
-					</div>
-				{/if}
-			{/each}
+{#snippet cardBadges()}
+	{#each resolvedBadges as badge (`${badge.variant}:${badge.text}`)}
+		<Badge variant={badge.variant} size="sm" minWidth="20">{badge.text}</Badge>
+	{/each}
+{/snippet}
+
+{#snippet cardFields()}
+	{#each visibleFields as field (field.label)}
+		{@const value = field.getValue(item)}
+		{#if isPresent(value)}
+			<ResourceCardField
+				label={field.label}
+				icon={field.icon}
+				iconClass={field.iconVariant ? getIconTextClass(field.iconVariant) : undefined}
+			>
+				{@render FieldValue(field, value)}
+			</ResourceCardField>
 		{/if}
+	{/each}
+{/snippet}
+
+{#snippet cardFooter()}
+	{#if footer}
+		<ResourceCardMeta label={footer.label} icon={footer.icon}>
+			<span class="font-mono">{footerValue}</span>
+		</ResourceCardMeta>
 	{/if}
 {/snippet}
 
-<div class={cn('group relative w-full px-3 py-2', className)}>
-	<Card.Root
-		variant="subtle"
-		size="sm"
-		interactive={!!onclick}
-		class="overflow-hidden text-left"
+<div class={cn('w-full px-3 py-2', className)}>
+	<ResourceCard
 		onclick={onclick ? () => onclick(item) : undefined}
+		title={cardTitle}
+		actions={rowActions ? cardActions : undefined}
+		badges={resolvedBadges.length > 0 ? cardBadges : undefined}
+		fields={hasFields ? cardFields : undefined}
+		footer={footerValue ? cardFooter : undefined}
 	>
-		<Card.Content>
-			<div class={compact ? 'flex flex-col gap-2.5 text-left' : 'flex flex-col gap-3 text-left'}>
-				{@render cardHeader()}
-
-				{#if resolvedBadges.length > 0}
-					<div class="flex flex-wrap items-center gap-1">
-						{#each resolvedBadges as badge (`${badge.variant}:${badge.text}`)}
-							<Badge variant={badge.variant} size="sm" minWidth="20">{badge.text}</Badge>
-						{/each}
-					</div>
-				{/if}
-
-				{@render additionalFields()}
-
-				<!-- Custom children content -->
-				{#if children}
-					{@render children()}
-				{/if}
+		{#if children}
+			<div class="px-4 pb-4">
+				{@render children()}
 			</div>
-		</Card.Content>
-
-		{#if !compact && footer}
-			{@const footerValue = footer.getValue(item)}
-			{#if footerValue}
-				{@const FooterIcon = footer.icon}
-				<div class="flex items-center gap-2.5 border-t border-border/40 bg-muted/30 px-3.5 py-2.5">
-					<FooterIcon class="size-4 text-muted-foreground" />
-					<span class="text-2xs font-medium tracking-wide text-muted-foreground uppercase">
-						{footer.label}
-					</span>
-					<span class="ml-auto font-mono text-xs font-medium text-foreground">
-						{footerValue}
-					</span>
-				</div>
-			{/if}
 		{/if}
-	</Card.Root>
+	</ResourceCard>
 </div>
