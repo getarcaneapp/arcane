@@ -24,7 +24,7 @@
 		{/if}
 		<span class="truncate">{label}</span>
 	</dt>
-	<dd class="flex min-h-6 min-w-0 flex-1 flex-wrap items-center gap-1 wrap-break-word">
+	<dd class="flex min-h-6 min-w-0 flex-1 flex-wrap items-center gap-1 overflow-hidden wrap-break-word *:max-w-full *:min-w-0">
 		{@render children()}
 	</dd>
 </div>
