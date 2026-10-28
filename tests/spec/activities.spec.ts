@@ -301,10 +301,7 @@ async function openActivityCenter(page: Page) {
 }
 
 function activityRow(activityCenter: Locator, text: string) {
-	return activityCenter
-		.locator('button[aria-label="Activity Center"]')
-		.filter({ hasText: text })
-		.first();
+	return activityCenter.locator('[data-activity-row]').filter({ hasText: text }).first();
 }
 
 function waitForActivityStream(page: Page) {
@@ -601,33 +598,27 @@ test.describe('Activity Center', () => {
 			expect(startedBy).toBeTruthy();
 
 			const activityCenter = await openActivityCenter(page);
+			// The default tray is a summary; the full view carries search, filters and the detail pane.
+			await activityCenter.getByRole('button', { name: 'Open full view' }).click();
 			await expect(activityCenter.getByPlaceholder('Search activity…')).toBeVisible();
 			await expect(activityCenter.getByRole('button', { name: 'Filter' })).toBeVisible();
-			await expect(activityCenter.getByText('History', { exact: true })).toBeVisible();
+			await expect(
+				activityCenter.getByRole('heading', { name: 'Today', exact: true })
+			).toBeVisible();
 
 			const activityItem = activityRow(activityCenter, networkName);
 			await expect(activityItem).toBeVisible();
 			await expect(activityItem).toContainText('Resource Action');
-			await expect(activityItem).toContainText('Success');
+			await expect(activityItem.getByRole('img', { name: 'Success' })).toBeVisible();
 			await expect(activityItem.getByText(environment.name, { exact: true })).toBeVisible();
-			await expect(
-				activityItem.getByText(`Started by ${startedBy}`, { exact: true })
-			).toBeVisible();
 
 			await activityItem.click();
-			await expect(activityItem).toHaveAttribute('aria-expanded', 'true');
-			// Attribution stays in the row header when its output is expanded.
-			await expect(activityItem.getByText(environment.name, { exact: true })).toBeVisible();
-			await expect(
-				activityItem.getByText(`Started by ${startedBy}`, { exact: true })
-			).toBeVisible();
-			const detailPanelId = await activityItem.getAttribute('aria-controls');
-			expect(detailPanelId).toBeTruthy();
-			const detailPanel = activityCenter.locator(`[id=${JSON.stringify(detailPanelId)}]`);
-			await expect(detailPanel).toHaveAttribute('data-state', 'open');
+			await expect(activityItem).toHaveAttribute('aria-current', 'true');
+			const detailPanel = activityCenter.locator('[data-activity-detail]');
+			await expect(detailPanel.getByRole('heading', { name: networkName })).toBeVisible();
+			await expect(detailPanel.getByText(environment.name, { exact: true })).toBeVisible();
+			await expect(detailPanel.getByText(startedBy, { exact: true })).toBeVisible();
 			await expect(detailPanel.getByText('Output', { exact: true })).toBeVisible();
-			// The output pane shows the activity's messages verbatim; step labels
-			// (e.g. "Creating network") are no longer rendered in the detail panel.
 			await expect(detailPanel.getByText('Network created successfully').first()).toBeVisible();
 		} finally {
 			await removeApiResource(

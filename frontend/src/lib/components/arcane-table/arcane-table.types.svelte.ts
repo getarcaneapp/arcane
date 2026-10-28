@@ -26,7 +26,7 @@ export type TableViewMode = 'list' | 'grid';
 export type ColumnWidth = 'auto' | 'min' | 'max' | number;
 export type ColumnAlign = 'left' | 'center' | 'right';
 /** Where a column renders on a grid card; inferred from the column id when unset. */
-export type CardSlot = 'title' | 'context' | 'badge' | 'field' | 'footer' | 'hidden';
+export type CardSlot = 'title' | 'context' | 'badge' | 'field' | 'footer' | 'footerEnd' | 'hidden';
 
 export type ColumnSpec<T extends RowData> = {
 	accessorKey?: keyof T & string;
@@ -40,7 +40,7 @@ export type ColumnSpec<T extends RowData> = {
 	 * server. For values the server cannot sort (e.g. live WebSocket stats).
 	 */
 	clientSort?: boolean;
-	cell?: Snippet<[{ row: ArcaneRow<T>; item: T; value: unknown }]>;
+	cell?: Snippet<[{ row: ArcaneRow<T>; item: T; value: unknown; view: TableViewMode }]>;
 	/** Render a shared value-only Svelte component without a per-table wrapper snippet. */
 	cellComponent?: Component<{ value: unknown }>;
 	header?: Snippet<[{ column: ArcaneColumn<T>; title: string; class?: string }]>;

@@ -7,7 +7,7 @@
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
-	import type { SortState } from '#lib/components/arcane-table/arcane-table.types.svelte';
+	import type { SortState, TableViewMode } from '#lib/components/arcane-table/arcane-table.types.svelte';
 	import ActionMenuItem from '#lib/components/arcane-table/cells/action-menu-item.svelte';
 	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import type { ColumnSpec, BulkAction } from '#lib/components/arcane-table/index.js';
@@ -309,6 +309,10 @@
 		)
 	);
 
+	function getRowActionStatus(item: ContainerRow): ActionStatus {
+		return actionStatus[rowKey(item)] || (activeUpdateKeys.has(`${item.environmentId}:${item.id}`) ? 'updating' : '');
+	}
+
 	// Only the on/off state is tracked here. The callback reads requestOptions when
 	// it runs, so pagination or filter changes do not restart the poll cycle.
 	$effect(() => {
@@ -468,7 +472,7 @@
 			sortable: !groupByProject && resourceSortSupported,
 			cell: MemoryCell
 		},
-		{ accessorKey: 'status', title: m.common_status() },
+		{ accessorKey: 'status', title: m.common_status(), card: 'footerEnd' },
 		{
 			accessorKey: 'networkSettings',
 			id: 'ipAddress',
@@ -693,7 +697,7 @@
 	{@const iconUrl = getThemedIconUrl(item, mode.current)}
 	{@const projectLabel = item.labels?.[COMPOSE_PROJECT_LABEL]}
 	{@const quadletHref = quadletUnitHref(item.labels, item.environmentId)}
-	<div class="flex items-center gap-2">
+	<div class="flex min-w-0 items-center gap-2">
 		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-8 shrink-0" />
 		<a class="min-w-0 truncate font-medium hover:underline" href={environmentHref(`/containers/${item.id}`, item.environmentId)}
 			>{displayName}</a
@@ -720,8 +724,8 @@
 	<span class="font-mono text-sm">{String(item.id)}</span>
 {/snippet}
 
-{#snippet StateCell({ item }: { item: ContainerRow })}
-	{@const status = actionStatus[rowKey(item)] || (activeUpdateKeys.has(`${item.environmentId}:${item.id}`) ? 'updating' : '')}
+{#snippet StateCell({ item, view }: { item: ContainerRow; view: TableViewMode })}
+	{@const status = getRowActionStatus(item)}
 	<div class="flex items-center gap-2">
 		{#if status === 'updating'}
 			<Badge variant="primary" minWidth="20" beam>{getActionStatusMessage(status)}</Badge>
@@ -735,44 +739,50 @@
 		{:else}
 			<Badge variant={getStateBadgeVariant(item.state)} minWidth="20">{getContainerStatusLabel(item.state)}</Badge>
 		{/if}
-		<div class="flex items-center gap-1 {stateActionsMinWidth}">
-			{#if !status && item.state !== 'running' && hasPermission('containers:start', item.environmentId)}
-				<ArcaneButton
-					action="base"
-					tone="ghost"
-					size="sm"
-					class="size-7 p-0 text-success! hover:bg-success/10 hover:text-success"
-					onclick={() => performContainerAction('start', item.id, item.environmentId)}
-					disabled={!resourcesCurrent || isAnyLoading}
-					icon={StartIcon}
-					title={m.common_start()}
-				/>
-			{:else if !status && item.state === 'running' && hasPermission('containers:stop', item.environmentId)}
-				<ArcaneButton
-					action="base"
-					tone="ghost"
-					size="sm"
-					class="size-7 p-0 text-destructive! hover:bg-destructive/10 hover:text-destructive"
-					onclick={() => performContainerAction('stop', item.id, item.environmentId)}
-					disabled={!resourcesCurrent || isAnyLoading}
-					title={m.common_stop()}
-					icon={StopIcon}
-				/>
-			{/if}
-			{#if !status && item.updateInfo?.hasUpdate && hasPermission('containers:autoupdate', item.environmentId)}
-				<ArcaneButton
-					action="base"
-					tone="ghost"
-					size="sm"
-					class="size-7 p-0"
-					onclick={() => handleUpdateContainer(item)}
-					disabled={!resourcesCurrent || isAnyLoading}
-					title={m.update_container()}
-					icon={UpdateIcon}
-				/>
-			{/if}
-		</div>
+		{#if view === 'list'}
+			<div class="flex items-center gap-1 {stateActionsMinWidth}">
+				{@render StateActions(item, status)}
+			</div>
+		{/if}
 	</div>
+{/snippet}
+
+{#snippet StateActions(item: ContainerRow, status: ActionStatus)}
+	{#if !status && item.state !== 'running' && hasPermission('containers:start', item.environmentId)}
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="sm"
+			class="size-7 p-0 text-success! hover:bg-success/10 hover:text-success"
+			onclick={() => performContainerAction('start', item.id, item.environmentId)}
+			disabled={!resourcesCurrent || isAnyLoading}
+			icon={StartIcon}
+			title={m.common_start()}
+		/>
+	{:else if !status && item.state === 'running' && hasPermission('containers:stop', item.environmentId)}
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="sm"
+			class="size-7 p-0 text-destructive! hover:bg-destructive/10 hover:text-destructive"
+			onclick={() => performContainerAction('stop', item.id, item.environmentId)}
+			disabled={!resourcesCurrent || isAnyLoading}
+			title={m.common_stop()}
+			icon={StopIcon}
+		/>
+	{/if}
+	{#if !status && item.updateInfo?.hasUpdate && hasPermission('containers:autoupdate', item.environmentId)}
+		<ArcaneButton
+			action="base"
+			tone="ghost"
+			size="sm"
+			class="size-7 p-0"
+			onclick={() => handleUpdateContainer(item)}
+			disabled={!resourcesCurrent || isAnyLoading}
+			title={m.update_container()}
+			icon={UpdateIcon}
+		/>
+	{/if}
 {/snippet}
 
 {#snippet ContainerUpdateItem(item: ContainerRow)}
@@ -947,10 +957,13 @@
 	</UniversalMobileCard>
 {/snippet}
 
-{#snippet RowActions({ item }: { item: ContainerRow })}
+{#snippet RowActions({ item, view = 'list' }: { item: ContainerRow; view?: TableViewMode })}
 	{#if resourcesCurrent}
 		{@const status = actionStatus[rowKey(item)]}
 		{@const envId = item.environmentId}
+		{#if view === 'grid'}
+			{@render StateActions(item, getRowActionStatus(item))}
+		{/if}
 		<RowActionsMenu>
 			<DropdownMenu.Item onclick={() => goto(environmentHref(`/containers/${item.id}`, envId))} disabled={isAnyLoading}>
 				<InspectIcon class="size-4" />

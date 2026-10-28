@@ -25,7 +25,7 @@
 	const canReadActivities = $derived(userHasPermissionInAnyEnvironment(currentUser.current, 'activities:read'));
 
 	function handleOpenInternal() {
-		activityStore.openCenter();
+		activityStore.toggleCenter();
 		onOpen?.();
 	}
 </script>
@@ -34,6 +34,7 @@
 	{#if compact}
 		<button
 			type="button"
+			data-activity-center-trigger
 			onclick={handleOpenInternal}
 			title={m.activity_center_open()}
 			aria-label={m.activity_center_open()}
@@ -77,6 +78,7 @@
 	{:else}
 		<button
 			type="button"
+			data-activity-center-trigger
 			onclick={handleOpenInternal}
 			title={m.activity_center_open()}
 			aria-label={m.activity_center_open()}
