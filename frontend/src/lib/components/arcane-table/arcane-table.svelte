@@ -22,6 +22,7 @@
 	import ArcaneTableCell from './arcane-table-cell.svelte';
 	import TableCheckbox from './arcane-table-checkbox.svelte';
 	import ArcaneTableDesktopView from './arcane-table-desktop-view.svelte';
+	import ArcaneTableGridView from './arcane-table-grid-view.svelte';
 	import ArcaneTableHeader from './arcane-table-header.svelte';
 	import ArcaneTableMobileView from './arcane-table-mobile-view.svelte';
 	import ArcaneTablePagination from './arcane-table-pagination.svelte';
@@ -34,6 +35,7 @@
 		type GroupSelectionState,
 		type SelectionModifiers,
 		type SortState,
+		type TableViewMode,
 		encodeHidden,
 		applyHiddenPatch,
 		encodeFilters,
@@ -184,9 +186,17 @@
 
 	// Each view owns its virtualizer and restores its own scroll position.
 	let desktopScrollEl = $state<HTMLElement>();
+	let gridScrollEl = $state<HTMLElement>();
 	let mobileScrollEl = $state<HTMLElement>();
 	const isMobile = new IsMobile();
-	const scrollPositions = { desktop: { top: 0, left: 0 }, mobile: { top: 0, left: 0 } };
+	const scrollPositions = { desktop: { top: 0, left: 0 }, grid: { top: 0, left: 0 }, mobile: { top: 0, left: 0 } };
+
+	// Desktop layout; mobile always renders cards.
+	let viewMode = $state<TableViewMode>('list');
+	function setViewMode(mode: TableViewMode) {
+		viewMode = mode;
+		if (enablePersist && prefs) prefs.current = { ...prefs.current, d: mode };
+	}
 	const selectedIdSet = $derived(new Set(selectedIds ?? []));
 
 	function restoreScroll(node: HTMLElement, view: keyof typeof scrollPositions) {
@@ -295,6 +305,7 @@
 			return;
 		}
 		const snapshot = extractPersistedPreferences(prefs?.current, getEffectiveLimit());
+		if (snapshot.viewMode) viewMode = snapshot.viewMode;
 		if (!restoreAllPageSize && snapshot.limit === TABLE_PAGE_SIZE_ALL) {
 			snapshot.limit = DEFAULT_LIMIT;
 		}
@@ -339,8 +350,10 @@
 			limit: items?.pagination?.itemsPerPage ?? 10
 		};
 		scrollPositions.desktop.top = 0;
+		scrollPositions.grid.top = 0;
 		scrollPositions.mobile.top = 0;
 		if (desktopScrollEl) desktopScrollEl.scrollTop = 0;
+		if (gridScrollEl) gridScrollEl.scrollTop = 0;
 		if (mobileScrollEl) mobileScrollEl.scrollTop = 0;
 		const next = { ...prev, ...patch };
 		requestOptions = { ...requestOptions, pagination: next };
@@ -837,6 +850,8 @@
 					{imageNameFilterOptions}
 					{wrapText}
 					onToggleWrapText={toggleWrapText}
+					{viewMode}
+					onViewModeChange={isMobile.current ? undefined : setViewMode}
 					{isFiltered}
 					onResetFilters={resetFilters}
 				/>
@@ -879,7 +894,37 @@
 			</div>
 		{/if}
 
-		{#if !isMobile.current}
+		{#if !isMobile.current && viewMode === 'grid'}
+			<div
+				{@attach (node) => restoreScroll(node, 'grid')}
+				bind:this={gridScrollEl}
+				data-table-scroll="grid"
+				class="isolate h-full min-h-0 flex-1 overflow-auto bg-background"
+			>
+				<ArcaneTableGridView
+					scrollElement={gridScrollEl}
+					initialScrollTop={scrollPositions.grid.top}
+					{rowIndex}
+					{table}
+					{mobileCard}
+					{mobileFieldVisibility}
+					{selectedIdSet}
+					{selectionDisabled}
+					onToggleRowSelection={(id, selected, modifiers) => onToggleRow(selected, id, modifiers)}
+					groupedRows={effectiveGroupedRows}
+					{groupIcon}
+					{groupCollapsedState}
+					onGroupToggle={handleGroupToggle}
+					{getGroupSelectionState}
+					{onToggleGroupSelection}
+					{expandedRowContent}
+					{expandedRows}
+					onToggleRowExpanded={toggleRowExpanded}
+					{loading}
+					empty={EmptySnippet}
+				/>
+			</div>
+		{:else if !isMobile.current}
 			<div
 				{@attach (node) => restoreScroll(node, 'desktop')}
 				bind:this={desktopScrollEl}

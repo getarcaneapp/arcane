@@ -21,6 +21,7 @@ export type MobileFieldVisibility = Record<string, boolean>;
 export type SortDirection = 'asc' | 'desc';
 export type SortPreference = [string, SortDirection];
 export type SortState = { column: string; direction: SortDirection };
+export type TableViewMode = 'list' | 'grid';
 
 export type ColumnWidth = 'auto' | 'min' | 'max' | number;
 export type ColumnAlign = 'left' | 'center' | 'right';
@@ -63,6 +64,8 @@ export type CompactTablePrefs = {
 	l?: number;
 	// m: list of hidden mobile field ids
 	m?: string[];
+	// d: desktop view mode
+	d?: TableViewMode;
 	c?: Record<string, unknown>;
 };
 
