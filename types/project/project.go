@@ -170,6 +170,11 @@ type DeployOptions struct {
 	// Required: false
 	ForceRecreate bool `json:"forceRecreate,omitempty"`
 
+	// Build rebuilds services that define a build section before deploying.
+	//
+	// Required: false
+	Build bool `json:"build,omitempty"`
+
 	// RemoveOrphans removes containers for services not defined in the compose file.
 	//
 	// Required: false

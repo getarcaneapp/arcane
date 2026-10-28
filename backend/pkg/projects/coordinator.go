@@ -57,16 +57,16 @@ func (c *composeCoordinatorInternal) Deploy(ctx context.Context, request project
 		return nil, fmt.Errorf("resolve registry credentials: %w", err)
 	}
 	pullPolicy := ""
-	forceRecreate, recreateVolumes := false, false
+	forceRecreate, recreateVolumes, build := false, false, false
 	if request.Options != nil {
 		pullPolicy = NormalizeDeployPullPolicy(request.Options.PullPolicy)
-		forceRecreate, recreateVolumes = request.Options.ForceRecreate, request.Options.RecreateVolumes
+		forceRecreate, recreateVolumes, build = request.Options.ForceRecreate, request.Options.RecreateVolumes, request.Options.Build
 	}
 	if pullPolicy == "" {
 		pullPolicy = NormalizeDeployPullPolicy(request.DefaultPullPolicy)
 	}
 	pullPolicy = cmp.Or(pullPolicy, "missing")
-	if prepareImagesForDeployErr := c.PrepareImagesForDeploy(ctx, request.ProjectID, model, request.Progress, operations, pullPolicy); prepareImagesForDeployErr != nil {
+	if prepareImagesForDeployErr := c.PrepareImagesForDeploy(ctx, request.ProjectID, model, request.Progress, operations, pullPolicy, build); prepareImagesForDeployErr != nil {
 		return nil, fmt.Errorf("failed to prepare project images for deploy: %w", prepareImagesForDeployErr)
 	}
 	removeOrphans := ResolveRemoveOrphans(request.GitOpsManaged, request.Options)
@@ -256,6 +256,7 @@ func (c *composeCoordinatorInternal) PrepareImagesForDeploy(
 	progressWriter io.Writer,
 	operations projecttypes.ComposeImageOperations,
 	pullPolicyOverride string,
+	build bool,
 ) error {
 	if project == nil {
 		return nil
@@ -273,7 +274,10 @@ func (c *composeCoordinatorInternal) PrepareImagesForDeploy(
 
 		decision := DecideDeployImageAction(localSvc, pullPolicyOverride)
 		serviceDecision := decision
-		if updated && !decision.Build {
+		switch {
+		case build && localSvc.Build != nil:
+			serviceDecision = DeployImageDecision{Build: true}
+		case updated && !decision.Build:
 			exists, existsErr := operations.Exists(ctx, imageName)
 			if existsErr != nil {
 				slog.WarnContext(ctx, "failed to check local image existence", "image", imageName, "error", existsErr)
@@ -386,6 +390,9 @@ func (c *composeCoordinatorInternal) buildServiceImageForDeployInternal(
 
 	if buildErr := operations.Build(ctx, buildReq, progressWriter, serviceName); buildErr != nil {
 		return buildErr
+	}
+	if buildReq.Provider == "depot" {
+		return operations.Pull(ctx, strings.TrimSpace(updatedSvc.Image), progressWriter)
 	}
 
 	return nil

@@ -120,9 +120,10 @@ func New(
 	}
 }
 
-// Run clones the sync source and applies it to its project or Swarm stack. A retry replays the
-// revision its run pinned, and redeploys it unless the record already confirms that revision.
-func (s *Service) Run(ctx context.Context, sync *projectpkg.GitOpsSync, actor user.Actor, result *gitops.SyncResult) (*gitops.SyncResult, error) {
+// Run clones the sync source and applies it to its project or Swarm stack within sourceTimeout; the redeploy
+// keeps ctx's own budget. A retry replays the revision its run pinned, and redeploys it unless the record
+// already confirms that revision.
+func (s *Service) Run(ctx context.Context, sourceTimeout time.Duration, sync *projectpkg.GitOpsSync, actor user.Actor, result *gitops.SyncResult) (*gitops.SyncResult, error) {
 	pinned := ""
 	if run, ok := jobcontext.Run(ctx); ok {
 		index := slices.IndexFunc(run.Outcome.Targets, func(target scheduler.TargetOutcome) bool {
@@ -142,7 +143,10 @@ func (s *Service) Run(ctx context.Context, sync *projectpkg.GitOpsSync, actor us
 		return result, nil
 	}
 
-	source, err := s.prepareSyncSource(ctx, sync, result, actor, pinned)
+	stageCtx, cancelStage := context.WithTimeout(ctx, sourceTimeout)
+	defer cancelStage()
+
+	source, err := s.prepareSyncSource(stageCtx, sync, result, actor, pinned)
 	if source != nil {
 		defer s.repoService.Discard(ctx, source.repoPath)
 	}
@@ -152,7 +156,7 @@ func (s *Service) Run(ctx context.Context, sync *projectpkg.GitOpsSync, actor us
 
 	var syncFiles []projects.SyncFile
 	if sync.SyncDirectory {
-		if syncFiles, err = s.walkAndParseSyncDirectory(ctx, sync, source.repoPath); err != nil {
+		if syncFiles, err = s.walkAndParseSyncDirectory(stageCtx, sync, source.repoPath); err != nil {
 			return result, s.failSync(ctx, result, sync, actor, "Failed to walk directory", err)
 		}
 	}
@@ -180,18 +184,18 @@ func (s *Service) Run(ctx context.Context, sync *projectpkg.GitOpsSync, actor us
 			WithRegistryAuth: true,
 			WorkingDir:       filepath.Dir(filepath.Join(source.repoPath, sync.ComposePath)),
 		}
-		if _, deployErr := s.swarmService.DeployStack(ctx, sync.EnvironmentID, request); deployErr != nil {
+		if _, deployErr := s.swarmService.DeployStack(stageCtx, sync.EnvironmentID, request); deployErr != nil {
 			return result, s.failSync(ctx, result, sync, actor, "Failed to deploy swarm stack", deployErr)
 		}
 		result.Message = fmt.Sprintf("Successfully deployed swarm stack %s from %s", sync.ProjectName, sync.ComposePath)
 	case sync.SyncDirectory:
-		if project, syncedFiles, _, changed, err = s.syncProjectDirectory(ctx, sync, syncFiles, actor); err != nil {
+		if project, syncedFiles, _, changed, err = s.syncProjectDirectory(stageCtx, sync, syncFiles, actor); err != nil {
 			message := kit.Ternary(errors.Is(err, common.ErrGitOpsSyncProjectBindingBroken), "GitOps project binding broken", "Failed to sync project directory")
 			return result, s.failSync(ctx, result, sync, actor, message, err)
 		}
 		result.Message = fmt.Sprintf("Successfully synced directory with %d files to project %s", len(syncedFiles), project.Name)
 	default:
-		if project, changed, err = s.syncComposeFile(ctx, sync, actor, result, source); err != nil {
+		if project, changed, err = s.syncComposeFile(stageCtx, sync, actor, result, source); err != nil {
 			return result, err
 		}
 		result.Message = fmt.Sprintf("Successfully synced compose file from %s to project %s", sync.ComposePath, project.Name)
@@ -406,7 +410,7 @@ func (s *Service) syncComposeFile(ctx context.Context, sync *projectpkg.GitOpsSy
 	return project, true, nil
 }
 
-// redeployIfRunningAfterSync redeploys a running project, or any project when RedeployAfterSync is on. A project
+// redeployIfRunningAfterSync rebuilds and redeploys a running project, or any project when RedeployAfterSync is on. A project
 // left stopped still gets its images pulled when PullImageAfterSync is on, so a re-pointed tag stays available.
 func (s *Service) redeployIfRunningAfterSync(ctx context.Context, sync *projectpkg.GitOpsSync, project *projectpkg.Project, actor user.Actor) error {
 	details, err := s.projectService.GetProjectDetails(ctx, project.ID, projecttypes.DetailsOptions{})
@@ -414,7 +418,7 @@ func (s *Service) redeployIfRunningAfterSync(ctx context.Context, sync *projectp
 	switch {
 	case running || sync.RedeployAfterSync:
 		slog.InfoContext(ctx, "Redeploying project after Git sync", "projectName", project.Name, "projectId", project.ID, "wasRunning", running)
-		if redeployErr := s.projectService.RedeployProject(ctx, project.ID, actor, nil); redeployErr != nil {
+		if redeployErr := s.projectService.RedeployProject(ctx, project.ID, actor, &projecttypes.DeployOptions{Build: true}); redeployErr != nil {
 			slog.ErrorContext(ctx, "Failed to redeploy project after Git sync", "error", redeployErr, "projectId", project.ID)
 			return common.Classify(common.ErrRedeployAfterSyncFailed, fmt.Errorf("redeploy failed: %w", redeployErr))
 		}

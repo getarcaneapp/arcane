@@ -819,7 +819,7 @@ func (s *GitOpsSyncService) performSyncAdmitted(ctx context.Context, environment
 		return s.backup.Perform(syncCtx, syncRecord, actor, result, backupAdopt)
 	}
 
-	return s.sync.Run(syncCtx, syncRecord, actor, result)
+	return s.sync.Run(ctx, defaultGitSyncTimeout, syncRecord, actor, result)
 }
 
 func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id string) (*gitops.SyncStatus, error) {
