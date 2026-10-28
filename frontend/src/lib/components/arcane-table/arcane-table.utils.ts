@@ -177,6 +177,7 @@ const BADGE_COLUMNS = new Set([
 	'inUse',
 	'severity',
 	'vulnSeverity',
+	'vulnerabilities',
 	'lastSyncStatus',
 	'availability',
 	'desiredState',
@@ -197,27 +198,12 @@ const FOOTER_COLUMNS = new Set([
 	'lastTriggeredAt',
 	'expiresAt'
 ]);
-const WIDE_COLUMNS = new Set([
-	'tags',
-	'labels',
-	'ports',
-	'networks',
-	'description',
-	'permissions',
-	'url',
-	'image',
-	'imageRef',
-	'repoTags',
-	'error',
-	'usedBy',
-	'roleAssignments',
-	'vulnerabilities'
-]);
 
+/** Where a column lands on a grid card. Titles are picked separately from the remaining fields. */
 export function getCardSlot(columnId: string, explicit?: CardSlot): CardSlot {
 	if (explicit) return explicit;
+	if (columnId === ENVIRONMENT_FILTER) return 'context';
 	if (BADGE_COLUMNS.has(columnId)) return 'badge';
 	if (FOOTER_COLUMNS.has(columnId)) return 'footer';
-	if (WIDE_COLUMNS.has(columnId)) return 'wide';
 	return 'field';
 }
