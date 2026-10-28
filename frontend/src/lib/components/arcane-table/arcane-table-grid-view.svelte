@@ -2,6 +2,7 @@
 	import { FlexRender as FlexRenderBase } from '@tanstack/svelte-table';
 	import type { Snippet, Component } from 'svelte';
 
+	import { Button } from '#lib/components/ui/button/index.js';
 	import Skeleton from '#lib/components/ui/skeleton/skeleton.svelte';
 	import { createVirtualizer } from '#lib/components/ui/virtualizer.svelte.js';
 	import VirtualRows from '#lib/components/virtual-rows.svelte';
@@ -71,7 +72,6 @@
 	} = $props();
 
 	const hasExpand = $derived(!!expandedRowContent);
-	const hasSelection = $derived(selectedIdSet.size > 0);
 	// Pin FlexRender's generics, as in the desktop view.
 	const FlexRender = FlexRenderBase<ArcaneFeatures, TData, unknown>;
 	const CONTROL_COLUMNS = new Set(['select', 'actions']);
@@ -184,9 +184,18 @@
 		rowVirtualizer.measure();
 	});
 
+	// Cards have no checkbox: clicking a card selects it, and expandable cards get their own toggle.
 	function handleCardClick(event: MouseEvent, rowId: string) {
 		if (shouldIgnoreTableRowClick(event)) return;
-		if (hasExpand) onToggleRowExpanded?.(rowId);
+		if (selectionDisabled) {
+			if (hasExpand) onToggleRowExpanded?.(rowId);
+			return;
+		}
+		onToggleRowSelection(rowId, !selectedIdSet.has(rowId), { shiftKey: event.shiftKey });
+	}
+
+	function handleCardMouseDown(event: MouseEvent) {
+		if (event.shiftKey && !selectionDisabled && !shouldIgnoreTableRowClick(event)) event.preventDefault();
 	}
 </script>
 
@@ -253,26 +262,24 @@
 	{@const isSelected = selectedIdSet.has(rowId)}
 	{@const isExpanded = expandedRows?.has(rowId) ?? false}
 	{@const cells = splitCells(row)}
-	{#snippet cardLeading()}
-		<div
-			class={cn(
-				'flex shrink-0 transition-opacity duration-150 group-hover/resource-card:opacity-100 focus-within:opacity-100',
-				isSelected || hasSelection ? 'opacity-100' : 'opacity-0'
-			)}
-		>
-			<TableCheckbox
-				checked={isSelected}
-				onCheckedChange={(value, modifiers) => onToggleRowSelection(rowId, value, modifiers)}
-				aria-label={m.common_select_row()}
-			/>
-		</div>
-	{/snippet}
 	{#snippet cardTitle()}
 		{#if cells.title}
 			<FlexRender cell={cells.title} />
 		{/if}
 	{/snippet}
 	{#snippet cardActions()}
+		{#if hasExpand && !selectionDisabled}
+			<Button
+				variant="ghost"
+				size="icon"
+				class="size-8"
+				aria-expanded={isExpanded}
+				aria-label={m.table_expand_row()}
+				onclick={() => onToggleRowExpanded?.(rowId)}
+			>
+				<ArrowDownIcon class={cn('size-4 transition-transform duration-150', isExpanded && 'rotate-180')} />
+			</Button>
+		{/if}
 		{#if cells.actions}
 			<FlexRender cell={cells.actions} />
 		{/if}
@@ -303,11 +310,11 @@
 	{/snippet}
 	<ResourceCard
 		selected={isSelected}
-		onclick={hasExpand ? (e) => handleCardClick(e, rowId) : undefined}
-		leading={selectionDisabled ? undefined : cardLeading}
+		onclick={selectionDisabled && !hasExpand ? undefined : (e) => handleCardClick(e, rowId)}
+		onmousedown={handleCardMouseDown}
 		title={cardTitle}
 		context={cells.context.length > 0 ? cardContext : undefined}
-		actions={cells.actions ? cardActions : undefined}
+		actions={cells.actions || (hasExpand && !selectionDisabled) ? cardActions : undefined}
 		badges={cells.badges.length > 0 ? cardBadges : undefined}
 		fields={cells.fields.length > 0 ? cardFields : undefined}
 		footer={cells.footer.length > 0 ? cardFooter : undefined}
