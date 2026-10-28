@@ -2893,6 +2893,8 @@
   "update_center_step_reload": "Reload page",
   "update_center_estimated": "This usually takes under a minute.",
   "update_center_complete": "Update complete.",
+  "update_center_unconfirmed": "The update was requested but could not be confirmed. Check the environment's logs.",
+  "update_center_unconfirmed_version": "The update was requested but the environment still runs {version}. Check its logs.",
   "auto_start": "Auto-start",
   "api_key_name_placeholder": "Enter a name for this API key",
   "api_key_save_warning": "Save this key now — it won't be shown again.",

@@ -6,7 +6,7 @@
 	import ReleaseNotes from '#lib/components/release-notes.svelte';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
-	import { ExternalLinkIcon, SuccessIcon } from '#lib/icons/index.js';
+	import { AlertIcon, ExternalLinkIcon, SuccessIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import BaseAPIService from '#lib/services/api-service.js';
@@ -104,7 +104,8 @@
 		return at ? formatRelativeTime(at) : '';
 	});
 
-	let upgradeStatus = $state<'upgrading' | 'waiting' | 'ready' | 'complete'>('upgrading');
+	let upgradeStatus = $state<'upgrading' | 'waiting' | 'ready' | 'complete' | 'failed'>('upgrading');
+	let lastSeenVersion = $state<string | null>(null);
 	let pollAbort = $state<{ aborted: boolean } | null>(null);
 	let fallbackTimeout: ReturnType<typeof setTimeout> | null = null;
 	let baselineVersionInfo = $state<AppVersionInformation | null>(null);
@@ -215,6 +216,7 @@
 				(async () => {
 					const info = await systemUpgradeService.getVersionInfo(envId);
 					successfulPolls += 1;
+					lastSeenVersion = info.displayVersion || info.currentVersion;
 
 					// Promote a hung trigger to "resolved" once the agent has answered
 					// at least 2 unrelated requests successfully. The agent is alive and
@@ -297,6 +299,7 @@
 			if (requestResult1.error !== null) {
 				const err = requestResult1.error;
 
+				lastSeenVersion = null;
 				log('version-endpoint-error', err);
 			}
 			if (requestResult1.data) return;
@@ -307,7 +310,7 @@
 		if (!abortRef.aborted) {
 			log('monitor-timeout', { timeoutMs, isRemoteEnvironment });
 			if (isRemoteEnvironment) {
-				upgradeStatus = 'complete';
+				upgradeStatus = 'failed';
 			} else {
 				if (fallbackTimeout) {
 					clearTimeout(fallbackTimeout);
@@ -374,6 +377,7 @@
 		// poll loop can run its no-op detection against it.
 		triggerResolvedAt = null;
 		reportedUpToDate = false;
+		lastSeenVersion = null;
 		let triggerErrored = false;
 		const triggerPromise = (async () => {
 			const result = await tryCatch(
@@ -408,7 +412,7 @@
 			() => {
 				log('fallback-timeout', { reason: 'timeout', isRemoteEnvironment });
 				if (isRemoteEnvironment) {
-					if (upgradeStatus !== 'complete') upgradeStatus = 'complete';
+					if (upgradeStatus !== 'complete') upgradeStatus = 'failed';
 				} else {
 					reloadPage();
 				}
@@ -432,7 +436,7 @@
 		open = false;
 	}
 
-	type StepState = 'done' | 'active' | 'pending';
+	type StepState = 'done' | 'active' | 'pending' | 'failed';
 	const steps = $derived.by<Array<{ key: string; label: string; state: StepState }>>(() => {
 		const labels = isRemoteEnvironment
 			? [
@@ -454,6 +458,7 @@
 				case 'waiting':
 					return 1;
 				case 'ready':
+				case 'failed':
 					return 2;
 				case 'complete':
 					return labels.length;
@@ -465,7 +470,11 @@
 		return labels.map(({ key, label }, idx) => ({
 			key,
 			label,
-			state: idx < phaseIndex ? 'done' : idx === phaseIndex ? 'active' : 'pending'
+			state: (() => {
+				if (idx < phaseIndex) return 'done';
+				if (idx > phaseIndex) return 'pending';
+				return upgradeStatus === 'failed' ? 'failed' : 'active';
+			})()
 		}));
 	});
 
@@ -501,11 +510,14 @@
 									'flex size-6 shrink-0 items-center justify-center rounded-full border transition-colors',
 									step.state === 'done' && 'border-success/40 bg-success/10 text-success',
 									step.state === 'active' && 'border-primary/40 bg-primary/10 text-primary',
-									step.state === 'pending' && 'border-border bg-muted/40 text-muted-foreground/60'
+									step.state === 'pending' && 'border-border bg-muted/40 text-muted-foreground/60',
+									step.state === 'failed' && 'border-warning/40 bg-warning/10 text-warning'
 								)}
 							>
 								{#if step.state === 'done'}
 									<SuccessIcon class="size-3.5" />
+								{:else if step.state === 'failed'}
+									<AlertIcon class="size-3.5" />
 								{:else if step.state === 'active'}
 									<Spinner class="size-3.5" />
 								{:else}
@@ -516,7 +528,7 @@
 								class={cn(
 									'transition-colors',
 									step.state === 'done' && 'text-foreground',
-									step.state === 'active' && 'font-medium text-foreground',
+									(step.state === 'active' || step.state === 'failed') && 'font-medium text-foreground',
 									step.state === 'pending' && 'text-muted-foreground'
 								)}
 							>
@@ -531,6 +543,16 @@
 						<p class="flex items-center gap-2 text-sm font-medium text-success">
 							<SuccessIcon class="size-4" />
 							{m.update_center_complete()}
+						</p>
+						<ArcaneButton action="base" onclick={closeAfterComplete} size="sm" customLabel={m.common_close()} />
+					</div>
+				{:else if upgradeStatus === 'failed'}
+					<div class="mt-4 flex items-center justify-between gap-3 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2.5">
+						<p class="flex items-center gap-2 text-sm font-medium text-warning">
+							<AlertIcon class="size-4 shrink-0" />
+							{lastSeenVersion
+								? m.update_center_unconfirmed_version({ version: lastSeenVersion })
+								: m.update_center_unconfirmed()}
 						</p>
 						<ArcaneButton action="base" onclick={closeAfterComplete} size="sm" customLabel={m.common_close()} />
 					</div>
