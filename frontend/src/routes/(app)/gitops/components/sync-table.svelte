@@ -308,8 +308,8 @@
 	{@const path = isBackup(item) ? (item.backupDirectory ?? '') : item.composePath}
 	{@const route = isBackup(item) ? 'tree' : 'blob'}
 	{@const fileUrl = item.repository?.url && path ? toGitRouteUrl(item.repository.url, route, item.branch, path) : null}
-	<div class="flex items-center gap-1.5">
-		<FolderIcon class="size-3.5 text-muted-foreground" />
+	<div class="flex min-w-0 items-center gap-1.5">
+		<FolderIcon class="size-3.5 shrink-0 text-muted-foreground" />
 		{#if !path}
 			<span class="text-sm text-muted-foreground">{m.common_na()}</span>
 		{:else if fileUrl}
@@ -317,12 +317,12 @@
 				href={fileUrl}
 				target="_blank"
 				rel="noopener noreferrer"
-				class="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
+				class="min-w-0 truncate rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
 			>
 				{path}
 			</a>
 		{:else}
-			<code class="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{path}</code>
+			<code class="min-w-0 truncate rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{path}</code>
 		{/if}
 	</div>
 {/snippet}
@@ -349,18 +349,18 @@
 {#snippet CommitCell({ item }: { item: SyncRow })}
 	{#if item.lastSyncCommit}
 		{@const commitUrl = item.repository?.url ? toGitRouteUrl(item.repository.url, 'commit', item.lastSyncCommit) : null}
-		<div class="flex items-center gap-1.5">
-			<HashIcon class="size-3.5 text-muted-foreground" />
+		<div class="flex min-w-0 items-center gap-1.5">
+			<HashIcon class="size-3.5 shrink-0 text-muted-foreground" />
 			{#if commitUrl}
 				<a
 					href={commitUrl}
 					target="_blank"
-					class="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
+					class="min-w-0 truncate rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
 				>
 					{item.lastSyncCommit}
 				</a>
 			{:else}
-				<code class="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
+				<code class="min-w-0 truncate rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
 					{item.lastSyncCommit}
 				</code>
 			{/if}
