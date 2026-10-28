@@ -11,5 +11,5 @@
 		<Icon class="size-3.5 shrink-0 opacity-70" />
 	{/if}
 	<span>{label}</span>
-	<span class="truncate text-foreground/80">{@render children()}</span>
+	<span class="truncate text-foreground/70">{@render children()}</span>
 </span>

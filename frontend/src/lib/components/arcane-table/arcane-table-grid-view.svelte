@@ -13,6 +13,7 @@
 	import {
 		shouldIgnoreTableRowClick,
 		type GroupedData,
+		type CardSlot,
 		type GroupSelectionState,
 		type SelectionModifiers
 	} from './arcane-table.types.svelte';
@@ -75,22 +76,42 @@
 	const FlexRender = FlexRenderBase<ArcaneFeatures, TData, unknown>;
 	const CONTROL_COLUMNS = new Set(['select', 'actions']);
 
-	// Cards render the list's own cells: the first visible data column is the title, the rest go to their card slot.
+	// Cards render the list's own cells; each visible column gets a card slot once per column change.
+	const cardLayout = $derived.by(() => {
+		const slots = new Map<string, CardSlot>();
+		let titleId: string | undefined;
+		for (const column of table.getVisibleLeafColumns()) {
+			if (CONTROL_COLUMNS.has(column.id)) continue;
+			const slot = getCardSlot(column.id, column.columnDef.meta?.card);
+			if (slot === 'title' && !titleId) titleId = column.id;
+			slots.set(column.id, slot);
+		}
+		titleId ??= [...slots].find(([, slot]) => slot === 'field')?.[0] ?? slots.keys().next().value;
+		if (titleId) slots.set(titleId, 'title');
+		return slots;
+	});
+	const fieldCount = $derived([...cardLayout.values()].filter((slot) => slot === 'field').length);
+
 	function splitCells(row: ArcaneRow<TData>) {
-		const visible = row.getVisibleCells();
-		const cells = visible.filter((cell) => !CONTROL_COLUMNS.has(cell.column.id));
 		const slots = {
-			title: cells[0] as ArcaneCell<TData> | undefined,
-			actions: visible.find((cell) => cell.column.id === 'actions'),
+			title: undefined as ArcaneCell<TData> | undefined,
+			context: [] as ArcaneCell<TData>[],
+			actions: undefined as ArcaneCell<TData> | undefined,
 			badges: [] as ArcaneCell<TData>[],
-			fields: [] as { cell: ArcaneCell<TData>; wide: boolean }[],
+			fields: [] as ArcaneCell<TData>[],
 			footer: [] as ArcaneCell<TData>[]
 		};
-		for (const cell of cells.slice(1)) {
-			const slot = getCardSlot(cell.column.id, cell.column.columnDef.meta?.card);
-			if (slot === 'badge') slots.badges.push(cell);
+		for (const cell of row.getVisibleCells()) {
+			if (cell.column.id === 'actions') {
+				slots.actions = cell;
+				continue;
+			}
+			const slot = cardLayout.get(cell.column.id);
+			if (slot === 'title') slots.title = cell;
+			else if (slot === 'context') slots.context.push(cell);
+			else if (slot === 'badge') slots.badges.push(cell);
 			else if (slot === 'footer') slots.footer.push(cell);
-			else if (slot !== 'hidden') slots.fields.push({ cell, wide: slot === 'wide' });
+			else if (slot === 'field') slots.fields.push(cell);
 		}
 		return slots;
 	}
@@ -100,7 +121,6 @@
 	}
 
 	let containerWidth = $state(0);
-	const fieldCount = $derived(Math.max(0, table.getVisibleLeafColumns().filter((c) => !CONTROL_COLUMNS.has(c.id)).length - 1));
 	const columnCount = $derived(Math.max(1, Math.floor(containerWidth / MIN_CARD_WIDTH)));
 	const gridColumnsStyle = $derived(`--grid-cols: repeat(${columnCount}, minmax(0, 1fr))`);
 
@@ -149,7 +169,7 @@
 	const rowVirtualizer = createVirtualizer<HTMLElement, HTMLDivElement>(() => ({
 		count: entries.length,
 		getScrollElement: () => scrollElement ?? null,
-		estimateSize: (index) => (entries[index]?.kind === 'group' ? 48 : 140 + Math.ceil(fieldCount / 2) * 52),
+		estimateSize: (index) => (entries[index]?.kind === 'group' ? 48 : 130 + fieldCount * 28),
 		overscan: 4,
 		getItemKey,
 		initialOffset: initialScrollTop,
@@ -171,7 +191,7 @@
 </script>
 
 {#snippet gridSkeleton()}
-	<div class="grid grid-cols-(--grid-cols) gap-3 p-3" style={gridColumnsStyle}>
+	<div class="grid grid-cols-(--grid-cols) gap-2.5 p-3" style={gridColumnsStyle}>
 		{#each Array.from({ length: columnCount * 2 }, (_, i) => i) as r (r)}
 			<div class="space-y-3 rounded-xl border border-border/40 p-4">
 				<div class="flex items-center gap-3">
@@ -262,10 +282,15 @@
 			<FlexRender {cell} />
 		{/each}
 	{/snippet}
+	{#snippet cardContext()}
+		{#each cells.context as cell (cell.id)}
+			<FlexRender {cell} />
+		{/each}
+	{/snippet}
 	{#snippet cardFields()}
-		{#each cells.fields as field (field.cell.id)}
-			<ResourceCardField label={cellLabel(field.cell)} wide={field.wide}>
-				<FlexRender cell={field.cell} />
+		{#each cells.fields as cell (cell.id)}
+			<ResourceCardField label={cellLabel(cell)}>
+				<FlexRender {cell} />
 			</ResourceCardField>
 		{/each}
 	{/snippet}
@@ -281,13 +306,14 @@
 		onclick={hasExpand ? (e) => handleCardClick(e, rowId) : undefined}
 		leading={selectionDisabled ? undefined : cardLeading}
 		title={cardTitle}
+		context={cells.context.length > 0 ? cardContext : undefined}
 		actions={cells.actions ? cardActions : undefined}
 		badges={cells.badges.length > 0 ? cardBadges : undefined}
 		fields={cells.fields.length > 0 ? cardFields : undefined}
 		footer={cells.footer.length > 0 ? cardFooter : undefined}
 	>
 		{#if hasExpand && isExpanded && expandedRowContent}
-			<div class="border-t border-border/50 bg-muted/30 px-4 py-3">
+			<div class="border-t border-border/40 bg-muted/30 px-3.5 py-3">
 				{@render expandedRowContent({ row, item: row.original })}
 			</div>
 		{/if}
@@ -298,7 +324,7 @@
 	{#if entry.kind === 'group'}
 		{@render groupHeader(entry.group)}
 	{:else}
-		<div class="grid grid-cols-(--grid-cols) items-stretch gap-3 px-3 py-1.5" style={gridColumnsStyle}>
+		<div class="grid grid-cols-(--grid-cols) items-stretch gap-2.5 px-3 py-1.5" style={gridColumnsStyle}>
 			{#each entry.rows as row (row.id)}
 				{@render gridCard(row)}
 			{/each}
