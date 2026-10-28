@@ -55,6 +55,7 @@ export { default as DownloadIcon } from 'virtual:icons/solar/download-linear';
 export { default as BackupIcon } from 'virtual:icons/solar/archive-down-minimlistic-linear';
 export { default as SuccessIcon } from 'virtual:icons/qlementine-icons/success-12';
 export { default as ExternalLinkIcon } from 'virtual:icons/majesticons/external-link-line';
+export { default as ExpandIcon } from 'virtual:icons/lucide/maximize-2';
 export { default as GithubIcon } from 'virtual:icons/garden/github-stroke-16';
 export { default as BookOpenIcon } from 'virtual:icons/solar/notebook-minimalistic-bold';
 export { default as CalendarIcon } from 'virtual:icons/solar/calendar-outline';

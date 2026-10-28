@@ -108,7 +108,7 @@
 		/** Allows a caller to confirm a page-size change before applying it. */
 		onPageSizeChangeRequest?: (limit: number, apply: () => void) => void;
 		columns: ColumnSpec<TData>[];
-		rowActions?: Snippet<[{ row: ArcaneRow<TData>; item: TData }]>;
+		rowActions?: Snippet<[{ row: ArcaneRow<TData>; item: TData; view: TableViewMode }]>;
 		mobileCard: Snippet<[{ row: ArcaneRow<TData>; item: TData; mobileFieldVisibility: Record<string, boolean> }]>;
 		mobileFields?: FieldSpec[];
 		mobileFieldVisibility?: Record<string, boolean>;
@@ -473,7 +473,7 @@
 				cell: ({ row, getValue }) => {
 					const item = row.original as TData;
 					const value = accessorKey ? row.getValue(accessorKey) : getValue?.();
-					if (spec.cell) return renderSnippet(spec.cell, { row, item, value });
+					if (spec.cell) return renderSnippet(spec.cell, { row, item, value, view: viewMode });
 					if (spec.cellComponent) return renderComponent(spec.cellComponent, { value });
 					return renderComponent(ArcaneTableCell, { value });
 				},
@@ -489,7 +489,8 @@
 				// to undefined (e.g. a project stops and its per-row actions go away),
 				// the old column can still render once before the column set rebuilds —
 				// rendering an undefined snippet would crash the page (invalid_snippet).
-				cell: ({ row }) => (rowActions ? renderSnippet(rowActions, { row, item: row.original as TData }) : undefined)
+				cell: ({ row }) =>
+					rowActions ? renderSnippet(rowActions, { row, item: row.original as TData, view: viewMode }) : undefined
 			});
 		}
 

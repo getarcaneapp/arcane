@@ -90,7 +90,7 @@
 		if (titleId) slots.set(titleId, 'title');
 		return slots;
 	});
-	const fieldCount = $derived([...cardLayout.values()].filter((slot) => slot === 'field').length);
+	const fieldCount = $derived([...cardLayout.values()].filter((slot) => slot === 'field' || slot === 'context').length);
 
 	function splitCells(row: ArcaneRow<TData>) {
 		const slots = {
@@ -99,7 +99,8 @@
 			actions: undefined as ArcaneCell<TData> | undefined,
 			badges: [] as ArcaneCell<TData>[],
 			fields: [] as ArcaneCell<TData>[],
-			footer: [] as ArcaneCell<TData>[]
+			footer: [] as ArcaneCell<TData>[],
+			footerEnd: [] as ArcaneCell<TData>[]
 		};
 		for (const cell of row.getVisibleCells()) {
 			if (cell.column.id === 'actions') {
@@ -111,6 +112,7 @@
 			else if (slot === 'context') slots.context.push(cell);
 			else if (slot === 'badge') slots.badges.push(cell);
 			else if (slot === 'footer') slots.footer.push(cell);
+			else if (slot === 'footerEnd') slots.footerEnd.push(cell);
 			else if (slot === 'field') slots.fields.push(cell);
 		}
 		return slots;
@@ -289,13 +291,8 @@
 			<FlexRender {cell} />
 		{/each}
 	{/snippet}
-	{#snippet cardContext()}
-		{#each cells.context as cell (cell.id)}
-			<FlexRender {cell} />
-		{/each}
-	{/snippet}
 	{#snippet cardFields()}
-		{#each cells.fields as cell (cell.id)}
+		{#each [...cells.context, ...cells.fields] as cell (cell.id)}
 			<ResourceCardField label={cellLabel(cell)}>
 				<FlexRender {cell} />
 			</ResourceCardField>
@@ -307,17 +304,23 @@
 				<FlexRender {cell} />
 			</ResourceCardMeta>
 		{/each}
+		{#if cells.footerEnd.length > 0}
+			<span class="ml-auto inline-flex min-w-0 items-center gap-3 text-foreground/70">
+				{#each cells.footerEnd as cell (cell.id)}
+					<FlexRender {cell} />
+				{/each}
+			</span>
+		{/if}
 	{/snippet}
 	<ResourceCard
 		selected={isSelected}
 		onclick={selectionDisabled && !hasExpand ? undefined : (e) => handleCardClick(e, rowId)}
 		onmousedown={handleCardMouseDown}
 		title={cardTitle}
-		context={cells.context.length > 0 ? cardContext : undefined}
 		actions={cells.actions || (hasExpand && !selectionDisabled) ? cardActions : undefined}
 		badges={cells.badges.length > 0 ? cardBadges : undefined}
-		fields={cells.fields.length > 0 ? cardFields : undefined}
-		footer={cells.footer.length > 0 ? cardFooter : undefined}
+		fields={cells.context.length + cells.fields.length > 0 ? cardFields : undefined}
+		footer={cells.footer.length + cells.footerEnd.length > 0 ? cardFooter : undefined}
 	>
 		{#if hasExpand && isExpanded && expandedRowContent}
 			<div class="border-t border-border/40 bg-muted/30 px-3.5 py-3">
