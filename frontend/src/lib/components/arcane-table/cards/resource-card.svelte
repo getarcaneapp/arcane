@@ -6,6 +6,7 @@
 	let {
 		selected = false,
 		onclick,
+		onmousedown,
 		leading,
 		title,
 		context,
@@ -18,6 +19,7 @@
 	}: {
 		selected?: boolean;
 		onclick?: (event: MouseEvent) => void;
+		onmousedown?: (event: MouseEvent) => void;
 		/** Sits before the title, e.g. a selection checkbox. */
 		leading?: Snippet;
 		title: Snippet;
@@ -47,6 +49,7 @@
 		className
 	)}
 	{onclick}
+	{onmousedown}
 >
 	<header class="flex items-start gap-2.5 px-3.5 pt-3">
 		{#if leading}
