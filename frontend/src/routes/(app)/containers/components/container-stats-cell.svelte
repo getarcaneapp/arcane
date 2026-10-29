@@ -21,10 +21,21 @@
 
 	const memoryFormatted = $derived.by(() => {
 		if (type !== 'memory' || value === undefined) return undefined;
-		return bytes.format(value, { unitSeparator: ' ' });
+		return bytes.format(value, { decimalPlaces: 1, unitSeparator: ' ' }) ?? undefined;
 	});
 
-	const percent = $derived(type === 'cpu' ? value : memoryPercent);
+	const memoryLabel = $derived.by(() => {
+		if (!memoryFormatted) return undefined;
+		const [amountText = '', unit = ''] = memoryFormatted.split(' ');
+		const amount = Number.parseFloat(amountText);
+		return { amount: amount >= 100 ? Math.round(amount).toString() : amountText, unit };
+	});
+
+	const memoryTitle = $derived.by(() => {
+		if (!memoryFormatted) return undefined;
+		if (memoryPercent === undefined) return memoryFormatted;
+		return `${memoryFormatted} (${Math.round(memoryPercent)}%)`;
+	});
 </script>
 
 {#if stopped}
@@ -33,14 +44,21 @@
 	<div class="text-xs text-muted-foreground">{m.common_unavailable()}</div>
 {:else if loading}
 	<div class="size-9.5 shrink-0 animate-pulse rounded-full bg-muted"></div>
-{:else if percent !== undefined}
-	<span class="inline-flex" title={memoryFormatted}>
-		<MetricRing {percent} variant={type} size={38} stroke={3}>
-			<span class="text-2xs font-medium text-foreground tabular-nums">{Math.round(percent)}%</span>
+{:else if type === 'cpu' && value !== undefined}
+	<span class="inline-flex">
+		<MetricRing percent={value} variant="cpu" size={38} stroke={3}>
+			<span class="text-2xs font-medium text-foreground tabular-nums">{Math.round(value)}%</span>
 		</MetricRing>
 	</span>
-{:else if memoryFormatted}
-	<div class="text-xs font-medium text-foreground tabular-nums">{memoryFormatted}</div>
+{:else if type === 'memory' && memoryLabel}
+	<span class="inline-flex" title={memoryTitle}>
+		<MetricRing percent={memoryPercent} variant="memory" size={38} stroke={3}>
+			<span class="flex flex-col items-center leading-none">
+				<span class="text-2xs font-medium text-foreground tabular-nums">{memoryLabel.amount}</span>
+				<span class="text-3xs text-muted-foreground">{memoryLabel.unit}</span>
+			</span>
+		</MetricRing>
+	</span>
 {:else}
 	<div class="text-xs text-muted-foreground">—</div>
 {/if}
