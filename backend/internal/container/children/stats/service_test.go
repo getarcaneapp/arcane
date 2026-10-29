@@ -92,7 +92,7 @@ func TestCollectMaxAge(t *testing.T) {
 				0,
 			)
 			for range 2 {
-				samples, collectErr := svc.Collect(t.Context(), []types.ContainerSummary{{ID: "web", State: "running"}}, tt.maxAge)
+				samples, collectErr := svc.Collect(t.Context(), []types.ContainerSummary{{ID: "web", State: "running"}}, tt.maxAge, true)
 				require.NoError(t, collectErr)
 				require.Contains(t, samples, "web")
 			}

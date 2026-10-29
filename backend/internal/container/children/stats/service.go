@@ -146,7 +146,7 @@ func (s *Service) Stream(ctx context.Context, containerID string, statsChan chan
 // Collect fetches one sample per running container, reusing cached samples younger than maxAge.
 // Individual failures leave the container unsampled; a batch timeout or cancellation fails so partial
 // lists never sort as global.
-func (s *Service) Collect(ctx context.Context, items []types.ContainerSummary, maxAge time.Duration) (map[string]*types.ContainerResourceSample, error) {
+func (s *Service) Collect(ctx context.Context, items []types.ContainerSummary, maxAge time.Duration, waitForBaseline bool) (map[string]*types.ContainerResourceSample, error) {
 	ids := make([]string, 0, len(items))
 	for i := range items {
 		if items[i].State == string(container.StateRunning) {
@@ -154,7 +154,7 @@ func (s *Service) Collect(ctx context.Context, items []types.ContainerSummary, m
 		}
 	}
 	raw, err := collect(ctx, s.batchTimeout, ids, func(ctx context.Context, id string) (container.StatsResponse, error) {
-		return s.fetch(ctx, id, maxAge)
+		return s.fetch(ctx, id, maxAge, waitForBaseline)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect container resource samples: %w", err)
@@ -202,8 +202,9 @@ func collect[T any](ctx context.Context, timeout time.Duration, ids []string, fe
 }
 
 // fetch returns a cached stats sample younger than maxAge and coalesces concurrent fetches per daemon
-// and container. IncludePreviousSample gives the CPU delta a valid previous sample.
-func (s *Service) fetch(ctx context.Context, containerID string, maxAge time.Duration) (container.StatsResponse, error) {
+// and container. The CPU delta is measured from the last cached sample; without one, waitForBaseline
+// asks Docker for a second sample one second later instead of the delta since container start.
+func (s *Service) fetch(ctx context.Context, containerID string, maxAge time.Duration, waitForBaseline bool) (container.StatsResponse, error) {
 	key := s.dockerHost() + "\x00" + containerID
 	if cached, ok, _ := s.cache.Get(key); ok && time.Since(cached.fetchedAt) < maxAge {
 		return cached.stats, nil
@@ -217,7 +218,11 @@ func (s *Service) fetch(ctx context.Context, containerID string, maxAge time.Dur
 		if err != nil {
 			return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 		}
-		statsResponse, err := dockerClient.ContainerStats(flightCtx, containerID, client.ContainerStatsOptions{Stream: false, IncludePreviousSample: true})
+		previous, hasPrevious, _ := s.cache.Get(key)
+		statsResponse, err := dockerClient.ContainerStats(flightCtx, containerID, client.ContainerStatsOptions{
+			Stream:                false,
+			IncludePreviousSample: waitForBaseline && !hasPrevious,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch container stats: %w", err)
 		}
@@ -229,6 +234,10 @@ func (s *Service) fetch(ctx context.Context, containerID string, maxAge time.Dur
 		}
 		if statsData.Read.IsZero() {
 			statsData.Read = time.Now() // keep: StatsResponse is filled by json.UnmarshalDecode and has ~15 nested fields
+		}
+		if hasPrevious {
+			statsData.PreCPUStats = previous.stats.CPUStats
+			statsData.PreRead = previous.stats.Read
 		}
 		s.cache.Set(key, cachedStats{stats: statsData, fetchedAt: time.Now()})
 		return statsData, nil
@@ -300,7 +309,7 @@ func (s *Service) ObserveResources(meter metric.Meter, list func(context.Context
 			}
 		}
 		samples, err := collect(ctx, ContainerMetricsCollectTimeout, slices.Collect(maps.Keys(running)), func(ctx context.Context, id string) (resourceSample, error) {
-			statsData, fetchErr := s.fetch(ctx, id, ContainerResourceSampleTTL)
+			statsData, fetchErr := s.fetch(ctx, id, ContainerResourceSampleTTL, true)
 			if fetchErr != nil {
 				return resourceSample{}, fetchErr
 			}
