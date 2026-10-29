@@ -24,10 +24,11 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	let {
-		registries = $bindable(),
+		registries,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
 		pullUsageByRegistry = {},
+		onRefreshData,
 		onEditRegistry,
 		emptyState
 	}: {
@@ -35,6 +36,7 @@
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		pullUsageByRegistry?: Record<string, ContainerRegistryPullUsage>;
+		onRefreshData: (options: SearchPaginationSortRequest) => Promise<void>;
 		onEditRegistry: (registry: ContainerRegistry) => void;
 		emptyState?: Snippet;
 	} = $props();
@@ -83,7 +85,7 @@
 			setLoading: (loading) => (isLoading.removing = loading),
 			onComplete: async ({ success }) => {
 				removingId = null;
-				if (success > 0) registries = await containerRegistryService.getRegistries(requestOptions);
+				if (success > 0) await onRefreshData(requestOptions);
 			},
 			clearSelection: () => (selectedIds = []),
 			sequential: true
@@ -102,7 +104,7 @@
 			failureMessage: m.registries_delete_failed({ url: safeUrl }),
 			onSuccess: async () => {
 				toast.success(m.common_delete_success({ resource: `${m.resource_registry()} "${safeUrl}"` }));
-				registries = await containerRegistryService.getRegistries(requestOptions);
+				await onRefreshData(requestOptions);
 			}
 		});
 	}
@@ -309,7 +311,11 @@
 		bind:selectedIds
 		bind:mobileFieldVisibility
 		{bulkActions}
-		onRefresh={async (options) => (registries = await containerRegistryService.getRegistries(options))}
+		onRefresh={async (options) => {
+			requestOptions = options;
+			await onRefreshData(options);
+			return registries;
+		}}
 		{columns}
 		{mobileFields}
 		rowActions={RowActions}

@@ -37,7 +37,6 @@
 	import { ShieldCheckIcon, ImagesIcon, ClockIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
 	import { activityToastOptions } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -54,12 +53,7 @@
 		onRefreshData: (options: SearchPaginationSortRequest) => Promise<PatchTargetPage>;
 	} = $props();
 
-	// Track the user store: hasPermission reads it non-reactively, so without
-	// this the derived would cache a pre-hydration false forever.
-	const canPatchImage = $derived.by(() => {
-		userStore.current;
-		return vulnerabilityEnvironments().some((env) => hasPermission('images:patch', env.id));
-	});
+	const canPatchImage = $derived(vulnerabilityEnvironments().some((env) => hasPermission('images:patch', env.id)));
 
 	// Only the latest request is applied, so a slow response for an earlier filter cannot replace newer rows.
 	let latestRequest = 0;

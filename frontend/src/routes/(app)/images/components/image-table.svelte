@@ -35,7 +35,6 @@
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { ImageSummaryDto, ImageUpdateInfoDto } from '#lib/types/docker.js';
 	import type { VulnerabilityScanSummary } from '#lib/types/environment.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -84,32 +83,12 @@
 	const vulnerabilityManagementEnabled = $derived(
 		environmentStore.shown.some((env) => featureStore.isEnabled('vulnerabilityManagement', env.id))
 	);
-	// Track the user store: hasPermission reads it non-reactively, so without
-	// this the deriveds would cache pre-hydration falses forever.
-	const canDeleteImage = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('images:delete');
-	});
-	const canPullImage = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('images:pull');
-	});
-	const canScanImage = $derived.by(() => {
-		userStore.current;
-		return vulnerabilityManagementEnabled && hasShownPermission('vulnerabilities:scan');
-	});
-	const canTagImage = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('images:tag');
-	});
-	const canPatchImage = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('images:patch');
-	});
-	const canReadImage = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('images:read');
-	});
+	const canDeleteImage = $derived(hasShownPermission('images:delete'));
+	const canPullImage = $derived(hasShownPermission('images:pull'));
+	const canScanImage = $derived(vulnerabilityManagementEnabled && hasShownPermission('vulnerabilities:scan'));
+	const canTagImage = $derived(hasShownPermission('images:tag'));
+	const canPatchImage = $derived(hasShownPermission('images:patch'));
+	const canReadImage = $derived(hasShownPermission('images:read'));
 
 	let tagDialogImage = $state<ImageRow | null>(null);
 	// Set once on destroy so late async results don't touch a dead component.

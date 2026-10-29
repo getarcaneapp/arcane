@@ -1,11 +1,15 @@
 <script lang="ts">
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import GitRepositoryFormSheet from '#lib/components/sheets/git-repository-sheet.svelte';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitRepositoryService } from '#lib/services/git-repository-service.js';
 	import type { GitRepository, GitRepositoryCreate, GitRepositoryUpdate } from '#lib/types/automation.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -13,8 +17,8 @@
 	import RepositoryTable from './components/repository-table.svelte';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
-	let repositories = $derived(data.repositories);
 	let selectedIds = $state<string[]>([]);
 	let isRepositoryDialogOpen = $state(false);
 	let repositorySession = $state(0);
@@ -22,7 +26,25 @@
 	let clearSshKey = $state(false);
 	let clearSigningKey = $state(false);
 	let repositoryToEdit = $state<GitRepository | null>(null);
-	let requestOptions = $derived(data.repositoryRequestOptions);
+	let requestOptions = $state(untrack(() => data.repositoryRequestOptions));
+	const repositoriesQuery = createQuery(() => {
+		const options = requestOptions;
+		return {
+			queryKey: queryKeys.gitRepositories.list(options),
+			queryFn: () => gitRepositoryService.getRepositories(options),
+			placeholderData: (previous) => previous
+		};
+	});
+	const repositories = $derived(repositoriesQuery.data ?? data.repositories);
+
+	async function loadRepositories(options: SearchPaginationSortRequest = requestOptions) {
+		requestOptions = options;
+		await queryClient.query({
+			queryKey: queryKeys.gitRepositories.list(options),
+			staleTime: 0,
+			queryFn: () => gitRepositoryService.getRepositories(options)
+		});
+	}
 
 	let isLoading = $state({
 		create: false,
@@ -33,11 +55,10 @@
 	async function refreshRepositories() {
 		isLoading.refresh = true;
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(gitRepositoryService.getRepositories(requestOptions)),
+			result: await tryCatch(loadRepositories()),
 			message: m.common_refresh_failed({ resource: m.git_repositories_title() }),
 			setLoadingState: (value) => (isLoading.refresh = value),
-			onSuccess: async (newRepositories) => {
-				repositories = newRepositories;
+			onSuccess: () => {
 				toast.success(m.common_refresh_success({ resource: m.git_repositories_title() }));
 			}
 		});
@@ -80,7 +101,7 @@
 						toast.success(m.common_create_success({ resource: m.resource_repository() }));
 					}
 
-					repositories = await gitRepositoryService.getRepositories(requestOptions);
+					await queryClient.invalidateQueries({ queryKey: queryKeys.gitRepositories.all });
 					clearToken = false;
 					clearSshKey = false;
 					clearSigningKey = false;
@@ -127,7 +148,13 @@
 
 <ResourcePageLayout title={m.git_repositories_title()} subtitle={m.git_repositories_subtitle()} {actionButtons}>
 	{#snippet mainContent()}
-		<RepositoryTable bind:repositories bind:selectedIds bind:requestOptions onEditRepository={openEditRepositoryDialog} />
+		<RepositoryTable
+			{repositories}
+			bind:selectedIds
+			bind:requestOptions
+			onRefreshData={loadRepositories}
+			onEditRepository={openEditRepositoryDialog}
+		/>
 	{/snippet}
 
 	{#snippet additionalContent()}
