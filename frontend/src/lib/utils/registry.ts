@@ -1,16 +1,16 @@
 import { m } from '#lib/paraglide/messages.js';
 import type { ContainerRegistry } from '#lib/types/docker.js';
 
-type RegistryIdentity = Pick<ContainerRegistry, 'url' | 'registryType'>;
+type RegistryIdentity = Pick<ContainerRegistry, 'url' | 'host' | 'registryType'>;
 
 export function getRegistryDisplayName(registry: RegistryIdentity): string {
 	if (registry.registryType === 'ecr') return m.amazon_ecr();
-	const url = registry.url;
-	if (!url || url === 'docker.io') return m.registry_docker_hub();
-	if (url.includes('ghcr.io')) return m.registry_github_container_registry();
-	if (url.includes('gcr.io')) return m.registry_google_container_registry();
-	if (url.includes('quay.io')) return m.registry_quay_io();
-	return url;
+	const host = registry.host;
+	if (!host || host === 'docker.io') return m.registry_docker_hub();
+	if (host === 'ghcr.io') return m.registry_github_container_registry();
+	if (host === 'gcr.io' || host.endsWith('.gcr.io')) return m.registry_google_container_registry();
+	if (host === 'quay.io') return m.registry_quay_io();
+	return registry.url;
 }
 
 export function arcaneImageRegistryOptions() {
