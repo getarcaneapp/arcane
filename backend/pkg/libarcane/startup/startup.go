@@ -12,8 +12,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/buildables"
 )
 
+const unlimitedGCPercent = 50
+
 // ApplyMemoryLimit sets the Go soft memory limit to 90% of the cgroup memory
-// limit so the GC tightens before the container is OOM-killed. GOMEMLIMIT wins.
+// limit so the GC tightens before the container is OOM-killed. Without a cgroup
+// limit it lowers GOGC to 50 instead. GOMEMLIMIT and GOGC win.
 func ApplyMemoryLimit(ctx context.Context) {
 	if os.Getenv("GOMEMLIMIT") != "" {
 		return
@@ -21,6 +24,10 @@ func ApplyMemoryLimit(ctx context.Context) {
 	limits, err := cgroup.DetectLimits()
 	// cgroup v1 reports "no limit" as a page-aligned value near MaxInt64.
 	if err != nil || limits.MemoryLimit <= 0 || limits.MemoryLimit >= 1<<62 {
+		if os.Getenv("GOGC") == "" {
+			debug.SetGCPercent(unlimitedGCPercent)
+			slog.InfoContext(ctx, "Lowered Go GC target without a cgroup memory limit", "gcPercent", unlimitedGCPercent)
+		}
 		return
 	}
 	limit := limits.MemoryLimit / 10 * 9

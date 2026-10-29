@@ -569,6 +569,34 @@ func TestValidateAPIKeyUpdatesLastUsedAt(t *testing.T) {
 	require.NotNil(t, apiKey.LastUsedAt)
 }
 
+func TestAPIKeyHashingUsesSHA256AndUpgradesLegacyArgon2(t *testing.T) {
+	ctx := t.Context()
+	service, db, userService := setupAPIKeyService(t)
+	localUser := createTestAPIKeyUser(t, ctx, userService, "user-hash-upgrade")
+
+	created, err := service.CreateApiKey(ctx, localUser.ID, authz.SudoPermissionSet(), types.ApiKey{
+		Name:        "sha-key",
+		Permissions: []types.ApiKeyPermissionGrant{{Permission: authz.PermContainersList}},
+	})
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(fetchAPIKey(t, db, created.ID).KeyHash, apiKeySHA256HashPrefix))
+
+	legacyHash, err := userService.HashPassword(ctx, created.Key)
+	require.NoError(t, err)
+	require.NoError(t, db.Model(&ApiKey{}).Where("id = ?", created.ID).Update("key_hash", legacyHash).Error)
+
+	validatedUser, err := service.ValidateApiKey(ctx, created.Key)
+	require.NoError(t, err)
+	require.Equal(t, localUser.ID, validatedUser.ID)
+	require.Equal(t, apiKeySHA256HashPrefix+kit.SHA256Hex(created.Key), fetchAPIKey(t, db, created.ID).KeyHash)
+
+	static, err := service.CreateDefaultAdminAPIKey(ctx, localUser.ID, "arc_staticoperatorkey1234567890")
+	require.NoError(t, err)
+	_, err = service.ValidateApiKey(ctx, static.Key)
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(fetchAPIKey(t, db, static.ID).KeyHash, "$argon2id$"))
+}
+
 func TestValidateAPIKeyCacheSkipsHashValidationAndInvalidatesOnRevoke(t *testing.T) {
 	ctx := t.Context()
 	service, db, userService := setupAPIKeyService(t)
