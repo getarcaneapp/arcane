@@ -2893,6 +2893,8 @@
   "update_center_step_reload": "Pagina herladen",
   "update_center_estimated": "Dit duurt meestal minder dan een minuut.",
   "update_center_complete": "Update voltooid.",
+  "update_center_unconfirmed": "De update is aangevraagd, maar kon niet worden bevestigd. Controleer de logbestanden van de omgeving.",
+  "update_center_unconfirmed_version": "De update is aangevraagd, maar de omgeving draait nog steeds op {version}. Controleer de logbestanden.",
   "auto_start": "Auto-start",
   "api_key_name_placeholder": "Voer een naam in voor deze API-sleutel",
   "api_key_save_warning": "Sla deze sleutel nu op — hij wordt niet meer weergegeven.",
