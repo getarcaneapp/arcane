@@ -4,6 +4,7 @@
 	import type { Component } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
+	import ImageReleaseNotesDialog from '#lib/components/dialogs/image-release-notes-dialog.svelte';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import UncheckedRingIcon from '#lib/components/unchecked-ring-icon.svelte';
@@ -18,13 +19,15 @@
 		CircleArrowUpIcon,
 		BoxIcon,
 		ClockIcon,
-		DownloadIcon
+		DownloadIcon,
+		FileTextIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import type { ImageUpdateData, ImageUpdateInfoDto } from '#lib/types/docker.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatRelativeTime, instantEpochMilliseconds, nowInstantString } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -134,6 +137,16 @@
 
 	const isChecking = $derived(imageUpdateQuery.isFetching);
 	let isOpen = $state(false);
+	let releaseNotesOpen = $state(false);
+	let releaseNotesTarget = $state<{ imageRef: string; version?: string; digest?: string } | null>(null);
+	const releaseNotesRef = $derived(imageRef || (repo && tag ? `${repo}:${tag}` : ''));
+	const canShowReleaseNotes = $derived(
+		!!effectiveUpdateInfo?.hasUpdate &&
+			effectiveUpdateInfo.updateType !== 'not_pulled' &&
+			!!releaseNotesRef &&
+			!!environmentId &&
+			hasPermission('image-updates:read', environmentId)
+	);
 
 	const isLocalImage = $derived(!!isLocal || effectiveUpdateInfo?.updateType === 'local');
 	const canCheckUpdate = $derived(
@@ -232,6 +245,16 @@
 		}
 	}
 
+	function openReleaseNotes() {
+		isOpen = false;
+		releaseNotesTarget = {
+			imageRef: releaseNotesRef,
+			version: effectiveUpdateInfo?.updateType === 'tag' ? effectiveUpdateInfo.latestVersion : undefined,
+			digest: effectiveUpdateInfo?.latestDigest
+		};
+		releaseNotesOpen = true;
+	}
+
 	function handleUpdateContainer() {
 		isOpen = false;
 		onUpdateContainer?.();
@@ -286,7 +309,16 @@
 
 {#snippet footer()}
 	{#if canCheckUpdate}
-		<div class="px-2 pb-2">
+		<div class="flex flex-col gap-1 px-2 pb-2">
+			{#if canShowReleaseNotes}
+				<button
+					onclick={openReleaseNotes}
+					class="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-sidebar-accent text-xs font-medium text-sidebar-accent-foreground transition-colors hover:bg-sidebar-accent/80"
+				>
+					<FileTextIcon class="size-3.5" />
+					{m.image_update_release_notes_button()}
+				</button>
+			{/if}
 			{#if effectiveUpdateInfo?.hasUpdate && onUpdateContainer}
 				<button
 					onclick={handleUpdateContainer}
@@ -518,4 +550,14 @@
 			</div>
 		{/snippet}
 	</UpdateStatusPopover>
+{/if}
+
+{#if releaseNotesTarget}
+	<ImageReleaseNotesDialog
+		bind:open={releaseNotesOpen}
+		{environmentId}
+		imageRef={releaseNotesTarget.imageRef}
+		version={releaseNotesTarget.version}
+		digest={releaseNotesTarget.digest}
+	/>
 {/if}

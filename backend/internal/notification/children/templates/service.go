@@ -126,7 +126,7 @@ func (s *Service) Vulnerability(environmentName string, payload types.Notificati
 	}
 }
 
-func (s *Service) BatchImageUpdate(environmentName string, updates map[string]*types.ImageUpdateResponse) notifications.Content {
+func (s *Service) BatchImageUpdate(environmentName string, updates map[string]*types.ImageUpdateResponse, includeReleaseLinks bool) notifications.Content {
 	ntfyTitle := fmt.Sprintf("📦 %d Container Image Updates", len(updates))
 	if len(updates) == 1 {
 		ntfyTitle = "📦 1 Container Image Update"
@@ -134,7 +134,7 @@ func (s *Service) BatchImageUpdate(environmentName string, updates map[string]*t
 
 	return notifications.Content{
 		Text: notifications.TextByFormat(func(format notifications.MessageFormat) string {
-			return notifications.BuildBatchImageUpdateNotificationMessage(format, environmentName, updates)
+			return notifications.BuildBatchImageUpdateNotificationMessage(format, environmentName, updates, includeReleaseLinks)
 		}),
 		Title:     "Container Image Updates Available",
 		NtfyTitle: ntfyTitle,
@@ -145,6 +145,12 @@ func (s *Service) BatchImageUpdate(environmentName string, updates map[string]*t
 					Label: imageRef,
 					Value: updates[imageRef].UpdateType,
 				})
+				if includeReleaseLinks && updates[imageRef].ReleaseURL != "" {
+					rows = append(rows, emailRow{
+						Label: imageRef + " release notes",
+						Value: updates[imageRef].ReleaseURL,
+					})
+				}
 			}
 			updateCount := len(updates)
 			plural := kit.Ternary(updateCount > 1, "s", "")

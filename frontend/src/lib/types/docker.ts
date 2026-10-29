@@ -643,6 +643,17 @@ export interface ImageAttestationRequestOptions {
 
 export type ImageUpdateData = ImageUpdateInfoDto;
 
+export interface ImageReleaseNotesDto {
+	imageRef: string;
+	version?: string;
+	status: 'found' | 'not_found' | 'unavailable' | 'link' | 'no_source';
+	sourceUrl?: string;
+	releaseUrl?: string;
+	releaseName?: string;
+	notes?: string;
+	publishedAt?: string;
+}
+
 export type ImagePatchMode = 'update-all' | 'report';
 export type ImagePatchStatus = 'patching' | 'completed' | 'failed';
 

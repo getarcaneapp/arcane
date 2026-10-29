@@ -14,11 +14,12 @@
 		type MobileFieldVisibility
 	} from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import ImageReleaseNotesDialog from '#lib/components/dialogs/image-release-notes-dialog.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { ContainersIcon, UpdateIcon, EyeOffIcon, EyeOnIcon } from '#lib/icons/index.js';
+	import { ContainersIcon, UpdateIcon, EyeOffIcon, EyeOnIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import type { ContainersPaginatedResponse, ContainerListRequestOptions } from '#lib/services/container-service.js';
@@ -85,6 +86,8 @@
 	let updatingContainerIds = $state<Record<string, boolean>>({});
 	let togglingAutoUpdateIds = $state<Record<string, boolean>>({});
 	let bulkUpdating = $state(false);
+	let releaseNotesTarget = $state<ContainerUpdateRow | null>(null);
+	let releaseNotesOpen = $state(false);
 	let updateTableMounted = false;
 	const queryClient = useQueryClient();
 	const scope = $derived(environmentStore.shownKey);
@@ -295,31 +298,47 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ContainerUpdateRow })}
-	<IfPermitted perm="containers:autoupdate" envId={item.environmentId}>
+	<IfPermitted perm={['image-updates:read', 'containers:autoupdate']} envId={item.environmentId}>
 		<RowActionsMenu>
-			<DropdownMenu.Item onclick={() => handleUpdateContainer(item.container)} disabled={!!updatingContainerIds[rowKey(item)]}>
-				{#if updatingContainerIds[rowKey(item)]}
-					<Spinner class="size-4" />
-				{:else}
-					<UpdateIcon class="size-4" />
-				{/if}
-				{m.update_container()}
-			</DropdownMenu.Item>
+			{#if item.updateInfo?.hasUpdate}
+				<IfPermitted perm="image-updates:read" envId={item.environmentId}>
+					<DropdownMenu.Item
+						onclick={() => {
+							releaseNotesTarget = item;
+							releaseNotesOpen = true;
+						}}
+					>
+						<FileTextIcon class="size-4" />
+						{m.image_update_release_notes_button()}
+					</DropdownMenu.Item>
+				</IfPermitted>
+			{/if}
 
-			<DropdownMenu.Item
-				onclick={() => handleToggleAutoUpdate(item)}
-				disabled={item.labelControlled || !item.statusAvailable || !!togglingAutoUpdateIds[rowKey(item)]}
-				title={item.autoUpdateTitle}
-			>
-				{#if togglingAutoUpdateIds[rowKey(item)]}
-					<Spinner class="size-4" />
-				{:else if item.autoUpdateDisabled}
-					<EyeOnIcon class="size-4" />
-				{:else}
-					<EyeOffIcon class="size-4" />
-				{/if}
-				{item.autoUpdateDisabled ? m.updates_enable_auto_update() : m.updates_disable_auto_update()}
-			</DropdownMenu.Item>
+			<IfPermitted perm="containers:autoupdate" envId={item.environmentId}>
+				<DropdownMenu.Item onclick={() => handleUpdateContainer(item.container)} disabled={!!updatingContainerIds[rowKey(item)]}>
+					{#if updatingContainerIds[rowKey(item)]}
+						<Spinner class="size-4" />
+					{:else}
+						<UpdateIcon class="size-4" />
+					{/if}
+					{m.update_container()}
+				</DropdownMenu.Item>
+
+				<DropdownMenu.Item
+					onclick={() => handleToggleAutoUpdate(item)}
+					disabled={item.labelControlled || !item.statusAvailable || !!togglingAutoUpdateIds[rowKey(item)]}
+					title={item.autoUpdateTitle}
+				>
+					{#if togglingAutoUpdateIds[rowKey(item)]}
+						<Spinner class="size-4" />
+					{:else if item.autoUpdateDisabled}
+						<EyeOnIcon class="size-4" />
+					{:else}
+						<EyeOffIcon class="size-4" />
+					{/if}
+					{item.autoUpdateDisabled ? m.updates_enable_auto_update() : m.updates_disable_auto_update()}
+				</DropdownMenu.Item>
+			</IfPermitted>
 		</RowActionsMenu>
 	</IfPermitted>
 {/snippet}
@@ -376,3 +395,13 @@
 	mobileCard={ContainerUpdatesMobileCard}
 	withoutFilters
 />
+
+{#if releaseNotesTarget}
+	<ImageReleaseNotesDialog
+		bind:open={releaseNotesOpen}
+		environmentId={releaseNotesTarget.environmentId}
+		imageRef={releaseNotesTarget.imageRef}
+		version={releaseNotesTarget.updateInfo?.updateType === 'tag' ? releaseNotesTarget.updateInfo.latestVersion : undefined}
+		digest={releaseNotesTarget.updateInfo?.latestDigest}
+	/>
+{/if}

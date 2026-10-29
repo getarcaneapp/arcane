@@ -8,6 +8,7 @@ import type {
 	ImageBuildRecord,
 	ImageAttestationListDto,
 	ImageAttestationRequestOptions,
+	ImageReleaseNotesDto,
 	ImageHistoryItemDto,
 	ImageSearchResultDto,
 	ImageTagRequest,
@@ -71,6 +72,18 @@ class ImageService extends BaseAPIService {
 				params
 			})
 		);
+	}
+
+	async getImageReleaseNotes(
+		environmentId: string,
+		imageRef: string,
+		options?: { version?: string; digest?: string }
+	): Promise<ImageReleaseNotesDto> {
+		const params: Record<string, string> = { imageRef };
+		if (options?.version) params['version'] = options.version;
+		if (options?.digest) params['digest'] = options.digest;
+
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/images/updates/releasenotes`, { params }));
 	}
 
 	async tagImage(imageId: string, request: ImageTagRequest, environmentId: string): Promise<any> {

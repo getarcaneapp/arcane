@@ -10,11 +10,13 @@
 		type MobileFieldVisibility
 	} from '#lib/components/arcane-table/index.js';
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import ImageReleaseNotesDialog from '#lib/components/dialogs/image-release-notes-dialog.svelte';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
-	import { ProjectsIcon, ImagesIcon, UpdateIcon } from '#lib/icons/index.js';
+	import { ProjectsIcon, ImagesIcon, UpdateIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import type { ImageUpdateData } from '#lib/types/docker.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { Project } from '#lib/types/swarm.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
@@ -40,6 +42,8 @@
 		currentValue: string;
 		latestValue: string;
 		checkedAt: string;
+		releaseNotesRef: string;
+		releaseNotesInfo?: ImageUpdateData;
 		project: ProjectRow;
 	};
 
@@ -55,6 +59,8 @@
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
 	let updatingProjectIds = $state<Record<string, boolean>>({});
 	let bulkUpdating = $state(false);
+	let releaseNotesTarget = $state<ProjectUpdateRow | null>(null);
+	let releaseNotesOpen = $state(false);
 
 	function mapProjectRow(project: ProjectRow): ProjectUpdateRow {
 		const updateInfo = project.updateInfo;
@@ -98,6 +104,8 @@
 			currentValue,
 			latestValue,
 			checkedAt: info?.checkTime || updateInfo?.lastCheckedAt || '',
+			releaseNotesRef: hasSingleTarget ? firstRef : '',
+			releaseNotesInfo: info,
 			project
 		};
 	}
@@ -198,16 +206,32 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ProjectUpdateRow })}
-	<IfPermitted perm="image-updates:check" envId={item.environmentId}>
+	<IfPermitted perm={['image-updates:read', 'image-updates:check']} envId={item.environmentId}>
 		<RowActionsMenu>
-			<DropdownMenu.Item onclick={() => handleUpdateProject(item)} disabled={!!updatingProjectIds[rowKey(item)]}>
-				{#if updatingProjectIds[rowKey(item)]}
-					<Spinner class="size-4" />
-				{:else}
-					<UpdateIcon class="size-4" />
-				{/if}
-				{m.common_update()}
-			</DropdownMenu.Item>
+			{#if item.releaseNotesRef}
+				<IfPermitted perm="image-updates:read" envId={item.environmentId}>
+					<DropdownMenu.Item
+						onclick={() => {
+							releaseNotesTarget = item;
+							releaseNotesOpen = true;
+						}}
+					>
+						<FileTextIcon class="size-4" />
+						{m.image_update_release_notes_button()}
+					</DropdownMenu.Item>
+				</IfPermitted>
+			{/if}
+
+			<IfPermitted perm="image-updates:check" envId={item.environmentId}>
+				<DropdownMenu.Item onclick={() => handleUpdateProject(item)} disabled={!!updatingProjectIds[rowKey(item)]}>
+					{#if updatingProjectIds[rowKey(item)]}
+						<Spinner class="size-4" />
+					{:else}
+						<UpdateIcon class="size-4" />
+					{/if}
+					{m.common_update()}
+				</DropdownMenu.Item>
+			</IfPermitted>
 		</RowActionsMenu>
 	</IfPermitted>
 {/snippet}
@@ -261,3 +285,15 @@
 	mobileCard={ProjectUpdatesMobileCard}
 	withoutFilters
 />
+
+{#if releaseNotesTarget}
+	<ImageReleaseNotesDialog
+		bind:open={releaseNotesOpen}
+		environmentId={releaseNotesTarget.environmentId}
+		imageRef={releaseNotesTarget.releaseNotesRef}
+		version={releaseNotesTarget.releaseNotesInfo?.updateType === 'tag'
+			? releaseNotesTarget.releaseNotesInfo.latestVersion
+			: undefined}
+		digest={releaseNotesTarget.releaseNotesInfo?.latestDigest}
+	/>
+{/if}

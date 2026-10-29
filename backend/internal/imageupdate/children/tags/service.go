@@ -388,6 +388,7 @@ func AttachContainerUpdates(results, containerUpdates map[string]*types.ImageUpd
 				ResponseTimeMs:   result.ResponseTimeMs,
 				HasUpdate:        result.HasUpdate,
 				UsedCredential:   result.UsedCredential,
+				ReleaseURL:       result.ReleaseURL,
 			}),
 			ImageRef:         result.ImageRef,
 			ContainerUpdates: scoped,
@@ -405,6 +406,7 @@ func AttachContainerUpdates(results, containerUpdates map[string]*types.ImageUpd
 			ResponseTimeMs:   result.ResponseTimeMs,
 			HasUpdate:        promoted.HasUpdate,
 			UsedCredential:   result.UsedCredential,
+			ReleaseURL:       result.ReleaseURL,
 		}
 	}
 	return attached

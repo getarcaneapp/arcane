@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate/children/releasenotes"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
@@ -63,9 +64,11 @@ func (m *Module) Service() *ImageUpdateService {
 func (m *Module) RegisterRoutes(api huma.API, appCtx handlerutil.ActivityAppContext) {
 	if m == nil {
 		RegisterImageUpdates(api, nil, nil, appCtx)
+		releasenotes.RegisterRoutes(api, releasenotes.NewHandler(nil))
 		return
 	}
 	RegisterImageUpdates(api, m.service, m.getUpdateInfoByImageRefs, appCtx)
+	releasenotes.RegisterRoutes(api, releasenotes.NewHandler(m.service.releaseNotes))
 }
 
 // RegisterImageUpdates registers image update endpoints.

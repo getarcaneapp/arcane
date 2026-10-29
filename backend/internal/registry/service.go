@@ -69,11 +69,11 @@ const (
 	ecrTokenTTL                         = 11 * time.Hour
 	OCIImageVersionLabel                = "org.opencontainers.image.version"
 	OCIImageRevisionLabel               = "org.opencontainers.image.revision"
+	OCIImageSourceLabel                 = "org.opencontainers.image.source"
+	OCIImageURLLabel                    = "org.opencontainers.image.url"
+	OCIImageDocumentationLabel          = "org.opencontainers.image.documentation"
 	versionLabelCacheTTL                = 3 * time.Hour
 )
-
-// ErrNoVersionLabel is returned when the remote image config carries no org.opencontainers.image.version label.
-var ErrNoVersionLabel = errors.New("image config has no version label")
 
 type RegistryDaemonClient interface {
 	RegistryLogin(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error)
@@ -1317,7 +1317,7 @@ func (s *ContainerRegistryService) GetOrRefreshECRToken(ctx context.Context, reg
 	return "AWS", ecrPassword, nil
 }
 
-// ImageLabels resolves the remote image config labels without pulling. The config must carry org.opencontainers.image.version.
+// ImageLabels resolves the remote image config labels without pulling.
 func (s *ContainerRegistryService) ImageLabels(ctx context.Context, imageRef string) (map[string]string, error) {
 	if strings.TrimSpace(imageRef) == "" {
 		return nil, errors.New("empty image reference")
@@ -1331,16 +1331,29 @@ func (s *ContainerRegistryService) ImageLabels(ctx context.Context, imageRef str
 		if parseErr != nil {
 			return nil, fmt.Errorf("invalid image reference %q: %w", strings.TrimSpace(imageRef), parseErr)
 		}
-		img, fetchErr := remote.Image(parsedRef, remote.WithContext(loadCtx), remote.WithPlatform(v1.Platform{OS: "linux", Architecture: runtime.GOARCH}))
+		img, _, fetchErr := registryOperationWithCredentials(loadCtx, s, parsedRef.Context().RegistryStr(), "image labels fetch for "+strings.TrimSpace(imageRef), nil,
+			func(ctx context.Context, credential *resolvedRegistryCredential) (v1.Image, error) {
+				return remote.Image(parsedRef,
+					remote.WithContext(ctx),
+					remote.WithPlatform(v1.Platform{OS: "linux", Architecture: runtime.GOARCH}),
+					remote.WithTransport(s.distributionHTTPClient.Transport),
+					remote.WithAuth(func() authn.Authenticator {
+						if credential == nil {
+							return authn.Anonymous
+						}
+						return authn.FromConfig(authn.AuthConfig{Username: credential.Username, Password: credential.Token})
+					}()),
+				)
+			})
 		if fetchErr != nil {
-			return nil, fmt.Errorf("image labels fetch failed for %s: %w", strings.TrimSpace(imageRef), fetchErr)
+			return nil, fetchErr
 		}
 		cfg, configErr := img.ConfigFile()
 		if configErr != nil {
 			return nil, fmt.Errorf("image labels fetch failed for %s: %w", strings.TrimSpace(imageRef), configErr)
 		}
-		if cfg == nil || strings.TrimSpace(cfg.Config.Labels[OCIImageVersionLabel]) == "" {
-			return nil, ErrNoVersionLabel
+		if cfg == nil {
+			return nil, fmt.Errorf("image labels fetch failed for %s: missing config", strings.TrimSpace(imageRef))
 		}
 		return map[string]map[string]string{strings.TrimSpace(imageRef): cfg.Config.Labels}, nil
 	})

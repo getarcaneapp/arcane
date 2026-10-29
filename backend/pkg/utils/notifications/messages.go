@@ -3,6 +3,7 @@ package notifications
 import (
 	"encoding/hex"
 	"fmt"
+	"html"
 	"maps"
 	"slices"
 	"strings"
@@ -154,7 +155,7 @@ func BuildContainerUpdateNotificationMessage(format MessageFormat, environmentNa
 	return message.String()
 }
 
-func BuildBatchImageUpdateNotificationMessage(format MessageFormat, environmentName string, updates map[string]*types.ImageUpdateResponse) string {
+func BuildBatchImageUpdateNotificationMessage(format MessageFormat, environmentName string, updates map[string]*types.ImageUpdateResponse, includeReleaseLinks bool) string {
 	imageRefs := slices.Sorted(maps.Keys(updates))
 	var message strings.Builder
 
@@ -177,6 +178,9 @@ func BuildBatchImageUpdateNotificationMessage(format MessageFormat, environmentN
 			if !writeNtfyTransition(&message, current, latest, "   ") {
 				fmt.Fprintln(&message, "   ⚠️ Update available")
 			}
+			if releaseURL := kit.FromPtr(update).ReleaseURL; includeReleaseLinks && releaseURL != "" {
+				fmt.Fprintf(&message, "   📝 [Release notes](%s)\n", releaseURL)
+			}
 		}
 
 		return message.String()
@@ -193,28 +197,42 @@ func BuildBatchImageUpdateNotificationMessage(format MessageFormat, environmentN
 
 	for _, imageRef := range imageRefs {
 		update := updates[imageRef]
+		releaseURL := kit.Ternary(includeReleaseLinks, update.ReleaseURL, "")
 		switch format {
 		case MessageFormatPlain:
 			fmt.Fprintf(&message, "%s\n", imageRef)
 			fmt.Fprintf(&message, "• Type: %s\n", update.UpdateType)
 			fmt.Fprintf(&message, "• Current: %s\n", update.CurrentDigest)
-			fmt.Fprintf(&message, "• Latest: %s\n\n", update.LatestDigest)
+			fmt.Fprintf(&message, "• Latest: %s\n", update.LatestDigest)
+			if releaseURL != "" {
+				fmt.Fprintf(&message, "• Release notes: %s\n", releaseURL)
+			}
 		case MessageFormatMarkdown:
 			fmt.Fprintf(&message, "**%s**\n", imageRef)
 			fmt.Fprintf(&message, "• **Type:** %s\n", update.UpdateType)
 			fmt.Fprintf(&message, "• **Current:** %s\n", formatNotificationCode(format, update.CurrentDigest))
-			fmt.Fprintf(&message, "• **Latest:** %s\n\n", formatNotificationCode(format, update.LatestDigest))
+			fmt.Fprintf(&message, "• **Latest:** %s\n", formatNotificationCode(format, update.LatestDigest))
+			if releaseURL != "" {
+				fmt.Fprintf(&message, "• **Release notes:** <%s>\n", releaseURL)
+			}
 		case MessageFormatSlack:
 			fmt.Fprintf(&message, "*%s*\n", imageRef)
 			fmt.Fprintf(&message, "• *Type:* %s\n", update.UpdateType)
 			fmt.Fprintf(&message, "• *Current:* %s\n", formatNotificationCode(format, update.CurrentDigest))
-			fmt.Fprintf(&message, "• *Latest:* %s\n\n", formatNotificationCode(format, update.LatestDigest))
+			fmt.Fprintf(&message, "• *Latest:* %s\n", formatNotificationCode(format, update.LatestDigest))
+			if releaseURL != "" {
+				fmt.Fprintf(&message, "• <%s|Release notes>\n", releaseURL)
+			}
 		case MessageFormatHTML:
 			fmt.Fprintf(&message, "<b>%s</b>\n", imageRef)
 			fmt.Fprintf(&message, "• <b>Type:</b> %s\n", update.UpdateType)
 			fmt.Fprintf(&message, "• <b>Current:</b> %s\n", formatNotificationCode(format, update.CurrentDigest))
-			fmt.Fprintf(&message, "• <b>Latest:</b> %s\n\n", formatNotificationCode(format, update.LatestDigest))
+			fmt.Fprintf(&message, "• <b>Latest:</b> %s\n", formatNotificationCode(format, update.LatestDigest))
+			if releaseURL != "" {
+				fmt.Fprintf(&message, "• <b>Release notes:</b> <a href=\"%s\">%s</a>\n", html.EscapeString(releaseURL), html.EscapeString(releaseURL))
+			}
 		}
+		message.WriteString("\n")
 	}
 
 	return message.String()
