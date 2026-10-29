@@ -7,7 +7,7 @@
 
 	import UpdateAllDialog from '#lib/components/dialogs/update-all-dialog.svelte';
 	import NewEnvironmentSheet from '#lib/components/sheets/new-environment-sheet.svelte';
-	import { DownloadIcon, UpdateIcon } from '#lib/icons/index.js';
+	import { DownloadIcon, SettingsIcon, UpdateIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
@@ -15,10 +15,11 @@
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import { simpleRefresh } from '#lib/utils/api.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import { hasPermission, isGlobalAdmin } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
 
+	import EnvironmentSettingsDialog from './components/environment-settings-dialog.svelte';
 	import EnvironmentTable from './components/environment-table.svelte';
 
 	let { data } = $props();
@@ -29,6 +30,7 @@
 	let showEnvironmentSheet = $state(false);
 	let environmentSession = $state(0);
 	let showUpdateAllDialog = $state(false);
+	let showSettingsDialog = $state(false);
 	let isLoading = $state({ refresh: false, creating: false, deleting: false });
 
 	async function refresh() {
@@ -155,6 +157,19 @@
 					}
 				]
 			: []),
+		...(isGlobalAdmin()
+			? [
+					{
+						id: 'settings',
+						action: 'edit' as const,
+						placement: 'secondary' as const,
+						iconOnly: true,
+						label: m.settings(),
+						icon: SettingsIcon,
+						onclick: () => (showSettingsDialog = true)
+					}
+				]
+			: []),
 		{
 			id: 'refresh',
 			action: 'refresh' as const,
@@ -186,5 +201,6 @@
 			{/key}
 		{/if}
 		<UpdateAllDialog bind:open={showUpdateAllDialog} debugDemo={updateAllDemo} onFinished={refresh} />
+		<EnvironmentSettingsDialog bind:open={showSettingsDialog} />
 	{/snippet}
 </ResourcePageLayout>
