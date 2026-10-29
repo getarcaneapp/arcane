@@ -40,15 +40,17 @@
 	import EnvironmentVersionCell from './environment-version-cell.svelte';
 
 	let {
-		environments = $bindable(),
+		environments,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
+		onRefreshData,
 		onDeleteSelected,
 		bulkDeleteLoading = false
 	}: {
 		environments: Paginated<Environment>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
+		onRefreshData: (options: SearchPaginationSortRequest) => Promise<void>;
 		onDeleteSelected: (ids: string[]) => void;
 		bulkDeleteLoading?: boolean;
 	} = $props();
@@ -116,7 +118,7 @@
 						setLoadingState: () => {},
 						onSuccess: async () => {
 							toast.success(m.common_delete_success({ resource: `${m.resource_environment()} "${hostname}"` }));
-							environments = await environmentManagementService.getEnvironments(requestOptions);
+							await onRefreshData(requestOptions);
 							await environmentStore.initialize(environments.data);
 						}
 					});
@@ -138,7 +140,7 @@
 				if (status === 'online') toast.success(m.environments_test_connection_success());
 				else toast.error(m.environments_test_connection_error());
 				// Refresh to get updated status from backend
-				environments = await environmentManagementService.getEnvironments(requestOptions);
+				await onRefreshData(requestOptions);
 				await environmentStore.initialize(environments.data);
 			}
 		});
@@ -167,7 +169,7 @@
 						resource: `${m.resource_environment()} "${environment.name}"`
 					})
 				);
-				environments = await environmentManagementService.getEnvironments(requestOptions);
+				await onRefreshData(requestOptions);
 				await environmentStore.initialize(environments.data);
 			}
 		});
@@ -379,7 +381,8 @@
 	bind:mobileFieldVisibility
 	{bulkActions}
 	onRefresh={async (options) => {
-		environments = await environmentManagementService.getEnvironments(options);
+		requestOptions = options;
+		await onRefreshData(options);
 		await environmentStore.initialize(environments.data);
 		return environments;
 	}}
@@ -392,7 +395,7 @@
 <UpdateCenterDialog
 	bind:open={showUpgradeDialog}
 	onFinished={async () => {
-		environments = await environmentManagementService.getEnvironments(requestOptions);
+		await onRefreshData(requestOptions);
 		await environmentStore.initialize(environments.data);
 	}}
 	versionInformation={selectedVersionInfoForUpgrade ?? undefined}

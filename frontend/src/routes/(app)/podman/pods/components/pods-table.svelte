@@ -11,7 +11,6 @@
 	import { BoxIcon, CalendarIcon, ContainersIcon, InspectIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { PodmanPodAction } from '#lib/services/podman-service.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { PodmanPod } from '#lib/types/podman.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -33,10 +32,7 @@
 		onRefreshData: (options: SearchPaginationSortRequest) => Promise<void>;
 	} = $props();
 
-	const canManagePods = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('podman:pods');
-	});
+	const canManagePods = $derived(hasShownPermission('podman:pods'));
 	const lifecycleActions: PodmanPodAction[] = ['start', 'stop', 'restart', 'pause', 'unpause', 'kill'];
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});

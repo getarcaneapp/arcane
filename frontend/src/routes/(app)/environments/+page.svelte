@@ -2,6 +2,7 @@
 	import { dev } from '$app/env';
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -10,36 +11,57 @@
 	import { DownloadIcon, SettingsIcon, UpdateIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
-	import { simpleRefresh } from '#lib/utils/api.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission, isGlobalAdmin } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
+	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import EnvironmentSettingsDialog from './components/environment-settings-dialog.svelte';
 	import EnvironmentTable from './components/environment-table.svelte';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
-	let environments = $derived(data.environments);
 	let selectedIds = $state<string[]>([]);
-	let requestOptions = $derived(data.environmentRequestOptions);
+	let requestOptions = $state(untrack(() => data.environmentRequestOptions));
+	const environmentsQuery = createQuery(() => {
+		const options = requestOptions;
+		return {
+			queryKey: queryKeys.environments.list(options),
+			queryFn: () => environmentManagementService.getEnvironments(options),
+			placeholderData: (previous) => previous
+		};
+	});
+	const environments = $derived(environmentsQuery.data ?? data.environments);
 	let showEnvironmentSheet = $state(false);
 	let environmentSession = $state(0);
 	let showUpdateAllDialog = $state(false);
 	let showSettingsDialog = $state(false);
 	let isLoading = $state({ refresh: false, creating: false, deleting: false });
 
+	async function loadEnvironments(options: SearchPaginationSortRequest = requestOptions) {
+		requestOptions = options;
+		await queryClient.query({
+			queryKey: queryKeys.environments.list(options),
+			staleTime: 0,
+			queryFn: () => environmentManagementService.getEnvironments(options)
+		});
+	}
+
 	async function refresh() {
-		await simpleRefresh(
-			() => environmentManagementService.getEnvironments(requestOptions),
-			(data) => (environments = data),
-			m.common_refresh_failed({ resource: m.environments_title() }),
-			(v) => (isLoading.refresh = v)
-		);
+		isLoading.refresh = true;
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(loadEnvironments()),
+			message: m.common_refresh_failed({ resource: m.environments_title() }),
+			setLoadingState: (value) => (isLoading.refresh = value)
+		});
 	}
 
 	const connectivityFingerprint = $derived(
@@ -100,7 +122,7 @@
 
 	async function onEnvironmentCreated() {
 		showEnvironmentSheet = false;
-		environments = await environmentManagementService.getEnvironments(requestOptions);
+		await loadEnvironments();
 		await environmentStore.initialize(environments.data);
 		toast.success(m.common_create_success({ resource: m.resource_environment() }));
 	}
@@ -186,9 +208,10 @@
 <ResourcePageLayout title={m.environments_title()} subtitle={m.environments_subtitle()} {actionButtons}>
 	{#snippet mainContent()}
 		<EnvironmentTable
-			bind:environments
+			{environments}
 			bind:selectedIds
 			bind:requestOptions
+			onRefreshData={loadEnvironments}
 			onDeleteSelected={handleBulkDelete}
 			bulkDeleteLoading={isLoading.deleting}
 		/>

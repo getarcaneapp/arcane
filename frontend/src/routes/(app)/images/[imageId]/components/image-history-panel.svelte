@@ -8,7 +8,6 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bytes, formatDateTimeShort } from '#lib/utils/formatting.js';
 
@@ -17,7 +16,6 @@
 	const historyQuery = createQuery(() => {
 		const environmentId = imageEnvironmentId;
 		const requestedImageId = imageId;
-		userStore.current;
 		return {
 			queryKey: queryKeys.images.history(environmentId ?? '', requestedImageId),
 			queryFn: async () => {

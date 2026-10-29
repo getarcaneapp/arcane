@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { createQuery } from '@tanstack/svelte-query';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import ContainerRegistryFormSheet from '#lib/components/sheets/container-registry-sheet.svelte';
@@ -12,6 +13,7 @@
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
 	import type { ContainerRegistry, ContainerRegistryPullUsage } from '#lib/types/docker.js';
 	import type { ContainerRegistryCreate, ContainerRegistryUpdate } from '#lib/types/docker.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -19,13 +21,31 @@
 	import RegistryTable from './components/registry-table.svelte';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
-	let registries = $derived(data.registries);
 	let selectedIds = $state<string[]>([]);
 	let isRegistryDialogOpen = $state(false);
 	let isInfoDialogOpen = $state(false);
 	let registryToEdit = $state<ContainerRegistry | null>(null);
-	let requestOptions = $derived(data.registryRequestOptions);
+	let requestOptions = $state(untrack(() => data.registryRequestOptions));
+	const registriesQuery = createQuery(() => {
+		const options = requestOptions;
+		return {
+			queryKey: queryKeys.containerRegistries.list(options),
+			queryFn: () => containerRegistryService.getRegistries(options),
+			placeholderData: (previous) => previous
+		};
+	});
+	const registries = $derived(registriesQuery.data ?? data.registries);
+
+	async function loadRegistries(options: SearchPaginationSortRequest = requestOptions) {
+		requestOptions = options;
+		await queryClient.query({
+			queryKey: queryKeys.containerRegistries.list(options),
+			staleTime: 0,
+			queryFn: () => containerRegistryService.getRegistries(options)
+		});
+	}
 	const pullUsageQuery = createQuery(() => ({
 		queryKey: queryKeys.containerRegistries.pullUsage(),
 		queryFn: () => containerRegistryService.getPullUsage(),
@@ -45,12 +65,12 @@
 	async function refreshRegistries() {
 		isLoading.refresh = true;
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(containerRegistryService.getRegistries(requestOptions)),
+			result: await tryCatch(
+				queryClient.invalidateQueries({ queryKey: queryKeys.containerRegistries.all }, { throwOnError: true })
+			),
 			message: m.common_refresh_failed({ resource: m.registries_title() }),
 			setLoadingState: (value) => (isLoading.refresh = value),
-			onSuccess: async (newRegistries) => {
-				registries = newRegistries;
-				await pullUsageQuery.refetch();
+			onSuccess: () => {
 				toast.success(m.registries_refreshed());
 			}
 		});
@@ -85,7 +105,7 @@
 						toast.success(m.common_create_success({ resource: m.resource_registry() }));
 					}
 
-					[registries] = await Promise.all([containerRegistryService.getRegistries(requestOptions), pullUsageQuery.refetch()]);
+					await queryClient.invalidateQueries({ queryKey: queryKeys.containerRegistries.all });
 					isRegistryDialogOpen = false;
 				})()
 			);
@@ -149,9 +169,10 @@
 	{#snippet mainContent()}
 		<RegistryTable
 			emptyState={registriesEmptyState}
-			bind:registries
+			{registries}
 			bind:selectedIds
 			bind:requestOptions
+			onRefreshData={loadRegistries}
 			{pullUsageByRegistry}
 			onEditRegistry={openEditRegistryDialog}
 		/>

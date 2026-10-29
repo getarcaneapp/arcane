@@ -31,14 +31,16 @@
 	type FieldVisibility = Record<string, boolean>;
 
 	let {
-		repositories = $bindable(),
+		repositories,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
+		onRefreshData,
 		onEditRepository
 	}: {
 		repositories: Paginated<GitRepository>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
+		onRefreshData: (options: SearchPaginationSortRequest) => Promise<void>;
 		onEditRepository: (repository: GitRepository) => void;
 	} = $props();
 
@@ -83,8 +85,7 @@
 			},
 			onComplete: async (result) => {
 				if (result.success > 0) {
-					// fallow-ignore-next-line code-duplication -- refresh handler calls gitRepositoryService (sync-table calls gitOpsSyncService); no shared surface
-					repositories = await gitRepositoryService.getRepositories(requestOptions);
+					await onRefreshData(requestOptions);
 				}
 			},
 			clearSelection: () => (selectedIds = []),
@@ -104,7 +105,7 @@
 			failureMessage: m.common_delete_failed({ resource: safeName }),
 			onSuccess: async () => {
 				toast.success(m.common_delete_success({ resource: `${m.resource_repository()} "${safeName}"` }));
-				repositories = await gitRepositoryService.getRepositories(requestOptions);
+				await onRefreshData(requestOptions);
 			}
 		});
 	}
@@ -252,7 +253,11 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
-	onRefresh={async (options) => (repositories = await gitRepositoryService.getRepositories(options))}
+	onRefresh={async (options) => {
+		requestOptions = options;
+		await onRefreshData(options);
+		return repositories;
+	}}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

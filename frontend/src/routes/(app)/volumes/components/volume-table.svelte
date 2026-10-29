@@ -20,7 +20,6 @@
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { volumeService, type VolumesPaginatedResponse } from '#lib/services/volume-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { VolumeSizeInfo, Volume } from '#lib/types/docker.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
@@ -72,21 +71,11 @@
 	let renameEnvironmentId = $state('0');
 
 	const scope = $derived(environmentStore.shownKey);
-	// Track the user store: hasPermission reads it non-reactively, so without
-	// this the derived would cache a pre-hydration false forever.
-	const canDeleteVolume = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('volumes:delete');
-	});
-	const canRenameVolume = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('volumes:rename');
-	});
+	const canDeleteVolume = $derived(hasShownPermission('volumes:delete'));
+	const canRenameVolume = $derived(hasShownPermission('volumes:rename'));
 	let tablePreferences = $state<{ persistCustomSettings(settings: Record<string, unknown>): void }>();
 	let customSettings = $state<Record<string, unknown>>({});
-	let showInternal = $derived.by(() => {
-		return (customSettings['showInternalVolumes'] as boolean) ?? false;
-	});
+	let showInternal = $derived((customSettings['showInternalVolumes'] as boolean) ?? false);
 
 	async function refreshVolumes(options: SearchPaginationSortRequest = requestOptions, refreshSizes = true) {
 		if (onRefreshData) {
@@ -154,10 +143,9 @@
 		return configured === undefined || name === configured;
 	};
 	const isBackupVolume = (item: VolumeRow) => isBackupVolumeName(item.name, item.environmentId);
-	const sizesEnabled = $derived.by(() => {
-		userStore.current;
-		return tablePreferencesReady && columnVisibility['size'] !== false && hasShownPermission('volumes:read');
-	});
+	const sizesEnabled = $derived(
+		tablePreferencesReady && columnVisibility['size'] !== false && hasShownPermission('volumes:read')
+	);
 	const sizesQuery = createQuery(() => {
 		const queryScope = scope;
 		const environments = readableEnvironments('volumes:list');

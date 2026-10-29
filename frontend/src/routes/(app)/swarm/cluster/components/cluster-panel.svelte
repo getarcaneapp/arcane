@@ -14,7 +14,6 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { SwarmInitRequest, SwarmJoinRequest, SwarmUpdateRequest } from '#lib/types/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -26,7 +25,6 @@
 
 	const swarmInfoQuery = createQuery(() => {
 		const requestedEnvironmentId = environmentId;
-		userStore.current;
 		return {
 			queryKey: queryKeys.swarm.info(requestedEnvironmentId),
 			queryFn: () => swarmService.getSwarmInfo(requestedEnvironmentId),
@@ -36,7 +34,6 @@
 	});
 	const joinTokensQuery = createQuery(() => {
 		const requestedEnvironmentId = environmentId;
-		userStore.current;
 		return {
 			queryKey: queryKeys.swarm.joinTokens(requestedEnvironmentId),
 			queryFn: () => swarmService.getSwarmJoinTokens(requestedEnvironmentId),
@@ -46,7 +43,6 @@
 	});
 	const unlockKeyQuery = createQuery(() => {
 		const requestedEnvironmentId = environmentId;
-		userStore.current;
 		return {
 			queryKey: queryKeys.swarm.unlockKey(requestedEnvironmentId),
 			queryFn: () => swarmService.getSwarmUnlockKey(requestedEnvironmentId),
