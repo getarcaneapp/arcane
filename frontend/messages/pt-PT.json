@@ -2893,6 +2893,8 @@
   "update_center_step_reload": "Recarregar página",
   "update_center_estimated": "Normalmente demora menos de um minuto.",
   "update_center_complete": "Atualização concluída.",
+  "update_center_unconfirmed": "A atualização foi solicitada, mas não foi possível confirmá-la. Verifique os registos do ambiente.",
+  "update_center_unconfirmed_version": "A atualização foi solicitada, mas o ambiente continua a executar o ` {version}`. Verifique os registos.",
   "auto_start": "Início automático",
   "api_key_name_placeholder": "Introduza um nome para esta chave de API",
   "api_key_save_warning": "Guarde esta chave agora - não voltará a ser apresentada.",
