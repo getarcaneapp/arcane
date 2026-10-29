@@ -2893,6 +2893,8 @@
   "update_center_step_reload": "重新載入頁面",
   "update_center_estimated": "這通常需要不到一分鐘的時間。",
   "update_center_complete": "更新完成。",
+  "update_center_unconfirmed": "已收到更新請求，但無法確認。請檢查環境的日誌。",
+  "update_center_unconfirmed_version": "雖然已要求進行更新，但環境仍執行著 {version}。請檢查其日誌。",
   "auto_start": "自動啟動",
   "api_key_name_placeholder": "輸入此 API 金鑰的名稱",
   "api_key_save_warning": "請立即儲存此金鑰——它之後將不再顯示。",
