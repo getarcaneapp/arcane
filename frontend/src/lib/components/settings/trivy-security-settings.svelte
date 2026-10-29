@@ -279,6 +279,7 @@
 					<Input
 						id="trivyServerUrl"
 						type="url"
+						autocomplete="off"
 						bind:value={formInputs.trivyServerUrl.value}
 						placeholder={m.security_trivy_server_url_placeholder()}
 						aria-invalid={!!formInputs.trivyServerUrl.error}
@@ -294,7 +295,7 @@
 					<Input
 						id="trivyServerToken"
 						type="password"
-						autocomplete="off"
+						autocomplete="new-password"
 						bind:value={formInputs.trivyServerToken.value}
 						aria-invalid={!!formInputs.trivyServerToken.error}
 					/>

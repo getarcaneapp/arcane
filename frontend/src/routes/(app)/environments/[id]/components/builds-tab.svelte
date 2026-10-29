@@ -124,6 +124,7 @@
 			<Input
 				id="depot-project-id"
 				placeholder={m.build_settings_depot_project_id_placeholder()}
+				autocomplete="off"
 				bind:value={
 					() => formInputs.depotProjectId.value,
 					(value) => {
@@ -145,6 +146,7 @@
 			<Input
 				id="depot-token"
 				type="password"
+				autocomplete="new-password"
 				placeholder={m.build_settings_depot_token_placeholder()}
 				bind:value={
 					() => formInputs.depotToken.value,
