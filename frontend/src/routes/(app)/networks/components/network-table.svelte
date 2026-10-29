@@ -4,35 +4,6 @@
 	function ipamValues(item: NetworkSummaryDto, key: 'subnet' | 'gateway'): string[] {
 		return (item.ipam?.config ?? []).map((c) => c[key]).filter((v): v is string => !!v);
 	}
-
-	// A fixed-width digit key that orders like the backend: IPv4 before IPv6, then by address, then by prefix
-	// length. An entry that is not an address sorts after every address.
-	function addressSortKey(value: string): string {
-		const [address = '', prefix = ''] = value.split('/');
-		const octets = address.split('.');
-		let family = '1';
-		let hex = '';
-		if (octets.length === 4 && octets.every((octet) => /^\d{1,3}$/.test(octet))) {
-			hex = octets.map((octet) => Number(octet).toString(16).padStart(2, '0')).join('');
-		} else if (/^[\da-f:]+$/i.test(address)) {
-			const [head = '', tail = ''] = address.split('::');
-			const headGroups = head ? head.split(':') : [];
-			const tailGroups = tail ? tail.split(':') : [];
-			const fill = address.includes('::') ? 8 - headGroups.length - tailGroups.length : 0;
-			family = '2';
-			hex = [...headGroups, ...Array<string>(Math.max(fill, 0)).fill('0'), ...tailGroups].map((g) => g.padStart(4, '0')).join('');
-		}
-		if (!hex) return `z${value}`;
-		return `${family}${BigInt(`0x${hex}`).toString().padStart(39, '0')}${prefix.padStart(3, '0')}`;
-	}
-
-	/** Sort value for a network column whose sort key is not a row field. */
-	export function networkSortValue(network: NetworkSummaryDto, column: string): unknown {
-		// The backend sorts each network's entries before comparing networks, so entry order does not matter.
-		if (column === 'subnet' || column === 'gateway')
-			return ipamValues(network, column).map(addressSortKey).sort().join(' ') || null;
-		return network[column as keyof NetworkSummaryDto];
-	}
 </script>
 
 <script lang="ts">
@@ -198,14 +169,14 @@
 		{ accessorKey: 'scope', title: m.common_scope(), sortable: true, cell: ScopeCell },
 		{
 			id: 'subnet',
-			accessorFn: (row) => networkSortValue(row, 'subnet'),
+			accessorFn: (row) => ipamValues(row, 'subnet').join(', '),
 			title: m.common_subnet(),
 			sortable: true,
 			cell: SubnetCell
 		},
 		{
 			id: 'gateway',
-			accessorFn: (row) => networkSortValue(row, 'gateway'),
+			accessorFn: (row) => ipamValues(row, 'gateway').join(', '),
 			title: m.common_gateway(),
 			sortable: true,
 			cell: GatewayCell

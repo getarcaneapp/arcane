@@ -782,10 +782,8 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_Creat
 	authSvc.userService = userSvc
 	authSvc.settingsService = settingsSvc
 
-	existing, err := userSvc.CreateUser(ctx, &user.User{
-		ID: "existing-canonical-identity", Username: "José", Email: new("néw@example.com"),
-	})
-	require.NoError(t, err)
+	existing := &user.User{ID: "existing-canonical-identity", Username: "José", Email: new("néw@example.com")}
+	require.NoError(t, db.Create(existing).Error)
 
 	userInfo := types.OidcUserInfo{
 		Subject:           "sub-123",
@@ -912,8 +910,6 @@ func TestAuthenticateLocalPrimary_EmailFallback(t *testing.T) {
 	require.NoError(t, err)
 	for _, u := range []*user.User{
 		{ID: "u-email-login", Username: "bob", Email: new("bob@example.com"), PasswordHash: hash},
-		{ID: "u-unicode", Username: "José", Email: new("josé@example.com"), PasswordHash: hash},
-		{ID: "u-decomposed", Username: "Jose\u0301", Email: new("jose\u0301@example.com"), PasswordHash: hash},
 		{ID: "u-dup-1", Username: "dup1", Email: new("dup@example.com"), PasswordHash: hash},
 		{ID: "u-carol", Username: "carol@example.com", Email: new("carol@example.com"), PasswordHash: hash},
 		{ID: "u-col-a", Username: "owner@example.com", PasswordHash: hash},
@@ -923,6 +919,8 @@ func TestAuthenticateLocalPrimary_EmailFallback(t *testing.T) {
 		require.NoError(t, err)
 	}
 
+	require.NoError(t, db.Create(&user.User{ID: "u-unicode", Username: "José", Email: new("josé@example.com"), PasswordHash: hash}).Error)
+	require.NoError(t, db.Create(&user.User{ID: "u-decomposed", Username: "Jose\u0301", Email: new("jose\u0301@example.com"), PasswordHash: hash}).Error)
 	require.NoError(t, db.Create(&user.User{ID: "u-dup-2", Username: "dup2", Email: new("dup@example.com"), PasswordHash: dupHash}).Error)
 	require.NoError(t, db.Create(&user.User{
 		ID: "u-legacy-spaces", Username: " Jose\u0301 ", Email: new(" spaced@example.com "), PasswordHash: hash,

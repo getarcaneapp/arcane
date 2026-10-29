@@ -12,7 +12,6 @@ const MAX_EXPORT_BATCH_SIZE = 32;
 // Aborted fetches and logout cancellations are expected, not failures.
 const CANCELLED_ERRORS = ['AbortError', 'SessionCancelledError'];
 
-// Query strings and fragments can carry OIDC codes and tokens, so they never leave the browser.
 function stripUrlQuery(value: string): string {
 	return value.replace(/(https?:\/\/[^\s?#"']*)[?#][^\s"']*/g, '$1').replace(/^(\/[^\s?#]*)[?#].*$/, '$1');
 }
@@ -204,7 +203,11 @@ export function setTelemetry(enabled: Record<Signal, boolean>, version: string):
 
 // Starts the pageview span that parents this navigation's requests.
 export function startPageView(routeId: string | null | undefined, startTime = performance.now()): void {
-	route = (routeId ?? '').replace(/\/\([^)]*\)/g, '') || '/';
+	route =
+		(routeId ?? '')
+			.split('/')
+			.filter((segment) => !segment.startsWith('('))
+			.join('/') || '/';
 	navigationStart = startTime;
 	navigated = true;
 	if (!otel) return;

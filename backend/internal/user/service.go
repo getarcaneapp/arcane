@@ -27,6 +27,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/dbutil"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/userctx"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/validation"
 )
 
 type Argon2Params struct {
@@ -162,6 +163,13 @@ func (s *UserService) CreateUser(ctx context.Context, localUser *User) (*User, e
 		return nil, err
 	}
 	localUser.Username = username
+	if localUser.OidcSubjectId == nil {
+		email, emailErr := NormalizeOptionalEmail(localUser.Email)
+		if emailErr != nil {
+			return nil, emailErr
+		}
+		localUser.Email = email
+	}
 
 	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if localUser.OidcSubjectId == nil {
@@ -305,7 +313,12 @@ func (s *UserService) UpdateUser(ctx context.Context, localUser *User, actorPerm
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", localUser.ID).First(&current).Error; err != nil {
 			return fmt.Errorf("failed to load user: %w", err)
 		}
-		if !strings.EqualFold(kit.FromPtr(current.Email), kit.FromPtr(localUser.Email)) {
+		if !strings.EqualFold(kit.FromPtr(current.Email), strings.TrimSpace(kit.FromPtr(localUser.Email))) {
+			email, normalizeErr := NormalizeOptionalEmail(localUser.Email)
+			if normalizeErr != nil {
+				return normalizeErr
+			}
+			localUser.Email = email
 			if err := ensureEmailAvailable(tx, localUser.ID, localUser.Email); err != nil {
 				return err
 			}
@@ -340,6 +353,17 @@ func (s *UserService) UpdateUser(ctx context.Context, localUser *User, actorPerm
 	}
 	*localUser = updated
 	return localUser, nil
+}
+
+func NormalizeOptionalEmail(email *string) (*string, error) {
+	trimmedEmail := strings.TrimSpace(kit.FromPtr(email))
+	if trimmedEmail == "" {
+		return nil, nil
+	}
+	if !validation.IsValidUserEmail(trimmedEmail) {
+		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "email", Err: errors.New("email must be a valid email address")})
+	}
+	return &trimmedEmail, nil
 }
 
 func ensureEmailAvailable(tx *gorm.DB, userID string, email *string) error {

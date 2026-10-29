@@ -151,7 +151,7 @@ class ContainerService extends BaseAPIService {
 	}
 
 	async downloadContainerLogs(containerId: string, environmentId: string): Promise<void> {
-		const base = this.api.defaults.baseURL.replace(/\/+$/, '');
+		const base = this.api.defaults.baseURL;
 		const url = `${base}/environments/${environmentId}/containers/${containerId}/logs/download`;
 		if (await this.probeDownloadInternal(url)) {
 			downloadFromUrl(url);

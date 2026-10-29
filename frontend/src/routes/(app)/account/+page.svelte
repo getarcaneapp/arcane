@@ -50,7 +50,7 @@
 	};
 
 	function prettyRoleName(roleId: string): string {
-		return BUILT_IN_ROLE_LABELS[roleId]?.() ?? roleId.replace(/^role_/, '').replace(/_/g, ' ');
+		return BUILT_IN_ROLE_LABELS[roleId]?.() ?? roleId.replace('role_', '').replaceAll('_', ' ');
 	}
 
 	const queryClient = useQueryClient();

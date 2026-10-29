@@ -11,7 +11,7 @@ export const STREAM_CHANNEL_UPGRADE = 'arcane-upgrade';
 
 class StreamService extends BaseAPIService {
 	getClientStreamUrl(channels: string[], params: Record<string, string> = {}): string {
-		const baseUrl = this.api.defaults.baseURL.replace(/\/+$/, '');
+		const baseUrl = this.api.defaults.baseURL;
 		const search = new URLSearchParams({ ...params, channels: channels.join(',') });
 		search.set('_', streamCacheBuster());
 		return `${baseUrl}/stream?${search.toString()}`;

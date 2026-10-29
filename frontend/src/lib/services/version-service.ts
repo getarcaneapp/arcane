@@ -23,6 +23,7 @@ export function toAppVersionInformation(data: Partial<AppVersionInformation>): A
 		enabledFeatures: data.enabledFeatures ?? [],
 		buildTime: data.buildTime,
 		isSemverVersion: data.isSemverVersion || false,
+		isStableVersion: data.isStableVersion || false,
 		newestVersion: data.newestVersion,
 		newestDigest: data.newestDigest,
 		updateAvailable: data.updateAvailable || false,

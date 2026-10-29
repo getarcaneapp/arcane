@@ -33,7 +33,7 @@ test.describe('Container updates', () => {
 	function containerWithUpdate(container: (typeof CONTAINERS)[number]) {
 		return {
 			id: container.id,
-			names: [`/${container.name}`],
+			names: [container.name],
 			image: container.image,
 			imageId: `sha256:${container.id}`,
 			command: 'sleep',

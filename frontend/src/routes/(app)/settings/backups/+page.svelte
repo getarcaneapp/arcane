@@ -116,28 +116,11 @@
 	// they accept a typed (previously generated) key. Everything else only
 	// ever uses this instance's stored key.
 	const actionNeedsTypedKey = $derived(action === 'restore' || action === 'discover');
-	const recoveryKeyPattern = /^[A-Z2-7]{6}(-[A-Z2-7]{6}){7}$/;
-	const restoreFilesKeyError = $derived(
-		restoreFilesRecoveryKey.length > 0 && !recoveryKeyPattern.test(restoreFilesRecoveryKey.trim())
-			? m.system_backups_recovery_key_required()
-			: ''
-	);
-	const restoreFilesKeyInvalid = $derived(
-		Boolean(restoreFilesKeyError) ||
-			(!policyCollection.recoveryKeyStored && !recoveryKeyPattern.test(restoreFilesRecoveryKey.trim()))
-	);
-	const importKeyError = $derived(
-		importKeyInput.length > 0 && !recoveryKeyPattern.test(importKeyInput.trim()) ? m.system_backups_recovery_key_required() : ''
-	);
-	const importKeyInvalid = $derived(Boolean(importKeyError) || !recoveryKeyPattern.test(importKeyInput.trim()));
-	const keyError = $derived(
-		actionNeedsTypedKey && recoveryKey.length > 0 && !recoveryKeyPattern.test(recoveryKey.trim())
-			? m.system_backups_recovery_key_required()
-			: ''
-	);
+	const restoreFilesKeyInvalid = $derived(!policyCollection.recoveryKeyStored && !restoreFilesRecoveryKey.trim());
+	const importKeyInvalid = $derived(!importKeyInput.trim());
 	const actionKeyInvalid = $derived.by(() => {
 		if (action === 'create' && backupType === 'volume') return false;
-		if (actionNeedsTypedKey) return !policyCollection.recoveryKeyStored && !recoveryKeyPattern.test(recoveryKey.trim());
+		if (actionNeedsTypedKey) return !policyCollection.recoveryKeyStored && !recoveryKey.trim();
 		// Deleting is always allowed; the backend only asks for the key when
 		// the run still has snapshots to forget.
 		if (action === 'delete') return false;
@@ -150,7 +133,7 @@
 			? m.volume_backup_s3_destination_required()
 			: ''
 	);
-	const invalid = $derived(Boolean(actionKeyInvalid || keyError || destinationError));
+	const invalid = $derived(Boolean(actionKeyInvalid || destinationError));
 
 	function openSchedule(type: 'system' | 'volume' = 'system', id?: string) {
 		scheduleSession += 1;
@@ -650,7 +633,6 @@
 				<TextInputWithLabel
 					value={importKeyInput}
 					onChange={(value) => (importKeyInput = value)}
-					error={importKeyError || null}
 					label={m.system_backups_recovery_key()}
 					description={m.system_backups_recovery_key_required()}
 					type="password"
@@ -750,7 +732,6 @@
 					<TextInputWithLabel
 						value={recoveryKey}
 						onChange={(value) => (recoveryKey = value)}
-						error={keyError || null}
 						label={m.system_backups_recovery_key()}
 						description={policyCollection.recoveryKeyStored
 							? m.system_backups_recovery_key_saved_description()
@@ -813,7 +794,6 @@
 						<TextInputWithLabel
 							value={restoreFilesRecoveryKey}
 							onChange={updateRestoreFilesRecoveryKey}
-							error={restoreFilesKeyError || null}
 							label={m.system_backups_recovery_key()}
 							description={policyCollection.recoveryKeyStored
 								? m.system_backups_recovery_key_saved_description()

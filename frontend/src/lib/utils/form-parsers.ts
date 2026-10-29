@@ -7,10 +7,10 @@ export function parseLines(text: string): string[] {
 
 /** Splits newline or comma separated input into trimmed, non-empty values. */
 export function parseList(text: string): string[] {
-	return splitAndTrim(text, /[\n,]/);
+	return splitAndTrim(text.replaceAll(',', '\n'), '\n');
 }
 
-function splitAndTrim(text: string, separator: string | RegExp): string[] {
+function splitAndTrim(text: string, separator: string): string[] {
 	if (!text) return [];
 	return text
 		.split(separator)

@@ -77,7 +77,7 @@
 			region: inputs.region.value.trim(),
 			accessKeyId: inputs.accessKeyId.value.trim(),
 			secretAccessKey: inputs.secretAccessKey.value.trim(),
-			prefix: inputs.prefix.value.trim().replace(/^\/+|\/+$/g, ''),
+			prefix: inputs.prefix.value.trim(),
 			useSsl: inputs.useSsl.value,
 			forcePathStyle: inputs.forcePathStyle.value
 		})

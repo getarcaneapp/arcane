@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/acfs"
@@ -115,6 +116,9 @@ func (s *Service) prepareBackupCreate(ctx context.Context, tx *gorm.DB, req type
 	directory, err := kit.NormalizeRelativePath(req.BackupDirectory)
 	if err == nil && slices.Contains(strings.Split(directory, "/"), ".git") {
 		err = errors.New("backup directory must not contain a .git segment")
+	}
+	if err == nil && len(directory) >= 2 && directory[1] == ':' && unicode.IsLetter(rune(directory[0])) {
+		err = errors.New("backup directory must not start with a drive letter")
 	}
 	if err != nil {
 		return nil, common.Classify(common.ErrValidation, &types.FieldError{Field: "backupDirectory", Err: err})

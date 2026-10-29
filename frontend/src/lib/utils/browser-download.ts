@@ -18,5 +18,5 @@ export function filenameFromPath(path: string, fallback = 'download'): string {
 }
 
 export function filenameFromContentDisposition(header: string | null, fallback: string): string {
-	return /filename="?([^";]+)"?/.exec(header ?? '')?.[1] || fallback;
+	return header?.split('filename=')[1]?.split(';')[0]?.replaceAll('"', '') || fallback;
 }

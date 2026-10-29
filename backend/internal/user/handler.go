@@ -4,12 +4,11 @@ import (
 	"cmp"
 	"context"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
-	"go.getarcane.app/kit/pkg"
+	kit "go.getarcane.app/kit/pkg"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
@@ -88,14 +87,13 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 
-	email, err := NormalizeOptionalEmail(input.Body.Email)
-	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
-	}
-
 	passwordPolicy := h.passwordPolicy(ctx)
 	if validatePasswordPolicyErr := validation.ValidatePasswordPolicy(input.Body.Password, passwordPolicy); validatePasswordPolicyErr != nil {
-		return nil, handlerutil.Error400BadRequestWithType(validatePasswordPolicyErr.Error(), validation.PasswordPolicyProblemType(passwordPolicy))
+		return nil, handlerutil.Error400BadRequestWithType(common.Classify(common.ErrValidation,
+			&types.FieldError{
+				Field: "password",
+				Err:   validatePasswordPolicyErr,
+			}), validation.PasswordPolicyProblemType(passwordPolicy))
 	}
 
 	hashedPassword, err := h.userService.HashPassword(ctx, input.Body.Password)
@@ -107,7 +105,7 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 		Username:     username,
 		PasswordHash: hashedPassword,
 		DisplayName:  input.Body.DisplayName,
-		Email:        email,
+		Email:        input.Body.Email,
 		Locale:       input.Body.Locale,
 		TimeFormat:   cmp.Or(input.Body.TimeFormat, types.TimeFormatAuto),
 		CreatedAt:    time.Now(),
@@ -118,6 +116,9 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 		}
 		if errors.Is(err, ErrEmailTaken) {
 			return nil, huma.Error409Conflict(ErrEmailTaken.Error())
+		}
+		if errors.Is(err, common.ErrValidation) {
+			return nil, handlerutil.APIError(err)
 		}
 		return nil, huma.Error500InternalServerError("Failed to create user")
 	}
@@ -172,11 +173,6 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 
-	email, err := NormalizeOptionalEmail(kit.Ternary(submitted["email"], input.Body.Email, current.Email))
-	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
-	}
-
 	callerPerms, err := h.checkUpdateUserPrivileges(ctx, input, current.ID)
 	if err != nil {
 		return nil, err
@@ -185,7 +181,8 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 	if input.Body.Password != "" {
 		passwordPolicy := h.passwordPolicy(ctx)
 		if validatePasswordPolicyErr := validation.ValidatePasswordPolicy(input.Body.Password, passwordPolicy); validatePasswordPolicyErr != nil {
-			return nil, handlerutil.Error400BadRequestWithType(validatePasswordPolicyErr.Error(), validation.PasswordPolicyProblemType(passwordPolicy))
+			fieldErr := common.Classify(common.ErrValidation, &types.FieldError{Field: "password", Err: validatePasswordPolicyErr})
+			return nil, handlerutil.Error400BadRequestWithType(fieldErr, validation.PasswordPolicyProblemType(passwordPolicy))
 		}
 	}
 
@@ -193,7 +190,7 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		BaseModel:   current.BaseModel,
 		Username:    username,
 		DisplayName: kit.Ternary(submitted["displayName"], input.Body.DisplayName, current.DisplayName),
-		Email:       email,
+		Email:       kit.Ternary(submitted["email"], input.Body.Email, current.Email),
 		Locale:      kit.Ternary(submitted["locale"], input.Body.Locale, current.Locale),
 		TimeFormat:  kit.Ternary(submitted["timeFormat"], input.Body.TimeFormat, current.TimeFormat),
 		FontSize:    current.FontSize,
@@ -214,6 +211,9 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		}
 		if errors.Is(err, common.ErrUserNotFound) {
 			return nil, huma.Error404NotFound("User not found")
+		}
+		if errors.Is(err, common.ErrValidation) {
+			return nil, handlerutil.APIError(err)
 		}
 		return nil, huma.Error500InternalServerError("Failed to update user")
 	}
@@ -301,23 +301,6 @@ func (h *UserHandler) GetUserAvatar(ctx context.Context, input *GetUserAvatarInp
 		XContentTypeOptions: "nosniff",
 		Body:                data,
 	}, nil
-}
-
-func NormalizeOptionalEmail(email *string) (*string, error) {
-	if email == nil {
-		return nil, nil
-	}
-
-	trimmedEmail := strings.TrimSpace(*email)
-	if trimmedEmail == "" {
-		return nil, nil
-	}
-
-	if !validation.IsValidUserEmail(trimmedEmail) {
-		return nil, errors.New("must be a valid email")
-	}
-
-	return &trimmedEmail, nil
 }
 
 // checkUpdateUserPrivileges enforces that a non-admin caller may not

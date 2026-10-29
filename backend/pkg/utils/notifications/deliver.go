@@ -8,6 +8,8 @@ import (
 	"net/mail"
 	"regexp"
 
+	"github.com/getarcaneapp/arcane/types/v3"
+
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 )
 
@@ -106,6 +108,19 @@ func deliverDiscord(ctx context.Context, config database.JSON, c Content) error 
 	return nil
 }
 
+// ValidateEmailAddresses checks that the sender and every recipient parse as RFC 5322 addresses.
+func ValidateEmailAddresses(config EmailConfig) error {
+	if _, err := mail.ParseAddress(config.FromAddress); err != nil {
+		return &types.FieldError{Field: "fromAddress", Err: fmt.Errorf("invalid from address: %w", err)}
+	}
+	for _, addr := range config.ToAddresses {
+		if _, err := mail.ParseAddress(addr); err != nil {
+			return &types.FieldError{Field: "toAddresses", Err: fmt.Errorf("invalid to address %s: %w", addr, err)}
+		}
+	}
+	return nil
+}
+
 func deliverEmail(ctx context.Context, config database.JSON, c Content) error {
 	emailConfig, err := DecodeConfig[EmailConfig](config, "email")
 	if err != nil {
@@ -117,13 +132,8 @@ func deliverEmail(ctx context.Context, config database.JSON, c Content) error {
 	if len(emailConfig.ToAddresses) == 0 {
 		return errors.New("no recipient email addresses configured")
 	}
-	if _, parseAddressErr := mail.ParseAddress(emailConfig.FromAddress); parseAddressErr != nil {
-		return fmt.Errorf("invalid from address: %w", parseAddressErr)
-	}
-	for _, addr := range emailConfig.ToAddresses {
-		if _, parseAddressErr2 := mail.ParseAddress(addr); parseAddressErr2 != nil {
-			return fmt.Errorf("invalid to address %s: %w", addr, parseAddressErr2)
-		}
+	if validateErr := ValidateEmailAddresses(emailConfig); validateErr != nil {
+		return validateErr
 	}
 	if decryptStringCredentialErr := DecryptStringCredential(&emailConfig.SMTPPassword); decryptStringCredentialErr != nil {
 		return decryptStringCredentialErr

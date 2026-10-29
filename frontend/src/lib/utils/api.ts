@@ -29,6 +29,19 @@ export function extractApiErrorMessage(error: any): string {
 	}
 }
 
+export function extractApiErrorField(error: unknown): string | undefined {
+	if (!(error instanceof APIError)) return undefined;
+	const field: unknown = error.response?.data?.details?.field;
+	return typeof field === 'string' ? field : undefined;
+}
+
+export function applyApiFieldError(inputs: Record<string, { error: string | null }>, error: unknown): boolean {
+	const input = inputs[extractApiErrorField(error) ?? ''];
+	if (!input) return false;
+	input.error = extractApiErrorMessage(error);
+	return true;
+}
+
 export async function handleApiResultWithCallbacks<T>({
 	result,
 	message,

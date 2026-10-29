@@ -15,11 +15,6 @@ export const UPDATE_CHECK_LABEL = 'com.getarcaneapp.arcane.update-check';
 export const UPDATE_DELAY_LABEL = 'com.getarcaneapp.arcane.updater.delay';
 const DISABLED_LABEL_VALUES = ['false', '0', 'no', 'off'];
 
-/** Strips the leading slashes Docker puts on container names. */
-export function normalizeContainerName(name: string): string {
-	return name.replace(/^\/+/, '');
-}
-
 /** True when the Docker label opts the container out of auto-updates. */
 export function isAutoUpdateLabelDisabled(labels?: Record<string, string>): boolean {
 	if (!labels) return false;
@@ -32,7 +27,7 @@ export function parseExcludedContainerSet(csv?: string): Set<string> {
 	return new Set(
 		(csv || '')
 			.split(',')
-			.map((entry) => normalizeContainerName(entry.trim()))
+			.map((entry) => entry.trim())
 			.filter(Boolean)
 	);
 }

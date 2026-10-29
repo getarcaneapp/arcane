@@ -137,7 +137,7 @@ func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Con
 		if apiErr.HTTPStatus() == http.StatusInternalServerError {
 			return nil, huma.Error500InternalServerError("Failed to update notification settings")
 		}
-		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+		return nil, handlerutil.APIError(err)
 	}
 
 	response := types.NotificationSettings{

@@ -24,8 +24,8 @@ export function getRouteAccessSurfaces(manifest: PermissionsManifest | null | un
 		.filter((surface) => !!surface.url)
 		.slice()
 		.sort((a, b) => {
-			const aTemplates = (a.url?.match(/\{[^}]+\}/g) ?? []).length;
-			const bTemplates = (b.url?.match(/\{[^}]+\}/g) ?? []).length;
+			const aTemplates = (a.url ?? '').split('{').length - 1;
+			const bTemplates = (b.url ?? '').split('{').length - 1;
 			if (aTemplates !== bTemplates) return aTemplates - bTemplates;
 			return (b.url?.length ?? 0) - (a.url?.length ?? 0);
 		});

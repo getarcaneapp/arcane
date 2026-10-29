@@ -153,18 +153,7 @@ func (h *SettingsHandler) UpdateSettings(ctx context.Context, input *UpdateSetti
 		case http.StatusInternalServerError:
 			return nil, huma.Error500InternalServerError("Failed to update settings")
 		case http.StatusBadRequest:
-			return nil, &struct {
-				*huma.ErrorModel
-
-				Details any `json:"details,omitempty"`
-			}{
-				ErrorModel: &huma.ErrorModel{
-					Title:  http.StatusText(http.StatusBadRequest),
-					Status: http.StatusBadRequest,
-					Detail: apiErr.Message,
-				},
-				Details: apiErr.Details,
-			}
+			return nil, handlerutil.APIError(err)
 		default:
 			return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 		}

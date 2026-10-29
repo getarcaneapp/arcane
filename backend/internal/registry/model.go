@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/registryauth"
 )
 
 type ContainerRegistry struct {
@@ -29,4 +30,14 @@ type ContainerRegistry struct {
 
 func (ContainerRegistry) TableName() string {
 	return "container_registries"
+}
+
+func (r ContainerRegistry) Host() string {
+	host, _ := registryauth.SplitRegistryURL(r.URL)
+	return host
+}
+
+func (r ContainerRegistry) Namespace() string {
+	_, namespace := registryauth.SplitRegistryURL(r.URL)
+	return namespace
 }

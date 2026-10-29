@@ -7,7 +7,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
 
-	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
 )
 
@@ -59,8 +58,7 @@ func (h *VariableHandler) ListVariables(ctx context.Context, _ *ListGlobalVariab
 func (h *VariableHandler) CreateVariable(ctx context.Context, input *CreateGlobalVariableInput) (*handlerutil.Out[types.GlobalVariableMutationResponse], error) {
 	variable, err := h.variableService.CreateVariable(ctx, input.Body)
 	if err != nil {
-		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+		return nil, handlerutil.APIError(err)
 	}
 
 	return &handlerutil.Out[types.GlobalVariableMutationResponse]{
@@ -82,8 +80,7 @@ func (h *VariableHandler) UpdateVariable(ctx context.Context, input *UpdateGloba
 
 	variable, err := h.variableService.UpdateVariable(ctx, input.ID, input.Body, submitted)
 	if err != nil {
-		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+		return nil, handlerutil.APIError(err)
 	}
 
 	return &handlerutil.Out[types.GlobalVariableMutationResponse]{
@@ -99,8 +96,7 @@ func (h *VariableHandler) UpdateVariable(ctx context.Context, input *UpdateGloba
 
 func (h *VariableHandler) DeleteVariable(ctx context.Context, input *DeleteGlobalVariableInput) (*handlerutil.Out[types.GlobalVariableMutationResponse], error) {
 	if err := h.variableService.DeleteVariable(ctx, input.ID); err != nil {
-		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+		return nil, handlerutil.APIError(err)
 	}
 
 	return &handlerutil.Out[types.GlobalVariableMutationResponse]{
@@ -167,8 +163,7 @@ func (h *VariableHandler) UpdateMaterializedVariables(ctx context.Context, input
 	}
 
 	if err := h.variableService.WriteLocalEnvFile(ctx, input.Body.Variables); err != nil {
-		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+		return nil, handlerutil.APIError(err)
 	}
 
 	return handlerutil.MessageOutput("Global variables updated successfully", ""), nil

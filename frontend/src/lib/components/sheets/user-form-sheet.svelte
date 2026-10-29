@@ -11,7 +11,6 @@
 	import type { User, UserUpdate } from '#lib/types/auth.js';
 	import type { Role } from '#lib/types/auth.js';
 	import type { Environment } from '#lib/types/environment.js';
-	import { isValidUserEmail } from '#lib/utils/formatting.js';
 	import { changedFields } from '#lib/utils/payload.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 
@@ -82,10 +81,7 @@
 				(value) => [...value].length <= userFieldMaxLength,
 				m.common_max_length({ field: m.common_display_name(), maxLength: userFieldMaxLength })
 			),
-		email: z
-			.string()
-			.trim()
-			.refine((value) => value === '' || isValidUserEmail(value), m.common_invalid_email()),
+		email: z.string().trim(),
 		roleAssignments: z
 			.array(
 				z.object({

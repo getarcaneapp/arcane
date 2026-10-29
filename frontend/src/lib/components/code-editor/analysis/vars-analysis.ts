@@ -22,7 +22,7 @@ function parseVariableAssignment(rawLine: string): { key: string; value: string 
 
 function parseEnvVariables(envContent: string): Map<string, string> {
 	const values = new Map<string, string>();
-	const lines = envContent.split(/\r?\n/);
+	const lines = envContent.replaceAll('\r\n', '\n').split('\n');
 
 	let multiLineKey: string | null = null;
 	let multiLineQuote: string | null = null;

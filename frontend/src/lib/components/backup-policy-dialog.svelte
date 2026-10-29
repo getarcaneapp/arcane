@@ -10,7 +10,7 @@
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import type { BackupPolicy, BackupPolicyForm, BackupPolicyUpdate } from '#lib/types/backup.js';
 	import type { S3Destination } from '#lib/types/s3-destination.js';
-	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { extractApiErrorField, extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { backupDestinationFromFlags, backupPolicyDestinationValues, backupPolicyUpdateFromPolicy } from '#lib/utils/backups.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -90,7 +90,6 @@
 	const destinationList = $derived(destinations ?? loadedDestinations);
 	const scheduleError = $derived.by(() => {
 		if (!form.schedule.trim()) return m.jobs_cron_required();
-		if (form.schedule.trim().split(/\s+/).length !== 6) return m.jobs_cron_invalid();
 		return form.serverError ?? null;
 	});
 	const retentionError = $derived(
@@ -171,9 +170,8 @@
 			if (operationResult2.error !== null) {
 				const error = operationResult2.error;
 
-				const message = error instanceof Error ? error.message : messages.saveFailed;
-				if (/cron|schedule/i.test(message)) form = { ...form, serverError: message };
-				else toast.error(message);
+				if (extractApiErrorField(error) === 'schedule') form = { ...form, serverError: extractApiErrorMessage(error) };
+				else toast.error(messages.saveFailed, { description: extractApiErrorMessage(error) });
 			}
 		} finally {
 			saving = false;

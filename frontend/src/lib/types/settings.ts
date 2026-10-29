@@ -196,6 +196,7 @@ export interface AppVersionInformation {
 	enabledFeatures?: string[];
 	buildTime?: string;
 	isSemverVersion: boolean;
+	isStableVersion: boolean;
 	newestVersion?: string;
 	newestDigest?: string;
 	updateAvailable?: boolean;

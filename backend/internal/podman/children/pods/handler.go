@@ -2,6 +2,7 @@ package pods
 
 import (
 	"context"
+	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
@@ -100,6 +101,9 @@ func (h *Handler) Get(ctx context.Context, input *GetPodInput) (*handlerutil.Out
 
 func (h *Handler) Create(ctx context.Context, input *CreatePodInput) (*handlerutil.Out[types.PodCreateResponse], error) {
 	id, err := h.service.Create(ctx, input.Body)
+	if errors.Is(err, common.ErrValidation) {
+		return nil, handlerutil.APIError(err)
+	}
 	if err != nil {
 		apiErr := common.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to create pod: "+apiErr.Message)

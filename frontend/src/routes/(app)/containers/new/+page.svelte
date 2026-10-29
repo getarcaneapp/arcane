@@ -16,7 +16,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
-	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { applyApiFieldError, extractApiErrorMessage } from '#lib/utils/api.js';
 	import { destinationEnvironmentId, environmentHref } from '#lib/utils/environments.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
 
@@ -36,6 +36,7 @@
 			goto(environmentHref(`/containers/${created.id}`, destination));
 		},
 		onError: (error) => {
+			applyApiFieldError(form.inputs, error);
 			toast.error(m.containers_create_failed(), { description: extractApiErrorMessage(error) });
 		}
 	}));

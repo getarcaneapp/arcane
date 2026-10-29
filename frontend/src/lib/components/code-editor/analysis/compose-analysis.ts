@@ -40,7 +40,7 @@ export type YamlPositionContext = {
 };
 
 function decodePointerSegment(segment: string): string {
-	return segment.replace(/~1/g, '/').replace(/~0/g, '~');
+	return segment.replaceAll('~1', '/').replaceAll('~0', '~');
 }
 
 function pointerToPath(pointer: string): Array<string | number> {
@@ -51,7 +51,7 @@ function pointerToPath(pointer: string): Array<string | number> {
 		.filter((segment) => segment.length > 0)
 		.map((segment) => {
 			const decoded = decodePointerSegment(segment);
-			return /^\d+$/.test(decoded) ? Number(decoded) : decoded;
+			return String(Number(decoded)) === decoded ? Number(decoded) : decoded;
 		});
 }
 
@@ -267,7 +267,7 @@ function buildTabDiagnostics(source: string): Diagnostic[] {
 							changes: {
 								from,
 								to,
-								insert: text.replace(/\t/g, '  ')
+								insert: text.replaceAll('\t', '  ')
 							}
 						});
 					}
@@ -296,10 +296,10 @@ function addMissingHyphenQuickFix(fieldName: string, serviceName: string, range:
 						const trimmed = line.text.trim();
 						if (!trimmed) continue;
 						if (trimmed.startsWith('-')) return;
-						const indent = line.text.match(/^\s*/)?.[0] ?? '';
+						const indentLength = line.text.length - line.text.trimStart().length;
 						view.dispatch({
 							changes: {
-								from: line.from + indent.length,
+								from: line.from + indentLength,
 								insert: '- '
 							}
 						});

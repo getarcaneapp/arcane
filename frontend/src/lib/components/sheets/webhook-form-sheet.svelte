@@ -119,7 +119,7 @@
 					let options: { label: string; value: string }[] = [];
 					if (type === 'container') {
 						const res = await containerService.getContainersForEnvironment(envId, { pagination: { page: 1, limit: 200 } });
-						options = res.data.map((c) => ({ value: c.id, label: c.names[0]?.replace(/^\//, '') ?? c.id }));
+						options = res.data.map((c) => ({ value: c.id, label: c.names[0] ?? c.id }));
 					} else if (type === 'project') {
 						const res = await projectService.getProjectsForEnvironment(envId, { pagination: { page: 1, limit: 200 } });
 						options = res.data.map((p) => ({ value: p.id, label: p.name }));

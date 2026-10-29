@@ -74,7 +74,7 @@
 			return [
 				...pods.data.map((pod) => ({ value: pod.name, label: pod.name, hint: m.podman_pod() })),
 				...containers.data.map((container) => {
-					const name = container.names[0]?.replace(/^\//, '') ?? container.id;
+					const name = container.names[0] ?? container.id;
 					return { value: name, label: name, hint: m.resource_container() };
 				}),
 				...volumes.data.map((volume) => ({ value: volume.name, label: volume.name, hint: m.resource_volume() }))

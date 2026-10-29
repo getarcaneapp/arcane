@@ -66,7 +66,7 @@
 	}
 
 	function isValidTagInternal(value: string): boolean {
-		return value.length > 0 && Array.from(value).length <= 64 && !value.includes(',') && !/\p{Cc}/u.test(value);
+		return value.length > 0 && Array.from(value).length <= 64 && !value.includes(',');
 	}
 
 	function isComposeTagInternal(tag: ProjectTag | undefined): boolean {

@@ -12,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
 	activitylib "github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/activity"
@@ -143,6 +144,9 @@ func (h *Handler) UpdateBackupPolicy(ctx context.Context, input *UpdateVolumeBac
 		}
 		if errorStatus == http.StatusBadGateway || errorStatus == http.StatusNotFound {
 			return nil, huma.NewError(errorStatus, err.Error())
+		}
+		if errors.Is(err, common.ErrValidation) {
+			return nil, handlerutil.APIError(err)
 		}
 		return nil, huma.Error400BadRequest(err.Error())
 	}

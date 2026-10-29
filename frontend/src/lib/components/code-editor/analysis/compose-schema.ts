@@ -213,7 +213,7 @@ function resolveRef(root: SchemaObject, ref: string, visited: Set<string>): Sche
 	const segments = ref
 		.slice(2)
 		.split('/')
-		.map((segment) => segment.replace(/~1/g, '/').replace(/~0/g, '~'));
+		.map((segment) => segment.replaceAll('~1', '/').replaceAll('~0', '~'));
 
 	let current: unknown = root;
 	for (const segment of segments) {
@@ -611,7 +611,7 @@ export function getEnumValueCompletions(schema: SchemaObject | null, path: Array
 		.map((value) => ({
 			label: value,
 			type: 'enum',
-			apply: /^\d+$/.test(value) || value === 'true' || value === 'false' ? value : JSON.stringify(value)
+			apply: String(Number(value)) === value || value === 'true' || value === 'false' ? value : JSON.stringify(value)
 		}));
 }
 

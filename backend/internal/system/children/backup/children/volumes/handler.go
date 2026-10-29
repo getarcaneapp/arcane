@@ -2,6 +2,7 @@ package volumes
 
 import (
 	"context"
+	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
@@ -52,6 +53,9 @@ func (h *Handler) GetSystemVolumeConfig(ctx context.Context, _ *struct{}) (*Syst
 
 func (h *Handler) UpdateSystemVolumeConfig(ctx context.Context, input *UpdateSystemVolumeBackupConfigInput) (*SystemVolumeBackupConfigOutput, error) {
 	config, err := h.service.UpdateConfig(ctx, input.Body.Policies)
+	if errors.Is(err, common.ErrValidation) {
+		return nil, handlerutil.APIError(err)
+	}
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}

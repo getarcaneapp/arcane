@@ -199,12 +199,10 @@ export interface ContainerResourceSample {
 	sampleTime: string;
 }
 
-/** Client frame on the batched container stats stream; each frame replaces the previous set. */
 export interface ContainerResourceSampleSubscription {
 	containerIds: string[];
 }
 
-/** Server frame on the batched container stats stream. Stopped, unknown and unsampled containers are omitted. */
 export interface ContainerResourceSampleBatch {
 	samples: Record<string, ContainerResourceSample>;
 	error?: string;
@@ -262,7 +260,7 @@ export interface ContainerMounts {
 }
 
 export interface ContainerNetwork {
-	ipamConfig: any | null;
+	ipamConfig: unknown;
 	links: string[] | null;
 	aliases: string[] | null;
 	macAddress: string;
@@ -572,7 +570,7 @@ export interface ImageDetailSummaryDto {
 	os: string;
 	size: number;
 	graphDriver: {
-		data: unknown | null;
+		data: unknown;
 		name: string;
 	};
 	rootFs: {
@@ -1055,6 +1053,8 @@ export type RegistryType = 'generic' | 'ecr';
 export interface ContainerRegistry {
 	id: string;
 	url: string;
+	host: string;
+	namespace: string;
 	username: string;
 	description?: string;
 	insecure: boolean;

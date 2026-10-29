@@ -476,6 +476,38 @@ func TestNotificationService_CreateOrUpdateSettingsEncryptsCredentialFields(t *t
 	require.Equal(t, "discord-secret-token", decrypted)
 }
 
+func TestNotificationService_CreateOrUpdateSettingsValidatesFields(t *testing.T) {
+	ctx := t.Context()
+	svc := NewNotificationService(setupNotificationTestDB(t), &config.Config{}, nil, nil, nil, nil)
+
+	tests := []struct {
+		name     string
+		provider notifications.NotificationProvider
+		config   database.JSON
+		field    string
+	}{
+		{"email from", notifications.NotificationProviderEmail, database.JSON{"fromAddress": "not an email", "toAddresses": []any{"ops@example.com"}}, "fromAddress"},
+		{"email to", notifications.NotificationProviderEmail, database.JSON{"fromAddress": "Arcane <arcane@example.com>", "toAddresses": []any{"ops@example.com", "bad"}}, "toAddresses"},
+		{"telegram topic", notifications.NotificationProviderTelegram, database.JSON{"chatIds": []any{"-100123:0"}}, "destinations"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := svc.CreateOrUpdateSettings(ctx, tt.provider, true, tt.config)
+			require.ErrorIs(t, err, common.ErrValidation)
+			var fieldErr *types.FieldError
+			require.ErrorAs(t, err, &fieldErr)
+			assert.Equal(t, tt.field, fieldErr.Field)
+		})
+	}
+
+	_, err := svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderEmail, true, database.JSON{"fromAddress": "Arcane <arcane@example.com>", "toAddresses": []any{"ops@example.com"}})
+	require.NoError(t, err)
+	_, err = svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderTelegram, true, database.JSON{"chatIds": []any{"-100123:42", "@channel"}})
+	require.NoError(t, err)
+	_, err = svc.CreateOrUpdateSettings(ctx, notifications.NotificationProviderEmail, false, database.JSON{"fromAddress": ""})
+	require.NoError(t, err)
+}
+
 func TestNotificationService_CreateOrUpdateSettingsPreservesStoredCredentialWhenEmpty(t *testing.T) {
 	ctx := t.Context()
 	db := setupNotificationTestDB(t)
@@ -548,6 +580,7 @@ func TestNotificationService_CreateOrUpdateSettingsClearsEmailPasswordWhenAuthMo
 		"smtpHost":     "smtp.example",
 		"smtpPassword": "stale-password",
 		"authMode":     "auto",
+		"fromAddress":  "arcane@example.com",
 	})
 	require.NoError(t, err)
 
@@ -555,6 +588,7 @@ func TestNotificationService_CreateOrUpdateSettingsClearsEmailPasswordWhenAuthMo
 		"smtpHost":     "smtp.example",
 		"smtpPassword": "",
 		"authMode":     string(notifications.EmailAuthModeNone),
+		"fromAddress":  "arcane@example.com",
 	})
 	require.NoError(t, err)
 

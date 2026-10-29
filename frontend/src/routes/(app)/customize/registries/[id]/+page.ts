@@ -24,11 +24,7 @@ export const load: PageLoad = async ({ params, parent, url }) => {
 		throwPageLoadError(registryResult.error, m.common_load_failed({ resource: m.resource_registry() }));
 	}
 
-	const repository =
-		url.searchParams
-			.get('repository')
-			?.trim()
-			.replace(/^\/+|\/+$/g, '') ?? '';
+	const repository = url.searchParams.get('repository')?.trim() ?? '';
 	const search = url.searchParams.get('search')?.trim() ?? '';
 	const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
 
