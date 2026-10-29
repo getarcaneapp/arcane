@@ -64,6 +64,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/webhook"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/handlerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/userctx"
+	"github.com/getarcaneapp/arcane/backend/v2/resources"
 )
 
 const (
@@ -88,7 +89,7 @@ const (
         "hiddenClients": ["unirest"],
         "defaultHttpClient": { "targetKey": "shell", "clientKey": "curl" }
       }'></script>
-    <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
+    <script src="/api/docs/scalar.js"></script>
   </body>
 </html>`
 )
@@ -321,6 +322,9 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlerutil.ActivityApp
 
 	apiGroup.GET("/docs", func(c *echo.Context) error {
 		return c.HTML(http.StatusOK, scalarDocsHTML)
+	})
+	apiGroup.GET("/docs/scalar.js", func(c *echo.Context) error {
+		return c.FileFS("scalar/standalone.js", resources.FS)
 	})
 
 	return api
