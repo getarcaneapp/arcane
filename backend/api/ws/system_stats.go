@@ -70,9 +70,8 @@ func (h *WebSocketHandler) acquireSystemStatsSampler(ctx context.Context, interv
 		closeReady := sync.OnceFunc(func() {
 			close(ready)
 		})
-		if !h.initializeCPUCache(samplerCtx) {
-			closeReady()
-			return
+		if val, ok := h.readCPUUsage(0); ok {
+			h.cpuCache.Store(val)
 		}
 		if samplerCtx.Err() != nil {
 			closeReady()
@@ -291,31 +290,6 @@ func applyCPUAffinityLimit(cpuCount int) int {
 		return n
 	}
 	return cpuCount
-}
-
-// initializeCPUCache permits unavailable CPU samples but stops on cancellation.
-func (h *WebSocketHandler) initializeCPUCache(ctx context.Context) bool {
-	result := make(chan float64, 1)
-
-	go func() {
-		if val, ok := h.readCPUUsage(time.Second); ok {
-			result <- val
-		}
-		close(result)
-	}()
-
-	select {
-	case <-ctx.Done():
-		return false
-	case val, ok := <-result:
-		if ctx.Err() != nil {
-			return false
-		}
-		if ok {
-			h.cpuCache.Store(val)
-		}
-		return true
-	}
 }
 
 func (h *WebSocketHandler) readCPUUsage(interval time.Duration) (float64, bool) {
