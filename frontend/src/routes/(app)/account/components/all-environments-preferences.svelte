@@ -2,6 +2,7 @@
 	import { toast } from 'svelte-sonner';
 
 	import AccentColorPicker from '#lib/components/accent-color/accent-color-picker.svelte';
+	import CustomColorDialog from '#lib/components/accent-color/custom-color.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
@@ -27,6 +28,9 @@
 		{ value: 'name', label: m.environment_label_style_name() },
 		{ value: 'dot', label: m.environment_label_style_dot() }
 	];
+
+	let openPickerId = $state<string | null>(null);
+	let customColorEnvironmentId = $state<string | null>(null);
 
 	function pickColor(environmentId: string, color: string | null) {
 		const environmentColors = withEnvironmentColor(environmentId, color);
@@ -58,26 +62,33 @@
 					.map((other) => environmentColor(other.id))
 					.filter((other): other is string => Boolean(other))}
 				<div class="flex items-center gap-3">
-					<Popover.Root>
+					<Popover.Root bind:open={() => openPickerId === env.id, (open) => (openPickerId = open ? env.id : null)}>
 						<Popover.Trigger>
 							{#snippet child({ props })}
 								<button
 									{...props}
 									type="button"
-									class="size-5 shrink-0 cursor-pointer rounded-full border-2 bg-(--swatch) transition-transform hover:scale-110"
-									style:--swatch={color}
+									class="group/swatch size-5 shrink-0 cursor-pointer"
 									aria-label={`${env.name} ${m.environment_colors()}`}
-								></button>
+								>
+									<span
+										class="block size-full rounded-full border-2 bg-(--swatch) transition-transform group-hover/swatch:scale-110"
+										style:--swatch={color}
+									></span>
+								</button>
 							{/snippet}
 						</Popover.Trigger>
-						<Popover.Content align="start" class="w-auto max-w-80 overflow-visible">
+						<Popover.Content align="start" class="w-auto max-w-80">
 							<AccentColorPicker
 								bind:selectedColor={() => color, (next) => pickColor(env.id, next)}
 								previousColor={color}
 								colors={swatches}
 								withTheme={false}
-								customColorTitle={m.environment_colors()}
 								{disabledColors}
+								onCustomColor={() => {
+									openPickerId = null;
+									customColorEnvironmentId = env.id;
+								}}
 							/>
 						</Popover.Content>
 					</Popover.Root>
@@ -96,3 +107,9 @@
 		</div>
 	</SettingsRow>
 </SettingsSection>
+
+<CustomColorDialog
+	bind:open={() => customColorEnvironmentId !== null, (open) => !open && (customColorEnvironmentId = null)}
+	title={m.environment_colors()}
+	onApply={(color) => customColorEnvironmentId && pickColor(customColorEnvironmentId, color)}
+/>
