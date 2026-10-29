@@ -3,7 +3,6 @@ import type { ContainerRegistry } from '#lib/types/docker.js';
 
 type RegistryIdentity = Pick<ContainerRegistry, 'url' | 'registryType'>;
 
-/** Human readable name for a registry, falling back to its URL. */
 export function getRegistryDisplayName(registry: RegistryIdentity): string {
 	if (registry.registryType === 'ecr') return m.amazon_ecr();
 	const url = registry.url;
@@ -14,7 +13,6 @@ export function getRegistryDisplayName(registry: RegistryIdentity): string {
 	return url;
 }
 
-/** Select options for the registries that mirror the getarcaneapp images. */
 export function arcaneImageRegistryOptions() {
 	return [
 		{ value: 'ghcr.io', label: m.registry_github_container_registry() },
@@ -22,7 +20,6 @@ export function arcaneImageRegistryOptions() {
 	];
 }
 
-/** Select options for the update check; ECR Public only mirrors the manager and agent images. */
 export function arcaneUpdateCheckRegistryOptions() {
 	return [
 		{ value: 'auto', label: m.auto() },
@@ -50,28 +47,9 @@ export function arcaneUpdateCheckImage(registry: string, isLocalEnvironment: boo
 	return `${host}/getarcaneapp/${isLocalEnvironment ? 'manager' : 'agent'}`;
 }
 
-/** Strips the scheme and trailing slashes so a registry URL can be used as an image host. */
-function normalizeRegistryHost(url: string): string {
-	return url.replace(/^https?:\/\//, '').replace(/\/+$/, '');
-}
-
-/**
- * Splits a registry URL into its host and the repository namespace in its path.
- * Docker Hub's `/v1/` API path is not a namespace.
- */
-export function splitRegistryUrl(url: string): { host: string; namespace: string } {
-	const [host = '', ...path] = normalizeRegistryHost(url || 'docker.io').split('/');
-	if (/^(index\.|registry-1\.)?docker\.io$/i.test(host) && path[0] === 'v1') path.shift();
-	return { host, namespace: path.join('/') };
-}
-
-/**
- * Builds a `host/repository:tag` reference, or an empty string when the
- * repository name or tag is missing.
- */
-export function buildImageReference(registryUrl: string, repositoryName: string, tag: string): string {
+export function buildImageReference(host: string, namespace: string, repositoryName: string, tag: string): string {
 	const repository = repositoryName.trim();
 	const trimmedTag = tag.trim();
 	if (!repository || !trimmedTag) return '';
-	return `${normalizeRegistryHost(registryUrl)}/${repository}:${trimmedTag}`;
+	return `${[host, namespace, repository].filter(Boolean).join('/')}:${trimmedTag}`;
 }

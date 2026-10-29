@@ -602,17 +602,6 @@ test.describe('Notifications', () => {
 			});
 			const panel = providerPanel(page);
 
-			// Non-numeric and non-positive topics are rejected.
-			await telegramRow(page, 0).chatId.fill('-1001234567890');
-			await telegramRow(page, 0).topicId.fill('abc');
-			await expect(panel.getByText('Topic ID must be a positive whole number')).toBeVisible();
-			await saveButton.click();
-			await expect(page.getByText('Please check the form for errors').first()).toBeVisible();
-			expect(wasSaveEndpointCalled()).toBe(false);
-
-			await telegramRow(page, 0).topicId.fill('0');
-			await expect(panel.getByText('Topic ID must be a positive whole number')).toBeVisible();
-
 			// A topic without a chat is incomplete.
 			await telegramRow(page, 0).topicId.fill('5');
 			await telegramRow(page, 0).chatId.fill('');

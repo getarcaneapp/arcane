@@ -93,6 +93,11 @@ type VersionInfo struct {
 	// Required: true
 	IsSemverVersion bool `json:"isSemverVersion"`
 
+	// IsStableVersion indicates if the current version is a semantic version release without a prerelease suffix.
+	//
+	// Required: true
+	IsStableVersion bool `json:"isStableVersion"`
+
 	// UpdateAvailable indicates if an update is available.
 	//
 	// Required: true

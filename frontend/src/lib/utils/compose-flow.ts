@@ -92,10 +92,7 @@ export function extractComposeYamlName(content: string): string | null {
 
 export function createComposeEditorSchema(nameRequiredMessage: string) {
 	return z.object({
-		name: z
-			.string()
-			.min(1, nameRequiredMessage)
-			.regex(/^[a-z0-9-_]+$/i, m.compose_project_name_invalid()),
+		name: z.string().min(1, nameRequiredMessage),
 		composeContent: z.string().min(1, m.compose_content_is_required()),
 		envContent: z.string().optional().default('')
 	});

@@ -11,6 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v3"
 	"go.getarcane.app/kit/pkg"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/scheduler/runs"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/handlerutil"
@@ -136,6 +137,9 @@ func (h *JobSchedulesHandler) Update(ctx context.Context, input *UpdateJobSchedu
 		return nil, huma.Error400BadRequest("invalid job schedule update body")
 	}
 	cfg, err := h.jobService.UpdateJobSchedules(ctx, input.Body, submitted)
+	if errors.Is(err, common.ErrValidation) {
+		return nil, handlerutil.APIError(err)
+	}
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}

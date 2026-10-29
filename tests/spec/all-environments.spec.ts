@@ -10,7 +10,7 @@ const remoteEnvironment = {
 
 const remoteContainer = {
 	id: 'remote-preview-container',
-	names: ['/remote-preview-web'],
+	names: ['remote-preview-web'],
 	image: 'nginx:latest',
 	imageId: 'sha256:remote-preview',
 	command: 'nginx',

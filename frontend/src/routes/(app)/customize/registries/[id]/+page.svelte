@@ -26,7 +26,7 @@
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { bytes, formatRelativeTime } from '#lib/utils/formatting.js';
-	import { buildImageReference, splitRegistryUrl } from '#lib/utils/registry.js';
+	import { buildImageReference } from '#lib/utils/registry.js';
 	import { debounced } from '#lib/utils/ws.js';
 
 	let { data } = $props();
@@ -36,7 +36,6 @@
 	const registry = $derived(data.registry);
 	const registryLabel = $derived(registry.url || 'docker.io');
 	// Repository names already carry any namespace from the registry URL.
-	const { host: registryHost, namespace: registryNamespace } = $derived(splitRegistryUrl(registry.url));
 	const repository = $derived(data.repository);
 	const tags = $derived(data.tags);
 	const canDeleteTags = $derived(hasShownPermission('registries:delete-tags'));
@@ -49,7 +48,7 @@
 
 	// Configured names are relative to the registry URL namespace, like the build flow.
 	const configuredNames = $derived(
-		(registry.repositoryNames ?? []).map((name) => (registryNamespace ? `${registryNamespace}/${name}` : name))
+		(registry.repositoryNames ?? []).map((name) => (registry.namespace ? `${registry.namespace}/${name}` : name))
 	);
 	const repositories = $derived(data.catalog?.data.map((item) => item.name) ?? configuredNames);
 
@@ -69,9 +68,7 @@
 
 	function submitRepositoryQuery(event: SubmitEvent) {
 		event.preventDefault();
-		const value = String(new FormData(event.currentTarget as HTMLFormElement).get('query') ?? '')
-			.trim()
-			.replace(/^\/+|\/+$/g, '');
+		const value = String(new FormData(event.currentTarget as HTMLFormElement).get('query') ?? '').trim();
 		if (data.catalog) {
 			navigate({ search: value, page: 1 });
 		} else if (value) {
@@ -80,7 +77,7 @@
 	}
 
 	function tagReference(tag: string) {
-		return buildImageReference(registryHost, repository, tag);
+		return buildImageReference(registry.host, '', repository, tag);
 	}
 
 	function platformLabel(platform: RegistryTag['platforms'][number]) {
@@ -206,7 +203,7 @@
 				{:else}
 					<InputGroup.Input
 						name="query"
-						placeholder={m.registries_open_repository_placeholder({ namespace: registryNamespace })}
+						placeholder={m.registries_open_repository_placeholder({ namespace: registry.namespace })}
 					/>
 				{/if}
 			</InputGroup.Root>
@@ -234,7 +231,7 @@
 						</span>
 						<span class="min-w-0 flex-1">
 							<span class="block truncate font-medium">{name}</span>
-							<span class="block truncate text-xs text-muted-foreground">{registryHost}/{name}</span>
+							<span class="block truncate text-xs text-muted-foreground">{registry.host}/{name}</span>
 						</span>
 						<ArrowRightIcon class="size-4 shrink-0 text-muted-foreground" />
 					</button>
@@ -278,7 +275,7 @@
 					</Breadcrumb.Item>
 				</Breadcrumb.List>
 			</Breadcrumb.Root>
-			<CopyButton text={`${registryHost}/${repository}`} class="size-7" title={m.registries_copy_reference()} />
+			<CopyButton text={`${registry.host}/${repository}`} class="size-7" title={m.registries_copy_reference()} />
 		</div>
 
 		<div class="flex flex-wrap items-center gap-2">

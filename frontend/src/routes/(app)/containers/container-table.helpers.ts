@@ -45,11 +45,7 @@ export function containerSortValue(container: ContainerSummaryDto, column: strin
 }
 
 export function getContainerDisplayName(container: ContainerSummaryDto): string {
-	const first = container.names?.[0];
-	if (first) {
-		return first.replace(/^\//, '');
-	}
-	return container.id.substring(0, 12);
+	return container.names?.[0] || container.id.substring(0, 12);
 }
 
 const actionStatusMessages: Record<ActionStatus, () => string> = {

@@ -24,6 +24,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v3/internal/activity"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/environment"
@@ -204,7 +205,7 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates types.JobSc
 			continue
 		}
 		if _, err := parser.Parse(field.update); err != nil {
-			return types.JobScheduleConfig{}, fmt.Errorf("invalid cron expression for %s: %w", field.key, err)
+			return types.JobScheduleConfig{}, common.Classify(common.ErrValidation, &types.FieldError{Field: field.key, Err: fmt.Errorf("invalid cron expression for %s: %w", field.key, err)})
 		}
 	}
 

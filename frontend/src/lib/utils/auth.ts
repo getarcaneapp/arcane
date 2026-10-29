@@ -95,7 +95,7 @@ export function userHasPermission(user: User | null | undefined, permission: str
 }
 
 function isAdminOnlyRoute(path: string): boolean {
-	return path === '/settings/roles/new' || /^\/settings\/roles\/[^/]+/.test(path);
+	return path === '/settings/roles/new' || (path.startsWith('/settings/roles/') && path.split('/')[3] !== '');
 }
 
 const matchesAny = (path: string, prefixes: string[]) =>

@@ -95,13 +95,36 @@ func RequireUser(ctx context.Context) (*types.Actor, error) {
 	return user, nil
 }
 
-// Error400BadRequestWithType returns RFC 9457 problem details with a stable type.
-func Error400BadRequestWithType(detail, problemType string) huma.StatusError {
-	return &huma.ErrorModel{
-		Type:   problemType,
-		Title:  http.StatusText(http.StatusBadRequest),
-		Status: http.StatusBadRequest,
-		Detail: detail,
+// ProblemError is an RFC 9457 problem that also carries API error details such as the invalid field.
+type ProblemError struct {
+	*huma.ErrorModel
+
+	Details any `json:"details,omitempty"`
+}
+
+// APIError converts a service error into a problem response that keeps its API error details.
+func APIError(err error) huma.StatusError {
+	apiErr := common.ToAPIError(err)
+	return &ProblemError{
+		ErrorModel: &huma.ErrorModel{
+			Title:  http.StatusText(apiErr.HTTPStatus()),
+			Status: apiErr.HTTPStatus(),
+			Detail: apiErr.Message,
+		},
+		Details: apiErr.Details,
+	}
+}
+
+// Error400BadRequestWithType returns RFC 9457 problem details with a stable type and the error's API details.
+func Error400BadRequestWithType(err error, problemType string) huma.StatusError {
+	return &ProblemError{
+		ErrorModel: &huma.ErrorModel{
+			Type:   problemType,
+			Title:  http.StatusText(http.StatusBadRequest),
+			Status: http.StatusBadRequest,
+			Detail: err.Error(),
+		},
+		Details: common.ToAPIError(err).Details,
 	}
 }
 

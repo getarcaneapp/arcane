@@ -113,6 +113,16 @@ type ContainerRegistry struct {
 	// Required: false
 	URL string `json:"url" required:"false"`
 
+	// Host is the registry host parsed from URL, used in image references.
+	//
+	// Required: true
+	Host string `json:"host" readOnly:"true"`
+
+	// Namespace is the repository namespace parsed from URL's path, if any.
+	//
+	// Required: true
+	Namespace string `json:"namespace" readOnly:"true"`
+
 	// Username for authentication with the container registry.
 	//
 	// Required: false

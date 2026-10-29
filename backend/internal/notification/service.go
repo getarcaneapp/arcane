@@ -360,7 +360,8 @@ func (s *NotificationService) GetSettingsByProvider(ctx context.Context, provide
 }
 
 func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provider notifications.NotificationProvider, enabled bool, localConfig database.JSON) (*NotificationSettings, error) {
-	if provider == notifications.NotificationProviderGeneric {
+	switch {
+	case provider == notifications.NotificationProviderGeneric:
 		genericConfig, decodeErr := notifications.DecodeConfig[notifications.GenericConfig](localConfig, "Generic")
 		if decodeErr != nil {
 			return nil, decodeErr
@@ -370,6 +371,22 @@ func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provid
 		// the user's own configuration instead of as an opaque send failure.
 		if validateErr := notifications.ValidateGenericPayloadTemplate(genericConfig); validateErr != nil {
 			return nil, common.Classify(common.ErrInvalidNotificationPayloadTemplate, validateErr)
+		}
+	case enabled && provider == notifications.NotificationProviderEmail:
+		emailConfig, decodeErr := notifications.DecodeConfig[notifications.EmailConfig](localConfig, "email")
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		if validateErr := notifications.ValidateEmailAddresses(emailConfig); validateErr != nil {
+			return nil, common.Classify(common.ErrValidation, validateErr)
+		}
+	case enabled && provider == notifications.NotificationProviderTelegram:
+		telegramConfig, decodeErr := notifications.DecodeConfig[notifications.TelegramConfig](localConfig, "Telegram")
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		if validateErr := notifications.ValidateTelegramChatIDs(telegramConfig); validateErr != nil {
+			return nil, common.Classify(common.ErrValidation, validateErr)
 		}
 	}
 

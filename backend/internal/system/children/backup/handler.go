@@ -2,6 +2,7 @@ package backup
 
 import (
 	"context"
+	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
@@ -160,6 +161,9 @@ func (h *Handler) UpdatePolicies(ctx context.Context, input *UpdateSystemBackupP
 		policies, updateErr = h.service.UpdatePolicies(activityCtx, input.Body.Policies)
 		return updateErr
 	})
+	if errors.Is(err, common.ErrValidation) {
+		return nil, handlerutil.APIError(err)
+	}
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -189,6 +193,9 @@ func (h *Handler) SetRecoveryKey(ctx context.Context, input *SetSystemBackupReco
 		status, setErr = h.service.SetRecoveryKey(activityCtx, input.Body.RecoveryKey)
 		return setErr
 	})
+	if errors.Is(err, common.ErrValidation) {
+		return nil, handlerutil.APIError(err)
+	}
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}

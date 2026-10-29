@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -569,6 +570,46 @@ func TestApplyEditHostname(t *testing.T) {
 	cfg, err = applyEditToContainerConfig(cfg, nil, types.ContainerEdit{Hostname: new("")})
 	require.NoError(t, err)
 	require.Empty(t, cfg.Hostname)
+}
+
+func TestApplyEditRejectsInvalidChangedHostname(t *testing.T) {
+	_, err := applyEditToContainerConfig(container.Config{Hostname: "old-host"}, nil, types.ContainerEdit{Hostname: new("bad_host")})
+	require.ErrorIs(t, err, common.ErrValidation)
+	fieldErr, ok := errors.AsType[*types.FieldError](err)
+	require.True(t, ok)
+	require.Equal(t, "hostname", fieldErr.Field)
+
+	cfg, err := applyEditToContainerConfig(container.Config{Hostname: "legacy_host"}, nil, types.ContainerEdit{Hostname: new("legacy_host")})
+	require.NoError(t, err)
+	require.Equal(t, "legacy_host", cfg.Hostname)
+}
+
+func TestCreateContainerValidatesHostname(t *testing.T) {
+	tests := []struct {
+		name     string
+		hostname string
+	}{
+		{name: "leading hyphen", hostname: "-web"},
+		{name: "trailing hyphen", hostname: "web-"},
+		{name: "underscore", hostname: "web_app"},
+		{name: "empty label", hostname: "web..local"},
+		{name: "label too long", hostname: strings.Repeat("a", 64)},
+		{name: "name too long", hostname: strings.Repeat(strings.Repeat("a", 63)+".", 4) + "a"},
+		{name: "ipv4 address", hostname: "10.0.0.1"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := (&ContainerService{}).CreateContainer(t.Context(), &container.Config{Image: "nginx:latest", Hostname: test.hostname}, nil, nil, "web", types.Actor{}, nil)
+			require.ErrorIs(t, err, common.ErrValidation)
+			fieldErr, ok := errors.AsType[*types.FieldError](err)
+			require.True(t, ok)
+			require.Equal(t, "hostname", fieldErr.Field)
+		})
+	}
+
+	for _, hostname := range []string{"", "web", "Web-01", "db.internal.example", "1.2.3", strings.Repeat("a", 63)} {
+		require.NoError(t, validateContainerHostname(hostname))
+	}
 }
 
 func TestBuildEditNetworkingConfig(t *testing.T) {

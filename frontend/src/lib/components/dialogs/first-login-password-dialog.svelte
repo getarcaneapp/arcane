@@ -12,6 +12,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { authService } from '#lib/services/auth-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 
 	let {
 		open = $bindable(false),
@@ -29,46 +30,26 @@
 	let showNewPassword = $state(false);
 	let showConfirmPassword = $state(false);
 
-	const passwordPolicy = $derived.by(() => {
-		const requiredCharacters = /(?=.*\p{Lu})(?=.*\p{Ll})(?=.*\p{Nd})/su;
-
+	const passwordRequirements = $derived.by(() => {
 		switch (settingsStore.current?.authPasswordPolicy) {
-			case 'basic': {
-				const requirements = m.security_password_policy_basic_tooltip();
-				return { schema: z.string().min(8, requirements), requirements };
-			}
-			case 'standard': {
-				const requirements = m.security_password_policy_standard_tooltip();
-				return {
-					schema: z.string().min(10, requirements).regex(requiredCharacters, requirements),
-					requirements
-				};
-			}
-			default: {
-				const requirements = m.security_password_policy_strong_tooltip();
-				return {
-					schema: z
-						.string()
-						.min(12, requirements)
-						.regex(requiredCharacters, requirements)
-						.regex(/[\p{P}\p{S}\p{White_Space}]/u, requirements),
-					requirements
-				};
-			}
+			case 'basic':
+				return m.security_password_policy_basic_tooltip();
+			case 'standard':
+				return m.security_password_policy_standard_tooltip();
+			default:
+				return m.security_password_policy_strong_tooltip();
 		}
 	});
-	const formSchema = $derived(
-		z
-			.object({
-				currentPassword: z.string().min(1, m.common_required()),
-				newPassword: passwordPolicy.schema,
-				confirmPassword: z.string()
-			})
-			.refine((data) => data.newPassword === data.confirmPassword, {
-				message: m.first_login_error_mismatch(),
-				path: ['confirmPassword']
-			})
-	);
+	const formSchema = z
+		.object({
+			currentPassword: z.string().min(1, m.common_required()),
+			newPassword: z.string().min(1, m.common_required()),
+			confirmPassword: z.string()
+		})
+		.refine((data) => data.newPassword === data.confirmPassword, {
+			message: m.first_login_error_mismatch(),
+			path: ['confirmPassword']
+		});
 	const validation = $derived(formSchema.safeParse({ currentPassword, newPassword, confirmPassword }));
 	const changePasswordMutation = createMutation(() => ({
 		mutationFn: ({ currentPassword, newPassword }: { currentPassword: string; newPassword: string }) =>
@@ -79,7 +60,7 @@
 			onSuccess?.();
 		},
 		onError: (err) => {
-			toast.error(err instanceof Error ? err.message : m.first_login_error_failed());
+			error = extractApiErrorMessage(err);
 		}
 	}));
 
@@ -177,7 +158,7 @@
 			</InputGroup.Root>
 		</div>
 
-		<p id="new-password-requirements" class="text-sm text-muted-foreground">{passwordPolicy.requirements}</p>
+		<p id="new-password-requirements" class="text-sm text-muted-foreground">{passwordRequirements}</p>
 
 		<div class="space-y-2">
 			<Label for="confirm-password">{m.first_login_confirm_password()}</Label>

@@ -133,7 +133,7 @@ const actionLabels: Record<string, () => string> = {
 };
 
 function humanize(value: string): string {
-	const words = value.replace(/[._]/g, ' ').trim();
+	const words = value.replaceAll('.', ' ').replaceAll('_', ' ').trim();
 	return words ? words.charAt(0).toUpperCase() + words.slice(1) : value;
 }
 

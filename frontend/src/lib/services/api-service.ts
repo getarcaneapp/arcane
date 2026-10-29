@@ -249,7 +249,7 @@ class APIClient {
 	private client;
 
 	constructor(baseURL: string) {
-		this.defaults = { baseURL };
+		this.defaults = { baseURL: baseURL.endsWith('/') ? baseURL.slice(0, -1) : baseURL };
 		this.client = ky.create({
 			credentials: 'include',
 			retry: 0,
@@ -268,7 +268,10 @@ class APIClient {
 		config: InternalRequestConfig = {}
 	): Promise<APIResponse<T>> {
 		const baseURL = config.baseURL ?? this.defaults.baseURL;
-		const requestUrl = /^[a-z]+:\/\//i.test(url) ? url : `${baseURL.replace(/\/+$/, '')}/${url.replace(/^\/+/, '')}`;
+		let requestUrl = url;
+		if (!URL.canParse(url)) {
+			requestUrl = url.startsWith('/') ? `${baseURL}${url}` : `${baseURL}/${url}`;
+		}
 		const requestConfig = { ...config, baseURL, method, url };
 		let requestPath = requestUrl;
 		try {

@@ -9,6 +9,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { jobScheduleService } from '#lib/services/job-schedule-service.js';
 	import type { JobStatus } from '#lib/types/settings.js';
+	import { extractApiErrorField, extractApiErrorMessage } from '#lib/utils/api.js';
 
 	let {
 		job,
@@ -31,7 +32,8 @@
 			onUpdate?.();
 		},
 		onError: (err) => {
-			toast.error(err instanceof Error ? err.message : m.jobs_schedule_update_failed());
+			if (extractApiErrorField(err) === job.settingsKey) error = extractApiErrorMessage(err);
+			else toast.error(m.jobs_schedule_update_failed(), { description: extractApiErrorMessage(err) });
 		}
 	}));
 	const isLoading = $derived(saveMutation.isPending);
@@ -44,19 +46,8 @@
 	];
 
 	function validateCron(value: string): boolean {
-		if (!value.trim()) {
-			error = m.jobs_cron_required();
-			return false;
-		}
-
-		const parts = value.trim().split(/\s+/);
-		if (parts.length !== 6) {
-			error = m.jobs_cron_invalid();
-			return false;
-		}
-
-		error = null;
-		return true;
+		error = value.trim() ? null : m.jobs_cron_required();
+		return !error;
 	}
 
 	function save() {

@@ -12,6 +12,7 @@ import (
 	"net/netip"
 	"net/url"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -1005,6 +1006,11 @@ func endpointIPAMFromCreate(ep types.ContainerEndpointSettingsCreate) (*network.
 // applyEditToContainerConfig returns cfg with the non-nil form-owned sections of an edit applied. Replaced port
 // bindings recompute ExposedPorts as the new keys plus previously exposed but unbound ports (image EXPOSE entries).
 func applyEditToContainerConfig(cfg container.Config, previousBindings network.PortMap, req types.ContainerEdit) (container.Config, error) {
+	if hostname := strings.TrimSpace(kit.FromPtr(req.Hostname)); req.Hostname != nil && hostname != cfg.Hostname {
+		if err := validateContainerHostname(hostname); err != nil {
+			return container.Config{}, err
+		}
+	}
 	newBindings, err := portMapFromCreate(kit.FromPtr(kit.FromPtr(req.HostConfig).PortBindings))
 	if err != nil {
 		return container.Config{}, err
@@ -1416,6 +1422,30 @@ func (s *ContainerService) DeleteContainer(ctx context.Context, containerID stri
 	return nil
 }
 
+var hostnameLabelPattern = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$`)
+
+func validateContainerHostname(hostname string) error {
+	if hostname == "" {
+		return nil
+	}
+	invalidErr := common.Classify(common.ErrValidation, &types.FieldError{Field: "hostname", Err: errors.New("hostname must be a valid RFC 1123 hostname")})
+	if len(hostname) > 253 {
+		return invalidErr
+	}
+	parts := strings.Split(hostname, ".")
+	allNumeric := len(parts) == 4
+	for _, label := range parts {
+		if !hostnameLabelPattern.MatchString(label) {
+			return invalidErr
+		}
+		allNumeric = allNumeric && strings.Trim(label, "0123456789") == ""
+	}
+	if allNumeric {
+		return invalidErr
+	}
+	return nil
+}
+
 func (s *ContainerService) CreateContainer(
 	ctx context.Context,
 	config *container.Config,
@@ -1433,6 +1463,9 @@ func (s *ContainerService) CreateContainer(
 	}
 	if strings.TrimSpace(config.Image) == "" {
 		return nil, common.Classify(common.ErrBadRequest, errors.New("container image is required"))
+	}
+	if err := validateContainerHostname(config.Hostname); err != nil {
+		return nil, err
 	}
 	if _, inspectErr := s.dockerService.Call(ctx, func(ctx context.Context, dockerClient *client.Client) (client.ImageInspectResult, error) {
 		return dockerClient.ImageInspect(ctx, config.Image)

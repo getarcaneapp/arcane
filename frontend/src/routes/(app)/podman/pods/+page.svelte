@@ -68,8 +68,9 @@
 
 	async function handleCreate(request: PodmanPodCreateRequest, environmentId: string) {
 		isLoading.create = true;
+		const result = await tryCatch(podmanService.createPod(request, environmentId));
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(podmanService.createPod(request, environmentId)),
+			result,
 			message: m.common_create_failed({ resource: request.name }),
 			setLoadingState: (value) => (isLoading.create = value),
 			onSuccess: async () => {
@@ -78,6 +79,7 @@
 				await refresh();
 			}
 		});
+		return result.error;
 	}
 
 	function handlePrune() {

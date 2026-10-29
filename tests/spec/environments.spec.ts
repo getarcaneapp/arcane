@@ -587,7 +587,7 @@ test.describe('Environment filter', () => {
 	function containerSummary(id: string, name: string) {
 		return {
 			id,
-			names: [`/${name}`],
+			names: [name],
 			image: 'nginx:latest',
 			imageId: `sha256:${id}`,
 			command: 'nginx',

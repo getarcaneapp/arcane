@@ -3,9 +3,8 @@ import { z } from 'zod/v4';
 
 import { UseSettingsForm } from '#lib/hooks/use-settings-form.svelte.js';
 import { m } from '#lib/paraglide/messages.js';
-import { APIError } from '#lib/services/api-service.js';
 import type { Settings } from '#lib/types/settings.js';
-import { extractApiErrorMessage } from '#lib/utils/api.js';
+import { applyApiFieldError, extractApiErrorMessage } from '#lib/utils/api.js';
 import { createForm } from '#lib/utils/settings.svelte.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -61,12 +60,8 @@ export function createSettingsForm<T extends z.ZodType<SettingsPayload>>(config:
 			);
 			if (operationResult.error !== null) {
 				const error = operationResult.error;
-				const description = extractApiErrorMessage(error);
-				const field: unknown = error instanceof APIError ? error.response?.data?.details?.field : undefined;
-				if (typeof field === 'string' && Object.hasOwn(formInputs, field)) {
-					formInputs[field as keyof typeof formInputs].error = description;
-				}
-				toast.error(errorMessage, { description });
+				applyApiFieldError(formInputs, error);
+				toast.error(errorMessage, { description: extractApiErrorMessage(error) });
 			}
 		} finally {
 			settingsForm.setLoading(false);
