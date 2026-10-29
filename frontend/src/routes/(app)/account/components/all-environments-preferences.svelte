@@ -6,6 +6,7 @@
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
+	import * as Popover from '#lib/components/ui/popover/index.js';
 	import { ResetIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import {
@@ -49,28 +50,46 @@
 		</div>
 	</SettingsRow>
 	<SettingsRow label={m.environment_colors()} description={m.environment_colors_description()} layout="wide">
-		<div class="grid gap-4">
+		<div class="grid gap-1">
 			{#each environments as env (env.id)}
 				{@const color = environmentColor(env.id) ?? ''}
-				<div class="grid gap-2">
-					<div class="flex items-center justify-between gap-3">
-						<span class="min-w-0 truncate text-sm">{env.name}</span>
-						<ArcaneButton
-							action="base"
-							tone="ghost"
-							size="icon"
-							icon={ResetIcon}
-							showLabel={false}
-							customLabel={m.common_reset()}
-							onclick={() => pickColor(env.id, null)}
-						/>
-					</div>
-					<AccentColorPicker
-						bind:selectedColor={() => color, (next) => pickColor(env.id, next)}
-						previousColor={color}
-						colors={swatches}
-						withTheme={false}
-						customColorTitle={m.environment_colors()}
+				{@const disabledColors = environments
+					.filter((other) => other.id !== env.id)
+					.map((other) => environmentColor(other.id))
+					.filter((other): other is string => Boolean(other))}
+				<div class="flex items-center gap-3">
+					<Popover.Root>
+						<Popover.Trigger>
+							{#snippet child({ props })}
+								<button
+									{...props}
+									type="button"
+									class="size-5 shrink-0 cursor-pointer rounded-full border-2 bg-(--swatch) transition-transform hover:scale-110"
+									style:--swatch={color}
+									aria-label={`${env.name} ${m.environment_colors()}`}
+								></button>
+							{/snippet}
+						</Popover.Trigger>
+						<Popover.Content align="start" class="w-auto max-w-80 overflow-visible">
+							<AccentColorPicker
+								bind:selectedColor={() => color, (next) => pickColor(env.id, next)}
+								previousColor={color}
+								colors={swatches}
+								withTheme={false}
+								customColorTitle={m.environment_colors()}
+								{disabledColors}
+							/>
+						</Popover.Content>
+					</Popover.Root>
+					<span class="min-w-0 flex-1 truncate text-sm">{env.name}</span>
+					<ArcaneButton
+						action="base"
+						tone="ghost"
+						size="icon"
+						icon={ResetIcon}
+						showLabel={false}
+						customLabel={m.common_reset()}
+						onclick={() => pickColor(env.id, null)}
 					/>
 				</div>
 			{/each}

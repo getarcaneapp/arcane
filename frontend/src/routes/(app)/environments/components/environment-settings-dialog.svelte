@@ -63,6 +63,8 @@
 				description={m.all_environments_limit_description()}
 				helpText={m.all_environments_limit_help()}
 				error={environmentLimitError}
+				layout="wide"
+				class="p-0"
 			>
 				<Input
 					id="environments-all-environments-limit"
