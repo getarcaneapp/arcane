@@ -25,22 +25,6 @@
 	const GENERIC_PAYLOAD_TEMPLATE_VARS =
 		'{{.title}}, {{.message}}, {{.environment}}, {{.environmentId}}, {{.event}}, {{.timestamp}}';
 
-	// Accepts RFC 5322 "Display Name <addr@example.com>" as well as a bare address,
-	// matching what backend/pkg/utils/notifications parses with net/mail.ParseAddress.
-	// The display name must be either a quoted string (which may contain "<"/">") or an
-	// unquoted phrase without "@", angle brackets, quotes, or commas; anything else is left
-	// as-is so the surrounding email check rejects the whole malformed string.
-	function extractEmailAddress(value: string): string {
-		const match = value.match(/^\s*(.*?)\s*<([^<>]+)>\s*$/);
-		if (!match) return value;
-		const namePart = (match[1] ?? '').trim();
-		const address = (match[2] ?? '').trim();
-		if (namePart === '') return address;
-		const isQuotedName = /^"(?:[^"\\]|\\.)*"$/.test(namePart);
-		const isUnquotedName = /^[^"<>,@]+$/.test(namePart);
-		return isQuotedName || isUnquotedName ? address : value;
-	}
-
 	interface Props {
 		provider: NotificationProviderKey;
 		values: AnyBuiltInValues;
@@ -122,35 +106,9 @@
 				}
 				if (!d.fromAddress.trim()) {
 					ctx.addIssue({ code: 'custom', message: m.common_required(), path: ['fromAddress'] });
-				} else {
-					const v = z.string().email().safeParse(extractEmailAddress(d.fromAddress.trim()));
-					if (!v.success) {
-						ctx.addIssue({ code: 'custom', message: m.common_invalid_email(), path: ['fromAddress'] });
-					}
 				}
 				if (!d.toAddresses.trim()) {
-					ctx.addIssue({
-						code: 'custom',
-						message: m.common_required(),
-						path: ['toAddresses']
-					});
-				} else {
-					const addresses = d.toAddresses
-						.split(',')
-						.map((addr) => addr.trim())
-						.filter((addr) => addr.length > 0);
-					const invalid: string[] = [];
-					addresses.forEach((addr) => {
-						const v = z.string().email().safeParse(addr);
-						if (!v.success) invalid.push(addr);
-					});
-					if (invalid.length > 0) {
-						ctx.addIssue({
-							code: 'custom',
-							message: m.notifications_email_invalid_addresses({ addresses: invalid.join(', ') }),
-							path: ['toAddresses']
-						});
-					}
+					ctx.addIssue({ code: 'custom', message: m.common_required(), path: ['toAddresses'] });
 				}
 			}),
 		telegram: z
@@ -179,13 +137,6 @@
 							code: 'custom',
 							message: m.notifications_telegram_chat_id_invalid(),
 							path: ['destinations', index, 'chatId']
-						});
-					}
-					if (row.topicId && !/^[1-9]\d*$/.test(row.topicId)) {
-						ctx.addIssue({
-							code: 'custom',
-							message: m.notifications_telegram_topic_id_invalid(),
-							path: ['destinations', index, 'topicId']
 						});
 					}
 				});

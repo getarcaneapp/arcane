@@ -8,6 +8,7 @@
 	import { variableService } from '#lib/services/variable-service.js';
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import type { GlobalVariable, GlobalVariableCreate, GlobalVariableUpdate, VariableEnvSyncResult } from '#lib/types/variable.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -51,7 +52,7 @@
 		isSheetOpen = true;
 	}
 
-	async function handleSheetSubmit(payload: VariableFormPayload) {
+	async function handleSheetSubmit(payload: VariableFormPayload): Promise<Error | null> {
 		isSubmitting = true;
 		try {
 			const operationResult = await tryCatch(
@@ -82,17 +83,19 @@
 			if (operationResult.error !== null) {
 				const error = operationResult.error;
 
-				console.error('Error saving variable:', error);
 				toast.error(
 					payload.mode === 'edit'
 						? m.common_update_failed({ resource: m.variable() })
-						: m.common_create_failed({ resource: m.variable() })
+						: m.common_create_failed({ resource: m.variable() }),
+					{ description: extractApiErrorMessage(error) }
 				);
 				// A bulk create can partially succeed before the failing entry, so
 				// refresh even on error to keep the table and duplicate-key
 				// validation in sync with what was actually persisted.
 				await refreshVariables();
+				return error;
 			}
+			return null;
 		} finally {
 			isSubmitting = false;
 		}

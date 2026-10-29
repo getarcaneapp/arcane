@@ -290,7 +290,7 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 			return nil, huma.Error403Forbidden(err.Error())
 		case errors.Is(err, common.ErrValidation):
 			passwordPolicy := h.authService.passwordPolicy(ctx)
-			return nil, handlerutil.Error400BadRequestWithType(err.Error(), validation.PasswordPolicyProblemType(passwordPolicy))
+			return nil, handlerutil.Error400BadRequestWithType(err, validation.PasswordPolicyProblemType(passwordPolicy))
 		default:
 			return nil, huma.Error500InternalServerError("Failed to change password")
 		}
@@ -340,7 +340,7 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 
 	email, err := userdomain.NormalizeOptionalEmail(kit.Ternary(submitted["email"], input.Body.Email, userModel.Email))
 	if err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
+		return nil, handlerutil.APIError(err)
 	}
 	if !strings.EqualFold(kit.FromPtr(email), kit.FromPtr(userModel.Email)) && h.settingsService.GetBoolSetting(ctx, "oidcMergeAccounts") {
 		return nil, huma.Error403Forbidden("email cannot be changed while OIDC account merging is enabled")
@@ -392,6 +392,9 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 	if err != nil {
 		if errors.Is(err, userdomain.ErrEmailTaken) {
 			return nil, huma.Error409Conflict(userdomain.ErrEmailTaken.Error())
+		}
+		if errors.Is(err, common.ErrValidation) {
+			return nil, handlerutil.APIError(err)
 		}
 		return nil, huma.Error500InternalServerError("Failed to update user")
 	}

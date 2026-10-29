@@ -40,6 +40,13 @@ import (
 // rejected with common.ErrInvalidEnvKey.
 var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
+func validateVariableKey(key string) error {
+	if envKeyPattern.MatchString(key) {
+		return nil
+	}
+	return common.Classify(common.ErrInvalidEnvKey, &types.FieldError{Field: "key", Err: fmt.Errorf("invalid key %q: use letters, numbers, and underscores, and do not start with a number", key)})
+}
+
 const (
 	globalVariablesImportedKVPrefix = "globalvars:imported:"
 	agentVariablesPath              = "/api/environments/0/templates/variables"
@@ -96,8 +103,8 @@ func (s *VariableService) ListVariables(ctx context.Context) ([]types.GlobalVari
 
 func (s *VariableService) CreateVariable(ctx context.Context, req types.GlobalVariable) (*types.GlobalVariable, error) {
 	key := strings.TrimSpace(req.Key)
-	if !envKeyPattern.MatchString(key) {
-		return nil, common.Classify(common.ErrInvalidEnvKey, fmt.Errorf("invalid env key %q (must match [A-Za-z_][A-Za-z0-9_]*)", key))
+	if validateKeyErr := validateVariableKey(key); validateKeyErr != nil {
+		return nil, validateKeyErr
 	}
 
 	envIDs, err := s.normalizeScope(ctx, req.AllEnvironments, req.EnvironmentIDs)
@@ -148,8 +155,8 @@ func (s *VariableService) UpdateVariable(ctx context.Context, id string, req typ
 	}
 
 	key := kit.Ternary(submitted["key"], strings.TrimSpace(req.Key), variable.Key)
-	if !envKeyPattern.MatchString(key) {
-		return nil, common.Classify(common.ErrInvalidEnvKey, fmt.Errorf("invalid env key %q (must match [A-Za-z_][A-Za-z0-9_]*)", key))
+	if validateKeyErr := validateVariableKey(key); validateKeyErr != nil {
+		return nil, validateKeyErr
 	}
 
 	isSecret := kit.Ternary(submitted["isSecret"], req.IsSecret, variable.IsSecret)
@@ -555,8 +562,8 @@ func (s *VariableService) WriteLocalEnvFile(ctx context.Context, vars []types.En
 		}
 
 		key := strings.TrimSpace(v.Key)
-		if !envKeyPattern.MatchString(key) {
-			return common.Classify(common.ErrInvalidEnvKey, fmt.Errorf("invalid env key %q (must match [A-Za-z_][A-Za-z0-9_]*)", key))
+		if validateKeyErr := validateVariableKey(key); validateKeyErr != nil {
+			return validateKeyErr
 		}
 
 		// Preserve intentional whitespace inside the quoted value.

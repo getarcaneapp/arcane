@@ -56,8 +56,7 @@
 	// query key and breadcrumb stay consistent the moment the dialog opens — there's
 	// no race between "set currentPath" and "query enables when open=true".
 	let userPath = $state('');
-	const normalizedRoot = $derived(rootPath.replace(/^\/+|\/+$/g, ''));
-	const currentPath = $derived(joinPath(normalizedRoot, userPath));
+	const currentPath = $derived(joinPath(rootPath, userPath));
 	const pathSegments = $derived(userPath.split('/').filter(Boolean));
 	const fileTreeQuery = createQuery<{ files: FileTreeNode[] }>(() => ({
 		queryKey: queryKeys.gitRepositories.files(repositoryId, branch, currentPath),
@@ -76,10 +75,10 @@
 	}
 
 	function pathRelativeToRoot(absolutePath: string): string {
-		if (!normalizedRoot) return absolutePath;
-		if (absolutePath === normalizedRoot) return '';
-		if (absolutePath.startsWith(normalizedRoot + '/')) {
-			return absolutePath.slice(normalizedRoot.length + 1);
+		if (!rootPath) return absolutePath;
+		if (absolutePath === rootPath) return '';
+		if (absolutePath.startsWith(rootPath + '/')) {
+			return absolutePath.slice(rootPath.length + 1);
 		}
 		return absolutePath;
 	}
@@ -121,7 +120,7 @@
 		<div class="flex items-center gap-2 text-sm">
 			<Button variant="ghost" size="sm" onclick={() => (userPath = '')} disabled={atRoot} class="h-8">
 				<FolderOpenIcon class="size-4" />
-				<span class="ml-1">{normalizedRoot || m.git_sync_browse_root()}</span>
+				<span class="ml-1">{rootPath || m.git_sync_browse_root()}</span>
 			</Button>
 			{#each pathSegments as segment, index (`${index}-${segment}`)}
 				<ArrowRightIcon class="size-4 text-muted-foreground" />

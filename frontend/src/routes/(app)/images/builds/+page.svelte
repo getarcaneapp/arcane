@@ -215,7 +215,7 @@
 
 	const fullImageReference = $derived(
 		isPushMode && selectedRegistry
-			? buildImageReference(selectedRegistry.url, inputs.repositoryName.value, inputs.pushTag.value)
+			? buildImageReference(selectedRegistry.host, selectedRegistry.namespace, inputs.repositoryName.value, inputs.pushTag.value)
 			: ''
 	);
 
@@ -446,7 +446,7 @@
 		if (!repositoryName) return { error: m.select_a_repository_name() };
 		if (!registry.repositoryNames?.includes(repositoryName)) return { error: m.repository_name_not_configured() };
 
-		const reference = buildImageReference(registry.url, repositoryName, data.pushTag);
+		const reference = buildImageReference(registry.host, registry.namespace, repositoryName, data.pushTag);
 		if (!reference) return { error: m.tag_required() };
 
 		return { tags: [reference] };

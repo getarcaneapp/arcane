@@ -31,6 +31,7 @@ import (
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v3/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/image"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
@@ -670,7 +671,7 @@ var (
 // ValidateRecoveryKey checks that a key has the generated recovery key format.
 func ValidateRecoveryKey(key string) error {
 	if !RecoveryKeyFormat.MatchString(strings.TrimSpace(key)) {
-		return errors.New("enter the generated recovery key (8 groups of 6 characters)")
+		return common.Classify(common.ErrValidation, &types.FieldError{Field: "recoveryKey", Err: errors.New("enter the generated recovery key (8 groups of 6 characters)")})
 	}
 	return nil
 }
@@ -903,7 +904,7 @@ func (r PolicyReconciliation[P, U]) Run(ctx context.Context, updates []U) error 
 func ValidatePolicyUpdate(ctx context.Context, domain string, update types.UpdateBackupPolicy, s3Service *s3.S3DestinationService) (types.UpdateBackupPolicy, error) {
 	normalized, err := schedule.NormalizeSixField(update.Schedule, domain+" backup")
 	if err != nil {
-		return update, err
+		return update, common.Classify(common.ErrValidation, &types.FieldError{Field: "schedule", Err: err})
 	}
 	if update.RetentionCount < 0 || update.RetentionCount > 3650 {
 		return update, errors.New("retentionCount must be between 0 and 3650")

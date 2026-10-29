@@ -888,7 +888,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 
 	policy := s.passwordPolicy(ctx)
 	if validatePasswordPolicyErr := validation.ValidatePasswordPolicy(newPassword, policy); validatePasswordPolicyErr != nil {
-		return common.Classify(common.ErrValidation, validatePasswordPolicyErr)
+		return common.Classify(common.ErrValidation, &types.FieldError{Field: "newPassword", Err: validatePasswordPolicyErr})
 	}
 
 	if _, err = s.userService.SetPasswordAndRevokeSessionsExcept(ctx, localUser, newPassword, currentSessionID, nil); err != nil {

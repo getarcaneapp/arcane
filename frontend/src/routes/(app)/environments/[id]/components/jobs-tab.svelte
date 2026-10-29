@@ -29,7 +29,6 @@
 		UPDATE_CHECK_LABEL,
 		UPDATE_DELAY_LABEL,
 		isAutoUpdateLabelDisabled,
-		normalizeContainerName,
 		parseExcludedContainerSet
 	} from '#lib/utils/container-auto-update.js';
 	import { formatRelativeTime, parseInstant } from '#lib/utils/formatting.js';
@@ -81,12 +80,11 @@
 	let autoHealSearchTerm = $state('');
 
 	function toggleExcludedContainerValue(current: ReadonlySet<string>, containerName: string): string {
-		const normalizedName = normalizeContainerName(containerName);
 		const newSet = new SvelteSet(current);
-		if (newSet.has(normalizedName)) {
-			newSet.delete(normalizedName);
+		if (newSet.has(containerName)) {
+			newSet.delete(containerName);
 		} else {
-			newSet.add(normalizedName);
+			newSet.add(containerName);
 		}
 
 		return Array.from(newSet).join(',');
@@ -233,8 +231,7 @@
 	}
 
 	function getContainerName(c: ContainerSummaryDto): string {
-		const rawName = c.names[0] || c.id.substring(0, 12);
-		return normalizeContainerName(rawName);
+		return c.names[0] || c.id.substring(0, 12);
 	}
 
 	function mapContainerToItem(container: ContainerSummaryDto) {

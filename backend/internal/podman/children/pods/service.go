@@ -136,23 +136,26 @@ func (s *Service) Inspect(ctx context.Context, nameOrID string) (types.PodInspec
 }
 
 func (s *Service) Create(ctx context.Context, req types.PodCreateRequest) (string, error) {
+	if err := validatePodRequest(req); err != nil {
+		return "", err
+	}
 	memory, err := byteSize("memory", req.Memory)
 	if err != nil {
 		return "", err
 	}
-	memorySwap, err := byteSize("memory swap", req.MemorySwap)
+	memorySwap, err := byteSize("memorySwap", req.MemorySwap)
 	if err != nil {
 		return "", err
 	}
-	shmSize, err := byteSize("shm size", req.ShmSize)
+	shmSize, err := byteSize("shmSize", req.ShmSize)
 	if err != nil {
 		return "", err
 	}
-	shmSizeSystemd, err := byteSize("systemd shm size", req.ShmSizeSystemd)
+	shmSizeSystemd, err := byteSize("shmSizeSystemd", req.ShmSizeSystemd)
 	if err != nil {
 		return "", err
 	}
-	weightDevices, err := deviceLimits("blkio weight", req.BlkioWeightDevices, func(major, minor int64, value string) (podman.PodWeightDevice, error) {
+	weightDevices, err := deviceLimits("blkioWeightDevices", req.BlkioWeightDevices, func(major, minor int64, value string) (podman.PodWeightDevice, error) {
 		weight, parseErr := strconv.ParseUint(value, 10, 16)
 		return podman.PodWeightDevice{
 			Major:  major,
@@ -171,11 +174,11 @@ func (s *Service) Create(ctx context.Context, req types.PodCreateRequest) (strin
 			Rate:  uint64(max(rate, 0)),
 		}, parseErr
 	}
-	readBps, err := deviceLimits("read bps", req.DeviceReadBps, throttle)
+	readBps, err := deviceLimits("deviceReadBps", req.DeviceReadBps, throttle)
 	if err != nil {
 		return "", err
 	}
-	writeBps, err := deviceLimits("write bps", req.DeviceWriteBps, throttle)
+	writeBps, err := deviceLimits("deviceWriteBps", req.DeviceWriteBps, throttle)
 	if err != nil {
 		return "", err
 	}
@@ -183,8 +186,9 @@ func (s *Service) Create(ctx context.Context, req types.PodCreateRequest) (strin
 	for i, entries := range [][]string{req.UIDMap, req.GIDMap} {
 		for _, entry := range entries {
 			var idMap podman.PodIDMap
-			if _, scanErr := fmt.Sscanf(strings.TrimSpace(entry), "%d:%d:%d", &idMap.ContainerID, &idMap.HostID, &idMap.Size); scanErr != nil {
-				return "", common.Classify(common.ErrBadRequest, fmt.Errorf("invalid ID mapping %q: use CONTAINER:HOST:SIZE", entry))
+			_, scanErr := fmt.Sscanf(strings.TrimSpace(entry), "%d:%d:%d", &idMap.ContainerID, &idMap.HostID, &idMap.Size)
+			if scanErr != nil || !idMapPattern.MatchString(strings.TrimSpace(entry)) {
+				return "", common.Classify(common.ErrValidation, &types.FieldError{Field: kit.Ternary(i == 0, "uidMap", "gidMap"), Err: fmt.Errorf("invalid ID mapping %q: use CONTAINER:HOST:SIZE", entry)})
 			}
 			idMaps[i] = append(idMaps[i], idMap)
 		}
@@ -194,7 +198,7 @@ func (s *Service) Create(ctx context.Context, req types.PodCreateRequest) (strin
 	var volumes []podman.PodNamedVolume
 	for _, volume := range req.Volumes {
 		if !strings.HasPrefix(volume.Source, "/") && strings.ContainsAny(volume.Source, `/\`) {
-			return "", common.Classify(common.ErrBadRequest, fmt.Errorf("volume source %q must be an absolute host path or a named volume", volume.Source))
+			return "", common.Classify(common.ErrValidation, &types.FieldError{Field: "volumes", Err: fmt.Errorf("volume source %q must be an absolute host path or a named volume", volume.Source)})
 		}
 		if strings.HasPrefix(volume.Source, "/") {
 			mounts = append(mounts, podman.PodMount{

@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
+	"github.com/getarcaneapp/arcane/types/v3"
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/telegram"
 )
 
@@ -34,6 +37,20 @@ func BuildTelegramURL(config TelegramConfig) (string, error) {
 	}
 
 	return url.String(), nil
+}
+
+// ValidateTelegramChatIDs checks that each optional "chat:topic" topic ID is a positive integer.
+func ValidateTelegramChatIDs(config TelegramConfig) error {
+	for _, chatID := range config.ChatIDs {
+		_, topic, hasTopic := strings.Cut(chatID, ":")
+		if !hasTopic {
+			continue
+		}
+		if topicID, err := strconv.Atoi(topic); err != nil || topicID < 1 || strconv.Itoa(topicID) != topic {
+			return &types.FieldError{Field: "destinations", Err: fmt.Errorf("invalid Telegram topic ID %q: must be a positive integer", topic)}
+		}
+	}
+	return nil
 }
 
 // SendTelegram sends a message via Shoutrrr Telegram using proper service configuration

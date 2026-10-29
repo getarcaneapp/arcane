@@ -68,7 +68,7 @@
 			case '/(app)/projects/[projectId]':
 				return page.data['project']?.name;
 			case '/(app)/containers/[containerId]':
-				return page.data['container']?.name?.replace(/^\/+/, '');
+				return page.data['container']?.name;
 			case '/(app)/volumes/[volumeName]':
 				return page.params['volumeName'];
 			case '/(app)/networks/[networkId]':

@@ -88,12 +88,7 @@
 		await refreshAll();
 	}
 
-	const cleanContainerName = (name: string | undefined): string => {
-		if (!name) return m.common_not_found_title({ resource: m.containers() });
-		return name.replace(/^\/+/, '');
-	};
-
-	const containerDisplayName = $derived(cleanContainerName(container?.name));
+	const containerDisplayName = $derived(container?.name || m.common_not_found_title({ resource: m.containers() }));
 	const containerIconUrl = $derived(getThemedIconUrl(container, mode.current));
 
 	const calculateCPUPercent = (statsData: ContainerStatsType | null): number => {

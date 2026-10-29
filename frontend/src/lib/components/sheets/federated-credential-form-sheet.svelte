@@ -89,17 +89,12 @@
 	const form = $derived(createForm<typeof formSchema>(formSchema, formData));
 	let inputs = $derived(form.inputs);
 
-	const hasWildcardWarning = $derived.by(() => {
-		const value = String(inputs.subjectMatch.value ?? '').trim();
-		return shouldWarnSubjectMatchInternal(value);
-	});
-
-	function shouldWarnSubjectMatchInternal(value: string): boolean {
-		if (value === '' || value === '*') {
-			return value === '*';
-		}
-		return value.endsWith('/*') || /^repo:[^/]+\/\*(?::|$)/.test(value);
-	}
+	const hasWildcardWarning = $derived(
+		String(inputs.subjectMatch.value ?? '')
+			.trim()
+			.split(':')
+			.some((part) => part === '*' || part.endsWith('/*'))
+	);
 
 	function envSelectedLabel(value: string): string {
 		return envOptions.find((o) => o.id === value)?.name ?? m.common_select_option();

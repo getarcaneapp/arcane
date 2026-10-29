@@ -3,6 +3,7 @@ package pods
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -258,13 +259,21 @@ func TestCreateMapsRequestToPodSpec(t *testing.T) {
 
 func TestCreateRejectsInvalidOptions(t *testing.T) {
 	tests := []struct {
-		name string
-		req  types.PodCreateRequest
+		name  string
+		field string
+		req   types.PodCreateRequest
 	}{
-		{name: "memory", req: types.PodCreateRequest{Name: "bad", Memory: "lots"}},
-		{name: "device", req: types.PodCreateRequest{Name: "bad", DeviceReadBps: []types.PodDeviceLimit{{Device: "/dev/sda", Value: "1mb"}}}},
-		{name: "weight", req: types.PodCreateRequest{Name: "bad", BlkioWeightDevices: []types.PodDeviceLimit{{Device: "8:0", Value: "heavy"}}}},
-		{name: "id map", req: types.PodCreateRequest{Name: "bad", GIDMap: []string{"0:100000"}}},
+		{name: "memory", field: "memory", req: types.PodCreateRequest{Name: "bad", Memory: "lots"}},
+		{name: "terabyte memory", field: "memory", req: types.PodCreateRequest{Name: "bad", Memory: "1t"}},
+		{name: "device", field: "deviceReadBps", req: types.PodCreateRequest{Name: "bad", DeviceReadBps: []types.PodDeviceLimit{{Device: "/dev/sda", Value: "1mb"}}}},
+		{name: "signed device", field: "deviceWriteBps", req: types.PodCreateRequest{Name: "bad", DeviceWriteBps: []types.PodDeviceLimit{{Device: "+8:0", Value: "1mb"}}}},
+		{name: "weight", field: "blkioWeightDevices", req: types.PodCreateRequest{Name: "bad", BlkioWeightDevices: []types.PodDeviceLimit{{Device: "8:0", Value: "heavy"}}}},
+		{name: "id map", field: "gidMap", req: types.PodCreateRequest{Name: "bad", GIDMap: []string{"0:100000"}}},
+		{name: "id map trailing text", field: "uidMap", req: types.PodCreateRequest{Name: "bad", UIDMap: []string{"0:100000:65536x"}}},
+		{name: "invalid name", field: "name", req: types.PodCreateRequest{Name: "-bad"}},
+		{name: "name with slash", field: "name", req: types.PodCreateRequest{Name: "bad/pod"}},
+		{name: "cpuset cpus", field: "cpusetCpus", req: types.PodCreateRequest{Name: "bad", CPUSetCPUs: "0-"}},
+		{name: "cpuset mems", field: "cpusetMems", req: types.PodCreateRequest{Name: "bad", CPUSetMems: "0,,1"}},
 	}
 
 	for _, tt := range tests {
@@ -274,9 +283,16 @@ func TestCreateRejectsInvalidOptions(t *testing.T) {
 				return podman.Runtime{}, nil
 			})
 			_, err := svc.Create(t.Context(), tt.req)
-			require.ErrorIs(t, err, common.ErrBadRequest)
+			require.ErrorIs(t, err, common.ErrValidation)
+			fieldErr, ok := errors.AsType[*types.FieldError](err)
+			require.True(t, ok)
+			require.Equal(t, tt.field, fieldErr.Field)
 		})
 	}
+}
+
+func TestValidatePodRequestAcceptsValidNameAndCpusets(t *testing.T) {
+	require.NoError(t, validatePodRequest(types.PodCreateRequest{Name: "web_pod.v1-2", CPUSetCPUs: "0-3,5", CPUSetMems: "0"}))
 }
 
 func TestInspectMergesContainerDetails(t *testing.T) {

@@ -119,10 +119,10 @@ function formatShortcutKey(key: ShortcutKey, isMac: boolean): string {
 }
 
 function getExpectedCode(key: string): string | null {
-	if (/^[0-9]$/.test(key)) {
+	if (key.length === 1 && key >= '0' && key <= '9') {
 		return `digit${key}`;
 	}
-	if (/^[a-z]$/.test(key)) {
+	if (key.length === 1 && key >= 'a' && key <= 'z') {
 		return `key${key}`;
 	}
 	return null;
@@ -193,12 +193,12 @@ export function toGitWebUrl(raw: string): string | null {
 		}
 	}
 
-	const match = /^(?:.+@)?([^:/]+):(.+)$/.exec(trimmed) ?? /^([^/]+)\/(.+)$/.exec(trimmed);
+	const match = /^(?:.+@)?([^:/]+):\/*([^/].*)$/.exec(trimmed) ?? /^([^/]+)\/+([^/].*)$/.exec(trimmed);
 	if (!match) return null;
 	const host = match[1];
 	const matchedPath = match[2];
 	if (!host || !matchedPath) return null;
-	const path = stripGitSuffix(matchedPath.replace(/^\/+/, ''));
+	const path = stripGitSuffix(matchedPath);
 	return path ? `https://${host}/${path}` : null;
 }
 

@@ -393,7 +393,7 @@ func (s *Service) remoteRepository(ctx context.Context, destinationID string) (b
 func (s *Service) recoveryKey(ctx context.Context, supplied string) (string, error) {
 	if strings.TrimSpace(supplied) != "" {
 		if err := backup.ValidateRecoveryKey(supplied); err != nil {
-			return "", common.Classify(common.ErrValidation, err)
+			return "", err
 		}
 		return supplied, nil
 	}

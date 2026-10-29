@@ -91,6 +91,7 @@
 		nodeVersion: '',
 		svelteKitVersion: '',
 		isSemverVersion: false,
+		isStableVersion: false,
 		newestVersion: 'debug-v2',
 		updateAvailable: true
 	};

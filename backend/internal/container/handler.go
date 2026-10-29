@@ -306,8 +306,7 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 		input.Body.Credentials,
 	)
 	if err != nil {
-		apiErr := common.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+		return nil, handlerutil.APIError(err)
 	}
 
 	return &handlerutil.Out[types.ContainerCreated]{
@@ -638,8 +637,7 @@ func (h *ContainerHandler) EditContainer(ctx context.Context, input *EditContain
 	if err != nil {
 		activitylib.FlushWriter(activityWriter)
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container edit failed", err)
-		apiErr := common.ToAPIError(common.ClassifyDockerError(err))
-		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+		return nil, handlerutil.APIError(common.ClassifyDockerError(err))
 	}
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container edited", nil)

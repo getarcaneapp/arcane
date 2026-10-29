@@ -145,8 +145,6 @@
 				const directory = value.backupDirectory.trim();
 				if (!directory) {
 					ctx.issues.push({ code: 'custom', message: m.destination_folder_required(), path: ['backupDirectory'], input: value });
-				} else if (directory.startsWith('/') || directory.includes('..') || /^[a-zA-Z]:/.test(directory)) {
-					ctx.issues.push({ code: 'custom', message: m.destination_folder_invalid(), path: ['backupDirectory'], input: value });
 				}
 				return;
 			}
@@ -355,11 +353,7 @@
 	});
 	const selectedProject = $derived(projects.find((project) => project.id === selectedProjectId));
 
-	function slugifyInternal(value: string): string {
-		return value.trim().replace(/[\s/]+/g, '-');
-	}
-
-	const suggestedBackupDirectory = $derived(slugifyInternal(selectedProject?.name ?? ''));
+	const suggestedBackupDirectory = $derived(selectedProject?.name ?? '');
 
 	const effectiveBackupDirectory = $derived(inputs.backupDirectory.value.trim() || suggestedBackupDirectory);
 
@@ -1117,7 +1111,7 @@
 		? m.git_sync_browse_files_description_script()
 		: m.git_sync_browse_files_description()}
 	rootPath={fileBrowserTarget === 'preDeployScript' && inputs.composePath.value.includes('/')
-		? inputs.composePath.value.replace(/\/[^/]*$/, '')
+		? inputs.composePath.value.slice(0, inputs.composePath.value.lastIndexOf('/'))
 		: ''}
 	fileFilter={fileBrowserTarget === 'preDeployScript' ? undefined : composeFileFilter}
 	fileBadge={fileBrowserTarget === 'preDeployScript' ? undefined : composeBadge}

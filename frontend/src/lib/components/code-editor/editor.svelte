@@ -294,7 +294,7 @@
 	}
 
 	function formatEnvContent(content: string): string {
-		const lines = content.split(/\r?\n/);
+		const lines = content.replaceAll('\r\n', '\n').split('\n');
 		const formatted: string[] = [];
 		for (const line of lines) {
 			const trimmed = line.trim();
@@ -308,11 +308,11 @@
 				formatted.push(trimmed);
 				continue;
 			}
-			const key = valueLine.slice(0, separator).trim().toUpperCase().replace(/\s+/g, '_');
+			const key = valueLine.slice(0, separator).trim().toUpperCase().split(' ').filter(Boolean).join('_');
 			const valuePart = valueLine.slice(separator + 1).trim();
 			formatted.push(`${key}=${valuePart}`);
 		}
-		return formatted.join('\n').replace(/\n{3,}/g, '\n\n');
+		return formatted.filter((line, index) => line !== '' || formatted[index - 1] !== '').join('\n');
 	}
 
 	async function formatDocument() {
@@ -450,7 +450,7 @@
 			new Set<string>([
 				...Object.keys(effectiveEditorContext.globalVariables),
 				...(effectiveEditorContext.envContent ?? '')
-					.split(/\r?\n/)
+					.split('\n')
 					.map((line) => line.trim())
 					.filter(Boolean)
 					.map((line) => line.split('=')[0]?.trim() ?? '')

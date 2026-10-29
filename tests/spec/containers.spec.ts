@@ -283,7 +283,7 @@ test.describe('Management', () => {
 						data: [
 							{
 								id: 'wordpress-multi-network',
-								names: ['/wordpress'],
+								names: ['wordpress'],
 								image: 'wordpress:latest',
 								imageId: 'sha256:wordpress',
 								command: 'apache2-foreground',
@@ -1213,7 +1213,7 @@ test.describe('Resource sorting', () => {
 	): MockContainer {
 		return {
 			id,
-			names: [`/${id}`],
+			names: [id],
 			image: 'misc:latest',
 			imageId: `image-${id}`,
 			command: '',
@@ -1392,7 +1392,7 @@ test.describe('Resource sorting', () => {
 			.getByRole('row')
 			.filter({ has: page.getByRole('link', { name: 'big-bytes' }) });
 		await expect(bigBytesRow.getByText('10%', { exact: true })).toBeVisible();
-		await expect(bigBytesRow.getByTitle('3 GB', { exact: true })).toBeVisible();
+		await expect(bigBytesRow.getByTitle('3 GB (75%)', { exact: true })).toBeVisible();
 
 		const brokenRow = page
 			.getByRole('row')
@@ -1526,7 +1526,7 @@ test.describe('Project grouping', () => {
 	): MockContainer {
 		return {
 			id,
-			names: [`/${name}`],
+			names: [name],
 			image: `${project || 'misc'}:latest`,
 			imageId: `image-${id}`,
 			command: '',
