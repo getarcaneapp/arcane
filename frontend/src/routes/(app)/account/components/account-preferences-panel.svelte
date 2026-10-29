@@ -16,7 +16,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { getLayoutMode, layoutModeStore, type LayoutMode } from '#lib/stores/layout-mode.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { ProjectEditorLayout, UserPreferences } from '#lib/types/auth.js';
+	import type { ProjectEditorLayout, ToastPosition, UserPreferences } from '#lib/types/auth.js';
 	import type { ApplicationTheme, IconCatalog } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
 	import { getMobileNavigation } from '#lib/utils/navigation.js';
@@ -65,6 +65,16 @@
 		{ value: 'auto', label: m.automatic(), description: m.layout_mode_auto_description() },
 		{ value: 'mobile', label: m.layout_mode_mobile(), description: m.layout_mode_mobile_description() },
 		{ value: 'desktop', label: m.layout_mode_desktop(), description: m.layout_mode_desktop_description() }
+	]);
+	const toastPositionValue = $derived<ToastPosition>(preferences.toastPosition ?? 'auto');
+	const toastPositionOptions = $derived([
+		{ value: 'auto', label: m.automatic(), description: m.toast_position_auto_description() },
+		{ value: 'top-left', label: m.toast_position_top_left() },
+		{ value: 'top-center', label: m.toast_position_top_center() },
+		{ value: 'top-right', label: m.toast_position_top_right() },
+		{ value: 'bottom-left', label: m.toast_position_bottom_left() },
+		{ value: 'bottom-center', label: m.toast_position_bottom_center() },
+		{ value: 'bottom-right', label: m.toast_position_bottom_right() }
 	]);
 	const landingPageOptions = $derived(getLandingPageNavItems().map((item) => ({ value: item.url, label: item.title })));
 	const landingValue = $derived.by(() => {
@@ -131,6 +141,19 @@
 					value={layoutModeValue}
 					options={layoutModeOptions}
 					onValueChange={(value) => (layoutModeStore.current = value as LayoutMode)}
+				/>
+			</div>
+		</SettingsRow>
+		<SettingsRow label={m.toast_position()} description={m.toast_position_description()} layout="switch">
+			<div class="w-52">
+				<SelectWithLabel
+					id="account-toast-position"
+					label={m.toast_position()}
+					hideLabel
+					triggerSize="sm"
+					value={toastPositionValue}
+					options={toastPositionOptions}
+					onValueChange={(value) => void saveUserPreferences({ toastPosition: value as ToastPosition })}
 				/>
 			</div>
 		</SettingsRow>

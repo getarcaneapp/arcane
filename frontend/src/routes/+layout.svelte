@@ -19,6 +19,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { isAuthPagePath } from '#lib/services/api-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
+	import userStore from '#lib/stores/user-store.svelte.js';
 	import { environmentName } from '#lib/utils/environments.js';
 	import { finishNavigation, startPageView } from '#lib/utils/telemetry.js';
 
@@ -42,6 +43,14 @@
 
 	const isMobile = new IsMobile();
 	const isTablet = new IsTablet();
+
+	const toastPosition = $derived.by(() => {
+		const preferred = userStore.current?.preferences?.toastPosition;
+		if (!preferred || preferred === 'auto') {
+			return isMobile.current || isTablet.current ? 'top-center' : 'bottom-right';
+		}
+		return preferred;
+	});
 
 	// Mirror the per-device layout onto <html> for CSS; `$effect.pre` sets it before first paint.
 	$effect.pre(() => {
@@ -104,7 +113,7 @@
 
 	<ModeWatcher disableTransitions={false} />
 	<Toaster
-		position={isMobile.current || isTablet.current ? 'top-center' : 'bottom-right'}
+		position={toastPosition}
 		toastOptions={{
 			classes: {
 				toast: 'border border-primary/30!',

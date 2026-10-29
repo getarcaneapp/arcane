@@ -1,3 +1,5 @@
+import type { ToasterProps } from 'svelte-sonner';
+
 import type { Locale } from '#lib/paraglide/runtime.js';
 import type { Environment } from '#lib/types/environment.js';
 import type { AppVersionInformation, ApplicationTheme, IconCatalog } from '#lib/types/settings.js';
@@ -129,6 +131,8 @@ export type ProjectEditorLayout = 'auto' | 'classic' | 'tree';
 
 export type EnvironmentLabelStyle = 'name' | 'dot';
 
+export type ToastPosition = 'auto' | NonNullable<ToasterProps['position']>;
+
 /**
  * Personal display/UI preferences stored on the user record. Every field is
  * optional: an unset value falls back to the frontend default.
@@ -147,6 +151,7 @@ export type UserPreferences = {
 	mobileNavigationShowLabels?: boolean;
 	defaultLandingPage?: string;
 	defaultProjectEditorLayout?: ProjectEditorLayout;
+	toastPosition?: ToastPosition;
 	environmentColors?: Record<string, string>;
 	environmentLabelStyle?: EnvironmentLabelStyle;
 };
