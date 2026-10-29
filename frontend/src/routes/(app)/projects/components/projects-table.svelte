@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { mode } from 'mode-watcher';
 	import type { Snippet } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -26,6 +25,7 @@
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { Project, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { hasAnyLoadingState } from '#lib/utils/bulk-actions.js';
 	import { getStatusVariant, getThemedIconUrl } from '#lib/utils/docker.js';
 	import {

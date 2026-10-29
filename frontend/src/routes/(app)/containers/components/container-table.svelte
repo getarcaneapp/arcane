@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { mode } from 'mode-watcher';
 	import { PersistedState } from 'runed';
@@ -55,6 +54,7 @@
 	import type { ContainerSummaryDto } from '#lib/types/docker.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { hasAnyLoadingState } from '#lib/utils/bulk-actions.js';
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
 	import { COMPOSE_PROJECT_LABEL, getContainerIpAddresses, getThemedIconUrl, parseImageRef } from '#lib/utils/docker.js';

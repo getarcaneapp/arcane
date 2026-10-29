@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -26,6 +25,7 @@
 	import type { SwarmNodeAgentDeployment, SwarmNode } from '#lib/types/swarm.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { environmentHref, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { capitalizeFirstLetter } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';

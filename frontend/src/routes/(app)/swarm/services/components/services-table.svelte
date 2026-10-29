@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -17,6 +16,7 @@
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { SwarmServiceSummary, SwarmServicePort } from '#lib/types/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { getSwarmServiceModeLabel, getSwarmServiceModeVariant } from '#lib/utils/docker.js';
 	import { environmentHref, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';

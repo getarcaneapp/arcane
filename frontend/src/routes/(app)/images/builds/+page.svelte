@@ -21,6 +21,7 @@
 	import type { ResolvedSettings } from '#lib/types/settings.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import { isDepotBuildAvailable } from '#lib/utils/build-provider.js';
 	import { extractErrorMessage } from '#lib/utils/docker.js';
 	import { destinationEnvironmentId } from '#lib/utils/environments.js';
@@ -281,7 +282,7 @@
 		mutationKey: queryKeys.images.buildRun(buildEnvironmentId),
 		mutationFn: async (request: ImageBuildRequest) => {
 			const { envId, ...payload } = request;
-			const response = await fetch(`/api/environments/${envId}/images/build`, {
+			const response = await fetch(`${withBase('/api')}/environments/${envId}/images/build`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json'

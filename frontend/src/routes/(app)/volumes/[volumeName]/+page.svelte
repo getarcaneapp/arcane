@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { afterNavigate, goto } from '$app/navigation';
+	import { afterNavigate } from '$app/navigation';
 	import { createQuery, skipToken, useQueryClient } from '@tanstack/svelte-query';
 	import { PersistedState } from 'runed';
 	import { onMount, tick } from 'svelte';
@@ -50,6 +50,7 @@
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { composeTreeSplitProps } from '#lib/utils/compose-flow.js';
 	import { environmentHref } from '#lib/utils/environments.js';
 	import { formatDateTimeShort, truncateString } from '#lib/utils/formatting.js';

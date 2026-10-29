@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -30,6 +29,7 @@
 	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { confirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { environmentHref } from '#lib/utils/environments.js';
 	import { formatDateTimeShort, formatRelativeTime } from '#lib/utils/formatting.js';

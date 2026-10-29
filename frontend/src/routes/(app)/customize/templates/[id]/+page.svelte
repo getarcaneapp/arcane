@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, refreshAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -26,6 +26,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { templateService } from '#lib/services/template-service.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { changedFields } from '#lib/utils/payload.js';

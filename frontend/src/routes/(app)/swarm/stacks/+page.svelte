@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 
@@ -12,6 +11,7 @@
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { fetchAcrossEnvironments, withFailedEnvironments } from '#lib/utils/environments.js';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -17,6 +16,7 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { withBase, goto } from '#lib/utils/base-path.js';
 	import { destinationEnvironmentId, environmentHref } from '#lib/utils/environments.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
 
@@ -54,7 +54,7 @@
 				action="base"
 				tone="ghost"
 				size="sm"
-				href="/containers"
+				href={withBase('/containers')}
 				class="gap-2 bg-transparent"
 				icon={ArrowLeftIcon}
 				customLabel={m.common_back()}

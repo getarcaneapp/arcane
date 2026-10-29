@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -8,6 +7,7 @@
 	import { ErrorNotFoundIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
+	import { goto } from '#lib/utils/base-path.js';
 
 	let {
 		message,

@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -18,6 +17,7 @@
 	import type { SwarmStackSource } from '#lib/types/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { environmentHref, fetchAcrossEnvironments } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 

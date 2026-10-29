@@ -551,6 +551,43 @@ func TestConfig_LoadRejectsWeakProductionEncryptionKey(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestConfig_BasePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		appURL  string
+		agent   bool
+		want    string
+		wantErr bool
+	}{
+		{name: "default", appURL: "", want: ""},
+		{name: "host only", appURL: "https://example.com", want: ""},
+		{name: "root slash", appURL: "https://example.com/", want: ""},
+		{name: "path", appURL: "https://example.com/arcane", want: "/arcane"},
+		{name: "trailing slash", appURL: "https://example.com/arcane/", want: "/arcane"},
+		{name: "nested path", appURL: "https://example.com/tools/arcane", want: "/tools/arcane"},
+		{name: "no scheme", appURL: "example.com/arcane", want: "/arcane"},
+		{name: "agent ignores path", appURL: "https://manager.example.com/arcane", agent: true, want: ""},
+		{name: "unsafe characters", appURL: "https://example.com/a%22b", wantErr: true},
+		{name: "collides with the API", appURL: "https://example.com/api", wantErr: true},
+		{name: "collides with the assets", appURL: "https://example.com/_app/x", wantErr: true},
+		{name: "api only as a later segment", appURL: "https://example.com/tools/api", want: "/tools/api"},
+		{name: "dot-dot segment", appURL: "https://example.com/tools/../arcane", wantErr: true},
+		{name: "dot segment", appURL: "https://example.com/./arcane", wantErr: true},
+		{name: "dots inside a segment", appURL: "https://example.com/arcane..v2", want: "/arcane..v2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := (&Config{AppUrl: tt.appURL, AgentEnabled: tt.agent}).BasePath()
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestConfig_ApplyProxyDefaults(t *testing.T) {
 	t.Run("loopback ipv4 auto-trusts", func(t *testing.T) {
 		cfg := &Config{Listen: "127.0.0.1"}

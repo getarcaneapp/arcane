@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 
 	import { m } from '#lib/paraglide/messages.js';
 	import { roleService } from '#lib/services/role-service.js';
 	import type { Role, RoleCreate, RoleWritable } from '#lib/types/auth.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { changedFields } from '#lib/utils/payload.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 

@@ -10,6 +10,7 @@ import type {
 } from '#lib/types/diagnostics.js';
 import type { ContainerResourceSampleBatch } from '#lib/types/docker.js';
 import type { SystemStats } from '#lib/types/shared.js';
+import { withBase } from '#lib/utils/base-path.js';
 import { downloadBlob } from '#lib/utils/browser-download.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -268,7 +269,7 @@ export function createStatsWebSocket(opts: {
 	const buildUrl = () => {
 		const envId = opts.getEnvId();
 		const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-		return `${protocol}://${location.host}/api/environments/${envId}/ws/system/stats`;
+		return `${protocol}://${location.host}${withBase(`/api/environments/${envId}/ws/system/stats`)}`;
 	};
 
 	return new ReconnectingWebSocket<SystemStats>({
@@ -296,7 +297,7 @@ export function createContainerStatsWebSocket(opts: {
 	const buildUrl = () => {
 		const envId = opts.getEnvId();
 		const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-		return `${protocol}://${location.host}/api/environments/${envId}/ws/containers/${opts.containerId}/stats`;
+		return `${protocol}://${location.host}${withBase(`/api/environments/${envId}/ws/containers/${opts.containerId}/stats`)}`;
 	};
 
 	return new ReconnectingWebSocket<any>({
@@ -323,7 +324,7 @@ export function createContainersStatsWebSocket(opts: {
 }) {
 	const buildUrl = () => {
 		const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-		return `${protocol}://${location.host}/api/environments/${opts.envId}/ws/containers/stats`;
+		return `${protocol}://${location.host}${withBase(`/api/environments/${opts.envId}/ws/containers/stats`)}`;
 	};
 
 	return new ReconnectingWebSocket<ContainerResourceSampleBatch>({
@@ -350,7 +351,7 @@ export function createDiagnosticsWebSocket(opts: {
 		pending.clear();
 	};
 
-	const socket = createDiagnosticsStreamWebSocket<DiagnosticsMessage>('/api/diagnostics/stream', {
+	const socket = createDiagnosticsStreamWebSocket<DiagnosticsMessage>(withBase('/api/diagnostics/stream'), {
 		onMessage: (msg) => {
 			if (msg.type === 'snapshot') {
 				if (msg.snapshot) opts.onSnapshot(msg.snapshot);
@@ -405,7 +406,7 @@ export function createActorDiagnosticsWebSocket(opts: {
 	onError?: (err: Event | Error) => void;
 	maxBackoff?: number;
 }) {
-	return createDiagnosticsStreamWebSocket('/api/diagnostics/actors/stream', opts);
+	return createDiagnosticsStreamWebSocket(withBase('/api/diagnostics/actors/stream'), opts);
 }
 
 export function createBackendLogsWebSocket(opts: {
@@ -415,7 +416,7 @@ export function createBackendLogsWebSocket(opts: {
 	onError?: (err: Event | Error) => void;
 	maxBackoff?: number;
 }) {
-	return createDiagnosticsStreamWebSocket('/api/diagnostics/logs/stream', opts);
+	return createDiagnosticsStreamWebSocket(withBase('/api/diagnostics/logs/stream'), opts);
 }
 
 function createDiagnosticsStreamWebSocket<T>(

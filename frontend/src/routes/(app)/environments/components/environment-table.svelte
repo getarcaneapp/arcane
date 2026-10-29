@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -31,6 +30,7 @@
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker.js';
 	import { capitalizeFirstLetter } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';

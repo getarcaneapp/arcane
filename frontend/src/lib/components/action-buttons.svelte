@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, refreshAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -20,6 +20,7 @@
 	import { activityToastOptions, activityIdFromStreamFrame, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { isDepotBuildAvailable } from '#lib/utils/build-provider.js';
 	import { environmentHref } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';

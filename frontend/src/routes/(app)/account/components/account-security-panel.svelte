@@ -9,6 +9,7 @@
 	import { userService } from '#lib/services/user-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	const currentUser = $derived(userStore.current);
@@ -140,7 +141,7 @@
 				<div class="space-y-2">
 					<div class="text-sm font-medium">{m.common_log_out()}</div>
 					<p class="text-xs text-muted-foreground">{m.account_signout_this()}</p>
-					<form action="/logout" method="POST">
+					<form action={withBase('/logout')} method="POST">
 						<ArcaneButton
 							action="cancel"
 							tone="outline"

@@ -212,7 +212,7 @@ func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 		AppUrl:       "http://localhost:3552",
 		Environment:  config.AppEnvironmentTest,
 	}
-	router, _ := newRouter(RouterParams{
+	router, _, err := newRouter(RouterParams{
 		Context: t.Context(),
 		Config:  cfg,
 		HandlerDeps: api.HandlerDeps{
@@ -226,6 +226,7 @@ func TestHTTP2APIResponsesDoNotUseAPIGzip(t *testing.T) {
 		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
 		TunnelRegistry: agent.NewTunnelRegistry(),
 	})
+	require.NoError(t, err)
 	handler, protocols := configureHTTPProtocols(false, router)
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

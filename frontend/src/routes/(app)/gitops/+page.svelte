@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { afterNavigate, goto } from '$app/navigation';
+	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
@@ -23,6 +23,7 @@
 	} from '#lib/types/automation.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import {
 		destinationEnvironmentId,
 		fetchAcrossEnvironments,

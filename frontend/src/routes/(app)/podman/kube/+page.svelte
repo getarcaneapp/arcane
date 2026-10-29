@@ -25,6 +25,7 @@
 	import { volumeService } from '#lib/services/volume-service.js';
 	import { PODMAN_KUBE_GENERATE_TYPES, type PodmanKubeGenerateType } from '#lib/types/podman.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import { templateBtnClass } from '#lib/utils/compose-flow.js';
 	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { withOccurrenceKeys } from '#lib/utils/formatting.js';
@@ -226,7 +227,7 @@
 					action="base"
 					tone="ghost"
 					size="sm"
-					href="/podman/pods"
+					href={withBase('/podman/pods')}
 					class="gap-2 bg-transparent"
 					icon={ArrowLeftIcon}
 					customLabel={m.common_back()}

@@ -8,6 +8,7 @@ import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID, type EnvironmentRef } fr
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { extractApiErrorMessage } from '#lib/utils/api.js';
 import { hasPermission } from '#lib/utils/auth.js';
+import { withBase } from '#lib/utils/base-path.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 /** A row tagged by environment; `environmentTagged` tells it apart from DTOs that carry an environment. */
@@ -79,7 +80,7 @@ export function hasShownPermission(permission: string): boolean {
 }
 
 export function environmentHref(path: string, environmentId: string): string {
-	return `${path}${path.includes('?') ? '&' : '?'}env=${encodeURIComponent(environmentId)}`;
+	return withBase(`${path}${path.includes('?') ? '&' : '?'}env=${encodeURIComponent(environmentId)}`);
 }
 
 export async function resolveDetailEnvironmentId(url: URL): Promise<string> {

@@ -2,6 +2,7 @@ import ky, { HTTPError as KyHTTPError, TimeoutError, type Options as KyOptions, 
 import { toast } from 'svelte-sonner';
 
 import { m } from '#lib/paraglide/messages.js';
+import { stripBase, withBase } from '#lib/utils/base-path.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 export interface APIRequestConfig {
@@ -180,7 +181,7 @@ export function currentSessionSignal(): AbortSignal {
 }
 
 export function isAuthPagePath(pathname: string): boolean {
-	return ['/login', '/logout', '/oidc', '/auth/oidc', '/mobile/passkey'].some((prefix) => pathname.startsWith(prefix));
+	return ['/login', '/logout', '/oidc', '/auth/oidc', '/mobile/passkey'].some((prefix) => stripBase(pathname).startsWith(prefix));
 }
 
 type UnauthorizedAction = 'none' | 'redirect' | 'reload' | 'retry';
@@ -239,7 +240,7 @@ export async function handleUnauthorizedResponseInternal(
 	if (recoverable && isTransientRefreshFailure) return 'none';
 	if (!unauthorizedRedirectStarted) {
 		unauthorizedRedirectStarted = true;
-		window.location.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
+		window.location.replace(`${withBase('/login')}?redirect=${encodeURIComponent(pathname)}`);
 	}
 	return 'redirect';
 }
@@ -276,7 +277,7 @@ class APIClient {
 		} catch {
 			// Fall back to the raw request URL.
 		}
-		if (requestPath.startsWith('/api')) requestPath = requestPath.slice(4) || '/';
+		if (requestPath.startsWith(withBase('/api'))) requestPath = requestPath.slice(withBase('/api').length) || '/';
 
 		// Requests needed to sign in again must keep working after logout.
 		const isSessionFree =
@@ -403,7 +404,7 @@ class APIClient {
 }
 
 const devBackendUrl = typeof process !== 'undefined' ? process?.env?.['DEV_BACKEND_URL'] : undefined;
-export const apiClient = new APIClient(devBackendUrl || '/api');
+export const apiClient = new APIClient(devBackendUrl || withBase('/api'));
 
 abstract class BaseAPIService {
 	api = apiClient;

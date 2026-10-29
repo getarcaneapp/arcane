@@ -13,6 +13,7 @@
 	import type { Environment } from '#lib/types/environment.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { base } from '#lib/utils/base-path.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import FederatedCredentialTable from './federated-credential-table.svelte';
@@ -105,7 +106,7 @@
 
 	function instructionsSnippet(credential: FederatedCredential | null): string {
 		const audience = credential?.audiences?.[0] ?? 'https://arcane.example.com';
-		const serverURL = globalThis.location?.origin ?? 'https://arcane.example.com';
+		const serverURL = globalThis.location ? `${globalThis.location.origin}${base}` : 'https://arcane.example.com';
 		return `permissions: { id-token: write, contents: read }
 steps:
   - run: |

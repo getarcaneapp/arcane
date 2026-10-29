@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/env';
-	import { goto, afterNavigate } from '$app/navigation';
+	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -22,6 +22,7 @@
 	import { versionStore } from '#lib/stores/version.store.svelte.js';
 	import { cn } from '#lib/utils.js';
 	import { getAuthRedirectPath } from '#lib/utils/auth.js';
+	import { goto, stripBase } from '#lib/utils/base-path.js';
 	import { getEffectiveLandingPage, getEffectiveNavigationSettings, setMobileNavigation } from '#lib/utils/navigation.js';
 	import { isEditableTarget, matchesShortcutEvent } from '#lib/utils/navigation.js';
 
@@ -99,7 +100,13 @@
 	});
 
 	const authRedirectPath = $derived(
-		getAuthRedirectPath(page.url.pathname, user, permissionsManifest, permissionsManifestLoadFailed, getEffectiveLandingPage())
+		getAuthRedirectPath(
+			stripBase(page.url.pathname),
+			user,
+			permissionsManifest,
+			permissionsManifestLoadFailed,
+			getEffectiveLandingPage()
+		)
 	);
 
 	$effect(() => {

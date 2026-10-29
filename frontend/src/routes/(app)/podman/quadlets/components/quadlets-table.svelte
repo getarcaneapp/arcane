@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import { environmentColumns } from '#lib/components/arcane-table/environment-column.js';
 	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table/index.js';
@@ -14,6 +12,7 @@
 	import type { PodmanQuadletDetail, PodmanStatus } from '#lib/types/podman.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { environmentHref, hasShownPermission, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { podmanStateVariant } from '#lib/utils/podman.js';
 

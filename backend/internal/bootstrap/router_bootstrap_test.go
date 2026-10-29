@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/getarcaneapp/arcane/backend/v3/api"
+	"github.com/getarcaneapp/arcane/backend/v3/frontend"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/auth"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/container"
@@ -34,7 +36,7 @@ func TestNewRouter_DecodesPathParams(t *testing.T) {
 		AppUrl:       "http://localhost:3552",
 		Environment:  config.AppEnvironmentTest,
 	}
-	router, _ := newRouter(RouterParams{
+	router, _, err := newRouter(RouterParams{
 		Context: t.Context(),
 		Config:  cfg,
 		HandlerDeps: api.HandlerDeps{
@@ -48,6 +50,7 @@ func TestNewRouter_DecodesPathParams(t *testing.T) {
 		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
 		TunnelRegistry: agent.NewTunnelRegistry(),
 	})
+	require.NoError(t, err)
 	humaAPI := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))
 
 	var got string
@@ -152,7 +155,7 @@ func TestProxiedEnvironmentRoutesAreAgentRoutable(t *testing.T) {
 	}
 
 	cfg := &config.Config{AgentEnabled: true, AppUrl: "http://localhost:3552", Environment: config.AppEnvironmentTest}
-	router, _ := newRouter(RouterParams{
+	router, _, err := newRouter(RouterParams{
 		Context: t.Context(),
 		Config:  cfg,
 		HandlerDeps: api.HandlerDeps{
@@ -166,6 +169,7 @@ func TestProxiedEnvironmentRoutesAreAgentRoutable(t *testing.T) {
 		AuthMiddleware: auth.NewAuthMiddleware(nil, cfg),
 		TunnelRegistry: agent.NewTunnelRegistry(),
 	})
+	require.NoError(t, err)
 	for _, route := range router.Router().Routes() {
 		if strings.HasPrefix(route.Path, "/api/environments/:id/ws/") && !strings.HasSuffix(route.Path, "*") {
 			routes = append(routes, proxiedRoute{method: route.Method, path: strings.TrimPrefix(route.Path, "/api"), stream: true})
@@ -190,4 +194,90 @@ func TestProxiedEnvironmentRoutesAreAgentRoutable(t *testing.T) {
 	slices.Sort(missing)
 	assert.Empty(t, slices.Compact(missing),
 		"proxied environment routes missing from the agent command allowlist; add them to pkg/libarcane/agent/commands.go or classify them in middleware.IsManagerLocalPath")
+}
+
+func TestBasePathMiddleware(t *testing.T) {
+	tests := []struct {
+		name           string
+		target         string
+		wantPath       string
+		wantRawPath    string
+		wantRequestURI string
+	}{
+		{name: "prefixed", target: "/arcane/api/health?x=1", wantPath: "/api/health", wantRequestURI: "/api/health?x=1"},
+		{name: "base only", target: "/arcane", wantPath: "/", wantRequestURI: "/"},
+		{name: "base with slash", target: "/arcane/", wantPath: "/", wantRequestURI: "/"},
+		{name: "base with query", target: "/arcane?x=1", wantPath: "/", wantRequestURI: "/?x=1"},
+		{name: "unprefixed passes through", target: "/api/health", wantPath: "/api/health", wantRequestURI: "/api/health"},
+		{name: "similar prefix is not the base", target: "/arcane2/api", wantPath: "/arcane2/api", wantRequestURI: "/arcane2/api"},
+		{name: "encoded percent is not decoded twice", target: "/arcane/api/volumes/a%252Fb", wantPath: "/api/volumes/a%2Fb", wantRequestURI: "/api/volumes/a%252Fb"},
+		{name: "encoded slash keeps its raw form", target: "/arcane/api/volumes/a%2Fb", wantPath: "/api/volumes/a/b", wantRawPath: "/api/volumes/a%2Fb", wantRequestURI: "/api/volumes/a%2Fb"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := echo.New()
+			e.Pre(basePathMiddleware("/arcane"))
+			var got *http.Request
+			e.Any("/*", func(c *echo.Context) error {
+				got = c.Request()
+				return c.NoContent(http.StatusNoContent)
+			})
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tt.target, http.NoBody))
+			require.NotNil(t, got)
+			assert.Equal(t, tt.wantPath, got.URL.Path)
+			assert.Equal(t, tt.wantRawPath, got.URL.RawPath)
+			assert.Equal(t, tt.wantRequestURI, got.RequestURI)
+		})
+	}
+}
+
+func TestBasePathMiddlewareWithCSRF(t *testing.T) {
+	cfg := &config.Config{Environment: "production", AppUrl: "https://example.com/arcane"}
+	e := echo.New()
+	e.Pre(basePathMiddleware("/arcane"))
+	e.Use(middleware.NewCSRFMiddleware(cfg).Add())
+	e.POST("/api/test", func(c *echo.Context) error { return c.NoContent(http.StatusOK) })
+	e.POST("/api/webhooks/trigger/:token", func(c *echo.Context) error { return c.NoContent(http.StatusOK) })
+
+	post := func(target, site string) int {
+		req := httptest.NewRequest(http.MethodPost, target, http.NoBody)
+		req.Header.Set("Sec-Fetch-Site", site)
+		if site == "cross-site" {
+			req.Header.Set("Origin", "https://evil.example.com")
+		}
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	assert.Equal(t, http.StatusForbidden, post("/arcane/api/test", "cross-site"))
+	assert.Equal(t, http.StatusOK, post("/arcane/api/test", "same-origin"))
+	assert.Equal(t, http.StatusOK, post("/arcane/api/webhooks/trigger/abc", "cross-site"))
+}
+
+func TestBasePathMiddlewareWithFrontend(t *testing.T) {
+	e := echo.New()
+	e.Pre(basePathMiddleware("/arcane"))
+	e.GET("/api/health", func(c *echo.Context) error { return c.NoContent(http.StatusOK) })
+	err := frontend.RegisterFrontend(e, "/arcane")
+	if errors.Is(err, frontend.ErrFrontendNotIncluded) {
+		t.Skip("frontend not included in this build")
+	}
+	require.NoError(t, err)
+
+	get := func(target string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, http.NoBody))
+		return rec
+	}
+	for _, target := range []string{"/arcane/api/health", "/api/health"} {
+		assert.Equal(t, http.StatusOK, get(target).Code, target)
+	}
+	for _, target := range []string{"/arcane/", "/arcane/containers", "/containers"} {
+		rec := get(target)
+		assert.Equal(t, http.StatusOK, rec.Code, target)
+		assert.Contains(t, rec.Body.String(), `base: "/arcane"`, target)
+		assert.Contains(t, rec.Body.String(), `location.replace(`, target)
+	}
+	assert.Contains(t, get("/arcanefoo/api/health").Body.String(), `base: "/arcane"`)
 }

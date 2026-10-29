@@ -16,6 +16,7 @@
 	import { isSessionCancelledError, withSessionSignal } from '#lib/services/api-service.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import type { EnvironmentCreate, DeploymentSnippetFile } from '#lib/types/environment.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import { downloadTextFile } from '#lib/utils/formatting.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -132,7 +133,7 @@
 			return;
 		}
 
-		const downloadUrl = file.downloadUrl;
+		const downloadUrl = withBase(file.downloadUrl);
 		const operationResult2 = await tryCatch(
 			(async () => {
 				const response = await fetch(downloadUrl, { credentials: 'include', signal: withSessionSignal() });

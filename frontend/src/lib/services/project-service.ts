@@ -11,6 +11,7 @@ import type {
 	ProjectTagColor,
 	ProjectTagOption
 } from '#lib/types/swarm.js';
+import { withBase } from '#lib/utils/base-path.js';
 import { readNdjsonStream } from '#lib/utils/streaming.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
@@ -52,7 +53,7 @@ class ProjectService extends BaseAPIService {
 			? (optionsOrEnvironmentId as DeployProjectOptions | undefined)
 			: (onLineOrOptions as DeployProjectOptions);
 		const environmentId = (onLine ? maybeEnvironmentId : optionsOrEnvironmentId) as string;
-		const url = `/api/environments/${environmentId}/projects/${projectId}/deploy?action=${mode}`;
+		const url = withBase(`/api/environments/${environmentId}/projects/${projectId}/deploy?action=${mode}`);
 
 		await this.postProjectStream(url, options ?? {}, onLine, {
 			startFailed: (status) => m.progress_deploy_failed_to_start({ status }),
@@ -211,7 +212,7 @@ class ProjectService extends BaseAPIService {
 	}
 
 	async pullProjectImages(projectId: string, onLine: (data: any) => void, environmentId: string): Promise<void> {
-		const url = `/api/environments/${environmentId}/projects/${projectId}/deploy?action=pull`;
+		const url = withBase(`/api/environments/${environmentId}/projects/${projectId}/deploy?action=pull`);
 
 		const res = await fetch(url, { method: 'POST', signal: withSessionSignal() });
 		if (!res.ok || !res.body) {
@@ -232,7 +233,7 @@ class ProjectService extends BaseAPIService {
 		onLine: ((data: any) => void) | undefined,
 		environmentId: string
 	): Promise<void> {
-		const url = `/api/environments/${environmentId}/projects/${projectId}/build`;
+		const url = withBase(`/api/environments/${environmentId}/projects/${projectId}/build`);
 
 		await this.postProjectStream(url, options || {}, onLine, {
 			startFailed: (status) => `Failed to start project build (${status})`,

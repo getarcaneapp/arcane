@@ -103,3 +103,24 @@ func newSettingsServiceForTest(t testing.TB, ctx context.Context, db *database.D
 	}
 	return svc, err
 }
+
+func TestGetOidcRedirectURLBasePath(t *testing.T) {
+	tests := []struct {
+		name   string
+		appURL string
+		origin string
+		want   string
+	}{
+		{name: "root, from app URL", appURL: "https://example.com", want: "https://example.com/auth/oidc/callback"},
+		{name: "root, from origin", appURL: "https://example.com", origin: "https://example.com", want: "https://example.com/auth/oidc/callback"},
+		{name: "base path, from app URL", appURL: "https://example.com/arcane", want: "https://example.com/arcane/auth/oidc/callback"},
+		{name: "base path, app URL with trailing slash", appURL: "https://example.com/arcane/", want: "https://example.com/arcane/auth/oidc/callback"},
+		{name: "base path, from origin header", appURL: "https://example.com/arcane", origin: "https://example.com", want: "https://example.com/arcane/auth/oidc/callback"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &OidcService{config: &config.Config{AppUrl: tt.appURL}}
+			require.Equal(t, tt.want, s.GetOidcRedirectURL(tt.origin))
+		})
+	}
+}

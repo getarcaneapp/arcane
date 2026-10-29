@@ -37,7 +37,7 @@ var precompressedVariants = []precompressedVariant{
 }
 
 // RegisterFrontend serves embedded assets and the SPA fallback outside /api.
-func RegisterFrontend(e *echo.Echo) error {
+func RegisterFrontend(e *echo.Echo, basePath string) error {
 	distFS, err := fs.Sub(frontendFS, "dist")
 	if err != nil {
 		return fmt.Errorf("failed to create sub FS: %w", err)
@@ -49,6 +49,17 @@ func RegisterFrontend(e *echo.Echo) error {
 	appFS, err := fs.Sub(distFS, "_app")
 	if err != nil {
 		return fmt.Errorf("failed to create app sub FS: %w", err)
+	}
+
+	var indexHTML []byte
+	if basePath != "" {
+		raw, err := fs.ReadFile(distFS, indexHtmlFileConstant)
+		if err != nil {
+			return fmt.Errorf("failed to read %s: %w", indexHtmlFileConstant, err)
+		}
+		if indexHTML, err = rewriteIndexForBasePath(raw, basePath); err != nil {
+			return err
+		}
 	}
 
 	skipAPI := func(c *echo.Context) bool {
@@ -78,6 +89,9 @@ func RegisterFrontend(e *echo.Echo) error {
 				header.Set("Cache-Control", "public, max-age=86400")
 			}
 
+			if indexHTML != nil && p == indexHtmlFileConstant {
+				return c.HTMLBlob(http.StatusOK, indexHTML)
+			}
 			method := c.Request().Method
 			if (method == http.MethodGet || method == http.MethodHead) && serveEncoded(c, distFS, p) {
 				return nil

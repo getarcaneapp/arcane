@@ -36,7 +36,6 @@
 </script>
 
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -55,6 +54,7 @@
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import {
 		environmentHref,

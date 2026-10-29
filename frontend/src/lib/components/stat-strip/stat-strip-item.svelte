@@ -5,6 +5,7 @@
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { InfoIcon, type IconType } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { withBase } from '#lib/utils/base-path.js';
 
 	interface Props {
 		label: string;
@@ -45,7 +46,7 @@
 		{#if href}
 			<!-- The link's overlay makes the whole tile clickable. -->
 			<a
-				{href}
+				href={withBase(href)}
 				class="flex items-center gap-1.5 after:absolute after:inset-0 after:rounded-sm focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-offset-4 focus-visible:after:outline-ring"
 			>
 				{@render labelContent()}

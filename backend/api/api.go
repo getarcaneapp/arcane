@@ -72,7 +72,7 @@ const (
   <body>
     <script
       id="api-reference"
-      data-url="/api/openapi.json"
+      data-url="openapi.json"
       data-configuration='{
         "theme": "purple",
         "darkMode": true,
@@ -80,7 +80,7 @@ const (
         "hiddenClients": ["unirest"],
         "defaultHttpClient": { "targetKey": "shell", "clientKey": "curl" }
       }'></script>
-    <script src="/api/docs/scalar.js"></script>
+    <script src="docs/scalar.js"></script>
   </body>
 </html>`
 )

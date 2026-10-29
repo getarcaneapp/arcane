@@ -8,6 +8,7 @@
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { User } from '#lib/types/auth.js';
 	import { cn } from '#lib/utils.js';
+	import { withBase } from '#lib/utils/base-path.js';
 
 	type Props = {
 		user: User;
@@ -48,7 +49,7 @@
 				<ArrowDownIcon class="size-8" />
 			</div>
 			{#if !autoLoginEnabled.current}
-				<form action="/logout" method="POST">
+				<form action={withBase('/logout')} method="POST">
 					<ArcaneButton
 						action="base"
 						tone="ghost"

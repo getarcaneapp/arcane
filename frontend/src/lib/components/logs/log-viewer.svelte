@@ -10,6 +10,7 @@
 	import { ArrowDownIcon, ArrowRightIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { cn } from '#lib/utils.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import { ansiToHtml, formatDateTime, nowInstantString } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { ReconnectingWebSocket } from '#lib/utils/ws.js';
@@ -179,7 +180,7 @@
 
 	function buildWebSocketEndpoint(path: string): string {
 		const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-		return `${protocol}://${window.location.host}${path}`;
+		return `${protocol}://${window.location.host}${withBase(path)}`;
 	}
 
 	async function buildLogWsEndpoint(): Promise<string> {

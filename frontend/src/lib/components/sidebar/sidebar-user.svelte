@@ -1,6 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-
 	import * as Avatar from '#lib/components/ui/avatar/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
@@ -9,6 +7,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { User } from '#lib/types/auth.js';
+	import { withBase, goto } from '#lib/utils/base-path.js';
 
 	let {
 		user,
@@ -42,7 +41,7 @@
 							{#key user?.updatedAt}
 								<Avatar.Root>
 									{#if user?.avatarUrl}
-										<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
+										<Avatar.Image src={`${withBase(user.avatarUrl)}?t=${user.updatedAt}`} alt={displayLabel} />
 									{:else if settingsStore.current?.enableGravatar}
 										{#await getGravatarUrl(user?.email ?? undefined)}
 											<!-- Loading gravatar, show fallback -->
@@ -84,7 +83,7 @@
 							{#key user?.updatedAt}
 								<Avatar.Root>
 									{#if user?.avatarUrl}
-										<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={displayLabel} />
+										<Avatar.Image src={`${withBase(user.avatarUrl)}?t=${user.updatedAt}`} alt={displayLabel} />
 									{:else if settingsStore.current?.enableGravatar}
 										{#await getGravatarUrl(user?.email ?? undefined)}
 											<!-- Loading gravatar, show fallback -->
@@ -126,7 +125,7 @@
 						</DropdownMenu.Item>
 
 						{#if !autoLoginEnabled}
-							<form action="/logout" method="POST" class="w-full">
+							<form action={withBase('/logout')} method="POST" class="w-full">
 								<button
 									type="submit"
 									class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10"

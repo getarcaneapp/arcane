@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -7,6 +6,7 @@
 	import OidcStatusPanel from '#lib/components/oidc-status-panel.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { authService } from '#lib/services/auth-service.js';
+	import { goto } from '#lib/utils/base-path.js';
 
 	const queryClient = useQueryClient();
 

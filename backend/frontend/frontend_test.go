@@ -22,7 +22,7 @@ func TestRegisterFrontend_ServesSPA(t *testing.T) {
 	e.GET("/api/health", func(c *echo.Context) error {
 		return c.String(http.StatusOK, "ok")
 	})
-	require.NoError(t, RegisterFrontend(e))
+	require.NoError(t, RegisterFrontend(e, ""))
 
 	for _, path := range []string{"/", "/containers/some-id"} {
 		rec := httptest.NewRecorder()
@@ -40,4 +40,23 @@ func TestRegisterFrontend_ServesSPA(t *testing.T) {
 	e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/health", nil))
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.True(t, strings.HasPrefix(rec.Body.String(), "ok"))
+}
+
+func TestRegisterFrontend_BasePath(t *testing.T) {
+	e := echo.New()
+	require.NoError(t, RegisterFrontend(e, "/arcane"))
+
+	for _, path := range []string{"/", "/containers/some-id"} {
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, http.NoBody))
+		require.Equal(t, http.StatusOK, rec.Code, "path %s", path)
+		body := rec.Body.String()
+		require.Contains(t, body, `base: "/arcane"`, "path %s", path)
+		require.Contains(t, body, `"/arcane/_app/`, "path %s", path)
+		require.NotContains(t, body, `"/_app/`, "path %s", path)
+	}
+
+	asset := httptest.NewRecorder()
+	e.ServeHTTP(asset, httptest.NewRequest(http.MethodGet, "/_app/version.json", http.NoBody))
+	require.Equal(t, http.StatusOK, asset.Code)
 }

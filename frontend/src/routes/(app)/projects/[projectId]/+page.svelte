@@ -63,6 +63,7 @@
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import {
 		composeTreeSplitProps,
 		extractComposeYamlName,
@@ -2307,7 +2308,7 @@
 			<ArcaneButton
 				action="base"
 				tone="outline"
-				href="/projects"
+				href={withBase('/projects')}
 				icon={ArrowLeftIcon}
 				customLabel={m.common_back_to({ resource: m.projects_title() })}
 			/>

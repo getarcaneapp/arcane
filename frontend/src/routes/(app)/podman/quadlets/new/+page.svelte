@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -16,6 +15,7 @@
 	import { PODMAN_QUADLET_TYPES, type PodmanQuadletType } from '#lib/types/podman.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { withBase, goto } from '#lib/utils/base-path.js';
 	import { destinationEnvironmentId, environmentHref } from '#lib/utils/environments.js';
 	import { shownPodmanEnvironments } from '#lib/utils/podman.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -123,7 +123,7 @@
 					action="base"
 					tone="ghost"
 					size="sm"
-					href="/podman/quadlets"
+					href={withBase('/podman/quadlets')}
 					class="gap-2 bg-transparent"
 					icon={ArrowLeftIcon}
 					customLabel={m.common_back()}

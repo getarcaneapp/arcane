@@ -18,6 +18,7 @@
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import { avatarUploadLimitBytes, prepareAvatarUploadFile } from '#lib/utils/avatar-upload.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import { getDefaultProfilePicture } from '#lib/utils/docker.js';
 	import { formatDate, formatRelativeTime } from '#lib/utils/formatting.js';
 	import { changedFields } from '#lib/utils/payload.js';
@@ -75,7 +76,7 @@
 
 	const avatarUrl = $derived(updateAvatar(currentUser?.email ?? undefined, gravatarEnabled));
 	let avatarCacheBuster = $state(Temporal.Now.instant().epochMilliseconds);
-	const avatarSrc = $derived(currentUser?.avatarUrl ? `${currentUser.avatarUrl}?t=${avatarCacheBuster}` : '');
+	const avatarSrc = $derived(currentUser?.avatarUrl ? `${withBase(currentUser.avatarUrl)}?t=${avatarCacheBuster}` : '');
 	let cropperAvatarSrc = $state('');
 
 	let avatarUploading = $state(false);

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, refreshAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -30,6 +30,7 @@
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { withBase, goto } from '#lib/utils/base-path.js';
 	import {
 		composeTreeSplitProps,
 		createComposeEditorSchema,
@@ -348,7 +349,7 @@
 					action="base"
 					tone="ghost"
 					size="sm"
-					href="/projects"
+					href={withBase('/projects')}
 					class="gap-2 bg-transparent"
 					icon={ArrowLeftIcon}
 					customLabel={m.common_back()}

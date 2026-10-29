@@ -16,6 +16,7 @@
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import { simpleRefresh } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
 
@@ -138,7 +139,7 @@
 						id: 'download-agent-ca',
 						action: 'save' as const,
 						label: m.environments_download_agent_ca(),
-						href: '/api/agent/mtls/ca',
+						href: withBase('/api/agent/mtls/ca'),
 						rel: 'external',
 						icon: DownloadIcon
 					}

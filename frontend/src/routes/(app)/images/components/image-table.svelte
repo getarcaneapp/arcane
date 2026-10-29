@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -42,6 +41,7 @@
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import {
 		environmentHref,

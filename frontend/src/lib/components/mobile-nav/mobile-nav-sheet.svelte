@@ -13,6 +13,7 @@
 	import type { PermissionsManifest, User } from '#lib/types/auth.js';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
+	import { stripBase, withBase } from '#lib/utils/base-path.js';
 
 	import MobileUserCard from './mobile-user-card.svelte';
 
@@ -53,14 +54,15 @@
 	}
 
 	function isActiveItem(item: NavigationItem): boolean {
-		return currentPath === item.url || currentPath.startsWith(item.url + '/');
+		const path = stripBase(currentPath);
+		return path === item.url || path.startsWith(item.url + '/');
 	}
 </script>
 
 {#snippet navLink(item: NavigationItem, focusStyles: boolean)}
 	{@const IconComponent = item.icon}
 	<a
-		href={item.url}
+		href={withBase(item.url)}
 		onclick={handleItemClick}
 		class={cn(
 			'flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ease-out',
@@ -80,7 +82,7 @@
 		{#each subItems as subItem (subItem.url)}
 			{@const SubIconComponent = subItem.icon}
 			<a
-				href={subItem.url}
+				href={withBase(subItem.url)}
 				onclick={handleItemClick}
 				class={cn(
 					'flex items-center gap-3 rounded-xl px-4 py-2 text-sm transition-all duration-200 ease-out',

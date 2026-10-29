@@ -12,6 +12,7 @@
 	import type { PodmanStatus } from '#lib/types/podman.js';
 	import type { AppVersionInformation } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
+	import { stripBase } from '#lib/utils/base-path.js';
 	import { getMobileNavigation } from '#lib/utils/navigation.js';
 
 	import { MobileNavGestures } from './gestures.svelte';
@@ -53,7 +54,7 @@
 			.filter((item) => item !== undefined);
 	});
 
-	const currentPath = $derived(page.url.pathname);
+	const currentPath = $derived(stripBase(page.url.pathname));
 	const showLabels = $derived(navigationSettings?.showLabels ?? true);
 	const scrollToHideEnabled = $derived(navigationSettings?.scrollToHide ?? true);
 	const mode = $derived(navigationSettings?.mode ?? 'floating');

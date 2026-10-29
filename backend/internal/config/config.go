@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/url"
 	"os"
 	"reflect"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -101,6 +103,9 @@ func Load() (*Config, error) {
 	if cfg.Environment.IsProdEnvironment() && !cfg.AgentEnabled && key != "" &&
 		!strings.HasPrefix(key, "hex:") && !strings.HasPrefix(key, "base64:") && len(strings.TrimPrefix(key, "raw:")) < 32 {
 		return nil, errors.New("ARCANE_ENCRYPTION_KEY passphrase must be at least 32 characters in production (or use a hex:/base64: encoded 32-byte key)")
+	}
+	if _, err := cfg.BasePath(); err != nil {
+		return nil, err
 	}
 
 	// Set global file permissions
@@ -346,4 +351,32 @@ func (c *Config) GetLocation() *time.Location {
 // GetAppURL returns the effective application URL.
 func (c *Config) GetAppURL() string {
 	return cmp.Or(c.AppUrl, kit.Ternary(c.AgentEnabled, httpx.ManagerBaseURL(c.ManagerApiUrl), ""), "http://localhost:"+c.Port)
+}
+
+var basePathPattern = regexp.MustCompile(`^(/[A-Za-z0-9._~-]+)+$`)
+
+func (c *Config) BasePath() (string, error) {
+	appURL := strings.TrimSpace(c.AppUrl)
+	if c.AgentEnabled || appURL == "" {
+		return "", nil
+	}
+	parsed, err := url.Parse(kit.Ternary(strings.Contains(appURL, "://"), appURL, "https://"+appURL))
+	if err != nil {
+		return "", fmt.Errorf("invalid ARCANE_APP_URL %q: %w", c.AppUrl, err)
+	}
+	base := strings.TrimRight(parsed.EscapedPath(), "/")
+	if base == "" {
+		return "", nil
+	}
+	if !basePathPattern.MatchString(base) {
+		return "", fmt.Errorf("ARCANE_APP_URL %q: the path may only contain letters, digits and - . _ ~ / characters", c.AppUrl)
+	}
+	segments := strings.Split(base[1:], "/")
+	if slices.Contains(segments, ".") || slices.Contains(segments, "..") {
+		return "", fmt.Errorf("ARCANE_APP_URL %q: the path must not contain . or .. segments", c.AppUrl)
+	}
+	if segments[0] == "api" || segments[0] == "_app" {
+		return "", fmt.Errorf("ARCANE_APP_URL %q: the path must not start with /%s, which Arcane uses itself", c.AppUrl, segments[0])
+	}
+	return base, nil
 }

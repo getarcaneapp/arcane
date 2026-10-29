@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { tick, untrack } from 'svelte';
@@ -18,6 +17,7 @@
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { ProjectStatusCounts } from '#lib/types/swarm.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import {
 		acrossEnvironmentsNote,
 		actionEnvironments,

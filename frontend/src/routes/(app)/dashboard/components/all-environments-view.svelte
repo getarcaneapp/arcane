@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { createQuery, keepPreviousData } from '@tanstack/svelte-query';
 	import { PersistedState } from 'runed';
 	import { onDestroy, untrack } from 'svelte';
@@ -57,6 +56,7 @@
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasAnyPermission, hasPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { isEnvironmentOnline } from '#lib/utils/docker.js';
 	import { readableEnvironments, sumAcrossEnvironments, type EnvironmentFailure } from '#lib/utils/environments.js';
 	import { parseInstant, withOccurrenceKeys } from '#lib/utils/formatting.js';

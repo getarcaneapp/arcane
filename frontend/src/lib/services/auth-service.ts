@@ -1,4 +1,4 @@
-import { goto, refreshAll } from '$app/navigation';
+import { refreshAll } from '$app/navigation';
 import type { QueryClient } from '@tanstack/svelte-query';
 
 import { activityStore } from '#lib/stores/activity.store.svelte.js';
@@ -9,6 +9,7 @@ import { versionStore } from '#lib/stores/version.store.svelte.js';
 import type { User, MFAChallenge, AuthenticationResponse, SessionBootstrap } from '#lib/types/auth.js';
 import type { LoginCredentials, AutoLoginConfig } from '#lib/types/auth.js';
 import type { OidcStatusInfo } from '#lib/types/settings.js';
+import { goto } from '#lib/utils/base-path.js';
 import { parseInstant } from '#lib/utils/formatting.js';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 import { tryCatch } from '#lib/utils/try-catch.js';

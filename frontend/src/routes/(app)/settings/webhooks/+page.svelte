@@ -16,6 +16,7 @@
 	import type { Webhook, WebhookCreated, WebhookCreate } from '#lib/types/environment.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { withBase } from '#lib/utils/base-path.js';
 	import { type EnvironmentPage, fetchAcrossEnvironments, readableEnvironments } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -77,7 +78,7 @@
 		}
 
 		const origin = globalThis.location?.origin ?? '';
-		return `${origin}/api/webhooks/trigger/${encodeURIComponent(newlyCreatedWebhook.token)}`;
+		return `${origin}${withBase('/api')}/webhooks/trigger/${encodeURIComponent(newlyCreatedWebhook.token)}`;
 	});
 
 	async function handleCreateWebhook(webhook: WebhookCreate, environmentId: string) {

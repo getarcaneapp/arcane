@@ -1,8 +1,8 @@
-import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import { onMount, untrack } from 'svelte';
 
 import type { TabItem } from '#lib/components/tab-bar/index.js';
+import { goto } from '#lib/utils/base-path.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 type UrlTabItem<T extends string> = TabItem & { value: T; visible?: boolean };

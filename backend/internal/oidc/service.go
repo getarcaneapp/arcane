@@ -235,6 +235,11 @@ func (s *OidcService) GetOidcRedirectURL(origin string) string {
 	if baseUrl == "" {
 		baseUrl = strings.TrimSuffix(s.config.GetAppURL(), "/")
 	}
+	if base, err := s.config.BasePath(); err == nil && base != "" {
+		if u, parseErr := url.Parse(baseUrl); parseErr == nil && strings.Trim(u.Path, "/") == "" {
+			baseUrl = strings.TrimSuffix(baseUrl, "/") + base
+		}
+	}
 	return baseUrl + "/auth/oidc/callback"
 }
 

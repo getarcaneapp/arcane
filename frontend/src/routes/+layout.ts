@@ -26,6 +26,7 @@ import type { AppVersionInformation, ResolvedSettings } from '#lib/types/setting
 import type { SwarmRuntimeStatus } from '#lib/types/swarm.js';
 import { extractApiErrorStatus, isAuthRejectionError } from '#lib/utils/api.js';
 import { getAuthRedirectPath, userHasPermission } from '#lib/utils/auth.js';
+import { stripBase, withBase } from '#lib/utils/base-path.js';
 import { isEnvironmentOnline } from '#lib/utils/docker.js';
 import { readableEnvironments, sumAcrossEnvironments } from '#lib/utils/environments.js';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
@@ -89,7 +90,7 @@ function afterDiscoveryTimeout(): Promise<undefined> {
 export const load: LayoutLoad = async ({ url, depends }) => {
 	depends(PODMAN_STATUS_DEPENDENCY);
 	// Logout must not wait on, or be triggered by, authenticated requests; preloading runs this too.
-	if (url.pathname === '/logout') {
+	if (stripBase(url.pathname) === '/logout') {
 		return {
 			user: null,
 			settings: settingsStore.current ?? null,
@@ -324,14 +325,14 @@ export const load: LayoutLoad = async ({ url, depends }) => {
 	}
 
 	const redirectPath = getAuthRedirectPath(
-		url.pathname,
+		stripBase(url.pathname),
 		user,
 		permissionsManifest,
 		permissionsManifestLoadFailed,
 		getEffectiveLandingPage()
 	);
-	if (redirectPath && redirectPath !== url.pathname) {
-		throw redirect(302, redirectPath);
+	if (redirectPath && redirectPath !== stripBase(url.pathname)) {
+		throw redirect(302, withBase(redirectPath));
 	}
 
 	return {

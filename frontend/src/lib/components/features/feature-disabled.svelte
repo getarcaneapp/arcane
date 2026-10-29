@@ -1,10 +1,9 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { hasAnyPermission } from '#lib/utils/auth.js';
+	import { goto } from '#lib/utils/base-path.js';
 
 	let { environmentId }: { environmentId: string } = $props();
 </script>

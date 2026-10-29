@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
@@ -8,6 +7,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { APIError } from '#lib/services/api-service.js';
 	import { authService } from '#lib/services/auth-service.js';
+	import { goto } from '#lib/utils/base-path.js';
 
 	let error = $state('');
 

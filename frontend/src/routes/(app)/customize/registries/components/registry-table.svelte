@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import type { Snippet } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -18,6 +17,7 @@
 	import type { ContainerRegistry, ContainerRegistryPullUsage } from '#lib/types/docker.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { withBase, goto } from '#lib/utils/base-path.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { getRegistryDisplayName } from '#lib/utils/registry.js';
@@ -195,7 +195,7 @@
 {#snippet UrlCell({ item }: { item: ContainerRegistry })}
 	<div class="flex flex-col">
 		{#if canBrowseRegistry}
-			<a class="font-medium hover:underline" href="/customize/registries/{item.id}">{item.url || 'docker.io'}</a>
+			<a class="font-medium hover:underline" href={withBase(`/customize/registries/${item.id}`)}>{item.url || 'docker.io'}</a>
 		{:else}
 			<span class="font-medium">{item.url || 'docker.io'}</span>
 		{/if}

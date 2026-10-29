@@ -13,6 +13,7 @@
 	import type { ApiKey, ApiKeyCreated, ApiKeyPermissionGrant, ApiKeyUpdate, PersonalApiKeyCreate } from '#lib/types/auth.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { base } from '#lib/utils/base-path.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import ApiKeyTable from './components/api-key-table.svelte';
@@ -110,7 +111,7 @@
 
 <SettingsPageLayout
 	title={m.api_key_page_title()}
-	description={m.api_key_page_description()}
+	description={m.api_key_page_description().replaceAll("href='/api/", `href='${base}/api/`)}
 	icon={ApiKeyIcon}
 	pageType="management"
 	{actionButtons}

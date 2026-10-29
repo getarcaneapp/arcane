@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, refreshAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
@@ -15,6 +15,7 @@
 	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import type { AuthenticationResponse, MFAChallenge as MFAChallengeData, User } from '#lib/types/auth.js';
 	import { getAuthRedirectPath, normalizeAuthenticationError } from '#lib/utils/auth.js';
+	import { goto, stripBase, withBase } from '#lib/utils/base-path.js';
 	import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -78,7 +79,7 @@
 		const requestedTarget = redirectTo || landingPage;
 		const target =
 			getAuthRedirectPath(
-				requestedTarget,
+				stripBase(requestedTarget),
 				landingUser,
 				page.data['permissionsManifest'],
 				page.data['permissionsManifestLoadFailed'] ?? false,
@@ -213,6 +214,6 @@
 			     unexpected throw inside onSuccess), the user would otherwise
 			     see a blank page with no way out. Always show a logout link. -->
 		<p class="text-sm text-muted-foreground">{m.auth_processing_login()}</p>
-		<a href="/logout" class="mt-6 text-xs text-primary underline">{m.common_logout()}</a>
+		<a href={withBase('/logout')} class="mt-6 text-xs text-primary underline">{m.common_logout()}</a>
 	</OidcStatusPanel>
 {/if}

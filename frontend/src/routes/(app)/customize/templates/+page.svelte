@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 
 	import AddTemplateRegistrySheet from '#lib/components/sheets/add-template-registry-sheet.svelte';
@@ -12,6 +11,7 @@
 	import { templateService } from '#lib/services/template-service.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { TemplateRegistry, TemplateRegistryCreate, TemplateRegistryUpdate } from '#lib/types/swarm.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 

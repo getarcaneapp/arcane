@@ -16,6 +16,7 @@ import type {
 	ImagePatchTargetDto
 } from '#lib/types/docker.js';
 import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
+import { withBase } from '#lib/utils/base-path.js';
 import { readNdjsonStream } from '#lib/utils/streaming.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -88,7 +89,7 @@ class ImageService extends BaseAPIService {
 	}
 
 	async getImageExportUrl(imageId: string, environmentId: string): Promise<string> {
-		return `/api/environments/${environmentId}/images/${encodeURIComponent(imageId)}/export`;
+		return withBase(`/api/environments/${environmentId}/images/${encodeURIComponent(imageId)}/export`);
 	}
 
 	async pullImageStream(
@@ -98,7 +99,7 @@ class ImageService extends BaseAPIService {
 	): Promise<ImagePullResult> {
 		const operationResult = await tryCatch(
 			(async () => {
-				const response = await fetch(`/api/environments/${environmentId}/images/pull`, {
+				const response = await fetch(withBase(`/api/environments/${environmentId}/images/pull`), {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ imageName }),

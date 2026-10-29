@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"log/slog"
@@ -130,7 +131,7 @@ type RouterParams struct {
 	TunnelRegistry *agent.TunnelRegistry
 }
 
-func newRouter(p RouterParams) (*echo.Echo, *agent.TunnelServer) {
+func newRouter(p RouterParams) (*echo.Echo, *agent.TunnelServer, error) {
 	// Path params are decoded after matching on the escaped path, so an encoded "/" cannot change the route.
 	e := echo.NewWithConfig(echo.Config{
 		Router: echo.NewRouter(echo.RouterConfig{AllowOverwritingRoute: true, UnescapePathParamValues: true}),
@@ -159,6 +160,15 @@ func newRouter(p RouterParams) (*echo.Echo, *agent.TunnelServer) {
 		e.IPExtractor = echo.ExtractIPDirect()
 	} else {
 		e.IPExtractor = echo.ExtractIPFromXFFHeader(trustOpts...)
+	}
+
+	basePath, err := p.Config.BasePath()
+	if err != nil {
+		return nil, nil, err
+	}
+	cookie.SetBasePath(basePath)
+	if basePath != "" {
+		e.Pre(basePathMiddleware(basePath))
 	}
 
 	e.Use(echomiddleware.Recover())
@@ -345,15 +355,32 @@ func newRouter(p RouterParams) (*echo.Echo, *agent.TunnelServer) {
 	apiGroup.RouteNotFound("/*", apiNotFound)
 
 	//nolint:staticcheck,nolintlint // SA4023 only under exclude_frontend: the stub always returns ErrFrontendNotIncluded
-	if err := frontend.RegisterFrontend(e); err != nil {
-		if errors.Is(err, frontend.ErrFrontendNotIncluded) {
+	if err := frontend.RegisterFrontend(e, basePath); err != nil {
+		switch {
+		case errors.Is(err, frontend.ErrFrontendNotIncluded):
 			slog.DebugContext(p.Context, "Frontend not included in this build; skipping frontend registration")
-		} else {
+		case errors.Is(err, frontend.ErrIndexNotRecognized):
+			return nil, nil, err
+		default:
 			slog.ErrorContext(p.Context, "Failed to register frontend", "error", err)
 		}
 	}
 
-	return e, tunnelServer
+	return e, tunnelServer, nil
+}
+
+func basePathMiddleware(basePath string) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			req := c.Request()
+			if rest, ok := strings.CutPrefix(req.URL.Path, basePath); ok && (rest == "" || rest[0] == '/') {
+				req.URL.Path = cmp.Or(rest, "/")
+				req.URL.RawPath = strings.TrimPrefix(req.URL.RawPath, basePath)
+				req.RequestURI = req.URL.RequestURI()
+			}
+			return next(c)
+		}
+	}
 }
 
 // secureCookieContextMiddleware marks requests as HTTPS for cookies. X-Forwarded-Proto is

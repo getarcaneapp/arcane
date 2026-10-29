@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, refreshAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -23,6 +23,7 @@
 	import type { RegistryTag } from '#lib/types/docker.js';
 	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
 	import { bytes, formatRelativeTime } from '#lib/utils/formatting.js';

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, refreshAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -22,6 +22,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { SwarmStackSourceUpdate, SwarmStackSourceWritable, SwarmSyncFile } from '#lib/types/swarm.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import {
 		createComposeEditorSchema,
 		createComposeTemplateDialogFlow,

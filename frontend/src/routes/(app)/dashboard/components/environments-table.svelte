@@ -30,6 +30,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { cn } from '#lib/utils.js';
+	import { withBase } from '#lib/utils/base-path.js';
 
 	import { getCpuMetric, getDiskMetric, getMemoryMetric } from '../overview.helpers';
 
@@ -49,7 +50,7 @@
 {#snippet actionCount(count: number, href: string, icon: IconType, tone: 'amber' | 'red')}
 	{@const Icon = count > 0 ? icon : VerifiedCheckIcon}
 	<a
-		{href}
+		href={withBase(href)}
 		class={cn(
 			'inline-flex items-center gap-1.5 text-sm tabular-nums transition-colors hover:underline',
 			count === 0 && 'text-muted-foreground',
@@ -106,7 +107,7 @@
 				<Table.Row>
 					<Table.Cell>
 						<div class="flex min-w-0 items-center gap-2">
-							<a class="truncate font-medium hover:underline" href="/environments/{row.environment.id}">
+							<a class="truncate font-medium hover:underline" href={withBase(`/environments/${row.environment.id}`)}>
 								{row.environment.name}
 							</a>
 							{#if row.podCount !== null}

@@ -1,11 +1,10 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
-
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import type { FileProvider } from '#lib/components/file-browser/index.js';
 	import { FolderOpenIcon, SettingsIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { buildWorkspaceService } from '#lib/services/build-workspace-service.js';
+	import { goto } from '#lib/utils/base-path.js';
 
 	import BuildWorkspaceBrowser from './build-workspace-browser.svelte';
 

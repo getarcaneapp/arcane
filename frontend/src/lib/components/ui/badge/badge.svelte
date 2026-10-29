@@ -1,6 +1,8 @@
 <script lang="ts" module>
 	import { type VariantProps, tv } from 'tailwind-variants';
 
+	import { withBase } from '#lib/utils/base-path.js';
+
 	export const badgeVariants = tv({
 		base: 'focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden whitespace-nowrap rounded-full border text-xs font-medium transition-colors focus-visible:ring-3 [&>svg]:pointer-events-none [&>svg]:size-3',
 		variants: {
@@ -100,7 +102,7 @@
 	this={href ? 'a' : 'span'}
 	bind:this={ref}
 	data-slot="badge"
-	{href}
+	href={href ? withBase(href) : undefined}
 	class={cn(badgeVariants({ variant, size, minWidth, hoverEffect, mono }), beam && 'relative overflow-visible', className)}
 	{...restProps}
 >

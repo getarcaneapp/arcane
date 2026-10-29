@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, afterNavigate } from '$app/navigation';
+	import { afterNavigate } from '$app/navigation';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { onMount, onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -44,6 +44,7 @@
 		runAutomaticBackupDiscovery,
 		s3DestinationOptions
 	} from '#lib/utils/backups.js';
+	import { goto } from '#lib/utils/base-path.js';
 	import { environmentHref, hasShownPermission } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
