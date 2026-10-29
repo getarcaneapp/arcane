@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -36,6 +37,7 @@ const (
 	apiKeyLength              = 32
 	apiKeyPrefixLen           = 8
 	apiKeyLastUsedWriteWindow = 5 * time.Minute
+	apiKeySHA256HashPrefix    = "sha256$"
 
 	managedByAdminBootstrap = "admin_account_default_api_key"
 	defaultAdminUsername    = "arcane"
@@ -265,8 +267,34 @@ func (s *ApiKeyService) markApiKeyUsedDebounced(ctx context.Context, keyID strin
 	}
 }
 
+func (s *ApiKeyService) hashAPIKey(ctx context.Context, rawKey string, operatorChosen bool) (string, error) {
+	if operatorChosen {
+		return s.userService.HashPassword(ctx, rawKey)
+	}
+	return apiKeySHA256HashPrefix + kit.SHA256Hex(rawKey), nil
+}
+
+func (s *ApiKeyService) apiKeyMatches(ctx context.Context, keyHash, rawKey string) bool {
+	if digest, ok := strings.CutPrefix(keyHash, apiKeySHA256HashPrefix); ok {
+		return subtle.ConstantTimeCompare([]byte(digest), []byte(kit.SHA256Hex(rawKey))) == 1
+	}
+	return s.userService.ValidatePassword(ctx, keyHash, rawKey) == nil
+}
+
+func (s *ApiKeyService) upgradeAPIKeyHash(ctx context.Context, apiKey ApiKey, rawKey string) {
+	if strings.HasPrefix(apiKey.KeyHash, apiKeySHA256HashPrefix) || kit.FromPtr(apiKey.ManagedBy) == managedByAdminBootstrap {
+		return
+	}
+	if err := s.db.WithContext(ctx).
+		Model(&ApiKey{}).
+		Where("id = ? AND key_hash = ?", apiKey.ID, apiKey.KeyHash).
+		UpdateColumn("key_hash", apiKeySHA256HashPrefix+kit.SHA256Hex(rawKey)).Error; err != nil {
+		slog.WarnContext(ctx, "Failed to upgrade API key hash", "apiKeyId", apiKey.ID, "error", err)
+	}
+}
+
 // hashRawAPIKey derives the cache key for a raw API key. This is not
-// credential storage — Argon2id in the DB is — so a fast keyed hash is
+// credential storage — the stored key_hash is — so a fast keyed hash is
 // appropriate for this hot path; the per-process pepper prevents offline
 // brute-force of the digest should process memory leak.
 func (s *ApiKeyService) hashRawAPIKey(rawKey string) string {
@@ -446,7 +474,7 @@ func (s *ApiKeyService) createAPIKeyWithRawKey(
 		return nil, err
 	}
 
-	keyHash, err := s.userService.HashPassword(ctx, rawKey)
+	keyHash, err := s.hashAPIKey(ctx, rawKey, kit.FromPtr(managedBy) == managedByAdminBootstrap)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash API key: %w", err)
 	}
@@ -595,7 +623,7 @@ func (s *ApiKeyService) deleteManagedAPIKeysByIDs(tx *gorm.DB, ids []string) err
 
 func (s *ApiKeyService) findMatchingManagedAPIKey(ctx context.Context, rawKey string, managedKeys []ApiKey) (int, error) {
 	for i, managedKey := range managedKeys {
-		if err := s.userService.ValidatePassword(ctx, managedKey.KeyHash, rawKey); err == nil {
+		if s.apiKeyMatches(ctx, managedKey.KeyHash, rawKey) {
 			return i, nil
 		}
 		if ctx.Err() != nil {
@@ -635,7 +663,7 @@ func (s *ApiKeyService) createManagedDefaultAdminAPIKey(ctx context.Context, tx 
 		return err
 	}
 
-	keyHash, err := s.userService.HashPassword(ctx, rawKey)
+	keyHash, err := s.hashAPIKey(ctx, rawKey, true)
 	if err != nil {
 		return fmt.Errorf("failed to hash API key: %w", err)
 	}
@@ -1063,10 +1091,11 @@ func (s *ApiKeyService) ValidateRawApiKey(ctx context.Context, rawKey string) (*
 	}
 
 	for _, apiKey := range apiKeys {
-		if validateErr := s.userService.ValidatePassword(ctx, apiKey.KeyHash, rawKey); validateErr == nil {
+		if s.apiKeyMatches(ctx, apiKey.KeyHash, rawKey) {
 			if apiKey.ExpiresAt != nil && apiKey.ExpiresAt.Before(time.Now()) {
 				return nil, ErrApiKeyExpired
 			}
+			s.upgradeAPIKeyHash(ctx, apiKey, rawKey)
 
 			s.storeValidatedKey(gen, cacheKey, apiKey)
 			s.markApiKeyUsedDebounced(ctx, apiKey.ID)
