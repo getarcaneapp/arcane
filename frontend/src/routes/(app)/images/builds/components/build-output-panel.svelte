@@ -24,28 +24,23 @@
 		onReset?: () => void;
 	} = $props();
 
+	const statusDotClass = $derived.by(() => {
+		if (buildError) return 'bg-destructive';
+		if (hasReachedComplete) return 'bg-success';
+		if (isBuilding) return 'animate-pulse bg-info';
+		return 'bg-muted-foreground/30';
+	});
+
 	function autoScrollToBottom(node: HTMLElement) {
-		logLines.length;
-		if (autoScroll) node.scrollTop = node.scrollHeight;
+		if (logLines.length > 0 && autoScroll) node.scrollTop = node.scrollHeight;
 	}
 </script>
 
 <div class="flex h-full flex-col p-8">
-	<!-- Status section -->
 	<div class="mb-6 shrink-0 space-y-4 rounded-2xl border border-border/50 bg-card p-5">
 		<div class="flex items-center justify-between">
 			<div class="flex items-center gap-3">
-				<div
-					class={`size-2 rounded-full ${
-						buildError
-							? 'bg-destructive'
-							: hasReachedComplete
-								? 'bg-success'
-								: isBuilding
-									? 'animate-pulse bg-info'
-									: 'bg-muted-foreground/30'
-					}`}
-				></div>
+				<div class={['size-2 rounded-full', statusDotClass]}></div>
 				<span class="truncate text-sm font-medium">
 					{#if hasReachedComplete}
 						{m.build_completed()}
@@ -61,7 +56,6 @@
 		{/if}
 	</div>
 
-	<!-- Terminal output with refined styling -->
 	<div
 		{@attach autoScrollToBottom}
 		class="group dark relative min-h-0 flex-1 overflow-auto rounded-2xl border border-border/50 bg-background p-5 font-mono text-xs-plus leading-relaxed text-foreground shadow-2xl shadow-black/50"
@@ -85,14 +79,12 @@
 		</div>
 	</div>
 
-	<!-- Error display -->
 	{#if buildError}
 		<div class="mt-4 shrink-0 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
 			{buildError}
 		</div>
 	{/if}
 
-	<!-- Clear button -->
 	{#if logLines.length > 0 && !isBuilding}
 		<div class="mt-4 shrink-0">
 			<ArcaneButton action="base" tone="outline" size="sm" onclick={() => onReset?.()}>

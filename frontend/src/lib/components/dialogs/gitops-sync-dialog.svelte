@@ -185,11 +185,12 @@
 
 	const formData = $derived.by(() => {
 		// New drafts use the first settings response; later refreshes preserve edits.
-		if (!untrack(() => isEditMode)) settingsQuery.isFetchedAfterMount;
+		const settings =
+			!untrack(() => isEditMode) && settingsQuery.isFetchedAfterMount ? untrack(() => settingsQuery.data?.values) : undefined;
 		return untrack(() => {
-			let maxSyncFiles = settingsQuery.data?.values.gitSyncMaxFiles ?? 0;
-			let maxSyncTotalSizeMb = settingsQuery.data?.values.gitSyncMaxTotalSizeMb ?? 0;
-			let maxSyncBinarySizeMb = settingsQuery.data?.values.gitSyncMaxBinarySizeMb ?? 0;
+			let maxSyncFiles = settings?.gitSyncMaxFiles ?? 0;
+			let maxSyncTotalSizeMb = settings?.gitSyncMaxTotalSizeMb ?? 0;
+			let maxSyncBinarySizeMb = settings?.gitSyncMaxBinarySizeMb ?? 0;
 			let preDeployRunnerImage = lifecycleDefaultRunnerImage;
 			if (syncToEdit) {
 				maxSyncFiles = syncToEdit.maxSyncFiles ?? 0;
