@@ -33,6 +33,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/docker"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate/children/releasenotes"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/imageupdate/children/tags"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/notification"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/registry"
@@ -70,6 +71,7 @@ type ImageUpdateService struct {
 	notificationService *notification.NotificationService
 	registryLimiter     *ratelimit.RegistryRateLimiter
 	tags                *tags.Service
+	releaseNotes        *releasenotes.Service
 	activityService     *activity.ActivityService
 	engine              *flow.Engine
 	checkWorkflow       *flow.Workflow
@@ -157,6 +159,7 @@ func NewImageUpdateService(
 		notificationService: notificationService,
 		registryLimiter:     registryLimiter,
 		tags:                tags.NewService(registryService, dockerService, settingsService, registryLimiter),
+		releaseNotes:        releasenotes.NewService(dockerService, registryService.ImageLabels),
 		activityService:     activityService,
 		credentials:         hot.NewHotCache[string, []types.ContainerRegistryCredential](hot.LRU, 8).WithTTL(time.Minute).Build(),
 		// They outlive the longest check: its slot wait plus its workflow timeout.
@@ -1309,6 +1312,7 @@ func (s *ImageUpdateService) CheckImages(ctx context.Context, request types.Imag
 			ResponseTimeMs:   result.ResponseTimeMs,
 			HasUpdate:        result.HasUpdate,
 			UsedCredential:   result.UsedCredential,
+			ReleaseURL:       result.ReleaseURL,
 		}
 	}
 	// Failed images get their entries first, so their containers' tag results still attach.
@@ -1613,9 +1617,16 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) e
 		return fmt.Errorf("flush pending update notifications: %w", err)
 	case len(unnotifiedUpdates) > 0:
 		updatesToNotify := make(map[string]*types.ImageUpdateResponse)
+		links := map[string]string{}
+		linkCtx, cancelLinks := context.WithTimeout(notifCtx, 5*time.Second)
+		defer cancelLinks()
 
 		for _, record := range unnotifiedUpdates {
-			updatesToNotify[record.Repository+":"+record.Tag+kit.Ternary(record.ContainerID != "", " (container "+record.ContainerID+")", "")] = &types.ImageUpdateResponse{
+			ref := record.Repository + ":" + record.Tag
+			if _, ok := links[ref]; !ok {
+				links[ref] = s.releaseNotes.ReleaseLink(linkCtx, ref)
+			}
+			updatesToNotify[ref+kit.Ternary(record.ContainerID != "", " (container "+record.ContainerID+")", "")] = &types.ImageUpdateResponse{
 				HasUpdate:      record.HasUpdate,
 				UpdateType:     record.UpdateType,
 				CurrentVersion: record.CurrentVersion,
@@ -1629,6 +1640,7 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) e
 				AuthUsername:   kit.FromPtr(record.AuthUsername),
 				AuthRegistry:   kit.FromPtr(record.AuthRegistry),
 				UsedCredential: record.UsedCredential,
+				ReleaseURL:     links[ref],
 			}
 		}
 

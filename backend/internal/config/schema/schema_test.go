@@ -341,6 +341,7 @@ var expectedSettingKeys = []string{
 	"lifecycleMaxTimeoutSec",
 	"maxConcurrentActivities",
 	"maxImageUploadSize",
+	"notificationsIncludeReleaseLinks",
 	"oidcAuthorizationEndpoint",
 	"oidcAutoRedirectToProvider",
 	"oidcClientId",

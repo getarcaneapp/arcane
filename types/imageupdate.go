@@ -81,6 +81,11 @@ type ImageUpdateResponse struct {
 	//
 	// Required: false
 	UsedCredential bool `json:"usedCredential,omitempty"`
+
+	// ReleaseURL links to the release page of the image source repository.
+	//
+	// Required: false
+	ReleaseURL string `json:"releaseUrl,omitempty"`
 }
 
 type ImageUpdateSummary struct {

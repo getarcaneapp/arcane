@@ -23,9 +23,11 @@
 
 	const isReadOnly = $derived(settingsStore.readOnly);
 	const canManageNotifications = $derived(hasPermission('notifications:manage', GLOBAL_SCOPE));
-	const canToggleMobilePush = $derived(hasPermission('settings:write', LOCAL_DOCKER_ENVIRONMENT_ID));
+	const canWriteSettings = $derived(hasPermission('settings:write', LOCAL_DOCKER_ENVIRONMENT_ID));
 	const mobilePushEnabled = $derived(settingsStore.current?.apnsEnabled === true);
 	let savingMobilePush = $state(false);
+	const releaseLinksEnabled = $derived(settingsStore.current?.notificationsIncludeReleaseLinks !== false);
+	let savingReleaseLinks = $state(false);
 	let mobileDevices = $state<ApnsDevice[]>([]);
 	let testingDeviceId = $state<string | null>(null);
 
@@ -45,6 +47,18 @@
 				} else {
 					mobileDevices = [];
 				}
+				toast.success(m.common_update_success({ resource: m.settings() }));
+			}
+		});
+	}
+
+	async function handleReleaseLinksToggle(enabled: boolean) {
+		savingReleaseLinks = true;
+		await handleApiResultWithCallbacks({
+			result: await tryCatch(settingsStore.save({ notificationsIncludeReleaseLinks: enabled })),
+			message: m.common_update_failed({ resource: m.settings() }),
+			setLoadingState: (value) => (savingReleaseLinks = value),
+			onSuccess: () => {
 				toast.success(m.common_update_success({ resource: m.settings() }));
 			}
 		});
@@ -98,8 +112,22 @@
 					<Switch
 						id="apnsEnabled"
 						checked={mobilePushEnabled}
-						disabled={isReadOnly || !canToggleMobilePush || savingMobilePush}
+						disabled={isReadOnly || !canWriteSettings || savingMobilePush}
 						onCheckedChange={(checked) => void handleMobilePushToggle(checked)}
+					/>
+				</SettingsRow>
+				<SettingsRow
+					for="notificationsIncludeReleaseLinks"
+					label={m.notifications_release_links_label()}
+					description={m.notifications_release_links_description()}
+					layout="switch"
+					lock={settingsStore.lock('notificationsIncludeReleaseLinks')}
+				>
+					<Switch
+						id="notificationsIncludeReleaseLinks"
+						checked={releaseLinksEnabled}
+						disabled={isReadOnly || !canWriteSettings || savingReleaseLinks}
+						onCheckedChange={(checked) => void handleReleaseLinksToggle(checked)}
 					/>
 				</SettingsRow>
 				{#if mobilePushEnabled}

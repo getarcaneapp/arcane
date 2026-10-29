@@ -1677,14 +1677,15 @@ func TestContainerRegistryService_ImageLabels(t *testing.T) {
 	assert.Equal(t, "v2.8.0-next.66", labels[OCIImageVersionLabel])
 }
 
-func TestContainerRegistryService_ImageLabelsMissingLabel(t *testing.T) {
+func TestContainerRegistryService_ImageLabelsWithoutVersionLabel(t *testing.T) {
 	host := newLabelTestRegistry(t)
 	imageRef := host + "/getarcaneapp/arcane:next"
 	pushLabeledImage(t, imageRef, nil)
 
 	svc := NewContainerRegistryService(nil, nil, nil, nil)
-	_, err := svc.ImageLabels(t.Context(), imageRef)
-	assert.ErrorIs(t, err, ErrNoVersionLabel)
+	labels, err := svc.ImageLabels(t.Context(), imageRef)
+	require.NoError(t, err)
+	assert.NotContains(t, labels, OCIImageVersionLabel)
 }
 
 func TestContainerRegistryService_ImageLabelsErrorNotCached(t *testing.T) {

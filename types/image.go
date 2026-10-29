@@ -189,6 +189,48 @@ type ImageAttestationList struct {
 	Attestations  []ImageAttestation `json:"attestations"`
 }
 
+type ImageReleaseNotes struct {
+	// ImageRef is the image reference the release notes were resolved for.
+	//
+	// Required: true
+	ImageRef string `json:"imageRef"`
+
+	// Version is the target version used to match a release.
+	//
+	// Required: false
+	Version string `json:"version,omitempty"`
+
+	// Status is the lookup result: found, not_found, unavailable, link, or no_source.
+	//
+	// Required: true
+	Status string `json:"status"`
+
+	// SourceURL is the source repository of the image.
+	//
+	// Required: false
+	SourceURL string `json:"sourceUrl,omitempty"`
+
+	// ReleaseURL links to the matched release or the releases page.
+	//
+	// Required: false
+	ReleaseURL string `json:"releaseUrl,omitempty"`
+
+	// ReleaseName is the name of the matched release.
+	//
+	// Required: false
+	ReleaseName string `json:"releaseName,omitempty"`
+
+	// Notes is the markdown body of the matched release.
+	//
+	// Required: false
+	Notes string `json:"notes,omitempty"`
+
+	// PublishedAt is when the matched release was published.
+	//
+	// Required: false
+	PublishedAt string `json:"publishedAt,omitempty"`
+}
+
 type ImageAttestation struct {
 	Digest        string                    `json:"digest"`
 	MediaType     string                    `json:"mediaType"`

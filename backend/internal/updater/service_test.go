@@ -245,11 +245,11 @@ func (m *mockSystemUpgradeService) TriggerUpgradeViaCLI(_ context.Context, user 
 func TestUpdaterService_ApplyPendingNoRecords(t *testing.T) {
 	ctx := t.Context()
 	db := setupProjectTestDB(t)
-	require.NoError(t, db.AutoMigrate(&notification.NotificationSettings{}))
+	require.NoError(t, db.AutoMigrate(&notification.NotificationSettings{}, &settings.SettingVariable{}))
 	settingsService, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, settingsService.Stop(context.WithoutCancel(ctx))) })
-	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
+	notif := newTestNotificationService(t, db)
 	harness := flowtest.New(t, activity.NewActivityService(db, nil))
 	admission := runs.NewAdmission(harness.Runtime.Service(), t.Name())
 	require.NoError(t, admission.Register(harness.Runtime))
@@ -587,7 +587,7 @@ func TestUpdaterService_PendingImageUpdatesAdapter(t *testing.T) {
 		CheckTime:  checkTime,
 	}).Error)
 	require.NoError(t, db.AutoMigrate(&notification.NotificationSettings{}))
-	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
+	notif := newTestNotificationService(t, db)
 	imageUpdates := imageupdate.NewImageUpdateService(db, nil, nil, newEmptyContainerListDockerService(t), nil, notif, nil)
 	svc, svcErr := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil, nil, nil, nil)
 	require.NoError(t, svcErr)
@@ -633,7 +633,7 @@ func newEmptyContainerListDockerService(t *testing.T) *docker.DockerClientServic
 func TestUpdaterService_PendingImageUpdatesAbortsWhenNotificationEligibilityUnresolved(t *testing.T) {
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}, &notification.NotificationSettings{}))
-	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
+	notif := newTestNotificationService(t, db)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -681,7 +681,7 @@ func TestUpdaterService_PendingImageUpdatesFlushesPendingNotifications(t *testin
 		},
 	}).Error)
 
-	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
+	notif := newTestNotificationService(t, db)
 	imageUpdates := imageupdate.NewImageUpdateService(db, nil, nil, newEmptyContainerListDockerService(t), nil, notif, nil)
 	svc, svcErr := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil, nil, nil, nil)
 	require.NoError(t, svcErr)
@@ -712,7 +712,7 @@ func TestUpdaterService_PendingImageUpdatesNoProvidersLeavesUnnotified(t *testin
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&imageupdate.ImageUpdateRecord{}, &notification.NotificationSettings{}))
 
-	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
+	notif := newTestNotificationService(t, db)
 	imageUpdates := imageupdate.NewImageUpdateService(db, nil, nil, newEmptyContainerListDockerService(t), nil, notif, nil)
 	svc, svcErr := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil, nil, nil, nil)
 	require.NoError(t, svcErr)
@@ -1598,7 +1598,7 @@ func TestUpdaterService_ScopedPendingRecordsIsolation(t *testing.T) {
 	server := newUpdaterApplyPendingDockerServer(t, containers, nil, nil, nil)
 	dockerSvc := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
 	require.NoError(t, db.AutoMigrate(&notification.NotificationSettings{}))
-	notif := notification.NewNotificationService(db, nil, nil, nil, nil)
+	notif := newTestNotificationService(t, db)
 	imageUpdates := imageupdate.NewImageUpdateService(db, nil, nil, dockerSvc, nil, notif, nil)
 	svc, err := NewUpdaterService(db, nil, dockerSvc, nil, imageUpdates, nil, nil, nil, notif, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
@@ -1960,4 +1960,14 @@ func TestAggregateHistoryMergesNewestFirst(t *testing.T) {
 	require.Equal(t, "b1", body.Data[1].ID)
 	require.Equal(t, "Env b", body.Data[1].EnvironmentName)
 	require.Len(t, body.FailedEnvironments, 1)
+}
+
+func newTestNotificationService(t *testing.T, db *database.DB) *notification.NotificationService {
+	t.Helper()
+	settingsService, err := settings.NewSettingsService(t.Context(), db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, settingsService.Stop(context.WithoutCancel(t.Context())))
+	})
+	return notification.NewNotificationService(db, nil, nil, nil, nil, settingsService)
 }

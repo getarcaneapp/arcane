@@ -73,6 +73,7 @@ export type Settings = {
 	experimentalFeaturesEnabled: boolean;
 	developmentBrandingEnabled: boolean;
 	apnsEnabled?: boolean;
+	notificationsIncludeReleaseLinks?: boolean;
 	avatarMaxUploadSizeMb: number;
 	allEnvironmentsLimit: number;
 	defaultShell: string;

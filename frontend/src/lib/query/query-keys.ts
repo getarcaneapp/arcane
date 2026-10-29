@@ -167,6 +167,8 @@ export const queryKeys = {
 		history: (environmentId: string, imageId: string) => ['image', environmentId, imageId, 'history'] as const,
 		detail: (environmentId: string, imageId: string) => ['image', environmentId, imageId] as const,
 		updateCheck: (environmentId: string, imageId: string) => ['image-update', environmentId, imageId] as const,
+		releaseNotes: (environmentId: string, imageRef: string, version: string, digest: string) =>
+			['image-release-notes', environmentId, imageRef, version, digest] as const,
 		builds: (environmentId: string) => ['images', environmentId, 'builds'] as const,
 		buildsList: (environmentId: string, options: SearchPaginationSortRequest) =>
 			['images', environmentId, 'builds', stableSerialize(options)] as const,

@@ -287,6 +287,10 @@ func (s *VersionService) resolveNextImage(ctx context.Context, imageRef, tag, ne
 		slog.WarnContext(ctx, "Failed to resolve next-channel image labels", "imageRef", lookupRef, "error", err)
 		return nextImage{}
 	}
+	if strings.TrimSpace(labels[registry.OCIImageVersionLabel]) == "" {
+		slog.WarnContext(ctx, "Next-channel image has no version label", "imageRef", lookupRef)
+		return nextImage{}
+	}
 
 	normalized := s.normalizeVersion(labels[registry.OCIImageVersionLabel])
 	if !semver.IsValid(normalized) {
