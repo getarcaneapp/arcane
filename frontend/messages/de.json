@@ -2893,6 +2893,8 @@
   "update_center_step_reload": "Seite neu laden",
   "update_center_estimated": "Dies dauert in der Regel weniger als eine Minute.",
   "update_center_complete": "Update abgeschlossen.",
+  "update_center_unconfirmed": "Die Aktualisierung wurde angefordert, konnte jedoch nicht bestätigt werden. Überprüfen Sie die Protokolle der Umgebung.",
+  "update_center_unconfirmed_version": "Das Update wurde angefordert, aber in der Umgebung läuft weiterhin „ {version}“. Überprüfen Sie die Protokolle.",
   "auto_start": "Auto-Start",
   "api_key_name_placeholder": "Namen für diesen API-Key eingeben",
   "api_key_save_warning": "Speichern Sie diesen Schlüssel jetzt – er wird nicht noch einmal angezeigt.",
