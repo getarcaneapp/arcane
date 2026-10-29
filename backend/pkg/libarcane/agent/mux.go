@@ -67,7 +67,7 @@ func newMuxHTTPClient(dial func(ctx context.Context) (net.Conn, error)) *http.Cl
 		},
 		// Stays below the agent server's IdleTimeout so a pooled stream is never reused as the server closes it.
 		IdleConnTimeout:       90 * time.Second,
-		MaxIdleConnsPerHost:   32,
+		MaxIdleConnsPerHost:   8,
 		ExpectContinueTimeout: time.Second,
 		ResponseHeaderTimeout: ProxyResponseHeaderTimeout,
 		ReadBufferSize:        64 << 10,

@@ -176,7 +176,7 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 		sqlDB.SetMaxIdleConns(conns)
 		sqlDB.SetMaxOpenConns(conns)
 		sqlDB.SetConnMaxLifetime(0)
-		sqlDB.SetConnMaxIdleTime(0)
+		sqlDB.SetConnMaxIdleTime(sqliteConnMaxIdleTime)
 	}
 	metrics.ReportDBStatsMetrics(sqlDB)
 	if migrationErr := migrateDatabase(ctx, sqlDB, dbProvider, options, latestMigrationVersion); migrationErr != nil {
@@ -309,7 +309,7 @@ func ParseSQLiteConnectionString(connString string) (string, error) {
 			qs.Add("_pragma", "synchronous(NORMAL)")
 		}
 		if !sqliteutil.HasPragma(qs, "cache_size") {
-			qs.Add("_pragma", "cache_size(-8000)")
+			qs.Add("_pragma", "cache_size(-2000)")
 		}
 		if !sqliteutil.HasPragma(qs, "temp_store") {
 			qs.Add("_pragma", "temp_store(MEMORY)")

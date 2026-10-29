@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/libtnb/sqlite"
 	"go.opentelemetry.io/otel/attribute"
@@ -17,7 +18,10 @@ import (
 	"gorm.io/plugin/opentelemetry/metrics"
 )
 
-const sqliteWriteConns = 2
+const (
+	sqliteWriteConns      = 2
+	sqliteConnMaxIdleTime = 5 * time.Minute
+)
 
 type sqliteReadRouter struct {
 	*gorm.PreparedStmtDB
@@ -87,11 +91,11 @@ func attachSQLiteReadPool(gormDB *gorm.DB, writer *sql.DB, readDSN string) (*sql
 	if err != nil {
 		return nil, fmt.Errorf("failed to get SQLite read pool: %w", err)
 	}
-	readConns := min(max(runtime.NumCPU(), 4), 8)
+	readConns := min(max(runtime.NumCPU(), 2), 4)
 	reader.SetMaxIdleConns(readConns)
 	reader.SetMaxOpenConns(readConns)
 	reader.SetConnMaxLifetime(0)
-	reader.SetConnMaxIdleTime(0)
+	reader.SetConnMaxIdleTime(sqliteConnMaxIdleTime)
 	metrics.ReportDBStatsMetrics(reader, metric.WithAttributes(attribute.String("db.pool", "read")))
 	router := &sqliteReadRouter{
 		PreparedStmtDB: gorm.NewPreparedStmtDB(writer, preparedStmtMaxSize, preparedStmtTTL),
