@@ -28,6 +28,17 @@
 	const nodes = $derived((service?.nodes as string[]) || []);
 	const versionIndex = $derived(service?.version?.index ?? service?.version?.Index ?? 0);
 	const updateStatus = $derived(service?.updateStatus as Record<string, any> | null | undefined);
+	const updateStatusVariant = $derived.by(() => {
+		switch (updateStatus?.['State']) {
+			case 'completed':
+				return 'green';
+			case 'updating':
+			case 'paused':
+				return 'amber';
+			default:
+				return 'red';
+		}
+	});
 	const canScaleService = $derived(isSwarmServiceModeScalable(serviceMode));
 </script>
 
@@ -130,16 +141,7 @@
 						<div class="flex flex-col gap-2">
 							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.common_status()}</div>
 							<div class="flex items-center gap-2">
-								<Badge
-									variant={updateStatus['State'] === 'completed'
-										? 'green'
-										: updateStatus['State'] === 'updating'
-											? 'amber'
-											: updateStatus['State'] === 'paused'
-												? 'amber'
-												: 'red'}
-									minWidth="20">{updateStatus['State']}</Badge
-								>
+								<Badge variant={updateStatusVariant} minWidth="20">{updateStatus['State']}</Badge>
 								{#if updateStatus['Message']}
 									<span class="text-sm text-muted-foreground">{updateStatus['Message']}</span>
 								{/if}

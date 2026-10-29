@@ -331,20 +331,23 @@
 	const gitProjectUrl = $derived(gitOpsProjectUrl(lifecycleSync));
 	const gitComposeEditUrl = $derived(gitOpsComposeEditUrl(lifecycleSync));
 	const gitOverrideEditUrl = $derived(gitOpsFileEditUrl(lifecycleSync, overrideFileName));
+	const overrideWorkspaceRows = $derived.by(() => {
+		if (overrideActive) return [{ key: 'override', label: overrideFileName, iconClass: 'text-purple', locked: true }];
+		if (canEditOverride) {
+			return [
+				{
+					key: 'add-override',
+					label: m.compose_override_add(),
+					action: true,
+					onSelect: handleAddOverride
+				}
+			];
+		}
+		return [];
+	});
 	const projectWorkspaceLeadingRows = $derived([
 		{ key: 'compose', label: composeFileName, iconClass: 'text-info', locked: true },
-		...(overrideActive
-			? [{ key: 'override', label: overrideFileName, iconClass: 'text-purple', locked: true }]
-			: canEditOverride
-				? [
-						{
-							key: 'add-override',
-							label: m.compose_override_add(),
-							action: true,
-							onSelect: handleAddOverride
-						}
-					]
-				: []),
+		...overrideWorkspaceRows,
 		{ key: 'env', label: '.env', iconClass: 'text-success', locked: true }
 	]);
 	let archiveRequiresStopped = $derived(
@@ -436,19 +439,17 @@
 		return valid.length > 0 ? valid : ['compose'];
 	});
 	const activeTreeTab = $derived(openTabs.includes(selectedFile) ? selectedFile : (openTabs[0] ?? 'compose'));
+	const treeTabIconClass: Record<string, string> = {
+		compose: 'text-info',
+		override: 'text-purple',
+		env: 'text-success'
+	};
 	const treeTabs = $derived(
 		openTabs.map((key) => ({
 			key,
 			label: treeTabLabel(key),
 			title: treeTabTitle(key),
-			iconClass:
-				key === 'compose'
-					? 'text-info'
-					: key === 'override'
-						? 'text-purple'
-						: key === 'env'
-							? 'text-success'
-							: 'text-muted-foreground',
+			iconClass: treeTabIconClass[key] ?? 'text-muted-foreground',
 			pending: treeTabPending(key)
 		}))
 	);
@@ -652,12 +653,12 @@
 			queryKeys.projects.detail(currentEnvId, updatedProject.id),
 			(old: Project | undefined) => ({ ...old, ...updatedProject }) as Project
 		);
-		await Promise.all([
-			...listScopes([currentEnvId]).flatMap((scope) => [
+		await Promise.all(
+			listScopes([currentEnvId]).flatMap((scope) => [
 				queryClient.invalidateQueries({ queryKey: ['projects', scope] }),
 				queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(scope) })
 			])
-		]);
+		);
 	}
 
 	const checkProjectUpdatesMutation = createMutation(() => ({
@@ -850,12 +851,12 @@
 					toast.success(archiving ? m.compose_archive_success() : m.compose_unarchive_success());
 					await refreshProjectDetails();
 					const currentEnvId = envId;
-					await Promise.all([
-						...listScopes([currentEnvId]).flatMap((scope) => [
+					await Promise.all(
+						listScopes([currentEnvId]).flatMap((scope) => [
 							queryClient.invalidateQueries({ queryKey: ['projects', scope] }),
 							queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(scope) })
 						])
-					]);
+					);
 				}
 			});
 		} finally {
@@ -962,9 +963,7 @@
 		const targetFile =
 			kind === 'include'
 				? project?.includeFiles?.find((file) => file.relativePath === relativePath)
-				: kind === 'directory'
-					? projectWorkspaceEntries.find((file) => file.relativePath === relativePath)
-					: projectWorkspaceEntries.find((file) => file.relativePath === relativePath);
+				: projectWorkspaceEntries.find((file) => file.relativePath === relativePath);
 
 		if (!targetFile) {
 			throw new Error(m.workspace_file_not_found());

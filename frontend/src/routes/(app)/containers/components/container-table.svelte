@@ -625,6 +625,12 @@
 	function getGroupName(item: ContainerRow): string {
 		return getProjectName(item);
 	}
+
+	function getContainerIconVariant(state: string): 'emerald' | 'red' | 'amber' {
+		if (state === 'running') return 'emerald';
+		if (state === 'exited') return 'red';
+		return 'amber';
+	}
 </script>
 
 {#if resourcesCurrent}
@@ -856,16 +862,15 @@
 		{item}
 		icon={(item) => {
 			const iconUrl = getThemedIconUrl(item, mode.current);
-			const state = item.state;
 			return {
 				component: BoxIcon,
-				variant: state === 'running' ? 'emerald' : state === 'exited' ? 'red' : 'amber',
+				variant: getContainerIconVariant(item.state),
 				imageUrl: iconUrl ?? undefined,
 				alt: getContainerDisplayName(item)
 			};
 		}}
 		title={(item) => getContainerDisplayName(item)}
-		subtitle={(item) => ((mobileFieldVisibility['id'] ?? true) ? (item.id.length > 12 ? item.id : null) : null)}
+		subtitle={(item) => ((mobileFieldVisibility['id'] ?? true) && item.id.length > 12 ? item.id : null)}
 		badges={[
 			(item) =>
 				(mobileFieldVisibility['state'] ?? true)

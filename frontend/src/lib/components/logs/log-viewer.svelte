@@ -166,14 +166,28 @@
 	let currentStreamKey: string | null = null;
 	let streamSession = 0;
 	let currentStreamSession = 0;
-	// The environment is part of the key: the same ID in another environment is a different stream.
+
 	function streamKey() {
 		if (type === 'project') return projectId ? `${environmentId}:project:${projectId}` : null;
 		if (type === 'service') return serviceId ? `${environmentId}:svc:${serviceId}` : null;
 		return containerId ? `${environmentId}:ctr:${containerId}` : null;
 	}
 
-	const humanType = $derived(type === 'project' ? m.project() : type === 'service' ? m.swarm_service() : m.container());
+	const humanType = $derived.by(() => {
+		if (type === 'project') return m.project();
+		if (type === 'service') return m.swarm_service();
+		return m.container();
+	});
+	const targetId = $derived.by(() => {
+		if (type === 'project') return projectId;
+		if (type === 'service') return serviceId;
+		return containerId;
+	});
+	const logWsBasePath = $derived.by(() => {
+		if (type === 'project') return `/api/environments/${environmentId}/ws/projects/${projectId}/logs`;
+		if (type === 'service') return `/api/environments/${environmentId}/ws/swarm/services/${serviceId}/logs`;
+		return `/api/environments/${environmentId}/ws/containers/${containerId}/logs`;
+	});
 	const fillParent = $derived(height === '100%');
 	const minHeight = $derived(height === '100%' ? '0' : '300px');
 
@@ -183,18 +197,10 @@
 	}
 
 	async function buildLogWsEndpoint(): Promise<string> {
-		const basePath =
-			type === 'project'
-				? `/api/environments/${environmentId}/ws/projects/${projectId}/logs`
-				: type === 'service'
-					? `/api/environments/${environmentId}/ws/swarm/services/${serviceId}/logs`
-					: `/api/environments/${environmentId}/ws/containers/${containerId}/logs`;
-		return buildWebSocketEndpoint(`${basePath}?follow=true&tail=${tailLines}&timestamps=true&format=json&batched=true`);
+		return buildWebSocketEndpoint(`${logWsBasePath}?follow=true&tail=${tailLines}&timestamps=true&format=json&batched=true`);
 	}
 
 	export async function startLogStream() {
-		const targetId = type === 'project' ? projectId : type === 'service' ? serviceId : containerId;
-
 		if (!targetId) {
 			error = type === 'project' ? m.log_stream_no_project_selected() : m.log_stream_no_container_selected();
 			isStreaming = false;
@@ -207,8 +213,6 @@
 			return;
 		}
 
-		// A manual stop/start should reload the backend tail instead of appending
-		// onto the previous in-memory session buffer.
 		resetLogState();
 
 		connecting = true;
@@ -243,7 +247,6 @@
 	}
 
 	async function startWebSocketStream(sessionId: number) {
-		// Close existing connection if any
 		if (wsClient) {
 			try {
 				wsClient.close();
@@ -343,14 +346,12 @@
 			containerId: logData.containerId ?? (type === 'container' ? (containerId ?? undefined) : undefined)
 		};
 
-		// Parse eagerly only while detecting whether to auto-enable the structured view.
 		if (!hasAutoEnabledStructuredView && !showParsedJson && getStructuredLog(entry).isStructured) {
 			hasAutoEnabledStructuredView = true;
 			showParsedJson = true;
 		}
 
 		pending.push(entry);
-		// Animation frames pause in hidden tabs, so bound the queue to what a flush would keep.
 		if (pending.length > maxLines * COMPACT_FACTOR) pending = pending.slice(-Math.max(1, maxLines));
 		scheduleFlush();
 	}

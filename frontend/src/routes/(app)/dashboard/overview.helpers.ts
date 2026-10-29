@@ -86,19 +86,20 @@ export function getAgentConnectionStateLabel(environment: Environment): string {
 	}
 }
 
+function getActivityLabelAndValue(environment: Environment): { label: string; raw: string } | null {
+	if (environment.lastHeartbeat) return { label: m.environments_agent_last_heartbeat_label(), raw: environment.lastHeartbeat };
+	if (environment.connectedAt) return { label: m.environments_agent_connected_since_label(), raw: environment.connectedAt };
+	if (environment.lastSeen) return { label: m.dashboard_all_last_seen(), raw: environment.lastSeen };
+	return null;
+}
+
 export function getActivityMeta(environment: Environment): { label: string; value: string; title: string } {
 	if (!isEnvironmentOnline(environment)) {
 		const statusLabel = getResolvedStatusLabel(environment);
 		return { label: m.activity(), value: statusLabel, title: statusLabel };
 	}
 
-	const labelAndValue = environment.lastHeartbeat
-		? { label: m.environments_agent_last_heartbeat_label(), raw: environment.lastHeartbeat }
-		: environment.connectedAt
-			? { label: m.environments_agent_connected_since_label(), raw: environment.connectedAt }
-			: environment.lastSeen
-				? { label: m.dashboard_all_last_seen(), raw: environment.lastSeen }
-				: null;
+	const labelAndValue = getActivityLabelAndValue(environment);
 
 	if (!labelAndValue?.raw) return { label: m.activity(), value: m.common_never(), title: m.common_never() };
 	const parsed = parseInstant(labelAndValue.raw);

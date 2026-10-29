@@ -95,6 +95,12 @@
 		}
 		return items;
 	});
+
+	function getUsageTone(percent: number): 'destructive' | 'warning' | 'default' {
+		if (percent > 80) return 'destructive';
+		if (percent > 60) return 'warning';
+		return 'default';
+	}
 </script>
 
 {#snippet statRow(label: string, value: string | null)}
@@ -161,12 +167,7 @@
 				<div class="text-right text-sm font-semibold text-muted-foreground">
 					{cpuUsagePercent.toFixed(2)}%
 				</div>
-				<Progress
-					value={cpuUsagePercent}
-					max={100}
-					class="h-3"
-					tone={cpuUsagePercent > 80 ? 'destructive' : cpuUsagePercent > 60 ? 'warning' : 'default'}
-				/>
+				<Progress value={cpuUsagePercent} max={100} class="h-3" tone={getUsageTone(cpuUsagePercent)} />
 				{#if stats.cpu_stats}
 					<div class="flex items-center justify-between text-xs text-muted-foreground">
 						{#if cpuLimit > 0}
@@ -218,12 +219,7 @@
 						{memoryUsageFormatted} / {memoryLimitFormatted}
 					</div>
 				</div>
-				<Progress
-					value={memoryUsagePercent}
-					max={100}
-					class="h-3"
-					tone={memoryUsagePercent > 80 ? 'destructive' : memoryUsagePercent > 60 ? 'warning' : 'default'}
-				/>
+				<Progress value={memoryUsagePercent} max={100} class="h-3" tone={getUsageTone(memoryUsagePercent)} />
 			</div>
 			<div class="grid grid-cols-1 gap-x-4 gap-y-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
 				{@render statRow(m.containers_stats_cache(), bytes.format(memoryCacheBytes))}

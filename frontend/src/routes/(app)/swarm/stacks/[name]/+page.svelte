@@ -85,7 +85,11 @@
 	]);
 	const urlTab = useUrlTab<StackTab>({
 		validTabs: () => tabItems.map((tab) => tab.value as StackTab),
-		defaultTab: () => (hasLiveStack ? 'services' : canViewSource ? 'source' : 'services')
+		defaultTab: () => {
+			if (hasLiveStack) return 'services';
+			if (canViewSource) return 'source';
+			return 'services';
+		}
 	});
 	const selectedTab = $derived(urlTab.value);
 	const totalServices = $derived(services?.pagination?.totalItems ?? services?.data?.length ?? 0);

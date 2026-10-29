@@ -801,7 +801,7 @@
 				pruneEnvironment = null;
 				pruneDefaults = null;
 				const toastOptions = {
-					...(activityToastOptions(extractActivityId(data)) ?? {}),
+					...activityToastOptions(extractActivityId(data)),
 					description: targetEnvironment.environment.name
 				};
 				if (selectedTypes.length === 1) {

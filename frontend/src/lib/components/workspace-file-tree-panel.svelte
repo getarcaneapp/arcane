@@ -168,13 +168,11 @@
 	const hasDestinationPicker = $derived(
 		dialogMode === 'create_file' || dialogMode === 'create_folder' || dialogMode === 'upload' || dialogMode === 'move'
 	);
-	const allDestinationOptions = $derived.by(() =>
-		hasDestinationPicker
-			? dialogMode === 'move' && dialogTargetPath
-				? buildMoveDestinationOptions(dialogTargetPath)
-				: buildFolderDestinationOptions()
-			: []
-	);
+	const allDestinationOptions = $derived.by(() => {
+		if (!hasDestinationPicker) return [];
+		if (dialogMode === 'move' && dialogTargetPath) return buildMoveDestinationOptions(dialogTargetPath);
+		return buildFolderDestinationOptions();
+	});
 	const visibleDestinationOptions = $derived.by(() =>
 		allDestinationOptions.filter((option) => option.relativePath === '' || isDestinationVisible(option.relativePath))
 	);

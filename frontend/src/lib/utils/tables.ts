@@ -115,7 +115,7 @@ export function resolveInitialTableRequest(
 		if (sort && !options.deferredSortColumns?.includes(sort.column)) {
 			base.sort = sort;
 		}
-	} catch (error) {
+	} catch {
 		return base;
 	}
 

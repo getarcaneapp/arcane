@@ -83,6 +83,16 @@
 		})
 	);
 	const connectionVerified = $derived(testedConfiguration === currentConfiguration);
+	const submitAction = $derived.by(() => {
+		if (!connectionVerified) return 'test';
+		if (destination) return 'save';
+		return 'create';
+	});
+	const submitLabel = $derived.by(() => {
+		if (!connectionVerified) return m.test_connection();
+		if (destination) return m.common_save_changes();
+		return m.s3_destination_add_title();
+	});
 
 	function handleSubmit() {
 		const data = form.validate();
@@ -185,15 +195,11 @@
 			<SheetFooterActions
 				bind:open
 				cancelDisabled={saving || testing}
-				submitAction={connectionVerified ? (destination ? 'save' : 'create') : 'test'}
+				{submitAction}
 				submitDisabled={saving || testing}
 				submitLoading={saving || testing}
 				onSubmit={() => (connectionVerified ? handleSubmit() : handleTest())}
-				submitLabel={connectionVerified
-					? destination
-						? m.common_save_changes()
-						: m.s3_destination_add_title()
-					: m.test_connection()}
+				{submitLabel}
 			/>
 		</div>
 	{/snippet}

@@ -113,7 +113,7 @@
 	role={href && disabled ? 'link' : role}
 	tabindex={href && disabled ? -1 : tabindex}
 	class={cn('relative', arcaneButtonVariants({ tone: tone ?? config.tone, size, hoverEffect }), className)}
-	aria-label={ariaLabel ?? (children ? undefined : isIconOnlyButton ? displayLabel : undefined)}
+	aria-label={ariaLabel ?? (!children && isIconOnlyButton ? displayLabel : undefined)}
 	bind:this={ref}
 	{@attach shortcut && clickOnShortcut(shortcut)}
 	onclick={async (e: any) => {

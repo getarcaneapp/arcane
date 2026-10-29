@@ -67,6 +67,7 @@
 		"marked": "^18.1.2",
 		"mode-watcher": "^1.1.0",
 		"runed": "^0.38.0",
+		"strip-ansi": "^7.2.0",
 		"svelte": "^5.57.3",
 		"svelte-codemirror-editor": "^2.1.0",
 		"svelte-easy-crop": "^5.0.1",

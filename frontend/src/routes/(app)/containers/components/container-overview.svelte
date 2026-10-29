@@ -119,6 +119,17 @@
 			container.config?.user
 		)
 	);
+
+	function getHealthStatusVariant(status: string): 'green' | 'red' | 'amber' {
+		switch (status) {
+			case 'healthy':
+				return 'green';
+			case 'unhealthy':
+				return 'red';
+			default:
+				return 'amber';
+		}
+	}
 </script>
 
 <div class="space-y-6">
@@ -126,13 +137,8 @@
 		{#if container.state?.health}
 			<div class="flex items-center gap-1.5">
 				<HealthIcon class="size-4 shrink-0 text-muted-foreground" />
-				<Badge
-					variant={container.state.health.status === 'healthy'
-						? 'green'
-						: container.state.health.status === 'unhealthy'
-							? 'red'
-							: 'amber'}
-					minWidth="20">{container.state.health.status}</Badge
+				<Badge variant={getHealthStatusVariant(container.state.health.status)} minWidth="20"
+					>{container.state.health.status}</Badge
 				>
 			</div>
 		{/if}

@@ -63,10 +63,22 @@
 		isFiltered?: boolean;
 		onResetFilters?: () => void;
 	} = $props();
+
+	function toButtonAction(action: BulkAction['action']) {
+		switch (action) {
+			case 'up':
+				return 'start' as const;
+			case 'down':
+				return 'stop' as const;
+			default:
+				return action;
+		}
+	}
+
 	const buttonActions = $derived(
 		bulkActions.map((item) => ({
 			...item,
-			action: item.action === 'up' ? ('start' as const) : item.action === 'down' ? ('stop' as const) : item.action
+			action: toButtonAction(item.action)
 		}))
 	);
 
