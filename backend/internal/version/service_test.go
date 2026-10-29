@@ -402,3 +402,116 @@ func TestVersionService_GetAppVersionInfoSuppressesOlderStableForPrerelease(t *t
 	assert.Empty(t, info.ReleaseURL)
 	assert.Empty(t, info.ReleasedAt)
 }
+
+func TestVersionService_GetAppVersionInfoChannelCommitNotes(t *testing.T) {
+	const (
+		runningRevision = "1111111111111111111111111111111111111111"
+		targetRevision  = "2222222222222222222222222222222222222222"
+	)
+	tests := []struct {
+		name          string
+		imageRevision string
+		status        int
+		wantNotes     []string
+		wantURL       string
+		wantGitHubHit bool
+	}{
+		{
+			name:          "newer revision gets grouped notes",
+			imageRevision: targetRevision,
+			status:        http.StatusOK,
+			wantNotes: []string{
+				"### New features\n\n- feat: redesigned activity center ([#42](https://github.com/getarcaneapp/arcane/pull/42) by @octo)",
+				"### Bug fixes\n\n- fix: correct e2e test ([3333333](https://github.com/getarcaneapp/arcane/commit/3333333333333333333333333333333333333333))",
+				"[And 1 more commits](https://github.com/getarcaneapp/arcane/compare/" + runningRevision + "..." + targetRevision + ")",
+			},
+			wantURL:       "https://github.com/getarcaneapp/arcane/compare/" + runningRevision + "..." + targetRevision,
+			wantGitHubHit: true,
+		},
+		{
+			name:          "same revision gets no notes",
+			imageRevision: runningRevision,
+			status:        http.StatusOK,
+		},
+		{
+			name:          "compare failure keeps the diff link only",
+			imageRevision: targetRevision,
+			status:        http.StatusForbidden,
+			wantURL:       "https://github.com/getarcaneapp/arcane/compare/" + runningRevision + "..." + targetRevision,
+			wantGitHubHit: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			db := setupImageUpdateTestDB(t)
+
+			const (
+				containerID = "arcane-container-1234567890"
+				imageID     = "sha256:arcane-image"
+			)
+			repo := newLabelRegistryTestServer(t) + "/getarcaneapp/arcane"
+
+			img, err := random.Image(64, 1)
+			require.NoError(t, err)
+			cfg, err := img.ConfigFile()
+			require.NoError(t, err)
+			cfg = cfg.DeepCopy()
+			cfg.Config.Labels = map[string]string{
+				registry.OCIImageVersionLabel:  "v3.0.0-beta.45",
+				registry.OCIImageRevisionLabel: tt.imageRevision,
+			}
+			img, err = mutate.ConfigFile(img, cfg)
+			require.NoError(t, err)
+			pushRef, err := name.ParseReference(repo + ":v3-beta")
+			require.NoError(t, err)
+			require.NoError(t, remote.Write(pushRef, img))
+			imgDigest, err := img.Digest()
+			require.NoError(t, err)
+
+			currentDigest := digest.FromString("current-arcane").String()
+			server := newNextChannelDockerServer(t, containerID, imageID, repo, "v3-beta", currentDigest)
+			require.NoError(t, db.WithContext(ctx).Create(&imageupdate.ImageUpdateRecord{
+				ID:             imageID,
+				Repository:     repo,
+				Tag:            "v3-beta",
+				HasUpdate:      true,
+				UpdateType:     imageupdate.UpdateTypeDigest,
+				CurrentVersion: "v3-beta",
+				CurrentDigest:  &currentDigest,
+				LatestDigest:   new(imgDigest.String()),
+				CheckTime:      time.Now().UTC(),
+			}).Error)
+
+			githubHit := false
+			httpClient := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				githubHit = true
+				assert.Equal(t, "/repos/getarcaneapp/arcane/compare/"+runningRevision+"..."+targetRevision, req.URL.Path)
+				return &http.Response{
+					StatusCode: tt.status,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(`{"total_commits":5,"commits":[
+						{"sha":"4444444444444444444444444444444444444444","commit":{"message":"feat: redesigned activity center (#42)\n\nbody"},"author":{"login":"octo"}},
+						{"sha":"5555555555555555555555555555555555555555","commit":{"message":"chore: bump deps"},"author":null},
+						{"sha":"6666666666666666666666666666666666666666","commit":{"message":"Merge branch main"},"author":null},
+						{"sha":"3333333333333333333333333333333333333333","commit":{"message":"fix: correct e2e test"},"author":null}
+					]}`)),
+					Request: req,
+				}, nil
+			})}
+			dockerService := (&docker.DockerClientService{}).WithClient(newTestDockerClient(t, server))
+			imageUpdateService := imageupdate.NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
+			registrySvc := registry.NewContainerRegistryService(nil, nil, nil, nil)
+			svc := NewVersionService(httpClient, "3.0.0-beta.44", runningRevision, registrySvc, dockerService, imageUpdateService, newVersionSettingsService(t, true))
+
+			info := svc.GetAppVersionInfo(ctx)
+
+			require.NotNil(t, info)
+			assert.Equal(t, "v3.0.0-beta.45", info.NewestVersion)
+			assert.Equal(t, tt.wantURL, info.ReleaseURL)
+			assert.Equal(t, strings.Join(tt.wantNotes, "\n\n"), info.ReleaseNotes)
+			assert.Equal(t, tt.wantGitHubHit, githubHit)
+		})
+	}
+}
