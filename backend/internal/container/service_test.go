@@ -1391,7 +1391,7 @@ func TestResourceSortCoalescesConcurrentFetches(t *testing.T) {
 	errs := make([]error, callers)
 	for i := range callers {
 		wg.Go(func() {
-			_, err := svc.stats.Collect(t.Context(), []types.ContainerSummary{{ID: "web", State: "running"}}, stats.ContainerResourceSampleTTL)
+			_, err := svc.stats.Collect(t.Context(), []types.ContainerSummary{{ID: "web", State: "running"}}, stats.ContainerResourceSampleTTL, true)
 			errs[i] = err
 		})
 	}
