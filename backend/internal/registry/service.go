@@ -67,7 +67,8 @@ const (
 	dockerHubRateLimitRepository        = "ratelimitpreview/test"
 	dockerHubRateLimitTag               = "latest"
 	ecrTokenTTL                         = 11 * time.Hour
-	ociImageVersionLabel                = "org.opencontainers.image.version"
+	OCIImageVersionLabel                = "org.opencontainers.image.version"
+	OCIImageRevisionLabel               = "org.opencontainers.image.revision"
 	versionLabelCacheTTL                = 3 * time.Hour
 )
 
@@ -103,7 +104,7 @@ type ContainerRegistryService struct {
 	dockerClient           registryDaemonGetter
 	cache                  *hot.HotCache[string, string]
 	digestFailures         *hot.HotCache[string, error]
-	labelCache             *hot.HotCache[string, string]
+	labelCache             *hot.HotCache[string, map[string]string]
 	ecrRefreshGroup        singleflight.Group
 	distributionHTTPClient *http.Client
 	kvService              *kv.KVService
@@ -162,8 +163,8 @@ func NewContainerRegistryService(
 			WithTTL(registryDigestFailureTTL).
 			WithJanitor().
 			Build(),
-		// No static loader: ImageVersionLabel uses GetWithLoaders so failed resolutions retry on the next request.
-		labelCache: hot.NewHotCache[string, string](hot.LRU, 64).
+		// No static loader: ImageLabels uses GetWithLoaders so failed resolutions retry on the next request.
+		labelCache: hot.NewHotCache[string, map[string]string](hot.LRU, 64).
 			WithTTL(versionLabelCacheTTL).
 			Build(),
 		distributionHTTPClient: distributionHTTPClient,
@@ -1316,14 +1317,13 @@ func (s *ContainerRegistryService) GetOrRefreshECRToken(ctx context.Context, reg
 	return "AWS", ecrPassword, nil
 }
 
-// ImageVersionLabel resolves the org.opencontainers.image.version label from the remote image config without pulling.
-// Anonymous access only — this is used for Arcane's own public GHCR images.
-func (s *ContainerRegistryService) ImageVersionLabel(ctx context.Context, imageRef string) (string, error) {
+// ImageLabels resolves the remote image config labels without pulling. The config must carry org.opencontainers.image.version.
+func (s *ContainerRegistryService) ImageLabels(ctx context.Context, imageRef string) (map[string]string, error) {
 	if strings.TrimSpace(imageRef) == "" {
-		return "", errors.New("empty image reference")
+		return nil, errors.New("empty image reference")
 	}
 
-	label, found, err := s.labelCache.GetWithLoaders(strings.TrimSpace(imageRef), func(_ []string) (map[string]string, error) {
+	labels, found, err := s.labelCache.GetWithLoaders(strings.TrimSpace(imageRef), func(_ []string) (map[string]map[string]string, error) {
 		loadCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultRegistry)
 		defer cancel()
 
@@ -1333,22 +1333,22 @@ func (s *ContainerRegistryService) ImageVersionLabel(ctx context.Context, imageR
 		}
 		img, fetchErr := remote.Image(parsedRef, remote.WithContext(loadCtx), remote.WithPlatform(v1.Platform{OS: "linux", Architecture: runtime.GOARCH}))
 		if fetchErr != nil {
-			return nil, fmt.Errorf("version label fetch failed for %s: %w", strings.TrimSpace(imageRef), fetchErr)
+			return nil, fmt.Errorf("image labels fetch failed for %s: %w", strings.TrimSpace(imageRef), fetchErr)
 		}
 		cfg, configErr := img.ConfigFile()
 		if configErr != nil {
-			return nil, fmt.Errorf("version label fetch failed for %s: %w", strings.TrimSpace(imageRef), configErr)
+			return nil, fmt.Errorf("image labels fetch failed for %s: %w", strings.TrimSpace(imageRef), configErr)
 		}
-		if cfg == nil || strings.TrimSpace(cfg.Config.Labels[ociImageVersionLabel]) == "" {
+		if cfg == nil || strings.TrimSpace(cfg.Config.Labels[OCIImageVersionLabel]) == "" {
 			return nil, ErrNoVersionLabel
 		}
-		return map[string]string{strings.TrimSpace(imageRef): strings.TrimSpace(cfg.Config.Labels[ociImageVersionLabel])}, nil
+		return map[string]map[string]string{strings.TrimSpace(imageRef): cfg.Config.Labels}, nil
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if !found {
-		return "", errors.New("registry version label cache loader returned no label")
+		return nil, errors.New("registry image label cache loader returned no labels")
 	}
-	return label, nil
+	return labels, nil
 }
