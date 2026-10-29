@@ -66,6 +66,7 @@ var commandRoutes = []commandRoute{
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/images/updates/check", CommandName: "image_update.check_images"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/images/updates/summary", CommandName: "image_update.summary"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/images/updates/refs", CommandName: "image_update.by_refs"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/images/updates/releasenotes", CommandName: "image_update.release_notes"},
 
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/activities", CommandName: "activity.list"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/activities/{activityId}", CommandName: "activity.inspect"},
