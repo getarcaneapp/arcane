@@ -39,9 +39,9 @@ type ListImagePatchesInput struct {
 	Search        string `query:"search" doc:"Search query"`
 	Sort          string `query:"sort" doc:"Sort field"`
 	Order         string `query:"order" doc:"Sort order"`
+	Status        string `query:"status" doc:"Filter by patch status"`
 	Start         int    `query:"start" doc:"Start offset"`
 	Limit         int    `query:"limit" doc:"Limit"`
-	Status        string `query:"status" doc:"Filter by patch status"`
 	IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
 }
 

@@ -60,6 +60,9 @@ import (
 )
 
 type EnvironmentService struct {
+	remoteSyncs remoteSyncQueue
+
+	variableSyncer   VariableSyncer
 	db               *database.DB
 	dockerService    *docker.DockerClientService
 	eventService     *event.EventService
@@ -67,20 +70,18 @@ type EnvironmentService struct {
 	agentTokens      *agentTokenCache
 	remoteEnvs       *remoteEnvSnapshotCache
 	environmentCache *hot.HotCache[environmentCacheKey, Environment]
-	environmentGens  [environmentCacheStripes]atomic.Uint64
 	accessTokens     *hot.HotCache[string, string]
 	accessTokenIndex *accessTokenIndex
 	jobs             *entityjobs.Registry
 
-	variableSyncer  VariableSyncer
 	invalidateUser  func(userID string)
-	runtimeWatchers runtimeWatchers
-	remoteSyncs     remoteSyncQueue
 	syncGate        *utils.SyncGate
 	proxy           *proxy.Service
 	health          *health.Service
 	snippets        *snippets.Service
 	swarm           *swarm.Service
+	runtimeWatchers runtimeWatchers
+	environmentGens [environmentCacheStripes]atomic.Uint64
 }
 
 const (
@@ -109,15 +110,15 @@ type VariableSyncer interface {
 }
 
 type resourceSync struct {
-	kind string
 	sync func(ctx context.Context, environmentID string) error
+	kind string
 }
 
 // DeploymentSnippets contains deployment configuration snippets for an environment.
 type DeploymentSnippets struct {
+	MTLS          *types.DeploymentSnippetMTLS
 	DockerRun     string
 	DockerCompose string
-	MTLS          *types.DeploymentSnippetMTLS
 }
 
 // ForgetSyncState makes the next sync of every resource group resend regardless of payload changes.
@@ -768,9 +769,9 @@ func (s *EnvironmentService) SyncResourcesToEnvironment(ctx context.Context, env
 // resourceSyncs lists the manager-owned resource groups pushed to remote environments.
 func (s *EnvironmentService) resourceSyncs() []resourceSync {
 	return []resourceSync{
-		{"container registries", s.SyncRegistriesToEnvironment},
-		{"S3 destinations", s.SyncS3DestinationsToEnvironment},
-		{"git repositories", s.SyncRepositoriesToEnvironment},
+		{kind: "container registries", sync: s.SyncRegistriesToEnvironment},
+		{kind: "S3 destinations", sync: s.SyncS3DestinationsToEnvironment},
+		{kind: "git repositories", sync: s.SyncRepositoriesToEnvironment},
 	}
 }
 

@@ -199,12 +199,14 @@ func TestNormalizationReadTimeout(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(previousLogger) })
 	for _, tc := range []struct {
-		name                         string
-		timeout                      time.Duration
-		readTimeout                  bool
-		setupErr, resetErr, closeErr error
-		status                       int
-		logMessage                   string
+		setupErr    error
+		resetErr    error
+		closeErr    error
+		name        string
+		logMessage  string
+		timeout     time.Duration
+		status      int
+		readTimeout bool
 	}{
 		{name: "read timeout", timeout: time.Second, readTimeout: true, status: http.StatusRequestTimeout},
 		{name: "unsupported deadline", timeout: time.Second, setupErr: fmt.Errorf("writer: %w", http.ErrNotSupported), status: http.StatusNoContent},

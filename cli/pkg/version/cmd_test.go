@@ -15,8 +15,8 @@ import (
 func TestVersionOutput(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
-		status      int
 		body        string
+		status      int
 		json        bool
 		unavailable bool
 	}{

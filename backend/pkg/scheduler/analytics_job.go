@@ -40,10 +40,10 @@ type AnalyticsJob struct {
 	settingsService *settings.SettingsService
 	kvService       *kv.KVService
 	httpClient      *http.Client
-	heartbeatURL    string
 	cfg             *config.Config
-	runMu           sync.Mutex
 	now             func() time.Time
+	heartbeatURL    string
+	runMu           sync.Mutex
 }
 
 func NewAnalyticsJob(

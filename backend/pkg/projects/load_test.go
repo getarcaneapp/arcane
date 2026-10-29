@@ -200,9 +200,9 @@ func TestLoadComposeProject_ArcaneProcessEnvInterpolation(t *testing.T) {
 	t.Setenv("TZ", "America/Chicago")
 
 	testCases := []struct {
+		check   func(t *testing.T, app composetypes.ServiceConfig)
 		name    string
 		compose string
-		check   func(t *testing.T, app composetypes.ServiceConfig)
 	}{
 		{
 			name:    "blocked var falls back to compose default",

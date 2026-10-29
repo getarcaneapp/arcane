@@ -321,8 +321,8 @@ func TestS3DestinationService_TestS3DestinationRoundTrip(t *testing.T) {
 	for _, scenario := range []struct {
 		name          string
 		code          string
-		status        int
 		reason        string
+		status        int
 		wantError     bool
 		snapshotError bool
 		configOnly    bool

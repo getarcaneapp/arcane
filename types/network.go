@@ -195,6 +195,10 @@ type NetworkInspect struct {
 }
 
 type NetworkCreateResponse struct {
+	// ActivityID is the activity created by the network creation action.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 	// ID is the unique identifier of the created network.
 	//
 	// Required: true
@@ -204,11 +208,6 @@ type NetworkCreateResponse struct {
 	//
 	// Required: false
 	Warning string `json:"warning,omitempty"`
-
-	// ActivityID is the activity created by the network creation action.
-	//
-	// Required: false
-	ActivityID *string `json:"activityId,omitempty"`
 }
 
 // Network is the writable representation of a network.
@@ -226,10 +225,10 @@ type Network struct {
 
 // NetworkIPAMConfig contains IP address management configuration for a subnet.
 type NetworkIPAMConfig struct {
+	AuxAddress map[string]string `json:"auxAddress,omitempty"`
 	Subnet     string            `json:"subnet,omitempty"`
 	Gateway    string            `json:"gateway,omitempty"`
 	IPRange    string            `json:"ipRange,omitempty"`
-	AuxAddress map[string]string `json:"auxAddress,omitempty"`
 }
 
 // NetworkIPAM contains IP Address Management configuration.
@@ -275,11 +274,6 @@ type NetworkContainerRequest struct {
 	// Required: true
 	ContainerID string `json:"containerId" minLength:"1" doc:"Container ID or name"`
 
-	// Aliases for the container on this network.
-	//
-	// Required: false
-	Aliases []string `json:"aliases,omitempty" doc:"Network-scoped aliases (connect only)"`
-
 	// IPv4Address is a static IPv4 address for the container on this network.
 	//
 	// Required: false
@@ -290,6 +284,11 @@ type NetworkContainerRequest struct {
 	// Required: false
 	IPv6Address string `json:"ipv6Address,omitempty" doc:"Static IPv6 address (connect only)"`
 
+	// Aliases for the container on this network.
+	//
+	// Required: false
+	Aliases []string `json:"aliases,omitempty" doc:"Network-scoped aliases (connect only)"`
+
 	// Force disconnects even if the container is running.
 	//
 	// Required: false
@@ -297,6 +296,10 @@ type NetworkContainerRequest struct {
 }
 
 type NetworkPruneReport struct {
+	// ActivityID is the activity created by the prune action.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 	// NetworksDeleted is a list of network IDs that were deleted.
 	//
 	// Required: true
@@ -306,11 +309,6 @@ type NetworkPruneReport struct {
 	//
 	// Required: true
 	SpaceReclaimed uint64 `json:"spaceReclaimed"`
-
-	// ActivityID is the activity created by the prune action.
-	//
-	// Required: false
-	ActivityID *string `json:"activityId,omitempty"`
 }
 
 type NetworkTopologyNodeType string

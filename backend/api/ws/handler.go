@@ -45,36 +45,16 @@ var (
 // REST endpoints are handled by Huma handlers.
 type WebSocketHandler struct {
 	// ctx ends after open connections were closed with StatusGoingAway on app shutdown.
-	ctx                 context.Context
-	conns               sync.Map
-	projectService      *project.ProjectService
-	containerService    *container.ContainerService
-	swarmService        *swarm.SwarmService
-	systemService       *system.SystemService
-	diagnosticsService  *diagnostics.DiagnosticsService
-	checkWSOrigin       func(*http.Request) bool
-	activeConnectionsMu sync.Mutex
-	activeConnections   map[string]int
-	logStreamsMu        sync.Mutex
-	logStreams          map[string]*wsLogStream
-	cpuCache            concurrency.Snapshot[float64]
-	systemStaticInfo    struct {
-		once     sync.Once
-		cpuCount int
-		hostname string
-	}
-	systemStatsSampler struct {
-		latest            concurrency.Snapshot[types.SystemStats]
-		lifecycleMu       sync.Mutex
-		clients           int
-		intervals         map[time.Duration]int
-		effectiveInterval atomic.Int64
-		cancel            context.CancelFunc
-		ready             chan struct{}
-		wake              chan struct{}
-		running           bool
-	}
-	containerStatsHubs sync.Map
+	ctx                context.Context
+	projectService     *project.ProjectService
+	containerService   *container.ContainerService
+	swarmService       *swarm.SwarmService
+	systemService      *system.SystemService
+	diagnosticsService *diagnostics.DiagnosticsService
+	checkWSOrigin      func(*http.Request) bool
+	activeConnections  map[string]int
+	logStreams         map[string]*wsLogStream
+	cpuCache           concurrency.Snapshot[float64]
 	containersStatsHub *agg.Hub[containersStatsResult]
 	cgroupCache        *cgroup.Cache
 	gpuMonitor         atomic.Pointer[systemlib.GPUMonitor]
@@ -84,6 +64,26 @@ type WebSocketHandler struct {
 	containerLogStreamer func(ctx context.Context, containerID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error
 	systemStatsCollector func(ctx context.Context) types.SystemStats
 	cpuUsageReader       func(interval time.Duration) (float64, bool)
+	systemStatsSampler   struct {
+		latest            concurrency.Snapshot[types.SystemStats]
+		intervals         map[time.Duration]int
+		cancel            context.CancelFunc
+		ready             chan struct{}
+		wake              chan struct{}
+		clients           int
+		effectiveInterval atomic.Int64
+		lifecycleMu       sync.Mutex
+		running           bool
+	}
+	conns              sync.Map
+	containerStatsHubs sync.Map
+	systemStaticInfo   struct {
+		hostname string
+		cpuCount int
+		once     sync.Once
+	}
+	activeConnectionsMu sync.Mutex
+	logStreamsMu        sync.Mutex
 }
 
 func NewWebSocketHandler(

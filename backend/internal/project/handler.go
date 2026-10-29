@@ -39,14 +39,14 @@ type ListProjectsInput struct {
 	Search        string `query:"search" doc:"Search query"`
 	Sort          string `query:"sort" doc:"Column to sort by"`
 	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 	Status        string `query:"status" doc:"Filter by status (comma-separated: running,stopped,partially running)"`
 	Updates       string `query:"updates" doc:"Filter by update status (has_update, up_to_date, error, unknown)"`
 	Archived      string `query:"archived" doc:"Archived filter: 'true' (only archived), 'all' (include archived). Default excludes archived."`
 	Tags          string `query:"tags" doc:"Filter by tag names (comma-separated, OR semantics)"`
 	Label         string `query:"label" doc:"Filter by container label key or key=value on any running service"`
 	Name          string `query:"name" doc:"Filter by exact project name (comma-separated for several)"`
+	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 }
 
 // UpdateProjectTagInput identifies a project and the UI tag mutation to apply.
@@ -57,10 +57,10 @@ type UpdateProjectTagInput struct {
 }
 
 type DeployProjectInput struct {
+	Body          *types.ProjectDeployOptions
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 	Action        string `query:"action" required:"true" enum:"up,redeploy,pull" doc:"Deploy action"`
-	Body          *types.ProjectDeployOptions
 }
 
 type ProjectActionInput struct {
@@ -71,8 +71,8 @@ type ProjectActionInput struct {
 }
 
 type CreateProjectInput struct {
-	EnvironmentID string         `path:"id" doc:"Environment ID"`
 	RawBody       multipart.Form `contentType:"multipart/form-data"`
+	EnvironmentID string         `path:"id" doc:"Environment ID"`
 }
 
 type GetProjectInput struct {
@@ -81,9 +81,9 @@ type GetProjectInput struct {
 }
 
 type DestroyProjectInput struct {
+	Body          *types.ProjectDestroy
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
-	Body          *types.ProjectDestroy
 }
 
 type UpdateProjectInput struct {
@@ -93,9 +93,9 @@ type UpdateProjectInput struct {
 }
 
 type BuildProjectInput struct {
+	Body          *types.ProjectBuildRequest
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
-	Body          *types.ProjectBuildRequest
 }
 
 // ListProjects returns a paginated list of projects.
@@ -241,17 +241,17 @@ func (h *ProjectHandler) UpdateProjectTag(ctx context.Context, input *UpdateProj
 // operation (deploy, redeploy, pull, build): the activity it records and the
 // action whose raw docker CLI output is streamed to the client.
 type projectStreamOperationConfig struct {
+	Metadata database.JSON
+	// Action runs the operation. ctx carries the stream writer under
+	// types.ProgressWriterKey; it is also passed directly for actions
+	// that take a writer parameter.
+	Action         func(ctx context.Context, writer io.Writer) error
 	ActivityType   types.ActivityType
 	Step           string
 	StartMessage   string
 	WriterStep     string
 	FailureMessage string
 	SuccessMessage string
-	Metadata       database.JSON
-	// Action runs the operation. ctx carries the stream writer under
-	// types.ProgressWriterKey; it is also passed directly for actions
-	// that take a writer parameter.
-	Action func(ctx context.Context, writer io.Writer) error
 }
 
 // projectActivityName returns the project's name for activity records, falling back to its ID.
@@ -689,6 +689,9 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 }
 
 type projectActivityActionConfig struct {
+	Metadata        database.JSON
+	Action          func(context.Context, string, types.Actor) error
+	Error           func(error) error
 	ActivityType    types.ActivityType
 	Step            string
 	StartMessage    string
@@ -698,10 +701,7 @@ type projectActivityActionConfig struct {
 	SuccessMessage  string
 	// Queue routes the activity through the per-environment concurrency
 	// limiter; set for long-running deploy-like actions, not quick restarts.
-	Queue    bool
-	Metadata database.JSON
-	Action   func(context.Context, string, types.Actor) error
-	Error    func(error) error
+	Queue bool
 }
 
 func (h *ProjectHandler) runProjectActivityAction(ctx context.Context, environmentID, projectID string, cfg projectActivityActionConfig) (*handlerutil.Out[types.MessageResponse], error) {
@@ -825,9 +825,9 @@ type GetProjectWorkspaceFileInput struct {
 }
 
 type UpdateProjectWorkspaceInput struct {
+	RawBody       multipart.Form `contentType:"multipart/form-data"`
 	EnvironmentID string         `path:"id" doc:"Environment ID"`
 	ProjectID     string         `path:"projectId" doc:"Project ID"`
-	RawBody       multipart.Form `contentType:"multipart/form-data"`
 }
 
 func (h *ProjectHandler) GetProjectWorkspace(ctx context.Context, input *GetProjectWorkspaceInput) (*handlerutil.Out[types.Workspace], error) {

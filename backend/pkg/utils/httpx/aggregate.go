@@ -32,15 +32,15 @@ var errEnvironmentResponseTooLarge = errors.New("response too large")
 type EnvironmentResolver func(ctx context.Context, id string) (types.EnvironmentRef, error)
 
 type EnvironmentScope struct {
-	IDs     []string
-	Request *http.Request // clone of the outer request captured before auth; carries no scope
 	Handler http.Handler  // the Echo instance, for in-process re-dispatch
+	Request *http.Request // clone of the outer request captured before auth; carries no scope
 	Resolve EnvironmentResolver
+	IDs     []string
 }
 
 type EnvironmentResult[R any] struct {
-	Environment types.EnvironmentRef
 	Value       R
+	Environment types.EnvironmentRef
 }
 
 type EnvironmentCollection[R any] struct {
@@ -208,8 +208,8 @@ func dispatchEnvironment[R any](ctx context.Context, scope *EnvironmentScope, id
 
 type boundedResponseWriter struct {
 	header   http.Header
-	status   int
 	body     bytes.Buffer
+	status   int
 	overflow bool
 }
 

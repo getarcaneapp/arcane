@@ -42,24 +42,25 @@ const (
 )
 
 type DockerClientService struct {
-	*client.Client
-
-	db              *database.DB
-	settingsService *settings.SettingsService
-	clientVersion   string
-	clientHost      string
-	boundHost       string
 	clientLastProbe time.Time
-	engine          compat.EngineCompatibilityInfo
-	engineClient    *client.Client
-	mu              sync.Mutex
-	eventBus        *bus.DockerEventBus
-	streamConnected *concurrency.Signal[struct{}]
 
 	// Coalesce concurrent full-inventory lists into one Docker response; per-instance
 	// because a WithClient copy talks to a different daemon.
 	imageListFlight     singleflight.Group
 	containerListFlight singleflight.Group
+	*client.Client
+
+	db              *database.DB
+	settingsService *settings.SettingsService
+	engineClient    *client.Client
+	eventBus        *bus.DockerEventBus
+	streamConnected *concurrency.Signal[struct{}]
+
+	engine        compat.EngineCompatibilityInfo
+	clientVersion string
+	clientHost    string
+	boundHost     string
+	mu            sync.Mutex
 }
 
 func NewDockerClientService(ctx context.Context, db *database.DB, settingsService *settings.SettingsService, eventBusOptions ...bus.Option) *DockerClientService {

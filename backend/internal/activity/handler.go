@@ -51,11 +51,11 @@ type ListActivitiesInput struct {
 	Search        string `query:"search" doc:"Search query"`
 	Sort          string `query:"sort" doc:"Column to sort by"`
 	Order         string `query:"order" default:"desc" doc:"Sort direction"`
-	Start         int    `query:"start" default:"0" doc:"Start index"`
-	Limit         int    `query:"limit" default:"50" doc:"Limit"`
 	Status        string `query:"status" doc:"Filter by activity status"`
 	Type          string `query:"type" doc:"Filter by activity type"`
 	ResourceType  string `query:"resourceType" doc:"Filter by resource type"`
+	Start         int    `query:"start" default:"0" doc:"Start index"`
+	Limit         int    `query:"limit" default:"50" doc:"Limit"`
 	IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
 }
 

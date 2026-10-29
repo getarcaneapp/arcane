@@ -137,11 +137,11 @@ func TestWithTransientValidationEnvFile_PreservesExternalSymlink(t *testing.T) {
 
 func TestBuildEffectiveEnvContent(t *testing.T) {
 	tests := []struct {
+		wantEnv         EnvMap
 		name            string
 		gitContent      string
 		overrideContent string
 		want            string
-		wantEnv         EnvMap
 	}{
 		{
 			name:       "preserves escaped dollar secret exactly",

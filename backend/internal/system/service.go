@@ -235,13 +235,13 @@ func (s *SystemService) StopAllContainers(ctx context.Context, environmentID str
 }
 
 type startMatchingContainersOptions struct {
+	ShouldStart    func(mobycontainer.Summary) bool
+	Action         func(context.Context, string) error
 	ActivityType   types.ActivityType
 	ActionName     string
 	ResourceName   string
 	StartMessage   string
 	SuccessMessage string
-	ShouldStart    func(mobycontainer.Summary) bool
-	Action         func(context.Context, string) error
 }
 
 func (s *SystemService) performBatchContainerAction(ctx context.Context, environmentID string, opts startMatchingContainersOptions) (*types.ContainerActionResult, error) {

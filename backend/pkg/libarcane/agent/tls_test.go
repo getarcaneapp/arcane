@@ -635,8 +635,8 @@ func TestGeneratedMLDSAAssets_HandshakeWithVerifiedClientCertificate(t *testing.
 	defer func() { assert.NoError(t, listener.Close()) }()
 
 	type handshakeResult struct {
-		state tls.ConnectionState
 		err   error
+		state tls.ConnectionState
 	}
 	resultCh := make(chan handshakeResult, 1)
 	go func() {

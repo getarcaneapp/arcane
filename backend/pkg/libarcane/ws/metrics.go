@@ -17,9 +17,9 @@ import (
 // WebSocketMetrics tracks active WebSocket connections and their counts.
 type WebSocketMetrics struct {
 	counters    map[string]*atomic.Int64
+	connections map[string]types.WebSocketConnectionInfo
 	seq         atomic.Uint64
 	mu          sync.RWMutex
-	connections map[string]types.WebSocketConnectionInfo
 }
 
 // NewWebSocketMetrics creates a new WebSocketMetrics instance.

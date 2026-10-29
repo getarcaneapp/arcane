@@ -35,18 +35,18 @@ func TestInitAllowsMultiAckCapabilities(t *testing.T) {
 func TestGetKnownHostsPath(t *testing.T) {
 	homePath := "/home/tester/.ssh/known_hosts"
 	tests := []struct {
-		name       string
-		workDir    string
-		override   string
-		dataDir    bool
-		homeDir    string
-		homeExists bool
-		workExists bool
 		homeErr    error
 		statErr    error
 		workErr    error
-		want       []string
 		wantErr    error
+		name       string
+		workDir    string
+		override   string
+		homeDir    string
+		want       []string
+		dataDir    bool
+		homeExists bool
+		workExists bool
 	}{
 		{
 			name:    "returns SSH_KNOWN_HOSTS env var when set",

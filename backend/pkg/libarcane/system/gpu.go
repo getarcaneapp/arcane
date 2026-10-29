@@ -38,33 +38,34 @@ const (
 // Detection is cached for gpuDetectionTTL; once a vendor is detected, subsequent Stats
 // calls invoke the vendor-specific tool directly.
 type GPUMonitor struct {
-	configuredType string
+	statsGroup singleflight.Group
 
-	detectionMu    sync.Mutex
 	detectionCache *hot.HotCache[struct{}, gpuDetection]
-	detectionDone  bool
 
 	// statsCache holds the last vendor-tool result (success or failure) for
 	// gpuStatsTTL so concurrent consumers and fast sampler ticks share one
 	// process fork instead of each launching their own.
-	statsCache atomic.Pointer[gpuStatsSnapshotInternal]
-	statsGroup singleflight.Group
+	statsCache     atomic.Pointer[gpuStatsSnapshotInternal]
+	configuredType string
 
 	announcedType string
+
+	detectionMu   sync.Mutex
+	detectionDone bool
 
 	enabled bool
 }
 
 type gpuStatsSnapshotInternal struct {
-	stats     []types.GPUStats
-	err       error
 	sampledAt time.Time
+	err       error
+	stats     []types.GPUStats
 }
 
 type gpuDetection struct {
-	detected bool
 	gpuType  string
 	toolPath string
+	detected bool
 }
 
 // NewGPUMonitor creates a monitor. enabled gates Stats; when false, Stats returns

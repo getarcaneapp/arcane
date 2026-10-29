@@ -76,8 +76,6 @@ type rusticSnapshotOutput struct {
 
 // RestoreOptions selects what a snapshot restore writes and where.
 type RestoreOptions struct {
-	// DeleteExtra removes files in the target that are absent from the snapshot.
-	DeleteExtra bool
 	// SourcePath restores only this path inside the snapshot when non-empty.
 	SourcePath string
 	// DestinationPath overrides the restore target path inside the helper
@@ -85,6 +83,8 @@ type RestoreOptions struct {
 	DestinationPath string
 	// ExtraMounts are attached alongside the target, e.g. mounts nested inside it.
 	ExtraMounts []mount.Mount
+	// DeleteExtra removes files in the target that are absent from the snapshot.
+	DeleteExtra bool
 }
 
 // CreateSnapshotInput describes what one snapshot captures: the mounts to
@@ -128,17 +128,17 @@ func snapshotCommand(label string, input CreateSnapshotInput) ([]string, error) 
 type Engine struct {
 	imageService *image.ImageService
 	admission    *runs.Admission
-	mu           sync.Mutex
 	repositories map[string]*sync.Mutex
 	// held parks admission a manual start won until the run that won it takes it over.
 	held      map[types.SchedulerAdmissionKey]heldLease
 	authorize func(context.Context, types.BackupRequester) error
+	mu        sync.Mutex
 }
 
 // heldLease is a parked lease and the run entitled to take it.
 type heldLease struct {
-	run   string
 	lease *runs.Lease
+	run   string
 }
 
 // NewRequester captures the user, and API key if any, behind a manual backup request.
@@ -556,8 +556,8 @@ func (e *Engine) RekeyRepository(ctx context.Context, dockerClient *client.Clien
 
 func (e *Engine) RekeyRepositories(ctx context.Context, dockerClient *client.Client, repositories []Repository, newPassword string, currentPasswords ...string) error {
 	type rekeyed struct {
-		repository Repository
 		previous   string
+		repository Repository
 	}
 	changed := make([]rekeyed, 0, len(repositories))
 	for _, repository := range repositories {
@@ -819,11 +819,7 @@ func (e *Engine) lockRepository(ctx context.Context, id string) (func(), error) 
 // PolicyReconciliation reconciles a full set of policy updates against the
 // existing policies of one backup domain, then swaps the scheduled jobs.
 type PolicyReconciliation[P, U any] struct {
-	// Domain names the backup flavor in validation errors ("volume", "system").
-	Domain string
-	DB     *database.DB
-	// Existing is every policy currently persisted for the reconciled scope.
-	Existing []P
+	DB       *database.DB
 	ID       func(*P) string
 	UpdateID func(U) string
 	// New returns the blank policy for created entries, pre-scoped by the
@@ -835,6 +831,10 @@ type PolicyReconciliation[P, U any] struct {
 	Persist    func(ctx context.Context, policies []P) error
 	Unregister func(ctx context.Context, policyID string)
 	Reschedule func(ctx context.Context, policy *P)
+	// Domain names the backup flavor in validation errors ("volume", "system").
+	Domain string
+	// Existing is every policy currently persisted for the reconciled scope.
+	Existing []P
 }
 
 // Run applies updates as the full policy set: it saves them, removes the rest, and reschedules their jobs.

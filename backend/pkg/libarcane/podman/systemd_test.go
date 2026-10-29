@@ -12,11 +12,11 @@ import (
 
 func TestNewSystemd(t *testing.T) {
 	tests := []struct {
+		env      map[string]string
+		want     *dbusSystemd
 		name     string
 		host     string
 		rootless bool
-		env      map[string]string
-		want     *dbusSystemd
 	}{
 		{
 			name: "rootful default system bus",

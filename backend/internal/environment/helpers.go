@@ -12,31 +12,31 @@ import (
 // agentTokenCache maps agent tokens to environment IDs; the reverse index drops
 // an environment's entry when its token rotates.
 type agentTokenCache struct {
-	mu      sync.RWMutex
 	byToken *hot.HotCache[string, string]
 	byEnvID map[string]string
+	mu      sync.RWMutex
 }
 
 type accessTokenIndex struct {
-	mu       sync.RWMutex
 	byEnvID  map[string]string
 	byHashed map[string]int
+	mu       sync.RWMutex
 }
 
 // remoteEnvSnapshotCache holds every enabled, visible, non-local environment
 // in memory so hot paths avoid a DB round trip.
 type remoteEnvSnapshotCache struct {
-	mu       sync.RWMutex
 	envs     map[string]Environment
-	seeded   bool
 	revision uint64
+	mu       sync.RWMutex
+	seeded   bool
 }
 
 // environmentCacheKey scopes cached records to a generation so loads that
 // started before a write are never served after it.
 type environmentCacheKey struct {
-	gen uint64
 	id  string
+	gen uint64
 }
 
 // environmentCacheStripes bounds generation tracking: a write orphans only the
@@ -46,16 +46,16 @@ const environmentCacheStripes = 64
 var environmentCacheSeed = maphash.MakeSeed()
 
 type remoteSyncQueue struct {
-	mu      sync.Mutex
 	running map[string]bool
 	pending map[string]bool
+	mu      sync.Mutex
 }
 
 // runtimeWatchers fans a coalesced wake-up out to environment liveness watchers.
 type runtimeWatchers struct {
-	mu    sync.Mutex
 	chans map[int]chan struct{}
 	seq   int
+	mu    sync.Mutex
 }
 
 // sync replaces an environment's cached token, dropping it when the new token is blank.

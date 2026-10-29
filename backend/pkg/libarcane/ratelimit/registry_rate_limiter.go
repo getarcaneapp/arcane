@@ -10,10 +10,10 @@ import (
 )
 
 type RegistryRateLimiter struct {
-	mu           sync.RWMutex
 	semaphores   map[string]*semaphore.Weighted
 	limits       map[string]int64
 	defaultLimit int64
+	mu           sync.RWMutex
 }
 
 var defaultRegistryLimits = map[string]int64{
@@ -34,12 +34,12 @@ func NewRegistryRateLimiter() *RegistryRateLimiter {
 }
 
 func (r *RegistryRateLimiter) Acquire(ctx context.Context, registry string) error {
-	sem := r.getSemaphoreInternal(registry)
+	sem := r.getSemaphore(registry)
 	return sem.Acquire(ctx, 1)
 }
 
 func (r *RegistryRateLimiter) Release(registry string) {
-	normalized := normalizeRegistryKeyInternal(registry)
+	normalized := normalizeRegistryKey(registry)
 	r.mu.RLock()
 	sem, ok := r.semaphores[normalized]
 	r.mu.RUnlock()
@@ -48,8 +48,8 @@ func (r *RegistryRateLimiter) Release(registry string) {
 	}
 }
 
-func (r *RegistryRateLimiter) getSemaphoreInternal(registry string) *semaphore.Weighted {
-	normalized := normalizeRegistryKeyInternal(registry)
+func (r *RegistryRateLimiter) getSemaphore(registry string) *semaphore.Weighted {
+	normalized := normalizeRegistryKey(registry)
 
 	r.mu.RLock()
 	sem, ok := r.semaphores[normalized]
@@ -65,13 +65,13 @@ func (r *RegistryRateLimiter) getSemaphoreInternal(registry string) *semaphore.W
 		return sem
 	}
 
-	limit := r.limitForRegistryInternal(normalized)
+	limit := r.limitForRegistry(normalized)
 	sem = semaphore.NewWeighted(limit)
 	r.semaphores[normalized] = sem
 	return sem
 }
 
-func (r *RegistryRateLimiter) limitForRegistryInternal(registry string) int64 {
+func (r *RegistryRateLimiter) limitForRegistry(registry string) int64 {
 	if limit, ok := r.limits[registry]; ok {
 		return limit
 	}
@@ -81,7 +81,7 @@ func (r *RegistryRateLimiter) limitForRegistryInternal(registry string) int64 {
 	return r.defaultLimit
 }
 
-func normalizeRegistryKeyInternal(registry string) string {
+func normalizeRegistryKey(registry string) string {
 	normalized := strings.ToLower(strings.TrimSpace(registry))
 	return kit.Ternary(normalized == "registry-1.docker.io" || normalized == "index.docker.io", "docker.io", normalized)
 }

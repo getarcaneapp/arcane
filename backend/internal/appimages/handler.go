@@ -18,8 +18,8 @@ type AppImagesHandler struct {
 }
 
 type GetLogoInput struct {
-	Full     bool   `query:"full" default:"false" doc:"Return full logo instead of icon"`
 	Color    string `query:"color" doc:"Optional accent color override for preview (e.g., 'oklch(0.65 0.2 150)')"`
+	Full     bool   `query:"full" default:"false" doc:"Return full logo instead of icon"`
 	Animated bool   `query:"animated" default:"false" doc:"Return trace-and-fill animated logo variant"`
 	Loop     bool   `query:"loop" default:"false" doc:"Loop the animated icon indefinitely (loader mode; animated icon only)"`
 }

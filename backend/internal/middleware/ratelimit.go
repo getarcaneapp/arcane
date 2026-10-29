@@ -17,18 +17,18 @@ import (
 
 // ipRateLimiter tracks per-client token bucket limiters keyed by client IP.
 type ipRateLimiter struct {
-	mu         sync.Mutex
+	lastSweep  time.Time
 	limiters   map[string]*limiterEntry
 	rate       rate.Limit
 	burst      int
 	ttl        time.Duration
-	lastSweep  time.Time
 	maxEntries int
+	mu         sync.Mutex
 }
 
 type limiterAge struct {
-	key  string
 	seen time.Time
+	key  string
 }
 
 type limiterEntry struct {

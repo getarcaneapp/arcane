@@ -46,9 +46,9 @@ type CreateSwarmServiceInput struct {
 }
 
 type UpdateSwarmServiceInput struct {
+	Body          types.SwarmServiceUpdateRequest
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ServiceID     string `path:"serviceId" doc:"Service ID"`
-	Body          types.SwarmServiceUpdateRequest
 }
 
 type DeleteSwarmServiceInput struct {

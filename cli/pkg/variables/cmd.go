@@ -109,9 +109,9 @@ func newCreateCmd() *cobra.Command {
 	var opts struct {
 		key     string
 		value   string
+		envIDs  []string
 		secret  bool
 		allEnvs bool
-		envIDs  []string
 	}
 	command := &cobra.Command{
 		Use:          "create",
@@ -156,9 +156,9 @@ func newUpdateCmd() *cobra.Command {
 	var opts struct {
 		key     string
 		value   string
+		envIDs  []string
 		secret  bool
 		allEnvs bool
-		envIDs  []string
 	}
 	command := &cobra.Command{
 		Use:          "update <id>",
@@ -168,9 +168,9 @@ func newUpdateCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			req := map[string]any{}
 			for _, field := range []struct {
+				value any
 				flag  string
 				key   string
-				value any
 			}{
 				{flag: "key", key: "key", value: opts.key},
 				{flag: "value", key: "value", value: opts.value},

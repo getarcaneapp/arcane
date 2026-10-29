@@ -137,9 +137,9 @@ func newUpdateCmd() *cobra.Command {
 
 			body := map[string]any{}
 			for _, field := range []struct {
+				value any
 				flag  string
 				key   string
-				value any
 			}{
 				{flag: "claim", key: "claimValue", value: opts.claim},
 				{flag: "role", key: "roleId", value: opts.roleID},

@@ -24,9 +24,9 @@ import (
 // commands from inside temporary containers.
 type RuntimeImage struct {
 	Image      string
+	Source     string
 	Entrypoint []string
 	Command    []string
-	Source     string
 }
 
 const (

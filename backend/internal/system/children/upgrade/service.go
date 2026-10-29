@@ -93,9 +93,6 @@ const (
 )
 
 type Service struct {
-	upgrading    atomic.Bool
-	startingJob  atomic.Bool
-	resultMu     sync.Mutex
 	progress     *progressFeed
 	jobHub       *agg.Hub[types.UpgradeJob]
 	jobChanged   chan struct{}
@@ -112,7 +109,6 @@ type Service struct {
 	settingsService    *settings.SettingsService
 	projectService     *project.ProjectService
 	registryService    *registry.ContainerRegistryService
-	keepUpgrader       bool
 	// resolveRuntimeOptions determines how the upgrader container reaches the Docker daemon.
 	resolveRuntimeOptions func(
 		ctx context.Context,
@@ -122,6 +118,10 @@ type Service struct {
 		isRunningInDocker func() bool,
 		selectReachableNetwork func(context.Context, *container.InspectResponse, string) string,
 	) ([]string, []mount.Mount, container.NetworkMode, error)
+	resultMu     sync.Mutex
+	upgrading    atomic.Bool
+	startingJob  atomic.Bool
+	keepUpgrader bool
 }
 
 // remoteAgent is one environment the upgrade job workflow upgrades.
@@ -137,8 +137,10 @@ type upgradeJobInput struct {
 }
 
 type preparedUpgrade struct {
-	dockerClient  *client.Client
-	current       container.InspectResponse
+	current      container.InspectResponse
+	dockerClient *client.Client
+	// saveCompose persists a tag change in the container's Compose project.
+	saveCompose   func(context.Context)
 	containerName string
 	binaryPath    string
 	// targetImage is what the recreated container runs; pullImage is the immutable reference pulled (same unless frozen).
@@ -146,8 +148,6 @@ type preparedUpgrade struct {
 	pullImage   string
 	fromVersion string
 	toVersion   string
-	// saveCompose persists a tag change in the container's Compose project.
-	saveCompose func(context.Context)
 }
 
 type resumeAction struct {
@@ -1447,15 +1447,15 @@ func (s *Service) followAgentProgress(ctx context.Context, envID string, sink *p
 }
 
 type progressSink struct {
+	savedAt   time.Time
 	service   *Service
 	job       *UpgradeJob
+	baseLogs  []string
 	index     int
 	keepStage bool
 	dirty     bool
-	savedAt   time.Time
 	replaying bool
 	baseSet   bool
-	baseLogs  []string
 }
 
 func (p *progressSink) apply(ctx context.Context, update types.UpgradeProgressEvent) {

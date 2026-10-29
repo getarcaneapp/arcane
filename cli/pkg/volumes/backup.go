@@ -241,8 +241,8 @@ func newBackupsCreateCmd() *cobra.Command {
 
 func newBackupsRestoreCmd() *cobra.Command {
 	var opts struct {
-		restorePaths       []string
 		restoreArchiveFile string
+		restorePaths       []string
 		forceFlag          bool
 	}
 	cmd := &cobra.Command{
@@ -614,15 +614,15 @@ func renderVolumePolicies(name string, data types.VolumeBackupPolicyCollection) 
 }
 
 type backupPolicyOptions struct {
-	policyEnabled        bool
 	policySchedule       string
-	policyRetention      int
-	policyStopContainers bool
-	policyLocal          bool
-	policyS3             bool
 	policyS3Destination  string
 	policyID             string
 	policyFile           string
+	policyRetention      int
+	policyEnabled        bool
+	policyStopContainers bool
+	policyLocal          bool
+	policyS3             bool
 }
 
 func volumeBackupPolicies(cmd *cobra.Command, c *client.Client, name string, opts backupPolicyOptions) (types.UpdateVolumeBackupPolicies, error) {

@@ -87,9 +87,9 @@ func newCreateCmd() *cobra.Command {
 	var opts struct {
 		destination   types.SystemBackupDestination
 		s3Destination string
-		local         bool
 		recoveryKey   string
 		policyID      string
+		local         bool
 	}
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -172,8 +172,8 @@ alone stores it in S3, and --local together with --s3-destination stores it in b
 
 func newDeleteCmd() *cobra.Command {
 	var opts struct {
-		force       bool
 		recoveryKey string
+		force       bool
 	}
 	cmd := &cobra.Command{
 		Use:          "delete <backup-id>",
@@ -204,8 +204,8 @@ func newDeleteCmd() *cobra.Command {
 
 func newRestoreCmd() *cobra.Command {
 	var opts struct {
-		force       bool
 		recoveryKey string
+		force       bool
 	}
 	cmd := &cobra.Command{
 		Use:          "restore <backup-id>",
@@ -576,12 +576,12 @@ func renderSystemPolicies(policies types.SystemBackupPolicyCollection) error {
 type policiesUpdateOptions struct {
 	file          string
 	id            string
-	enabled       bool
 	schedule      string
+	s3Destination string
 	retention     int
+	enabled       bool
 	local         bool
 	s3            bool
-	s3Destination string
 }
 
 func (opts policiesUpdateOptions) requestFromFile() (types.UpdateSystemBackupPolicies, error) {

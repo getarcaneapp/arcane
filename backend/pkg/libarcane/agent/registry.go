@@ -67,8 +67,8 @@ type TunnelMetadataSnapshot struct {
 	SessionID     string
 	AgentInstance string
 	SecurityMode  string
-	Capabilities  []string
 	State         string
+	Capabilities  []string
 }
 
 // MetadataSnapshot returns the tunnel's mutable metadata under one read lock, so readers never race
@@ -182,10 +182,10 @@ func (r *TunnelRegistry) Register(envID string, tunnel *AgentTunnel) {
 }
 
 type registerSessionResult struct {
+	previous      *AgentTunnel
+	reason        string
 	accepted      bool
 	drainPrevious bool
-	reason        string
-	previous      *AgentTunnel
 }
 
 // RegisterSession adds a tunnel with duplicate-session handling.

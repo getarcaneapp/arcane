@@ -15,15 +15,15 @@ type BackupFileEntry struct {
 
 // BackupRestoreSelection selects explicit paths or every eligible backup entry.
 type BackupRestoreSelection struct {
+	Search    string   `json:"search,omitempty"`
 	Paths     []string `json:"paths,omitempty"`
 	SelectAll bool     `json:"selectAll,omitempty"`
-	Search    string   `json:"search,omitempty"`
 }
 
 // BackupRepositoryObservation describes a read-only S3 metadata check.
 type BackupRepositoryObservation struct {
-	Available         bool
 	Reason            string
+	Available         bool
 	SnapshotAvailable bool
 }
 
@@ -41,6 +41,8 @@ type S3DestinationUsage struct {
 }
 
 type S3Destination struct {
+	CreatedAt        time.Time  `json:"createdAt" readOnly:"true"`
+	UpdatedAt        *time.Time `json:"updatedAt,omitempty" readOnly:"true"`
 	ID               string     `json:"id" readOnly:"true"`
 	Name             string     `json:"name" required:"false" minLength:"1" unorm:"nfc" trim:"true"`
 	Endpoint         string     `json:"endpoint,omitempty"`
@@ -52,8 +54,6 @@ type S3Destination struct {
 	UseSSL           bool       `json:"useSsl" required:"false"`
 	ForcePathStyle   bool       `json:"forcePathStyle" required:"false"`
 	SecretConfigured bool       `json:"secretConfigured" readOnly:"true"`
-	CreatedAt        time.Time  `json:"createdAt" readOnly:"true"`
-	UpdatedAt        *time.Time `json:"updatedAt,omitempty" readOnly:"true"`
 }
 
 type S3DestinationSyncRequest struct {
@@ -80,11 +80,10 @@ const (
 )
 
 type SystemBackupRun struct {
+	CreatedAt         time.Time               `json:"createdAt"`
 	RemoteAvailable   *bool                   `json:"remoteAvailable,omitempty"`
 	ActivityID        string                  `json:"activityId,omitempty"`
 	ID                string                  `json:"id"`
-	Size              int64                   `json:"size"`
-	CreatedAt         time.Time               `json:"createdAt"`
 	Status            string                  `json:"status"`
 	Trigger           string                  `json:"trigger"`
 	Destination       SystemBackupDestination `json:"destination"`
@@ -94,31 +93,32 @@ type SystemBackupRun struct {
 	S3DestinationName string                  `json:"s3DestinationName,omitempty"`
 	PolicyID          string                  `json:"policyId,omitempty"`
 	Error             string                  `json:"error,omitempty"`
+	Size              int64                   `json:"size"`
 }
 
 type SystemBackupPolicy struct {
+	LastRun           *SystemBackupRun `json:"lastRun,omitempty"`
 	ID                string           `json:"id"`
-	Enabled           bool             `json:"enabled"`
 	Schedule          string           `json:"schedule"`
-	RetentionCount    int              `json:"retentionCount"`
-	LocalEnabled      bool             `json:"localEnabled"`
-	S3Enabled         bool             `json:"s3Enabled"`
 	S3DestinationID   string           `json:"s3DestinationId,omitempty"`
 	S3DestinationName string           `json:"s3DestinationName,omitempty"`
-	LastRun           *SystemBackupRun `json:"lastRun,omitempty"`
+	RetentionCount    int              `json:"retentionCount"`
+	Enabled           bool             `json:"enabled"`
+	LocalEnabled      bool             `json:"localEnabled"`
+	S3Enabled         bool             `json:"s3Enabled"`
 }
 
 // UpdateBackupPolicy is the shared policy-update payload for every backup
 // domain; StopContainers only applies to volume backups.
 type UpdateBackupPolicy struct {
 	ID              string `json:"id,omitempty"`
-	Enabled         bool   `json:"enabled"`
 	Schedule        string `json:"schedule"`
+	S3DestinationID string `json:"s3DestinationId,omitempty"`
 	RetentionCount  int    `json:"retentionCount"`
+	Enabled         bool   `json:"enabled"`
 	StopContainers  bool   `json:"stopContainers,omitempty"`
 	LocalEnabled    bool   `json:"localEnabled"`
 	S3Enabled       bool   `json:"s3Enabled"`
-	S3DestinationID string `json:"s3DestinationId,omitempty"`
 }
 
 type SystemBackupPolicyCollection struct {
@@ -147,9 +147,8 @@ type CreateSystemBackupRequest struct {
 
 // RestoreSystemBackupFilesRequest selects project files to restore from a system backup.
 type RestoreSystemBackupFilesRequest struct {
-	BackupRestoreSelection
-
 	RecoveryKey string `json:"recoveryKey"`
+	BackupRestoreSelection
 }
 
 type UploadSystemBackupRequest struct {
@@ -186,28 +185,28 @@ type SystemVolumeSelectionMode string
 
 // SystemVolumeBackupPolicy is one manager-owned policy for local Docker volumes.
 type SystemVolumeBackupPolicy struct {
+	LastRun           *SystemBackupRun          `json:"lastRun,omitempty"`
 	ID                string                    `json:"id"`
-	Enabled           bool                      `json:"enabled"`
 	Schedule          string                    `json:"schedule"`
-	RetentionCount    int                       `json:"retentionCount"`
-	StopContainers    bool                      `json:"stopContainers"`
-	LocalEnabled      bool                      `json:"localEnabled"`
-	S3Enabled         bool                      `json:"s3Enabled"`
 	S3DestinationID   string                    `json:"s3DestinationId,omitempty"`
 	S3DestinationName string                    `json:"s3DestinationName,omitempty"`
 	SelectionMode     SystemVolumeSelectionMode `json:"selectionMode"`
 	VolumeNames       []string                  `json:"volumeNames"`
+	RetentionCount    int                       `json:"retentionCount"`
+	Enabled           bool                      `json:"enabled"`
+	StopContainers    bool                      `json:"stopContainers"`
+	LocalEnabled      bool                      `json:"localEnabled"`
+	S3Enabled         bool                      `json:"s3Enabled"`
 	IgnoreAnonymous   bool                      `json:"ignoreAnonymous"`
-	LastRun           *SystemBackupRun          `json:"lastRun,omitempty"`
 }
 
 // UpdateSystemVolumeBackupPolicy is the writable centralized policy shape.
 type UpdateSystemVolumeBackupPolicy struct {
+	SelectionMode SystemVolumeSelectionMode `json:"selectionMode"`
+	VolumeNames   []string                  `json:"volumeNames"`
 	UpdateBackupPolicy
 
-	SelectionMode   SystemVolumeSelectionMode `json:"selectionMode"`
-	VolumeNames     []string                  `json:"volumeNames"`
-	IgnoreAnonymous bool                      `json:"ignoreAnonymous"`
+	IgnoreAnonymous bool `json:"ignoreAnonymous"`
 }
 
 type SystemVolumeBackupPolicyCollection struct {
@@ -222,16 +221,16 @@ type UpdateSystemVolumeBackupPolicies struct {
 type SystemVolumeBackupCustomRun struct {
 	Destination     SystemBackupDestination   `json:"destination"`
 	S3DestinationID string                    `json:"s3DestinationId,omitempty"`
-	StopContainers  bool                      `json:"stopContainers"`
 	SelectionMode   SystemVolumeSelectionMode `json:"selectionMode"`
 	VolumeNames     []string                  `json:"volumeNames"`
+	StopContainers  bool                      `json:"stopContainers"`
 	IgnoreAnonymous bool                      `json:"ignoreAnonymous"`
 }
 
 // RunSystemVolumeBackupsRequest selects a saved policy or supplies a transient custom policy.
 type RunSystemVolumeBackupsRequest struct {
-	PolicyID string                       `json:"policyId,omitempty"`
 	Custom   *SystemVolumeBackupCustomRun `json:"custom,omitempty"`
+	PolicyID string                       `json:"policyId,omitempty"`
 }
 
 // SystemVolumeBackupOption describes a selectable live or unavailable configured volume.
@@ -249,19 +248,18 @@ type SystemVolumeBackupFailure struct {
 
 // SystemVolumeBackupRunResult summarizes a centralized multi-volume execution.
 type SystemVolumeBackupRunResult struct {
+	Failures  []SystemVolumeBackupFailure `json:"failures"`
 	Matched   int                         `json:"matched"`
 	Succeeded int                         `json:"succeeded"`
 	Failed    int                         `json:"failed"`
 	Skipped   int                         `json:"skipped"`
-	Failures  []SystemVolumeBackupFailure `json:"failures"`
 }
 
 // SystemVolumeBackupHistoryEntry is a common view over Arcane recovery and volume backup records.
 type SystemVolumeBackupHistoryEntry struct {
+	CreatedAt         time.Time               `json:"createdAt" sortable:"true"`
 	RemoteAvailable   *bool                   `json:"remoteAvailable,omitempty" gorm:"-"`
 	ID                string                  `json:"id" sortable:"true"`
-	Size              int64                   `json:"size" sortable:"true"`
-	CreatedAt         time.Time               `json:"createdAt" sortable:"true"`
 	Status            string                  `json:"status" sortable:"true"`
 	Trigger           string                  `json:"trigger" sortable:"true"`
 	Destination       SystemBackupDestination `json:"destination" sortable:"true"`
@@ -276,6 +274,7 @@ type SystemVolumeBackupHistoryEntry struct {
 	Type              BackupManagementType    `json:"type" sortable:"true"`
 	ResourceType      string                  `json:"resourceType"`
 	ResourceName      string                  `json:"resourceName" sortable:"true"`
+	Size              int64                   `json:"size" sortable:"true"`
 }
 
 // BackupRunAccepted identifies a backup operation accepted for background execution.

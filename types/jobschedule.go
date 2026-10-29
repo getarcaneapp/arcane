@@ -23,37 +23,37 @@ type JobStatus struct {
 	CurrentRun     *SchedulerRun          `json:"currentRun,omitempty"`
 	LastRun        *SchedulerRun          `json:"lastRun,omitempty"`
 	LastSuccess    *time.Time             `json:"lastSuccess,omitempty"`
-	LastError      string                 `json:"lastError,omitempty"`
 	WorkerHealth   *SchedulerWorkerHealth `json:"workerHealth,omitempty"`
-	Children       []JobStatus            `json:"children,omitempty"`
+	NextRun        *time.Time             `json:"nextRun,omitempty"`
+	LastError      string                 `json:"lastError,omitempty"`
 	ID             string                 `json:"id"`
 	Name           string                 `json:"name"`
 	Description    string                 `json:"description"`
 	Category       string                 `json:"category"`
 	Schedule       string                 `json:"schedule"`
-	NextRun        *time.Time             `json:"nextRun,omitempty"`
+	SettingsKey    string                 `json:"settingsKey,omitempty"`
+	Children       []JobStatus            `json:"children,omitempty"`
+	Prerequisites  []JobPrerequisite      `json:"prerequisites"`
 	Enabled        bool                   `json:"enabled"`
 	ManagerOnly    bool                   `json:"managerOnly"`
 	IsContinuous   bool                   `json:"isContinuous"`
 	CanRunManually bool                   `json:"canRunManually"`
-	Prerequisites  []JobPrerequisite      `json:"prerequisites"`
-	SettingsKey    string                 `json:"settingsKey,omitempty"`
 }
 
 // JobPrerequisite represents a requirement that must be met for a job to run.
 type JobPrerequisite struct {
 	SettingKey  string `json:"settingKey"`
 	Label       string `json:"label"`
-	IsMet       bool   `json:"isMet"`
 	SettingsURL string `json:"settingsUrl,omitempty"`
+	IsMet       bool   `json:"isMet"`
 }
 
 // JobListResponse contains all jobs and system mode information.
 type JobListResponse struct {
-	DurableRuns bool        `json:"durableRuns"`
 	ObservedAt  time.Time   `json:"observedAt"`
-	Offline     bool        `json:"offline,omitempty"`
 	Jobs        []JobStatus `json:"jobs"`
+	DurableRuns bool        `json:"durableRuns"`
+	Offline     bool        `json:"offline,omitempty"`
 	IsAgent     bool        `json:"isAgent"`
 }
 
@@ -61,8 +61,8 @@ type JobListResponse struct {
 type JobRunResponse struct {
 	RunID   string    `json:"runId,omitempty"`
 	Status  RunStatus `json:"status,omitempty"`
-	Success bool      `json:"success"`
 	Message string    `json:"message"`
+	Success bool      `json:"success"`
 }
 
 // JobSubmitRunInput preserves identity across manager-to-agent delivery retries.

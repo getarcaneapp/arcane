@@ -36,11 +36,11 @@ const (
 
 // SchemaDocument is the canonical JSON artifact consumed by the docs site.
 type SchemaDocument struct {
-	SchemaVersion int               `json:"schemaVersion"`
+	RenamedEnv    map[string]string `json:"renamedEnv"`
 	EnvConfig     []ConfigEntry     `json:"envConfig"`
 	Settings      []SettingEntry    `json:"settings"`
-	RenamedEnv    map[string]string `json:"renamedEnv"`
 	RetiredEnv    []string          `json:"retiredEnv"`
+	SchemaVersion int               `json:"schemaVersion"`
 }
 
 // ConfigEntry describes an environment-backed runtime config value.
@@ -50,26 +50,23 @@ type ConfigEntry struct {
 	Type         string   `json:"type"`
 	DefaultValue string   `json:"defaultValue,omitempty"`
 	Description  string   `json:"description,omitempty"`
-	Options      []string `json:"options,omitempty"`
-	SupportsFile bool     `json:"supportsFile,omitempty"`
-	Conditional  bool     `json:"conditional,omitempty"`
-	BuildTags    []string `json:"buildTags,omitempty"`
 	Source       string   `json:"source"`
 	SourceFile   string   `json:"sourceFile"`
 	SourceSymbol string   `json:"sourceSymbol"`
+	Options      []string `json:"options,omitempty"`
+	BuildTags    []string `json:"buildTags,omitempty"`
+	SupportsFile bool     `json:"supportsFile,omitempty"`
+	Conditional  bool     `json:"conditional,omitempty"`
 }
 
 type SettingEntry struct {
+	Min          *float64 `json:"min,omitempty"`
+	Max          *float64 `json:"max,omitempty"`
 	Env          string   `json:"env"`
 	Key          string   `json:"key"`
 	Type         string   `json:"type"`
 	Default      string   `json:"default,omitempty"`
-	Values       []string `json:"values,omitempty"`
-	Min          *float64 `json:"min,omitempty"`
-	Max          *float64 `json:"max,omitempty"`
 	Scope        string   `json:"scope"`
-	Sensitive    bool     `json:"sensitive"`
-	Public       bool     `json:"public"`
 	Description  string   `json:"description,omitempty"`
 	Category     string   `json:"category,omitempty"`
 	Requires     string   `json:"requires,omitempty"`
@@ -77,13 +74,16 @@ type SettingEntry struct {
 	Source       string   `json:"source"`
 	SourceFile   string   `json:"sourceFile"`
 	SourceSymbol string   `json:"sourceSymbol"`
+	Values       []string `json:"values,omitempty"`
+	Sensitive    bool     `json:"sensitive"`
+	Public       bool     `json:"public"`
 }
 
 type envFieldOptions struct {
-	conditional bool
-	buildTags   []string
 	sourceFile  string
 	sourceType  string
+	buildTags   []string
+	conditional bool
 }
 
 type overrideDocRule struct {

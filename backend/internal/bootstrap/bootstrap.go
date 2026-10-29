@@ -340,8 +340,8 @@ func initializeStartupState(p initializeStartupStateParams) {
 
 	// Startup repairs are best-effort: log each failure and continue.
 	for _, task := range []struct {
-		name string
 		run  func(context.Context) error
+		name string
 	}{
 		{name: "normalize projects directory", run: p.Settings.NormalizeProjectsDirectory},
 		{name: "normalize builds directory", run: p.Settings.NormalizeBuildsDirectory},

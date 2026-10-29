@@ -17,9 +17,9 @@ func TestParseVersion(t *testing.T) {
 
 func TestBuildDockerConfigJSON(t *testing.T) {
 	tests := []struct {
-		name      string
 		auths     map[string]dockerregistry.AuthConfig
 		wantAuths map[string]string
+		name      string
 	}{
 		{
 			name: "nil map",

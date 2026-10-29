@@ -10,8 +10,8 @@ import (
 
 func TestResolveServiceImagePullMode(t *testing.T) {
 	tests := []struct {
-		name     string
 		service  composetypes.ServiceConfig
+		name     string
 		expected ImagePullStep
 	}{
 		{

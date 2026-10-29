@@ -77,9 +77,9 @@ type SwarmNodeIdentity struct {
 }
 
 type swarmNodeAgentRuntime struct {
-	connected     bool
 	lastHeartbeat *time.Time
 	identity      *SwarmNodeIdentity
+	connected     bool
 }
 
 type swarmNodeAgentCoverage struct {
@@ -95,8 +95,8 @@ type swarmNodeAgentCoverage struct {
 func (s *Service) ListNodesPaginated(ctx context.Context, environmentID string, params pagination.QueryParams) ([]types.SwarmNode, pagination.Response, error) {
 	if environmentID != "0" && s.environmentService != nil {
 		var remote struct {
-			Success bool              `json:"success"`
 			Data    []types.SwarmNode `json:"data"`
+			Success bool              `json:"success"`
 		}
 		if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, "/api/environments/0/swarm/nodes?limit=-1", nil, &remote); err != nil {
 			return nil, pagination.Response{}, fmt.Errorf("failed to list remote swarm nodes: %w", err)
@@ -139,8 +139,8 @@ func (s *Service) ListNodesPaginated(ctx context.Context, environmentID string, 
 func (s *Service) GetNode(ctx context.Context, environmentID, nodeID string) (*types.SwarmNode, error) {
 	if environmentID != "0" && s.environmentService != nil {
 		var remote struct {
-			Success bool            `json:"success"`
 			Data    types.SwarmNode `json:"data"`
+			Success bool            `json:"success"`
 		}
 		remotePath := "/api/environments/0/swarm/nodes/" + nodeID
 		if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, remotePath, nil, &remote); err != nil {
@@ -468,8 +468,8 @@ func (s *Service) getSwarmJoinTokensForEnvironment(ctx context.Context, environm
 	}
 
 	var response struct {
-		Success bool                          `json:"success"`
 		Data    types.SwarmJoinTokensResponse `json:"data"`
+		Success bool                          `json:"success"`
 	}
 	if err := s.environmentService.ProxyJSONRequest(ctx, environmentID, http.MethodGet, "/api/environments/0/swarm/join/tokens", nil, &response); err != nil {
 		return nil, fmt.Errorf("failed to get remote swarm join tokens: %w", err)
@@ -569,8 +569,8 @@ func (s *Service) fetchSwarmNodeIdentityViaAgent(ctx context.Context, environmen
 	defer cancel()
 
 	var parsed struct {
-		Success bool               `json:"success"`
 		Data    *SwarmNodeIdentity `json:"data"`
+		Success bool               `json:"success"`
 	}
 	if err := s.environmentService.ProxyJSONRequest(reqCtx, environmentID, http.MethodGet, "/api/swarm/identity", nil, &parsed); err != nil {
 		return nil, err

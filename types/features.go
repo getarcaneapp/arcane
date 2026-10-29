@@ -47,11 +47,11 @@ func LookupFeature(id FeatureID) (FeatureDefinition, bool) {
 
 // FeatureDisabledError describes an unavailable runtime feature using problem details.
 type FeatureDisabledError struct {
-	Status  int       `json:"status"`
 	Title   string    `json:"title"`
 	Detail  string    `json:"detail"`
 	Code    string    `json:"code"`
 	Feature FeatureID `json:"feature"`
+	Status  int       `json:"status"`
 }
 
 // Error returns the reason the feature operation was rejected.

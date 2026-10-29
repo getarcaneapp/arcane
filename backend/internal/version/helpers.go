@@ -19,8 +19,8 @@ const (
 )
 
 type commitParser struct {
-	group   string
 	pattern *regexp.Regexp
+	group   string
 }
 
 var (
@@ -53,8 +53,7 @@ var (
 )
 
 type commitComparison struct {
-	TotalCommits int `json:"total_commits"`
-	Commits      []struct {
+	Commits []struct {
 		SHA    string `json:"sha"`
 		Commit struct {
 			Message string `json:"message"`
@@ -63,6 +62,7 @@ type commitComparison struct {
 			Login string `json:"login"`
 		} `json:"author"`
 	} `json:"commits"`
+	TotalCommits int `json:"total_commits"`
 }
 
 func isCommitSHA(revision string) bool {

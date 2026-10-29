@@ -23,23 +23,23 @@ const (
 )
 
 type APIErrorResponse struct {
-	Success bool         `json:"success"`
+	Details any          `json:"details,omitempty"`
 	Error   string       `json:"error"`
 	Code    APIErrorCode `json:"code"`
-	Details any          `json:"details,omitempty"`
+	Success bool         `json:"success"`
 }
 
 type APISuccessResponse struct {
-	Success bool   `json:"success"`
 	Data    any    `json:"data,omitempty"`
 	Message string `json:"message,omitempty"`
+	Success bool   `json:"success"`
 }
 
 type APIError struct {
+	Details    any          `json:"details,omitempty"`
 	Message    string       `json:"message"`
 	Code       APIErrorCode `json:"code"`
 	StatusCode int          `json:"statusCode"`
-	Details    any          `json:"details,omitempty"`
 }
 
 func (e *APIError) Error() string {
@@ -72,9 +72,9 @@ func NewAPIErrorWithDetails(message string, code APIErrorCode, statusCode int, d
 }
 
 type DockerAPIError struct {
+	Details    any
 	Message    string
 	StatusCode int
-	Details    any
 }
 
 func (e *DockerAPIError) Error() string {

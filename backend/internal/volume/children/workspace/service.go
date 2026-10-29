@@ -266,6 +266,7 @@ func (s *Service) DownloadVolumeWorkspaceFile(ctx context.Context, volumeName, r
 
 type volumeWorkspaceReadStream struct {
 	ctx       context.Context
+	err       error
 	cancel    context.CancelFunc
 	stopClose func() bool
 	pipe      *io.PipeReader
@@ -273,7 +274,6 @@ type volumeWorkspaceReadStream struct {
 	cleanup   func()
 	remaining int64
 	once      sync.Once
-	err       error
 }
 
 func (r *volumeWorkspaceReadStream) Read(buffer []byte) (int, error) {
@@ -713,8 +713,8 @@ type volumeWorkspaceStagedFile struct {
 }
 
 type volumeWorkspaceStagedContent struct {
-	name    string
 	content io.ReadCloser
+	name    string
 	size    int64
 }
 

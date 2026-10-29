@@ -74,11 +74,11 @@ type ApiKeyService struct {
 	argon2Params      *user.Argon2Params
 	validatedKeyCache *hot.HotCache[string, ApiKey]
 	rejectedKeyCache  *hot.HotCache[string, struct{}]
+	lastUsedWrites    map[string]time.Time
 	cacheKeyPepper    []byte
 	cacheGen          atomic.Uint64
 	cacheFillMu       sync.Mutex
 	lastUsedMu        sync.Mutex
-	lastUsedWrites    map[string]time.Time
 }
 
 func NewApiKeyService(db *database.DB, userService *user.UserService, roleService *role.RoleService) *ApiKeyService {

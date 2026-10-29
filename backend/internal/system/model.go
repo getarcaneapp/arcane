@@ -25,7 +25,6 @@ type SystemBackupTrigger string
 type SystemBackupRun struct {
 	database.BaseModel
 
-	Size              int64                         `json:"size" gorm:"column:size" sortable:"true"`
 	CreatedAt         time.Time                     `json:"createdAt" gorm:"column:created_at" sortable:"true"`
 	Status            SystemBackupStatus            `json:"status" gorm:"column:status;type:text;not null" sortable:"true"`
 	Trigger           SystemBackupTrigger           `json:"trigger" gorm:"column:trigger;type:text;not null" sortable:"true"`
@@ -36,6 +35,8 @@ type SystemBackupRun struct {
 	S3DestinationName string                        `json:"s3DestinationName,omitempty" gorm:"-"`
 	PolicyID          string                        `json:"policyId,omitempty" gorm:"column:policy_id;type:text;index"`
 	Error             string                        `json:"error,omitempty" gorm:"column:error;type:text"`
+
+	Size int64 `json:"size" gorm:"column:size" sortable:"true"`
 }
 
 func (SystemBackupRun) TableName() string { return "system_backup_runs" }
@@ -51,12 +52,13 @@ func (b SystemBackupRun) ToDTO() types.SystemBackupRun {
 type SystemBackupPolicy struct {
 	database.BaseModel
 
-	Enabled         bool   `gorm:"column:enabled;not null;default:false"`
 	Schedule        string `gorm:"column:schedule;type:text;not null"`
-	RetentionCount  int    `gorm:"column:retention_count;not null;default:7"`
-	LocalEnabled    bool   `gorm:"column:local_enabled;not null;default:true"`
-	S3Enabled       bool   `gorm:"column:s3_enabled;not null;default:false"`
 	S3DestinationID string `gorm:"column:s3_destination_id;type:text;index"`
+	RetentionCount  int    `gorm:"column:retention_count;not null;default:7"`
+
+	Enabled      bool `gorm:"column:enabled;not null;default:false"`
+	LocalEnabled bool `gorm:"column:local_enabled;not null;default:true"`
+	S3Enabled    bool `gorm:"column:s3_enabled;not null;default:false"`
 }
 
 func (SystemBackupPolicy) TableName() string { return "system_backup_policies" }

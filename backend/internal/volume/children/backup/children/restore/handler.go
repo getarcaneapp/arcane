@@ -25,11 +25,11 @@ type Handler struct {
 }
 
 type RestoreBackupInput struct {
+	Body          *types.BackupRestoreSelection `required:"false"`
 	EnvironmentID string                        `path:"id" doc:"Environment ID"`
 	VolumeName    string                        `path:"volumeName" doc:"Volume name"`
 	BackupID      string                        `path:"backupId" doc:"Backup ID"`
 	Action        string                        `query:"action" required:"true" enum:"restore,restorefiles" doc:"Restore action"`
-	Body          *types.BackupRestoreSelection `required:"false"`
 }
 
 type UploadAndRestoreInput struct {

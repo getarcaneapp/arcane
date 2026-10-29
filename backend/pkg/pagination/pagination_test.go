@@ -135,8 +135,8 @@ func TestPaginateItemsFunction(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		params   Params
 		expected []int
+		params   Params
 	}{
 		{
 			name:     "show all mode (limit = -1)",

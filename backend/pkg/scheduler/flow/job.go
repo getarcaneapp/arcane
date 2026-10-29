@@ -12,19 +12,19 @@ import (
 // Job runs a workflow as a scheduler job. The coordinator's single flight per
 // job and environment already prevents overlapping runs.
 type Job struct {
-	Engine   *Engine
-	Workflow *Workflow
-	JobName  string
 	// Payload is every instance's input, such as the entity a per-entity job runs for.
-	Payload any
-	// Activity overrides the definition's activity template, such as with the entity's name.
-	Activity    activitylib.StartRequest
+	Payload     any
+	Engine      *Engine
+	Workflow    *Workflow
 	ScheduleFn  func(ctx context.Context) string
 	ShouldRunFn func(ctx context.Context) bool
 	// FallbackFn recovers a run whose instance cannot resume; nil fails the run so
 	// a retry starts a fresh instance under a new attempt.
 	FallbackFn      func(ctx context.Context, previous types.SchedulerRun) (types.SchedulerOutcome, error)
 	ValidateRetryFn func(ctx context.Context, run types.SchedulerRun) error
+	JobName         string
+	// Activity overrides the definition's activity template, such as with the entity's name.
+	Activity activitylib.StartRequest
 }
 
 // Name is the scheduler job name.

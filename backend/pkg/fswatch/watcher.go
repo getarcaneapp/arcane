@@ -23,33 +23,33 @@ import (
 )
 
 type Watcher struct {
-	callbacks      sync.WaitGroup
+	stopErr        error
 	watcher        *fsnotify.Watcher
-	watchedPath    string
-	maxDepth       int
-	followSymlinks bool
 	onChange       func(ctx context.Context)
 	onChangePaths  func(ctx context.Context, paths []string)
-	debounce       time.Duration
 	stopCh         chan struct{}
 	stoppedCh      chan struct{}
 	cancel         context.CancelFunc
 	watchAliases   map[string]string
 	pendingPaths   map[string]struct{}
 	readyPaths     map[string]struct{}
-	changed        bool
 	wake           chan struct{}
+	watchedPath    string
+	callbacks      sync.WaitGroup
+	maxDepth       int
+	debounce       time.Duration
+	stopOnce       sync.Once
 	mu             sync.Mutex
+	followSymlinks bool
+	changed        bool
 	started        bool
 	stopped        bool
-	stopOnce       sync.Once
-	stopErr        error
 }
 
 type WatcherOptions struct {
-	Debounce          time.Duration
 	OnChange          func(ctx context.Context)
 	OnChangePaths     func(ctx context.Context, paths []string)
+	Debounce          time.Duration
 	MaxDepth          int
 	FollowSymlinkDirs bool
 }

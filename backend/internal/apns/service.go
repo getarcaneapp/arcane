@@ -277,10 +277,16 @@ func (s *ApnsService) IssuePairingToken(ctx context.Context) (types.ApnsPairingT
 	payload, err := json.Marshal(struct {
 		ChannelID string `json:"channelId"`
 		Subject   string `json:"sub"`
+		Nonce     string `json:"nonce"`
 		IssuedAt  int64  `json:"iat"`
 		ExpiresAt int64  `json:"exp"`
-		Nonce     string `json:"nonce"`
-	}{channelID, uuid.New().String(), now.Unix(), expiresAt.Unix(), uuid.New().String()})
+	}{
+		ChannelID: channelID,
+		Subject:   uuid.New().String(),
+		Nonce:     uuid.New().String(),
+		IssuedAt:  now.Unix(),
+		ExpiresAt: expiresAt.Unix(),
+	})
 	if err != nil {
 		return types.ApnsPairingToken{}, fmt.Errorf("failed to marshal pairing token: %w", err)
 	}

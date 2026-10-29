@@ -83,30 +83,30 @@ type Dependencies struct {
 
 // Service runs volume backups and owns their policies, file browser, and restores.
 type Service struct {
-	deps     Dependencies
-	rekeyed  sync.Map
 	policies *policies.Service
 	browser  *browser.Service
 	restore  *restore.Service
 	flow     *flow.Engine
 	// backupWorkflow runs manual backups that StartBackup accepted.
 	backupWorkflow *flow.Workflow
+	deps           Dependencies
+	rekeyed        sync.Map
 }
 
 // backupPlan is one run's resolved destinations; it doubles as the run's recovery checkpoint.
 type backupPlan struct {
+	Policy          *policies.VolumeBackupPolicy `json:"policy,omitempty"`
 	BackupID        string                       `json:"backupId"`
+	S3DestinationID string                       `json:"s3DestinationId"`
 	LocalEnabled    bool                         `json:"localEnabled"`
 	S3Enabled       bool                         `json:"s3Enabled"`
-	S3DestinationID string                       `json:"s3DestinationId"`
-	Policy          *policies.VolumeBackupPolicy `json:"policy,omitempty"`
 }
 
 // manualBackupInput is a manual backup's workflow payload; the row and plan are frozen before it starts.
 type manualBackupInput struct {
-	Checkpoint backupPlan            `json:"checkpoint"`
-	VolumeName string                `json:"volumeName"`
 	Requester  types.BackupRequester `json:"requester"`
+	VolumeName string                `json:"volumeName"`
+	Checkpoint backupPlan            `json:"checkpoint"`
 }
 
 // lockHeld marks a context whose caller already holds the volume's workspace lock.

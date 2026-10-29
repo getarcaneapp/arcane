@@ -210,8 +210,8 @@ func (m secretModel) View() tea.View {
 }
 
 type confirmModel struct {
-	label                string
 	out                  io.Writer
+	label                string
 	yes, confirmed, done bool
 }
 

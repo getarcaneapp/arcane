@@ -50,15 +50,15 @@ func Command() *cobra.Command {
 
 func newListCmd() *cobra.Command {
 	var opts struct {
-		limit         int
-		start         int
 		sort          string
 		order         string
 		search        string
+		updatesFilter string
+		limit         int
+		start         int
 		inUseOnly     bool
 		unusedOnly    bool
 		all           bool
-		updatesFilter string
 	}
 	command := &cobra.Command{
 		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeMerged},

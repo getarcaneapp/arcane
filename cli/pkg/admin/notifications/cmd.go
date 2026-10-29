@@ -118,9 +118,9 @@ func newSettingsDeleteCmd() *cobra.Command {
 func newSettingsSetCmd() *cobra.Command {
 	var opts struct {
 		provider types.NotificationProvider
-		enabled  bool
 		config   string
 		file     string
+		enabled  bool
 	}
 	command := &cobra.Command{
 		Use:   "set",

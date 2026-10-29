@@ -517,8 +517,8 @@ func TestContainerRegistryService_UpdateRegistry_KeepsExistingTokenWhenNotProvid
 
 func TestContainerRegistryService_UpdateRegistry_RejectsTargetChangeWhenStoredTokenWouldBeReused(t *testing.T) {
 	tests := []struct {
-		name  string
 		token *string
+		name  string
 	}{
 		{name: "omitted token"},
 		{name: "empty token", token: new("")},
@@ -1502,9 +1502,9 @@ func TestContainerRegistryService_UpdateRegistry_RepositoryNamesPointerSemantics
 func TestListImageTagsCredentials(t *testing.T) {
 	for _, tt := range []struct {
 		name         string
-		external     []types.ContainerRegistryCredential
 		wantUser     string
 		wantPassword string
+		external     []types.ContainerRegistryCredential
 	}{
 		{name: "stored", wantUser: "stored-user", wantPassword: "stored-token"},
 		{
@@ -1589,8 +1589,8 @@ func TestListImageTagsRejectedCredentialFallback(t *testing.T) {
 	for _, tt := range []struct {
 		name          string
 		host          string
-		wantError     bool
 		wantTokenAuth []string
+		wantError     bool
 	}{
 		{name: "private registry public image", host: "registry.test", wantTokenAuth: []string{basic, ""}},
 		{name: "docker hub preserves quota", host: "docker.io", wantError: true, wantTokenAuth: []string{basic}},

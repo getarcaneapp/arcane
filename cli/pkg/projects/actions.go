@@ -167,8 +167,8 @@ func newUnarchiveCmd() *cobra.Command {
 
 func newBuildCmd() *cobra.Command {
 	var opts struct {
-		buildServices []string
 		buildProvider string
+		buildServices []string
 		buildPush     bool
 		buildLoad     bool
 	}

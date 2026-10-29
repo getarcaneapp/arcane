@@ -28,8 +28,8 @@ type actorLogHandler struct {
 }
 
 type actorLogStepInternal struct {
-	attrs []slog.Attr
 	group string
+	attrs []slog.Attr
 }
 
 func (h *actorLogHandler) Handle(ctx context.Context, record slog.Record) error {

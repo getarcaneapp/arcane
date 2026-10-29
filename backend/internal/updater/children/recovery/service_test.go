@@ -383,9 +383,11 @@ func TestResumePlanConfirmsRedeliveredChangeWithoutReapplying(t *testing.T) {
 		},
 	}}}
 	for _, test := range []struct {
-		name, id, image string
-		remaining       int
-		status          types.RunStatus
+		name      string
+		id        string
+		image     string
+		status    types.RunStatus
+		remaining int
 	}{
 		{
 			name:   "applied before the redelivery",
@@ -443,8 +445,8 @@ func TestResumePlanConfirmsRedeliveredChangeWithoutReapplying(t *testing.T) {
 func TestConfirmTargetRequiresRunningReplacementWhenBaselineRan(t *testing.T) {
 	for _, test := range []struct {
 		name      string
-		running   bool
 		status    container.ContainerState
+		running   bool
 		confirmed bool
 	}{
 		{

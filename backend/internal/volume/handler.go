@@ -48,9 +48,9 @@ type ListVolumesInput struct {
 	Search          string `query:"search" doc:"Search query"`
 	Sort            string `query:"sort" doc:"Column to sort by"`
 	Order           string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+	InUse           string `query:"inUse" doc:"Filter by in-use status (true/false)"`
 	Start           int    `query:"start" default:"0" doc:"Start index for pagination"`
 	Limit           int    `query:"limit" default:"20" doc:"Number of items per page"`
-	InUse           string `query:"inUse" doc:"Filter by in-use status (true/false)"`
 	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal volumes"`
 }
 
@@ -83,9 +83,9 @@ type RemoveVolumeInput struct {
 // VolumePruneReportData represents the result of a volume prune operation.
 // This is a local type to avoid schema naming conflicts with image.PruneReport.
 type VolumePruneReportData struct {
+	ActivityID     *string  `json:"activityId,omitempty"`
 	VolumesDeleted []string `json:"volumesDeleted,omitempty"`
 	SpaceReclaimed uint64   `json:"spaceReclaimed"`
-	ActivityID     *string  `json:"activityId,omitempty"`
 }
 
 type GetVolumeUsageInput struct {
@@ -95,8 +95,8 @@ type GetVolumeUsageInput struct {
 
 // VolumeUsageResponse represents volume usage information.
 type VolumeUsageResponse struct {
-	InUse      bool     `json:"inUse"`
 	Containers []string `json:"containers"`
+	InUse      bool     `json:"inUse"`
 }
 
 type GetVolumeUsageCountsInput struct {

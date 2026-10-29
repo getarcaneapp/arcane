@@ -42,10 +42,10 @@ type CreatePodInput struct {
 }
 
 type PodActionInput struct {
+	Body          *types.PodActionRequest
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	PodID         string `path:"podId" doc:"Pod name or ID"`
 	Action        string `query:"action" required:"true" enum:"start,stop,restart,pause,unpause,kill" doc:"Lifecycle action"`
-	Body          *types.PodActionRequest
 }
 
 type DeletePodInput struct {

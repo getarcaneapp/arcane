@@ -66,18 +66,18 @@ type snapshot struct {
 }
 
 type SettingsService struct {
+	lifecycleCtx  context.Context
 	db            *database.DB
 	appConfig     *config.Config
 	env           Env
 	snapshot      atomic.Pointer[snapshot]
-	writes        sync.Mutex
-	effectsMu     sync.Mutex
-	effects       []func()
 	effectsWake   chan struct{}
 	effectsDone   chan struct{}
-	effectsClosed bool
-	lifecycleCtx  context.Context
 	changes       *concurrency.Signal[[]libarcane.SettingUpdate]
+	effects       []func()
+	writes        sync.Mutex
+	effectsMu     sync.Mutex
+	effectsClosed bool
 }
 
 func NewSettingsService(ctx context.Context, db *database.DB, appConfig *config.Config, env Env) (*SettingsService, error) {

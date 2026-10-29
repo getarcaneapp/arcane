@@ -354,25 +354,25 @@ func createTestEnvironment(t *testing.T, db *database.DB, id, apiURL string, acc
 // Minimal stand-ins for the environments and api_keys rows these tests need.
 type testEnvironmentRow struct {
 	database.BaseModel
+	AccessToken *string `gorm:"column:access_token"`
 	Name        string
 	ApiUrl      string `gorm:"column:api_url"`
 	Status      string
 	Enabled     bool
-	AccessToken *string `gorm:"column:access_token"`
 }
 
 func (testEnvironmentRow) TableName() string { return "environments" }
 
 type testApiKeyRow struct {
 	database.BaseModel
-	Name          string
-	KeyHash       string `gorm:"column:key_hash"`
-	KeyPrefix     string `gorm:"column:key_prefix"`
-	Kind          string
 	UserID        *string `gorm:"column:user_id"`
 	EnvironmentID *string `gorm:"column:environment_id"`
 	ManagedBy     *string `gorm:"column:managed_by"`
 	ExpiresAt     *time.Time
+	Name          string
+	KeyHash       string `gorm:"column:key_hash"`
+	KeyPrefix     string `gorm:"column:key_prefix"`
+	Kind          string
 }
 
 func (testApiKeyRow) TableName() string { return "api_keys" }

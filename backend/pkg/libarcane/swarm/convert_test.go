@@ -95,9 +95,9 @@ configs:
 
 func TestBuildServiceSpecConformance(t *testing.T) {
 	type testCase struct {
-		name      string
 		configure func(*composegotypes.ServiceConfig)
 		check     func(*testing.T, swarm.ServiceSpec, error)
+		name      string
 	}
 
 	tests := []testCase{
@@ -276,37 +276,37 @@ secrets:
 	spec := build()
 
 	checks := []struct {
-		aspect string
 		check  func(*testing.T)
+		aspect string
 	}{
-		{"names", func(t *testing.T) {
+		{aspect: "names", check: func(t *testing.T) {
 			require.Equal(t, "stack_web", spec.Name)
 			require.Equal(t, "stack_default", networkNames["default"])
 			require.Equal(t, "stack_data", volumeNames["data"])
 		}},
-		{"extra hosts", func(t *testing.T) {
+		{aspect: "extra hosts", check: func(t *testing.T) {
 			require.Equal(t, []string{"127.0.0.1 api.local"}, spec.TaskTemplate.ContainerSpec.Hosts)
 		}},
-		{"network alias", func(t *testing.T) {
+		{aspect: "network alias", check: func(t *testing.T) {
 			require.Contains(t, spec.TaskTemplate.Networks[0].Aliases, "web")
 		}},
-		{"volume options", func(t *testing.T) {
+		{aspect: "volume options", check: func(t *testing.T) {
 			volumeMount := spec.TaskTemplate.ContainerSpec.Mounts[0]
 			require.Equal(t, "stack_data", volumeMount.Source)
 			require.Equal(t, "stack", volumeMount.VolumeOptions.Labels[types.SwarmStackNamespaceLabel])
 			require.NotNil(t, volumeMount.VolumeOptions.DriverConfig)
 		}},
-		{"file targets", func(t *testing.T) {
+		{aspect: "file targets", check: func(t *testing.T) {
 			require.Equal(t, "app_config", spec.TaskTemplate.ContainerSpec.Configs[0].File.Name)
 			require.Equal(t, "/run/secrets/db_pw", spec.TaskTemplate.ContainerSpec.Secrets[0].File.Name)
 		}},
-		{"update defaults", func(t *testing.T) {
+		{aspect: "update defaults", check: func(t *testing.T) {
 			require.Equal(t, uint64(1), spec.UpdateConfig.Parallelism)
 		}},
-		{"ipam options", func(t *testing.T) {
+		{aspect: "ipam options", check: func(t *testing.T) {
 			require.Equal(t, "fixture", convertIPAMInternal(project.Networks["default"].Ipam).Options["source"])
 		}},
-		{"determinism", func(t *testing.T) {
+		{aspect: "determinism", check: func(t *testing.T) {
 			require.Equal(t, spec, build())
 		}},
 	}

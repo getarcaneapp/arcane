@@ -52,10 +52,10 @@ type environmentTestScheduler struct {
 // Project imports environment, so these rows avoid an import cycle in tests.
 type testProjectRow struct {
 	database.BaseModel
+	GitOpsManagedBy *string `gorm:"column:gitops_managed_by"`
 	Name            string
 	Path            string
 	Status          string
-	GitOpsManagedBy *string `gorm:"column:gitops_managed_by"`
 }
 
 type testGitOpsSyncRow struct {
@@ -70,9 +70,9 @@ type testGitOpsSyncRow struct {
 
 type testFederatedCredentialRow struct {
 	database.BaseModel
-	Name           string
-	IdentityUserID string  `gorm:"column:identity_user_id"`
 	EnvironmentID  *string `gorm:"column:environment_id"`
+	Name           string
+	IdentityUserID string `gorm:"column:identity_user_id"`
 }
 
 type testGlobalVariableRow struct {

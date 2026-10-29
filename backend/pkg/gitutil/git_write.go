@@ -37,12 +37,12 @@ var (
 
 // WriteCheckout is a scratch clone prepared for committing to one branch.
 type WriteCheckout struct {
+	repo         *git.Repository
 	RepoPath     string
 	Branch       string
 	HeadCommit   string
-	BranchExists bool
 	url          string
-	repo         *git.Repository
+	BranchExists bool
 }
 
 // CommitFile is one file to write into the checkout, repo-relative.
@@ -54,17 +54,17 @@ type CommitFile struct {
 
 // CollectOptions bounds CollectFiles; SkipDir and SkipFile see base names while directories expand.
 type CollectOptions struct {
-	MaxFiles     int
-	MaxTotalSize int64
 	SkipDir      func(name string) bool
 	SkipFile     func(name string) bool
+	MaxFiles     int
+	MaxTotalSize int64
 }
 
 type fileCollectorInternal struct {
-	root      string
 	opts      CollectOptions
-	files     []CommitFile
 	seen      map[string]struct{}
+	root      string
+	files     []CommitFile
 	totalSize int64
 }
 
@@ -140,19 +140,19 @@ func (c *fileCollectorInternal) addInternal(ctx context.Context, entry acfstypes
 
 // CommitRequest describes the tree mutation to commit and push.
 type CommitRequest struct {
-	Files       []CommitFile
-	Remove      []string
+	SignKey     *openpgp.Entity
 	Message     string
 	AuthorName  string
 	AuthorEmail string
-	SignKey     *openpgp.Entity
+	Files       []CommitFile
+	Remove      []string
 }
 
 // CommitIdentity is the author Arcane commits as for one repository.
 type CommitIdentity struct {
+	SignKey *openpgp.Entity
 	Name    string
 	Email   string
-	SignKey *openpgp.Entity
 }
 
 // ParseSigningKey loads an armored OpenPGP private key and unlocks it with

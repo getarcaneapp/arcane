@@ -46,8 +46,9 @@ type DiagnosticsService struct {
 	coordinator  *runs.Coordinator
 	environments *environment.EnvironmentService
 
-	leakMu     sync.Mutex
 	leakReport types.GoroutineLeakReport
+
+	leakMu sync.Mutex
 }
 
 func NewDiagnosticsService(actors *francis.Runtime, coordinator *runs.Coordinator, environments *environment.EnvironmentService) *DiagnosticsService {

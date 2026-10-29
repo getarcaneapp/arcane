@@ -758,13 +758,13 @@ func TestTriggerByToken_UnknownActionType_ReturnsInvalidAction(t *testing.T) {
 
 func TestRemoteWebhookRequest(t *testing.T) {
 	tests := []struct {
+		wantErr    error
 		name       string
-		wh         Webhook
 		actionType string
 		wantMethod string
 		wantPath   string
+		wh         Webhook
 		wantResult bool
-		wantErr    error
 	}{
 		{
 			name:       "container update prefers target ref",

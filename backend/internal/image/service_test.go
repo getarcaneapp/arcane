@@ -46,9 +46,9 @@ var imageDockerAPIVersionPrefix = regexp.MustCompile(`^/v\d+\.\d+`)
 // package imports this one, so the in-package test cannot import it back.
 type testProjectRow struct {
 	database.BaseModel
+	BuildImageRefsJSON *string `gorm:"column:build_image_refs_json"`
 	Name               string
 	Path               string
-	BuildImageRefsJSON *string `gorm:"column:build_image_refs_json"`
 }
 
 func imageDockerTestPath(path string) string {

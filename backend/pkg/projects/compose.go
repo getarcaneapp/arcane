@@ -30,8 +30,8 @@ type Client struct {
 }
 
 type composeClientConfigInternal struct {
-	isLogDemuxEnabled bool
 	serviceOptions    []compose.Option
+	isLogDemuxEnabled bool
 }
 
 type composeClientOptionInternal func(*composeClientConfigInternal)
@@ -126,8 +126,8 @@ func NewClient(ctx context.Context, dockerHost string, authConfigs map[string]re
 }
 
 type plainComposeClientEntryInternal struct {
-	host   string
 	client *Client
+	host   string
 }
 
 var plainComposeClient atomic.Pointer[plainComposeClientEntryInternal]

@@ -18,26 +18,26 @@ const (
 // FederatedCredential is a configured trust rule for one external OIDC
 // workload identity subject.
 type FederatedCredential struct {
+	CreatedAt       time.Time  `json:"createdAt" readOnly:"true" doc:"Creation timestamp"`
+	Description     *string    `json:"description,omitempty" maxLength:"1000" doc:"Optional description" unorm:"nfc" trim:"true"`
+	EnvironmentID   *string    `json:"environmentId,omitempty" doc:"Optional environment scope for the role assignment"`
+	LastUsedAt      *time.Time `json:"lastUsedAt,omitempty" readOnly:"true" doc:"Last successful token exchange"`
+	ExpiresAt       *time.Time `json:"expiresAt,omitempty" doc:"Optional credential expiration"`
+	UpdatedAt       *time.Time `json:"updatedAt,omitempty" readOnly:"true" doc:"Last update timestamp"`
 	ID              string     `json:"id" readOnly:"true" doc:"Unique identifier of the federated credential"`
 	Name            string     `json:"name" required:"false" minLength:"1" maxLength:"255" doc:"Display name" unorm:"nfc" trim:"true"`
-	Description     *string    `json:"description,omitempty" maxLength:"1000" doc:"Optional description" unorm:"nfc" trim:"true"`
-	Enabled         bool       `json:"enabled" required:"false" doc:"Whether exchanges are allowed"`
 	IssuerURL       string     `json:"issuerUrl" required:"false" doc:"Trusted external OIDC issuer URL"`
-	Audiences       []string   `json:"audiences" required:"false" doc:"Allowed external token audiences"`
 	SubjectClaim    string     `json:"subjectClaim" required:"false" doc:"Claim path to match against; defaults to sub"`
 	SubjectMatch    string     `json:"subjectMatch" required:"false" doc:"Exact subject or anchored glob pattern"`
 	MatchType       string     `json:"matchType" required:"false" doc:"Subject match strategy" enum:"exact,glob"`
 	RoleID          string     `json:"roleId" required:"false" doc:"Mapped role ID"`
-	EnvironmentID   *string    `json:"environmentId,omitempty" doc:"Optional environment scope for the role assignment"`
 	IdentityUserID  string     `json:"identityUserId" readOnly:"true" doc:"Dedicated service user ID backing issued tokens"`
-	TokenTTLSeconds int        `json:"tokenTtlSeconds" required:"false" minimum:"60" maximum:"3600" doc:"Issued token lifetime in seconds"`
-	LastUsedAt      *time.Time `json:"lastUsedAt,omitempty" readOnly:"true" doc:"Last successful token exchange"`
-	ExpiresAt       *time.Time `json:"expiresAt,omitempty" doc:"Optional credential expiration"`
-	CreatedAt       time.Time  `json:"createdAt" readOnly:"true" doc:"Creation timestamp"`
-	UpdatedAt       *time.Time `json:"updatedAt,omitempty" readOnly:"true" doc:"Last update timestamp"`
 	ServiceUsername string     `json:"serviceUsername,omitempty" readOnly:"true" doc:"Dedicated service account username"`
 	RoleName        string     `json:"roleName,omitempty" readOnly:"true" doc:"Mapped role name"`
 	EnvironmentName string     `json:"environmentName,omitempty" readOnly:"true" doc:"Mapped environment name when scoped"`
+	Audiences       []string   `json:"audiences" required:"false" doc:"Allowed external token audiences"`
+	TokenTTLSeconds int        `json:"tokenTtlSeconds" required:"false" minimum:"60" maximum:"3600" doc:"Issued token lifetime in seconds"`
+	Enabled         bool       `json:"enabled" required:"false" doc:"Whether exchanges are allowed"`
 }
 
 // TokenExchangeRequest is the RFC 8693 token exchange form payload after
@@ -55,6 +55,6 @@ type TokenExchangeRequest struct {
 type FederatedTokenResponse struct {
 	AccessToken     string `json:"access_token"`      //nolint:tagliatelle // RFC 8693 wire shape is snake_case.
 	TokenType       string `json:"token_type"`        //nolint:tagliatelle // RFC 8693 wire shape is snake_case.
-	ExpiresIn       int    `json:"expires_in"`        //nolint:tagliatelle // RFC 8693 wire shape is snake_case.
 	IssuedTokenType string `json:"issued_token_type"` //nolint:tagliatelle // RFC 8693 wire shape is snake_case.
+	ExpiresIn       int    `json:"expires_in"`        //nolint:tagliatelle // RFC 8693 wire shape is snake_case.
 }

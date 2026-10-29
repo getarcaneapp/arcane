@@ -471,12 +471,12 @@ func setupSettingsSubscriptions(params settingsSubscriptionsParams) error {
 }
 
 type timeoutSyncWorker struct {
-	mu      sync.Mutex
+	ctx     context.Context
 	updates map[string]string
 	wake    chan struct{}
 	done    chan struct{}
-	ctx     context.Context
 	cancel  context.CancelFunc
+	mu      sync.Mutex
 	closed  bool
 }
 

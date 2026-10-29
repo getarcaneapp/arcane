@@ -50,9 +50,9 @@ type target struct {
 	registry name.Registry
 	// prefix is the repository namespace configured in the registry URL, if any.
 	prefix      string
+	cacheKey    string
 	nameOptions []name.Option
 	options     []remote.Option
-	cacheKey    string
 }
 
 func NewService(

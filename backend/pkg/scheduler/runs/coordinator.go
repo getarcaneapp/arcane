@@ -28,24 +28,24 @@ import (
 
 // Coordinator persists work before dispatching it to the owning domain.
 type Coordinator struct {
+	lifecycleCtx context.Context
+	observer     types.RunObserver
+	observers    utils.KeyedMutex
 	store        *kv.KVService
 	service      *actor.Service
 	runtime      *francis.Runtime
-	owner        string
-	mu           sync.Mutex
 	checkpointed map[string]bool
-	stopping     bool
-	started      bool
 	cancel       context.CancelFunc
-	lifecycleCtx context.Context
 	done         chan struct{}
 	wake         chan struct{}
-	enabled      atomic.Bool
 	execute      func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error)
 	reconcile    func(context.Context, types.SchedulerRun) (types.SchedulerOutcome, error)
-	observer     types.RunObserver
-	observers    utils.KeyedMutex
 	location     *time.Location
+	owner        string
+	mu           sync.Mutex
+	enabled      atomic.Bool
+	stopping     bool
+	started      bool
 }
 
 // Submit persists acceptance before waking the dispatcher. Run IDs deduplicate

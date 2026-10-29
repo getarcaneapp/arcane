@@ -105,10 +105,10 @@ GitHub Actions example:
 				return cmdutil.PrintJSON(struct {
 					Token           string `json:"token"`
 					TokenType       string `json:"tokenType"`
-					ExpiresIn       int    `json:"expiresIn"`
 					ExpiresAt       string `json:"expiresAt"`
 					IssuedTokenType string `json:"issuedTokenType"`
 					Source          string `json:"source"`
+					ExpiresIn       int    `json:"expiresIn"`
 					Persisted       bool   `json:"persisted"`
 				}{
 					Token:           tokenResp.AccessToken,

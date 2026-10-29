@@ -38,9 +38,9 @@ type Service struct {
 
 // Target is a validated remote environment endpoint; build it with NewTarget.
 type Target struct {
+	accessToken *string
 	id          string
 	name        string
-	accessToken *string
 }
 
 // New builds the remote transport. syncGate is owned by the parent so it can
@@ -355,10 +355,10 @@ func (s *Service) fanOutSyncToEnvironment[Model, Item, Request any](
 	slog.InfoContext(ctx, "Sending sync request to agent", "kind", kind, "path", path, "count", len(syncItems))
 
 	var result struct {
-		Success bool `json:"success"`
-		Data    struct {
+		Data struct {
 			Message string `json:"message"`
 		} `json:"data"`
+		Success bool `json:"success"`
 	}
 	if proxyJSONRequestForTargetErr := s.JSON(reqCtx, target, http.MethodPost, path, reqBody, &result); proxyJSONRequestForTargetErr != nil {
 		return fmt.Errorf("failed to send sync request: %w", proxyJSONRequestForTargetErr)

@@ -34,20 +34,10 @@ type SettingState struct {
 	// Required: true
 	Source string `json:"source" enum:"default,db,env"`
 
-	// Locked indicates the setting cannot be changed through the UI, API, or CLI.
-	//
-	// Required: true
-	Locked bool `json:"locked"`
-
 	// LockReason explains why the setting is locked: env or readOnly. Empty when unlocked.
 	//
 	// Required: false
 	LockReason string `json:"lockReason,omitempty" enum:"env,readOnly"`
-
-	// Sensitive indicates the value is a secret and is masked in responses.
-	//
-	// Required: true
-	Sensitive bool `json:"sensitive"`
 
 	// Scope is manager for settings only the main environment owns, otherwise environment.
 	//
@@ -58,10 +48,25 @@ type SettingState struct {
 	//
 	// Required: true
 	EnvName string `json:"envName"`
+
+	// Locked indicates the setting cannot be changed through the UI, API, or CLI.
+	//
+	// Required: true
+	Locked bool `json:"locked"`
+
+	// Sensitive indicates the value is a secret and is masked in responses.
+	//
+	// Required: true
+	Sensitive bool `json:"sensitive"`
 }
 
 // SettingsRuntime carries runtime values derived from server configuration.
 type SettingsRuntime struct {
+	// BackupVolumeName is the Docker volume that stores backups.
+	//
+	// Required: false
+	BackupVolumeName string `json:"backupVolumeName,omitzero"`
+
 	// FrontendTracingEnabled indicates the frontend may relay traces.
 	//
 	// Required: true
@@ -76,11 +81,6 @@ type SettingsRuntime struct {
 	//
 	// Required: true
 	FrontendLogsEnabled bool `json:"frontendLogsEnabled"`
-
-	// BackupVolumeName is the Docker volume that stores backups.
-	//
-	// Required: false
-	BackupVolumeName string `json:"backupVolumeName,omitzero"`
 
 	// AgentMTLSManagerCAAvailable indicates the manager mTLS CA can be downloaded.
 	//

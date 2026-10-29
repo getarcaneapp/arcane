@@ -5,16 +5,6 @@ import (
 )
 
 type DockerInfo struct {
-	// Embedded system.Info from the Docker daemon.
-	//
-	// Required: true
-	system.Info
-
-	// Success indicates if the Docker daemon information was successfully retrieved.
-	//
-	// Required: true
-	Success bool `json:"success"`
-
 	// APIVersion is the API version of the Docker daemon.
 	//
 	// Required: true
@@ -44,4 +34,13 @@ type DockerInfo struct {
 	//
 	// Required: true
 	BuildTime string `json:"buildTime"`
+	// Embedded system.Info from the Docker daemon.
+	//
+	// Required: true
+	system.Info
+
+	// Success indicates if the Docker daemon information was successfully retrieved.
+	//
+	// Required: true
+	Success bool `json:"success"`
 }

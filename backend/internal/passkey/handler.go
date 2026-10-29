@@ -35,8 +35,8 @@ type mfaBeginBody struct {
 }
 
 type mfaFinishBody struct {
-	TransactionID string         `json:"transactionId"`
 	Credential    map[string]any `json:"credential"`
+	TransactionID string         `json:"transactionId"`
 }
 
 type mobilePasskeyFinishBody struct {
@@ -51,8 +51,8 @@ type mobilePasskeyExchangeBody struct {
 }
 
 type stepUpFinishBody struct {
-	TransactionID string         `json:"transactionId"`
 	Credential    map[string]any `json:"credential"`
+	TransactionID string         `json:"transactionId"`
 }
 
 type recoveryBody struct {
@@ -114,10 +114,10 @@ type PasskeyRecoveryOutput struct {
 }
 
 type passkeyBeginResponse struct {
+	ExpiresAt     time.Time `json:"expiresAt"`
+	Options       any       `json:"options"`
 	CeremonyID    string    `json:"ceremonyId"`
 	TransactionID string    `json:"transactionId,omitempty"`
-	Options       any       `json:"options"`
-	ExpiresAt     time.Time `json:"expiresAt"`
 }
 
 type BeginPasskeyRegistrationInput struct {

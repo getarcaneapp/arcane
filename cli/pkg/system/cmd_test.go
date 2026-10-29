@@ -90,8 +90,8 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 				require.NoError(t, runErr, diagnostics)
 			}
 			var result struct {
-				Success      bool              `json:"success"`
 				Environments []json.RawMessage `json:"environments"`
+				Success      bool              `json:"success"`
 			}
 			require.NoError(t, json.Unmarshal([]byte(out), &result), out)
 			require.Equal(t, !tc.partial, result.Success)

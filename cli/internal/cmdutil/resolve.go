@@ -27,16 +27,6 @@ const MaxPromptOptions = 20
 // ResourceRef resolves a resource from a name, ID, or prefix.
 // D is the detail shape and S is the list summary.
 type ResourceRef[D any, S any] struct {
-	EnvironmentScoped bool
-	// Singular and Plural name the resource in prompts and error messages
-	// ("container", "containers").
-	Singular string
-	Plural   string
-	// IDHint completes "use <IDHint> or run `<ListCmd>`" guidance
-	// ("the container ID", "the volume name").
-	IDHint  string
-	ListCmd string
-
 	// GetPath builds the GET-by-identifier path; ListPath the list endpoint
 	// that Resolve queries with ?search=<identifier>&limit=-1.
 	GetPath  func(envID, identifier string) string
@@ -64,14 +54,24 @@ type ResourceRef[D any, S any] struct {
 
 	// Exact identifies exact matches so a unique exact search result wins over substring matches.
 	Exact func(item S, identifierLower, original string) bool
+	// Singular and Plural name the resource in prompts and error messages
+	// ("container", "containers").
+	Singular string
+	Plural   string
+	// IDHint completes "use <IDHint> or run `<ListCmd>`" guidance
+	// ("the container ID", "the volume name").
+	IDHint  string
+	ListCmd string
+
+	EnvironmentScoped bool
 }
 
 type resourceCandidate[D any] struct {
 	details  *D
-	complete bool
-	exact    bool
 	envID    string
 	label    string
+	complete bool
+	exact    bool
 }
 
 // Fetch resolves an identifier and retrieves full detail when resolution returned only a summary.
@@ -248,8 +248,8 @@ func (ref ResourceRef[D, S]) fetchByIdentifier(ctx context.Context, c *client.Cl
 
 	if resp.StatusCode == http.StatusOK {
 		var result struct {
-			types.ApiResponse[D]
 			types.ErrorResponse
+			types.ApiResponse[D]
 		}
 		if unmarshalErr := json.Unmarshal(body, &result); unmarshalErr != nil {
 			return nil, false, fmt.Errorf("failed to parse %s response: %w", ref.Singular, unmarshalErr)
@@ -320,8 +320,8 @@ func (ref ResourceRef[D, S]) listItems(ctx context.Context, c *client.Client, pa
 	}
 
 	var result struct {
-		types.ApiResponse[[]S]
 		types.ErrorResponse
+		types.ApiResponse[[]S]
 	}
 	if unmarshalErr := json.Unmarshal(body, &result); unmarshalErr != nil {
 		return nil, fmt.Errorf("failed to parse %s response: %w", ref.Plural, unmarshalErr)

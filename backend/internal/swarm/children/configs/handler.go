@@ -47,9 +47,9 @@ type CreateSwarmConfigInput struct {
 }
 
 type UpdateSwarmConfigInput struct {
+	Body          types.SwarmConfigUpdateRequest
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ConfigID      string `path:"configId" doc:"Config ID"`
-	Body          types.SwarmConfigUpdateRequest
 }
 
 type DeleteSwarmConfigInput struct {

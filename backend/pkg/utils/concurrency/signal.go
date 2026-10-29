@@ -16,9 +16,9 @@ import (
 // Signal delivers each published value once to every current subscriber.
 // Subscribers run sequentially on the publishing goroutine.
 type Signal[T any] struct {
-	mu          sync.RWMutex
-	nextID      atomic.Uint64
 	subscribers map[uint64]func(T)
+	nextID      atomic.Uint64
+	mu          sync.RWMutex
 }
 
 // NewSignal creates an empty typed signal.

@@ -66,8 +66,8 @@ func Select(label string, options []string) (int, error) {
 }
 
 type selectItem struct {
-	index int
 	title string
+	index int
 }
 
 func (i selectItem) Title() string       { return i.title }

@@ -14,12 +14,12 @@ import (
 )
 
 type StackRenderOptions struct {
+	PathMapper      *projects.PathMapper
 	Name            string
 	ComposeContent  string
 	OverrideContent string
 	EnvContent      string
 	WorkingDir      string
-	PathMapper      *projects.PathMapper
 }
 
 type StackRenderResult struct {

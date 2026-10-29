@@ -34,9 +34,9 @@ var backupActions = []string{
 
 // Candidate is the part of an activity row a sweep decides on.
 type Candidate struct {
-	ID        string
 	StartedAt time.Time
 	Metadata  database.JSON `gorm:"type:text"`
+	ID        string
 }
 
 // Service runs the candidate queries behind the periodic activity sweeps.

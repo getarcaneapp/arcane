@@ -50,21 +50,21 @@ type Service struct {
 // scan's manager-provided credentials never leak into the service caches.
 type tagRegistry struct {
 	service     *registry.ContainerRegistryService
-	credentials []types.ContainerRegistryCredential
 	docker      *docker.DockerClientService
 	settings    *settings.SettingsService
 	tags        *scanRegistryMemo[[]string]
 	digests     *scanRegistryMemo[string]
+	credentials []types.ContainerRegistryCredential
 }
 
 // scanRegistryMemo memoizes successful registry lookups for one scan
 // and coalesces concurrent misses for the same key into a single request.
 type scanRegistryMemo[V any] struct {
 	flight      singleflight.Group
-	mu          sync.Mutex
 	values      map[string]V
 	failures    map[string]error
 	keepFailure func(error) bool
+	mu          sync.Mutex
 }
 
 func NewService(

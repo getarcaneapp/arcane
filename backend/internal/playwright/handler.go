@@ -21,9 +21,9 @@ type createTestAPIKeysRequestInternal struct {
 
 type createTestFederatedCredentialRequestInternal struct {
 	IssuerURL       string   `json:"issuerUrl"`
-	Audiences       []string `json:"audiences"`
 	Subject         string   `json:"subject"`
 	RoleID          string   `json:"roleId"`
+	Audiences       []string `json:"audiences"`
 	TokenTTLSeconds int      `json:"tokenTtlSeconds"`
 }
 

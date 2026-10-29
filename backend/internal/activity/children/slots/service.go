@@ -28,21 +28,22 @@ const (
 type Service struct {
 	settings *settings.SettingsService
 
-	mu    sync.Mutex
 	state map[string]*environmentSlots
 
 	// releases maps an activity ID to the release func of the slot it holds;
 	// the slot is freed when the activity completes.
+	releases map[string]func()
+
+	mu         sync.Mutex
 	releasesMu sync.Mutex
-	releases   map[string]func()
 }
 
 type environmentSlots struct {
-	held int
 	// wake is closed (and replaced) on every release to broadcast to waiters;
 	// each re-checks against the current limit, so a raised limit can admit
 	// more than one of them.
 	wake chan struct{}
+	held int
 }
 
 // NewService returns a slot limiter sized from the local settings.

@@ -47,25 +47,25 @@ const (
 )
 
 type NotificationSettings struct {
-	// ID is the unique identifier of the notification settings.
+	// Config contains the provider-specific configuration.
 	//
 	// Required: true
-	ID uint `json:"id" readOnly:"true"`
+	Config JsonObject `json:"config"`
 
 	// Provider is the notification provider type.
 	//
 	// Required: true
 	Provider NotificationProvider `json:"provider"`
 
+	// ID is the unique identifier of the notification settings.
+	//
+	// Required: true
+	ID uint `json:"id" readOnly:"true"`
+
 	// Enabled indicates if the notification provider is enabled.
 	//
 	// Required: true
 	Enabled bool `json:"enabled"`
-
-	// Config contains the provider-specific configuration.
-	//
-	// Required: true
-	Config JsonObject `json:"config"`
 }
 
 // NotificationTestResponse is the result of a test notification send.
@@ -120,7 +120,6 @@ type NotificationDispatchAutoHeal struct {
 }
 
 type NotificationDispatchRequest struct {
-	Kind                 NotificationDispatchKind                  `json:"kind"`
 	ImageUpdate          *NotificationDispatchImageUpdate          `json:"imageUpdate,omitempty"`
 	BatchImageUpdate     *NotificationDispatchBatchImageUpdate     `json:"batchImageUpdate,omitempty"`
 	ContainerUpdate      *NotificationDispatchContainerUpdate      `json:"containerUpdate,omitempty"`
@@ -128,6 +127,7 @@ type NotificationDispatchRequest struct {
 	VulnerabilityFound   *NotificationDispatchVulnerabilityFound   `json:"vulnerabilityFound,omitempty"`
 	PruneReport          *NotificationDispatchPruneReport          `json:"pruneReport,omitempty"`
 	AutoHeal             *NotificationDispatchAutoHeal             `json:"autoHeal,omitempty"`
+	Kind                 NotificationDispatchKind                  `json:"kind"`
 }
 
 type NotificationDispatchResponse struct {

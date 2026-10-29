@@ -51,20 +51,20 @@ type IconSet = iconcatalog.IconSet
 
 // ArcaneComposeMetadata represents Arcane-specific configuration extracted from a Compose file.
 type ArcaneComposeMetadata struct {
+	// ServiceIconSets maps service names to their fallback, light, and dark icon values.
+	ServiceIconSets map[string]IconSet
 	// ProjectIcon contains fallback, light, and dark icon values for the project.
 	ProjectIcon IconSet
 	// ProjectURLS are additional URLs related to the project (e.g., documentation, homepage).
 	ProjectURLS []string
 	// ProjectTags are normalized tags managed by Compose metadata.
 	ProjectTags []types.ProjectTagOption
-	// ProjectTagsAuthoritative reports whether every Compose tag was parsed successfully.
-	ProjectTagsAuthoritative bool
-	// ServiceIconSets maps service names to their fallback, light, and dark icon values.
-	ServiceIconSets map[string]IconSet
 	// ComposeFiles lists every compose file the metadata was parsed from: the root, COMPOSE_FILE entries, an auto-loaded override, and includes.
 	ComposeFiles []string
 	// EnvFiles lists every env file the parse read: the .env beside each parsed compose file plus resolved COMPOSE_ENV_FILES entries.
 	EnvFiles []string
+	// ProjectTagsAuthoritative reports whether every Compose tag was parsed successfully.
+	ProjectTagsAuthoritative bool
 }
 
 // ParseArcaneComposeMetadata reads a Docker Compose file and extracts Arcane-specific metadata.
