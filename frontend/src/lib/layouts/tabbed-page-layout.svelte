@@ -39,44 +39,47 @@
 	const floatingHeaderVisible = $derived(showFloatingHeader ?? scrollTop > 100);
 </script>
 
-<div class={cn('flex h-full min-h-0 flex-col bg-background', className)}>
-	<Tabs.Root value={selectedTab} class="flex min-h-0 w-full flex-1 flex-col">
-		<div
-			class={cn(
-				'sticky top-0 border-b transition-opacity duration-300',
-				floatingHeaderVisible && 'pointer-events-none opacity-0'
-			)}
-			inert={floatingHeaderVisible || undefined}
-		>
-			<div class="max-w-full px-4 py-3">
-				<div class="flex items-start gap-3">
-					<div class="flex max-w-7-10 min-w-0 items-start gap-2">
-						{#if backUrl}
-							<ArcaneButton action="base" tone="ghost" size="sm" href={backUrl}>
-								<ArrowLeftIcon class="size-4" />
-								{backLabel ?? ''}
-							</ArcaneButton>
-						{/if}
-						<div class="min-w-0">
-							{@render headerInfo()}
-						</div>
-					</div>
-					{#if headerActions}
-						<div class="flex min-w-9 flex-1 basis-0 items-center justify-end gap-2">
-							{@render headerActions()}
-						</div>
+{#snippet fullHeader()}
+	<div
+		class={cn('shrink-0 border-b transition-opacity duration-300', floatingHeaderVisible && 'pointer-events-none opacity-0')}
+		inert={floatingHeaderVisible || undefined}
+	>
+		<div class="max-w-full px-4 py-3">
+			<div class="flex items-start gap-3">
+				<div class="flex max-w-7-10 min-w-0 items-start gap-2">
+					{#if backUrl}
+						<ArcaneButton action="base" tone="ghost" size="sm" href={backUrl}>
+							<ArrowLeftIcon class="size-4" />
+							{backLabel ?? ''}
+						</ArcaneButton>
 					{/if}
+					<div class="min-w-0">
+						{@render headerInfo()}
+					</div>
 				</div>
-
-				{#if subHeader}
-					{@render subHeader()}
+				{#if headerActions}
+					<div class="flex min-w-9 flex-1 basis-0 items-center justify-end gap-2">
+						{@render headerActions()}
+					</div>
 				{/if}
+			</div>
 
-				<div class="mt-4">
-					<TabBar items={tabItems} value={selectedTab} onValueChange={onTabChange} />
-				</div>
+			{#if subHeader}
+				{@render subHeader()}
+			{/if}
+
+			<div class="mt-4">
+				<TabBar items={tabItems} value={selectedTab} onValueChange={onTabChange} />
 			</div>
 		</div>
+	</div>
+{/snippet}
+
+<div class={cn('flex h-full min-h-0 flex-col bg-background', className)}>
+	<Tabs.Root value={selectedTab} class="flex min-h-0 w-full flex-1 flex-col">
+		{#if showFloatingHeader === false}
+			{@render fullHeader()}
+		{/if}
 
 		{#if floatingHeaderVisible}
 			<!-- A full-width, click-through strip centres the bubble. Positioning the bubble itself at
@@ -100,8 +103,11 @@
 			</div>
 		{/if}
 
-		<div class="min-h-0 flex-1 overflow-y-auto" onscroll={(event) => (scrollTop = event.currentTarget.scrollTop)}>
-			<div class="flex h-full min-h-0 flex-col px-1 py-4 pb-2 sm:px-4">
+		<div class="flex min-h-0 flex-1 flex-col overflow-y-auto" onscroll={(event) => (scrollTop = event.currentTarget.scrollTop)}>
+			{#if showFloatingHeader !== false}
+				{@render fullHeader()}
+			{/if}
+			<div class="flex min-h-0 flex-1 flex-col px-1 py-4 pb-2 sm:px-4">
 				{@render tabContent(selectedTab)}
 			</div>
 		</div>
