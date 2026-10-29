@@ -48,21 +48,21 @@ import (
 // NOTE: This is intentionally separate from settings.SettingsService to keep the API
 // surface job-focused and to centralize schedule validation/rescheduling.
 type JobService struct {
-	activity     *activity.ActivityService
-	activityMu   sync.Mutex
-	runs         *runs.Coordinator
-	remote       *remote.Service
-	environment  *environment.EnvironmentService
-	roles        *role.RoleService
-	db           *database.DB
-	settings     *settings.SettingsService
-	cfg          *config.Config
 	scheduler    types.JobController
 	lifecycleCtx context.Context
-	location     *time.Location // Timezone for cron schedule calculations
 	runCount     metric.Int64Counter
 	runDuration  metric.Float64Histogram
 	activeRuns   metric.Int64UpDownCounter
+
+	activity    *activity.ActivityService
+	runs        *runs.Coordinator
+	remote      *remote.Service
+	environment *environment.EnvironmentService
+	roles       *role.RoleService
+	db          *database.DB
+	settings    *settings.SettingsService
+	cfg         *config.Config
+	location    *time.Location // Timezone for cron schedule calculations
 
 	// environment-health is no longer a single scheduler job — it fans out to one
 	// dynamic job per environment owned by environment.EnvironmentService. These bridge the Jobs
@@ -70,6 +70,7 @@ type JobService struct {
 	// the manager only.
 	OnEnvironmentHealthReschedule func(ctx context.Context)
 	RunEnvironmentHealthNow       func(ctx context.Context) error
+	activityMu                    sync.Mutex
 }
 
 func NewJobService(

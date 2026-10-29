@@ -10,9 +10,9 @@ import (
 func TestBuildMatrixURL(t *testing.T) {
 	tests := []struct {
 		name     string
+		expected string
 		config   MatrixConfig
 		wantErr  bool
-		expected string
 	}{
 		{
 			name: "basic config (host + token)",

@@ -13,8 +13,8 @@ type healthHandler struct {
 }
 
 type healthOutput struct {
-	Status int
 	Body   types.HealthResponse
+	Status int
 }
 
 type headHealthOutput struct {
@@ -22,8 +22,8 @@ type headHealthOutput struct {
 }
 
 type readyOutput struct {
-	Status int
 	Body   types.ReadinessResponse
+	Status int
 }
 
 type healthOutputs interface {

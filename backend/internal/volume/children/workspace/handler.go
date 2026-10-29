@@ -39,9 +39,9 @@ type GetVolumeWorkspaceFileInput struct {
 }
 
 type UpdateVolumeWorkspaceInput struct {
+	RawBody       multipart.Form `contentType:"multipart/form-data"`
 	EnvironmentID string         `path:"id" doc:"Environment ID"`
 	VolumeName    string         `path:"volumeName" doc:"Volume name"`
-	RawBody       multipart.Form `contentType:"multipart/form-data"`
 }
 
 func NewHandler(service *Service, activityService *activity.ActivityService, appCtx context.Context) *Handler {

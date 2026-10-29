@@ -56,9 +56,9 @@ type LoginOutput struct {
 }
 
 type LogoutInput struct {
+	Body                  *types.AuthLogout `required:"false"`
 	SecureRefreshCookie   string            `cookie:"__Secure-refresh" doc:"Refresh cookie (HTTPS)"`
 	InsecureRefreshCookie string            `cookie:"refresh" doc:"Refresh cookie (HTTP)"`
-	Body                  *types.AuthLogout `required:"false"`
 }
 
 type LogoutOutput struct {
@@ -67,10 +67,10 @@ type LogoutOutput struct {
 }
 
 type RefreshTokenInput struct {
+	Body                  *types.AuthRefresh `required:"false"`
 	UserAgent             string             `header:"User-Agent"`
 	SecureRefreshCookie   string             `cookie:"__Secure-refresh" doc:"Refresh cookie (HTTPS)"`
 	InsecureRefreshCookie string             `cookie:"refresh" doc:"Refresh cookie (HTTP)"`
-	Body                  *types.AuthRefresh `required:"false"`
 }
 
 type RefreshTokenOutput struct {

@@ -37,15 +37,15 @@ type SettingVariable struct {
 type SettingVisibility int
 
 type settingFieldMeta struct {
-	index               int
-	position            int
 	key                 string
 	envName             string
 	defaultValue        string
 	valueType           string
+	values              []string
 	min                 mo.Option[float64]
 	max                 mo.Option[float64]
-	values              []string
+	index               int
+	position            int
 	isPublic            bool
 	isVisibleToNonAdmin bool
 	isSensitive         bool
@@ -56,9 +56,9 @@ type settingFieldMeta struct {
 }
 
 var settingsFieldCache struct {
-	once    sync.Once
-	ordered []settingFieldMeta
 	byKey   map[string]settingFieldMeta
+	ordered []settingFieldMeta
+	once    sync.Once
 }
 
 // IsTrue returns true if the value is a truthy string

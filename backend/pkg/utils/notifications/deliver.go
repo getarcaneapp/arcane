@@ -18,17 +18,6 @@ type Content struct {
 	// messages.go builders.
 	Text map[MessageFormat]string
 
-	// Title is the generic-webhook title.
-	Title string
-
-	// NtfyTitle is the event-specific ntfy title used when the provider does
-	// not have a custom title configured.
-	NtfyTitle string
-
-	// DefaultTitle is applied to pushover/gotify when their config has no
-	// title; "" means don't default.
-	DefaultTitle string
-
 	// RenderEmail lazily renders the email subject and HTML body. Built as a
 	// closure by the caller so template resources and app config stay out of
 	// this package. Nil means the provider map's email deliverer errors.
@@ -39,6 +28,17 @@ type Content struct {
 	// injected into the outgoing request when a payload template is configured,
 	// so existing template-less generic webhooks keep their exact payload.
 	Vars map[string]string
+
+	// Title is the generic-webhook title.
+	Title string
+
+	// NtfyTitle is the event-specific ntfy title used when the provider does
+	// not have a custom title configured.
+	NtfyTitle string
+
+	// DefaultTitle is applied to pushover/gotify when their config has no
+	// title; "" means don't default.
+	DefaultTitle string
 
 	// RequireNtfyTopic preserves the per-event ntfy topic validation.
 	RequireNtfyTopic bool
@@ -81,8 +81,8 @@ var webhookURL = regexp.MustCompile(`(https?://)(?:[^@/?#\s"']*@)?([^/?#\s"']+)[
 
 // deliveryError reports a provider failure without its webhook URL while keeping the cause for errors.Is.
 type deliveryError struct {
-	message string
 	err     error
+	message string
 }
 
 func (e deliveryError) Error() string { return e.message }

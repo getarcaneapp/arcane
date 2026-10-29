@@ -34,12 +34,12 @@ func Command() *cobra.Command {
 
 func newListCmd() *cobra.Command {
 	var opts struct {
-		limit        int
-		start        int
-		all          bool
 		status       types.ActivityStatus
 		activityType types.ActivityType
 		resourceType string
+		limit        int
+		start        int
+		all          bool
 	}
 	cmd := &cobra.Command{
 		Use:          "list",

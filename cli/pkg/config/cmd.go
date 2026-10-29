@@ -116,8 +116,8 @@ func newConfigSetCmd() *cobra.Command {
 		jwtToken          string
 		federatedAudience string
 		logLevel          string
-		defaultLimit      int
 		resourceLimits    []string
+		defaultLimit      int
 	}
 	cmd := &cobra.Command{
 		Use:   "set [key value]...",

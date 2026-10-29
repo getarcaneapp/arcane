@@ -34,10 +34,12 @@ func TestVerify(t *testing.T) {
 			bundleJSON, readErr := os.ReadFile("testdata/arcane_" + version + "_checksums.txt.sigstore.json")
 			require.NoError(t, readErr)
 			for _, tt := range []struct {
-				name                                 string
-				keys                                 [][]byte
-				mutate                               func(*bundle.Bundle)
-				alterChecksums, malformed, wantError bool
+				mutate         func(*bundle.Bundle)
+				name           string
+				keys           [][]byte
+				alterChecksums bool
+				malformed      bool
+				wantError      bool
 			}{
 				{name: "valid", keys: [][]byte{cosignPublicKey}},
 				{name: "altered checksums", keys: [][]byte{cosignPublicKey}, alterChecksums: true, wantError: true},

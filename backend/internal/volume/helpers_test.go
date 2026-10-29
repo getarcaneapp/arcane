@@ -32,8 +32,8 @@ func newVolumeServiceTestDockerClient(t *testing.T, server *httptest.Server) *cl
 func TestCreateTempContainerReusesWritableHelper(t *testing.T) {
 	var createCalls, startCalls, removeCalls int
 	var createRequest struct {
-		NetworkDisabled bool                  `json:"NetworkDisabled"`
 		HostConfig      *container.HostConfig `json:"HostConfig"`
+		NetworkDisabled bool                  `json:"NetworkDisabled"`
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {

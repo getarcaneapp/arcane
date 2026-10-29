@@ -37,56 +37,56 @@ const (
 type Config struct {
 	BuildablesConfig
 
-	AppUrl                string         `env:"ARCANE_APP_URL" default:""`
-	DatabaseURL           string         `env:"ARCANE_DATABASE_URL" default:"file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_txlock=immediate" options:"file"`
-	AllowDowngrade        bool           `env:"ARCANE_ALLOW_DOWNGRADE" default:"false"`
-	AllowCLIPasswordReset bool           `env:"ARCANE_ALLOW_CLI_PASSWORD_RESET" default:"false"`
-	AllowCLIMFAReset      bool           `env:"ARCANE_ALLOW_CLI_MFA_RESET" default:"false"`
-	ActorPort             string         `env:"ARCANE_ACTOR_PORT" default:"3551"`
-	Port                  string         `env:"ARCANE_PORT" default:"3552"`
-	Listen                string         `env:"ARCANE_LISTEN" default:""`
-	TLSEnabled            bool           `env:"ARCANE_TLS_ENABLED" default:"false"`
-	TLSCertFile           string         `env:"ARCANE_TLS_CERT_FILE" default:""`
-	TLSKeyFile            string         `env:"ARCANE_TLS_KEY_FILE" default:""`
-	Environment           AppEnvironment `env:"ARCANE_ENVIRONMENT" default:"production"`
-	JWTRefreshExpiry      time.Duration  `env:"ARCANE_JWT_REFRESH_EXPIRY" default:"168h"`
-	EncryptionKey         string         `env:"ARCANE_ENCRYPTION_KEY" default:"" options:"file"`
-	AdminStaticAPIKey     string         `env:"ARCANE_ADMIN_STATIC_API_KEY" default:"" options:"file"`
-	ApnsRelayUrl          string         `env:"ARCANE_APNS_RELAY_URL" default:"https://apns.getarcane.app" options:"trimTrailingSlash"`
-	ApnsKeyAlgorithm      string         `env:"ARCANE_APNS_KEY_ALGORITHM" default:"ed25519" options:"toLower"`
+	AppUrl            string         `env:"ARCANE_APP_URL" default:""`
+	DatabaseURL       string         `env:"ARCANE_DATABASE_URL" default:"file:data/arcane.db?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_txlock=immediate" options:"file"`
+	ActorPort         string         `env:"ARCANE_ACTOR_PORT" default:"3551"`
+	Port              string         `env:"ARCANE_PORT" default:"3552"`
+	Listen            string         `env:"ARCANE_LISTEN" default:""`
+	TLSCertFile       string         `env:"ARCANE_TLS_CERT_FILE" default:""`
+	TLSKeyFile        string         `env:"ARCANE_TLS_KEY_FILE" default:""`
+	Environment       AppEnvironment `env:"ARCANE_ENVIRONMENT" default:"production"`
+	EncryptionKey     string         `env:"ARCANE_ENCRYPTION_KEY" default:"" options:"file"`
+	AdminStaticAPIKey string         `env:"ARCANE_ADMIN_STATIC_API_KEY" default:"" options:"file"`
+	ApnsRelayUrl      string         `env:"ARCANE_APNS_RELAY_URL" default:"https://apns.getarcane.app" options:"trimTrailingSlash"`
+	ApnsKeyAlgorithm  string         `env:"ARCANE_APNS_KEY_ALGORITHM" default:"ed25519" options:"toLower"`
 
 	OidcRoleMappings string `env:"ARCANE_OIDC_ROLE_MAPPINGS" default:"" options:"file"`
 
-	PUID                    string `env:"PUID" default:""`
-	PGID                    string `env:"PGID" default:""`
-	DockerConfig            string `env:"DOCKER_CONFIG" default:""`
-	InContainer             bool   `env:"ARCANE_IN_CONTAINER" default:"false"`
-	LogJson                 bool   `env:"ARCANE_LOG_JSON" default:"false"`
-	LogLevel                string `env:"ARCANE_LOG_LEVEL" default:"info" options:"toLower"`
-	AgentToken              string `env:"ARCANE_AGENT_TOKEN" default:"" options:"file"`
-	ManagerApiUrl           string `env:"ARCANE_MANAGER_API_URL" default:""`
-	UIConfigurationDisabled bool   `env:"ARCANE_UI_CONFIGURATION_DISABLED" default:"false"`
+	PUID                string `env:"PUID" default:""`
+	PGID                string `env:"PGID" default:""`
+	DockerConfig        string `env:"DOCKER_CONFIG" default:""`
+	LogLevel            string `env:"ARCANE_LOG_LEVEL" default:"info" options:"toLower"`
+	AgentToken          string `env:"ARCANE_AGENT_TOKEN" default:"" options:"file"`
+	ManagerApiUrl       string `env:"ARCANE_MANAGER_API_URL" default:""`
+	AgentTransport      string `env:"ARCANE_AGENT_TRANSPORT" default:"auto" options:"toLower"`
+	AgentMTLSMode       string `env:"ARCANE_AGENT_MTLS_MODE" default:"disabled" options:"toLower"`
+	AgentMTLSCAFile     string `env:"ARCANE_AGENT_MTLS_CA_FILE" default:""`
+	AgentMTLSCertFile   string `env:"ARCANE_AGENT_MTLS_CERT_FILE" default:""`
+	AgentMTLSKeyFile    string `env:"ARCANE_AGENT_MTLS_KEY_FILE" default:""`
+	AgentMTLSServerName string `env:"ARCANE_AGENT_MTLS_SERVER_NAME" default:""`
+	AgentMTLSAssetsDir  string `env:"ARCANE_AGENT_MTLS_ASSETS_DIR" default:""`
 
-	AgentEnabled           bool   `env:"ARCANE_AGENT" default:"false"`
-	AgentTransport         string `env:"ARCANE_AGENT_TRANSPORT" default:"auto" options:"toLower"`
-	AgentReconnectInterval int    `env:"ARCANE_AGENT_RECONNECT_INTERVAL" default:"5"` // seconds
-	AgentMTLSMode          string `env:"ARCANE_AGENT_MTLS_MODE" default:"disabled" options:"toLower"`
-	AgentMTLSCAFile        string `env:"ARCANE_AGENT_MTLS_CA_FILE" default:""`
-	AgentMTLSCertFile      string `env:"ARCANE_AGENT_MTLS_CERT_FILE" default:""`
-	AgentMTLSKeyFile       string `env:"ARCANE_AGENT_MTLS_KEY_FILE" default:""`
-	AgentMTLSServerName    string `env:"ARCANE_AGENT_MTLS_SERVER_NAME" default:""`
-	AgentMTLSAssetsDir     string `env:"ARCANE_AGENT_MTLS_ASSETS_DIR" default:""`
+	TrustedProxies          string        `env:"ARCANE_TRUSTED_PROXIES" default:""`
+	GitWorkDir              string        `env:"ARCANE_GIT_WORK_DIR" default:"data/git"`
+	BackupVolumeName        string        `env:"ARCANE_BACKUP_VOLUME_NAME" default:"arcane-backups"`
+	HTTPProxy               string        `env:"HTTP_PROXY" default:""`
+	HTTPSProxy              string        `env:"HTTPS_PROXY" default:""`
+	NoProxy                 string        `env:"NO_PROXY" default:""`
+	Timezone                string        `env:"TZ" default:"Local"`
+	JWTRefreshExpiry        time.Duration `env:"ARCANE_JWT_REFRESH_EXPIRY" default:"168h"`
+	AgentReconnectInterval  int           `env:"ARCANE_AGENT_RECONNECT_INTERVAL" default:"5"` // seconds
+	FilePerm                os.FileMode   `env:"ARCANE_FILE_PERM" default:"0644"`
+	DirPerm                 os.FileMode   `env:"ARCANE_DIR_PERM" default:"0755"`
+	AllowDowngrade          bool          `env:"ARCANE_ALLOW_DOWNGRADE" default:"false"`
+	AllowCLIPasswordReset   bool          `env:"ARCANE_ALLOW_CLI_PASSWORD_RESET" default:"false"`
+	AllowCLIMFAReset        bool          `env:"ARCANE_ALLOW_CLI_MFA_RESET" default:"false"`
+	TLSEnabled              bool          `env:"ARCANE_TLS_ENABLED" default:"false"`
+	InContainer             bool          `env:"ARCANE_IN_CONTAINER" default:"false"`
+	LogJson                 bool          `env:"ARCANE_LOG_JSON" default:"false"`
+	UIConfigurationDisabled bool          `env:"ARCANE_UI_CONFIGURATION_DISABLED" default:"false"`
 
-	TrustedProxies       string      `env:"ARCANE_TRUSTED_PROXIES" default:""`
-	FilePerm             os.FileMode `env:"ARCANE_FILE_PERM" default:"0644"`
-	DirPerm              os.FileMode `env:"ARCANE_DIR_PERM" default:"0755"`
-	GitWorkDir           string      `env:"ARCANE_GIT_WORK_DIR" default:"data/git"`
-	BackupVolumeName     string      `env:"ARCANE_BACKUP_VOLUME_NAME" default:"arcane-backups"`
-	UpgradeKeepContainer bool        `env:"ARCANE_UPGRADE_KEEP_CONTAINER" default:"false"`
-	HTTPProxy            string      `env:"HTTP_PROXY" default:""`
-	HTTPSProxy           string      `env:"HTTPS_PROXY" default:""`
-	NoProxy              string      `env:"NO_PROXY" default:""`
-	Timezone             string      `env:"TZ" default:"Local"`
+	AgentEnabled         bool `env:"ARCANE_AGENT" default:"false"`
+	UpgradeKeepContainer bool `env:"ARCANE_UPGRADE_KEEP_CONTAINER" default:"false"`
 }
 
 func Load() (*Config, error) {

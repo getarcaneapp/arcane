@@ -12,9 +12,9 @@ import (
 func TestPodCreateOptionsRequest(t *testing.T) {
 	tests := []struct {
 		name    string
+		wantErr string
 		opts    podCreateOptions
 		want    types.PodCreateRequest
-		wantErr string
 	}{
 		{
 			name: "network modes, named networks, and limits",

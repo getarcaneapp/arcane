@@ -80,11 +80,11 @@ var (
 // UpdaterService is Arcane's handler-facing service for the standalone updater engine.
 type UpdaterService struct {
 	admission  *runs.Admission
-	deps       updaterDependencies
 	engine     *updater.Service
 	execution  *execution.Service
 	recovery   *recovery.Service
 	autoUpdate *flow.Workflow
+	deps       updaterDependencies
 }
 
 type updaterDependencies struct {
@@ -112,9 +112,8 @@ type (
 	// containerUpdateBatch accumulates per-container update notifications
 	// so a single update batch produces one batched notification.
 	containerUpdateBatch struct {
-		sync.Mutex
-
 		entries []notifications.ContainerUpdateBatchEntry
+		sync.Mutex
 	}
 
 	containerUpdateBatchContextKey struct{}
@@ -125,19 +124,19 @@ type (
 	ignoreSettingsExclusionsKey    struct{}
 
 	updateProgress struct {
-		mu            sync.Mutex
 		err           error
-		selfTriggered bool
 		selfID        string
+		mu            sync.Mutex
+		selfTriggered bool
 	}
 
 	// autoUpdateApplied is the apply step's output, read back by finalize.
 	autoUpdateApplied struct {
-		Result         types.UpdaterResult `json:"result"`
 		Error          string              `json:"error,omitempty"`
 		RecordingError string              `json:"recordingError,omitempty"`
-		SelfTriggered  bool                `json:"selfTriggered,omitempty"`
 		SelfID         string              `json:"selfId,omitempty"`
+		Result         types.UpdaterResult `json:"result"`
+		SelfTriggered  bool                `json:"selfTriggered,omitempty"`
 		Unresolved     bool                `json:"unresolved,omitempty"`
 		Completed      bool                `json:"completed"`
 		// Busy means another update held the updater, so this run applied nothing; Started means an earlier

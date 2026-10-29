@@ -49,8 +49,8 @@ type Service struct {
 	docker        *docker.DockerClientService
 	remoteLabels  func(context.Context, string) (map[string]string, error)
 	httpClient    *http.Client
-	githubAPIBase string
 	releases      *hot.HotCache[string, []githubRelease]
+	githubAPIBase string
 }
 
 type Request struct {

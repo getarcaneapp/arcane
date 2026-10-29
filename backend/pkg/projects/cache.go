@@ -19,9 +19,9 @@ type composeCacheInternal[T any] struct {
 }
 
 type composeCacheEntryInternal[T any] struct {
-	fingerprint string
-	stamps      map[string]composeCacheStampInternal
 	value       T
+	stamps      map[string]composeCacheStampInternal
+	fingerprint string
 }
 
 type composeCacheStampInternal struct {

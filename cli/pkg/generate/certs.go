@@ -53,9 +53,9 @@ func newTLSCmd() *cobra.Command {
 	var opts struct {
 		outDir     string
 		commonName string
-		hosts      []string
 		certName   string
 		keyName    string
+		hosts      []string
 	}
 	cmd := &cobra.Command{
 		Use:   "tls",

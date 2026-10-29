@@ -110,9 +110,9 @@ func TestRiskScore_EnvironmentScore(t *testing.T) {
 	kev := ThreatIntel{KnownExploited: true}
 	overdue := ThreatIntel{KnownExploited: true, KEVOverdue: true}
 	type scanned struct {
-		cvss     float64
 		intel    ThreatIntel
 		exposure types.ImageExposure
+		cvss     float64
 		count    int
 	}
 	running, stopped := types.ImageExposureRunning, types.ImageExposureStopped
@@ -229,12 +229,12 @@ func TestBuildScanInsights_NonCVEAdvisories(t *testing.T) {
 func TestFindingPriority(t *testing.T) {
 	zeroEPSS, lowEPSS, highEPSS := 0.0, 0.01, 0.97
 	tests := []struct {
-		name           string
-		base           float64
-		knownExploited bool
 		epss           *float64
+		name           string
 		exposure       types.ImageExposure
+		base           float64
 		want           float64
+		knownExploited bool
 	}{
 		{name: "no intel running", base: 7.5, exposure: types.ImageExposureRunning, want: 52.5},
 		{name: "epss zero", base: 7.5, epss: &zeroEPSS, exposure: types.ImageExposureRunning, want: 52.5},

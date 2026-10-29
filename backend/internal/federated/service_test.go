@@ -36,10 +36,10 @@ import (
 )
 
 type federatedTestIssuer struct {
-	IssuerURL string
 	private   *mldsa.PrivateKey
-	keyID     string
 	server    *httptest.Server
+	IssuerURL string
+	keyID     string
 }
 
 func newFederatedTestIssuer(t *testing.T) *federatedTestIssuer {
@@ -202,9 +202,9 @@ func TestFederatedCredentialServiceExchangeToken(t *testing.T) {
 	ctx := t.Context()
 
 	tests := []struct {
+		wantError func(error) bool
 		name      string
 		token     string
-		wantError func(error) bool
 	}{
 		{
 			name:  "issues an Arcane bearer token for a matching issuer audience and subject",

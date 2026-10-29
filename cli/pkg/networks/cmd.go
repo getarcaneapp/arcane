@@ -252,11 +252,11 @@ func newCreateCmd() *cobra.Command {
 		networkCreateSubnet     string
 		networkCreateGateway    string
 		networkCreateIPRange    string
+		networkCreateLabels     []string
+		networkCreateOpts       []string
 		networkCreate           bool
 		networkCreateAttachable bool
 		networkCreateIPv6       bool
-		networkCreateLabels     []string
-		networkCreateOpts       []string
 	}
 	cmd := &cobra.Command{
 		Use:          "create",
@@ -346,9 +346,9 @@ func newCreateCmd() *cobra.Command {
 
 func newConnectCmd() *cobra.Command {
 	var opts struct {
-		connectAliases []string
 		connectIPv4    string
 		connectIPv6    string
+		connectAliases []string
 	}
 	cmd := &cobra.Command{
 		Use:          "connect <network-id|name> <container-id|name>",

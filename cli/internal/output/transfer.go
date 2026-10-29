@@ -20,8 +20,8 @@ type transferReader struct {
 	ctx            context.Context
 	source         io.Reader
 	loading        *tracker
-	current, total int64
 	label          string
+	current, total int64
 }
 
 func (r *transferReader) Read(p []byte) (int, error) {

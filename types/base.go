@@ -16,8 +16,8 @@ type EnvironmentRef struct {
 }
 
 type EnvironmentData[T any] struct {
-	Environment EnvironmentRef `json:"environment" doc:"Environment the data came from"`
 	Data        T              `json:"data" doc:"Data reported by the environment"`
+	Environment EnvironmentRef `json:"environment" doc:"Environment the data came from"`
 }
 
 type EnvironmentFailure struct {
@@ -41,8 +41,8 @@ func (t *EnvironmentTag) SetEnvironment(ref EnvironmentRef) {
 
 // FieldError identifies the input field associated with an error.
 type FieldError struct {
-	Field string
 	Err   error
+	Field string
 }
 
 func (e *FieldError) Error() string { return e.Err.Error() }
@@ -92,8 +92,8 @@ type ErrorResponse struct {
 
 // MessageResponse represents a simple message response.
 type MessageResponse struct {
-	Message    string  `json:"message" doc:"Response message"`
 	ActivityID *string `json:"activityId,omitempty" doc:"Background activity ID tracking this action"`
+	Message    string  `json:"message" doc:"Response message"`
 }
 
 // PaginationResponse contains pagination metadata.
@@ -108,35 +108,35 @@ type PaginationResponse struct {
 
 // ApiResponse is a generic wrapper for API responses.
 type ApiResponse[T any] struct {
-	Success            bool                 `json:"success" doc:"Whether the request was successful"`
 	Data               T                    `json:"data" doc:"Response data"`
 	Environments       []EnvironmentData[T] `json:"environments,omitempty" doc:"Per-environment data behind a multi-environment response"`
 	FailedEnvironments []EnvironmentFailure `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
+	Success            bool                 `json:"success" doc:"Whether the request was successful"`
 }
 
 // Paginated is a generic wrapper for paginated responses.
 type Paginated[T any] struct {
-	Success            bool                 `json:"success" doc:"Whether the request was successful"`
 	Data               []T                  `json:"data" doc:"Array of items for the current page"`
-	Pagination         PaginationResponse   `json:"pagination" doc:"Pagination metadata"`
 	FailedEnvironments []EnvironmentFailure `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
+	Pagination         PaginationResponse   `json:"pagination" doc:"Pagination metadata"`
+	Success            bool                 `json:"success" doc:"Whether the request was successful"`
 }
 
 // PaginatedWithWarnings is a generic wrapper for paginated responses with warnings.
 type PaginatedWithWarnings[T any] struct {
-	Success    bool               `json:"success"`
 	Data       []T                `json:"data"`
-	Pagination PaginationResponse `json:"pagination"`
 	Warnings   []string           `json:"warnings,omitempty"`
+	Pagination PaginationResponse `json:"pagination"`
+	Success    bool               `json:"success"`
 }
 
 // PaginatedWithCounts is a generic wrapper for paginated responses with aggregate counts.
 type PaginatedWithCounts[T, C any] struct {
-	Success            bool                 `json:"success" doc:"Whether the request was successful"`
-	Data               []T                  `json:"data" doc:"Array of items for the current page"`
 	Counts             C                    `json:"counts" doc:"Aggregate counts for the filtered collection"`
-	Pagination         PaginationResponse   `json:"pagination" doc:"Pagination metadata"`
+	Data               []T                  `json:"data" doc:"Array of items for the current page"`
 	FailedEnvironments []EnvironmentFailure `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
+	Pagination         PaginationResponse   `json:"pagination" doc:"Pagination metadata"`
+	Success            bool                 `json:"success" doc:"Whether the request was successful"`
 }
 
 type SubmittedBody struct {

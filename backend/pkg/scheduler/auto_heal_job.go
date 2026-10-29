@@ -61,17 +61,18 @@ type AutoHealJob struct {
 	notificationService *notification.NotificationService
 	admissionGate       *runs.Admission
 
-	mu       sync.Mutex
 	restarts map[string]*restartRecord
-
-	selfIDOnce sync.Once
-	selfID     string
 
 	getDockerClientFn  func() (*client.Client, error)
 	listContainers     func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error)
 	inspectContainerFn func(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error)
 	restartContainerFn func(ctx context.Context, dockerClient *client.Client, containerID string) error
 	getSelfContainerID func() (string, error)
+	selfID             string
+
+	selfIDOnce sync.Once
+
+	mu sync.Mutex
 }
 
 func NewAutoHealJob(

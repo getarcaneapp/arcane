@@ -56,13 +56,14 @@ type VariableService struct {
 	listEnabledRemoteEnvironments func(context.Context) ([]environment.Environment, error)
 	settingsService               *settings.SettingsService
 	kvService                     *kv.KVService
-	importLocks                   utils.KeyedMutex
+	syncStatus                    map[string]types.EnvironmentSyncStatus
 
-	statusMu   sync.RWMutex
-	syncStatus map[string]types.EnvironmentSyncStatus
+	importLocks utils.KeyedMutex
 
 	// syncGate skips the agent PUT when the effective variable set is unchanged.
 	syncGate utils.SyncGate
+
+	statusMu sync.RWMutex
 }
 
 func NewVariableService(db *database.DB, environmentService *environment.EnvironmentService, settingsService *settings.SettingsService, kvService *kv.KVService) *VariableService {
@@ -604,8 +605,8 @@ func (s *VariableService) importRemoteLegacyVarsOnce(ctx context.Context, envID 
 	}
 
 	var out struct {
-		Success bool                `json:"success"`
 		Data    []types.EnvVariable `json:"data"`
+		Success bool                `json:"success"`
 	}
 	if proxyEnvironmentJSONErr := s.proxyEnvironmentJSON(ctx, envID, http.MethodGet, agentVariablesPath, nil, &out); proxyEnvironmentJSONErr != nil {
 		return proxyEnvironmentJSONErr

@@ -24,15 +24,15 @@ type watcherRegistrationInternal struct {
 	done    chan struct{}
 }
 type jobSchedulerInternal struct {
-	mu          sync.RWMutex
+	context     context.Context
 	jobsByID    map[string]types.SchedulerJob
 	watchers    map[string]types.BusWatcher
 	allWatchers map[string]watcherRegistrationInternal
 	supervisors map[string]*watcherSupervisorInternal
-	context     context.Context
 	cancel      context.CancelFunc
 	location    *time.Location
 	coordinator *runs.Coordinator
+	mu          sync.RWMutex
 	stopping    bool
 	started     bool
 }

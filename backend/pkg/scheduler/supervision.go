@@ -14,10 +14,10 @@ import (
 
 type watcherSupervisorInternal struct {
 	watcher types.BusWatcher
-	mu      sync.Mutex
-	health  types.SchedulerWorkerHealth
 	restart chan struct{}
 	cancel  context.CancelFunc
+	health  types.SchedulerWorkerHealth
+	mu      sync.Mutex
 }
 
 func newWatcherSupervisor(watcher types.BusWatcher) *watcherSupervisorInternal {

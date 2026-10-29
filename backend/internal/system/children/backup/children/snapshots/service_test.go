@@ -41,9 +41,9 @@ func TestSnapshotSourceFilesSkipLiveAndProjectFiles(t *testing.T) {
 		excludes:          []string{".arcane-snapshot-*", RecoveryRequestName, "arcane.db-wal", "arcane.db-shm", "arcane.db-journal", "arcane.francis.db-wal"},
 	}
 	type attributes struct {
+		modTime time.Time
 		size    int64
 		mode    os.FileMode
-		modTime time.Time
 	}
 	walk := func() map[string]attributes {
 		files, walkErr := snapshotSourceFiles(t.Context(), layout)
@@ -233,11 +233,11 @@ func TestNormalizeSystemBackupSelection(t *testing.T) {
 func TestSnapshotLayoutFromManifest(t *testing.T) {
 	legacy := map[string]string{"DATABASE_URL": "file:/app/data/arcane.db", "PROJECTS_DIRECTORY": "/app/data/projects"}
 	tests := []struct {
-		name          string
-		manifest      types.RecoveryManifest
-		root          string
 		expected      snapshotLayout
+		name          string
+		root          string
 		errorContains string
+		manifest      types.RecoveryManifest
 	}{
 		{
 			name: "version 1 projects inside data", manifest: types.RecoveryManifest{FormatVersion: 1, Environment: legacy}, root: "/",
@@ -295,9 +295,12 @@ func TestSnapshotLayoutProtectsDataFiles(t *testing.T) {
 
 func TestProjectsSnapshotPath(t *testing.T) {
 	tests := []struct {
-		name, data, projects, expected string
-		external                       bool
-		errorContains                  string
+		name          string
+		data          string
+		projects      string
+		expected      string
+		errorContains string
+		external      bool
 	}{
 		{name: "inside data", data: "/app/data", projects: "/app/data/projects", expected: "/data/projects"},
 		{name: "nested deeper", data: "/app/data", projects: "/app/data/custom/projects/", expected: "/data/custom/projects"},
@@ -348,10 +351,10 @@ func TestSourceMounts(t *testing.T) {
 func TestNestedDataPath(t *testing.T) {
 	tests := []struct {
 		name          string
-		mounts        []container.MountPoint
 		expected      string
-		nested        bool
 		errorContains string
+		mounts        []container.MountPoint
+		nested        bool
 	}{
 		{
 			name: "data directory inside projects bind on the host",

@@ -74,23 +74,23 @@ type (
 	// stagedDirectorySync holds the fully prepared directory-sync result before it
 	// is promoted into the live project path.
 	stagedDirectorySync struct {
-		stagePath string
+		project *projectpkg.Project
+		// gitEnvContent is the repo's project-root .env, routed through the env merge.
+		gitEnvContent *string
+		stagePath     string
 		// stageLogical is stagePath relative to the projects directory, the root every staging mutation is confined to.
 		stageLogical    string
 		projectsDir     string
 		composeFileName string
-		project         *projectpkg.Project
 		// syncFiles are the repo files written raw; syncedFiles are their paths.
 		syncFiles   []projects.SyncFile
 		syncedFiles []string
 		// oldSyncedFiles are the paths the previous sync tracked.
 		oldSyncedFiles []string
-		// gitEnvContent is the repo's project-root .env, routed through the env merge.
-		gitEnvContent   *string
+		// backupScope names every live path promotion may create, rewrite or delete.
+		backupScope     projects.ProjectUpdateBackupScope
 		serviceCount    int
 		contentsChanged bool
-		// backupScope names every live path promotion may create, rewrite or delete.
-		backupScope projects.ProjectUpdateBackupScope
 	}
 )
 

@@ -70,8 +70,8 @@ type fakeDockerClientProvider struct {
 }
 
 type fakeImagePuller struct {
-	pulled []string
 	fail   map[string]error
+	pulled []string
 }
 
 type fakeRunRecorder struct {
@@ -87,15 +87,15 @@ type fakeUsedImageCollector struct {
 type fakeProjectUpdater struct {
 	projects     map[string]updater.ComposeProject
 	updateErrs   map[string]error
-	calls        []string
 	imageChanges map[string]map[string]updatertypes.ServiceImageChange
+	calls        []string
 }
 
 type mockSystemUpgradeService struct {
-	triggerCalled  bool
 	triggerError   error
 	capturedUser   *types.Actor
 	capturedTarget *updater.SelfUpdateTarget
+	triggerCalled  bool
 }
 
 type projectCheckRegistry struct{}
@@ -1361,8 +1361,8 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgrade(
 
 func TestUpdateLabelPolicyMarksQuadletContainersUnmanaged(t *testing.T) {
 	tests := []struct {
-		name      string
 		labels    map[string]string
+		name      string
 		unmanaged bool
 	}{
 		{name: "unlabelled", labels: map[string]string{}},
@@ -1385,8 +1385,8 @@ func TestPullableImageRef(t *testing.T) {
 		name         string
 		summaryImage string
 		inspectImage string
-		repoTags     []string
 		expectedRef  string
+		repoTags     []string
 	}{
 		{
 			name:         "inspect config image wins",
@@ -1896,9 +1896,9 @@ func TestUpdaterService_AutoUpdateDeferral(t *testing.T) {
 	require.NoError(t, err)
 
 	tests := []struct {
+		labels map[string]string
 		name   string
 		id     string
-		labels map[string]string
 		want   bool
 	}{
 		{name: "younger than the environment delay", id: "young", want: true},

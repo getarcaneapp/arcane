@@ -66,8 +66,8 @@ type HandleOidcCallbackInput struct {
 }
 
 type HandleOidcCallbackOutput struct {
-	SetCookie []string `header:"Set-Cookie" doc:"Session and clear state cookies"`
 	Body      types.AuthenticationResponse
+	SetCookie []string `header:"Set-Cookie" doc:"Session and clear state cookies"`
 }
 
 type GetOidcConfigInput struct {
@@ -110,8 +110,8 @@ type DeleteOidcRoleMappingInput struct {
 
 type DeleteOidcRoleMappingOutput struct {
 	Body struct {
-		Success bool   `json:"success"`
 		Message string `json:"message"`
+		Success bool   `json:"success"`
 	}
 }
 

@@ -9,8 +9,8 @@ import (
 )
 
 type SwarmRuntimeStatus struct {
-	Enabled   bool   `json:"enabled"`
 	ClusterID string `json:"clusterId,omitempty" doc:"Swarm cluster ID when the environment is a swarm manager"`
+	Enabled   bool   `json:"enabled"`
 }
 
 type SwarmInfo struct {
@@ -59,23 +59,23 @@ func NewSwarmInfo(s swarm.Swarm) SwarmInfo {
 }
 
 type SwarmConfig struct {
-	EnvironmentTag
-
-	ID        string           `json:"id" readOnly:"true"`
-	Version   swarm.Version    `json:"version" readOnly:"true"`
+	Spec      swarm.ConfigSpec `json:"spec" required:"false"`
 	CreatedAt time.Time        `json:"createdAt" readOnly:"true"`
 	UpdatedAt time.Time        `json:"updatedAt" readOnly:"true"`
-	Spec      swarm.ConfigSpec `json:"spec" required:"false"`
+	EnvironmentTag
+
+	ID      string        `json:"id" readOnly:"true"`
+	Version swarm.Version `json:"version" readOnly:"true"`
 }
 
 type SwarmSecret struct {
-	EnvironmentTag
-
-	ID        string           `json:"id" readOnly:"true"`
-	Version   swarm.Version    `json:"version" readOnly:"true"`
+	Spec      swarm.SecretSpec `json:"spec" required:"false"`
 	CreatedAt time.Time        `json:"createdAt" readOnly:"true"`
 	UpdatedAt time.Time        `json:"updatedAt" readOnly:"true"`
-	Spec      swarm.SecretSpec `json:"spec" required:"false"`
+	EnvironmentTag
+
+	ID      string        `json:"id" readOnly:"true"`
+	Version swarm.Version `json:"version" readOnly:"true"`
 }
 
 // NewSwarmConfig converts a Docker swarm config into the API-facing ConfigSummary shape.
@@ -115,13 +115,13 @@ func NewSwarmSecret(secret swarm.Secret) SwarmSecret {
 }
 
 type SwarmConfigUpdateRequest struct {
-	Version uint64            `json:"version" doc:"Current config version, used to reject stale updates"`
 	Labels  map[string]string `json:"labels" doc:"Replacement labels; config data is immutable"`
+	Version uint64            `json:"version" doc:"Current config version, used to reject stale updates"`
 }
 
 type SwarmSecretUpdateRequest struct {
-	Version uint64            `json:"version" doc:"Current secret version, used to reject stale updates"`
 	Labels  map[string]string `json:"labels" doc:"Replacement labels; secret data is immutable"`
+	Version uint64            `json:"version" doc:"Current secret version, used to reject stale updates"`
 }
 
 type SwarmInitRequest struct {
@@ -145,9 +145,9 @@ type SwarmJoinRequest struct {
 	ListenAddr    string                 `json:"listenAddr,omitempty"`
 	AdvertiseAddr string                 `json:"advertiseAddr,omitempty"`
 	DataPathAddr  string                 `json:"dataPathAddr,omitempty"`
-	RemoteAddrs   []string               `json:"remoteAddrs"`
 	JoinToken     string                 `json:"joinToken"`
 	Availability  swarm.NodeAvailability `json:"availability,omitempty"`
+	RemoteAddrs   []string               `json:"remoteAddrs"`
 }
 
 type SwarmLeaveRequest struct {
@@ -173,8 +173,8 @@ type SwarmRotateJoinTokensRequest struct {
 }
 
 type SwarmUpdateRequest struct {
-	Version                uint64          `json:"version,omitempty"`
 	Spec                   json.RawMessage `json:"spec" doc:"Updated swarm specification"`
+	Version                uint64          `json:"version,omitempty"`
 	RotateWorkerToken      bool            `json:"rotateWorkerToken,omitempty"`
 	RotateManagerToken     bool            `json:"rotateManagerToken,omitempty"`
 	RotateManagerUnlockKey bool            `json:"rotateManagerUnlockKey,omitempty"`
@@ -235,10 +235,10 @@ type SwarmJoinEnvironmentsRequest struct {
 }
 
 type SwarmJoinEnvironmentResult struct {
-	EnvironmentID string                          `json:"environmentId"`
-	State         SwarmJoinEnvironmentResultState `json:"state"`
 	NodeID        *string                         `json:"nodeId,omitempty"`
 	Error         *string                         `json:"error,omitempty"`
+	EnvironmentID string                          `json:"environmentId"`
+	State         SwarmJoinEnvironmentResultState `json:"state"`
 }
 
 type SwarmJoinEnvironmentsResponse struct {
@@ -282,6 +282,26 @@ type NodeAgentStatus struct {
 }
 
 type SwarmNode struct {
+	// CreatedAt is when the node was created.
+	//
+	// Required: true
+	CreatedAt time.Time `json:"createdAt" readOnly:"true"`
+
+	// UpdatedAt is when the node was last updated.
+	//
+	// Required: true
+	UpdatedAt time.Time `json:"updatedAt" readOnly:"true"`
+
+	// Labels contains user-defined node labels from the node spec.
+	//
+	// Required: false
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// SystemLabels contains read-only engine labels.
+	//
+	// Required: false
+	SystemLabels map[string]string `json:"systemLabels,omitempty" readOnly:"true"`
+
 	EnvironmentTag
 
 	// ID is the unique identifier of the node.
@@ -290,8 +310,6 @@ type SwarmNode struct {
 	ID string `json:"id" readOnly:"true"`
 
 	Name string `json:"name,omitempty"`
-
-	Version uint64 `json:"version,omitempty"`
 
 	// Hostname is the node hostname.
 	//
@@ -333,16 +351,6 @@ type SwarmNode struct {
 	// Required: false
 	Reachability string `json:"reachability,omitempty" readOnly:"true"`
 
-	// Labels contains user-defined node labels from the node spec.
-	//
-	// Required: false
-	Labels map[string]string `json:"labels,omitempty"`
-
-	// SystemLabels contains read-only engine labels.
-	//
-	// Required: false
-	SystemLabels map[string]string `json:"systemLabels,omitempty" readOnly:"true"`
-
 	// EngineVersion is the Docker engine version.
 	//
 	// Required: false
@@ -353,20 +361,12 @@ type SwarmNode struct {
 	// Required: false
 	Platform string `json:"platform,omitempty" readOnly:"true"`
 
-	// CreatedAt is when the node was created.
-	//
-	// Required: true
-	CreatedAt time.Time `json:"createdAt" readOnly:"true"`
-
-	// UpdatedAt is when the node was last updated.
-	//
-	// Required: true
-	UpdatedAt time.Time `json:"updatedAt" readOnly:"true"`
-
 	// Agent describes Arcane node-agent coverage for this swarm node.
 	//
 	// Required: true
 	Agent NodeAgentStatus `json:"agent" readOnly:"true"`
+
+	Version uint64 `json:"version,omitempty"`
 }
 
 // NewSwarmNode converts a Docker swarm node into the API-facing NodeSummary shape.
@@ -429,6 +429,11 @@ type SwarmServicePort struct {
 	// Required: true
 	Protocol string `json:"protocol"`
 
+	// PublishMode is the publish mode used for the port.
+	//
+	// Required: false
+	PublishMode string `json:"publishMode,omitempty"`
+
 	// TargetPort is the port inside the container.
 	//
 	// Required: true
@@ -438,14 +443,12 @@ type SwarmServicePort struct {
 	//
 	// Required: false
 	PublishedPort uint32 `json:"publishedPort,omitempty"`
-
-	// PublishMode is the publish mode used for the port.
-	//
-	// Required: false
-	PublishMode string `json:"publishMode,omitempty"`
 }
 
 type SwarmServiceMount struct {
+	// VolumeOptions contains driver-specific options (only for volume mounts).
+	VolumeOptions map[string]string `json:"volumeOptions,omitempty"`
+
 	// Type of the mount (bind, volume, tmpfs, npipe, cluster).
 	Type string `json:"type"`
 
@@ -455,20 +458,32 @@ type SwarmServiceMount struct {
 	// Target is the container-internal path.
 	Target string `json:"target"`
 
-	// ReadOnly indicates if the mount is read-only.
-	ReadOnly bool `json:"readOnly,omitempty"`
-
 	// VolumeDriver is the volume driver name (only for volume mounts).
 	VolumeDriver string `json:"volumeDriver,omitempty"`
 
-	// VolumeOptions contains driver-specific options (only for volume mounts).
-	VolumeOptions map[string]string `json:"volumeOptions,omitempty"`
-
 	// DevicePath is the host device path for bind-backed volumes (driver_opts type=none, o=bind).
 	DevicePath string `json:"devicePath,omitempty"`
+
+	// ReadOnly indicates if the mount is read-only.
+	ReadOnly bool `json:"readOnly,omitempty"`
 }
 
 type SwarmServiceSummary struct {
+	// CreatedAt is the time when the service was created.
+	//
+	// Required: true
+	CreatedAt time.Time `json:"createdAt"`
+
+	// UpdatedAt is the time when the service was last updated.
+	//
+	// Required: true
+	UpdatedAt time.Time `json:"updatedAt"`
+
+	// Labels contains user-defined metadata for the service.
+	//
+	// Required: true
+	Labels map[string]string `json:"labels"`
+
 	EnvironmentTag
 
 	// ID is the unique identifier of the service.
@@ -491,42 +506,15 @@ type SwarmServiceSummary struct {
 	// Required: true
 	Mode string `json:"mode"`
 
-	// Replicas is the desired replica count.
-	// For replicated services this comes from the spec.
-	// For global services this is the number of eligible nodes (from ServiceStatus.DesiredTasks).
+	// StackName is the stack namespace if the service belongs to a stack.
 	//
-	// Required: true
-	Replicas uint64 `json:"replicas"`
-
-	// RunningReplicas is the number of tasks currently in the Running state.
-	//
-	// Required: true
-	RunningReplicas uint64 `json:"runningReplicas"`
+	// Required: false
+	StackName string `json:"stackName,omitempty"`
 
 	// Ports is the list of published ports for the service.
 	//
 	// Required: true
 	Ports []SwarmServicePort `json:"ports"`
-
-	// CreatedAt is the time when the service was created.
-	//
-	// Required: true
-	CreatedAt time.Time `json:"createdAt"`
-
-	// UpdatedAt is the time when the service was last updated.
-	//
-	// Required: true
-	UpdatedAt time.Time `json:"updatedAt"`
-
-	// Labels contains user-defined metadata for the service.
-	//
-	// Required: true
-	Labels map[string]string `json:"labels"`
-
-	// StackName is the stack namespace if the service belongs to a stack.
-	//
-	// Required: false
-	StackName string `json:"stackName,omitempty"`
 
 	// Nodes is the list of node hostnames running tasks for this service.
 	//
@@ -542,18 +530,25 @@ type SwarmServiceSummary struct {
 	//
 	// Required: true
 	Mounts []SwarmServiceMount `json:"mounts"`
+
+	// Replicas is the desired replica count.
+	// For replicated services this comes from the spec.
+	// For global services this is the number of eligible nodes (from ServiceStatus.DesiredTasks).
+	//
+	// Required: true
+	Replicas uint64 `json:"replicas"`
+
+	// RunningReplicas is the number of tasks currently in the Running state.
+	//
+	// Required: true
+	RunningReplicas uint64 `json:"runningReplicas"`
 }
 
 type SwarmServiceInspect struct {
-	// ID is the unique identifier of the service.
+	// Spec is the full service specification.
 	//
 	// Required: true
-	ID string `json:"id"`
-
-	// Version is the service version metadata.
-	//
-	// Required: true
-	Version swarm.Version `json:"version"`
+	Spec swarm.ServiceSpec `json:"spec"`
 
 	// CreatedAt is the time when the service was created.
 	//
@@ -565,27 +560,32 @@ type SwarmServiceInspect struct {
 	// Required: true
 	UpdatedAt time.Time `json:"updatedAt"`
 
-	// Spec is the full service specification.
+	// UpdateStatus is the current update status, if any.
+	UpdateStatus *swarm.UpdateStatus `json:"updateStatus,omitempty"`
+
+	// NetworkDetails contains enriched network information keyed by network ID.
+	NetworkDetails map[string]SwarmServiceNetworkDetail `json:"networkDetails,omitempty"`
+
+	// ID is the unique identifier of the service.
 	//
 	// Required: true
-	Spec swarm.ServiceSpec `json:"spec"`
+	ID string `json:"id"`
 
 	// Endpoint is the service endpoint configuration.
 	//
 	// Required: true
 	Endpoint swarm.Endpoint `json:"endpoint"`
 
-	// UpdateStatus is the current update status, if any.
-	UpdateStatus *swarm.UpdateStatus `json:"updateStatus,omitempty"`
-
 	// Nodes is a list of node hostnames running this service.
 	Nodes []string `json:"nodes,omitempty"`
 
-	// NetworkDetails contains enriched network information keyed by network ID.
-	NetworkDetails map[string]SwarmServiceNetworkDetail `json:"networkDetails,omitempty"`
-
 	// Mounts contains enriched mount information with volume driver details.
 	Mounts []SwarmServiceMount `json:"mounts,omitempty"`
+
+	// Version is the service version metadata.
+	//
+	// Required: true
+	Version swarm.Version `json:"version"`
 }
 
 // SwarmServiceNetworkIPAMConfig represents a single IPAM configuration entry with camelCase JSON tags.
@@ -597,14 +597,14 @@ type SwarmServiceNetworkIPAMConfig struct {
 
 // SwarmServiceNetworkConfigDetail holds details about a config-only network referenced by configFrom.
 type SwarmServiceNetworkConfigDetail struct {
+	Options     map[string]string               `json:"options,omitempty"`
 	Name        string                          `json:"name"`
 	Driver      string                          `json:"driver"`
 	Scope       string                          `json:"scope"`
-	EnableIPv4  bool                            `json:"enableIPv4"`
-	EnableIPv6  bool                            `json:"enableIPv6"`
-	Options     map[string]string               `json:"options,omitempty"`
 	IPv4Configs []SwarmServiceNetworkIPAMConfig `json:"ipv4Configs,omitempty"`
 	IPv6Configs []SwarmServiceNetworkIPAMConfig `json:"ipv6Configs,omitempty"`
+	EnableIPv4  bool                            `json:"enableIPv4"`
+	EnableIPv6  bool                            `json:"enableIPv6"`
 }
 
 // SwarmServiceNetworkDetail holds enriched network information for a service's attached network.
@@ -626,23 +626,17 @@ type SwarmServiceNetworkDetail struct {
 }
 
 type SwarmServiceCreateRequest struct {
-	// Spec is the service specification as a JSON object.
-	//
-	// Required: true
-	Spec json.RawMessage `json:"spec" doc:"Service specification"`
-
 	// Options are additional create options for the service.
 	//
 	// Required: false
 	Options *SwarmServiceCreateOptions `json:"options,omitempty" doc:"Additional create options"`
+	// Spec is the service specification as a JSON object.
+	//
+	// Required: true
+	Spec json.RawMessage `json:"spec" doc:"Service specification"`
 }
 
 type SwarmServiceUpdateRequest struct {
-	// Version is the service version index to update.
-	//
-	// Required: true
-	Version uint64 `json:"version"`
-
 	// Spec is the updated service specification.
 	//
 	// Required: true
@@ -652,6 +646,10 @@ type SwarmServiceUpdateRequest struct {
 	//
 	// Required: false
 	Options *SwarmServiceUpdateOptions `json:"options,omitzero"`
+	// Version is the service version index to update.
+	//
+	// Required: true
+	Version uint64 `json:"version"`
 }
 
 type SwarmServiceCreateResponse struct {
@@ -859,6 +857,16 @@ func NewSwarmServiceInspect(service swarm.Service) SwarmServiceInspect {
 }
 
 type SwarmStackSummary struct {
+	// CreatedAt is the earliest service creation time in the stack.
+	//
+	// Required: true
+	CreatedAt time.Time `json:"createdAt"`
+
+	// UpdatedAt is the latest service update time in the stack.
+	//
+	// Required: true
+	UpdatedAt time.Time `json:"updatedAt"`
+
 	EnvironmentTag
 
 	// ID is the unique identifier for the stack (uses namespace).
@@ -876,11 +884,17 @@ type SwarmStackSummary struct {
 	// Required: true
 	Namespace string `json:"namespace"`
 
+	ClusterID string `json:"clusterId,omitempty" doc:"Swarm cluster ID of the manager that listed the stack"`
+
 	// Services is the number of services in the stack.
 	//
 	// Required: true
 	Services int `json:"services"`
 
+	HasSource bool `json:"hasSource" doc:"Whether this environment stores the stack's saved source files"`
+}
+
+type SwarmStackInspect struct {
 	// CreatedAt is the earliest service creation time in the stack.
 	//
 	// Required: true
@@ -890,12 +904,6 @@ type SwarmStackSummary struct {
 	//
 	// Required: true
 	UpdatedAt time.Time `json:"updatedAt"`
-
-	ClusterID string `json:"clusterId,omitempty" doc:"Swarm cluster ID of the manager that listed the stack"`
-	HasSource bool   `json:"hasSource" doc:"Whether this environment stores the stack's saved source files"`
-}
-
-type SwarmStackInspect struct {
 	// Name is the stack name.
 	//
 	// Required: true
@@ -910,16 +918,6 @@ type SwarmStackInspect struct {
 	//
 	// Required: true
 	Services int `json:"services"`
-
-	// CreatedAt is the earliest service creation time in the stack.
-	//
-	// Required: true
-	CreatedAt time.Time `json:"createdAt"`
-
-	// UpdatedAt is the latest service update time in the stack.
-	//
-	// Required: true
-	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type SwarmStackRenderConfigRequest struct {
@@ -1040,6 +1038,17 @@ type SwarmStackDeployRequest struct {
 	// Required: false
 	EnvContent string `json:"envContent,omitempty"`
 
+	// ResolveImage controls how image digests are resolved (always, changed, never).
+	//
+	// Required: false
+	ResolveImage string `json:"resolveImage,omitempty"`
+
+	// WorkingDir is the trusted internal working directory used by GitOps.
+	// It is never decoded from public API requests.
+	//
+	// Required: false
+	WorkingDir string `json:"-"`
+
 	// Files is an optional list of additional files to sync (e.g. env_file, configs, secrets).
 	//
 	// Required: false
@@ -1054,17 +1063,6 @@ type SwarmStackDeployRequest struct {
 	//
 	// Required: false
 	Prune bool `json:"prune,omitempty"`
-
-	// ResolveImage controls how image digests are resolved (always, changed, never).
-	//
-	// Required: false
-	ResolveImage string `json:"resolveImage,omitempty"`
-
-	// WorkingDir is the trusted internal working directory used by GitOps.
-	// It is never decoded from public API requests.
-	//
-	// Required: false
-	WorkingDir string `json:"-"`
 }
 
 // SwarmSyncFile represents a file to be synced to the target environment.
@@ -1089,6 +1087,15 @@ type SwarmStackDeployResponse struct {
 }
 
 type SwarmTaskSummary struct {
+	// CreatedAt is when the task was created.
+	//
+	// Required: true
+	CreatedAt time.Time `json:"createdAt"`
+
+	// UpdatedAt is when the task was last updated.
+	//
+	// Required: true
+	UpdatedAt time.Time `json:"updatedAt"`
 	EnvironmentTag
 
 	// ID is the unique identifier of the task.
@@ -1150,16 +1157,6 @@ type SwarmTaskSummary struct {
 	//
 	// Required: false
 	Slot int `json:"slot,omitempty"`
-
-	// CreatedAt is when the task was created.
-	//
-	// Required: true
-	CreatedAt time.Time `json:"createdAt"`
-
-	// UpdatedAt is when the task was last updated.
-	//
-	// Required: true
-	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // NewSwarmTaskSummary converts a Docker swarm task into the API-facing TaskSummary shape.

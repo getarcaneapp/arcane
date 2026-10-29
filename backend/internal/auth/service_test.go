@@ -824,9 +824,9 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_Creat
 
 func TestFindOrCreateOidcUser_MergeEnabled_WithExistingUser(t *testing.T) {
 	tests := []struct {
+		extra         map[string]any
 		name          string
 		emailVerified bool
-		extra         map[string]any
 		wantMerge     bool
 	}{
 		{name: "verified email merges", emailVerified: true, extra: map[string]any{"email_verified": true}, wantMerge: true},
@@ -929,11 +929,11 @@ func TestAuthenticateLocalPrimary_EmailFallback(t *testing.T) {
 	}).Error)
 
 	tests := []struct {
+		wantErr  error
 		name     string
 		login    string
 		password string
 		wantID   string
-		wantErr  error
 	}{
 		{name: "composed username", login: "José", password: "hunter22!", wantID: "u-unicode"},
 		{name: "decomposed username stays distinct", login: "Jose\u0301", password: "hunter22!", wantID: "u-decomposed"},

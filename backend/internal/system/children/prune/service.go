@@ -42,8 +42,8 @@ type Service struct {
 	imageUpdateService *imageupdate.ImageUpdateService
 	volumeService      *volume.VolumeService
 	networkService     *network.NetworkService
-	pruneMu            sync.Mutex
 	runningPrunes      map[string]string
+	pruneMu            sync.Mutex
 }
 
 func NewService(
@@ -500,8 +500,8 @@ func (s *Service) pruneNetworks(ctx context.Context, options types.PruneNetworks
 type pruneResource struct {
 	Kind  string   `json:"kind"`
 	ID    string   `json:"id"`
-	Size  int64    `json:"size"`
 	Names []string `json:"names,omitempty"`
+	Size  int64    `json:"size"`
 }
 
 type prunePlan struct {

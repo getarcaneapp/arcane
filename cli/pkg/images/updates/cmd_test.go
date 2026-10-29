@@ -209,9 +209,9 @@ func TestImageUpdateCommandsRejectHTTPAndEnvelopeFailures(t *testing.T) {
 	}
 	failures := []struct {
 		name       string
-		statusCode int
 		body       string
 		wantError  string
+		statusCode int
 	}{
 		{
 			name:       "non-2xx",

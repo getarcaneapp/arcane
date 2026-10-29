@@ -96,16 +96,16 @@ func newCreateCmd() *cobra.Command {
 	var opts struct {
 		name         string
 		description  string
-		enabled      bool
 		issuerURL    string
-		audiences    []string
 		subjectClaim string
 		subjectMatch string
 		matchType    string
 		roleID       string
 		environment  string
-		tokenTTL     int
 		expiresAt    string
+		audiences    []string
+		tokenTTL     int
+		enabled      bool
 	}
 	command := &cobra.Command{
 		Use:   "create",
@@ -180,16 +180,16 @@ func newUpdateCmd() *cobra.Command {
 	var opts struct {
 		name         string
 		description  string
-		enabled      bool
 		issuerURL    string
-		audiences    []string
 		subjectClaim string
 		subjectMatch string
 		matchType    string
 		roleID       string
-		tokenTTL     int
 		environment  string
 		expiresAt    string
+		audiences    []string
+		tokenTTL     int
+		enabled      bool
 	}
 	command := &cobra.Command{
 		Use:          "update <credential-id>",
@@ -213,9 +213,9 @@ func newUpdateCmd() *cobra.Command {
 
 			body := map[string]any{}
 			for _, field := range []struct {
-				changed bool
-				key     string
 				value   any
+				key     string
+				changed bool
 			}{
 				{changed: cmd.Flags().Changed("name"), key: "name", value: opts.name},
 				{changed: cmd.Flags().Changed("description"), key: "description", value: opts.description},

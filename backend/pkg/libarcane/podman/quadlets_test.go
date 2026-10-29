@@ -14,8 +14,8 @@ import (
 func TestClientQuadletInstall(t *testing.T) {
 	tests := []struct {
 		name          string
-		appsSupported bool
 		query         string
+		appsSupported bool
 	}{
 		{name: "apps supported", appsSupported: true, query: "application=shop&replace=true"},
 		{name: "apps unsupported", query: "replace=true"},

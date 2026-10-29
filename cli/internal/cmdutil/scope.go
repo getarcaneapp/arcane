@@ -40,8 +40,8 @@ type mergedScope struct {
 type environmentResult struct {
 	EnvironmentID   string         `json:"environmentId"`
 	EnvironmentName string         `json:"environmentName"`
-	Result          jsontext.Value `json:"result,omitempty"`
 	Error           string         `json:"error,omitempty"`
+	Result          jsontext.Value `json:"result,omitempty"`
 }
 
 // SetResource binds raw identifiers through a command-owned closure; call after assigning RunE.
@@ -240,8 +240,8 @@ func RunEnvironments(cmd *cobra.Command, args []string, run func(*cobra.Command,
 	defer output.Configure(stdout, stderr, jsonMode, app.NoColor, cmd.Short)
 	defer app.SelectEnvironment("")
 	result := struct {
-		Success      bool                `json:"success"`
 		Environments []environmentResult `json:"environments"`
+		Success      bool                `json:"success"`
 	}{Success: true, Environments: make([]environmentResult, len(environments))}
 	var failures []error
 	var details []struct{ environment, body string }

@@ -10,8 +10,8 @@ import (
 func TestBuildTelegramURL(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  TelegramConfig
 		wantURL string
+		config  TelegramConfig
 	}{
 		{
 			name: "basic config with single chat",

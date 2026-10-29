@@ -11,9 +11,9 @@ import (
 )
 
 type BaseModel struct {
-	ID        string     `json:"id" gorm:"primaryKey;type:text"`
 	CreatedAt time.Time  `json:"createdAt" gorm:"column:created_at" sortable:"true"`
 	UpdatedAt *time.Time `json:"updatedAt,omitempty" gorm:"column:updated_at"`
+	ID        string     `json:"id" gorm:"primaryKey;type:text"`
 }
 
 func (m *BaseModel) BeforeCreate(_ *gorm.DB) (err error) {

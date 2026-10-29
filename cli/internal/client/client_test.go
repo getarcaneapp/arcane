@@ -300,9 +300,12 @@ func TestClientDoEnvelope(t *testing.T) {
 		Name string `json:"name"`
 	}
 	for _, tt := range []struct {
-		name, method, response, wantErr string
-		status                          int
-		body                            any
+		body     any
+		name     string
+		method   string
+		response string
+		wantErr  string
+		status   int
 	}{
 		{name: "GET", method: http.MethodGet, status: http.StatusOK, response: `{"success":true,"data":{"name":"arcane"}}`},
 		{

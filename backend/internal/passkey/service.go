@@ -76,33 +76,33 @@ var (
 // PasskeyChallenge is the public result of a WebAuthn ceremony begin.
 // The matching SessionData remains in passkey_ceremonies.
 type PasskeyChallenge struct {
+	ExpiresAt     time.Time
+	Options       any
 	CeremonyID    string
 	TransactionID string
-	Options       any
-	ExpiresAt     time.Time
 }
 
 // PasskeySummary is the safe representation of a stored credential.
 type PasskeySummary struct {
+	CreatedAt               time.Time  `json:"createdAt"`
+	UpdatedAt               *time.Time `json:"updatedAt,omitempty"`
+	LastUsedAt              *time.Time `json:"lastUsedAt,omitempty"`
 	ID                      string     `json:"id"`
 	Name                    string     `json:"name"`
 	RPID                    string     `json:"rpId"`
 	AAGUID                  string     `json:"aaguid,omitempty"`
+	AuthenticatorAttachment string     `json:"authenticatorAttachment,omitempty"`
 	Transports              []string   `json:"transports,omitempty"`
 	BackupEligible          bool       `json:"backupEligible"`
 	BackupState             bool       `json:"backupState"`
 	CloneWarning            bool       `json:"cloneWarning"`
-	AuthenticatorAttachment string     `json:"authenticatorAttachment,omitempty"`
-	CreatedAt               time.Time  `json:"createdAt"`
-	UpdatedAt               *time.Time `json:"updatedAt,omitempty"`
-	LastUsedAt              *time.Time `json:"lastUsedAt,omitempty"`
 }
 
 // PasskeyCapabilities describes the server-derived authentication choices for
 // the current account. It deliberately does not trust client-supplied flags.
 type PasskeyCapabilities struct {
-	PasskeyMFAEnabled          bool `json:"passkeyMfaEnabled"`
 	PasskeyCount               int  `json:"passkeyCount"`
+	PasskeyMFAEnabled          bool `json:"passkeyMfaEnabled"`
 	HasLocalPassword           bool `json:"hasLocalPassword"`
 	HasOIDCFallback            bool `json:"hasOidcFallback"`
 	CanEnrollWithActiveSession bool `json:"canEnrollWithActiveSession"`
@@ -122,8 +122,8 @@ type MFAStatus struct {
 // token is hashed in the database and stays usable, for the issuing session
 // only, until ExpiresAt.
 type StepUpGrant struct {
-	Token     string    `json:"token"`
 	ExpiresAt time.Time `json:"expiresAt"`
+	Token     string    `json:"token"`
 }
 
 // AuthenticationCompletion carries the original primary-auth metadata across
@@ -139,10 +139,10 @@ type AuthenticationCompletion struct {
 // transactions, recovery codes, and step-up grants. It intentionally does not
 // issue JWTs; auth.AuthService remains the single token/session issuer.
 type PasskeyService struct {
+	initErr  error
 	db       *database.DB
 	webAuthn *webauthn.WebAuthn
 	rpID     string
-	initErr  error
 }
 
 func NewPasskeyService(db *database.DB, cfg *config.Config) *PasskeyService {
@@ -192,8 +192,8 @@ func (s *PasskeyService) ready() error {
 
 type webAuthnUser struct {
 	model              userdomain.User
-	credentials        []webauthn.Credential
 	credentialModelIDs map[string]string
+	credentials        []webauthn.Credential
 }
 
 func (u *webAuthnUser) WebAuthnID() []byte {

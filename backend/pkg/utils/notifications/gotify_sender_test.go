@@ -10,9 +10,9 @@ import (
 func TestBuildGotifyURL(t *testing.T) {
 	tests := []struct {
 		name     string
+		expected string
 		config   GotifyConfig
 		wantErr  bool
-		expected string
 	}{
 		{
 			name: "basic config (host + token)",

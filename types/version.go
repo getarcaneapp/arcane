@@ -111,33 +111,33 @@ type VersionCheck struct {
 	// Required: false
 	NewestVersion string `json:"newestVersion,omitempty"`
 
-	// UpdateAvailable indicates if an update is available.
-	//
-	// Required: true
-	UpdateAvailable bool `json:"updateAvailable"`
-
 	// ReleaseURL is the URL to the release page.
 	//
 	// Required: false
 	ReleaseURL string `json:"releaseUrl,omitempty"`
+
+	// UpdateAvailable indicates if an update is available.
+	//
+	// Required: true
+	UpdateAvailable bool `json:"updateAvailable"`
 }
 
 // VersionStreamEvent is one version-channel line on the multiplexed client stream.
 type VersionStreamEvent struct {
-	// Type is the event kind: "snapshot".
+	// Timestamp is when the event was produced.
 	//
 	// Required: true
-	Type string `json:"type"`
+	Timestamp time.Time `json:"timestamp"`
 
 	// Info is the app version information for a "snapshot".
 	//
 	// Required: false
 	Info *VersionInfo `json:"info,omitempty"`
 
-	// Timestamp is when the event was produced.
+	// Type is the event kind: "snapshot".
 	//
 	// Required: true
-	Timestamp time.Time `json:"timestamp"`
+	Type string `json:"type"`
 }
 
 // AlreadyOnNewest reports whether the check is confident the environment already

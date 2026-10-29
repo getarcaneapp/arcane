@@ -14,17 +14,17 @@ import (
 // how long a delivery is trusted (zero means forever) so a target rebuilt
 // behind an unchanged status still converges. The zero value is ready to use.
 type SyncGate struct {
-	Expiry time.Duration
-
-	mu     sync.Mutex
-	locks  KeyedMutex
 	sent   map[string]map[string]syncGateEntryInternal
 	epochs map[string]uint64
+	locks  KeyedMutex
+	Expiry time.Duration
+
+	mu sync.Mutex
 }
 
 type syncGateEntryInternal struct {
-	digest [sha256.Size]byte
 	sentAt time.Time
+	digest [sha256.Size]byte
 }
 
 // Begin reports whether body is already delivered for scope and key. When it

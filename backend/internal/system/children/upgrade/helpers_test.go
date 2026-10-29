@@ -15,8 +15,8 @@ func TestParseUpgraderLine(t *testing.T) {
 		name        string
 		line        string
 		wantType    string
-		wantPercent int
 		wantMessage string
+		wantPercent int
 	}{
 		{name: "progress marker", line: "PROGRESS:65:Renaming old container", wantType: types.UpgradeProgressEventProgress, wantPercent: 65, wantMessage: "Renaming old container"},
 		{name: "message keeps colons", line: "PROGRESS:95:Upgrade complete: ok", wantType: types.UpgradeProgressEventProgress, wantPercent: 95, wantMessage: "Upgrade complete: ok"},

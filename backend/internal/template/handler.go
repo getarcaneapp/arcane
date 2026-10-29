@@ -23,9 +23,9 @@ type ListTemplatesInput struct {
 	Search string `query:"search" doc:"Search query"`
 	Sort   string `query:"sort" doc:"Column to sort by"`
 	Order  string `query:"order" default:"asc" doc:"Sort direction"`
+	Type   string `query:"type" doc:"Filter by template type (comma-separated: false,true)"`
 	Start  int    `query:"start" default:"0" doc:"Start index"`
 	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
-	Type   string `query:"type" doc:"Filter by template type (comma-separated: false,true)"`
 }
 
 type GetAllTemplatesInput struct{}

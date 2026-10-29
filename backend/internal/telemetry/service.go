@@ -47,8 +47,8 @@ type Service struct {
 }
 
 type destination struct {
-	endpoint string
 	headers  http.Header
+	endpoint string
 }
 
 // SDKDisabled reports whether OTEL_SDK_DISABLED turns all telemetry off.

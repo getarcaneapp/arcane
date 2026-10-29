@@ -149,8 +149,8 @@ type Service struct {
 
 // manualBackupInput is a manual backup's workflow payload; the run row is created before it starts.
 type manualBackupInput struct {
-	Checkpoint systemBackupRecovery  `json:"checkpoint"`
 	Requester  types.BackupRequester `json:"requester"`
+	Checkpoint systemBackupRecovery  `json:"checkpoint"`
 }
 
 // systemBackupRecovery is the checkpoint a run records so an interrupted backup can resume.

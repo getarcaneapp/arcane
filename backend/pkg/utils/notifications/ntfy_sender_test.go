@@ -10,10 +10,10 @@ import (
 
 func TestBuildNtfyURL(t *testing.T) {
 	tests := []struct {
+		check   func(string) bool
 		name    string
 		config  NtfyConfig
 		wantErr bool
-		check   func(string) bool
 	}{
 		{
 			name: "basic config with default host",

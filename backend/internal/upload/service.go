@@ -39,9 +39,9 @@ var uploadIDPattern = regexp.MustCompile(`^[0-9a-f]{16}$`)
 // instance, which holds for Arcane's single-instance-per-node deployment (for
 // remote environments the session lives on that environment's agent).
 type UploadService struct {
+	locks           utils.KeyedMutex
 	settingsService *settings.SettingsService
 	root            string
-	locks           utils.KeyedMutex
 }
 
 // NewUploadService builds the session service rooted in the system temp

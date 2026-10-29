@@ -44,9 +44,9 @@ func TestValidateUploadIndices(t *testing.T) {
 
 	tests := []struct {
 		name        string
+		message     string
 		changes     []UploadReference
 		uploadCount int
-		message     string
 	}{
 		{name: "missing", changes: []UploadReference{{Operation: "create_file"}}, uploadCount: 0, message: "required"},
 		{name: "unexpected", changes: []UploadReference{{Operation: "delete", UploadIndex: new(0)}}, uploadCount: 1, message: "not allowed"},

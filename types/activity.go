@@ -50,27 +50,27 @@ type ActivityType string
 type ActivityMessageLevel string
 
 type Activity struct {
-	ID string `json:"id"`
+	StartedAt    time.Time          `json:"startedAt"`
+	CreatedAt    time.Time          `json:"createdAt"`
+	BatchID      *string            `json:"batchId,omitempty"`
+	ResourceType *string            `json:"resourceType,omitempty"`
+	ResourceID   *string            `json:"resourceId,omitempty"`
+	ResourceName *string            `json:"resourceName,omitempty"`
+	Progress     *int               `json:"progress,omitempty"`
+	StartedBy    *ActivityStartedBy `json:"startedBy,omitempty"`
+	EndedAt      *time.Time         `json:"endedAt,omitempty"`
+	DurationMs   *int64             `json:"durationMs,omitempty"`
+	Error        *string            `json:"error,omitempty"`
+	Metadata     map[string]any     `json:"metadata,omitempty"`
+	UpdatedAt    *time.Time         `json:"updatedAt,omitempty"`
 	EnvironmentTag
-	BatchID               *string            `json:"batchId,omitempty"`
-	SourceEnvironmentID   string             `json:"sourceEnvironmentId,omitempty"`
-	SourceEnvironmentName string             `json:"sourceEnvironmentName,omitempty"`
-	Type                  ActivityType       `json:"type"`
-	Status                ActivityStatus     `json:"status"`
-	ResourceType          *string            `json:"resourceType,omitempty"`
-	ResourceID            *string            `json:"resourceId,omitempty"`
-	ResourceName          *string            `json:"resourceName,omitempty"`
-	Progress              *int               `json:"progress,omitempty"`
-	Step                  string             `json:"step,omitempty"`
-	LatestMessage         string             `json:"latestMessage,omitempty"`
-	StartedBy             *ActivityStartedBy `json:"startedBy,omitempty"`
-	StartedAt             time.Time          `json:"startedAt"`
-	EndedAt               *time.Time         `json:"endedAt,omitempty"`
-	DurationMs            *int64             `json:"durationMs,omitempty"`
-	Error                 *string            `json:"error,omitempty"`
-	Metadata              map[string]any     `json:"metadata,omitempty"`
-	CreatedAt             time.Time          `json:"createdAt"`
-	UpdatedAt             *time.Time         `json:"updatedAt,omitempty"`
+	ID                    string         `json:"id"`
+	SourceEnvironmentID   string         `json:"sourceEnvironmentId,omitempty"`
+	SourceEnvironmentName string         `json:"sourceEnvironmentName,omitempty"`
+	Type                  ActivityType   `json:"type"`
+	Status                ActivityStatus `json:"status"`
+	Step                  string         `json:"step,omitempty"`
+	LatestMessage         string         `json:"latestMessage,omitempty"`
 }
 
 type ActivityStartedBy struct {
@@ -80,12 +80,12 @@ type ActivityStartedBy struct {
 }
 
 type ActivityMessage struct {
+	CreatedAt  time.Time            `json:"createdAt"`
+	Payload    map[string]any       `json:"payload,omitempty"`
 	ID         string               `json:"id"`
 	ActivityID string               `json:"activityId"`
 	Level      ActivityMessageLevel `json:"level"`
 	Message    string               `json:"message"`
-	Payload    map[string]any       `json:"payload,omitempty"`
-	CreatedAt  time.Time            `json:"createdAt"`
 }
 
 type ActivityDetail struct {
@@ -94,15 +94,15 @@ type ActivityDetail struct {
 }
 
 type ActivityStreamEvent struct {
+	Timestamp     time.Time        `json:"timestamp"`
+	Activity      *Activity        `json:"activity,omitempty"`
+	Message       *ActivityMessage `json:"message,omitempty"`
 	Type          string           `json:"type"`
 	EnvironmentID string           `json:"environmentId,omitempty"`
 	ActivityID    string           `json:"activityId,omitempty"`
-	Activity      *Activity        `json:"activity,omitempty"`
-	Activities    []Activity       `json:"activities,omitempty"`
-	Message       *ActivityMessage `json:"message,omitempty"`
 	Error         string           `json:"error,omitempty"`
-	Timestamp     time.Time        `json:"timestamp"`
 	ActivityType  ActivityType     `json:"-"`
+	Activities    []Activity       `json:"activities,omitempty"`
 }
 
 type ActivityClearHistoryResult struct {

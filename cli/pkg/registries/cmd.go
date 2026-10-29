@@ -143,12 +143,12 @@ func newCreateCmd() *cobra.Command {
 		username     string
 		token        string
 		description  string
-		insecure     bool
-		enabled      bool
 		registryType string
 		awsKeyID     string
 		awsSecret    string
 		awsRegion    string
+		insecure     bool
+		enabled      bool
 	}
 	cmd := &cobra.Command{
 		Use:          "create",
@@ -227,9 +227,9 @@ func newUpdateCmd() *cobra.Command {
 
 			req := map[string]any{}
 			for _, field := range []struct {
-				changed bool
-				key     string
 				value   any
+				key     string
+				changed bool
 			}{
 				{changed: cmd.Flags().Changed("url"), key: "url", value: opts.url},
 				{changed: cmd.Flags().Changed("username"), key: "username", value: opts.username},

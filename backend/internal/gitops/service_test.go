@@ -1058,19 +1058,19 @@ type backupTestEnv struct {
 	service     *GitOpsSyncService
 	db          *database.DB
 	scheduler   *gitOpsBackupTestScheduler
+	project     *projectpkg.Project
+	remote      *git.Client
 	projectsDir string
 	projectPath string
-	project     *projectpkg.Project
 	repoURL     string
-	remote      *git.Client
 }
 
 // gitOpsBackupTestScheduler runs a submitted job body inline so the
 // save-debounce path reaches PerformSync the way the real scheduler does.
 type gitOpsBackupTestScheduler struct {
-	mu        sync.Mutex
 	jobs      map[string]types.SchedulerJob
 	submitted []types.SchedulerRequest
+	mu        sync.Mutex
 }
 
 func (s *gitOpsBackupTestScheduler) AddJob(_ context.Context, job types.SchedulerJob) error {
@@ -1446,11 +1446,11 @@ func TestGitOpsBackup_CreateValidation(t *testing.T) {
 	scriptPath := "deploy.sh"
 
 	tests := []struct {
-		name      string
-		mutate    func(t *testing.T, env *backupTestEnv)
-		request   types.GitOpsSync
-		submitted map[string]bool
 		wantErr   error
+		mutate    func(t *testing.T, env *backupTestEnv)
+		submitted map[string]bool
+		name      string
+		request   types.GitOpsSync
 	}{
 		{
 			name: "project deployed from git",

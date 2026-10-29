@@ -82,14 +82,14 @@ func TestClientDo_WrapsTransportErrors(t *testing.T) {
 	require.Contains(t, transportErr.Error(), "not connected")
 	require.True(t, transportErr.Unavailable())
 	for _, test := range []struct {
-		name        string
 		cause       error
+		name        string
 		unavailable bool
 	}{
-		{"deadline", context.DeadlineExceeded, true},
-		{"response truncated", io.ErrUnexpectedEOF, false},
-		{"invalid request", errors.New("invalid URL"), false},
-		{"canceled", context.Canceled, false},
+		{name: "deadline", cause: context.DeadlineExceeded, unavailable: true},
+		{name: "response truncated", cause: io.ErrUnexpectedEOF},
+		{name: "invalid request", cause: errors.New("invalid URL")},
+		{name: "canceled", cause: context.Canceled},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			require.Equal(t, test.unavailable, (&TransportError{Err: test.cause}).Unavailable())

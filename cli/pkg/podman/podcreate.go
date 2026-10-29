@@ -25,46 +25,42 @@ import (
 var podNetworkModes = []string{"bridge", "host", "none", "private", "slirp4netns", "pasta", "ns"}
 
 type podCreateOptions struct {
+	labels             map[string]string
+	sysctl             map[string]string
 	name               string
 	hostname           string
-	labels             map[string]string
-	labelFiles         []string
 	exitPolicy         string
 	restart            string
-	infra              bool
 	infraImage         string
 	infraCommand       string
 	infraName          string
 	infraConmonPidFile string
 	share              string
-	shareParent        bool
 	pid                string
 	ipc                string
 	uts                string
 	userns             string
+	ip                 string
+	ip6                string
+	macAddress         string
+	hostsFile          string
+	cgroupParent       string
+	cpusetCPUs         string
+	cpusetMems         string
+	memory             string
+	memorySwap         string
+	shmSize            string
+	shmSizeSystemd     string
+	labelFiles         []string
 	uidMap             []string
 	gidMap             []string
 	networks           []string
 	networkAliases     []string
-	ip                 string
-	ip6                string
-	macAddress         string
 	publish            []string
 	dns                []string
 	dnsSearch          []string
 	dnsOptions         []string
 	addHosts           []string
-	noHosts            bool
-	noHostname         bool
-	hostsFile          string
-	cgroupParent       string
-	cpus               float64
-	cpuShares          uint64
-	cpusetCPUs         string
-	cpusetMems         string
-	memory             string
-	memorySwap         string
-	blkioWeight        uint16
 	blkioWeightDevices []string
 	deviceReadBps      []string
 	deviceWriteBps     []string
@@ -72,10 +68,14 @@ type podCreateOptions struct {
 	gpus               []string
 	volumes            []string
 	volumesFrom        []string
-	shmSize            string
-	shmSizeSystemd     string
 	securityOpt        []string
-	sysctl             map[string]string
+	cpus               float64
+	cpuShares          uint64
+	blkioWeight        uint16
+	infra              bool
+	shareParent        bool
+	noHosts            bool
+	noHostname         bool
 }
 
 func newPodCreateCmd() *cobra.Command {

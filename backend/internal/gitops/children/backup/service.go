@@ -86,8 +86,8 @@ func (s *Service) ApplyCreate(ctx context.Context, tx *gorm.DB, req types.GitOps
 type backupCreateConfigInternal struct {
 	project     *projectpkg.Project
 	directory   string
-	paths       []string
 	composeFile string
+	paths       []string
 }
 
 // prepareBackupCreate validates a backup create request against the project and other backups on the branch.
@@ -502,8 +502,8 @@ func (s *Service) Preview(previewCtx context.Context, syncRecord *projectpkg.Git
 
 // backupSnapshotInternal is the set of project files a backup run commits.
 type backupSnapshotInternal struct {
-	files  []git.CommitFile
 	hashes map[string]string
+	files  []git.CommitFile
 }
 
 // backupAnalysisInternal is the decision for one backup run.

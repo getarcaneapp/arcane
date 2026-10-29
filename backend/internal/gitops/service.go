@@ -107,10 +107,10 @@ type (
 
 	// backupRuntime holds the in-memory coordination for backup syncs.
 	backupRuntime struct {
-		mu       sync.Mutex
 		branches map[string]*sync.Mutex
 		timers   map[string]*time.Timer
 		debounce time.Duration
+		mu       sync.Mutex
 	}
 )
 
@@ -678,8 +678,8 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 
 	updates := make(map[string]any)
 	for field, update := range map[string]struct {
-		column string
 		value  any
+		column string
 	}{
 		"name":               {column: "name", value: req.Name},
 		"repositoryId":       {column: "repository_id", value: req.RepositoryID},

@@ -39,6 +39,21 @@ const (
 
 // GitRepository represents a reusable Git repository with credentials.
 type GitRepository struct {
+	// CreatedAt is the date and time at which the repository was created.
+	//
+	// Required: true
+	CreatedAt time.Time `json:"createdAt" readOnly:"true"`
+
+	// UpdatedAt is the date and time at which the repository was last updated.
+	//
+	// Required: true
+	UpdatedAt time.Time `json:"updatedAt" readOnly:"true"`
+
+	// Description of the git repository.
+	//
+	// Required: false
+	Description *string `json:"description,omitempty" unorm:"nfc" trim:"true"`
+
 	// ID of the git repository.
 	//
 	// Required: true
@@ -58,12 +73,6 @@ type GitRepository struct {
 	//
 	// Required: false
 	AuthType string `json:"authType" required:"false"`
-
-	// HasToken indicates whether an HTTP token is stored.
-	HasToken bool `json:"hasToken" readOnly:"true"`
-
-	// HasSshKey indicates whether an SSH private key is stored.
-	HasSshKey bool `json:"hasSshKey" readOnly:"true"`
 
 	// Username for HTTP authentication.
 	//
@@ -85,33 +94,24 @@ type GitRepository struct {
 	// Required: false
 	CommitAuthorEmail string `json:"commitAuthorEmail,omitempty" trim:"true"`
 
+	Token                string `json:"token,omitempty" writeOnly:"true" copier:"-"`
+	SSHKey               string `json:"sshKey,omitempty" writeOnly:"true" copier:"-"`
+	SigningKey           string `json:"signingKey,omitempty" writeOnly:"true" copier:"-"`
+	SigningKeyPassphrase string `json:"signingKeyPassphrase,omitempty" writeOnly:"true" copier:"-"`
+
+	// HasToken indicates whether an HTTP token is stored.
+	HasToken bool `json:"hasToken" readOnly:"true"`
+
+	// HasSshKey indicates whether an SSH private key is stored.
+	HasSshKey bool `json:"hasSshKey" readOnly:"true"`
+
 	// HasSigningKey indicates whether an OpenPGP signing key is stored.
 	HasSigningKey bool `json:"hasSigningKey" readOnly:"true"`
-
-	// Description of the git repository.
-	//
-	// Required: false
-	Description *string `json:"description,omitempty" unorm:"nfc" trim:"true"`
 
 	// Enabled indicates if the repository is enabled.
 	//
 	// Required: false
 	Enabled bool `json:"enabled" required:"false"`
-
-	// CreatedAt is the date and time at which the repository was created.
-	//
-	// Required: true
-	CreatedAt time.Time `json:"createdAt" readOnly:"true"`
-
-	// UpdatedAt is the date and time at which the repository was last updated.
-	//
-	// Required: true
-	UpdatedAt time.Time `json:"updatedAt" readOnly:"true"`
-
-	Token                string `json:"token,omitempty" writeOnly:"true" copier:"-"`
-	SSHKey               string `json:"sshKey,omitempty" writeOnly:"true" copier:"-"`
-	SigningKey           string `json:"signingKey,omitempty" writeOnly:"true" copier:"-"`
-	SigningKeyPassphrase string `json:"signingKeyPassphrase,omitempty" writeOnly:"true" copier:"-"`
 }
 
 // GitOpsSync represents a GitOps sync configuration.
@@ -206,6 +206,16 @@ type GitOpsSync struct {
 	// Required: false
 	LastSyncStatus *string `json:"lastSyncStatus,omitempty" readOnly:"true"`
 
+	// BackupFailureReason is the typed reason for the last backup failure.
+	//
+	// Required: false
+	BackupFailureReason *string `json:"backupFailureReason,omitempty" readOnly:"true"`
+
+	// LastBackupAt is the time the remote last received a new backup commit.
+	//
+	// Required: false
+	LastBackupAt *time.Time `json:"lastBackupAt,omitempty" readOnly:"true"`
+
 	// ProjectName is the name used to create/identify the project or stack.
 	//
 	// Required: false
@@ -265,25 +275,15 @@ type GitOpsSync struct {
 	// Required: false
 	BackupDirectory string `json:"backupDirectory,omitempty"`
 
-	// BackupPaths lists the project-relative files and directories included in backups.
-	//
-	// Required: false
-	BackupPaths []string `json:"backupPaths,omitempty"`
-
 	// BackupState summarizes the backup lifecycle (never, pending, backing_up, backed_up, paused, failed, needs_attention).
 	//
 	// Required: false
 	BackupState string `json:"backupState,omitempty" readOnly:"true"`
 
-	// BackupFailureReason is the typed reason for the last backup failure.
+	// BackupPaths lists the project-relative files and directories included in backups.
 	//
 	// Required: false
-	BackupFailureReason *string `json:"backupFailureReason,omitempty" readOnly:"true"`
-
-	// LastBackupAt is the time the remote last received a new backup commit.
-	//
-	// Required: false
-	LastBackupAt *time.Time `json:"lastBackupAt,omitempty" readOnly:"true"`
+	BackupPaths []string `json:"backupPaths,omitempty"`
 
 	// PreDeployTimeoutSec bounds the script execution. Capped by the
 	// lifecycleMaxTimeoutSec global setting at run time.
@@ -436,25 +436,25 @@ func (r GitOpsPreDeployConfigRequest) HasPreDeployConfig() bool {
 
 // GitOpsSyncResult represents the result of a sync operation.
 type GitOpsSyncResult struct {
-	// Success indicates if the sync was successful.
+	// SyncedAt is the timestamp of the sync.
 	//
 	// Required: true
-	Success bool `json:"success"`
-
-	// Message contains a human-readable message about the sync result.
-	//
-	// Required: true
-	Message string `json:"message"`
+	SyncedAt time.Time `json:"syncedAt"`
 
 	// Error contains error details if the sync failed.
 	//
 	// Required: false
 	Error *string `json:"error,omitempty"`
 
-	// SyncedAt is the timestamp of the sync.
+	// Message contains a human-readable message about the sync result.
 	//
 	// Required: true
-	SyncedAt time.Time `json:"syncedAt"`
+	Message string `json:"message"`
+
+	// Success indicates if the sync was successful.
+	//
+	// Required: true
+	Success bool `json:"success"`
 }
 
 // FileTreeNodeType represents the type of a file tree node.
@@ -477,15 +477,15 @@ type FileTreeNode struct {
 	// Required: true
 	Type FileTreeNodeType `json:"type"`
 
-	// Size of the file in bytes (0 for directories).
-	//
-	// Required: false
-	Size int64 `json:"size,omitempty"`
-
 	// Children contains child nodes for directories.
 	//
 	// Required: false
 	Children []FileTreeNode `json:"children,omitempty"`
+
+	// Size of the file in bytes (0 for directories).
+	//
+	// Required: false
+	Size int64 `json:"size,omitempty"`
 }
 
 // GitOpsBrowseResponse represents the response for browsing repository files.
@@ -524,6 +524,21 @@ type GitBranchesResponse struct {
 
 // GitRepositorySync represents a git repository for syncing to remote environments.
 type GitRepositorySync struct {
+	// CreatedAt is the date and time at which the repository was created.
+	//
+	// Required: true
+	CreatedAt time.Time `json:"createdAt"`
+
+	// UpdatedAt is the date and time at which the repository was last updated.
+	//
+	// Required: true
+	UpdatedAt time.Time `json:"updatedAt"`
+
+	// Description of the git repository.
+	//
+	// Required: false
+	Description *string `json:"description,omitempty" unorm:"nfc" trim:"true"`
+
 	// ID of the git repository.
 	//
 	// Required: true
@@ -584,25 +599,10 @@ type GitRepositorySync struct {
 	// Required: false
 	SigningKeyPassphrase string `json:"signingKeyPassphrase,omitempty"`
 
-	// Description of the git repository.
-	//
-	// Required: false
-	Description *string `json:"description,omitempty" unorm:"nfc" trim:"true"`
-
 	// Enabled indicates if the repository is enabled.
 	//
 	// Required: true
 	Enabled bool `json:"enabled"`
-
-	// CreatedAt is the date and time at which the repository was created.
-	//
-	// Required: true
-	CreatedAt time.Time `json:"createdAt"`
-
-	// UpdatedAt is the date and time at which the repository was last updated.
-	//
-	// Required: true
-	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // GitRepositorySyncRequest represents a request to sync git repositories to an agent.
@@ -615,16 +615,6 @@ type GitRepositorySyncRequest struct {
 
 // GitOpsSyncStatus represents the current status of a sync configuration.
 type GitOpsSyncStatus struct {
-	// ID of the sync configuration.
-	//
-	// Required: true
-	ID string `json:"id"`
-
-	// AutoSync indicates if automatic sync is enabled.
-	//
-	// Required: true
-	AutoSync bool `json:"autoSync"`
-
 	// NextSyncAt is the estimated time of the next automatic sync.
 	//
 	// Required: false
@@ -650,6 +640,20 @@ type GitOpsSyncStatus struct {
 	// Required: false
 	LastSyncCommit *string `json:"lastSyncCommit,omitempty"`
 
+	// BackupFailureReason is the typed reason for the last backup failure.
+	//
+	// Required: false
+	BackupFailureReason *string `json:"backupFailureReason,omitempty"`
+
+	// LastBackupAt is the time the remote last received a new backup commit.
+	//
+	// Required: false
+	LastBackupAt *time.Time `json:"lastBackupAt,omitempty"`
+	// ID of the sync configuration.
+	//
+	// Required: true
+	ID string `json:"id"`
+
 	// Mode is the sync direction ("deploy" or "backup").
 	//
 	// Required: true
@@ -660,55 +664,20 @@ type GitOpsSyncStatus struct {
 	// Required: false
 	BackupState string `json:"backupState,omitempty"`
 
+	// AutoSync indicates if automatic sync is enabled.
+	//
+	// Required: true
+	AutoSync bool `json:"autoSync"`
+
 	// BackupPending indicates saved changes have not reached the repository yet.
 	//
 	// Required: true
 	BackupPending bool `json:"backupPending"`
-
-	// BackupFailureReason is the typed reason for the last backup failure.
-	//
-	// Required: false
-	BackupFailureReason *string `json:"backupFailureReason,omitempty"`
-
-	// LastBackupAt is the time the remote last received a new backup commit.
-	//
-	// Required: false
-	LastBackupAt *time.Time `json:"lastBackupAt,omitempty"`
 }
 
 // ImportGitOpsSyncRequest represents the request to import gitops syncs.
 type ImportGitOpsSyncRequest struct {
 	GitOpsPreDeployConfigRequest
-
-	// SyncName is the name of the sync configuration.
-	//
-	// Required: true
-	SyncName string `json:"syncName"`
-
-	// GitRepo is the repository identifier or URL.
-	//
-	// Required: true
-	GitRepo string `json:"gitRepo"`
-
-	// Branch to sync from.
-	//
-	// Required: true
-	Branch string `json:"branch"`
-
-	// DockerComposePath is the path to the docker-compose file.
-	//
-	// Required: true
-	DockerComposePath string `json:"dockerComposePath"`
-
-	// AutoSync indicates if the sync should run automatically.
-	//
-	// Required: true
-	AutoSync bool `json:"autoSync"`
-
-	// SyncInterval is the interval in minutes between automatic syncs.
-	//
-	// Required: true
-	SyncInterval int `json:"syncInterval"`
 
 	// SyncDirectory indicates if the entire directory containing the compose file should be synced.
 	// When true (default), all files in the compose file's directory are synced.
@@ -734,11 +703,6 @@ type ImportGitOpsSyncRequest struct {
 	// Required: false
 	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitempty"`
 
-	// ProjectName is the compose project name. Defaults to SyncName.
-	//
-	// Required: false
-	ProjectName string `json:"projectName,omitempty"`
-
 	// PullImageAfterSync pulls each service image after a sync that changes
 	// managed content. Default: false.
 	//
@@ -750,10 +714,49 @@ type ImportGitOpsSyncRequest struct {
 	//
 	// Required: false
 	RedeployAfterSync *bool `json:"redeployAfterSync,omitempty"`
+
+	// SyncName is the name of the sync configuration.
+	//
+	// Required: true
+	SyncName string `json:"syncName"`
+
+	// GitRepo is the repository identifier or URL.
+	//
+	// Required: true
+	GitRepo string `json:"gitRepo"`
+
+	// Branch to sync from.
+	//
+	// Required: true
+	Branch string `json:"branch"`
+
+	// DockerComposePath is the path to the docker-compose file.
+	//
+	// Required: true
+	DockerComposePath string `json:"dockerComposePath"`
+
+	// ProjectName is the compose project name. Defaults to SyncName.
+	//
+	// Required: false
+	ProjectName string `json:"projectName,omitempty"`
+
+	// SyncInterval is the interval in minutes between automatic syncs.
+	//
+	// Required: true
+	SyncInterval int `json:"syncInterval"`
+
+	// AutoSync indicates if the sync should run automatically.
+	//
+	// Required: true
+	AutoSync bool `json:"autoSync"`
 }
 
 // ImportGitOpsSyncResponse represents the response for importing gitops syncs.
 type ImportGitOpsSyncResponse struct {
+	// Errors contains error messages for failed imports.
+	//
+	// Required: true
+	Errors []string `json:"errors"`
 	// SuccessCount is the number of successfully imported syncs.
 	//
 	// Required: true
@@ -763,11 +766,6 @@ type ImportGitOpsSyncResponse struct {
 	//
 	// Required: true
 	FailedCount int `json:"failedCount"`
-
-	// Errors contains error messages for failed imports.
-	//
-	// Required: true
-	Errors []string `json:"errors"`
 }
 
 // GitOpsBackupFileChange describes one file difference between Arcane and the repository.

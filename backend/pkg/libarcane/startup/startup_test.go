@@ -9,8 +9,8 @@ import (
 )
 
 type mockSettingsPruner struct {
-	pruneCalled bool
 	pruneErr    error
+	pruneCalled bool
 }
 
 func (m *mockSettingsPruner) PruneUnknownSettings(ctx context.Context) error {

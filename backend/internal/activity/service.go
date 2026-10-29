@@ -59,8 +59,7 @@ type ActivityService struct {
 	// running maps an active activity ID to the cancel function of its work
 	// context, so cancellation requests can interrupt in-flight work. Entries
 	// are added by Track and removed when the activity is completed.
-	runningMu sync.Mutex
-	running   map[string]context.CancelCauseFunc
+	running map[string]context.CancelCauseFunc
 
 	// publishLocks serializes the commit→publish window of the non-terminal
 	// snapshot writers (AppendMessages, UpdateActivity) per activity, so their
@@ -70,6 +69,8 @@ type ActivityService struct {
 	// ordered separately by the pubsub terminal latch. Striped by activity
 	// ID hash so no per-activity lifecycle management is needed.
 	publishLocks [64]sync.Mutex
+
+	runningMu sync.Mutex
 }
 
 type (

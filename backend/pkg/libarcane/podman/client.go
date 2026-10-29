@@ -22,21 +22,21 @@ import (
 const apiPrefix = "/v4.0.0/libpod"
 
 type Client struct {
-	baseURL    string
 	httpClient *http.Client
+	baseURL    string
 }
 
 type Runtime struct {
+	Systemd  Systemd
 	Client   *Client
 	Version  types.PodmanVersion
 	Rootless bool
-	Systemd  Systemd
 }
 
 type Features struct {
+	AutoUpdateMode       types.PodmanAutoUpdateMode
 	QuadletsSupported    bool
 	QuadletAppsSupported bool
-	AutoUpdateMode       types.PodmanAutoUpdateMode
 }
 
 type request struct {
@@ -113,8 +113,8 @@ func (c *Client) Info(ctx context.Context) (types.PodmanInfo, error) {
 }
 
 type containerResponse struct {
-	types.PodmanContainer
 	Ports []PodPortMapping `json:"Ports"`
+	types.PodmanContainer
 }
 
 func (c *Client) ContainerList(ctx context.Context, labels, pods []string) ([]types.PodmanContainer, error) {

@@ -24,8 +24,8 @@ func TestApplyCPUAffinityLimit(t *testing.T) {
 
 func TestSystemStatsSamplerEffectiveInterval(t *testing.T) {
 	tests := []struct {
-		name      string
 		intervals map[time.Duration]int
+		name      string
 		want      time.Duration
 	}{
 		{

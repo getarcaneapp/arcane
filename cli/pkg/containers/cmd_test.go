@@ -217,10 +217,13 @@ func TestContainersListExplicitStartZeroSendsStartZero(t *testing.T) {
 func TestContainersListTextShowsShowingSummary(t *testing.T) {
 	const localRow = `{"environmentId":"0","environmentName":"Local","id":"same-id","names":["/nginx"],"image":"nginx:latest","state":"running","status":"Up 1 hour"}`
 	for _, tc := range []struct {
-		name                                 string
-		command                              []string
-		single, unavailable, empty, explicit bool
-		summary                              string
+		name        string
+		summary     string
+		command     []string
+		single      bool
+		unavailable bool
+		empty       bool
+		explicit    bool
 	}{
 		{name: "single environment", single: true, summary: "Showing: 1/26 containers"},
 		{name: "combined environments", summary: "Showing: 2/52 containers"},
@@ -468,12 +471,12 @@ func TestContainersListJSONContract(t *testing.T) {
 				return
 			}
 			var result struct {
-				Success      bool `json:"success"`
 				Environments []struct {
 					ID     string          `json:"environmentId"`
-					Result json.RawMessage `json:"result"`
 					Error  string          `json:"error"`
+					Result json.RawMessage `json:"result"`
 				} `json:"environments"`
+				Success bool `json:"success"`
 			}
 			require.NoError(t, json.Unmarshal([]byte(out), &result), out)
 			if tc.explicit {

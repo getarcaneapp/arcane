@@ -411,9 +411,9 @@ func TestVersionService_GetAppVersionInfoChannelCommitNotes(t *testing.T) {
 	tests := []struct {
 		name          string
 		imageRevision string
-		status        int
-		wantNotes     []string
 		wantURL       string
+		wantNotes     []string
+		status        int
 		wantGitHubHit bool
 	}{
 		{

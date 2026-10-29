@@ -67,9 +67,9 @@ type repoDigestParts struct {
 // package imports this one, so the in-package test cannot import it back.
 type testProjectRow struct {
 	database.BaseModel
+	BuildImageRefsJSON *string `gorm:"column:build_image_refs_json"`
 	Name               string
 	Path               string
-	BuildImageRefsJSON *string `gorm:"column:build_image_refs_json"`
 }
 
 // noopActivities stands in for the activity service in tests that do not inspect activities.
@@ -733,9 +733,9 @@ func TestImageUpdateService_GetImageRefByID_UsesContainerFallback(t *testing.T) 
 
 	tests := []struct {
 		name       string
-		containers []container.Summary
 		wantRef    string
 		wantErr    string
+		containers []container.Summary
 	}{
 		{
 			name: "uses repo tag from matching container when inspect fails",
@@ -1512,11 +1512,11 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 	tag := "alpine"
 
 	tests := []struct {
-		name             string
 		existingRecord   *ImageUpdateRecord
 		newResult        *types.ImageUpdateResponse
-		expectNotifReset bool
+		name             string
 		reason           string
+		expectNotifReset bool
 	}{
 		{
 			name: "digest changed - should reset",

@@ -76,16 +76,24 @@ type EnvLoader struct {
 }
 
 type envFileCacheEntry struct {
-	path   string
 	mtime  time.Time
+	values EnvMap
+	path   string
 	size   int64
 	exists bool
-	values EnvMap
 }
 
 var (
 	globalEnvFileCache  = hot.NewHotCache[string, envFileCacheEntry](hot.LRU, 4096).Build()
 	projectEnvFileCache = hot.NewHotCache[string, envFileCacheEntry](hot.LRU, 4096).Build()
+	// processEnvAllowlist is the only part of Arcane's own process environment
+	// that flows into compose interpolation of managed projects: timezone and
+	// locale, whose container values are safe to share. Everything else is
+	// excluded so Arcane's variables never leak into ${VAR} references or
+	// pass-through environment entries — its PORT collides with project port
+	// mappings, secrets would be readable from any compose file, and vars like
+	// HOME or PUID carry container-internal values that are wrong for projects.
+	processEnvAllowlist = []string{"TZ", "LANG", "LANGUAGE", "LC_ALL"}
 )
 
 func NewEnvLoader(projectsDir, workdir string, autoInjectEnv bool) *EnvLoader {
@@ -95,15 +103,6 @@ func NewEnvLoader(projectsDir, workdir string, autoInjectEnv bool) *EnvLoader {
 		autoInjectEnv: autoInjectEnv,
 	}
 }
-
-// processEnvAllowlist is the only part of Arcane's own process environment
-// that flows into compose interpolation of managed projects: timezone and
-// locale, whose container values are safe to share. Everything else is
-// excluded so Arcane's variables never leak into ${VAR} references or
-// pass-through environment entries — its PORT collides with project port
-// mappings, secrets would be readable from any compose file, and vars like
-// HOME or PUID carry container-internal values that are wrong for projects.
-var processEnvAllowlist = []string{"TZ", "LANG", "LANGUAGE", "LC_ALL"}
 
 func allowedProcessEnv() EnvMap {
 	envMap := make(EnvMap)

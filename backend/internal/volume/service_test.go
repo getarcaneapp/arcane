@@ -39,11 +39,11 @@ import (
 
 func TestEnrichVolumesWithUsageData(t *testing.T) {
 	tests := []struct {
+		assertions   func(t *testing.T, got []volume.Volume)
 		name         string
 		volumes      []volume.Volume
 		usageVolumes []volume.Volume
 		wantLen      int
-		assertions   func(t *testing.T, got []volume.Volume)
 	}{
 		{
 			name: "attaches usage by name",

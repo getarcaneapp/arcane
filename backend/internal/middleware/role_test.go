@@ -180,8 +180,8 @@ func TestRequirePermission_SudoCallerAllowed(t *testing.T) {
 
 func TestRequireSudoRejectsHumanAdminAndAllowsAgent(t *testing.T) {
 	tests := []struct {
-		name       string
 		permission *authz.PermissionSet
+		name       string
 		wantStatus int
 		wantRan    bool
 	}{

@@ -19,11 +19,11 @@ const forcedRefreshInterval = 30 * time.Second
 var errForcedRefreshThrottled = errors.New("oidcjwk: forced refresh throttled")
 
 type keySet struct {
+	set         jwk.Set
+	group       singleflight.Group
 	cache       *jwkfetch.Cache
 	jwksURL     string
-	set         jwk.Set
 	nextRefresh atomic.Int64
-	group       singleflight.Group
 }
 
 func (k *keySet) VerifySignature(ctx context.Context, rawToken string) ([]byte, error) {

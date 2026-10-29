@@ -39,12 +39,21 @@ type SlotWaiter interface {
 }
 
 type StartRequest struct {
+	// BatchID groups activities spawned by one logical user action. When nil,
+	// the batch ID attached to the request context (if any) is used instead.
+	BatchID      *string
+	ResourceType *string
+	ResourceID   *string
+	ResourceName *string
+	StartedBy    *types.Actor
+	Progress     *int
+	Metadata     database.JSON
 	// ID is an optional caller-chosen ID; starting an existing ID returns that row.
 	ID            string
 	EnvironmentID string
-	// BatchID groups activities spawned by one logical user action. When nil,
-	// the batch ID attached to the request context (if any) is used instead.
-	BatchID *string
+	Type          types.ActivityType
+	Step          string
+	LatestMessage string
 	// Queue routes the activity through the per-environment concurrency
 	// limiter: with a free slot it starts running as usual; otherwise it is
 	// created with status queued and the caller must block on
@@ -53,26 +62,17 @@ type StartRequest struct {
 	// DeferSlot persists a queued activity without reserving a slot until its
 	// serialized worker starts. It is used by actor-owned work submitted after
 	// activity creation so queued tasks cannot hold slots ahead of the actor.
-	DeferSlot     bool
-	Type          types.ActivityType
-	ResourceType  *string
-	ResourceID    *string
-	ResourceName  *string
-	StartedBy     *types.Actor
-	Step          string
-	LatestMessage string
-	Progress      *int
-	Metadata      database.JSON
+	DeferSlot bool
 }
 
 type UpdateRequest struct {
-	Status        types.ActivityStatus
 	ResourceName  *string
 	Progress      *int
 	Step          *string
 	LatestMessage *string
 	Error         *string
 	Metadata      database.JSON
+	Status        types.ActivityStatus
 }
 
 type AppendMessageRequest struct {

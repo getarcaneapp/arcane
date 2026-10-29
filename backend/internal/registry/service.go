@@ -89,8 +89,8 @@ type resolvedRegistryCredential struct {
 }
 
 type registryRateLimitCacheEntry struct {
-	RateLimit registry.RateLimitInfo `json:"rateLimit"`
 	CheckedAt time.Time              `json:"checkedAt"`
+	RateLimit registry.RateLimitInfo `json:"rateLimit"`
 }
 
 type rateLimitRoundTripFunc func(*http.Request) (*http.Response, error)

@@ -35,10 +35,10 @@ type managedCache struct {
 
 type KeySetManager struct {
 	ctx      context.Context
-	mu       sync.Mutex
-	caches   *hot.HotCache[*http.Client, *managedCache]
 	group    singleflight.Group
+	caches   *hot.HotCache[*http.Client, *managedCache]
 	active   sync.WaitGroup
+	mu       sync.Mutex
 	shutdown atomic.Bool
 }
 

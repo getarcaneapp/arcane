@@ -23,9 +23,9 @@ type UpdaterHandler struct {
 }
 
 type RunUpdaterInput struct {
+	Body          *types.UpdaterOptions `doc:"Updater run options"`
 	EnvironmentID string                `path:"id" doc:"Environment ID"`
 	Automatic     bool                  `query:"automatic" doc:"Honor updater opt-out labels and excluded containers, as automatic runs do"`
-	Body          *types.UpdaterOptions `doc:"Updater run options"`
 }
 
 type UpdateContainerInput struct {
@@ -35,8 +35,8 @@ type UpdateContainerInput struct {
 }
 
 type updateContainerOutput struct {
-	Status int
 	Body   types.ApiResponse[any]
+	Status int
 }
 
 type GetUpdaterHistoryInput struct {

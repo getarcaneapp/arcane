@@ -40,13 +40,13 @@ type ContainerHandler struct {
 
 // ContainerPaginatedResponse is the paginated list response for containers.
 type ContainerPaginatedResponse struct {
-	Success               bool                          `json:"success"`
 	Data                  []types.ContainerSummary      `json:"data"`
 	Groups                []types.ContainerSummaryGroup `json:"groups,omitempty"`
-	Counts                types.ContainerStatusCounts   `json:"counts"`
-	Pagination            types.PaginationResponse      `json:"pagination"`
-	ResourceSortSupported bool                          `json:"resourceSortSupported"`
 	FailedEnvironments    []types.EnvironmentFailure    `json:"failedEnvironments,omitempty" doc:"Environments whose results are missing from a multi-environment response"`
+	Pagination            types.PaginationResponse      `json:"pagination"`
+	Counts                types.ContainerStatusCounts   `json:"counts"`
+	Success               bool                          `json:"success"`
+	ResourceSortSupported bool                          `json:"resourceSortSupported"`
 }
 
 type ListContainersInput struct {
@@ -54,14 +54,14 @@ type ListContainersInput struct {
 	Search          string `query:"search" doc:"Search query"`
 	Sort            string `query:"sort" doc:"Column to sort by"`
 	Order           string `query:"order" default:"asc" doc:"Sort direction"`
-	Start           int    `query:"start" default:"0" doc:"Start index"`
-	Limit           int    `query:"limit" default:"20" doc:"Limit"`
 	GroupBy         string `query:"groupBy" doc:"Optional grouping mode (for example: project)"`
-	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
-	IncludeHidden   bool   `query:"includeHidden" default:"false" doc:"Include hidden containers"`
 	Updates         string `query:"updates" doc:"Filter by update status (has_update, up_to_date, error, unknown)"`
 	Standalone      string `query:"standalone" doc:"Filter standalone containers only (true/false)"`
 	Label           string `query:"label" doc:"Filter by label key or key=value"`
+	Start           int    `query:"start" default:"0" doc:"Start index"`
+	Limit           int    `query:"limit" default:"20" doc:"Limit"`
+	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
+	IncludeHidden   bool   `query:"includeHidden" default:"false" doc:"Include hidden containers"`
 }
 
 type ListContainersOutput struct {
@@ -128,13 +128,13 @@ type GenerateComposeInput struct {
 }
 
 type containerActionConfig struct {
+	Action          func(context.Context, string, types.Actor) error
 	ActivityType    types.ActivityType
 	Verb            string
 	Step            string
 	StartMessage    string
 	CompleteMessage string
 	SuccessMessage  string
-	Action          func(context.Context, string, types.Actor) error
 }
 
 func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContainersInput) (*ListContainersOutput, error) {

@@ -11,7 +11,6 @@ import (
 const broadcastDropWarningInterval = 5 * time.Second
 
 type Hub struct {
-	mu         sync.RWMutex
 	clients    map[*Client]struct{}
 	register   chan *Client
 	unregister chan *Client
@@ -20,12 +19,13 @@ type Hub struct {
 	// torn-down hub fail fast instead of blocking forever on the unbuffered
 	// register channel.
 	stopped     chan struct{}
-	stoppedOnce sync.Once
 	onFirst     func()
 	onActive    func()
 	onEmpty     func()
 	dropped     atomic.Uint64
 	lastWarned  atomic.Int64
+	mu          sync.RWMutex
+	stoppedOnce sync.Once
 }
 
 func NewHub(buffer int) *Hub {

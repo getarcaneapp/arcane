@@ -1441,12 +1441,12 @@ func TestProjectService_UpdateProjectServicesForcesRecreate(t *testing.T) {
 }
 
 type fakeProjectVolumeRenameMigration struct {
-	applyCalled    bool
-	commitCalled   bool
-	rollbackCalled bool
 	applyErr       error
 	commitErr      error
 	rollbackErr    error
+	applyCalled    bool
+	commitCalled   bool
+	rollbackCalled bool
 }
 
 func (m *fakeProjectVolumeRenameMigration) Apply(context.Context) error {
@@ -2263,8 +2263,8 @@ func TestProjectService_RecoverStuckProjectStatuses(t *testing.T) {
 	tests := []struct {
 		name       string
 		saved      ProjectStatus
-		containers []container.Summary
 		want       ProjectStatus
+		containers []container.Summary
 	}{
 		{
 			name:  "deploying with running containers becomes running",
@@ -4248,15 +4248,15 @@ func TestBuildProjectUpdateInfoSummary(t *testing.T) {
 	now := time.Now().UTC()
 
 	tests := []struct {
-		name        string
-		imageRefs   []string
 		updates     map[string]*types.ImageUpdateInfo
+		name        string
 		wantStatus  string
+		wantError   string
+		imageRefs   []string
 		wantCount   int
 		wantChecked int
 		wantErrors  int
 		wantUpdates int
-		wantError   string
 	}{
 		{
 			name:        "unknown when no checks exist",
@@ -6603,9 +6603,9 @@ func dockerHostFromProjectRuntimeServerURL(t *testing.T, serverURL string) strin
 
 func TestResolveRemoveOrphans(t *testing.T) {
 	tests := []struct {
+		options       *types.ProjectDeployOptions
 		name          string
 		gitOpsManaged bool
-		options       *types.ProjectDeployOptions
 		want          bool
 	}{
 		{name: "non-gitops, nil options", gitOpsManaged: false, options: nil, want: false},
@@ -9191,12 +9191,12 @@ func (s *serviceTagTransport) RoundTrip(request *http.Request) (*http.Response, 
 func TestProjectServiceManualUpdateDiscoversTags(t *testing.T) {
 	for _, tt := range []struct {
 		name          string
-		tags          []string
 		wantRef       string
+		strategy      string
+		tags          []string
+		wantCalls     int
 		wantChanged   bool
 		skipDiscovery bool
-		wantCalls     int
-		strategy      string
 		omitLabels    bool
 	}{
 		{name: "new tag", tags: []string{"1.2.0", "1.3.0", "2.0.0"}, wantRef: "app:1.3.0", wantChanged: true, wantCalls: 1},
@@ -9280,8 +9280,8 @@ func TestProjectServiceManualUpdateDiscoversTags(t *testing.T) {
 
 func TestProjectServiceManualUpdateRejectsUnsafeTagPolicies(t *testing.T) {
 	for _, tt := range []struct {
-		name   string
 		change func(*composetypes.ServiceConfig)
+		name   string
 	}{
 		{name: "invalid constraint", change: func(s *composetypes.ServiceConfig) { s.Labels[labels.LabelUpdateConstraint] = "not semver" }},
 		{name: "local build", change: func(s *composetypes.ServiceConfig) { s.Build = &composetypes.BuildConfig{Context: "."} }},
@@ -9956,8 +9956,8 @@ func TestComposeFile(t *testing.T) {
 	transient := errors.New("transient")
 
 	type call struct {
-		wantPath  string
 		wantErr   error
+		wantPath  string
 		wantCalls int
 	}
 

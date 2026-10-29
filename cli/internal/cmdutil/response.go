@@ -18,8 +18,8 @@ const maxErrorBodyBytes = 4096
 
 // HTTPStatusError represents a non-2xx HTTP response.
 type HTTPStatusError struct {
-	StatusCode int
 	Body       string
+	StatusCode int
 }
 
 func (e *HTTPStatusError) Error() string {

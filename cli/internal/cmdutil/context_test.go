@@ -24,9 +24,16 @@ func (input confirmationInput) Fd() uintptr { return input.terminal.Fd() }
 
 func TestConfirmOrCancel(t *testing.T) {
 	for _, tt := range []struct {
-		name                                                   string
-		force, yes, json, terminal, all, runtimeYes, confirmed bool
-		answer, wantErr                                        string
+		name       string
+		answer     string
+		wantErr    string
+		force      bool
+		yes        bool
+		json       bool
+		terminal   bool
+		all        bool
+		runtimeYes bool
+		confirmed  bool
 	}{
 		{name: "force", force: true, json: true, confirmed: true},
 		{name: "global yes", yes: true, confirmed: true},

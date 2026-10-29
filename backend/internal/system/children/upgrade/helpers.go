@@ -29,13 +29,13 @@ const (
 )
 
 type progressFeed struct {
-	mu          sync.Mutex
-	active      bool
+	subscribers map[chan types.UpgradeProgressEvent]struct{}
 	fromVersion string
 	toVersion   string
-	percent     int
 	history     []types.UpgradeProgressEvent
-	subscribers map[chan types.UpgradeProgressEvent]struct{}
+	percent     int
+	mu          sync.Mutex
+	active      bool
 }
 
 func newProgressFeed() *progressFeed {

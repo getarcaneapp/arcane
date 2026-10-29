@@ -58,22 +58,23 @@ type templateFileSnapshot struct {
 }
 
 type TemplateService struct {
+	lastFsSync      time.Time
 	db              *database.DB
 	httpClient      *http.Client
 	safeHTTPClient  *http.Client
 	lookupIP        httpx.LookupIPFunc
 	settingsService *settings.SettingsService
 
-	remoteCache      *hot.HotCache[uint64, []ComposeTemplate]
-	remoteGeneration atomic.Uint64
-
-	registryMu        sync.RWMutex
+	remoteCache       *hot.HotCache[uint64, []ComposeTemplate]
 	registryFetchMeta map[string]*registryFetchMeta
 	registryErrors    map[string]string // last fetch error per registry ID, cleared on success
 
+	remoteGeneration atomic.Uint64
+
+	registryMu sync.RWMutex
+
 	// fsMu serializes folder template writes and deletes with the filesystem sync, and guards lastFsSync.
-	fsMu       sync.Mutex
-	lastFsSync time.Time
+	fsMu sync.Mutex
 }
 
 const (

@@ -17,20 +17,20 @@ import (
 
 // TunnelClient represents the agent-side tunnel client
 type TunnelClient struct {
-	cfg                    *Config
+	preferWebSocketUntil   time.Time
 	handler                http.Handler
+	cfg                    *Config
+	conn                   atomic.Pointer[connBox]
+	sessionID              concurrency.Snapshot[string]
+	managerURL             string
+	managerGRPCAddr        string
+	agentInstanceID        string
 	reconnectInterval      time.Duration
 	registrationTimeout    time.Duration
 	websocketPreferenceTTL time.Duration
 	healthySessionDuration time.Duration
-	managerURL             string
-	managerGRPCAddr        string
-	conn                   atomic.Pointer[connBox]
-	transportPreferenceMu  sync.RWMutex
-	preferWebSocketUntil   time.Time
 	grpcFailureStreak      int
-	agentInstanceID        string
-	sessionID              concurrency.Snapshot[string]
+	transportPreferenceMu  sync.RWMutex
 }
 
 // connBox lets the active connection swap atomically on reconnect: an atomic.Value would panic when the
@@ -66,30 +66,30 @@ type commandRouteIndex map[commandRouteKey]*commandRouteNode
 
 // AgentTunnel represents an active tunnel connection from an agent
 type AgentTunnel struct {
-	EnvironmentID string
-	Conn          TunnelConnection
 	ConnectedAt   time.Time
 	LastHeartbeat time.Time
+	Conn          TunnelConnection
+	// HTTPClient sends requests to the agent's router over the multiplexed session; use MuxAgentBaseURL as the origin.
+	HTTPClient *http.Client
+	done       chan struct{}
+
+	mux           *muxSession
+	EnvironmentID string
 	SessionID     string
 	AgentInstance string
 	Transport     string
 	SecurityMode  string
-	Capabilities  []string
 	State         string
 	DisconnectErr string
-	// HTTPClient sends requests to the agent's router over the multiplexed session; use MuxAgentBaseURL as the origin.
-	HTTPClient *http.Client
-	mu         sync.RWMutex
-	done       chan struct{}
-	closeOnce  sync.Once
-
-	mux *muxSession
+	Capabilities  []string
+	mu            sync.RWMutex
+	closeOnce     sync.Once
 }
 
 // TunnelRegistry manages active agent tunnel connections
 type TunnelRegistry struct {
-	stopped atomic.Bool
 	tunnels *concurrency.StateMap[string, *AgentTunnel]
+	stopped atomic.Bool
 }
 
 // TunnelServer handles incoming agent connections on the manager side.
@@ -146,8 +146,8 @@ type GeneratedMTLSFile struct {
 
 // GeneratedMTLSAssets contains manager-generated agent client certificates and snippet metadata.
 type GeneratedMTLSAssets struct {
-	Files       []GeneratedMTLSFile `json:"files"`
 	HostDirHint string              `json:"hostDirHint"`
+	Files       []GeneratedMTLSFile `json:"files"`
 	CertIssued  bool                `json:"-"`
 	CAGenerated bool                `json:"-"`
 	Reenrolled  bool                `json:"-"`
@@ -159,9 +159,7 @@ type enrollMTLSResponse struct {
 
 // Config contains the public agent-tunnel runtime settings needed by pkg/libarcane/agent.
 type Config struct {
-	AgentEnabled           bool
 	AgentTransport         string
-	AgentReconnectInterval int
 	AgentMTLSMode          string
 	AgentMTLSCAFile        string
 	AgentMTLSCertFile      string
@@ -173,22 +171,24 @@ type Config struct {
 	AgentToken             string
 	Port                   string
 	Listen                 string
+	AgentReconnectInterval int
+	AgentEnabled           bool
 }
 
 // TunnelRuntimeState describes the live, in-memory state of an active agent tunnel.
 type TunnelRuntimeState struct {
 	// RoundTripTime is the last keepalive round trip.
 	RoundTripTime *time.Duration
-	// OpenStreams counts open mux streams, including pooled idle ones.
-	OpenStreams   int
-	Transport     string
 	ConnectedAt   *time.Time
 	LastHeartbeat *time.Time
+	Transport     string
 	SessionID     string
 	AgentInstance string
 	SecurityMode  string
-	Capabilities  []string
 	State         string
+	Capabilities  []string
+	// OpenStreams counts open mux streams, including pooled idle ones.
+	OpenStreams int
 }
 
 // TunnelMessage is the register handshake both peers exchange before switching to the multiplexed data plane.
@@ -249,26 +249,27 @@ type GRPCAgentTunnelConn struct {
 
 // muxSession is the manager end of a multiplexed data plane. Dials wait until ready closes.
 type muxSession struct {
-	ready     chan struct{}
-	closed    chan struct{}
+	ready   chan struct{}
+	closed  chan struct{}
+	session *yamux.Session
+	// rtt is the last keepalive round trip in nanoseconds, zero until the first ping.
+	rtt       atomic.Int64
 	closeOnce sync.Once
 	mu        sync.Mutex
-	session   *yamux.Session
-	// rtt is the last keepalive round trip in nanoseconds, zero until the first ping.
-	rtt atomic.Int64
 }
 
 // muxConn adapts a message transport to the byte stream yamux runs on.
 type muxConn struct {
+	err            error
 	recv           func() ([]byte, error)
 	closeTransport func() error
-	closeOnce      sync.Once
+	cond           sync.Cond
 	unread         []byte
 
-	mu      sync.Mutex
-	cond    sync.Cond
-	pending []byte
-	err     error
+	pending   []byte
+	closeOnce sync.Once
+
+	mu sync.Mutex
 }
 
 type cancelableGRPCManagerStream struct {

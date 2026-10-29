@@ -33,9 +33,9 @@ func newKubeCmd() *cobra.Command {
 
 func newKubePlayCmd() *cobra.Command {
 	var opts struct {
+		networks []string
 		replace  bool
 		noStart  bool
-		networks []string
 	}
 	cmd := &cobra.Command{
 		Use:          "play <file>",

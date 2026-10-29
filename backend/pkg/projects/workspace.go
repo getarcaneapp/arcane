@@ -34,10 +34,10 @@ var (
 
 type ProjectWorkspaceApplyOptions struct {
 	ExpectedRevision string
-	MaxDepth         int
-	MaxEntries       int
 	SkipDirectories  string
 	ComposeFileName  string
+	MaxDepth         int
+	MaxEntries       int
 	MaxFileSizeBytes int64
 }
 
@@ -93,14 +93,14 @@ func ReadProjectWorkspace(
 
 type projectWorkspaceTreeWalkerInternal struct {
 	ctx              context.Context
+	revisionHash     hash.Hash
+	protected        map[string]bool
+	skipDirs         map[string]bool
 	projectAbs       string
+	files            []types.WorkspaceFileEntry
 	maxDepth         int
 	maxEntries       int
 	maxFileSizeBytes int64
-	protected        map[string]bool
-	skipDirs         map[string]bool
-	files            []types.WorkspaceFileEntry
-	revisionHash     hash.Hash
 	entryCount       int
 	truncated        bool
 }

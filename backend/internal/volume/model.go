@@ -30,9 +30,11 @@ type VolumeBackupFormat string
 type VolumeBackup struct {
 	database.BaseModel
 
+	CreatedAt       time.Time `json:"createdAt" gorm:"column:created_at"`
+	ActivityID      *string   `json:"activityId,omitempty" gorm:"-"`
+	RemoteAvailable *bool     `json:"remoteAvailable,omitempty" gorm:"-"`
+
 	VolumeName        string                        `json:"volumeName" gorm:"column:volume_name;index"`
-	Size              int64                         `json:"size" gorm:"column:size"`
-	CreatedAt         time.Time                     `json:"createdAt" gorm:"column:created_at"`
 	Status            VolumeBackupStatus            `json:"status" gorm:"column:status;type:text;not null;default:succeeded"`
 	Trigger           VolumeBackupTrigger           `json:"trigger" gorm:"column:trigger;type:text;not null;default:manual"`
 	Destination       types.VolumeBackupDestination `json:"destination" gorm:"column:destination;type:text;not null;default:local"`
@@ -44,9 +46,8 @@ type VolumeBackup struct {
 	S3DestinationName string                        `json:"s3DestinationName,omitempty" gorm:"-"`
 	PolicyID          string                        `json:"policyId,omitempty" gorm:"column:policy_id;type:text;index"`
 	Error             string                        `json:"error,omitempty" gorm:"column:error;type:text"`
-	ActivityID        *string                       `json:"activityId,omitempty" gorm:"-"`
 	Type              types.BackupManagementType    `json:"type" gorm:"-"`
-	RemoteAvailable   *bool                         `json:"remoteAvailable,omitempty" gorm:"-"`
+	Size              int64                         `json:"size" gorm:"column:size"`
 }
 
 func (*VolumeBackup) TableName() string {

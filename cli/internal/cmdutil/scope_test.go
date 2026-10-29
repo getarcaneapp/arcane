@@ -28,9 +28,14 @@ func TestRunScopedMerged(t *testing.T) {
 	}
 	const tagged = `{"success":true,"data":[{"environmentId":"0","environmentName":"Alpha","name":"web"},{"environmentId":"b","environmentName":"Beta","name":"db"}],"pagination":{"totalItems":7}}`
 	for _, tt := range []struct {
-		name, environments, body, scope, wantErr, limit string
-		json                                            bool
-		wantOut                                         []string
+		name         string
+		environments string
+		body         string
+		scope        string
+		wantErr      string
+		limit        string
+		wantOut      []string
+		json         bool
 	}{
 		{
 			name: "table names rows from their tags", environments: `[{"id":"b","name":"Beta","enabled":true},{"id":"0","name":"Alpha","enabled":true}]`,

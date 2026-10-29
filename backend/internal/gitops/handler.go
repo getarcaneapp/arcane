@@ -25,12 +25,12 @@ type ListGitOpsSyncsInput struct {
 	Search        string `query:"search" doc:"Search query"`
 	Sort          string `query:"sort" doc:"Column to sort by"`
 	Order         string `query:"order" default:"asc" doc:"Sort direction"`
-	Start         int    `query:"start" default:"0" doc:"Start index"`
-	Limit         int    `query:"limit" default:"20" doc:"Items per page"`
 	Mode          string `query:"mode" doc:"Filter by direction (deploy or backup)"`
 	ProjectID     string `query:"projectId" doc:"Filter by linked project ID"`
 	RepositoryID  string `query:"repositoryId" doc:"Filter by repository ID"`
 	AutoSync      string `query:"autoSync" doc:"Filter by automatic sync (true or false)"`
+	Start         int    `query:"start" default:"0" doc:"Start index"`
+	Limit         int    `query:"limit" default:"20" doc:"Items per page"`
 }
 
 type ListGitOpsSyncsOutput struct {

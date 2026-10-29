@@ -15,30 +15,15 @@ type EventSeverityCounts struct {
 
 // Event represents an event in API responses.
 type Event struct {
-	// ID of the event.
+	// Timestamp is when the event occurred.
 	//
 	// Required: true
-	ID string `json:"id"`
+	Timestamp time.Time `json:"timestamp"`
 
-	// Type of the event.
+	// CreatedAt is the date and time at which the event was created.
 	//
 	// Required: true
-	Type string `json:"type"`
-
-	// Severity level of the event.
-	//
-	// Required: true
-	Severity string `json:"severity"`
-
-	// Title of the event.
-	//
-	// Required: true
-	Title string `json:"title"`
-
-	// Description of the event.
-	//
-	// Required: false
-	Description string `json:"description,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
 
 	// ResourceType is the type of the resource associated with the event.
 	//
@@ -75,20 +60,34 @@ type Event struct {
 	// Required: false
 	Metadata map[string]any `json:"metadata,omitempty"`
 
-	// Timestamp is when the event occurred.
-	//
-	// Required: true
-	Timestamp time.Time `json:"timestamp"`
-
-	// CreatedAt is the date and time at which the event was created.
-	//
-	// Required: true
-	CreatedAt time.Time `json:"createdAt"`
-
 	// UpdatedAt is the date and time at which the event was last updated.
 	//
 	// Required: false
 	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
+	// ID of the event.
+	//
+	// Required: true
+	ID string `json:"id"`
+
+	// Type of the event.
+	//
+	// Required: true
+	Type string `json:"type"`
+
+	// Severity level of the event.
+	//
+	// Required: true
+	Severity string `json:"severity"`
+
+	// Title of the event.
+	//
+	// Required: true
+	Title string `json:"title"`
+
+	// Description of the event.
+	//
+	// Required: false
+	Description string `json:"description,omitempty"`
 }
 
 // EventStreamEvent invalidates event queries after persistence changes.
@@ -101,7 +100,7 @@ type EventStreamEvent struct {
 }
 
 type EnvironmentChanges struct {
+	Kinds         map[string]uint64 `json:"kinds"`
 	EnvironmentID string            `json:"environmentId"`
 	Epoch         string            `json:"epoch"`
-	Kinds         map[string]uint64 `json:"kinds"`
 }

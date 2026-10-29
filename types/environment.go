@@ -5,15 +5,14 @@ import (
 )
 
 type EnvironmentTest struct {
-	// Status of the environment test.
-	//
-	// Required: true
-	Status string `json:"status"`
-
 	// Message providing additional details about the test result.
 	//
 	// Required: false
 	Message *string `json:"message,omitempty"`
+	// Status of the environment test.
+	//
+	// Required: true
+	Status string `json:"status"`
 }
 
 type AgentMTLSCertificate struct {
@@ -45,31 +44,6 @@ type AgentMTLSCertificate struct {
 
 // Environment represents an environment in API responses.
 type Environment struct {
-	// ID of the environment.
-	//
-	// Required: true
-	ID string `json:"id" readOnly:"true"`
-
-	// Name of the environment.
-	//
-	// Required: false
-	Name string `json:"name,omitempty" unorm:"nfc" trim:"true"`
-
-	// ApiUrl is the URL of the environment API.
-	//
-	// Required: false
-	ApiUrl string `json:"apiUrl" readOnly:"true"`
-
-	// Status of the environment.
-	//
-	// Required: true
-	Status string `json:"status" readOnly:"true"`
-
-	// Enabled indicates if the environment is enabled.
-	//
-	// Required: false
-	Enabled bool `json:"enabled" required:"false"`
-
 	// LastSeen is the last successful manager-side health/contact timestamp.
 	//
 	// Required: false
@@ -103,11 +77,6 @@ type Environment struct {
 	//
 	// Required: false
 	AgentInstance *string `json:"agentInstance,omitempty" readOnly:"true"`
-
-	// AgentCapabilities lists the protocol features advertised by the connected agent.
-	//
-	// Required: false
-	AgentCapabilities []string `json:"agentCapabilities,omitempty" readOnly:"true"`
 
 	// AgentRoundTripMs is the last keepalive round trip of a multiplexed tunnel, in milliseconds.
 	//
@@ -145,6 +114,36 @@ type Environment struct {
 	// Required: false
 	ApiKey *string `json:"apiKey,omitempty" readOnly:"true"`
 
+	// ID of the environment.
+	//
+	// Required: true
+	ID string `json:"id" readOnly:"true"`
+
+	// Name of the environment.
+	//
+	// Required: false
+	Name string `json:"name,omitempty" unorm:"nfc" trim:"true"`
+
+	// ApiUrl is the URL of the environment API.
+	//
+	// Required: false
+	ApiUrl string `json:"apiUrl" readOnly:"true"`
+
+	// Status of the environment.
+	//
+	// Required: true
+	Status string `json:"status" readOnly:"true"`
+
+	// AgentCapabilities lists the protocol features advertised by the connected agent.
+	//
+	// Required: false
+	AgentCapabilities []string `json:"agentCapabilities,omitempty" readOnly:"true"`
+
+	// Enabled indicates if the environment is enabled.
+	//
+	// Required: false
+	Enabled bool `json:"enabled" required:"false"`
+
 	// RegenerateApiKey indicates whether to regenerate the API key on update.
 	//
 	// Required: false
@@ -157,6 +156,10 @@ type Environment struct {
 // merging field by field — which also keeps renames and enable toggles live,
 // not just connectivity.
 type EnvironmentStreamEvent struct {
+	// Timestamp is when the event was produced.
+	//
+	// Required: true
+	Timestamp time.Time `json:"timestamp"`
 	// Type is the event kind: "snapshot" or "heartbeat".
 	//
 	// Required: true
@@ -166,41 +169,36 @@ type EnvironmentStreamEvent struct {
 	//
 	// Required: false
 	Environments []Environment `json:"environments,omitempty"`
-
-	// Timestamp is when the event was produced.
-	//
-	// Required: true
-	Timestamp time.Time `json:"timestamp"`
 }
 
 // SwarmBindingCandidate is the binding-relevant state of an environment being attached to a node.
 type SwarmBindingCandidate struct {
-	Hidden              bool
-	Enabled             bool
 	ParentEnvironmentID *string
 	SwarmNodeID         *string
+	Hidden              bool
+	Enabled             bool
 }
 
 const LocalDockerEnvironmentID = "0"
 
 type DeploymentSnippet struct {
+	MTLS          *DeploymentSnippetMTLS `json:"mtls,omitempty" doc:"Optional Arcane-generated mTLS deployment assets for agents"`
 	DockerRun     string                 `json:"dockerRun" doc:"Docker run command snippet"`
 	DockerCompose string                 `json:"dockerCompose" doc:"Docker compose YAML snippet"`
-	MTLS          *DeploymentSnippetMTLS `json:"mtls,omitempty" doc:"Optional Arcane-generated mTLS deployment assets for agents"`
 }
 
 type DeploymentSnippetMTLS struct {
 	DockerRun     string                  `json:"dockerRun" doc:"Docker run snippet using Arcane-generated mTLS assets"`
 	DockerCompose string                  `json:"dockerCompose" doc:"Docker compose snippet using Arcane-generated mTLS assets"`
-	Files         []DeploymentSnippetFile `json:"files" doc:"Generated PEM files to place on the agent host"`
 	HostDirHint   string                  `json:"hostDirHint" doc:"Suggested host directory containing the generated PEM files"`
+	Files         []DeploymentSnippetFile `json:"files" doc:"Generated PEM files to place on the agent host"`
 }
 
 type DeploymentSnippetFile struct {
 	Name          string `json:"name" doc:"Suggested filename"`
 	Content       string `json:"content,omitempty" doc:"PEM file contents. Omitted for sensitive files such as private keys; use downloadUrl instead."`
 	DownloadURL   string `json:"downloadUrl,omitempty" doc:"Pairing-permission endpoint to download this file when content is withheld"`
-	Sensitive     bool   `json:"sensitive,omitempty" doc:"True when this file is sensitive and must be fetched via downloadUrl"`
 	ContainerPath string `json:"containerPath" doc:"Container mount path expected by the mTLS snippet"`
 	Permissions   string `json:"permissions" doc:"Suggested file mode"`
+	Sensitive     bool   `json:"sensitive,omitempty" doc:"True when this file is sensitive and must be fetched via downloadUrl"`
 }

@@ -67,13 +67,8 @@ type remoteWebhookTarget struct {
 }
 
 type WebhookService struct {
-	tokenWriteMu sync.Mutex
-	tokenMu      sync.RWMutex
-	tokenHashes  map[string]struct{}
+	tokenHashes map[string]struct{}
 
-	// actions tracks in-flight background webhook actions accepted with a 202
-	// so shutdown can drain them instead of dropping acknowledged work.
-	actions            sync.WaitGroup
 	db                 *database.DB
 	containerService   *container.ContainerService
 	updaterService     *updater.UpdaterService
@@ -81,6 +76,12 @@ type WebhookService struct {
 	gitOpsSyncService  *gitops.GitOpsSyncService
 	eventService       *event.EventService
 	environmentService *environment.EnvironmentService
+
+	// actions tracks in-flight background webhook actions accepted with a 202
+	// so shutdown can drain them instead of dropping acknowledged work.
+	actions      sync.WaitGroup
+	tokenMu      sync.RWMutex
+	tokenWriteMu sync.Mutex
 }
 
 func NewWebhookService(

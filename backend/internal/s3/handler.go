@@ -53,9 +53,9 @@ type s3DestinationOutput struct {
 }
 
 type s3DestinationActionInput struct {
+	Body   *types.S3Destination `json:"body,omitempty"`
 	ID     string               `path:"id" doc:"S3 destination ID"`
 	Action string               `query:"action" required:"true" enum:"test" doc:"S3 destination action"`
-	Body   *types.S3Destination `json:"body,omitempty"`
 }
 
 type testS3DestinationConfigurationInput struct {

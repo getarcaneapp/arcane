@@ -61,26 +61,26 @@ type (
 	// Definition declares a workflow. Bump Version and update Fingerprint on any
 	// graph or policy change; flowtest.AssertDefinitions reports the new value.
 	Definition struct {
-		Name        string
-		Version     int
-		Fingerprint string
-		Concurrency int
-		Timeout     time.Duration
 		// Activity is the template for the activity each root instance owns; an empty Type means none.
 		Activity activitylib.StartRequest
 		// Labels name steps on the activity; steps without one show their name.
-		Labels map[string]string
+		Labels      map[string]string
+		Name        string
+		Fingerprint string
 		// Steps use Francis step builders with handlers wrapped by Engine.Handler.
 		// The last step returns scheduler.Outcome.
-		Steps   []workflow.StepSpec
-		Options []workflow.Option
+		Steps       []workflow.StepSpec
+		Options     []workflow.Option
+		Version     int
+		Concurrency int
+		Timeout     time.Duration
 	}
 
 	// Workflow is a defined workflow registered on the engine's host.
 	Workflow struct {
-		def Definition
 		wf  *workflow.Workflow
 		svc *workflow.WorkflowService
+		def Definition
 	}
 
 	// Activities is the activity service surface the engine drives.
@@ -94,18 +94,16 @@ type (
 
 	// Engine defines workflows, runs them inside coordinator runs, and owns their activities.
 	Engine struct {
+		activities Activities
+		ctx        context.Context
+		evidence   utils.KeyedMutex
+		// slots serializes reacquiring a root activity's slot, so its sibling tasks never wait on the slot it holds.
+		slots       utils.KeyedMutex
 		runtime     *francis.Runtime
 		coordinator *runs.Coordinator
-		activities  Activities
-		ctx         context.Context
 		cancel      context.CancelFunc
-		mu          sync.Mutex
-		workflows   []*Workflow
 		monitors    map[string]*instanceMonitor
 		roots       map[string]rootCancellation
-		evidence    utils.KeyedMutex
-		// slots serializes reacquiring a root activity's slot, so its sibling tasks never wait on the slot it holds.
-		slots utils.KeyedMutex
 		// tracked holds each starting activity's cancel registration until its monitor takes it over.
 		tracked map[string]context.Context
 		// admitted holds the runs whose executor authorized them and waits on them; other runs' tasks wait for reconcile.
@@ -114,7 +112,9 @@ type (
 		ready chan struct{}
 		// submitted holds the standalone instances this process started; tasks of others are recovered.
 		submitted map[string]struct{}
+		workflows []*Workflow
 		readyOnce sync.Once
+		mu        sync.Mutex
 	}
 
 	// rootCancellation interrupts every running task of one root instance.

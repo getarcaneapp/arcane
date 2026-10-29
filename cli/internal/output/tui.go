@@ -41,15 +41,15 @@ type trackerStep struct {
 }
 
 type tracker struct {
-	mu                            sync.Mutex
 	out                           io.Writer
-	live                          bool
+	stop, done                    chan struct{}
+	resumeOuter                   func()
 	steps                         []trackerStep
 	current, drawn, frame, paused int
-	stopped                       bool
-	stop, done                    chan struct{}
 	once                          sync.Once
-	resumeOuter                   func()
+	mu                            sync.Mutex
+	live                          bool
+	stopped                       bool
 }
 
 // StartTracker renders a checklist only for interactive text output.

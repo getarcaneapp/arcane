@@ -27,8 +27,6 @@ type builder interface {
 // projectMetadataEnv carries the request-scoped inputs compose
 // resolution needs beyond the project itself, resolved once per list request.
 type projectMetadataEnv struct {
-	projectsDirectory string
-	autoInjectEnv     bool
 	// settings is the snapshot shared by compose loads.
 	settings *settings.Settings
 	// gitOpsComposePaths maps preloaded GitOps sync IDs to their configured
@@ -38,11 +36,14 @@ type projectMetadataEnv struct {
 	gitOpsComposePaths map[string]string
 	pathMapper         func() *projects.PathMapper
 
+	composeFiles      map[string]string
+	projectsDirectory string
+
 	// composeFiles memoizes successfully resolved compose files by project ID.
 	// Failures are not stored so a later phase in the same request retries
 	// resolution instead of replaying an error that may have been transient.
 	composeFilesMu sync.Mutex
-	composeFiles   map[string]string
+	autoInjectEnv  bool
 }
 
 func gitOpsSyncID(proj *Project) string {
@@ -75,8 +76,8 @@ func (env *projectMetadataEnv) composeFile(projectID string, resolve func() (str
 // composeNameCache maps normalized compose project names to project
 // IDs so a name lookup skips the projects table scan.
 type composeNameCache struct {
-	mu     sync.RWMutex
 	byName map[string]string
+	mu     sync.RWMutex
 }
 
 func (c *composeNameCache) projectID(normalizedName string) mo.Option[string] {
@@ -129,8 +130,8 @@ func (c *composeNameCache) replace(byName map[string]string) {
 // projectCleanupDecision records a project the reconcile pass intends to delete,
 // alongside the reason logged when the deletion is carried out.
 type projectCleanupDecision struct {
-	project Project
 	reason  string
+	project Project
 }
 
 func deleteProjectWithTags(tx *gorm.DB, projectID string) error {

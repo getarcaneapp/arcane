@@ -21,14 +21,14 @@ import (
 )
 
 type imageUpdateScannerFakeInternal struct {
-	mu        sync.Mutex
+	startedCh chan int
+	releaseCh <-chan struct{}
+	errors    []error
+	panics    []bool
 	calls     int
 	active    int
 	maxActive int
-	errors    []error
-	panics    []bool
-	startedCh chan int
-	releaseCh <-chan struct{}
+	mu        sync.Mutex
 }
 
 func (s *imageUpdateScannerFakeInternal) RunImageCheck(ctx context.Context, _ types.ImageUpdateCheckRequest) (types.SchedulerOutcome, error) {
@@ -84,10 +84,10 @@ func (s *imageUpdateScannerFakeInternal) peakActive() int {
 }
 
 type pollingSettingReaderFake struct {
+	schedule            string
 	mu                  sync.RWMutex
 	enabled             bool
 	eventWatcherEnabled bool
-	schedule            string
 }
 
 func (s *pollingSettingReaderFake) GetBoolSetting(_ context.Context, key string) bool {
@@ -124,10 +124,10 @@ func (p dockerEventBusProviderFakeInternal) EventBus() *bus.DockerEventBus {
 }
 
 type projectImageRefsBackfillerFakeInternal struct {
-	mu      sync.Mutex
-	calls   int
 	run     func(ctx context.Context, call int) (int, error)
 	started chan int
+	calls   int
+	mu      sync.Mutex
 }
 
 func (b *projectImageRefsBackfillerFakeInternal) BackfillProjectImageRefs(ctx context.Context) (int, error) {
@@ -157,8 +157,8 @@ func (b *projectImageRefsBackfillerFakeInternal) count() int {
 }
 
 type lockedBufferInternal struct {
-	mu sync.Mutex
 	bytes.Buffer
+	mu sync.Mutex
 }
 
 func (b *lockedBufferInternal) Write(p []byte) (int, error) {

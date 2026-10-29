@@ -32,9 +32,9 @@ type IncludeFile struct {
 // MissingIncludeStubLoader creates temporary stub compose files for missing
 // include paths during validation.
 type MissingIncludeStubLoader struct {
+	stubs       map[string]string
 	projectPath string
 	tempDir     string
-	stubs       map[string]string
 }
 
 // NewMissingIncludeStubLoader creates a loader for validation stubs under projectPath.

@@ -31,10 +31,10 @@ type stallingTunnelService struct {
 }
 
 type blockingRegistrationConn struct {
-	closeCount       atomic.Int32
 	closedCh         chan struct{}
 	receiveStarted   chan struct{}
 	receiveStartOnce sync.Once
+	closeCount       atomic.Int32
 }
 
 func newBlockingRegistrationConn() *blockingRegistrationConn {
@@ -820,11 +820,11 @@ func TestTunnelClient_connectAndServeManagedTunnel_AutoDoesNotFallbackWhenEstabl
 }
 
 type fakeTunnelConn struct {
-	mu         sync.Mutex
-	closed     bool
 	sendErr    error
 	receiveErr error
 	transport  string
+	mu         sync.Mutex
+	closed     bool
 }
 
 func (f *fakeTunnelConn) Send(*TunnelMessage) error {

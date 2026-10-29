@@ -59,24 +59,24 @@ type AuthValidator func(ctx context.Context, c *echo.Context) (*authz.Permission
 
 // EnvironmentMiddleware proxies requests for remote environments to their respective agents.
 type EnvironmentMiddleware struct {
-	localID       string
-	paramName     string
 	resolver      EnvResolver
 	authValidator AuthValidator
 	registry      *agent.TunnelRegistry
 	matcher       *authz.PermissionMatcher
 	// checkOrigin is the local WebSocket Origin validator, so proxied upgrades cannot ride a cross-origin session.
 	checkOrigin func(*http.Request) bool
+	localID     string
+	paramName   string
 }
 
 type EnvironmentProxyConfig struct {
-	LocalID       string
-	ParamName     string
 	Resolver      EnvResolver
 	AuthValidator AuthValidator
 	Matcher       *authz.PermissionMatcher
 	Registry      *agent.TunnelRegistry
 	CheckOrigin   func(*http.Request) bool
+	LocalID       string
+	ParamName     string
 }
 
 func NewEnvironmentProxyMiddleware(cfg EnvironmentProxyConfig) echo.MiddlewareFunc {

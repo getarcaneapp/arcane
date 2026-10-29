@@ -40,21 +40,23 @@ type Options struct {
 }
 
 type AppContext struct {
+	environmentsErr error
+
+	clientErr       error
+	unauthClientErr error
+	cfg             *clitypes.Config
+	client          *client.Client
+
+	unauthClient *client.Client
+	selectedEnv  string
+	environments []types.Environment
 	Options
-	AllConfirmed     bool
-	cfg              *clitypes.Config
-	selectedEnv      string
 	environmentsOnce sync.Once
-	environments     []types.Environment
-	environmentsErr  error
 
 	clientOnce sync.Once
-	clientErr  error
-	client     *client.Client
 
 	unauthClientOnce sync.Once
-	unauthClientErr  error
-	unauthClient     *client.Client
+	AllConfirmed     bool
 }
 
 func New(opts Options) (*AppContext, error) {

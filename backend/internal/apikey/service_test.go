@@ -1058,12 +1058,12 @@ func TestGetEnvironmentByAPIKeyRecentLastUsedAtDoesNotRewriteImmediately(t *test
 // environment package imports apikey, so this in-package test cannot import it.
 type testEnvironmentRow struct {
 	database.BaseModel
+	AccessToken *string `gorm:"column:access_token"`
+	ApiKeyID    *string `gorm:"column:api_key_id"`
 	Name        string
 	ApiUrl      string `gorm:"column:api_url"`
 	Status      string
 	Enabled     bool
-	AccessToken *string `gorm:"column:access_token"`
-	ApiKeyID    *string `gorm:"column:api_key_id"`
 }
 
 func (testEnvironmentRow) TableName() string { return "environments" }

@@ -14,62 +14,62 @@ type Diagnostics struct {
 	//
 	// Required: true
 	Timestamp time.Time `json:"timestamp"`
-	// Runtime holds Go runtime and scheduler counters.
-	//
-	// Required: true
-	Runtime RuntimeInfo `json:"runtime"`
-	// Memory holds a subset of runtime.MemStats.
-	//
-	// Required: true
-	Memory MemoryInfo `json:"memory"`
 	// GC holds garbage-collector statistics.
 	//
 	// Required: true
 	GC GCInfo `json:"gc"`
+	// Runtime holds Go runtime and scheduler counters.
+	//
+	// Required: true
+	Runtime RuntimeInfo `json:"runtime"`
 	// WebSocket holds active WebSocket connection metrics.
 	//
 	// Required: true
 	WebSocket WebSocketDiagnostics `json:"websocket"`
+	// Memory holds a subset of runtime.MemStats.
+	//
+	// Required: true
+	Memory MemoryInfo `json:"memory"`
 }
 
 // RuntimeInfo describes the Go runtime, build, and scheduler state.
 type RuntimeInfo struct {
+	LeakScannedAt      time.Time `json:"leakScannedAt,omitzero"`
+	GoVersion          string    `json:"goVersion"`
+	OS                 string    `json:"os"`
+	Arch               string    `json:"arch"`
 	Goroutines         int       `json:"goroutines"`
 	WSWorkerGoroutines int       `json:"wsWorkerGoroutines"`
 	LeakedGoroutines   int       `json:"leakedGoroutines"`
 	GOMAXPROCS         int       `json:"gomaxprocs"`
 	NumCPU             int       `json:"numCpu"`
-	GoVersion          string    `json:"goVersion"`
-	OS                 string    `json:"os"`
-	Arch               string    `json:"arch"`
 	NumCgoCall         int64     `json:"numCgoCall"`
 	UptimeSeconds      int64     `json:"uptimeSeconds"`
-	LeakScannedAt      time.Time `json:"leakScannedAt,omitzero"`
 }
 
 // GoroutineLeakReport is the result of an on-demand goroutine leak scan. The
 // scan triggers a leak-detection GC cycle, then writes the goroutineleak
 // pprof profile as debug=1 text (leaked stacks only).
 type GoroutineLeakReport struct {
-	Count     int       `json:"count"`
-	Profile   string    `json:"profile"`
 	ScannedAt time.Time `json:"scannedAt"`
+	Profile   string    `json:"profile"`
+	Count     int       `json:"count"`
 }
 
 // GoroutineProfile groups the live goroutines by identical stack, largest group first.
 type GoroutineProfile struct {
-	Total      int              `json:"total"`
-	Groups     []GoroutineGroup `json:"groups"`
 	CapturedAt time.Time        `json:"capturedAt"`
+	Groups     []GoroutineGroup `json:"groups"`
+	Total      int              `json:"total"`
 }
 
 // GoroutineGroup is a set of goroutines that share one stack.
 type GoroutineGroup struct {
-	Count int `json:"count"`
 	// Label is the outermost non-runtime function, usually the goroutine's entry point.
 	Label string `json:"label"`
 	// Frames lists the stack innermost first.
 	Frames []GoroutineFrame `json:"frames"`
+	Count  int              `json:"count"`
 }
 
 // GoroutineFrame is one stack frame of a goroutine group.
@@ -105,76 +105,76 @@ type MemoryInfo struct {
 type GCInfo struct {
 	// LastGC is the time of the most recent collection.
 	LastGC time.Time `json:"lastGc"`
+	// RecentPausesNs lists the most recent GC pause durations (ns), newest first.
+	RecentPausesNs []int64 `json:"recentPausesNs"`
 	// NumGC is the total number of completed GC cycles.
 	NumGC int64 `json:"numGc"`
 	// PauseTotalNs is the cumulative stop-the-world pause time in nanoseconds.
 	PauseTotalNs int64 `json:"pauseTotalNs"`
-	// RecentPausesNs lists the most recent GC pause durations (ns), newest first.
-	RecentPausesNs []int64 `json:"recentPausesNs"`
 }
 
 // WebSocketDiagnostics aggregates the active WebSocket connection counts and the
 // list of currently-tracked connections.
 type WebSocketDiagnostics struct {
-	Snapshot    WebSocketMetricsSnapshot  `json:"snapshot"`
 	Connections []WebSocketConnectionInfo `json:"connections"`
+	Snapshot    WebSocketMetricsSnapshot  `json:"snapshot"`
 }
 
 // ActorDiagnostics describes the Francis actor host of one environment.
 type ActorDiagnostics struct {
-	EnvironmentID   string `json:"environmentId"`
-	EnvironmentName string `json:"environmentName"`
+	CheckedAt       time.Time      `json:"checkedAt"`
+	Runs            map[string]int `json:"runs"`
+	EnvironmentID   string         `json:"environmentId"`
+	EnvironmentName string         `json:"environmentName"`
 	// Error is set when the environment's actor diagnostics could not be collected.
 	Error      string          `json:"error,omitempty"`
-	Ready      bool            `json:"ready"`
 	Hosts      []ActorHostInfo `json:"hosts"`
 	ActorTypes []ActorTypeInfo `json:"actorTypes"`
-	Runs       map[string]int  `json:"runs"`
-	CheckedAt  time.Time       `json:"checkedAt"`
+	Ready      bool            `json:"ready"`
 }
 
 // ActorHostInfo is a registered Francis host.
 type ActorHostInfo struct {
+	LastHealthCheck time.Time `json:"lastHealthCheck"`
 	HostID          string    `json:"hostId"`
 	Address         string    `json:"address"`
-	LastHealthCheck time.Time `json:"lastHealthCheck"`
 }
 
 // ActorTypeInfo holds per actor type activation, alarm, and job details.
 type ActorTypeInfo struct {
-	ActorType string `json:"actorType"`
+	NextAlarmAt    time.Time         `json:"nextAlarmAt,omitzero"`
+	ActorType      string            `json:"actorType"`
+	Instances      []ActorInstance   `json:"instances"`
+	RecentFailures []ActorJobFailure `json:"recentFailures"`
 	// ConcurrencyLimit caps concurrent invocations per actor; 0 is unlimited.
-	ConcurrencyLimit int               `json:"concurrencyLimit"`
-	ActiveActors     int               `json:"activeActors"`
-	StoredStates     int               `json:"storedStates"`
-	PendingAlarms    int               `json:"pendingAlarms"`
-	PendingJobs      int               `json:"pendingJobs"`
-	LeasedAlarms     int               `json:"leasedAlarms"`
-	CompletedJobs    int               `json:"completedJobs"`
-	DeadJobs         int               `json:"deadJobs"`
-	NextAlarmAt      time.Time         `json:"nextAlarmAt,omitzero"`
-	Instances        []ActorInstance   `json:"instances"`
-	RecentFailures   []ActorJobFailure `json:"recentFailures"`
+	ConcurrencyLimit int `json:"concurrencyLimit"`
+	ActiveActors     int `json:"activeActors"`
+	StoredStates     int `json:"storedStates"`
+	PendingAlarms    int `json:"pendingAlarms"`
+	PendingJobs      int `json:"pendingJobs"`
+	LeasedAlarms     int `json:"leasedAlarms"`
+	CompletedJobs    int `json:"completedJobs"`
+	DeadJobs         int `json:"deadJobs"`
 }
 
 // ActorInstance is an activated actor.
 type ActorInstance struct {
-	ActorID string `json:"actorId"`
-	// Name is Arcane's display name for the actor, when known.
-	Name        string    `json:"name,omitempty"`
-	HostID      string    `json:"hostId"`
 	ActivatedAt time.Time `json:"activatedAt"`
+	ActorID     string    `json:"actorId"`
+	// Name is Arcane's display name for the actor, when known.
+	Name   string `json:"name,omitempty"`
+	HostID string `json:"hostId"`
 }
 
 // ActorJobFailure is a dead-lettered actor job.
 type ActorJobFailure struct {
+	FailedAt  time.Time `json:"failedAt"`
 	JobID     string    `json:"jobId"`
 	ActorID   string    `json:"actorId"`
 	Name      string    `json:"name,omitempty"`
 	Method    string    `json:"method"`
-	Attempts  int       `json:"attempts"`
 	LastError string    `json:"lastError,omitempty"`
-	FailedAt  time.Time `json:"failedAt"`
+	Attempts  int       `json:"attempts"`
 }
 
 // DiagnosticsCommand is a client request sent over the diagnostics stream.
@@ -188,37 +188,37 @@ type DiagnosticsCommand struct {
 
 // DiagnosticsMessage is a snapshot push or command result on the diagnostics stream.
 type DiagnosticsMessage struct {
-	// Type is snapshot or result.
-	Type       string               `json:"type"`
-	ID         string               `json:"id,omitempty"`
 	Snapshot   *Diagnostics         `json:"snapshot,omitempty"`
 	LeakReport *GoroutineLeakReport `json:"leakReport,omitempty"`
-	Text       string               `json:"text,omitempty"`
-	Data       []byte               `json:"data,omitempty"`
-	Error      string               `json:"error,omitempty"`
+	// Type is snapshot or result.
+	Type  string `json:"type"`
+	ID    string `json:"id,omitempty"`
+	Text  string `json:"text,omitempty"`
+	Error string `json:"error,omitempty"`
+	Data  []byte `json:"data,omitempty"`
 }
 
 type DockerRunCommand struct {
 	Image       string   `json:"image"`
 	Name        string   `json:"name,omitempty"`
-	Ports       []string `json:"ports,omitempty"`
-	Volumes     []string `json:"volumes,omitempty"`
-	Environment []string `json:"environment,omitempty"`
-	Networks    []string `json:"networks,omitempty"`
 	Restart     string   `json:"restart,omitempty"`
 	Workdir     string   `json:"workdir,omitempty"`
 	User        string   `json:"user,omitempty"`
 	Entrypoint  string   `json:"entrypoint,omitempty"`
 	Command     string   `json:"command,omitempty"`
+	HealthCheck string   `json:"healthCheck,omitempty"`
+	MemoryLimit string   `json:"memoryLimit,omitempty"`
+	CPULimit    string   `json:"cpuLimit,omitempty"`
+	Ports       []string `json:"ports,omitempty"`
+	Volumes     []string `json:"volumes,omitempty"`
+	Environment []string `json:"environment,omitempty"`
+	Networks    []string `json:"networks,omitempty"`
+	Labels      []string `json:"labels,omitempty"`
 	Detached    bool     `json:"detached,omitempty"`
 	Interactive bool     `json:"interactive,omitempty"`
 	TTY         bool     `json:"tty,omitempty"`
 	Remove      bool     `json:"remove,omitempty"`
 	Privileged  bool     `json:"privileged,omitempty"`
-	Labels      []string `json:"labels,omitempty"`
-	HealthCheck string   `json:"healthCheck,omitempty"`
-	MemoryLimit string   `json:"memoryLimit,omitempty"`
-	CPULimit    string   `json:"cpuLimit,omitempty"`
 }
 
 type ConvertDockerRunRequest struct {
@@ -226,10 +226,10 @@ type ConvertDockerRunRequest struct {
 }
 
 type ConvertDockerRunResponse struct {
-	Success       bool   `json:"success"`
 	DockerCompose string `json:"dockerCompose"`
 	EnvVars       string `json:"envVars"`
 	ServiceName   string `json:"serviceName"`
+	Success       bool   `json:"success"`
 }
 
 // HealthResponse contains the health status of the API.
@@ -242,14 +242,14 @@ type HealthResponse struct {
 
 // ReadinessResponse is the body of the readiness probe; Checks maps each dependency to "ok" or its error.
 type ReadinessResponse struct {
-	// Status is "ready" or "not_ready".
-	//
-	// Required: true
-	Status string `json:"status"`
 	// Checks maps each dependency name to "ok" or its error.
 	//
 	// Required: true
 	Checks map[string]string `json:"checks"`
+	// Status is "ready" or "not_ready".
+	//
+	// Required: true
+	Status string `json:"status"`
 }
 
 type PruneContainerMode string
@@ -320,12 +320,12 @@ type PruneAllRequest struct {
 }
 
 type pruneAllRequestWire struct {
+	Dangling   *bool              `json:"dangling,omitempty"`
 	Containers stdjson.RawMessage `json:"containers,omitempty"`
 	Images     stdjson.RawMessage `json:"images,omitempty"`
 	Volumes    stdjson.RawMessage `json:"volumes,omitempty"`
 	Networks   stdjson.RawMessage `json:"networks,omitempty"`
 	BuildCache stdjson.RawMessage `json:"buildCache,omitempty"`
-	Dangling   *bool              `json:"dangling,omitempty"`
 }
 
 func (r *PruneAllRequest) UnmarshalJSON(data []byte) error {
@@ -483,6 +483,10 @@ func decodePruneBuildCacheOptions(raw stdjson.RawMessage, dangling *bool) (*Prun
 
 // PruneAllResult is the result of a prune operation on Docker system resources.
 type PruneAllResult struct {
+	// ActivityID is the background activity that tracked this prune operation.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 	// ContainersPruned is a list of container IDs that were pruned.
 	//
 	// Required: false
@@ -502,6 +506,11 @@ type PruneAllResult struct {
 	//
 	// Required: false
 	NetworksDeleted []string `json:"networksDeleted,omitempty"`
+
+	// Errors is a list of any errors encountered during the prune operation.
+	//
+	// Required: false
+	Errors []string `json:"errors,omitempty"`
 
 	// SpaceReclaimed is the amount of space reclaimed in bytes.
 	//
@@ -532,16 +541,6 @@ type PruneAllResult struct {
 	//
 	// Required: true
 	Success bool `json:"success"`
-
-	// Errors is a list of any errors encountered during the prune operation.
-	//
-	// Required: false
-	Errors []string `json:"errors,omitempty"`
-
-	// ActivityID is the background activity that tracked this prune operation.
-	//
-	// Required: false
-	ActivityID *string `json:"activityId,omitempty"`
 }
 
 // GPUStats represents resource statistics for a single GPU.
@@ -566,6 +565,18 @@ type GPUStats struct {
 
 // SystemStats represents system resource statistics for WebSocket streaming.
 type SystemStats struct {
+	// Architecture is the CPU architecture (e.g., amd64).
+	//
+	// Required: true
+	Architecture string `json:"architecture"`
+	// Platform is the operating system platform (e.g., linux).
+	//
+	// Required: true
+	Platform string `json:"platform"`
+	// Hostname is the system hostname.
+	Hostname string `json:"hostname,omitempty"`
+	// GPUs contains per-GPU resource statistics.
+	GPUs []GPUStats `json:"gpus,omitempty"`
 	// CPUUsage is the total CPU usage percentage.
 	//
 	// Required: true
@@ -586,32 +597,21 @@ type SystemStats struct {
 	//
 	// Required: true
 	CPUCount int `json:"cpuCount"`
-	// Architecture is the CPU architecture (e.g., amd64).
-	//
-	// Required: true
-	Architecture string `json:"architecture"`
-	// Platform is the operating system platform (e.g., linux).
-	//
-	// Required: true
-	Platform string `json:"platform"`
-	// Hostname is the system hostname.
-	Hostname string `json:"hostname,omitempty"`
 	// GPUCount is the number of GPUs detected.
 	//
 	// Required: true
 	GPUCount int `json:"gpuCount"`
-	// GPUs contains per-GPU resource statistics.
-	GPUs []GPUStats `json:"gpus,omitempty"`
 }
 
 // UpgradeCheckResult reports whether the system can be upgraded.
 type UpgradeCheckResult struct {
+	Message    string `json:"message"`
 	CanUpgrade bool   `json:"canUpgrade"`
 	Error      bool   `json:"error"`
-	Message    string `json:"message"`
 }
 
 type UpgradeJobResult struct {
+	StageStartedAt  *time.Time `json:"stageStartedAt,omitempty"`
 	EnvironmentID   string     `json:"environmentId"`
 	EnvironmentName string     `json:"environmentName"`
 	Status          string     `json:"status"`
@@ -619,16 +619,17 @@ type UpgradeJobResult struct {
 	FromDigest      string     `json:"fromDigest,omitempty"`
 	ToVersion       string     `json:"toVersion,omitempty"`
 	Stage           string     `json:"stage,omitempty"`
-	StageStartedAt  *time.Time `json:"stageStartedAt,omitempty"`
-	Percent         int        `json:"percent"`
-	Logs            []string   `json:"logs,omitempty"`
 	Error           string     `json:"error,omitempty"`
+	Logs            []string   `json:"logs,omitempty"`
+	Percent         int        `json:"percent"`
 }
 
 type UpgradeJob struct {
-	ID                    string             `json:"id"`
 	CreatedAt             time.Time          `json:"createdAt" sortable:"true"`
 	UpdatedAt             *time.Time         `json:"updatedAt,omitempty"`
+	Error                 *string            `json:"error,omitempty"`
+	CompletedAt           *time.Time         `json:"completedAt,omitempty"`
+	ID                    string             `json:"id"`
 	Status                string             `json:"status"`
 	UserID                string             `json:"userId"`
 	Username              string             `json:"username"`
@@ -636,8 +637,6 @@ type UpgradeJob struct {
 	ManagerDigestAtStart  string             `json:"managerDigestAtStart"`
 	ManagerTargetVersion  string             `json:"managerTargetVersion"`
 	Results               []UpgradeJobResult `json:"results,omitempty"`
-	Error                 *string            `json:"error,omitempty"`
-	CompletedAt           *time.Time         `json:"completedAt,omitempty"`
 }
 
 type StartUpgradeJobRequest struct {
@@ -652,12 +651,12 @@ const (
 )
 
 type UpgradeProgressEvent struct {
+	At          time.Time `json:"at"`
 	Type        string    `json:"type" enum:"stage,progress,log,done"`
-	Percent     int       `json:"percent"`
 	Message     string    `json:"message,omitempty"`
 	FromVersion string    `json:"fromVersion,omitempty"`
 	ToVersion   string    `json:"toVersion,omitempty"`
-	At          time.Time `json:"at"`
+	Percent     int       `json:"percent"`
 	Replay      bool      `json:"replay,omitempty"`
 }
 
@@ -674,6 +673,10 @@ const (
 
 // WebSocketConnectionInfo describes a single active WebSocket connection.
 type WebSocketConnectionInfo struct {
+	// StartedAt is when the connection was established.
+	//
+	// Required: true
+	StartedAt time.Time `json:"startedAt"`
 	// ID is the unique identifier for the connection.
 	//
 	// Required: true
@@ -692,10 +695,6 @@ type WebSocketConnectionInfo struct {
 	UserID string `json:"userId,omitempty"`
 	// UserAgent is the HTTP User-Agent header from the client.
 	UserAgent string `json:"userAgent,omitempty"`
-	// StartedAt is when the connection was established.
-	//
-	// Required: true
-	StartedAt time.Time `json:"startedAt"`
 }
 
 // WebSocketMetricsSnapshot is a point-in-time copy of active WebSocket

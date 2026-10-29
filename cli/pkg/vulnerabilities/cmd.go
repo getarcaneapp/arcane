@@ -94,11 +94,11 @@ func newSummaryCmd() *cobra.Command {
 
 func newListCmd() *cobra.Command {
 	var opts struct {
+		severity string
+		image    string
 		limit    int
 		start    int
 		all      bool
-		severity string
-		image    string
 	}
 	command := &cobra.Command{
 		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeMerged},
@@ -196,10 +196,10 @@ func newScanCmd() *cobra.Command {
 
 func newImageCmd() *cobra.Command {
 	var opts struct {
+		severity string
 		limit    int
 		start    int
 		all      bool
-		severity string
 		summary  bool
 	}
 	command := &cobra.Command{

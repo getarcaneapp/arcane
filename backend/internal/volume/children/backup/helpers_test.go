@@ -28,13 +28,13 @@ import (
 func TestResolveBackupStorageMountFromMounts(t *testing.T) {
 	tests := []struct {
 		name         string
-		mounts       []container.MountPoint
 		target       string
-		readOnly     bool
-		wantResolved bool
 		wantType     mount.Type
 		wantSource   string
 		wantTarget   string
+		mounts       []container.MountPoint
+		readOnly     bool
+		wantResolved bool
 		wantReadOnly bool
 	}{
 		{
@@ -112,8 +112,8 @@ func TestResolveBackupStorageMountFromMounts(t *testing.T) {
 func TestBackupMountWarningFromArcaneMounts(t *testing.T) {
 	tests := []struct {
 		name   string
-		mounts []container.MountPoint
 		want   string
+		mounts []container.MountPoint
 	}{
 		{
 			name: "bind mount at backups suppresses warning",

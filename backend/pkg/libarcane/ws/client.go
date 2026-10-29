@@ -25,8 +25,8 @@ const (
 type Client struct {
 	conn     *websocket.Conn
 	send     chan []byte
-	once     sync.Once
 	onRemove func()
+	once     sync.Once
 }
 
 func NewClient(conn *websocket.Conn, sendBuffer int) *Client {

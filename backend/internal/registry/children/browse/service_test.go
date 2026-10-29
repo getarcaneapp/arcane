@@ -281,9 +281,9 @@ func TestService_BrowseErrors(t *testing.T) {
 	namespacedID := registries.add("http://"+host+"/team/", "", "")
 
 	tests := []struct {
-		name    string
-		call    func(ctx context.Context) error
 		wantErr error
+		call    func(ctx context.Context) error
+		name    string
 	}{
 		{
 			name: "unknown registry",

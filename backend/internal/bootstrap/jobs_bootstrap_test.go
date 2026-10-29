@@ -22,9 +22,9 @@ import (
 )
 
 type settingsSubscriptionStubInternal struct {
-	featureCallbacks []func([]libarcane.SettingUpdate)
 	pollingCallback  func([]libarcane.SettingUpdate)
 	timeoutCallback  func([]libarcane.SettingUpdate)
+	featureCallbacks []func([]libarcane.SettingUpdate)
 }
 
 func (s *settingsSubscriptionStubInternal) SubscribeSettingsChanges(keys []string, callback func([]libarcane.SettingUpdate)) func() {

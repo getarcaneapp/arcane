@@ -61,6 +61,7 @@ const (
 // UpgradeJobResult is the outcome for a single environment within a job.
 // The manager appears as the first entry with EnvironmentID "0".
 type UpgradeJobResult struct {
+	StageStartedAt  *time.Time          `json:"stageStartedAt,omitempty"`
 	EnvironmentID   string              `json:"environmentId"`
 	EnvironmentName string              `json:"environmentName"`
 	Status          UpgradeResultStatus `json:"status"`
@@ -68,10 +69,9 @@ type UpgradeJobResult struct {
 	FromDigest      string              `json:"fromDigest,omitempty"`
 	ToVersion       string              `json:"toVersion,omitempty"`
 	Stage           UpgradeStage        `json:"stage,omitempty"`
-	StageStartedAt  *time.Time          `json:"stageStartedAt,omitempty"`
-	Percent         int                 `json:"percent"`
-	Logs            []string            `json:"logs,omitempty"`
 	Error           string              `json:"error,omitempty"`
+	Logs            []string            `json:"logs,omitempty"`
+	Percent         int                 `json:"percent"`
 }
 
 // clearStage drops live-progress fields once the row leaves updating.
@@ -110,6 +110,9 @@ func (r *UpgradeJobResults) Scan(value any) error {
 type UpgradeJob struct {
 	database.BaseModel
 
+	Error       *string    `json:"error,omitempty" gorm:"column:error"`
+	CompletedAt *time.Time `json:"completedAt,omitempty" gorm:"column:completed_at"`
+
 	Status                UpgradeJobStatus  `json:"status" gorm:"column:status"`
 	UserID                string            `json:"userId" gorm:"column:user_id"`
 	Username              string            `json:"username" gorm:"column:username"`
@@ -117,8 +120,6 @@ type UpgradeJob struct {
 	ManagerDigestAtStart  string            `json:"managerDigestAtStart" gorm:"column:manager_digest_at_start"`
 	ManagerTargetVersion  string            `json:"managerTargetVersion" gorm:"column:manager_target_version"`
 	Results               UpgradeJobResults `json:"results,omitempty" gorm:"column:results;type:text"`
-	Error                 *string           `json:"error,omitempty" gorm:"column:error"`
-	CompletedAt           *time.Time        `json:"completedAt,omitempty" gorm:"column:completed_at"`
 }
 
 func (UpgradeJob) TableName() string {

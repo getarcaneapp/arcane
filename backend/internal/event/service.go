@@ -81,22 +81,22 @@ var changeKindAliases = map[string]string{
 }
 
 type EventService struct {
-	Changes        *concurrency.Signal[types.EnvironmentChanges]
-	changeEpoch    string
-	changesMu      sync.RWMutex
-	changeRevision uint64
-	changeKinds    map[string]map[string]uint64
-	correlation    *correlation.Service
-	db             *database.DB
-	cfg            *config.Config
-	httpClient     *http.Client
-	agentSyncs     *semaphore.Weighted
+	Changes     *concurrency.Signal[types.EnvironmentChanges]
+	changeKinds map[string]map[string]uint64
+	correlation *correlation.Service
+	db          *database.DB
+	cfg         *config.Config
+	httpClient  *http.Client
+	agentSyncs  *semaphore.Weighted
 	// Daemon events are persisted in batches by a writer started on first use.
-	daemonQueue   chan CreateEventRequest
-	daemonStart   sync.Once
-	daemonDone    chan struct{}
-	daemonMu      sync.RWMutex
-	daemonStopped bool
+	daemonQueue    chan CreateEventRequest
+	daemonDone     chan struct{}
+	changeEpoch    string
+	changeRevision uint64
+	changesMu      sync.RWMutex
+	daemonMu       sync.RWMutex
+	daemonStart    sync.Once
+	daemonStopped  bool
 }
 
 func NewEventService(db *database.DB, cfg *config.Config, httpClient *http.Client) *EventService {
@@ -120,19 +120,19 @@ func NewEventService(db *database.DB, cfg *config.Config, httpClient *http.Clien
 }
 
 type CreateEventRequest struct {
+	ResourceType  *string       `json:"resourceType,omitempty"`
+	ResourceID    *string       `json:"resourceId,omitempty"`
+	ResourceName  *string       `json:"resourceName,omitempty"`
+	UserID        *string       `json:"userId,omitempty"`
+	Username      *string       `json:"username,omitempty"`
+	EnvironmentID *string       `json:"environmentId,omitempty"`
+	Metadata      database.JSON `json:"metadata,omitempty"`
 	// Internal identity for replay-safe daemon delivery; never accepted from API payloads.
 	deduplicationKey string
 	Type             EventType     `json:"type"`
 	Severity         EventSeverity `json:"severity,omitempty"`
 	Title            string        `json:"title"`
 	Description      string        `json:"description,omitempty"`
-	ResourceType     *string       `json:"resourceType,omitempty"`
-	ResourceID       *string       `json:"resourceId,omitempty"`
-	ResourceName     *string       `json:"resourceName,omitempty"`
-	UserID           *string       `json:"userId,omitempty"`
-	Username         *string       `json:"username,omitempty"`
-	EnvironmentID    *string       `json:"environmentId,omitempty"`
-	Metadata         database.JSON `json:"metadata,omitempty"`
 }
 
 func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) (*Event, error) {

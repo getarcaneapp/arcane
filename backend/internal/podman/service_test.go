@@ -60,12 +60,12 @@ func (f *fakeSystemd) UnitStatus(_ context.Context, unit string) (types.PodmanUn
 }
 
 type testHost struct {
-	engine   string
-	version  string
-	rootless bool
 	systemd  *fakeSystemd
 	routes   map[string]http.HandlerFunc
+	engine   string
+	version  string
 	notified [][]notifications.ContainerUpdateBatchEntry
+	rootless bool
 }
 
 func newTestService(t *testing.T, host *testHost) *Service {

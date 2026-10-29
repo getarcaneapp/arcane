@@ -44,11 +44,11 @@ func (i *ImageUpdateRecord) TableName() string {
 }
 
 type ImageUpdate struct {
-	HasUpdate      bool   `json:"hasUpdate"`
 	UpdateType     string `json:"updateType"`
 	CurrentVersion string `json:"currentVersion"`
 	LatestVersion  string `json:"latestVersion,omitempty"`
 	CheckTime      string `json:"checkTime"`
+	HasUpdate      bool   `json:"hasUpdate"`
 }
 
 const (

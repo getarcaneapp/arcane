@@ -28,8 +28,8 @@ type emailRow struct {
 type emailData struct {
 	Title  string
 	Intro  string
-	Rows   []emailRow
 	AppURL string
+	Rows   []emailRow
 }
 
 func renderEmail(data emailData) (string, error) {

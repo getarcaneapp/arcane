@@ -51,10 +51,10 @@ func New(
 // Snapshot is the compose container listing shared by every row of one list request, grouped by project.
 type Snapshot struct {
 	ContainerIndex
-	Containers          []container.Summary
 	Err                 error
-	currentContainerID  string
 	currentContainerErr error
+	currentContainerID  string
+	Containers          []container.Summary
 }
 
 // Snapshot lists compose containers once for every row of a list request.

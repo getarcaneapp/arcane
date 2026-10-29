@@ -21,8 +21,8 @@ func NewHandler(service *Service, appCtx context.Context) *Handler {
 }
 
 type PruneAllInput struct {
-	EnvironmentID string                `path:"id" doc:"Environment ID"`
 	Body          types.PruneAllRequest `doc:"Prune options"`
+	EnvironmentID string                `path:"id" doc:"Environment ID"`
 }
 
 // PruneAll removes unused Docker resources.

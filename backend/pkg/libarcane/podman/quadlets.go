@@ -11,9 +11,9 @@ import (
 
 type QuadletInstallOptions struct {
 	File          types.QuadletFile
+	Application   string
 	ExtraFiles    []types.QuadletFile
 	Replace       bool
-	Application   string
 	AppsSupported bool
 }
 

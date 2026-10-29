@@ -54,13 +54,14 @@ import (
 )
 
 type resourceStatsServer struct {
-	mu          sync.Mutex
-	containers  []container.Summary
 	stats       map[string]container.StatsResponse
 	statsStatus map[string]int
 	statsCalls  map[string]int
-	delay       time.Duration
 	slowIDs     map[string]bool
+
+	containers []container.Summary
+	delay      time.Duration
+	mu         sync.Mutex
 
 	current atomic.Int32
 	maxSeen atomic.Int32
@@ -948,16 +949,16 @@ func TestBuildSummariesUsesContainerTagPolicyUpdates(t *testing.T) {
 
 func TestContainerServiceGetContainerProcesses(t *testing.T) {
 	tests := []struct {
-		name     string
-		status   int
-		body     string
 		fallback *struct {
-			status int
 			body   string
+			status int
 		}
+		wantErr    func(error) bool
+		name       string
+		body       string
 		wantTitles []string
 		wantRows   [][]string
-		wantErr    func(error) bool
+		status     int
 	}{
 		{
 			name:   "docker snapshot",
@@ -993,9 +994,9 @@ func TestContainerServiceGetContainerProcesses(t *testing.T) {
 			status: http.StatusInternalServerError,
 			body:   `{"message":"ps: bad -o argument '%cpu', supported arguments: user,group,comm,args,pid,ppid,pgid,etime,nice,rgroup,ruser,time,tty,vsz,stat,rss"}`,
 			fallback: &struct {
-				status int
 				body   string
-			}{http.StatusOK, `{"Titles":["PID","USER","ELAPSED","COMMAND"],"Processes":[["1","root","01:02:03","nginx: master process nginx -g daemon off;"]]}`},
+				status int
+			}{status: http.StatusOK, body: `{"Titles":["PID","USER","ELAPSED","COMMAND"],"Processes":[["1","root","01:02:03","nginx: master process nginx -g daemon off;"]]}`},
 			wantTitles: []string{"PID", "USER", "ELAPSED", "COMMAND"},
 			wantRows:   [][]string{{"1", "root", "01:02:03", "nginx: master process nginx -g daemon off;"}},
 		},
@@ -1273,8 +1274,8 @@ func TestResourceSortOrdersAcrossPages(t *testing.T) {
 	tests := []struct {
 		name  string
 		order string
-		start int
 		want  []string
+		start int
 	}{
 		{name: "desc page 1", order: "desc", start: 0, want: []string{"c5", "c4"}},
 		{name: "desc page 2", order: "desc", start: 2, want: []string{"c3", "c2"}},
@@ -1552,14 +1553,14 @@ func TestContainerServiceDownloadLogsDemultiplexesNonTTY(t *testing.T) {
 	var frames bytes.Buffer
 	longLine := strings.Repeat("x", 70*1024) + "\n"
 	for _, frame := range []struct {
-		stream  byte
 		payload string
+		stream  byte
 	}{
-		{1, "out one\n"},
-		{2, "err one\n"},
-		{1, "\n"},
-		{1, longLine},
-		{2, "err two\n"},
+		{stream: 1, payload: "out one\n"},
+		{stream: 2, payload: "err one\n"},
+		{stream: 1, payload: "\n"},
+		{stream: 1, payload: longLine},
+		{stream: 2, payload: "err two\n"},
 	} {
 		header := make([]byte, 8)
 		header[0] = frame.stream
@@ -1726,8 +1727,8 @@ func TestAggregateContainersMergesEnvironments(t *testing.T) {
 }
 
 type quadletTestSystemd struct {
-	mu    sync.Mutex
 	calls []string
+	mu    sync.Mutex
 }
 
 func (f *quadletTestSystemd) Availability(context.Context) types.PodmanSystemdAvailability {

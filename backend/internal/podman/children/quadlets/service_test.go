@@ -198,8 +198,8 @@ func TestUpdateReplacesAndKeepsApplication(t *testing.T) {
 	tests := []struct {
 		name          string
 		listBody      string
-		appsSupported bool
 		wantQuery     string
+		appsSupported bool
 	}{
 		{
 			name:          "app member keeps its application",

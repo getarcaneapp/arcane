@@ -23,16 +23,16 @@ import (
 // The matcher is populated once during startup and is read-only afterwards, so
 // concurrent Lookup calls during request serving need no synchronization.
 type PermissionMatcher struct {
-	routes     []permRoute
 	aggregates map[string]struct{}
+	routes     []permRoute
 }
 
 type permRoute struct {
+	actionPerms map[string]string
 	method      string
-	segments    []string // literal segment, or "*" for a path parameter
 	perm        string
 	actionParam string
-	actionPerms map[string]string
+	segments    []string // literal segment, or "*" for a path parameter
 }
 
 // NewPermissionMatcher returns an empty matcher.

@@ -74,9 +74,9 @@ type ImageService struct {
 }
 
 type imageRefUpdateLookup struct {
+	repositoryCandidates map[string]struct{}
 	originalRef          string
 	tag                  string
-	repositoryCandidates map[string]struct{}
 }
 
 type imageUpdateRecordKey struct {

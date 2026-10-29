@@ -52,8 +52,8 @@ func TestDetectFeatures(t *testing.T) {
 	tests := []struct {
 		name             string
 		version          string
-		systemdAvailable bool
 		want             Features
+		systemdAvailable bool
 	}{
 		{
 			name:             "podman 4 with systemd",
@@ -162,9 +162,9 @@ func TestClientContainerList(t *testing.T) {
 
 func TestClientErrorClassification(t *testing.T) {
 	tests := []struct {
+		kind   error
 		name   string
 		status int
-		kind   error
 	}{
 		{name: "not found", status: http.StatusNotFound, kind: common.ErrNotFound},
 		{name: "conflict", status: http.StatusConflict, kind: common.ErrConflict},

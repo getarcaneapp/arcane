@@ -36,14 +36,14 @@ type GetSecretInput struct {
 }
 
 type CreateSecretInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          types.PodmanSecretCreateRequest
+	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
 type UpdateSecretInput struct {
+	Body          types.PodmanSecretUpdateRequest
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	SecretID      string `path:"secretId" doc:"Secret name"`
-	Body          types.PodmanSecretUpdateRequest
 }
 
 type DeleteSecretInput struct {

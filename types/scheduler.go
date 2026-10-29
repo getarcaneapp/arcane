@@ -8,18 +8,18 @@ import (
 
 // SchedulerCoordinatorState is the durable state of one environment/job actor.
 type SchedulerCoordinatorState struct {
-	Revision            uint64
-	Record              SchedulerQueueRecord
-	Imported            bool
-	ImportHash          string
 	Dispatches          map[string]SchedulerDispatchIntent
 	PendingActivitySync map[string]time.Time
+	ImportHash          string
+	Record              SchedulerQueueRecord
+	Revision            uint64
+	Imported            bool
 }
 
 type SchedulerDispatchIntent struct {
 	RunID   string
-	Attempt int
 	JobID   string
+	Attempt int
 }
 
 type SchedulerExecutionCommand struct {
@@ -47,9 +47,9 @@ type SchedulerAdmissionKey struct {
 	ID    string
 }
 type SchedulerAdmissionState struct {
+	AcquiredAt time.Time
 	Epoch      string
 	Token      string
-	AcquiredAt time.Time
 }
 type SchedulerAdmissionCommand struct {
 	Epoch string
@@ -58,21 +58,21 @@ type SchedulerAdmissionCommand struct {
 
 // SchedulerActivitySyncCommand acknowledges one persisted activity projection version.
 type SchedulerActivitySyncCommand struct {
-	RunID     string
 	UpdatedAt time.Time
+	RunID     string
 }
 
 // SchedulerCoordinatorImport binds imported state to the exact inactive legacy row.
 type SchedulerCoordinatorImport struct {
-	Record     SchedulerQueueRecord
 	SourceHash string
+	Record     SchedulerQueueRecord
 }
 
 // JobRuntimeState describes the schedule currently installed in a scheduler.
 // It intentionally exposes only read-only state needed by job-management APIs.
 type JobRuntimeState struct {
-	Schedule  string
 	NextRun   *time.Time
+	Schedule  string
 	Scheduled bool
 }
 
@@ -149,11 +149,11 @@ type JobScheduler interface {
 // always scheduled, matching the behavior of a SchedulerJob that does not implement
 // ConditionalJob.
 type GenericJob struct {
-	JobName     string
 	ScheduleFn  func(ctx context.Context) string
 	RunFn       func(ctx context.Context) (SchedulerOutcome, error)
 	ReconcileFn func(ctx context.Context, previous SchedulerRun) (SchedulerOutcome, error)
 	ShouldRunFn func(ctx context.Context) bool
+	JobName     string
 }
 
 func (g *GenericJob) Name() string { return g.JobName }
@@ -188,15 +188,15 @@ type RunObserver interface {
 
 // SchedulerQueueRecord holds atomic admission, claims, and checkpoints for one job and target.
 type SchedulerQueueRecord struct {
-	Generation     uint64                  `json:"-"`
-	Sequence       uint64                  `json:"-"`
+	LastEnqueuedAt time.Time               `json:"lastEnqueuedAt"`
+	NextRun        time.Time               `json:"nextRun"`
+	Receipts       map[string]SchedulerRun `json:"receipts,omitempty"`
 	JobID          string                  `json:"jobId"`
 	EnvironmentID  string                  `json:"environmentId"`
 	Schedule       string                  `json:"schedule"`
-	LastEnqueuedAt time.Time               `json:"lastEnqueuedAt"`
-	NextRun        time.Time               `json:"nextRun"`
 	Runs           []SchedulerRun          `json:"runs"`
-	Receipts       map[string]SchedulerRun `json:"receipts,omitempty"`
+	Generation     uint64                  `json:"-"`
+	Sequence       uint64                  `json:"-"`
 }
 
 // RunStatus describes durable execution, independently of the configured schedule.
@@ -224,25 +224,25 @@ func (s RunStatus) Terminal() bool {
 }
 
 type TargetOutcome struct {
-	RecoveryData jsontext.Value `json:"-" msgpack:"recoveryData,omitempty"`
 	ResourceType string         `json:"resourceType,omitempty"`
 	ID           string         `json:"id"`
 	Status       RunStatus      `json:"status"`
 	Message      string         `json:"message,omitempty"`
 	ActivityID   string         `json:"activityId,omitempty"`
+	RecoveryData jsontext.Value `json:"-" msgpack:"recoveryData,omitempty"`
 }
 
 // StepOutcome is one workflow step as projected onto its run.
 type StepOutcome struct {
+	StartedAt  *time.Time `json:"startedAt,omitempty"`
+	FinishedAt *time.Time `json:"finishedAt,omitempty"`
 	Name       string     `json:"name"`
 	Status     RunStatus  `json:"status"`
+	Message    string     `json:"message,omitempty"`
 	Total      int        `json:"total,omitempty"`
 	Completed  int        `json:"completed,omitempty"`
 	Failed     int        `json:"failed,omitempty"`
 	Attempts   int        `json:"attempts,omitempty"`
-	Message    string     `json:"message,omitempty"`
-	StartedAt  *time.Time `json:"startedAt,omitempty"`
-	FinishedAt *time.Time `json:"finishedAt,omitempty"`
 }
 
 type SchedulerOutcome struct {
@@ -263,13 +263,20 @@ type SchedulerRequest struct {
 }
 
 type SchedulerAttempt struct {
-	Number     int              `json:"number"`
 	StartedAt  time.Time        `json:"startedAt"`
 	FinishedAt *time.Time       `json:"finishedAt,omitempty"`
 	Outcome    SchedulerOutcome `json:"outcome"`
+	Number     int              `json:"number"`
 }
 
 type SchedulerRun struct {
+	CreatedAt               time.Time          `json:"createdAt"`
+	UpdatedAt               time.Time          `json:"updatedAt"`
+	StartedAt               *time.Time         `json:"startedAt,omitempty"`
+	FinishedAt              *time.Time         `json:"finishedAt,omitempty"`
+	NextAttempt             *time.Time         `json:"nextAttempt,omitempty"`
+	RemoteOutcome           *SchedulerOutcome  `json:"remoteOutcome,omitempty"`
+	LastConfirmedAt         *time.Time         `json:"lastConfirmedAt,omitempty"`
 	ActivityEnvironmentID   string             `json:"activityEnvironmentId,omitempty"`
 	ActivityID              string             `json:"activityId,omitempty"`
 	RequestedWithKey        string             `json:"requestedWithKey,omitempty"`
@@ -279,23 +286,16 @@ type SchedulerRun struct {
 	Trigger                 string             `json:"trigger"`
 	RequestedBy             string             `json:"requestedBy,omitempty"`
 	Status                  RunStatus          `json:"status"`
-	CreatedAt               time.Time          `json:"createdAt"`
-	UpdatedAt               time.Time          `json:"updatedAt"`
-	StartedAt               *time.Time         `json:"startedAt,omitempty"`
-	FinishedAt              *time.Time         `json:"finishedAt,omitempty"`
-	NextAttempt             *time.Time         `json:"nextAttempt,omitempty"`
-	AttemptCount            int                `json:"attemptCount"`
 	Owner                   string             `json:"owner,omitempty"`
 	Outcome                 SchedulerOutcome   `json:"outcome"`
 	Attempts                []SchedulerAttempt `json:"attempts,omitempty"`
+	AttemptCount            int                `json:"attemptCount"`
+	RemoteAttemptCount      int                `json:"remoteAttemptCount,omitempty"`
 	RemoteDeliveryAttempted bool               `json:"remoteDeliveryAttempted"`
-	RemoteOutcome           *SchedulerOutcome  `json:"remoteOutcome,omitempty"`
 	RemoteRetryRequested    bool               `json:"remoteRetryRequested,omitempty"`
 	RemoteRetryAttempted    bool               `json:"remoteRetryAttempted,omitempty"`
-	RemoteAttemptCount      int                `json:"remoteAttemptCount,omitempty"`
 	RemoteAccepted          bool               `json:"remoteAccepted"`
 	RemoteSettled           bool               `json:"remoteSettled"`
-	LastConfirmedAt         *time.Time         `json:"lastConfirmedAt,omitempty"`
 }
 
 type SchedulerRunList struct {
@@ -306,10 +306,10 @@ type SchedulerRunList struct {
 }
 
 type SchedulerWorkerHealth struct {
+	UpdatedAt time.Time  `json:"updatedAt"`
+	NextRetry *time.Time `json:"nextRetry,omitempty"`
 	Status    string     `json:"status"`
 	LastError string     `json:"lastError,omitempty"`
-	NextRetry *time.Time `json:"nextRetry,omitempty"`
-	UpdatedAt time.Time  `json:"updatedAt"`
 }
 
 // SchedulerReconciler consults domain state before repeating interrupted work.
@@ -319,8 +319,8 @@ type SchedulerReconciler interface {
 
 // SchedulerOutcomeError carries partial results through error-only watcher contracts.
 type SchedulerOutcomeError struct {
-	Outcome SchedulerOutcome
 	Cause   error
+	Outcome SchedulerOutcome
 }
 
 func (e *SchedulerOutcomeError) Error() string {

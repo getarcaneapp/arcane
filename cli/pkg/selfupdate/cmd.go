@@ -52,11 +52,11 @@ type cliUpdatePlan struct {
 	ArtifactURL       string `json:"artifactUrl"`
 	ChecksumURL       string `json:"checksumUrl"`
 	BundleURL         string `json:"bundleUrl,omitempty"`
-	SignatureVerified bool   `json:"signatureVerified"`
 	ArtifactSHA       string `json:"artifactSha"`
 	ExpectedSHA       string `json:"expectedSha,omitempty"`
 	CurrentSHA        string `json:"currentSha"`
 	TargetPath        string `json:"targetPath"`
+	SignatureVerified bool   `json:"signatureVerified"`
 	UpdateNeeded      bool   `json:"updateNeeded"`
 }
 

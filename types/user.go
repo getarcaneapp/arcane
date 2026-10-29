@@ -66,10 +66,10 @@ type User struct {
 
 // Actor identifies a user performing domain work without exposing persistence data.
 type Actor struct {
+	Preferences UserPreferences `json:"preferences"`
+	DisplayName *string         `json:"displayName,omitempty"`
 	ID          string          `json:"id"`
 	Username    string          `json:"username"`
-	DisplayName *string         `json:"displayName,omitempty"`
-	Preferences UserPreferences `json:"preferences"`
 }
 
 // ActorProvider supplies an actor from an authenticated user model.

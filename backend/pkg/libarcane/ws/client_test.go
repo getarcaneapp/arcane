@@ -137,8 +137,8 @@ func TestServeClient_ContextCancellation(t *testing.T) {
 
 func TestIsExpectedCloseError(t *testing.T) {
 	tests := []struct {
-		name     string
 		err      error
+		name     string
 		expected bool
 	}{
 		{

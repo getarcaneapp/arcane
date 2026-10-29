@@ -524,8 +524,8 @@ func TestSQLiteDSN_ConcurrencyDefaults(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
-		pragmas []string
 		txlock  string
+		pragmas []string
 	}{
 		{
 			name:    "defaults added",

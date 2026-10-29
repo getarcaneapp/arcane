@@ -23,11 +23,11 @@ const logFilePerm = 0o644
 // none of the level/time/source framing a text handler adds. The upgrade log is
 // read by humans watching an upgrade, so it stays terse.
 type messageOnlyHandler struct {
-	mu       *sync.Mutex
 	w        io.Writer
-	minLevel slog.Level
+	mu       *sync.Mutex
 	attrs    []slog.Attr
 	groups   []string
+	minLevel slog.Level
 }
 
 // LogWriter accumulates the upgrade log in memory and rewrites the whole file
@@ -37,9 +37,9 @@ type messageOnlyHandler struct {
 // up to the last entry emitted, with no partial line ever visible to whoever
 // reads it afterwards.
 type LogWriter struct {
-	mu   sync.Mutex
 	path string
 	buf  []byte
+	mu   sync.Mutex
 }
 
 func (w *LogWriter) Write(p []byte) (int, error) {

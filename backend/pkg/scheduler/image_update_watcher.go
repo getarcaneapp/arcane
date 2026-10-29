@@ -53,27 +53,27 @@ type ImageUpdateWatcher struct {
 	settingsService        pollingSettingReader
 	dockerService          dockerEventBusProviderInternal
 	projectService         projectImageRefsBackfillerInternal
-	dispatchMu             sync.RWMutex
 	coordinator            *runs.Coordinator
+	trigger                chan struct{}
+	scheduleRefresh        chan struct{}
+	cancel                 context.CancelFunc
+	done                   chan struct{}
+	location               *time.Location
+	metadataReady          chan struct{}
+	stopped                chan struct{}
+	triggerGeneration      atomic.Uint64
+	acknowledgedGeneration atomic.Uint64
+	triggeredAt            atomic.Int64
+	debounce               time.Duration
+	backfillRetry          time.Duration
+	dispatchMu             sync.RWMutex
+	metadataReadyOnce      sync.Once
+	stoppedOnce            sync.Once
+	runMu                  sync.Mutex
 	eventDegraded          atomic.Bool
 	running                atomic.Bool
 	scanRunning            atomic.Bool
 	stopping               atomic.Bool
-	triggerGeneration      atomic.Uint64
-	acknowledgedGeneration atomic.Uint64
-	triggeredAt            atomic.Int64
-	trigger                chan struct{}
-	scheduleRefresh        chan struct{}
-	runMu                  sync.Mutex
-	cancel                 context.CancelFunc
-	done                   chan struct{}
-	location               *time.Location
-	debounce               time.Duration
-	backfillRetry          time.Duration
-	metadataReady          chan struct{}
-	metadataReadyOnce      sync.Once
-	stopped                chan struct{}
-	stoppedOnce            sync.Once
 }
 
 func NewImageUpdateWatcher(cfg *config.Config,

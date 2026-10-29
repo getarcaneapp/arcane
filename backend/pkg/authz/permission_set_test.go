@@ -37,8 +37,8 @@ func TestPermissionSetEnvScopedDoesNotLeak(t *testing.T) {
 
 func TestPermissionSetAllowsAnyEffectiveScope(t *testing.T) {
 	tests := []struct {
-		name string
 		ps   *PermissionSet
+		name string
 		want bool
 	}{
 		{name: "nil", ps: nil, want: false},

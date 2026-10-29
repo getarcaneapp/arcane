@@ -50,9 +50,9 @@ type Request struct {
 }
 
 type Response struct {
-	StatusCode int
-	Body       []byte
 	Headers    map[string]string
+	Body       []byte
+	StatusCode int
 }
 
 type TunnelTransport interface {
@@ -144,8 +144,8 @@ func (e *TransportError) Unwrap() error {
 }
 
 type StatusError struct {
-	StatusCode int
 	Body       []byte
+	StatusCode int
 }
 
 func (e *StatusError) Error() string {

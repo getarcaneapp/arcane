@@ -42,8 +42,8 @@ func TestEnumVarP(t *testing.T) {
 	type mode string
 	for _, tt := range []struct {
 		name         string
-		persistent   bool
 		input        string
+		persistent   bool
 		valid        bool
 		short        bool
 		emptyDefault bool
@@ -123,8 +123,8 @@ func TestEnumVarPInvalidDefault(t *testing.T) {
 func TestExclusiveFlags(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
-		args    []string
 		wantErr string
+		args    []string
 	}{
 		{name: "defaults do not conflict"},
 		{name: "one boolean", args: []string{"--inuse"}},

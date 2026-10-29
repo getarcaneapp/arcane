@@ -573,8 +573,8 @@ func (s *RoleService) ResolvePermissions(ctx context.Context, userID string) (*a
 func (s *RoleService) ResolveUserPermissionsInDB(_ context.Context, tx *gorm.DB, userID string) (*authz.PermissionSet, error) {
 	// Scan permissions as a raw string; GORM cannot wire StringSlice on anonymous structs.
 	type row struct {
-		Permissions   string  `gorm:"column:permissions"`
 		EnvironmentID *string `gorm:"column:environment_id"`
+		Permissions   string  `gorm:"column:permissions"`
 	}
 	var rows []row
 	if err := tx.Table("user_role_assignments AS ura").
@@ -625,11 +625,11 @@ func (s *RoleService) ResolveExecutionPermissions(ctx context.Context, userID, k
 		return s.ResolveUserPermissionsInDB(ctx, db, userID)
 	}
 	var key struct {
-		ID            string
-		Kind          string
 		UserID        *string
 		EnvironmentID *string
 		ExpiresAt     *time.Time
+		ID            string
+		Kind          string
 	}
 	if err := db.Table("api_keys").Select("id, kind, user_id, environment_id, expires_at").Where("id = ?", keyID).Take(&key).Error; err != nil {
 		return nil, fmt.Errorf("failed to load requesting API key: %w", err)

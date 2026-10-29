@@ -17,9 +17,9 @@ type SortParams struct {
 type (
 	SortOption[T any]  func(a, b T) int
 	SortBinding[T any] struct {
-		Key    string
 		Fn     SortOption[T]
 		DescFn SortOption[T]
+		Key    string
 	}
 )
 

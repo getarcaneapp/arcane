@@ -33,9 +33,9 @@ func signCompactInternal(t *testing.T, sk *mldsa.PrivateKey, alg, kid string, cl
 
 func TestKeySetVerifySignature(t *testing.T) {
 	tests := []struct {
+		initialFailure string
 		params         mldsa.Parameters
 		tamper         bool
-		initialFailure string
 	}{
 		{params: mldsa.MLDSA44()},
 		{params: mldsa.MLDSA65()},

@@ -66,49 +66,50 @@ type EmailTLSMode string
 type EmailAuthMode string
 
 type DiscordConfig struct {
+	Events    map[NotificationEventType]bool `json:"events,omitempty"`
 	WebhookID string                         `json:"webhookId"`
 	Token     string                         `json:"token"`
 	Username  string                         `json:"username,omitempty"`
 	AvatarURL string                         `json:"avatarUrl,omitempty"`
-	Events    map[NotificationEventType]bool `json:"events,omitempty"`
 }
 
 type EmailConfig struct {
+	Events       map[NotificationEventType]bool `json:"events,omitempty"`
 	SMTPHost     string                         `json:"smtpHost"`
-	SMTPPort     int                            `json:"smtpPort"`
 	SMTPUsername string                         `json:"smtpUsername"`
 	SMTPPassword string                         `json:"smtpPassword"`
 	FromAddress  string                         `json:"fromAddress"`
-	ToAddresses  []string                       `json:"toAddresses"`
 	TLSMode      EmailTLSMode                   `json:"tlsMode"`
 	AuthMode     EmailAuthMode                  `json:"authMode,omitempty"`
-	Events       map[NotificationEventType]bool `json:"events,omitempty"`
+	ToAddresses  []string                       `json:"toAddresses"`
+	SMTPPort     int                            `json:"smtpPort"`
 }
 
 type TelegramConfig struct {
+	Events       map[NotificationEventType]bool `json:"events,omitempty"`
 	BotToken     string                         `json:"botToken"`
+	ParseMode    string                         `json:"parseMode,omitempty"`
+	Title        string                         `json:"title,omitempty"`
 	ChatIDs      []string                       `json:"chatIds"`
 	Preview      bool                           `json:"preview"`
 	Notification bool                           `json:"notification"`
-	ParseMode    string                         `json:"parseMode,omitempty"`
-	Title        string                         `json:"title,omitempty"`
-	Events       map[NotificationEventType]bool `json:"events,omitempty"`
 }
 
 type SignalConfig struct {
+	NotifySelf *bool                          `json:"notifySelf,omitempty"`
+	Events     map[NotificationEventType]bool `json:"events,omitempty"`
 	Host       string                         `json:"host"`
-	Port       int                            `json:"port"`
 	User       string                         `json:"user,omitempty"`
 	Password   string                         `json:"password,omitempty"`
 	Token      string                         `json:"token,omitempty"`
 	Source     string                         `json:"source"`
 	Recipients []string                       `json:"recipients"`
+	Port       int                            `json:"port"`
 	DisableTLS bool                           `json:"disableTls"`
-	NotifySelf *bool                          `json:"notifySelf,omitempty"`
-	Events     map[NotificationEventType]bool `json:"events,omitempty"`
 }
 
 type SlackConfig struct {
+	Events   map[NotificationEventType]bool `json:"events,omitempty"`
 	Token    string                         `json:"token"`
 	BotName  string                         `json:"botName,omitempty"`
 	Icon     string                         `json:"icon,omitempty"`
@@ -116,74 +117,72 @@ type SlackConfig struct {
 	Title    string                         `json:"title,omitempty"`
 	Channel  string                         `json:"channel,omitempty"`
 	ThreadTS string                         `json:"threadTs,omitempty"`
-	Events   map[NotificationEventType]bool `json:"events,omitempty"`
 }
 
 type NtfyConfig struct {
+	Events                 map[NotificationEventType]bool `json:"events,omitempty"`
 	Host                   string                         `json:"host"`
-	Port                   int                            `json:"port"`
 	Topic                  string                         `json:"topic"`
 	Username               string                         `json:"username,omitempty"`
 	Password               string                         `json:"password,omitempty"`
 	Title                  string                         `json:"title,omitempty"`
 	Priority               string                         `json:"priority,omitempty"`
-	Tags                   []string                       `json:"tags,omitempty"`
 	Icon                   string                         `json:"icon,omitempty"`
+	Tags                   []string                       `json:"tags,omitempty"`
+	Port                   int                            `json:"port"`
 	Cache                  bool                           `json:"cache"`
 	Firebase               bool                           `json:"firebase"`
 	DisableTLS             bool                           `json:"disableTls"`
 	DisableTLSVerification bool                           `json:"disableTlsVerification"`
-	Events                 map[NotificationEventType]bool `json:"events,omitempty"`
 }
 
 type PushoverConfig struct {
+	Events   map[NotificationEventType]bool `json:"events,omitempty"`
 	Token    string                         `json:"token"`
 	User     string                         `json:"user"`
+	Title    string                         `json:"title,omitempty"`
 	Devices  []string                       `json:"devices,omitempty"`
 	Priority int8                           `json:"priority"`
-	Title    string                         `json:"title,omitempty"`
-	Events   map[NotificationEventType]bool `json:"events,omitempty"`
 }
 
 type GotifyConfig struct {
+	Events             map[NotificationEventType]bool `json:"events,omitempty"`
 	Host               string                         `json:"host"`
-	Port               int                            `json:"port,omitempty"`
 	Token              string                         `json:"token"`
 	Path               string                         `json:"path,omitempty"`
-	Priority           int                            `json:"priority,omitempty"`
 	Title              string                         `json:"title,omitempty"`
+	Port               int                            `json:"port,omitempty"`
+	Priority           int                            `json:"priority,omitempty"`
 	DisableTLS         bool                           `json:"disableTls"`
 	InsecureSkipVerify bool                           `json:"insecureSkipVerify"`
 	UseHeader          bool                           `json:"useHeader"`
-	Events             map[NotificationEventType]bool `json:"events,omitempty"`
 }
 
 type GoogleChatConfig struct {
+	Events map[NotificationEventType]bool `json:"events,omitempty"`
 	// WebhookURL is the full incoming webhook URL copied from Google Chat,
 	// e.g. https://chat.googleapis.com/v1/spaces/SPACE/messages?key=KEY&token=TOKEN.
-	WebhookURL string                         `json:"webhookUrl"`
-	Events     map[NotificationEventType]bool `json:"events,omitempty"`
+	WebhookURL string `json:"webhookUrl"`
 }
 
 type MatrixConfig struct {
+	Events                 map[NotificationEventType]bool `json:"events,omitempty"`
 	Host                   string                         `json:"host"`
-	Port                   int                            `json:"port,omitempty"`
 	Rooms                  string                         `json:"rooms"`
 	Username               string                         `json:"username,omitempty"`
 	Password               string                         `json:"password,omitempty"`
+	Port                   int                            `json:"port,omitempty"`
 	DisableTLSVerification bool                           `json:"disableTlsVerification"`
-	Events                 map[NotificationEventType]bool `json:"events,omitempty"`
 }
 
 type GenericConfig struct {
+	CustomHeaders map[string]string              `json:"customHeaders,omitempty"`
+	Events        map[NotificationEventType]bool `json:"events,omitempty"`
 	WebhookURL    string                         `json:"webhookUrl"`
 	Method        string                         `json:"method,omitempty"`
 	ContentType   string                         `json:"contentType,omitempty"`
 	TitleKey      string                         `json:"titleKey,omitempty"`
 	MessageKey    string                         `json:"messageKey,omitempty"`
-	CustomHeaders map[string]string              `json:"customHeaders,omitempty"`
-	DisableTLS    bool                           `json:"disableTls"`
-	Events        map[NotificationEventType]bool `json:"events,omitempty"`
 	// SuccessBodyContains is an optional substring that must appear in the
 	// response body for the send to be considered successful. Useful for
 	// providers that always return HTTP 200 but embed a status indicator in
@@ -200,4 +199,5 @@ type GenericConfig struct {
 	// string contexts. When empty, the flat JSON payload is used (existing
 	// behaviour).
 	PayloadTemplate string `json:"payloadTemplate,omitempty"`
+	DisableTLS      bool   `json:"disableTls"`
 }

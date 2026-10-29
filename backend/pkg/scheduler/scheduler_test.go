@@ -13,9 +13,9 @@ import (
 )
 
 type testSchedulerJob struct {
+	run      func(context.Context)
 	name     string
 	schedule string
-	run      func(context.Context)
 }
 
 func (j *testSchedulerJob) Name() string { return j.name }
@@ -35,16 +35,16 @@ type conditionalTestSchedulerJob struct {
 }
 
 type testBusWatcherInternal struct {
-	name    string
 	started chan struct{}
 	stopped chan struct{}
 	ranNow  chan context.Context
+	name    string
 }
 
 type orderedStopBusWatcherInternal struct {
-	name         string
 	started      chan struct{}
 	runnerExited chan struct{}
+	name         string
 }
 
 func (w *orderedStopBusWatcherInternal) Name() string {

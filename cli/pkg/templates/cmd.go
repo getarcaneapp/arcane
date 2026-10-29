@@ -814,9 +814,9 @@ func newRegistriesUpdateCmd() *cobra.Command {
 
 			req := map[string]any{}
 			for _, field := range []struct {
-				changed bool
-				key     string
 				value   any
+				key     string
+				changed bool
 			}{
 				{changed: cmd.Flags().Changed("name"), key: "name", value: opts.name},
 				{changed: cmd.Flags().Changed("url"), key: "url", value: opts.url},

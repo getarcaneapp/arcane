@@ -8,12 +8,12 @@ import (
 )
 
 type NotificationSettings struct {
-	ID        uint                               `json:"id" gorm:"primaryKey"`
-	Provider  notifications.NotificationProvider `json:"provider" gorm:"not null;index;type:varchar(50)"`
-	Enabled   bool                               `json:"enabled" gorm:"default:false"`
-	Config    database.JSON                      `json:"config" gorm:"type:jsonb"`
 	CreatedAt time.Time                          `json:"createdAt"`
 	UpdatedAt time.Time                          `json:"updatedAt"`
+	Config    database.JSON                      `json:"config" gorm:"type:jsonb"`
+	Provider  notifications.NotificationProvider `json:"provider" gorm:"not null;index;type:varchar(50)"`
+	ID        uint                               `json:"id" gorm:"primaryKey"`
+	Enabled   bool                               `json:"enabled" gorm:"default:false"`
 }
 
 func (NotificationSettings) TableName() string {

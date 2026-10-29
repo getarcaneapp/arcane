@@ -33,9 +33,9 @@ func newTestCoordinator(t *testing.T) *Coordinator {
 }
 
 type claimingObserverFake struct {
-	once    sync.Once
-	target  string
 	claim   func(types.SchedulerRun)
+	target  string
+	once    sync.Once
 	claimed bool
 }
 

@@ -6,23 +6,23 @@ import (
 
 // AutoUpdateRecord reports a persisted resource auto-update operation.
 type AutoUpdateRecord struct {
-	EnvironmentTag
-
-	ID               string         `json:"id"`
 	CreatedAt        time.Time      `json:"createdAt" sortable:"true"`
-	UpdatedAt        *time.Time     `json:"updatedAt,omitempty"`
-	ResourceID       string         `json:"resourceId"`
-	ResourceType     string         `json:"resourceType"`
-	ResourceName     string         `json:"resourceName"`
-	Status           string         `json:"status"`
 	StartTime        time.Time      `json:"startTime"`
+	UpdatedAt        *time.Time     `json:"updatedAt,omitempty"`
 	EndTime          *time.Time     `json:"endTime,omitempty"`
-	UpdateAvailable  bool           `json:"updateAvailable"`
-	UpdateApplied    bool           `json:"updateApplied"`
 	OldImageVersions map[string]any `json:"oldImageVersions,omitempty"`
 	NewImageVersions map[string]any `json:"newImageVersions,omitempty"`
 	Error            *string        `json:"error,omitempty"`
 	Details          map[string]any `json:"details,omitempty"`
+	EnvironmentTag
+
+	ID              string `json:"id"`
+	ResourceID      string `json:"resourceId"`
+	ResourceType    string `json:"resourceType"`
+	ResourceName    string `json:"resourceName"`
+	Status          string `json:"status"`
+	UpdateAvailable bool   `json:"updateAvailable"`
+	UpdateApplied   bool   `json:"updateApplied"`
 }
 
 const (
@@ -60,6 +60,20 @@ type UpdaterOptions struct {
 
 // UpdaterResourceResult represents the result of an update operation on a single resource.
 type UpdaterResourceResult struct {
+	// OldImages is a map of old image references.
+	//
+	// Required: false
+	OldImages map[string]string `json:"oldImages,omitempty"`
+
+	// NewImages is a map of new image references.
+	//
+	// Required: false
+	NewImages map[string]string `json:"newImages,omitempty"`
+
+	// Details contains additional details about the update operation.
+	//
+	// Required: false
+	Details map[string]any `json:"details,omitempty"`
 	// ResourceID is the unique identifier of the resource.
 	//
 	// Required: true
@@ -80,6 +94,11 @@ type UpdaterResourceResult struct {
 	// Required: true
 	Status string `json:"status"`
 
+	// Error contains any error message encountered during the update.
+	//
+	// Required: false
+	Error string `json:"error,omitempty"`
+
 	// UpdateAvailable indicates if an update is available.
 	//
 	// Required: false
@@ -89,34 +108,34 @@ type UpdaterResourceResult struct {
 	//
 	// Required: false
 	UpdateApplied bool `json:"updateApplied,omitempty"`
-
-	// OldImages is a map of old image references.
-	//
-	// Required: false
-	OldImages map[string]string `json:"oldImages,omitempty"`
-
-	// NewImages is a map of new image references.
-	//
-	// Required: false
-	NewImages map[string]string `json:"newImages,omitempty"`
-
-	// Error contains any error message encountered during the update.
-	//
-	// Required: false
-	Error string `json:"error,omitempty"`
-
-	// Details contains additional details about the update operation.
-	//
-	// Required: false
-	Details map[string]any `json:"details,omitempty"`
 }
 
 // UpdaterResult represents the complete result of an update operation.
 type UpdaterResult struct {
-	// Success indicates if the overall update operation was successful.
+	// ActivityID is the background activity that tracked this update operation.
 	//
 	// Required: false
-	Success bool `json:"success,omitempty"`
+	ActivityID *string `json:"activityId,omitempty"`
+
+	// StartTime is the time when the update operation started.
+	//
+	// Required: false
+	StartTime string `json:"startTime,omitempty"`
+
+	// EndTime is the time when the update operation ended.
+	//
+	// Required: false
+	EndTime string `json:"endTime,omitempty"`
+
+	// Duration is the total duration of the update operation.
+	//
+	// Required: true
+	Duration string `json:"duration"`
+
+	// Items is a list of individual resource results.
+	//
+	// Required: true
+	Items []UpdaterResourceResult `json:"items"`
 
 	// Checked is the number of resources checked.
 	//
@@ -143,44 +162,14 @@ type UpdaterResult struct {
 	// Required: true
 	Failed int `json:"failed"`
 
-	// StartTime is the time when the update operation started.
+	// Success indicates if the overall update operation was successful.
 	//
 	// Required: false
-	StartTime string `json:"startTime,omitempty"`
-
-	// EndTime is the time when the update operation ended.
-	//
-	// Required: false
-	EndTime string `json:"endTime,omitempty"`
-
-	// Duration is the total duration of the update operation.
-	//
-	// Required: true
-	Duration string `json:"duration"`
-
-	// Items is a list of individual resource results.
-	//
-	// Required: true
-	Items []UpdaterResourceResult `json:"items"`
-
-	// ActivityID is the background activity that tracked this update operation.
-	//
-	// Required: false
-	ActivityID *string `json:"activityId,omitempty"`
+	Success bool `json:"success,omitempty"`
 }
 
 // UpdaterStatus represents the current status of the updater.
 type UpdaterStatus struct {
-	// UpdatingContainers is the count of containers currently being updated.
-	//
-	// Required: true
-	UpdatingContainers int `json:"updatingContainers"`
-
-	// UpdatingProjects is the count of projects currently being updated.
-	//
-	// Required: true
-	UpdatingProjects int `json:"updatingProjects"`
-
 	// ContainerIds is a list of container IDs currently being updated.
 	//
 	// Required: true
@@ -190,6 +179,15 @@ type UpdaterStatus struct {
 	//
 	// Required: true
 	ProjectIds []string `json:"projectIds"`
+	// UpdatingContainers is the count of containers currently being updated.
+	//
+	// Required: true
+	UpdatingContainers int `json:"updatingContainers"`
+
+	// UpdatingProjects is the count of projects currently being updated.
+	//
+	// Required: true
+	UpdatingProjects int `json:"updatingProjects"`
 }
 
 // UpdaterCheckProjectInput identifies the project whose service policies should be checked.
@@ -207,8 +205,8 @@ type FrozenUpdateTarget struct {
 	ComposeNumber        string
 	BaselineImageID      string
 	BaselineStartedAt    string
-	BaselineRestartCount int
-	BaselineRunning      bool
 	DesiredImageRef      string
 	DesiredDigest        string
+	BaselineRestartCount int
+	BaselineRunning      bool
 }

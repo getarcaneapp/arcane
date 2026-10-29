@@ -96,8 +96,8 @@ type systemBackupSnapshotLocation struct {
 	name            string
 	destination     types.SystemBackupDestination
 	s3DestinationID string
-	repository      backup.Repository
 	snapshotID      string
+	repository      backup.Repository
 }
 
 type systemBackupSnapshot struct {
@@ -108,10 +108,10 @@ type systemBackupSnapshot struct {
 }
 
 type systemBackupSafetySnapshot struct {
-	systemBackupSnapshotLocation
+	paths map[string]struct{}
 
 	layout snapshotLayout
-	paths  map[string]struct{}
+	systemBackupSnapshotLocation
 }
 
 // systemBackupSnapshotSession carries the Docker client and resolved
@@ -521,8 +521,8 @@ func (s *Service) RestoreFiles(
 // into the current container layout.
 type RestorePlan struct {
 	SnapshotID       string
-	ProjectsIncluded bool
 	Stages           []types.RecoveryRestoreStage
+	ProjectsIncluded bool
 }
 
 // PlanRestore opens the first readable snapshot of run and plans its restore stages.

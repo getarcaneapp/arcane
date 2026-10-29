@@ -43,8 +43,8 @@ var retryableStatusCodes = map[int]struct{}{
 }
 
 type StatusError struct {
-	StatusCode int
 	Body       string
+	StatusCode int
 }
 
 func (e *StatusError) Error() string {
@@ -53,13 +53,13 @@ func (e *StatusError) Error() string {
 
 // Client provides authenticated requests, token refresh, and response decoding for the Arcane API.
 type Client struct {
-	baseURL       string
 	baseURLParsed *url.URL
+	httpClient    *http.Client
+	baseURL       string
 	apiKey        string
 	jwtToken      string
 	refreshToken  string
 	envID         string
-	httpClient    *http.Client
 	maxAttempts   int
 	baseBackoff   time.Duration
 	maxBackoff    time.Duration
@@ -589,8 +589,8 @@ func decodeResponseStrict[T any](resp *http.Response) (*types.ApiResponse[T], er
 	}
 
 	var result struct {
-		types.ApiResponse[T]
 		types.ErrorResponse
+		types.ApiResponse[T]
 	}
 	if unmarshalErr := json.Unmarshal(body, &result); unmarshalErr != nil {
 		return nil, fmt.Errorf("failed to decode response (body: %s): %w", string(body), unmarshalErr)

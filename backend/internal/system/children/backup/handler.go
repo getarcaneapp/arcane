@@ -33,9 +33,9 @@ type ListBackupHistoryInput struct {
 	Search       string `query:"search"`
 	Sort         string `query:"sort" default:"createdAt"`
 	Order        string `query:"order" default:"desc"`
+	Type         string `query:"type"`
 	Start        int    `query:"start" default:"0"`
 	Limit        int    `query:"limit" default:"20"`
-	Type         string `query:"type"`
 	IncludeTotal bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
 }
 
@@ -81,9 +81,9 @@ type BrowseSystemBackupFilesInput struct {
 	ID     string `path:"id"`
 	Path   string `query:"path" doc:"Folder path relative to the backup root"`
 	Search string `query:"search" doc:"Case-insensitive full-path search"`
-	Start  int    `query:"start" default:"0" doc:"Start index for the page"`
-	Limit  int    `query:"limit" default:"20" doc:"Requested page size"`
 	Body   types.SystemBackupRecoveryKey
+	Start  int `query:"start" default:"0" doc:"Start index for the page"`
+	Limit  int `query:"limit" default:"20" doc:"Requested page size"`
 }
 
 type UploadSystemBackupInput struct {

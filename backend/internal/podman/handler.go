@@ -24,8 +24,8 @@ type Handler struct {
 }
 
 type RunPodmanAutoUpdateInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          *types.PodmanAutoUpdateOptions
+	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
 func (h *Handler) GetStatus(ctx context.Context, _ *types.EnvironmentInput) (*handlerutil.Out[types.PodmanStatus], error) {

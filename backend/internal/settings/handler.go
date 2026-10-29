@@ -34,8 +34,8 @@ type SettingsSnapshotOutput struct {
 }
 
 type UpdateSettingsInput struct {
-	EnvironmentID string               `path:"id" doc:"Environment ID"`
 	Body          types.SettingsUpdate `doc:"Setting keys mapped to their new values"`
+	EnvironmentID string               `path:"id" doc:"Environment ID"`
 }
 
 type SearchSettingsInput struct {

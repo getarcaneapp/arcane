@@ -14,9 +14,9 @@ import (
 func TestBuildGenericURL(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  GenericConfig
 		wantURL string
 		wantErr string
+		config  GenericConfig
 	}{
 		{
 			name: "basic HTTPS webhook",
@@ -262,8 +262,8 @@ func TestBuildGenericURL_CustomHeadersEncoding(t *testing.T) {
 func TestBuildGenericURL_DisableTLSFlag(t *testing.T) {
 	tests := []struct {
 		name       string
-		disableTLS bool
 		wantParam  string
+		disableTLS bool
 	}{
 		{
 			name:       "TLS enabled (default)",
@@ -518,8 +518,8 @@ func TestSendGenericWithTitle_TemplateWithSuccessBodyContains(t *testing.T) {
 func TestValidateGenericPayloadTemplate(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  GenericConfig
 		wantErr string
+		config  GenericConfig
 	}{
 		{
 			name:   "no template is always valid",

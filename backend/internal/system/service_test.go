@@ -179,8 +179,8 @@ func newSystemBackupAdmissionGateForTest(t testing.TB) *runs.Admission {
 }
 
 type systemBackupPolicyScheduler struct {
-	submitted []types.SchedulerRequest
 	jobs      map[string]types.SchedulerJob
+	submitted []types.SchedulerRequest
 }
 
 func (s *systemBackupPolicyScheduler) AddJob(_ context.Context, job types.SchedulerJob) error {

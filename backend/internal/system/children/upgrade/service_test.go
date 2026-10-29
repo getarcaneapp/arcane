@@ -282,8 +282,13 @@ func TestResolveSelfUpgradeTargetImage(t *testing.T) {
 	// Both the updater engine and the manual upgrade respell the resolved
 	// target from the container's Compose service before the upgrader starts.
 	composeTests := []struct {
-		name, runtime, target, want, wantCompose, wantErr string
-		files                                             map[string]string
+		files       map[string]string
+		name        string
+		runtime     string
+		target      string
+		want        string
+		wantCompose string
+		wantErr     string
 	}{
 		{
 			name: "unmanaged Compose keeps the runtime spelling", runtime: "getarcaneapp/manager:next",

@@ -31,8 +31,8 @@ import (
 // volumeHelper tracks a reused helper container and its last use for idle reaping.
 // inUse counts active holds so the reaper never removes a helper mid-request.
 type volumeHelper struct {
-	id         string
 	lastUsedAt time.Time
+	id         string
 	inUse      int
 	protocol   int
 }

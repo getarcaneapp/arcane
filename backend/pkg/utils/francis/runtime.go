@@ -34,20 +34,20 @@ const TablePrefix = "arcane_francis"
 // Runtime starts one durable actor host and publishes its service after readiness.
 // Services must wait for Ready before using Service, including during startup retries.
 type Runtime struct {
-	mu            sync.Mutex
-	options       []local.HostOption
-	registrations []registration
-	workflows     []*workflow.Workflow
+	runError      error
 	service       *actor.Service
 	ready         chan struct{}
 	done          chan struct{}
 	cancel        context.CancelFunc
-	started       bool
-	runError      error
-	address       string
-	storeURL      string
 	store         *gorm.DB
 	actorNames    sync.Map
+	address       string
+	storeURL      string
+	options       []local.HostOption
+	registrations []registration
+	workflows     []*workflow.Workflow
+	mu            sync.Mutex
+	started       bool
 }
 
 type registration struct {

@@ -14,30 +14,33 @@ import (
 type Passkey struct {
 	database.BaseModel
 
-	UserID string     `json:"userId" gorm:"column:user_id;not null;index"`
-	User   *user.User `json:"-" gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
+	User *user.User `json:"-" gorm:"foreignKey:UserID;constraint:OnDelete:CASCADE"`
 
-	RPID                    string               `json:"rpId" gorm:"column:rp_id;not null"`
-	CredentialID            []byte               `json:"-" gorm:"column:credential_id;not null"`
-	PublicKey               []byte               `json:"-" gorm:"column:public_key;not null"`
-	AttestationType         string               `json:"attestationType,omitempty" gorm:"column:attestation_type"`
-	AttestationFormat       string               `json:"attestationFormat,omitempty" gorm:"column:attestation_format"`
-	Transports              database.StringSlice `json:"transports,omitempty" gorm:"column:transports;type:text"`
-	AAGUID                  []byte               `json:"-" gorm:"column:aaguid"`
-	SignCount               uint32               `json:"signCount" gorm:"column:sign_count;not null;default:0"`
-	BackupEligible          bool                 `json:"backupEligible" gorm:"column:backup_eligible;not null;default:false"`
-	BackupState             bool                 `json:"backupState" gorm:"column:backup_state;not null;default:false"`
-	CloneWarning            bool                 `json:"cloneWarning" gorm:"column:clone_warning;not null;default:false"`
-	AuthenticatorAttachment string               `json:"authenticatorAttachment,omitempty" gorm:"column:authenticator_attachment"`
-
-	AttestationClientDataJSON     []byte `json:"-" gorm:"column:attestation_client_data_json"`
-	AttestationClientDataHash     []byte `json:"-" gorm:"column:attestation_client_data_hash"`
-	AttestationAuthenticatorData  []byte `json:"-" gorm:"column:attestation_authenticator_data"`
-	AttestationPublicKeyAlgorithm int64  `json:"-" gorm:"column:attestation_public_key_algorithm"`
-	AttestationObject             []byte `json:"-" gorm:"column:attestation_object"`
-
-	Name       string     `json:"name" gorm:"column:name;not null"`
 	LastUsedAt *time.Time `json:"lastUsedAt,omitempty" gorm:"column:last_used_at"`
+
+	UserID string `json:"userId" gorm:"column:user_id;not null;index"`
+
+	RPID                    string `json:"rpId" gorm:"column:rp_id;not null"`
+	AttestationType         string `json:"attestationType,omitempty" gorm:"column:attestation_type"`
+	AttestationFormat       string `json:"attestationFormat,omitempty" gorm:"column:attestation_format"`
+	AuthenticatorAttachment string `json:"authenticatorAttachment,omitempty" gorm:"column:authenticator_attachment"`
+
+	Name         string               `json:"name" gorm:"column:name;not null"`
+	CredentialID []byte               `json:"-" gorm:"column:credential_id;not null"`
+	PublicKey    []byte               `json:"-" gorm:"column:public_key;not null"`
+	Transports   database.StringSlice `json:"transports,omitempty" gorm:"column:transports;type:text"`
+	AAGUID       []byte               `json:"-" gorm:"column:aaguid"`
+
+	AttestationClientDataJSON    []byte `json:"-" gorm:"column:attestation_client_data_json"`
+	AttestationClientDataHash    []byte `json:"-" gorm:"column:attestation_client_data_hash"`
+	AttestationAuthenticatorData []byte `json:"-" gorm:"column:attestation_authenticator_data"`
+	AttestationObject            []byte `json:"-" gorm:"column:attestation_object"`
+
+	AttestationPublicKeyAlgorithm int64  `json:"-" gorm:"column:attestation_public_key_algorithm"`
+	SignCount                     uint32 `json:"signCount" gorm:"column:sign_count;not null;default:0"`
+	BackupEligible                bool   `json:"backupEligible" gorm:"column:backup_eligible;not null;default:false"`
+	BackupState                   bool   `json:"backupState" gorm:"column:backup_state;not null;default:false"`
+	CloneWarning                  bool   `json:"cloneWarning" gorm:"column:clone_warning;not null;default:false"`
 }
 
 func (Passkey) TableName() string {
@@ -49,14 +52,15 @@ func (Passkey) TableName() string {
 type PasskeyCeremony struct {
 	database.BaseModel
 
-	Purpose           string     `json:"purpose" gorm:"column:purpose;not null;index"`
+	ExpiresAt         time.Time  `json:"expiresAt" gorm:"column:expires_at;not null;index"`
 	UserID            *string    `json:"userId,omitempty" gorm:"column:user_id;index"`
 	SessionID         *string    `json:"sessionId,omitempty" gorm:"column:session_id;index"`
 	AuthTransactionID *string    `json:"authTransactionId,omitempty" gorm:"column:auth_transaction_id;index"`
-	RPID              string     `json:"rpId" gorm:"column:rp_id;not null"`
-	SessionData       string     `json:"-" gorm:"column:session_data;type:text;not null"`
-	ExpiresAt         time.Time  `json:"expiresAt" gorm:"column:expires_at;not null;index"`
 	ConsumedAt        *time.Time `json:"-" gorm:"column:consumed_at;index"`
+
+	Purpose     string `json:"purpose" gorm:"column:purpose;not null;index"`
+	RPID        string `json:"rpId" gorm:"column:rp_id;not null"`
+	SessionData string `json:"-" gorm:"column:session_data;type:text;not null"`
 }
 
 func (PasskeyCeremony) TableName() string {
@@ -69,16 +73,17 @@ func (PasskeyCeremony) TableName() string {
 type AuthTransaction struct {
 	database.BaseModel
 
-	Kind        string     `json:"kind" gorm:"column:kind;not null;index"`
-	UserID      string     `json:"userId" gorm:"column:user_id;not null;index"`
+	ExpiresAt   time.Time  `json:"expiresAt" gorm:"column:expires_at;not null;index"`
 	SessionID   *string    `json:"sessionId,omitempty" gorm:"column:session_id;index"`
-	Source      string     `json:"source" gorm:"column:source;not null"`
 	UserAgent   *string    `json:"-" gorm:"column:user_agent"`
 	IPAddress   *string    `json:"-" gorm:"column:ip_address"`
 	SecretHash  *string    `json:"-" gorm:"column:secret_hash;index"`
-	Status      string     `json:"status" gorm:"column:status;not null;index"`
-	ExpiresAt   time.Time  `json:"expiresAt" gorm:"column:expires_at;not null;index"`
 	CompletedAt *time.Time `json:"completedAt,omitempty" gorm:"column:completed_at"`
+
+	Kind   string `json:"kind" gorm:"column:kind;not null;index"`
+	UserID string `json:"userId" gorm:"column:user_id;not null;index"`
+	Source string `json:"source" gorm:"column:source;not null"`
+	Status string `json:"status" gorm:"column:status;not null;index"`
 }
 
 func (AuthTransaction) TableName() string {
@@ -90,9 +95,10 @@ func (AuthTransaction) TableName() string {
 type PasskeyRecoveryCode struct {
 	database.BaseModel
 
-	UserID   string     `json:"userId" gorm:"column:user_id;not null;index"`
-	CodeHash string     `json:"-" gorm:"column:code_hash;not null;uniqueIndex"`
-	UsedAt   *time.Time `json:"usedAt,omitempty" gorm:"column:used_at;index"`
+	UsedAt *time.Time `json:"usedAt,omitempty" gorm:"column:used_at;index"`
+
+	UserID   string `json:"userId" gorm:"column:user_id;not null;index"`
+	CodeHash string `json:"-" gorm:"column:code_hash;not null;uniqueIndex"`
 }
 
 func (PasskeyRecoveryCode) TableName() string {

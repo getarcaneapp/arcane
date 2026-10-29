@@ -20,18 +20,19 @@ import (
 
 // ListSpec describes a paginated list with raw JSON passthrough or table rendering.
 type ListSpec[T any] struct {
+	// Query holds extra query parameters, applied after pagination.
+	Query url.Values
+
+	Row func(T) []string
 	// Resource names the collection in error messages and the trailing
 	// "Showing x of y <resource>" line.
 	Resource string
 	// Endpoint is the list path (environment already applied).
 	Endpoint string
-	// Params configures pagination from the command's flags.
-	Params ListParams
-	// Query holds extra query parameters, applied after pagination.
-	Query url.Values
 
 	Headers []string
-	Row     func(T) []string
+	// Params configures pagination from the command's flags.
+	Params ListParams
 }
 
 // RunList executes one standard list command as described by spec.
@@ -100,10 +101,10 @@ func RunList[T any](cmd *cobra.Command, c *client.Client, spec ListSpec[T]) erro
 // Spec describes a request with raw JSON data output or typed text rendering.
 // Render is required in text mode; a nil Render returns a programmer error before requesting.
 type Spec[T any] struct {
-	Method, Path, FailureMessage string
 	Body                         any
-	Timeout                      time.Duration
 	Render                       func(T) error
+	Method, Path, FailureMessage string
+	Timeout                      time.Duration
 }
 
 // Run enforces a success envelope and prints raw data in JSON mode or invokes Render in text mode.
@@ -148,9 +149,9 @@ func Run[T any](cmd *cobra.Command, c *client.Client, spec Spec[T]) error {
 
 // DeleteSpec describes a confirmed DELETE with optional body and human-readable success output.
 type DeleteSpec struct {
-	Force                                        bool
-	Prompt, Path, FailureMessage, SuccessMessage string
 	Body                                         any
+	Prompt, Path, FailureMessage, SuccessMessage string
+	Force                                        bool
 }
 
 // RunDelete returns nil on cancellation, otherwise printing raw data in JSON mode or SuccessMessage in text mode.

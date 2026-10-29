@@ -89,7 +89,18 @@ var (
 )
 
 type ProjectService struct {
-	composeCoordinator          types.ComposeCoordinator
+	composeCoordinator types.ComposeCoordinator
+
+	parsedCompose types.ComposeCache[*composetypes.Project]
+	// metaCache holds per-project icon/URL metadata, keyed by project ID. Deriving
+	// it costs a full compose load (interpolation plus .env reads) and, for GitOps
+	// projects, a gitops_syncs lookup — per project, on every list request.
+	// Entries are validated by compose/include/env file mtimes rather than a TTL.
+	metaCache types.ComposeCache[projects.ArcaneComposeMetadata]
+	// composeIdentities caches filesystem-sync compose identities by project path,
+	// so a sync only re-parses projects whose compose or env files changed.
+	composeIdentities types.ComposeCache[types.ComposeIdentity]
+
 	db                          *database.DB
 	settingsService             *settings.SettingsService
 	eventService                *event.EventService
@@ -106,26 +117,18 @@ type ProjectService struct {
 	config                      *config.Config
 	RegistryCredentialsProvider func(context.Context) ([]types.ContainerRegistryCredential, error)
 
-	// syncMu serializes SyncProjectsFromFileSystem: its discovery walk and its
-	// cleanup pass must not interleave with another run's.
-	syncMu sync.Mutex
-	// opLock serializes mutating operations on the same project.
-	opLock utils.KeyedMutex
-
-	composeNames  composeNameCache
-	parsedCompose types.ComposeCache[*composetypes.Project]
-	// metaCache holds per-project icon/URL metadata, keyed by project ID. Deriving
-	// it costs a full compose load (interpolation plus .env reads) and, for GitOps
-	// projects, a gitops_syncs lookup — per project, on every list request.
-	// Entries are validated by compose/include/env file mtimes rather than a TTL.
-	metaCache types.ComposeCache[projects.ArcaneComposeMetadata]
-	// composeIdentities caches filesystem-sync compose identities by project path,
-	// so a sync only re-parses projects whose compose or env files changed.
-	composeIdentities types.ComposeCache[types.ComposeIdentity]
-
 	// FilesChanged fires with the project ID after project files are saved
 	// through Arcane, so Git backups can react without polling.
 	FilesChanged *concurrency.Signal[string]
+
+	// opLock serializes mutating operations on the same project.
+	opLock utils.KeyedMutex
+
+	composeNames composeNameCache
+
+	// syncMu serializes SyncProjectsFromFileSystem: its discovery walk and its
+	// cleanup pass must not interleave with another run's.
+	syncMu sync.Mutex
 }
 
 // EnsureGitOpsProjectLinked persists the bidirectional GitOps/project binding

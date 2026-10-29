@@ -18,8 +18,8 @@ func TestResolveDockerHost(t *testing.T) {
 		name     string
 		host     string
 		xdg      string
-		existing []string
 		want     string
+		existing []string
 	}{
 		{
 			name:     "custom host is kept",

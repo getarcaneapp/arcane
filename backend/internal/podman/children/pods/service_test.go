@@ -18,9 +18,9 @@ import (
 
 func TestCreateMapsRequestToPodSpec(t *testing.T) {
 	tests := []struct {
+		want map[string]any
 		name string
 		req  types.PodCreateRequest
-		want map[string]any
 	}{
 		{
 			name: "named network with ports",
@@ -282,8 +282,8 @@ func TestCreateRejectsInvalidOptions(t *testing.T) {
 func TestInspectMergesContainerDetails(t *testing.T) {
 	tests := []struct {
 		name       string
-		listStatus int
 		want       []types.PodInspectContainer
+		listStatus int
 		wantErr    bool
 	}{
 		{

@@ -28,12 +28,12 @@ import (
 // telemetryProviders owns the providers enabled through the standard OTEL_*
 // exporter variables. A nil provider means that signal is off.
 type telemetryProviders struct {
+	shutdownErr    error
 	tracerProvider *trace.TracerProvider
 	meterProvider  *metric.MeterProvider
 	loggerProvider *log.LoggerProvider
 
 	shutdownOnce sync.Once
-	shutdownErr  error
 }
 
 // setupTelemetry installs global providers for each OTEL_*_EXPORTER that is set

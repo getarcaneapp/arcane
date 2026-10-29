@@ -41,10 +41,10 @@ var rankWeightsInternal = [...]float64{0.70, 0.15, 0.05, 0.02}
 
 // ThreatIntel is the exploitation evidence known for one CVE.
 type ThreatIntel struct {
+	EPSS           *float64
 	KnownExploited bool
 	// KEVOverdue reports a known-exploited CVE past its CISA KEV due date.
 	KEVOverdue bool
-	EPSS       *float64
 }
 
 // CVSSScore returns the CVSS v3 score, else v2, else 0.

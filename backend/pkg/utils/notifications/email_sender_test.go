@@ -39,9 +39,9 @@ type smtpTestServer struct {
 	clientTLSConfig    *tls.Config
 	done               chan error
 	authMechanismUsed  string
+	message            string
 	authMechanisms     []string
 	commands           []string
-	message            string
 	mu                 sync.Mutex
 	supportStartTLS    bool
 	authBeforeTLS      bool

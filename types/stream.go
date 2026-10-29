@@ -15,16 +15,10 @@ const (
 // StreamEvent is the JSON data of one message in the multiplexed SSE stream.
 // Exactly one payload is set, retaining its channel's event type.
 type StreamEvent struct {
-	// Channel identifies which feed produced this event. Empty on a heartbeat.
+	// Timestamp is when the envelope was produced.
 	//
-	// Required: false
-	Channel string `json:"channel,omitempty"`
-
-	// Type is set to "heartbeat" for connection keepalives; otherwise the
-	// per-channel payload carries its own type.
-	//
-	// Required: false
-	Type string `json:"type,omitempty"`
+	// Required: true
+	Timestamp time.Time `json:"timestamp"`
 
 	// Activity carries a ChannelActivities payload.
 	//
@@ -48,8 +42,14 @@ type StreamEvent struct {
 
 	Upgrade *UpgradeJob `json:"upgrade,omitempty"`
 
-	// Timestamp is when the envelope was produced.
+	// Channel identifies which feed produced this event. Empty on a heartbeat.
 	//
-	// Required: true
-	Timestamp time.Time `json:"timestamp"`
+	// Required: false
+	Channel string `json:"channel,omitempty"`
+
+	// Type is set to "heartbeat" for connection keepalives; otherwise the
+	// per-channel payload carries its own type.
+	//
+	// Required: false
+	Type string `json:"type,omitempty"`
 }

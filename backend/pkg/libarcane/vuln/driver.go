@@ -57,9 +57,9 @@ const (
 )
 
 type RuntimeOptions struct {
+	NetworkMode  string
 	ContainerEnv []string
 	Mounts       []mounttypes.Mount
-	NetworkMode  string
 }
 
 func ResolveUnixSocketSource(

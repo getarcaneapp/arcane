@@ -19,9 +19,9 @@ const admissionType = "resource-admission"
 
 type Admission struct {
 	service *actor.Service
+	pending map[string]map[string]types.SchedulerAdmissionCommand
 	epoch   string
 	mu      sync.Mutex
-	pending map[string]map[string]types.SchedulerAdmissionCommand
 }
 type Lease struct {
 	admission *Admission
@@ -30,8 +30,8 @@ type Lease struct {
 	once      sync.Once
 }
 type admissionActor struct {
-	id      string
 	service *actor.Service
+	id      string
 }
 
 func NewAdmission(service *actor.Service, epoch string) *Admission {

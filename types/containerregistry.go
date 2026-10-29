@@ -14,6 +14,11 @@ type ContainerRegistryRepository struct {
 
 // ContainerRegistryRepositoryTag describes a tag of a repository and the manifest it points to.
 type ContainerRegistryRepositoryTag struct {
+	// Created is the creation date of the image, when a single platform is published.
+	//
+	// Required: false
+	Created *time.Time `json:"created,omitempty"`
+
 	// Name of the tag.
 	//
 	// Required: true
@@ -29,25 +34,20 @@ type ContainerRegistryRepositoryTag struct {
 	// Required: false
 	MediaType string `json:"mediaType,omitempty"`
 
-	// Size is the compressed size in bytes of every platform image.
-	//
-	// Required: true
-	Size int64 `json:"size"`
-
-	// Created is the creation date of the image, when a single platform is published.
+	// Error explains why the manifest details could not be loaded.
 	//
 	// Required: false
-	Created *time.Time `json:"created,omitempty"`
+	Error string `json:"error,omitempty"`
 
 	// Platforms published under the tag.
 	//
 	// Required: true
 	Platforms []ContainerRegistryTagPlatform `json:"platforms"`
 
-	// Error explains why the manifest details could not be loaded.
+	// Size is the compressed size in bytes of every platform image.
 	//
-	// Required: false
-	Error string `json:"error,omitempty"`
+	// Required: true
+	Size int64 `json:"size"`
 }
 
 // ContainerRegistryTagPlatform describes one platform image published under a tag.
@@ -88,6 +88,21 @@ type ContainerRegistryDeleteTagResponse struct {
 
 // ContainerRegistry represents a container registry in API responses.
 type ContainerRegistry struct {
+	// CreatedAt is the date and time at which the registry was created.
+	//
+	// Required: true
+	CreatedAt time.Time `json:"createdAt" readOnly:"true"`
+
+	// UpdatedAt is the date and time at which the registry was last updated.
+	//
+	// Required: true
+	UpdatedAt time.Time `json:"updatedAt" readOnly:"true"`
+
+	// Description of the container registry.
+	//
+	// Required: false
+	Description *string `json:"description,omitempty" unorm:"nfc" trim:"true"`
+
 	// ID of the container registry.
 	//
 	// Required: true
@@ -103,31 +118,10 @@ type ContainerRegistry struct {
 	// Required: false
 	Username string `json:"username" required:"false"`
 
-	// Description of the container registry.
-	//
-	// Required: false
-	Description *string `json:"description,omitempty" unorm:"nfc" trim:"true"`
-
-	// Insecure indicates if the registry uses an insecure connection (HTTP).
-	//
-	// Required: false
-	Insecure bool `json:"insecure" required:"false"`
-
-	// Enabled indicates if the registry is enabled.
-	//
-	// Required: false
-	Enabled bool `json:"enabled" required:"false"`
-
 	// RegistryType indicates the type of registry (generic, ecr).
 	//
 	// Required: false
 	RegistryType string `json:"registryType" required:"false"`
-
-	// RepositoryNames is the list of pre-configured repository namespace
-	// strings available for selection when pushing images from the build page.
-	//
-	// Required: false
-	RepositoryNames []string `json:"repositoryNames" required:"false"`
 
 	// AWSAccessKeyID is the AWS Access Key ID for ECR registries.
 	// Empty means the default AWS credential chain (e.g. an IAM instance profile) is used.
@@ -140,18 +134,24 @@ type ContainerRegistry struct {
 	// Required: false
 	AWSRegion string `json:"awsRegion,omitempty"`
 
-	// CreatedAt is the date and time at which the registry was created.
-	//
-	// Required: true
-	CreatedAt time.Time `json:"createdAt" readOnly:"true"`
-
-	// UpdatedAt is the date and time at which the registry was last updated.
-	//
-	// Required: true
-	UpdatedAt time.Time `json:"updatedAt" readOnly:"true"`
-
 	Token              string `json:"token,omitempty" writeOnly:"true" copier:"-"`
 	AWSSecretAccessKey string `json:"awsSecretAccessKey,omitempty" writeOnly:"true" copier:"-"`
+
+	// RepositoryNames is the list of pre-configured repository namespace
+	// strings available for selection when pushing images from the build page.
+	//
+	// Required: false
+	RepositoryNames []string `json:"repositoryNames" required:"false"`
+
+	// Insecure indicates if the registry uses an insecure connection (HTTP).
+	//
+	// Required: false
+	Insecure bool `json:"insecure" required:"false"`
+
+	// Enabled indicates if the registry is enabled.
+	//
+	// Required: false
+	Enabled bool `json:"enabled" required:"false"`
 }
 
 type ContainerRegistryPullUsageResponse struct {
@@ -162,6 +162,31 @@ type ContainerRegistryPullUsageResponse struct {
 }
 
 type ContainerRegistryPullUsage struct {
+	// CheckedAt is the time when usage was computed.
+	//
+	// Required: true
+	CheckedAt time.Time `json:"checkedAt"`
+
+	// Limit is the pull limit for the current window.
+	//
+	// Required: false
+	Limit *int `json:"limit,omitempty"`
+
+	// Remaining is the remaining pulls for the current window.
+	//
+	// Required: false
+	Remaining *int `json:"remaining,omitempty"`
+
+	// Used is the number of pulls used in the current window.
+	//
+	// Required: false
+	Used *int `json:"used,omitempty"`
+
+	// WindowSeconds is the current rate limit window duration in seconds.
+	//
+	// Required: false
+	WindowSeconds *int `json:"windowSeconds,omitempty"`
+
 	// RegistryID is the configured registry row ID.
 	//
 	// Required: true
@@ -187,31 +212,6 @@ type ContainerRegistryPullUsage struct {
 	// Required: false
 	Repository string `json:"repository,omitempty"`
 
-	// Limit is the pull limit for the current window.
-	//
-	// Required: false
-	Limit *int `json:"limit,omitempty"`
-
-	// Remaining is the remaining pulls for the current window.
-	//
-	// Required: false
-	Remaining *int `json:"remaining,omitempty"`
-
-	// Used is the number of pulls used in the current window.
-	//
-	// Required: false
-	Used *int `json:"used,omitempty"`
-
-	// WindowSeconds is the current rate limit window duration in seconds.
-	//
-	// Required: false
-	WindowSeconds *int `json:"windowSeconds,omitempty"`
-
-	// ObservedPulls is the number of successful pulls Arcane has initiated for this registry.
-	//
-	// Required: true
-	ObservedPulls int64 `json:"observedPulls"`
-
 	// AuthMethod is the authentication method used for probing.
 	//
 	// Required: true
@@ -227,18 +227,33 @@ type ContainerRegistryPullUsage struct {
 	// Required: false
 	Source string `json:"source,omitempty"`
 
-	// CheckedAt is the time when usage was computed.
-	//
-	// Required: true
-	CheckedAt time.Time `json:"checkedAt"`
-
 	// Error contains a recoverable probe or counter error.
 	//
 	// Required: false
 	Error string `json:"error,omitempty"`
+
+	// ObservedPulls is the number of successful pulls Arcane has initiated for this registry.
+	//
+	// Required: true
+	ObservedPulls int64 `json:"observedPulls"`
 }
 
 type ContainerRegistrySync struct {
+	// CreatedAt is the date and time at which the registry was created.
+	//
+	// Required: true
+	CreatedAt time.Time `json:"createdAt"`
+
+	// UpdatedAt is the date and time at which the registry was last updated.
+	//
+	// Required: true
+	UpdatedAt time.Time `json:"updatedAt"`
+
+	// Description of the container registry.
+	//
+	// Required: false
+	Description *string `json:"description,omitzero" unorm:"nfc" trim:"true"`
+
 	// ID of the container registry.
 	//
 	// Required: true
@@ -259,31 +274,10 @@ type ContainerRegistrySync struct {
 	// Required: true
 	Token string `json:"token"`
 
-	// Description of the container registry.
-	//
-	// Required: false
-	Description *string `json:"description,omitzero" unorm:"nfc" trim:"true"`
-
-	// Insecure indicates if the registry uses an insecure connection (HTTP).
-	//
-	// Required: true
-	Insecure bool `json:"insecure"`
-
-	// Enabled indicates if the registry is enabled.
-	//
-	// Required: true
-	Enabled bool `json:"enabled"`
-
 	// RegistryType indicates the type of registry (generic, ecr).
 	//
 	// Required: true
 	RegistryType string `json:"registryType"`
-
-	// RepositoryNames is the list of pre-configured repository namespace
-	// strings available for selection when pushing images from the build page.
-	//
-	// Required: false
-	RepositoryNames []string `json:"repositoryNames"`
 
 	// AWSAccessKeyID is the AWS Access Key ID for ECR registries.
 	// Empty means the agent uses the default AWS credential chain (e.g. its own IAM instance profile).
@@ -302,15 +296,21 @@ type ContainerRegistrySync struct {
 	// Required: false
 	AWSRegion string `json:"awsRegion,omitempty"`
 
-	// CreatedAt is the date and time at which the registry was created.
+	// RepositoryNames is the list of pre-configured repository namespace
+	// strings available for selection when pushing images from the build page.
 	//
-	// Required: true
-	CreatedAt time.Time `json:"createdAt"`
+	// Required: false
+	RepositoryNames []string `json:"repositoryNames"`
 
-	// UpdatedAt is the date and time at which the registry was last updated.
+	// Insecure indicates if the registry uses an insecure connection (HTTP).
 	//
 	// Required: true
-	UpdatedAt time.Time `json:"updatedAt"`
+	Insecure bool `json:"insecure"`
+
+	// Enabled indicates if the registry is enabled.
+	//
+	// Required: true
+	Enabled bool `json:"enabled"`
 }
 
 type ContainerRegistryCredential struct {

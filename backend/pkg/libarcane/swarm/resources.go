@@ -20,12 +20,12 @@ type resourceMeta struct {
 }
 
 type managedFileResourceSpecInternal struct {
-	Name           string
 	Labels         map[string]string
-	Data           []byte
-	Driver         string
 	DriverOpts     map[string]string
+	Name           string
+	Driver         string
 	TemplateDriver string
+	Data           []byte
 }
 
 type plannedFileResourceInternal struct {
@@ -39,11 +39,11 @@ type plannedFileResourceInternal struct {
 }
 
 type fileResourceAdapterInternal struct {
-	ResourceType string
 	Inspect      func(context.Context, string) (resourceMeta, error)
 	Create       func(context.Context, managedFileResourceSpecInternal) (resourceMeta, error)
 	List         func(context.Context, dockerclient.Filters) ([]staleManagedResourceInternal, error)
 	Remove       func(context.Context, string) error
+	ResourceType string
 }
 
 func planNetworks(project *composegotypes.Project, ns namespace) map[string]string {

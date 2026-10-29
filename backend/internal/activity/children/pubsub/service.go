@@ -30,17 +30,18 @@ const (
 
 // Service fans activity stream events out to per-environment subscribers.
 type Service struct {
-	changes       *concurrency.Signal[string]
+	changes           *concurrency.Signal[string]
+	subscribers       map[int]*subscriber
+	terminalPublished map[string]time.Time
+	nextSubID         int
+
 	subscribersMu sync.RWMutex
-	subscribers   map[int]*subscriber
-	nextSubID     int
 
 	// terminalPublished records when each activity's terminal snapshot was
 	// published, so later non-terminal snapshots from slower goroutines can
 	// be dropped (see admit). Entries are pruned on terminal publishes once
 	// older than terminalPublishRetention.
 	terminalPublishedMu sync.Mutex
-	terminalPublished   map[string]time.Time
 }
 
 // subscriber buffers stream events between publishers and one stream
@@ -50,16 +51,17 @@ type Service struct {
 // resends. Other events keep arrival order in a FIFO bounded by
 // subscriberMessageQueueLimit with drop-oldest on overflow.
 type subscriber struct {
-	environmentID string
-	ch            chan types.ActivityStreamEvent
-	done          chan struct{}
-	wake          chan struct{}
+	ch   chan types.ActivityStreamEvent
+	done chan struct{}
+	wake chan struct{}
 
-	mu              sync.Mutex
-	missed          bool
-	queue           []*pendingStreamEvent
 	pendingActivity map[string]*pendingStreamEvent
+	environmentID   string
+	queue           []*pendingStreamEvent
 	messageCount    int
+
+	mu     sync.Mutex
+	missed bool
 }
 
 type pendingStreamEvent struct {

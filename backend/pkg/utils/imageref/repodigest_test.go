@@ -5,8 +5,8 @@ import "testing"
 func TestRepoDigestRepository(t *testing.T) {
 	tests := []struct {
 		name        string
-		repoDigests []string
 		want        string
+		repoDigests []string
 		wantOK      bool
 	}{
 		{name: "nil"},

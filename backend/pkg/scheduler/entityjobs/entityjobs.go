@@ -17,12 +17,11 @@ const GitOpsSyncJobPrefix = "gitops-sync:"
 // Registry owns one job per entity ID and admits one run per entity at a time.
 // Without SetScheduler, as in agent mode, every registration is a no-op.
 type Registry struct {
+	lifecycleCtx   context.Context
+	scheduler      types.DynamicScheduler
+	admissionGate  *runs.Admission
 	jobPrefix      string
 	admissionScope string
-
-	lifecycleCtx  context.Context
-	scheduler     types.DynamicScheduler
-	admissionGate *runs.Admission
 }
 
 // New creates a registry whose job names are jobPrefix+entityID and whose

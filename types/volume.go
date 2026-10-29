@@ -12,6 +12,25 @@ import (
 
 // Volume represents a Docker volume.
 type Volume struct {
+	// Options contains driver-specific options.
+	//
+	// Required: false
+	Options map[string]string `json:"options" required:"false"`
+
+	// Labels contains user-defined metadata for the volume.
+	//
+	// Required: false
+	Labels map[string]string `json:"labels" required:"false"`
+
+	// UsageData contains size and reference count information.
+	//
+	// Required: false
+	UsageData *volume.UsageData `json:"usageData,omitempty" readOnly:"true"`
+
+	// ActivityID is the activity created by a mutating volume action.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty" readOnly:"true"`
 	EnvironmentTag
 
 	// ID is the unique identifier of the volume.
@@ -39,45 +58,25 @@ type Volume struct {
 	// Required: true
 	Scope string `json:"scope" readOnly:"true"`
 
-	// Options contains driver-specific options.
-	//
-	// Required: false
-	Options map[string]string `json:"options" required:"false"`
-
-	// Labels contains user-defined metadata for the volume.
-	//
-	// Required: false
-	Labels map[string]string `json:"labels" required:"false"`
-
 	// CreatedAt is the time when the volume was created.
 	//
 	// Required: true
 	CreatedAt string `json:"createdAt" readOnly:"true"`
-
-	// InUse indicates if the volume is currently in use by a container.
-	//
-	// Required: true
-	InUse bool `json:"inUse" readOnly:"true"`
-
-	// UsageData contains size and reference count information.
-	//
-	// Required: false
-	UsageData *volume.UsageData `json:"usageData,omitempty" readOnly:"true"`
-
-	// Size is the size of the volume in bytes.
-	//
-	// Required: false
-	Size int64 `json:"size" readOnly:"true"`
 
 	// Containers is a list of container IDs using this volume.
 	//
 	// Required: true
 	Containers []string `json:"containers" readOnly:"true"`
 
-	// ActivityID is the activity created by a mutating volume action.
+	// Size is the size of the volume in bytes.
 	//
 	// Required: false
-	ActivityID *string `json:"activityId,omitempty" readOnly:"true"`
+	Size int64 `json:"size" readOnly:"true"`
+
+	// InUse indicates if the volume is currently in use by a container.
+	//
+	// Required: true
+	InUse bool `json:"inUse" readOnly:"true"`
 }
 
 // VolumeUsageCounts contains counts of volumes by usage status.
@@ -100,6 +99,10 @@ type VolumeUsageCounts struct {
 
 // VolumePruneReport is the result of a volume prune operation.
 type VolumePruneReport struct {
+	// ActivityID is the activity created by the prune action.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 	// VolumesDeleted is a list of volume names that were deleted.
 	//
 	// Required: true
@@ -109,11 +112,6 @@ type VolumePruneReport struct {
 	//
 	// Required: true
 	SpaceReclaimed uint64 `json:"spaceReclaimed"`
-
-	// ActivityID is the activity created by the prune action.
-	//
-	// Required: false
-	ActivityID *string `json:"activityId,omitempty"`
 }
 
 // VolumeRename is used to rename an existing volume.
@@ -181,19 +179,20 @@ type DiscoverVolumeBackupsRequest struct {
 }
 
 type DiscoverVolumeBackupsResponse struct {
-	Count  int      `json:"count" doc:"Number of newly discovered volume backups"`
 	Errors []string `json:"errors,omitempty" doc:"Per-repository failures encountered during discovery"`
+	Count  int      `json:"count" doc:"Number of newly discovered volume backups"`
 }
 
 type VolumeBackupFormat string
 
 // VolumeBackup is one volume backup run.
 type VolumeBackup struct {
-	ID                string                  `json:"id"`
-	UpdatedAt         *time.Time              `json:"updatedAt,omitempty"`
-	VolumeName        string                  `json:"volumeName"`
-	Size              int64                   `json:"size"`
 	CreatedAt         time.Time               `json:"createdAt"`
+	UpdatedAt         *time.Time              `json:"updatedAt,omitempty"`
+	ActivityID        *string                 `json:"activityId,omitempty"`
+	RemoteAvailable   *bool                   `json:"remoteAvailable,omitempty"`
+	ID                string                  `json:"id"`
+	VolumeName        string                  `json:"volumeName"`
 	Status            string                  `json:"status"`
 	Trigger           string                  `json:"trigger"`
 	Destination       VolumeBackupDestination `json:"destination"`
@@ -205,9 +204,8 @@ type VolumeBackup struct {
 	S3DestinationName string                  `json:"s3DestinationName,omitempty"`
 	PolicyID          string                  `json:"policyId,omitempty"`
 	Error             string                  `json:"error,omitempty"`
-	ActivityID        *string                 `json:"activityId,omitempty"`
 	Type              BackupManagementType    `json:"type"`
-	RemoteAvailable   *bool                   `json:"remoteAvailable,omitempty"`
+	Size              int64                   `json:"size"`
 }
 
 type VolumeBackupEntry struct {
@@ -215,7 +213,6 @@ type VolumeBackupEntry struct {
 	ActivityID        *string                 `json:"activityId,omitempty"`
 	ID                string                  `json:"id" doc:"Unique identifier of the backup"`
 	VolumeName        string                  `json:"volumeName" doc:"Name of the volume"`
-	Size              int64                   `json:"size" doc:"Total size of the backup contents"`
 	CreatedAt         string                  `json:"createdAt" doc:"When the backup was created"`
 	Status            string                  `json:"status" doc:"Backup result status"`
 	Trigger           string                  `json:"trigger" doc:"How the backup was started"`
@@ -228,6 +225,7 @@ type VolumeBackupEntry struct {
 	PolicyID          string                  `json:"policyId,omitempty" doc:"Backup policy that created the backup"`
 	Error             string                  `json:"error,omitempty" doc:"Backup error when the run failed"`
 	Type              BackupManagementType    `json:"type" doc:"Whether the backup was system-managed or volume-managed"`
+	Size              int64                   `json:"size" doc:"Total size of the backup contents"`
 }
 
 // Entry is the backup as the API lists it.
@@ -254,19 +252,19 @@ func (b *VolumeBackup) Entry() VolumeBackupEntry {
 }
 
 type VolumeBackupPolicy struct {
+	LastRun           *VolumeBackupEntry `json:"lastRun,omitempty"`
 	ID                string             `json:"id"`
 	VolumeName        string             `json:"volumeName"`
-	Enabled           bool               `json:"enabled"`
 	Schedule          string             `json:"schedule"`
+	S3DestinationID   string             `json:"s3DestinationId,omitempty"`
+	S3DestinationName string             `json:"s3DestinationName,omitempty"`
+	S3Bucket          string             `json:"s3Bucket,omitempty"`
 	RetentionCount    int                `json:"retentionCount"`
+	Enabled           bool               `json:"enabled"`
 	StopContainers    bool               `json:"stopContainers"`
 	LocalEnabled      bool               `json:"localEnabled"`
 	S3Enabled         bool               `json:"s3Enabled"`
-	S3DestinationID   string             `json:"s3DestinationId,omitempty"`
-	S3DestinationName string             `json:"s3DestinationName,omitempty"`
 	S3Available       bool               `json:"s3Available"`
-	S3Bucket          string             `json:"s3Bucket,omitempty"`
-	LastRun           *VolumeBackupEntry `json:"lastRun,omitempty"`
 }
 
 type VolumeBackupPolicyCollection struct {
@@ -280,11 +278,11 @@ type UpdateVolumeBackupPolicies struct {
 
 // VolumeRenameEntry describes a source volume and the target configuration for a copy-based rename.
 type VolumeRenameEntry struct {
+	OldVolume     volume.Volume
+	CreateOptions client.VolumeCreateOptions
 	Key           string
 	OldName       string
 	NewName       string
-	OldVolume     volume.Volume
-	CreateOptions client.VolumeCreateOptions
 }
 
 type VolumeMigration interface {
@@ -301,12 +299,12 @@ type VolumeJournalSource interface {
 }
 
 type VolumeJournalVolume struct {
+	Options map[string]string `json:"options,omitempty"`
+	Labels  map[string]string `json:"labels,omitempty"`
 	Key     string            `json:"key"`
 	OldName string            `json:"oldName"`
 	NewName string            `json:"newName"`
 	Driver  string            `json:"driver,omitempty"`
-	Options map[string]string `json:"options,omitempty"`
-	Labels  map[string]string `json:"labels,omitempty"`
 }
 
 type ProjectVolumeRenameConflictError struct {
@@ -330,14 +328,14 @@ type TargetMissingWithSourceError struct {
 }
 
 type SourceCleanupError struct {
-	SourceVolume string
 	Err          error
+	SourceVolume string
 }
 
 type TargetPreservedDuringRollbackError struct {
+	Err          error
 	SourceVolume string
 	TargetVolume string
-	Err          error
 }
 
 type VolumesExternallyRemovedError struct {

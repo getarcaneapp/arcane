@@ -48,22 +48,22 @@ import (
 )
 
 type VolumeService struct {
+	workspaceLocks utils.KeyedMutex
+	// helperGroup deduplicates concurrent read-only helper creation per volume.
+	// Without it two simultaneous browse requests each create a helper and the
+	// second overwrites the first in helperByVolume, orphaning a `sleep infinity`
+	// container that pins the volume until restart.
+	helperGroup      singleflight.Group
 	db               *database.DB
 	dockerService    *dockerInternal.DockerClientService
 	eventService     *event.EventService
 	settingsService  *settings.SettingsService
 	imageService     *image.ImageService
-	backupVolumeName string
-	workspaceLocks   utils.KeyedMutex
-	helperMu         sync.Mutex
 	helperByVolume   map[string]*volumeHelper
-	// helperGroup deduplicates concurrent read-only helper creation per volume.
-	// Without it two simultaneous browse requests each create a helper and the
-	// second overwrites the first in helperByVolume, orphaning a `sleep infinity`
-	// container that pins the volume until restart.
-	helperGroup singleflight.Group
-	backup      *volumebackup.Service
-	workspace   *workspace.Service
+	backup           *volumebackup.Service
+	workspace        *workspace.Service
+	backupVolumeName string
+	helperMu         sync.Mutex
 }
 
 var ErrVolumeBackupAlreadyRunning = errors.New("a backup is already running for this volume")
@@ -775,8 +775,8 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 
 	// Run volume list and container list in parallel for better performance
 	type volumeListResult struct {
-		volumes []volume.Volume
 		err     error
+		volumes []volume.Volume
 	}
 	type containerMapResult struct {
 		containerMap map[string][]string

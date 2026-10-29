@@ -234,9 +234,9 @@ pagination:
 		content       string
 		serverURL     string
 		logLevel      string
+		errorText     string
 		limit         int
 		resourceLimit int
-		errorText     string
 	}{
 		{name: "partial defaults", content: "api_key: partial\n", serverURL: "http://localhost:3552", logLevel: "info"},
 		{name: "empty document", content: "", serverURL: "http://localhost:3552", logLevel: "info"},
@@ -618,8 +618,8 @@ func TestAuthTokens(t *testing.T) {
 	require.NoError(t, Save(t.Context(), stale))
 	require.NoError(t, SwitchServer(t.Context(), stale, "https://b.test"))
 	for _, operation := range []struct {
-		name string
 		run  func(context.Context) error
+		name string
 	}{
 		{name: "save", run: func(ctx context.Context) error {
 			return SaveTokens(ctx, &types.Config{ServerURL: "https://a.test", JWTToken: "changed"})
