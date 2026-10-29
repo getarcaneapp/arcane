@@ -35,6 +35,7 @@ const (
 	versionStreamPollInterval = 5 * time.Minute
 	versionTTL                = 3 * time.Hour
 	versionCheckURL           = "https://api.github.com/repos/getarcaneapp/arcane/releases/latest"
+	commitNotesTTL            = 24 * time.Hour
 	defaultRequestTimeout     = 15 * time.Second
 )
 
@@ -42,6 +43,11 @@ type latestRelease struct {
 	TagName     string
 	Body        string
 	PublishedAt string
+}
+
+type nextImage struct {
+	Version  string
+	Revision string
 }
 
 type currentImageInfo struct {
@@ -55,6 +61,7 @@ type currentImageInfo struct {
 type VersionService struct {
 	httpClient               *http.Client
 	cache                    *hot.HotCache[struct{}, latestRelease]
+	commitNotesCache         *hot.HotCache[string, string]
 	version                  string
 	revision                 string
 	containerRegistryService *registry.ContainerRegistryService
@@ -86,6 +93,9 @@ func NewVersionService(
 		settingsService:          settingsService,
 		streamHub:                agg.NewHub[types.VersionStreamEvent](),
 		currentImage:             hot.NewHotCache[struct{}, currentImageInfo](hot.LRU, 1).Build(),
+		commitNotesCache: hot.NewHotCache[string, string](hot.LRU, 16).
+			WithTTL(commitNotesTTL).
+			Build(),
 	}
 	loader := func(cacheFailure bool) func(_ []struct{}) (map[struct{}]latestRelease, error) {
 		return func(_ []struct{}) (map[struct{}]latestRelease, error) {
@@ -261,30 +271,31 @@ func (s *VersionService) isChannelBuild(currentTag string) bool {
 		strings.HasSuffix(strings.TrimSpace(currentTag), "-beta")
 }
 
-// resolveNextVersion returns the normalized version label of the image
-// an upgrade would pull, or "" when it cannot be resolved. It prefers the
-// digest reference so the reported version and NewestDigest describe the same
-// artifact.
-func (s *VersionService) resolveNextVersion(ctx context.Context, imageRef, tag, newestDigest string) string {
+// resolveNextImage returns the normalized version label and source revision of the
+// image an upgrade would pull; unresolvable fields stay empty. It prefers the
+// digest reference so the result and NewestDigest describe the same artifact.
+func (s *VersionService) resolveNextImage(ctx context.Context, imageRef, tag, newestDigest string) nextImage {
 	newestDigest, tag = strings.TrimSpace(newestDigest), strings.TrimSpace(tag)
 	if s.containerRegistryService == nil || strings.TrimSpace(imageRef) == "" || (newestDigest == "" && tag == "") {
-		return ""
+		return nextImage{}
 	}
 
 	lookupRef := kit.Ternary(newestDigest != "", imageRef+"@"+newestDigest, imageRef+":"+tag)
 
-	label, err := s.containerRegistryService.ImageVersionLabel(ctx, lookupRef)
+	labels, err := s.containerRegistryService.ImageLabels(ctx, lookupRef)
 	if err != nil {
-		slog.WarnContext(ctx, "Failed to resolve next-channel version label", "imageRef", lookupRef, "error", err)
-		return ""
+		slog.WarnContext(ctx, "Failed to resolve next-channel image labels", "imageRef", lookupRef, "error", err)
+		return nextImage{}
 	}
 
-	normalized := s.normalizeVersion(label)
+	normalized := s.normalizeVersion(labels[registry.OCIImageVersionLabel])
 	if !semver.IsValid(normalized) {
-		slog.WarnContext(ctx, "Next-channel image version label is not valid semver", "imageRef", lookupRef, "label", label)
-		return ""
+		slog.WarnContext(ctx, "Next-channel image version label is not valid semver", "imageRef", lookupRef, "label", labels[registry.OCIImageVersionLabel])
 	}
-	return normalized
+	return nextImage{
+		Version:  kit.Ternary(semver.IsValid(normalized), normalized, ""),
+		Revision: strings.TrimSpace(labels[registry.OCIImageRevisionLabel]),
+	}
 }
 
 // updateCheckImageRef points the digest lookup at the configured registry; "auto" keeps the running reference.
@@ -335,11 +346,21 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *types.VersionIn
 
 		switch {
 		case isSemver && s.isChannelBuild(current.Tag):
-			nextVersion := s.resolveNextVersion(ctx, checkImageRef, current.Tag, latestDigest)
-			return types.VersionInfo{
+			next := s.resolveNextImage(ctx, checkImageRef, current.Tag, latestDigest)
+			info := types.VersionInfo{
 				NewestDigest:    latestDigest,
-				NewestVersion:   kit.Ternary(nextVersion != "" && semver.Compare(nextVersion, ver) >= 0, nextVersion, ""),
-				UpdateAvailable: digestUpdateAvailable || (nextVersion != "" && s.IsNewer(nextVersion, ver)),
+				NewestVersion:   kit.Ternary(next.Version != "" && semver.Compare(next.Version, ver) >= 0, next.Version, ""),
+				UpdateAvailable: digestUpdateAvailable || (next.Version != "" && s.IsNewer(next.Version, ver)),
+			}
+			if !isCommitSHA(s.revision) || !isCommitSHA(next.Revision) || strings.EqualFold(s.revision, next.Revision) {
+				return info
+			}
+			return types.VersionInfo{
+				NewestDigest:    info.NewestDigest,
+				NewestVersion:   info.NewestVersion,
+				UpdateAvailable: info.UpdateAvailable,
+				ReleaseURL:      compareURL(s.revision, next.Revision),
+				ReleaseNotes:    s.commitNotes(ctx, s.revision, next.Revision),
 			}
 		case isSemver:
 			// Never surface a release older than the running version as the target.
