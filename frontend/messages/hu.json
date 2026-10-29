@@ -2893,6 +2893,8 @@
   "update_center_step_reload": "Oldal újratöltése",
   "update_center_estimated": "Ez általában kevesebb mint egy percet vesz igénybe.",
   "update_center_complete": "A frissítés befejeződött.",
+  "update_center_unconfirmed": "A frissítést kérték, de nem sikerült megerősíteni. Ellenőrizze a környezet naplófájljait.",
+  "update_center_unconfirmed_version": "A frissítést kérték, de a környezet továbbra is a „ {version}” parancsot futtatja. Ellenőrizze a naplóit.",
   "auto_start": "Auto-start",
   "api_key_name_placeholder": "Enter a name for this API key",
   "api_key_save_warning": "Mentse el most ezt a kulcsot – ezután már nem jelenik meg.",
