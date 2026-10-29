@@ -218,7 +218,7 @@ function parseBindString(bind: string): VolumeMountRow {
 }
 
 function serializeBindRow(row: VolumeMountRow): string {
-	const options = [...(row.rawOptions ? row.rawOptions.split(',').filter(Boolean) : [])];
+	const options = row.rawOptions ? row.rawOptions.split(',').filter(Boolean) : [];
 	if (row.readOnly) options.push('ro');
 	const suffix = options.length > 0 ? `:${options.join(',')}` : '';
 	return `${row.source.trim()}:${row.target.trim()}${suffix}`;

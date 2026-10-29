@@ -74,19 +74,47 @@ export class WorkspaceDraftState {
 	}
 
 	get entries(): WorkspaceDisplayEntry[] {
-		return this.files.map((file) => {
+		return this.files.map((file): WorkspaceDisplayEntry => {
 			const staged = this.stagedFiles[file.relativePath];
 			const binary = this.binaryFiles[file.relativePath] === true;
+			if (file.isDirectory) {
+				return {
+					path: file.relativePath,
+					relativePath: file.relativePath,
+					name: workspaceFileBasename(file.relativePath),
+					isDirectory: true,
+					size: 0,
+					content: undefined,
+					mimeType: undefined,
+					editable: binary ? false : undefined,
+					readOnlyReason: binary ? 'binary' : undefined,
+					pending: this.#pendingEntries
+				};
+			}
+			if (binary) {
+				return {
+					path: file.relativePath,
+					relativePath: file.relativePath,
+					name: workspaceFileBasename(file.relativePath),
+					isDirectory: false,
+					size: staged?.size ?? 0,
+					content: undefined,
+					mimeType: staged?.type ?? undefined,
+					editable: false,
+					readOnlyReason: 'binary',
+					pending: this.#pendingEntries
+				};
+			}
 			return {
 				path: file.relativePath,
 				relativePath: file.relativePath,
 				name: workspaceFileBasename(file.relativePath),
-				isDirectory: !!file.isDirectory,
-				size: file.isDirectory ? 0 : binary ? (staged?.size ?? 0) : (this.contents[file.relativePath]?.length ?? 0),
-				content: file.isDirectory ? undefined : binary ? undefined : (this.contents[file.relativePath] ?? ''),
-				mimeType: file.isDirectory ? undefined : (staged?.type ?? undefined),
-				editable: binary ? false : undefined,
-				readOnlyReason: binary ? 'binary' : undefined,
+				isDirectory: false,
+				size: this.contents[file.relativePath]?.length ?? 0,
+				content: this.contents[file.relativePath] ?? '',
+				mimeType: staged?.type ?? undefined,
+				editable: undefined,
+				readOnlyReason: undefined,
 				pending: this.#pendingEntries
 			};
 		});
@@ -202,17 +230,23 @@ export class WorkspaceDraftState {
 	};
 
 	toDrafts(): WorkspaceFileDraft[] {
-		return this.files.map((file) => {
+		return this.files.map((file): WorkspaceFileDraft => {
 			const relativePath = file.relativePath;
 			const staged = this.stagedFiles[relativePath];
 			const binary = this.binaryFiles[relativePath] === true;
 			const uploadedText = this.uploadedText[relativePath];
 			const untouched = uploadedText !== undefined && this.contents[relativePath] === uploadedText;
+			if (file.isDirectory) {
+				return { relativePath, isDirectory: true, content: undefined, file: undefined };
+			}
+			if (binary) {
+				return { relativePath, isDirectory: false, content: undefined, file: staged };
+			}
 			return {
 				relativePath,
-				isDirectory: !!file.isDirectory,
-				content: file.isDirectory ? undefined : binary ? undefined : (this.contents[relativePath] ?? ''),
-				file: file.isDirectory ? undefined : binary || untouched ? staged : undefined
+				isDirectory: false,
+				content: this.contents[relativePath] ?? '',
+				file: untouched ? staged : undefined
 			};
 		});
 	}

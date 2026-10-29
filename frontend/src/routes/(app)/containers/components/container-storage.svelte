@@ -10,6 +10,11 @@
 	}
 
 	let { container }: Props = $props();
+
+	const mountIconBgClass: Record<string, string> = {
+		volume: 'bg-primary/10',
+		bind: 'bg-info/10'
+	};
 </script>
 
 <div class="space-y-6">
@@ -32,13 +37,7 @@
 							<Card.Content>
 								<div class="mb-4 flex items-center justify-between border-b border-border pb-4">
 									<div class="flex items-center gap-3">
-										<div
-											class="rounded-lg p-2 {mount.type === 'volume'
-												? 'bg-primary/10'
-												: mount.type === 'bind'
-													? 'bg-info/10'
-													: 'bg-warning/10'}"
-										>
+										<div class={['rounded-lg p-2', mountIconBgClass[mount.type] ?? 'bg-warning/10']}>
 											{#if mount.type === 'volume'}
 												<VolumesIcon class="size-5 text-primary" />
 											{:else if mount.type === 'bind'}
@@ -49,11 +48,13 @@
 										</div>
 										<div class="min-w-0 flex-1">
 											<div class="text-base font-semibold break-all text-foreground">
-												{mount.type === 'tmpfs'
-													? m.containers_mount_type_tmpfs()
-													: mount.type === 'volume'
-														? mount.name || m.containers_mount_type_volume()
-														: m.containers_mount_type_bind()}
+												{#if mount.type === 'tmpfs'}
+													{m.containers_mount_type_tmpfs()}
+												{:else if mount.type === 'volume'}
+													{mount.name || m.containers_mount_type_volume()}
+												{:else}
+													{m.containers_mount_type_bind()}
+												{/if}
 											</div>
 											<div class="text-xs text-muted-foreground">
 												{mount.type} mount
@@ -83,11 +84,13 @@
 									<Card.Root variant="outlined" class="sm:col-span-2" size="sm">
 										<Card.Content class="flex flex-col">
 											<div class="mb-2 text-xs font-semibold text-muted-foreground">
-												{mount.type === 'volume'
-													? m.containers_mount_label_volume()
-													: mount.type === 'bind'
-														? m.containers_mount_label_host()
-														: m.containers_mount_label_source()}
+												{#if mount.type === 'volume'}
+													{m.containers_mount_label_volume()}
+												{:else if mount.type === 'bind'}
+													{m.containers_mount_label_host()}
+												{:else}
+													{m.containers_mount_label_source()}
+												{/if}
 											</div>
 											<div
 												class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"

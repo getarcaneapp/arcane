@@ -215,11 +215,7 @@
 				<FormInput
 					label={m.common_token()}
 					type="password"
-					placeholder={urlChanged && hasToken
-						? m.common_token_placeholder()
-						: hasToken
-							? m.common_keep_placeholder()
-							: m.common_token_placeholder()}
+					placeholder={hasToken && !urlChanged ? m.common_keep_placeholder() : m.common_token_placeholder()}
 					warningText={tokenNeedsAttention ? m.git_repository_token_url_change() : undefined}
 					disabled={clearToken}
 					oninput={clearCredentialErrors}

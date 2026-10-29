@@ -181,12 +181,11 @@
 		{item}
 		icon={() => ({ component: ShieldCheckIcon, variant: item.fixableCount > 0 ? 'amber' : 'emerald' })}
 		title={(item) => item.imageRef}
-		subtitle={(item) =>
-			(mobileFieldVisibility['fixableCount'] ?? true)
-				? item.fixableCount > 0
-					? `${item.fixableCount} / ${item.totalCount} CVEs`
-					: m.security_no_fixable()
-				: null}
+		subtitle={(item) => {
+			if (!(mobileFieldVisibility['fixableCount'] ?? true)) return null;
+			if (item.fixableCount > 0) return `${item.fixableCount} / ${item.totalCount} CVEs`;
+			return m.security_no_fixable();
+		}}
 		badges={[
 			(item) => {
 				if (!(mobileFieldVisibility['lastPatch'] ?? true)) return null;

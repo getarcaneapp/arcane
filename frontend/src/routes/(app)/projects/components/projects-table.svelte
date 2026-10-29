@@ -227,6 +227,22 @@
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
 	];
 
+	const selectionDisabledReason = $derived.by(() => {
+		if (hasConfigurationBlockedSelection) return m.env_file_unreadable_title();
+		if (hasArchivedSelection) return m.projects_archived_badge();
+		return undefined;
+	});
+	const redeployDisabledReason = $derived.by(() => {
+		if (selectionDisabledReason) return selectionDisabledReason;
+		if (hasRedeployDisabledSelection) return m.common_redeploy_disabled_arcane_self();
+		return undefined;
+	});
+	const archiveDisabledReason = $derived.by(() => {
+		if (hasRunningSelection) return m.projects_archive_requires_stopped();
+		if (hasArchivedSelection) return m.projects_archived_badge();
+		return undefined;
+	});
+
 	const bulkActions = $derived.by<BulkAction[]>(() => [
 		{
 			id: 'up',
@@ -235,11 +251,7 @@
 			onClick: handleBulkUp,
 			loading: isBulkLoading.up,
 			disabled: !canDeployProject || isAnyLoading || hasArchivedSelection || hasConfigurationBlockedSelection,
-			disabledReason: hasConfigurationBlockedSelection
-				? m.env_file_unreadable_title()
-				: hasArchivedSelection
-					? m.projects_archived_badge()
-					: undefined,
+			disabledReason: selectionDisabledReason,
 			icon: StartIcon
 		},
 		{
@@ -249,11 +261,7 @@
 			onClick: handleBulkDown,
 			loading: isBulkLoading.down,
 			disabled: !canDownProject || isAnyLoading || hasArchivedSelection || hasConfigurationBlockedSelection,
-			disabledReason: hasConfigurationBlockedSelection
-				? m.env_file_unreadable_title()
-				: hasArchivedSelection
-					? m.projects_archived_badge()
-					: undefined,
+			disabledReason: selectionDisabledReason,
 			icon: StopIcon
 		},
 		{
@@ -268,13 +276,7 @@
 				hasRedeployDisabledSelection ||
 				hasArchivedSelection ||
 				hasConfigurationBlockedSelection,
-			disabledReason: hasConfigurationBlockedSelection
-				? m.env_file_unreadable_title()
-				: hasArchivedSelection
-					? m.projects_archived_badge()
-					: hasRedeployDisabledSelection
-						? m.common_redeploy_disabled_arcane_self()
-						: undefined,
+			disabledReason: redeployDisabledReason,
 			icon: RedeployIcon
 		},
 		{
@@ -284,13 +286,21 @@
 			onClick: handleBulkArchive,
 			loading: isBulkLoading.archive,
 			disabled: !canArchiveProject || isAnyLoading || hasArchivedSelection || hasRunningSelection,
-			disabledReason: hasRunningSelection
-				? m.projects_archive_requires_stopped()
-				: hasArchivedSelection
-					? m.projects_archived_badge()
-					: undefined
+			disabledReason: archiveDisabledReason
 		}
 	]);
+
+	function getProjectIconVariant(status: string): 'emerald' | 'red' | 'amber' {
+		if (status === 'running') return 'emerald';
+		if (status === 'exited') return 'red';
+		return 'amber';
+	}
+
+	function getRowArchivedTitle(item: ProjectRow, configurationBlocked: boolean): string | undefined {
+		if (configurationBlocked) return m.env_file_unreadable_title();
+		if (item.isArchived) return m.projects_archived_badge();
+		return undefined;
+	}
 </script>
 
 {#snippet NameCell({ item }: { item: ProjectRow })}
@@ -393,7 +403,7 @@
 		{item}
 		icon={(item: ProjectRow) => ({
 			component: FolderOpenIcon,
-			variant: item.status === 'running' ? 'emerald' : item.status === 'exited' ? 'red' : 'amber',
+			variant: getProjectIconVariant(item.status),
 			imageUrl: getThemedIconUrl(item, mode.current) ?? undefined,
 			alt: item.name
 		})}
@@ -477,11 +487,7 @@
 	{@const envId = item.environmentId}
 	{@const configurationBlocked = !!item.configurationError?.blocksOperations}
 	{@const lifecycleDisabled = item.isArchived || isAnyLoading || configurationBlocked}
-	{@const archivedTitle = configurationBlocked
-		? m.env_file_unreadable_title()
-		: item.isArchived
-			? m.projects_archived_badge()
-			: undefined}
+	{@const archivedTitle = getRowArchivedTitle(item, configurationBlocked)}
 	<RowActionsMenu>
 		<DropdownMenu.Item onclick={() => goto(environmentHref(`/projects/${item.id}`, envId))} disabled={isAnyLoading}>
 			<EditIcon class="size-4" />

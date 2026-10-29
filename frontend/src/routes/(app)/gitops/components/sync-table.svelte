@@ -90,7 +90,7 @@
 	}
 
 	async function selectMode(mode: string) {
-		const filters: FilterMap = { ...(requestOptions?.filters ?? {}) };
+		const filters: FilterMap = { ...requestOptions?.filters };
 		if (mode) filters['mode'] = mode;
 		else delete filters['mode'];
 

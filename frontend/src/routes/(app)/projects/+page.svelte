@@ -36,7 +36,7 @@
 	let { data } = $props();
 
 	function withArchivedFilter(options: SearchPaginationSortRequest, show: boolean): SearchPaginationSortRequest {
-		const filters = { ...(options.filters ?? {}) };
+		const filters = { ...options.filters };
 		if (show) {
 			filters['archived'] = 'true';
 		} else {

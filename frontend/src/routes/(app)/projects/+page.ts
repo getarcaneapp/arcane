@@ -27,7 +27,7 @@ export const load: PageLoad = async ({ parent, url }) => {
 			direction: 'asc'
 		}
 	} satisfies SearchPaginationSortRequest);
-	const filters = { ...(projectRequestOptions.filters ?? {}) };
+	const filters = { ...projectRequestOptions.filters };
 	if (showArchived) {
 		filters['archived'] = 'true';
 	} else {

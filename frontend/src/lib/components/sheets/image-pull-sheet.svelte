@@ -77,11 +77,9 @@
 		}
 
 		open = newOpenState;
-		if (!newOpenState || newOpenState) {
-			pickedEnvironmentId = '';
-			inputs.imageRef.value = '';
-			inputs.tag.value = 'latest';
-		}
+		pickedEnvironmentId = '';
+		inputs.imageRef.value = '';
+		inputs.tag.value = 'latest';
 	}
 </script>
 
