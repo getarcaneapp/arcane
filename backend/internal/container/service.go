@@ -1561,7 +1561,7 @@ func (s *ContainerService) SampleResources(ctx context.Context, ids []string, ma
 			matched = append(matched, types.ContainerSummary{ID: dc.ID, State: string(dc.State)})
 		}
 	}
-	return s.stats.Collect(ctx, matched, maxAge)
+	return s.stats.Collect(ctx, matched, maxAge, false)
 }
 
 func (s *ContainerService) ListContainersPaginated(
@@ -1632,7 +1632,7 @@ func (s *ContainerService) ListContainersPaginated(
 			}
 		}
 
-		samples, collectErr := s.stats.Collect(ctx, filtered, stats.ContainerResourceSampleTTL)
+		samples, collectErr := s.stats.Collect(ctx, filtered, stats.ContainerResourceSampleTTL, true)
 		if collectErr != nil {
 			return ContainerListResult{}, collectErr
 		}
