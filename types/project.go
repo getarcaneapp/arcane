@@ -37,6 +37,15 @@ type ProjectIncludeFile struct {
 
 // CreateProject is used to create a new project.
 type CreateProject struct {
+	// EnvContent is the environment file content.
+	//
+	// Required: false
+	EnvContent *string `json:"envContent,omitempty"`
+
+	// TagColors maps normalized UI-managed tag names to their display colors.
+	//
+	// Required: false
+	TagColors map[string]ProjectTagColor `json:"tagColors,omitempty"`
 	// Name of the project.
 	//
 	// Required: true
@@ -47,20 +56,10 @@ type CreateProject struct {
 	// Required: true
 	ComposeContent string `json:"composeContent" binding:"required"`
 
-	// EnvContent is the environment file content.
-	//
-	// Required: false
-	EnvContent *string `json:"envContent,omitempty"`
-
 	// Tags are UI-managed tags to attach to the new project.
 	//
 	// Required: false
 	Tags []string `json:"tags,omitempty"`
-
-	// TagColors maps normalized UI-managed tag names to their display colors.
-	//
-	// Required: false
-	TagColors map[string]ProjectTagColor `json:"tagColors,omitempty"`
 }
 
 // ProjectTagSource identifies where a project tag is managed.
@@ -115,22 +114,22 @@ type ProjectReference struct {
 // UpdateProjectTag mutates a UI-managed tag association.
 type UpdateProjectTag struct {
 	Name     string          `json:"name"`
-	Attached bool            `json:"attached"`
 	Color    ProjectTagColor `json:"color,omitempty"`
+	Attached bool            `json:"attached"`
 }
 
 // UpdateProjectTagResponse is returned after a project tag mutation.
 type UpdateProjectTagResponse struct {
-	Tags       []ProjectTag `json:"tags"`
 	ActivityID *string      `json:"activityId,omitempty"`
+	Tags       []ProjectTag `json:"tags"`
 }
 
 // ProjectBuildRequest configures a project's image build.
 type ProjectBuildRequest struct {
-	Services []string `json:"services,omitempty" doc:"Service names to build"`
-	Provider string   `json:"provider,omitempty" doc:"Build provider override"`
 	Push     *bool    `json:"push,omitempty" doc:"Push images"`
 	Load     *bool    `json:"load,omitempty" doc:"Load images into Docker"`
+	Provider string   `json:"provider,omitempty" doc:"Build provider override"`
+	Services []string `json:"services,omitempty" doc:"Service names to build"`
 }
 
 // ProjectDeployOptions configures project deploy behavior.
@@ -167,6 +166,16 @@ type ProjectRuntimeService struct {
 	// ContainerLabels carries runtime policy inputs for server-side update aggregation.
 	ContainerLabels map[string]string `json:"-"`
 
+	// Health is the health status of the container.
+	//
+	// Required: false
+	Health *string `json:"health,omitempty"`
+
+	// ServiceConfig is the configuration of the service from the compose file.
+	//
+	// Required: false
+	ServiceConfig *composetypes.ServiceConfig `json:"serviceConfig,omitempty"`
+
 	// ImageID is the runtime image ID used to match image-level update checks.
 	ImageID string `json:"-"`
 
@@ -195,16 +204,6 @@ type ProjectRuntimeService struct {
 	// Required: false
 	ContainerName string `json:"containerName,omitempty"`
 
-	// Ports is a list of port mappings for the container.
-	//
-	// Required: false
-	Ports []string `json:"ports,omitempty"`
-
-	// Health is the health status of the container.
-	//
-	// Required: false
-	Health *string `json:"health,omitempty"`
-
 	// IconLightURL is an optional light icon URL for dark themes.
 	//
 	// Required: false
@@ -215,10 +214,10 @@ type ProjectRuntimeService struct {
 	// Required: false
 	IconDarkURL string `json:"iconDarkUrl,omitempty"`
 
-	// ServiceConfig is the configuration of the service from the compose file.
+	// Ports is a list of port mappings for the container.
 	//
 	// Required: false
-	ServiceConfig *composetypes.ServiceConfig `json:"serviceConfig,omitempty"`
+	Ports []string `json:"ports,omitempty"`
 
 	// RedeployDisabled indicates whether redeploy actions are disabled for this runtime service.
 	//
@@ -228,23 +227,48 @@ type ProjectRuntimeService struct {
 
 // ProjectServiceUpdateInfo keeps version candidates separate for services sharing an image.
 type ProjectServiceUpdateInfo struct {
-	ImageRef   string           `json:"imageRef"`
 	UpdateInfo *ImageUpdateInfo `json:"updateInfo,omitempty"`
+	ImageRef   string           `json:"imageRef"`
 }
 
 // ProjectUpdateInfo contains aggregated image update status for a project.
 type ProjectUpdateInfo struct {
 	ServiceUpdates map[string]ProjectServiceUpdateInfo `json:"serviceUpdates,omitempty"`
+
+	// ErrorMessage is the first available error message from the latest project image checks.
+	//
+	// Required: false
+	ErrorMessage *string `json:"errorMessage,omitempty"`
+
+	// UpdateInfoByRef contains the latest persisted per-image update result keyed by image reference.
+	//
+	// Required: false
+	UpdateInfoByRef map[string]ImageUpdateInfo `json:"updateInfoByRef,omitempty"`
+
+	// LastCheckedAt is the latest successful or failed image update check time for this project.
+	//
+	// Required: false
+	LastCheckedAt *time.Time `json:"lastCheckedAt,omitempty"`
 	// Status is the aggregate update status for the project.
 	//
 	// Values: has_update | up_to_date | not_pulled | unknown | error
 	// Required: true
 	Status string `json:"status"`
 
-	// HasUpdate indicates whether any project image has an available update.
+	// ImageRefs is the list of unique image references detected for the project.
 	//
-	// Required: true
-	HasUpdate bool `json:"hasUpdate"`
+	// Required: false
+	ImageRefs []string `json:"imageRefs,omitempty"`
+
+	// UpdatedImageRefs is the subset of project image references with available updates.
+	//
+	// Required: false
+	UpdatedImageRefs []string `json:"updatedImageRefs,omitempty"`
+
+	// NotPulledImageRefs is the subset of project image references not present locally.
+	//
+	// Required: false
+	NotPulledImageRefs []string `json:"notPulledImageRefs,omitempty"`
 
 	// ImageCount is the total number of unique checkable image references in the project.
 	//
@@ -271,35 +295,10 @@ type ProjectUpdateInfo struct {
 	// Required: true
 	ErrorCount int `json:"errorCount"`
 
-	// ErrorMessage is the first available error message from the latest project image checks.
+	// HasUpdate indicates whether any project image has an available update.
 	//
-	// Required: false
-	ErrorMessage *string `json:"errorMessage,omitempty"`
-
-	// ImageRefs is the list of unique image references detected for the project.
-	//
-	// Required: false
-	ImageRefs []string `json:"imageRefs,omitempty"`
-
-	// UpdatedImageRefs is the subset of project image references with available updates.
-	//
-	// Required: false
-	UpdatedImageRefs []string `json:"updatedImageRefs,omitempty"`
-
-	// NotPulledImageRefs is the subset of project image references not present locally.
-	//
-	// Required: false
-	NotPulledImageRefs []string `json:"notPulledImageRefs,omitempty"`
-
-	// UpdateInfoByRef contains the latest persisted per-image update result keyed by image reference.
-	//
-	// Required: false
-	UpdateInfoByRef map[string]ImageUpdateInfo `json:"updateInfoByRef,omitempty"`
-
-	// LastCheckedAt is the latest successful or failed image update check time for this project.
-	//
-	// Required: false
-	LastCheckedAt *time.Time `json:"lastCheckedAt,omitempty"`
+	// Required: true
+	HasUpdate bool `json:"hasUpdate"`
 }
 
 type ProjectDetailsOptions struct {
@@ -324,6 +323,26 @@ func AllProjectDetails() ProjectDetailsOptions {
 
 // CreateProjectResponse is the response when a project is created.
 type CreateProjectResponse struct {
+	// StatusReason provides additional information about the status.
+	//
+	// Required: false
+	StatusReason *string `json:"statusReason,omitempty"`
+
+	// GitOpsManagedBy is the ID of the GitOps sync managing this project (if any).
+	//
+	// Required: false
+	GitOpsManagedBy *string `json:"gitOpsManagedBy,omitempty"`
+
+	// ArchivedAt is the date and time when the project was archived.
+	//
+	// Required: false
+	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
+
+	// ActivityID is the activity created by the project action.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
+
 	// ID is the unique identifier of the project.
 	//
 	// Required: true
@@ -354,10 +373,18 @@ type CreateProjectResponse struct {
 	// Required: true
 	Status string `json:"status"`
 
-	// StatusReason provides additional information about the status.
+	// CreatedAt is the date and time when the project was created.
 	//
-	// Required: false
-	StatusReason *string `json:"statusReason,omitempty"`
+	// Required: true
+	CreatedAt string `json:"createdAt"`
+
+	// UpdatedAt is the date and time when the project was last updated.
+	//
+	// Required: true
+	UpdatedAt string `json:"updatedAt"`
+
+	// Tags are the effective UI and Compose tags for the project.
+	Tags []ProjectTag `json:"tags"`
 
 	// ServiceCount is the total number of services in the project.
 	//
@@ -369,38 +396,10 @@ type CreateProjectResponse struct {
 	// Required: true
 	RunningCount int `json:"runningCount"`
 
-	// GitOpsManagedBy is the ID of the GitOps sync managing this project (if any).
-	//
-	// Required: false
-	GitOpsManagedBy *string `json:"gitOpsManagedBy,omitempty"`
-
 	// IsArchived indicates whether the project is hidden from the default project list.
 	//
 	// Required: true
 	IsArchived bool `json:"isArchived"`
-
-	// ArchivedAt is the date and time when the project was archived.
-	//
-	// Required: false
-	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
-
-	// CreatedAt is the date and time when the project was created.
-	//
-	// Required: true
-	CreatedAt string `json:"createdAt"`
-
-	// UpdatedAt is the date and time when the project was last updated.
-	//
-	// Required: true
-	UpdatedAt string `json:"updatedAt"`
-
-	// ActivityID is the activity created by the project action.
-	//
-	// Required: false
-	ActivityID *string `json:"activityId,omitempty"`
-
-	// Tags are the effective UI and Compose tags for the project.
-	Tags []ProjectTag `json:"tags"`
 }
 
 // ProjectConfigurationError describes a filesystem-level configuration problem that
@@ -434,11 +433,6 @@ type ProjectConfigurationError struct {
 
 // Project contains detailed information about a project.
 type Project struct {
-	EnvironmentTag
-
-	// Tags are the effective UI and Compose tags for the project.
-	Tags []ProjectTag `json:"tags" readOnly:"true"`
-
 	// StatusReason provides additional information about the status.
 	//
 	// Required: false
@@ -469,6 +463,12 @@ type Project struct {
 	// Required: false
 	ArchivedAt *time.Time `json:"archivedAt,omitempty" readOnly:"true"`
 
+	// ConfigurationError reports a filesystem-level configuration problem detected for this project.
+	//
+	// Required: false
+	ConfigurationError *ProjectConfigurationError `json:"configurationError,omitempty" readOnly:"true"`
+	EnvironmentTag
+
 	// Status is the current status of the project.
 	//
 	// Required: true
@@ -488,14 +488,6 @@ type Project struct {
 	//
 	// Required: false
 	ComposeFileName string `json:"composeFileName,omitempty" readOnly:"true"`
-
-	// ComposeFiles is the ordered project-relative list of compose files selected
-	// by a COMPOSE_FILE entry in the project's .env. It is populated only when
-	// COMPOSE_FILE selects more than one file; otherwise it is empty and
-	// ComposeFileName is authoritative.
-	//
-	// Required: false
-	ComposeFiles []string `json:"composeFiles,omitempty" readOnly:"true"`
 
 	// EnvContent is the environment file content.
 	//
@@ -556,6 +548,17 @@ type Project struct {
 	// Required: true
 	CreatedAt string `json:"createdAt" readOnly:"true"`
 
+	// Tags are the effective UI and Compose tags for the project.
+	Tags []ProjectTag `json:"tags" readOnly:"true"`
+
+	// ComposeFiles is the ordered project-relative list of compose files selected
+	// by a COMPOSE_FILE entry in the project's .env. It is populated only when
+	// COMPOSE_FILE selects more than one file; otherwise it is empty and
+	// ComposeFileName is authoritative.
+	//
+	// Required: false
+	ComposeFiles []string `json:"composeFiles,omitempty" readOnly:"true"`
+
 	// RuntimeServices contains live container status information for each service.
 	//
 	// Required: false
@@ -605,11 +608,6 @@ type Project struct {
 	//
 	// Required: false
 	RedeployDisabled bool `json:"redeployDisabled,omitempty" readOnly:"true"`
-
-	// ConfigurationError reports a filesystem-level configuration problem detected for this project.
-	//
-	// Required: false
-	ConfigurationError *ProjectConfigurationError `json:"configurationError,omitempty" readOnly:"true"`
 }
 
 // ProjectDestroy is used to destroy a project.
@@ -679,20 +677,20 @@ type VolumeSourcePathMapper interface {
 
 // ComposeContentOptions configures loading a Compose project from in-memory content.
 type ComposeContentOptions struct {
+	PathMapper      VolumeSourcePathMapper
 	ProjectName     string
 	ComposeContent  string
 	OverrideContent string
 	EnvContent      string
 	WorkingDir      string
-	PathMapper      VolumeSourcePathMapper
 }
 
 // ProjectBuildOptions selects Compose services and overrides the configured build provider.
 type ProjectBuildOptions struct {
-	Services []string
-	Provider string
 	Push     *bool
 	Load     *bool
+	Provider string
+	Services []string
 }
 
 // ComposeImageOperations connects Compose preparation to the application's image and build services.
@@ -706,37 +704,37 @@ type ComposeImageOperations struct {
 
 // ComposeDeployment supplies application actions in deployment order.
 type ComposeDeployment struct {
-	ProjectID         string
-	ProjectPath       string
-	DockerHost        string
-	Options           *ProjectDeployOptions
-	DefaultPullPolicy string
-	GitOpsManaged     bool
-	WaitTimeout       time.Duration
-	AuthConfigs       map[string]registry.AuthConfig
 	Progress          io.Writer
+	Options           *ProjectDeployOptions
+	AuthConfigs       map[string]registry.AuthConfig
 	PreDeploy         func(context.Context) error
 	Load              func(context.Context) (*composetypes.Project, error)
 	ResolveImages     func(context.Context) (ComposeImageOperations, error)
 	Recover           func(context.Context)
+	ProjectID         string
+	ProjectPath       string
+	DockerHost        string
+	DefaultPullPolicy string
+	WaitTimeout       time.Duration
+	GitOpsManaged     bool
 }
 
 // ComposeServiceUpdate supplies an already authorized service update.
 type ComposeServiceUpdate struct {
-	Project    *composetypes.Project
-	DockerHost string
-	Services   []string
+	Progress              io.Writer
+	Project               *composetypes.Project
+	AuthConfigs           map[string]registry.AuthConfig
+	RestoreBeforeMutation func(context.Context)
+	Recover               func(context.Context)
+	Images                ComposeImageOperations
+	DockerHost            string
+	Services              []string
 	// Dependents are recreated alongside Services because they share a member's
 	// namespace or volumes; they are never pulled. StoppedDependents are
 	// recreated without being started so an operator's stop is preserved.
-	Dependents            []string
-	StoppedDependents     []string
-	Images                ComposeImageOperations
-	Progress              io.Writer
-	AuthConfigs           map[string]registry.AuthConfig
-	WaitTimeout           time.Duration
-	RestoreBeforeMutation func(context.Context)
-	Recover               func(context.Context)
+	Dependents        []string
+	StoppedDependents []string
+	WaitTimeout       time.Duration
 }
 
 // ComposeCommands supplies the SDK operations used by the coordinator.
@@ -820,21 +818,21 @@ const (
 
 // ProjectRecord is the stored state of a project that list projections read.
 type ProjectRecord struct {
-	ID                 string
-	Name               string
+	CreatedAt          time.Time
 	DirName            *string
-	Path               string
-	Status             string
 	StatusReason       *string
-	ServiceCount       int
-	RunningCount       int
 	GitOpsManagedBy    *string
 	ComposeProjectName *string
 	BuildImageRefsJSON *string
-	IsArchived         bool
 	ArchivedAt         *time.Time
-	CreatedAt          time.Time
 	UpdatedAt          *time.Time
+	ID                 string
+	Name               string
+	Path               string
+	Status             string
+	ServiceCount       int
+	RunningCount       int
+	IsArchived         bool
 }
 
 // ProjectTagAssignment is one stored project tag association.
@@ -847,9 +845,9 @@ type ProjectTagAssignment struct {
 
 // ComposeIdentity is the compose project identity of a discovered directory.
 type ComposeIdentity struct {
-	ServiceCount        int
-	ResolvedProjectName string
 	ComposeProjectName  *string
+	ResolvedProjectName string
+	ServiceCount        int
 	ExplicitProjectName bool
 }
 
@@ -866,26 +864,26 @@ const (
 )
 
 type ProjectRenameJournal struct {
+	UpdatedAt  time.Time             `json:"updatedAt"`
+	OldDirName *string               `json:"oldDirName,omitempty"`
 	ProjectID  string                `json:"projectId"`
 	OldName    string                `json:"oldName"`
 	NewName    string                `json:"newName"`
 	OldPath    string                `json:"oldPath"`
 	NewPath    string                `json:"newPath"`
-	OldDirName *string               `json:"oldDirName,omitempty"`
 	NewDirName string                `json:"newDirName"`
 	Phase      string                `json:"phase"`
 	Volumes    []VolumeJournalVolume `json:"volumes,omitempty"`
-	UpdatedAt  time.Time             `json:"updatedAt"`
 }
 
 type ProjectRenameRollbackCleanup struct {
+	UpdatedAt time.Time             `json:"updatedAt"`
 	ProjectID string                `json:"projectId"`
 	OldName   string                `json:"oldName"`
 	OldPath   string                `json:"oldPath"`
 	NewName   string                `json:"newName"`
 	NewPath   string                `json:"newPath"`
 	Volumes   []VolumeJournalVolume `json:"volumes,omitempty"`
-	UpdatedAt time.Time             `json:"updatedAt"`
 }
 
 // ProjectRenameRecoveryOperations supplies persistence and Docker access to rename recovery.

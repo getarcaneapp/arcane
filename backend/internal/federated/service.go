@@ -49,6 +49,8 @@ const (
 var errInvalidGrant = common.Classify(common.ErrFederatedCredentialInvalidGrant, errors.New("invalid federated token grant"))
 
 type FederatedCredentialService struct {
+	providerGroup   singleflight.Group
+	exchanges       metric.Int64Counter
 	db              *database.DB
 	authService     *auth.AuthService
 	userService     *user.UserService
@@ -57,10 +59,8 @@ type FederatedCredentialService struct {
 	roleService     *role.RoleService
 	httpClient      *http.Client
 	keySetManager   *oidcjwk.KeySetManager
-	providerMu      sync.RWMutex
 	keySets         map[string]oidc.KeySet
-	providerGroup   singleflight.Group
-	exchanges       metric.Int64Counter
+	providerMu      sync.RWMutex
 }
 
 func NewFederatedCredentialService(

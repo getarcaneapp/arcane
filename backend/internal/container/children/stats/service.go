@@ -44,25 +44,25 @@ const (
 
 // Service collects container stats through the parent's Docker client.
 type Service struct {
+	flight        singleflight.Group
 	getClient     func(context.Context) (*client.Client, error)
 	dockerHost    func() string
-	history       stats.Store
 	cache         *hot.HotCache[string, cachedStats]
 	inspectCache  *hot.HotCache[string, container.InspectResponse]
-	flight        singleflight.Group
+	history       stats.Store
 	sampleTimeout time.Duration
 	batchTimeout  time.Duration
 }
 
 // cachedStats records when Arcane fetched a sample, so freshness checks don't depend on the daemon's clock.
 type cachedStats struct {
-	stats     container.StatsResponse
 	fetchedAt time.Time
+	stats     container.StatsResponse
 }
 
 type resourceSample struct {
-	stats   container.StatsResponse
 	inspect *container.InspectResponse
+	stats   container.StatsResponse
 }
 
 type resourceInstruments struct {

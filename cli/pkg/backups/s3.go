@@ -202,9 +202,9 @@ func newS3UpdateCmd() *cobra.Command {
 
 			req := map[string]any{}
 			for _, field := range []struct {
+				value any
 				flag  string
 				key   string
-				value any
 			}{
 				{flag: "name", key: "name", value: opts.Name},
 				{flag: "endpoint", key: "endpoint", value: opts.Endpoint},

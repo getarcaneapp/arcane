@@ -22,10 +22,10 @@ import (
 )
 
 type updateLeases struct {
-	mu     sync.Mutex
-	keys   []types.SchedulerAdmissionKey
 	leases map[types.SchedulerAdmissionKey]*runs.Lease
 	retain map[types.SchedulerAdmissionKey]<-chan struct{}
+	keys   []types.SchedulerAdmissionKey
+	mu     sync.Mutex
 }
 
 func updateAdmissionKeys(containers []container.Summary) func(targetIDs []string) []types.SchedulerAdmissionKey {

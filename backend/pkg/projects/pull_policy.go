@@ -35,13 +35,13 @@ type ImagePullStep struct {
 
 // DeployImageDecision describes how deploy should handle a service image.
 type DeployImageDecision struct {
+	StaleAfter    time.Duration
 	Build         bool
 	PullAlways    bool
 	PullIfMissing bool
 	// PullIfStale pulls when the image is missing or its last-tag time is
 	// older than StaleAfter (pull_policy daily/weekly/every_N).
 	PullIfStale             bool
-	StaleAfter              time.Duration
 	FallbackBuildOnPullFail bool
 	RequireLocalOnly        bool
 }

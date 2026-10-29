@@ -39,9 +39,9 @@ func TestService_ScaleService_HandlesServiceModes(t *testing.T) {
 	maxConcurrent := uint64(2)
 
 	tests := []struct {
-		name       string
 		mode       swarm.ServiceMode
 		assertMode func(*testing.T, swarm.ServiceMode)
+		name       string
 		wantErr    bool
 	}{
 		{

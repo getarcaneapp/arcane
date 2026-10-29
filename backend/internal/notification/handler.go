@@ -53,8 +53,8 @@ type NotificationSettingsActionInput struct {
 }
 
 type DispatchNotificationInput struct {
-	APIKey string `header:"X-API-Key" doc:"Remote environment access token"`
 	Body   types.NotificationDispatchRequest
+	APIKey string `header:"X-API-Key" doc:"Remote environment access token"`
 }
 
 func normalizeNotificationTestType(testType string) string {

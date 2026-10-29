@@ -16,8 +16,8 @@ func TestSystemVolumeBackupSelection(t *testing.T) {
 	}
 	tests := []struct {
 		name     string
-		config   types.SystemVolumeBackupPolicy
 		expected []string
+		config   types.SystemVolumeBackupPolicy
 	}{
 		{
 			name:     "all includes future named volumes",

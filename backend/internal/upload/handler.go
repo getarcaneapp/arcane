@@ -35,8 +35,8 @@ type UploadChunkInput struct {
 	EnvironmentID string `path:"id"`
 	Kind          string `path:"kind" enum:"image,volume-backup,build-workspace"`
 	UploadID      string `path:"uploadId"`
-	Index         int    `path:"index"`
 	RawBody       []byte `contentType:"application/octet-stream"`
+	Index         int    `path:"index"`
 }
 
 type GetUploadSessionInput struct {

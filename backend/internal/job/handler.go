@@ -38,11 +38,11 @@ type GetJobsOutput struct {
 }
 
 type JobActionInput struct {
+	Body      *types.JobSubmitRunInput `required:"false"`
 	ID        string                   `path:"id" doc:"Environment ID"`
 	JobID     string                   `path:"jobId" minLength:"1" doc:"Job ID"`
 	Action    string                   `query:"action" required:"true" enum:"run,restart" doc:"Job action"`
 	RequestID string                   `header:"Idempotency-Key"`
-	Body      *types.JobSubmitRunInput `required:"false"`
 }
 
 type JobRunActionInput struct {

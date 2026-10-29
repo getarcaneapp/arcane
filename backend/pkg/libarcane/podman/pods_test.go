@@ -71,8 +71,8 @@ func TestClientPodAction(t *testing.T) {
 func TestClientPodStats(t *testing.T) {
 	tests := []struct {
 		name  string
-		names []string
 		query string
+		names []string
 	}{
 		{name: "all pods", query: "all=true&stream=false"},
 		{name: "named pods", names: []string{"web", "db"}, query: "namesOrIDs=web&namesOrIDs=db&stream=false"},

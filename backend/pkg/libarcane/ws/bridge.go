@@ -7,12 +7,12 @@ import (
 )
 
 type LogMessage struct {
-	Seq         uint64 `json:"seq"`
 	Level       string `json:"level,omitempty"`
 	Message     string `json:"message"`
 	Timestamp   string `json:"timestamp"` // RFC3339(9) string
 	Service     string `json:"service,omitempty"`
 	ContainerID string `json:"containerId,omitempty"`
+	Seq         uint64 `json:"seq"`
 }
 
 // ForwardLines forwards plain text lines to the hub.

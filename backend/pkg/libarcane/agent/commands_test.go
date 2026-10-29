@@ -14,8 +14,8 @@ func TestResolveCommandName(t *testing.T) {
 		name      string
 		method    string
 		path      string
-		stream    bool
 		command   string
+		stream    bool
 		shouldHit bool
 	}{
 		{name: "container list", method: "GET", path: "/api/environments/0/containers", command: "container.list", shouldHit: true},

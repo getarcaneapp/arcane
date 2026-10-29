@@ -310,14 +310,14 @@ func newAttestationsCmd() *cobra.Command {
 
 func newBuildCmd() *cobra.Command {
 	var opts struct {
-		tags       []string
 		dockerfile string
 		inlineFile string
-		args       []string
 		target     string
-		platforms  []string
 		network    string
 		provider   string
+		tags       []string
+		args       []string
+		platforms  []string
 		noCache    bool
 		pull       bool
 		push       bool
@@ -403,11 +403,11 @@ func newBuildCmd() *cobra.Command {
 
 func newBuildsCmd() *cobra.Command {
 	var opts struct {
+		status   string
+		provider string
 		limit    int
 		start    int
 		all      bool
-		status   string
-		provider string
 	}
 	command := &cobra.Command{
 		Annotations:  map[string]string{"arcane:scope": cmdutil.ScopeMerged},
@@ -569,10 +569,10 @@ func readBuildStream(cmd *cobra.Command, reader io.Reader) error {
 		line := scanner.Text()
 		trimmed := strings.TrimSpace(line)
 		var frame struct {
-			Type  string  `json:"type"`
-			Done  bool    `json:"done"`
-			Error string  `json:"error"`
 			Log   *string `json:"log"`
+			Type  string  `json:"type"`
+			Error string  `json:"error"`
+			Done  bool    `json:"done"`
 		}
 		framed := strings.HasPrefix(trimmed, "{") && json.Unmarshal([]byte(trimmed), &frame) == nil
 		if jsonMode && trimmed != "" {

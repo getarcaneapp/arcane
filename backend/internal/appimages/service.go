@@ -17,8 +17,8 @@ import (
 )
 
 type appImage struct {
-	data     []byte
 	mimeType string
+	data     []byte
 }
 
 type ApplicationImagesService struct {

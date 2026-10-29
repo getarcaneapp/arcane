@@ -62,14 +62,14 @@ type VersionService struct {
 	httpClient               *http.Client
 	cache                    *hot.HotCache[struct{}, latestRelease]
 	commitNotesCache         *hot.HotCache[string, string]
-	version                  string
-	revision                 string
 	containerRegistryService *registry.ContainerRegistryService
 	dockerService            *docker.DockerClientService
 	imageUpdateService       *imageupdate.ImageUpdateService
 	settingsService          *settings.SettingsService
 	streamHub                *agg.Hub[types.VersionStreamEvent]
 	currentImage             *hot.HotCache[struct{}, currentImageInfo]
+	version                  string
+	revision                 string
 }
 
 func NewVersionService(
@@ -124,9 +124,9 @@ func NewVersionService(
 
 func (s *VersionService) getLatestRelease(ctx context.Context) (latestRelease, error) {
 	type lookup struct {
+		err     error
 		release latestRelease
 		found   bool
-		err     error
 	}
 	result := make(chan lookup, 1)
 	go func() {

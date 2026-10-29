@@ -39,9 +39,9 @@ type ListBackupsInput struct {
 	Search        string `query:"search" doc:"Search query"`
 	Sort          string `query:"sort" doc:"Column to sort by"`
 	Order         string `query:"order" default:"asc" doc:"Sort direction"`
+	Type          string `query:"type" doc:"Management origin filter"`
 	Start         int    `query:"start" default:"0" doc:"Start index"`
 	Limit         int    `query:"limit" default:"20" doc:"Limit"`
-	Type          string `query:"type" doc:"Management origin filter"`
 	IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
 }
 
@@ -50,9 +50,9 @@ type ListBackupsOutput struct {
 }
 
 type CreateBackupInput struct {
+	Body          *types.CreateVolumeBackupRequest `json:"body,omitempty"`
 	EnvironmentID string                           `path:"id" doc:"Environment ID"`
 	VolumeName    string                           `path:"volumeName" doc:"Volume name"`
-	Body          *types.CreateVolumeBackupRequest `json:"body,omitempty"`
 }
 
 type DiscoverVolumeBackupsInput struct {

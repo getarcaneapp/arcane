@@ -54,10 +54,10 @@ type ListImagesInput struct {
 	Search        string `query:"search" doc:"Search query"`
 	Sort          string `query:"sort" doc:"Column to sort by"`
 	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 	InUse         string `query:"inUse" doc:"Filter by in-use status (true/false)"`
 	Updates       string `query:"updates" doc:"Filter by update availability (true/false)"`
+	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 }
 
 type GetImageInput struct {
@@ -107,10 +107,10 @@ type ListImageBuildsInput struct {
 	Search        string `query:"search" doc:"Search query"`
 	Sort          string `query:"sort" doc:"Column to sort by"`
 	Order         string `query:"order" default:"desc" doc:"Sort direction (asc or desc)"`
-	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
-	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 	Status        string `query:"status" doc:"Filter by status"`
 	Provider      string `query:"provider" doc:"Filter by provider"`
+	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
+	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 	IncludeTotal  bool   `query:"includeTotal" doc:"Return exact totalItems and totalPages; otherwise they are -1 and hasNextPage reports whether more rows exist"`
 }
 
@@ -120,14 +120,14 @@ type GetImageBuildInput struct {
 }
 
 type PruneImagesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Dangling      bool   `query:"dangling" doc:"Only remove dangling images"`
-	Body          *struct {
+	Body *struct {
 		Mode     *string             `json:"mode,omitempty"`
 		Until    *string             `json:"until,omitempty"`
 		Dangling *bool               `json:"dangling,omitempty"`
 		Filters  map[string][]string `json:"filters,omitempty"`
 	}
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Dangling      bool   `query:"dangling" doc:"Only remove dangling images"`
 }
 
 type UploadImageInput struct {

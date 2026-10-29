@@ -20,8 +20,8 @@ import (
 func TestCalculateProjectStatus(t *testing.T) {
 	tests := []struct {
 		name     string
-		services []types.ProjectRuntimeService
 		want     string
+		services []types.ProjectRuntimeService
 	}{
 		{
 			name:     "empty",
@@ -88,11 +88,11 @@ func TestMapProjectToDto_SetsRedeployDisabledFromRuntimeServices(t *testing.T) {
 	}
 
 	tests := []struct {
+		currentErr         error
+		labels             map[string]string
 		name               string
 		containerID        string
 		currentContainerID string
-		currentErr         error
-		labels             map[string]string
 		wantProject        bool
 		wantService        bool
 	}{
@@ -191,8 +191,8 @@ func TestProjectListRow_SeedsHasBuildDirectiveFromPersistedRefs(t *testing.T) {
 
 	now := time.Now()
 	tests := []struct {
-		name               string
 		buildImageRefsJSON *string
+		name               string
 		want               bool
 	}{
 		{name: "build refs persisted", buildImageRefsJSON: new(`["demo-worker"]`), want: true},

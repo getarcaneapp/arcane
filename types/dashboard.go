@@ -8,8 +8,8 @@ import (
 )
 
 type DashboardDockerSnapshot struct {
+	Volumes    *client.VolumeListResult  `json:"volumes"`
 	Containers []dockercontainer.Summary `json:"containers"`
 	Images     []dockerimage.Summary     `json:"images"`
 	Networks   []dockernetwork.Summary   `json:"networks"`
-	Volumes    *client.VolumeListResult  `json:"volumes"`
 }

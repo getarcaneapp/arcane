@@ -10,11 +10,11 @@ import (
 
 func TestBuildPushoverURL(t *testing.T) {
 	tests := []struct {
+		check   func(*url.URL)
 		name    string
-		config  PushoverConfig
 		wantURL string
 		wantErr string
-		check   func(*url.URL)
+		config  PushoverConfig
 	}{
 		{
 			name: "basic config",

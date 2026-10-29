@@ -90,32 +90,32 @@ type ImageParts struct {
 
 // imageCheckResult is a check task's output; failures travel as errors.
 type imageCheckResult struct {
-	Local bool `json:"local,omitempty"`
 	// Result is the ref's own result, kept when the caller reports results; tags sharing an image share its stored row.
 	Result *types.ImageUpdateResponse `json:"result,omitempty"`
 	// Failure is a reported check's error, which keeps its Result instead of failing the slot.
 	Failure string `json:"failure,omitempty"`
+	Local   bool   `json:"local,omitempty"`
 }
 
 // imageCheckInput is an image-check payload; Report keeps every ref's result in the output for the caller.
 type imageCheckInput struct {
-	types.ImageUpdateCheckRequest
-	Report         bool   `json:"report,omitempty"`
 	CredentialsKey string `json:"credentialsKey,omitempty"`
+	types.ImageUpdateCheckRequest
+	Report bool `json:"report,omitempty"`
 }
 
 // imageCheckOutput is the image-check outcome plus, when reported, each ref's result and the current
 // container tag results, failed checks included.
 type imageCheckOutput struct {
-	types.SchedulerOutcome
 	Results          types.ImageUpdateBatchResponse        `json:"results,omitempty"`
 	ContainerUpdates map[string]*types.ImageUpdateResponse `json:"containerUpdates,omitempty"`
+	types.SchedulerOutcome
 }
 
 // tagCheckOutput is the tags step's output: failed container checks and, when reported, every container's result.
 type tagCheckOutput struct {
-	Failures []types.TargetOutcome                 `json:"failures"`
 	Updates  map[string]*types.ImageUpdateResponse `json:"updates,omitempty"`
+	Failures []types.TargetOutcome                 `json:"failures"`
 }
 
 type localImageSnapshot struct {
@@ -177,8 +177,8 @@ func (s *ImageUpdateService) registryContext(ctx context.Context) (context.Conte
 
 func (s *ImageUpdateService) composeBuildImageRefs(ctx context.Context) (map[string]struct{}, error) {
 	var projectRows []struct {
-		ID                 string
 		BuildImageRefsJSON *string `gorm:"column:build_image_refs_json"`
+		ID                 string
 	}
 	if err := s.db.WithContext(ctx).
 		Table("projects").

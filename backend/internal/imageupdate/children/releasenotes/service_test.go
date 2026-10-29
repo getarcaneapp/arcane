@@ -21,8 +21,8 @@ import (
 const testDigest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 type testGitHub struct {
-	status   int
 	releases []githubRelease
+	status   int
 }
 
 func newTestDockerService(t *testing.T, labels map[string]string) *docker.DockerClientService {

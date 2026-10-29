@@ -1,4 +1,3 @@
-# Slightly Modified Version of docker's golangci lint configuration to fit arcanes standards
 version: '2'
 
 run:
@@ -7,6 +6,7 @@ run:
     - exclude_frontend
     - playwright
   timeout: 15m
+  allow-serial-runners: true
 
 issues:
   max-issues-per-linter: 0
@@ -124,6 +124,8 @@ linters:
       alias:
         - pkg: go.getarcane.app/docker
           alias: docker
+        - pkg: go.getarcane.app/kit/pkg
+          alias: kit
         - pkg: github.com/getarcaneapp/arcane/backend/v3/internal/docker
           alias: dockerInternal
 
@@ -131,8 +133,7 @@ linters:
       line-length: 200
 
     govet:
-      enable:
-        - shadow
+      enable-all: true
       settings:
         shadow:
           strict: true

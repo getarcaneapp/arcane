@@ -30,9 +30,9 @@ type CheckImageUpdateByIDInput struct {
 }
 
 type CheckImagesActionInput struct {
+	Body          *types.BatchImageUpdateRequest `required:"false"`
 	EnvironmentID string                         `path:"id" doc:"Environment ID"`
 	Action        string                         `query:"action" required:"true" enum:"all,batch" doc:"Check every local image or only the listed image references"`
-	Body          *types.BatchImageUpdateRequest `required:"false"`
 }
 
 type GetUpdateInfoByRefsInput struct {

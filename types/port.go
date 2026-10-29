@@ -23,6 +23,11 @@ type PortMapping struct {
 	// Required: false
 	HostIP string `json:"hostIp,omitempty"`
 
+	// Protocol is the transport protocol.
+	//
+	// Required: true
+	Protocol string `json:"protocol"`
+
 	// HostPort is the published port on the host.
 	//
 	// Required: false
@@ -32,11 +37,6 @@ type PortMapping struct {
 	//
 	// Required: true
 	ContainerPort int `json:"containerPort"`
-
-	// Protocol is the transport protocol.
-	//
-	// Required: true
-	Protocol string `json:"protocol"`
 
 	// IsPublished indicates whether the port is bound on the host.
 	//

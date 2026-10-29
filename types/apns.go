@@ -5,25 +5,25 @@ import (
 )
 
 type ApnsDevice struct {
+	CreatedAt      time.Time       `json:"createdAt" readOnly:"true"`
+	Events         map[string]bool `json:"events" required:"false"`
+	LastSeenAt     *time.Time      `json:"lastSeenAt,omitempty" readOnly:"true"`
 	ID             string          `json:"id" readOnly:"true"`
 	Label          string          `json:"label" required:"false" maxLength:"100" unorm:"nfc" trim:"true"`
-	Events         map[string]bool `json:"events" required:"false"`
 	EnvironmentIDs []string        `json:"environmentIds" required:"false"`
-	CreatedAt      time.Time       `json:"createdAt" readOnly:"true"`
-	LastSeenAt     *time.Time      `json:"lastSeenAt,omitempty" readOnly:"true"`
 }
 
 type ApnsStatus struct {
-	Enabled   bool         `json:"enabled"`
 	ChannelID string       `json:"channelId,omitempty"`
 	RelayURL  string       `json:"relayUrl"`
 	Devices   []ApnsDevice `json:"devices"`
+	Enabled   bool         `json:"enabled"`
 }
 
 type ApnsPairingToken struct {
+	ExpiresAt time.Time `json:"expiresAt"`
 	Token     string    `json:"token"`
 	ChannelID string    `json:"channelId"`
-	ExpiresAt time.Time `json:"expiresAt"`
 }
 
 type ApnsRegisterDeviceRequest struct {
@@ -47,17 +47,17 @@ type ApnsRoute struct {
 }
 
 type ApnsEnvelope struct {
-	Version         int           `json:"v"`
-	EventID         string        `json:"eventId"`
 	OccurredAt      time.Time     `json:"occurredAt"`
+	Resource        *ApnsResource `json:"resource,omitempty"`
+	Route           ApnsRoute     `json:"route"`
+	EventID         string        `json:"eventId"`
 	Type            string        `json:"type"`
 	Severity        string        `json:"severity"`
 	EnvironmentID   string        `json:"environmentId"`
 	EnvironmentName string        `json:"environmentName"`
-	Resource        *ApnsResource `json:"resource,omitempty"`
 	Title           string        `json:"title"`
 	Body            string        `json:"body"`
-	Route           ApnsRoute     `json:"route"`
 	ChannelID       string        `json:"channelId"`
 	RecipientIDs    []string      `json:"recipientIds"`
+	Version         int           `json:"v"`
 }

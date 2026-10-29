@@ -18,8 +18,8 @@ import (
 //
 // The zero value is ready to use.
 type KeyedMutex struct {
-	mu    sync.Mutex
 	locks map[string]*keyedMutexEntry
+	mu    sync.Mutex
 }
 
 type keyedMutexEntry struct {

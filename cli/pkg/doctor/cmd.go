@@ -21,8 +21,8 @@ type checkResult struct {
 }
 
 type report struct {
-	Healthy bool          `json:"healthy"`
 	Checks  []checkResult `json:"checks"`
+	Healthy bool          `json:"healthy"`
 }
 
 // Command runs environment and connection diagnostics.

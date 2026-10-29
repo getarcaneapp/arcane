@@ -30,8 +30,8 @@ type GetBuildFileContentInput struct {
 }
 
 type BuildFileContentResponse struct {
-	Content  []byte `json:"content"`
 	MimeType string `json:"mimeType"`
+	Content  []byte `json:"content"`
 }
 
 type DownloadBuildFileInput struct {

@@ -34,9 +34,9 @@ const (
 
 type Config struct {
 	Engine        func(context.Context) (compat.EngineCompatibilityInfo, error)
-	Host          string
 	NewSystemd    func(rootless bool) libpodman.Systemd
 	NotifyUpdates func(context.Context, []notifications.ContainerUpdateBatchEntry) error
+	Host          string
 }
 
 type Service struct {
@@ -49,13 +49,15 @@ type Service struct {
 }
 
 type detector struct {
-	config    Config
-	client    *libpodman.Client
+	cachedAt  time.Time
 	clientErr error
 
-	mu       sync.Mutex
-	cached   libpodman.Runtime
-	cachedAt time.Time
+	client *libpodman.Client
+
+	config Config
+	cached libpodman.Runtime
+
+	mu sync.Mutex
 }
 
 func NewService(cfg Config) *Service {

@@ -72,12 +72,12 @@ type Service struct {
 
 // selectionInput freezes the policy and volumes one run backs up; a manual run also carries its requester.
 type selectionInput struct {
+	Requester *types.BackupRequester `json:"requester,omitempty"`
+	// Claim names the manual run that parked the system admission for its own task.
+	Claim        string                           `json:"claim,omitempty"`
+	Candidates   []types.SystemVolumeBackupOption `json:"candidates"`
 	Policy       types.SystemVolumeBackupPolicy   `json:"policy"`
 	ManualPolicy bool                             `json:"manualPolicy"`
-	Candidates   []types.SystemVolumeBackupOption `json:"candidates"`
-	Requester    *types.BackupRequester           `json:"requester,omitempty"`
-	// Claim names the manual run that parked the system admission for its own task.
-	Claim string `json:"claim,omitempty"`
 }
 
 func NewService(deps Dependencies) *Service {

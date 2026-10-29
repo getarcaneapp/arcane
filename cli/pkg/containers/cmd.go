@@ -59,12 +59,12 @@ func newListCmd() *cobra.Command {
 
 func newContainerListCmd(updatesOnly bool) *cobra.Command {
 	var opts struct {
-		limit         int
-		start         int
-		all           bool
 		updatesFilter string
 		standalone    string
 		labelFilter   string
+		limit         int
+		start         int
+		all           bool
 		include       bool
 		includeHidden bool
 	}
@@ -428,20 +428,20 @@ type createOptions struct {
 	file       string
 	name       string
 	image      string
-	env        []string
-	port       []string
-	volume     []string
-	label      []string
-	network    []string
 	restart    string
-	memory     int64
-	cpus       float64
-	privileged bool
 	hostname   string
 	user       string
 	workdir    string
 	entrypoint string
 	cmd        string
+	env        []string
+	port       []string
+	volume     []string
+	label      []string
+	network    []string
+	memory     int64
+	cpus       float64
+	privileged bool
 }
 
 func newCreateCmd() *cobra.Command {

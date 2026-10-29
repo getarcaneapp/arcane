@@ -6,26 +6,26 @@ import (
 
 // Role represents a named permission set returned by the API.
 type Role struct {
+	CreatedAt         time.Time  `json:"createdAt" readOnly:"true" doc:"Creation timestamp"`
+	Description       *string    `json:"description,omitempty" maxLength:"500" doc:"Optional human description" unorm:"nfc" trim:"true"`
+	UpdatedAt         *time.Time `json:"updatedAt,omitempty" readOnly:"true" doc:"Last update timestamp"`
 	ID                string     `json:"id" readOnly:"true" doc:"Unique identifier of the role" example:"role_admin"`
 	Name              string     `json:"name" required:"false" minLength:"1" maxLength:"100" doc:"Display name of the role" example:"Admin" unorm:"nfc" trim:"true"`
-	Description       *string    `json:"description,omitempty" maxLength:"500" doc:"Optional human description" unorm:"nfc" trim:"true"`
 	Permissions       []string   `json:"permissions" required:"false" doc:"Permission strings granted by this role" example:"[\"containers:start\",\"projects:deploy\"]"`
-	BuiltIn           bool       `json:"builtIn" readOnly:"true" doc:"True for built-in roles (Admin/Editor/Deployer/Viewer); built-ins cannot be edited or deleted"`
 	AssignedUserCount int        `json:"assignedUserCount" readOnly:"true" doc:"How many users currently hold an assignment to this role"`
-	CreatedAt         time.Time  `json:"createdAt" readOnly:"true" doc:"Creation timestamp"`
-	UpdatedAt         *time.Time `json:"updatedAt,omitempty" readOnly:"true" doc:"Last update timestamp"`
+	BuiltIn           bool       `json:"builtIn" readOnly:"true" doc:"True for built-in roles (Admin/Editor/Deployer/Viewer); built-ins cannot be edited or deleted"`
 }
 
 // RoleAssignment binds a user to a role, optionally scoped to one environment.
 // EnvironmentID == nil means the assignment is global — it applies to every
 // environment and to org-level endpoints.
 type RoleAssignment struct {
+	CreatedAt     time.Time `json:"createdAt" doc:"Creation timestamp"`
+	EnvironmentID *string   `json:"environmentId,omitempty" doc:"Environment ID this assignment is scoped to; omit for a global assignment"`
 	ID            string    `json:"id" doc:"Unique identifier of the assignment"`
 	UserID        string    `json:"userId" doc:"ID of the user holding this assignment"`
 	RoleID        string    `json:"roleId" doc:"ID of the granted role"`
-	EnvironmentID *string   `json:"environmentId,omitempty" doc:"Environment ID this assignment is scoped to; omit for a global assignment"`
 	Source        string    `json:"source" doc:"How the assignment was created" enum:"manual,oidc"`
-	CreatedAt     time.Time `json:"createdAt" doc:"Creation timestamp"`
 }
 
 // SetUserRoleAssignments replaces every manual role assignment for one user. OIDC-
@@ -36,21 +36,21 @@ type SetUserRoleAssignments struct {
 
 // UserRoleAssignmentInput is one row in a SetUserRoleAssignments request.
 type UserRoleAssignmentInput struct {
-	RoleID        string  `json:"roleId" doc:"ID of the role to grant"`
 	EnvironmentID *string `json:"environmentId,omitempty" doc:"Environment ID to scope the assignment to; omit for a global assignment"`
+	RoleID        string  `json:"roleId" doc:"ID of the role to grant"`
 }
 
 // OidcRoleMapping maps an OIDC group/claim value to a role assignment. On
 // every OIDC login, mappings whose ClaimValue is present in the user's
 // configured groups claim are converted into source='oidc' role assignments.
 type OidcRoleMapping struct {
+	CreatedAt     time.Time  `json:"createdAt" readOnly:"true"`
+	EnvironmentID *string    `json:"environmentId,omitempty" doc:"Environment ID to scope the assignment to; omit for a global assignment"`
+	UpdatedAt     *time.Time `json:"updatedAt,omitempty" readOnly:"true"`
 	ID            string     `json:"id" readOnly:"true" doc:"Unique identifier of the mapping"`
 	ClaimValue    string     `json:"claimValue" required:"false" doc:"OIDC claim value that triggers this mapping" example:"docker-admins"`
 	RoleID        string     `json:"roleId" required:"false" doc:"Role to assign when the claim matches"`
-	EnvironmentID *string    `json:"environmentId,omitempty" doc:"Environment ID to scope the assignment to; omit for a global assignment"`
 	Source        string     `json:"source" readOnly:"true" enum:"manual,env" doc:"Origin: manual rows are editable via UI/API; env rows come from ARCANE_OIDC_ROLE_MAPPINGS and are read-only"`
-	CreatedAt     time.Time  `json:"createdAt" readOnly:"true"`
-	UpdatedAt     *time.Time `json:"updatedAt,omitempty" readOnly:"true"`
 }
 
 // OidcRoleMappingSpec is the schema for one entry in the OIDC_ROLE_MAPPINGS
@@ -59,9 +59,9 @@ type OidcRoleMapping struct {
 // OidcRoleMapping (the API DTO) so the env-var format can evolve without
 // breaking the API and vice versa.
 type OidcRoleMappingSpec struct {
+	EnvironmentID *string `json:"environmentId,omitempty" doc:"Environment ID to scope the assignment to; omit for a global assignment"`
 	ClaimValue    string  `json:"claimValue" doc:"OIDC claim value to match"`
 	RoleID        string  `json:"roleId" doc:"Role ID to assign when the claim matches"`
-	EnvironmentID *string `json:"environmentId,omitempty" doc:"Environment ID to scope the assignment to; omit for a global assignment"`
 }
 
 // PermissionsManifest describes every permission the server recognizes,

@@ -49,9 +49,10 @@ const (
 type ApiKeyPermission struct {
 	database.BaseModel
 
-	ApiKeyID      string  `json:"apiKeyId" gorm:"column:api_key_id;not null;index"`
-	Permission    string  `json:"permission" gorm:"column:permission;not null"`
 	EnvironmentID *string `json:"environmentId,omitempty" gorm:"column:environment_id"`
+
+	ApiKeyID   string `json:"apiKeyId" gorm:"column:api_key_id;not null;index"`
+	Permission string `json:"permission" gorm:"column:permission;not null"`
 }
 
 func (ApiKeyPermission) TableName() string { return "api_key_permissions" }

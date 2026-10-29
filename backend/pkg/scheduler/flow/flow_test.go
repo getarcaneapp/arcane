@@ -24,10 +24,10 @@ import (
 )
 
 type activitiesFake struct {
-	mu        sync.Mutex
 	statuses  map[string]types.ActivityStatus
 	completed map[string]int
 	tracked   map[string]context.CancelCauseFunc
+	mu        sync.Mutex
 }
 
 type hostFixture struct {

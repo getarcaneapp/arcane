@@ -74,8 +74,8 @@ type SyncState struct {
 
 // composeImageEdit is an image scalar's source byte span and its replacement text.
 type composeImageEdit struct {
-	start, end int
 	text       []byte
+	start, end int
 }
 
 // SyncState collects the paths pending renames protect during filesystem sync.

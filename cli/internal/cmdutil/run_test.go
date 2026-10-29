@@ -26,14 +26,14 @@ func TestRun(t *testing.T) {
 	}
 	renderFailure := errors.New("render failed")
 	for _, tt := range []struct {
-		name      string
-		json      bool
-		status    int
-		body      string
 		renderErr error
+		name      string
+		body      string
 		wantErr   string
 		wantText  string
+		status    int
 		wantCalls int
+		json      bool
 	}{
 		{name: "json data only", json: true, status: http.StatusOK, body: `{"success":true,"data":{"name":"arcane"}}`, wantText: "{\n  \"name\": \"arcane\"\n}\n"},
 		{
@@ -107,11 +107,16 @@ func TestRunRequiresRender(t *testing.T) {
 
 func TestRunDelete(t *testing.T) {
 	for _, tt := range []struct {
-		name                       string
-		force, yes, json, terminal bool
-		answer, response, wantErr  string
-		body                       any
-		wantRequests               int
+		body         any
+		name         string
+		answer       string
+		response     string
+		wantErr      string
+		wantRequests int
+		force        bool
+		yes          bool
+		json         bool
+		terminal     bool
 	}{
 		{name: "force", force: true, wantRequests: 1},
 		{name: "yes", yes: true, wantRequests: 1},

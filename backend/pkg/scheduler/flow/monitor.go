@@ -25,20 +25,20 @@ type (
 	// instanceMonitor is the single poller for one root instance. It owns the
 	// instance's activity and broadcasts step changes and the final outcome.
 	instanceMonitor struct {
-		mu      sync.Mutex
-		steps   []types.StepOutcome
 		outcome *types.SchedulerOutcome
 		changed chan struct{}
 		cancel  context.CancelFunc
 		// children caches the workflow serving each child instance.
 		children map[string]*Workflow
+		steps    []types.StepOutcome
+		mu       sync.Mutex
 	}
 
 	// activityProjection remembers what was last written to the activity.
 	activityProjection struct {
-		progress int
-		step     string
 		statuses map[string]types.RunStatus
+		step     string
+		progress int
 	}
 )
 

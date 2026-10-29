@@ -17,9 +17,13 @@ func TestResourceRefFetch(t *testing.T) {
 	type detail struct{ ID, Name, Extra string }
 	type summary struct{ ID, Name string }
 	for _, tt := range []struct {
-		name, identifier, detailBody, searchBody, wantErr string
-		noIdentifier                                      bool
-		wantRequests                                      []string
+		name         string
+		identifier   string
+		detailBody   string
+		searchBody   string
+		wantErr      string
+		wantRequests []string
+		noIdentifier bool
 	}{
 		{name: "complete direct lookup", identifier: "id-1", wantRequests: []string{"/resources/id-1"}},
 		{name: "summary fetches canonical detail", identifier: "arcane", wantRequests: []string{"/resources/arcane", "/resources?search=arcane&limit=-1", "/resources/id-1"}},

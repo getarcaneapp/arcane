@@ -32,8 +32,8 @@ type CheckUpgradeOutput struct {
 }
 
 type TriggerUpgradeInput struct {
-	EnvironmentID string              `path:"id" doc:"Environment ID"`
 	Body          *TriggerUpgradeBody `doc:"Optional upgrade parameters"`
+	EnvironmentID string              `path:"id" doc:"Environment ID"`
 }
 
 type TriggerUpgradeBody struct {
@@ -48,8 +48,8 @@ type TriggerUpgradeData struct {
 }
 
 type StartUpgradeJobInput struct {
-	types.EnvironmentInput
 	Body *types.StartUpgradeJobRequest
+	types.EnvironmentInput
 }
 
 // CheckUpgradeAvailable checks if a system upgrade is available.

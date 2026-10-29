@@ -219,8 +219,8 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 
 	updates := make(map[string]any)
 	for field, update := range map[string]struct {
-		column string
 		value  any
+		column string
 	}{
 		"name":                   {column: "name", value: req.Name},
 		"url":                    {column: "url", value: req.URL},

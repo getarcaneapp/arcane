@@ -10,9 +10,9 @@ import (
 
 func TestBuildSignalURL(t *testing.T) {
 	tests := []struct {
+		check  func(string) bool
 		name   string
 		config SignalConfig
-		check  func(string) bool
 	}{
 		{
 			name: "basic auth configuration",
@@ -138,8 +138,8 @@ func TestBuildSignalURL(t *testing.T) {
 func TestBuildSignalURL_AuthenticationMethods(t *testing.T) {
 	tests := []struct {
 		name     string
-		config   SignalConfig
 		wantAuth string
+		config   SignalConfig
 	}{
 		{
 			name: "basic auth only",
@@ -207,8 +207,8 @@ func TestBuildSignalURL_PhoneNumberEncoding(t *testing.T) {
 func TestSendSignal_Validation(t *testing.T) {
 	tests := []struct {
 		name    string
-		config  SignalConfig
 		wantErr string
+		config  SignalConfig
 	}{
 		{
 			name: "missing host",

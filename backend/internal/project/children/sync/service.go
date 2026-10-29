@@ -243,11 +243,11 @@ func PrepareGitSyncEnvUpdate(projectPath string, gitEnvContent *string) (GitSync
 
 // GitSyncEnvUpdate is the resolved three-file env change for one git sync.
 type GitSyncEnvUpdate struct {
-	State           projects.ProjectEnvState
-	gitEnvContent   *string
-	overrideContent string
+	gitEnvContent *string
 	// EffectiveContent is the merged .env content, or nil when none is kept.
 	EffectiveContent *string
+	overrideContent  string
+	State            projects.ProjectEnvState
 }
 
 // PersistGitSyncEnvFiles writes a prepared env merge.

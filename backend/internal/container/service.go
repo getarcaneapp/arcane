@@ -90,17 +90,17 @@ type ContainerListResult struct {
 }
 
 type containerLifecycleAction struct {
-	action             string
-	eventType          event.EventType
 	metadata           database.JSON
 	runContainerAction func(context.Context) error
+	action             string
+	eventType          event.EventType
 }
 
 type ExecSession struct {
-	execID       string
-	containerID  string
 	hijackedResp client.HijackedResponse
 	dockerClient *client.Client
+	execID       string
+	containerID  string
 	closeOnce    sync.Once
 }
 

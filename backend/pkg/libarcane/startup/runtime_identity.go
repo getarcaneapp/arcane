@@ -30,12 +30,12 @@ const (
 var lchownFn = os.Lchown
 
 type runtimeIdentityRequest struct {
-	Enabled       bool
+	DockerHost    string
 	UID           int
 	GID           int
 	CredentialUID uint32
 	CredentialGID uint32
-	DockerHost    string
+	Enabled       bool
 }
 
 // RuntimeIdentityConfig contains the config-backed environment values used to

@@ -47,9 +47,9 @@ type CreateSwarmSecretInput struct {
 }
 
 type UpdateSwarmSecretInput struct {
+	Body          types.SwarmSecretUpdateRequest
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	SecretID      string `path:"secretId" doc:"Secret ID"`
-	Body          types.SwarmSecretUpdateRequest
 }
 
 type DeleteSwarmSecretInput struct {

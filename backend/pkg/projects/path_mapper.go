@@ -32,8 +32,8 @@ type HostMount struct {
 type PathMapper struct {
 	containerPrefix string      // e.g., "/app/data/projects" (single-prefix mode)
 	hostPrefix      string      // e.g., "D:/self-hosted/arcane/projects" (single-prefix mode)
-	isNonMatching   bool        // true if a translation can occur
 	mounts          []HostMount // when set, sources resolve by longest-prefix match (auto-discovery mode)
+	isNonMatching   bool        // true if a translation can occur
 }
 
 // NewPathMapper creates a new path mapper
@@ -380,11 +380,11 @@ func RemapEscapedRelativeSources(
 // remapTarget is one daemon-side path that may need re-resolving, paired with how
 // to write the new value back into the project.
 type remapTarget struct {
+	apply   func(hostPath string)
 	kind    string
 	name    string
 	key     string
 	current string
-	apply   func(hostPath string)
 }
 
 // remapTargets collects every daemon-side path in the project, so that

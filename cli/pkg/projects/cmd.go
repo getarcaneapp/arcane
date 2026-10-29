@@ -652,13 +652,13 @@ var projectRef = cmdutil.ResourceRef[types.Project, types.Project]{
 }
 
 type projectListOptions struct {
-	limitFlag              int
-	startFlag              int
-	allFlag                bool
 	projectsUpdatesFilter  string
 	projectsStatusFilter   string
 	projectsArchivedFilter string
 	projectsLabelFilter    string
+	limitFlag              int
+	startFlag              int
+	allFlag                bool
 }
 
 func runProjectList(cmd *cobra.Command, opts projectListOptions) error {

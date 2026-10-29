@@ -25,12 +25,12 @@ import (
 
 type dockerProjectVolumeRenameMigrationInternal struct {
 	dockerClient   *client.Client
-	entries        []types.VolumeRenameEntry
-	createdNew     []types.VolumeRenameEntry
-	removedOld     []types.VolumeRenameEntry
 	oldComposeName string
 	newComposeName string
 	toolsImage     string
+	entries        []types.VolumeRenameEntry
+	createdNew     []types.VolumeRenameEntry
+	removedOld     []types.VolumeRenameEntry
 }
 
 type projectVolumeCopyRuntimeInternal struct {

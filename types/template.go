@@ -103,6 +103,10 @@ type TemplateRemoteRegistry struct {
 
 // TemplateRegistry represents a local registry configuration.
 type TemplateRegistry struct {
+	// LastFetchError is the error message from the most recent failed fetch, if any.
+	//
+	// Required: false
+	LastFetchError *string `json:"lastFetchError,omitempty" readOnly:"true"`
 	TemplateBaseRegistry
 
 	// ID is the unique identifier of the registry.
@@ -114,11 +118,6 @@ type TemplateRegistry struct {
 	//
 	// Required: false
 	Enabled bool `json:"enabled" required:"false"`
-
-	// LastFetchError is the error message from the most recent failed fetch, if any.
-	//
-	// Required: false
-	LastFetchError *string `json:"lastFetchError,omitempty" readOnly:"true"`
 }
 
 // TemplateContent contains a template with its associated content and metadata.
@@ -157,27 +156,10 @@ type TemplateContent struct {
 
 // Template represents a Docker Compose template.
 type Template struct {
-	BaseTemplate
-
-	// Content is the Docker Compose file content.
-	//
-	// Required: false
-	Content string `json:"content" required:"false"`
-
 	// EnvContent is the environment file content.
 	//
 	// Required: false
 	EnvContent *string `json:"envContent,omitempty"`
-
-	// IsCustom indicates if this is a user-created custom template.
-	//
-	// Required: true
-	IsCustom bool `json:"isCustom" readOnly:"true"`
-
-	// IsRemote indicates if this template is from a remote registry.
-	//
-	// Required: true
-	IsRemote bool `json:"isRemote" readOnly:"true"`
 
 	// RegistryID is the ID of the registry this template belongs to.
 	//
@@ -193,6 +175,22 @@ type Template struct {
 	//
 	// Required: false
 	Metadata *TemplateMeta `json:"metadata,omitempty" readOnly:"true"`
+	BaseTemplate
+
+	// Content is the Docker Compose file content.
+	//
+	// Required: false
+	Content string `json:"content" required:"false"`
+
+	// IsCustom indicates if this is a user-created custom template.
+	//
+	// Required: true
+	IsCustom bool `json:"isCustom" readOnly:"true"`
+
+	// IsRemote indicates if this template is from a remote registry.
+	//
+	// Required: true
+	IsRemote bool `json:"isRemote" readOnly:"true"`
 }
 
 // DefaultTemplatesResponse contains the default compose, swarm stack, and env templates.

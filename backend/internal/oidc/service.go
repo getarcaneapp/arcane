@@ -50,11 +50,11 @@ type oidcProviderKey struct {
 }
 
 type OidcState struct {
+	CreatedAt    time.Time `json:"created_at"`
 	State        string    `json:"state"`
 	Nonce        string    `json:"nonce"`
 	CodeVerifier string    `json:"code_verifier"`
 	RedirectTo   string    `json:"redirect_to"`
-	CreatedAt    time.Time `json:"created_at"`
 }
 
 func NewOidcService(authService *auth.AuthService, settingsService *settings.SettingsService, cfg *config.Config, httpClient *http.Client, keySetManager *oidcjwk.KeySetManager) *OidcService {

@@ -213,9 +213,9 @@ func newUpdateCmd() *cobra.Command {
 
 			req := map[string]any{}
 			for _, field := range []struct {
+				value any
 				flag  string
 				key   string
-				value any
 			}{
 				{flag: "name", key: "name", value: opts.name},
 				{flag: "repo-id", key: "repositoryId", value: opts.repoID},
@@ -421,9 +421,9 @@ func newImportCmd() *cobra.Command {
 		repoURL     string
 		branch      string
 		composePath string
-		autoSync    bool
-		interval    int
 		projectName string
+		interval    int
+		autoSync    bool
 	}
 	cmd := &cobra.Command{
 		Use:          "import",

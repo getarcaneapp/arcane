@@ -10,15 +10,15 @@ type SearchRequest struct {
 
 // SearchResponse represents the results of a search.
 type SearchResponse struct {
-	// Results is a list of categories matching the search query.
-	//
-	// Required: true
-	Results []Category `json:"results"`
-
 	// Query is the search query that was executed.
 	//
 	// Required: true
 	Query string `json:"query"`
+
+	// Results is a list of categories matching the search query.
+	//
+	// Required: true
+	Results []Category `json:"results"`
 
 	// Count is the number of results returned.
 	//

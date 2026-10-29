@@ -28,16 +28,17 @@ type Writer struct {
 	// terminal write.
 	persistCtx      context.Context
 	activityService MessageAppender
-	activityID      string
 	writer          io.Writer
-	defaultStep     string
 	queueCh         chan writerQueueItem
 
-	mu     sync.Mutex
-	buffer []byte
+	activityID  string
+	defaultStep string
+	buffer      []byte
 
 	dropped      atomic.Uint64
 	lastDropWarn atomic.Int64
+
+	mu sync.Mutex
 }
 
 const (

@@ -121,9 +121,9 @@ func newSecretInspectCmd() *cobra.Command {
 
 func newSecretCreateCmd() *cobra.Command {
 	var opts struct {
+		labels map[string]string
 		file   string
 		driver string
-		labels map[string]string
 	}
 	cmd := &cobra.Command{
 		Use:          "create <name>",
@@ -175,9 +175,9 @@ func newSecretCreateCmd() *cobra.Command {
 
 func newSecretUpdateCmd() *cobra.Command {
 	var opts struct {
+		labels map[string]string
 		file   string
 		driver string
-		labels map[string]string
 	}
 	cmd := &cobra.Command{
 		Use:     "update <name>",

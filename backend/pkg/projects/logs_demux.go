@@ -50,8 +50,9 @@ func wrapDockerCLIWithLogsDemuxInternal(cli command.Cli) command.Cli {
 type logsDemuxDockerClientInternal struct {
 	client.APIClient
 
-	ttyMu        sync.RWMutex
 	containerTty map[string]bool
+
+	ttyMu sync.RWMutex
 }
 
 func (c *logsDemuxDockerClientInternal) ContainerInspect(ctx context.Context, containerID string, options client.ContainerInspectOptions) (client.ContainerInspectResult, error) {
@@ -106,10 +107,10 @@ const maxLogEntryBytesInternal = 64 * 1024
 // response, which also unblocks any pending read.
 type stderrMarkedDemuxedStreamInternal struct {
 	upstream io.ReadCloser
-	src      *bufio.Reader
-	out      bytes.Buffer
-	pending  [2][]byte
 	err      error
+	src      *bufio.Reader
+	pending  [2][]byte
+	out      bytes.Buffer
 }
 
 func (s *stderrMarkedDemuxedStreamInternal) Read(p []byte) (int, error) {

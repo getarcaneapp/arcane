@@ -85,8 +85,8 @@ func TestCollectEnvironmentsDispatchesEachEnvironmentInScopeOrder(t *testing.T) 
 
 func TestCollectEnvironmentsMapsFailures(t *testing.T) {
 	bodies := map[string]struct {
-		status int
 		body   string
+		status int
 	}{
 		"huma":      {status: http.StatusUnprocessableEntity, body: `{"title":"Unprocessable Entity","detail":"invalid sort"}`},
 		"api":       {status: http.StatusInternalServerError, body: `{"message":"docker unavailable"}`},

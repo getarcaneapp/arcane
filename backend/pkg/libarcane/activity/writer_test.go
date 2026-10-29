@@ -14,9 +14,9 @@ import (
 )
 
 type recordingAppender struct {
-	mu         sync.Mutex
 	messages   []AppendMessageRequest
 	batchSizes []int
+	mu         sync.Mutex
 }
 
 func (a *recordingAppender) AppendMessage(_ context.Context, _ string, req AppendMessageRequest) (*types.ActivityMessage, error) {
@@ -87,9 +87,9 @@ func TestWriterRecordsLogAndErrorFramesVerbatim(t *testing.T) {
 // gatedAppender blocks its first AppendMessages call until release is
 // closed, letting a test queue lines behind a known-stalled drain goroutine.
 type gatedAppender struct {
+	started chan struct{}
+	release chan struct{}
 	recordingAppender
-	started     chan struct{}
-	release     chan struct{}
 	startedOnce sync.Once
 }
 

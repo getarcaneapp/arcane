@@ -35,11 +35,11 @@ const (
 )
 
 type accessTokenClaims struct {
+	ExpiresAt  time.Time
 	UserID     string
 	SessionID  string
 	Username   string
 	AppVersion string
-	ExpiresAt  time.Time
 }
 
 type refreshTokenClaims struct {

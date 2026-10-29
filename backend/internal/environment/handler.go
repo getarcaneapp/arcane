@@ -80,9 +80,9 @@ type ListEnvironmentsInput struct {
 	Search string `query:"search" doc:"Search query for filtering by name or API URL"`
 	Sort   string `query:"sort" doc:"Column to sort by"`
 	Order  string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+	Type   string `query:"type" doc:"Filter by environment type (comma-separated: http,agent,websocket,grpc)"`
 	Start  int    `query:"start" default:"0" doc:"Start index for pagination"`
 	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
-	Type   string `query:"type" doc:"Filter by environment type (comma-separated: http,agent,websocket,grpc)"`
 }
 
 type CreateEnvironmentInput struct {

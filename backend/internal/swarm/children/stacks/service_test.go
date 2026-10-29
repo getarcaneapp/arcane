@@ -43,8 +43,8 @@ func newSettingsServiceForSwarmTest(t testing.TB, ctx context.Context, db *datab
 }
 
 type stackSourceDeployRecorder struct {
-	calls   int
 	lastReq types.SwarmStackDeployRequest
+	calls   int
 }
 
 var fullStackSourceSubmitted = map[string]bool{

@@ -48,16 +48,16 @@ func CancelledByContext(ctx context.Context) bool {
 }
 
 type HandlerOptions struct {
+	User           *types.Actor
+	Metadata       database.JSON
 	EnvironmentID  string
 	Type           types.ActivityType
 	ResourceType   string
 	ResourceID     string
 	ResourceName   string
-	User           *types.Actor
 	Step           string
 	Message        string
 	SuccessMessage string
-	Metadata       database.JSON
 	// Queue routes the activity through the per-environment concurrency
 	// limiter so bulk long-running operations wait visibly instead of all
 	// running at once. Quick actions (start/stop/delete) must not set this.

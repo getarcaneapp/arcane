@@ -51,12 +51,12 @@ var (
 )
 
 type TokenPair struct {
+	ExpiresAt        time.Time `json:"expiresAt"`
+	RefreshExpiresAt time.Time `json:"-"`
 	AccessToken      string    `json:"accessToken"`
 	BrowserToken     string    `json:"-"`
 	RefreshToken     string    `json:"refreshToken"`
 	BrowserRefresh   string    `json:"-"`
-	ExpiresAt        time.Time `json:"expiresAt"`
-	RefreshExpiresAt time.Time `json:"-"`
 }
 
 func (p *TokenPair) CookieHeaders(secure bool) []string {
@@ -67,10 +67,10 @@ func (p *TokenPair) CookieHeaders(secure bool) []string {
 }
 
 type verifiedTokenEntry struct {
-	User             user.User
-	SessionID        string
 	TokenExpiresAt   time.Time
 	SessionExpiresAt time.Time
+	SessionID        string
+	User             user.User
 }
 
 type AuthService struct {
@@ -81,16 +81,16 @@ type AuthService struct {
 	roleService        *role.RoleService
 	environmentService *environment.EnvironmentService
 	versionService     *version.VersionService
-	signingKeyMu       sync.Mutex
 	signingKey         *mldsa.PrivateKey
-	browserSigningKey  []byte
-	refreshExpiry      time.Duration
 	config             *config.Config
 	tokenCache         *hot.HotCache[string, verifiedTokenEntry]
+	dummyHash          string
+	browserSigningKey  []byte
+	refreshExpiry      time.Duration
 	cacheGen           atomic.Uint64
+	signingKeyMu       sync.Mutex
 	cacheFillMu        sync.Mutex
 	dummyMu            sync.Mutex
-	dummyHash          string
 }
 
 func (s *AuthService) dummyPasswordHash(ctx context.Context) (string, error) {

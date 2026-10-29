@@ -21,15 +21,15 @@ type SettingMetadata struct {
 	// Required: true
 	Type string `json:"type"`
 
-	// Keywords is a list of keywords associated with the metadata.
-	//
-	// Required: false
-	Keywords []string `json:"keywords,omitempty"`
-
 	// Description provides additional information about the metadata.
 	//
 	// Required: false
 	Description string `json:"description,omitempty"`
+
+	// Keywords is a list of keywords associated with the metadata.
+	//
+	// Required: false
+	Keywords []string `json:"keywords,omitempty"`
 }
 
 type JobMetadata struct {
@@ -39,10 +39,10 @@ type JobMetadata struct {
 	Category       string
 	SettingsKey    string
 	EnabledKey     string
+	Prerequisites  []JobPrerequisiteMetadata
 	ManagerOnly    bool
 	IsContinuous   bool
 	CanRunManually bool
-	Prerequisites  []JobPrerequisiteMetadata
 }
 
 type JobPrerequisiteMetadata struct {
@@ -292,11 +292,6 @@ type TemplateMeta struct {
 	// Required: false
 	Author *string `json:"author,omitempty"`
 
-	// Tags is a list of tags associated with the template.
-	//
-	// Required: false
-	Tags []string `json:"tags,omitempty"`
-
 	// RemoteURL is the URL to the remote template file.
 	//
 	// Required: false
@@ -321,4 +316,9 @@ type TemplateMeta struct {
 	//
 	// Required: false
 	UpdatedAt *string `json:"updatedAt,omitempty"`
+
+	// Tags is a list of tags associated with the template.
+	//
+	// Required: false
+	Tags []string `json:"tags,omitempty"`
 }

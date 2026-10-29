@@ -32,8 +32,8 @@ const (
 )
 
 type coordinatorActor struct {
-	id string
 	q  *Coordinator
+	id string
 }
 type executorActor struct {
 	q *Coordinator

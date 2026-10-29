@@ -36,9 +36,9 @@ type ListNetworksInput struct {
 	Search        string `query:"search" doc:"Search query"`
 	Sort          string `query:"sort" doc:"Column to sort by"`
 	Order         string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
+	InUse         string `query:"inUse" doc:"Filter by in-use status (true/false)"`
 	Start         int    `query:"start" default:"0" doc:"Start index for pagination"`
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
-	InUse         string `query:"inUse" doc:"Filter by in-use status (true/false)"`
 }
 
 type ListNetworksOutput struct {
@@ -70,11 +70,11 @@ type NetworkActionInput struct {
 }
 
 type networkAction struct {
+	Metadata       database.JSON
+	Run            func(context.Context, string, types.NetworkContainerRequest, types.Actor) error
 	Step           string
 	SuccessMessage string
 	ErrorPrefix    string
-	Metadata       database.JSON
-	Run            func(context.Context, string, types.NetworkContainerRequest, types.Actor) error
 }
 
 func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksInput) (*ListNetworksOutput, error) {

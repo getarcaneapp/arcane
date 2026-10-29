@@ -14,10 +14,10 @@ import (
 
 func TestNormalizeRecreatedArcaneLabelsInternal(t *testing.T) {
 	tests := []struct {
-		name       string
 		labels     map[string]string
 		want       map[string]string
 		wantSource map[string]string
+		name       string
 	}{
 		{
 			name: "legacy server gains current Arcane label",

@@ -5,22 +5,23 @@ import (
 )
 
 type ImageUpdateResponse struct {
-	// ImageUpdate preserves the image-scoped result before container-policy aggregation.
-	ImageUpdate *ImageUpdateResponse `json:"imageUpdate,omitempty"`
-	// ImageRef identifies the configured reference for a container-specific check.
-	ImageRef string `json:"imageRef,omitempty"`
-	// ContainerUpdates contains policy-specific results keyed by container ID.
-	ContainerUpdates map[string]*ImageUpdateResponse `json:"containerUpdates,omitempty"`
-
 	// CheckTime is the time when the update check was performed.
 	//
 	// Required: true
 	CheckTime time.Time `json:"checkTime"`
 
+	// ImageUpdate preserves the image-scoped result before container-policy aggregation.
+	ImageUpdate *ImageUpdateResponse `json:"imageUpdate,omitempty"`
+	// ContainerUpdates contains policy-specific results keyed by container ID.
+	ContainerUpdates map[string]*ImageUpdateResponse `json:"containerUpdates,omitempty"`
+
 	// ActivityID is the background activity that tracked this check.
 	//
 	// Required: false
 	ActivityID *string `json:"activityId,omitempty"`
+
+	// ImageRef identifies the configured reference for a container-specific check.
+	ImageRef string `json:"imageRef,omitempty"`
 
 	// UpdateType describes the type of update (e.g., major, minor, patch).
 	//
@@ -67,6 +68,11 @@ type ImageUpdateResponse struct {
 	// Required: false
 	AuthRegistry string `json:"authRegistry,omitempty"`
 
+	// ReleaseURL links to the release page of the image source repository.
+	//
+	// Required: false
+	ReleaseURL string `json:"releaseUrl,omitempty"`
+
 	// ResponseTimeMs is the response time in milliseconds.
 	//
 	// Required: true
@@ -81,11 +87,6 @@ type ImageUpdateResponse struct {
 	//
 	// Required: false
 	UsedCredential bool `json:"usedCredential,omitempty"`
-
-	// ReleaseURL links to the release page of the image source repository.
-	//
-	// Required: false
-	ReleaseURL string `json:"releaseUrl,omitempty"`
 }
 
 type ImageUpdateSummary struct {
