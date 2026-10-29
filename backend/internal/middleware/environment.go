@@ -69,28 +69,25 @@ type EnvironmentMiddleware struct {
 	checkOrigin func(*http.Request) bool
 }
 
-// NewEnvProxyMiddlewareWithParamAndRegistry creates middleware with an injected tunnel registry.
-func NewEnvProxyMiddlewareWithParamAndRegistry(
-	localID,
-	paramName string,
-	resolver EnvResolver,
-	authValidator AuthValidator,
-	matcher *authz.PermissionMatcher,
-	registry *agent.TunnelRegistry,
-	checkOrigin func(*http.Request) bool,
-) echo.MiddlewareFunc {
-	if registry == nil {
-		registry = agent.NewTunnelRegistry()
-	}
+type EnvironmentProxyConfig struct {
+	LocalID       string
+	ParamName     string
+	Resolver      EnvResolver
+	AuthValidator AuthValidator
+	Matcher       *authz.PermissionMatcher
+	Registry      *agent.TunnelRegistry
+	CheckOrigin   func(*http.Request) bool
+}
 
+func NewEnvironmentProxyMiddleware(cfg EnvironmentProxyConfig) echo.MiddlewareFunc {
 	m := &EnvironmentMiddleware{
-		localID:       localID,
-		paramName:     paramName,
-		resolver:      resolver,
-		authValidator: authValidator,
-		registry:      registry,
-		matcher:       matcher,
-		checkOrigin:   checkOrigin,
+		localID:       cfg.LocalID,
+		paramName:     cfg.ParamName,
+		resolver:      cfg.Resolver,
+		authValidator: cfg.AuthValidator,
+		registry:      cfg.Registry,
+		matcher:       cfg.Matcher,
+		checkOrigin:   cfg.CheckOrigin,
 	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
@@ -120,33 +117,28 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	}
 
 	// SECURITY: Validate authentication BEFORE proxying to remote environments.
-	var perms *authz.PermissionSet
-	var user *types.Actor
-	if m.authValidator != nil {
-		var authenticated bool
-		perms, user, authenticated = m.authValidator(ctx, c)
-		if !authenticated {
-			return writeProxyError(c, http.StatusUnauthorized, "Authentication required to access remote environments")
-		}
-		if user != nil {
-			RecordAuthenticatedRequest(ctx, req.Header, user)
-		}
+	perms, user, authenticated := m.authValidator(ctx, c)
+	if !authenticated {
+		return writeProxyError(c, http.StatusUnauthorized, "Authentication required to access remote environments")
+	}
+	if user != nil {
+		RecordAuthenticatedRequest(ctx, req.Header, user)
 	}
 
 	// SECURITY: forwarded identity headers are always cleared first; only server-resolved values are sent.
 	req.Header.Del(HeaderIconCatalog)
-	if user != nil && user.Preferences.IconCatalog != nil && *user.Preferences.IconCatalog != "" {
-		req.Header.Set(HeaderIconCatalog, *user.Preferences.IconCatalog)
+	if iconCatalog := kit.FromPtr(kit.FromPtr(user).Preferences.IconCatalog); iconCatalog != "" {
+		req.Header.Set(HeaderIconCatalog, iconCatalog)
 	}
 	req.Header.Del(HeaderUpdateInitiatorID)
 	req.Header.Del(HeaderUpdateInitiatorName)
 	req.Header.Del(HeaderUpdateInitiatorDisplayName)
-	isContainerUpdate := req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/containers/") && strings.HasSuffix(req.URL.Path, "/update")
-	if isContainerUpdate && user != nil && user.ID != "" {
+	if req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/containers/") && strings.HasSuffix(req.URL.Path, "/update") &&
+		kit.FromPtr(user).ID != "" {
 		req.Header.Set(HeaderUpdateInitiatorID, user.ID)
 		req.Header.Set(HeaderUpdateInitiatorName, user.Username)
-		if user.DisplayName != nil {
-			req.Header.Set(HeaderUpdateInitiatorDisplayName, *user.DisplayName)
+		if displayName := kit.FromPtr(user.DisplayName); displayName != "" {
+			req.Header.Set(HeaderUpdateInitiatorDisplayName, displayName)
 		}
 	}
 
@@ -173,16 +165,14 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		return writeProxyError(c, status, "Invalid request body")
 	}
 
-	tunnel, unavailable := m.activeTunnel(ctx, envID)
-	if unavailable {
+	tunnel, connected := m.registry.WaitForActive(ctx, envID, kit.Ternary(httpx.IsEnvironmentFanOutRequest(ctx), 0, agent.DefaultTunnelAcquireTimeout)).Get()
+	if !connected {
+		slog.WarnContext(ctx, "No active agent tunnel for environment", "environmentId", envID)
 		return writeProxyError(c, http.StatusServiceUnavailable, "Agent is not connected")
 	}
 
 	slog.DebugContext(ctx, "Routing request through agent tunnel", "environmentId", envID, "path", req.URL.Path)
-	target := agent.MuxAgentBaseURL + path.Join(apiEnvironmentsPrefix, m.localID) + suffix
-	if req.URL.RawQuery != "" {
-		target += "?" + req.URL.RawQuery
-	}
+	target := agent.MuxAgentBaseURL + path.Join(apiEnvironmentsPrefix, m.localID) + suffix + kit.Ternary(req.URL.RawQuery != "", "?"+req.URL.RawQuery, "")
 	if httpx.IsWebSocketUpgradeRequest(req) {
 		if proxyErr := ws.ProxyHTTP(c.Response(), req, agent.HTTPToWebSocketURL(target), agent.BuildWebSocketHeaders(c, accessToken), m.checkOrigin, tunnel.HTTPClient); proxyErr != nil {
 			slog.ErrorContext(ctx, "websocket proxy failed", "err", proxyErr)
@@ -196,13 +186,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	}
 
 	// Stream the body unbuffered (uploads reach gigabytes); ContentLength 0 means no body, -1 means chunked.
-	var requestBody io.ReadCloser
-	var contentLength int64
-	switch {
-	case req.Body == nil:
-	case req.ContentLength != 0:
-		requestBody, contentLength = req.Body, req.ContentLength
-	default:
+	if req.Body != nil && req.ContentLength == 0 {
 		_ = req.Body.Close()
 	}
 
@@ -214,8 +198,8 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		URL:           targetURL,
 		Host:          targetURL.Host,
 		Header:        make(http.Header),
-		Body:          requestBody,
-		ContentLength: contentLength,
+		Body:          kit.Ternary(req.ContentLength != 0, req.Body, nil),
+		ContentLength: kit.Ternary(req.Body != nil, req.ContentLength, 0),
 	}).WithContext(ctx)
 
 	agent.CopyRequestHeaders(req.Header, proxyReq.Header)
@@ -223,7 +207,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	agent.SetAgentToken(proxyReq, accessToken)
 	agent.SetForwardedHeaders(proxyReq, c.RealIP(), req.Host)
 
-	if requestBody != nil {
+	if proxyReq.Body != nil {
 		if fullDuplexErr := http.NewResponseController(c.Response()).EnableFullDuplex(); fullDuplexErr != nil {
 			slog.DebugContext(ctx, "Failed to enable full duplex for proxied request", "error", fullDuplexErr)
 		}
@@ -254,19 +238,10 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 	return nil
 }
 
-// activeTunnel waits briefly for the environment's live tunnel; unavailable reports an offline agent.
-func (m *EnvironmentMiddleware) activeTunnel(ctx context.Context, envID string) (tunnel *agent.AgentTunnel, unavailable bool) {
-	if active, ok := m.registry.WaitForActive(ctx, envID, agent.DefaultTunnelAcquireTimeout).Get(); ok {
-		return active, false
-	}
-	slog.WarnContext(ctx, "No active agent tunnel for environment", "environmentId", envID)
-	return nil, true
-}
-
 // proxyPermissionStatus returns http.StatusOK when the caller may perform the proxied request, mirroring local
 // RequirePermission checks. Sudo bypasses it; routes without a permission mapping are denied by default.
 func (m *EnvironmentMiddleware) proxyPermissionStatus(c *echo.Context, ps *authz.PermissionSet, envID, suffix string) int {
-	if m.matcher == nil || (ps != nil && ps.Sudo) {
+	if kit.FromPtr(ps).Sudo {
 		return http.StatusOK
 	}
 
@@ -277,16 +252,9 @@ func (m *EnvironmentMiddleware) proxyPermissionStatus(c *echo.Context, ps *authz
 
 	// Upload-session routes derive their permission from the {kind} segment; unknown kinds fail closed.
 	if len(segments) >= 2 && segments[0] == "uploads" && segments[1] != "" {
-		var isUploadSession bool
-		switch len(segments) {
-		case 2:
-			isUploadSession = method == http.MethodPost
-		case 3:
-			isUploadSession = method == http.MethodGet || method == http.MethodDelete
-		case 5:
-			isUploadSession = method == http.MethodPut && segments[3] == "chunks"
-		}
-		if isUploadSession {
+		if len(segments) == 2 && method == http.MethodPost ||
+			len(segments) == 3 && (method == http.MethodGet || method == http.MethodDelete) ||
+			len(segments) == 5 && method == http.MethodPut && segments[3] == "chunks" {
 			perm, known := authz.UploadKindPermission(segments[1])
 			denied := !known || !ps.Allows(perm, envID)
 			if denied {
@@ -311,13 +279,12 @@ func (m *EnvironmentMiddleware) proxyPermissionStatus(c *echo.Context, ps *authz
 		return http.StatusForbidden
 	}
 
-	var required []string
-	var err error
-	if method == http.MethodPatch && len(segments) == 3 && segments[0] == "volumes" && segments[1] != "" && segments[2] == "workspace" {
-		required, err = proxiedVolumeWorkspacePermissions(req)
-	} else {
-		required, err = proxiedGitOpsSyncPermissions(req, method, segments)
-	}
+	required, err := func() ([]string, error) {
+		if method == http.MethodPatch && len(segments) == 3 && segments[0] == "volumes" && segments[1] != "" && segments[2] == "workspace" {
+			return proxiedVolumeWorkspacePermissions(req)
+		}
+		return proxiedGitOpsSyncPermissions(req, method, segments)
+	}()
 	if err != nil {
 		slog.DebugContext(ctx, "Rejecting proxied request with invalid body", "path", suffix, "environmentId", envID, "error", err)
 		return kit.Ternary(errors.Is(err, errProxiedBodyTooLarge), http.StatusRequestEntityTooLarge, http.StatusBadRequest)
@@ -423,17 +390,12 @@ func proxiedGitOpsSyncPermissions(request *http.Request, method string, segments
 
 		Mode string `json:"mode"`
 	}
-	var items []syncBody
-	var decodeErr error
-	if isImport {
-		decodeErr = json.Unmarshal(body, &items)
-	} else {
-		items = make([]syncBody, 1)
-		decodeErr = json.Unmarshal(body, &items[0])
+	var batch []syncBody
+	var single syncBody
+	if err := json.Unmarshal(body, kit.Ternary[any](isImport, &batch, &single)); err != nil {
+		return nil, fmt.Errorf("decode gitops sync body: %w", err)
 	}
-	if decodeErr != nil {
-		return nil, fmt.Errorf("decode gitops sync body: %w", decodeErr)
-	}
+	items := kit.Ternary(isImport, batch, []syncBody{single})
 
 	var required []string
 	if slices.ContainsFunc(items, func(item syncBody) bool { return item.HasPreDeployConfig() }) {

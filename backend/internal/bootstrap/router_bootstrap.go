@@ -269,15 +269,15 @@ func newRouter(p RouterParams) (*echo.Echo, *agent.TunnelServer) {
 
 	permissionMatcher := authz.NewPermissionMatcher()
 
-	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParamAndRegistry(
-		types.LocalDockerEnvironmentID,
-		"id",
-		envResolver,
-		createAuthValidator(p.HandlerDeps),
-		permissionMatcher,
-		p.TunnelRegistry,
-		httpx.ValidateWebSocketOrigin(p.Config.GetAppURL()),
-	)
+	envProxyMiddleware := middleware.NewEnvironmentProxyMiddleware(middleware.EnvironmentProxyConfig{
+		LocalID:       types.LocalDockerEnvironmentID,
+		ParamName:     "id",
+		Resolver:      envResolver,
+		AuthValidator: createAuthValidator(p.HandlerDeps),
+		Matcher:       permissionMatcher,
+		Registry:      p.TunnelRegistry,
+		CheckOrigin:   httpx.ValidateWebSocketOrigin(p.Config.GetAppURL()),
+	})
 	apiGroup.Use(middleware.NewEnvironmentScopeMiddleware(func(ctx context.Context, id string) (types.EnvironmentRef, error) {
 		env, err := p.HandlerDeps.Environment.Service().GetEnvironmentByIDCached(ctx, id)
 		if err != nil {
