@@ -2893,6 +2893,8 @@
   "update_center_step_reload": "페이지 새로 고침",
   "update_center_estimated": "보통 1분 이내에 완료됩니다.",
   "update_center_complete": "업데이트 완료.",
+  "update_center_unconfirmed": "업데이트가 요청되었으나 확인되지 않았습니다. 환경의 로그를 확인해 주십시오.",
+  "update_center_unconfirmed_version": "업데이트를 요청했지만 환경에서는 여전히 {version}이 실행되고 있습니다. 해당 로그를 확인해 보세요.",
   "auto_start": "자동 시작",
   "api_key_name_placeholder": "이 API 키의 이름 입력",
   "api_key_save_warning": "이 키를 지금 저장하세요. 다시는 표시되지 않습니다.",
