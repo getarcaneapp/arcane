@@ -2893,6 +2893,8 @@
   "update_center_step_reload": "Recharger la page",
   "update_center_estimated": "Cette opération prend généralement moins d'une minute.",
   "update_center_complete": "Mise à jour terminée.",
+  "update_center_unconfirmed": "La mise à jour a été demandée, mais n'a pas pu être validée. Vérifiez les journaux de l'environnement.",
+  "update_center_unconfirmed_version": "La mise à jour a été demandée, mais l'environnement exécute toujours ` {version}`. Vérifiez ses journaux.",
   "auto_start": "Démarrage automatique",
   "api_key_name_placeholder": "Entrez un nom pour cette clé API",
   "api_key_save_warning": "Enregistrez cette clé dès maintenant — elle ne s'affichera plus.",
