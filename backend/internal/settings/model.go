@@ -208,9 +208,10 @@ type Settings struct {
 	// Notifications category (placeholder for category metadata only - actual settings managed via notification service)
 	NotificationsCategoryPlaceholder SettingVariable `key:"notificationsCategory,internal" default:"" meta:"label=Notifications;type=internal;keywords=notifications,alerts,email,discord,webhooks,events,messages;category=notifications;description=Configure notification providers and alerts" catmeta:"id=notifications;title=Notifications;icon=bell;url=/settings/notifications;description=Configure email and Discord notifications for container and image updates"`
 
-	ApnsEnabled    SettingVariable `key:"apnsEnabled,authrequired,manager" default:"false" meta:"label=Mobile Push Notifications;type=boolean;keywords=apns,push,mobile,ios,notifications,relay;category=notifications;description=Let users receive native push notifications in the Arcane mobile app"`
-	ApnsChannelID  SettingVariable `key:"apnsChannelId,internal" default:""`
-	ApnsSigningKey SettingVariable `key:"apnsSigningKey,internal,sensitive" default:""`
+	ApnsEnabled                      SettingVariable `key:"apnsEnabled,authrequired,manager" default:"false" meta:"label=Mobile Push Notifications;type=boolean;keywords=apns,push,mobile,ios,notifications,relay;category=notifications;description=Let users receive native push notifications in the Arcane mobile app"`
+	NotificationsIncludeReleaseLinks SettingVariable `key:"notificationsIncludeReleaseLinks,authrequired,manager" default:"true" meta:"label=Include Release Notes Links;type=boolean;keywords=release,notes,changelog,github,source,notifications,image,update;category=notifications;description=Add a link to the image's release notes in image update notifications"`
+	ApnsChannelID                    SettingVariable `key:"apnsChannelId,internal" default:""`
+	ApnsSigningKey                   SettingVariable `key:"apnsSigningKey,internal,sensitive" default:""`
 
 	BrowserSessionSigningKey   SettingVariable `key:"browserSessionSigningKey,internal,sensitive" default:""`
 	JwtSigningKeySeed          SettingVariable `key:"jwtSigningKeySeed,internal,sensitive" default:""`

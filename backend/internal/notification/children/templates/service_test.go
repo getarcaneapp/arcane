@@ -58,12 +58,34 @@ func TestService_RenderBatchEmailTemplate_IncludesEnvironment(t *testing.T) {
 		},
 	}
 
-	_, htmlBody, err := svc.BatchImageUpdate("Agent Cluster A", updates).RenderEmail()
+	_, htmlBody, err := svc.BatchImageUpdate("Agent Cluster A", updates, false).RenderEmail()
 	require.NoError(t, err)
 	require.Contains(t, htmlBody, "Agent Cluster A")
 
 	subject := notifications.BuildEmailSubject("Agent Cluster A", "2 Container Image Updates Available")
 	require.Equal(t, "[Agent Cluster A] 2 Container Image Updates Available", subject)
+}
+
+func TestService_RenderBatchEmailTemplate_ReleaseLinks(t *testing.T) {
+	svc := NewService(func() string { return "http://localhost:3000" })
+
+	updates := map[string]*types.ImageUpdateResponse{
+		"nginx:latest": {
+			HasUpdate:  true,
+			UpdateType: "digest",
+			ReleaseURL: "https://github.com/nginx/nginx/releases",
+		},
+	}
+
+	_, withLinks, err := svc.BatchImageUpdate("Lab", updates, true).RenderEmail()
+	require.NoError(t, err)
+	require.Contains(t, withLinks, "nginx:latest release notes")
+	require.Contains(t, withLinks, "https://github.com/nginx/nginx/releases")
+
+	_, withoutLinks, err := svc.BatchImageUpdate("Lab", updates, false).RenderEmail()
+	require.NoError(t, err)
+	require.NotContains(t, withoutLinks, "release notes")
+	require.NotContains(t, withoutLinks, "https://github.com/nginx/nginx/releases")
 }
 
 func TestService_RenderVulnerabilitySummaryEmailTemplate_IncludesEnvironment(t *testing.T) {

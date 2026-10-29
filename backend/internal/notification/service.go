@@ -34,6 +34,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v3/internal/event"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v3/internal/notification/children/templates"
+	"github.com/getarcaneapp/arcane/backend/v3/internal/settings"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/libarcane/agent"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils/httpx"
@@ -100,13 +101,14 @@ var notificationsSent = func() metric.Int64Counter {
 }()
 
 type NotificationService struct {
-	db             *database.DB
-	config         *config.Config
-	environmentSvc *environment.EnvironmentService
-	eventSvc       *event.EventService
-	apnsSvc        *apns.ApnsService
-	templates      *templates.Service
-	httpClient     *http.Client
+	db              *database.DB
+	config          *config.Config
+	environmentSvc  *environment.EnvironmentService
+	eventSvc        *event.EventService
+	apnsSvc         *apns.ApnsService
+	settingsService *settings.SettingsService
+	templates       *templates.Service
+	httpClient      *http.Client
 }
 
 type NotificationTarget struct {
@@ -129,15 +131,17 @@ func NewNotificationService(
 	environmentSvc *environment.EnvironmentService,
 	eventSvc *event.EventService,
 	apnsSvc *apns.ApnsService,
+	settingsService *settings.SettingsService,
 ) *NotificationService {
 	return &NotificationService{
-		db:             db,
-		config:         cfg,
-		environmentSvc: environmentSvc,
-		eventSvc:       eventSvc,
-		apnsSvc:        apnsSvc,
-		templates:      templates.NewService(cfg.GetAppURL),
-		httpClient:     &http.Client{Timeout: 15 * time.Second},
+		db:              db,
+		config:          cfg,
+		environmentSvc:  environmentSvc,
+		eventSvc:        eventSvc,
+		apnsSvc:         apnsSvc,
+		settingsService: settingsService,
+		templates:       templates.NewService(cfg.GetAppURL),
+		httpClient:      &http.Client{Timeout: 15 * time.Second},
 	}
 }
 
@@ -900,7 +904,11 @@ func (s *NotificationService) sendBatchImageUpdateNotificationForTarget(ctx cont
 		"eventType":   string(notifications.NotificationEventImageUpdate),
 		"batch":       true,
 	}
-	content := s.templates.BatchImageUpdate(target.EnvironmentName, updatesWithChanges)
+	content := s.templates.BatchImageUpdate(
+		target.EnvironmentName,
+		updatesWithChanges,
+		s.settingsService.GetSettingsConfig().NotificationsIncludeReleaseLinks.IsTrue(),
+	)
 	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, notifications.NotificationEventImageUpdate)
 	return s.notifyEnabledProviders(ctx, target, notifications.NotificationEventImageUpdate, batchImageUpdateLogRef(updatesWithChanges), metadata, content)
 }
@@ -1064,6 +1072,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider not
 				LatestDigest:   "sha256:xyz789ghi012345678901234567890123456",
 				CheckTime:      time.Now(),
 				ResponseTimeMs: 100,
+				ReleaseURL:     "https://github.com/nginx/nginx/releases",
 			},
 			"postgres:16-alpine": {
 				HasUpdate:      true,
@@ -1081,7 +1090,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, provider not
 				CheckTime:      time.Now(),
 				ResponseTimeMs: 95,
 			},
-		})
+		}, true)
 	default: // simple and image-update
 		imageRef := kit.Ternary(testType == notificationTestTypeSimple, "test/image:latest", "nginx:latest")
 		content = s.templates.ImageUpdate(target.EnvironmentName, imageRef, &types.ImageUpdateResponse{
