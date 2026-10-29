@@ -40,7 +40,8 @@
 		PlayIcon,
 		ZapIcon,
 		AlertTriangleIcon,
-		InfoIcon
+		InfoIcon,
+		HealthIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
@@ -472,7 +473,7 @@
 			sortable: !groupByProject && resourceSortSupported,
 			cell: MemoryCell
 		},
-		{ accessorKey: 'status', title: m.common_status(), card: 'footerEnd' },
+		{ accessorKey: 'status', title: m.common_status(), card: 'footerEnd', cell: StatusCell },
 		{
 			accessorKey: 'networkSettings',
 			id: 'ipAddress',
@@ -499,6 +500,13 @@
 			hidden: true
 		}
 	] satisfies ColumnSpec<ContainerRow>[]);
+
+	const HEALTH_SUFFIX = /\s*\((healthy|unhealthy|health: starting)\)$/;
+	const healthStatus = {
+		healthy: { class: 'text-success', label: m.health_status_healthy },
+		unhealthy: { class: 'text-destructive', label: m.health_status_unhealthy },
+		'health: starting': { class: 'text-warning', label: m.health_status_starting }
+	};
 
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
@@ -688,8 +696,19 @@
 	{/if}
 {/snippet}
 
-{#snippet PortsCell({ item }: { item: ContainerRow })}
-	<PortBadge ports={item.ports ?? []} environmentId={item.environmentId} hideExposed={hideExposedPorts} wrap={false} />
+{#snippet PortsCell({ item, view }: { item: ContainerRow; view: TableViewMode })}
+	<PortBadge ports={item.ports ?? []} environmentId={item.environmentId} hideExposed={hideExposedPorts} wrap={view === 'grid'} />
+{/snippet}
+
+{#snippet StatusCell({ item }: { item: ContainerRow })}
+	{@const healthMatch = item.status?.match(HEALTH_SUFFIX)}
+	{@const health = healthMatch ? healthStatus[healthMatch[1] as keyof typeof healthStatus] : undefined}
+	<span class="inline-flex items-center gap-1.5">
+		{#if health}
+			<HealthIcon class="size-4 shrink-0 {health.class}" aria-label={health.label()} />
+		{/if}
+		<span>{item.status?.replace(HEALTH_SUFFIX, '')}</span>
+	</span>
 {/snippet}
 
 {#snippet NameCell({ item }: { item: ContainerRow })}
