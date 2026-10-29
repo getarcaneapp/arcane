@@ -1662,7 +1662,7 @@ test.describe('Project grouping', () => {
 
 		await page.setViewportSize({ width: 1440, height: 900 });
 
-		await page.getByRole('button', { name: 'View' }).click();
+		await page.getByRole('button', { name: 'View', exact: true }).click();
 		await page.getByRole('menuitemcheckbox', { name: 'Group by Project' }).click();
 		await page.keyboard.press('Escape');
 
@@ -1764,7 +1764,7 @@ test.describe('Project grouping', () => {
 		await page.setViewportSize({ width: 1440, height: 900 });
 		await page.goto('/containers');
 		await page.waitForLoadState('load');
-		await page.getByRole('button', { name: 'View' }).click();
+		await page.getByRole('button', { name: 'View', exact: true }).click();
 		await page.getByRole('menuitemcheckbox', { name: 'Group by Project' }).click();
 		await page.keyboard.press('Escape');
 		await expect(groupRow(page, 'immich')).toContainText('(4)');
