@@ -2893,6 +2893,8 @@
   "update_center_step_reload": "Перезавантажити сторінку",
   "update_center_estimated": "Зазвичай це займає менше хвилини.",
   "update_center_complete": "Оновлення завершено.",
+  "update_center_unconfirmed": "Оновлення було запрошено, але його не вдалося підтвердити. Перевірте журнали середовища.",
+  "update_center_unconfirmed_version": "Оновлення було запрошено, але середовище все ще працює під адресою {version}. Перевірте його журнали.",
   "auto_start": "Auto-start",
   "api_key_name_placeholder": "Enter a name for this API key",
   "api_key_save_warning": "Збережіть цей ключ зараз — він більше не з’явиться.",
