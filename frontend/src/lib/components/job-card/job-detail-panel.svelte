@@ -17,7 +17,7 @@
 
 	import JobRunHistory from './job-run-history.svelte';
 	import JobScheduleDialog from './job-schedule-dialog.svelte';
-	import { jobNameLabel, jobStatusLabel, jobStatusTone, type JobPanelSection } from './job-status';
+	import { jobNameLabel, jobStatusLabel, jobStatusTone, type JobPanelSection, type JobStatusTone } from './job-status';
 
 	let {
 		job,
@@ -39,13 +39,11 @@
 		open?: boolean;
 		section?: JobPanelSection;
 		settings?: Snippet<[JobStatus]>;
-		/** The job's enable switch, mirrored from the row so it can be toggled from here. */
 		enableControl?: Snippet;
 		onScheduleUpdate?: () => void;
 	} = $props();
 
 	let showScheduleDialog = $state(false);
-	// History can show a target's runs instead of the parent's; cleared when another job is shown.
 	let historyJobId = $state<string | null>(null);
 	let historyOwnerId = $state<string | null>(null);
 
@@ -58,18 +56,15 @@
 		if (job.isContinuous) return m.jobs_continuous();
 		return m.jobs_never_run();
 	});
-	const statusTone = $derived(
-		!jobActions.isEnabled
-			? 'gray'
-			: jobActions.run
-				? jobStatusTone(jobActions.run.status)
-				: jobStatusTone(job.workerHealth?.status)
-	);
+	const statusTone = $derived.by((): JobStatusTone => {
+		if (!jobActions.isEnabled) return 'gray';
+		if (jobActions.run) return jobStatusTone(jobActions.run.status);
+		return jobStatusTone(job.workerHealth?.status);
+	});
 	const errors = $derived([job.lastError, job.workerHealth?.lastError].filter((text): text is string => !!text));
 	const activeHistoryJobId = $derived(historyOwnerId === job.id && historyJobId ? historyJobId : job.id);
 	const activeHistoryJob = $derived(job.children?.find((child) => child.id === activeHistoryJobId));
 
-	// Past runs stay readable while a job is disabled.
 	const historyAvailable = $derived(durableRuns);
 	const sectionItems = $derived.by((): TabItem[] => {
 		const items: TabItem[] = [{ value: 'overview', label: m.common_overview() }];

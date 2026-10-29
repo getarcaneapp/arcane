@@ -90,6 +90,11 @@
 	let targetOptionsLoading = $state(false);
 	let loadGeneration = 0;
 	let actionTypeOptions = $derived(getActionTypeOptions(selectedTargetType));
+	const targetLabel = $derived.by(() => {
+		if (selectedTargetType === 'container') return m.container();
+		if (selectedTargetType === 'project') return m.project();
+		return m.webhook_target_resource_label_gitops();
+	});
 
 	const formSchema = z.object({
 		name: z.string().min(1, m.common_field_required({ field: m.common_name() }))
@@ -230,11 +235,7 @@
 			{#if selectedTargetType !== 'updater'}
 				<SelectWithLabel
 					id="webhook-target-id"
-					label={selectedTargetType === 'container'
-						? m.container()
-						: selectedTargetType === 'project'
-							? m.project()
-							: m.webhook_target_resource_label_gitops()}
+					label={targetLabel}
 					description={m.webhook_target_resource_description()}
 					bind:value={selectedTargetId}
 					options={targetOptions}

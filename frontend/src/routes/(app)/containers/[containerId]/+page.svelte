@@ -64,7 +64,7 @@
 	import ContainerStats from '../components/container-stats.svelte';
 	import ContainerStorage from '../components/container-storage.svelte';
 	import KillContainerDialog from '../components/kill-container-dialog.svelte';
-	import { getContainerStatusLabel } from '../container-table.helpers';
+	import { getContainerStatusLabel, getStateBadgeVariant } from '../container-table.helpers';
 	let { data } = $props();
 	const queryClient = useQueryClient();
 	let container = $derived(data?.container as ContainerDetailsDto);
@@ -465,9 +465,8 @@
 			{containerDisplayName}
 		</h1>
 		{#if container?.state}
-			<Badge
-				variant={container.state.status === 'running' ? 'green' : container.state.status === 'exited' ? 'red' : 'amber'}
-				minWidth="20">{getContainerStatusLabel(container.state.status)}</Badge
+			<Badge variant={getStateBadgeVariant(container.state.status)} minWidth="20"
+				>{getContainerStatusLabel(container.state.status)}</Badge
 			>
 		{/if}
 		<EnvironmentCell value={currentEnvId} plain />

@@ -50,6 +50,17 @@
 		}
 	}
 
+	function getConflictingRoleId(roleId: string): string {
+		switch (roleId) {
+			case BUILT_IN_ROLE_ADMIN:
+				return BUILT_IN_ROLE_EDITOR;
+			case BUILT_IN_ROLE_EDITOR:
+				return BUILT_IN_ROLE_ADMIN;
+			default:
+				return '';
+		}
+	}
+
 	function envIdToSelectValue(envId: string | undefined): string {
 		return envId ?? GLOBAL_ENVIRONMENT_OPTION_ID;
 	}
@@ -92,8 +103,7 @@
 
 	function toggleQuickPreset(roleId: string, checked: boolean) {
 		if (disabled) return;
-		const conflictingRoleId =
-			roleId === BUILT_IN_ROLE_ADMIN ? BUILT_IN_ROLE_EDITOR : roleId === BUILT_IN_ROLE_EDITOR ? BUILT_IN_ROLE_ADMIN : '';
+		const conflictingRoleId = getConflictingRoleId(roleId);
 		let next = assignments;
 		if (checked) {
 			if (conflictingRoleId) {

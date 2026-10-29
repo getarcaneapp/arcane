@@ -88,13 +88,11 @@
 	let form = $state<PolicyForm>(initialForm);
 
 	const destinationList = $derived(destinations ?? loadedDestinations);
-	const scheduleError = $derived(
-		!form.schedule.trim()
-			? m.jobs_cron_required()
-			: form.schedule.trim().split(/\s+/).length !== 6
-				? m.jobs_cron_invalid()
-				: (form.serverError ?? null)
-	);
+	const scheduleError = $derived.by(() => {
+		if (!form.schedule.trim()) return m.jobs_cron_required();
+		if (form.schedule.trim().split(/\s+/).length !== 6) return m.jobs_cron_invalid();
+		return form.serverError ?? null;
+	});
 	const retentionError = $derived(
 		Number.isInteger(Number(form.retentionCount)) && form.retentionCount >= 0 && form.retentionCount <= 3650
 			? null

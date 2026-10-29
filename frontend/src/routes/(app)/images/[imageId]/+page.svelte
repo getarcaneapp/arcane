@@ -190,7 +190,7 @@
 					if (destroyed || !vulnerabilityManagementEnabled || environmentId !== currentEnvId || requestedImageId !== image.id)
 						return;
 					queryClient.setQueryData(requestedKey, {
-						...(vulnerabilityScan ?? {}),
+						...vulnerabilityScan,
 						imageId: summary.imageId,
 						scanTime: summary.scanTime,
 						status: summary.status,
@@ -224,7 +224,7 @@
 						return;
 					if (isVulnerabilityScanInProgress(resolvedSummary.status)) {
 						queryClient.setQueryData(requestedKey, {
-							...(vulnerabilityScan ?? {}),
+							...vulnerabilityScan,
 							imageId: resolvedSummary.imageId,
 							scanTime: resolvedSummary.scanTime,
 							status: resolvedSummary.status,
@@ -246,7 +246,7 @@
 					if (operationResult2.error !== null) {
 						scanReportError = extractApiErrorMessage(operationResult2.error);
 						queryClient.setQueryData(requestedKey, {
-							...(vulnerabilityScan ?? {}),
+							...vulnerabilityScan,
 							imageId: resolvedSummary.imageId,
 							scanTime: resolvedSummary.scanTime,
 							status: resolvedSummary.status,

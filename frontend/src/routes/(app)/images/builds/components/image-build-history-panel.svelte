@@ -194,6 +194,12 @@
 		onApplyBuild(selectedBuild, selectedOptimistic.environmentId);
 		detailsOpen = false;
 	}
+
+	const buildIconVariant: Record<string, 'emerald' | 'red' | 'blue'> = {
+		success: 'emerald',
+		failed: 'red',
+		running: 'blue'
+	};
 </script>
 
 {#snippet BuildHistoryStatusCell({ value }: { value: unknown })}
@@ -246,8 +252,7 @@
 		{item}
 		icon={(item: ImageBuildRecord) => ({
 			component: TerminalIcon,
-			variant:
-				item.status === 'success' ? 'emerald' : item.status === 'failed' ? 'red' : item.status === 'running' ? 'blue' : 'gray'
+			variant: buildIconVariant[item.status] ?? 'gray'
 		})}
 		title={(item: ImageBuildRecord) => getBuildTitle(item)}
 		subtitle={(item: ImageBuildRecord) => ((fieldVisibility['context'] ?? true) ? item.contextDir : null)}

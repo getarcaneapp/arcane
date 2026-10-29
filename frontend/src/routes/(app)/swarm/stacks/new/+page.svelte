@@ -149,27 +149,22 @@
 	let treeCommandPaletteOpen = $state(false);
 	const stackOpenTabs = $derived(stackWorkspace.validOpenTabs);
 	const activeStackTab = $derived(stackWorkspace.activeTab);
+	const fixedTabNames: Record<string, string> = {
+		compose: 'compose.yaml',
+		override: 'compose.override.yaml',
+		env: '.env'
+	};
+	const fixedTabIconClass: Record<string, string> = {
+		compose: 'text-info',
+		override: 'text-purple',
+		env: 'text-success'
+	};
 	const stackTabs = $derived(
 		stackOpenTabs.map((key) => ({
 			key,
-			label:
-				key === 'compose'
-					? 'compose.yaml'
-					: key === 'override'
-						? 'compose.override.yaml'
-						: key === 'env'
-							? '.env'
-							: workspaceFileBasename(key.slice(5)),
-			title:
-				key === 'compose' ? 'compose.yaml' : key === 'override' ? 'compose.override.yaml' : key === 'env' ? '.env' : key.slice(5),
-			iconClass:
-				key === 'compose'
-					? 'text-info'
-					: key === 'override'
-						? 'text-purple'
-						: key === 'env'
-							? 'text-success'
-							: 'text-muted-foreground',
+			label: fixedTabNames[key] ?? workspaceFileBasename(key.slice(5)),
+			title: fixedTabNames[key] ?? key.slice(5),
+			iconClass: fixedTabIconClass[key] ?? 'text-muted-foreground',
 			pending: false
 		}))
 	);
@@ -377,11 +372,13 @@
 								<Select.Root type="single" bind:value={deployOptions.resolveImage}>
 									<Select.Trigger id="swarm-stack-resolve-image" class="h-8 min-w-32">
 										<span class="truncate">
-											{deployOptions.resolveImage === 'changed'
-												? m.swarm_stack_resolve_image_changed()
-												: deployOptions.resolveImage === 'never'
-													? m.common_never()
-													: m.common_always()}
+											{#if deployOptions.resolveImage === 'changed'}
+												{m.swarm_stack_resolve_image_changed()}
+											{:else if deployOptions.resolveImage === 'never'}
+												{m.common_never()}
+											{:else}
+												{m.common_always()}
+											{/if}
 										</span>
 									</Select.Trigger>
 									<Select.Content>

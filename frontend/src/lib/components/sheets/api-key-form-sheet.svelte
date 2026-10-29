@@ -40,6 +40,18 @@
 	let isEditMode = $derived(!!apiKeyToEdit);
 	let isStaticApiKey = $derived(apiKeyToEdit?.isStatic ?? false);
 	let isBootstrapApiKey = $derived(apiKeyToEdit?.isBootstrap ?? false);
+	const sheetTitle = $derived.by(() => {
+		if (isStaticApiKey) return apiKeyToEdit?.name ?? m.api_key_static_title();
+		if (isBootstrapApiKey) return apiKeyToEdit?.name ?? m.api_key_bootstrap_title();
+		if (isEditMode) return m.api_key_edit_title();
+		return m.create_api_key();
+	});
+	const sheetDescription = $derived.by(() => {
+		if (!isEditMode) return m.api_key_create_description();
+		if (isStaticApiKey) return m.api_key_static_description();
+		if (isBootstrapApiKey) return m.api_key_bootstrap_description();
+		return m.api_key_edit_description({ name: apiKeyToEdit?.name ?? m.common_unknown() });
+	});
 	let isReadOnlyApiKey = $derived(isStaticApiKey || isBootstrapApiKey);
 	// Personal keys carry no grants; they inherit the owner's role permissions.
 	const hidePermissions = $derived(mode === 'personal' || apiKeyToEdit?.kind === 'personal');
@@ -126,20 +138,8 @@
 	{open}
 	onOpenChange={handleOpenChange}
 	variant="sheet"
-	title={isStaticApiKey
-		? (apiKeyToEdit?.name ?? m.api_key_static_title())
-		: isBootstrapApiKey
-			? (apiKeyToEdit?.name ?? m.api_key_bootstrap_title())
-			: isEditMode
-				? m.api_key_edit_title()
-				: m.create_api_key()}
-	description={isEditMode
-		? isStaticApiKey
-			? m.api_key_static_description()
-			: isBootstrapApiKey
-				? m.api_key_bootstrap_description()
-				: m.api_key_edit_description({ name: apiKeyToEdit?.name ?? m.common_unknown() })
-		: m.api_key_create_description()}
+	title={sheetTitle}
+	description={sheetDescription}
 	contentClass="sm:max-w-125"
 >
 	{#snippet children()}

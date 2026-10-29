@@ -13,17 +13,14 @@
 
 	let { ref = $bindable(null), variant, size, disabled, class: className, onclick, children }: Props = $props();
 	void ref;
+
+	const tone = $derived.by(() => {
+		if (variant === 'destructive') return 'outline-destructive';
+		if (variant === 'ghost') return 'ghost';
+		return 'outline';
+	});
 </script>
 
-<ArcaneButton
-	bind:ref
-	action="base"
-	type="submit"
-	tone={variant === 'destructive' ? 'outline-destructive' : variant === 'ghost' ? 'ghost' : 'outline'}
-	{size}
-	{disabled}
-	class={className}
-	{onclick}
->
+<ArcaneButton bind:ref action="base" type="submit" {tone} {size} {disabled} class={className} {onclick}>
 	{@render children?.()}
 </ArcaneButton>

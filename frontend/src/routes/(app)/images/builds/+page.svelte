@@ -361,6 +361,12 @@
 		if (isBuilding) return m.common_live();
 		return m.idle();
 	});
+	const statusDotClass = $derived.by(() => {
+		if (buildError) return 'bg-destructive shadow-lg shadow-destructive/50';
+		if (hasReachedComplete) return 'bg-success shadow-lg shadow-success/50';
+		if (isBuilding) return 'animate-pulse bg-info shadow-lg shadow-info/50';
+		return 'bg-muted-foreground';
+	});
 	const buildMobileTabItems = $derived([
 		{ value: 'workspace', label: m.build_context() },
 		{ value: 'configuration', label: m.build_configuration() },
@@ -726,17 +732,7 @@
 					<div class="hidden h-4 w-px bg-border xl:block"></div>
 					<div class="flex items-center gap-2">
 						<div class="relative flex items-center">
-							<div
-								class={`size-2 rounded-full transition-all ${
-									buildError
-										? 'bg-destructive shadow-lg shadow-destructive/50'
-										: hasReachedComplete
-											? 'bg-success shadow-lg shadow-success/50'
-											: isBuilding
-												? 'animate-pulse bg-info shadow-lg shadow-info/50'
-												: 'bg-muted-foreground'
-								}`}
-							></div>
+							<div class={['size-2 rounded-full transition-all', statusDotClass]}></div>
 							{#if isBuilding}
 								<div class="absolute inset-0 size-2 animate-ping rounded-full bg-info opacity-75"></div>
 							{/if}

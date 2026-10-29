@@ -378,7 +378,7 @@ export function applyWorkspaceFileChangesForDisplay(
 				break;
 			}
 			case 'delete':
-				for (const entryPath of [...entries.keys()]) {
+				for (const entryPath of entries.keys()) {
 					if (workspaceFilePathMatches(entryPath, relativePath)) entries.delete(entryPath);
 				}
 				break;

@@ -47,6 +47,16 @@
 	let canEditUsername = $derived(!isEditMode || allowUsernameEdit);
 
 	let isOidcUser = $derived(!!userToEdit?.oidcSubjectId);
+	const passwordPlaceholder = $derived.by(() => {
+		if (isOidcUser) return m.users_password_managed_oidc();
+		if (isEditMode) return m.users_password_leave_empty();
+		return m.users_password_enter();
+	});
+	const passwordDescription = $derived.by(() => {
+		if (isOidcUser) return m.users_password_description_oidc();
+		if (isEditMode) return m.users_password_description_edit();
+		return m.users_password_description_create();
+	});
 	let oidcAssignments = $derived(userToEdit?.roleAssignments?.filter((a) => a.source === 'oidc') ?? []);
 	const userFieldMaxLength = 255;
 	const passwordMinLength = 8;
@@ -192,16 +202,8 @@
 			<FormInput
 				label={isEditMode ? m.common_password() : m.users_password_required_label()}
 				type="password"
-				placeholder={isOidcUser
-					? m.users_password_managed_oidc()
-					: isEditMode
-						? m.users_password_leave_empty()
-						: m.users_password_enter()}
-				description={isOidcUser
-					? m.users_password_description_oidc()
-					: isEditMode
-						? m.users_password_description_edit()
-						: m.users_password_description_create()}
+				placeholder={passwordPlaceholder}
+				description={passwordDescription}
 				disabled={isOidcUser}
 				bind:input={inputs.password}
 			/>

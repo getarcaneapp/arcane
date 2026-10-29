@@ -55,6 +55,12 @@
 		return apiKey.isBootstrap;
 	}
 
+	function getLockedReason(apiKey: ApiKey): string | null {
+		if (isStaticApiKey(apiKey)) return m.api_key_static_description();
+		if (isBootstrapApiKey(apiKey)) return m.api_key_bootstrap_description();
+		return null;
+	}
+
 	const selectedStaticApiKeyCount = $derived.by(
 		() =>
 			apiKeys.data.filter((apiKey) => selectedIds.includes(apiKey.id) && (isStaticApiKey(apiKey) || isBootstrapApiKey(apiKey)))
@@ -221,11 +227,7 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ApiKey })}
-	{@const lockedReason = isStaticApiKey(item)
-		? m.api_key_static_description()
-		: isBootstrapApiKey(item)
-			? m.api_key_bootstrap_description()
-			: null}
+	{@const lockedReason = getLockedReason(item)}
 	<RowActionsMenu>
 		<IfPermitted perm="apikeys:update">
 			{#if lockedReason}

@@ -193,7 +193,7 @@ export function toGitWebUrl(raw: string): string | null {
 		}
 	}
 
-	const match = /^(?:.+@)?([^:\/]+):(.+)$/.exec(trimmed) ?? /^([^\/]+)\/(.+)$/.exec(trimmed);
+	const match = /^(?:.+@)?([^:/]+):(.+)$/.exec(trimmed) ?? /^([^/]+)\/(.+)$/.exec(trimmed);
 	if (!match) return null;
 	const host = match[1];
 	const matchedPath = match[2];

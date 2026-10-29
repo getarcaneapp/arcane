@@ -177,6 +177,18 @@
 		return variantMap[driver] || 'gray';
 	}
 
+	function getNetworkStatusBadge(
+		item: NetworkRow,
+		visible: boolean
+	): { variant: 'gray' | 'green' | 'amber'; text: string } | null {
+		if (!visible) return null;
+		if ((item.isDefault ?? false) || DEFAULT_NETWORK_NAMES.has(item.name)) {
+			return { variant: 'gray', text: m.networks_predefined() };
+		}
+		if (item.inUse) return { variant: 'green', text: m.common_in_use() };
+		return { variant: 'amber', text: m.common_unused() };
+	}
+
 	const columns = $derived([
 		...environmentColumns<NetworkRow>(),
 		{ accessorKey: 'id', title: m.common_id(), cell: IdCell, hidden: true },
@@ -233,18 +245,7 @@
 {/snippet}
 
 {#snippet DriverCell({ item }: { item: NetworkRow })}
-	<Badge
-		variant={item.driver === 'bridge'
-			? 'blue'
-			: item.driver === 'overlay'
-				? 'purple'
-				: item.driver === 'ipvlan'
-					? 'red'
-					: item.driver === 'macvlan'
-						? 'orange'
-						: 'gray'}
-		minWidth="20">{capitalizeFirstLetter(item.driver)}</Badge
-	>
+	<Badge variant={getDriverVariant(item.driver)} minWidth="20">{capitalizeFirstLetter(item.driver)}</Badge>
 {/snippet}
 
 {#snippet ScopeCell({ item }: { item: NetworkRow })}
@@ -294,16 +295,7 @@
 		})}
 		title={(item: NetworkRow) => item.name}
 		subtitle={(item: NetworkRow) => ((mobileFieldVisibility['id'] ?? true) ? item.id : null)}
-		badges={[
-			(item: NetworkRow) =>
-				(mobileFieldVisibility['inUse'] ?? true)
-					? (item.isDefault ?? false) || DEFAULT_NETWORK_NAMES.has(item.name)
-						? { variant: 'gray', text: m.networks_predefined() }
-						: item.inUse
-							? { variant: 'green', text: m.common_in_use() }
-							: { variant: 'amber', text: m.common_unused() }
-					: null
-		]}
+		badges={[(item: NetworkRow) => getNetworkStatusBadge(item, mobileFieldVisibility['inUse'] ?? true)]}
 		fields={[
 			{
 				label: m.common_driver(),

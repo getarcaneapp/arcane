@@ -89,14 +89,16 @@
 
 	const formSchema = createComposeEditorSchema(m.compose_project_name_required());
 
+	function initialProjectName(): string {
+		if (data.selectedTemplate) return templateNameSlug(data.selectedTemplate.name);
+		if (data.sourceContainerName) return templateNameSlug(data.sourceContainerName);
+		return '';
+	}
+
 	// Initial form values intentionally come from the page load data once.
 	// svelte-ignore state_referenced_locally
 	const formData = {
-		name: data.selectedTemplate
-			? templateNameSlug(data.selectedTemplate.name)
-			: data.sourceContainerName
-				? templateNameSlug(data.sourceContainerName)
-				: '',
+		name: initialProjectName(),
 		composeContent: data.defaultTemplate || '',
 		envContent: data.envTemplate || ''
 	};
@@ -155,12 +157,20 @@
 	let treeCommandPaletteOpen = $state(false);
 	const openTabs = $derived(workspaceDraft.validOpenTabs);
 	const activeProjectTab = $derived(workspaceDraft.activeTab);
+	const fixedTabNames: Record<string, string> = {
+		compose: 'compose.yaml',
+		env: '.env'
+	};
+	const fixedTabIconClass: Record<string, string> = {
+		compose: 'text-info',
+		env: 'text-success'
+	};
 	const projectTabs = $derived(
 		openTabs.map((key) => ({
 			key,
-			label: key === 'compose' ? 'compose.yaml' : key === 'env' ? '.env' : workspaceFileBasename(key.slice(5)),
-			title: key === 'compose' ? 'compose.yaml' : key === 'env' ? '.env' : key.slice(5),
-			iconClass: key === 'compose' ? 'text-info' : key === 'env' ? 'text-success' : 'text-muted-foreground',
+			label: fixedTabNames[key] ?? workspaceFileBasename(key.slice(5)),
+			title: fixedTabNames[key] ?? key.slice(5),
+			iconClass: fixedTabIconClass[key] ?? 'text-muted-foreground',
 			pending: false
 		}))
 	);

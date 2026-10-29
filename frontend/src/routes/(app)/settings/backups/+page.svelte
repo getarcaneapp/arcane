@@ -341,6 +341,20 @@
 		if (action === 'discover') return m.system_backups_discover_description();
 		return backupType === 'volume' ? m.system_volume_backups_description() : m.system_backups_dialog_description();
 	}
+	function actionFailedMessage() {
+		if (action === 'restore') return m.system_backups_restore_failed();
+		if (action === 'delete') return m.system_backups_delete_failed();
+		if (action === 'upload') return m.backups_upload_s3_failed();
+		if (action === 'discover') return m.system_backups_discover_failed();
+		return backupType === 'volume' ? m.system_volume_backups_run_failed() : m.system_backups_create_failed();
+	}
+	const submitButtonAction = {
+		create: 'create',
+		restore: 'confirm',
+		upload: 'save',
+		delete: 'remove',
+		discover: 'save'
+	} as const;
 	async function refresh() {
 		backups = await systemBackupService.listHistory(requestOptions);
 	}
@@ -438,10 +452,11 @@
 			const operationResult = await tryCatch(
 				(async () => {
 					if (action === 'create') {
+						const customS3DestinationId = destination === 'local' ? '' : s3DestinationId;
 						if (backupType === 'system') {
 							const result = await systemBackupService.create(
 								backupConfiguration === 'custom'
-									? { destination, s3DestinationId: destination === 'local' ? '' : s3DestinationId, recoveryKey }
+									? { destination, s3DestinationId: customS3DestinationId, recoveryKey }
 									: { policyId: backupConfiguration, recoveryKey }
 							);
 							backupActivity.accepted(extractActivityId(result));
@@ -452,7 +467,7 @@
 									? {
 											custom: {
 												destination,
-												s3DestinationId: destination === 'local' ? '' : s3DestinationId,
+												s3DestinationId: customS3DestinationId,
 												stopContainers,
 												selectionMode,
 												volumeNames,
@@ -495,18 +510,7 @@
 			if (operationResult.error !== null) {
 				const error = operationResult.error;
 
-				const fallback =
-					action === 'restore'
-						? m.system_backups_restore_failed()
-						: action === 'delete'
-							? m.system_backups_delete_failed()
-							: action === 'upload'
-								? m.backups_upload_s3_failed()
-								: action === 'discover'
-									? m.system_backups_discover_failed()
-									: backupType === 'volume'
-										? m.system_volume_backups_run_failed()
-										: m.system_backups_create_failed();
+				const fallback = actionFailedMessage();
 				toast.error(error instanceof Error ? error.message : fallback);
 			}
 		} finally {
@@ -774,7 +778,7 @@
 		{#snippet footer()}
 			<ArcaneButton action="cancel" onclick={() => (actionOpen = false)} disabled={loading} />
 			<ArcaneButton
-				action={action === 'delete' ? 'remove' : action === 'restore' ? 'confirm' : action === 'create' ? 'create' : 'save'}
+				action={submitButtonAction[action]}
 				customLabel={dialogTitle()}
 				onclick={submitAction}
 				{loading}

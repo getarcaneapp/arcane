@@ -234,6 +234,11 @@
 	]);
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
+
+	const statusDotClass: Record<string, string> = {
+		online: 'bg-success',
+		pending: 'bg-warning'
+	};
 </script>
 
 {#snippet EnvironmentCell({ item }: { item: Environment })}
@@ -244,11 +249,10 @@
 				<EnvironmentsIcon class="size-4 text-muted-foreground" />
 			</div>
 			<div
-				class="absolute -top-1 -right-1 size-3 rounded-full border-2 border-background {statusValue === 'online'
-					? 'bg-success'
-					: statusValue === 'pending'
-						? 'bg-warning'
-						: 'bg-destructive'}"
+				class={[
+					'absolute -top-1 -right-1 size-3 rounded-full border-2 border-background',
+					statusDotClass[statusValue] ?? 'bg-destructive'
+				]}
 			></div>
 		</div>
 		<div class="flex flex-col gap-0.5 leading-tight">

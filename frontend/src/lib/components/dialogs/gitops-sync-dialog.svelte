@@ -427,7 +427,7 @@
 		}
 		selection.add(node.relativePath);
 		if (!node.isDirectory) return;
-		for (const path of [...selection]) {
+		for (const path of selection) {
 			if (path !== node.relativePath && path.startsWith(`${node.relativePath}/`) && !isEnvPathInternal(path)) {
 				selection.delete(path);
 			}
@@ -1082,13 +1082,15 @@
 					{#if isLoading}
 						<Spinner class="mr-2 size-4" />
 					{/if}
-					{isEditMode
-						? isBackupMode
-							? m.common_save()
-							: m.common_save_changes()
-						: isBackupMode
-							? m.save_and_back_up()
-							: m.common_add_button({ resource: m.resource_sync_cap() })}
+					{#if isEditMode && isBackupMode}
+						{m.common_save()}
+					{:else if isEditMode}
+						{m.common_save_changes()}
+					{:else if isBackupMode}
+						{m.save_and_back_up()}
+					{:else}
+						{m.common_add_button({ resource: m.resource_sync_cap() })}
+					{/if}
 				</Button>
 			{/snippet}
 		</GitopsDialogFooter>
@@ -1114,10 +1116,8 @@
 	description={fileBrowserTarget === 'preDeployScript'
 		? m.git_sync_browse_files_description_script()
 		: m.git_sync_browse_files_description()}
-	rootPath={fileBrowserTarget === 'preDeployScript'
-		? inputs.composePath.value.includes('/')
-			? inputs.composePath.value.replace(/\/[^/]*$/, '')
-			: ''
+	rootPath={fileBrowserTarget === 'preDeployScript' && inputs.composePath.value.includes('/')
+		? inputs.composePath.value.replace(/\/[^/]*$/, '')
 		: ''}
 	fileFilter={fileBrowserTarget === 'preDeployScript' ? undefined : composeFileFilter}
 	fileBadge={fileBrowserTarget === 'preDeployScript' ? undefined : composeBadge}

@@ -39,16 +39,27 @@
 		indigo: 'bg-indigo/10 text-indigo ring-1 ring-indigo/20',
 		pink: 'bg-pink/10 text-pink ring-1 ring-pink/20'
 	};
+
+	const headerPaddingClasses = {
+		compact: 'gap-2 p-2',
+		icon: 'gap-3 p-4',
+		plain: 'py-5'
+	};
+	const headerVariant = $derived.by((): keyof typeof headerPaddingClasses => {
+		if (!icon) return 'plain';
+		if (compact) return 'compact';
+		return 'icon';
+	});
 </script>
 
 <div
 	bind:this={ref}
 	data-slot="card-header"
-	data-variant={icon ? (compact ? 'compact' : 'icon') : 'plain'}
+	data-variant={headerVariant}
 	class={cn(
 		'@container/card-header relative grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-6 has-[[data-slot=card-action]]:grid-cols-content-action',
 		icon && 'flex flex-row items-center space-y-0',
-		icon && compact ? 'gap-2 p-2' : icon ? 'gap-3 p-4' : 'py-5',
+		headerPaddingClasses[headerVariant],
 		divider && 'border-b',
 		icon && enableHover && 'transition-colors group-[&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:bg-muted/30',
 		className

@@ -292,7 +292,7 @@
 	async function addLabel(key: string, value: string) {
 		const node = nodeToLabel;
 		if (!node) return;
-		const labels = { ...(node.labels ?? {}), [key]: value };
+		const labels = { ...node.labels, [key]: value };
 		await mutateNode(
 			() => swarmService.updateNode(node.id, { labels }, node.environmentId),
 			m.common_update_success({ resource: m.swarm_node() }),
@@ -308,7 +308,7 @@
 				label: m.common_remove(),
 				destructive: true,
 				action: async () => {
-					const labels = { ...(node.labels ?? {}) };
+					const labels = { ...node.labels };
 					delete labels[key];
 					await mutateNode(
 						() => swarmService.updateNode(node.id, { labels }, node.environmentId),

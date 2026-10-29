@@ -47,11 +47,13 @@
 		<div class="space-y-2 rounded-lg border border-border/50 p-3">
 			<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
 				<Badge variant="outline" mono class="w-fit shrink-0">
-					{row.kind === 'mount'
-						? (row.mountType ?? m.common_mount())
-						: row.kind === 'bind'
-							? m.containers_mount_type_bind()
-							: m.containers_mount_type_volume()}
+					{#if row.kind === 'mount'}
+						{row.mountType ?? m.common_mount()}
+					{:else if row.kind === 'bind'}
+						{m.containers_mount_type_bind()}
+					{:else}
+						{m.containers_mount_type_volume()}
+					{/if}
 				</Badge>
 				{#if row.kind === 'volume'}
 					<SearchableSelect items={volumeItems} bind:value={row.source} {disabled} class="flex-1" />

@@ -129,6 +129,13 @@
 		};
 	}
 
+	const visibilityClass = $derived.by(() => {
+		if (visible && mode === 'floating') return 'translate-y-0 scale-100 opacity-100';
+		if (visible) return 'translate-y-0 opacity-100';
+		if (mode === 'floating') return 'translate-y-full scale-95 opacity-0';
+		return 'translate-y-full opacity-0';
+	});
+
 	// Mode-specific styles
 	const navClasses = $derived(
 		cn(
@@ -152,13 +159,7 @@
 						'justify-around border-t border-border/50',
 						showLabels ? 'px-4 pt-2 pb-(--safe-area-bottom)' : 'px-4 pt-2.5 pb-(--safe-area-bottom)'
 					),
-			visible
-				? mode === 'floating'
-					? 'translate-y-0 scale-100 opacity-100'
-					: 'translate-y-0 opacity-100'
-				: mode === 'floating'
-					? 'translate-y-full scale-95 opacity-0'
-					: 'translate-y-full opacity-0',
+			visibilityClass,
 			className
 		)
 	);

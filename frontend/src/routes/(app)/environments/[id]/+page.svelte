@@ -606,11 +606,14 @@
 					{#if !environment.enabled}
 						{m.environments_warning_disabled()}
 					{:else if !isCurrentlyOnline}
-						{m.common_status()}: {currentStatus === 'pending'
-							? m.common_pending()
-							: currentStatus === 'error'
-								? m.common_error()
-								: m.common_offline()}
+						{m.common_status()}:
+						{#if currentStatus === 'pending'}
+							{m.common_pending()}
+						{:else if currentStatus === 'error'}
+							{m.common_error()}
+						{:else}
+							{m.common_offline()}
+						{/if}
 					{:else if !settings}
 						{m.environments_warning_no_settings()}
 					{/if}
