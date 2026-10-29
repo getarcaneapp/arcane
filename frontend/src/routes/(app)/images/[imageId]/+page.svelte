@@ -32,7 +32,6 @@
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { VulnerabilityScanResult } from '#lib/types/environment.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks, extractApiErrorMessage } from '#lib/utils/api.js';
@@ -93,7 +92,6 @@
 	const scanQuery = createQuery(() => {
 		const environmentId = currentEnvId;
 		const imageId = image?.id;
-		userStore.current;
 		return {
 			queryKey: queryKeys.vulnerabilities.scanResult(environmentId, imageId ?? ''),
 			queryFn: async ({ signal }) => {

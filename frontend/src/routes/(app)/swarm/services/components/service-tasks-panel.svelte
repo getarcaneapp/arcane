@@ -8,7 +8,6 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { getSwarmTaskStateVariant, sortSwarmTasks } from '#lib/utils/swarm-tasks.js';
 
@@ -25,7 +24,6 @@
 	const tasksQuery = createQuery(() => {
 		const requestedEnvironmentId = environmentId;
 		const requestedServiceId = serviceId;
-		userStore.current;
 		return {
 			queryKey: queryKeys.swarm.serviceTasks(requestedEnvironmentId, requestedServiceId),
 			queryFn: () =>

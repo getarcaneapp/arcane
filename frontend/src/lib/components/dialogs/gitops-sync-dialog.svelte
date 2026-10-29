@@ -174,7 +174,7 @@
 		const requestEnvironmentId = environmentId;
 		return {
 			queryKey: queryKeys.settings.byEnvironment(requestEnvironmentId),
-			queryFn: () => settingsService.getSettingsForEnvironmentMerged(requestEnvironmentId),
+			queryFn: () => settingsService.getReadableSettings(requestEnvironmentId),
 			enabled: open,
 			staleTime: 0,
 			refetchOnMount: 'always'

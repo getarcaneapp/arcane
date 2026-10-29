@@ -10,7 +10,6 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { FileTextIcon, InspectIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { PodmanQuadletDetail, PodmanStatus } from '#lib/types/podman.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -33,14 +32,8 @@
 		onRefreshData: (options: SearchPaginationSortRequest) => Promise<void>;
 	} = $props();
 
-	const canManageQuadlets = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('podman:quadlets');
-	});
-	const canRunLifecycle = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('podman:quadlets:lifecycle');
-	});
+	const canManageQuadlets = $derived(hasShownPermission('podman:quadlets'));
+	const canRunLifecycle = $derived(hasShownPermission('podman:quadlets:lifecycle'));
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 

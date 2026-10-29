@@ -141,18 +141,3 @@ export async function parallelRefresh<T extends Record<string, RefreshTask<any>>
 		})
 	);
 }
-
-export async function simpleRefresh<T>(
-	fetch: () => Promise<T>,
-	onSuccess: (data: T) => void,
-	errorMessage: string,
-	setLoading: (loading: boolean) => void
-): Promise<void> {
-	setLoading(true);
-	await handleApiResultWithCallbacks({
-		result: await tryCatch(fetch()),
-		message: errorMessage,
-		setLoadingState: setLoading,
-		onSuccess
-	});
-}

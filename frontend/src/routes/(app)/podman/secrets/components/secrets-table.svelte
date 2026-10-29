@@ -12,7 +12,6 @@
 	import { CalendarIcon, EditIcon, LockIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { podmanService } from '#lib/services/podman-service.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { PodmanSecret } from '#lib/types/podman.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -38,10 +37,7 @@
 	let isDeleting = $state(false);
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 
-	const canManageSecrets = $derived.by(() => {
-		userStore.current;
-		return hasShownPermission('podman:secrets');
-	});
+	const canManageSecrets = $derived(hasShownPermission('podman:secrets'));
 
 	function handleDelete(secret: SecretRow) {
 		const name = secret.spec.name;

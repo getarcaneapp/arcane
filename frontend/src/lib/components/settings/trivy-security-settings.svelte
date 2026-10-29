@@ -16,7 +16,6 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { networkService } from '#lib/services/network-service.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { Settings } from '#lib/types/settings.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -83,7 +82,6 @@
 	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', environmentId));
 	const networksQuery = createQuery(() => {
 		const requestedEnvironmentId = environmentId;
-		userStore.current;
 		return {
 			queryKey: queryKeys.networks.list(requestedEnvironmentId, networkRequest),
 			queryFn: () => networkService.getNetworksForEnvironment(requestedEnvironmentId, networkRequest),

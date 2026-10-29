@@ -39,12 +39,7 @@
 	const isMobile = new IsMobile();
 	const isTablet = new IsTablet();
 
-	const navigationSettings = $derived.by(() => {
-		// Track the store, not the loader snapshot: saving a preference calls
-		// userStore.setUser() without re-running load().
-		void userStore.current;
-		return getEffectiveNavigationSettings();
-	});
+	const navigationSettings = $derived(getEffectiveNavigationSettings());
 	const navigationMode = $derived(navigationSettings.mode);
 	let hiddenNavigationSettings = $state.raw<typeof navigationSettings>();
 	setMobileNavigation({
