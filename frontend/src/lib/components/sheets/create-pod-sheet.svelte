@@ -167,14 +167,10 @@
 		};
 	}
 
-	let resetToken = $state(0);
 	let submitted = $state(false);
 	let rows = $state(emptyRows());
-	let form = $derived.by(() => {
-		resetToken;
-		return createForm<typeof formSchema>(formSchema, { ...defaults });
-	});
-	let inputs = $derived(form.inputs);
+	const form = createForm<typeof formSchema>(formSchema, { ...defaults });
+	const inputs = form.inputs;
 
 	const exitPolicies = [
 		{ value: 'default', label: m.podman_pod_restart_policy_default() },
@@ -327,7 +323,7 @@
 			pickedEnvironmentId = '';
 			submitted = false;
 			rows = emptyRows();
-			resetToken += 1;
+			form.reset();
 		}
 	}
 </script>
