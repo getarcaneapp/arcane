@@ -65,7 +65,7 @@
 				<li>
 					<button
 						type="button"
-						class="-mx-2 grid w-full-outset grid-cols-icon-content-action items-start gap-3 rounded-md px-2 py-2.5 text-left transition-colors hover:bg-muted/40"
+						class="-mx-2 grid w-full-outset grid-cols-icon-content-action items-start gap-3 rounded-md hover-glow px-2 py-2.5 text-left"
 						onclick={() => activityStore.openCenter(activity.id, undefined, environmentId)}
 					>
 						<span class={cn('mt-1.5 size-2 shrink-0 rounded-full', activityStatusAccentClass(activity.status))}></span>

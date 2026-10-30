@@ -47,7 +47,7 @@
 						href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(container.environmentId)}`, {
 							containerId: container.id
 						})}
-						class="-mx-2 grid grid-cols-content-action items-center gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-muted/40"
+						class="-mx-2 grid grid-cols-content-action items-center gap-3 rounded-md hover-glow px-2 py-2.5"
 					>
 						<span class="min-w-0 space-y-1">
 							<span class="block truncate text-sm font-medium">{getContainerDisplayName(container)}</span>
