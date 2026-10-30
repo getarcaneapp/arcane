@@ -22,11 +22,10 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 
-	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { ActionButtonGroup } from '#lib/components/action-button-group/index.js';
 	import MemoryRing from '#lib/components/memory-ring.svelte';
 	import MetricRing, { type MetricRingVariant } from '#lib/components/metric-ring.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import { ShieldAlertIcon, UpdateIcon, VerifiedCheckIcon, type IconType } from '#lib/icons/index.js';
@@ -182,20 +181,7 @@
 					{/if}
 					<Table.Cell class="text-right">
 						<div class="flex items-center justify-end gap-1">
-							<RowActionsMenu>
-								{#each row.menuButtons as btn (btn.id)}
-									<DropdownMenu.Item
-										disabled={!!(btn.disabled || btn.loading)}
-										onclick={btn.onclick}
-										variant={btn.action === 'prune' ? 'destructive' : 'default'}
-									>
-										{#if btn.icon}
-											<btn.icon class="size-4" />
-										{/if}
-										{btn.label}
-									</DropdownMenu.Item>
-								{/each}
-							</RowActionsMenu>
+							<ActionButtonGroup buttons={row.menuButtons} size="sm" />
 						</div>
 					</Table.Cell>
 				</Table.Row>
