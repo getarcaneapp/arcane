@@ -1,10 +1,8 @@
 <script lang="ts">
-	import type { ActionButton } from '#lib/components/action-button-group/index.js';
-	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { ActionButtonGroup, type ActionButton } from '#lib/components/action-button-group/index.js';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import { Badge, badgeVariants } from '#lib/components/ui/badge/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
-	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import { CpuIcon, GpuIcon, MemoryStickIcon, VolumesIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -144,20 +142,7 @@
 				</div>
 
 				<div class="flex shrink-0 items-center gap-1 pt-1 sm:pt-0">
-					<RowActionsMenu>
-						{#each menuButtons as button (button.id)}
-							<DropdownMenu.Item
-								disabled={!!(button.disabled || button.loading)}
-								onclick={button.onclick}
-								variant={button.action === 'prune' ? 'destructive' : 'default'}
-							>
-								{#if button.icon}
-									<button.icon class="size-4" />
-								{/if}
-								{button.label}
-							</DropdownMenu.Item>
-						{/each}
-					</RowActionsMenu>
+					<ActionButtonGroup buttons={menuButtons} size="sm" />
 				</div>
 			</div>
 

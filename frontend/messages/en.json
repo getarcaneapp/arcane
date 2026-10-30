@@ -2250,8 +2250,6 @@
   "terminal_websocket_error": "WebSocket error occurred",
   "terminal_connection_closed": "Connection closed",
   "apply": "Apply",
-  "docker_engine_title": "{engine}",
-  "docker_info_dialog_description": "Detailed information about your container installation",
   "docker_info_version_section": "Version Information",
   "docker_info_system_section": "System Information",
   "docker_info_stats_section": "Resource Statistics",
@@ -4241,5 +4239,6 @@
   "podman_info_run_root": "Run Root",
   "podman_info_volume_path": "Volume Path",
   "podman_info_quadlet_apps": "Quadlet Apps",
-  "podman_info_systemd": "Systemd"
+  "podman_info_systemd": "Systemd",
+  "engine": "Engine"
 }

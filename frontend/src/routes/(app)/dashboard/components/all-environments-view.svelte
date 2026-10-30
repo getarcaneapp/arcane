@@ -9,7 +9,6 @@
 	import { type ActionButton } from '#lib/components/action-button-group/index.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
-	import DockerInfoDialog, { type EngineInfo } from '#lib/components/dialogs/docker-info-dialog.svelte';
 	import PruneConfirmationDialog from '#lib/components/dialogs/prune-confirmation-dialog.svelte';
 	import * as StatStrip from '#lib/components/stat-strip/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
@@ -19,7 +18,6 @@
 		BoxIcon,
 		ContainersIcon,
 		ImagesIcon,
-		InfoIcon,
 		InspectIcon,
 		TrashIcon,
 		UpdateIcon,
@@ -138,14 +136,6 @@
 	const upgradeDialogOpenById = $state<Record<string, boolean>>({});
 	const upgradeDialogUpgradingById = $state<Record<string, boolean>>({});
 
-	let engineInfoOpen = $state(false);
-	let engineInfoEngine = $state<EngineInfo['engine']>('docker');
-	let engineInfoData = $state<EngineInfo | null>(null);
-	let engineInfoPromise = $state<Promise<EngineInfo> | null>(null);
-	let engineInfoError = $state<string | null>(null);
-	const engineInfoByEnvironmentId = $state<Record<string, EngineInfo | undefined>>({});
-	const engineInfoPromiseByEnvironmentId = $state<Record<string, Promise<EngineInfo> | undefined>>({});
-
 	const availableEnvironments = $derived.by(() => {
 		if (!userStore.current) {
 			return [];
@@ -259,56 +249,6 @@
 		for (const environmentId of Object.keys(liveStatsByEnvironmentId)) {
 			removeEnvironmentLiveStats(environmentId);
 		}
-	}
-
-	async function fetchEngineInfo(environmentId: string, podCount: number | undefined): Promise<EngineInfo> {
-		if (podCount === undefined) {
-			return { engine: 'docker', docker: await systemService.getDockerInfoForEnvironment(environmentId) };
-		}
-
-		const [podman, status] = await Promise.all([podmanService.getInfo(environmentId), podmanService.getStatus(environmentId)]);
-		return { engine: 'podman', podman, status, podCount };
-	}
-
-	async function loadEngineInfo(environmentId: string, podCount: number | undefined): Promise<EngineInfo> {
-		try {
-			const info = await fetchEngineInfo(environmentId, podCount);
-			engineInfoByEnvironmentId[environmentId] = info;
-			engineInfoData = info;
-			return info;
-		} finally {
-			delete engineInfoPromiseByEnvironmentId[environmentId];
-			engineInfoPromise = null;
-		}
-	}
-
-	function openEngineInfo(item: DashboardEnvironmentOverview) {
-		const environmentId = item.environment.id;
-		const podCount = hasPermission('podman:read', environmentId) ? item.podCount : undefined;
-		engineInfoError = null;
-		engineInfoOpen = true;
-		engineInfoEngine = podCount === undefined ? 'docker' : 'podman';
-		engineInfoData = engineInfoByEnvironmentId[environmentId] ?? null;
-		if (engineInfoData) {
-			engineInfoPromise = null;
-			return;
-		}
-
-		engineInfoPromise = engineInfoPromiseByEnvironmentId[environmentId] ?? null;
-		if (engineInfoPromise) {
-			return;
-		}
-
-		engineInfoPromise = tryCatch(loadEngineInfo(environmentId, podCount)).then((result) => {
-			if (result.error) {
-				const error: Error = result.error;
-
-				engineInfoError = extractApiErrorMessage(error);
-				throw error;
-			}
-			return result.data;
-		});
-		engineInfoPromiseByEnvironmentId[environmentId] = engineInfoPromise;
 	}
 
 	const environmentCards = $derived.by((): DashboardEnvironmentCardState[] => {
@@ -607,24 +547,19 @@
 		buttons.push({
 			id: `${item.environment.id}-details`,
 			action: 'inspect',
+			placement: 'primary',
+			iconOnly: true,
 			label: m.common_view_details(),
 			onclick: () => void goto(resolve('/(app)/environments/[id]', { id: item.environment.id })),
 			icon: InspectIcon
-		});
-
-		buttons.push({
-			id: `${item.environment.id}-docker-info`,
-			action: 'base',
-			label: m.common_inspect(),
-			disabled: !shouldLoadEnvironment(item.environment),
-			onclick: () => openEngineInfo(item),
-			icon: InfoIcon
 		});
 
 		if (canPruneInEnvironment(item.environment.id)) {
 			buttons.push({
 				id: `${item.environment.id}-prune`,
 				action: 'prune',
+				placement: 'primary',
+				iconOnly: true,
 				label: m.quick_actions_prune_system(),
 				loading: pruningEnvironmentId === item.environment.id || pruneDefaultsLoadingId === item.environment.id,
 				disabled: !canPruneEnvironment(item) || !!pruningEnvironmentId || !!pruneDefaultsLoadingId,
@@ -956,12 +891,4 @@
 	defaults={pruneDefaults}
 	onConfirm={confirmPrune}
 	onCancel={closePruneDialog}
-/>
-
-<DockerInfoDialog
-	bind:open={engineInfoOpen}
-	engine={engineInfoEngine}
-	info={engineInfoData}
-	infoPromise={engineInfoPromise}
-	errorMessage={engineInfoError}
 />
