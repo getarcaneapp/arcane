@@ -211,10 +211,6 @@
 		fields={hasFields ? cardFields : undefined}
 		footer={footerValue ? cardFooter : undefined}
 	>
-		{#if children}
-			<div class="px-3.5 pb-3">
-				{@render children()}
-			</div>
-		{/if}
+		{@render children?.()}
 	</ResourceCard>
 </div>

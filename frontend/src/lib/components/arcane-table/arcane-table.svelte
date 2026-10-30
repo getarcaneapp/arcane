@@ -80,6 +80,7 @@
 		customSettings = $bindable<Record<string, unknown>>({}),
 		columnVisibility = $bindable<ColumnVisibilityState>({}),
 		preferencesReady = $bindable(false),
+		viewMode = $bindable<TableViewMode>('list'),
 		hiddenSortFallback,
 		groupedRows = null,
 		groupBy,
@@ -124,6 +125,7 @@
 		customSettings?: Record<string, unknown>;
 		columnVisibility?: ColumnVisibilityState;
 		preferencesReady?: boolean;
+		viewMode?: TableViewMode;
 		hiddenSortFallback?: SortState;
 		groupedRows?: GroupedData<TData>[] | null;
 		groupBy?: (item: TData) => string;
@@ -179,7 +181,6 @@
 	const isMobile = new IsMobile();
 	const scrollPositions = { desktop: { top: 0, left: 0 }, grid: { top: 0, left: 0 }, mobile: { top: 0, left: 0 } };
 
-	let viewMode = $state<TableViewMode>('list');
 	function setViewMode(mode: TableViewMode) {
 		viewMode = mode;
 		if (enablePersist && prefs) prefs.current = { ...prefs.current, d: mode };
@@ -445,7 +446,9 @@
 					width: spec.width,
 					align: spec.align,
 					truncate: spec.truncate,
-					card: spec.card
+					card: spec.card,
+					cardIcon: spec.cardIcon,
+					cardLabel: spec.cardLabel
 				},
 				header: ({ column }) => {
 					if (spec.header) return renderSnippet(spec.header, { column, title: spec.title, class: spec.class });

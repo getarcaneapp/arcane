@@ -6,6 +6,8 @@
 	import type { ContainerDetailsDto, ContainerStats as ContainerStatsType } from '#lib/types/docker.js';
 	import { bytes } from '#lib/utils/formatting.js';
 
+	import { getUsageTone } from '../container-table.helpers';
+
 	interface Props {
 		container: ContainerDetailsDto;
 		stats: ContainerStatsType | null;
@@ -95,12 +97,6 @@
 		}
 		return items;
 	});
-
-	function getUsageTone(percent: number): 'destructive' | 'warning' | 'default' {
-		if (percent > 80) return 'destructive';
-		if (percent > 60) return 'warning';
-		return 'default';
-	}
 </script>
 
 {#snippet statRow(label: string, value: string | null)}

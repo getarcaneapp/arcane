@@ -22,6 +22,7 @@
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { Progress } from '#lib/components/ui/progress/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import {
 		StartIcon,
@@ -63,10 +64,12 @@
 	import { createContainerActions } from '../container-table.actions';
 	import {
 		containerSortValue,
+		formatUsagePercent,
 		getActionStatusMessage,
 		getContainerDisplayName,
 		getProjectName,
 		getStateBadgeVariant,
+		getUsageTone,
 		getContainerStatusLabel,
 		type ActionStatus
 	} from '../container-table.helpers';
@@ -222,6 +225,7 @@
 	let collapsedGroupsState = $state<PersistedState<Record<string, boolean>> | null>(null);
 	let collapsedGroups = $derived(collapsedGroupsState?.current ?? {});
 	let columnVisibility = $state<Record<string, boolean>>({});
+	let viewMode = $state<TableViewMode>('list');
 	const backendGroupedRows = $derived(
 		containers.groups?.map((group) => ({
 			groupName: group.groupName,
@@ -235,7 +239,7 @@
 		}
 		const cpuVisible = columnVisibility['cpuUsage'] !== false;
 		const memoryVisible = columnVisibility['memoryUsage'] !== false;
-		const statsVisible = cpuVisible || memoryVisible;
+		const statsVisible = cpuVisible || memoryVisible || viewMode === 'grid';
 
 		if (!statsVisible) {
 			return new Set<string>();
@@ -372,6 +376,7 @@
 			accessorKey: 'image',
 			title: m.common_image(),
 			sortable: !groupByProject,
+			card: 'hidden',
 			cell: ImageCell
 		},
 		{
@@ -399,6 +404,7 @@
 			accessorFn: (row) => containerSortValue(row, 'cpuUsage'),
 			title: m.cpu_usage(),
 			sortable: !groupByProject && resourceSortSupported,
+			card: 'meter',
 			cell: CPUCell
 		},
 		{
@@ -406,6 +412,7 @@
 			accessorFn: (row) => containerSortValue(row, 'memoryUsage'),
 			title: m.memory_usage(),
 			sortable: !groupByProject && resourceSortSupported,
+			card: 'meter',
 			cell: MemoryCell
 		},
 		{ accessorKey: 'status', title: m.common_status(), card: 'footerEnd', cell: StatusCell },
@@ -414,18 +421,23 @@
 			id: 'ipAddress',
 			title: m.containers_ip_address(),
 			sortable: false,
+			card: 'footer',
+			cardIcon: NetworksIcon,
 			cell: IPAddressCell
 		},
 		{
 			accessorKey: 'ports',
 			title: m.common_ports(),
 			sortable: !groupByProject,
+			card: 'footer',
+			cardLabel: false,
 			cell: PortsCell
 		},
 		{
 			accessorKey: 'created',
 			title: m.common_created(),
 			sortable: !groupByProject,
+			card: 'hidden',
 			cell: CreatedCell
 		},
 		{
@@ -572,9 +584,11 @@
 	<ContainerStatsSync {statsManager} targetIds={shouldConnect} />
 {/if}
 
-{#snippet IPAddressCell({ item }: { item: ContainerSummaryDto })}
+{#snippet IPAddressCell({ item, view }: { item: ContainerSummaryDto; view: TableViewMode })}
 	{@const ipAddresses = getContainerIpAddresses(item)}
-	{#if ipAddresses.length > 0}
+	{#if view === 'grid'}
+		<span class="font-mono">{ipAddresses.length > 0 ? ipAddresses.join(', ') : m.common_na()}</span>
+	{:else if ipAddresses.length > 0}
 		<div class="space-y-0.5">
 			{#each ipAddresses as ipAddress (ipAddress)}
 				<div class="font-mono text-sm leading-tight">{ipAddress}</div>
@@ -597,8 +611,39 @@
 	{/if}
 {/snippet}
 
-{#snippet CPUCell({ item }: { item: ContainerSummaryDto })}
-	{#if resourceSortActive}
+{#snippet UsageTile({
+	item,
+	title,
+	percent,
+	unavailable
+}: {
+	item: ContainerSummaryDto;
+	title: string;
+	percent: number | undefined;
+	unavailable: boolean;
+})}
+	{@const stopped = item.state !== 'running'}
+	{@const meterValue = stopped ? 0 : Math.min(100, percent ?? 0)}
+	<div class="flex min-w-0 flex-col gap-2">
+		<div class="flex items-baseline justify-between gap-2 text-xs">
+			<span class="truncate text-muted-foreground">{title}</span>
+			<span class="font-medium text-foreground tabular-nums">
+				{!stopped && unavailable && percent === undefined ? m.common_unavailable() : formatUsagePercent(percent, stopped)}
+			</span>
+		</div>
+		<Progress value={meterValue} max={100} class="h-1.5" tone={getUsageTone(meterValue)} />
+	</div>
+{/snippet}
+
+{#snippet CPUCell({ item, view }: { item: ContainerSummaryDto; view: TableViewMode })}
+	{#if view === 'grid'}
+		{@render UsageTile({
+			item,
+			title: m.cpu_usage(),
+			percent: resourceSortActive ? item.resourceSample?.cpuPercent : statsManager.getCPUPercent(rowKey(item)),
+			unavailable: resourceSortActive ? !item.resourceSample : statsManager.hasError(rowKey(item))
+		})}
+	{:else if resourceSortActive}
 		<ContainerStatsCell
 			value={item.resourceSample?.cpuPercent}
 			unavailable={!item.resourceSample}
@@ -616,8 +661,18 @@
 	{/if}
 {/snippet}
 
-{#snippet MemoryCell({ item }: { item: ContainerSummaryDto })}
-	{#if resourceSortActive}
+{#snippet MemoryCell({ item, view }: { item: ContainerSummaryDto; view: TableViewMode })}
+	{#if view === 'grid'}
+		{@const memoryData = resourceSortActive
+			? { usage: item.resourceSample?.memoryUsageBytes, limit: item.resourceSample?.memoryLimitBytes }
+			: statsManager.getMemoryUsage(rowKey(item))}
+		{@render UsageTile({
+			item,
+			title: m.memory_usage(),
+			percent: memoryData?.usage !== undefined && memoryData.limit ? (memoryData.usage / memoryData.limit) * 100 : undefined,
+			unavailable: resourceSortActive ? !item.resourceSample : statsManager.hasError(rowKey(item))
+		})}
+	{:else if resourceSortActive}
 		<ContainerStatsCell
 			value={item.resourceSample?.memoryUsageBytes}
 			limit={item.resourceSample?.memoryLimitBytes}
@@ -638,48 +693,83 @@
 {/snippet}
 
 {#snippet PortsCell({ item, view }: { item: ContainerRow; view: TableViewMode })}
-	<PortBadge ports={item.ports ?? []} environmentId={item.environmentId} hideExposed={hideExposedPorts} wrap={view === 'grid'} />
+	{#if view === 'list' || (item.ports?.length ?? 0) > 0}
+		<PortBadge ports={item.ports ?? []} environmentId={item.environmentId} hideExposed={hideExposedPorts} wrap={false} />
+	{/if}
 {/snippet}
 
-{#snippet StatusCell({ item }: { item: ContainerRow })}
+{#snippet StatusCell({ item, view }: { item: ContainerRow; view: TableViewMode })}
 	{@const healthMatch = item.status?.match(HEALTH_SUFFIX)}
 	{@const health = healthMatch ? healthStatus[healthMatch[1] as keyof typeof healthStatus] : undefined}
-	<span class="inline-flex items-center gap-1.5">
-		{#if health}
+	<span class="inline-flex min-w-0 items-center gap-1.5">
+		{#if view === 'grid'}
+			<ClockIcon class="size-3.5 shrink-0" />
+		{:else if health}
 			<HealthIcon class="size-4 shrink-0 {health.class}" aria-label={health.label()} />
 		{/if}
-		<span>{item.status?.replace(HEALTH_SUFFIX, '')}</span>
+		<span class="truncate">{item.status?.replace(HEALTH_SUFFIX, '')}</span>
 	</span>
 {/snippet}
 
-{#snippet NameCell({ item }: { item: ContainerRow })}
+{#snippet HealthIndicator(item: ContainerRow)}
+	{@const healthMatch = item.status?.match(HEALTH_SUFFIX)}
+	{@const health = healthMatch ? healthStatus[healthMatch[1] as keyof typeof healthStatus] : undefined}
+	{#if health}
+		<span class="inline-flex items-center gap-1 text-xs font-medium {health.class}">
+			<HealthIcon class="size-4 shrink-0" />
+			{health.label()}
+		</span>
+	{/if}
+{/snippet}
+
+{#snippet NameBadges(item: ContainerRow)}
+	{@const quadletHref = quadletUnitHref(item.labels, item.environmentId)}
+	{#if item.hidden}
+		<Badge variant="gray" size="sm">{m.hidden()}</Badge>
+	{/if}
+	{#if quadletHref}
+		<Badge variant="purple" size="sm" href={quadletHref}>
+			{m.podman_managed_by_quadlet()}
+		</Badge>
+	{/if}
+{/snippet}
+
+{#snippet NameCell({ item, view }: { item: ContainerRow; view: TableViewMode })}
 	{@const displayName = getContainerDisplayName(item)}
 	{@const iconUrl = getThemedIconUrl(item, mode.current)}
-	{@const projectLabel = item.labels?.[COMPOSE_PROJECT_LABEL]}
-	{@const quadletHref = quadletUnitHref(item.labels, item.environmentId)}
-	<div class="flex min-w-0 items-center gap-2">
-		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-8 shrink-0" />
-		<a
-			class="min-w-0 truncate font-medium hover:underline"
-			href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, { containerId: item.id })}
-			>{displayName}</a
-		>
-		{#if item.hidden}
-			<Badge variant="gray" size="sm">{m.hidden()}</Badge>
-		{/if}
-		{#if quadletHref}
-			<Badge variant="purple" size="sm" href={quadletHref}>
-				{m.podman_managed_by_quadlet()}
-			</Badge>
-		{/if}
-		{#if projectLabel && !groupByProject}
-			<Badge variant="gray" size="sm" class="max-w-40" title={projectLabel}>
-				<span class="block min-w-0 truncate">
-					{projectLabel}
-				</span>
-			</Badge>
-		{/if}
-	</div>
+	{@const projectLabel = groupByProject ? undefined : item.labels?.[COMPOSE_PROJECT_LABEL]}
+	{@const href = resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, {
+		containerId: item.id
+	})}
+	{#if view === 'grid'}
+		<div class="flex min-w-0 items-center gap-3">
+			<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-10 shrink-0 rounded-xl" />
+			<div class="flex min-w-0 flex-col">
+				<div class="flex min-w-0 items-center gap-2">
+					<a class="min-w-0 truncate hover:underline" {href}>{displayName}</a>
+					{@render NameBadges(item)}
+				</div>
+				{#if projectLabel}
+					<span class="truncate text-xs font-normal text-muted-foreground" title={projectLabel}>
+						{projectLabel}
+					</span>
+				{/if}
+			</div>
+		</div>
+	{:else}
+		<div class="flex min-w-0 items-center gap-2">
+			<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-8 shrink-0" />
+			<a class="min-w-0 truncate font-medium hover:underline" {href}>{displayName}</a>
+			{@render NameBadges(item)}
+			{#if projectLabel}
+				<Badge variant="gray" size="sm" class="max-w-40" title={projectLabel}>
+					<span class="block min-w-0 truncate">
+						{projectLabel}
+					</span>
+				</Badge>
+			{/if}
+		</div>
+	{/if}
 {/snippet}
 
 {#snippet IdCell({ item }: { item: ContainerSummaryDto })}
@@ -705,6 +795,8 @@
 			<div class="flex items-center gap-1 {stateActionsMinWidth}">
 				{@render StateActions(item, status)}
 			</div>
+		{:else}
+			{@render HealthIndicator(item)}
 		{/if}
 	</div>
 {/snippet}
@@ -1081,6 +1173,7 @@
 	bind:mobileFieldVisibility
 	bind:customSettings
 	bind:columnVisibility
+	bind:viewMode
 	{withoutFilters}
 	{onRetry}
 	{columns}

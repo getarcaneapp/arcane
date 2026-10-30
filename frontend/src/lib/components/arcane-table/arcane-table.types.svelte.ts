@@ -2,6 +2,8 @@ import type { ColumnFiltersState, ColumnVisibilityState, RowData } from '@tansta
 import type { Snippet } from 'svelte';
 import type { Component } from 'svelte';
 
+import type { IconType } from '#lib/icons/index.js';
+
 import type { ArcaneColumn, ArcaneFilterFn, ArcaneRow } from './table-features';
 
 export interface FilterOption {
@@ -25,7 +27,7 @@ export type TableViewMode = 'list' | 'grid';
 
 export type ColumnWidth = 'auto' | 'min' | 'max' | number;
 export type ColumnAlign = 'left' | 'center' | 'right';
-export type CardSlot = 'title' | 'context' | 'badge' | 'field' | 'footer' | 'footerEnd' | 'hidden';
+export type CardSlot = 'title' | 'context' | 'badge' | 'meter' | 'field' | 'footer' | 'footerEnd' | 'hidden';
 
 export type ColumnSpec<T extends RowData> = {
 	accessorKey?: keyof T & string;
@@ -45,6 +47,8 @@ export type ColumnSpec<T extends RowData> = {
 	align?: ColumnAlign;
 	truncate?: boolean;
 	card?: CardSlot;
+	cardIcon?: IconType;
+	cardLabel?: boolean;
 };
 
 export type CompactTablePrefs = {

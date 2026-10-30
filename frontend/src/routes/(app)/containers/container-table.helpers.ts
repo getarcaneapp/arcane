@@ -96,3 +96,14 @@ export function getContainerStatusLabel(state: string): string {
 			return state ? state.charAt(0).toUpperCase() + state.slice(1) : m.common_unknown();
 	}
 }
+
+export function formatUsagePercent(percent: number | undefined, stopped: boolean): string {
+	if (stopped) return m.common_na();
+	return percent === undefined ? '--' : `${percent.toFixed(1)}%`;
+}
+
+export function getUsageTone(percent: number): 'destructive' | 'warning' | 'default' {
+	if (percent > 80) return 'destructive';
+	if (percent > 60) return 'warning';
+	return 'default';
+}
