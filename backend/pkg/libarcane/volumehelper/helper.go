@@ -32,10 +32,18 @@ type RuntimeImage struct {
 const (
 	toolsRepoPathInternal = "getarcaneapp/tools"
 	ContainerLabel        = "com.getarcaneapp.volume-helper"
+
+	// WindowsToolsImage provides the tools image commands (sh, tar, acfs...) as Windows
+	// executables for Windows Docker hosts, where the tools image has no variant.
+	WindowsToolsImage = "ghcr.io/phb-fra/arcane-tools-windows:latest"
 )
 
 // ToolsImage returns the shared Arcane tools image reference hosted on the given registry setting.
+// A Windows Arcane binary runs in a Windows container, so its helpers are Windows containers too.
 func ToolsImage(registry string) string {
+	if runtime.GOOS == "windows" {
+		return WindowsToolsImage
+	}
 	return libarcane.ArcaneRegistryHost(registry) + "/" + toolsRepoPathInternal + ":latest"
 }
 
@@ -53,7 +61,11 @@ func RemoveOptions() client.ContainerRemoveOptions {
 }
 
 // HostConfig builds the host config shared by volume helper containers.
+// On Windows the Linux mount paths move to the C: drive (see WindowsContainerPath).
 func HostConfig(helperImage string, binds []string, mounts []mount.Mount) *container.HostConfig {
+	if runtime.GOOS == "windows" {
+		binds, mounts = windowsMountsInternal(binds, mounts)
+	}
 	hostConfig := &container.HostConfig{
 		Binds:      binds,
 		Mounts:     mounts,

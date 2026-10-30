@@ -458,6 +458,11 @@ func resolveUpgraderRuntimeOptions(
 	isRunningInDocker func() bool,
 	selectReachableNetwork func(context.Context, *mobycontainer.InspectResponse, string) string,
 ) ([]string, []mount.Mount, mobycontainer.NetworkMode, error) {
+	// Windows agents reach the engine through a named pipe, mounted into the upgrader at the same path.
+	if pipeMount, ok := vuln.NamedPipeMount(dockerHost); ok {
+		return vuln.BuildDockerHostEnv(dockerHost), []mount.Mount{pipeMount}, "", nil
+	}
+
 	scheme, socketPath, err := vuln.ParseDockerHost(dockerHost)
 	if err != nil {
 		return nil, nil, "", fmt.Errorf("resolve docker host %q: %w", dockerHost, err)
