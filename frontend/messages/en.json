@@ -4303,9 +4303,10 @@
   "edit_layout": "Edit layout",
   "reset_to_default": "Reset to default",
   "add_widget": "Add widget",
-  "reorder_name": "Reorder {name}",
   "hide_name": "Hide {name}",
   "prune_volumes": "Prune Volumes",
   "resize_name": "Resize {name}",
-  "attention_count": "Attention count"
+  "attention_count": "Attention count",
+  "move_name": "Move {name}",
+  "prune": "Prune"
 }

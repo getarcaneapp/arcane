@@ -110,7 +110,7 @@
 	{/if}
 {/snippet}
 
-<div class="overflow-x-auto rounded-lg border border-border/60">
+<div class="overflow-x-auto">
 	<Table.Root>
 		<Table.Header>
 			<Table.Row>

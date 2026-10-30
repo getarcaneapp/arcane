@@ -76,9 +76,10 @@
 		type AttentionItem,
 		type EnvironmentJob
 	} from '../overview.helpers';
-	import { DASHBOARD_WIDGETS, DEFAULT_DASHBOARD_LAYOUT, resolveDashboardLayout } from '../widgets';
+	import { DASHBOARD_WIDGETS, defaultDashboardLayout, resolveDashboardLayout, showWidget } from '../widgets';
 	import ActivityList from './activity-list.svelte';
 	import AttentionList from './attention-list.svelte';
+	import DashboardPanel from './dashboard-panel.svelte';
 	import EnvironmentCard from './environment-card.svelte';
 	import EnvironmentUpgradeAction from './environment-upgrade-action.svelte';
 	import EnvironmentsTable, { type EnvironmentTableRow } from './environments-table.svelte';
@@ -129,7 +130,7 @@
 
 	let isRefreshing = $state(false);
 	let isPruneDialogOpen = $state(false);
-	let pruneEnvironment = $state<DashboardEnvironmentOverview | null>(null);
+	let pruneTargetId = $state<string | null>(null);
 	let pruneDefaults = $state<Settings | null>(null);
 	let pruneDefaultsLoadingId = $state<string | null>(null);
 	let pruningEnvironmentId = $state<string | null>(null);
@@ -496,7 +497,7 @@
 				label: m.quick_actions_prune_system(),
 				loading: pruningEnvironmentId === item.environment.id || pruneDefaultsLoadingId === item.environment.id,
 				disabled: !canPruneEnvironment(item) || !!pruningEnvironmentId || !!pruneDefaultsLoadingId,
-				onclick: () => void openPruneDialog(item),
+				onclick: () => void openPruneDialog(item.environment.id),
 				icon: TrashIcon
 			});
 		}
@@ -529,7 +530,7 @@
 
 	let editingLayout = $state(false);
 	let draftLayout = $state.raw<DashboardWidgetLayout[]>([]);
-	const savedLayout = $derived(resolveDashboardLayout(userStore.current?.preferences?.dashboardLayout));
+	const savedLayout = $derived(resolveDashboardLayout(userStore.current?.preferences?.dashboardLayout, environmentCards.length));
 	const layout = $derived(editingLayout ? draftLayout : savedLayout);
 	const hiddenWidgets = $derived(layout.filter((widget) => widget.hidden));
 	const layoutHasChanges = $derived(editingLayout && JSON.stringify(draftLayout) !== JSON.stringify(savedLayout));
@@ -614,13 +615,32 @@
 		}
 	}
 
-	async function openPruneDialog(item: DashboardEnvironmentOverview) {
-		if (!canPruneEnvironment(item) || pruneDefaultsLoadingId) {
+	const prunableEnvironments = $derived(
+		environmentCards
+			.map(({ environment }) => overviewById.get(environment.id) ?? createBaseEnvironmentOverview(environment))
+			.filter(canPruneEnvironment)
+	);
+
+	async function openPruneDialog(requestedId: string) {
+		if (pruneDefaultsLoadingId) {
 			return;
 		}
 
-		const environmentId = item.environment.id;
-		pruneEnvironment = item;
+		const [onlyEnvironment] = prunableEnvironments;
+		const environmentId =
+			requestedId === 'all' && prunableEnvironments.length === 1 && onlyEnvironment
+				? onlyEnvironment.environment.id
+				: requestedId;
+		pruneTargetId = environmentId;
+		if (environmentId === 'all') {
+			pruneDefaults = null;
+			isPruneDialogOpen = true;
+			return;
+		}
+		if (!prunableEnvironments.some((item) => item.environment.id === environmentId)) {
+			return;
+		}
+
 		pruneDefaultsLoadingId = environmentId;
 		try {
 			const operationResult = await tryCatch((async () => settingsService.getSettingsForEnvironment(environmentId))());
@@ -635,7 +655,7 @@
 		}
 
 		// Guard against the selection changing while the fetch was in flight.
-		if (pruneEnvironment?.environment.id === environmentId) {
+		if (pruneTargetId === environmentId) {
 			isPruneDialogOpen = true;
 		}
 	}
@@ -646,18 +666,17 @@
 		}
 
 		isPruneDialogOpen = false;
-		pruneEnvironment = null;
+		pruneTargetId = null;
 		pruneDefaults = null;
 	}
 
 	async function confirmPrune(pruneRequest: SystemPruneRequest) {
 		const selectedTypes = Object.keys(pruneRequest) as PruneType[];
-		if (!pruneEnvironment || pruningEnvironmentId || selectedTypes.length === 0) {
+		const targetId = pruneTargetId;
+		const targets = prunableEnvironments.filter((item) => targetId === 'all' || item.environment.id === targetId);
+		if (!targetId || pruningEnvironmentId || selectedTypes.length === 0 || targets.length === 0) {
 			return;
 		}
-
-		const targetEnvironment = pruneEnvironment;
-		const environmentId = targetEnvironment.environment.id;
 
 		const typeLabels: Record<PruneType, string> = {
 			containers: m.prune_stopped_containers(),
@@ -668,33 +687,60 @@
 		};
 		const typesString = selectedTypes.map((type) => typeLabels[type]).join(', ');
 
-		pruningEnvironmentId = environmentId;
+		const successMessage =
+			selectedTypes.length === 1
+				? m.dashboard_prune_success_one({ types: typesString })
+				: m.dashboard_prune_success_many({ types: typesString });
 
-		await handleApiResultWithCallbacks({
-			result: await tryCatch(systemService.pruneAllForEnvironment(environmentId, pruneRequest)),
-			message: m.dashboard_prune_failed({ types: typesString }),
-			setLoadingState: (value) => {
-				pruningEnvironmentId = value ? environmentId : null;
-			},
-			onSuccess: (data) => {
-				isPruneDialogOpen = false;
-				pruneEnvironment = null;
-				pruneDefaults = null;
-				const toastOptions = {
-					...activityToastOptions(extractActivityId(data)),
-					description: targetEnvironment.environment.name
-				};
-				if (selectedTypes.length === 1) {
-					toast.success(m.dashboard_prune_success_one({ types: typesString }), toastOptions);
-				} else {
-					toast.success(m.dashboard_prune_success_many({ types: typesString }), toastOptions);
+		pruningEnvironmentId = targetId;
+
+		const [target] = targets;
+		if (targets.length === 1 && target) {
+			await handleApiResultWithCallbacks({
+				result: await tryCatch(systemService.pruneAllForEnvironment(target.environment.id, pruneRequest)),
+				message: m.dashboard_prune_failed({ types: typesString }),
+				setLoadingState: (value) => {
+					pruningEnvironmentId = value ? targetId : null;
+				},
+				onSuccess: (data) => {
+					isPruneDialogOpen = false;
+					pruneTargetId = null;
+					pruneDefaults = null;
+					toast.success(successMessage, {
+						...activityToastOptions(extractActivityId(data)),
+						description: target.environment.name
+					});
+					void diskUsageQuery.refetch();
 				}
-			}
+			});
+			return;
+		}
+
+		const results = await Promise.all(
+			targets.map((target) => tryCatch(systemService.pruneAllForEnvironment(target.environment.id, pruneRequest)))
+		);
+		pruningEnvironmentId = null;
+		isPruneDialogOpen = false;
+		pruneTargetId = null;
+		pruneDefaults = null;
+		void diskUsageQuery.refetch();
+
+		const failures = targets.flatMap((target, index) => {
+			const error = results[index]?.error;
+			return error ? [`${target.environment.name}: ${extractApiErrorMessage(error)}`] : [];
 		});
+		if (failures.length < targets.length) {
+			toast.success(successMessage, {
+				description: m.across_count_environments({ count: targets.length - failures.length })
+			});
+		}
+		if (failures.length > 0) {
+			toast.error(m.dashboard_prune_failed({ types: typesString }), { description: failures.join('\n') });
+		}
 	}
 </script>
 
-<div class="flex flex-col gap-8 pt-3 pb-6 md:pt-5">
+<div class="flex flex-col gap-4 pb-6">
 	<header class="flex flex-wrap items-start justify-between gap-4">
 		<h1 class="min-w-0 text-xl font-semibold tracking-tight sm:text-2xl">{heroGreeting}</h1>
 
@@ -708,10 +754,7 @@
 					</DropdownMenu.Trigger>
 					<DropdownMenu.Content align="end">
 						{#each hiddenWidgets as widget (widget.id)}
-							<DropdownMenu.Item
-								onclick={() =>
-									(draftLayout = draftLayout.map((entry) => (entry.id === widget.id ? { ...entry, hidden: false } : entry)))}
-							>
+							<DropdownMenu.Item onclick={() => (draftLayout = showWidget(draftLayout, widget.id))}>
 								{DASHBOARD_WIDGETS[widget.id].label()}
 							</DropdownMenu.Item>
 						{/each}
@@ -722,7 +765,7 @@
 					size="sm"
 					icon={ResetIcon}
 					customLabel={m.reset_to_default()}
-					onclick={() => (draftLayout = DEFAULT_DASHBOARD_LAYOUT)}
+					onclick={() => (draftLayout = defaultDashboardLayout(environmentCards.length))}
 				/>
 				{#if layoutHasChanges}
 					<span class="mx-1 text-xs text-warning">{m.common_unsaved_changes()}</span>
@@ -748,23 +791,6 @@
 					}}
 				/>
 			{:else}
-				<div class="inline-flex items-center gap-0.5 rounded-lg border border-border/60 bg-muted/40 p-0.5">
-					{#each [{ view: 'cards' as const, icon: LayoutGridIcon, label: m.dashboard_view_cards() }, { view: 'table' as const, icon: LayoutListIcon, label: m.dashboard_view_table() }] as option (option.view)}
-						<button
-							type="button"
-							title={option.label}
-							aria-label={option.label}
-							aria-pressed={boardView === option.view}
-							class={cn(
-								'inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
-								boardView === option.view && 'bg-primary/15 text-primary ring-1 ring-primary/30 dark:text-primary-tint'
-							)}
-							onclick={() => (boardViewPref.current = option.view)}
-						>
-							<option.icon class="size-4" />
-						</button>
-					{/each}
-				</div>
 				<ArcaneTooltip.Root>
 					<ArcaneTooltip.Trigger>
 						{#snippet child({ props })}
@@ -869,7 +895,26 @@
 					}}
 				/>
 			{:else if id === 'environments'}
-				<section class="min-w-0">
+				<DashboardPanel title={m.environments_title()}>
+					{#snippet actions()}
+						<div class="inline-flex items-center gap-0.5 rounded-lg border border-border/60 bg-muted/40 p-0.5">
+							{#each [{ view: 'cards' as const, icon: LayoutGridIcon, label: m.dashboard_view_cards() }, { view: 'table' as const, icon: LayoutListIcon, label: m.dashboard_view_table() }] as option (option.view)}
+								<button
+									type="button"
+									title={option.label}
+									aria-label={option.label}
+									aria-pressed={boardView === option.view}
+									class={cn(
+										'inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+										boardView === option.view && 'bg-primary/15 text-primary ring-1 ring-primary/30 dark:text-primary-tint'
+									)}
+									onclick={() => (boardViewPref.current = option.view)}
+								>
+									<option.icon class="size-4" />
+								</button>
+							{/each}
+						</div>
+					{/snippet}
 					{#if environmentCards.length === 0}
 						<div class="rounded-xl border border-dashed border-border/60 px-4 py-8 text-center">
 							<p class="text-sm text-muted-foreground">{m.dashboard_all_no_visible_environments()}</p>
@@ -913,7 +958,7 @@
 							{/each}
 						</div>
 					{/if}
-				</section>
+				</DashboardPanel>
 			{:else if id === 'attention'}
 				<AttentionList
 					items={attentionItems}
@@ -934,6 +979,7 @@
 					usage={diskUsage}
 					loading={diskUsageQuery.isPending && loadableEnvironmentIds.size > 0}
 					failed={diskUsageQuery.isError}
+					onPrune={prunableEnvironments.length > 0 ? () => void openPruneDialog('all') : undefined}
 				/>
 			{:else}
 				<TopMemory
@@ -968,4 +1014,7 @@
 	defaults={pruneDefaults}
 	onConfirm={confirmPrune}
 	onCancel={closePruneDialog}
+	environments={prunableEnvironments.map(({ environment }) => ({ id: environment.id, name: environment.name }))}
+	environmentId={pruneTargetId}
+	onEnvironmentChange={(environmentId) => void openPruneDialog(environmentId)}
 />

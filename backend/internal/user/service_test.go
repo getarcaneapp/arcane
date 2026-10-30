@@ -308,14 +308,17 @@ func TestUpdateUserNormalizesDashboardLayout(t *testing.T) {
 
 	u := createTestUser(t, userSvc, "user-1", "dashboard-layout-user")
 	u.Preferences.DashboardLayout = &[]types.DashboardWidgetLayout{
-		{ID: "attention", Span: 20},
-		{ID: "unknown", Span: 6},
-		{ID: "healthy", Span: 1},
-		{ID: "attention", Span: 4},
+		{ID: "attention", X: 10, Y: -2, W: 20, H: 30},
+		{ID: "unknown", W: 6, H: 4},
+		{ID: "healthy", X: 11, W: 1, H: 1},
+		{ID: "attention", W: 4, H: 4},
 		{ID: "jobs"},
 		{
 			ID:     "memory",
-			Span:   5,
+			X:      2,
+			Y:      3,
+			W:      5,
+			H:      6,
 			Hidden: true,
 		},
 	}
@@ -325,12 +328,15 @@ func TestUpdateUserNormalizesDashboardLayout(t *testing.T) {
 	reloaded, err := userSvc.GetUserByID(ctx, u.ID)
 	require.NoError(t, err)
 	require.Equal(t, &[]types.DashboardWidgetLayout{
-		{ID: "attention", Span: 12},
-		{ID: "healthy", Span: 2},
-		{ID: "jobs", Span: 4},
+		{ID: "attention", W: 12, H: 12},
+		{ID: "healthy", X: 10, W: 2, H: 2},
+		{ID: "jobs", W: 3, H: 3},
 		{
 			ID:     "memory",
-			Span:   5,
+			X:      2,
+			Y:      3,
+			W:      5,
+			H:      6,
 			Hidden: true,
 		},
 	}, reloaded.Preferences.DashboardLayout)
