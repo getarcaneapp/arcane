@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createQuery, keepPreviousData } from '@tanstack/svelte-query';
 	import { PersistedState } from 'runed';
 	import { onDestroy, untrack } from 'svelte';
@@ -132,17 +133,17 @@
 	let pruneDefaults = $state<Settings | null>(null);
 	let pruneDefaultsLoadingId = $state<string | null>(null);
 	let pruningEnvironmentId = $state<string | null>(null);
-	let liveStatsByEnvironmentId = $state<Record<string, EnvironmentLiveStatsState>>({});
-	let upgradeDialogOpenById = $state<Record<string, boolean>>({});
-	let upgradeDialogUpgradingById = $state<Record<string, boolean>>({});
+	const liveStatsByEnvironmentId = $state<Record<string, EnvironmentLiveStatsState>>({});
+	const upgradeDialogOpenById = $state<Record<string, boolean>>({});
+	const upgradeDialogUpgradingById = $state<Record<string, boolean>>({});
 
 	let engineInfoOpen = $state(false);
 	let engineInfoEngine = $state<EngineInfo['engine']>('docker');
 	let engineInfoData = $state<EngineInfo | null>(null);
 	let engineInfoPromise = $state<Promise<EngineInfo> | null>(null);
 	let engineInfoError = $state<string | null>(null);
-	let engineInfoByEnvironmentId = $state<Record<string, EngineInfo | undefined>>({});
-	let engineInfoPromiseByEnvironmentId = $state<Record<string, Promise<EngineInfo> | undefined>>({});
+	const engineInfoByEnvironmentId = $state<Record<string, EngineInfo | undefined>>({});
+	const engineInfoPromiseByEnvironmentId = $state<Record<string, Promise<EngineInfo> | undefined>>({});
 
 	const availableEnvironments = $derived.by(() => {
 		if (!userStore.current) {
@@ -612,7 +613,7 @@
 			id: `${item.environment.id}-details`,
 			action: 'inspect',
 			label: m.common_view_details(),
-			onclick: () => void goto(`/environments/${item.environment.id}`),
+			onclick: () => void goto(resolve('/(app)/environments/[id]', { id: item.environment.id })),
 			icon: InspectIcon
 		});
 
@@ -690,7 +691,7 @@
 		return [
 			{
 				key: 'updates',
-				href: '/updates',
+				href: resolve('/(app)/updates'),
 				icon: UpdateIcon,
 				label: m.updates(),
 				value: updatesOverview.pending,
@@ -698,7 +699,7 @@
 			},
 			{
 				key: 'containers',
-				href: '/containers',
+				href: resolve('/(app)/containers'),
 				icon: ContainersIcon,
 				label: m.containers(),
 				value: summary.totalContainers,
@@ -706,7 +707,7 @@
 			},
 			{
 				key: 'images',
-				href: '/images',
+				href: resolve('/(app)/images'),
 				icon: ImagesIcon,
 				label: m.images(),
 				value: summary.totalImages,
@@ -714,7 +715,7 @@
 			},
 			{
 				key: 'volumes',
-				href: '/volumes',
+				href: resolve('/(app)/volumes'),
 				icon: VolumesIcon,
 				label: m.resource_volumes_cap(),
 				value: summary.totalVolumes,
@@ -724,7 +725,7 @@
 				? [
 						{
 							key: 'pods',
-							href: '/podman/pods',
+							href: resolve('/(app)/podman/pods'),
 							icon: BoxIcon,
 							label: m.podman_pods_title(),
 							value: summary.totalPods,

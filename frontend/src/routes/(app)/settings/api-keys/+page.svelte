@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
@@ -9,21 +11,27 @@
 	import { ApiKeyIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { apiKeyListQuery } from '#lib/query/api-keys.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { apiKeyService } from '#lib/services/api-key-service.js';
 	import type { ApiKey, ApiKeyCreated, ApiKeyPermissionGrant, ApiKeyUpdate, PersonalApiKeyCreate } from '#lib/types/auth.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import ApiKeyTable from './components/api-key-table.svelte';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
-	let apiKeys = $derived(data.apiKeys);
-	let selectedIds = $state<string[]>([]);
-	let requestOptions = $derived<SearchPaginationSortRequest>(data.apiKeyRequestOptions);
+	const pageState = new ResourceListPageState(untrack(() => data.apiKeyRequestOptions));
+	const apiKeysQuery = createQuery(() => ({
+		...apiKeyListQuery(pageState.requestOptions),
+		placeholderData: (previous) => previous
+	}));
+	const apiKeys = $derived(apiKeysQuery.data ?? data.apiKeys);
 
-	let isDialogOpen = $state({
+	const isDialogOpen = $state({
 		create: false,
 		edit: false,
 		showKey: false
@@ -32,7 +40,7 @@
 	let apiKeyToEdit = $state<ApiKey | null>(null);
 	let newlyCreatedKey = $state<ApiKeyCreated | null>(null);
 
-	let isLoading = $state({
+	const isLoading = $state({
 		creating: false,
 		editing: false,
 		refresh: false
@@ -46,16 +54,6 @@
 	function openEditDialog(apiKey: ApiKey) {
 		apiKeyToEdit = apiKey;
 		isDialogOpen.edit = true;
-	}
-
-	async function refreshApiKeys() {
-		await handleApiResultWithCallbacks({
-			result: await tryCatch(apiKeyService.getApiKeys(requestOptions)),
-			message: m.common_refresh_failed({ resource: m.api_key_page_title() }),
-			onSuccess: (list) => {
-				apiKeys = list;
-			}
-		});
 	}
 
 	async function handleApiKeySubmit(
@@ -76,7 +74,7 @@
 					toast.success(m.api_key_updated_success({ name: safeName }));
 					isDialogOpen.edit = false;
 					apiKeyToEdit = null;
-					await refreshApiKeys();
+					await queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.all });
 				}
 			});
 		} else {
@@ -89,7 +87,7 @@
 					isDialogOpen.create = false;
 					newlyCreatedKey = createdKey as ApiKeyCreated;
 					isDialogOpen.showKey = true;
-					await refreshApiKeys();
+					await queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.all });
 				}
 			});
 		}
@@ -117,12 +115,10 @@
 >
 	{#snippet mainContent()}
 		<ApiKeyTable
-			bind:apiKeys
-			bind:selectedIds
-			bind:requestOptions
-			onApiKeysChanged={async () => {
-				apiKeys = await apiKeyService.getApiKeys(requestOptions);
-			}}
+			{apiKeys}
+			bind:selectedIds={pageState.selectedIds}
+			bind:requestOptions={pageState.requestOptions}
+			onRetry={() => apiKeysQuery.refetch()}
 			onEditApiKey={openEditDialog}
 		/>
 	{/snippet}

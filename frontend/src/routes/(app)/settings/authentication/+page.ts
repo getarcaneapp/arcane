@@ -1,8 +1,7 @@
-import { queryKeys } from '#lib/query/query-keys.js';
-import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
-import { federatedCredentialService } from '#lib/services/federated-credential-service.js';
-import { oidcMappingService } from '#lib/services/oidc-mapping-service.js';
-import { roleService } from '#lib/services/role-service.js';
+import { environmentListQuery } from '#lib/query/environments.js';
+import { federatedCredentialListQuery } from '#lib/query/federated-credentials.js';
+import { oidcMappingListQuery } from '#lib/query/oidc-mappings.js';
+import { roleAllQuery } from '#lib/query/roles.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 
@@ -26,26 +25,15 @@ export const load: PageLoad = async ({ parent }) => {
 	// here (instead of a standalone /settings/oidc-mappings route) so admins
 	// configure groups claim + the mappings that read from it in one place.
 	const [mappings, federatedCredentials, roles, environmentsPage] = await Promise.all([
-		oidcMappingService.list(),
-		queryClient.query({
-			queryKey: queryKeys.federatedCredentials.list(federatedCredentialRequestOptions),
-			queryFn: () => federatedCredentialService.list(federatedCredentialRequestOptions)
-		}),
-		queryClient.query({
-			queryKey: queryKeys.roles.all(),
-			queryFn: () => roleService.getAll()
-		}),
-		queryClient.query({
-			queryKey: queryKeys.environments.list({
+		queryClient.query(oidcMappingListQuery()),
+		queryClient.query(federatedCredentialListQuery(federatedCredentialRequestOptions)),
+		queryClient.query(roleAllQuery()),
+		queryClient.query(
+			environmentListQuery({
 				pagination: { page: 1, limit: 1000 },
 				sort: { column: 'name', direction: 'asc' }
-			}),
-			queryFn: () =>
-				environmentManagementService.getEnvironments({
-					pagination: { page: 1, limit: 1000 },
-					sort: { column: 'name', direction: 'asc' }
-				})
-		})
+			})
+		)
 	]);
 
 	return {

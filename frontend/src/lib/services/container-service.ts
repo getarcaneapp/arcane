@@ -4,6 +4,7 @@ import type {
 	ContainerSummaryDto,
 	ContainerSummaryGroupDto,
 	ContainerCreate,
+	ContainerCreated,
 	ContainerDetailsDto,
 	ContainerCommitRequest,
 	ContainerCommitResult,
@@ -11,7 +12,7 @@ import type {
 	ContainerEditRequest,
 	ContainerProcessesDto
 } from '#lib/types/docker.js';
-import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest, Paginated, MessageResponse } from '#lib/types/shared.js';
 import { downloadFromUrl } from '#lib/utils/browser-download.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -62,41 +63,41 @@ class ContainerService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/containers/${containerId}/processes`, { signal }));
 	}
 
-	async startContainer(containerId: string, environmentId: string): Promise<any> {
+	async startContainer(containerId: string, environmentId: string): Promise<MessageResponse> {
 		return this.handleResponse(
 			this.api.post(`/environments/${environmentId}/containers/${containerId}`, undefined, { params: { action: 'start' } })
 		);
 	}
 
-	async createContainer(options: ContainerCreate, environmentId: string): Promise<any> {
+	async createContainer(options: ContainerCreate, environmentId: string): Promise<ContainerCreated> {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/containers`, options));
 	}
 
-	async stopContainer(containerId: string, environmentId: string): Promise<any> {
+	async stopContainer(containerId: string, environmentId: string): Promise<MessageResponse> {
 		return this.handleResponse(
 			this.api.post(`/environments/${environmentId}/containers/${containerId}`, undefined, { params: { action: 'stop' } })
 		);
 	}
 
-	async restartContainer(containerId: string, environmentId: string): Promise<any> {
+	async restartContainer(containerId: string, environmentId: string): Promise<MessageResponse> {
 		return this.handleResponse(
 			this.api.post(`/environments/${environmentId}/containers/${containerId}`, undefined, { params: { action: 'restart' } })
 		);
 	}
 
-	async killContainer(containerId: string, signal: string | undefined, environmentId: string): Promise<any> {
+	async killContainer(containerId: string, signal: string | undefined, environmentId: string): Promise<MessageResponse> {
 		const params: Record<string, string> = { action: 'kill' };
 		if (signal) params['signal'] = signal;
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/containers/${containerId}`, undefined, { params }));
 	}
 
-	async pauseContainer(containerId: string, environmentId: string): Promise<any> {
+	async pauseContainer(containerId: string, environmentId: string): Promise<MessageResponse> {
 		return this.handleResponse(
 			this.api.post(`/environments/${environmentId}/containers/${containerId}`, undefined, { params: { action: 'pause' } })
 		);
 	}
 
-	async unpauseContainer(containerId: string, environmentId: string): Promise<any> {
+	async unpauseContainer(containerId: string, environmentId: string): Promise<MessageResponse> {
 		return this.handleResponse(
 			this.api.post(`/environments/${environmentId}/containers/${containerId}`, undefined, { params: { action: 'unpause' } })
 		);
@@ -110,7 +111,10 @@ class ContainerService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/containers/${containerId}/commit`, request));
 	}
 
-	async deleteContainer(containerId: string, opts: { force?: boolean; volumes?: boolean; environmentId: string }): Promise<any> {
+	async deleteContainer(
+		containerId: string,
+		opts: { force?: boolean; volumes?: boolean; environmentId: string }
+	): Promise<MessageResponse> {
 		const params: Record<string, string> = {};
 		if (opts.force !== undefined) params['force'] = String(!!opts.force);
 		if (opts.volumes !== undefined) params['volumes'] = String(!!opts.volumes);

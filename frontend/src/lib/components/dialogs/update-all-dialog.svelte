@@ -325,7 +325,7 @@
 							<a
 								href={releaseUrl}
 								target="_blank"
-								rel="noopener noreferrer"
+								rel="external noopener noreferrer"
 								class="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
 							>
 								{m.update_center_view_full_release()}

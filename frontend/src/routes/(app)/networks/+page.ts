@@ -1,48 +1,26 @@
-import { queryKeys } from '#lib/query/query-keys.js';
-import { networkService } from '#lib/services/network-service.js';
+import { networkListQuery } from '#lib/query/networks.js';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
-import { fetchAcrossEnvironments, readableEnvironments } from '#lib/utils/environments.js';
-import { resolveListPageLoadContext } from '#lib/utils/tables.js';
-import { tryCatch } from '#lib/utils/try-catch.js';
+import { readableEnvironments } from '#lib/utils/environments.js';
+import { resolveInitialListPageRequest } from '#lib/utils/tables.js';
 
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {
-	const {
-		queryClient,
-		scope,
-		requestOptions: networkRequestOptions
-	} = await resolveListPageLoadContext(parent, 'arcane-networks-table', {
+	const [{ queryClient }] = await Promise.all([parent(), environmentStore.ready]);
+	const scope = environmentStore.shownKey;
+	const networkRequestOptions = resolveInitialListPageRequest('arcane-networks-table', {
 		column: 'name',
 		direction: 'asc'
 	});
-	const environments = readableEnvironments('networks:list');
 
-	// Single API call - counts are included in the response
-	let networks;
-	const operationResult = await tryCatch(
-		(async () =>
-			queryClient.query({
-				queryKey: queryKeys.networks.list(scope, networkRequestOptions),
-				queryFn: () =>
-					fetchAcrossEnvironments(environments, networkRequestOptions, (id, request, config) =>
-						networkService.getNetworksForEnvironment(id, request, config)
-					)
-			}))()
-	);
-	if (operationResult.error !== null) {
-		const err = operationResult.error;
-
-		throwPageLoadError(err, 'Failed to load networks');
-	} else {
-		networks = operationResult.data;
-	}
+	const networks = await queryClient
+		.query(networkListQuery(scope, readableEnvironments('networks:list'), networkRequestOptions))
+		.catch((err: unknown) => throwPageLoadError(err, 'Failed to load networks'));
 
 	return {
 		scope,
 		networks,
-		networkRequestOptions,
-		// Use counts from the networks response
-		networkUsageCounts: networks.counts ?? { inuse: 0, unused: 0, total: 0 }
+		networkRequestOptions
 	};
 };

@@ -37,13 +37,14 @@
 	} from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
+	import { environmentDeploymentSnippetsQuery, environmentDetailQuery } from '#lib/query/environments.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import { parseSettingValue, settingsService } from '#lib/services/settings-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import type { DeploymentSnippets, Environment } from '#lib/types/environment.js';
+	import type { Environment } from '#lib/types/environment.js';
 	import type { FeatureID } from '#lib/types/features.js';
 	import type { SettingKey, Settings } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
@@ -76,7 +77,8 @@
 	const swarmActive = $derived(data.swarmActive === true);
 	let lastEnvironment: Environment | undefined;
 	let loadedEnvironment = $derived((lastEnvironment = data.environment ?? lastEnvironment));
-	let environment = $derived(loadedEnvironment);
+	const environmentQuery = createQuery(() => environmentDetailQuery(loadedEnvironment.id));
+	const environment = $derived(environmentQuery.data ?? loadedEnvironment);
 	// Agent reachability only reaches the browser through the live environment stream; the certificate is detail-only.
 	const liveEnvironment = $derived(
 		environment.id === '0' ? undefined : environmentStore.available.find((env) => env.id === environment.id)
@@ -92,7 +94,11 @@
 	let isRegeneratingKey = $state(false);
 	let showRegenerateDialog = $state(false);
 	let regeneratedApiKey = $state<string | null>(null);
-	let regeneratedSnippets = $state<DeploymentSnippets | null>(null);
+	const regeneratedSnippetsQuery = createQuery(() => ({
+		...environmentDeploymentSnippetsQuery(environment.id),
+		enabled: regeneratedApiKey !== null
+	}));
+	const regeneratedSnippets = $derived(regeneratedApiKey ? regeneratedSnippetsQuery.data : undefined);
 	let easyJoinDialogOpen = $state(false);
 	let easyJoinSession = $state(0);
 	let nameInputRef = $state<HTMLInputElement | null>(null);
@@ -339,9 +345,7 @@
 			if (result.error) {
 				throw new Error(result.error.message);
 			}
-			if (environment.id === environmentId) {
-				environment = result.data;
-			}
+			queryClient.setQueryData(environmentDetailQuery(environmentId).queryKey, result.data);
 		}
 		if (settings) {
 			await settingsService.updateSettingsForEnvironment(environmentId, settings, {
@@ -503,15 +507,8 @@
 					});
 
 					if (result.apiKey) {
+						queryClient.removeQueries({ queryKey: environmentDeploymentSnippetsQuery(environment.id).queryKey });
 						regeneratedApiKey = result.apiKey;
-						const snippets = await tryCatch(
-							queryClient.query({
-								queryKey: queryKeys.environments.deploymentSnippets(environment.id),
-								queryFn: () => environmentManagementService.getDeploymentSnippets(environment.id),
-								staleTime: 0
-							})
-						);
-						regeneratedSnippets = snippets.data;
 						toast.success(m.environments_regenerate_key_success());
 						await refreshAll();
 					} else {
@@ -648,7 +645,6 @@
 					tone="outline"
 					onclick={() => {
 						regeneratedApiKey = null;
-						regeneratedSnippets = null;
 					}}
 					customLabel={m.common_dismiss()}
 					class="shrink-0"

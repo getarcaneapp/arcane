@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -9,13 +9,14 @@
 	import { RegistryIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { containerRegistryListQuery, containerRegistryPullUsageQuery } from '#lib/query/container-registries.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
 	import type { ContainerRegistry, ContainerRegistryPullUsage } from '#lib/types/docker.js';
 	import type { ContainerRegistryCreate, ContainerRegistryUpdate } from '#lib/types/docker.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import RegistryTable from './components/registry-table.svelte';
@@ -23,32 +24,18 @@
 	let { data } = $props();
 	const queryClient = useQueryClient();
 
-	let selectedIds = $state<string[]>([]);
+	const pageState = new ResourceListPageState(untrack(() => data.registryRequestOptions));
 	let isRegistryDialogOpen = $state(false);
 	let isInfoDialogOpen = $state(false);
+	let isRefreshing = $state(false);
 	let registryToEdit = $state<ContainerRegistry | null>(null);
-	let requestOptions = $state(untrack(() => data.registryRequestOptions));
-	const registriesQuery = createQuery(() => {
-		const options = requestOptions;
-		return {
-			queryKey: queryKeys.containerRegistries.list(options),
-			queryFn: () => containerRegistryService.getRegistries(options),
-			placeholderData: (previous) => previous
-		};
-	});
+	const registriesQuery = createQuery(() => ({
+		...containerRegistryListQuery(pageState.requestOptions),
+		placeholderData: (previous) => previous
+	}));
 	const registries = $derived(registriesQuery.data ?? data.registries);
-
-	async function loadRegistries(options: SearchPaginationSortRequest = requestOptions) {
-		requestOptions = options;
-		await queryClient.query({
-			queryKey: queryKeys.containerRegistries.list(options),
-			staleTime: 0,
-			queryFn: () => containerRegistryService.getRegistries(options)
-		});
-	}
 	const pullUsageQuery = createQuery(() => ({
-		queryKey: queryKeys.containerRegistries.pullUsage(),
-		queryFn: () => containerRegistryService.getPullUsage(),
+		...containerRegistryPullUsageQuery(),
 		initialData: data.pullUsage ?? undefined
 	}));
 	const pullUsageByRegistry = $derived.by<Record<string, ContainerRegistryPullUsage>>(() => {
@@ -56,20 +43,39 @@
 		return Object.fromEntries(entries.map((usage) => [usage.registryId, usage]));
 	});
 
-	let isLoading = $state({
-		create: false,
-		edit: false,
-		refresh: false
-	});
+	const saveRegistryMutation = createMutation(() => ({
+		mutationFn: ({
+			registry,
+			target
+		}: {
+			registry: ContainerRegistryCreate | ContainerRegistryUpdate;
+			target: ContainerRegistry | null;
+		}) =>
+			target
+				? containerRegistryService.updateRegistry(target.id, registry as ContainerRegistryUpdate)
+				: containerRegistryService.createRegistry(registry as ContainerRegistryCreate),
+		onSuccess: async (_result, { target }) => {
+			toast.success(
+				target
+					? m.common_update_success({ resource: m.resource_registry() })
+					: m.common_create_success({ resource: m.resource_registry() })
+			);
+			await queryClient.invalidateQueries({ queryKey: queryKeys.containerRegistries.all });
+			isRegistryDialogOpen = false;
+		},
+		onError: (error) => {
+			toast.error(m.registries_save_failed(), { description: extractApiErrorMessage(error) });
+		}
+	}));
 
 	async function refreshRegistries() {
-		isLoading.refresh = true;
+		isRefreshing = true;
 		await handleApiResultWithCallbacks({
 			result: await tryCatch(
 				queryClient.invalidateQueries({ queryKey: queryKeys.containerRegistries.all }, { throwOnError: true })
 			),
 			message: m.common_refresh_failed({ resource: m.registries_title() }),
-			setLoadingState: (value) => (isLoading.refresh = value),
+			setLoadingState: (value) => (isRefreshing = value),
 			onSuccess: () => {
 				toast.success(m.registries_refreshed());
 			}
@@ -86,38 +92,14 @@
 		isRegistryDialogOpen = true;
 	}
 
-	async function handleRegistryDialogSubmit(detail: {
+	function handleRegistryDialogSubmit({
+		registry,
+		isEditMode
+	}: {
 		registry: ContainerRegistryCreate | ContainerRegistryUpdate;
 		isEditMode: boolean;
 	}) {
-		const { registry, isEditMode } = detail;
-		const loadingKey = isEditMode ? 'edit' : 'create';
-		isLoading[loadingKey] = true;
-
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					if (isEditMode && registryToEdit?.id) {
-						await containerRegistryService.updateRegistry(registryToEdit.id, registry as ContainerRegistryUpdate);
-						toast.success(m.common_update_success({ resource: m.resource_registry() }));
-					} else {
-						await containerRegistryService.createRegistry(registry as ContainerRegistryCreate);
-						toast.success(m.common_create_success({ resource: m.resource_registry() }));
-					}
-
-					await queryClient.invalidateQueries({ queryKey: queryKeys.containerRegistries.all });
-					isRegistryDialogOpen = false;
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				console.error('Error saving registry:', error);
-				toast.error(error instanceof Error ? error.message : m.registries_save_failed());
-			}
-		} finally {
-			isLoading[loadingKey] = false;
-		}
+		saveRegistryMutation.mutate({ registry, target: isEditMode && registryToEdit?.id ? registryToEdit : null });
 	}
 
 	const canCreateRegistry = $derived(hasShownPermission('registries:create'));
@@ -147,8 +129,8 @@
 			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refreshRegistries,
-			loading: isLoading.refresh,
-			disabled: isLoading.refresh
+			loading: isRefreshing,
+			disabled: isRefreshing
 		});
 		return buttons;
 	});
@@ -170,9 +152,8 @@
 		<RegistryTable
 			emptyState={registriesEmptyState}
 			{registries}
-			bind:selectedIds
-			bind:requestOptions
-			onRefreshData={loadRegistries}
+			bind:selectedIds={pageState.selectedIds}
+			bind:requestOptions={pageState.requestOptions}
 			{pullUsageByRegistry}
 			onEditRegistry={openEditRegistryDialog}
 		/>
@@ -183,7 +164,7 @@
 			bind:open={isRegistryDialogOpen}
 			bind:registryToEdit
 			onSubmit={handleRegistryDialogSubmit}
-			isLoading={isLoading.create || isLoading.edit}
+			isLoading={saveRegistryMutation.isPending}
 		/>
 
 		<Dialog.Root bind:open={isInfoDialogOpen}>

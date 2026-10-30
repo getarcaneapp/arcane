@@ -1,4 +1,8 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
+
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import CheckedAtCell from '#lib/components/arcane-table/cells/checked-at-cell.svelte';
 	import DigestCell from '#lib/components/arcane-table/cells/digest-cell.svelte';
@@ -16,17 +20,13 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { ProjectsIcon, ImagesIcon, UpdateIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ImageUpdateData } from '#lib/types/docker.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { Project } from '#lib/types/swarm.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
-	import {
-		environmentHref,
-		hasShownPermission,
-		rowKey,
-		type EnvironmentPage,
-		type EnvironmentRow
-	} from '#lib/utils/environments.js';
+	import { hasShownPermission, rowKey, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates.js';
 	import { applyScopedUpdate, summarizeUpdateResult, throwOnUpdateFailure } from '#lib/utils/update-actions.js';
 
@@ -50,10 +50,16 @@
 	interface Props {
 		projects: EnvironmentPage<Paginated<Project>>;
 		requestOptions: SearchPaginationSortRequest;
-		onRefreshData: (options: SearchPaginationSortRequest) => Promise<void>;
+		onRetry: () => Promise<unknown>;
 	}
 
-	let { projects, requestOptions = $bindable(), onRefreshData }: Props = $props();
+	let { projects, requestOptions = $bindable(), onRetry }: Props = $props();
+
+	const queryClient = useQueryClient();
+
+	async function refreshRows() {
+		await queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(environmentStore.shownKey) });
+	}
 
 	let selectedIds = $state<string[]>([]);
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
@@ -145,7 +151,7 @@
 			failureMessage: m.updates_apply_all_failed(),
 			onSuccess: async (result) => {
 				summarizeUpdateResult(result);
-				await onRefreshData(requestOptions);
+				await refreshRows();
 			}
 		});
 	}
@@ -163,7 +169,7 @@
 				failure: () => m.updates_bulk_update_failed()
 			},
 			setLoading: (loading) => (bulkUpdating = loading),
-			onComplete: () => onRefreshData(requestOptions),
+			onComplete: () => refreshRows(),
 			clearSelection: () => (selectedIds = []),
 			sequential: true
 		});
@@ -190,7 +196,10 @@
 	{#if item.project.isDiscovered}
 		<span class="font-medium">{item.name}</span>
 	{:else}
-		<a class="font-medium hover:underline" href={environmentHref(`/projects/${item.projectId}`, item.environmentId)}>
+		<a
+			class="font-medium hover:underline"
+			href={resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(item.environmentId)}`, { projectId: item.projectId })}
+		>
 			{item.name}
 		</a>
 	{/if}
@@ -262,7 +271,7 @@
 		rowActions={RowActions}
 		onclick={(item: ProjectUpdateRow) => {
 			if (item.project.isDiscovered) return;
-			window.location.href = environmentHref(`/projects/${item.projectId}`, item.environmentId);
+			goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(item.environmentId)}`, { projectId: item.projectId }));
 		}}
 	/>
 {/snippet}
@@ -273,11 +282,7 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRefresh={async (options) => {
-		requestOptions = options;
-		await onRefreshData(options);
-		return tableItems;
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	{bulkActions}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -9,6 +10,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { LockIcon, TrashIcon, EditIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { federatedCredentialService } from '#lib/services/federated-credential-service.js';
 	import type { FederatedCredential } from '#lib/types/auth.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -17,20 +19,22 @@
 	import { formatOptionalDateTime, isPastDate } from '#lib/utils/formatting.js';
 
 	let {
-		federatedCredentials = $bindable(),
+		federatedCredentials,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
-		onFederatedCredentialsChanged,
+		onRetry,
 		onEditFederatedCredential
 	}: {
 		federatedCredentials: Paginated<FederatedCredential>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
-		onFederatedCredentialsChanged: () => Promise<void>;
+		onRetry: () => Promise<unknown>;
 		onEditFederatedCredential: (credential: FederatedCredential) => void;
 	} = $props();
 
-	let isLoading = $state({
+	const queryClient = useQueryClient();
+
+	const isLoading = $state({
 		removing: false
 	});
 	const canManageFederatedCredentials = $derived(isGlobalAdmin());
@@ -75,7 +79,7 @@
 			},
 			setLoading: (loading) => (isLoading.removing = loading),
 			onComplete: async ({ success }) => {
-				if (success > 0) await onFederatedCredentialsChanged();
+				if (success > 0) await queryClient.invalidateQueries({ queryKey: queryKeys.federatedCredentials.all });
 			},
 			clearSelection: () => (selectedIds = []),
 			sequential: true
@@ -94,7 +98,7 @@
 			failureMessage: m.federated_credential_delete_failed({ name: safeName }),
 			onSuccess: async () => {
 				toast.success(m.federated_credential_delete_success({ name: safeName }));
-				await onFederatedCredentialsChanged();
+				await queryClient.invalidateQueries({ queryKey: queryKeys.federatedCredentials.all });
 			}
 		});
 	}
@@ -228,11 +232,7 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
-	onRefresh={async (options) => {
-		requestOptions = options;
-		await onFederatedCredentialsChanged();
-		return federatedCredentials;
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

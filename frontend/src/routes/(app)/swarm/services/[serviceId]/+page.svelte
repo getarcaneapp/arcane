@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 
 	import { ActionButtonGroup, type ActionButton } from '#lib/components/action-button-group/index.js';
@@ -65,7 +66,7 @@
 	let scaleDialogOpen = $state(false);
 	let userScaleReplicas = $state<number | null>(null);
 	let userScaleReplicasServiceId = $state<string | null>(null);
-	let isLoading = $state({ update: false, rollback: false, remove: false, scale: false });
+	const isLoading = $state({ update: false, rollback: false, remove: false, scale: false });
 
 	// Editor state
 	let editOpen = $state(false);
@@ -315,7 +316,7 @@
 						setLoadingState: (v) => (isLoading.remove = v),
 						onSuccess: async () => {
 							toast.success(m.common_delete_success({ resource: `${m.swarm_service()} "${serviceName}"` }));
-							goto('/swarm/services');
+							goto(resolve('/(app)/swarm/services'));
 						}
 					});
 				}

@@ -264,6 +264,7 @@
 		{#if hasExpand}
 			<Table.Cell variant="expander" data-row-select-ignore>
 				<button
+					type="button"
 					class={cn(
 						'flex items-center justify-center text-muted-foreground transition-transform duration-200 hover:text-foreground',
 						isExpanded && 'rotate-90'

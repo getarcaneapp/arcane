@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -21,12 +23,13 @@
 		TagIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService, type SwarmNodesPaginatedResponse } from '#lib/services/swarm-service.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { SwarmNodeAgentDeployment, SwarmNode } from '#lib/types/swarm.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { environmentHref, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
+	import { type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { capitalizeFirstLetter } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -35,14 +38,18 @@
 	import SwarmNodeLabelDialog from './swarm-node-label-dialog.svelte';
 
 	let {
-		nodes = $bindable(),
+		nodes,
+		scope,
 		requestOptions = $bindable(),
-		fetchNodes
+		onRetry
 	}: {
 		nodes: NodePage;
+		scope: string;
 		requestOptions: SearchPaginationSortRequest;
-		fetchNodes: (options: SearchPaginationSortRequest) => Promise<NodePage>;
+		onRetry: () => Promise<unknown>;
 	} = $props();
+
+	const queryClient = useQueryClient();
 
 	type NodeRow = EnvironmentRow<SwarmNode>;
 	type NodePage = EnvironmentPage<SwarmNodesPaginatedResponse>;
@@ -53,7 +60,12 @@
 
 	let isLoading = $state(false);
 	let isAgentDialogOpen = $state(false);
-	let selectedNode = $state<NodeRow | null>(null);
+	let selectedNodeRef = $state<NodeRow | null>(null);
+	const selectedNode = $derived.by(() => {
+		const current = selectedNodeRef;
+		if (!current) return null;
+		return nodes.data.find((node) => node.id === current.id && node.environmentId === current.environmentId) ?? current;
+	});
 	let agentDeploymentError = $state('');
 	let agentDeployment = $state<SwarmNodeAgentDeployment | null>(null);
 	let isAgentDeploymentLoading = $state(false);
@@ -74,13 +86,8 @@
 		return 'gray';
 	}
 
-	async function refreshNodes(options = requestOptions) {
-		nodes = await fetchNodes(options);
-		if (selectedNode) {
-			const current = selectedNode;
-			selectedNode = nodes.data.find((node) => node.id === current.id && node.environmentId === current.environmentId) ?? current;
-		}
-		return nodes;
+	function refreshNodes() {
+		return queryClient.invalidateQueries({ queryKey: queryKeys.swarm.listPrefix(scope, 'nodes') });
 	}
 
 	async function loadAgentDeployment(node: NodeRow, rotate = false) {
@@ -109,7 +116,7 @@
 	}
 
 	function openAgentDialog(node: NodeRow) {
-		selectedNode = node;
+		selectedNodeRef = node;
 		agentDeployment = null;
 		agentDeploymentError = '';
 		isAgentDialogOpen = true;
@@ -222,9 +229,8 @@
 
 	function inspectNodeTasks(node: NodeRow) {
 		goto(
-			environmentHref(
-				`/swarm/tasks?nodeId=${encodeURIComponent(node.id)}&search=${encodeURIComponent(node.hostname)}`,
-				node.environmentId
+			resolve(
+				`/(app)/swarm/tasks?nodeId=${encodeURIComponent(node.id)}&search=${encodeURIComponent(node.hostname)}&env=${encodeURIComponent(node.environmentId)}`
 			)
 		);
 	}
@@ -383,6 +389,7 @@
 				>
 				{#if canManageNode(item)}
 					<button
+						type="button"
 						class="absolute inset-0 flex cursor-pointer items-center justify-end rounded-lg bg-info/10 pr-1 opacity-0 backdrop-blur-2xs transition-opacity group-hover:opacity-100"
 						onclick={() => removeLabel(item, key)}
 						title={m.common_remove()}
@@ -396,6 +403,7 @@
 		{/each}
 		{#if canManageNode(item)}
 			<button
+				type="button"
 				class="inline-flex items-center gap-1 rounded border border-dashed border-border px-2 py-0.5 text-2xs font-medium transition-colors hover:border-primary hover:text-primary"
 				onclick={() => openAddLabelDialog(item)}
 			>
@@ -500,7 +508,7 @@
 	bind:requestOptions
 	bind:mobileFieldVisibility
 	selectionDisabled={true}
-	onRefresh={refreshNodes}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

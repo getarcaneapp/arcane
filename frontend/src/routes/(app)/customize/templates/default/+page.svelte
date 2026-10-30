@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -8,8 +10,10 @@
 	import TemplateSelectionDialog from '#lib/components/dialogs/template-selection-dialog.svelte';
 	import { ArrowLeftIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { templateService } from '#lib/services/template-service.js';
 	import type { Template } from '#lib/types/swarm.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
 	import {
 		createTemplateContentSchema,
@@ -21,8 +25,9 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
-	let ui = $state({
+	const ui = $state({
 		saving: false,
 		showTemplateDialog: false,
 		isLoadingTemplate: false
@@ -67,6 +72,7 @@
 				toast.success(m.templates_save_success());
 				originalComposeContent = inputs.composeContent.value;
 				originalEnvContent = inputs.envContent.value;
+				await queryClient.invalidateQueries({ queryKey: queryKeys.templates.defaults() });
 			}
 		});
 	}
@@ -98,10 +104,7 @@
 				})()
 			);
 			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				console.error('Error loading template:', error);
-				toast.error(error instanceof Error ? error.message : m.templates_download_failed());
+				toast.error(m.templates_download_failed(), { description: extractApiErrorMessage(operationResult.error) });
 			}
 		} finally {
 			ui.isLoadingTemplate = false;
@@ -111,7 +114,7 @@
 
 <div class="container mx-auto flex h-full min-h-0 max-w-full flex-col gap-6 overflow-hidden p-2 pb-10 sm:p-6 sm:pb-10">
 	<div class="space-y-3 sm:space-y-4">
-		<ArcaneButton action="base" tone="ghost" onclick={() => goto('/customize/templates')} class="w-fit gap-2">
+		<ArcaneButton action="base" tone="ghost" onclick={() => goto(resolve('/(app)/customize/templates'))} class="w-fit gap-2">
 			<ArrowLeftIcon class="size-4" />
 			<span>{m.common_back_to({ resource: m.templates_title() })}</span>
 		</ArcaneButton>

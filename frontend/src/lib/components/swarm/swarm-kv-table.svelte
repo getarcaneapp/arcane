@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -11,6 +12,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { CalendarIcon, EditIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { SwarmKvSummary } from '#lib/types/swarm.js';
@@ -23,15 +25,17 @@
 
 	let {
 		resource,
-		items = $bindable(),
+		items,
+		scope,
 		requestOptions = $bindable(),
-		fetchItems,
+		onRetry,
 		onEdit
 	}: {
 		resource: SwarmKvResource;
 		items: KvPage;
+		scope: string;
 		requestOptions: SearchPaginationSortRequest;
-		fetchItems: (options: SearchPaginationSortRequest) => Promise<KvPage>;
+		onRetry: () => Promise<unknown>;
 		onEdit: (item: KvRow) => void;
 	} = $props();
 
@@ -41,10 +45,7 @@
 	let isDeleting = $state(false);
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 
-	async function reload(options: SearchPaginationSortRequest = requestOptions) {
-		items = await fetchItems(options);
-		return items;
-	}
+	const queryClient = useQueryClient();
 
 	function handleDelete(item: KvRow) {
 		const name = item.spec.Name;
@@ -62,7 +63,7 @@
 						setLoadingState: (value) => (isDeleting = value),
 						onSuccess: async () => {
 							toast.success(resource.deleteSuccess(name));
-							await reload();
+							await queryClient.invalidateQueries({ queryKey: queryKeys.swarm.listPrefix(scope, resource.kind) });
 						}
 					});
 				}
@@ -152,10 +153,7 @@
 	bind:requestOptions
 	bind:mobileFieldVisibility
 	selectionDisabled={true}
-	onRefresh={async (options) => {
-		requestOptions = options;
-		return reload(options);
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -49,7 +50,7 @@
 	let envVars = $derived(data.templateData.envVariables);
 
 	// Edit state (custom templates only)
-	let status = $state({
+	const status = $state({
 		saving: false,
 		isDeleting: false,
 		isDownloading: false
@@ -168,7 +169,7 @@
 					const downloadedTemplate = await templateService.download(template.id);
 					toast.success(m.templates_downloaded_success({ name: template.name }));
 					if (downloadedTemplate?.id) {
-						await goto(`/customize/templates/${downloadedTemplate.id}`, { replace: true });
+						await goto(resolve('/(app)/customize/templates/[id]', { id: downloadedTemplate.id }), { replace: true });
 					} else {
 						await Promise.all([
 							queryClient.invalidateQueries({
@@ -213,7 +214,7 @@
 									resource: `${m.resource_template()} "${template.name}"`
 								})
 							);
-							await goto('/customize/templates');
+							await goto(resolve('/(app)/customize/templates'));
 						})()
 					);
 					if (operationResult.error !== null) {
@@ -241,7 +242,7 @@
 				action: 'create',
 				placement: 'primary',
 				label: m.compose_create_project(),
-				onclick: () => goto(`/projects/new?templateId=${template.id}`)
+				onclick: () => goto(resolve(`/(app)/projects/new?templateId=${encodeURIComponent(template.id)}`))
 			}
 		];
 		if (canDownload) {
@@ -261,7 +262,7 @@
 				action: 'base',
 				placement: 'secondary',
 				label: m.templates_view_local_version(),
-				onclick: () => goto(`/customize/templates/${localVersionOfRemote?.id}`)
+				onclick: () => goto(resolve('/(app)/customize/templates/[id]', { id: localVersionOfRemote.id }))
 			});
 		}
 		return actions;
@@ -313,7 +314,7 @@
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="end">
 					<IfPermitted perm="projects:create">
-						<DropdownMenu.Item onclick={() => goto(`/projects/new?templateId=${template.id}`)}>
+						<DropdownMenu.Item onclick={() => goto(resolve(`/(app)/projects/new?templateId=${encodeURIComponent(template.id)}`))}>
 							<MoveToFolderIcon class="size-4" />
 							{m.compose_create_project()}
 						</DropdownMenu.Item>
@@ -437,7 +438,7 @@
 									<a
 										href={template.metadata.documentationUrl}
 										target="_blank"
-										rel="noopener noreferrer"
+										rel="external noopener noreferrer"
 										class="inline-flex items-center gap-1 font-medium break-all text-primary hover:underline"
 									>
 										{documentationHost}

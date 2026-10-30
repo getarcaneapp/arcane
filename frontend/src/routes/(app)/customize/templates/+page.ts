@@ -1,5 +1,4 @@
-import { queryKeys } from '#lib/query/query-keys.js';
-import { templateService } from '#lib/services/template-service.js';
+import { templateListQuery, templateRegistriesQuery } from '#lib/query/templates.js';
 import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import type { Template, TemplateRegistry } from '#lib/types/swarm.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
@@ -22,12 +21,7 @@ export const load: PageLoad = async ({
 	} satisfies SearchPaginationSortRequest);
 
 	const [templates, registries] = await Promise.all([
-		tryCatch(
-			queryClient.query({
-				queryKey: queryKeys.templates.list(templateRequestOptions),
-				queryFn: () => templateService.getTemplates(templateRequestOptions)
-			})
-		).then((result) =>
+		tryCatch(queryClient.query(templateListQuery(templateRequestOptions))).then((result) =>
 			result.error
 				? {
 						data: [],
@@ -35,12 +29,7 @@ export const load: PageLoad = async ({
 					}
 				: result.data
 		),
-		tryCatch(
-			queryClient.query({
-				queryKey: queryKeys.templates.registries(),
-				queryFn: () => templateService.getRegistries()
-			})
-		).then((result) => (result.error ? [] : result.data))
+		tryCatch(queryClient.query(templateRegistriesQuery())).then((result) => (result.error ? [] : result.data))
 	]);
 
 	return {

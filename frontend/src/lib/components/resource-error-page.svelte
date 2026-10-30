@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import type { ResolvedPathname } from '$app/types';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as Empty from '#lib/components/ui/empty/index.js';
@@ -10,7 +11,7 @@
 	interface Props {
 		fallbackTitle: string;
 		backLabel: string;
-		backHref: string;
+		backHref: ResolvedPathname;
 	}
 
 	let { fallbackTitle, backLabel, backHref }: Props = $props();

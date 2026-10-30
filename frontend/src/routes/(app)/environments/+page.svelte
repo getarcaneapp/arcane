@@ -11,17 +11,18 @@
 	import { DownloadIcon, SettingsIcon, UpdateIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { environmentListQuery } from '#lib/query/environments.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission, isGlobalAdmin } from '#lib/utils/auth.js';
+	import { downloadFromUrl } from '#lib/utils/browser-download.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
-	import { tryCatch } from '#lib/utils/try-catch.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 
 	import EnvironmentSettingsDialog from './components/environment-settings-dialog.svelte';
 	import EnvironmentTable from './components/environment-table.svelte';
@@ -29,64 +30,40 @@
 	let { data } = $props();
 	const queryClient = useQueryClient();
 
-	let selectedIds = $state<string[]>([]);
-	let requestOptions = $state(untrack(() => data.environmentRequestOptions));
-	const environmentsQuery = createQuery(() => {
-		const options = requestOptions;
-		return {
-			queryKey: queryKeys.environments.list(options),
-			queryFn: () => environmentManagementService.getEnvironments(options),
-			placeholderData: (previous) => previous
-		};
+	const pageState = new ResourceListPageState(untrack(() => data.environmentRequestOptions));
+	const environmentsQuery = createQuery(() => ({
+		...environmentListQuery(pageState.requestOptions),
+		placeholderData: (previous) => previous
+	}));
+	const loadedEnvironments = $derived(environmentsQuery.data ?? data.environments);
+	const liveEnvironments = $derived(new Map(environmentStore.available.map((environment) => [environment.id, environment])));
+	const environments = $derived({
+		...loadedEnvironments,
+		data: loadedEnvironments.data.map((environment) => liveEnvironments.get(environment.id) ?? environment)
 	});
-	const environments = $derived(environmentsQuery.data ?? data.environments);
-	let showEnvironmentSheet = $state(false);
 	let environmentSession = $state(0);
 	let showUpdateAllDialog = $state(false);
 	let showSettingsDialog = $state(false);
-	let isLoading = $state({ refresh: false, creating: false, deleting: false });
-
-	async function loadEnvironments(options: SearchPaginationSortRequest = requestOptions) {
-		requestOptions = options;
-		await queryClient.query({
-			queryKey: queryKeys.environments.list(options),
-			staleTime: 0,
-			queryFn: () => environmentManagementService.getEnvironments(options)
-		});
-	}
+	let isDeleting = $state(false);
+	const isRefreshing = $derived(environmentsQuery.isFetching && !environmentsQuery.isPending);
 
 	async function refresh() {
-		isLoading.refresh = true;
-		await handleApiResultWithCallbacks({
-			result: await tryCatch(loadEnvironments()),
-			message: m.common_refresh_failed({ resource: m.environments_title() }),
-			setLoadingState: (value) => (isLoading.refresh = value)
-		});
+		const result = await environmentsQuery.refetch();
+		if (result.isError) {
+			toast.error(m.common_refresh_failed({ resource: m.environments_title() }), {
+				description: extractApiErrorMessage(result.error)
+			});
+		}
 	}
-
-	const connectivityFingerprint = $derived(
-		environmentStore.available.map((environment) => `${environment.id}:${environment.status}:${environment.connected}`).join('|')
-	);
-	let lastConnectivityFingerprint: string | undefined;
-	$effect(() => {
-		const fingerprint = connectivityFingerprint;
-		const changed = untrack(() => {
-			const differs = lastConnectivityFingerprint !== undefined && lastConnectivityFingerprint !== fingerprint;
-			lastConnectivityFingerprint = fingerprint;
-			return differs;
-		});
-		if (!changed) return;
-		const timer = setTimeout(() => void refresh(), 1000);
-		return () => clearTimeout(timer);
-	});
 
 	const canCreateEnvironment = $derived(hasPermission('environments:create', GLOBAL_SCOPE));
 	const canDeleteEnvironment = $derived(hasPermission('environments:delete', GLOBAL_SCOPE));
 	const canUpdateEnvironments = $derived(hasShownPermission('system:upgrade'));
 
-	function handleBulkDelete(ids: string[] = selectedIds) {
+	function handleBulkDelete(ids: string[] = pageState.selectedIds) {
 		if (ids.length === 0) return;
 		const environmentIds = [...ids];
+		const removedIds = new Set<string>();
 
 		bulkConfirmAndRun({
 			ids: environmentIds,
@@ -94,20 +71,23 @@
 			message: m.environments_remove_selected_message(),
 			confirmLabel: m.common_remove(),
 			destructive: true,
-			run: (id) => environmentManagementService.delete(id),
+			run: async (id) => {
+				await environmentManagementService.delete(id);
+				removedIds.add(id);
+			},
 			messages: {
 				success: (count) => m.common_bulk_remove_success({ count, resource: m.environments_title() }),
 				partial: (success, total, failed) =>
 					m.common_bulk_remove_partial({ success, total, failed, resource: m.environments_title() }),
 				failure: () => m.common_bulk_remove_failed({ count: environmentIds.length, resource: m.environments_title() })
 			},
-			setLoading: (loading) => (isLoading.deleting = loading),
+			setLoading: (loading) => (isDeleting = loading),
 			onComplete: async ({ success }) => {
 				if (success === 0) return;
-				await refresh();
-				await environmentStore.initialize(environments.data);
+				await environmentStore.initialize(environmentStore.available.filter((environment) => !removedIds.has(environment.id)));
+				await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
 			},
-			clearSelection: () => (selectedIds = []),
+			clearSelection: () => (pageState.selectedIds = []),
 			sequential: true
 		});
 	}
@@ -120,15 +100,13 @@
 		if (updateAllDemo) showUpdateAllDialog = true;
 	});
 
-	async function onEnvironmentCreated() {
-		showEnvironmentSheet = false;
-		await loadEnvironments();
-		await environmentStore.initialize(environments.data);
+	function onEnvironmentCreated() {
+		pageState.isCreateDialogOpen = false;
 		toast.success(m.common_create_success({ resource: m.resource_environment() }));
 	}
 
 	const actionButtons: ActionButton[] = $derived([
-		...(selectedIds.length > 0 && canDeleteEnvironment
+		...(pageState.selectedIds.length > 0 && canDeleteEnvironment
 			? [
 					{
 						id: 'remove-selected',
@@ -137,8 +115,8 @@
 						destructive: true,
 						label: m.common_remove_selected(),
 						onclick: handleBulkDelete,
-						loading: isLoading.deleting,
-						disabled: isLoading.deleting
+						loading: isDeleting,
+						disabled: isDeleting
 					}
 				]
 			: []),
@@ -151,7 +129,7 @@
 						label: m.common_add_button({ resource: m.resource_environment_cap() }),
 						onclick: () => {
 							environmentSession += 1;
-							showEnvironmentSheet = true;
+							pageState.isCreateDialogOpen = true;
 						}
 					}
 				]
@@ -162,8 +140,7 @@
 						id: 'download-agent-ca',
 						action: 'save' as const,
 						label: m.environments_download_agent_ca(),
-						href: '/api/agent/mtls/ca',
-						rel: 'external',
+						onclick: () => downloadFromUrl('/api/agent/mtls/ca'),
 						icon: DownloadIcon
 					}
 				]
@@ -199,8 +176,8 @@
 			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refresh,
-			loading: isLoading.refresh,
-			disabled: isLoading.refresh
+			loading: isRefreshing,
+			disabled: environmentsQuery.isFetching
 		}
 	]);
 </script>
@@ -209,18 +186,18 @@
 	{#snippet mainContent()}
 		<EnvironmentTable
 			{environments}
-			bind:selectedIds
-			bind:requestOptions
-			onRefreshData={loadEnvironments}
+			bind:selectedIds={pageState.selectedIds}
+			bind:requestOptions={pageState.requestOptions}
+			onRetry={() => environmentsQuery.refetch()}
 			onDeleteSelected={handleBulkDelete}
-			bulkDeleteLoading={isLoading.deleting}
+			bulkDeleteLoading={isDeleting}
 		/>
 	{/snippet}
 
 	{#snippet additionalContent()}
 		{#if environmentSession > 0}
 			{#key environmentSession}
-				<NewEnvironmentSheet bind:open={showEnvironmentSheet} {onEnvironmentCreated} />
+				<NewEnvironmentSheet bind:open={pageState.isCreateDialogOpen} {onEnvironmentCreated} />
 			{/key}
 		{/if}
 		<UpdateAllDialog bind:open={showUpdateAllDialog} debugDemo={updateAllDemo} onFinished={refresh} />

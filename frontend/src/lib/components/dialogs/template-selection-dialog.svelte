@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -349,7 +350,9 @@
 						<p class="mb-2">{m.templates_no_templates()}</p>
 						<p class="text-sm">
 							{m.templates_add_registry_prompt_part1()}
-							<a href="/customize/templates" class="text-primary hover:underline">{m.templates_template_settings()}</a>
+							<a href={resolve('/(app)/customize/templates')} class="text-primary hover:underline"
+								>{m.templates_template_settings()}</a
+							>
 							{m.templates_add_registry_prompt_part2()}
 						</p>
 					</div>

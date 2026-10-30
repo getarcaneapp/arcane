@@ -31,7 +31,7 @@ export interface ArcaneColumnMeta {
  * The single, app-wide TanStack Table v9 feature set shared by every Arcane table.
  *
  * Arcane runs all tables in manual / server-side mode — sorting, filtering and
- * pagination all happen on the backend (driven by `requestOptions` + `onRefresh`) — so
+ * pagination all happen on the backend (driven by `requestOptions`) — so
  * we register only the *state* features the UI actually drives and deliberately omit
  * every client-side row-model factory (`createSortedRowModel`, `createFilteredRowModel`,
  * `createPaginatedRowModel`, …). v9 tree-shakes the unregistered feature code out of the

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -16,7 +17,7 @@
 	import { PODMAN_QUADLET_TYPES, type PodmanQuadletType } from '#lib/types/podman.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { destinationEnvironmentId, environmentHref } from '#lib/utils/environments.js';
+	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { shownPodmanEnvironments } from '#lib/utils/podman.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -95,9 +96,13 @@
 				toast.success(m.podman_quadlet_install_success({ name: installFileName }));
 				await Promise.all([
 					queryClient.invalidateQueries({ queryKey: queryKeys.podman.environment(installEnvironmentId) }),
-					queryClient.invalidateQueries({ queryKey: ['podman-quadlets'] })
+					queryClient.invalidateQueries({ queryKey: queryKeys.podman.quadletsAll })
 				]);
-				await goto(environmentHref(`/podman/quadlets/${encodeURIComponent(installFileName)}`, installEnvironmentId));
+				await goto(
+					resolve(`/(app)/podman/quadlets/[name]?env=${encodeURIComponent(installEnvironmentId)}`, {
+						name: encodeURIComponent(installFileName)
+					})
+				);
 			}
 		});
 	}

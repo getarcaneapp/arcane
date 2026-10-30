@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import EmptyState from '#lib/components/states/empty-state.svelte';
@@ -10,21 +11,16 @@
 	import { ContainersIcon, ProjectsIcon, UpdateIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { containerListQuery } from '#lib/query/containers.js';
+	import { projectListQuery } from '#lib/query/projects.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { containerService, type ContainerListRequestOptions } from '#lib/services/container-service.js';
+	import type { ContainerListRequestOptions } from '#lib/services/container-service.js';
 	import { imageService } from '#lib/services/image-service.js';
-	import { projectService } from '#lib/services/project-service.js';
 	import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '#lib/utils/docker.js';
-	import {
-		actionEnvironments,
-		fetchAcrossEnvironments,
-		listScopes,
-		readableEnvironments,
-		settleAcrossEnvironments
-	} from '#lib/utils/environments.js';
+	import { actionEnvironments, listScopes, readableEnvironments, settleAcrossEnvironments } from '#lib/utils/environments.js';
 	import { confirmAndApplyAllUpdates } from '#lib/utils/update-actions.js';
 
 	import ContainerUpdatesTable from './components/container-updates-table.svelte';
@@ -33,8 +29,8 @@
 	let { data } = $props();
 	const queryClient = useQueryClient();
 
-	let containerRequestOptions = $derived(data.containerRequestOptions as ContainerListRequestOptions);
-	let projectRequestOptions = $derived(data.projectRequestOptions as SearchPaginationSortRequest);
+	let containerRequestOptions = $state<ContainerListRequestOptions>(untrack(() => data.containerRequestOptions));
+	let projectRequestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.projectRequestOptions));
 	const scope = $derived(environmentStore.shownKey);
 
 	// The page loader already populated these keys, so no initialData is needed.
@@ -42,14 +38,12 @@
 	// tagged with their environment so a switch never shows another's rows.
 	const containersQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = readableEnvironments('containers:list');
-		const options = ensureStandaloneContainerUpdatesFilter(containerRequestOptions);
 		return {
-			queryKey: queryKeys.containers.list(queryScope, options),
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, options, (id, request, config) =>
-					containerService.getContainersForEnvironment(id, request, config)
-				),
+			...containerListQuery(
+				queryScope,
+				readableEnvironments('containers:list'),
+				ensureStandaloneContainerUpdatesFilter(containerRequestOptions)
+			),
 			placeholderData: (previous, query) => {
 				if (query?.queryKey[1] === queryScope) return previous;
 				return undefined;
@@ -61,14 +55,8 @@
 
 	const projectsQuery = createQuery(() => {
 		const queryScope = scope;
-		const environments = readableEnvironments('projects:list');
-		const options = ensureUpdatesFilter(projectRequestOptions);
 		return {
-			queryKey: queryKeys.projects.list(queryScope, options),
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, options, (id, request, config) =>
-					projectService.getProjectsForEnvironment(id, request, config)
-				),
+			...projectListQuery(queryScope, readableEnvironments('projects:list'), ensureUpdatesFilter(projectRequestOptions)),
 			placeholderData: (previous, query) => {
 				if (query?.queryKey[1] === queryScope) return previous;
 				return undefined;
@@ -80,36 +68,6 @@
 
 	const containers = $derived(containersQuery.data?.envId === scope ? containersQuery.data.value : null);
 	const projects = $derived(projectsQuery.data?.envId === scope ? projectsQuery.data.value : null);
-
-	// Table refreshes write into the cache entry for the environment and request
-	// they were issued for, so a late response never replaces another
-	// environment's active table. Failures reject so callers can report them;
-	// the query's error state also renders inline.
-	async function refreshContainers(options: ContainerListRequestOptions) {
-		const requestedScope = scope;
-		const environments = readableEnvironments('containers:list');
-		const requestedOptions = ensureStandaloneContainerUpdatesFilter(options);
-		await queryClient.fetchQuery({
-			queryKey: queryKeys.containers.list(requestedScope, requestedOptions),
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, requestedOptions, (id, request, config) =>
-					containerService.getContainersForEnvironment(id, request, config)
-				)
-		});
-	}
-
-	async function refreshProjects(options: SearchPaginationSortRequest) {
-		const requestedScope = scope;
-		const environments = readableEnvironments('projects:list');
-		const requestedOptions = ensureUpdatesFilter(options);
-		await queryClient.fetchQuery({
-			queryKey: queryKeys.projects.list(requestedScope, requestedOptions),
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, requestedOptions, (id, request, config) =>
-					projectService.getProjectsForEnvironment(id, request, config)
-				)
-		});
-	}
 
 	// Ignoring a container changes its `autoUpdateEnabled` on every container
 	// response for this environment. The table refetches its own rows afterwards,
@@ -280,7 +238,7 @@
 								{containers}
 								bind:requestOptions={containerRequestOptions}
 								onAutoUpdateChanged={invalidateContainerQueries}
-								onRefreshData={refreshContainers}
+								onRetry={() => containersQuery.refetch()}
 							/>
 						{:else}
 							{@render loadingState()}
@@ -299,7 +257,11 @@
 								onAction={() => projectsQuery.refetch()}
 							/>
 						{:else if projects}
-							<ProjectUpdatesTable {projects} bind:requestOptions={projectRequestOptions} onRefreshData={refreshProjects} />
+							<ProjectUpdatesTable
+								{projects}
+								bind:requestOptions={projectRequestOptions}
+								onRetry={() => projectsQuery.refetch()}
+							/>
 						{:else}
 							{@render loadingState()}
 						{/if}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import type { Snippet } from 'svelte';
 
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
@@ -8,14 +9,12 @@
 
 	interface Props {
 		label: string;
-		/** `null` renders a dash for values that are unavailable rather than zero. */
 		value: string | number | null;
 		unavailableLabel?: string;
 		icon?: IconType;
 		help?: string;
-		href?: string;
+		href?: ResolvedPathname;
 		loading?: boolean;
-		/** Context line rendered under the value. */
 		children?: Snippet;
 	}
 
@@ -43,7 +42,6 @@
 		class="flex items-center justify-center gap-1.5 text-sm text-muted-foreground transition-colors group-hover:text-foreground"
 	>
 		{#if href}
-			<!-- The link's overlay makes the whole tile clickable. -->
 			<a
 				{href}
 				class="flex items-center gap-1.5 after:absolute after:inset-0 after:rounded-sm focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-offset-4 focus-visible:after:outline-ring"
@@ -78,7 +76,9 @@
 				<span class="text-3xl font-semibold tabular-nums">{value}</span>
 			{/if}
 			{#if children}
-				<div class="text-xs text-muted-foreground tabular-nums">{@render children()}</div>
+				<div class="text-xs text-muted-foreground tabular-nums">
+					{@render children()}
+				</div>
 			{/if}
 		{/if}
 	</dd>

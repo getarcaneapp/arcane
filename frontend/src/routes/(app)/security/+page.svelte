@@ -23,12 +23,13 @@
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
+	import { patchTargetListQuery, vulnerabilityListQuery, vulnerabilityOverviewQuery } from '#lib/query/vulnerabilities.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { extractApiErrorMessage, parallelRefresh } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import {
@@ -39,18 +40,15 @@
 	} from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import {
-		fetchRiskOverview,
 		getSeveritySegments,
-		mapVulnerabilityPage,
 		mapVulnerabilityRequest,
 		vulnerabilityEnvironments,
 		withVulnerabilityToggles,
-		type RiskOverview,
-		type VulnerabilityRow
+		type RiskOverview
 	} from '#lib/utils/vulnerability.js';
 
 	import SecurityOverview from './components/security-overview.svelte';
-	import SecurityPatchTable, { fetchPatchTargets, type PatchTargetPage } from './components/security-patch-table.svelte';
+	import SecurityPatchTable from './components/security-patch-table.svelte';
 	import SecurityVulnerabilityTable from './components/security-vulnerability-table.svelte';
 
 	let { data } = $props();
@@ -63,13 +61,12 @@
 
 	const vulnerabilityManagementEnabled = $derived(vulnerabilityEnvironments().length > 0);
 	const overviewQuery = createQuery(() => ({
-		queryKey: queryKeys.vulnerabilities.overviewByEnvironment(environmentStore.shownKey),
-		queryFn: fetchRiskOverview,
+		...vulnerabilityOverviewQuery(scope),
 		enabled: vulnerabilityManagementEnabled
 	}));
 	const overview = $derived<RiskOverview | null>(overviewQuery.data ?? null);
 
-	let requestOptions = $derived<SearchPaginationSortRequest>(data.vulnerabilityRequestOptions);
+	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.vulnerabilityRequestOptions));
 	let selectedVulnerabilityIds = $state<string[]>([]);
 	let showIgnored = $state(false);
 	let fixAvailable = $state(false);
@@ -78,36 +75,15 @@
 		return mapVulnerabilityRequest(withVulnerabilityToggles(options, { showIgnored, fixAvailable }));
 	}
 
-	async function fetchVulnerabilities(request: SearchPaginationSortRequest): Promise<Paginated<VulnerabilityRow>> {
-		return mapVulnerabilityPage(
-			await fetchAcrossEnvironments(vulnerabilityEnvironments(), request, (id, request, config) =>
-				vulnerabilityService.getAllVulnerabilitiesForEnvironment(id, request, config)
-			),
-			request
-		);
-	}
-
 	const vulnerabilitiesQuery = createQuery(() => {
 		const queryScope = scope;
-		const request = vulnerabilityRequest(requestOptions);
 		return {
-			queryKey: queryKeys.vulnerabilities.allByEnvironment(queryScope, request),
-			queryFn: () => fetchVulnerabilities(request),
+			...vulnerabilityListQuery(queryScope, vulnerabilityEnvironments(), vulnerabilityRequest(requestOptions)),
 			placeholderData: (previous, query) => (query?.queryKey[1] === queryScope ? previous : undefined),
 			enabled: vulnerabilityManagementEnabled
 		};
 	});
-	const vulnerabilities = $derived<Paginated<VulnerabilityRow>>(vulnerabilitiesQuery.data ?? emptyPage());
-
-	async function loadVulnerabilities(options: SearchPaginationSortRequest, requestedScope = scope) {
-		requestOptions = options;
-		const request = vulnerabilityRequest(options);
-		return queryClient.fetchQuery({
-			queryKey: queryKeys.vulnerabilities.allByEnvironment(requestedScope, request),
-			queryFn: () => fetchVulnerabilities(request),
-			staleTime: 0
-		});
-	}
+	const vulnerabilities = $derived(vulnerabilitiesQuery.data ?? emptyPage());
 
 	function toggleIgnored(next: boolean) {
 		showIgnored = next;
@@ -116,7 +92,7 @@
 	function toggleFixAvailable(next: boolean) {
 		fixAvailable = next;
 	}
-	let isLoading = $state({ refreshing: false, scanningAll: false });
+	const isLoading = $state({ refreshing: false, scanningAll: false });
 	let scanProgress = $state({ current: 0, total: 0 });
 	const urlTab = useUrlTab({
 		validTabs: () => ['overview', 'vulnerabilities', 'patches'],
@@ -132,34 +108,23 @@
 	const activeTab = $derived(urlTab.value);
 	let destroyed = false;
 
-	let patchRequestOptions = $derived<SearchPaginationSortRequest>(data.patchRequestOptions);
+	let patchRequestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.patchRequestOptions));
 	const patchTargetsQuery = createQuery(() => {
 		const queryScope = scope;
-		const options = patchRequestOptions;
 		return {
-			queryKey: queryKeys.images.patchTargets(queryScope, options),
-			queryFn: () => fetchPatchTargets(options),
+			...patchTargetListQuery(queryScope, vulnerabilityEnvironments(), patchRequestOptions),
 			placeholderData: (previous, query) => (query?.queryKey[1] === queryScope ? previous : undefined),
 			enabled: vulnerabilityManagementEnabled
 		};
 	});
-	const patchTargets = $derived<PatchTargetPage>(patchTargetsQuery.data ?? emptyPage());
-
-	async function loadPatchTargets(options: SearchPaginationSortRequest, requestedScope = scope) {
-		patchRequestOptions = options;
-		return queryClient.fetchQuery({
-			queryKey: queryKeys.images.patchTargets(requestedScope, options),
-			queryFn: () => fetchPatchTargets(options),
-			staleTime: 0
-		});
-	}
+	const patchTargets = $derived(patchTargetsQuery.data ?? emptyPage());
 
 	async function loadPatches() {
 		if (!vulnerabilityManagementEnabled) return;
 		const result = await patchTargetsQuery.refetch();
 		if (result.error) {
 			console.error('Failed to load image patch targets:', result.error);
-			toast.error(m.common_refresh_failed({ resource: m.patches() }));
+			toast.error(m.common_refresh_failed({ resource: m.patches() }), { description: extractApiErrorMessage(result.error) });
 		}
 	}
 
@@ -173,7 +138,8 @@
 		}
 	}
 
-	async function showVulnerability(vulnerabilityId: string) {
+	function showVulnerability(vulnerabilityId: string) {
+		selectedVulnerabilityIds = [];
 		showIgnored = false;
 		fixAvailable = false;
 		requestOptions = {
@@ -182,7 +148,6 @@
 			pagination: { ...(requestOptions.pagination ?? { limit: 20 }), page: 1 }
 		};
 		urlTab.select('vulnerabilities');
-		await refreshAll();
 	}
 
 	// reset drops retained data first so a failed reload leaves the page empty rather than stale.
@@ -485,21 +450,14 @@
 					<div class="rounded-xl border border-border/60">
 						<SecurityVulnerabilityTable
 							emptyState={vulnerabilitiesEmptyState}
-							bind:vulnerabilities={
-								() => vulnerabilities,
-								(value) =>
-									queryClient.setQueryData(
-										queryKeys.vulnerabilities.allByEnvironment(scope, vulnerabilityRequest(requestOptions)),
-										value
-									)
-							}
+							{vulnerabilities}
 							bind:requestOptions
 							bind:selectedIds={selectedVulnerabilityIds}
 							{showIgnored}
 							onToggleIgnored={toggleIgnored}
 							{fixAvailable}
 							onToggleFixAvailable={toggleFixAvailable}
-							onRefreshData={(options) => loadVulnerabilities(options)}
+							onRetry={() => vulnerabilitiesQuery.refetch()}
 						/>
 					</div>
 				</Tabs.Content>
@@ -514,12 +472,9 @@
 					{/if}
 					<div class="rounded-xl border border-border/60">
 						<SecurityPatchTable
-							bind:targets={
-								() => patchTargets,
-								(value) => queryClient.setQueryData(queryKeys.images.patchTargets(scope, patchRequestOptions), value)
-							}
+							targets={patchTargets}
 							bind:requestOptions={patchRequestOptions}
-							onRefreshData={(options) => loadPatchTargets(options)}
+							onRetry={() => patchTargetsQuery.refetch()}
 						/>
 					</div>
 				</Tabs.Content>

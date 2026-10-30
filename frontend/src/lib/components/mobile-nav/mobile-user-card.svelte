@@ -25,6 +25,7 @@
 
 <div class={`overflow-hidden rounded-3xl border-2 border-border bg-muted/30 dark:border-border/20 ${className}`}>
 	<button
+		type="button"
 		class="flex w-full items-center gap-4 p-5 text-left transition-all duration-200 hover:bg-muted/40"
 		onclick={() => (userCardExpanded = !userCardExpanded)}
 	>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -11,7 +12,9 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { CalendarIcon, EditIcon, LockIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService } from '#lib/services/podman-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { PodmanSecret } from '#lib/types/podman.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -23,16 +26,19 @@
 	type SecretRow = EnvironmentRow<PodmanSecret>;
 
 	let {
-		secrets = $bindable(),
+		secrets,
 		requestOptions = $bindable(),
-		onRefreshData,
+		onRetry,
 		onEdit
 	}: {
 		secrets: EnvironmentPage<Paginated<PodmanSecret>>;
 		requestOptions: SearchPaginationSortRequest;
-		onRefreshData: (options: SearchPaginationSortRequest) => Promise<void>;
+		onRetry: () => Promise<unknown>;
 		onEdit: (secret: SecretRow) => void;
 	} = $props();
+
+	const queryClient = useQueryClient();
+	const scope = $derived(environmentStore.shownKey);
 
 	let isDeleting = $state(false);
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
@@ -55,7 +61,7 @@
 						setLoadingState: (value) => (isDeleting = value),
 						onSuccess: async () => {
 							toast.success(m.swarm_secrets_delete_success({ name }));
-							await onRefreshData(requestOptions);
+							await queryClient.invalidateQueries({ queryKey: queryKeys.podman.secretsPrefix(scope) });
 						}
 					});
 				}
@@ -141,11 +147,7 @@
 	bind:requestOptions
 	bind:mobileFieldVisibility
 	selectionDisabled={true}
-	onRefresh={async (options) => {
-		requestOptions = options;
-		await onRefreshData(options);
-		return secrets;
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

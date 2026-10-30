@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -12,6 +13,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { ApiKeyIcon, TrashIcon, EditIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { apiKeyService } from '#lib/services/api-key-service.js';
 	import type { ApiKey } from '#lib/types/auth.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -20,20 +22,22 @@
 	import { formatOptionalDateTime, isPastDate } from '#lib/utils/formatting.js';
 
 	let {
-		apiKeys = $bindable(),
+		apiKeys,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
-		onApiKeysChanged,
+		onRetry,
 		onEditApiKey
 	}: {
 		apiKeys: Paginated<ApiKey>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
-		onApiKeysChanged: () => Promise<void>;
+		onRetry: () => Promise<unknown>;
 		onEditApiKey: (apiKey: ApiKey) => void;
 	} = $props();
 
-	let isLoading = $state({
+	const queryClient = useQueryClient();
+
+	const isLoading = $state({
 		removing: false
 	});
 
@@ -98,7 +102,7 @@
 			},
 			setLoading: (loading) => (isLoading.removing = loading),
 			onComplete: async ({ success }) => {
-				if (success > 0) await onApiKeysChanged();
+				if (success > 0) await queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.all });
 			},
 			clearSelection: () => (selectedIds = []),
 			sequential: true
@@ -111,7 +115,7 @@
 			run: () => apiKeyService.delete(apiKeyId),
 			setLoading: (loading) => (isLoading.removing = loading),
 			successMessage: (safeName) => m.api_key_delete_success({ name: safeName }),
-			onDeleted: () => onApiKeysChanged()
+			onDeleted: () => queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.all })
 		});
 	}
 
@@ -277,11 +281,7 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
-	onRefresh={async (options) => {
-		requestOptions = options;
-		await onApiKeysChanged();
-		return apiKeys;
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

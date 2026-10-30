@@ -2,6 +2,11 @@ export type SSEEventBase = {
 	type?: string;
 };
 
+export interface OperationStreamFrame {
+	done?: boolean;
+	error?: string | { message?: string };
+}
+
 export interface EnvironmentChanges {
 	environmentId: string;
 	epoch: string;

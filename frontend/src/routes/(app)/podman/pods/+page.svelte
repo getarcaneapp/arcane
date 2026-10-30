@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -8,13 +8,14 @@
 	import { BoxIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { podmanPodListQuery } from '#lib/query/podman.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { podmanService } from '#lib/services/podman-service.js';
+	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type { PodmanPodCreateRequest } from '#lib/types/podman.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { acrossEnvironmentsNote, fetchAcrossEnvironments, settleAcrossEnvironments } from '#lib/utils/environments.js';
+	import { acrossEnvironmentsNote, settleAcrossEnvironments } from '#lib/utils/environments.js';
 	import { shownPodmanEnvironments } from '#lib/utils/podman.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -27,58 +28,48 @@
 	const pageState = new ResourceListPageState(untrack(() => data.requestOptions));
 	const podmanEnvironments = $derived(shownPodmanEnvironments(data.podmanStatuses));
 	const manageableEnvironments = $derived(podmanEnvironments.filter((env) => hasPermission('podman:pods', env.id)));
-	let isLoading = $state({ create: false, prune: false });
 
 	const podsQuery = createQuery(() => {
-		const queryScope = pageState.scope;
-		const environments = podmanEnvironments;
-		const options = pageState.requestOptions;
+		const scope = pageState.scope;
 		return {
-			queryKey: queryKeys.podman.pods(queryScope, options),
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, options, (id, request, config) => podmanService.getPods(id, request, config)),
-			placeholderData: (previous, query) => {
-				if (query?.queryKey[1] === queryScope) return previous;
-				return undefined;
-			},
-			select: (value) => ({ envId: queryScope, value })
+			...podmanPodListQuery(scope, podmanEnvironments, pageState.requestOptions),
+			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
+			select: (value) => ({ envId: scope, value })
 		};
 	});
 
 	const resourcesReady = $derived(podsQuery.data?.envId === pageState.scope);
 	const pods = $derived(podsQuery.data?.value ?? data.pods);
 
-	async function loadPods(options: SearchPaginationSortRequest = pageState.requestOptions, requestedScope = pageState.scope) {
-		const environments = podmanEnvironments;
-		pageState.requestOptions = options;
-		await queryClient.query({
-			queryKey: queryKeys.podman.pods(requestedScope, options),
-			staleTime: 0,
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, options, (id, request, config) => podmanService.getPods(id, request, config))
-		});
-	}
+	const createPodMutation = createMutation(() => ({
+		mutationKey: ['podman-pods', 'create', pageState.scope],
+		mutationFn: ({ request, environmentId }: { request: PodmanPodCreateRequest; environmentId: string }) =>
+			podmanService.createPod(request, environmentId),
+		onSuccess: async (_data, { request }) => {
+			toast.success(m.common_create_success({ resource: request.name }));
+			pageState.isCreateDialogOpen = false;
+			await queryClient.invalidateQueries({ queryKey: queryKeys.podman.podsPrefix(pageState.scope) });
+		},
+		onError: (error, { request }) => {
+			toast.error(m.common_create_failed({ resource: request.name }), { description: extractApiErrorMessage(error) });
+		}
+	}));
 
-	async function refresh() {
-		await handleApiResultWithCallbacks({
-			result: await tryCatch(loadPods()),
-			message: m.common_refresh_failed({ resource: m.podman_pods_title() })
-		});
-	}
+	const prunePodsMutation = createMutation(() => ({
+		mutationKey: ['podman-pods', 'prune', pageState.scope],
+		mutationFn: (environments: EnvironmentRef[]) => settleAcrossEnvironments(environments, (id) => podmanService.prunePods(id)),
+		onSuccess: async (results) => {
+			const count = results.reduce((total, { value }) => total + (value?.length ?? 0), 0);
+			toast.success(m.podman_pods_prune_success({ count }));
+			await queryClient.invalidateQueries({ queryKey: queryKeys.podman.podsPrefix(pageState.scope) });
+		},
+		onError: (error) => {
+			toast.error(m.podman_pods_prune_failed(), { description: extractApiErrorMessage(error) });
+		}
+	}));
 
 	async function handleCreate(request: PodmanPodCreateRequest, environmentId: string) {
-		isLoading.create = true;
-		const result = await tryCatch(podmanService.createPod(request, environmentId));
-		await handleApiResultWithCallbacks({
-			result,
-			message: m.common_create_failed({ resource: request.name }),
-			setLoadingState: (value) => (isLoading.create = value),
-			onSuccess: async () => {
-				toast.success(m.common_create_success({ resource: request.name }));
-				pageState.isCreateDialogOpen = false;
-				await refresh();
-			}
-		});
+		const result = await tryCatch(createPodMutation.mutateAsync({ request, environmentId }));
 		return result.error;
 	}
 
@@ -91,17 +82,7 @@
 				label: m.podman_pods_prune(),
 				destructive: true,
 				action: async () => {
-					isLoading.prune = true;
-					await handleApiResultWithCallbacks({
-						result: await tryCatch(settleAcrossEnvironments(environments, (id) => podmanService.prunePods(id))),
-						message: m.podman_pods_prune_failed(),
-						setLoadingState: (value) => (isLoading.prune = value),
-						onSuccess: async (results) => {
-							const count = results.reduce((total, { value }) => total + (value?.length ?? 0), 0);
-							toast.success(m.podman_pods_prune_success({ count }));
-							await refresh();
-						}
-					});
+					await tryCatch(prunePodsMutation.mutateAsync(environments));
 				}
 			}
 		});
@@ -119,8 +100,8 @@
 					placement: 'primary',
 					label: m.common_create_button({ resource: m.podman_pod() }),
 					onclick: () => (pageState.isCreateDialogOpen = true),
-					loading: isLoading.create,
-					disabled: !resourcesReady || isLoading.create
+					loading: createPodMutation.isPending,
+					disabled: !resourcesReady || createPodMutation.isPending
 				},
 				{
 					id: 'prune',
@@ -128,8 +109,8 @@
 					placement: 'secondary',
 					label: m.podman_pods_prune(),
 					onclick: handlePrune,
-					loading: isLoading.prune,
-					disabled: isLoading.prune
+					loading: prunePodsMutation.isPending,
+					disabled: prunePodsMutation.isPending
 				}
 			);
 		}
@@ -139,7 +120,7 @@
 			placement: 'secondary',
 			iconOnly: true,
 			label: m.common_refresh(),
-			onclick: refresh,
+			onclick: () => podsQuery.refetch(),
 			loading: isRefreshing,
 			disabled: podsQuery.isFetching
 		});
@@ -160,14 +141,7 @@
 	{#snippet mainContent()}
 		{#if resourcesReady}
 			{#key pageState.scope}
-				<PodsTable
-					bind:pods={
-						() => pods,
-						(value) => queryClient.setQueryData(queryKeys.podman.pods(pageState.scope, pageState.requestOptions), value)
-					}
-					bind:requestOptions={pageState.requestOptions}
-					onRefreshData={loadPods}
-				/>
+				<PodsTable {pods} bind:requestOptions={pageState.requestOptions} onRetry={() => podsQuery.refetch()} />
 			{/key}
 		{/if}
 	{/snippet}
@@ -175,7 +149,7 @@
 	{#snippet additionalContent()}
 		<CreatePodSheet
 			bind:open={pageState.isCreateDialogOpen}
-			isLoading={isLoading.create}
+			isLoading={createPodMutation.isPending}
 			environments={manageableEnvironments}
 			onSubmit={handleCreate}
 		/>

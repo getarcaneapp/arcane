@@ -1,66 +1,35 @@
 <script lang="ts">
-	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { createQuery } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { AlertTriangleIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
-	import { podmanService } from '#lib/services/podman-service.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { podmanQuadletListQuery } from '#lib/query/podman.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
 	import { shownPodmanEnvironments } from '#lib/utils/podman.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
-	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import QuadletsTable from './components/quadlets-table.svelte';
 
 	let { data } = $props();
-	const queryClient = useQueryClient();
 
 	const pageState = new ResourceListPageState(untrack(() => data.requestOptions));
 	const quadletEnvironments = $derived(shownPodmanEnvironments(data.podmanStatuses, (status) => status.quadletsSupported));
 	const canInstall = $derived(quadletEnvironments.some((env) => hasPermission('podman:quadlets', env.id)));
 
 	const quadletsQuery = createQuery(() => {
-		const queryScope = pageState.scope;
-		const environments = quadletEnvironments;
-		const options = pageState.requestOptions;
+		const scope = pageState.scope;
 		return {
-			queryKey: queryKeys.podman.quadlets(queryScope, options),
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, options, (id, request, config) => podmanService.getQuadlets(id, request, config)),
-			placeholderData: (previous, query) => {
-				if (query?.queryKey[1] === queryScope) return previous;
-				return undefined;
-			},
-			select: (value) => ({ envId: queryScope, value })
+			...podmanQuadletListQuery(scope, quadletEnvironments, pageState.requestOptions),
+			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
+			select: (value) => ({ envId: scope, value })
 		};
 	});
 
 	const resourcesReady = $derived(quadletsQuery.data?.envId === pageState.scope);
 	const quadlets = $derived(quadletsQuery.data?.value ?? data.quadlets);
-
-	async function loadQuadlets(options: SearchPaginationSortRequest = pageState.requestOptions, requestedScope = pageState.scope) {
-		const environments = quadletEnvironments;
-		pageState.requestOptions = options;
-		await queryClient.query({
-			queryKey: queryKeys.podman.quadlets(requestedScope, options),
-			staleTime: 0,
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, options, (id, request, config) => podmanService.getQuadlets(id, request, config))
-		});
-	}
-
-	async function refresh() {
-		await handleApiResultWithCallbacks({
-			result: await tryCatch(loadQuadlets()),
-			message: m.common_refresh_failed({ resource: m.podman_quadlets_title() })
-		});
-	}
 
 	const isRefreshing = $derived(quadletsQuery.isFetching && !quadletsQuery.isPending);
 
@@ -81,7 +50,7 @@
 			placement: 'secondary',
 			iconOnly: true,
 			label: m.common_refresh(),
-			onclick: refresh,
+			onclick: () => quadletsQuery.refetch(),
 			loading: isRefreshing,
 			disabled: quadletsQuery.isFetching
 		});
@@ -112,13 +81,10 @@
 			{#if resourcesReady}
 				{#key pageState.scope}
 					<QuadletsTable
-						bind:quadlets={
-							() => quadlets,
-							(value) => queryClient.setQueryData(queryKeys.podman.quadlets(pageState.scope, pageState.requestOptions), value)
-						}
+						{quadlets}
 						bind:requestOptions={pageState.requestOptions}
 						podmanStatuses={data.podmanStatuses}
-						onRefreshData={loadQuadlets}
+						onRetry={() => quadletsQuery.refetch()}
 					/>
 				{/key}
 			{/if}

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -12,23 +14,28 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { LayersIcon, InspectIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { swarmService, type SwarmStacksPaginatedResponse } from '#lib/services/swarm-service.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { SwarmStackSummary } from '#lib/types/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { environmentHref, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
+	import { type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	let {
-		stacks = $bindable(),
+		stacks,
+		scope,
 		requestOptions = $bindable(),
-		fetchStacks
+		onRetry
 	}: {
 		stacks: StackPage;
+		scope: string;
 		requestOptions: SearchPaginationSortRequest;
-		fetchStacks: (options: SearchPaginationSortRequest) => Promise<StackPage>;
+		onRetry: () => Promise<unknown>;
 	} = $props();
+
+	const queryClient = useQueryClient();
 
 	type StackRow = EnvironmentRow<SwarmStackSummary>;
 	type StackPage = EnvironmentPage<SwarmStacksPaginatedResponse>;
@@ -36,7 +43,11 @@
 	let isLoading = $state(false);
 
 	function inspectStack(stack: StackRow) {
-		goto(environmentHref(`/swarm/stacks/${encodeURIComponent(stack.name)}`, stack.environmentId));
+		goto(
+			resolve(`/(app)/swarm/stacks/[name]?env=${encodeURIComponent(stack.environmentId)}`, {
+				name: encodeURIComponent(stack.name)
+			})
+		);
 	}
 
 	function handleDelete(stack: StackRow) {
@@ -54,7 +65,7 @@
 						setLoadingState: (v) => (isLoading = v),
 						onSuccess: async () => {
 							toast.success(m.common_delete_success({ resource: `${m.swarm_stack()} "${stack.name}"` }));
-							stacks = await fetchStacks(requestOptions);
+							await queryClient.invalidateQueries({ queryKey: queryKeys.swarm.listPrefix(scope, 'stacks') });
 						}
 					});
 				}
@@ -82,7 +93,9 @@
 
 {#snippet NameCell({ item }: { item: StackRow })}
 	<a
-		href={environmentHref(`/swarm/stacks/${encodeURIComponent(item.name)}`, item.environmentId)}
+		href={resolve(`/(app)/swarm/stacks/[name]?env=${encodeURIComponent(item.environmentId)}`, {
+			name: encodeURIComponent(item.name)
+		})}
 		class="text-sm font-medium text-primary hover:underline"
 	>
 		{item.name}
@@ -155,7 +168,7 @@
 	bind:requestOptions
 	bind:mobileFieldVisibility
 	selectionDisabled={true}
-	onRefresh={async (options) => (stacks = await fetchStacks(options))}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

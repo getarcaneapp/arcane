@@ -1,3 +1,6 @@
+import { resolve } from '$app/paths';
+import type { ResolvedPathname } from '$app/types';
+
 import { m } from '#lib/paraglide/messages.js';
 import { APIError } from '#lib/services/api-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -128,13 +131,17 @@ export function canReachAccessSurfaceUrl(
 	return canReachShownAccessSurface(accessManifest, accessManifest?.accessSurfaces?.find((entry) => entry.url === url)?.id, user);
 }
 
-function pickFallbackRoute(user: User, accessManifest: PermissionsManifest | null | undefined): string {
+export function isInAppPath(value: string | null | undefined): value is ResolvedPathname {
+	return !!value && value.startsWith('/') && !value.startsWith('//') && !value.startsWith('/\\');
+}
+
+function pickFallbackRoute(user: User, accessManifest: PermissionsManifest | null | undefined): ResolvedPathname {
 	for (const surface of getFallbackAccessSurfaces(accessManifest)) {
 		if (canReachShownAccessSurface(accessManifest, surface.id, user)) {
-			return surface.url ?? '/no-access';
+			return isInAppPath(surface.url) ? surface.url : resolve('/(app)/no-access');
 		}
 	}
-	return '/no-access';
+	return resolve('/(app)/no-access');
 }
 
 export function getAuthRedirectPath(
@@ -142,17 +149,17 @@ export function getAuthRedirectPath(
 	user: User | null,
 	accessManifest?: PermissionsManifest | null,
 	accessManifestLoadFailed = false,
-	landingPath: string = '/dashboard'
-): string | null {
+	landingPath: ResolvedPathname = resolve('/(app)/dashboard')
+): ResolvedPathname | null {
 	if (path === '/') {
-		return user ? landingPath : '/login';
+		return user ? landingPath : resolve('/(auth)/login/[[mode]]', {});
 	}
 
 	if (matchesAny(path, AUTH_CALLBACK_PREFIXES)) {
 		return null;
 	}
 
-	if (!user) return matchesAny(path, PROTECTED_PREFIXES) ? '/login' : null;
+	if (!user) return matchesAny(path, PROTECTED_PREFIXES) ? resolve('/(auth)/login/[[mode]]', {}) : null;
 	if (matchesAny(path, UNAUTHENTICATED_ONLY_PREFIXES)) return landingPath;
 	if (
 		!accessManifestLoadFailed &&
@@ -160,21 +167,21 @@ export function getAuthRedirectPath(
 		!accessManifest?.accessSurfaces?.length &&
 		matchesAny(path, PROTECTED_PREFIXES)
 	) {
-		return '/no-access';
+		return resolve('/(app)/no-access');
 	}
 
 	if (path !== '/no-access' && !userHasAnyAccess(user)) {
-		return '/no-access';
+		return resolve('/(app)/no-access');
 	}
 
 	if (isAdminOnlyRoute(path) && !isUserGlobalAdmin(user)) {
-		return '/settings/roles';
+		return resolve('/(app)/settings/roles');
 	}
 
 	const surface = getRouteAccessSurfaces(accessManifest).find((candidate) => pathMatchesAccessSurface(path, candidate));
 	if (surface && !canReachShownAccessSurface(accessManifest, surface.id, user)) {
 		const fallback = pickFallbackRoute(user, accessManifest);
-		return fallback === path ? '/no-access' : fallback;
+		return fallback === path ? resolve('/(app)/no-access') : fallback;
 	}
 
 	return null;
