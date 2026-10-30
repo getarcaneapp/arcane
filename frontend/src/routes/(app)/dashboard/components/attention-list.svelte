@@ -56,9 +56,7 @@
 	{:else}
 		<ul class="divide-y divide-border/40">
 			{#each sortedItems as item (item.key)}
-				<li
-					class="-mx-2 grid grid-cols-icon-content-action items-start gap-3 rounded-md px-2 py-2.5 transition-colors hover:bg-muted/40"
-				>
+				<li class="-mx-2 grid grid-cols-icon-content-action items-start gap-3 rounded-md hover-glow px-2 py-2.5">
 					<span class={cn('mt-1.5 size-2 shrink-0 rounded-full', severityDotClass[item.severity])}></span>
 					<span class="min-w-0 space-y-1">
 						<span class="flex min-w-0 items-center gap-1.5">
