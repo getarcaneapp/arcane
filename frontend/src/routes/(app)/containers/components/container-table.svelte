@@ -480,7 +480,7 @@
 							count: selectedIds?.length ?? 0
 						}),
 						action: 'start' as const,
-						onClick: handleBulkStart,
+						onclick: handleBulkStart,
 						loading: isBulkLoading.start,
 						disabled: !resourcesCurrent || isAnyLoading,
 						icon: StartIcon
@@ -495,7 +495,7 @@
 							count: filterUpdatableContainerIds()?.length ?? 0
 						}),
 						action: 'update' as const,
-						onClick: handleSelectedBulkUpdate,
+						onclick: handleSelectedBulkUpdate,
 						loading: isBulkLoading.update,
 						disabled: !resourcesCurrent || isAnyLoading,
 						icon: UpdateIcon
@@ -510,7 +510,7 @@
 							count: selectedIds?.length ?? 0
 						}),
 						action: 'stop' as const,
-						onClick: handleBulkStop,
+						onclick: handleBulkStop,
 						loading: isBulkLoading.stop,
 						disabled: !resourcesCurrent || isAnyLoading,
 						icon: StopIcon
@@ -525,7 +525,7 @@
 							count: selectedIds?.length ?? 0
 						}),
 						action: 'restart' as const,
-						onClick: handleBulkRestart,
+						onclick: handleBulkRestart,
 						loading: isBulkLoading.restart,
 						disabled: !resourcesCurrent || isAnyLoading,
 						icon: RefreshIcon
@@ -540,7 +540,7 @@
 							count: selectedIds?.length ?? 0
 						}),
 						action: 'remove' as const,
-						onClick: handleBulkRemove,
+						onclick: handleBulkRemove,
 						loading: isBulkLoading.remove,
 						disabled: !resourcesCurrent || isAnyLoading,
 						icon: TrashIcon
@@ -555,7 +555,7 @@
 							count: selectedIds?.length ?? 0
 						}),
 						action: 'base' as const,
-						onClick: handleBulkConvert,
+						onclick: handleBulkConvert,
 						disabled: !resourcesCurrent || isAnyLoading || selectedEnvironmentIds.size > 1,
 						icon: ProjectsIcon
 					}

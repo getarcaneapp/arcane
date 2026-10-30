@@ -8,6 +8,7 @@
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import type { UseClipboard } from '#lib/hooks/use-clipboard.svelte.js';
 	import { cn } from '#lib/utils.js';
+	import { withOccurrenceKeys } from '#lib/utils/formatting.js';
 
 	const style = tv({
 		base: 'bg-background relative w-full max-w-full rounded-md border py-2.5 pr-12 pl-3',
@@ -41,10 +42,9 @@
 			{text}
 		</pre>
 	{:else}
-		<!-- Repeated lines are valid; each line renders only text. -->
-		{#each text as line}
+		{#each withOccurrenceKeys(text) as line (line.key)}
 			<pre class={cn('overflow-y-auto text-left font-mono text-sm font-light whitespace-nowrap')}>
-			{line}
+			{line.value}
 		</pre>
 		{/each}
 	{/if}

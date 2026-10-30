@@ -458,7 +458,7 @@
 			id: 'remove',
 			label: m.common_remove_selected_count({ count: selectedIds.length }),
 			action: 'remove',
-			onClick: handleDeleteSelected,
+			onclick: handleDeleteSelected,
 			loading: deletingSelected,
 			disabled: !canDeleteBackup || deletingSelected || selectedIds.length === 0,
 			icon: TrashIcon

@@ -204,13 +204,17 @@
 	}
 
 	function fitToViewport(node: HTMLElement) {
+		const ancestors: HTMLElement[] = [];
+		for (let el = node.parentElement; el; el = el.parentElement) ancestors.push(el);
+		const scrollContainer =
+			ancestors.find((el) => ['auto', 'scroll', 'overlay'].includes(getComputedStyle(el).overflowY)) ?? document.documentElement;
 		let frame = 0;
 		const update = () => {
 			cancelAnimationFrame(frame);
 			frame = requestAnimationFrame(() => {
 				let top = node.getBoundingClientRect().top;
 				let bottomGap = parseFloat(getComputedStyle(node).marginBottom);
-				for (let el = node.parentElement; el; el = el.parentElement) {
+				for (const el of ancestors) {
 					const style = getComputedStyle(el);
 					top += el.scrollTop;
 					bottomGap += parseFloat(style.paddingBottom) + parseFloat(style.borderBottomWidth) + parseFloat(style.marginBottom);
@@ -220,7 +224,7 @@
 			});
 		};
 		const observer = new ResizeObserver(update);
-		for (let el = node.parentElement; el; el = el.parentElement) observer.observe(el);
+		observer.observe(scrollContainer);
 		window.addEventListener('resize', update);
 		update();
 		return () => {
@@ -489,24 +493,7 @@
 	const defaultColumnVisibility = $derived(getInitialHiddenColumns(columns));
 	const effectiveColumnVisibility = $derived({ ...defaultColumnVisibility, ...columnVisibility });
 
-	function getColumnsKey(specs: ColumnSpec<TData>[], hasRowActions: boolean, isSelectionDisabled: boolean): string {
-		const columnsMetadata = specs.map((spec, index) => ({
-			id: spec.id ?? spec.accessorKey ?? `col_${index}`,
-			filterOptions: spec.filterOptions?.map((option) => ({
-				value: option.value,
-				label: option.label,
-				dotClass: option.dotClass
-			}))
-		}));
-		return `${JSON.stringify(columnsMetadata)}:${hasRowActions}:${isSelectionDisabled}`;
-	}
-
-	let builtColumns: { key: string; defs: ArcaneColumnDef<TData>[] } | undefined;
-	const columnsDef = $derived.by(() => {
-		const key = getColumnsKey(columns, !!rowActions, selectionDisabled);
-		if (builtColumns?.key !== key) builtColumns = { key, defs: buildColumns(columns, selectionDisabled) };
-		return builtColumns.defs;
-	});
+	const columnsDef = $derived(buildColumns(columns, selectionDisabled));
 
 	const table = createTable({
 		features: arcaneTableFeatures,
@@ -657,7 +644,13 @@
 		}))
 	);
 
-	const rowIndex = $derived.by(() => new Map(table.getRowModel().rows.map((row, index) => [row.id, { row, index }])));
+	let builtRowIndex: { rows: ArcaneRow<TData>[]; index: Map<string, { row: ArcaneRow<TData>; index: number }> } | undefined;
+	const rowIndex = $derived.by(() => {
+		const rows = table.getRowModel().rows;
+		if (builtRowIndex?.rows !== rows)
+			builtRowIndex = { rows, index: new Map(rows.map((row, index) => [row.id, { row, index }])) };
+		return builtRowIndex.index;
+	});
 
 	// Compute grouped rows when groupBy is provided
 	const effectiveGroupedRows = $derived.by((): GroupedData<TData>[] | null => {

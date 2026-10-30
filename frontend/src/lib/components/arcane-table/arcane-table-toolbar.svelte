@@ -201,7 +201,7 @@
 								size="icon"
 								icon={bulkAction.icon}
 								customLabel={bulkAction.label}
-								onclick={() => bulkAction.onClick(selectedIds!)}
+								onclick={() => bulkAction.onclick(selectedIds!)}
 								disabled={bulkAction.disabled || bulkAction.loading}
 								loading={bulkAction.loading}
 								title={bulkAction.disabled ? bulkAction.disabledReason : undefined}

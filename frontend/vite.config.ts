@@ -31,7 +31,6 @@ function parseBooleanEnv(value: string | undefined): boolean | undefined {
 }
 
 const explicitInsecureTLS = parseBooleanEnv(process.env['DEV_BACKEND_INSECURE_TLS']);
-// Allow local self-signed HTTPS while developing edge mTLS against the manager.
 const useInsecureLocalTLS =
 	explicitInsecureTLS ??
 	(parsedDevBackendURL.protocol === 'https:' &&
