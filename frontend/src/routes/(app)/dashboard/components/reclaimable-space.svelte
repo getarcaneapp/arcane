@@ -1,12 +1,11 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
-	import ShareBar from '#lib/components/vulnerability/share-bar.svelte';
 	import { m } from '#lib/paraglide/messages.js';
+	import { environmentColor } from '#lib/stores/environment-colors.store.svelte.js';
 	import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type { SystemDiskUsage } from '#lib/types/shared.js';
 	import { bytes } from '#lib/utils/formatting.js';
-	import type { ShareBarSegment } from '#lib/utils/vulnerability.js';
 
 	import { totalReclaimableBytes } from '../overview.helpers';
 	import DashboardPanel from './dashboard-panel.svelte';
@@ -25,33 +24,27 @@
 		onPrune?: () => void;
 	} = $props();
 
-	const segments = $derived<ShareBarSegment[]>([
-		{
-			key: 'images',
-			label: m.prune_unused_images(),
-			count: usage.reduce((sum, entry) => sum + entry.data.unusedImagesBytes, 0),
-			barClass: 'bg-primary'
-		},
-		{
-			key: 'buildCache',
-			label: m.build_cache(),
-			count: usage.reduce((sum, entry) => sum + entry.data.buildCacheBytes, 0),
-			barClass: 'bg-primary/60'
-		},
-		{
-			key: 'volumes',
-			label: m.unused_volumes(),
-			count: usage.reduce((sum, entry) => sum + entry.data.unusedVolumesBytes, 0),
-			barClass: 'bg-primary/35'
-		},
-		{
-			key: 'containers',
-			label: m.prune_stopped_containers(),
-			count: usage.reduce((sum, entry) => sum + entry.data.stoppedContainersBytes, 0),
-			barClass: 'bg-muted-foreground/40'
-		}
-	]);
-	const total = $derived(segments.reduce((sum, segment) => sum + segment.count, 0));
+	const RESOURCE_TYPES: { key: string; label: () => string; bytes: (data: SystemDiskUsage) => number }[] = [
+		{ key: 'images', label: m.prune_unused_images, bytes: (data) => data.unusedImagesBytes },
+		{ key: 'buildCache', label: m.build_cache, bytes: (data) => data.buildCacheBytes },
+		{ key: 'volumes', label: m.unused_volumes, bytes: (data) => data.unusedVolumesBytes },
+		{ key: 'containers', label: m.prune_stopped_containers, bytes: (data) => data.stoppedContainersBytes }
+	];
+
+	const resources = $derived(
+		RESOURCE_TYPES.map((type) => {
+			const segments = usage
+				.map((entry) => ({ environment: entry.environment, bytes: type.bytes(entry.data) }))
+				.filter((segment) => segment.bytes > 0);
+			return {
+				key: type.key,
+				label: type.label(),
+				total: segments.reduce((sum, segment) => sum + segment.bytes, 0),
+				segments
+			};
+		}).filter((resource) => resource.total > 0)
+	);
+	const total = $derived(resources.reduce((sum, resource) => sum + resource.total, 0));
 	const topEnvironments = $derived(
 		usage
 			.map((entry) => ({ environment: entry.environment, bytes: totalReclaimableBytes(entry.data) }))
@@ -59,6 +52,10 @@
 			.sort((a, b) => b.bytes - a.bytes)
 			.slice(0, ENVIRONMENT_LIMIT)
 	);
+
+	function formatBytes(value: number) {
+		return bytes.format(value, { unitSeparator: ' ' }) ?? '-';
+	}
 </script>
 
 <DashboardPanel title={m.reclaimable_space()}>
@@ -75,19 +72,45 @@
 	{:else if total === 0}
 		<p class="py-2 text-sm text-muted-foreground">{failed ? m.common_unavailable() : m.nothing_to_reclaim()}</p>
 	{:else}
-		<p class="text-2xl font-semibold tabular-nums">{bytes.format(total, { unitSeparator: ' ' }) ?? '-'}</p>
-		<ShareBar {segments} formatCount={(value) => bytes.format(value, { unitSeparator: ' ' }) ?? '-'} />
-		{#if usage.length > 1}
-			<ul class="divide-y divide-border/40">
-				{#each topEnvironments as entry (entry.environment.id)}
-					<li class="flex items-center justify-between gap-3 py-2.5 text-sm">
-						<span class="truncate font-medium">{entry.environment.name}</span>
-						<span class="whitespace-nowrap text-muted-foreground tabular-nums">
-							{bytes.format(entry.bytes, { unitSeparator: ' ' }) ?? '-'}
-						</span>
+		<div class="space-y-4">
+			<p class="text-2xl font-semibold tabular-nums">{formatBytes(total)}</p>
+			<ul class="space-y-3">
+				{#each resources as resource (resource.key)}
+					<li class="space-y-1.5">
+						<div class="flex items-center justify-between gap-3 text-sm">
+							<span class="truncate text-muted-foreground">{resource.label}</span>
+							<span class="font-medium whitespace-nowrap tabular-nums">{formatBytes(resource.total)}</span>
+						</div>
+						<div class="flex h-2 gap-0.5">
+							{#each resource.segments as segment (segment.environment.id)}
+								<div
+									class="h-full grow-(--segment-grow) rounded-full bg-(--segment-color)"
+									style:--segment-grow={segment.bytes}
+									style:--segment-color={environmentColor(segment.environment.id) ?? 'var(--color-primary)'}
+									title={`${segment.environment.name}: ${formatBytes(segment.bytes)}`}
+								></div>
+							{/each}
+						</div>
 					</li>
 				{/each}
 			</ul>
-		{/if}
+			{#if usage.length > 1}
+				<ul class="divide-y divide-border/40">
+					{#each topEnvironments as entry (entry.environment.id)}
+						<li class="flex items-center justify-between gap-3 py-2.5 text-sm">
+							<span class="flex min-w-0 items-center gap-2">
+								<span
+									class="size-2 shrink-0 rounded-full bg-(--segment-color)"
+									style:--segment-color={environmentColor(entry.environment.id) ?? 'var(--color-primary)'}
+									aria-hidden="true"
+								></span>
+								<span class="truncate font-medium">{entry.environment.name}</span>
+							</span>
+							<span class="whitespace-nowrap text-muted-foreground tabular-nums">{formatBytes(entry.bytes)}</span>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
 	{/if}
 </DashboardPanel>
