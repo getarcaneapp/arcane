@@ -6,9 +6,10 @@
 		DiagnosticSummary,
 		EditorContext
 	} from '#lib/components/code-editor/analysis/types.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
-	import { CodeIcon, FileTextIcon, SearchIcon, ArrowsUpDownIcon } from '#lib/icons/index.js';
+	import { AlertIcon, CodeIcon, FileTextIcon, SearchIcon, ArrowsUpDownIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 
 	let {
@@ -100,31 +101,42 @@
 		onkeydown={handleEditorKeydown}
 	>
 		<div class={effectiveAutoHeight ? '' : 'absolute inset-0'}>
-			<!-- CodeMirror loads with the first panel that renders, not with the route. -->
-			{#await import('#lib/components/code-editor/editor.svelte')}
-				<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
-			{:then { default: CodeEditor }}
-				<CodeEditor
-					bind:value
-					{language}
-					{validationMode}
-					fontSize="13px"
-					autoHeight={effectiveAutoHeight}
-					{readOnly}
-					bind:hasErrors
-					bind:validationReady
-					bind:diagnosticSummary
-					{fileId}
-					{originalValue}
-					{enableDiff}
-					{editorContext}
-					bind:outlineOpen
-					bind:diffOpen
-					bind:commandPaletteOpen
-				/>
-			{:catch}
-				<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
-			{/await}
+			<svelte:boundary>
+				{#await import('#lib/components/code-editor/editor.svelte')}
+					<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
+				{:then { default: CodeEditor }}
+					<CodeEditor
+						bind:value
+						{language}
+						{validationMode}
+						fontSize="13px"
+						autoHeight={effectiveAutoHeight}
+						{readOnly}
+						bind:hasErrors
+						bind:validationReady
+						bind:diagnosticSummary
+						{fileId}
+						{originalValue}
+						{enableDiff}
+						{editorContext}
+						bind:outlineOpen
+						bind:diffOpen
+						bind:commandPaletteOpen
+					/>
+				{:catch}
+					<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
+				{/await}
+
+				{#snippet failed(_renderError: unknown, reset: () => void)}
+					<div class="p-4">
+						<Alert.Root variant="destructive" icon={AlertIcon} heading={m.error_generic()}>
+							<div class="mt-3">
+								<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onclick={reset} />
+							</div>
+						</Alert.Root>
+					</div>
+				{/snippet}
+			</svelte:boundary>
 		</div>
 	</div>
 	{#if error}

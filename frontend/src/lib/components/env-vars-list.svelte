@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail/index.js';
+	import { withOccurrenceKeys } from '#lib/utils/formatting.js';
 
 	interface Props {
 		envVars: string[];
@@ -11,8 +12,7 @@
 </script>
 
 <KeyValueGrid>
-	<!-- Docker environment entries can repeat; these cards have no row-local state. -->
-	{#each envVars as env}
+	{#each withOccurrenceKeys(envVars) as { value: env, key: entryKey } (entryKey)}
 		{#if env.includes('=')}
 			{@const [key, ...valueParts] = env.split('=')}
 			{@const value = valueParts.join('=')}

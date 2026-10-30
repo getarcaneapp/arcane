@@ -25,7 +25,6 @@ export type TableViewMode = 'list' | 'grid';
 
 export type ColumnWidth = 'auto' | 'min' | 'max' | number;
 export type ColumnAlign = 'left' | 'center' | 'right';
-/** Where a column renders on a grid card; inferred from the column id when unset. */
 export type CardSlot = 'title' | 'context' | 'badge' | 'field' | 'footer' | 'footerEnd' | 'hidden';
 
 export type ColumnSpec<T extends RowData> = {
@@ -35,13 +34,8 @@ export type ColumnSpec<T extends RowData> = {
 	title: string;
 	hidden?: boolean;
 	sortable?: boolean;
-	/**
-	 * Sort the current page locally via the column accessor instead of asking the
-	 * server. For values the server cannot sort (e.g. live WebSocket stats).
-	 */
 	clientSort?: boolean;
 	cell?: Snippet<[{ row: ArcaneRow<T>; item: T; value: unknown; view: TableViewMode }]>;
-	/** Render a shared value-only Svelte component without a per-table wrapper snippet. */
 	cellComponent?: Component<{ value: unknown }>;
 	header?: Snippet<[{ column: ArcaneColumn<T>; title: string; class?: string }]>;
 	class?: string;
@@ -53,21 +47,13 @@ export type ColumnSpec<T extends RowData> = {
 	card?: CardSlot;
 };
 
-// Compact persisted prefs to reduce JSON size
 export type CompactTablePrefs = {
-	// v: list of hidden column ids (only the exceptions)
 	v?: string[];
-	// f: filters as [id, value] tuples
 	f?: [string, unknown][];
-	// g: global filter string
 	g?: string;
-	// s: sort as [column, direction]
 	s?: SortPreference;
-	// l: page size (limit)
 	l?: number;
-	// m: list of hidden mobile field ids
 	m?: string[];
-	// d: desktop view mode
 	d?: TableViewMode;
 	c?: Record<string, unknown>;
 };
@@ -158,14 +144,13 @@ export type BulkAction = {
 		| 'prune'
 		| 'archive'
 		| 'update';
-	onClick: (ids: string[]) => void;
+	onclick: (ids: string[]) => void;
 	disabled?: boolean;
 	disabledReason?: string;
 	loading?: boolean;
 	icon?: Component;
 };
 
-// Grouping types
 export type GroupedData<T> = {
 	groupName: string;
 	items: T[];

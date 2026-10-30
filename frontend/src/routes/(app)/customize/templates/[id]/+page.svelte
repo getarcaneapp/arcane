@@ -6,7 +6,6 @@
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import CodeEditor from '#lib/components/code-editor/editor.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -363,7 +362,13 @@
 					</div>
 					<div class="relative h-120 overflow-hidden rounded-lg border border-border/50 sm:h-140">
 						<div class="absolute inset-0">
-							<CodeEditor bind:value={data.templateData.content} language="yaml" readOnly={true} fontSize="13px" />
+							{#await import('#lib/components/code-editor/editor.svelte')}
+								<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
+							{:then { default: CodeEditor }}
+								<CodeEditor bind:value={data.templateData.content} language="yaml" readOnly={true} fontSize="13px" />
+							{:catch}
+								<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
+							{/await}
 						</div>
 					</div>
 				</section>
@@ -376,7 +381,13 @@
 						</div>
 						<div class="relative h-70 overflow-hidden rounded-lg border border-border/50">
 							<div class="absolute inset-0">
-								<CodeEditor bind:value={data.templateData.envContent} language="env" readOnly={true} fontSize="13px" />
+								{#await import('#lib/components/code-editor/editor.svelte')}
+									<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
+								{:then { default: CodeEditor }}
+									<CodeEditor bind:value={data.templateData.envContent} language="env" readOnly={true} fontSize="13px" />
+								{:catch}
+									<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
+								{/await}
 							</div>
 						</div>
 					</section>
