@@ -629,6 +629,18 @@ input:autofill:active {
 	}
 }
 
+@utility hover-glow-card-subtle {
+	transition:
+		color 200ms ease-out,
+		background-color 200ms ease-out,
+		border-color 200ms ease-out,
+		box-shadow 200ms ease-out;
+	&:hover {
+		border-color: color-mix(in oklab, var(--color-primary) 20%, var(--color-border));
+		box-shadow: 0 0 16px -10px color-mix(in oklab, var(--color-primary) 25%, transparent);
+	}
+}
+
 @utility widget-scaled {
 	@media (width >= 64rem) {
 		width: calc(100% / 0.9);
