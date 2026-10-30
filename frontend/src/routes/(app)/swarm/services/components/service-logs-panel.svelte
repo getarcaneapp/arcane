@@ -23,6 +23,7 @@
 	let autoScroll = $state(true);
 	const preferences = new UseLogPreferences();
 	let logSearchTerm = $state('');
+	let hasAutoStarted = false;
 
 	function handleStart() {
 		startLogViewerStream(viewer);
@@ -45,7 +46,8 @@
 	}
 
 	$effect(() => {
-		if (preferences.autoStartLogs && serviceId && viewer) {
+		if (preferences.autoStartLogs && !hasAutoStarted && !isStreaming && serviceId && viewer) {
+			hasAutoStarted = true;
 			untrack(handleStart);
 		}
 	});

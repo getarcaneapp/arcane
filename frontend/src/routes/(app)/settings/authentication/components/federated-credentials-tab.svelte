@@ -82,7 +82,6 @@
 					toast.success(m.federated_credential_updated_success({ name: safeName }));
 					await queryClient.invalidateQueries({ queryKey: queryKeys.federatedCredentials.all });
 					isDialogOpen.edit = false;
-					credentialToEdit = null;
 				}
 			});
 		} else {
@@ -152,14 +151,16 @@ steps:
 		isLoading={isLoading.creating}
 	/>
 
-	<FederatedCredentialFormSheet
-		bind:open={isDialogOpen.edit}
-		{credentialToEdit}
-		{roles}
-		{environments}
-		onSubmit={handleFederatedCredentialSubmit}
-		isLoading={isLoading.editing}
-	/>
+	{#key credentialToEdit?.id ?? 'new'}
+		<FederatedCredentialFormSheet
+			bind:open={isDialogOpen.edit}
+			{credentialToEdit}
+			{roles}
+			{environments}
+			onSubmit={handleFederatedCredentialSubmit}
+			isLoading={isLoading.editing}
+		/>
+	{/key}
 
 	<ResponsiveDialog.Root
 		bind:open={isDialogOpen.instructions}

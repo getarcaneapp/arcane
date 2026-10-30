@@ -40,15 +40,12 @@
 		volumeLabels: z.string().optional().default('')
 	});
 
-	let formData = $derived({
+	const form = createForm<typeof formSchema>(formSchema, {
 		volumeName: '',
 		volumeDriver: 'local',
 		volumeOptText: '',
 		volumeLabels: ''
 	});
-
-	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
-	let inputs = $derived(form.inputs);
 
 	function handleSubmit() {
 		const data = form.validate();
@@ -71,10 +68,7 @@
 		open = newOpenState;
 		if (!newOpenState) {
 			pickedEnvironmentId = '';
-			inputs.volumeName.value = '';
-			inputs.volumeDriver.value = 'local';
-			inputs.volumeOptText.value = '';
-			inputs.volumeLabels.value = '';
+			form.reset();
 		}
 	}
 </script>
@@ -101,12 +95,12 @@
 				placeholder={m.volume_name_placeholder()}
 				description={m.volume_name_description()}
 				disabled={isLoading}
-				bind:input={inputs.volumeName}
+				bind:input={form.inputs.volumeName}
 			/>
 
 			<SelectWithLabel
 				id="driver-select"
-				bind:value={inputs.volumeDriver.value}
+				bind:value={form.inputs.volumeDriver.value}
 				label={m.volume_driver_label()}
 				description={m.volume_driver_description()}
 				options={drivers}
@@ -125,7 +119,7 @@
 								description={m.volume_driver_options_description()}
 								disabled={isLoading}
 								rows={3}
-								bind:input={inputs.volumeOptText}
+								bind:input={form.inputs.volumeOptText}
 							/>
 
 							<FormInput
@@ -135,7 +129,7 @@
 								description={m.volumes_labels_description()}
 								disabled={isLoading}
 								rows={3}
-								bind:input={inputs.volumeLabels}
+								bind:input={form.inputs.volumeLabels}
 							/>
 						</div>
 					</Accordion.Content>

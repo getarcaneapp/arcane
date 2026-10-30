@@ -247,18 +247,7 @@
 
 	const resourcesCurrent = $derived(scope === environmentStore.shownKey);
 
-	const activeUpdateKeys = $derived(
-		new Set(
-			activityStore.activities
-				.filter(
-					(activity) =>
-						activity.type === 'auto_update' &&
-						activity.resourceType === 'container' &&
-						(activity.status === 'queued' || activity.status === 'running')
-				)
-				.map((activity) => `${activity.sourceEnvironmentId || activity.environmentId}:${activity.resourceId}`)
-		)
-	);
+	const activeUpdateKeys = $derived(activityStore.activeUpdateKeys);
 
 	function getRowActionStatus(item: ContainerRow): ActionStatus {
 		return actionStatus[rowKey(item)] || (activeUpdateKeys.has(`${item.environmentId}:${item.id}`) ? 'updating' : '');

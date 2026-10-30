@@ -22,7 +22,7 @@
 	import MFADialog from './mfa-dialog.svelte';
 	import StepUpDialog from './step-up-dialog.svelte';
 
-	let passkeys = $state<Passkey[]>([]);
+	let passkeys = $state.raw<Passkey[]>([]);
 	let capabilities = $state<PasskeyCapabilities | null>(null);
 	let mfaStatus = $state<MFAStatus | null>(null);
 	let loading = $state(true);

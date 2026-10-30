@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { goto, refreshAll } from '$app/navigation';
+	import { afterNavigate, goto, refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { useQueryClient } from '@tanstack/svelte-query';
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
@@ -71,21 +72,27 @@
 	let originalCompose = $derived(data.templateData.content);
 	let originalEnv = $derived(data.templateData.envContent);
 
-	let formData = $derived({
-		name: originalName,
-		description: originalDescription,
-		composeContent: originalCompose,
-		envContent: originalEnv
-	});
+	function formValues() {
+		return {
+			name: originalName,
+			description: originalDescription,
+			composeContent: originalCompose,
+			envContent: originalEnv
+		};
+	}
 
-	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
-	let inputs = $derived(form.inputs);
+	const form = createForm<typeof formSchema>(formSchema, untrack(formValues));
+
+	afterNavigate(() => form.reset(formValues()));
+
+	let remoteCompose = $state({ value: '', dirty: false });
+	let remoteEnv = $state({ value: '', dirty: false });
 
 	const hasChanges = $derived(
-		inputs.name.value !== originalName ||
-			inputs.description.value !== originalDescription ||
-			inputs.composeContent.value !== originalCompose ||
-			inputs.envContent.value !== originalEnv
+		form.inputs.name.value !== originalName ||
+			form.inputs.description.value !== originalDescription ||
+			form.inputs.composeContent.value !== originalCompose ||
+			form.inputs.envContent.value !== originalEnv
 	);
 	// fallow-ignore-next-line code-duplication -- template editor form wiring (createForm + getTemplateEditorSaveState); hasChanges fields differ per page
 	const saveState = $derived(getTemplateEditorSaveState(validation, hasChanges));
@@ -133,19 +140,19 @@
 	function handleReset() {
 		resetTemplateEditorFields([
 			{
-				set: (value) => (inputs.name.value = value),
+				set: (value) => (form.inputs.name.value = value),
 				value: originalName
 			},
 			{
-				set: (value) => (inputs.description.value = value),
+				set: (value) => (form.inputs.description.value = value),
 				value: originalDescription
 			},
 			{
-				set: (value) => (inputs.composeContent.value = value),
+				set: (value) => (form.inputs.composeContent.value = value),
 				value: originalCompose
 			},
 			{
-				set: (value) => (inputs.envContent.value = value),
+				set: (value) => (form.inputs.envContent.value = value),
 				value: originalEnv
 			}
 		]);
@@ -280,7 +287,7 @@
 
 {#if !template.isRemote}
 	<TemplateEditorWorkspace
-		bind:inputs
+		bind:inputs={form.inputs}
 		bind:validation
 		{originalName}
 		{originalCompose}
@@ -365,7 +372,15 @@
 							{#await import('#lib/components/code-editor/editor.svelte')}
 								<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
 							{:then { default: CodeEditor }}
-								<CodeEditor bind:value={data.templateData.content} language="yaml" readOnly={true} fontSize="13px" />
+								<CodeEditor
+									bind:value={
+										() => (remoteCompose.dirty ? remoteCompose.value : data.templateData.content),
+										(value) => (remoteCompose = { value, dirty: true })
+									}
+									language="yaml"
+									readOnly={true}
+									fontSize="13px"
+								/>
 							{:catch}
 								<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
 							{/await}
@@ -384,7 +399,15 @@
 								{#await import('#lib/components/code-editor/editor.svelte')}
 									<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
 								{:then { default: CodeEditor }}
-									<CodeEditor bind:value={data.templateData.envContent} language="env" readOnly={true} fontSize="13px" />
+									<CodeEditor
+										bind:value={
+											() => (remoteEnv.dirty ? remoteEnv.value : data.templateData.envContent),
+											(value) => (remoteEnv = { value, dirty: true })
+										}
+										language="env"
+										readOnly={true}
+										fontSize="13px"
+									/>
 								{:catch}
 									<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
 								{/await}

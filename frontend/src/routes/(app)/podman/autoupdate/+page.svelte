@@ -32,7 +32,7 @@
 	let dryRun = $state(false);
 	let rollback = $state(true);
 	let running = $state(false);
-	let results = $state<{ environment: EnvironmentRef; value: PodmanAutoUpdateResult }[]>([]);
+	let results = $state.raw<{ environment: EnvironmentRef; value: PodmanAutoUpdateResult }[]>([]);
 
 	function modeOf(environmentId: string): PodmanAutoUpdateMode {
 		return data.podmanStatuses[environmentId]?.autoUpdateMode ?? 'unavailable';
