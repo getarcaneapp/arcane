@@ -42,10 +42,9 @@ type JobStatus struct {
 
 // JobPrerequisite represents a requirement that must be met for a job to run.
 type JobPrerequisite struct {
-	SettingKey  string `json:"settingKey"`
-	Label       string `json:"label"`
-	SettingsURL string `json:"settingsUrl,omitempty"`
-	IsMet       bool   `json:"isMet"`
+	SettingKey string `json:"settingKey"`
+	Label      string `json:"label"`
+	IsMet      bool   `json:"isMet"`
 }
 
 // JobListResponse contains all jobs and system mode information.

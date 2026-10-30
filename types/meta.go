@@ -46,9 +46,8 @@ type JobMetadata struct {
 }
 
 type JobPrerequisiteMetadata struct {
-	SettingKey  string
-	Label       string
-	SettingsURL string
+	SettingKey string
+	Label      string
 }
 
 var jobMetadataRegistry = map[string]JobMetadata{
@@ -129,14 +128,12 @@ var jobMetadataRegistry = map[string]JobMetadata{
 		CanRunManually: true,
 		Prerequisites: []JobPrerequisiteMetadata{
 			{
-				SettingKey:  "pollingEnabled",
-				Label:       "Image polling enabled",
-				SettingsURL: "/settings/updates",
+				SettingKey: "pollingEnabled",
+				Label:      "Image polling enabled",
 			},
 			{
-				SettingKey:  "autoUpdate",
-				Label:       "Auto update enabled",
-				SettingsURL: "/settings/updates",
+				SettingKey: "autoUpdate",
+				Label:      "Auto update enabled",
 			},
 		},
 	},
@@ -152,9 +149,8 @@ var jobMetadataRegistry = map[string]JobMetadata{
 		CanRunManually: true,
 		Prerequisites: []JobPrerequisiteMetadata{
 			{
-				SettingKey:  "pollingEnabled",
-				Label:       "Image polling enabled",
-				SettingsURL: "/settings/updates",
+				SettingKey: "pollingEnabled",
+				Label:      "Image polling enabled",
 			},
 		},
 	},
@@ -170,9 +166,8 @@ var jobMetadataRegistry = map[string]JobMetadata{
 		CanRunManually: true,
 		Prerequisites: []JobPrerequisiteMetadata{
 			{
-				SettingKey:  "scheduledPruneEnabled",
-				Label:       "Scheduled prune enabled",
-				SettingsURL: "/settings/general",
+				SettingKey: "scheduledPruneEnabled",
+				Label:      "Scheduled prune enabled",
 			},
 		},
 	},
@@ -199,9 +194,8 @@ var jobMetadataRegistry = map[string]JobMetadata{
 		CanRunManually: true,
 		Prerequisites: []JobPrerequisiteMetadata{
 			{
-				SettingKey:  "vulnerabilityScanEnabled",
-				Label:       "Scheduled vulnerability scan enabled",
-				SettingsURL: "/settings/security",
+				SettingKey: "vulnerabilityScanEnabled",
+				Label:      "Scheduled vulnerability scan enabled",
 			},
 		},
 	},
@@ -228,9 +222,8 @@ var jobMetadataRegistry = map[string]JobMetadata{
 		CanRunManually: true,
 		Prerequisites: []JobPrerequisiteMetadata{
 			{
-				SettingKey:  "imageAutoPatchEnabled",
-				Label:       "Scheduled image patching enabled",
-				SettingsURL: "/settings/security",
+				SettingKey: "imageAutoPatchEnabled",
+				Label:      "Scheduled image patching enabled",
 			},
 		},
 	},
@@ -246,9 +239,8 @@ var jobMetadataRegistry = map[string]JobMetadata{
 		CanRunManually: true,
 		Prerequisites: []JobPrerequisiteMetadata{
 			{
-				SettingKey:  "autoHealEnabled",
-				Label:       "Auto heal enabled",
-				SettingsURL: "/settings/general",
+				SettingKey: "autoHealEnabled",
+				Label:      "Auto heal enabled",
 			},
 		},
 	},

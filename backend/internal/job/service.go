@@ -376,10 +376,9 @@ func (s *JobService) evaluatePrerequisites(ctx context.Context, localMeta types.
 
 	for _, prereq := range localMeta.Prerequisites {
 		prerequisites = append(prerequisites, types.JobPrerequisite{
-			SettingKey:  prereq.SettingKey,
-			Label:       prereq.Label,
-			IsMet:       s.settings.GetBoolSetting(ctx, prereq.SettingKey),
-			SettingsURL: prereq.SettingsURL,
+			SettingKey: prereq.SettingKey,
+			Label:      prereq.Label,
+			IsMet:      s.settings.GetBoolSetting(ctx, prereq.SettingKey),
 		})
 	}
 

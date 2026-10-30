@@ -27,7 +27,7 @@
 	import type { ContainerSummaryDto } from '#lib/types/docker.js';
 	import type { JobStatus, JobPrerequisite } from '#lib/types/settings.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
-	import { hasPermission, isInAppPath } from '#lib/utils/auth.js';
+	import { hasPermission } from '#lib/utils/auth.js';
 	import {
 		UPDATE_CHECK_LABEL,
 		UPDATE_DELAY_LABEL,
@@ -49,7 +49,7 @@
 				...response,
 				jobs: response.jobs.map((job) => ({
 					...job,
-					prerequisites: (job.prerequisites ?? []).map((prereq) => ({ ...prereq, settingsUrl: resolveSettingsUrl(job, prereq) }))
+					prerequisites: (job.prerequisites ?? []).map((prereq) => ({ ...prereq, settingsUrl: resolveSettingsUrl(prereq) }))
 				}))
 			};
 		},
@@ -96,9 +96,7 @@
 		return parseExcludedContainerSet(formInputs.autoUpdateExcludedContainers?.value);
 	});
 
-	function resolveSettingsUrl(_job: JobStatus, prereq: JobPrerequisite): ResolvedPathname | undefined {
-		if (!isInAppPath(prereq.settingsUrl)) return undefined;
-		if (!environmentId) return prereq.settingsUrl;
+	function resolveSettingsUrl(prereq: JobPrerequisite): ResolvedPathname | undefined {
 		const scopedEnvironmentId = page.url.searchParams.get('env');
 
 		switch (prereq.settingKey) {
@@ -109,14 +107,12 @@
 				return scopedEnvironmentId
 					? resolve(`/(app)/settings/automations?env=${encodeURIComponent(scopedEnvironmentId)}`)
 					: resolve('/(app)/settings/automations');
-			case 'vulnerabilityScanEnabled':
-				return undefined;
 			case 'imageAutoPatchEnabled':
 				return scopedEnvironmentId
 					? resolve(`/(app)/settings/security?env=${encodeURIComponent(scopedEnvironmentId)}`)
 					: resolve('/(app)/settings/security');
 			default:
-				return prereq.settingsUrl;
+				return undefined;
 		}
 	}
 
