@@ -18,9 +18,10 @@
 	import { onMount } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
-	import { EyeOnIcon } from '#lib/icons/index.js';
+	import { AlertIcon, EyeOnIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { TopologyEdgeDto } from '#lib/types/docker.js';
 	import { cn } from '#lib/utils.js';
@@ -509,35 +510,45 @@
 			<p class="text-base font-medium text-foreground">{m.networks_topology_empty()}</p>
 		</div>
 	{:else if browser && isReady}
-		<div class="network-diagram-shell overflow-hidden rounded-3xl border">
-			<SvelteFlow
-				nodes={diagramNodes}
-				edges={diagramEdges}
-				colorMode={isDarkMode ? 'dark' : 'light'}
-				fitView
-				minZoom={0.35}
-				maxZoom={1.75}
-				zoomOnScroll
-				zoomOnPinch
-				panOnDrag
-				nodesDraggable
-				nodesConnectable={false}
-				elementsSelectable
-				attributionPosition="bottom-left"
-				class="network-diagram-flow"
-				onnodeclick={handleNodeClick}
-			>
-				<Controls showLock={false} />
-				<MiniMap
-					bgColor={canvasTheme.minimapBackground}
-					maskColor={canvasTheme.minimapMask}
-					maskStrokeColor={canvasTheme.minimapMaskStroke}
-					nodeColor={miniMapColor}
-					nodeStrokeColor={miniMapColor}
-				/>
-				<Background variant={BackgroundVariant.Dots} gap={18} size={1.2} bgColor={canvasTheme.backgroundDots} />
-			</SvelteFlow>
-		</div>
+		<svelte:boundary>
+			<div class="network-diagram-shell overflow-hidden rounded-3xl border">
+				<SvelteFlow
+					nodes={diagramNodes}
+					edges={diagramEdges}
+					colorMode={isDarkMode ? 'dark' : 'light'}
+					fitView
+					minZoom={0.35}
+					maxZoom={1.75}
+					zoomOnScroll
+					zoomOnPinch
+					panOnDrag
+					nodesDraggable
+					nodesConnectable={false}
+					elementsSelectable
+					attributionPosition="bottom-left"
+					class="network-diagram-flow"
+					onnodeclick={handleNodeClick}
+				>
+					<Controls showLock={false} />
+					<MiniMap
+						bgColor={canvasTheme.minimapBackground}
+						maskColor={canvasTheme.minimapMask}
+						maskStrokeColor={canvasTheme.minimapMaskStroke}
+						nodeColor={miniMapColor}
+						nodeStrokeColor={miniMapColor}
+					/>
+					<Background variant={BackgroundVariant.Dots} gap={18} size={1.2} bgColor={canvasTheme.backgroundDots} />
+				</SvelteFlow>
+			</div>
+
+			{#snippet failed(_renderError: unknown, reset: () => void)}
+				<Alert.Root variant="destructive" icon={AlertIcon} heading={m.error_generic()}>
+					<div class="mt-3">
+						<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onclick={reset} />
+					</div>
+				</Alert.Root>
+			{/snippet}
+		</svelte:boundary>
 	{/if}
 </div>
 

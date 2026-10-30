@@ -251,7 +251,7 @@
 						id: 'update',
 						label: m.updates_bulk_update({ count: selectedIds.length }),
 						action: 'update',
-						onClick: handleBulkUpdate,
+						onclick: handleBulkUpdate,
 						loading: bulkUpdating,
 						disabled: bulkUpdating,
 						icon: UpdateIcon

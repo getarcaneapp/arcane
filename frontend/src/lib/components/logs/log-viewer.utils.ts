@@ -5,9 +5,9 @@ export interface LogViewerEntry {
 	timestamp: string;
 	level: 'stdout' | 'stderr' | 'info' | 'error';
 	message: string;
+	html: string;
 	service?: string;
 	containerId?: string;
-	/** Parse result cached by getStructuredLog; absent until first requested. */
 	structured?: StructuredLogResult;
 }
 
@@ -259,7 +259,6 @@ function tryParseLogfmt(message: string): Record<string, unknown> | null {
 	return Object.keys(parsed).length > 0 ? parsed : null;
 }
 
-/** Parses an entry's message on first use and caches the result on the entry. */
 export function getStructuredLog(entry: LogViewerEntry): StructuredLogResult {
 	entry.structured ??= tryParseStructuredLog(entry.message);
 	return entry.structured;

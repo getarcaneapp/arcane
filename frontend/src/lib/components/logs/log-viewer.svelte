@@ -4,18 +4,20 @@
 	import { dev } from '$app/env';
 	import { onDestroy, untrack } from 'svelte';
 
-	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { createVirtualizer } from '#lib/components/ui/virtualizer.svelte.js';
 	import VirtualRows from '#lib/components/virtual-rows.svelte';
-	import { ArrowDownIcon, ArrowRightIcon } from '#lib/icons/index.js';
+	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
+	import { AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { cn } from '#lib/utils.js';
-	import { ansiToHtml, formatDateTime, nowInstantString } from '#lib/utils/formatting.js';
+	import { ansiToHtml, nowInstantString } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { ReconnectingWebSocket } from '#lib/utils/ws.js';
 
+	import LogRow from './log-row.svelte';
 	import { buildLogDisplayEntries, getStructuredLog, type LogViewerDisplayEntry, type LogViewerEntry } from './log-viewer.utils';
-	import StructuredLogEntry from './structured-log-entry.svelte';
 
 	interface Props {
 		class?: string;
@@ -59,65 +61,61 @@
 		searchTerm = ''
 	}: Props = $props();
 
+	const isMobile = new IsMobile();
+
 	let logs = $state.raw<LogViewerEntry[]>([]);
-	// Bumped when entries are pushed onto `logs` in place, which $state.raw does not track.
-	let logsVersion = $state(0);
 	let pending: LogViewerEntry[] = [];
 	let flushFrame: number | null = null;
 	let seq = 0;
+	let lastAppend: { from: LogViewerEntry[]; to: LogViewerEntry[]; batch: LogViewerEntry[] } | null = null;
+	let filterCache: { term: string; source: LogViewerEntry[]; result: LogViewerEntry[] } | null = null;
 
-	let dropBefore = $state(0);
+	const lineCap = $derived(Math.max(1, maxLines));
 
-	const COMPACT_FACTOR = 2;
-	let lastCompactSeq = 0;
+	function matchesSearch(entry: LogViewerEntry, term: string): boolean {
+		return entry.message.toLowerCase().includes(term) || !!entry.service?.toLowerCase().includes(term);
+	}
 
-	let visibleLogs = $derived.by(() => {
-		void logsVersion;
-		const kept = dropBefore === 0 ? logs : logs.filter((l) => l.id >= dropBefore);
+	const visibleLogs = $derived.by(() => {
 		const term = searchTerm.trim().toLowerCase();
-		if (!term) return kept;
-		return kept.filter((l) => l.message.toLowerCase().includes(term) || l.service?.toLowerCase().includes(term));
-	});
-
-	// Reads logsVersion directly: an in-place append leaves visibleLogs referentially unchanged.
-	let displayLogs = $derived.by(() => {
-		void logsVersion;
-		return buildLogDisplayEntries(visibleLogs, {
-			groupAdjacentLines,
-			type
-		});
-	});
-	let expandedGroups = $state<Set<number>>(new Set());
-	let hasAutoEnabledStructuredView = $state(false);
-
-	function maybeCompact() {
-		const threshold = maxLines * COMPACT_FACTOR;
-		if (logs.length <= threshold) return;
-		if (seq - lastCompactSeq < maxLines) return;
-
-		// Keep the most recent maxLines entries, trim older ones
-		const keepCount = Math.max(1, maxLines);
-		if (logs.length > keepCount) {
-			const start = logs.length - keepCount;
-			logs = logs.slice(start);
+		const source = logs;
+		if (!term) {
+			filterCache = null;
+			return source;
 		}
 
-		// mark compaction point and clear dropBefore so future compactions don't rely on it
-		lastCompactSeq = seq;
-		dropBefore = 0;
-	}
+		const cache = filterCache;
+		const append = lastAppend;
+		let result: LogViewerEntry[];
+		if (cache && append && cache.term === term && cache.source === append.from && append.to === source) {
+			const firstId = source[0]?.id ?? 0;
+			const added = append.batch.filter((entry) => entry.id >= firstId && matchesSearch(entry, term));
+			const start = cache.result.findIndex((entry) => entry.id >= firstId);
+			const kept = start === -1 ? [] : cache.result.slice(start);
+			result = start === 0 && added.length === 0 ? cache.result : kept.concat(added);
+		} else {
+			result = source.filter((entry) => matchesSearch(entry, term));
+		}
+
+		filterCache = { term, source, result };
+		return result;
+	});
+
+	const displayLogs = $derived(buildLogDisplayEntries(visibleLogs, { groupAdjacentLines, type }));
+	let expandedGroups = $state<Set<number>>(new Set());
+	let hasAutoEnabledStructuredView = $state(false);
 
 	function scheduleFlush() {
 		if (flushFrame !== null) return;
 		flushFrame = requestAnimationFrame(() => {
 			flushFrame = null;
 			if (!pending.length) return;
-			for (const entry of pending) logs.push(entry);
+			const batch = pending;
 			pending = [];
-			logsVersion++;
-			if (logs.length > maxLines * COMPACT_FACTOR) {
-				maybeCompact();
-			}
+			const merged = logs.concat(batch);
+			const next = merged.length > lineCap ? merged.slice(-lineCap) : merged;
+			lastAppend = { from: logs, to: next, batch };
+			logs = next;
 		});
 	}
 
@@ -126,13 +124,16 @@
 		flushFrame = null;
 	}
 
-	function resetLogState() {
+	function clearBuffer() {
 		cancelFlush();
-		logs = [];
 		pending = [];
+		lastAppend = null;
+		logs = [];
+	}
+
+	function resetLogState() {
+		clearBuffer();
 		seq = 0;
-		dropBefore = 0;
-		lastCompactSeq = 0;
 		expandedGroups = new Set();
 		hasAutoEnabledStructuredView = false;
 	}
@@ -143,7 +144,7 @@
 		if (hard) {
 			resetLogState();
 		} else {
-			dropBefore = seq;
+			clearBuffer();
 		}
 
 		if (opts?.restart) {
@@ -166,6 +167,7 @@
 	let currentStreamKey: string | null = null;
 	let streamSession = 0;
 	let currentStreamSession = 0;
+	let restartPending = false;
 
 	function streamKey() {
 		if (type === 'project') return projectId ? `${environmentId}:project:${projectId}` : null;
@@ -342,6 +344,7 @@
 			timestamp: logData.timestamp || nowInstantString(),
 			level: logData.level as LogViewerEntry['level'],
 			message: logData.message,
+			html: ansiToHtml(logData.message),
 			service: logData.service,
 			containerId: logData.containerId ?? (type === 'container' ? (containerId ?? undefined) : undefined)
 		};
@@ -352,7 +355,7 @@
 		}
 
 		pending.push(entry);
-		if (pending.length > maxLines * COMPACT_FACTOR) pending = pending.slice(-Math.max(1, maxLines));
+		if (pending.length > lineCap * 2) pending = pending.slice(-lineCap);
 		scheduleFlush();
 	}
 
@@ -374,48 +377,6 @@
 		return logs.length;
 	}
 
-	function getLevelClass(level: LogViewerEntry['level']): string {
-		switch (level) {
-			case 'stderr':
-			case 'error':
-				return 'text-destructive';
-			case 'stdout':
-			case 'info':
-				return 'text-success';
-			default:
-				return 'text-foreground/80';
-		}
-	}
-
-	// Generate consistent color for service names (similar to docker compose)
-	function getServiceColor(service: string): string {
-		const colors = [
-			'text-cyan',
-			'text-warning',
-			'text-success',
-			'text-info',
-			'text-purple',
-			'text-pink',
-			'text-orange',
-			'text-teal',
-			'text-lime',
-			'text-indigo',
-			'text-fuchsia',
-			'text-rose'
-		];
-
-		// Simple hash function to consistently map service names to colors
-		let hash = 0;
-		for (let i = 0; i < service.length; i++) {
-			hash = service.charCodeAt(i) + ((hash << 5) - hash);
-		}
-		return colors[Math.abs(hash) % colors.length] ?? 'text-foreground/80';
-	}
-
-	function isStructuredLogData(value: unknown): value is Record<string, unknown> {
-		return !!value && typeof value === 'object' && !Array.isArray(value);
-	}
-
 	// Keep short logs on the plain render path.
 	const VIRTUALIZE_THRESHOLD = 100;
 	const shouldVirtualize = $derived(displayLogs.length > VIRTUALIZE_THRESHOLD);
@@ -432,70 +393,51 @@
 	$effect(() => {
 		void displayLogs;
 		void rowVirtualizer.totalSize;
-		if (logContainer && untrack(() => autoScroll)) {
-			logContainer.scrollTop = logContainer.scrollHeight;
-		}
+		const container = logContainer;
+		if (!container || !untrack(() => autoScroll)) return;
+		const frame = requestAnimationFrame(() => {
+			container.scrollTop = container.scrollHeight;
+		});
+		return () => cancelAnimationFrame(frame);
 	});
 
 	$effect(() => {
 		const key = streamKey();
+		const wasStreaming = untrack(() => shouldBeStreaming) || restartPending;
 		if (!key) {
-			if (currentStreamKey && shouldBeStreaming) {
+			if (currentStreamKey && wasStreaming) {
 				stopLogStream(false);
 			}
+			restartPending = false;
 			currentStreamKey = null;
 			return;
 		}
 
 		// If key changed while streaming, restart with new key
 		if (currentStreamKey && currentStreamKey !== key) {
-			const wasStreaming = shouldBeStreaming;
 			currentStreamKey = key;
 
-			if (wasStreaming) {
-				(async () => {
-					await stopLogStream(false);
-					logs = [];
-					hasAutoEnabledStructuredView = false;
-					if (currentStreamKey === key) {
-						startLogStream();
-					}
-				})();
-			} else {
-				logs = [];
-				hasAutoEnabledStructuredView = false;
+			if (!wasStreaming) {
+				untrack(resetLogState);
+				return;
 			}
+
+			let cancelled = false;
+			restartPending = true;
+			(async () => {
+				await stopLogStream(false);
+				if (cancelled) return;
+				restartPending = false;
+				if (currentStreamKey === key) startLogStream();
+			})();
+			return () => {
+				cancelled = true;
+			};
 		} else if (!currentStreamKey) {
 			// First time - just set the key, don't auto-start
 			currentStreamKey = key;
 		}
 	});
-
-	function getDisplayEntryLevel(displayEntry: LogViewerDisplayEntry): LogViewerEntry['level'] {
-		return displayEntry.entries[0]?.level ?? 'stdout';
-	}
-
-	function getDisplayEntryService(displayEntry: LogViewerDisplayEntry): string | undefined {
-		return displayEntry.entries[0]?.service;
-	}
-
-	function getDisplayEntryTimestamp(displayEntry: LogViewerDisplayEntry): string | undefined {
-		return displayEntry.entries[0]?.timestamp;
-	}
-
-	function formatLogTimestamp(timestamp: string | undefined): string {
-		if (!timestamp) return '';
-		return (
-			formatDateTime(timestamp, {
-				dateStyle: 'short',
-				includeSeconds: true
-			}) || timestamp
-		);
-	}
-
-	function isGroupExpanded(displayEntry: LogViewerDisplayEntry): boolean {
-		return expandedGroups.has(displayEntry.id);
-	}
 
 	function setGroupExpanded(displayEntry: LogViewerDisplayEntry, open: boolean) {
 		const next = new Set(expandedGroups);
@@ -506,158 +448,20 @@
 		}
 		expandedGroups = next;
 	}
-
-	function getGroupedSummaryCount(displayEntry: LogViewerDisplayEntry): number {
-		return Math.max(displayEntry.entries.length - 1, 0);
-	}
 </script>
 
-{#snippet renderLogMessage(entry: LogViewerEntry, contentClass: string)}
-	{@const structured = showParsedJson ? getStructuredLog(entry) : null}
-	<div class={contentClass}>
-		{#if structured?.isStructured && isStructuredLogData(structured.parsed)}
-			<StructuredLogEntry data={structured.parsed} rawJson={entry.message} />
-		{:else}
-			{@html ansiToHtml(entry.message)}
-		{/if}
-	</div>
-{/snippet}
-
-{#snippet renderLevelLabel(level: LogViewerEntry['level'], labelClass: string)}
-	{#if showStreamLabels || (level !== 'stdout' && level !== 'stderr')}
-		<span class={cn('shrink-0', labelClass, getLevelClass(level))}>
-			{level.toUpperCase()}
-		</span>
-	{:else}
-		<span
-			class={cn('inline-flex h-4 shrink-0 items-center', labelClass, getLevelClass(level))}
-			role="img"
-			aria-label={level.toUpperCase()}
-			title={level.toUpperCase()}
-			data-stream={level}
-		>
-			<span class={cn('size-2 bg-current', level === 'stdout' ? 'rounded-full' : 'rounded-xs')}></span>
-		</span>
-	{/if}
-{/snippet}
-
-{#snippet renderGroupedSummary(displayEntry: LogViewerDisplayEntry, contentClass: string)}
-	<div class="flex min-w-0 items-start gap-2">
-		<Collapsible.Trigger>
-			{#snippet child({ props })}
-				<button
-					{...props}
-					type="button"
-					class="inline-flex shrink-0 items-center gap-1 rounded border border-transparent px-1 py-0.5 text-muted-foreground outline-none hover:bg-white/4 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-				>
-					{#if isGroupExpanded(displayEntry)}
-						<ArrowDownIcon class="size-4" />
-					{:else}
-						<ArrowRightIcon class="size-4" />
-					{/if}
-					<span class="text-2xs font-medium">+{getGroupedSummaryCount(displayEntry)}</span>
-				</button>
-			{/snippet}
-		</Collapsible.Trigger>
-
-		{@render renderLogMessage(displayEntry.entries[0]!, contentClass)}
-	</div>
-{/snippet}
-
 {#snippet logRow(displayLog: LogViewerDisplayEntry, index: number)}
-	<!-- Mobile view -->
-	<div
-		class={cn(
-			'border-l-2 border-transparent px-3 py-2 transition-colors hover:border-info hover:bg-card/50 sm:hidden',
-			index % 2 === 1 && 'bg-card/60'
-		)}
-	>
-		<div class="mb-1 flex flex-wrap items-center gap-2 text-xs">
-			{#if showTimestamps && getDisplayEntryTimestamp(displayLog)}
-				<span
-					class="inline-flex shrink-0 self-start rounded-md border border-info/15 bg-card px-2 py-1 font-semibold text-info tabular-nums"
-					title={getDisplayEntryTimestamp(displayLog)}
-				>
-					{formatLogTimestamp(getDisplayEntryTimestamp(displayLog))}
-				</span>
-			{/if}
-			{#if type === 'project' && getDisplayEntryService(displayLog)}
-				<span
-					class="shrink-0 truncate font-semibold {getServiceColor(getDisplayEntryService(displayLog)!)}"
-					title={getDisplayEntryService(displayLog)}
-				>
-					{getDisplayEntryService(displayLog)}
-				</span>
-			{/if}
-			{@render renderLevelLabel(getDisplayEntryLevel(displayLog), '')}
-		</div>
-		{#if displayLog.grouped}
-			<Collapsible.Root open={isGroupExpanded(displayLog)} onOpenChange={(open: boolean) => setGroupExpanded(displayLog, open)}>
-				{@render renderGroupedSummary(displayLog, 'text-sm break-words whitespace-pre-wrap text-foreground/80')}
-				<Collapsible.Content>
-					<div class="mt-2 space-y-1.5 border-l border-border pl-4">
-						{#each displayLog.entries.slice(1) as entry (entry.id)}
-							{@render renderLogMessage(entry, 'text-sm break-words whitespace-pre-wrap text-foreground/80')}
-						{/each}
-					</div>
-				</Collapsible.Content>
-			</Collapsible.Root>
-		{:else}
-			<div class="flex flex-col gap-1.5">
-				{#each displayLog.entries as entry (entry.id)}
-					{@render renderLogMessage(entry, 'text-sm break-words whitespace-pre-wrap text-foreground/80')}
-				{/each}
-			</div>
-		{/if}
-	</div>
-
-	<!-- Desktop view -->
-	<div
-		class={cn(
-			'hidden items-start border-l-2 border-transparent px-3 py-1.5 transition-colors hover:border-info hover:bg-card/50 sm:flex',
-			index % 2 === 1 && 'bg-card/60'
-		)}
-	>
-		{#if showTimestamps && getDisplayEntryTimestamp(displayLog)}
-			<span
-				class="mr-3 inline-flex min-w-44.5 shrink-0 self-start rounded-md border border-info/15 bg-card px-2.5 py-1 text-2xs font-semibold text-info tabular-nums"
-				title={getDisplayEntryTimestamp(displayLog)}
-			>
-				{formatLogTimestamp(getDisplayEntryTimestamp(displayLog))}
-			</span>
-		{/if}
-		{#if type === 'project' && getDisplayEntryService(displayLog)}
-			<span
-				class="mr-3 max-w-30 min-w-30 shrink-0 truncate text-xs font-semibold {getServiceColor(
-					getDisplayEntryService(displayLog)!
-				)}"
-				title={getDisplayEntryService(displayLog)}
-			>
-				{getDisplayEntryService(displayLog)}
-			</span>
-		{/if}
-		{@render renderLevelLabel(getDisplayEntryLevel(displayLog), 'mr-2 min-w-fit pt-1 text-xs')}
-		<div class="min-w-0 flex-1">
-			{#if displayLog.grouped}
-				<Collapsible.Root open={isGroupExpanded(displayLog)} onOpenChange={(open: boolean) => setGroupExpanded(displayLog, open)}>
-					{@render renderGroupedSummary(displayLog, 'break-words whitespace-pre-wrap text-foreground/80')}
-					<Collapsible.Content>
-						<div class="mt-2 space-y-1 border-l border-border pl-4">
-							{#each displayLog.entries.slice(1) as entry (entry.id)}
-								{@render renderLogMessage(entry, 'break-words whitespace-pre-wrap text-foreground/80')}
-							{/each}
-						</div>
-					</Collapsible.Content>
-				</Collapsible.Root>
-			{:else}
-				<div class="flex flex-1 flex-col gap-1">
-					{#each displayLog.entries as entry (entry.id)}
-						{@render renderLogMessage(entry, 'break-words whitespace-pre-wrap text-foreground/80')}
-					{/each}
-				</div>
-			{/if}
-		</div>
-	</div>
+	<LogRow
+		{displayLog}
+		{index}
+		mobile={isMobile.current}
+		{type}
+		{showTimestamps}
+		{showParsedJson}
+		{showStreamLabels}
+		expanded={expandedGroups.has(displayLog.id)}
+		onExpandedChange={(open) => setGroupExpanded(displayLog, open)}
+	/>
 {/snippet}
 
 <div
@@ -667,7 +471,7 @@
 		className
 	)}
 >
-	{#if error}
+	{#if error && displayLogs.length > 0}
 		<div class="border-b border-destructive bg-destructive/10 p-3 text-sm text-destructive">
 			{error}
 		</div>
@@ -689,21 +493,42 @@
 		data-is-streaming={isStreaming}
 	>
 		{#if displayLogs.length === 0}
-			<div class="p-4 text-center text-muted-foreground">
-				{#if !(containerId || projectId || serviceId)}
-					{m.log_viewer_no_selection({ type: humanType })}
-				{:else if !isStreaming}
-					{m.log_viewer_no_logs_available()}
-				{:else}
-					{m.log_viewer_waiting_for_logs()}
-				{/if}
-			</div>
-		{:else if shouldVirtualize}
-			<VirtualRows virtualizer={rowVirtualizer} rows={displayLogs} row={logRow} />
+			{#if error}
+				<div class="flex flex-col items-center gap-1 p-4 text-center" role="status">
+					<span class="font-semibold text-destructive">{m.common_unavailable()}</span>
+					<span class="text-muted-foreground">{error}</span>
+				</div>
+			{:else}
+				<div class="p-4 text-center text-muted-foreground">
+					{#if !(containerId || projectId || serviceId)}
+						{m.log_viewer_no_selection({ type: humanType })}
+					{:else if !isStreaming}
+						{m.log_viewer_no_logs_available()}
+					{:else}
+						{m.log_viewer_waiting_for_logs()}
+					{/if}
+				</div>
+			{/if}
 		{:else}
-			{#each displayLogs as displayLog, index (displayLog.key)}
-				{@render logRow(displayLog, index)}
-			{/each}
+			<svelte:boundary>
+				{#if shouldVirtualize}
+					<VirtualRows virtualizer={rowVirtualizer} rows={displayLogs} row={logRow} />
+				{:else}
+					{#each displayLogs as displayLog, index (displayLog.key)}
+						{@render logRow(displayLog, index)}
+					{/each}
+				{/if}
+
+				{#snippet failed(_renderError: unknown, reset: () => void)}
+					<div class="p-4">
+						<Alert.Root variant="destructive" icon={AlertIcon} heading={m.error_generic()}>
+							<div class="mt-3">
+								<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onclick={reset} />
+							</div>
+						</Alert.Root>
+					</div>
+				{/snippet}
+			</svelte:boundary>
 		{/if}
 	</div>
 </div>

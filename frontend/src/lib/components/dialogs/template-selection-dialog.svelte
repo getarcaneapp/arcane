@@ -30,6 +30,7 @@
 	import { templateService } from '#lib/services/template-service.js';
 	import type { Template } from '#lib/types/swarm.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
+	import { withOccurrenceKeys } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	interface Props {
@@ -250,9 +251,8 @@
 
 			{#if normalizeTags(template.metadata?.tags).length > 0}
 				<div class="mb-3 flex flex-wrap gap-1">
-					<!-- Template metadata may contain duplicate tags; badges have no local state. -->
-					{#each normalizeTags(template.metadata?.tags) as tag}
-						<Badge variant="outline" size="sm">{tag}</Badge>
+					{#each withOccurrenceKeys(normalizeTags(template.metadata?.tags)) as tag (tag.key)}
+						<Badge variant="outline" size="sm">{tag.value}</Badge>
 					{/each}
 				</div>
 			{/if}

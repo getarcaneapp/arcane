@@ -72,7 +72,7 @@
 	} from '#lib/utils/compose-flow.js';
 	import { getStatusVariant, getThemedIconUrl } from '#lib/utils/docker.js';
 	import { environmentName, listScopes } from '#lib/utils/environments.js';
-	import { capitalizeFirstLetter } from '#lib/utils/formatting.js';
+	import { capitalizeFirstLetter, withOccurrenceKeys } from '#lib/utils/formatting.js';
 	import { gitOpsComposeEditUrl, gitOpsFileEditUrl, gitOpsProjectUrl } from '#lib/utils/gitops.js';
 	import { toGitRouteUrl, toSafeHref } from '#lib/utils/navigation.js';
 	import { changedFields } from '#lib/utils/payload.js';
@@ -1958,9 +1958,8 @@
 			<Alert.Description>
 				{m.compose_multiple_files_description()}
 				<div class="mt-2 flex flex-wrap gap-1.5">
-					<!-- COMPOSE_FILE preserves repeated paths; these badges render only text. -->
-					{#each composeFiles as file}
-						<span class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{file}</span>
+					{#each withOccurrenceKeys(composeFiles) as file (file.key)}
+						<span class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{file.value}</span>
 					{/each}
 				</div>
 			</Alert.Description>

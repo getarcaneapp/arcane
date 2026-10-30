@@ -162,21 +162,9 @@
 
 		const layoutKey = columnKey;
 		let width = 0;
-		const remeasure = () => {
-			const row = body.querySelector<HTMLTableRowElement>('tr[data-entry-kind="row"]');
-			const height = row?.getBoundingClientRect().height;
-			if (height) measuredRowHeight = height;
-			rowVirtualizer.measure();
-		};
-		const updateLayout = () => {
-			const nextWidth = tableNode.getBoundingClientRect().width;
-			scrollMargin =
-				body.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - container.clientTop;
-			if (nextWidth !== width) {
-				width = nextWidth;
-				remeasure();
-			}
-		};
+		let forceRemeasure = false;
+		let columnsPending = false;
+		let frame = 0;
 		const measureColumns = () => {
 			if (columnWidths || !body.querySelector('tr[data-index]')) return;
 			const cells = tableNode.tHead?.rows[0]?.cells;
@@ -186,20 +174,37 @@
 				widths: Array.from(cells, (cell) => cell.getBoundingClientRect().width)
 			};
 		};
+		const scheduleLayout = () => {
+			cancelAnimationFrame(frame);
+			frame = requestAnimationFrame(() => {
+				if (columnsPending) measureColumns();
+				columnsPending = false;
+				const nextWidth = tableNode.getBoundingClientRect().width;
+				scrollMargin =
+					body.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop - container.clientTop;
+				if (nextWidth === width && !forceRemeasure) return;
+				width = nextWidth;
+				forceRemeasure = false;
+				const height = body.querySelector<HTMLTableRowElement>('tr[data-entry-kind="row"]')?.getBoundingClientRect().height;
+				if (height) measuredRowHeight = height;
+				rowVirtualizer.measure();
+			});
+		};
 		const fontsChanged = () => {
-			remeasure();
-			updateLayout();
+			forceRemeasure = true;
+			scheduleLayout();
 		};
 		const observer = new ResizeObserver(() => {
-			measureColumns();
-			updateLayout();
+			columnsPending = true;
+			scheduleLayout();
 		});
 		observer.observe(tableNode);
 		observer.observe(container);
 		if (tableNode.tHead) observer.observe(tableNode.tHead);
 		document.fonts.addEventListener('loadingdone', fontsChanged);
-		untrack(updateLayout);
+		scheduleLayout();
 		return () => {
+			cancelAnimationFrame(frame);
 			observer.disconnect();
 			document.fonts.removeEventListener('loadingdone', fontsChanged);
 		};

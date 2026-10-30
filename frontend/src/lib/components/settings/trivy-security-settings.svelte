@@ -3,7 +3,6 @@
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
-	import CodeEditor from '#lib/components/code-editor/editor.svelte';
 	import FeatureDisabled from '#lib/components/features/feature-disabled.svelte';
 	import SearchableSelect from '#lib/components/form/searchable-select.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
@@ -183,29 +182,41 @@
 
 			<SettingsRow label={m.security_trivy_config_label()} description={m.security_trivy_config_description()} layout="wide">
 				<div class="overflow-hidden rounded-md border border-border/60">
-					<CodeEditor
-						bind:value={formInputs.trivyConfig.value}
-						language="yaml"
-						validationMode="none"
-						autoHeight={true}
-						statusBar={false}
-						fontSize="13px"
-						placeholder={m.security_trivy_config_placeholder()}
-					/>
+					{#await import('#lib/components/code-editor/editor.svelte')}
+						<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
+					{:then { default: CodeEditor }}
+						<CodeEditor
+							bind:value={formInputs.trivyConfig.value}
+							language="yaml"
+							validationMode="none"
+							autoHeight={true}
+							statusBar={false}
+							fontSize="13px"
+							placeholder={m.security_trivy_config_placeholder()}
+						/>
+					{:catch}
+						<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
+					{/await}
 				</div>
 			</SettingsRow>
 
 			<SettingsRow label={m.security_trivy_ignore_label()} description={m.security_trivy_ignore_description()} layout="wide">
 				<div class="overflow-hidden rounded-md border border-border/60">
-					<CodeEditor
-						bind:value={formInputs.trivyIgnore.value}
-						language="plaintext"
-						validationMode="none"
-						autoHeight={true}
-						statusBar={false}
-						fontSize="13px"
-						placeholder={m.security_trivy_ignore_placeholder()}
-					/>
+					{#await import('#lib/components/code-editor/editor.svelte')}
+						<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
+					{:then { default: CodeEditor }}
+						<CodeEditor
+							bind:value={formInputs.trivyIgnore.value}
+							language="plaintext"
+							validationMode="none"
+							autoHeight={true}
+							statusBar={false}
+							fontSize="13px"
+							placeholder={m.security_trivy_ignore_placeholder()}
+						/>
+					{:catch}
+						<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
+					{/await}
 				</div>
 			</SettingsRow>
 

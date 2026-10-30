@@ -88,8 +88,6 @@
 	$effect(() => {
 		const container = scrollElement;
 		if (!container || !shouldVirtualize) return;
-		// Field changes invalidate cached heights for cards outside the viewport.
-		JSON.stringify(mobileFieldVisibility);
 		let width = container.clientWidth;
 		const observer = new ResizeObserver(() => {
 			if (container.clientWidth !== width) {
@@ -100,11 +98,15 @@
 		observer.observe(container);
 		const remeasure = () => rowVirtualizer.measure();
 		document.fonts.addEventListener('loadingdone', remeasure);
-		untrack(remeasure);
 		return () => {
 			observer.disconnect();
 			document.fonts.removeEventListener('loadingdone', remeasure);
 		};
+	});
+
+	$effect(() => {
+		if (!scrollElement || !shouldVirtualize || !mobileFieldVisibility) return;
+		untrack(() => rowVirtualizer.measure());
 	});
 
 	$effect(() => {

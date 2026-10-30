@@ -261,7 +261,7 @@
 			id: 'remove',
 			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
 			action: 'remove',
-			onClick: handleDeleteSelected,
+			onclick: handleDeleteSelected,
 			loading: isLoading.removing,
 			disabled: isLoading.removing,
 			icon: Trash2Icon

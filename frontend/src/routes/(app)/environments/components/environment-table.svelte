@@ -230,7 +230,7 @@
 			id: 'remove',
 			label: m.common_remove_selected_count({ count: selectedIds?.length ?? 0 }),
 			action: 'remove',
-			onClick: onDeleteSelected,
+			onclick: onDeleteSelected,
 			loading: bulkDeleteLoading,
 			disabled: bulkDeleteLoading || isLoading.removing,
 			icon: TrashIcon

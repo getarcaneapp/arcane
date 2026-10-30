@@ -237,7 +237,7 @@
 			id: 'up',
 			label: m.projects_bulk_up({ count: selectedIds?.length ?? 0 }),
 			action: 'up',
-			onClick: handleBulkUp,
+			onclick: handleBulkUp,
 			loading: isBulkLoading.up,
 			disabled: !canDeployProject || isAnyLoading || hasArchivedSelection || hasConfigurationBlockedSelection,
 			disabledReason: selectionDisabledReason,
@@ -247,7 +247,7 @@
 			id: 'down',
 			label: m.projects_bulk_down({ count: selectedIds?.length ?? 0 }),
 			action: 'down',
-			onClick: handleBulkDown,
+			onclick: handleBulkDown,
 			loading: isBulkLoading.down,
 			disabled: !canDownProject || isAnyLoading || hasArchivedSelection || hasConfigurationBlockedSelection,
 			disabledReason: selectionDisabledReason,
@@ -257,7 +257,7 @@
 			id: 'redeploy',
 			label: m.projects_bulk_redeploy({ count: selectedIds?.length ?? 0 }),
 			action: 'redeploy',
-			onClick: handleBulkRedeploy,
+			onclick: handleBulkRedeploy,
 			loading: isBulkLoading.redeploy,
 			disabled:
 				!canDeployProject ||
@@ -272,7 +272,7 @@
 			id: 'archive',
 			label: m.projects_bulk_archive({ count: selectedIds?.length ?? 0 }),
 			action: 'archive',
-			onClick: handleBulkArchive,
+			onclick: handleBulkArchive,
 			loading: isBulkLoading.archive,
 			disabled: !canArchiveProject || isAnyLoading || hasArchivedSelection || hasRunningSelection,
 			disabledReason: archiveDisabledReason

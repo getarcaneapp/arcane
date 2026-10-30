@@ -292,7 +292,7 @@
 			id: 'remove',
 			label: m.common_remove_selected_count({ count: deletableSelectedIds.length }),
 			action: 'remove',
-			onClick: () => handleDeleteSelected(deletableSelectedIds),
+			onclick: () => handleDeleteSelected(deletableSelectedIds),
 			loading: isLoading.removing,
 			disabled: !canDeleteVolume || isLoading.removing || deletableSelectedIds.length === 0,
 			icon: TrashIcon

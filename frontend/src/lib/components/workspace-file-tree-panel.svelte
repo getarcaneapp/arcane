@@ -4,6 +4,7 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import FileTreeRow from '#lib/components/file-tree-row.svelte';
+	import * as Alert from '#lib/components/ui/alert/index.js';
 	import * as Dialog from '#lib/components/ui/dialog/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
@@ -12,6 +13,7 @@
 	import { createVirtualizer } from '#lib/components/ui/virtualizer.svelte.js';
 	import VirtualRows from '#lib/components/virtual-rows.svelte';
 	import {
+		AlertIcon,
 		ArrowDownIcon,
 		ArrowRightIcon,
 		CreateFileIcon,
@@ -890,7 +892,19 @@
 	{#if readOnlyMessage}
 		<div class="border-b border-border px-3 py-2 text-xs text-muted-foreground">{readOnlyMessage}</div>
 	{/if}
-	{@render workspaceTree()}
+	<svelte:boundary>
+		{@render workspaceTree()}
+
+		{#snippet failed(_renderError: unknown, reset: () => void)}
+			<div class="p-2">
+				<Alert.Root variant="destructive" icon={AlertIcon} heading={m.error_generic()}>
+					<div class="mt-3">
+						<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onclick={reset} />
+					</div>
+				</Alert.Root>
+			</div>
+		{/snippet}
+	</svelte:boundary>
 </div>
 
 {@render workspaceDialog()}

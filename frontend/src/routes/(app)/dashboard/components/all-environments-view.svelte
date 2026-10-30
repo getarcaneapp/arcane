@@ -14,6 +14,7 @@
 	import * as StatStrip from '#lib/components/stat-strip/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import {
+		AlertIcon,
 		AlertTriangleIcon,
 		BoxIcon,
 		ContainersIcon,
@@ -925,19 +926,29 @@
 						{@const overview = overviewById.get(environment.id) ?? createBaseEnvironmentOverview(environment)}
 						{@const systemStats = getLiveStatsState(environment.id)?.stats ?? null}
 						{@const liveStatsStatus = getLiveStatsStatus(environment)}
-						<EnvironmentCard
-							{overview}
-							{systemStats}
-							{liveStatsStatus}
-							countsLoading={isEnvironmentCountsLoading(environment.id)}
-							menuButtons={getEnvironmentActionButtons(overview)}
-							{debugUpgrade}
-							debugVersionInfo={DEBUG_VERSION_INFO}
-							canUpgrade={canUpgradeEnvironment(environment.id)}
-							onRefreshRequested={refreshOverview}
-							bind:upgradeOpen={upgradeDialogOpenById[environment.id]}
-							bind:upgradeLoading={upgradeDialogUpgradingById[environment.id]}
-						/>
+						<svelte:boundary>
+							<EnvironmentCard
+								{overview}
+								{systemStats}
+								{liveStatsStatus}
+								countsLoading={isEnvironmentCountsLoading(environment.id)}
+								menuButtons={getEnvironmentActionButtons(overview)}
+								{debugUpgrade}
+								debugVersionInfo={DEBUG_VERSION_INFO}
+								canUpgrade={canUpgradeEnvironment(environment.id)}
+								onRefreshRequested={refreshOverview}
+								bind:upgradeOpen={upgradeDialogOpenById[environment.id]}
+								bind:upgradeLoading={upgradeDialogUpgradingById[environment.id]}
+							/>
+
+							{#snippet failed(_renderError: unknown, reset: () => void)}
+								<Alert.Root variant="destructive" icon={AlertIcon} heading={m.error_generic()}>
+									<div class="mt-3">
+										<ArcaneButton action="refresh" size="sm" customLabel={m.common_retry()} onclick={reset} />
+									</div>
+								</Alert.Root>
+							{/snippet}
+						</svelte:boundary>
 					{/each}
 				</div>
 			</div>

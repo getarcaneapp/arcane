@@ -117,7 +117,7 @@
 							<Table.Row variant="detail">
 								<Table.Cell colspan={3} variant="flush">
 									<ol transition:slide={{ duration: 200 }} class="space-y-1.5 px-6 py-4 font-mono text-2xs">
-										{#each group.frames as frame}
+										{#each group.frames as frame, index (`${index}:${frame.file}:${frame.line}`)}
 											<li>
 												<div class="break-all">{frame.function}</div>
 												<div class="break-all text-muted-foreground">{frame.file}:{frame.line}</div>

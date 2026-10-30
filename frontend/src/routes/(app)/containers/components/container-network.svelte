@@ -17,6 +17,7 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { getCustomHostname } from '#lib/utils/docker.js';
+	import { withOccurrenceKeys } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	interface Props {
@@ -269,10 +270,9 @@
 													{m.containers_aliases()}
 												</div>
 												<div class="space-y-1 text-sm font-medium text-foreground">
-													<!-- Docker may repeat aliases; these rows render only text. -->
-													{#each rawNetworkConfig.aliases as alias}
+													{#each withOccurrenceKeys(rawNetworkConfig.aliases) as alias (alias.key)}
 														<div class="cursor-pointer font-mono break-all select-all" title={m.common_click_to_select()}>
-															{alias}
+															{alias.value}
 														</div>
 														<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service network; typed props diverge across the boundary -->
 													{/each}
