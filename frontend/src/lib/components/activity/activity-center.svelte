@@ -20,8 +20,9 @@
 
 	const isMobile = new IsMobile();
 
+	const open = $derived(activityStore.open);
 	let expanded = $derived.by(() => {
-		void activityStore.open;
+		void open;
 		return false;
 	});
 	const anchor: Anchor = {

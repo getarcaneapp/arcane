@@ -62,44 +62,40 @@ import (
 )
 
 var (
-	upgradeLogName = regexp.MustCompile(`^arcane-upgrade-\d+\.log$`)
-	// exactReleaseTag pins an exact release (vX.Y.Z, prereleases included); channels like v2 or v2.9 are mutable.
+	upgradeLogName           = regexp.MustCompile(`^arcane-upgrade-\d+\.log$`)
 	exactReleaseTag          = regexp.MustCompile(`^v?\d+\.\d+\.\d+(?:[-+].*)?$`)
 	activeUpgradeJobStatuses = []UpgradeJobStatus{UpgradeJobStatusPendingRestart, UpgradeJobStatusRunning}
 	errUpgradeJobInProgress  = common.Classify(common.ErrUpgradeJobInProgress, errors.New("an upgrade job is already in progress"))
 )
 
 const (
-	// The run never finished observably: nothing may be concluded from it.
 	upgraderExitUnobserved upgraderExit = 0
 	upgraderExitSucceeded  upgraderExit = 1
 	upgraderExitFailed     upgraderExit = 2
-	// The upgrader is gone and its exit code with it: success and failure are indistinguishable.
-	upgraderExitCodeLost upgraderExit = 3
+	upgraderExitCodeLost   upgraderExit = 3
 
-	upgradeJobStaleThreshold      = time.Hour
-	upgradeJobAgentRequestTimeout = 15 * time.Second
-	upgradeJobRedialMaxBackoff    = 5 * time.Second
-	upgradeJobLegacyPollInterval  = 10 * time.Second
-	upgradeJobPublishInterval     = 250 * time.Millisecond
-	upgradeJobConfirmTimeout      = 5 * time.Minute
-	upgradeJobErrorMaxLen         = 500
-	upgradeJobMaxParallelAgents   = 4
-	upgradeJobWorkflowName        = "update-all"
-	// Generous: the upgrader pulls the target image before recreating anything.
-	upgradeJobManagerWatchTimeout = 15 * time.Minute
-	// How long a recreate already underway gets to stop this container before no restart is assumed.
+	upgradeJobStaleThreshold        = time.Hour
+	upgradeJobAgentRequestTimeout   = 15 * time.Second
+	upgradeJobRedialMaxBackoff      = 5 * time.Second
+	upgradeJobLegacyPollInterval    = 10 * time.Second
+	upgradeJobPublishInterval       = 250 * time.Millisecond
+	upgradeJobConfirmTimeout        = 5 * time.Minute
+	upgradeJobErrorMaxLen           = 500
+	upgradeJobMaxParallelAgents     = 16
+	upgradeJobWorkflowName          = "update-all"
+	upgradeJobManagerWatchTimeout   = 15 * time.Minute
 	upgradeJobManagerNoRestartGrace = 15 * time.Second
 )
 
 type Service struct {
-	progress     *progressFeed
-	jobHub       *agg.Hub[types.UpgradeJob]
-	jobChanged   chan struct{}
-	latestJob    atomic.Pointer[types.UpgradeJob]
-	flow         *flow.Engine
-	environments *environment.EnvironmentService
-	roles        *role.RoleService
+	progress       *progressFeed
+	jobHub         *agg.Hub[types.UpgradeJob]
+	jobChanged     chan struct{}
+	agentSlotFreed chan struct{}
+	latestJob      atomic.Pointer[types.UpgradeJob]
+	flow           *flow.Engine
+	environments   *environment.EnvironmentService
+	roles          *role.RoleService
 	// upgradeJobWorkflow upgrades agents in parallel, then the manager last.
 	upgradeJobWorkflow *flow.Workflow
 	db                 *database.DB
@@ -119,6 +115,8 @@ type Service struct {
 		selectReachableNetwork func(context.Context, *container.InspectResponse, string) string,
 	) ([]string, []mount.Mount, container.NetworkMode, error)
 	resultMu     sync.Mutex
+	agentSlotsMu sync.Mutex
+	activeAgents int
 	upgrading    atomic.Bool
 	startingJob  atomic.Bool
 	keepUpgrader bool
@@ -189,6 +187,7 @@ func NewService(
 		progress:              newProgressFeed(),
 		jobHub:                agg.NewHub[types.UpgradeJob](),
 		jobChanged:            make(chan struct{}, 1),
+		agentSlotFreed:        make(chan struct{}),
 	}
 }
 
@@ -199,9 +198,9 @@ func (s *Service) RegisterWorkflows(engine *flow.Engine, environments *environme
 	s.flow, s.environments, s.roles = engine, environments, roles
 	s.upgradeJobWorkflow, err = engine.Define(flow.Definition{
 		Name:        upgradeJobWorkflowName,
-		Version:     2,
-		Fingerprint: "2e931d8b90fa1ef53d566ac5616cb3ab1da3ea8da166ad728ca6d92cfc9a05bc",
-		Concurrency: 1,
+		Version:     3,
+		Fingerprint: "e42e3d34433141389251991e9fa1f111ad58c101df2b5dd42a4671b8e9fb4292",
+		Concurrency: upgradeJobMaxParallelAgents,
 		Timeout:     24 * time.Hour,
 		Steps: []workflow.StepSpec{
 			workflow.Step("discover", engine.Handler(s.discoverAgents), workflow.WithMaxAttempts(1)),
@@ -870,6 +869,7 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 	if decodeErr := errors.Join(t.Payload(&input), t.DecodeItem(&remote)); decodeErr != nil {
 		return nil, decodeErr
 	}
+	defer s.acquireAgentSlot(ctx)()
 	job, err := s.loadUpgradeJob(ctx, input.JobID)
 	if err != nil {
 		return nil, err
@@ -1048,6 +1048,30 @@ func (s *Service) upgradeAgentTask(ctx context.Context, t flow.Task) (_ any, err
 	}
 	settle(UpgradeResultStatusTriggered, result.Error)
 	return nil, nil
+}
+
+func (s *Service) acquireAgentSlot(ctx context.Context) func() {
+	for {
+		s.agentSlotsMu.Lock()
+		if s.activeAgents < max(s.settingsService.GetSettingsConfig().UpgradeMaxParallelAgents.AsInt(), 1) {
+			s.activeAgents++
+			s.agentSlotsMu.Unlock()
+			return func() {
+				s.agentSlotsMu.Lock()
+				defer s.agentSlotsMu.Unlock()
+				s.activeAgents--
+				close(s.agentSlotFreed)
+				s.agentSlotFreed = make(chan struct{})
+			}
+		}
+		freed := s.agentSlotFreed
+		s.agentSlotsMu.Unlock()
+		select {
+		case <-ctx.Done():
+			return func() {}
+		case <-freed:
+		}
+	}
 }
 
 // upgradeManagerTask triggers the manager's own self-upgrade last. The job is persisted pending_restart BEFORE the

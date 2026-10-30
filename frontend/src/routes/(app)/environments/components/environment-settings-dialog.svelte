@@ -18,32 +18,38 @@
 	let { open = $bindable(false) }: Props = $props();
 
 	const environmentLimit = $derived(Number(settingsStore.current?.allEnvironmentsLimit) || 64);
+	const parallelUpgrades = $derived(Number(settingsStore.current?.upgradeMaxParallelAgents) || 4);
 	let environmentLimitInput = $derived(String(environmentLimit));
+	let parallelUpgradesInput = $derived(String(parallelUpgrades));
 	let environmentLimitError = $state<string | null>(null);
+	let parallelUpgradesError = $state<string | null>(null);
 	let isSaving = $state(false);
 
 	function handleOpenChange(nextOpen: boolean) {
 		if (!nextOpen && isSaving) return;
 		if (!nextOpen) {
 			environmentLimitInput = String(environmentLimit);
+			parallelUpgradesInput = String(parallelUpgrades);
 			environmentLimitError = null;
+			parallelUpgradesError = null;
 		}
 		open = nextOpen;
 	}
 
 	async function handleSubmit() {
-		const parsed = Number(environmentLimitInput);
-		if (!Number.isInteger(parsed) || parsed < 2 || parsed > 256) {
-			environmentLimitError = m.all_environments_limit_help();
-			return;
-		}
-		environmentLimitError = null;
-		if (parsed === environmentLimit) {
+		const parsedLimit = Number(environmentLimitInput);
+		const parsedParallel = Number(parallelUpgradesInput);
+		const limitValid = Number.isInteger(parsedLimit) && parsedLimit >= 2 && parsedLimit <= 256;
+		const parallelValid = Number.isInteger(parsedParallel) && parsedParallel >= 1 && parsedParallel <= 16;
+		environmentLimitError = limitValid ? null : m.all_environments_limit_help();
+		parallelUpgradesError = parallelValid ? null : m.upgrade_max_parallel_agents_help();
+		if (!limitValid || !parallelValid) return;
+		if (parsedLimit === environmentLimit && parsedParallel === parallelUpgrades) {
 			handleOpenChange(false);
 			return;
 		}
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(settingsStore.save({ allEnvironmentsLimit: parsed })),
+			result: await tryCatch(settingsStore.save({ allEnvironmentsLimit: parsedLimit, upgradeMaxParallelAgents: parsedParallel })),
 			message: m.common_update_failed({ resource: m.settings() }),
 			setLoadingState: (value) => (isSaving = value),
 			onSuccess: () => {
@@ -74,6 +80,27 @@
 					bind:value={environmentLimitInput}
 					placeholder="64"
 					aria-invalid={Boolean(environmentLimitError)}
+				/>
+			</SettingsRow>
+			<SettingsRow
+				for="environments-upgrade-max-parallel-agents"
+				label={m.upgrade_max_parallel_agents()}
+				description={m.upgrade_max_parallel_agents_description()}
+				helpText={m.upgrade_max_parallel_agents_help()}
+				error={parallelUpgradesError}
+				lock={settingsStore.lock('upgradeMaxParallelAgents')}
+				layout="wide"
+				class="p-0"
+			>
+				<Input
+					id="environments-upgrade-max-parallel-agents"
+					type="number"
+					min="1"
+					max="16"
+					bind:value={parallelUpgradesInput}
+					placeholder="4"
+					disabled={settingsStore.isLocked('upgradeMaxParallelAgents')}
+					aria-invalid={Boolean(parallelUpgradesError)}
 				/>
 			</SettingsRow>
 		</form>
