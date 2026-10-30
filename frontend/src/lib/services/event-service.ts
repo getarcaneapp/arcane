@@ -2,12 +2,22 @@ import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.j
 import type { Event, EventSeverityCounts } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
-import BaseAPIService from './api-service';
+import BaseAPIService, { type APIRequestConfig } from './api-service';
 
 class EventService extends BaseAPIService {
 	async getEvents(options?: SearchPaginationSortRequest): Promise<Paginated<Event>> {
 		const params = transformPaginationParams(options);
 		const res = await this.api.get('/events', { params });
+		return res.data;
+	}
+
+	async getEnvironmentEvents(
+		environmentId: string,
+		options?: SearchPaginationSortRequest,
+		config?: APIRequestConfig
+	): Promise<Paginated<Event>> {
+		const params = transformPaginationParams(options);
+		const res = await this.api.get(`/events/environment/${environmentId}`, { ...config, params });
 		return res.data;
 	}
 

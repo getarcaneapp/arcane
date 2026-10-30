@@ -1,6 +1,7 @@
 package user
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -67,6 +68,20 @@ var (
 	// (e.g. a delegated users:update holder trying to edit a global admin).
 	ErrInsufficientPrivilege = errors.New("insufficient privilege to modify this user")
 )
+
+var dashboardWidgetSpans = map[string]struct{ minSpan, maxSpan, defaultSpan int }{
+	"healthy":          {minSpan: 2, maxSpan: 12, defaultSpan: 3},
+	"attentionCount":   {minSpan: 2, maxSpan: 12, defaultSpan: 3},
+	"updates":          {minSpan: 2, maxSpan: 12, defaultSpan: 2},
+	"risk":             {minSpan: 2, maxSpan: 12, defaultSpan: 2},
+	"reclaimableTotal": {minSpan: 2, maxSpan: 12, defaultSpan: 2},
+	"environments":     {minSpan: 6, maxSpan: 12, defaultSpan: 12},
+	"attention":        {minSpan: 4, maxSpan: 12, defaultSpan: 6},
+	"activity":         {minSpan: 4, maxSpan: 12, defaultSpan: 6},
+	"jobs":             {minSpan: 3, maxSpan: 12, defaultSpan: 4},
+	"reclaimable":      {minSpan: 3, maxSpan: 12, defaultSpan: 4},
+	"memory":           {minSpan: 3, maxSpan: 12, defaultSpan: 4},
+}
 
 func NewUserService(db *database.DB, roleService *role.RoleService, revokeSessionsExcept func(context.Context, *gorm.DB, string, string) error) *UserService {
 	return &UserService{
@@ -303,6 +318,24 @@ func (s *UserService) checkTargetPrivilege(ctx context.Context, tx *gorm.DB, act
 func (s *UserService) UpdateUser(ctx context.Context, localUser *User, actorPerms *authz.PermissionSet) (*User, error) {
 	if err := normalization.Normalize(localUser); err != nil {
 		return nil, err
+	}
+	if layout := localUser.Preferences.DashboardLayout; layout != nil {
+		widgets := make([]types.DashboardWidgetLayout, 0, len(dashboardWidgetSpans))
+		for _, widget := range *layout {
+			spans, known := dashboardWidgetSpans[widget.ID]
+			duplicate := slices.ContainsFunc(widgets, func(existing types.DashboardWidgetLayout) bool {
+				return existing.ID == widget.ID
+			})
+			if !known || duplicate {
+				continue
+			}
+			widgets = append(widgets, types.DashboardWidgetLayout{
+				ID:     widget.ID,
+				Span:   min(max(cmp.Or(widget.Span, spans.defaultSpan), spans.minSpan), spans.maxSpan),
+				Hidden: widget.Hidden,
+			})
+		}
+		localUser.Preferences.DashboardLayout = &widgets
 	}
 	var updated User
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {

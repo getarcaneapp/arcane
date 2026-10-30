@@ -140,9 +140,7 @@ test.describe('Token refresh behaviour', () => {
 		await page.getByRole('button', { name: 'Sign in to Arcane', exact: true }).click();
 		await expect(page).toHaveURL('/dashboard');
 		await expect(page.getByRole('button', { name: 'Card view', exact: true })).toBeVisible();
-		await expect(
-			page.locator('main').getByText('Dashboard', { exact: true }).first()
-		).toBeVisible();
+		await expect(page.locator('main').getByRole('heading', { level: 1 })).toBeVisible();
 
 		const tokenCookies = (await page.context().cookies()).filter(
 			(cookie) =>

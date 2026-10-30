@@ -56,6 +56,48 @@ const typeDisplay = new Map(
 	} satisfies Record<ActivityType, { label: () => string; icon: IconType }>)
 );
 
+const resourceActionDisplay = new Map<string, () => string>(
+	Object.entries({
+		create_network: m.create_network,
+		remove_network: m.remove_network,
+		prune_networks: m.prune_networks,
+		create_volume: m.create_volume,
+		remove_volume: m.remove_volume,
+		rename_volume: m.volumes_rename_title,
+		prune_volumes: m.prune_volumes,
+		update_volume_workspace: m.update_volume_workspace,
+		create_project: m.compose_create_project,
+		update_project: m.update_project,
+		update_project_workspace: m.update_project_workspace,
+		update_tags: m.update_tags,
+		sync_environment: m.sync_environment,
+		create_volume_backup: m.volumes_backup_create,
+		delete_volume_backup: m.delete_volume_backup,
+		upload_volume_backup: m.upload_volume_backup,
+		restore_volume_backup: m.volumes_backup_restore_title,
+		restore_volume_backup_files: m.restore_volume_files,
+		upload_restore_volume_backup: m.upload_and_restore_volume_backup,
+		update_volume_backup_policy: m.update_volume_backup_policy,
+		scheduled_volume_backup: m.scheduled_volume_backup,
+		create_system_backup: m.create_system_backup,
+		scheduled_system_backup: m.scheduled_system_backup,
+		delete_system_backup: m.delete_system_backup,
+		upload_system_backup: m.upload_system_backup,
+		restore_system_backup: m.system_backups_restore_title,
+		restore_system_backup_files: m.restore_system_backup_files,
+		discover_system_backups: m.discover_system_backups,
+		set_system_backup_recovery_key: m.set_recovery_key,
+		update_system_backup_policies: m.update_system_backup_policies,
+		run_system_volume_backups: m.back_up_volumes,
+		scheduled_system_volume_backups: m.scheduled_volume_backups
+	})
+);
+
+export function activityTitle(activity: Activity): string {
+	const action = activity.type === 'resource_action' ? activity.metadata?.['action'] : undefined;
+	return (typeof action === 'string' ? resourceActionDisplay.get(action)?.() : undefined) ?? activityTypeLabel(activity.type);
+}
+
 export function activityStatusLabel(status: ActivityStatus): string {
 	return statusDisplay.get(status)?.label() as string;
 }

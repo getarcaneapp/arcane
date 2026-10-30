@@ -1,6 +1,6 @@
 <script lang="ts" module>
 	import type { ActionButton } from '#lib/components/action-button-group/index.js';
-	import type { Environment } from '#lib/types/environment.js';
+	import type { Environment, VulnerabilityRiskBand, VulnerabilityScoreStatus } from '#lib/types/environment.js';
 	import type { DashboardLiveStatsStatus, SystemStats } from '#lib/types/shared.js';
 
 	export interface EnvironmentTableRow {
@@ -12,7 +12,8 @@
 		images: number;
 		podCount: number | null;
 		updates: number;
-		vulnerabilities: number;
+		reclaimable: number | null;
+		risk: { score: number; band: VulnerabilityRiskBand; status: VulnerabilityScoreStatus } | null;
 		versionText: string | null;
 		updateAvailable: boolean;
 		menuButtons: ActionButton[];
@@ -28,10 +29,12 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
-	import { ShieldAlertIcon, UpdateIcon, VerifiedCheckIcon, type IconType } from '#lib/icons/index.js';
+	import { UpdateIcon, VerifiedCheckIcon, type IconType } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { cn } from '#lib/utils.js';
+	import { bytes, formatRelativeTime } from '#lib/utils/formatting.js';
+	import { getRiskBandDisplay } from '#lib/utils/vulnerability.js';
 
 	import { getCpuMetric, getDiskMetric, getMemoryMetric } from '../overview.helpers';
 
@@ -48,20 +51,34 @@
 	const showPods = $derived(rows.some((row) => row.podCount !== null));
 </script>
 
-{#snippet actionCount(count: number, route: '/(app)/updates' | '/(app)/security', icon: IconType, tone: 'amber' | 'red')}
+{#snippet actionCount(count: number, icon: IconType)}
 	{@const Icon = count > 0 ? icon : VerifiedCheckIcon}
 	<a
-		href={resolve(route)}
+		href={resolve('/(app)/updates')}
 		class={cn(
 			'inline-flex items-center gap-1.5 text-sm tabular-nums transition-colors hover:underline',
-			count === 0 && 'text-muted-foreground',
-			count > 0 && tone === 'amber' && 'text-warning',
-			count > 0 && tone === 'red' && 'text-destructive'
+			count === 0 ? 'text-muted-foreground' : 'text-warning'
 		)}
 	>
 		<Icon class={cn('size-3.5 shrink-0', count === 0 && 'text-success')} />
 		{count}
 	</a>
+{/snippet}
+
+{#snippet riskScore(risk: EnvironmentTableRow['risk'])}
+	{#if risk}
+		{@const band = getRiskBandDisplay(risk.band, risk.status)}
+		<a
+			href={resolve('/(app)/security')}
+			class="inline-flex items-center gap-2 text-sm tabular-nums hover:underline"
+			title={band.label}
+		>
+			<span class="size-2 shrink-0 rounded-full {band.barClass}"></span>
+			{risk.status === 'unavailable' ? '–' : risk.score}
+		</a>
+	{:else}
+		<span class="text-xs text-muted-foreground">—</span>
+	{/if}
 {/snippet}
 
 {#snippet metric(
@@ -104,10 +121,11 @@
 				<Table.Head>{m.images()}</Table.Head>
 				{#if showPods}<Table.Head>{m.podman_pods_title()}</Table.Head>{/if}
 				<Table.Head>{m.updates()}</Table.Head>
-				{#if showVulnerabilities}<Table.Head>{m.vuln_title()}</Table.Head>{/if}
+				{#if showVulnerabilities}<Table.Head>{m.risk()}</Table.Head>{/if}
+				<Table.Head>{m.reclaimable()}</Table.Head>
 				<Table.Head class="text-right">{m.cpu_usage()}</Table.Head>
 				<Table.Head class="text-right">{m.memory_usage()}</Table.Head>
-				<Table.Head class="text-right">{m.dashboard_meter_disk()}</Table.Head>
+				<Table.Head class="text-right">{m.disk()}</Table.Head>
 				<Table.Head></Table.Head>
 			</Table.Row>
 		</Table.Header>
@@ -149,8 +167,16 @@
 							<span class="text-sm text-muted-foreground">{row.online ? m.common_online() : m.common_offline()}</span>
 						</span>
 					</Table.Cell>
-					{#if row.loading}
-						<Table.Cell colspan={6 + Number(showVulnerabilities) + Number(showPods)}
+					{#if !row.online}
+						<Table.Cell colspan={7 + Number(showVulnerabilities) + Number(showPods)}>
+							<span class="text-sm text-muted-foreground">
+								{row.environment.lastSeen
+									? m.offline_last_seen({ time: formatRelativeTime(row.environment.lastSeen) })
+									: m.common_offline()}
+							</span>
+						</Table.Cell>
+					{:else if row.loading}
+						<Table.Cell colspan={7 + Number(showVulnerabilities) + Number(showPods)}
 							><Skeleton class="h-4 w-full max-w-md" /></Table.Cell
 						>
 					{:else}
@@ -165,14 +191,23 @@
 								{/if}
 							</Table.Cell>
 						{/if}
-						<Table.Cell>{@render actionCount(row.updates, '/(app)/updates', UpdateIcon, 'amber')}</Table.Cell>
+						<Table.Cell>{@render actionCount(row.updates, UpdateIcon)}</Table.Cell>
 						{#if showVulnerabilities}
 							<Table.Cell>
 								{#if featureStore.isEnabled('vulnerabilityManagement', row.environment.id)}
-									{@render actionCount(row.vulnerabilities, '/(app)/security', ShieldAlertIcon, 'red')}
+									{@render riskScore(row.risk)}
 								{/if}
 							</Table.Cell>
 						{/if}
+						<Table.Cell>
+							{#if row.reclaimable === null}
+								<span class="text-xs text-muted-foreground">—</span>
+							{:else}
+								<span class="text-sm whitespace-nowrap tabular-nums"
+									>{bytes.format(row.reclaimable, { unitSeparator: ' ' }) ?? '-'}</span
+								>
+							{/if}
+						</Table.Cell>
 						<Table.Cell class="text-right">{@render metric(getCpuMetric(stats), 'cpu', statsStatus)}</Table.Cell>
 						<Table.Cell class="text-right"
 							>{@render metric(getMemoryMetric(stats), 'memory', statsStatus, stats?.memoryUsage, stats?.memoryTotal)}</Table.Cell

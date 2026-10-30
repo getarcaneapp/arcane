@@ -289,6 +289,7 @@ export interface ContainerStatusCounts {
 	runningContainers: number;
 	stoppedContainers: number;
 	totalContainers: number;
+	unhealthyContainers: number;
 	updatesAvailable: number;
 }
 

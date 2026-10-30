@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/types/v3"
 
 	"github.com/getarcaneapp/arcane/backend/v3/pkg/utils"
@@ -23,6 +24,20 @@ func NewHandler(service *Service, appCtx context.Context) *Handler {
 type PruneAllInput struct {
 	Body          types.PruneAllRequest `doc:"Prune options"`
 	EnvironmentID string                `path:"id" doc:"Environment ID"`
+}
+
+func (h *Handler) GetDiskUsage(ctx context.Context, input *types.EnvironmentInput) (*handlerutil.Out[types.SystemDiskUsage], error) {
+	usage, err := h.service.GetDiskUsage(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to get disk usage: " + err.Error())
+	}
+
+	return &handlerutil.Out[types.SystemDiskUsage]{
+		Body: types.ApiResponse[types.SystemDiskUsage]{
+			Success: true,
+			Data:    usage,
+		},
+	}, nil
 }
 
 // PruneAll removes unused Docker resources.

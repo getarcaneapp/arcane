@@ -4,6 +4,7 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
+	import SegmentToggle from '#lib/components/segment-toggle.svelte';
 	import * as StatStrip from '#lib/components/stat-strip/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -137,28 +138,6 @@
 	{/if}
 {/snippet}
 
-{#snippet SegmentToggle(
-	label: string,
-	options: { value: string; label: string }[],
-	current: string,
-	onSelect: (value: string) => void
-)}
-	<div class="flex gap-1 text-xs" role="group" aria-label={label}>
-		{#each options as option (option.value)}
-			<button
-				type="button"
-				class="rounded-md px-2 py-1 transition-colors {current === option.value
-					? 'bg-muted font-medium text-foreground'
-					: 'text-muted-foreground hover:text-foreground'}"
-				aria-pressed={current === option.value}
-				onclick={() => onSelect(option.value)}
-			>
-				{option.label}
-			</button>
-		{/each}
-	</div>
-{/snippet}
-
 {#snippet HelpTip(title: string, body: string)}
 	<ArcaneTooltip.Root>
 		<ArcaneTooltip.Trigger>
@@ -250,15 +229,15 @@
 							</p>
 						{/if}
 					</div>
-					{@render SegmentToggle(
-						m.security_risk_trend(),
-						[
+					<SegmentToggle
+						label={m.security_risk_trend()}
+						options={[
 							{ value: '30', label: m.security_risk_range_30d() },
 							{ value: '90', label: m.security_risk_range_90d() }
-						],
-						trendDays,
-						(value) => (trendDays = value)
-					)}
+						]}
+						current={trendDays}
+						onSelect={(value) => (trendDays = value)}
+					/>
 				</div>
 				{#if trendPoints.length > 1}
 					<RiskTrendChart points={trendPoints} days={Number(trendDays)} />
@@ -311,15 +290,15 @@
 								: m.security_top_vulnerabilities_prevalence_help()
 						)}
 					</h3>
-					{@render SegmentToggle(
-						m.security_top_vulnerabilities(),
-						[
+					<SegmentToggle
+						label={m.security_top_vulnerabilities()}
+						options={[
 							{ value: 'risk', label: m.security_rank_risk() },
 							{ value: 'prevalence', label: m.security_rank_prevalence() }
-						],
-						findingRank,
-						(value) => (findingRank = value === 'prevalence' ? 'prevalence' : 'risk')
-					)}
+						]}
+						current={findingRank}
+						onSelect={(value) => (findingRank = value === 'prevalence' ? 'prevalence' : 'risk')}
+					/>
 				</div>
 				{#if topFindings.length === 0}
 					<p class="py-6 text-sm text-muted-foreground">{m.vuln_no_vulnerabilities()}</p>

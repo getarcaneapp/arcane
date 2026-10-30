@@ -319,6 +319,13 @@ type PruneAllRequest struct {
 	BuildCache *PruneBuildCacheOptions `json:"buildCache,omitempty"`
 }
 
+type SystemDiskUsage struct {
+	UnusedImagesBytes      int64 `json:"unusedImagesBytes" doc:"Bytes held by images not referenced by any container"`
+	BuildCacheBytes        int64 `json:"buildCacheBytes" doc:"Bytes held by build cache records that are not in use"`
+	UnusedVolumesBytes     int64 `json:"unusedVolumesBytes" doc:"Bytes held by volumes no container references"`
+	StoppedContainersBytes int64 `json:"stoppedContainersBytes" doc:"Writable-layer bytes held by containers that are not running"`
+}
+
 type pruneAllRequestWire struct {
 	Dangling   *bool              `json:"dangling,omitempty"`
 	Containers stdjson.RawMessage `json:"containers,omitempty"`

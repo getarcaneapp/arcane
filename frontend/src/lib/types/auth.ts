@@ -131,6 +131,25 @@ export type ProjectEditorLayout = 'auto' | 'classic' | 'tree';
 
 export type EnvironmentLabelStyle = 'name' | 'dot';
 
+export type DashboardWidgetId =
+	| 'healthy'
+	| 'attentionCount'
+	| 'updates'
+	| 'risk'
+	| 'reclaimableTotal'
+	| 'environments'
+	| 'attention'
+	| 'activity'
+	| 'jobs'
+	| 'reclaimable'
+	| 'memory';
+
+export type DashboardWidgetLayout = {
+	id: DashboardWidgetId;
+	span: number;
+	hidden?: boolean;
+};
+
 export type ToastPosition = 'auto' | NonNullable<ToasterProps['position']>;
 
 /**
@@ -154,6 +173,7 @@ export type UserPreferences = {
 	toastPosition?: ToastPosition;
 	environmentColors?: Record<string, string>;
 	environmentLabelStyle?: EnvironmentLabelStyle;
+	dashboardLayout?: DashboardWidgetLayout[];
 };
 
 export type User = {

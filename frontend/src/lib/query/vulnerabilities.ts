@@ -16,7 +16,7 @@ export type PatchTargetPage = Paginated<PatchTargetRow> & { failedEnvironments?:
 export function vulnerabilityOverviewQuery(scope: string) {
 	return queryOptions({
 		queryKey: queryKeys.vulnerabilities.overviewByEnvironment(scope),
-		queryFn: fetchRiskOverview
+		queryFn: () => fetchRiskOverview()
 	});
 }
 

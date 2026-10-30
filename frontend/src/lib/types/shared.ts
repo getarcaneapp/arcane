@@ -90,6 +90,13 @@ export interface SystemStats {
 	gpus?: GPUStats[];
 }
 
+export interface SystemDiskUsage {
+	unusedImagesBytes: number;
+	buildCacheBytes: number;
+	unusedVolumesBytes: number;
+	stoppedContainersBytes: number;
+}
+
 export interface GPUStats {
 	name: string;
 	index: number;
@@ -230,24 +237,6 @@ export interface DashboardEnvironmentOverview {
 	versionInfo?: AppVersionInformation;
 	podCount?: number;
 	error?: string;
-}
-
-export interface DashboardOverviewSummary {
-	totalEnvironments: number;
-	reachableEnvironments: number;
-	unavailableEnvironments: number;
-	disabledEnvironments: number;
-	totalContainers: number;
-	runningContainers: number;
-	stoppedContainers: number;
-	totalImages: number;
-	imagesInUse: number;
-	imagesUnused: number;
-	totalVolumes: number;
-	volumesInUse: number;
-	volumesUnused: number;
-	podmanEnvironments: number;
-	totalPods: number;
 }
 
 export interface DashboardEnvironmentCardState {

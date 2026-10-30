@@ -417,6 +417,7 @@ func newCountsCmd() *cobra.Command {
 					output.KeyValue("Running", data.RunningContainers)
 					output.KeyValue("Stopped", data.StoppedContainers)
 					output.KeyValue("Total", data.TotalContainers)
+					output.KeyValue("Unhealthy", data.UnhealthyContainers)
 					return nil
 				},
 			})

@@ -115,18 +115,6 @@
 									</Badge>
 								{/if}
 							</div>
-							{#if versionInfo.updateAvailable || debugUpgrade}
-								<EnvironmentUpgradeAction
-									{environment}
-									{versionInfo}
-									{canUpgrade}
-									debug={debugUpgrade}
-									{onRefreshRequested}
-									render="dialog"
-									bind:open={upgradeOpen}
-									bind:upgrading={upgradeLoading}
-								/>
-							{/if}
 						{/if}
 					</div>
 

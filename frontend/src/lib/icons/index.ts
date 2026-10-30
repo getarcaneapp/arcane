@@ -42,6 +42,7 @@ export { default as CheckIcon } from 'virtual:icons/material-symbols/fitbit-chec
 export { default as FilterIcon } from 'virtual:icons/fluent/filter-32-filled';
 export { default as LoadingSpinnerIcon } from 'virtual:icons/svg-spinners/ring-resize';
 export { default as AddIcon } from 'virtual:icons/ic/outline-add-circle';
+export { default as GripIcon } from 'virtual:icons/lucide/grip-vertical';
 export { default as TrashIcon } from 'virtual:icons/solar/trash-bin-trash-bold';
 export { default as LockIcon } from 'virtual:icons/solar/lock-linear';
 export { default as AlertIcon } from 'virtual:icons/mdi/alert-decagram';
