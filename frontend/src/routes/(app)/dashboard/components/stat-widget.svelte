@@ -38,7 +38,7 @@
 	});
 </script>
 
-<Card.Root variant="subtle" class="h-full min-w-0">
+<Card.Root variant="transparent" class="h-full min-w-0">
 	<dl class="flex h-full w-full items-center justify-center p-5">
 		{#if id === 'healthy'}
 			<StatStrip.Item label={m.health_status_healthy()} value={`${healthy.online}/${healthy.total}`} icon={EnvironmentsIcon}>

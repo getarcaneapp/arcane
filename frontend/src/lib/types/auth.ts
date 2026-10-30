@@ -146,7 +146,10 @@ export type DashboardWidgetId =
 
 export type DashboardWidgetLayout = {
 	id: DashboardWidgetId;
-	span: number;
+	x: number;
+	y: number;
+	w: number;
+	h: number;
 	hidden?: boolean;
 };
 

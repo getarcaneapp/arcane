@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { Skeleton } from '#lib/components/ui/skeleton/index.js';
 	import ShareBar from '#lib/components/vulnerability/share-bar.svelte';
 	import { m } from '#lib/paraglide/messages.js';
@@ -15,11 +16,13 @@
 	let {
 		usage,
 		loading,
-		failed
+		failed,
+		onPrune
 	}: {
 		usage: { environment: EnvironmentRef; data: SystemDiskUsage }[];
 		loading: boolean;
 		failed: boolean;
+		onPrune?: () => void;
 	} = $props();
 
 	const segments = $derived<ShareBarSegment[]>([
@@ -59,6 +62,11 @@
 </script>
 
 <DashboardPanel title={m.reclaimable_space()}>
+	{#snippet actions()}
+		{#if onPrune}
+			<ArcaneButton action="prune" size="sm" customLabel={m.prune()} onclick={onPrune} />
+		{/if}
+	{/snippet}
 	{#if loading && usage.length === 0}
 		<div class="space-y-3 py-2">
 			<Skeleton class="h-7 w-24" />

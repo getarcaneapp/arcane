@@ -574,8 +574,44 @@ input:autofill:active {
 	border-radius: inherit;
 }
 
-@utility zoom-widget {
-	zoom: var(--widget-zoom);
+@utility dashboard-grid {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+	@media (width >= 64rem) {
+		display: block;
+		position: relative;
+		height: calc(var(--grid-rows) * 4rem - 1rem);
+		transition: height 150ms ease-out;
+	}
+}
+
+@utility dashboard-widget {
+	@media (width >= 64rem) {
+		position: absolute;
+		top: calc(var(--widget-y) * 4rem);
+		left: calc((100% + 1rem) * var(--widget-x) / 12);
+		width: calc((100% + 1rem) * var(--widget-w) / 12 - 1rem);
+		height: calc(var(--widget-h) * 4rem - 1rem);
+		translate: var(--widget-dx, 0) var(--widget-dy, 0);
+		&:not([data-moving]) {
+			transition:
+				top 150ms ease-out,
+				left 150ms ease-out,
+				width 150ms ease-out,
+				height 150ms ease-out,
+				translate 150ms ease-out;
+		}
+	}
+}
+
+@utility widget-scaled {
+	@media (width >= 64rem) {
+		width: calc(100% / 0.9);
+		height: calc(100% / 0.9);
+		transform: scale(0.9);
+		transform-origin: top left;
+	}
 }
 
 @utility transition-stroke-dashoffset {

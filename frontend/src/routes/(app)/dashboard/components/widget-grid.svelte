@@ -1,19 +1,22 @@
 <script lang="ts">
 	import { tick, type Snippet } from 'svelte';
-	import { flip } from 'svelte/animate';
 
-	import { EyeOffIcon, GripIcon } from '#lib/icons/index.js';
+	import { EyeOffIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { DashboardWidgetId, DashboardWidgetLayout } from '#lib/types/auth.js';
 	import { cn } from '#lib/utils.js';
 
-	import { DASHBOARD_WIDGETS, placeWidget, WIDGET_SPAN_CLASSES } from '../widgets';
+	import { DASHBOARD_WIDGETS, GRID_COLUMNS, moveWidget } from '../widgets';
 
-	const GRID_COLUMNS = 12;
-	const EDIT_INSET = 12;
-	const KEY_OFFSETS: Record<string, number> = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 };
+	const ROW_PITCH_REM = 4;
+	const KEY_STEPS: Record<string, { x: number; y: number }> = {
+		ArrowLeft: { x: -1, y: 0 },
+		ArrowRight: { x: 1, y: 0 },
+		ArrowUp: { x: 0, y: -1 },
+		ArrowDown: { x: 0, y: 1 }
+	};
 	const CONTROL_CLASS =
-		'inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none disabled:pointer-events-none disabled:opacity-40';
+		'inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none';
 
 	let {
 		layout,
@@ -28,152 +31,147 @@
 	} = $props();
 
 	let grid = $state<HTMLElement | null>(null);
-	let dragging = $state<{ id: DashboardWidgetId; overId: DashboardWidgetId | null } | null>(null);
-	let resizing = $state<{
-		id: DashboardWidgetId;
+	let pointer = $state<{
+		mode: 'move' | 'resize';
+		origin: DashboardWidgetLayout;
 		startX: number;
-		startSpan: number;
-		span: number;
-		columnWidth: number;
-		gap: number;
+		startY: number;
+		dx: number;
+		dy: number;
+		columnPitch: number;
+		rowPitch: number;
 	} | null>(null);
 
-	const visible = $derived(layout.filter((item) => !item.hidden));
-	let heights = $state.raw<Partial<Record<DashboardWidgetId, number>>>({});
-
-	$effect.pre(() => {
-		if (!editing || !grid) return;
-		heights = Object.fromEntries(
-			Array.from(grid.querySelectorAll<HTMLElement>('[data-widget-id]'), (element) => [
-				element.dataset['widgetId'],
-				element.offsetHeight
-			])
+	const preview = $derived.by(() => {
+		if (!pointer) return layout;
+		const { mode, origin, dx, dy, columnPitch, rowPitch } = pointer;
+		const columns = Math.round(dx / columnPitch);
+		const rows = Math.round(dy / rowPitch);
+		return moveWidget(
+			layout,
+			origin.id,
+			mode === 'move' ? { x: origin.x + columns, y: origin.y + rows } : { w: origin.w + columns, h: origin.h + rows }
 		);
 	});
+	const positions = $derived(new Map(preview.map((item) => [item.id, item])));
+	const ordered = $derived(layout.filter((item) => !item.hidden).toSorted((a, b) => a.y - b.y || a.x - b.x));
+	const rows = $derived(Math.max(0, ...preview.filter((item) => !item.hidden).map((item) => item.y + item.h)));
+	const target = $derived(pointer ? positions.get(pointer.origin.id) : undefined);
 
-	function editZoom(id: DashboardWidgetId) {
-		const height = heights[id];
-		if (!height) return 0.9;
-		return Math.min(Math.max((height - EDIT_INSET * 2) / height, 0.75), 0.95);
-	}
-
-	function resize(id: DashboardWidgetId, span: number) {
-		const { minSpan, maxSpan } = DASHBOARD_WIDGETS[id];
-		onChange(layout.map((item) => (item.id === id ? { ...item, span: Math.min(Math.max(span, minSpan), maxSpan) } : item)));
-	}
-
-	async function moveBy(id: DashboardWidgetId, offset: number) {
-		const target = visible[visible.findIndex((item) => item.id === id) + offset];
-		if (!target) return;
-		onChange(placeWidget(layout, id, target.id));
-		await tick();
-		grid?.querySelector<HTMLElement>(`[data-widget-handle="${id}"]`)?.focus();
-	}
-
-	function startDrag(event: PointerEvent, id: DashboardWidgetId) {
-		if (event.button !== 0) return;
+	function start(event: PointerEvent, item: DashboardWidgetLayout, mode: 'move' | 'resize') {
+		if (event.button !== 0 || !grid || !window.matchMedia('(width >= 64rem)').matches) return;
 		event.preventDefault();
-		dragging = { id, overId: null };
-	}
-
-	function drag(event: PointerEvent) {
-		if (!dragging) return;
-		const hovered = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-widget-id]');
-		const overId = visible.find((item) => item.id === hovered?.dataset['widgetId'] && item.id !== dragging?.id)?.id ?? null;
-		if (overId !== dragging.overId) dragging = { id: dragging.id, overId };
-	}
-
-	function drop() {
-		if (dragging?.overId) onChange(placeWidget(layout, dragging.id, dragging.overId));
-		dragging = null;
-	}
-
-	function startResize(event: PointerEvent, item: DashboardWidgetLayout) {
-		if (event.button !== 0) return;
-		event.preventDefault();
-		if (!grid) return;
-		const gap = Number.parseFloat(getComputedStyle(grid).columnGap) || 0;
-		resizing = {
-			id: item.id,
+		const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
+		pointer = {
+			mode,
+			origin: item,
 			startX: event.clientX,
-			startSpan: item.span,
-			span: item.span,
-			columnWidth: (grid.clientWidth + gap) / GRID_COLUMNS,
-			gap
+			startY: event.clientY,
+			dx: 0,
+			dy: 0,
+			columnPitch: (grid.clientWidth + rem) / GRID_COLUMNS,
+			rowPitch: rem * ROW_PITCH_REM
 		};
 	}
 
-	function resizeTo(event: PointerEvent) {
-		if (!resizing) return;
-		const { minSpan, maxSpan } = DASHBOARD_WIDGETS[resizing.id];
-		const span = Math.min(
-			Math.max(resizing.startSpan + Math.round((event.clientX - resizing.startX) / resizing.columnWidth), minSpan),
-			maxSpan
-		);
-		if (span !== resizing.span) resizing = { ...resizing, span };
-	}
-
 	function endPointer() {
-		drop();
-		if (resizing && resizing.span !== resizing.startSpan) resize(resizing.id, resizing.span);
-		resizing = null;
+		if (!pointer) return;
+		const next = preview;
+		pointer = null;
+		onChange(next);
 	}
 
-	function moveWithKeyboard(event: KeyboardEvent, id: DashboardWidgetId) {
-		const offset = KEY_OFFSETS[event.key];
-		if (offset === undefined) return;
+	async function step(event: KeyboardEvent, item: DashboardWidgetLayout, mode: 'move' | 'resize') {
+		const delta = KEY_STEPS[event.key];
+		if (!delta) return;
 		event.preventDefault();
-		void moveBy(id, offset);
+		onChange(
+			moveWidget(
+				layout,
+				item.id,
+				mode === 'move' ? { x: item.x + delta.x, y: item.y + delta.y } : { w: item.w + delta.x, h: item.h + delta.y }
+			)
+		);
+		await tick();
+		grid?.querySelector<HTMLElement>(`[data-widget-${mode}="${item.id}"]`)?.focus();
 	}
 </script>
 
 <svelte:window
 	onpointermove={(event) => {
-		drag(event);
-		resizeTo(event);
+		if (pointer) pointer = { ...pointer, dx: event.clientX - pointer.startX, dy: event.clientY - pointer.startY };
 	}}
 	onpointerup={endPointer}
-	onpointercancel={() => {
-		dragging = null;
-		resizing = null;
-	}}
+	onpointercancel={() => (pointer = null)}
 />
 
-<div bind:this={grid} class={cn('grid grid-cols-1 gap-4 lg:grid-cols-12', (dragging || resizing) && 'select-none')}>
-	{#each visible as item (item.id)}
-		{@const definition = DASHBOARD_WIDGETS[item.id]}
-		{@const name = definition.label()}
+<div
+	bind:this={grid}
+	class={cn(
+		'dashboard-grid',
+		pointer && 'select-none',
+		pointer?.mode === 'move' && 'cursor-grabbing',
+		pointer?.mode === 'resize' && 'cursor-nwse-resize'
+	)}
+	style:--grid-rows={rows}
+>
+	{#if pointer?.mode === 'move' && target}
+		<div
+			class="pointer-events-none dashboard-widget rounded-xl bg-primary/10 outline-2 outline-primary outline-dashed max-lg:hidden"
+			style:--widget-x={target.x}
+			style:--widget-y={target.y}
+			style:--widget-w={target.w}
+			style:--widget-h={target.h}
+		></div>
+	{/if}
+	{#each ordered as item (item.id)}
+		{@const name = DASHBOARD_WIDGETS[item.id].label()}
+		{@const cell = positions.get(item.id) ?? item}
+		{@const active = pointer?.origin.id === item.id}
+		{@const moving = active && pointer?.mode === 'move'}
 		<div
 			data-widget-id={item.id}
-			animate:flip={{ duration: 150 }}
+			data-moving={moving || undefined}
 			class={cn(
-				'relative flex min-w-0 flex-col',
-				WIDGET_SPAN_CLASSES[item.span],
-				editing && 'rounded-xl p-3 outline-2 outline-border/70 transition-colors outline-dashed',
-				dragging?.id === item.id && 'opacity-50',
-				dragging?.overId === item.id && 'bg-primary/5 outline-primary'
+				'dashboard-widget flex min-w-0 flex-col max-lg:relative',
+				editing && 'rounded-xl p-3 outline-2 outline-border/70 outline-dashed',
+				active && 'outline-primary',
+				moving && 'z-30 bg-background/80 shadow-xl'
 			)}
+			style:--widget-x={cell.x}
+			style:--widget-y={cell.y}
+			style:--widget-w={cell.w}
+			style:--widget-h={cell.h}
+			style:--widget-dx={moving && pointer ? `${(pointer.origin.x - cell.x) * pointer.columnPitch + pointer.dx}px` : undefined}
+			style:--widget-dy={moving && pointer ? `${(pointer.origin.y - cell.y) * pointer.rowPitch + pointer.dy}px` : undefined}
 		>
+			<div
+				inert={editing}
+				class={cn('grid min-h-0 min-w-0', editing ? 'pointer-events-none widget-scaled shrink-0 select-none' : 'flex-1')}
+			>
+				{@render widget(item.id)}
+			</div>
 			{#if editing}
-				<div class="pointer-events-none absolute inset-x-4 -top-3.5 z-10 flex justify-center">
+				<button
+					type="button"
+					data-widget-move={item.id}
+					class={cn(
+						'absolute inset-0 z-10 rounded-xl focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none lg:cursor-grab lg:touch-none',
+						moving && 'lg:cursor-grabbing'
+					)}
+					aria-label={m.move_name({ name })}
+					title={m.move_name({ name })}
+					onpointerdown={(event) => start(event, item, 'move')}
+					onkeydown={(event) => step(event, item, 'move')}
+				></button>
+				<div class="pointer-events-none absolute inset-x-4 -top-3.5 z-20 flex justify-center">
 					<div
 						class="pointer-events-auto flex h-7 min-w-0 items-center gap-0.5 rounded-full border border-border/70 bg-background pr-0.5 pl-3 shadow-sm"
 					>
 						<span class="mr-1 min-w-0 truncate text-xs font-medium text-muted-foreground">{name}</span>
 						<button
 							type="button"
-							data-widget-handle={item.id}
-							class={cn(CONTROL_CLASS, 'size-6 shrink-0 cursor-grab touch-none rounded-full active:cursor-grabbing')}
-							aria-label={m.reorder_name({ name })}
-							title={m.reorder_name({ name })}
-							onpointerdown={(event) => startDrag(event, item.id)}
-							onkeydown={(event) => moveWithKeyboard(event, item.id)}
-						>
-							<GripIcon class="size-3.5" />
-						</button>
-						<button
-							type="button"
-							class={cn(CONTROL_CLASS, 'size-6 shrink-0 rounded-full')}
+							class={CONTROL_CLASS}
 							aria-label={m.hide_name({ name })}
 							title={m.hide_name({ name })}
 							onclick={() => onChange(layout.map((entry) => (entry.id === item.id ? { ...entry, hidden: true } : entry)))}
@@ -182,44 +180,26 @@
 						</button>
 					</div>
 				</div>
-			{/if}
-			<div
-				inert={editing}
-				class={cn('grid min-w-0 flex-1', editing && 'pointer-events-none zoom-widget select-none')}
-				style:--widget-zoom={editing ? editZoom(item.id) : undefined}
-			>
-				{@render widget(item.id)}
-			</div>
-			{#if resizing?.id === item.id}
-				<div
-					class="pointer-events-none absolute inset-y-0 left-0 z-20 w-(--widget-preview-width) rounded-xl bg-primary/10 outline-2 outline-primary transition-all duration-100 ease-out outline-dashed"
-					style:--widget-preview-width="{resizing.span * resizing.columnWidth - resizing.gap}px"
-				>
+				{#if active && pointer?.mode === 'resize'}
 					<span
-						class="absolute right-2 bottom-2 rounded-md bg-primary px-1.5 py-0.5 text-xs font-medium text-primary-foreground tabular-nums"
+						class="pointer-events-none absolute right-8 bottom-2 z-20 rounded-md bg-primary px-1.5 py-0.5 text-xs font-medium text-primary-foreground tabular-nums"
 					>
-						{resizing.span}/{GRID_COLUMNS}
+						{cell.w} × {cell.h}
 					</span>
-				</div>
-			{/if}
-			{#if editing}
+				{/if}
 				<button
 					type="button"
+					data-widget-resize={item.id}
 					aria-label={m.resize_name({ name })}
 					title={m.resize_name({ name })}
-					class="group absolute -right-0.5 -bottom-0.5 hidden size-6 cursor-nwse-resize touch-none items-end justify-end rounded-md p-1.5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none lg:flex"
-					onpointerdown={(event) => startResize(event, item)}
-					onkeydown={(event) => {
-						const offset = KEY_OFFSETS[event.key];
-						if (offset === undefined) return;
-						event.preventDefault();
-						resize(item.id, item.span + offset);
-					}}
+					class="group absolute -right-0.5 -bottom-0.5 z-20 hidden size-6 cursor-nwse-resize touch-none items-end justify-end rounded-md p-1.5 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none lg:flex"
+					onpointerdown={(event) => start(event, item, 'resize')}
+					onkeydown={(event) => step(event, item, 'resize')}
 				>
 					<span
 						class={cn(
 							'size-3 rounded-br-md border-r-2 border-b-2 border-muted-foreground/70 transition-colors group-hover:border-primary group-focus-visible:border-primary',
-							resizing?.id === item.id && 'border-primary'
+							active && pointer?.mode === 'resize' && 'border-primary'
 						)}
 					></span>
 				</button>
