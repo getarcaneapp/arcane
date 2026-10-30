@@ -1,14 +1,14 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
-	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import { SettingLock } from '#lib/components/badges/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import { AlertTriangleIcon, LayersIcon } from '#lib/icons/index.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
+	import { AlertTriangleIcon, ArrowRightIcon, LayersIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { SettingState } from '#lib/types/settings.js';
+	import type { MixedSettingValue, SettingState } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
 
 	// One setting: label and description on the left, the control on the right.
@@ -25,7 +25,7 @@
 		layout?: 'default' | 'switch' | 'wide';
 		labelExtra?: Snippet;
 		lock?: SettingState;
-		mixed?: boolean;
+		mixed?: MixedSettingValue[];
 		/** Extra content under the row (e.g. fields revealed by a switch), indented. */
 		expanded?: Snippet;
 		contentClass?: string;
@@ -43,7 +43,7 @@
 		layout = 'default',
 		labelExtra,
 		lock,
-		mixed = false,
+		mixed,
 		expanded,
 		contentClass,
 		class: className,
@@ -83,15 +83,53 @@
 					<SettingLock {lock} />
 				{/if}
 				{#if mixed}
-					<ArcaneTooltip.Root>
-						<ArcaneTooltip.Trigger>
-							<Badge variant="gray">
-								<LayersIcon />
-								{m.mixed()}
-							</Badge>
-						</ArcaneTooltip.Trigger>
-						<ArcaneTooltip.Content side="bottom">{m.mixed_across_selected_environments()}</ArcaneTooltip.Content>
-					</ArcaneTooltip.Root>
+					<Popover.Root>
+						<Popover.Trigger>
+							{#snippet child({ props })}
+								<button
+									{...props}
+									type="button"
+									title={m.mixed_across_selected_environments()}
+									class="rounded-full focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+								>
+									<Badge variant="gray">
+										<LayersIcon />
+										{m.mixed()}
+									</Badge>
+								</button>
+							{/snippet}
+						</Popover.Trigger>
+						<Popover.Content
+							align="start"
+							variant="panel"
+							class="w-80 overflow-hidden"
+							onOpenAutoFocus={(event) => event.preventDefault()}
+						>
+							<p class="px-4 pt-3 pb-2 text-xs text-muted-foreground">{m.mixed_across_selected_environments()}</p>
+							<div class="divide-y divide-border/50 border-t border-border/50">
+								{#each mixed as value, index (index)}
+									<Popover.Close onclick={value.apply}>
+										{#snippet child({ props })}
+											<button
+												{...props}
+												type="button"
+												class="flex w-full items-center justify-between gap-4 px-4 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
+											>
+												<span class="min-w-0">
+													<span class="block truncate text-sm font-medium">{value.label}</span>
+													<span class="block truncate text-xs text-muted-foreground">{value.environments.join(', ')}</span>
+												</span>
+												<span class="flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground">
+													{m.use_for_all()}
+													<ArrowRightIcon class="size-3.5" />
+												</span>
+											</button>
+										{/snippet}
+									</Popover.Close>
+								{/each}
+							</div>
+						</Popover.Content>
+					</Popover.Root>
 				{/if}
 			</div>
 			{#if description}
