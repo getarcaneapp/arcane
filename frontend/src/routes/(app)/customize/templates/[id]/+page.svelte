@@ -10,8 +10,10 @@
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import {
 		EllipsisIcon,
 		CodeIcon,
@@ -85,8 +87,14 @@
 
 	afterNavigate(() => form.reset(formValues()));
 
-	let remoteCompose = $state({ value: '', dirty: false });
-	let remoteEnv = $state({ value: '', dirty: false });
+	const remoteComposeLines = useHighlightedCode(
+		() => data.templateData.content,
+		() => 'yaml'
+	);
+	const remoteEnvLines = useHighlightedCode(
+		() => data.templateData.envContent ?? '',
+		() => 'env'
+	);
 
 	const hasChanges = $derived(
 		form.inputs.name.value !== originalName ||
@@ -367,25 +375,13 @@
 						<CodeIcon class="size-4 text-muted-foreground" />
 						<h2 class="font-mono text-sm font-medium">compose.yaml</h2>
 					</div>
-					<div class="relative h-120 overflow-hidden rounded-lg border border-border/50 sm:h-140">
-						<div class="absolute inset-0">
-							{#await import('#lib/components/code-editor/editor.svelte')}
-								<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
-							{:then { default: CodeEditor }}
-								<CodeEditor
-									bind:value={
-										() => (remoteCompose.dirty ? remoteCompose.value : data.templateData.content),
-										(value) => (remoteCompose = { value, dirty: true })
-									}
-									language="yaml"
-									readOnly={true}
-									fontSize="13px"
-								/>
-							{:catch}
-								<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
-							{/await}
-						</div>
-					</div>
+					<CodeBlock.Root class="h-120 sm:h-140">
+						<CodeBlock.Content lineNumbers class="flex-1">
+							{#each remoteComposeLines.current as line, index (index)}
+								<CodeBlock.Line code={line} />
+							{/each}
+						</CodeBlock.Content>
+					</CodeBlock.Root>
 				</section>
 
 				{#if data.templateData.envContent}
@@ -394,25 +390,13 @@
 							<FileTextIcon class="size-4 text-muted-foreground" />
 							<h2 class="font-mono text-sm font-medium">.env</h2>
 						</div>
-						<div class="relative h-70 overflow-hidden rounded-lg border border-border/50">
-							<div class="absolute inset-0">
-								{#await import('#lib/components/code-editor/editor.svelte')}
-									<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
-								{:then { default: CodeEditor }}
-									<CodeEditor
-										bind:value={
-											() => (remoteEnv.dirty ? remoteEnv.value : data.templateData.envContent),
-											(value) => (remoteEnv = { value, dirty: true })
-										}
-										language="env"
-										readOnly={true}
-										fontSize="13px"
-									/>
-								{:catch}
-									<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
-								{/await}
-							</div>
-						</div>
+						<CodeBlock.Root class="h-70">
+							<CodeBlock.Content lineNumbers class="flex-1">
+								{#each remoteEnvLines.current as line, index (index)}
+									<CodeBlock.Line code={line} />
+								{/each}
+							</CodeBlock.Content>
+						</CodeBlock.Root>
 					</section>
 				{/if}
 			</div>

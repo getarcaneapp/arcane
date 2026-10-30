@@ -1,6 +1,8 @@
 <script lang="ts">
 	import * as Card from '#lib/components/ui/card/index.js';
+	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
+	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { CodeIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { ContainerDetailsDto } from '#lib/types/docker.js';
@@ -12,6 +14,10 @@
 	let { container }: Props = $props();
 
 	const json = $derived(JSON.stringify(container, null, 2));
+	const jsonLines = useHighlightedCode(
+		() => json,
+		() => 'json'
+	);
 </script>
 
 <Card.Root>
@@ -28,7 +34,11 @@
 			</CopyButton>
 		</div>
 	</Card.Header>
-	<div>
-		<pre class="overflow-auto rounded-b-lg bg-muted/40 p-4 font-mono text-xs leading-relaxed"><code>{json}</code></pre>
-	</div>
+	<CodeBlock.Root size="sm" variant="ghost">
+		<CodeBlock.Content>
+			{#each jsonLines.current as line, index (index)}
+				<CodeBlock.Line code={line} />
+			{/each}
+		</CodeBlock.Content>
+	</CodeBlock.Root>
 </Card.Root>

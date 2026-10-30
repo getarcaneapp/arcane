@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
+	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { Event } from '#lib/types/shared.js';
 
@@ -11,6 +13,10 @@
 	let showRawEvent = $state(false);
 
 	const eventJson = $derived(JSON.stringify(event, null, 2));
+	const eventJsonLines = useHighlightedCode(
+		() => eventJson,
+		() => 'json'
+	);
 	const metadataEntries = $derived(flattenMetadata(event.metadata ?? {}));
 	const hasMetadata = $derived(metadataEntries.length > 0);
 	const eventErrorMessage = $derived.by(() => {
@@ -65,9 +71,15 @@
 			</div>
 		</div>
 		{#if showRawEvent}
-			<pre class="max-h-80 overflow-auto border-t border-border/50 bg-muted/40 p-4 text-xs leading-relaxed"><code
-					class="font-mono">{eventJson}</code
-				></pre>
+			<div class="border-t border-border/50">
+				<CodeBlock.Root size="sm" variant="ghost">
+					<CodeBlock.Content class="max-h-80">
+						{#each eventJsonLines.current as line, index (index)}
+							<CodeBlock.Line code={line} />
+						{/each}
+					</CodeBlock.Content>
+				</CodeBlock.Root>
+			</div>
 		{:else if hasMetadata}
 			<div class="max-h-80 overflow-auto border-t border-border/50">
 				{#each metadataEntries as entry (entry.key)}

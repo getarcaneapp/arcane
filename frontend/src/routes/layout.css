@@ -330,6 +330,7 @@ html.reduce-effects *::after {
 	--font-sans: 'Montserrat Variable', sans-serif;
 	--font-heading: 'Geist Mono Variable', monospace;
 	--font-mono: 'Geist Mono Variable', monospace;
+	--font-code: 'Mona Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', 'Courier New', monospace;
 }
 
 @layer base {

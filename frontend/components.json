@@ -9,7 +9,8 @@
 		"components": "#lib/components",
 		"utils": "#lib/utils",
 		"ui": "#lib/components/ui",
-		"hooks": "#lib/hooks"
+		"hooks": "#lib/hooks",
+		"lib": "#lib"
 	},
 	"typescript": true,
 	"registry": "https://shadcn-svelte.com/registry",

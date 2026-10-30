@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Attachment } from 'svelte/attachments';
 
+	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import { Progress } from '#lib/components/ui/progress/index.js';
 	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
 	import { SuccessIcon, ClockIcon, AlertIcon, AlertTriangleIcon, ArrowDownIcon } from '#lib/icons/index.js';
@@ -134,11 +135,9 @@
 
 	{#if showLogs}
 		{#if logs.length > 0}
-			<pre
-				{@attach followLogTail}
-				class="mt-2 ml-10 max-h-48 overflow-auto rounded-md border bg-muted/40 p-2 font-mono text-2xs leading-relaxed whitespace-pre-wrap text-muted-foreground">{logs.join(
-					'\n'
-				)}</pre>
+			<CodeBlock.Root size="sm" class="mt-2 ml-10 w-auto">
+				<CodeBlock.Content {@attach followLogTail} wrap code={logs.join('\n')} class="max-h-48" />
+			</CodeBlock.Root>
 		{:else}
 			<p class="mt-2 ml-10 text-xs text-muted-foreground italic">{m.environments_update_all_no_logs()}</p>
 		{/if}

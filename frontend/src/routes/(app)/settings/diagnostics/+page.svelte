@@ -5,6 +5,7 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
+	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
 	import * as Table from '#lib/components/ui/table/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
@@ -543,12 +544,12 @@
 											{/snippet}
 										</Collapsible.Trigger>
 										<Collapsible.Content>
-											<pre
-												class="mt-1 max-h-96 overflow-auto rounded-lg border border-border/60 bg-background p-3 font-mono text-2xs leading-relaxed">{dumpLoading[
-													d.id
-												]
-													? m.common_loading()
-													: dumpText[d.id] || m.diagnostics_dump_empty()}</pre>
+											<CodeBlock.Root size="sm" class="mt-1">
+												<CodeBlock.Content
+													code={dumpLoading[d.id] ? m.common_loading() : dumpText[d.id] || m.diagnostics_dump_empty()}
+													class="max-h-96"
+												/>
+											</CodeBlock.Root>
 										</Collapsible.Content>
 									</Collapsible.Root>
 								{/each}
