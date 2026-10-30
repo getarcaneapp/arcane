@@ -90,7 +90,14 @@
 		if (titleId) slots.set(titleId, 'title');
 		return slots;
 	});
-	const fieldCount = $derived([...cardLayout.values()].filter((slot) => slot === 'field' || slot === 'context').length);
+	const layoutCounts = $derived.by(() => {
+		const slots = [...cardLayout.values()];
+		return {
+			fields: slots.filter((slot) => slot === 'field').length,
+			meters: slots.filter((slot) => slot === 'meter').length,
+			footer: slots.filter((slot) => slot === 'footer' || slot === 'footerEnd').length
+		};
+	});
 
 	function splitCells(row: ArcaneRow<TData>) {
 		const slots = {
@@ -98,6 +105,7 @@
 			context: [] as ArcaneCell<TData>[],
 			actions: undefined as ArcaneCell<TData> | undefined,
 			badges: [] as ArcaneCell<TData>[],
+			meters: [] as ArcaneCell<TData>[],
 			fields: [] as ArcaneCell<TData>[],
 			footer: [] as ArcaneCell<TData>[],
 			footerEnd: [] as ArcaneCell<TData>[]
@@ -111,11 +119,18 @@
 			if (slot === 'title') slots.title = cell;
 			else if (slot === 'context') slots.context.push(cell);
 			else if (slot === 'badge') slots.badges.push(cell);
+			else if (slot === 'meter') slots.meters.push(cell);
 			else if (slot === 'footer') slots.footer.push(cell);
 			else if (slot === 'footerEnd') slots.footerEnd.push(cell);
 			else if (slot === 'field') slots.fields.push(cell);
 		}
 		return slots;
+	}
+
+	function footerJustify(index: number, count: number): string {
+		if (index === 0) return 'justify-self-start';
+		if (index === count - 1) return 'justify-self-end';
+		return 'justify-self-center';
 	}
 
 	function cellLabel(cell: ArcaneCell<TData>): string {
@@ -164,6 +179,12 @@
 	});
 
 	const shouldVirtualize = $derived(entries.length > 30);
+	const cardHeightEstimate = $derived(
+		72 +
+			(layoutCounts.meters > 0 ? 56 : 0) +
+			(layoutCounts.fields > 0 ? 24 + layoutCounts.fields * 26 : 0) +
+			(layoutCounts.footer > 0 ? 38 : 0)
+	);
 	const getItemKey = $derived.by(() => {
 		const displayed = entries;
 		return (index: number) => displayed[index]?.key ?? index;
@@ -171,7 +192,7 @@
 	const rowVirtualizer = createVirtualizer<HTMLElement, HTMLDivElement>(() => ({
 		count: entries.length,
 		getScrollElement: () => scrollElement ?? null,
-		estimateSize: (index) => (entries[index]?.kind === 'group' ? 48 : 130 + fieldCount * 28),
+		estimateSize: (index) => (entries[index]?.kind === 'group' ? 48 : cardHeightEstimate),
 		overscan: 4,
 		getItemKey,
 		initialOffset: initialScrollTop,
@@ -182,7 +203,7 @@
 		if (!shouldVirtualize) return;
 		// Column count and field changes reflow every line, invalidating cached heights.
 		void columnCount;
-		void fieldCount;
+		void cardHeightEstimate;
 		rowVirtualizer.measure();
 	});
 
@@ -204,8 +225,8 @@
 {#snippet gridSkeleton()}
 	<div class="grid grid-cols-(--grid-cols) gap-2.5 p-3" style={gridColumnsStyle}>
 		{#each Array.from({ length: columnCount * 2 }, (_, i) => i) as r (r)}
-			<div class="space-y-3 rounded-xl border border-border/40 p-4">
-				<div class="flex items-center gap-3">
+			<div class="flex flex-col gap-3 rounded-xl border border-border p-3.5">
+				<div class="flex items-center gap-3 border-b border-border/40 pb-3">
 					<Skeleton class="size-10" />
 					<div class="flex-1 space-y-1.5">
 						<Skeleton class="h-4 w-1/2" />
@@ -214,6 +235,9 @@
 				</div>
 				<Skeleton class="h-3 w-3/4" />
 				<Skeleton class="h-3 w-2/3" />
+				<div class="border-t border-border/40 pt-3">
+					<Skeleton class="h-3 w-1/2" />
+				</div>
 			</div>
 		{/each}
 	</div>
@@ -286,26 +310,48 @@
 			<FlexRender cell={cells.actions} />
 		{/if}
 	{/snippet}
+	{#snippet cardContext()}
+		{#each cells.context as cell, index (cell.id)}
+			{#if index > 0}
+				<span>•</span>
+			{/if}
+			<span class="inline-flex min-w-0 items-center">
+				<FlexRender {cell} />
+			</span>
+		{/each}
+	{/snippet}
 	{#snippet cardBadges()}
 		{#each cells.badges as cell (cell.id)}
 			<FlexRender {cell} />
 		{/each}
 	{/snippet}
+	{#snippet cardMeters()}
+		{#each cells.meters as cell (cell.id)}
+			<FlexRender {cell} />
+		{/each}
+	{/snippet}
 	{#snippet cardFields()}
-		{#each [...cells.context, ...cells.fields] as cell (cell.id)}
+		{#each cells.fields as cell (cell.id)}
 			<ResourceCardField label={cellLabel(cell)}>
 				<FlexRender {cell} />
 			</ResourceCardField>
 		{/each}
 	{/snippet}
 	{#snippet cardFooter()}
-		{#each cells.footer as cell (cell.id)}
-			<ResourceCardMeta label={cellLabel(cell)}>
-				<FlexRender {cell} />
-			</ResourceCardMeta>
+		{@const footerCount = cells.footer.length + (cells.footerEnd.length > 0 ? 1 : 0)}
+		{#each cells.footer as cell, index (cell.id)}
+			<div class={cn('flex min-w-0', footerJustify(index, footerCount))}>
+				<ResourceCardMeta
+					label={cellLabel(cell)}
+					icon={cell.column.columnDef.meta?.cardIcon}
+					showLabel={cell.column.columnDef.meta?.cardLabel ?? !cell.column.columnDef.meta?.cardIcon}
+				>
+					<FlexRender {cell} />
+				</ResourceCardMeta>
+			</div>
 		{/each}
 		{#if cells.footerEnd.length > 0}
-			<span class="ml-auto inline-flex min-w-0 items-center gap-3 text-foreground/70">
+			<span class="inline-flex min-w-0 items-center justify-end gap-3 justify-self-end whitespace-nowrap text-foreground/70">
 				{#each cells.footerEnd as cell (cell.id)}
 					<FlexRender {cell} />
 				{/each}
@@ -317,13 +363,15 @@
 		onclick={selectionDisabled && !hasExpand ? undefined : (e) => handleCardClick(e, rowId)}
 		onmousedown={handleCardMouseDown}
 		title={cardTitle}
+		context={cells.context.length > 0 ? cardContext : undefined}
 		actions={cells.actions || (hasExpand && !selectionDisabled) ? cardActions : undefined}
 		badges={cells.badges.length > 0 ? cardBadges : undefined}
-		fields={cells.context.length + cells.fields.length > 0 ? cardFields : undefined}
+		meters={cells.meters.length > 0 ? cardMeters : undefined}
+		fields={cells.fields.length > 0 ? cardFields : undefined}
 		footer={cells.footer.length + cells.footerEnd.length > 0 ? cardFooter : undefined}
 	>
 		{#if hasExpand && isExpanded && expandedRowContent}
-			<div class="border-t border-border/40 bg-muted/30 px-3.5 py-3">
+			<div class="rounded-lg border border-border/60 bg-muted/30 p-3">
 				{@render expandedRowContent({ row, item: row.original })}
 			</div>
 		{/if}

@@ -11,6 +11,8 @@ import { metaHelper } from '@tanstack/table-core';
 import type { Cell, Column, ColumnDef, FilterFn, Row, RowData, Table } from '@tanstack/table-core';
 
 // Type-only cycle with arcane-table.types.svelte.ts (which imports only types from here) — erased at emit.
+import type { IconType } from '#lib/icons/index.js';
+
 import type { CardSlot, ColumnAlign, ColumnWidth, FilterOption } from './arcane-table.types.svelte';
 
 /**
@@ -25,6 +27,8 @@ export interface ArcaneColumnMeta {
 	align?: ColumnAlign;
 	truncate?: boolean;
 	card?: CardSlot;
+	cardIcon?: IconType;
+	cardLabel?: boolean;
 }
 
 /**

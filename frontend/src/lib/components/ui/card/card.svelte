@@ -19,7 +19,7 @@
 			/** `sm` tightens the content padding for dense tiles. */
 			size?: 'default' | 'sm';
 			/** Hover affordance for cards that act as links or choices. */
-			interactive?: boolean;
+			interactive?: boolean | 'subtle';
 			/** Highlights the current or chosen card. */
 			selected?: boolean;
 			onclick?: (e: MouseEvent) => void;
@@ -61,10 +61,12 @@
 	class={cn(
 		'group relative isolate gap-0 overflow-hidden rounded-xl border border-border/70 p-0 text-card-foreground transition-colors duration-200',
 		getVariantClasses(variant),
-		onclick
-			? 'cursor-pointer [&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:bg-muted/60 [&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:shadow-sm'
-			: '',
-		interactive && 'hover-glow-card',
+		onclick && 'cursor-pointer',
+		onclick &&
+			!interactive &&
+			'[&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:bg-muted/60 [&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:shadow-sm',
+		interactive === true && 'hover-glow-card',
+		interactive === 'subtle' && 'hover-glow-card-subtle',
 		selected && 'border-primary/40 bg-primary/5',
 		className
 	)}

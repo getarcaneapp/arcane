@@ -1,16 +1,19 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
+	import * as Card from '#lib/components/ui/card/index.js';
 	import { cn } from '#lib/utils.js';
 
 	let {
 		selected = false,
 		onclick,
 		onmousedown,
+		icon,
 		title,
 		context,
 		actions,
 		badges,
+		meters,
 		fields,
 		footer,
 		children,
@@ -19,72 +22,74 @@
 		selected?: boolean;
 		onclick?: (event: MouseEvent) => void;
 		onmousedown?: (event: MouseEvent) => void;
+		icon?: Snippet;
 		title: Snippet;
-		/** Secondary line under the title, e.g. the environment. */
 		context?: Snippet;
 		actions?: Snippet;
-		/** Status pills and indicators, the same ones the list row shows. */
 		badges?: Snippet;
-		/** `ResourceCardField` rows. */
+		meters?: Snippet;
 		fields?: Snippet;
 		footer?: Snippet;
-		/** Extra content below the fields, e.g. an expanded row. */
 		children?: Snippet;
 		class?: string;
 	} = $props();
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<article
-	data-slot="resource-card"
-	data-state={selected ? 'selected' : undefined}
-	class={cn(
-		'group/resource-card relative flex h-full min-w-0 flex-col rounded-lg border border-border/50 bg-card/30 transition-colors duration-150 hover:border-border hover:bg-muted/30',
-		selected && 'border-primary/40 bg-primary/5 hover:border-primary/50 hover:bg-primary/8',
-		onclick && 'cursor-pointer',
-		className
-	)}
+<Card.Root
+	variant="transparent"
+	interactive="subtle"
+	{selected}
 	{onclick}
 	{onmousedown}
+	data-slot="resource-card"
+	data-state={selected ? 'selected' : undefined}
+	class={cn('flex h-full min-w-0 flex-col', className)}
 >
-	<header class="flex items-start gap-2 px-3.5 pt-3">
-		<div class="flex min-w-0 flex-1 flex-col gap-0.5">
-			<div class="min-w-0 overflow-hidden text-sm leading-5 font-medium">
-				{@render title()}
-			</div>
-			{#if context}
-				<div class="min-w-0 overflow-hidden text-xs *:text-xs">
-					{@render context()}
+	<div class="flex min-w-0 flex-1 flex-col divide-y divide-border/40 px-3.5">
+		<header class="flex min-w-0 items-start gap-3 py-3">
+			{#if icon}
+				<div class="shrink-0">
+					{@render icon()}
 				</div>
 			{/if}
-		</div>
-		{#if actions}
-			<div class="-mt-1 -mr-1.5 flex shrink-0 items-center" data-row-select-ignore>
-				{@render actions()}
+			<div class="flex min-w-0 flex-1 flex-col gap-0.5">
+				<div class="min-w-0 truncate text-sm font-medium">
+					{@render title()}
+				</div>
+				{#if context}
+					<div class="flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground **:text-xs">
+						{@render context()}
+					</div>
+				{/if}
+			</div>
+			{#if badges || actions}
+				<div class="-mr-1.5 flex shrink-0 items-center gap-1.5" data-row-select-ignore>
+					{@render badges?.()}
+					{@render actions?.()}
+				</div>
+			{/if}
+		</header>
+
+		{#if meters}
+			<div class="grid grid-cols-2 gap-4 py-3">
+				{@render meters()}
 			</div>
 		{/if}
-	</header>
 
-	{#if badges}
-		<div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 px-3.5 pt-2.5 *:max-w-full">
-			{@render badges()}
-		</div>
-	{/if}
+		{#if fields}
+			<dl class="flex flex-col gap-1.5 py-3">
+				{@render fields()}
+			</dl>
+		{/if}
 
-	{#if fields}
-		<dl class="mx-3.5 mt-3 flex flex-col gap-1.5 border-t border-border/40 pt-3 pb-3">
-			{@render fields()}
-		</dl>
-	{/if}
+		{@render children?.()}
 
-	{@render children?.()}
-
-	{#if footer}
-		<footer
-			class="mt-auto flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border/40 px-3.5 py-2 text-xs text-muted-foreground tabular-nums"
-		>
-			{@render footer()}
-		</footer>
-	{/if}
-</article>
+		{#if footer}
+			<footer
+				class="mt-auto grid auto-cols-fr grid-flow-col items-center gap-x-4 py-2.5 text-xs text-muted-foreground tabular-nums"
+			>
+				{@render footer()}
+			</footer>
+		{/if}
+	</div>
+</Card.Root>

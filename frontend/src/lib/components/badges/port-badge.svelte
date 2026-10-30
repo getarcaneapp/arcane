@@ -119,7 +119,7 @@
 						{@const triggerProps = mergeProps(props, {
 							class: cn(
 								badgeVariants({ variant: 'sky', size: 'sm' }),
-								'hover:bg-info/20 hover:border-info/40 focus-visible:outline-none'
+								'shrink-0 hover:bg-info/20 hover:border-info/40 focus-visible:outline-none'
 							),
 							href: toPortHref(p.hostPort!, baseServerUrl),
 							target: '_blank',
@@ -150,7 +150,7 @@
 		{#each exposedOnly as p (portKey(p))}
 			<ArcaneTooltip.Root>
 				<ArcaneTooltip.Trigger>
-					<span class={badgeVariants({ variant: 'gray', size: 'sm' })}>
+					<span class={cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'shrink-0')}>
 						<span class="tabular-nums">{p.containerPort}</span>
 						{#if p.proto}
 							<span class="text-muted-foreground uppercase">{p.proto}</span>
@@ -170,7 +170,7 @@
 					{#snippet child({ props })}
 						{@const triggerProps = mergeProps(props, {
 							onclick: () => (expanded = !expanded),
-							class: cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'hover:bg-muted cursor-pointer')
+							class: cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'shrink-0 hover:bg-muted cursor-pointer')
 						})}
 						<button {...triggerProps}>{expanded ? '−' : `+${hiddenCount}`}</button>
 					{/snippet}
