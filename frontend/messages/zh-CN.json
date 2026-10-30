@@ -2893,6 +2893,8 @@
   "update_center_step_reload": "重新加载页面",
   "update_center_estimated": "此过程通常不超过一分钟。",
   "update_center_complete": "更新完成。",
+  "update_center_unconfirmed": "已请求更新，但无法确认。请检查环境的日志。",
+  "update_center_unconfirmed_version": "虽然已请求更新，但环境仍运行着 {version}。请检查其日志。",
   "auto_start": "自动启动",
   "api_key_name_placeholder": "输入此 API 密钥的名称",
   "api_key_save_warning": "请立即保存此密钥——它只会显示这一次。",

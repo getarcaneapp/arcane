@@ -2893,6 +2893,8 @@
   "update_center_step_reload": "Sayfayı yeniden yükle",
   "update_center_estimated": "Bu işlem genellikle bir dakikadan az sürer.",
   "update_center_complete": "Güncelleme tamamlandı.",
+  "update_center_unconfirmed": "Güncelleme talep edildi ancak onaylanamadı. Ortamın günlüklerini kontrol edin.",
+  "update_center_unconfirmed_version": "Güncelleme talep edildi ancak ortam hâlâ ` {version}` dosyasını çalıştırıyor. Günlüklerini kontrol edin.",
   "auto_start": "Otomatik başlatma",
   "api_key_name_placeholder": "Bu API anahtarı için bir ad girin",
   "api_key_save_warning": "Bu anahtarı şimdi kaydedin — bir daha gösterilmeyecektir.",

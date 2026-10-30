@@ -2893,6 +2893,8 @@
   "update_center_step_reload": "Reŝargi paĝon",
   "update_center_estimated": "Tio kutime daŭras malpli ol unu minuton.",
   "update_center_complete": "Ĝisdatigo finita.",
+  "update_center_unconfirmed": "La ĝisdatigo estis petita, sed ne povis esti konfirmita. Kontrolu la registrojn de la medio.",
+  "update_center_unconfirmed_version": "La ĝisdatigo estis petita, sed la medio ankoraŭ rulas {version}. Kontrolu ĝiajn registrojn.",
   "auto_start": "Aŭtomata ekfunkciigo",
   "api_key_name_placeholder": "Enigu nomon por ĉi tiu API-ŝlosilo",
   "api_key_save_warning": "Konservu ĉi tiun ŝlosilon nun — ĝi ne plu aperos.",

@@ -2893,6 +2893,8 @@
   "update_center_step_reload": "ページの再読み込み",
   "update_center_estimated": "通常1分もかからない。",
   "update_center_complete": "アップデート完了。",
+  "update_center_unconfirmed": "更新が要求されましたが、確認できませんでした。環境のログを確認してください。",
+  "update_center_unconfirmed_version": "アップデートのリクエストは行われたものの、環境では依然として ` {version}` が実行されています。そのログを確認してください。",
   "auto_start": "Auto-start",
   "api_key_name_placeholder": "Enter a name for this API key",
   "api_key_save_warning": "このキーを今すぐ保存してください。二度と表示されません。",
