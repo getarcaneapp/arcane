@@ -4,7 +4,7 @@ import { fetchApiKeysWithRetry } from '../utils/fetch.util';
 import { openRowActionsMenu } from '../utils/table-actions.util';
 
 test.describe('API keys', () => {
-	const API_KEYS_ROUTE = '/settings/api-keys';
+	const API_KEYS_ROUTE = '/system/api-keys';
 
 	async function navigateToApiKeys(page: Page) {
 		await page.goto(API_KEYS_ROUTE);
@@ -198,7 +198,7 @@ test.describe('Diagnostics', () => {
 		test('renders repeated entries from the live diagnostic log stream', async ({ page }) => {
 			await mockDiagnosticsLogsWebSocket(page);
 
-			await page.goto('/settings/diagnostics?tab=logs');
+			await page.goto('/system/diagnostics?tab=logs');
 			await page.waitForLoadState('domcontentloaded');
 
 			await expect(page).toHaveURL(/\/settings\/diagnostics/);
@@ -207,22 +207,17 @@ test.describe('Diagnostics', () => {
 	});
 });
 
-test.describe('Environment settings tabs', () => {
-	test('opens the environment-scoped settings as tabs on the environment page', async ({
-		page
-	}) => {
-		for (const [tab, name] of [
+test.describe('Environment settings pages', () => {
+	test('opens the environment-scoped settings as settings pages', async ({ page }) => {
+		for (const [slug, name] of [
 			['timeouts', 'Timeouts'],
 			['activity', 'Activity'],
 			['builds', 'Builds'],
-			['jobs', 'Automations']
+			['automations', 'Automations']
 		]) {
-			await page.goto(`/environments/0?tab=${tab}`);
-			await expect(page.getByRole('tab', { name, exact: true })).toHaveAttribute(
-				'data-state',
-				'active'
-			);
-			expect(new URL(page.url()).searchParams.get('tab')).toBe(tab);
+			await page.goto(`/settings/${slug}?env=0`);
+			await expect(page.getByRole('heading', { name, exact: true, level: 1 })).toBeVisible();
+			expect(new URL(page.url()).searchParams.get('env')).toBe('0');
 		}
 	});
 });
@@ -343,7 +338,7 @@ test.describe('Notifications', () => {
 				});
 			});
 
-			await page.goto('/settings/notifications');
+			await page.goto('/system/notifications');
 			await page.waitForLoadState('load');
 			await expect(page.getByRole('tab', { name: 'Email' })).toBeVisible();
 

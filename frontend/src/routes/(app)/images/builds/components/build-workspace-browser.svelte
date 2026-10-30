@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -253,7 +254,7 @@
 						action="base"
 						tone="outline"
 						customLabel={m.build_workspace_open_settings()}
-						href={`/environments/${envId}?tab=builds`}
+						href={resolve(`/(app)/settings/builds?env=${encodeURIComponent(envId)}`)}
 					/>
 				{:else}
 					<p class="text-xs text-muted-foreground">{m.build_workspace_ask_admin()}</p>

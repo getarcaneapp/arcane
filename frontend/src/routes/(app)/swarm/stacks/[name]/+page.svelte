@@ -273,7 +273,7 @@
 	{#snippet mainContent()}
 		<div class="flex min-h-screen-inset-18 flex-col gap-4">
 			{#if !hasLiveStack && canViewSource}
-				<Card.Root variant="subtle">
+				<Card.Root>
 					<Card.Content>
 						<p class="text-sm">{m.swarm_stacks_not_deployed_files_found()}</p>
 					</Card.Content>
@@ -361,13 +361,13 @@
 							{/key}
 						</div>
 					{:else if sourceState === 'loading'}
-						<Card.Root variant="subtle">
+						<Card.Root>
 							<Card.Content>
 								<p class="text-center text-sm text-muted-foreground">{m.swarm_stack_source_loading()}</p>
 							</Card.Content>
 						</Card.Root>
 					{:else if sourceState === 'missing'}
-						<Card.Root variant="subtle">
+						<Card.Root>
 							<Card.Content>
 								<div class="space-y-2 text-sm">
 									<p class="font-medium">{m.common_not_found_title({ resource: 'Saved source' })}</p>
@@ -378,7 +378,7 @@
 							</Card.Content>
 						</Card.Root>
 					{:else if sourceState === 'error'}
-						<Card.Root variant="subtle">
+						<Card.Root>
 							<Card.Content>
 								<div class="space-y-2 text-sm">
 									<p class="font-medium">{m.common_action_failed()}</p>

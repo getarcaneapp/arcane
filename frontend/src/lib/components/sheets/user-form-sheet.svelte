@@ -229,7 +229,7 @@
 						<div class="mb-3">
 							<p class="text-xs text-muted-foreground">
 								{m.oidc_synced_role_assignments()}
-								<a href={resolve('/(app)/settings/authentication')} class="ml-1 text-primary underline"
+								<a href={resolve('/(app)/system/authentication')} class="ml-1 text-primary underline"
 									>{m.users_role_assignments_oidc_link()}</a
 								>
 							</p>

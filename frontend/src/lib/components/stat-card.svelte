@@ -67,7 +67,7 @@
 {:else}
 	<div
 		class={cn(
-			'hover-lift group relative overflow-hidden rounded-xl border border-border/70 bg-card/80 p-4 transition-colors',
+			'hover-lift group relative overflow-hidden rounded-xl border border-border/70 bg-card/10 p-4 transition-colors',
 			iconColor,
 			className
 		)}

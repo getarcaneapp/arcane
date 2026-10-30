@@ -136,7 +136,7 @@
 			>
 
 			{#if updateStatus?.['State']}
-				<Card.Root variant="subtle" class="sm:col-span-2">
+				<Card.Root class="sm:col-span-2">
 					<Card.Content>
 						<div class="flex flex-col gap-2">
 							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.common_status()}</div>

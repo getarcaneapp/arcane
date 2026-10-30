@@ -151,7 +151,9 @@
 
 	{#each assignments as assignment, index (assignment)}
 		{@const envValue = envIdToSelectValue(assignment.environmentId)}
-		<div class="grid grid-cols-1 gap-2 rounded-md border bg-card/50 p-3 sm:grid-cols-halves-action sm:items-center">
+		<div
+			class="grid grid-cols-1 gap-2 rounded-md border border-border/70 bg-card/10 p-3 sm:grid-cols-halves-action sm:items-center"
+		>
 			<Select.Root
 				type="single"
 				value={envValue}

@@ -143,7 +143,7 @@
 								<RadioGroup.Item id={`application-theme-${theme.value}`} value={theme.value} class="sr-only" {disabled} />
 								<Label for={`application-theme-${theme.value}`} class={disabled ? 'cursor-not-allowed' : 'cursor-pointer'}>
 									<div class={cn('h-full', selectedTheme !== theme.value && 'opacity-85 saturate-75', disabled && 'opacity-60')}>
-										<Card.Root variant="outlined" interactive selected={selectedTheme === theme.value} class="h-full">
+										<Card.Root interactive selected={selectedTheme === theme.value} class="h-full">
 											<Card.Content class="h-full">
 												<div class="flex h-full flex-col gap-4">
 													<div

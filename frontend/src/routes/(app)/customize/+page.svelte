@@ -117,7 +117,7 @@
 	noResultsDescription={m.customize_try_adjusting()}
 	matchingItemsLabel={m.customize_available_options()}
 	goToPageLabel={m.customize_button()}
-	categories={normalizedCategories}
+	groups={[{ id: 'customize', categories: normalizedCategories }]}
 	categorySearch={searchAdapter}
 	navigate={navigateToCategory}
 >

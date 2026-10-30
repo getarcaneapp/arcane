@@ -3,13 +3,24 @@
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { DownloadIcon, ResetIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import type { Environment, EnvironmentStatus } from '#lib/types/environment.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 
 	import EnvironmentConnectionDetails from './environment-connection-details.svelte';
-	import type { ConnectionAgentTabProps } from './tab-props';
 
-	let { environment, currentStatus, showMTLSDownloads, isRegeneratingKey, onRegenerateApiKey }: ConnectionAgentTabProps =
-		$props();
+	let {
+		environment,
+		currentStatus,
+		showMTLSDownloads,
+		isRegeneratingKey,
+		onRegenerateApiKey
+	}: {
+		environment: Environment;
+		currentStatus: EnvironmentStatus;
+		showMTLSDownloads: boolean;
+		isRegeneratingKey: boolean;
+		onRegenerateApiKey: () => void;
+	} = $props();
 
 	let mtlsBundleDownloadHref = $derived(`/api/environments/${environment.id}/deployment/mtls/bundle`);
 	let mtlsCertificateDownloadHref = $derived(`/api/environments/${environment.id}/deployment/mtls/agent.crt`);

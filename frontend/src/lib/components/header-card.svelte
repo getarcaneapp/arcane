@@ -11,12 +11,7 @@
 	let { children, class: className }: Props = $props();
 </script>
 
-<div
-	class={cn(
-		'relative overflow-hidden rounded-xl border border-border/70 bg-card/60 p-4 shadow-xs backdrop-blur-md sm:p-5',
-		className
-	)}
->
+<div class={cn('relative overflow-hidden rounded-xl border border-border/70 bg-card/10 p-4 sm:p-5', className)}>
 	<div class="relative">
 		{@render children()}
 	</div>

@@ -51,13 +51,13 @@
 	{@const aliases = network.aliases}
 	{@const vip = vipMap[networkId]}
 	{@const info = networkDetails[networkId]}
-	<Card.Root variant="subtle">
+	<Card.Root>
 		<Card.Content>
 			{@render networkSummary(info, aliases, networkId)}
 
 			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 				{#if vip}
-					<Card.Root variant="outlined" size="sm">
+					<Card.Root size="sm">
 						<Card.Content class="flex flex-col">
 							<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.networks_service_vip_label()}</div>
 							<code
@@ -69,7 +69,7 @@
 					</Card.Root>
 				{/if}
 
-				<Card.Root variant="outlined" size="sm">
+				<Card.Root size="sm">
 					<Card.Content class="flex flex-col">
 						<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.common_id()}</div>
 						<code
@@ -81,7 +81,7 @@
 				</Card.Root>
 
 				{#if aliases.length > 0}
-					<Card.Root variant="outlined" size="sm">
+					<Card.Root size="sm">
 						<Card.Content class="flex flex-col">
 							<div class="mb-2 text-xs font-semibold text-muted-foreground">
 								{m.containers_aliases()}
@@ -108,7 +108,7 @@
 {/snippet}
 
 {#snippet configurationNetwork(configNetwork: NonNullable<ServiceNetworkDetail['configNetwork']>)}
-	<Card.Root variant="outlined" class="sm:col-span-2" size="sm">
+	<Card.Root class="sm:col-span-2" size="sm">
 		<Card.Content>
 			<div class="mb-3 flex items-center justify-between border-b border-border pb-3">
 				<div>

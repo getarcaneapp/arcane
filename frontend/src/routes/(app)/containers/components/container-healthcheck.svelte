@@ -242,7 +242,7 @@
 				<div class="space-y-2">
 					{#each recentProbes as probe (probeKey(probe))}
 						{@const key = probeKey(probe)}
-						<Card.Root variant="subtle">
+						<Card.Root>
 							<Card.Content>
 								<div class="flex flex-col gap-2">
 									<div class="flex flex-wrap items-center justify-between gap-2">

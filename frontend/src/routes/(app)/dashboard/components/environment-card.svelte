@@ -67,7 +67,7 @@
 	const gpuMetric = $derived(getGpuMetric(systemStats));
 </script>
 
-<Card.Root variant="outlined" interactive class="@container overflow-hidden">
+<Card.Root interactive class="@container overflow-hidden">
 	<Card.Content>
 		<div class="flex flex-col gap-4">
 			<div class="flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:items-start sm:justify-between">

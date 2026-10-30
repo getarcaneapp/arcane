@@ -80,7 +80,7 @@
 	}
 </script>
 
-<div class="space-y-5 rounded-2xl border bg-card/60 p-5 shadow-sm ring-1 ring-border/40">
+<div class="space-y-5 rounded-xl border border-border/70 bg-card/10 p-5">
 	<div class="space-y-2">
 		<div class="flex items-center gap-2">
 			<ApiKeyIcon class="size-5 text-primary" />

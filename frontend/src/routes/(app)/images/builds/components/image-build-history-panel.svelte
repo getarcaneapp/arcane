@@ -355,12 +355,12 @@
 			<div class="grid gap-4 lg:h-screen-70 lg:grid-cols-aside-90 lg:items-stretch">
 				<div class="min-h-0 space-y-3 lg:overflow-auto lg:overscroll-contain lg:pr-1">
 					{#each detailItems as detail (detail.label)}
-						<KeyValueCard label={detail.label} variant="outlined" compact>
+						<KeyValueCard label={detail.label} compact>
 							{detail.value}
 						</KeyValueCard>
 					{/each}
 				</div>
-				<div class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/30">
+				<div class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-card/10">
 					<div class="flex items-center justify-between border-b border-border/60 px-4 py-3">
 						<div class="text-sm font-medium">{m.build_output()}</div>
 						{#if selectedBuild?.outputTruncated}

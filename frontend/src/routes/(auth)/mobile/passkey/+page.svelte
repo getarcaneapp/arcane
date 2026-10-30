@@ -136,7 +136,7 @@
 <main class="relative z-(--arcane-z-raised) flex min-h-dvh items-center justify-center p-5 sm:p-8">
 	<section
 		aria-labelledby="mobile-passkey-title"
-		class="w-full max-w-md rounded-3xl border bg-card/75 p-6 shadow-float ring-1 ring-border/40 backdrop-blur-xl sm:p-8"
+		class="w-full max-w-md rounded-xl border border-border/70 bg-card/10 p-6 sm:p-8"
 	>
 		<div class="mb-7 flex items-center justify-between gap-4">
 			<div class="flex items-center gap-3">

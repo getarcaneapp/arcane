@@ -66,7 +66,7 @@
 						{@const readOnly = getMountReadOnly(mount)}
 						{@const iconColor = getMountIconColor(type, mount)}
 						{@const bindBacked = type === 'volume' && isBindBackedVolume(mount)}
-						<Card.Root variant="subtle">
+						<Card.Root>
 							<Card.Content>
 								<div class="mb-4 flex items-center justify-between border-b border-border pb-4">
 									<div class="flex items-center gap-3">
@@ -97,7 +97,7 @@
 								</div>
 
 								<div class="grid grid-cols-1 gap-3">
-									<Card.Root variant="outlined" size="sm">
+									<Card.Root size="sm">
 										<Card.Content class="flex flex-col">
 											<div class="mb-2 text-xs font-semibold text-muted-foreground">
 												{m.containers_mount_label_container()}
@@ -109,7 +109,7 @@
 									</Card.Root>
 
 									{#if source && type !== 'tmpfs'}
-										<Card.Root variant="outlined" size="sm">
+										<Card.Root size="sm">
 											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">
 													{type === 'volume' ? m.containers_mount_label_volume() : m.containers_mount_label_host()}
@@ -122,7 +122,7 @@
 									{/if}
 
 									{#if bindBacked && mount.volumeOptions?.['device']}
-										<Card.Root variant="outlined" size="sm">
+										<Card.Root size="sm">
 											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.dashboard_meter_gpu_device()}:</div>
 												<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
@@ -133,7 +133,7 @@
 									{/if}
 
 									{#if mount.devicePath}
-										<Card.Root variant="outlined" size="sm">
+										<Card.Root size="sm">
 											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">
 													{bindBacked ? m.containers_mount_label_volume() : m.containers_mount_label_host()}

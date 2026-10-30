@@ -35,7 +35,7 @@
 		</div>
 	{/if}
 	{#if variant === 'list'}
-		<div class="divide-y divide-border/50 overflow-hidden rounded-xl border border-border/60 bg-card/30">
+		<div class="divide-y divide-border/50 overflow-hidden rounded-xl border border-border/70 bg-card/10">
 			{@render children()}
 		</div>
 	{:else}
