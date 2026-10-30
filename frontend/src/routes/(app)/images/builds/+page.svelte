@@ -186,6 +186,7 @@
 	const registriesQuery = createQuery(() => ({
 		queryKey: queryKeys.containerRegistries.list(registryRequestOptions),
 		enabled: isPushMode,
+		staleTime: 0,
 		queryFn: () => containerRegistryService.getRegistries(registryRequestOptions)
 	}));
 

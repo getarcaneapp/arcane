@@ -34,6 +34,7 @@ export type Settings = {
 	environmentHealthInterval: number;
 	activityHistoryRetentionDays: number;
 	upgradeLogRetentionDays: number;
+	upgradeMaxParallelAgents: number;
 	activityHistoryMaxEntries: number;
 	maxConcurrentActivities: number;
 	defaultDeployPullPolicy: 'missing' | 'always' | 'never';

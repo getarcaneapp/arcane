@@ -890,3 +890,47 @@ func TestManagerOnlyUpgradeJobReachesManagerStep(t *testing.T) {
 	require.Equal(t, types.RunStatusSucceeded, outcome.Status)
 	require.Equal(t, "Upgrade job finished; completed", outcome.Message)
 }
+
+func TestAcquireAgentSlotHonorsParallelSetting(t *testing.T) {
+	ctx := t.Context()
+	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+
+	db := &database.DB{DB: gormDB}
+	require.NoError(t, db.AutoMigrate(&settings.SettingVariable{}))
+	settingsSvc, err := settings.NewSettingsService(ctx, db, &config.Config{}, settings.Env{})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, settingsSvc.Stop(context.WithoutCancel(t.Context()))) })
+	require.NoError(t, settingsSvc.SetIntSetting(ctx, "upgradeMaxParallelAgents", 1))
+
+	svc := NewService(db, nil, nil, nil, settingsSvc, nil, nil, nil, false)
+	release := svc.acquireAgentSlot(ctx)
+
+	waitCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	svc.acquireAgentSlot(waitCtx)()
+	svc.agentSlotsMu.Lock()
+	require.Equal(t, 1, svc.activeAgents)
+	svc.agentSlotsMu.Unlock()
+
+	acquired := make(chan func(), 1)
+	go func() {
+		acquired <- svc.acquireAgentSlot(ctx)
+	}()
+	release()
+	select {
+	case next := <-acquired:
+		next()
+	case <-time.After(time.Second):
+		t.Fatal("waiting upgrade did not get the released slot")
+	}
+
+	require.NoError(t, settingsSvc.SetIntSetting(ctx, "upgradeMaxParallelAgents", 2))
+	first := svc.acquireAgentSlot(ctx)
+	second := svc.acquireAgentSlot(ctx)
+	svc.agentSlotsMu.Lock()
+	require.Equal(t, 2, svc.activeAgents)
+	svc.agentSlotsMu.Unlock()
+	first()
+	second()
+}
