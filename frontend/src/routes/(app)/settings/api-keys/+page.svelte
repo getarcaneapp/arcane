@@ -73,7 +73,6 @@
 				onSuccess: async () => {
 					toast.success(m.api_key_updated_success({ name: safeName }));
 					isDialogOpen.edit = false;
-					apiKeyToEdit = null;
 					await queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys.all });
 				}
 			});
@@ -133,14 +132,16 @@
 			isLoading={isLoading.creating}
 		/>
 
-		<ApiKeyFormSheet
-			bind:open={isDialogOpen.edit}
-			{apiKeyToEdit}
-			manifest={data.permissionsManifest}
-			availablePermissions={apiKeyToEdit?.permissions ?? []}
-			onSubmit={handleApiKeySubmit}
-			isLoading={isLoading.editing}
-		/>
+		{#key apiKeyToEdit?.id ?? 'new'}
+			<ApiKeyFormSheet
+				bind:open={isDialogOpen.edit}
+				{apiKeyToEdit}
+				manifest={data.permissionsManifest}
+				availablePermissions={apiKeyToEdit?.permissions ?? []}
+				onSubmit={handleApiKeySubmit}
+				isLoading={isLoading.editing}
+			/>
+		{/key}
 
 		<ResponsiveDialog.Root
 			bind:open={isDialogOpen.showKey}

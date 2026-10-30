@@ -9,7 +9,6 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { swarmNodeListQuery } from '#lib/query/swarm.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
-	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -44,24 +43,27 @@
 		});
 	}
 
-	onMount(() => {
-		let active = true;
-		const reconciled = new Set<string>();
-		async function reconcileEnvironments() {
-			const pending = swarm.managers.filter((env) => !reconciled.has(env.id) && hasPermission('swarm:nodes', env.id));
-			if (pending.length === 0) return;
-			for (const env of pending) reconciled.add(env.id);
-			const results = await Promise.all(pending.map((env) => tryCatch(swarmService.reconcileNodeAgents(env.id))));
-			if (!active || results.every((result) => result.error !== null)) return;
-			await refresh();
-		}
-		const unsubscribeUser = userStore.onChange(() => {
-			void reconcileEnvironments();
+	let active = true;
+	const reconciled = new Set<string>();
+	const reconcilableManagers = $derived(swarm.managers.filter((env) => hasPermission('swarm:nodes', env.id)));
+
+	async function reconcileEnvironments(pending: typeof reconcilableManagers) {
+		for (const env of pending) reconciled.add(env.id);
+		const results = await Promise.all(pending.map((env) => tryCatch(swarmService.reconcileNodeAgents(env.id))));
+		if (!active || results.every((result) => result.error !== null)) return;
+		await refresh();
+	}
+
+	onMount(() => () => {
+		active = false;
+	});
+
+	$effect(() => {
+		const pending = reconcilableManagers.filter((env) => !reconciled.has(env.id));
+		if (pending.length === 0) return;
+		untrack(() => {
+			void reconcileEnvironments(pending);
 		});
-		return () => {
-			active = false;
-			unsubscribeUser();
-		};
 	});
 
 	const totalNodes = $derived(nodes?.pagination?.totalItems ?? nodes?.data?.length ?? 0);

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
 
@@ -26,13 +27,10 @@
 		tag: z.string().optional().default('latest')
 	});
 
-	let formData = $derived({
-		repository: defaultRepository || '',
+	const form = createForm<typeof schema>(schema, {
+		repository: untrack(() => defaultRepository) || '',
 		tag: 'latest'
 	});
-
-	let form = $derived(createForm<typeof schema>(schema, formData));
-	let inputs = $derived(form.inputs);
 	let isTagging = $state(false);
 
 	function handleOpenChange(nextOpen: boolean) {
@@ -83,7 +81,7 @@
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">
-			<RepoTagFields bind:repository={inputs.repository} bind:tag={inputs.tag} />
+			<RepoTagFields bind:repository={form.inputs.repository} bind:tag={form.inputs.tag} />
 		</form>
 	{/snippet}
 

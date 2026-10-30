@@ -205,12 +205,7 @@ function createClientStreamInternal() {
 				}
 				return;
 			}
-			if (!transport.isStarted) {
-				transport.markStarted();
-				transport.connect(transport.nextGeneration());
-				return;
-			}
-			transport.restart();
+			transport.start();
 		}, 0);
 	}
 
@@ -238,13 +233,9 @@ function createClientStreamInternal() {
 		get streamFailed(): boolean {
 			return transport.streamFailed;
 		},
-		get generation(): number {
-			return transport.generation;
-		},
 		get hasActiveStream(): boolean {
 			return transport.hasActiveStream;
 		},
-		isCurrentGeneration: transport.isCurrentGeneration,
 		subscribe,
 		connect: changes.connect,
 		watchChanges(): () => void {

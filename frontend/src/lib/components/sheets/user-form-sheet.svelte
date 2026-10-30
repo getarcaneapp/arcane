@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { untrack } from 'svelte';
 	import { z } from 'zod/v4';
 
 	import FormInput from '#lib/components/form/form-input.svelte';
@@ -34,7 +35,7 @@
 
 	let {
 		open = $bindable(false),
-		userToEdit = $bindable(),
+		userToEdit,
 		roles,
 		environments,
 		availableRoleAssignments = [],
@@ -95,16 +96,16 @@
 			.refine((assignments) => isOidcUser || assignments.length >= 1, m.users_role_assignments_required())
 	});
 
-	let formData = $derived({
-		username: userToEdit?.username || '',
-		password: '',
-		displayName: userToEdit?.displayName || '',
-		email: userToEdit?.email || '',
-		roleAssignments: availableRoleAssignments
-	});
-
-	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
-	let inputs = $derived(form.inputs);
+	const form = createForm<typeof formSchema>(
+		formSchema,
+		untrack(() => ({
+			username: userToEdit?.username || '',
+			password: '',
+			displayName: userToEdit?.displayName || '',
+			email: userToEdit?.email || '',
+			roleAssignments: availableRoleAssignments
+		}))
+	);
 
 	async function submitUser(data: UserFormSubmission) {
 		if (await onSubmit(data)) {
@@ -115,7 +116,7 @@
 	async function handleSubmit() {
 		// createForm trims strings for ordinary text fields. Passwords are opaque,
 		// so preserve exactly what the user entered after validating the raw value.
-		const password = inputs.password.value;
+		const password = form.inputs.password.value;
 		const data = form.validate();
 		if (!data) return;
 
@@ -172,7 +173,6 @@
 		open = newOpenState;
 		if (!newOpenState) {
 			form.reset();
-			userToEdit = null;
 		}
 	}
 </script>
@@ -194,7 +194,7 @@
 				type="text"
 				description={m.users_username_description()}
 				disabled={!canEditUsername || isOidcUser}
-				bind:input={inputs.username}
+				bind:input={form.inputs.username}
 			/>
 			<FormInput
 				label={isEditMode ? m.common_password() : m.users_password_required_label()}
@@ -202,7 +202,7 @@
 				placeholder={passwordPlaceholder}
 				description={passwordDescription}
 				disabled={isOidcUser}
-				bind:input={inputs.password}
+				bind:input={form.inputs.password}
 			/>
 			<FormInput
 				label={m.common_display_name()}
@@ -210,7 +210,7 @@
 				placeholder={m.users_display_name_placeholder()}
 				description={m.users_display_name_description()}
 				disabled={isOidcUser}
-				bind:input={inputs.displayName}
+				bind:input={form.inputs.displayName}
 			/>
 			<FormInput
 				label={m.common_email()}
@@ -219,7 +219,7 @@
 				description={m.users_email_description()}
 				autocomplete="email"
 				disabled={isOidcUser}
-				bind:input={inputs.email}
+				bind:input={form.inputs.email}
 			/>
 			<IfPermitted adminOnly>
 				<div>
@@ -244,9 +244,9 @@
 							</div>
 						</div>
 					{/if}
-					<RoleAssignmentsEditor bind:assignments={inputs.roleAssignments.value} {roles} {environments} />
-					{#if inputs.roleAssignments.error}
-						<p class="mt-1 text-xs text-destructive">{inputs.roleAssignments.error}</p>
+					<RoleAssignmentsEditor bind:assignments={form.inputs.roleAssignments.value} {roles} {environments} />
+					{#if form.inputs.roleAssignments.error}
+						<p class="mt-1 text-xs text-destructive">{form.inputs.roleAssignments.error}</p>
 					{/if}
 				</div>
 			</IfPermitted>

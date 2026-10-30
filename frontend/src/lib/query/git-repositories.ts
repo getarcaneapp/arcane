@@ -10,3 +10,10 @@ export function gitRepositoryListQuery(requestOptions: SearchPaginationSortReque
 		queryFn: () => gitRepositoryService.getRepositories(requestOptions)
 	});
 }
+
+export function gitRepositoryBranchesQuery(repositoryId: string) {
+	return queryOptions({
+		queryKey: queryKeys.gitRepositories.branches(repositoryId),
+		queryFn: () => gitRepositoryService.getBranches(repositoryId)
+	});
+}

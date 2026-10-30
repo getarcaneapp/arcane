@@ -1,11 +1,8 @@
-import { untrack } from 'svelte';
-
 import { settingsService } from '#lib/services/settings-service.js';
 import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import type { ResolvedSettings, SettingKey, Settings } from '#lib/types/settings.js';
 
 let resolved = $state.raw<ResolvedSettings>();
-const listeners = new Set<(settings: Settings | undefined) => void>();
 
 const reload = async () => {
 	set(await settingsService.getReadableSettings(LOCAL_DOCKER_ENVIRONMENT_ID));
@@ -13,9 +10,6 @@ const reload = async () => {
 
 const set = (settings: ResolvedSettings) => {
 	resolved = settings;
-	untrack(() => {
-		for (const listener of listeners) listener(settings.values);
-	});
 };
 
 const save = async (changes: Partial<Settings>) => {
@@ -48,13 +42,6 @@ export default {
 	lock,
 	isLocked(key: SettingKey) {
 		return lock(key) !== undefined;
-	},
-	onChange(listener: (settings: Settings | undefined) => void) {
-		listeners.add(listener);
-		untrack(() => listener(resolved?.values));
-		return () => {
-			listeners.delete(listener);
-		};
 	},
 	reload,
 	set,

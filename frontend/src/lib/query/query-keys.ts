@@ -114,7 +114,6 @@ export const queryKeys = {
 	gitRepositories: {
 		all: ['git-repositories'] as const,
 		list: (options: SearchPaginationSortRequest) => ['git-repositories', stableSerialize(options)] as const,
-		syncDialog: () => ['git-repositories', 'sync-dialog'] as const,
 		branches: (repositoryId: string) => ['git-repositories', 'branches', repositoryId] as const,
 		files: (repositoryId: string, branch: string, path: string) => ['git-repository-files', repositoryId, branch, path] as const
 	},

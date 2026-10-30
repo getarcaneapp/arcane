@@ -1,5 +1,4 @@
 import { setMode } from 'mode-watcher';
-import { untrack } from 'svelte';
 
 import { timeFormatStore } from '#lib/stores/time-format.store.svelte.js';
 import type { User } from '#lib/types/auth.js';
@@ -16,7 +15,6 @@ import {
 } from '#lib/utils/theme.svelte.js';
 
 let current = $state.raw<User | null>(null);
-const listeners = new Set<(user: User | null) => void>();
 
 export const userHasPermissionInAnyEnvironment = (user: User | null | undefined, perm: string): boolean => {
 	if (!user?.permissionsByEnv) return false;
@@ -45,9 +43,6 @@ const setUser = async (user: User) => {
 	}
 
 	current = user;
-	untrack(() => {
-		for (const listener of listeners) listener(user);
-	});
 };
 
 const clearUser = () => {
@@ -61,9 +56,6 @@ const clearUser = () => {
 	// Light/dark mode is deliberately left alone on logout: it is a device-local
 	// preference and flipping it mid-session is jarring.
 	current = null;
-	untrack(() => {
-		for (const listener of listeners) listener(null);
-	});
 };
 
 /**
@@ -119,13 +111,6 @@ const isGlobalAdmin = (): boolean => {
 export default {
 	get current() {
 		return current;
-	},
-	onChange(listener: (user: User | null) => void) {
-		listeners.add(listener);
-		untrack(() => listener(current));
-		return () => {
-			listeners.delete(listener);
-		};
 	},
 	setUser,
 	clearUser,

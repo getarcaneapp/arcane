@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { z } from 'zod/v4';
 
 	import FormInput from '#lib/components/form/form-input.svelte';
@@ -29,7 +30,7 @@
 
 	let {
 		open = $bindable(false),
-		apiKeyToEdit = $bindable(),
+		apiKeyToEdit,
 		mode = 'admin',
 		manifest,
 		availablePermissions = [],
@@ -56,32 +57,31 @@
 	// Personal keys carry no grants; they inherit the owner's role permissions.
 	const hidePermissions = $derived(mode === 'personal' || apiKeyToEdit?.kind === 'personal');
 
-	const formSchema = $derived(
-		z.object({
-			name: z.string().min(1, m.common_field_required({ field: m.common_name() })),
-			description: z.string().optional(),
-			expiresAt: z.instanceof(Temporal.PlainDate).optional(),
-			permissions: hidePermissions
-				? z.array(z.string()).default([])
-				: z.array(z.string()).min(1, m.pick_at_least_one_permission())
-		})
-	);
-
-	let formData = $derived({
-		name: apiKeyToEdit?.name || '',
-		description: apiKeyToEdit?.description || '',
-		expiresAt: plainDateFromInstant(apiKeyToEdit?.expiresAt),
-		permissions:
-			hidePermissions || !manifest
-				? []
-				: normalizePermissionSelection(
-						manifest,
-						availablePermissions.map((p) => p.permission)
-					)
+	const formSchema = z.object({
+		name: z.string().min(1, m.common_field_required({ field: m.common_name() })),
+		description: z.string().optional(),
+		expiresAt: z.instanceof(Temporal.PlainDate).optional(),
+		permissions: untrack(() => hidePermissions)
+			? z.array(z.string()).default([])
+			: z.array(z.string()).min(1, m.pick_at_least_one_permission())
 	});
 
-	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
-	let inputs = $derived(form.inputs);
+	function formValues() {
+		return {
+			name: apiKeyToEdit?.name || '',
+			description: apiKeyToEdit?.description || '',
+			expiresAt: plainDateFromInstant(apiKeyToEdit?.expiresAt),
+			permissions:
+				hidePermissions || !manifest
+					? []
+					: normalizePermissionSelection(
+							manifest,
+							availablePermissions.map((p) => p.permission)
+						)
+		};
+	}
+
+	const form = createForm<typeof formSchema>(formSchema, untrack(formValues));
 
 	function handleSubmit() {
 		if (isReadOnlyApiKey) return;
@@ -129,7 +129,7 @@
 	function handleOpenChange(newOpenState: boolean) {
 		open = newOpenState;
 		if (!newOpenState) {
-			apiKeyToEdit = null;
+			form.reset(formValues());
 		}
 	}
 </script>
@@ -152,7 +152,7 @@
 				type="text"
 				placeholder={m.api_key_name_placeholder()}
 				description={m.api_key_name_description()}
-				bind:input={inputs.name}
+				bind:input={form.inputs.name}
 				disabled={isReadOnlyApiKey}
 			/>
 			<FormInput
@@ -160,14 +160,14 @@
 				type="text"
 				placeholder={m.optional_description_placeholder()}
 				description={m.api_key_description_help()}
-				bind:input={inputs.description}
+				bind:input={form.inputs.description}
 				disabled={isReadOnlyApiKey}
 			/>
 			<FormInput
 				label={m.api_key_expires_at()}
 				type="date"
 				description={m.api_key_expires_at_description()}
-				bind:input={inputs.expiresAt}
+				bind:input={form.inputs.expiresAt}
 				disabled={isReadOnlyApiKey}
 			/>
 			{#if !isReadOnlyApiKey}
@@ -177,9 +177,9 @@
 					<div>
 						<label for="permissions" class="text-sm font-medium">{m.permissions()}</label>
 						<p class="mb-3 text-xs text-muted-foreground">{m.api_key_permissions_description()}</p>
-						<PermissionPicker {manifest} bind:selected={inputs.permissions.value} showSearch />
-						{#if inputs.permissions.error}
-							<p class="mt-1 text-xs text-destructive">{inputs.permissions.error}</p>
+						<PermissionPicker {manifest} bind:selected={form.inputs.permissions.value} showSearch />
+						{#if form.inputs.permissions.error}
+							<p class="mt-1 text-xs text-destructive">{form.inputs.permissions.error}</p>
 						{/if}
 					</div>
 				{/if}
@@ -190,6 +190,7 @@
 	{#snippet footer()}
 		<SheetFooterActions
 			bind:open
+			onCancel={() => handleOpenChange(false)}
 			cancelDisabled={isLoading}
 			showSubmit={!isReadOnlyApiKey}
 			submitAction={isEditMode ? 'save' : 'create'}

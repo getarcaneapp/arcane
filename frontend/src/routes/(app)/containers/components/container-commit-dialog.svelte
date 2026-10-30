@@ -32,16 +32,13 @@
 		noPause: z.boolean().optional().default(false)
 	});
 
-	let formData = $derived({
+	const form = createForm<typeof schema>(schema, {
 		repository: '',
 		tag: 'latest',
 		comment: '',
 		author: '',
 		noPause: false
 	});
-
-	let form = $derived(createForm<typeof schema>(schema, formData));
-	let inputs = $derived(form.inputs);
 	let isCommitting = $state(false);
 
 	function handleOpenChange(nextOpen: boolean) {
@@ -105,15 +102,15 @@
 				<InfoIcon class="size-4" />
 				<Alert.Description>{m.containers_commit_registry_note()}</Alert.Description>
 			</Alert.Root>
-			<RepoTagFields bind:repository={inputs.repository} bind:tag={inputs.tag} />
+			<RepoTagFields bind:repository={form.inputs.repository} bind:tag={form.inputs.tag} />
 			<FormInput
 				label={m.common_description()}
 				placeholder={m.containers_commit_comment_placeholder()}
-				bind:input={inputs.comment}
+				bind:input={form.inputs.comment}
 			/>
-			<FormInput label={m.common_author()} placeholder={m.arcane_placeholder()} bind:input={inputs.author} />
+			<FormInput label={m.common_author()} placeholder={m.arcane_placeholder()} bind:input={form.inputs.author} />
 			<label class="flex items-center gap-2 text-sm">
-				<input type="checkbox" bind:checked={inputs.noPause.value} class="size-4 accent-primary" />
+				<input type="checkbox" bind:checked={form.inputs.noPause.value} class="size-4 accent-primary" />
 				<span>{m.containers_commit_no_pause()}</span>
 			</label>
 		</form>

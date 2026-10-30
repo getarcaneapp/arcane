@@ -287,7 +287,7 @@
 			{#key syncSession}
 				<GitOpsSyncFormSheet
 					bind:open={isSyncDialogOpen}
-					bind:syncToEdit
+					{syncToEdit}
 					bind:environmentId={() => syncToEdit?.environmentId ?? createEnvironmentId, (value) => (pickedEnvironmentId = value)}
 					targetType={dialogTargetType}
 					mode={dialogMode}

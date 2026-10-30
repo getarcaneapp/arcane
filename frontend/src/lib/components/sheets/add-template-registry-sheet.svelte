@@ -26,13 +26,10 @@
 		enabled: z.boolean().default(true)
 	});
 
-	let formData = $derived({
+	const form = createForm<typeof formSchema>(formSchema, {
 		url: '',
 		enabled: true
 	});
-
-	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
-	let inputs = $derived(form.inputs);
 
 	let submitError = $state<string | null>(null);
 	const validateRegistryMutation = createMutation(() => ({
@@ -87,14 +84,14 @@
 				type="text"
 				placeholder={m.templates_registry_url_placeholder()}
 				description={m.templates_registry_url_description()}
-				bind:input={inputs.url}
+				bind:input={form.inputs.url}
 			/>
 
 			<SwitchWithLabel
 				id="enabledSwitch"
 				label={m.templates_enable_registry_label()}
 				description={m.templates_enable_registry_description()}
-				bind:checked={inputs.enabled.value}
+				bind:checked={form.inputs.enabled.value}
 			/>
 
 			{#if submitError}

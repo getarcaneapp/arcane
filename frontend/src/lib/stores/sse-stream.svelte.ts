@@ -2,29 +2,19 @@ import { browser } from '$app/env';
 
 import { currentSessionSignal } from '#lib/services/api-service.js';
 import type { SSEEventBase, SSEStreamConfig } from '#lib/types/stream.js';
+import { createAbortLifecycle } from '#lib/utils/abort-lifecycle.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 const MAX_RECONNECT_DELAY = 15_000;
 const MAX_RECONNECT_ATTEMPTS = 20;
 
 export function createSSEStream<TEvent extends SSEEventBase>(config: SSEStreamConfig<TEvent>) {
-	let started = false;
+	const lifecycle = createAbortLifecycle();
 	let streamAbortController: AbortController | null = null;
-	let removePageLifecycleListeners: (() => void) | null = null;
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	let reconnectAttempt = 0;
-	let streamGeneration = 0;
 	let _streamConnected = $state(false);
 	let _streamFailed = $state(false);
-
-	function nextGeneration(): number {
-		streamGeneration += 1;
-		return streamGeneration;
-	}
-
-	function isCurrentGeneration(generation: number): boolean {
-		return streamGeneration === generation;
-	}
 
 	function clearReconnectTimer() {
 		if (reconnectTimer) {
@@ -40,42 +30,40 @@ export function createSSEStream<TEvent extends SSEEventBase>(config: SSEStreamCo
 		_streamConnected = false;
 	}
 
-	function watchPageLifecycle() {
-		if (!browser || removePageLifecycleListeners) {
-			return;
+	function runSession(sessionSignal: AbortSignal) {
+		if (browser) {
+			window.addEventListener('pagehide', () => abortStream(), { signal: sessionSignal });
+			window.addEventListener(
+				'pageshow',
+				(event: PageTransitionEvent) => {
+					if (event.persisted && !streamAbortController) {
+						void connectStream(sessionSignal);
+					}
+				},
+				{ signal: sessionSignal }
+			);
+			document.addEventListener(
+				'visibilitychange',
+				() => {
+					if (document.hidden) {
+						abortStream();
+						return;
+					}
+					if (!streamAbortController && !_streamFailed) {
+						void connectStream(sessionSignal);
+					}
+				},
+				{ signal: sessionSignal }
+			);
 		}
-
-		const onPageHide = () => abortStream();
-		const onPageShow = (event: PageTransitionEvent) => {
-			if (event.persisted && started && !streamAbortController) {
-				void connectStream(nextGeneration());
-			}
-		};
-		const onVisibilityChange = () => {
-			if (document.hidden) {
-				abortStream();
-				return;
-			}
-			if (started && !streamAbortController && !_streamFailed) {
-				void connectStream(nextGeneration());
-			}
-		};
-
-		window.addEventListener('pagehide', onPageHide);
-		window.addEventListener('pageshow', onPageShow);
-		document.addEventListener('visibilitychange', onVisibilityChange);
-		removePageLifecycleListeners = () => {
-			window.removeEventListener('pagehide', onPageHide);
-			window.removeEventListener('pageshow', onPageShow);
-			document.removeEventListener('visibilitychange', onVisibilityChange);
-		};
+		void connectStream(sessionSignal);
+		return abortStream;
 	}
 
-	async function connectStream(generation: number) {
-		if (!browser || !isCurrentGeneration(generation)) {
+	async function connectStream(sessionSignal: AbortSignal) {
+		if (!browser || sessionSignal.aborted) {
 			return;
 		}
-		// Reconnects and restarts in a background tab wait for visibilitychange.
 		if (document.hidden) {
 			return;
 		}
@@ -84,15 +72,13 @@ export function createSSEStream<TEvent extends SSEEventBase>(config: SSEStreamCo
 
 		const controller = new AbortController();
 		streamAbortController = controller;
+		const signal = AbortSignal.any([sessionSignal, controller.signal]);
 		try {
 			const operationResult = await tryCatch(
 				(async () => {
-					const response = await config.openStream(controller.signal);
-					if (controller.signal.aborted || !isCurrentGeneration(generation) || !response.body) {
+					const response = await config.openStream(signal);
+					if (signal.aborted || !response.body) {
 						controller.abort();
-						if (streamAbortController === controller) {
-							streamAbortController = null;
-						}
 						return;
 					}
 
@@ -100,12 +86,12 @@ export function createSSEStream<TEvent extends SSEEventBase>(config: SSEStreamCo
 					_streamFailed = false;
 					reconnectAttempt = 0;
 					config.onConnected?.();
-					await readSSEFrames(response.body, generation, controller.signal);
+					await readSSEFrames(response.body, signal);
 				})()
 			);
 			if (operationResult.error !== null) {
 				const error = operationResult.error;
-				if (!controller.signal.aborted && !currentSessionSignal().aborted && isCurrentGeneration(generation)) {
+				if (!signal.aborted && !currentSessionSignal().aborted) {
 					console.warn(`${config.label} stream disconnected:`, error);
 				}
 			} else {
@@ -115,19 +101,16 @@ export function createSSEStream<TEvent extends SSEEventBase>(config: SSEStreamCo
 			if (streamAbortController === controller) {
 				streamAbortController = null;
 			}
-			if (isCurrentGeneration(generation)) {
+			if (!signal.aborted) {
 				_streamConnected = false;
-				// After logout, the next sign-in restarts streams through their stores.
-				if (!controller.signal.aborted && !currentSessionSignal().aborted) {
-					scheduleReconnect(generation);
+				if (!currentSessionSignal().aborted) {
+					scheduleReconnect(sessionSignal);
 				}
-			} else if (!controller.signal.aborted) {
-				controller.abort();
 			}
 		}
 	}
 
-	async function readSSEFrames(stream: ReadableStream<Uint8Array>, generation: number, signal: AbortSignal) {
+	async function readSSEFrames(stream: ReadableStream<Uint8Array>, signal: AbortSignal) {
 		const reader = stream.getReader();
 		const decoder = new TextDecoder();
 		let line = '';
@@ -137,7 +120,7 @@ export function createSSEStream<TEvent extends SSEEventBase>(config: SSEStreamCo
 		function consumeLine() {
 			if (line === '') {
 				if (data.length > 0) {
-					handleStreamData(data.join('\n'), generation, signal);
+					handleStreamData(data.join('\n'), signal);
 				}
 				data = [];
 			} else if (line === 'data') {
@@ -152,7 +135,7 @@ export function createSSEStream<TEvent extends SSEEventBase>(config: SSEStreamCo
 
 		function consumeText(text: string) {
 			for (const character of text) {
-				if (signal.aborted || !isCurrentGeneration(generation)) return;
+				if (signal.aborted) return;
 				if (skipLF && character === '\n') {
 					skipLF = false;
 					continue;
@@ -167,13 +150,13 @@ export function createSSEStream<TEvent extends SSEEventBase>(config: SSEStreamCo
 		}
 
 		try {
-			while (!signal.aborted && isCurrentGeneration(generation)) {
+			while (!signal.aborted) {
 				const { done, value } = await reader.read();
-				if (signal.aborted || !isCurrentGeneration(generation)) return;
+				if (signal.aborted) return;
 				if (done) break;
 				consumeText(decoder.decode(value, { stream: true }));
 			}
-			if (!signal.aborted && isCurrentGeneration(generation)) {
+			if (!signal.aborted) {
 				consumeText(decoder.decode());
 			}
 		} finally {
@@ -182,8 +165,8 @@ export function createSSEStream<TEvent extends SSEEventBase>(config: SSEStreamCo
 		}
 	}
 
-	function handleStreamData(line: string, generation: number, signal: AbortSignal) {
-		if (signal.aborted || !isCurrentGeneration(generation)) return;
+	function handleStreamData(line: string, signal: AbortSignal) {
+		if (signal.aborted) return;
 		const trimmed = line.trim();
 		if (!trimmed) {
 			return;
@@ -201,8 +184,8 @@ export function createSSEStream<TEvent extends SSEEventBase>(config: SSEStreamCo
 		}
 	}
 
-	function scheduleReconnect(generation: number) {
-		if (!browser || !started || !isCurrentGeneration(generation)) {
+	function scheduleReconnect(sessionSignal: AbortSignal) {
+		if (!browser || sessionSignal.aborted) {
 			return;
 		}
 
@@ -215,7 +198,7 @@ export function createSSEStream<TEvent extends SSEEventBase>(config: SSEStreamCo
 		const delay = Math.min(1000 * 2 ** reconnectAttempt, MAX_RECONNECT_DELAY);
 		reconnectAttempt += 1;
 		reconnectTimer = setTimeout(() => {
-			void connectStream(generation);
+			void connectStream(sessionSignal);
 		}, delay);
 	}
 
@@ -229,31 +212,18 @@ export function createSSEStream<TEvent extends SSEEventBase>(config: SSEStreamCo
 		get streamFailed(): boolean {
 			return _streamFailed;
 		},
-		get generation(): number {
-			return streamGeneration;
-		},
 		get hasActiveStream(): boolean {
 			return streamAbortController !== null;
 		},
 		get isStarted(): boolean {
-			return started;
+			return lifecycle.active;
 		},
-		isCurrentGeneration,
-		nextGeneration,
-		connect(generation: number) {
-			void connectStream(generation);
-		},
-		markStarted() {
-			started = true;
-			watchPageLifecycle();
+		start() {
+			lifecycle.start(runSession);
 		},
 		stop(options?: { resetStreamFailed?: boolean }) {
-			const wasStarted = started;
-			started = false;
-			removePageLifecycleListeners?.();
-			removePageLifecycleListeners = null;
-			nextGeneration();
-			abortStream();
+			const wasStarted = lifecycle.active;
+			lifecycle.stop();
 			reconnectAttempt = 0;
 			if (options?.resetStreamFailed) {
 				_streamFailed = false;
@@ -265,8 +235,9 @@ export function createSSEStream<TEvent extends SSEEventBase>(config: SSEStreamCo
 				_streamFailed = false;
 				reconnectAttempt = 0;
 			}
-			abortStream();
-			void connectStream(nextGeneration());
+			if (lifecycle.active) {
+				lifecycle.start(runSession);
+			}
 		}
 	};
 }

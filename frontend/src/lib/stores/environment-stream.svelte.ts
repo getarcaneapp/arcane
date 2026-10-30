@@ -1,8 +1,10 @@
 import { browser } from '$app/env';
+import { untrack } from 'svelte';
 
 import { clientStream } from '#lib/stores/client-stream.svelte.js';
 import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 import type { Environment } from '#lib/types/environment.js';
+import { createAbortLifecycle } from '#lib/utils/abort-lifecycle.js';
 
 export type StreamEnvStateBase = {
 	id: string;
@@ -39,13 +41,11 @@ export interface EnvStreamCoreConfig<TState extends StreamEnvStateBase, TEvent e
 	channel: string;
 	/** Handles every event type except 'heartbeat' (core owns connection state). */
 	applyEvent(environmentId: string, event: TEvent): void;
-	/** Fully owns a per-environment REST refresh, including generation/removal guards via core helpers. */
-	fetchSnapshot(environmentId: string, generation: number): Promise<void>;
+	fetchSnapshot(environmentId: string, signal: AbortSignal): Promise<void>;
 	refreshOnStart?: boolean;
 	/** Limits aggregate stream state and REST snapshots to caller-authorized environments. */
 	includeEnvironment?(environment: Pick<Environment, 'id' | 'name'>): boolean;
-	/** Reconciles when state used by includeEnvironment changes (for example, user permissions). */
-	subscribeEnvironmentFilter?(reconcile: () => void): () => void;
+	watchEnvironmentFilter?(): unknown;
 	/** Extra cleanup when an environment disappears (core already dropped its state). */
 	onEnvironmentRemoved?(environmentId: string): void;
 	/** Replaces the default rename handling (which just updates state.name). */
@@ -59,13 +59,8 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 ) {
 	let _environmentStates = $state.raw<Record<string, TState>>({});
 
-	let started = false;
-	// REST snapshots belong to this store lifecycle, not the shared transport's reconnect lifecycle.
-	let lifecycleGeneration = 0;
-	let unsubscribeEnvironment: (() => void) | null = null;
-	let unsubscribeEnvironmentFilter: (() => void) | null = null;
-
-	let unsubscribeChannel: (() => void) | null = null;
+	const lifecycle = createAbortLifecycle();
+	let lifecycleSignal = AbortSignal.abort();
 
 	const channelHandlers = {
 		// A fresh stream re-emits error events for environments that are still
@@ -134,14 +129,14 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 		config.onEnvironmentRemoved?.(environmentId);
 	}
 
-	async function refresh(generation = lifecycleGeneration) {
+	async function refresh(signal = lifecycleSignal) {
 		// The Promise.all below fetches every environment, including new ones.
 		reconcileEnvironments(false);
-		await Promise.all(Object.keys(_environmentStates).map((environmentId) => config.fetchSnapshot(environmentId, generation)));
+		await Promise.all(Object.keys(_environmentStates).map((environmentId) => config.fetchSnapshot(environmentId, signal)));
 	}
 
 	function reconcileEnvironments(fetchNew = true) {
-		if (!browser || !started) {
+		if (!browser || !lifecycle.active) {
 			return;
 		}
 
@@ -172,7 +167,7 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 			// up on its server-side reconcile tick; fetch once so the first
 			// snapshot doesn't take up to that interval to appear.
 			if (fetchNew && clientStream.hasActiveStream) {
-				void config.fetchSnapshot(environmentId, lifecycleGeneration);
+				void config.fetchSnapshot(environmentId, lifecycleSignal);
 			}
 			return;
 		}
@@ -202,9 +197,6 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 		get streamFailed(): boolean {
 			return clientStream.streamFailed;
 		},
-		get generation(): number {
-			return lifecycleGeneration;
-		},
 		get hasActiveStream(): boolean {
 			return clientStream.hasActiveStream;
 		},
@@ -212,40 +204,47 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 		updateEnvironmentState,
 		setEnvironmentError,
 		clearEnvironmentError,
-		isCurrentGeneration: (generation: number) => generation === lifecycleGeneration,
 		reconcileEnvironments,
 		refresh,
-		async start() {
-			if (!browser || started) {
+		start() {
+			if (!browser || lifecycle.active) {
 				return;
 			}
 
-			started = true;
-			const generation = ++lifecycleGeneration;
-			await environmentStore.ready;
-			if (generation !== lifecycleGeneration) {
-				return;
-			}
-			// refresh reconciles synchronously, so states exist before the channel subscribes.
-			if (config.refreshOnStart) {
-				void refresh(generation);
-			} else {
-				reconcileEnvironments();
-			}
-			unsubscribeChannel = clientStream.subscribe(config.channel, channelHandlers);
-			unsubscribeEnvironment = environmentStore.subscribeAvailable(() => reconcileEnvironments());
-			unsubscribeEnvironmentFilter = config.subscribeEnvironmentFilter?.(reconcileEnvironments) ?? null;
+			lifecycle.start((signal) => {
+				lifecycleSignal = signal;
+				void environmentStore.ready.then(() => {
+					if (signal.aborted) {
+						return;
+					}
+					if (config.refreshOnStart) {
+						void refresh(signal);
+					} else {
+						reconcileEnvironments();
+					}
+					const unsubscribers = [
+						clientStream.subscribe(config.channel, channelHandlers),
+						environmentStore.subscribeAvailable(() => reconcileEnvironments()),
+						$effect.root(() => {
+							$effect(() => {
+								config.watchEnvironmentFilter?.();
+								untrack(() => reconcileEnvironments());
+							});
+						})
+					];
+					signal.addEventListener(
+						'abort',
+						() => {
+							for (const unsubscribe of unsubscribers) unsubscribe();
+						},
+						{ once: true }
+					);
+				});
+			});
 		},
 		stop(options?: { resetState?: boolean; resetStreamFailed?: boolean }) {
-			const wasStarted = started;
-			started = false;
-			lifecycleGeneration += 1;
-			unsubscribeEnvironment?.();
-			unsubscribeEnvironment = null;
-			unsubscribeEnvironmentFilter?.();
-			unsubscribeEnvironmentFilter = null;
-			unsubscribeChannel?.();
-			unsubscribeChannel = null;
+			const wasStarted = lifecycle.active;
+			lifecycle.stop();
 			if (options?.resetState) {
 				_environmentStates = {};
 			}

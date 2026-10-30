@@ -23,7 +23,7 @@
 
 	let query = $state('');
 	let tag = $state('latest');
-	let results = $state<ImageSearchResultDto[]>([]);
+	let results = $state.raw<ImageSearchResultDto[]>([]);
 	let hasSearched = $state(false);
 	let isSearching = $state(false);
 	let pullingImageName = $state<string | null>(null);
