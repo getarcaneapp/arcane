@@ -509,7 +509,11 @@ func UpgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	if hostConfig == nil {
 		hostConfig = &container.HostConfig{}
 	}
-	hostConfig.Binds, hostConfig.Mounts, err = docker.PreserveVolumeMounts(ctx, hostConfig.Binds, hostConfig.Mounts, oldContainer.Mounts)
+	if strings.EqualFold(oldContainer.Platform, "windows") {
+		hostConfig.Binds, hostConfig.Mounts = preserveWindowsVolumeBindsInternal(hostConfig.Binds, hostConfig.Mounts, oldContainer.Mounts)
+	} else {
+		hostConfig.Binds, hostConfig.Mounts, err = docker.PreserveVolumeMounts(ctx, hostConfig.Binds, hostConfig.Mounts, oldContainer.Mounts)
+	}
 	if err != nil {
 		return fmt.Errorf("preserve volumes of container %s: %w", originalName, err)
 	}
