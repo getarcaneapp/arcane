@@ -109,7 +109,7 @@
 	let projectId = $derived(data.projectId);
 	const queryClient = useQueryClient();
 
-	let isLoading = $state({
+	const isLoading = $state({
 		deploying: false,
 		stopping: false,
 		restarting: false,
@@ -644,7 +644,7 @@
 		);
 		await Promise.all(
 			listScopes([currentEnvId]).flatMap((scope) => [
-				queryClient.invalidateQueries({ queryKey: ['projects', scope] }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(scope) }),
 				queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(scope) })
 			])
 		);
@@ -659,7 +659,7 @@
 			await Promise.all([
 				refreshProjectDetails(),
 				...listScopes([currentEnvId]).flatMap((scope) => [
-					queryClient.invalidateQueries({ queryKey: ['projects', scope] }),
+					queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(scope) }),
 					queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(scope) })
 				])
 			]);
@@ -842,7 +842,7 @@
 					const currentEnvId = envId;
 					await Promise.all(
 						listScopes([currentEnvId]).flatMap((scope) => [
-							queryClient.invalidateQueries({ queryKey: ['projects', scope] }),
+							queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(scope) }),
 							queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(scope) })
 						])
 					);
@@ -2185,7 +2185,7 @@
 							class="inline-flex h-6 max-w-40 min-w-0 items-center gap-1.5 rounded-lg border border-info/20 bg-background/70 px-2.5 text-xs font-semibold ring-offset-background transition-colors hover:border-info/40 hover:bg-info/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none sm:max-w-56 md:max-w-72 dark:bg-info/20 dark:hover:bg-info/30"
 							href={toSafeHref(url)}
 							target="_blank"
-							rel="noopener noreferrer"
+							rel="external noopener noreferrer"
 							title={url}
 						>
 							<GlobeIcon class="size-3 text-info" />
@@ -2206,6 +2206,7 @@
 							<a
 								href={commitUrl}
 								target="_blank"
+								rel="external"
 								class="font-mono transition-colors hover:text-primary sm:rounded sm:bg-muted sm:px-1.5 sm:py-0.5"
 							>
 								{project.lastSyncCommit}

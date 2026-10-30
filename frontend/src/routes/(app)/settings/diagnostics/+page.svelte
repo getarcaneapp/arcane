@@ -217,9 +217,9 @@
 		if (!ws?.refresh()) error = m.disconnected();
 	}
 
-	let dumpOpen = $state<{ goroutine: boolean; heap: boolean }>({ goroutine: false, heap: false });
-	let dumpText = $state<{ goroutine: string; heap: string }>({ goroutine: '', heap: '' });
-	let dumpLoading = $state<{ goroutine: boolean; heap: boolean }>({ goroutine: false, heap: false });
+	const dumpOpen = $state<{ goroutine: boolean; heap: boolean }>({ goroutine: false, heap: false });
+	const dumpText = $state<{ goroutine: string; heap: string }>({ goroutine: '', heap: '' });
+	const dumpLoading = $state<{ goroutine: boolean; heap: boolean }>({ goroutine: false, heap: false });
 
 	async function loadDump(name: 'goroutine' | 'heap') {
 		dumpLoading[name] = true;

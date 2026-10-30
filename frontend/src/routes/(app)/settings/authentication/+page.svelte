@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { mergeProps } from 'bits-ui';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -22,6 +23,8 @@
 	import { LockIcon, InfoIcon, ArrowDownIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { oidcMappingListQuery } from '#lib/query/oidc-mappings.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { oidcMappingService } from '#lib/services/oidc-mapping-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { OidcRoleMapping, OidcRoleMappingWritable } from '#lib/types/auth.js';
@@ -60,14 +63,12 @@
 
 	// OIDC role mappings — co-located with the OIDC settings so admins
 	// configure the groups claim and the mappings that read it in one place.
-	let oidcMappings: OidcRoleMapping[] = $derived(data.oidcMappings ?? []);
+	const queryClient = useQueryClient();
+	const oidcMappingsQuery = createQuery(() => oidcMappingListQuery());
+	const oidcMappings = $derived(oidcMappingsQuery.data ?? data.oidcMappings);
 	let mappingSheetOpen = $state(false);
 	let editingMapping: OidcRoleMapping | null = $state(null);
 	let mappingSaving = $state(false);
-
-	async function refreshMappings() {
-		oidcMappings = await oidcMappingService.list();
-	}
 
 	function openCreateMapping() {
 		editingMapping = null;
@@ -95,7 +96,7 @@
 				setLoadingState: (v) => (mappingSaving = v),
 				onSuccess: async () => {
 					toast.success(m.common_update_success({ resource: m.resource_oidc_mapping_cap() }));
-					await refreshMappings();
+					await queryClient.invalidateQueries({ queryKey: queryKeys.oidcMappings.all });
 					mappingSheetOpen = false;
 					editingMapping = null;
 				}
@@ -107,7 +108,7 @@
 				setLoadingState: (v) => (mappingSaving = v),
 				onSuccess: async () => {
 					toast.success(m.common_create_success({ resource: m.resource_oidc_mapping_cap() }));
-					await refreshMappings();
+					await queryClient.invalidateQueries({ queryKey: queryKeys.oidcMappings.all });
 					mappingSheetOpen = false;
 				}
 			});
@@ -508,7 +509,7 @@
 										mappings={oidcMappings}
 										roles={data.roles}
 										environments={data.environments}
-										onRefresh={refreshMappings}
+										onRetry={() => oidcMappingsQuery.refetch()}
 										onEdit={openEditMapping}
 									/>
 								{:else}

@@ -7,19 +7,15 @@
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
+	import { swarmKvListQuery } from '#lib/query/swarm.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { SwarmKvSummary } from '#lib/types/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import {
-		destinationEnvironmentId,
-		fetchAcrossEnvironments,
-		withFailedEnvironments,
-		type EnvironmentPage,
-		type EnvironmentRow
-	} from '#lib/utils/environments.js';
+	import { destinationEnvironmentId, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import type { SwarmKvResource } from '#lib/utils/swarm-kv.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -41,43 +37,27 @@
 	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm:read'));
 	const swarm = $derived(swarmQuery.data ?? initialSwarm);
 
-	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => initialRequestOptions));
+	const pageState = new ResourceListPageState<SearchPaginationSortRequest>(untrack(() => initialRequestOptions));
 	let isSheetOpen = $state(false);
 	let sheetSession = $state(0);
 	let itemToEdit = $state<SwarmKvSummary | null>(null);
 	let sheetEnvironmentId = $state('');
 
-	function itemsQueryOptions(options: SearchPaginationSortRequest, current: SwarmEnvironments = swarm) {
-		const kind = resource.kind;
-		const { environments, failedEnvironments, scope } = current;
+	const itemsQuery = createQuery(() => {
+		const scope = swarm.scope;
 		return {
-			queryKey: queryKeys.swarm[kind](scope, options),
-			queryFn: async () =>
-				withFailedEnvironments(
-					await fetchAcrossEnvironments(environments, options, (id, request, config) =>
-						swarmService.getKvItems(kind, request, id, config)
-					),
-					failedEnvironments
-				)
+			...swarmKvListQuery(swarm, resource.kind, pageState.requestOptions),
+			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
+			select: (value) => ({ envId: scope, value })
 		};
-	}
-
-	const itemsQuery = createQuery(() => ({
-		...itemsQueryOptions(requestOptions),
-		placeholderData: (previous) => previous
-	}));
-	let items = $derived(itemsQuery.data ?? initialItems);
+	});
+	const items = $derived(itemsQuery.data?.value ?? initialItems);
 	const refreshing = $derived(itemsQuery.isFetching && !itemsQuery.isPending);
 
-	function fetchItems(options: SearchPaginationSortRequest, current: SwarmEnvironments = swarm) {
-		requestOptions = options;
-		return queryClient.query({ ...itemsQueryOptions(options, current), staleTime: 0 });
-	}
-
 	async function refresh() {
-		const discovered = await swarmQuery.refetch();
+		await swarmQuery.refetch();
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(fetchItems(requestOptions, discovered.data ?? swarm)),
+			result: await tryCatch(itemsQuery.refetch({ throwOnError: true })),
 			message: m.common_refresh_failed({ resource: resource.title() })
 		});
 	}
@@ -99,7 +79,7 @@
 
 	async function handleSaved() {
 		isSheetOpen = false;
-		await refresh();
+		await queryClient.invalidateQueries({ queryKey: queryKeys.swarm.listPrefix(swarm.scope, resource.kind) });
 	}
 
 	const actionButtons = $derived(
@@ -127,7 +107,14 @@
 
 <ResourcePageLayout title={resource.title()} subtitle={resource.subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<SwarmKvTable {resource} bind:items bind:requestOptions {fetchItems} onEdit={openEditSheet} />
+		<SwarmKvTable
+			{resource}
+			{items}
+			scope={swarm.scope}
+			bind:requestOptions={pageState.requestOptions}
+			onRetry={() => itemsQuery.refetch()}
+			onEdit={openEditSheet}
+		/>
 	{/snippet}
 
 	{#snippet additionalContent()}

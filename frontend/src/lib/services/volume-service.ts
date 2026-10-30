@@ -6,7 +6,7 @@ import type {
 	VolumeRenameRequest,
 	VolumeSizeInfo
 } from '#lib/types/docker.js';
-import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest, Paginated, MessageResponse } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService, { type APIRequestConfig } from './api-service';
@@ -54,7 +54,7 @@ class VolumeService extends BaseAPIService {
 		) as Promise<Volume>;
 	}
 
-	async deleteVolume(volumeName: string, environmentId: string): Promise<any> {
+	async deleteVolume(volumeName: string, environmentId: string): Promise<MessageResponse> {
 		return this.handleResponse(this.api.delete(`/environments/${environmentId}/volumes/${volumeName}`));
 	}
 }

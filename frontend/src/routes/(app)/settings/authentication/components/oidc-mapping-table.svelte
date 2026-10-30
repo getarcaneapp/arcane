@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -10,6 +11,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { ShieldAlertIcon, TrashIcon, EditIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { oidcMappingService } from '#lib/services/oidc-mapping-service.js';
 	import type { OidcRoleMapping, Role } from '#lib/types/auth.js';
 	import { BUILT_IN_ROLE_ADMIN, BUILT_IN_ROLE_EDITOR, BUILT_IN_ROLE_DEPLOYER, BUILT_IN_ROLE_VIEWER } from '#lib/types/auth.js';
@@ -22,17 +24,19 @@
 		mappings,
 		roles,
 		environments,
-		onRefresh,
+		onRetry,
 		onEdit
 	}: {
 		mappings: OidcRoleMapping[];
 		roles: Role[];
 		environments: Environment[];
-		onRefresh: () => Promise<void>;
+		onRetry: () => Promise<unknown>;
 		onEdit: (mapping: OidcRoleMapping) => void;
 	} = $props();
 
-	let isLoading = $state({
+	const queryClient = useQueryClient();
+
+	const isLoading = $state({
 		removing: false
 	});
 
@@ -116,7 +120,7 @@
 						setLoadingState: (value) => (isLoading.removing = value),
 						onSuccess: async () => {
 							toast.success(m.oidc_mappings_delete_success());
-							await onRefresh();
+							await queryClient.invalidateQueries({ queryKey: queryKeys.oidcMappings.all });
 						}
 					});
 				}
@@ -228,10 +232,7 @@
 	bind:mobileFieldVisibility
 	selectionDisabled
 	withoutPagination
-	onRefresh={async () => {
-		await onRefresh();
-		return paginatedMappings;
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

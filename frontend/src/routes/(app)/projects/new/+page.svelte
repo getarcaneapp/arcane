@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -40,7 +41,7 @@
 		templateNameSlug,
 		type ProjectEditorLayoutMode
 	} from '#lib/utils/compose-flow.js';
-	import { destinationEnvironmentId, environmentHref, environmentName } from '#lib/utils/environments.js';
+	import { destinationEnvironmentId, environmentName } from '#lib/utils/environments.js';
 	import { preventDefault, createForm } from '#lib/utils/settings.svelte.js';
 	import {
 		getTemplateEditorValidationState,
@@ -78,7 +79,7 @@
 	const destinationSettings = useEnvironmentSettings(() => currentEnvId);
 	const projectWorkspaceMaxFileSizeMb = $derived(destinationSettings.current?.values.projectWorkspaceMaxFileSizeMb ?? 10);
 
-	let ui = $state({
+	const ui = $state({
 		saving: false,
 		converting: false,
 		creatingTemplate: false,
@@ -125,7 +126,7 @@
 		queryFn: () => fetchProjectTags([{ id: currentEnvId, name: environmentName(currentEnvId) }])
 	}));
 	const availableProjectTags = $derived(projectTagsQuery.data?.tags ?? []);
-	let validation = $state({
+	const validation = $state({
 		composeHasErrors: false,
 		envHasErrors: false,
 		composeValidationReady: false,
@@ -243,7 +244,9 @@
 					}
 				}
 				// fallow-ignore-next-line code-duplication -- create-success handler; navigation target diverges per page
-				goto(environmentHref(`/projects/${project.id}`, destination), { refreshAll: true });
+				goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(destination)}`, { projectId: project.id }), {
+					refreshAll: true
+				});
 			}
 		});
 	}
@@ -398,7 +401,7 @@
 					convertLabel={m.compose_convert_from_docker_run()}
 					onConvert={() => (ui.showConverterDialog = true)}
 					fromGitLabel={m.git_from_git_repo()}
-					onFromGit={async () => goto(environmentHref('/gitops?action=create', environmentId))}
+					onFromGit={async () => goto(resolve(`/(app)/gitops?action=create&env=${encodeURIComponent(environmentId)}`))}
 					createTemplateLabel={m.templates_create_template()}
 					createTemplateDisabled={!inputs.name.value ||
 						!inputs.composeContent.value ||

@@ -1,61 +1,45 @@
 <script lang="ts">
-	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { createQuery } from '@tanstack/svelte-query';
 	import { onMount, untrack } from 'svelte';
 
-	import { swarmEnvironmentsQueryOptions, type SwarmEnvironments } from '#lib/components/swarm/swarm-environments.js';
+	import { swarmEnvironmentsQueryOptions } from '#lib/components/swarm/swarm-environments.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
 	import { AlertTriangleIcon, UsersIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
+	import { swarmNodeListQuery } from '#lib/query/swarm.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { fetchAcrossEnvironments, withFailedEnvironments } from '#lib/utils/environments.js';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import SwarmNodesTable from './components/nodes-table.svelte';
 
 	let { data } = $props();
-	const queryClient = useQueryClient();
 
-	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
+	const pageState = new ResourceListPageState<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
 	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm:read'));
 	const swarm = $derived(swarmQuery.data ?? data.swarm);
 
-	function nodesQueryOptions(options: SearchPaginationSortRequest, current: SwarmEnvironments = swarm) {
-		const { environments, failedEnvironments, scope } = current;
+	const nodesQuery = createQuery(() => {
+		const scope = swarm.scope;
 		return {
-			queryKey: queryKeys.swarm.nodes(scope, options),
-			queryFn: async () =>
-				withFailedEnvironments(
-					await fetchAcrossEnvironments(environments, options, (id, request, config) =>
-						swarmService.getNodes(request, id, config)
-					),
-					failedEnvironments
-				)
+			...swarmNodeListQuery(swarm, pageState.requestOptions),
+			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
+			select: (value) => ({ envId: scope, value })
 		};
-	}
-
-	const nodesQuery = createQuery(() => ({
-		...nodesQueryOptions(requestOptions),
-		placeholderData: (previous) => previous
-	}));
-	let nodes = $derived(nodesQuery.data ?? data.nodes);
+	});
+	const nodes = $derived(nodesQuery.data?.value ?? data.nodes);
 	const isRefreshing = $derived(nodesQuery.isFetching && !nodesQuery.isPending);
 
-	function fetchNodes(options: SearchPaginationSortRequest, current: SwarmEnvironments = swarm) {
-		requestOptions = options;
-		return queryClient.query({ ...nodesQueryOptions(options, current), staleTime: 0 });
-	}
-
 	async function refresh() {
-		const discovered = await swarmQuery.refetch();
+		await swarmQuery.refetch();
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(fetchNodes(requestOptions, discovered.data ?? swarm)),
+			result: await tryCatch(nodesQuery.refetch({ throwOnError: true })),
 			message: m.common_refresh_failed({ resource: m.nodes() })
 		});
 	}
@@ -115,7 +99,12 @@
 				</Alert.Root>
 			{/if}
 
-			<SwarmNodesTable bind:nodes bind:requestOptions {fetchNodes} />
+			<SwarmNodesTable
+				{nodes}
+				scope={swarm.scope}
+				bind:requestOptions={pageState.requestOptions}
+				onRetry={() => nodesQuery.refetch()}
+			/>
 		</div>
 	{/snippet}
 </ResourcePageLayout>

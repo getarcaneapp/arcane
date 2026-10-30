@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -61,7 +62,11 @@
 		if ((patch.page ?? 1) > 1) params.set('page', String(patch.page));
 		selecting = false;
 		selected = [];
-		goto(`/customize/registries/${registry.id}?${params}`, { reset: false });
+		const href =
+			params.size > 0
+				? resolve(`/(app)/customize/registries/[id]?${params}`, { id: registry.id })
+				: resolve('/(app)/customize/registries/[id]', { id: registry.id });
+		goto(href, { reset: false });
 	}
 
 	const search = debounced((value: string) => navigate({ search: value.trim(), page: 1 }), 300);

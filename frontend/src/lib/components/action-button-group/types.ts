@@ -1,3 +1,4 @@
+import type { ResolvedPathname } from '$app/types';
 import type { Snippet } from 'svelte';
 
 import type { Action } from '#lib/components/arcane-button/index.js';
@@ -13,7 +14,7 @@ export interface ActionButtonMenuItem {
 	destructive?: boolean;
 	disabled?: boolean;
 	onclick?: () => void;
-	href?: string;
+	href?: ResolvedPathname;
 }
 
 export interface ActionButton {
@@ -25,18 +26,14 @@ export interface ActionButton {
 	disabled?: boolean;
 	disabledReason?: string;
 	onclick?: () => void;
-	href?: string;
+	href?: ResolvedPathname;
 	rel?: string;
 	icon?: IconType | null;
 	badge?: string | number;
-	// Inline placement; defaults to the Actions menu.
 	placement?: ActionPlacement;
-	// Menu section; defaults to "manage".
 	group?: ActionGroup;
 	destructive?: boolean;
-	// Inline icon button with a tooltip instead of a label.
 	iconOnly?: boolean;
 	menuItems?: ActionButtonMenuItem[];
-	// Rich dropdown entries rendered after menuItems; receives the parent's disabled state.
 	menuContent?: Snippet<[boolean]>;
 }

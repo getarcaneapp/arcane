@@ -1,19 +1,18 @@
-import { queryKeys } from '#lib/query/query-keys.js';
-import { containerService, type ContainerListRequestOptions } from '#lib/services/container-service.js';
-import { projectService } from '#lib/services/project-service.js';
+import { containerListQuery } from '#lib/query/containers.js';
+import { projectListQuery } from '#lib/query/projects.js';
+import type { ContainerListRequestOptions } from '#lib/services/container-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
 import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '#lib/utils/docker.js';
-import { fetchAcrossEnvironments, readableEnvironments } from '#lib/utils/environments.js';
+import { readableEnvironments } from '#lib/utils/environments.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {
-	const { queryClient } = await parent();
-	await environmentStore.ready;
+	const [{ queryClient }] = await Promise.all([parent(), environmentStore.ready]);
 	const scope = environmentStore.shownKey;
 
 	const containerRequestOptions = ensureStandaloneContainerUpdatesFilter(
@@ -31,28 +30,13 @@ export const load: PageLoad = async ({ parent }) => {
 	);
 
 	const operationResult = await tryCatch(
-		(async () =>
-			Promise.all([
-				queryClient.query({
-					queryKey: queryKeys.containers.list(scope, containerRequestOptions),
-					queryFn: () =>
-						fetchAcrossEnvironments(readableEnvironments('containers:list'), containerRequestOptions, (id, request, config) =>
-							containerService.getContainersForEnvironment(id, request, config)
-						)
-				}),
-				queryClient.query({
-					queryKey: queryKeys.projects.list(scope, projectRequestOptions),
-					queryFn: () =>
-						fetchAcrossEnvironments(readableEnvironments('projects:list'), projectRequestOptions, (id, request, config) =>
-							projectService.getProjectsForEnvironment(id, request, config)
-						)
-				})
-			]))()
+		Promise.all([
+			queryClient.query(containerListQuery(scope, readableEnvironments('containers:list'), containerRequestOptions)),
+			queryClient.query(projectListQuery(scope, readableEnvironments('projects:list'), projectRequestOptions))
+		])
 	);
 	if (operationResult.error !== null) {
-		const err = operationResult.error;
-
-		throwPageLoadError(err, 'Failed to load updates');
+		throwPageLoadError(operationResult.error, 'Failed to load updates');
 	}
 
 	return {

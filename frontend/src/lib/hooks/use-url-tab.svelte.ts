@@ -1,8 +1,10 @@
 import { goto } from '$app/navigation';
 import { page } from '$app/state';
+import type { ResolvedPathname } from '$app/types';
 import { onMount, untrack } from 'svelte';
 
 import type { TabItem } from '#lib/components/tab-bar/index.js';
+import { isInAppPath } from '#lib/utils/auth.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
 type UrlTabItem<T extends string> = TabItem & { value: T; visible?: boolean };
@@ -33,6 +35,9 @@ export function useUrlTab<T extends string>({
 
 	function updateUrl(url: URL) {
 		const state = page.state;
+		const href = `${url.pathname}${url.search}${url.hash}`;
+		if (!isInAppPath(href)) return;
+		const target: ResolvedPathname = href;
 		pendingUrlUpdate = tryCatch(pendingUrlUpdate)
 			.then((result) => {
 				if (result.error !== null) {
@@ -42,7 +47,7 @@ export function useUrlTab<T extends string>({
 				}
 			})
 			.then(() =>
-				goto(url, {
+				goto(target, {
 					replace: true,
 					shallow: true,
 					reset: false,

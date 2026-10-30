@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { mode } from 'mode-watcher';
 	import { toast } from 'svelte-sonner';
 
@@ -21,7 +22,6 @@
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { confirmAndRemoveContainer, runContainerLifecycleAction } from '#lib/utils/container-actions.js';
 	import { getThemedIconUrl, parseImageRef } from '#lib/utils/docker.js';
-	import { environmentHref } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	interface Props {
@@ -54,7 +54,7 @@
 	);
 
 	type ActionStatus = 'starting' | 'stopping' | 'restarting' | 'pausing' | 'unpausing' | 'removing' | '';
-	let actionStatus = $state<Record<string, ActionStatus>>({});
+	const actionStatus = $state<Record<string, ActionStatus>>({});
 	const isAnyLoading = $derived(Object.values(actionStatus).some(Boolean));
 
 	function statusDotClass(status: string | undefined): string {
@@ -83,12 +83,11 @@
 		});
 	}
 
-	function getContainerUrl(service: RuntimeService): string {
-		if (!service.containerId) return '#';
-		return projectId
-			? environmentHref(`/containers/${service.containerId}?from=project&projectId=${projectId}`, environmentId)
-			: environmentHref(`/containers/${service.containerId}`, environmentId);
-	}
+	const containerQuery = $derived(
+		projectId
+			? `from=project&projectId=${projectId}&env=${encodeURIComponent(environmentId)}`
+			: `env=${encodeURIComponent(environmentId)}`
+	);
 
 	async function performContainerAction(action: 'start' | 'stop' | 'restart', id: string) {
 		await runContainerLifecycleAction({
@@ -169,11 +168,12 @@
 						containerClass="size-5 bg-transparent ring-0"
 					/>
 					{#if item.containerId}
+						{@const containerId = item.containerId}
 						<button
 							type="button"
 							class="min-w-0 flex-1 truncate text-left text-sm hover:underline"
 							title={item.containerName || item.name}
-							onclick={() => goto(getContainerUrl(item))}
+							onclick={() => goto(resolve(`/(app)/containers/[containerId]?${containerQuery}`, { containerId }))}
 						>
 							{item.name}
 						</button>
@@ -197,8 +197,12 @@
 						/>
 					{/if}
 					{#if item.containerId}
+						{@const containerId = item.containerId}
 						<RowActionsMenu triggerClass="size-6 shrink-0 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100">
-							<DropdownMenu.Item onclick={() => goto(getContainerUrl(item))} disabled={isAnyLoading}>
+							<DropdownMenu.Item
+								onclick={() => goto(resolve(`/(app)/containers/[containerId]?${containerQuery}`, { containerId }))}
+								disabled={isAnyLoading}
+							>
 								<InspectIcon class="size-4" />
 								{m.common_inspect()}
 							</DropdownMenu.Item>

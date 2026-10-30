@@ -1,5 +1,4 @@
-import { queryKeys } from '#lib/query/query-keys.js';
-import { roleService } from '#lib/services/role-service.js';
+import { roleListQuery } from '#lib/query/roles.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 
@@ -19,10 +18,7 @@ export const load: PageLoad = async ({ parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	const roles = await queryClient.query({
-		queryKey: queryKeys.roles.list(rolesRequestOptions),
-		queryFn: () => roleService.getRoles(rolesRequestOptions)
-	});
+	const roles = await queryClient.query(roleListQuery(rolesRequestOptions));
 
 	return {
 		roles,

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { toast } from 'svelte-sonner';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -80,7 +81,7 @@
 			setLoadingState: (value) => (saving = value),
 			onSuccess: async (created) => {
 				toast.success(m.templates_create_template_success({ name: validated.name }));
-				await goto(`/customize/templates/${created.id}`);
+				await goto(resolve('/(app)/customize/templates/[id]', { id: created.id }));
 			}
 		});
 	}
@@ -95,7 +96,7 @@
 	onSubmit={handleCreate}
 >
 	{#snippet toolbarActions()}
-		<ArcaneButton action="cancel" onclick={() => goto('/customize/templates')} disabled={saving} />
+		<ArcaneButton action="cancel" onclick={() => goto(resolve('/(app)/customize/templates'))} disabled={saving} />
 		<ArcaneButton
 			action="create"
 			customLabel={m.templates_create_template()}

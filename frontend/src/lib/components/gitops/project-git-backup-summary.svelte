@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -221,7 +222,10 @@
 						</DropdownMenu.Item>
 
 						{#if canEdit}
-							<DropdownMenu.Item onclick={() => goto(environmentHref(`/gitops?action=edit&syncId=${sync.id}`, environmentId))}>
+							<DropdownMenu.Item
+								onclick={() =>
+									goto(resolve(`/(app)/gitops?action=edit&syncId=${sync.id}&env=${encodeURIComponent(environmentId)}`))}
+							>
 								<SettingsIcon class="size-4" />
 								{m.settings()}
 							</DropdownMenu.Item>

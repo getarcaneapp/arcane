@@ -107,7 +107,7 @@
 
 	$effect(() => {
 		if (authRedirectPath) {
-			goto(authRedirectPath);
+			goto(authRedirectPath!);
 		}
 	});
 

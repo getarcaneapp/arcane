@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { afterNavigate, goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -10,9 +11,9 @@
 	import { RefreshIcon, ClockIcon, SuccessIcon, GitBranchIcon, UploadIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { gitOpsSyncListQuery } from '#lib/query/gitops.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
-	import { environmentStore, type EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 	import type {
 		GitOpsSync,
 		GitOpsSyncCounts,
@@ -21,14 +22,9 @@
 		GitOpsSyncUpdate,
 		ImportGitOpsSyncRequest
 	} from '#lib/types/automation.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import {
-		destinationEnvironmentId,
-		fetchAcrossEnvironments,
-		hasShownPermission,
-		readableEnvironments
-	} from '#lib/utils/environments.js';
+	import { destinationEnvironmentId, hasShownPermission, readableEnvironments } from '#lib/utils/environments.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import SyncTable from './components/sync-table.svelte';
@@ -36,56 +32,85 @@
 	let { data } = $props();
 	const queryClient = useQueryClient();
 
-	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.syncRequestOptions));
-	let selectedIds = $state<string[]>([]);
+	const pageState = new ResourceListPageState(untrack(() => data.syncRequestOptions));
 	let isSyncDialogOpen = $state(false);
 	let syncSession = $state(0);
 	let isImportDialogOpen = $state(false);
 	let syncToEdit = $state<GitOpsSync | null>(null);
 	let pickedEnvironmentId = $state('');
-	const scope = $derived(environmentStore.shownKey);
+	let isLoadingSync = $state(false);
 	const createEnvironmentId = $derived(destinationEnvironmentId(pickedEnvironmentId, 'gitops:create'));
 	const canCreate = $derived(hasShownPermission('gitops:create'));
 
-	let isLoading = $state({
-		create: false,
-		edit: false,
-		import: false
-	});
-
-	function fetchSyncs(environments: EnvironmentRef[], options: SearchPaginationSortRequest) {
-		return fetchAcrossEnvironments(environments, options, (id, request, config) =>
-			gitOpsSyncService.getSyncs(id, request, config)
-		);
-	}
-
 	const syncsQuery = createQuery(() => {
-		const queryScope = scope;
-		const environments = readableEnvironments('gitops:list');
-		const options = requestOptions;
+		const scope = pageState.scope;
 		return {
-			queryKey: queryKeys.gitOpsSyncs.list(queryScope, options),
-			queryFn: () => fetchSyncs(environments, options),
-			placeholderData: (previous, query) => {
-				if (query?.queryKey[1] === queryScope) return previous;
-				return undefined;
-			},
-			select: (value) => ({ scope: queryScope, value })
+			...gitOpsSyncListQuery(scope, readableEnvironments('gitops:list'), pageState.requestOptions),
+			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
+			select: (value) => ({ scope, value })
 		};
 	});
 	const syncs = $derived(syncsQuery.data?.value ?? data.syncs);
-	const resourcesReady = $derived(syncsQuery.data?.scope === scope || data.scope === scope);
+	const resourcesReady = $derived(syncsQuery.data?.scope === pageState.scope || data.scope === pageState.scope);
 	const isRefreshing = $derived(syncsQuery.isFetching && !syncsQuery.isPending);
 
-	async function loadSyncs(options: SearchPaginationSortRequest = requestOptions) {
-		requestOptions = options;
-		const environments = readableEnvironments('gitops:list');
-		return queryClient.query({
-			queryKey: queryKeys.gitOpsSyncs.list(scope, options),
-			queryFn: () => fetchSyncs(environments, options),
-			staleTime: 0
-		});
-	}
+	const saveSyncMutation = createMutation(() => ({
+		mutationFn: ({
+			sync,
+			target,
+			environmentId
+		}: {
+			sync: GitOpsSyncCreate | GitOpsSyncUpdate;
+			target: GitOpsSync | null;
+			environmentId: string;
+		}) =>
+			target
+				? gitOpsSyncService.updateSync(target.environmentId, target.id, sync as GitOpsSyncUpdate)
+				: gitOpsSyncService.createSync(environmentId, sync as GitOpsSyncCreate),
+		onSuccess: async (_result, { target }) => {
+			toast.success(
+				target
+					? m.common_update_success({ resource: m.resource_sync() })
+					: m.common_create_success({ resource: m.resource_sync() })
+			);
+			await queryClient.invalidateQueries({ queryKey: queryKeys.gitOpsSyncs.listPrefix(pageState.scope) });
+			isSyncDialogOpen = false;
+		},
+		onError: (error, { target }) => {
+			toast.error(
+				target
+					? m.common_update_failed({ resource: m.resource_sync() })
+					: m.common_create_failed({ resource: m.resource_sync() }),
+				{ description: extractApiErrorMessage(error) }
+			);
+		}
+	}));
+
+	const importSyncsMutation = createMutation(() => ({
+		mutationFn: ({ syncs, environmentId }: { syncs: ImportGitOpsSyncRequest[]; environmentId: string }) =>
+			gitOpsSyncService.importSyncs(environmentId, syncs),
+		onSuccess: async (response) => {
+			if (response.failedCount === 0) {
+				toast.success(m.git_sync_import_success({ count: response.successCount }));
+				isImportDialogOpen = false;
+			} else {
+				if (response.successCount > 0) {
+					toast.warning(
+						m.git_sync_import_partial_success({ successCount: response.successCount, failedCount: response.failedCount })
+					);
+				} else {
+					toast.error(m.git_sync_import_failed_count({ count: response.failedCount }));
+				}
+
+				response.errors?.slice(0, 3).forEach((err) => toast.error(err));
+			}
+
+			await queryClient.invalidateQueries({ queryKey: queryKeys.gitOpsSyncs.listPrefix(pageState.scope) });
+		},
+		onError: (error) => {
+			toast.error(m.git_sync_import_failed(), { description: extractApiErrorMessage(error) });
+		}
+	}));
 
 	const syncCountsFallback: GitOpsSyncCounts = {
 		totalSyncs: 0,
@@ -126,7 +151,8 @@
 		for (const param of ['action', 'targetType', 'mode', 'projectId', 'syncId', 'env']) {
 			newUrl.searchParams.delete(param);
 		}
-		void goto(newUrl.toString(), { replace: true, reset: false });
+		const href = newUrl.searchParams.size > 0 ? resolve(`/(app)/gitops?${newUrl.searchParams}`) : resolve('/(app)/gitops');
+		void goto(href, { replace: true, reset: false });
 	});
 
 	function openCreateSyncDialog(targetType?: string | Event, mode?: GitOpsSyncMode, projectId?: string) {
@@ -157,73 +183,21 @@
 		await handleApiResultWithCallbacks({
 			result: await tryCatch(gitOpsSyncService.getSync(environmentId, syncId)),
 			message: m.common_not_found_title({ resource: m.resource_sync_cap() }),
-			setLoadingState: (value) => (isLoading.edit = value),
+			setLoadingState: (value) => (isLoadingSync = value),
 			onSuccess: (sync) => openEditSyncDialog({ ...sync, environmentId })
 		});
 	}
 
-	async function handleSyncDialogSubmit(detail: { sync: GitOpsSyncCreate | GitOpsSyncUpdate; isEditMode: boolean }) {
-		const { sync, isEditMode } = detail;
-		const loadingKey = isEditMode ? 'edit' : 'create';
-		isLoading[loadingKey] = true;
-
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					if (isEditMode && syncToEdit?.id) {
-						await gitOpsSyncService.updateSync(syncToEdit.environmentId, syncToEdit.id, sync as GitOpsSyncUpdate);
-						toast.success(m.common_update_success({ resource: m.resource_sync() }));
-					} else {
-						await gitOpsSyncService.createSync(createEnvironmentId, sync as GitOpsSyncCreate);
-						toast.success(m.common_create_success({ resource: m.resource_sync() }));
-					}
-
-					await loadSyncs();
-					isSyncDialogOpen = false;
-				})()
-			);
-			if (operationResult.error !== null) {
-				const title = isEditMode
-					? m.common_update_failed({ resource: m.resource_sync() })
-					: m.common_create_failed({ resource: m.resource_sync() });
-				toast.error(title, { description: extractApiErrorMessage(operationResult.error) });
-			}
-		} finally {
-			isLoading[loadingKey] = false;
-		}
+	function handleSyncDialogSubmit({ sync, isEditMode }: { sync: GitOpsSyncCreate | GitOpsSyncUpdate; isEditMode: boolean }) {
+		saveSyncMutation.mutate({
+			sync,
+			target: isEditMode && syncToEdit?.id ? syncToEdit : null,
+			environmentId: createEnvironmentId
+		});
 	}
 
-	async function handleImportSubmit(data: ImportGitOpsSyncRequest[]) {
-		isLoading.import = true;
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					const response = await gitOpsSyncService.importSyncs(createEnvironmentId, data);
-
-					if (response.failedCount === 0) {
-						toast.success(m.git_sync_import_success({ count: response.successCount }));
-						isImportDialogOpen = false;
-					} else {
-						if (response.successCount > 0) {
-							toast.warning(
-								m.git_sync_import_partial_success({ successCount: response.successCount, failedCount: response.failedCount })
-							);
-						} else {
-							toast.error(m.git_sync_import_failed_count({ count: response.failedCount }));
-						}
-
-						response.errors?.slice(0, 3).forEach((err) => toast.error(err));
-					}
-
-					await loadSyncs();
-				})()
-			);
-			if (operationResult.error !== null) {
-				toast.error(m.git_sync_import_failed(), { description: extractApiErrorMessage(operationResult.error) });
-			}
-		} finally {
-			isLoading.import = false;
-		}
+	function handleImportSubmit(syncs: ImportGitOpsSyncRequest[]) {
+		importSyncsMutation.mutate({ syncs, environmentId: createEnvironmentId });
 	}
 
 	const actionButtons: ActionButton[] = $derived(
@@ -257,7 +231,7 @@
 				action: 'edit',
 				label: m.git_repositories_title(),
 				icon: GitBranchIcon,
-				onclick: () => goto('/customize/git-repositories')
+				onclick: () => goto(resolve('/(app)/customize/git-repositories'))
 			},
 			{
 				id: 'refresh',
@@ -265,7 +239,7 @@
 				placement: 'secondary',
 				iconOnly: true,
 				label: m.common_refresh(),
-				onclick: () => loadSyncs(),
+				onclick: () => syncsQuery.refetch(),
 				loading: isRefreshing,
 				disabled: syncsQuery.isFetching
 			}
@@ -299,7 +273,13 @@
 
 <ResourcePageLayout title={m.git_syncs_title()} subtitle={m.git_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<SyncTable {syncs} bind:selectedIds bind:requestOptions onRefresh={loadSyncs} onEditSync={openEditSyncDialog} />
+		<SyncTable
+			{syncs}
+			bind:selectedIds={pageState.selectedIds}
+			bind:requestOptions={pageState.requestOptions}
+			onRetry={() => syncsQuery.refetch()}
+			onEditSync={openEditSyncDialog}
+		/>
 	{/snippet}
 
 	{#snippet additionalContent()}
@@ -313,7 +293,7 @@
 					mode={dialogMode}
 					projectId={dialogProjectId}
 					onSubmit={handleSyncDialogSubmit}
-					isLoading={isLoading.create || isLoading.edit}
+					isLoading={saveSyncMutation.isPending || isLoadingSync}
 				/>
 			{/key}
 		{/if}
@@ -321,7 +301,7 @@
 			bind:open={isImportDialogOpen}
 			bind:environmentId={() => createEnvironmentId, (value) => (pickedEnvironmentId = value)}
 			onSubmit={handleImportSubmit}
-			isLoading={isLoading.import}
+			isLoading={importSyncsMutation.isPending}
 		/>
 	{/snippet}
 </ResourcePageLayout>

@@ -4,18 +4,20 @@
 	import { toast } from 'svelte-sonner';
 
 	import ServiceEditorDialog from '#lib/components/dialogs/service-editor-dialog.svelte';
-	import { swarmEnvironmentsQueryOptions, type SwarmEnvironments } from '#lib/components/swarm/swarm-environments.js';
+	import { swarmEnvironmentsQueryOptions } from '#lib/components/swarm/swarm-environments.js';
 	import { DockIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
+	import { swarmServiceListQuery } from '#lib/query/swarm.js';
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { SwarmServiceCreateSpec } from '#lib/types/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
-	import { destinationEnvironmentId, fetchAcrossEnvironments, withFailedEnvironments } from '#lib/utils/environments.js';
+	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { createRefreshActionButtons } from '#lib/utils/resource-actions.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import SwarmServicesTable from './components/services-table.svelte';
@@ -23,43 +25,28 @@
 	let { data } = $props();
 	const queryClient = useQueryClient();
 
-	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
+	const pageState = new ResourceListPageState<SearchPaginationSortRequest>(untrack(() => data.requestOptions));
 	const swarmQuery = createQuery(() => swarmEnvironmentsQueryOptions('swarm:read'));
 	const swarm = $derived(swarmQuery.data ?? data.swarm);
-	let isLoading = $state({ creating: false });
+	const isLoading = $state({ creating: false });
 	let showCreateDialog = $state(false);
 	let createEnvironmentId = $state('');
 
-	function servicesQueryOptions(options: SearchPaginationSortRequest, current: SwarmEnvironments = swarm) {
-		const { environments, failedEnvironments, scope } = current;
+	const servicesQuery = createQuery(() => {
+		const scope = swarm.scope;
 		return {
-			queryKey: queryKeys.swarm.services(scope, options),
-			queryFn: async () =>
-				withFailedEnvironments(
-					await fetchAcrossEnvironments(environments, options, (id, request, config) =>
-						swarmService.getServices(request, id, config)
-					),
-					failedEnvironments
-				)
+			...swarmServiceListQuery(swarm, pageState.requestOptions),
+			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
+			select: (value) => ({ envId: scope, value })
 		};
-	}
-
-	const servicesQuery = createQuery(() => ({
-		...servicesQueryOptions(requestOptions),
-		placeholderData: (previous) => previous
-	}));
-	let services = $derived(servicesQuery.data ?? data.services);
+	});
+	const services = $derived(servicesQuery.data?.value ?? data.services);
 	const isRefreshing = $derived(servicesQuery.isFetching && !servicesQuery.isPending);
 
-	function fetchServices(options: SearchPaginationSortRequest, current: SwarmEnvironments = swarm) {
-		requestOptions = options;
-		return queryClient.query({ ...servicesQueryOptions(options, current), staleTime: 0 });
-	}
-
 	async function refresh() {
-		const discovered = await swarmQuery.refetch();
+		await swarmQuery.refetch();
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(fetchServices(requestOptions, discovered.data ?? swarm)),
+			result: await tryCatch(servicesQuery.refetch({ throwOnError: true })),
 			message: m.common_refresh_failed({ resource: m.services() })
 		});
 	}
@@ -83,7 +70,7 @@
 			onSuccess: async () => {
 				toast.success(m.common_create_success({ resource: `${m.swarm_service()} "${spec.Name}"` }));
 				showCreateDialog = false;
-				await refresh();
+				await queryClient.invalidateQueries({ queryKey: queryKeys.swarm.listPrefix(swarm.scope, 'services') });
 			}
 		});
 	}
@@ -129,6 +116,11 @@
 
 <ResourcePageLayout title={m.services()} subtitle={m.swarm_services_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<SwarmServicesTable bind:services bind:requestOptions {fetchServices} />
+		<SwarmServicesTable
+			{services}
+			invalidateKey={queryKeys.swarm.listPrefix(swarm.scope, 'services')}
+			bind:requestOptions={pageState.requestOptions}
+			onRetry={() => servicesQuery.refetch()}
+		/>
 	{/snippet}
 </ResourcePageLayout>

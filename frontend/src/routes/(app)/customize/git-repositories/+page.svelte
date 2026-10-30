@@ -1,17 +1,18 @@
 <script lang="ts">
-	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import GitRepositoryFormSheet from '#lib/components/sheets/git-repository-sheet.svelte';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { gitRepositoryListQuery } from '#lib/query/git-repositories.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitRepositoryService } from '#lib/services/git-repository-service.js';
 	import type { GitRepository, GitRepositoryCreate, GitRepositoryUpdate } from '#lib/types/automation.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasShownPermission } from '#lib/utils/environments.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import RepositoryTable from './components/repository-table.svelte';
@@ -19,45 +20,54 @@
 	let { data } = $props();
 	const queryClient = useQueryClient();
 
-	let selectedIds = $state<string[]>([]);
+	const pageState = new ResourceListPageState(untrack(() => data.repositoryRequestOptions));
 	let isRepositoryDialogOpen = $state(false);
 	let repositorySession = $state(0);
 	let clearToken = $state(false);
 	let clearSshKey = $state(false);
 	let clearSigningKey = $state(false);
 	let repositoryToEdit = $state<GitRepository | null>(null);
-	let requestOptions = $state(untrack(() => data.repositoryRequestOptions));
-	const repositoriesQuery = createQuery(() => {
-		const options = requestOptions;
-		return {
-			queryKey: queryKeys.gitRepositories.list(options),
-			queryFn: () => gitRepositoryService.getRepositories(options),
-			placeholderData: (previous) => previous
-		};
-	});
+	let isRefreshing = $state(false);
+	const repositoriesQuery = createQuery(() => ({
+		...gitRepositoryListQuery(pageState.requestOptions),
+		placeholderData: (previous) => previous
+	}));
 	const repositories = $derived(repositoriesQuery.data ?? data.repositories);
 
-	async function loadRepositories(options: SearchPaginationSortRequest = requestOptions) {
-		requestOptions = options;
-		await queryClient.query({
-			queryKey: queryKeys.gitRepositories.list(options),
-			staleTime: 0,
-			queryFn: () => gitRepositoryService.getRepositories(options)
-		});
-	}
-
-	let isLoading = $state({
-		create: false,
-		edit: false,
-		refresh: false
-	});
+	const saveRepositoryMutation = createMutation(() => ({
+		mutationFn: ({
+			repository,
+			target
+		}: {
+			repository: GitRepositoryCreate | GitRepositoryUpdate;
+			target: GitRepository | null;
+		}) =>
+			target
+				? gitRepositoryService.updateRepository(target.id, repository as GitRepositoryUpdate)
+				: gitRepositoryService.createRepository(repository as GitRepositoryCreate),
+		onSuccess: async (_result, { target }) => {
+			toast.success(
+				target
+					? m.common_update_success({ resource: m.resource_repository() })
+					: m.common_create_success({ resource: m.resource_repository() })
+			);
+			await queryClient.invalidateQueries({ queryKey: queryKeys.gitRepositories.all });
+			clearToken = false;
+			clearSshKey = false;
+			clearSigningKey = false;
+			isRepositoryDialogOpen = false;
+		},
+		onError: (error) => {
+			toast.error(m.common_save_failed(), { description: extractApiErrorMessage(error) });
+		}
+	}));
 
 	async function refreshRepositories() {
-		isLoading.refresh = true;
+		isRefreshing = true;
 		await handleApiResultWithCallbacks({
-			result: await tryCatch(loadRepositories()),
+			result: await tryCatch(repositoriesQuery.refetch({ throwOnError: true })),
 			message: m.common_refresh_failed({ resource: m.git_repositories_title() }),
-			setLoadingState: (value) => (isLoading.refresh = value),
+			setLoadingState: (value) => (isRefreshing = value),
 			onSuccess: () => {
 				toast.success(m.common_refresh_success({ resource: m.git_repositories_title() }));
 			}
@@ -82,41 +92,14 @@
 		isRepositoryDialogOpen = true;
 	}
 
-	async function handleRepositoryDialogSubmit(detail: {
+	function handleRepositoryDialogSubmit({
+		repository,
+		isEditMode
+	}: {
 		repository: GitRepositoryCreate | GitRepositoryUpdate;
 		isEditMode: boolean;
 	}) {
-		const { repository, isEditMode } = detail;
-		const loadingKey = isEditMode ? 'edit' : 'create';
-		isLoading[loadingKey] = true;
-
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					if (isEditMode && repositoryToEdit?.id) {
-						await gitRepositoryService.updateRepository(repositoryToEdit.id, repository as GitRepositoryUpdate);
-						toast.success(m.common_update_success({ resource: m.resource_repository() }));
-					} else {
-						await gitRepositoryService.createRepository(repository as GitRepositoryCreate);
-						toast.success(m.common_create_success({ resource: m.resource_repository() }));
-					}
-
-					await queryClient.invalidateQueries({ queryKey: queryKeys.gitRepositories.all });
-					clearToken = false;
-					clearSshKey = false;
-					clearSigningKey = false;
-					isRepositoryDialogOpen = false;
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				console.error('Error saving repository:', error);
-				toast.error(error instanceof Error ? error.message : m.common_save_failed());
-			}
-		} finally {
-			isLoading[loadingKey] = false;
-		}
+		saveRepositoryMutation.mutate({ repository, target: isEditMode && repositoryToEdit?.id ? repositoryToEdit : null });
 	}
 
 	const canCreateRepository = $derived(hasShownPermission('git-repositories:create'));
@@ -139,8 +122,8 @@
 			iconOnly: true,
 			label: m.common_refresh(),
 			onclick: refreshRepositories,
-			loading: isLoading.refresh,
-			disabled: isLoading.refresh
+			loading: isRefreshing,
+			disabled: isRefreshing
 		});
 		return buttons;
 	});
@@ -150,9 +133,8 @@
 	{#snippet mainContent()}
 		<RepositoryTable
 			{repositories}
-			bind:selectedIds
-			bind:requestOptions
-			onRefreshData={loadRepositories}
+			bind:selectedIds={pageState.selectedIds}
+			bind:requestOptions={pageState.requestOptions}
 			onEditRepository={openEditRepositoryDialog}
 		/>
 	{/snippet}
@@ -167,7 +149,7 @@
 					bind:open={isRepositoryDialogOpen}
 					bind:repositoryToEdit
 					onSubmit={handleRepositoryDialogSubmit}
-					isLoading={isLoading.create || isLoading.edit}
+					isLoading={saveRepositoryMutation.isPending}
 				/>
 			{/key}
 		{/if}

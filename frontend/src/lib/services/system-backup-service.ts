@@ -1,5 +1,5 @@
 import type { BackupFileBrowseRequest, BackupFileEntry, BackupRestoreSelection } from '#lib/types/backup.js';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { MessageResponse, Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import type {
 	CreateSystemBackup,
 	BackupHistoryEntry,
@@ -73,7 +73,7 @@ class SystemBackupService extends BaseAPIService {
 		return response.data;
 	}
 
-	async restoreFiles(id: string, recoveryKey: string, selection: BackupRestoreSelection): Promise<unknown> {
+	async restoreFiles(id: string, recoveryKey: string, selection: BackupRestoreSelection): Promise<MessageResponse> {
 		return this.handleResponse(
 			this.api.post(`/backups/${id}`, { recoveryKey, ...selection }, { params: { action: 'restorefiles' } })
 		);

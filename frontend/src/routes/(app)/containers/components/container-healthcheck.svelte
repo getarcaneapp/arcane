@@ -102,7 +102,7 @@
 		return `${probe.start?.epochNanoseconds ?? ''}-${probe.end?.epochNanoseconds ?? ''}-${probe.exitCode}`;
 	}
 
-	let expanded = $state<Record<string, boolean>>({});
+	const expanded = $state<Record<string, boolean>>({});
 	function toggleExpanded(key: string) {
 		expanded[key] = !expanded[key];
 	}

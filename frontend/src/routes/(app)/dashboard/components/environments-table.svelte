@@ -20,6 +20,8 @@
 </script>
 
 <script lang="ts">
+	import { resolve } from '$app/paths';
+
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import MetricRing, { type MetricRingVariant } from '#lib/components/metric-ring.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
@@ -46,10 +48,10 @@
 	const showPods = $derived(rows.some((row) => row.podCount !== null));
 </script>
 
-{#snippet actionCount(count: number, href: string, icon: IconType, tone: 'amber' | 'red')}
+{#snippet actionCount(count: number, route: '/(app)/updates' | '/(app)/security', icon: IconType, tone: 'amber' | 'red')}
 	{@const Icon = count > 0 ? icon : VerifiedCheckIcon}
 	<a
-		{href}
+		href={resolve(route)}
 		class={cn(
 			'inline-flex items-center gap-1.5 text-sm tabular-nums transition-colors hover:underline',
 			count === 0 && 'text-muted-foreground',
@@ -106,7 +108,10 @@
 				<Table.Row>
 					<Table.Cell>
 						<div class="flex min-w-0 items-center gap-2">
-							<a class="truncate font-medium hover:underline" href="/environments/{row.environment.id}">
+							<a
+								class="truncate font-medium hover:underline"
+								href={resolve('/(app)/environments/[id]', { id: row.environment.id })}
+							>
 								{row.environment.name}
 							</a>
 							{#if row.podCount !== null}
@@ -150,11 +155,11 @@
 								{/if}
 							</Table.Cell>
 						{/if}
-						<Table.Cell>{@render actionCount(row.updates, '/updates', UpdateIcon, 'amber')}</Table.Cell>
+						<Table.Cell>{@render actionCount(row.updates, '/(app)/updates', UpdateIcon, 'amber')}</Table.Cell>
 						{#if showVulnerabilities}
 							<Table.Cell>
 								{#if featureStore.isEnabled('vulnerabilityManagement', row.environment.id)}
-									{@render actionCount(row.vulnerabilities, '/security', ShieldAlertIcon, 'red')}
+									{@render actionCount(row.vulnerabilities, '/(app)/security', ShieldAlertIcon, 'red')}
 								{/if}
 							</Table.Cell>
 						{/if}

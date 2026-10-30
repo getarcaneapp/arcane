@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -8,11 +9,14 @@
 	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
 	import { Snippet } from '#lib/components/ui/snippet/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { federatedCredentialListQuery } from '#lib/query/federated-credentials.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { federatedCredentialService } from '#lib/services/federated-credential-service.js';
 	import type { FederatedCredential, FederatedCredentialCreate, FederatedCredentialUpdate, Role } from '#lib/types/auth.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import FederatedCredentialTable from './federated-credential-table.svelte';
@@ -26,11 +30,16 @@
 
 	let { initialFederatedCredentials, initialRequestOptions, roles, environments }: Props = $props();
 
-	let federatedCredentials = $state(untrack(() => initialFederatedCredentials));
-	let selectedIds: string[] = $state([]);
-	let requestOptions: SearchPaginationSortRequest = $state(untrack(() => initialRequestOptions));
+	const queryClient = useQueryClient();
 
-	let isDialogOpen = $state({
+	const pageState = new ResourceListPageState(untrack(() => initialRequestOptions));
+	const federatedCredentialsQuery = createQuery(() => ({
+		...federatedCredentialListQuery(pageState.requestOptions),
+		placeholderData: (previous) => previous
+	}));
+	const federatedCredentials = $derived(federatedCredentialsQuery.data ?? initialFederatedCredentials);
+
+	const isDialogOpen = $state({
 		create: false,
 		edit: false,
 		instructions: false
@@ -39,7 +48,7 @@
 	let credentialToEdit: FederatedCredential | null = $state(null);
 	let newlyCreatedCredential: FederatedCredential | null = $state(null);
 
-	let isLoading = $state({
+	const isLoading = $state({
 		creating: false,
 		editing: false
 	});
@@ -52,16 +61,6 @@
 	function openEditDialog(credential: FederatedCredential) {
 		credentialToEdit = credential;
 		isDialogOpen.edit = true;
-	}
-
-	async function refreshFederatedCredentials() {
-		await handleApiResultWithCallbacks({
-			result: await tryCatch(federatedCredentialService.list(requestOptions)),
-			message: m.common_refresh_failed({ resource: m.federated_credential_page_title() }),
-			onSuccess: (list) => {
-				federatedCredentials = list;
-			}
-		});
 	}
 
 	async function handleFederatedCredentialSubmit(
@@ -81,7 +80,7 @@
 				setLoadingState: (value) => (isLoading[loading] = value),
 				onSuccess: async () => {
 					toast.success(m.federated_credential_updated_success({ name: safeName }));
-					await refreshFederatedCredentials();
+					await queryClient.invalidateQueries({ queryKey: queryKeys.federatedCredentials.all });
 					isDialogOpen.edit = false;
 					credentialToEdit = null;
 				}
@@ -94,7 +93,7 @@
 				setLoadingState: (value) => (isLoading[loading] = value),
 				onSuccess: async (createdCredential) => {
 					toast.success(m.federated_credential_created_success({ name: safeName }));
-					await refreshFederatedCredentials();
+					await queryClient.invalidateQueries({ queryKey: queryKeys.federatedCredentials.all });
 					isDialogOpen.create = false;
 					newlyCreatedCredential = createdCredential as FederatedCredential;
 					isDialogOpen.instructions = true;
@@ -136,10 +135,10 @@ steps:
 		</div>
 
 		<FederatedCredentialTable
-			bind:federatedCredentials
-			bind:selectedIds
-			bind:requestOptions
-			onFederatedCredentialsChanged={refreshFederatedCredentials}
+			{federatedCredentials}
+			bind:selectedIds={pageState.selectedIds}
+			bind:requestOptions={pageState.requestOptions}
+			onRetry={() => federatedCredentialsQuery.refetch()}
 			onEditFederatedCredential={openEditDialog}
 		/>
 	</div>

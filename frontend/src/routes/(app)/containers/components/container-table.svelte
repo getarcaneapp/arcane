@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { mode } from 'mode-watcher';
 	import { PersistedState } from 'runed';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -45,11 +46,7 @@
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import {
-		containerService,
-		type ContainerListRequestOptions,
-		type ContainersPaginatedResponse
-	} from '#lib/services/container-service.js';
+	import type { ContainersPaginatedResponse } from '#lib/services/container-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -59,16 +56,7 @@
 	import { hasAnyLoadingState } from '#lib/utils/bulk-actions.js';
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
 	import { COMPOSE_PROJECT_LABEL, getContainerIpAddresses, getThemedIconUrl, parseImageRef } from '#lib/utils/docker.js';
-	import {
-		environmentHref,
-		type EnvironmentPage,
-		type EnvironmentRow,
-		fetchAcrossEnvironments,
-		hasShownPermission,
-		listScopes,
-		readableEnvironments,
-		rowKey
-	} from '#lib/utils/environments.js';
+	import { type EnvironmentPage, type EnvironmentRow, hasShownPermission, listScopes, rowKey } from '#lib/utils/environments.js';
 	import { formatDateTimeShort, truncateImageDigest } from '#lib/utils/formatting.js';
 	import { quadletUnitHref } from '#lib/utils/podman.js';
 
@@ -94,12 +82,12 @@
 
 	let {
 		scope,
-		containers = $bindable(),
+		containers,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
 		groupByProject = $bindable(false),
 		withoutFilters = false,
-		onRefreshData
+		onRetry
 	}: {
 		/** Shown-environments scope the rows were loaded for. */
 		scope: string;
@@ -108,13 +96,13 @@
 		requestOptions: SearchPaginationSortRequest;
 		groupByProject?: boolean;
 		withoutFilters?: boolean;
-		onRefreshData?: (options: ContainerListRequestOptions) => Promise<ContainerPage>;
+		onRetry: () => Promise<unknown>;
 	} = $props();
 
 	// Track action status per container ID (e.g., "starting", "stopping", "updating", "")
-	let actionStatus = $state<Record<string, ActionStatus>>({});
+	const actionStatus = $state<Record<string, ActionStatus>>({});
 
-	let isBulkLoading = $state({
+	const isBulkLoading = $state({
 		start: false,
 		stop: false,
 		restart: false,
@@ -137,7 +125,6 @@
 				void queryClient.invalidateQueries({ queryKey: queryKeys.containers.environment(env.id) });
 				void queryClient.invalidateQueries({ queryKey: queryKeys.projects.environment(env.id) });
 			}
-			void refreshContainers(requestOptions);
 		}
 	);
 
@@ -155,53 +142,21 @@
 		return sort?.column === 'cpuUsage' || sort?.column === 'memoryUsage';
 	}
 
-	function buildGroupedRequest(options: SearchPaginationSortRequest, grouped = groupByProject): ContainerListRequestOptions {
-		return {
-			...options,
-			groupByProject: grouped
-		};
+	function invalidateContainers() {
+		return queryClient.invalidateQueries({ queryKey: queryKeys.containers.listPrefix(scope) });
 	}
 
-	async function fetchContainers(request: ContainerListRequestOptions): Promise<ContainerPage> {
-		return onRefreshData
-			? onRefreshData(request)
-			: fetchAcrossEnvironments(readableEnvironments('containers:list'), request, (id, request, config) =>
-					containerService.getContainersForEnvironment(id, request, config)
-				);
-	}
-
-	// Refreshes can overlap: a resource poll may still be in flight when the user changes
-	// the page or a filter, or when the parent refreshes the bound data itself. The
-	// generation orders requests started here; the identity check catches any other
-	// writer. Only a request that is newest on both counts may write table state.
-	let refreshGeneration = 0;
-
-	async function refreshContainers(options: SearchPaginationSortRequest, grouped = groupByProject) {
-		const generation = ++refreshGeneration;
-		const seen = containers;
-		const superseded = () => generation !== refreshGeneration || containers !== seen;
-		let request = buildGroupedRequest(options, grouped);
-		let result = await fetchContainers(request);
-		if (superseded()) return containers;
-
-		// Older agents cannot order by live CPU or memory and silently fall back to a name
-		// sort. Replace a persisted resource sort with the default so the request, the
-		// persisted preference, and the rendered order agree.
-		if (result.resourceSortSupported !== true && isResourceSort(request.sort)) {
-			request = { ...request, sort: defaultSort, pagination: { page: 1, limit: getCurrentLimit() } };
+	$effect(() => {
+		if (containers.resourceSortSupported === true || !isResourceSort(requestOptions?.sort)) return;
+		untrack(() => {
 			tablePreferences?.persistSort(defaultSort);
 			requestOptions = {
-				...options,
-				sort: request.sort,
-				pagination: request.pagination
+				...requestOptions,
+				sort: defaultSort,
+				pagination: { page: 1, limit: getCurrentLimit() }
 			};
-			result = await fetchContainers(request);
-			if (superseded()) return containers;
-		}
-
-		containers = result;
-		return result;
-	}
+		});
+	});
 
 	function getCurrentLimit() {
 		return requestOptions?.pagination?.limit ?? containers?.pagination?.itemsPerPage ?? 20;
@@ -218,13 +173,11 @@
 
 		customSettings = { ...customSettings, [settingsKey]: value };
 		tablePreferences?.persistCustomSettings(customSettings);
-		const nextOptions: SearchPaginationSortRequest = {
+		requestOptions = {
 			...requestOptions,
 			[requestKey]: value,
 			pagination: { page: 1, limit: getCurrentLimit() }
 		};
-		requestOptions = nextOptions;
-		refreshContainers(nextOptions);
 	}
 
 	const {
@@ -238,13 +191,10 @@
 		handleBulkRemove,
 		handleBulkUpdate
 	} = createContainerActions({
-		setContainers: (next) => {
-			containers = next;
-		},
 		setSelectedIds: (next) => {
 			selectedIds = next;
 		},
-		refreshContainers: () => refreshContainers(requestOptions),
+		refreshContainers: invalidateContainers,
 		actionStatus,
 		isBulkLoading,
 		scope: () => scope,
@@ -314,11 +264,11 @@
 		return actionStatus[rowKey(item)] || (activeUpdateKeys.has(`${item.environmentId}:${item.id}`) ? 'updating' : '');
 	}
 
-	// Only the on/off state is tracked here. The callback reads requestOptions when
-	// it runs, so pagination or filter changes do not restart the poll cycle.
 	$effect(() => {
 		if (!resourceSortActive || !resourcesCurrent) return;
-		resourcePoller.start(() => refreshContainers(requestOptions));
+		resourcePoller.start(() =>
+			queryClient.invalidateQueries({ queryKey: queryKeys.containers.listPrefix(scope) }, { throwOnError: true })
+		);
 		return () => resourcePoller.stop();
 	});
 	const canUpdateContainers = $derived(hasShownPermission('containers:autoupdate'));
@@ -343,7 +293,7 @@
 		const convertible = (containers.data ?? []).filter((c) => ids.includes(rowKey(c)) && !c.labels?.[COMPOSE_PROJECT_LABEL]);
 		if (convertible.length === 0) return;
 		const fromEnv = encodeURIComponent(convertible[0]!.environmentId);
-		goto(`/projects/new?fromContainers=${convertible.map((c) => c.id).join(',')}&fromEnv=${fromEnv}`);
+		goto(resolve(`/(app)/projects/new?fromContainers=${convertible.map((c) => c.id).join(',')}&fromEnv=${fromEnv}`));
 	}
 
 	function filterUpdatableContainerIds() {
@@ -385,14 +335,12 @@
 		groupByProject = persistedGroupByProject;
 
 		if (includeFlagsChanged || persistedGroupByProject) {
-			const nextOptions: SearchPaginationSortRequest = {
+			requestOptions = {
 				...requestOptions,
 				includeInternal: persistedInternal,
 				includeHidden: persistedHidden,
 				pagination: { page: 1, limit: getCurrentLimit() }
 			};
-			requestOptions = nextOptions;
-			void refreshContainers(nextOptions, persistedGroupByProject);
 		}
 
 		return () => {
@@ -406,12 +354,10 @@
 		customSettings = { ...customSettings, groupByProject: value };
 		tablePreferences?.persistCustomSettings(customSettings);
 		groupByProject = value;
-		const nextOptions: SearchPaginationSortRequest = {
+		requestOptions = {
 			...requestOptions,
 			pagination: { page: 1, limit: getCurrentLimit() }
 		};
-		requestOptions = nextOptions;
-		void refreshContainers(nextOptions, value);
 	}
 
 	function toggleGroup(groupName: string) {
@@ -724,7 +670,9 @@
 	{@const quadletHref = quadletUnitHref(item.labels, item.environmentId)}
 	<div class="flex min-w-0 items-center gap-2">
 		<IconImage src={iconUrl} alt={displayName} fallback={BoxIcon} class="size-6" containerClass="size-8 shrink-0" />
-		<a class="min-w-0 truncate font-medium hover:underline" href={environmentHref(`/containers/${item.id}`, item.environmentId)}
+		<a
+			class="min-w-0 truncate font-medium hover:underline"
+			href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, { containerId: item.id })}
 			>{displayName}</a
 		>
 		{#if item.hidden}
@@ -945,7 +893,8 @@
 				}
 			: undefined}
 		rowActions={RowActions}
-		onclick={(item: ContainerRow) => goto(environmentHref(`/containers/${item.id}`, item.environmentId))}
+		onclick={(item: ContainerRow) =>
+			goto(resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, { containerId: item.id }))}
 	>
 		{#if ((mobileFieldVisibility['ports'] ?? true) && item.ports && item.ports.length > 0) || (mobileFieldVisibility['updates'] ?? true)}
 			<div class="flex flex-row gap-4 border-t pt-3">
@@ -989,13 +938,21 @@
 			{@render StateActions(item, getRowActionStatus(item))}
 		{/if}
 		<RowActionsMenu>
-			<DropdownMenu.Item onclick={() => goto(environmentHref(`/containers/${item.id}`, envId))} disabled={isAnyLoading}>
+			<DropdownMenu.Item
+				onclick={() =>
+					goto(resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(envId)}`, { containerId: item.id }))}
+				disabled={isAnyLoading}
+			>
 				<InspectIcon class="size-4" />
 				{m.common_inspect()}
 			</DropdownMenu.Item>
 
 			{#if hasPermission('containers:edit', envId) && !item.redeployDisabled && !item.labels?.[COMPOSE_PROJECT_LABEL]}
-				<DropdownMenu.Item onclick={() => goto(environmentHref(`/containers/${item.id}/edit`, envId))} disabled={isAnyLoading}>
+				<DropdownMenu.Item
+					onclick={() =>
+						goto(resolve(`/(app)/containers/[containerId]/edit?env=${encodeURIComponent(envId)}`, { containerId: item.id }))}
+					disabled={isAnyLoading}
+				>
 					<EditIcon class="size-4" />
 					{m.common_edit()}
 				</DropdownMenu.Item>
@@ -1003,7 +960,7 @@
 
 			{#if canConvertToCompose && hasPermission('projects:create', envId) && !item.labels?.[COMPOSE_PROJECT_LABEL]}
 				<DropdownMenu.Item
-					onclick={() => goto(`/projects/new?fromContainers=${item.id}&fromEnv=${encodeURIComponent(envId)}`)}
+					onclick={() => goto(resolve(`/(app)/projects/new?fromContainers=${item.id}&fromEnv=${encodeURIComponent(envId)}`))}
 					disabled={isAnyLoading}
 				>
 					<ProjectsIcon class="size-4" />
@@ -1136,7 +1093,7 @@
 	bind:customSettings
 	bind:columnVisibility
 	{withoutFilters}
-	onRefresh={refreshContainers}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	{bulkActions}
@@ -1183,8 +1140,6 @@
 		containerName={getContainerDisplayName(killTarget)}
 		environmentId={killTarget.environmentId}
 		onClose={() => (killTarget = null)}
-		onComplete={async () => {
-			await refreshContainers(requestOptions);
-		}}
+		onComplete={invalidateContainers}
 	/>
 {/if}

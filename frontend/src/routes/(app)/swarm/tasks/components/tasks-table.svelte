@@ -13,15 +13,15 @@
 	import { getSwarmTaskIconVariant, getSwarmTaskStateVariant } from '#lib/utils/swarm-tasks.js';
 
 	let {
-		tasks = $bindable(),
+		tasks,
 		requestOptions = $bindable(),
-		fetchTasks,
+		onRetry,
 		persistKey = 'arcane-swarm-tasks-table',
 		showEnvironment = true
 	}: {
 		tasks: TaskPage;
 		requestOptions: SearchPaginationSortRequest;
-		fetchTasks: (options: SearchPaginationSortRequest) => Promise<TaskPage>;
+		onRetry: () => Promise<unknown>;
 		persistKey?: string;
 		showEnvironment?: boolean;
 	} = $props();
@@ -97,7 +97,7 @@
 	bind:requestOptions
 	bind:mobileFieldVisibility
 	selectionDisabled={true}
-	onRefresh={async (options) => (tasks = await fetchTasks(options))}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	mobileCard={TaskMobileCardSnippet}

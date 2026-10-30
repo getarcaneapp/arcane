@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { afterNavigate, goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createQuery, skipToken, useQueryClient } from '@tanstack/svelte-query';
 	import { PersistedState } from 'runed';
 	import { onMount, tick } from 'svelte';
@@ -51,7 +52,6 @@
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { composeTreeSplitProps } from '#lib/utils/compose-flow.js';
-	import { environmentHref } from '#lib/utils/environments.js';
 	import { formatDateTimeShort, truncateString } from '#lib/utils/formatting.js';
 	import { bytes } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -93,7 +93,7 @@
 	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
 	const volumeWorkspaceMaxFileSizeMb = $derived(environmentSettings.current?.values.volumeWorkspaceMaxFileSizeMb ?? 10);
 
-	let isLoading = $state({ remove: false, save: false });
+	const isLoading = $state({ remove: false, save: false });
 	const createdDate = $derived(volume?.createdAt ? formatDateTimeShort(volume.createdAt) : m.common_unknown());
 
 	const tabItems = $derived([
@@ -773,7 +773,7 @@
 						setLoadingState: (value) => (isLoading.remove = value),
 						onSuccess: async (data) => {
 							toast.success(m.volumes_remove_success({ name: safeName }), activityToastOptions(extractActivityId(data)));
-							goto('/volumes');
+							goto(resolve('/(app)/volumes'));
 						}
 					});
 				}
@@ -824,7 +824,7 @@
 					<div class="flex flex-col p-3 sm:flex-row sm:items-center">
 						<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
 							<a
-								href={environmentHref(`/containers/${c.id}`, currentEnvId)}
+								href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(currentEnvId)}`, { containerId: c.id })}
 								class="flex items-center text-primary hover:underline"
 							>
 								<ContainersIcon class="mr-1.5 size-3.5 text-muted-foreground" />
@@ -848,8 +848,9 @@
 				{#each volume.containers as id (id)}
 					<div class="flex items-center justify-between gap-3 p-3">
 						<code class="font-mono text-sm break-all">{truncateString(id, 48)}</code>
-						<a href={environmentHref(`/containers/${id}`, currentEnvId)} class="text-sm text-primary hover:underline"
-							>{m.common_view()}</a
+						<a
+							href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(currentEnvId)}`, { containerId: id })}
+							class="text-sm text-primary hover:underline">{m.common_view()}</a
 						>
 					</div>
 				{/each}
@@ -1141,7 +1142,7 @@
 		<ArcaneButton
 			action="cancel"
 			customLabel={m.common_back_to({ resource: m.resource_volumes_cap() })}
-			onclick={() => goto('/volumes')}
+			onclick={() => goto(resolve('/(app)/volumes'))}
 			size="sm"
 		/>
 	</div>

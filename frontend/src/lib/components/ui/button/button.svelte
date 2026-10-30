@@ -1,4 +1,5 @@
 <script lang="ts" module>
+	import type { ResolvedPathname } from '$app/types';
 	import type { WithChildren } from 'bits-ui';
 	import type { HTMLAnchorAttributes, HTMLButtonAttributes } from 'svelte/elements';
 	import { type VariantProps, tv } from 'tailwind-variants';
@@ -58,7 +59,8 @@
 	}>;
 
 	export type ButtonProps = WithElementRef<HTMLButtonAttributes> &
-		WithElementRef<HTMLAnchorAttributes> & {
+		WithElementRef<Omit<HTMLAnchorAttributes, 'href'>> & {
+			href?: ResolvedPathname;
 			variant?: ButtonVariant;
 			size?: ButtonSize;
 			hoverEffect?: ButtonHoverEffect;

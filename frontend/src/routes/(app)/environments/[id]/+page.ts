@@ -1,6 +1,5 @@
+import { environmentDetailQuery, environmentSettingsQuery } from '#lib/query/environments.js';
 import { queryKeys } from '#lib/query/query-keys.js';
-import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
-import { settingsService } from '#lib/services/settings-service.js';
 import { swarmService } from '#lib/services/swarm-service.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import { userHasPermission } from '#lib/utils/auth.js';
@@ -15,10 +14,7 @@ export const load: PageLoad = async ({ params, parent }) => {
 
 	const operationResult = await tryCatch(
 		(async () => {
-			const environment = await queryClient.query({
-				queryKey: queryKeys.environments.detail(params.id),
-				queryFn: () => environmentManagementService.get(params.id)
-			});
+			const environment = await queryClient.query(environmentDetailQuery(params.id));
 			if (!environment.enabled || !isEnvironmentOnline(environment)) {
 				await featureStore.markUnavailable(params.id);
 				return { environment, settings: null, swarmActive: false };
@@ -42,13 +38,7 @@ export const load: PageLoad = async ({ params, parent }) => {
 			let settings = null;
 			const operationResult = await tryCatch(
 				(async () =>
-					queryClient.query({
-						queryKey: queryKeys.environments.settings(params.id),
-						queryFn: () =>
-							userHasPermission(user, 'settings:read', params.id)
-								? settingsService.getSettingsForEnvironment(params.id)
-								: settingsService.getPublicSettingsForEnvironment(params.id)
-					}))()
+					queryClient.query(environmentSettingsQuery(params.id, userHasPermission(user, 'settings:read', params.id))))()
 			);
 			if (operationResult.error !== null) {
 			} else {

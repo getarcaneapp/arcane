@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { createQuery, keepPreviousData } from '@tanstack/svelte-query';
-	import { tick } from 'svelte';
+	import { untrack } from 'svelte';
 
 	import { AlertIcon, CheckIcon, CloseIcon, EventsIcon, InfoIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import { queryKeys } from '#lib/query/query-keys.js';
+	import { eventListQuery, eventStatsQuery } from '#lib/query/events.js';
 	import { eventService } from '#lib/services/event-service.js';
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -16,22 +16,17 @@
 	let { data } = $props();
 
 	let selectedIds = $state<string[]>([]);
-	let requestOptions = $derived(data.eventRequestOptions);
+	let requestOptions = $state(untrack(() => data.eventRequestOptions));
 	let isDeleting = $state(false);
 
 	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
-	const eventsQuery = createQuery(() => {
-		const options = requestOptions;
-		return {
-			queryKey: queryKeys.events.listGlobal(options),
-			queryFn: () => eventService.getEvents(options),
-			placeholderData: keepPreviousData
-		};
-	});
+	const eventsQuery = createQuery(() => ({
+		...eventListQuery(requestOptions),
+		placeholderData: keepPreviousData
+	}));
 
 	const statsQuery = createQuery(() => ({
-		queryKey: queryKeys.events.statsGlobal(),
-		queryFn: () => eventService.getEventStats(),
+		...eventStatsQuery(),
 		initialData: data.eventStats
 	}));
 
@@ -165,16 +160,6 @@
 
 <ResourcePageLayout title={m.events_title()} subtitle={m.events_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<EventTable
-			{events}
-			bind:selectedIds
-			bind:requestOptions
-			onRefreshData={async (options) => {
-				requestOptions = options;
-				// Let the query switch to the new options first; the refetch then joins its fetch.
-				await tick();
-				await Promise.all([eventsQuery.refetch({ cancelRefetch: false }), statsQuery.refetch()]);
-			}}
-		/>
+		<EventTable {events} bind:selectedIds bind:requestOptions />
 	{/snippet}
 </ResourcePageLayout>

@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -12,6 +14,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { ShieldAlertIcon, TrashIcon, EditIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { roleService } from '#lib/services/role-service.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { Role } from '#lib/types/auth.js';
@@ -20,20 +23,22 @@
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 
 	let {
-		roles = $bindable(),
+		roles,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
-		onRolesChanged
+		onRetry
 	}: {
 		roles: Paginated<Role>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
-		onRolesChanged: () => Promise<void>;
+		onRetry: () => Promise<unknown>;
 	} = $props();
+
+	const queryClient = useQueryClient();
 
 	const isAdmin = $derived(userStore.isGlobalAdmin());
 
-	let isLoading = $state({
+	const isLoading = $state({
 		removing: false
 	});
 
@@ -86,7 +91,7 @@
 			},
 			setLoading: (loading) => (isLoading.removing = loading),
 			onComplete: async ({ success }) => {
-				if (success > 0) await onRolesChanged();
+				if (success > 0) await queryClient.invalidateQueries({ queryKey: queryKeys.roles.root });
 			},
 			clearSelection: () => (selectedIds = []),
 			sequential: true
@@ -107,7 +112,7 @@
 			failureMessage: m.common_delete_failed({ resource: `${m.resource_role()} "${safeName}"` }),
 			onSuccess: async () => {
 				toast.success(m.common_delete_success({ resource: `${m.resource_role()} "${safeName}"` }));
-				await onRolesChanged();
+				await queryClient.invalidateQueries({ queryKey: queryKeys.roles.root });
 			}
 		});
 	}
@@ -222,7 +227,7 @@
 	{#if isAdmin}
 		<RowActionsMenu>
 			<IfPermitted adminOnly>
-				<DropdownMenu.Item onclick={() => goto(`/settings/roles/${item.id}`)}>
+				<DropdownMenu.Item onclick={() => goto(resolve('/(app)/settings/roles/[id]', { id: item.id }))}>
 					<EditIcon class="size-4" />
 					{m.common_edit()}
 				</DropdownMenu.Item>
@@ -249,11 +254,7 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
-	onRefresh={async (options) => {
-		requestOptions = options;
-		await onRolesChanged();
-		return roles;
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
@@ -11,65 +12,41 @@
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import * as m from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
+	import { webhookListQuery } from '#lib/query/webhooks.js';
 	import { webhookService } from '#lib/services/webhook-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { Webhook, WebhookCreated, WebhookCreate } from '#lib/types/environment.js';
-	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+	import type { WebhookCreated, WebhookCreate } from '#lib/types/environment.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { type EnvironmentPage, fetchAcrossEnvironments, readableEnvironments } from '#lib/utils/environments.js';
+	import { readableEnvironments } from '#lib/utils/environments.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import WebhookTable from './components/webhook-table.svelte';
 
+	let { data } = $props();
 	const queryClient = useQueryClient();
-	let requestOptions = $state<SearchPaginationSortRequest>({ pagination: { page: 1, limit: 20 } });
 
-	function webhookPage(items: Webhook[]): Paginated<Webhook> {
-		return {
-			data: items,
-			pagination: {
-				totalPages: 1,
-				totalItems: items.length,
-				currentPage: 1,
-				itemsPerPage: Math.max(items.length, 1)
-			}
-		};
-	}
+	const pageState = new ResourceListPageState(untrack(() => data.webhookRequestOptions));
 
 	const webhooksQuery = createQuery(() => {
-		const environments = readableEnvironments('webhooks:list');
-		const options = requestOptions;
+		const scope = pageState.scope;
 		return {
-			queryKey: queryKeys.webhooks.list(environmentStore.shownKey, options),
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, options, (scope, _request, config) =>
-					webhookService.getWebhooks(scope, config).then(webhookPage)
-				)
+			...webhookListQuery(scope, readableEnvironments('webhooks:list'), pageState.requestOptions),
+			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
+			select: (value) => ({ envId: scope, value })
 		};
 	});
 
-	const webhooks = $derived<EnvironmentPage<Paginated<Webhook>>>(
-		webhooksQuery.data ?? { data: [], pagination: webhookPage([]).pagination }
-	);
+	const resourcesReady = $derived(webhooksQuery.data?.envId === pageState.scope);
+	const webhooks = $derived(webhooksQuery.data?.value ?? data.webhooks);
 
-	async function loadWebhooks(options: SearchPaginationSortRequest = requestOptions) {
-		requestOptions = options;
-		const result = await webhooksQuery.refetch();
-		return result.data ?? webhooks;
-	}
-
-	async function refreshWebhooks() {
-		await queryClient.invalidateQueries({ queryKey: queryKeys.webhooks.all });
-	}
-
-	let isDialogOpen = $state({
+	const isDialogOpen = $state({
 		create: false,
 		showToken: false
 	});
 
 	let newlyCreatedWebhook = $state<WebhookCreated | null>(null);
 
-	let isLoading = $state({ creating: false });
+	const isLoading = $state({ creating: false });
 
 	let newlyCreatedWebhookUrl = $derived.by(() => {
 		if (!newlyCreatedWebhook?.token) {
@@ -89,7 +66,7 @@
 			setLoadingState: (value) => (isLoading.creating = value),
 			onSuccess: async (created) => {
 				toast.success(m.webhook_create_success({ name: webhook.name }));
-				await refreshWebhooks();
+				await queryClient.invalidateQueries({ queryKey: queryKeys.webhooks.all });
 				isDialogOpen.create = false;
 				newlyCreatedWebhook = created as WebhookCreated;
 				isDialogOpen.showToken = true;
@@ -118,7 +95,11 @@
 	{actionButtons}
 >
 	{#snippet mainContent()}
-		<WebhookTable {webhooks} bind:requestOptions onRefresh={loadWebhooks} onWebhooksChanged={refreshWebhooks} />
+		{#if resourcesReady}
+			{#key pageState.scope}
+				<WebhookTable {webhooks} bind:requestOptions={pageState.requestOptions} onRetry={() => webhooksQuery.refetch()} />
+			{/key}
+		{/if}
 	{/snippet}
 
 	{#snippet additionalContent()}

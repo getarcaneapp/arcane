@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -11,6 +12,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { UserIcon, TrashIcon, EditIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { userService } from '#lib/services/user-service.js';
 	import type { User } from '#lib/types/auth.js';
 	import type { Role } from '#lib/types/auth.js';
@@ -19,24 +21,26 @@
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
 
 	let {
-		users = $bindable(),
+		users,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
 		roles,
-		onUsersChanged,
+		onRetry,
 		onEditUser
 	}: {
 		users: Paginated<User>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		roles: Role[];
-		onUsersChanged: () => Promise<void>;
+		onRetry: () => Promise<unknown>;
 		onEditUser: (user: User) => void;
 	} = $props();
 
+	const queryClient = useQueryClient();
+
 	const rolesById = $derived(new Map(roles.map((r) => [r.id, r])));
 
-	let isLoading = $state({
+	const isLoading = $state({
 		removing: false
 	});
 
@@ -68,7 +72,7 @@
 			},
 			setLoading: (loading) => (isLoading.removing = loading),
 			onComplete: async ({ success }) => {
-				if (success > 0) await onUsersChanged();
+				if (success > 0) await queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
 			},
 			clearSelection: () => (selectedIds = []),
 			sequential: true
@@ -89,7 +93,7 @@
 			failureMessage: m.users_delete_user_failed({ username: safeName }),
 			onSuccess: async () => {
 				toast.success(m.users_delete_user_success({ username: safeName }));
-				await onUsersChanged();
+				await queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
 			}
 		});
 	}
@@ -275,11 +279,7 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
-	onRefresh={async (options) => {
-		requestOptions = options;
-		await onUsersChanged();
-		return users;
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -21,8 +23,9 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { ContainersIcon, UpdateIcon, EyeOffIcon, EyeOnIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
-	import type { ContainersPaginatedResponse, ContainerListRequestOptions } from '#lib/services/container-service.js';
+	import type { ContainersPaginatedResponse } from '#lib/services/container-service.js';
 	import { activityStore } from '#lib/stores/activity.store.svelte.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ContainerSummaryDto } from '#lib/types/docker.js';
@@ -34,14 +37,7 @@
 	import { confirmAndUpdateContainer } from '#lib/utils/container-actions.js';
 	import { isAutoUpdateLabelDisabled, UPDATE_CHECK_LABEL } from '#lib/utils/container-auto-update.js';
 	import { createContainerUpdateActivityTracker } from '#lib/utils/container-update-activities.js';
-	import {
-		environmentHref,
-		hasShownPermission,
-		listScopes,
-		rowKey,
-		type EnvironmentPage,
-		type EnvironmentRow
-	} from '#lib/utils/environments.js';
+	import { hasShownPermission, listScopes, rowKey, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates.js';
 	import { quadletUnitHref } from '#lib/utils/podman.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -74,12 +70,11 @@
 	interface Props {
 		containers: EnvironmentPage<ContainersPaginatedResponse>;
 		requestOptions: SearchPaginationSortRequest;
-		// Refreshed rows arrive through the `containers` prop once the parent's query updates.
-		onRefreshData: (options: ContainerListRequestOptions) => Promise<void>;
+		onRetry: () => Promise<unknown>;
 		onAutoUpdateChanged?: () => Promise<unknown> | unknown;
 	}
 
-	let { containers, requestOptions = $bindable(), onRefreshData, onAutoUpdateChanged }: Props = $props();
+	let { containers, requestOptions = $bindable(), onRetry, onAutoUpdateChanged }: Props = $props();
 
 	let selectedIds = $state<string[]>([]);
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
@@ -98,10 +93,10 @@
 			void refreshRows();
 			// Compose containers also drive the project update badges.
 			for (const listScope of listScopes(environmentStore.shown.map((env) => env.id))) {
-				void queryClient.invalidateQueries({ queryKey: ['projects', listScope] });
+				void queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(listScope) });
 			}
 			for (const env of environmentStore.shown) {
-				void queryClient.invalidateQueries({ queryKey: ['project', env.id] });
+				void queryClient.invalidateQueries({ queryKey: queryKeys.projects.environment(env.id) });
 			}
 		}
 	);
@@ -173,7 +168,7 @@
 	];
 
 	async function refreshRows() {
-		await onRefreshData(requestOptions as ContainerListRequestOptions);
+		await queryClient.invalidateQueries({ queryKey: queryKeys.containers.listPrefix(scope) }, { throwOnError: true });
 	}
 
 	async function handleUpdateContainer(container: ContainerRow) {
@@ -270,7 +265,9 @@
 	<div class="flex items-center gap-2">
 		<a
 			class="font-medium hover:underline {item.autoUpdateDisabled ? 'text-muted-foreground' : ''}"
-			href={environmentHref(`/containers/${item.containerId}`, item.environmentId)}
+			href={resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, {
+				containerId: item.containerId
+			})}
 		>
 			{item.name}
 		</a>
@@ -372,7 +369,11 @@
 		]}
 		rowActions={RowActions}
 		onclick={(item: ContainerUpdateRow) => {
-			window.location.href = environmentHref(`/containers/${item.containerId}`, item.environmentId);
+			goto(
+				resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(item.environmentId)}`, {
+					containerId: item.containerId
+				})
+			);
 		}}
 	/>
 {/snippet}
@@ -383,11 +384,7 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRefresh={async (options) => {
-		requestOptions = options;
-		await onRefreshData(options as ContainerListRequestOptions);
-		return tableItems;
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	{bulkActions}

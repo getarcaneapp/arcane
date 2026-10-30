@@ -36,7 +36,7 @@
 	let connectAliases = $state('');
 	let connectIp = $state('');
 	let connectPending = $state(false);
-	let disconnectPending = $state<Record<string, boolean>>({});
+	const disconnectPending = $state<Record<string, boolean>>({});
 
 	const networkListOptions = { pagination: { page: 1, limit: 500 } };
 	const networksQuery = createQuery(() => ({

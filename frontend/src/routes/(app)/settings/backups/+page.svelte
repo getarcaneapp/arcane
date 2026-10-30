@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { goto, afterNavigate } from '$app/navigation';
-	import { useQueryClient } from '@tanstack/svelte-query';
-	import { onMount, onDestroy } from 'svelte';
+	import { resolve } from '$app/paths';
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { onMount, onDestroy, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
@@ -22,6 +23,7 @@
 	import { AlertIcon, BackupIcon, CloudStorageIcon, InfoIcon, LockIcon, ResetIcon, UploadIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { systemBackupHistoryQuery } from '#lib/query/backups.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { systemBackupService } from '#lib/services/system-backup-service.js';
 	import { volumeBackupService } from '#lib/services/volume-backup-service.js';
@@ -30,7 +32,6 @@
 	import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { BackupFileProvider, BackupFileRootLoadState } from '#lib/types/backup.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type {
 		BackupHistoryEntry,
 		SystemBackupDestination,
@@ -44,7 +45,8 @@
 		runAutomaticBackupDiscovery,
 		s3DestinationOptions
 	} from '#lib/utils/backups.js';
-	import { environmentHref, hasShownPermission } from '#lib/utils/environments.js';
+	import { hasShownPermission } from '#lib/utils/environments.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import SystemBackupScheduleDialog from './components/system-backup-schedule-dialog.svelte';
@@ -53,11 +55,15 @@
 
 	let { data } = $props();
 	const queryClient = useQueryClient();
-	let backups = $derived(data.backups);
+	const pageState = new ResourceListPageState(untrack(() => data.requestOptions));
+	const backupsQuery = createQuery(() => ({
+		...systemBackupHistoryQuery(pageState.requestOptions),
+		placeholderData: (previous) => previous
+	}));
+	const backups = $derived(backupsQuery.data ?? data.backups);
 	let policyCollection = $derived(data.policyCollection);
 	let systemVolumePolicyCollection = $derived(data.systemVolumePolicyCollection);
 	let systemVolumeOptions = $state<SystemVolumeBackupOption[]>([]);
-	let requestOptions = $derived<SearchPaginationSortRequest>(data.requestOptions);
 	let scheduleOpen = $state(false);
 	let scheduleSession = $state(0);
 	let scheduleType = $state<'system' | 'volume'>('system');
@@ -155,6 +161,7 @@
 					await systemBackupService.setRecoveryKey(generated.recoveryKey);
 					newRecoveryKey = generated.recoveryKey;
 					policyCollection = { ...policyCollection, recoveryKeyStored: true };
+					void queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.policies() });
 					void discoverStoredBackups();
 					keyOpen = true;
 				})()
@@ -200,6 +207,7 @@
 				(async () => {
 					await systemBackupService.setRecoveryKey(importKeyInput.trim());
 					policyCollection = { ...policyCollection, recoveryKeyStored: true };
+					void queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.policies() });
 					void discoverStoredBackups();
 					importKeyOpen = false;
 					toast.success(m.system_backups_recovery_key_saved());
@@ -339,7 +347,7 @@
 		discover: 'save'
 	} as const;
 	async function refresh() {
-		backups = await systemBackupService.listHistory(requestOptions);
+		await queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.historyPrefix() });
 	}
 
 	async function loadSystemVolumeOptions() {
@@ -371,7 +379,11 @@
 	}
 
 	async function openVolumeBackups(backup: BackupHistoryEntry) {
-		await goto(environmentHref(`/volumes/${encodeURIComponent(backup.resourceName)}?tab=backups`, LOCAL_DOCKER_ENVIRONMENT_ID));
+		await goto(
+			resolve(`/(app)/volumes/[volumeName]?tab=backups&env=${encodeURIComponent(LOCAL_DOCKER_ENVIRONMENT_ID)}`, {
+				volumeName: encodeURIComponent(backup.resourceName)
+			})
+		);
 	}
 
 	let autoDiscovered = false;
@@ -898,9 +910,9 @@
 
 			<SystemBackupTable
 				emptyState={backupsEmptyState}
-				bind:backups
-				bind:requestOptions
-				onChanged={(options) => systemBackupService.listHistory(options)}
+				{backups}
+				bind:requestOptions={pageState.requestOptions}
+				onRetry={() => backupsQuery.refetch()}
 				onRestore={(item) => openAction('restore', item)}
 				onRestoreFiles={openRestoreFiles}
 				onRestoreVolume={openVolumeRestore}
@@ -924,8 +936,14 @@
 					volumeOptions={systemVolumeOptions}
 					volumeOptionsLoading={systemVolumeOptionsLoading}
 					onLoadVolumeOptions={loadSystemVolumeOptions}
-					onSystemSaved={(policies) => (policyCollection = { ...policyCollection, policies })}
-					onVolumeSaved={(policies) => (systemVolumePolicyCollection = { policies })}
+					onSystemSaved={(policies) => {
+						policyCollection = { ...policyCollection, policies };
+						void queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.policies() });
+					}}
+					onVolumeSaved={(policies) => {
+						systemVolumePolicyCollection = { policies };
+						void queryClient.invalidateQueries({ queryKey: queryKeys.systemBackups.systemVolumeConfig() });
+					}}
 				/>
 			{/key}
 		{/if}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -14,6 +15,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { TrashIcon, GlobeIcon } from '#lib/icons/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { webhookService } from '#lib/services/webhook-service.js';
 	import type { Webhook } from '#lib/types/environment.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -27,16 +29,16 @@
 	let {
 		webhooks,
 		requestOptions = $bindable(),
-		onRefresh,
-		onWebhooksChanged
+		onRetry
 	}: {
 		webhooks: EnvironmentPage<Paginated<Webhook>>;
 		requestOptions: SearchPaginationSortRequest;
-		onRefresh: (options: SearchPaginationSortRequest) => Promise<EnvironmentPage<Paginated<Webhook>>>;
-		onWebhooksChanged: () => Promise<void>;
+		onRetry: () => Promise<unknown>;
 	} = $props();
 
-	let isLoading = $state({ removing: false, toggling: false });
+	const queryClient = useQueryClient();
+
+	const isLoading = $state({ removing: false, toggling: false });
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
 
 	function formatDate(dateString?: string): string {
@@ -106,7 +108,7 @@
 			setLoadingState: (value) => (isLoading.toggling = value),
 			onSuccess: async () => {
 				toast.success(enabling ? m.webhook_enable_success({ name }) : m.webhook_disable_success({ name }));
-				await onWebhooksChanged();
+				await queryClient.invalidateQueries({ queryKey: queryKeys.webhooks.all });
 			}
 		});
 	}
@@ -127,7 +129,7 @@
 						setLoadingState: (value) => (isLoading.removing = value),
 						onSuccess: async () => {
 							toast.success(m.webhook_delete_success({ name }));
-							await onWebhooksChanged();
+							await queryClient.invalidateQueries({ queryKey: queryKeys.webhooks.all });
 						}
 					});
 				}
@@ -166,7 +168,7 @@
 	selectionDisabled={true}
 	withoutSearch
 	withoutPagination
-	{onRefresh}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

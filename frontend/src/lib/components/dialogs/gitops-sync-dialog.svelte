@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { RadioGroup as RadioGroupPrimitive } from 'bits-ui';
 	import { untrack } from 'svelte';
@@ -1061,7 +1062,7 @@
 
 					<p class="text-xs text-muted-foreground">
 						{m.webhook_hint_description()}
-						<a href="/settings/webhooks" class="text-foreground underline">{m.webhook_page_title()}</a>
+						<a href={resolve('/(app)/settings/webhooks')} class="text-foreground underline">{m.webhook_page_title()}</a>
 						{m.git_sync_webhook_hint_suffix()}
 					</p>
 				{/if}

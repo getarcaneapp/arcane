@@ -11,7 +11,7 @@
 	import { customizeSearchService } from '#lib/services/customize-search.js';
 	import type { CustomizeCategory } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { canReachAccessSurfaceUrl } from '#lib/utils/auth.js';
+	import { canReachAccessSurfaceUrl, isInAppPath } from '#lib/utils/auth.js';
 	import { normalizeCategory, orderCategoriesByNav } from '#lib/utils/category-page.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -69,7 +69,7 @@
 	});
 
 	function navigateToCategory(categoryUrl: string) {
-		goto(categoryUrl);
+		if (isInAppPath(categoryUrl)) goto(categoryUrl);
 	}
 
 	function normalize(category: CustomizeCategory): NormalizedCategory {

@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+	import type { ResolvedPathname } from '$app/types';
 	import { createQuery } from '@tanstack/svelte-query';
 	import { SvelteSet } from 'svelte/reactivity';
 
@@ -24,7 +26,7 @@
 	import type { ContainerSummaryDto } from '#lib/types/docker.js';
 	import type { JobStatus, JobPrerequisite } from '#lib/types/settings.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
-	import { hasPermission } from '#lib/utils/auth.js';
+	import { hasPermission, isInAppPath } from '#lib/utils/auth.js';
 	import {
 		UPDATE_CHECK_LABEL,
 		UPDATE_DELAY_LABEL,
@@ -94,21 +96,20 @@
 		return parseExcludedContainerSet(formInputs.autoUpdateExcludedContainers?.value);
 	});
 
-	function resolveSettingsUrl(_job: JobStatus, prereq: JobPrerequisite): string | undefined {
-		if (!prereq.settingsUrl) return undefined;
+	function resolveSettingsUrl(_job: JobStatus, prereq: JobPrerequisite): ResolvedPathname | undefined {
+		if (!isInAppPath(prereq.settingsUrl)) return undefined;
 		if (!environmentId) return prereq.settingsUrl;
 
-		const envBase = `/environments/${environmentId}`;
 		switch (prereq.settingKey) {
 			case 'pollingEnabled':
 			case 'autoUpdate':
 			case 'scheduledPruneEnabled':
 			case 'autoHealEnabled':
-				return `${envBase}?tab=jobs`;
+				return resolve('/(app)/environments/[id]?tab=jobs', { id: environmentId });
 			case 'vulnerabilityScanEnabled':
 				return undefined;
 			case 'imageAutoPatchEnabled':
-				return `${envBase}?tab=security`;
+				return resolve('/(app)/environments/[id]?tab=security', { id: environmentId });
 			default:
 				return prereq.settingsUrl;
 		}

@@ -1,5 +1,4 @@
-import { queryKeys } from '#lib/query/query-keys.js';
-import { containerRegistryService } from '#lib/services/container-registry-service.js';
+import { containerRegistryListQuery, containerRegistryPullUsageQuery } from '#lib/query/container-registries.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -20,16 +19,10 @@ export const load: PageLoad = async ({ parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	const registries = await queryClient.query({
-		queryKey: queryKeys.containerRegistries.list(registryRequestOptions),
-		queryFn: () => containerRegistryService.getRegistries(registryRequestOptions)
-	});
-	const pullUsage = await tryCatch(
-		queryClient.query({
-			queryKey: queryKeys.containerRegistries.pullUsage(),
-			queryFn: () => containerRegistryService.getPullUsage()
-		})
-	).then((result) => (result.error ? null : result.data));
+	const [registries, pullUsage] = await Promise.all([
+		queryClient.query(containerRegistryListQuery(registryRequestOptions)),
+		tryCatch(queryClient.query(containerRegistryPullUsageQuery())).then((result) => (result.error ? null : result.data))
+	]);
 
 	return { registries, registryRequestOptions, pullUsage };
 };

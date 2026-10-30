@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import type { ColumnVisibilityState } from '@tanstack/table-core';
 	import { onMount } from 'svelte';
@@ -28,11 +29,9 @@
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
 	import {
 		collectAcrossEnvironments,
-		environmentHref,
 		type EnvironmentPage,
 		type EnvironmentRow,
 		environmentRows,
-		fetchAcrossEnvironments,
 		hasShownPermission,
 		parseRowKey,
 		readableEnvironments,
@@ -50,18 +49,18 @@
 	type VolumeRow = EnvironmentRow<Volume>;
 
 	let {
-		volumes = $bindable(),
+		volumes,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
-		onRefreshData
+		onRetry
 	}: {
 		volumes: EnvironmentPage<VolumesPaginatedResponse>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
-		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
+		onRetry: () => Promise<unknown>;
 	} = $props();
 
-	let isLoading = $state({
+	const isLoading = $state({
 		removing: false,
 		renaming: false
 	});
@@ -77,21 +76,19 @@
 	let customSettings = $state<Record<string, unknown>>({});
 	let showInternal = $derived((customSettings['showInternalVolumes'] as boolean) ?? false);
 
-	async function refreshVolumes(options: SearchPaginationSortRequest = requestOptions, refreshSizes = true) {
-		if (onRefreshData) {
-			await onRefreshData(options);
-		} else {
-			volumes = await fetchAcrossEnvironments(readableEnvironments('volumes:list'), options, (id, request, config) =>
-				volumeService.getVolumesForEnvironment(id, request, config)
-			);
-		}
-		if (refreshSizes && sizesEnabled) {
-			await sizesQuery.refetch({ cancelRefetch: false });
-		}
-		// A retry also reloads backup volume names an environment failed to return.
-		if (backupVolumeNamesQuery.isError || backupVolumeNamesQuery.data?.failures.length) {
-			await backupVolumeNamesQuery.refetch();
-		}
+	async function invalidateVolumes() {
+		await Promise.all([
+			queryClient.invalidateQueries({ queryKey: queryKeys.volumes.listPrefix(scope) }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.volumes.sizes(scope) })
+		]);
+	}
+
+	async function retryFailedEnvironments() {
+		await Promise.all([
+			onRetry(),
+			sizesEnabled && sizesQuery.refetch({ cancelRefetch: false }),
+			(backupVolumeNamesQuery.isError || backupVolumeNamesQuery.data?.failures.length) && backupVolumeNamesQuery.refetch()
+		]);
 	}
 
 	function getCurrentLimit() {
@@ -105,13 +102,11 @@
 
 		customSettings = { ...customSettings, showInternalVolumes: value };
 		tablePreferences?.persistCustomSettings(customSettings);
-		const nextOptions: SearchPaginationSortRequest = {
+		requestOptions = {
 			...requestOptions,
 			includeInternal: value,
 			pagination: { page: 1, limit: getCurrentLimit() }
 		};
-		requestOptions = nextOptions;
-		refreshVolumes(nextOptions);
 	}
 
 	let columnVisibility = $state<ColumnVisibilityState>({});
@@ -176,7 +171,9 @@
 			if (event.type !== 'updated') return;
 			if (event.query !== cache.find({ queryKey: queryKeys.volumes.sizes(scope), exact: true })) return;
 			if (event.action.type === 'success' && sizesEnabled && requestOptions?.sort?.column === 'size') {
-				void tryCatch(refreshVolumes(requestOptions, false)).then((result) =>
+				void tryCatch(
+					queryClient.invalidateQueries({ queryKey: queryKeys.volumes.listPrefix(scope) }, { throwOnError: true })
+				).then((result) =>
 					handleApiResultWithCallbacks({ result, message: m.common_refresh_failed({ resource: m.resource_volumes_cap() }) })
 				);
 			}
@@ -203,7 +200,7 @@
 								m.common_remove_success({ resource: `${m.resource_volume()} "${safeName}"` }),
 								activityToastOptions(extractActivityId(data))
 							);
-							await refreshVolumes();
+							await invalidateVolumes();
 						}
 					});
 				}
@@ -229,7 +226,7 @@
 			onSuccess: async (data) => {
 				toast.success(m.volumes_rename_success({ oldName, newName }), activityToastOptions(extractActivityId(data)));
 				renameDialogOpen = false;
-				if (environmentStore.shown.some((env) => env.id === renameEnvironmentId)) await refreshVolumes();
+				await invalidateVolumes();
 			}
 		});
 	}
@@ -258,7 +255,7 @@
 			},
 			setLoading: (loading) => (isLoading.removing = loading),
 			onComplete: async (result) => {
-				if (result.success > 0) await refreshVolumes();
+				if (result.success > 0) await invalidateVolumes();
 			},
 			clearSelection: () => (selectedIds = [])
 		});
@@ -306,7 +303,11 @@
 </script>
 
 {#snippet NameCell({ item }: { item: VolumeRow })}
-	<a class="font-medium hover:underline" href={environmentHref(`/volumes/${item.id}`, item.environmentId)} title={item.name}>
+	<a
+		class="font-medium hover:underline"
+		href={resolve(`/(app)/volumes/[volumeName]?env=${encodeURIComponent(item.environmentId)}`, { volumeName: item.id })}
+		title={item.name}
+	>
 		{truncateString(item.name, 40)}
 	</a>
 {/snippet}
@@ -377,13 +378,17 @@
 				}
 			: undefined}
 		rowActions={RowActions}
-		onclick={() => goto(environmentHref(`/volumes/${item.id}`, item.environmentId))}
+		onclick={() =>
+			goto(resolve(`/(app)/volumes/[volumeName]?env=${encodeURIComponent(item.environmentId)}`, { volumeName: item.id }))}
 	/>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: VolumeRow })}
 	<RowActionsMenu>
-		<DropdownMenu.Item onclick={() => goto(environmentHref(`/volumes/${item.id}`, item.environmentId))}>
+		<DropdownMenu.Item
+			onclick={() =>
+				goto(resolve(`/(app)/volumes/[volumeName]?env=${encodeURIComponent(item.environmentId)}`, { volumeName: item.id }))}
+		>
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
 		</DropdownMenu.Item>
@@ -436,11 +441,7 @@
 	}
 	hiddenSortFallback={{ column: 'name', direction: 'asc' }}
 	{bulkActions}
-	onRefresh={async (options) => {
-		requestOptions = options;
-		await refreshVolumes(options);
-		return volumes;
-	}}
+	onRetry={retryFailedEnvironments}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

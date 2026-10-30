@@ -61,8 +61,7 @@
 	const fileTreeQuery = createQuery<{ files: FileTreeNode[] }>(() => ({
 		queryKey: queryKeys.gitRepositories.files(repositoryId, branch, currentPath),
 		queryFn: () => gitRepositoryService.browseFiles(repositoryId, branch, currentPath),
-		enabled: open && !!repositoryId && !!branch,
-		staleTime: 0
+		enabled: open && !!repositoryId && !!branch
 	}));
 	const files = $derived(fileTreeQuery.data?.files ?? []);
 	const loading = $derived(fileTreeQuery.isPending || fileTreeQuery.isFetching);
@@ -143,6 +142,7 @@
 					<div class="space-y-1 p-2">
 						{#if !atRoot}
 							<button
+								type="button"
 								onclick={goBack}
 								class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent"
 							>
@@ -153,6 +153,7 @@
 						{#each files as file (file.path)}
 							{@const canSelect = file.type === 'directory' || fileFilter(file)}
 							<button
+								type="button"
 								onclick={() => handleFileClick(file)}
 								disabled={!canSelect}
 								class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"

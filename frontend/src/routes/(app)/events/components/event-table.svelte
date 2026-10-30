@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -21,6 +22,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { TrashIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { eventService } from '#lib/services/event-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -30,26 +32,17 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	let {
-		events = $bindable(),
+		events,
 		selectedIds = $bindable(),
-		requestOptions = $bindable(),
-		onRefreshData
+		requestOptions = $bindable()
 	}: {
 		events: Paginated<Event>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
-		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
 	} = $props();
 
-	let isLoading = $state({ removing: false });
-
-	async function refreshEvents(options: SearchPaginationSortRequest = requestOptions) {
-		if (onRefreshData) {
-			await onRefreshData(options);
-			return;
-		}
-		events = await eventService.getEvents(options);
-	}
+	const queryClient = useQueryClient();
+	const isLoading = $state({ removing: false });
 
 	async function handleDeleteEvent(eventId: string, title: string) {
 		const safeTitle = title?.trim() || m.common_unknown();
@@ -67,7 +60,7 @@
 						setLoadingState: (value) => (isLoading.removing = value),
 						onSuccess: async () => {
 							toast.success(m.events_delete_success({ title: safeTitle }));
-							await refreshEvents();
+							await queryClient.invalidateQueries({ queryKey: queryKeys.events.all });
 						}
 					});
 				}
@@ -272,11 +265,6 @@
 	bind:requestOptions
 	bind:selectedIds
 	bind:mobileFieldVisibility
-	onRefresh={async (options) => {
-		requestOptions = options;
-		await refreshEvents(options);
-		return events;
-	}}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

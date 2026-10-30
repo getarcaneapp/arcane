@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import type { ResolvedPathname } from '$app/types';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import * as Empty from '#lib/components/ui/empty/index.js';
@@ -14,14 +16,14 @@
 		status,
 		title = m.error_generic(),
 		showButton = true,
-		actionHref = '/dashboard',
+		actionHref = resolve('/(app)/dashboard'),
 		actionLabel = m.error_go_to_dashboard()
 	}: {
 		message: string;
 		status?: number;
 		title?: string;
 		showButton?: boolean;
-		actionHref?: string;
+		actionHref?: ResolvedPathname;
 		actionLabel?: string;
 	} = $props();
 

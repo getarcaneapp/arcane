@@ -19,7 +19,7 @@
 	import { formatDateTime, instantEpochMilliseconds } from '#lib/utils/formatting.js';
 
 	let {
-		variables = $bindable(),
+		variables,
 		environments,
 		onEdit,
 		onDelete
@@ -52,7 +52,7 @@
 
 	const filteredVariables = $derived.by(() => {
 		const query = (requestOptions.search ?? '').trim().toLowerCase();
-		let list = query
+		const list = query
 			? variables.filter(
 					(variable) =>
 						variable.key.toLowerCase().includes(query) || (!variable.isSecret && variable.value.toLowerCase().includes(query))
@@ -113,7 +113,6 @@
 		bind:mobileFieldVisibility
 		selectionDisabled={true}
 		withoutPagination
-		onRefresh={async () => tableData}
 		{columns}
 		{mobileFields}
 		rowActions={canMutateVariables ? RowActions : undefined}

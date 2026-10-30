@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -48,7 +49,7 @@
 	const destinationSettings = useEnvironmentSettings(() => destinationId);
 	const workspaceMaxFileSizeMb = $derived(destinationSettings.current?.values.projectWorkspaceMaxFileSizeMb ?? 10);
 
-	let ui = $state({
+	const ui = $state({
 		saving: false,
 		converting: false,
 		creatingTemplate: false,
@@ -93,7 +94,7 @@
 	let nameInputRef = $state<HTMLInputElement | null>(null);
 	let overrideContent = $state(untrack(() => data.overrideTemplate || ''));
 	let overrideActive = $state(untrack(() => (data.overrideTemplate || '').trim().length > 0));
-	let deployOptions = $state({
+	const deployOptions = $state({
 		prune: false,
 		withRegistryAuth: false,
 		resolveImage: 'always'
@@ -225,7 +226,7 @@
 			failureMessage: (name) => m.common_create_failed({ resource: `${m.swarm_stack()} "${name}"` }),
 			onSuccess: async (_result, { name }) => {
 				toast.success(m.common_create_success({ resource: `${m.swarm_stack()} "${name}"` }));
-				goto('/swarm/stacks', { refreshAll: true });
+				goto(resolve('/(app)/swarm/stacks'), { refreshAll: true });
 			}
 		});
 	}
@@ -256,7 +257,9 @@
 			failureMessage: (name) => m.common_update_failed({ resource: `${m.swarm_stack()} "${name}"` }),
 			onSuccess: async (_result, { name }) => {
 				toast.success(m.common_update_success({ resource: `${m.swarm_stack()} "${name}"` }));
-				goto(environmentHref(`/swarm/stacks/${encodeURIComponent(name)}`, destinationId), { refreshAll: true });
+				goto(resolve(`/(app)/swarm/stacks/[name]?env=${encodeURIComponent(destinationId)}`, { name: encodeURIComponent(name) }), {
+					refreshAll: true
+				});
 			}
 		});
 	}
@@ -323,7 +326,8 @@
 					convertLabel={m.compose_convert_from_docker_run()}
 					onConvert={() => (ui.showConverterDialog = true)}
 					fromGitLabel={m.git_from_git_repo()}
-					onFromGit={() => goto(environmentHref('/gitops?action=create&targetType=swarm_stack', destinationId))}
+					onFromGit={() =>
+						goto(resolve(`/(app)/gitops?action=create&targetType=swarm_stack&env=${encodeURIComponent(destinationId)}`))}
 					createTemplateLabel={m.templates_create_template()}
 					createTemplateDisabled={!canSubmit || ui.creatingTemplate}
 					createTemplateLoading={ui.creatingTemplate}

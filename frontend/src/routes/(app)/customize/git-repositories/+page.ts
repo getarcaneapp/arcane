@@ -1,5 +1,4 @@
-import { queryKeys } from '#lib/query/query-keys.js';
-import { gitRepositoryService } from '#lib/services/git-repository-service.js';
+import { gitRepositoryListQuery } from '#lib/query/git-repositories.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 
@@ -19,10 +18,7 @@ export const load: PageLoad = async ({ parent }) => {
 		}
 	} satisfies SearchPaginationSortRequest);
 
-	const repositories = await queryClient.query({
-		queryKey: queryKeys.gitRepositories.list(repositoryRequestOptions),
-		queryFn: () => gitRepositoryService.getRepositories(repositoryRequestOptions)
-	});
+	const repositories = await queryClient.query(gitRepositoryListQuery(repositoryRequestOptions));
 
 	return { repositories, repositoryRequestOptions };
 };

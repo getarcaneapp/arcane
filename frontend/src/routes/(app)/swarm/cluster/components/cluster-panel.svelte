@@ -58,7 +58,7 @@
 	let securityDialogOpen = $state(false);
 	const isSwarmInitialized = $derived(!!swarmInfo?.id);
 
-	let initForm = $state({
+	const initForm = $state({
 		listenAddr: '',
 		advertiseAddr: '',
 		spec: '{}',
@@ -66,7 +66,7 @@
 		forceNewCluster: false
 	});
 
-	let joinForm = $state({
+	const joinForm = $state({
 		remoteAddrs: '',
 		joinToken: '',
 		listenAddr: '',
@@ -77,14 +77,14 @@
 	let unlockInput = $state('');
 	let specDraft = $state<string | null>(null);
 	const updateSpec = $derived(specDraft ?? JSON.stringify(swarmInfo?.spec ?? {}, null, 2));
-	let updateForm = $state({
+	const updateForm = $state({
 		version: '',
 		rotateWorkerToken: false,
 		rotateManagerToken: false,
 		rotateManagerUnlockKey: false
 	});
 
-	let isLoading = $state({
+	const isLoading = $state({
 		refresh: false,
 		init: false,
 		join: false,

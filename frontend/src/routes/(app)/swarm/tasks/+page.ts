@@ -2,17 +2,11 @@ import type { QueryClient } from '@tanstack/svelte-query';
 
 import { swarmEnvironmentsQueryOptions, type SwarmEnvironments } from '#lib/components/swarm/swarm-environments.js';
 import { m } from '#lib/paraglide/messages.js';
-import { queryKeys } from '#lib/query/query-keys.js';
-import { swarmService } from '#lib/services/swarm-service.js';
+import { swarmTaskListQuery } from '#lib/query/swarm.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
-import {
-	environmentName,
-	fetchAcrossEnvironments,
-	resolveDetailEnvironmentId,
-	withFailedEnvironments
-} from '#lib/utils/environments.js';
+import { environmentName, resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -20,7 +14,6 @@ import type { PageLoad } from './$types';
 
 async function taskEnvironments(queryClient: QueryClient, nodeId: string, url: URL): Promise<SwarmEnvironments> {
 	if (!nodeId) {
-		await environmentStore.ready;
 		return queryClient.query(swarmEnvironmentsQueryOptions('swarm:read'));
 	}
 	const envId = await resolveDetailEnvironmentId(url);
@@ -33,7 +26,7 @@ async function taskEnvironments(queryClient: QueryClient, nodeId: string, url: U
 }
 
 export const load: PageLoad = async ({ parent, url }) => {
-	const { queryClient } = await parent();
+	const [{ queryClient }] = await Promise.all([parent(), environmentStore.ready]);
 	const searchParam = url.searchParams.get('search') || '';
 	const nodeId = url.searchParams.get('nodeId') || '';
 	const requestOptions = resolveInitialTableRequest('arcane-swarm-tasks-table', {
@@ -54,17 +47,7 @@ export const load: PageLoad = async ({ parent, url }) => {
 	const result = await tryCatch(
 		(async () => {
 			const swarm = await taskEnvironments(queryClient, nodeId, url);
-			const tasks = await queryClient.query({
-				queryKey: queryKeys.swarm.tasks(swarm.scope, nodeId, requestOptions),
-				queryFn: async () =>
-					withFailedEnvironments(
-						await fetchAcrossEnvironments(swarm.environments, requestOptions, (id, request, config) => {
-							if (nodeId) return swarmService.getNodeTasks(nodeId, request, id, config);
-							return swarmService.getTasks(request, id, config);
-						}),
-						swarm.failedEnvironments
-					)
-			});
+			const tasks = await queryClient.query(swarmTaskListQuery(swarm, nodeId, requestOptions));
 			return { swarm, tasks };
 		})()
 	);

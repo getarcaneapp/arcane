@@ -19,16 +19,16 @@
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	let {
-		destinations = $bindable(),
+		destinations,
 		requestOptions = $bindable(),
-		onDestinationsChanged,
+		onRetry,
 		onEdit,
 		onDelete,
 		emptyState
 	}: {
 		destinations: Paginated<S3Destination>;
 		requestOptions: SearchPaginationSortRequest;
-		onDestinationsChanged: (options: SearchPaginationSortRequest) => Promise<Paginated<S3Destination>>;
+		onRetry: () => Promise<unknown>;
 		onEdit: (destination: S3Destination) => void;
 		onDelete: (destination: S3Destination) => void;
 		emptyState?: Snippet;
@@ -160,11 +160,7 @@
 	items={destinations}
 	bind:requestOptions
 	bind:mobileFieldVisibility
-	onRefresh={async (options) => {
-		requestOptions = options;
-		destinations = await onDestinationsChanged(options);
-		return destinations;
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

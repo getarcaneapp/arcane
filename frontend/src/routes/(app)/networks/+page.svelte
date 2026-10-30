@@ -7,13 +7,14 @@
 	import { NetworksIcon, ConnectionIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { networkListQuery } from '#lib/query/networks.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { networkService } from '#lib/services/network-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { NetworkCreateOptions, NetworkUsageCounts } from '#lib/types/docker.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
-	import { fetchAcrossEnvironments, readableEnvironments } from '#lib/utils/environments.js';
+	import { readableEnvironments } from '#lib/utils/environments.js';
 	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -25,22 +26,12 @@
 	const pageState = new ResourceListPageState(untrack(() => data.networkRequestOptions));
 	const countsFallback: NetworkUsageCounts = { inuse: 0, unused: 0, total: 0 };
 
-	// The load already cached the first page under its key; seeding every key with it would hide other pages and filters.
 	const networksQuery = createQuery(() => {
-		const queryScope = pageState.scope;
-		const environments = readableEnvironments('networks:list');
-		const options = pageState.requestOptions;
+		const scope = pageState.scope;
 		return {
-			queryKey: queryKeys.networks.list(queryScope, options),
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, options, (id, request, config) =>
-					networkService.getNetworksForEnvironment(id, request, config)
-				),
-			placeholderData: (previous, query) => {
-				if (query?.queryKey[1] === queryScope) return previous;
-				return undefined;
-			},
-			select: (value) => ({ envId: queryScope, value })
+			...networkListQuery(scope, readableEnvironments('networks:list'), pageState.requestOptions),
+			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined),
+			select: (value) => ({ envId: scope, value })
 		};
 	});
 	const resourcesReady = $derived(networksQuery.data?.envId === pageState.scope);
@@ -56,7 +47,7 @@
 				activityToastOptions(extractActivityId(data))
 			);
 			if (environmentStore.shown.some((env) => env.id === variables.requestedEnvId)) {
-				await loadNetworks();
+				await queryClient.invalidateQueries({ queryKey: queryKeys.networks.listPrefix(pageState.scope) });
 				pageState.isCreateDialogOpen = false;
 			}
 		},
@@ -69,23 +60,6 @@
 
 	async function handleCreate(name: string, options: NetworkCreateOptions, environmentId: string) {
 		await tryCatch(createNetworkMutation.mutateAsync({ name, options, requestedEnvId: environmentId }));
-	}
-
-	async function loadNetworks(options = pageState.requestOptions, requestedScope = pageState.scope) {
-		const environments = readableEnvironments('networks:list');
-		pageState.requestOptions = options;
-		await queryClient.query({
-			queryKey: queryKeys.networks.list(requestedScope, options),
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, options, (id, request, config) =>
-					networkService.getNetworksForEnvironment(id, request, config)
-				),
-			staleTime: 0
-		});
-	}
-
-	async function refresh() {
-		await loadNetworks();
 	}
 
 	const isRefreshing = $derived(networksQuery.isFetching && !networksQuery.isPending);
@@ -110,7 +84,7 @@
 			placement: 'secondary',
 			iconOnly: true,
 			label: m.common_refresh(),
-			onclick: refresh,
+			onclick: () => networksQuery.refetch(),
 			loading: isRefreshing,
 			disabled: networksQuery.isFetching
 		}
@@ -137,13 +111,10 @@
 		{#if resourcesReady}
 			{#key pageState.scope}
 				<NetworkTable
-					bind:networks={
-						() => networks,
-						(value) => queryClient.setQueryData(queryKeys.networks.list(pageState.scope, pageState.requestOptions), value)
-					}
+					{networks}
 					bind:selectedIds={pageState.selectedIds}
 					bind:requestOptions={pageState.requestOptions}
-					onRefreshData={loadNetworks}
+					onRetry={() => networksQuery.refetch()}
 				/>
 			{/key}
 		{/if}

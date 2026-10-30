@@ -1,7 +1,6 @@
-import { queryKeys } from '#lib/query/query-keys.js';
-import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
-import { roleService } from '#lib/services/role-service.js';
-import { userService } from '#lib/services/user-service.js';
+import { environmentListQuery } from '#lib/query/environments.js';
+import { roleAllQuery } from '#lib/query/roles.js';
+import { userListQuery } from '#lib/query/users.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 
@@ -22,20 +21,9 @@ export const load: PageLoad = async ({ parent }) => {
 	} satisfies SearchPaginationSortRequest);
 
 	const [users, roles, environmentsPage] = await Promise.all([
-		queryClient.query({
-			queryKey: queryKeys.users.list(userRequestOptions),
-			queryFn: () => userService.getUsers(userRequestOptions)
-		}),
-		queryClient.query({
-			queryKey: queryKeys.roles.all(),
-			queryFn: () => roleService.getAll(),
-			staleTime: 30_000
-		}),
-		queryClient.query({
-			queryKey: queryKeys.environments.list({ pagination: { page: 1, limit: 1000 } }),
-			queryFn: () => environmentManagementService.getEnvironments({ pagination: { page: 1, limit: 1000 } }),
-			staleTime: 30_000
-		})
+		queryClient.query(userListQuery(userRequestOptions)),
+		queryClient.query({ ...roleAllQuery(), staleTime: 30_000 }),
+		queryClient.query({ ...environmentListQuery({ pagination: { page: 1, limit: 1000 } }), staleTime: 30_000 })
 	]);
 
 	return {

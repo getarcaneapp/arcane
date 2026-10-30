@@ -1,12 +1,12 @@
 import { redirect } from '@sveltejs/kit';
 
 import { m } from '#lib/paraglide/messages.js';
-import { queryKeys } from '#lib/query/query-keys.js';
+import { podmanQuadletListQuery } from '#lib/query/podman.js';
 import { podmanService } from '#lib/services/podman-service.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
-import { environmentHref, fetchAcrossEnvironments, resolveDetailEnvironmentId } from '#lib/utils/environments.js';
+import { environmentHref, resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { shownPodmanEnvironments } from '#lib/utils/podman.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
@@ -14,8 +14,7 @@ import { tryCatch } from '#lib/utils/try-catch.js';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ url, parent }) => {
-	const { queryClient, podmanStatuses } = await parent();
-	const environments = shownPodmanEnvironments(podmanStatuses, (status) => status.quadletsSupported);
+	const [{ queryClient, podmanStatuses }] = await Promise.all([parent(), environmentStore.ready]);
 	const scope = environmentStore.shownKey;
 
 	const unit = url.searchParams.get('unit');
@@ -38,13 +37,13 @@ export const load: PageLoad = async ({ url, parent }) => {
 	} satisfies SearchPaginationSortRequest);
 
 	const quadlets = await tryCatch(
-		queryClient.query({
-			queryKey: queryKeys.podman.quadlets(scope, requestOptions),
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, requestOptions, (id, request, config) =>
-					podmanService.getQuadlets(id, request, config)
-				)
-		})
+		queryClient.query(
+			podmanQuadletListQuery(
+				scope,
+				shownPodmanEnvironments(podmanStatuses, (status) => status.quadletsSupported),
+				requestOptions
+			)
+		)
 	);
 	if (quadlets.error !== null) {
 		throwPageLoadError(quadlets.error, m.common_load_failed({ resource: m.podman_quadlets_title() }));

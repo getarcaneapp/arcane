@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -21,7 +22,7 @@
 		<ArcaneButton
 			action="base"
 			customLabel={m.features_title()}
-			onclick={() => goto(`/environments/${environmentId}?tab=features#features`)}
+			onclick={() => goto(resolve(`/(app)/environments/[id]?tab=features#features`, { id: environmentId }))}
 		/>
 	{/if}
 </div>

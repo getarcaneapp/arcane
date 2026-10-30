@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import type { Snippet } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -14,6 +16,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { RegistryIcon, UserIcon, ExternalLinkIcon, EditIcon, TrashIcon, TestIcon, FolderOpenIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
 	import type { ContainerRegistry, ContainerRegistryPullUsage } from '#lib/types/docker.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -28,7 +31,6 @@
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
 		pullUsageByRegistry = {},
-		onRefreshData,
 		onEditRegistry,
 		emptyState
 	}: {
@@ -36,10 +38,11 @@
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		pullUsageByRegistry?: Record<string, ContainerRegistryPullUsage>;
-		onRefreshData: (options: SearchPaginationSortRequest) => Promise<void>;
 		onEditRegistry: (registry: ContainerRegistry) => void;
 		emptyState?: Snippet;
 	} = $props();
+
+	const queryClient = useQueryClient();
 
 	let removingId = $state<string | null>(null);
 	let testingId = $state<string | null>(null);
@@ -85,7 +88,7 @@
 			setLoading: (loading) => (isLoading.removing = loading),
 			onComplete: async ({ success }) => {
 				removingId = null;
-				if (success > 0) await onRefreshData(requestOptions);
+				if (success > 0) await queryClient.invalidateQueries({ queryKey: queryKeys.containerRegistries.all });
 			},
 			clearSelection: () => (selectedIds = []),
 			sequential: true
@@ -104,7 +107,7 @@
 			failureMessage: m.registries_delete_failed({ url: safeUrl }),
 			onSuccess: async () => {
 				toast.success(m.common_delete_success({ resource: `${m.resource_registry()} "${safeUrl}"` }));
-				await onRefreshData(requestOptions);
+				await queryClient.invalidateQueries({ queryKey: queryKeys.containerRegistries.all });
 			}
 		});
 	}
@@ -175,7 +178,7 @@
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
 	];
 
-	let isLoading = $state({
+	const isLoading = $state({
 		removing: false
 	});
 
@@ -197,7 +200,9 @@
 {#snippet UrlCell({ item }: { item: ContainerRegistry })}
 	<div class="flex flex-col">
 		{#if canBrowseRegistry}
-			<a class="font-medium hover:underline" href="/customize/registries/{item.id}">{item.url || 'docker.io'}</a>
+			<a class="font-medium hover:underline" href={resolve('/(app)/customize/registries/[id]', { id: item.id })}
+				>{item.url || 'docker.io'}</a
+			>
 		{:else}
 			<span class="font-medium">{item.url || 'docker.io'}</span>
 		{/if}
@@ -233,7 +238,9 @@
 		icon={{ component: RegistryIcon, variant: 'purple' as const }}
 		title={(item) => item.url}
 		subtitle={(item) => ((mobileFieldVisibility['id'] ?? true) ? item.id : null)}
-		onclick={canBrowseRegistry ? (item: ContainerRegistry) => goto(`/customize/registries/${item.id}`) : undefined}
+		onclick={canBrowseRegistry
+			? (item: ContainerRegistry) => goto(resolve('/(app)/customize/registries/[id]', { id: item.id }))
+			: undefined}
 		badges={[{ variant: 'purple' as const, text: m.common_registry() }]}
 		fields={[
 			{
@@ -266,7 +273,7 @@
 {#snippet RowActions({ item }: { item: ContainerRegistry })}
 	<RowActionsMenu>
 		{#if canBrowseRegistry}
-			<DropdownMenu.Item onclick={() => goto(`/customize/registries/${item.id}`)}>
+			<DropdownMenu.Item onclick={() => goto(resolve('/(app)/customize/registries/[id]', { id: item.id }))}>
 				<FolderOpenIcon class="size-4" />
 				{m.registries_browse()}
 			</DropdownMenu.Item>
@@ -311,11 +318,6 @@
 		bind:selectedIds
 		bind:mobileFieldVisibility
 		{bulkActions}
-		onRefresh={async (options) => {
-			requestOptions = options;
-			await onRefreshData(options);
-			return registries;
-		}}
 		{columns}
 		{mobileFields}
 		rowActions={RowActions}

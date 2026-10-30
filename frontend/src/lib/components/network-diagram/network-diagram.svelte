@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { browser } from '$app/env';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import {
 		Background,
 		BackgroundVariant,
@@ -23,7 +24,6 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import type { TopologyEdgeDto } from '#lib/types/docker.js';
 	import { cn } from '#lib/utils.js';
-	import { environmentHref } from '#lib/utils/environments.js';
 
 	import type { EnvironmentTopology } from './topology.js';
 
@@ -39,10 +39,9 @@
 
 	type TopologyNodeDto = EnvironmentTopology['nodes'][number];
 
-	function nodeHref(node: TopologyNodeDto, path: string): string {
+	function nodeResourceId(node: TopologyNodeDto): string {
 		const prefix = `${node.environmentId}/`;
-		const id = node.id.startsWith(prefix) ? node.id.slice(prefix.length) : node.id;
-		return environmentHref(`${path}/${id}`, node.environmentId);
+		return node.id.startsWith(prefix) ? node.id.slice(prefix.length) : node.id;
 	}
 
 	let isReady = $state(false);
@@ -52,7 +51,8 @@
 	});
 
 	type DiagramNodeData = {
-		href: string;
+		resourceId: string;
+		environmentId: string;
 		kind: 'network' | 'container';
 		label: string;
 	};
@@ -381,7 +381,8 @@
 					'font-weight: 600'
 				].join('; '),
 				data: {
-					href: nodeHref(node, '/networks'),
+					resourceId: nodeResourceId(node),
+					environmentId: node.environmentId,
 					kind: 'network',
 					label: nodeLabel(node)
 				},
@@ -398,7 +399,8 @@
 				id: node.id,
 				position: layout.containerPositions[node.id] ?? { x: 440, y: 0 },
 				data: {
-					href: nodeHref(node, '/containers'),
+					resourceId: nodeResourceId(node),
+					environmentId: node.environmentId,
 					kind: 'container',
 					label: containerLabel(node, connectionsByContainer[node.id] ?? [])
 				},
@@ -453,10 +455,14 @@
 	}
 
 	function handleNodeClick({ node }: { node: Node }) {
-		const href = (node.data as DiagramNodeData | undefined)?.href;
-		if (href) {
-			void goto(href);
-		}
+		const data = node.data as DiagramNodeData | undefined;
+		if (!data) return;
+		const env = encodeURIComponent(data.environmentId);
+		void goto(
+			data.kind === 'network'
+				? resolve(`/(app)/networks/[networkId]?env=${env}`, { networkId: data.resourceId })
+				: resolve(`/(app)/containers/[containerId]?env=${env}`, { containerId: data.resourceId })
+		);
 	}
 </script>
 

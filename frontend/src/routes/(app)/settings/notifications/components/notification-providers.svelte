@@ -45,7 +45,7 @@
 
 	type ProviderFormRef = { isValid: () => boolean };
 
-	let providerFormRefs = $state<Partial<Record<NotificationProviderKey, ProviderFormRef>>>({});
+	const providerFormRefs = $state<Partial<Record<NotificationProviderKey, ProviderFormRef>>>({});
 	let savedSettings = $state<NotificationSettingsByProvider>(createNotificationSettingsByProvider());
 	let providerValues = $state<NotificationProviderFormState>(createNotificationProviderFormState());
 	let providerBaselines = $state<NotificationProviderFormState>(createNotificationProviderFormState());

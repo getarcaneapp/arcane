@@ -96,7 +96,7 @@
 					{m.sidebar_update_available()}: {remoteVersion.newestVersion}
 				</Badge>
 				{#if remoteVersion.releaseUrl}
-					<a href={remoteVersion.releaseUrl} target="_blank" rel="noopener noreferrer" class="text-info hover:underline">
+					<a href={remoteVersion.releaseUrl} target="_blank" rel="external noopener noreferrer" class="text-info hover:underline">
 						{m.version_info_view_release()}
 					</a>
 				{/if}

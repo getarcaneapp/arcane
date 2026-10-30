@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { z } from 'zod/v4';
 
 	import FormInput from '#lib/components/form/form-input.svelte';
@@ -228,7 +229,9 @@
 						<div class="mb-3">
 							<p class="text-xs text-muted-foreground">
 								{m.oidc_synced_role_assignments()}
-								<a href="/settings/authentication" class="ml-1 text-primary underline">{m.users_role_assignments_oidc_link()}</a>
+								<a href={resolve('/(app)/settings/authentication')} class="ml-1 text-primary underline"
+									>{m.users_role_assignments_oidc_link()}</a
+								>
 							</p>
 							<div class="mt-2 flex flex-wrap gap-2">
 								{#each oidcAssignments as assignment (`${assignment.roleId}-${assignment.environmentId ?? 'global'}`)}

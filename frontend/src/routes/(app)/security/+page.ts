@@ -1,15 +1,11 @@
-import { queryKeys } from '#lib/query/query-keys.js';
-import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
+import { vulnerabilityListQuery, vulnerabilityOverviewQuery } from '#lib/query/vulnerabilities.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
-import { fetchAcrossEnvironments } from '#lib/utils/environments.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 import {
-	fetchRiskOverview,
-	mapVulnerabilityPage,
 	mapVulnerabilityRequest,
 	vulnerabilityEnvironments,
 	vulnerabilityOverviewEnvironments,
@@ -19,8 +15,8 @@ import {
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {
-	const { queryClient } = await parent();
-	await environmentStore.ready;
+	const [{ queryClient }] = await Promise.all([parent(), environmentStore.ready]);
+	const scope = environmentStore.shownKey;
 
 	const vulnerabilityRequestOptions = resolveInitialTableRequest(
 		'arcane-security-vuln-table',
@@ -62,33 +58,16 @@ export const load: PageLoad = async ({ parent }) => {
 		withVulnerabilityToggles(vulnerabilityRequestOptions, { showIgnored: false, fixAvailable: false })
 	);
 
-	let overview;
 	const operationResult = await tryCatch(
-		(async () =>
-			Promise.all([
-				queryClient.query({
-					queryKey: queryKeys.vulnerabilities.overviewByEnvironment(environmentStore.shownKey),
-					queryFn: fetchRiskOverview
-				}),
-				queryClient.query({
-					queryKey: queryKeys.vulnerabilities.allByEnvironment(environmentStore.shownKey, requestForApi),
-					queryFn: async () =>
-						mapVulnerabilityPage(
-							await fetchAcrossEnvironments(vulnerabilityEnvironments(), requestForApi, (id, request, config) =>
-								vulnerabilityService.getAllVulnerabilitiesForEnvironment(id, request, config)
-							),
-							requestForApi
-						)
-				})
-			]))()
+		Promise.all([
+			queryClient.query(vulnerabilityOverviewQuery(scope)),
+			queryClient.query(vulnerabilityListQuery(scope, vulnerabilityEnvironments(), requestForApi))
+		])
 	);
 	if (operationResult.error !== null) {
-		const err = operationResult.error;
-
-		throwPageLoadError(err, 'Failed to load security data');
-	} else {
-		[overview] = operationResult.data;
+		throwPageLoadError(operationResult.error, 'Failed to load security data');
 	}
+	const [overview] = operationResult.data;
 
 	return {
 		featureDisabled: false,

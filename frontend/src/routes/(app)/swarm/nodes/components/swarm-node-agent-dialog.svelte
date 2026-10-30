@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 
 	import AgentCommandBlock from '#lib/components/agent-command-block.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -62,10 +63,10 @@
 		}
 	});
 
-	async function navigateToResource(path: string, permissions: string[]) {
+	async function navigateToResource(navigate: () => Promise<void>, permissions: string[]) {
 		const environmentId = agentStatus.environmentId;
 		if (!environmentId || !hasAnyPermission(permissions, environmentId)) return;
-		await goto(path);
+		await navigate();
 		open = false;
 	}
 </script>
@@ -147,7 +148,7 @@
 							action="base"
 							tone="outline"
 							customLabel={m.containers()}
-							onclick={() => navigateToResource('/containers', ['containers:list', 'containers:read'])}
+							onclick={() => navigateToResource(() => goto(resolve('/(app)/containers')), ['containers:list', 'containers:read'])}
 						/>
 					{/if}
 					{#if hasAnyPermission(['images:list', 'images:read'], agentStatus.environmentId)}
@@ -155,7 +156,7 @@
 							action="base"
 							tone="outline"
 							customLabel={m.images()}
-							onclick={() => navigateToResource('/images', ['images:list', 'images:read'])}
+							onclick={() => navigateToResource(() => goto(resolve('/(app)/images')), ['images:list', 'images:read'])}
 						/>
 					{/if}
 					{#if hasAnyPermission(['volumes:list', 'volumes:read'], agentStatus.environmentId)}
@@ -163,7 +164,7 @@
 							action="base"
 							tone="outline"
 							customLabel={m.resource_volumes_cap()}
-							onclick={() => navigateToResource('/volumes', ['volumes:list', 'volumes:read'])}
+							onclick={() => navigateToResource(() => goto(resolve('/(app)/volumes')), ['volumes:list', 'volumes:read'])}
 						/>
 					{/if}
 					{#if hasAnyPermission(['networks:list', 'networks:read'], agentStatus.environmentId)}
@@ -171,7 +172,7 @@
 							action="base"
 							tone="outline"
 							customLabel={m.resource_networks_cap()}
-							onclick={() => navigateToResource('/networks', ['networks:list', 'networks:read'])}
+							onclick={() => navigateToResource(() => goto(resolve('/(app)/networks')), ['networks:list', 'networks:read'])}
 						/>
 					{/if}
 				</div>

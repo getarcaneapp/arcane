@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import type { Snippet } from 'svelte';
 
 	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
@@ -19,7 +20,7 @@
 	}: {
 		item: {
 			title: string;
-			url: string;
+			url: ResolvedPathname;
 			icon?: typeof ArrowRightIcon;
 			shortcut?: ShortcutKey[];
 			isActive: boolean;

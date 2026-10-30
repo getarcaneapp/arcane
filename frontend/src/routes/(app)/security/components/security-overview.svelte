@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
@@ -12,7 +14,6 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { VulnerabilityRiskDrivers, VulnerabilityRiskImage } from '#lib/types/environment.js';
-	import { environmentHref } from '#lib/utils/environments.js';
 	import { formatRelativeTime } from '#lib/utils/formatting.js';
 	import {
 		getRiskBandDisplay,
@@ -384,7 +385,9 @@
 						{@const band = getRiskBandDisplay(image.riskBand, image.scoreStatus)}
 						<li>
 							<a
-								href={environmentHref(`/images/${image.imageId}?tab=vulnerabilities`, image.environmentId)}
+								href={resolve(`/(app)/images/[imageId]?tab=vulnerabilities&env=${encodeURIComponent(image.environmentId)}`, {
+									imageId: image.imageId
+								})}
 								class="-mx-2 grid grid-cols-content-action items-center gap-4 rounded-md px-2 py-3 transition-colors hover:bg-muted/40"
 							>
 								<span class="min-w-0 space-y-1">

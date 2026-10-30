@@ -13,11 +13,12 @@
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { isSessionCancelledError, withSessionSignal } from '#lib/services/api-service.js';
+	import { isSessionCancelledError } from '#lib/services/api-service.js';
 	import { containerRegistryService } from '#lib/services/container-registry-service.js';
+	import { imageService } from '#lib/services/image-service.js';
 	import { settingsService } from '#lib/services/settings-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
-	import type { ImageBuildRecord } from '#lib/types/docker.js';
+	import type { ImageBuildRecord, ImageBuildRequest } from '#lib/types/docker.js';
 	import type { ResolvedSettings } from '#lib/types/settings.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
@@ -185,7 +186,6 @@
 	const registriesQuery = createQuery(() => ({
 		queryKey: queryKeys.containerRegistries.list(registryRequestOptions),
 		enabled: isPushMode,
-		staleTime: 0,
 		queryFn: () => containerRegistryService.getRegistries(registryRequestOptions)
 	}));
 
@@ -218,33 +218,6 @@
 			? buildImageReference(selectedRegistry.host, selectedRegistry.namespace, inputs.repositoryName.value, inputs.pushTag.value)
 			: ''
 	);
-
-	type ImageBuildRequest = {
-		envId: string;
-		provider: 'local' | 'depot';
-	} & Pick<
-		ImageBuildRecord,
-		| 'contextDir'
-		| 'dockerfile'
-		| 'tags'
-		| 'target'
-		| 'buildArgs'
-		| 'labels'
-		| 'cacheFrom'
-		| 'cacheTo'
-		| 'noCache'
-		| 'pull'
-		| 'network'
-		| 'isolation'
-		| 'shmSize'
-		| 'ulimits'
-		| 'entitlements'
-		| 'privileged'
-		| 'extraHosts'
-		| 'platforms'
-		| 'push'
-		| 'load'
-	>;
 
 	function handleBuildLine(line: string): boolean {
 		if (line.trim() === '') return false;
@@ -279,59 +252,9 @@
 
 	const buildMutation = createMutation(() => ({
 		mutationKey: queryKeys.images.buildRun(buildEnvironmentId),
-		mutationFn: async (request: ImageBuildRequest) => {
+		mutationFn: async (request: ImageBuildRequest & { envId: string }) => {
 			const { envId, ...payload } = request;
-			const response = await fetch(`/api/environments/${envId}/images/build`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify(payload),
-				signal: withSessionSignal()
-			});
-
-			if (!response.ok || !response.body) {
-				const errorData = (await tryCatch(response.json()).then((result) =>
-					result.error
-						? {
-								data: { message: m.build_request_failed() }
-							}
-						: result.data
-				)) as Record<string, unknown>;
-				const errorDataPayload = errorData['data'] as Record<string, unknown> | undefined;
-				const errorMessage =
-					errorDataPayload?.['message'] ||
-					errorData['error'] ||
-					errorData['message'] ||
-					m.build_request_failed_http({ status: response.status });
-				throw new Error(String(errorMessage));
-			}
-
-			const reader = response.body.getReader();
-			const decoder = new TextDecoder();
-			let buffer = '';
-			let streamComplete = false;
-
-			while (!streamComplete) {
-				const { done, value } = await reader.read();
-				if (done) {
-					break;
-				}
-
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split('\n');
-				buffer = lines.pop() || '';
-
-				streamComplete = lines.some(handleBuildLine);
-			}
-			if (streamComplete) {
-				await tryCatch(reader.cancel()).then((result) => {
-					if (result.error) {
-						return;
-					}
-					return result.data;
-				});
-			}
+			await imageService.buildImageStream(payload, envId, handleBuildLine);
 
 			if (buildError) {
 				throw new Error(buildError);

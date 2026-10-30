@@ -1,4 +1,5 @@
 import { browser } from '$app/env';
+import type { ResolvedPathname } from '$app/types';
 import { PersistedState } from 'runed';
 import { createContext } from 'svelte';
 
@@ -31,15 +32,10 @@ export function getEffectiveNavigationSettings(): MobileNavigationSettings {
 	};
 }
 
-/**
- * Resolve the page to open after signing in from the signed-in user's account
- * preference, falling back to the built-in default. A stale value (e.g. a page
- * that no longer exists) falls back to the default rather than 404ing.
- */
-export function getEffectiveLandingPage(): string {
+export function getEffectiveLandingPage(): ResolvedPathname {
 	const candidate = userStore.current?.preferences?.defaultLandingPage ?? DEFAULT_LANDING_PAGE;
 
-	return getLandingPageNavItems().some((item) => item.url === candidate) ? candidate : DEFAULT_LANDING_PAGE;
+	return getLandingPageNavItems().find((item) => item.url === candidate)?.url ?? DEFAULT_LANDING_PAGE;
 }
 
 // --- Keyboard shortcuts ---

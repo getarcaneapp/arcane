@@ -6,8 +6,7 @@ import { userHasPermission } from '#lib/utils/auth.js';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {
-	const { user } = await parent();
-	await environmentStore.ready;
+	const [{ user }] = await Promise.all([parent(), environmentStore.ready]);
 	if (!environmentStore.shown.some((env) => userHasPermission(user, 'containers:create', env.id))) {
 		redirect(302, '/containers');
 	}

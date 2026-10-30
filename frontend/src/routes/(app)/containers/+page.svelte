@@ -1,23 +1,17 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { untrack } from 'svelte';
 
 	import { BoxIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { containerListQuery } from '#lib/query/containers.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { containerService } from '#lib/services/container-service.js';
-	import type { ContainerListRequestOptions } from '#lib/services/container-service.js';
-	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ContainerStatusCounts } from '#lib/types/docker.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import {
-		ENVIRONMENT_FILTER,
-		environmentFilterIds,
-		fetchAcrossEnvironments,
-		hasShownPermission,
-		readableEnvironments
-	} from '#lib/utils/environments.js';
+	import { ENVIRONMENT_FILTER, environmentFilterIds, hasShownPermission, readableEnvironments } from '#lib/utils/environments.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { confirmAndApplyAllUpdates } from '#lib/utils/update-actions.js';
 
 	import ContainerEnvironmentSync from './components/container-environment-sync.svelte';
@@ -26,9 +20,7 @@
 	let { data } = $props();
 	const queryClient = useQueryClient();
 
-	let requestOptions = $derived(data.containerRequestOptions);
-	let selectedIds = $state<string[]>([]);
-	const scope = $derived(environmentStore.shownKey);
+	const pageState = new ResourceListPageState(untrack(() => data.containerRequestOptions));
 	let groupByProject = $state(false);
 	let hasSeenEnvironmentSync = $state(false);
 	let isApplyingUpdates = $state(false);
@@ -40,48 +32,24 @@
 		updatesAvailable: 0
 	};
 
-	function buildRequestOptions(options: SearchPaginationSortRequest = requestOptions): ContainerListRequestOptions {
-		return {
-			...options,
-			groupByProject
-		};
-	}
-
 	const containersQuery = createQuery(() => {
-		const queryScope = scope;
-		const environments = readableEnvironments('containers:list');
-		const options = buildRequestOptions();
+		const scope = pageState.scope;
+		const options = { ...pageState.requestOptions, groupByProject };
 		return {
-			queryKey: queryKeys.containers.list(queryScope, options),
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, options, (id, request, config) =>
-					containerService.getContainersForEnvironment(id, request, config)
-				),
+			...containerListQuery(scope, readableEnvironments('containers:list'), options),
 			placeholderData: (previous, query) => {
-				if (query?.queryKey[1] !== queryScope || !previous) return undefined;
+				if (query?.queryKey[1] !== scope || !previous) return undefined;
 				const picked = environmentFilterIds(options.filters?.[ENVIRONMENT_FILTER]);
 				if (picked.length === 0 || previous.data.every((row) => picked.includes(row.environmentId))) return previous;
 				return { ...previous, data: [], groups: [] };
 			},
-			select: (value) => ({ envId: queryScope, value })
+			select: (value) => ({ envId: scope, value })
 		};
 	});
 
 	const containers = $derived(containersQuery.data?.value ?? data.containers);
-	const resourcesReady = $derived(containersQuery.data?.envId === scope);
+	const resourcesReady = $derived(containersQuery.data?.envId === pageState.scope);
 	const isRefreshing = $derived(containersQuery.isFetching && !containersQuery.isPending);
-
-	async function refreshContainers(options: ContainerListRequestOptions = buildRequestOptions(), requestedScope = scope) {
-		const environments = readableEnvironments('containers:list');
-		return queryClient.fetchQuery({
-			queryKey: queryKeys.containers.list(requestedScope, options),
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, options, (id, request, config) =>
-					containerService.getContainersForEnvironment(id, request, config)
-				),
-			staleTime: 0
-		});
-	}
 
 	function handleEnvironmentChange() {
 		if (!hasSeenEnvironmentSync) {
@@ -89,18 +57,14 @@
 			return;
 		}
 
-		selectedIds = [];
-		requestOptions = {
-			...requestOptions,
+		pageState.selectedIds = [];
+		pageState.requestOptions = {
+			...pageState.requestOptions,
 			pagination: {
 				page: 1,
-				limit: requestOptions.pagination?.limit ?? containers.pagination?.itemsPerPage ?? 20
+				limit: pageState.requestOptions.pagination?.limit ?? containers.pagination?.itemsPerPage ?? 20
 			}
 		};
-	}
-
-	async function refresh() {
-		await refreshContainers();
 	}
 
 	const containerStatusCounts = $derived(resourcesReady ? (containers.counts ?? countsFallback) : countsFallback);
@@ -116,7 +80,7 @@
 						action: 'create',
 						placement: 'primary',
 						label: m.common_create_button({ resource: m.container() }),
-						onclick: () => goto('/containers/new'),
+						onclick: () => goto(resolve('/(app)/containers/new')),
 						disabled: !resourcesReady
 					}
 				: null,
@@ -128,7 +92,7 @@
 						onclick: () =>
 							confirmAndApplyAllUpdates({
 								setLoading: (loading) => (isApplyingUpdates = loading),
-								onRefresh: () => refreshContainers()
+								onRefresh: () => queryClient.invalidateQueries({ queryKey: queryKeys.containers.listPrefix(pageState.scope) })
 							}),
 						loading: isApplyingUpdates,
 						disabled: !resourcesReady || isApplyingUpdates
@@ -140,7 +104,7 @@
 				placement: 'secondary',
 				iconOnly: true,
 				label: m.common_refresh(),
-				onclick: refresh,
+				onclick: () => containersQuery.refetch(),
 				loading: isRefreshing,
 				disabled: isRefreshing
 			}
@@ -169,7 +133,7 @@
 	]);
 </script>
 
-{#key scope}
+{#key pageState.scope}
 	<ContainerEnvironmentSync onActivate={handleEnvironmentChange} />
 {/key}
 
@@ -177,25 +141,12 @@
 	{#snippet mainContent()}
 		{#if resourcesReady}
 			<ContainerTable
-				{scope}
-				bind:containers={
-					() => containers, (value) => queryClient.setQueryData(queryKeys.containers.list(scope, buildRequestOptions()), value)
-				}
-				bind:selectedIds
-				bind:requestOptions
+				scope={pageState.scope}
+				{containers}
+				bind:selectedIds={pageState.selectedIds}
+				bind:requestOptions={pageState.requestOptions}
 				bind:groupByProject
-				onRefreshData={async (options) => {
-					const requestedScope = scope;
-					requestOptions = {
-						search: options.search,
-						pagination: options.pagination,
-						sort: options.sort,
-						filters: options.filters,
-						includeInternal: options.includeInternal,
-						includeHidden: options.includeHidden
-					};
-					return refreshContainers(buildRequestOptions(), requestedScope);
-				}}
+				onRetry={() => containersQuery.refetch()}
 			/>
 		{/if}
 	{/snippet}

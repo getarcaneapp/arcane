@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { useQueryClient, type QueryKey } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -18,22 +20,26 @@
 	import type { SwarmServiceSummary, SwarmServicePort } from '#lib/types/swarm.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { getSwarmServiceModeLabel, getSwarmServiceModeVariant } from '#lib/utils/docker.js';
-	import { environmentHref, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
+	import { type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	let {
-		services = $bindable(),
+		services,
+		invalidateKey,
 		requestOptions = $bindable(),
-		fetchServices,
+		onRetry,
 		persistKey = 'arcane-swarm-services-table',
 		showEnvironment = true
 	}: {
 		services: ServicePage;
+		invalidateKey: QueryKey;
 		requestOptions: SearchPaginationSortRequest;
-		fetchServices: (options: SearchPaginationSortRequest) => Promise<ServicePage>;
+		onRetry: () => Promise<unknown>;
 		persistKey?: string;
 		showEnvironment?: boolean;
 	} = $props();
+
+	const queryClient = useQueryClient();
 
 	type ServiceRow = EnvironmentRow<SwarmServiceSummary>;
 	type ServicePage = EnvironmentPage<SwarmServicesPaginatedResponse>;
@@ -68,12 +74,14 @@
 		return 'gray';
 	}
 
-	let isLoading = $state({ remove: false });
+	const isLoading = $state({ remove: false });
 
 	const isAnyLoading = $derived(Object.values(isLoading).some(Boolean));
 
 	function inspectService(service: ServiceRow) {
-		goto(environmentHref(`/swarm/services/${service.id}`, service.environmentId));
+		goto(
+			resolve(`/(app)/swarm/services/[serviceId]?env=${encodeURIComponent(service.environmentId)}`, { serviceId: service.id })
+		);
 	}
 
 	function handleDelete(service: ServiceRow) {
@@ -91,7 +99,7 @@
 						setLoadingState: (v) => (isLoading.remove = v),
 						onSuccess: async () => {
 							toast.success(m.common_delete_success({ resource: `${m.swarm_service()} "${service.name}"` }));
-							services = await fetchServices(requestOptions);
+							await queryClient.invalidateQueries({ queryKey: invalidateKey });
 						}
 					});
 				}
@@ -135,7 +143,7 @@
 
 {#snippet NameCell({ item }: { item: ServiceRow })}
 	<a
-		href={environmentHref(`/swarm/services/${item.id}`, item.environmentId)}
+		href={resolve(`/(app)/swarm/services/[serviceId]?env=${encodeURIComponent(item.environmentId)}`, { serviceId: item.id })}
 		class="text-sm font-medium text-primary hover:underline"
 	>
 		{getShortName(item.name, item.stackName)}
@@ -269,7 +277,7 @@
 	bind:requestOptions
 	bind:mobileFieldVisibility
 	selectionDisabled={true}
-	onRefresh={async (options) => (services = await fetchServices(options))}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

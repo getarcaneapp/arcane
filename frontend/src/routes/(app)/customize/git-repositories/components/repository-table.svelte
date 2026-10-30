@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -20,6 +21,7 @@
 		ExternalLinkIcon as LinkIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitRepositoryService } from '#lib/services/git-repository-service.js';
 	import type { GitRepository } from '#lib/types/automation.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
@@ -34,17 +36,17 @@
 		repositories,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
-		onRefreshData,
 		onEditRepository
 	}: {
 		repositories: Paginated<GitRepository>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
-		onRefreshData: (options: SearchPaginationSortRequest) => Promise<void>;
 		onEditRepository: (repository: GitRepository) => void;
 	} = $props();
 
-	let isLoading = $state({
+	const queryClient = useQueryClient();
+
+	const isLoading = $state({
 		removing: false,
 		testing: false
 	});
@@ -85,7 +87,7 @@
 			},
 			onComplete: async (result) => {
 				if (result.success > 0) {
-					await onRefreshData(requestOptions);
+					await queryClient.invalidateQueries({ queryKey: queryKeys.gitRepositories.all });
 				}
 			},
 			clearSelection: () => (selectedIds = []),
@@ -105,7 +107,7 @@
 			failureMessage: m.common_delete_failed({ resource: safeName }),
 			onSuccess: async () => {
 				toast.success(m.common_delete_success({ resource: `${m.resource_repository()} "${safeName}"` }));
-				await onRefreshData(requestOptions);
+				await queryClient.invalidateQueries({ queryKey: queryKeys.gitRepositories.all });
 			}
 		});
 	}
@@ -253,11 +255,6 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
-	onRefresh={async (options) => {
-		requestOptions = options;
-		await onRefreshData(options);
-		return repositories;
-	}}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

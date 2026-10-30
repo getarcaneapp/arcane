@@ -1,5 +1,4 @@
-import { queryKeys } from '#lib/query/query-keys.js';
-import { eventService } from '#lib/services/event-service.js';
+import { eventListQuery, eventStatsQuery } from '#lib/query/events.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
@@ -24,17 +23,7 @@ export const load: PageLoad = async ({ parent }) => {
 	let events;
 	let eventStats;
 	const operationResult = await tryCatch(
-		(async () =>
-			Promise.all([
-				queryClient.query({
-					queryKey: queryKeys.events.listGlobal(eventRequestOptions),
-					queryFn: () => eventService.getEvents(eventRequestOptions)
-				}),
-				queryClient.query({
-					queryKey: queryKeys.events.statsGlobal(),
-					queryFn: () => eventService.getEventStats()
-				})
-			]))()
+		(async () => Promise.all([queryClient.query(eventListQuery(eventRequestOptions)), queryClient.query(eventStatsQuery())]))()
 	);
 	if (operationResult.error !== null) {
 		const err = operationResult.error;

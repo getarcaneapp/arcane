@@ -160,7 +160,7 @@
 	<div class="flex items-center gap-2">
 		{#if item.isDirectory}
 			<FolderOpenIcon class={minimal ? 'size-4 text-muted-foreground' : 'size-4 text-info'} />
-			<button class="text-left font-medium hover:underline" onclick={() => onNavigate(item.path)}>
+			<button type="button" class="text-left font-medium hover:underline" onclick={() => onNavigate(item.path)}>
 				{item.name}
 			</button>
 		{:else}
@@ -273,7 +273,6 @@
 		items={itemsPaginated}
 		bind:requestOptions
 		bind:mobileFieldVisibility
-		onRefresh={async () => itemsPaginated}
 		{columns}
 		{mobileFields}
 		rowActions={RowActions}
