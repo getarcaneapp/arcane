@@ -44,7 +44,7 @@ async function selectPermission(page: Page, permission: string) {
 }
 
 async function createRoleThroughUI(page: Page, name: string, permissions: string[]) {
-	await page.goto('/settings/roles/new');
+	await page.goto('/system/roles/new');
 	await page.getByLabel('Name', { exact: true }).fill(name);
 	await page
 		.getByLabel('Description', { exact: true })
@@ -63,18 +63,18 @@ async function createRoleThroughUI(page: Page, name: string, permissions: string
 		.getByRole('button', { name: /Create Role/ })
 		.click();
 	const role = await readApiData<TestRole>(await responsePromise, `Create role ${name}`);
-	await expect(page).toHaveURL('/settings/roles');
+	await expect(page).toHaveURL('/system/roles');
 	return role;
 }
 
 async function editRoleThroughUI(page: Page, role: TestRole) {
-	await page.goto('/settings/roles');
+	await page.goto('/system/roles');
 	await page.getByPlaceholder('Search…').fill(role.name);
 	const row = page.getByRole('row').filter({ hasText: role.name });
 	const menu = await openRowActionsMenu(page, row);
 	await menu.getByRole('menuitem', { name: 'Edit', exact: true }).click();
 
-	await expect(page).toHaveURL(`/settings/roles/${role.id}`);
+	await expect(page).toHaveURL(`/system/roles/${role.id}`);
 	await page
 		.getByLabel('Description', { exact: true })
 		.fill('Updated by the Playwright RBAC journey');
@@ -86,19 +86,19 @@ async function editRoleThroughUI(page: Page, role: TestRole) {
 	);
 	await page.getByRole('button', { name: 'Save changes', exact: true }).click();
 	const updated = await readApiData<TestRole>(await responsePromise, `Update role ${role.name}`);
-	await expect(page).toHaveURL('/settings/roles');
+	await expect(page).toHaveURL('/system/roles');
 	expect(updated.description).toBe('Updated by the Playwright RBAC journey');
 }
 
 async function cloneViewerRoleThroughUI(page: Page) {
-	await page.goto('/settings/roles/role_viewer');
+	await page.goto('/system/roles/role_viewer');
 	const responsePromise = page.waitForResponse(
 		(response) =>
 			response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/roles'
 	);
 	await page.getByRole('button', { name: 'Clone as custom role', exact: true }).click();
 	const cloned = await readApiData<TestRole>(await responsePromise, 'Clone the Viewer role');
-	await expect(page).toHaveURL(`/settings/roles/${cloned.id}`);
+	await expect(page).toHaveURL(`/system/roles/${cloned.id}`);
 	expect(cloned.builtIn).toBe(false);
 	expect(cloned.permissions.length).toBeGreaterThan(0);
 	return cloned;
@@ -131,7 +131,7 @@ async function createRestrictedUserThroughUI(
 	remoteEnvironmentName: string,
 	remoteRoleName: string
 ) {
-	await page.goto('/settings/users');
+	await page.goto('/system/users');
 	await page.getByRole('button', { name: 'Create User', exact: true }).click();
 	const dialog = page.getByRole('dialog', { name: 'Create New User' });
 	await expect(dialog).toBeVisible();
@@ -229,7 +229,7 @@ async function createRestrictedUserThroughUI(
 }
 
 async function editUserThroughUI(page: Page, user: TestUser) {
-	await page.goto('/settings/users');
+	await page.goto('/system/users');
 	await page.getByPlaceholder('Search…').fill(user.username);
 	const row = page.getByRole('row').filter({ hasText: user.username });
 	const menu = await openRowActionsMenu(page, row);
@@ -381,7 +381,7 @@ async function toggleAutoUpdateThroughUI(
 }
 
 async function deleteUserThroughUI(page: Page, user: TestUser) {
-	await page.goto('/settings/users');
+	await page.goto('/system/users');
 	await page.getByPlaceholder('Search…').fill(user.username);
 	const row = page.getByRole('row').filter({ hasText: user.username });
 	const menu = await openRowActionsMenu(page, row);
@@ -398,7 +398,7 @@ async function deleteUserThroughUI(page: Page, user: TestUser) {
 }
 
 async function deleteRoleThroughUI(page: Page, role: TestRole) {
-	await page.goto('/settings/roles');
+	await page.goto('/system/roles');
 	await page.getByPlaceholder('Search…').fill(role.name);
 	const row = page.getByRole('row').filter({ hasText: role.name });
 	const menu = await openRowActionsMenu(page, row);
@@ -595,7 +595,7 @@ test('administers scoped identities and enforces their browser access immediatel
 			}
 			await restrictedPage.keyboard.press('Escape');
 
-			await restrictedPage.goto('/settings/backups');
+			await restrictedPage.goto('/system/backups');
 			await expect(restrictedPage).toHaveURL('/containers');
 
 			const currentUser = await readApiData<TestUser>(

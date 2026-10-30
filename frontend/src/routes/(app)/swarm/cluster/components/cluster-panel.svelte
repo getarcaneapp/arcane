@@ -459,7 +459,7 @@
 				</div>
 
 				<div class="grid items-stretch gap-5 lg:grid-cols-2">
-					<Card.Root class="flex h-full flex-col" variant="outlined">
+					<Card.Root class="flex h-full flex-col">
 						<Card.Header icon={SettingsIcon} iconVariant="primary">
 							<div class="min-w-0">
 								<Card.Title>{m.swarm_cluster_initialize_title()}</Card.Title>
@@ -512,7 +512,7 @@
 						</Card.Content>
 					</Card.Root>
 
-					<Card.Root class="flex h-full flex-col" variant="outlined">
+					<Card.Root class="flex h-full flex-col">
 						<Card.Header icon={UsersIcon} iconVariant="emerald">
 							<div class="min-w-0">
 								<Card.Title>{m.swarm_cluster_join_title()}</Card.Title>

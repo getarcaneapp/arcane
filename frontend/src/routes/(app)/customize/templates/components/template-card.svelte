@@ -38,7 +38,7 @@
 </script>
 
 <div
-	class="group relative flex h-full flex-col gap-3 rounded-xl border border-border/50 bg-card/30 p-4 transition-colors hover:bg-muted/40"
+	class="group relative flex h-full flex-col gap-3 rounded-xl border border-border/70 bg-card/10 p-4 transition-colors hover:bg-muted/40"
 >
 	<div class="flex items-start gap-3">
 		<IconImage

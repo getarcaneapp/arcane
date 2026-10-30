@@ -6,6 +6,7 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import type { SettingKey } from '#lib/types/settings.js';
 
 	type LifecycleSecurityFormValues = {
 		lifecycleEnabled: boolean;
@@ -22,7 +23,8 @@
 		[K in keyof LifecycleSecurityFormValues]: FormField<LifecycleSecurityFormValues[K]>;
 	};
 
-	let { formInputs = $bindable() }: { formInputs: LifecycleSecurityFormInputs } = $props();
+	let { formInputs = $bindable(), mixed }: { formInputs: LifecycleSecurityFormInputs; mixed: (key: SettingKey) => boolean } =
+		$props();
 </script>
 
 <SettingsSection title={m.security_lifecycle_hooks_heading()}>
@@ -38,8 +40,13 @@
 		label={m.security_lifecycle_enabled_label()}
 		description={m.security_lifecycle_enabled_description()}
 		layout="switch"
+		mixed={mixed('lifecycleEnabled')}
 	>
-		<Switch id="lifecycleEnabledSwitch" bind:checked={formInputs.lifecycleEnabled.value} />
+		<Switch
+			id="lifecycleEnabledSwitch"
+			bind:checked={formInputs.lifecycleEnabled.value}
+			data-mixed={mixed('lifecycleEnabled') || undefined}
+		/>
 	</SettingsRow>
 
 	<SettingsRow
@@ -48,11 +55,12 @@
 		description={m.security_lifecycle_runner_image_description()}
 		helpText={m.security_lifecycle_runner_image_help()}
 		error={formInputs.lifecycleDefaultRunnerImage.error}
+		mixed={mixed('lifecycleDefaultRunnerImage')}
 	>
 		<Input
 			id="lifecycleDefaultRunnerImage"
 			bind:value={formInputs.lifecycleDefaultRunnerImage.value}
-			placeholder="alpine:latest"
+			placeholder={mixed('lifecycleDefaultRunnerImage') ? m.mixed() : 'alpine:latest'}
 			aria-invalid={!!formInputs.lifecycleDefaultRunnerImage.error}
 		/>
 	</SettingsRow>
@@ -63,12 +71,14 @@
 		description={m.security_lifecycle_max_timeout_description()}
 		helpText={m.security_lifecycle_max_timeout_help()}
 		error={formInputs.lifecycleMaxTimeoutSec.error}
+		mixed={mixed('lifecycleMaxTimeoutSec')}
 	>
 		<Input
 			id="lifecycleMaxTimeoutSec"
 			type="number"
 			bind:value={formInputs.lifecycleMaxTimeoutSec.value}
 			aria-invalid={!!formInputs.lifecycleMaxTimeoutSec.error}
+			placeholder={mixed('lifecycleMaxTimeoutSec') ? m.mixed() : undefined}
 		/>
 	</SettingsRow>
 </SettingsSection>

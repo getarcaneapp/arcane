@@ -15,55 +15,62 @@ import (
 )
 
 func TestAccessSurfaceRegistryDefinesSettingsCustomizeAndLandingSemantics(t *testing.T) {
-	webhooks := requireAccessSurfaceInternal(t, "settings.category.webhooks")
+	webhooks := requireAccessSurface(t, "settings.category.webhooks")
 	require.Equal(t, authz.AccessSurfaceKindSettingsCategory, webhooks.Kind)
-	require.Equal(t, "/settings/webhooks", webhooks.URL)
+	require.Equal(t, "/system/webhooks", webhooks.URL)
 	require.Equal(t, authz.AccessModePermissions, webhooks.AccessMode)
 	require.Equal(t, authz.AccessMatchModeAnyOf, webhooks.MatchMode)
 	require.Equal(t, authz.AccessScopeModeEnvPlusGlobal, webhooks.ScopeMode)
 	require.ElementsMatch(t, []string{authz.PermWebhooksList}, webhooks.Permissions)
 
-	apiKeys := requireAccessSurfaceInternal(t, "settings.category.apikeys")
+	apiKeys := requireAccessSurface(t, "settings.category.apikeys")
 	require.Equal(t, authz.AccessScopeModeGlobalOnly, apiKeys.ScopeMode)
 	require.ElementsMatch(t, []string{authz.PermApiKeysList, authz.PermApiKeysRead}, apiKeys.Permissions)
 
-	notifications := requireAccessSurfaceInternal(t, "settings.category.notifications")
+	notifications := requireAccessSurface(t, "settings.category.notifications")
 	require.Equal(t, authz.AccessScopeModeGlobalOnly, notifications.ScopeMode)
 	require.ElementsMatch(t, []string{authz.PermNotificationsManage}, notifications.Permissions)
 
-	templates := requireAccessSurfaceInternal(t, "customize.category.templates")
+	templates := requireAccessSurface(t, "customize.category.templates")
 	require.Equal(t, authz.AccessSurfaceKindCustomizeCategory, templates.Kind)
 	require.Equal(t, authz.AccessScopeModeGlobalOnly, templates.ScopeMode)
 	require.ElementsMatch(t, []string{authz.PermCustomizeManage, authz.PermTemplatesList, authz.PermTemplatesRead}, templates.Permissions)
 
-	variables := requireAccessSurfaceInternal(t, "customize.category.variables")
+	variables := requireAccessSurface(t, "customize.category.variables")
 	require.Equal(t, authz.AccessSurfaceKindCustomizeCategory, variables.Kind)
 	require.Equal(t, authz.AccessScopeModeGlobalOnly, variables.ScopeMode)
 	require.Equal(t, authz.AccessMatchModeAnyOf, variables.MatchMode)
 	require.ElementsMatch(t, []string{authz.PermVariablesRead}, variables.Permissions)
 	require.NotContains(t, variables.Permissions, authz.PermTemplatesRead)
 
-	activities := requireAccessSurfaceInternal(t, "route.activities")
+	activities := requireAccessSurface(t, "route.activities")
 	require.Equal(t, authz.AccessSurfaceKindRoute, activities.Kind)
 	require.Empty(t, activities.URL)
 	require.Equal(t, authz.AccessScopeModeAnyEffectiveScope, activities.ScopeMode)
 	require.ElementsMatch(t, []string{authz.PermActivitiesRead}, activities.Permissions)
 
-	oidcRoleMappings := requireAccessSurfaceInternal(t, "route.oidc-role-mappings")
+	oidcRoleMappings := requireAccessSurface(t, "route.oidc-role-mappings")
 	require.Equal(t, authz.AccessSurfaceKindRoute, oidcRoleMappings.Kind)
 	require.Empty(t, oidcRoleMappings.URL)
 	require.Equal(t, authz.AccessScopeModeGlobalOnly, oidcRoleMappings.ScopeMode)
 	require.Equal(t, authz.AccessMatchModeAllOf, oidcRoleMappings.MatchMode)
 	require.ElementsMatch(t, authz.AllPermissions(), oidcRoleMappings.Permissions)
 
-	settingsLanding := requireAccessSurfaceInternal(t, "landing.settings")
+	settingsLanding := requireAccessSurface(t, "landing.settings")
 	require.Equal(t, authz.AccessSurfaceKindLanding, settingsLanding.Kind)
 	require.Equal(t, "/settings", settingsLanding.URL)
 	require.Equal(t, authz.AccessModeAnyChild, settingsLanding.AccessMode)
-	require.Contains(t, settingsLanding.Children, "settings.category.webhooks")
-	require.Contains(t, settingsLanding.Children, "settings.category.apikeys")
+	require.Contains(t, settingsLanding.Children, "settings.category.docker")
+	require.NotContains(t, settingsLanding.Children, "settings.category.webhooks")
 
-	dashboard := requireAccessSurfaceInternal(t, "route.dashboard")
+	systemLanding := requireAccessSurface(t, "landing.system")
+	require.Equal(t, authz.AccessSurfaceKindLanding, systemLanding.Kind)
+	require.Equal(t, "/system", systemLanding.URL)
+	require.Equal(t, authz.AccessModeAnyChild, systemLanding.AccessMode)
+	require.Contains(t, systemLanding.Children, "settings.category.webhooks")
+	require.Contains(t, systemLanding.Children, "settings.category.apikeys")
+
+	dashboard := requireAccessSurface(t, "route.dashboard")
 	require.Equal(t, authz.AccessSurfaceKindRoute, dashboard.Kind)
 	require.Equal(t, "/dashboard", dashboard.URL)
 	require.Positive(t, dashboard.FallbackOrder)
@@ -74,13 +81,14 @@ func TestCanAccessSurfaceEvaluatesScopeModesAndLandingChildren(t *testing.T) {
 	ps.AddEnv("env-a", authz.PermWebhooksList)
 
 	require.True(t, authz.CanAccessSurface(ps, "settings.category.webhooks", "env-a"))
-	require.True(t, authz.CanAccessSurface(ps, "landing.settings", "env-a"))
+	require.True(t, authz.CanAccessSurface(ps, "landing.system", "env-a"))
 	require.False(t, authz.CanAccessSurface(ps, "settings.category.webhooks", "env-b"))
-	require.False(t, authz.CanAccessSurface(ps, "landing.settings", "env-b"))
+	require.False(t, authz.CanAccessSurface(ps, "landing.system", "env-b"))
+	require.False(t, authz.CanAccessSurface(ps, "landing.settings", "env-a"))
 
 	ps.AddGlobal(authz.PermApiKeysRead)
 	require.True(t, authz.CanAccessSurface(ps, "settings.category.apikeys", "env-b"))
-	require.True(t, authz.CanAccessSurface(ps, "landing.settings", "env-b"))
+	require.True(t, authz.CanAccessSurface(ps, "landing.system", "env-b"))
 
 	notificationPS := authz.NewPermissionSet()
 	notificationPS.AddEnv("env-a", authz.PermNotificationsManage)
@@ -138,50 +146,39 @@ func TestAccessSurfaceRegistryIsDefensiveAndInternallyConsistent(t *testing.T) {
 			require.True(t, authz.IsKnownPermission(perm), "surface %s references unknown permission %s", surface.ID, perm)
 		}
 		for _, childID := range surface.Children {
-			_, ok := findAccessSurfaceInternal(childID)
+			_, ok := findAccessSurface(childID)
 			require.True(t, ok, "surface %s references unknown child %s", surface.ID, childID)
 		}
 	}
 }
 
 func TestAccessSurfaceCategoryRegistryCoversBackendCategories(t *testing.T) {
-	hiddenSettingsCategories := map[string]struct{}{
-		"activity":    {},
-		"build":       {},
-		"jobschedule": {},
-		"security":    {},
-		"timeouts":    {},
-	}
-
 	for _, category := range settings.NewSettingsSearchService().GetSettingsCategories() {
-		if _, hidden := hiddenSettingsCategories[category.ID]; hidden {
-			continue
-		}
-		_, ok := findAccessSurfaceInternal("settings.category." + category.ID)
+		_, ok := findAccessSurface("settings.category." + category.ID)
 		require.True(t, ok, "settings category %s must have an access surface", category.ID)
 	}
 
 	for _, category := range search.NewCustomizeSearchService().GetCustomizeCategories() {
-		_, ok := findAccessSurfaceInternal("customize.category." + category.ID)
+		_, ok := findAccessSurface("customize.category." + category.ID)
 		require.True(t, ok, "customize category %s must have an access surface", category.ID)
 	}
 }
 
 func TestPublishedAccessSurfaceURLsHaveFrontendRoutes(t *testing.T) {
-	routesRoot := filepath.Join(repoRootInternal(t), "frontend", "src", "routes", "(app)")
+	routesRoot := filepath.Join(repoRoot(t), "frontend", "src", "routes", "(app)")
 
 	for _, surface := range authz.AccessSurfaces() {
 		if surface.URL == "" {
 			continue
 		}
-		routePath := frontendRoutePathInternal(routesRoot, surface.URL)
+		routePath := frontendRoutePath(routesRoot, surface.URL)
 		_, err := os.Stat(routePath)
 		require.NoError(t, err, "access surface %s URL %s must map to frontend route %s", surface.ID, surface.URL, routePath)
 	}
 }
 
 func TestFrontendNavigationReferencesKnownAccessSurfaces(t *testing.T) {
-	navPath := filepath.Join(repoRootInternal(t), "frontend", "src", "lib", "config", "navigation-config.ts")
+	navPath := filepath.Join(repoRoot(t), "frontend", "src", "lib", "config", "navigation-config.ts")
 	body, err := os.ReadFile(navPath)
 	require.NoError(t, err)
 
@@ -190,21 +187,21 @@ func TestFrontendNavigationReferencesKnownAccessSurfaces(t *testing.T) {
 
 	for _, match := range matches {
 		require.Len(t, match, 2)
-		_, ok := findAccessSurfaceInternal(match[1])
+		_, ok := findAccessSurface(match[1])
 		require.True(t, ok, "frontend navigation references unknown access surface %s", match[1])
 	}
 }
 
-func requireAccessSurfaceInternal(t *testing.T, id string) authz.AccessSurface {
+func requireAccessSurface(t *testing.T, id string) authz.AccessSurface {
 	t.Helper()
 
-	surface, ok := findAccessSurfaceInternal(id)
+	surface, ok := findAccessSurface(id)
 	require.True(t, ok, "expected access surface %s to exist", id)
 
 	return surface
 }
 
-func findAccessSurfaceInternal(id string) (authz.AccessSurface, bool) {
+func findAccessSurface(id string) (authz.AccessSurface, bool) {
 	for _, surface := range authz.AccessSurfaces() {
 		if surface.ID == id {
 			return surface, true
@@ -213,7 +210,7 @@ func findAccessSurfaceInternal(id string) (authz.AccessSurface, bool) {
 	return authz.AccessSurface{}, false
 }
 
-func repoRootInternal(t *testing.T) string {
+func repoRoot(t *testing.T) string {
 	t.Helper()
 
 	// go test runs in the package directory; runtime.Caller breaks under -trimpath.
@@ -222,7 +219,7 @@ func repoRootInternal(t *testing.T) string {
 	return filepath.Clean(filepath.Join(wd, "..", "..", ".."))
 }
 
-func frontendRoutePathInternal(routesRoot, url string) string {
+func frontendRoutePath(routesRoot, url string) string {
 	parts := strings.Split(strings.Trim(url, "/"), "/")
 	for i, part := range parts {
 		if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {

@@ -73,8 +73,10 @@ test.describe('Settings', () => {
 		return { id: created.data.id, apiKey: created.data.apiKey };
 	}
 
-	async function openLocalEnvironment(page: Page) {
-		await openEnvironment(page, LOCAL_ENV_ID);
+	async function openLocalSettings(page: Page, category: string) {
+		await page.goto(`/settings/${category}?env=${LOCAL_ENV_ID}`);
+		await page.waitForLoadState('load');
+		await expect(page.getByText('Applying settings for', { exact: true })).toBeVisible();
 	}
 
 	async function saveAndWaitForPatch(page: Page, expectedPath: string) {
@@ -169,25 +171,20 @@ test.describe('Settings', () => {
 		});
 
 		test('should keep primary tabs selectable and restore them from the URL', async ({ page }) => {
-			await page.goto(`/environments/${LOCAL_ENV_ID}?tab=jobs`);
+			await page.goto(`/environments/${LOCAL_ENV_ID}?tab=engine`);
 			await page.waitForLoadState('load');
 
-			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('jobs');
-			await expect(page.getByRole('tab', { name: 'Automations', exact: true })).toHaveAttribute(
+			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('engine');
+			await expect(page.getByRole('tab', { name: 'Engine', exact: true })).toHaveAttribute(
 				'data-state',
 				'active'
 			);
 
-			const storageTab = page.getByRole('tab', { name: 'Storage & Limits', exact: true });
-			await storageTab.click();
-			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('storage');
-			await expect(storageTab).toHaveAttribute('data-state', 'active');
-
-			const dockerTab = page.getByRole('tab', { name: 'Docker Settings', exact: true });
-			await dockerTab.click();
-			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('docker');
+			const featuresTab = page.getByRole('tab', { name: 'Features', exact: true });
+			await featuresTab.click();
+			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('features');
 			await page.reload();
-			await expect(dockerTab).toHaveAttribute('data-state', 'active');
+			await expect(featuresTab).toHaveAttribute('data-state', 'active');
 
 			await page.goto(`/environments/${LOCAL_ENV_ID}?source=e2e&tab=invalid#tab-state`);
 			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('features');
@@ -272,8 +269,7 @@ test.describe('Settings', () => {
 		});
 
 		test('should update and save the base server URL in Docker settings', async ({ page }) => {
-			await openLocalEnvironment(page);
-			await page.getByRole('tab', { name: 'Docker Settings', exact: true }).click();
+			await openLocalSettings(page, 'docker');
 
 			const baseServerUrlInput = page.locator('#base-server-url');
 			await expect(baseServerUrlInput).toBeVisible();
@@ -289,13 +285,11 @@ test.describe('Settings', () => {
 				await saveAndWaitForPatch(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
 
 				await page.reload();
-				await page.getByRole('tab', { name: 'Docker Settings', exact: true }).click();
 				await expect(page.locator('#base-server-url')).toHaveValue(updatedBaseServerUrl, {
 					timeout: 15000
 				});
 			} finally {
 				if (!page.isClosed()) {
-					await page.getByRole('tab', { name: 'Docker Settings', exact: true }).click();
 					const currentValue = await page.locator('#base-server-url').inputValue();
 					if (currentValue !== originalBaseServerUrl) {
 						await page.locator('#base-server-url').fill(originalBaseServerUrl);
@@ -308,8 +302,7 @@ test.describe('Settings', () => {
 		test('should update and save the follow project symlinks setting from Storage & Limits', async ({
 			page
 		}) => {
-			await openLocalEnvironment(page);
-			await page.getByRole('tab', { name: 'Storage & Limits', exact: true }).click();
+			await openLocalSettings(page, 'storage');
 
 			const followProjectSymlinksSwitch = page.locator('#follow-project-symlinks');
 			await expect(followProjectSymlinksSwitch).toBeVisible();
@@ -340,14 +333,12 @@ test.describe('Settings', () => {
 				expect(response.ok()).toBeTruthy();
 
 				await page.reload();
-				await page.getByRole('tab', { name: 'Storage & Limits', exact: true }).click();
 				await expect(page.locator('#follow-project-symlinks')).toHaveAttribute(
 					'aria-checked',
 					String(updatedChecked)
 				);
 			} finally {
 				if (!page.isClosed()) {
-					await page.getByRole('tab', { name: 'Storage & Limits', exact: true }).click();
 					const currentChecked =
 						(await page.locator('#follow-project-symlinks').getAttribute('aria-checked')) ===
 						'true';
@@ -393,10 +384,8 @@ test.describe('Settings', () => {
 		test('should update and save the default deploy pull policy in Docker settings', async ({
 			page
 		}) => {
-			await openLocalEnvironment(page);
+			await openLocalSettings(page, 'docker');
 
-			const dockerTab = page.getByRole('tab', { name: 'Docker Settings', exact: true });
-			await dockerTab.click();
 			const pullPolicyTrigger = page.locator('#defaultDeployPullPolicy');
 			await expect(pullPolicyTrigger).toBeVisible();
 
@@ -409,13 +398,11 @@ test.describe('Settings', () => {
 				await saveAndWaitForPatch(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
 
 				await page.reload();
-				await page.getByRole('tab', { name: 'Docker Settings', exact: true }).click();
 				await expect(page.locator('#defaultDeployPullPolicy')).toContainText(updatedValue, {
 					timeout: 15000
 				});
 			} finally {
 				if (!page.isClosed()) {
-					await page.getByRole('tab', { name: 'Docker Settings', exact: true }).click();
 					const currentValue = (
 						(await page.locator('#defaultDeployPullPolicy').textContent()) || ''
 					).trim();
@@ -449,8 +436,7 @@ test.describe('Settings', () => {
 			expect(Object.keys(originalSettings)).toHaveLength(3);
 
 			try {
-				await openLocalEnvironment(page);
-				await page.getByRole('tab', { name: 'Security', exact: true }).click();
+				await openLocalSettings(page, 'security');
 				await page.locator('#trivyResourceLimitsEnabledSwitch').setChecked(true);
 				const cpuInput = page.getByRole('spinbutton', { name: 'CPU Limit (cores)', exact: true });
 				await expect(cpuInput).toHaveAttribute('min', '0');
@@ -473,7 +459,6 @@ test.describe('Settings', () => {
 					expect(payload.trivyCpuLimit).toBe(value);
 					expect(payload.trivyResourceLimitsEnabled ?? 'true').toBe('true');
 					await page.reload();
-					await page.getByRole('tab', { name: 'Security', exact: true }).click();
 					await expect(cpuInput).toHaveValue(value);
 				}
 
@@ -492,7 +477,6 @@ test.describe('Settings', () => {
 					).toBeVisible();
 					expect(writes).toHaveLength(0);
 					await page.reload();
-					await page.getByRole('tab', { name: 'Security', exact: true }).click();
 					await expect(cpuInput).toHaveValue(values[values.length - 1]);
 				} finally {
 					page.off('request', recordWrite);
@@ -504,8 +488,7 @@ test.describe('Settings', () => {
 		});
 
 		test('should update and save the trivy network mode including auto', async ({ page }) => {
-			await openLocalEnvironment(page);
-			await page.getByRole('tab', { name: 'Security', exact: true }).click();
+			await openLocalSettings(page, 'security');
 
 			const trivyNetworkTrigger = page.locator('#trivyNetwork');
 			await expect(trivyNetworkTrigger).toBeVisible();
@@ -532,11 +515,9 @@ test.describe('Settings', () => {
 				expect(response.ok()).toBeTruthy();
 
 				await page.reload();
-				await page.getByRole('tab', { name: 'Security', exact: true }).click();
 				await expect(page.locator('#trivyNetwork')).toContainText(updatedValue);
 			} finally {
 				if (!page.isClosed()) {
-					await page.getByRole('tab', { name: 'Security', exact: true }).click();
 					const currentValue = ((await page.locator('#trivyNetwork').textContent()) || '').trim();
 					if (!currentValue.includes(originalValue)) {
 						await selectSettingOption(page, page.locator('#trivyNetwork'), originalValue);

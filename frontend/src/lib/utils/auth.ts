@@ -73,6 +73,7 @@ const PROTECTED_PREFIXES = [
 	'/ports',
 	'/settings',
 	'/swarm',
+	'/system',
 	'/updates'
 ];
 
@@ -98,7 +99,7 @@ export function userHasPermission(user: User | null | undefined, permission: str
 }
 
 function isAdminOnlyRoute(path: string): boolean {
-	return path === '/settings/roles/new' || (path.startsWith('/settings/roles/') && path.split('/')[3] !== '');
+	return path === '/system/roles/new' || (path.startsWith('/system/roles/') && path.split('/')[3] !== '');
 }
 
 const matchesAny = (path: string, prefixes: string[]) =>
@@ -175,7 +176,7 @@ export function getAuthRedirectPath(
 	}
 
 	if (isAdminOnlyRoute(path) && !isUserGlobalAdmin(user)) {
-		return resolve('/(app)/settings/roles');
+		return resolve('/(app)/system/roles');
 	}
 
 	const surface = getRouteAccessSurfaces(accessManifest).find((candidate) => pathMatchesAccessSurface(path, candidate));

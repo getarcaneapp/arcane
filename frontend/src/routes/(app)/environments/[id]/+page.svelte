@@ -1,18 +1,16 @@
 <script lang="ts">
 	import { refreshAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import { ActionButtonGroup, type ActionButton } from '#lib/components/action-button-group/index.js';
 	import AgentCommandBlock from '#lib/components/agent-command-block.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import ImagePatchSettings from '#lib/components/settings/image-patch-settings.svelte';
-	import LifecycleSecuritySettings from '#lib/components/settings/lifecycle-security-settings.svelte';
 	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import SettingsSection from '#lib/components/settings/settings-section.svelte';
-	import TrivySecuritySettings from '#lib/components/settings/trivy-security-settings.svelte';
 	import { EmptyState } from '#lib/components/states/index.js';
-	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
+	import type { TabItem } from '#lib/components/tab-bar/index.js';
 	import * as AlertDialog from '#lib/components/ui/alert-dialog/index.js';
 	import { CopyButton } from '#lib/components/ui/copy-button/index.js';
 	import { Switch } from '#lib/components/ui/switch/index.js';
@@ -20,34 +18,17 @@
 	import { featureDefinitions } from '#lib/config/features.js';
 	import { useEasyJoinCandidates } from '#lib/hooks/use-easy-join-candidates.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
-	import {
-		AlertIcon,
-		DockerBrandIcon,
-		SecurityIcon,
-		JobsIcon,
-		ResetIcon,
-		ConnectionIcon,
-		VolumesIcon,
-		ScanIcon,
-		ShieldCheckIcon,
-		CodeIcon,
-		SettingsIcon,
-		ClockIcon,
-		ActivityIcon,
-		InfoIcon
-	} from '#lib/icons/index.js';
+	import { AlertIcon, ResetIcon, ConnectionIcon, SettingsIcon, InfoIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentDeploymentSnippetsQuery, environmentDetailQuery } from '#lib/query/environments.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
-	import { parseSettingValue, settingsService } from '#lib/services/settings-service.js';
-	import settingsStore from '#lib/stores/config-store.svelte.js';
+	import { settingsService } from '#lib/services/settings-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import type { Environment } from '#lib/types/environment.js';
 	import type { FeatureID } from '#lib/types/features.js';
-	import type { SettingKey, Settings } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
 	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -58,21 +39,14 @@
 
 	import EditableName from '../../projects/components/editable-name.svelte';
 	import EasyJoinDialog from '../../swarm/cluster/components/easy-join-dialog.svelte';
-	import ActivityTab from './components/activity-tab.svelte';
-	import BuildsTab from './components/builds-tab.svelte';
 	import ConnectionAgentTab from './components/connection-agent-tab.svelte';
-	import DockerTab from './components/docker-tab.svelte';
 	import EngineInfoTab from './components/engine-info-tab.svelte';
 	import {
 		environmentFormSchema,
 		environmentUpdateSchema,
-		requireTrivyServerUrl,
 		type EnvironmentFormValues
 	} from './components/environment-form-schema';
 	import EnvironmentStatusSummary from './components/environment-status-summary.svelte';
-	import JobsTab from './components/jobs-tab.svelte';
-	import StorageTab from './components/storage-tab.svelte';
-	import TimeoutsTab from './components/timeouts-tab.svelte';
 
 	let { data } = $props();
 	let { settings, versionInformation } = $derived(data);
@@ -125,12 +99,9 @@
 	const remoteVersion = $derived(versionQuery.data ?? null);
 	const isLoadingVersion = $derived(versionQuery.isFetching);
 
-	// Settings tabs stay listed while offline so the selected tab survives a temporary outage.
-	let showSettingsTabs = $derived(runtimeEnvironment.enabled && hasPermission('settings:read', environment.id));
-	let settingsAvailable = $derived(isCurrentlyOnline && settings !== null);
+	let showSettingsAction = $derived(runtimeEnvironment.enabled && hasPermission('settings:read', environment.id));
 	let showEngineTab = $derived(runtimeEnvironment.enabled && hasPermission('system:read', environment.id));
 	const podmanStatus = $derived(hasPermission('podman:read', environment.id) ? data.podmanStatuses?.[environment.id] : undefined);
-	let showJobsTab = $derived(showSettingsTabs && hasPermission('jobs:manage', environment.id));
 	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.agentMTLSCertificate));
 	let canPairEnvironments = $derived(hasPermission('environments:pair', environment.id));
 	let showMTLSDownloads = $derived(
@@ -165,6 +136,15 @@
 			disabled: !settingsForm.hasChanges || settingsForm.isLoading,
 			loading: settingsForm.isLoading
 		});
+		if (showSettingsAction) {
+			actions.push({
+				id: 'settings',
+				action: 'base',
+				label: m.settings(),
+				href: resolve(`/(app)/settings/docker?env=${encodeURIComponent(environment.id)}`),
+				icon: SettingsIcon
+			});
+		}
 		actions.push({
 			id: 'test',
 			action: 'test',
@@ -230,49 +210,6 @@
 			items.push({ value: 'engine', label: m.engine(), icon: InfoIcon });
 		}
 
-		if (showSettingsTabs) {
-			items.push(
-				{
-					value: 'storage',
-					label: m.storage_limits(),
-					icon: VolumesIcon
-				},
-				{
-					value: 'docker',
-					label: m.environments_docker_settings_title(),
-					icon: DockerBrandIcon
-				},
-				{
-					value: 'security',
-					label: m.security(),
-					icon: SecurityIcon
-				},
-				{
-					value: 'timeouts',
-					label: m.timeouts_settings(),
-					icon: ClockIcon
-				},
-				{
-					value: 'activity',
-					label: m.activity(),
-					icon: ActivityIcon
-				},
-				{
-					value: 'builds',
-					label: m.builds(),
-					icon: CodeIcon
-				}
-			);
-		}
-
-		if (showJobsTab) {
-			items.push({
-				value: 'jobs',
-				label: m.automations(),
-				icon: JobsIcon
-			});
-		}
-
 		return items;
 	});
 
@@ -282,83 +219,15 @@
 	});
 	const activeTab = $derived(urlTab.value);
 
-	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', environment.id));
-	let securitySubTab = $state('trivy');
-	const activeSecuritySubTab = $derived(
-		!vulnerabilityManagementEnabled && securitySubTab === 'trivy' ? 'patching' : securitySubTab
-	);
-	const securityTabItems: TabItem[] = $derived([
-		...(vulnerabilityManagementEnabled
-			? [
-					{
-						value: 'trivy',
-						label: m.security_vulnerability_scanning_heading(),
-						icon: ScanIcon
-					}
-				]
-			: []),
-		{
-			value: 'patching',
-			label: m.security_image_patching_heading(),
-			icon: ShieldCheckIcon
-		},
-		{
-			value: 'lifecycle',
-			label: m.security_lifecycle_hooks_heading(),
-			icon: CodeIcon
-		}
-	]);
-
-	const snapshotValues = $derived(
-		settings?.values ??
-			(Object.fromEntries(
-				Object.values(settingsStore.resolved?.meta ?? {}).map((meta) => [meta.key, parseSettingValue(meta.type, meta.default)])
-			) as Partial<Settings>)
-	);
-	const formSchema = $derived(
-		environmentFormSchema
-			.pick(
-				Object.fromEntries(
-					Object.keys(environmentFormSchema.shape)
-						.filter(
-							(key) =>
-								key in environmentUpdateSchema.shape ||
-								key in snapshotValues ||
-								featureDefinitions.some((feature) => feature.settingKey === key)
-						)
-						.map((key) => [key, true] as const)
-				) as Partial<Record<keyof typeof environmentFormSchema.shape, true>>
-			)
-			.superRefine(requireTrivyServerUrl)
-	);
-	const settingFormKeys = $derived(
-		(Object.keys(formSchema.shape) as (keyof EnvironmentFormValues)[]).filter((key) => !(key in environmentUpdateSchema.shape))
-	);
 	const currentSettings = $derived({
-		...Object.fromEntries(settingFormKeys.map((key) => [key, snapshotValues[key as SettingKey]])),
-		...(settingFormKeys.includes('buildProvider') && !depotReady('', '') && { buildProvider: 'local' }),
-		...(settingFormKeys.includes('depotToken') && { depotToken: '' }),
+		featureVulnerabilityManagementEnabled: Boolean(settings?.values.featureVulnerabilityManagementEnabled),
+		featureSwarmEnabled: Boolean(settings?.values.featureSwarmEnabled),
 		name: loadedEnvironment.name,
 		enabled: loadedEnvironment.enabled
 	} as EnvironmentFormValues);
 
-	function settingLock(key: SettingKey) {
-		const meta = settings?.meta[key];
-		return meta?.locked ? meta : undefined;
-	}
-
-	function depotReady(projectId: string, token: string): boolean {
-		if (settings?.runtime.depotConfigured) return true;
-		return (
-			Boolean(projectId.trim() || settings?.values.depotProjectId?.trim()) &&
-			Boolean(token.trim() || settings?.values.depotToken?.trim())
-		);
-	}
-
-	// Custom save handler for environment-specific settings
 	async function saveEnvironmentSettings(formData: EnvironmentFormValues) {
 		const environmentId = environment.id;
-		const submittedInputs = formInputs;
 		const changedFeatures = featureDefinitions.filter(
 			(feature) => formData[feature.settingKey] !== currentSettings[feature.settingKey]
 		);
@@ -377,17 +246,12 @@
 			}
 			queryClient.setQueryData(environmentDetailQuery(environmentId).queryKey, result.data);
 		}
-		if (settings) {
-			await settingsService.updateSettingsForEnvironment(environmentId, settings, {
-				...Object.fromEntries(settingFormKeys.map((key) => [key, formData[key]])),
-				trivyCpuLimit: formData.trivyResourceLimitsEnabled ? formData.trivyCpuLimit : 0,
-				trivyMemoryLimitMb: formData.trivyResourceLimitsEnabled ? formData.trivyMemoryLimitMb : 0,
-				buildProvider: depotReady(formData.depotProjectId, formData.depotToken) ? formData.buildProvider : 'local',
-				depotToken: formData.depotToken || undefined
-			});
-			submittedInputs.depotToken.value = '';
-		}
-		if (changedFeatures.length > 0) {
+		if (settings && changedFeatures.length > 0) {
+			await settingsService.updateSettingsForEnvironment(
+				environmentId,
+				settings,
+				Object.fromEntries(changedFeatures.map((feature) => [feature.settingKey, formData[feature.settingKey]]))
+			);
 			await featureStore.refresh(environmentId);
 			if (featureStore.status(environmentId) !== 'ready') throw new Error(m.features_unavailable());
 			const overridden = changedFeatures.find(
@@ -399,9 +263,6 @@
 		// The root load's refresh re-reads the environment list into the store.
 		await queryClient.invalidateQueries({
 			queryKey: queryKeys.environments.all
-		});
-		await queryClient.invalidateQueries({
-			queryKey: queryKeys.jobs.list(environmentId)
 		});
 		await refreshEnvironment();
 	}
@@ -427,7 +288,7 @@
 
 	let { formInputs, settingsForm, resetForm, onSubmit } = $derived(
 		createSettingsForm({
-			schema: formSchema,
+			schema: environmentFormSchema,
 			currentSettings,
 			getCurrentSettings: () => ({
 				...currentSettings,
@@ -444,40 +305,6 @@
 			onReset: () => toast.info(m.changes_reset())
 		})
 	);
-
-	const shellOptions = [
-		{
-			value: '/bin/sh',
-			label: '/bin/sh',
-			description: m.docker_shell_sh_description()
-		},
-		{
-			value: '/bin/bash',
-			label: '/bin/bash',
-			description: m.docker_shell_bash_description()
-		},
-		{
-			value: '/bin/ash',
-			label: '/bin/ash',
-			description: m.docker_shell_ash_description()
-		},
-		{
-			value: '/bin/zsh',
-			label: '/bin/zsh',
-			description: m.docker_shell_zsh_description()
-		}
-	];
-
-	let shellSelectValue = $derived.by((): string => {
-		if (!settings) return 'custom';
-		return shellOptions.find((o) => o.value === settings.values.defaultShell)?.value ?? 'custom';
-	});
-
-	function handleShellSelectChange(value: string) {
-		if (value !== 'custom') {
-			formInputs.defaultShell.value = value;
-		}
-	}
 
 	async function refreshEnvironment() {
 		if (isRefreshing) return;
@@ -810,67 +637,6 @@
 					{isRegeneratingKey}
 					onRegenerateApiKey={() => (showRegenerateDialog = true)}
 				/>
-			</Tabs.Content>
-		{/if}
-
-		{#if showSettingsTabs && settingsAvailable}
-			<Tabs.Content value="storage">
-				<StorageTab bind:formInputs />
-			</Tabs.Content>
-
-			<Tabs.Content value="docker">
-				<DockerTab bind:formInputs environmentId={environment.id} {shellSelectValue} {handleShellSelectChange} {shellOptions} />
-			</Tabs.Content>
-
-			<Tabs.Content value="security">
-				<Tabs.Root value={activeSecuritySubTab} class="w-full">
-					<div class="mb-4">
-						<TabBar
-							items={securityTabItems}
-							value={activeSecuritySubTab}
-							onValueChange={(value) => {
-								securitySubTab = value;
-							}}
-						/>
-					</div>
-					<Tabs.Content value="trivy">
-						<TrivySecuritySettings bind:formInputs environmentId={environment.id} />
-					</Tabs.Content>
-					<Tabs.Content value="patching">
-						<ImagePatchSettings bind:formInputs environmentId={environment.id} />
-					</Tabs.Content>
-					<Tabs.Content value="lifecycle">
-						<LifecycleSecuritySettings bind:formInputs />
-					</Tabs.Content>
-				</Tabs.Root>
-			</Tabs.Content>
-
-			<Tabs.Content value="timeouts">
-				<TimeoutsTab bind:formInputs lock={settingLock} />
-			</Tabs.Content>
-
-			<Tabs.Content value="activity">
-				<ActivityTab bind:formInputs lock={settingLock} />
-			</Tabs.Content>
-
-			<Tabs.Content value="builds">
-				<BuildsTab bind:formInputs settings={settings!} lock={settingLock} />
-			</Tabs.Content>
-		{:else if showSettingsTabs}
-			{#each ['storage', 'docker', 'security', 'timeouts', 'activity', 'builds'] as tab (tab)}
-				<Tabs.Content value={tab}>
-					{@render settingsOffline()}
-				</Tabs.Content>
-			{/each}
-		{/if}
-
-		{#if showJobsTab && settingsAvailable}
-			<Tabs.Content value="jobs">
-				<JobsTab bind:formInputs environmentId={environment.id} />
-			</Tabs.Content>
-		{:else if showJobsTab}
-			<Tabs.Content value="jobs">
-				{@render settingsOffline()}
 			</Tabs.Content>
 		{/if}
 	{/snippet}

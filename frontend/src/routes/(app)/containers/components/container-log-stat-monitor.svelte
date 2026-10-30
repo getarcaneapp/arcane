@@ -25,7 +25,7 @@
 
 <section
 	class={cn(
-		'grid min-w-0 gap-2 rounded-lg border border-border/70 bg-card/35 px-3 py-2.5',
+		'grid min-w-0 gap-2 rounded-lg border border-border/70 bg-card/10 px-3 py-2.5',
 		disabled && 'bg-muted/25 text-muted-foreground'
 	)}
 	data-testid={testId}

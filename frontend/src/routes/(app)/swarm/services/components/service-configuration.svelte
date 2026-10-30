@@ -69,7 +69,7 @@
 			<Card.Content>
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 					{#if command.length > 0}
-						<Card.Root variant="subtle" class="sm:col-span-2 lg:col-span-3 xl:col-span-4">
+						<Card.Root class="sm:col-span-2 lg:col-span-3 xl:col-span-4">
 							<Card.Content>
 								<div class="flex flex-col gap-2">
 									<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
@@ -84,7 +84,7 @@
 					{/if}
 
 					{#if args.length > 0}
-						<Card.Root variant="subtle" class="sm:col-span-2 lg:col-span-3 xl:col-span-4">
+						<Card.Root class="sm:col-span-2 lg:col-span-3 xl:col-span-4">
 							<Card.Content>
 								<div class="flex flex-col gap-2">
 									<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
@@ -99,7 +99,7 @@
 					{/if}
 
 					{#if workingDir}
-						<Card.Root variant="subtle">
+						<Card.Root>
 							<Card.Content>
 								<div class="flex flex-col gap-2">
 									<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
@@ -114,7 +114,7 @@
 					{/if}
 
 					{#if user}
-						<Card.Root variant="subtle">
+						<Card.Root>
 							<Card.Content>
 								<div class="flex flex-col gap-2">
 									<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
@@ -129,7 +129,7 @@
 					{/if}
 
 					{#if hostname}
-						<Card.Root variant="subtle">
+						<Card.Root>
 							<Card.Content>
 								<div class="flex flex-col gap-2">
 									<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.hostname()}</div>
