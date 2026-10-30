@@ -30,7 +30,7 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 	// This is a pure bridge; frame-size policing is the remote endpoint's job.
 	clientConn.SetReadLimit(-1)
 
-	slog.DebugContext(r.Context(), "attempting websocket dial", "remoteWs", remoteWS, "headers", header)
+	slog.DebugContext(r.Context(), "attempting websocket dial", "remoteWs", remoteWS)
 	dialCtx, dialCancel := context.WithTimeout(r.Context(), 45*time.Second)
 	remoteConn, resp, err := websocket.Dial(dialCtx, remoteWS, &websocket.DialOptions{
 		HTTPHeader: header,
