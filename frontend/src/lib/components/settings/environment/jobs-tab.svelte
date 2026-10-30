@@ -293,7 +293,7 @@
 				<Switch
 					id="image-event-watcher-enabled"
 					bind:checked={formInputs.imageEventWatcherEnabled.value}
-					data-mixed={mixed('imageEventWatcherEnabled') || undefined}
+					data-mixed={!!mixed('imageEventWatcherEnabled') || undefined}
 				/>
 			</div>
 			<Alert.Root variant="warning" size="sm">
@@ -364,33 +364,33 @@
 		<Switch
 			aria-label={job.name}
 			bind:checked={formInputs.pollingEnabled.value}
-			data-mixed={mixed('pollingEnabled') || undefined}
+			data-mixed={!!mixed('pollingEnabled') || undefined}
 		/>
 	{:else if job.id === 'auto-update'}
 		<Switch
 			aria-label={job.name}
 			bind:checked={formInputs.autoUpdate.value}
 			disabled={!formInputs.pollingEnabled.value}
-			data-mixed={mixed('autoUpdate') || undefined}
+			data-mixed={!!mixed('autoUpdate') || undefined}
 		/>
 	{:else if job.id === 'scheduled-prune'}
 		<Switch
 			aria-label={job.name}
 			bind:checked={formInputs.scheduledPruneEnabled.value}
-			data-mixed={mixed('scheduledPruneEnabled') || undefined}
+			data-mixed={!!mixed('scheduledPruneEnabled') || undefined}
 		/>
 	{:else if job.id === 'vulnerability-scan'}
 		<Switch
 			aria-label={job.name}
 			bind:checked={formInputs.vulnerabilityScanEnabled.value}
 			disabled={!vulnerabilityManagementEnabled}
-			data-mixed={mixed('vulnerabilityScanEnabled') || undefined}
+			data-mixed={!!mixed('vulnerabilityScanEnabled') || undefined}
 		/>
 	{:else if job.id === 'auto-heal'}
 		<Switch
 			aria-label={job.name}
 			bind:checked={formInputs.autoHealEnabled.value}
-			data-mixed={mixed('autoHealEnabled') || undefined}
+			data-mixed={!!mixed('autoHealEnabled') || undefined}
 		/>
 	{/if}
 {/snippet}

@@ -4318,5 +4318,7 @@
   "access": "Access",
   "integrations": "Integrations",
   "system_subtitle": "Manage users, access, integrations, backups, and diagnostics for this Arcane instance",
-  "search_system_settings": "Search system settings..."
+  "search_system_settings": "Search system settings...",
+  "use_for_all": "Use for all",
+  "not_set": "Not set"
 }

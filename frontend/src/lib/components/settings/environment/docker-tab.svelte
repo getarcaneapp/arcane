@@ -209,7 +209,7 @@
 			<Switch
 				id="auto-inject-env"
 				bind:checked={formInputs.autoInjectEnv.value}
-				data-mixed={mixed('autoInjectEnv') || undefined}
+				data-mixed={!!mixed('autoInjectEnv') || undefined}
 			/>
 		</SettingsRow>
 	</SettingsSection>

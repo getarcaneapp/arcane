@@ -5,7 +5,7 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import type { SettingKey } from '#lib/types/settings.js';
+	import type { MixedSettingValue, SettingKey } from '#lib/types/settings.js';
 
 	type ImagePatchFormValues = {
 		imagePatchSuffix: string;
@@ -27,7 +27,11 @@
 		formInputs = $bindable(),
 		environmentId,
 		mixed
-	}: { formInputs: ImagePatchFormInputs; environmentId: string; mixed: (key: SettingKey) => boolean } = $props();
+	}: {
+		formInputs: ImagePatchFormInputs;
+		environmentId: string;
+		mixed: (key: SettingKey) => MixedSettingValue[] | undefined;
+	} = $props();
 	const vulnerabilityManagementEnabled = $derived(featureStore.isEnabled('vulnerabilityManagement', environmentId));
 </script>
 
@@ -43,7 +47,7 @@
 			id="imageAutoPatchEnabledSwitch"
 			disabled={!vulnerabilityManagementEnabled}
 			bind:checked={formInputs.imageAutoPatchEnabled.value}
-			data-mixed={mixed('imageAutoPatchEnabled') || undefined}
+			data-mixed={!!mixed('imageAutoPatchEnabled') || undefined}
 		/>
 	</SettingsRow>
 
@@ -57,7 +61,7 @@
 		<Switch
 			id="imagePatchAllPlatformsSwitch"
 			bind:checked={formInputs.imagePatchAllPlatforms.value}
-			data-mixed={mixed('imagePatchAllPlatforms') || undefined}
+			data-mixed={!!mixed('imagePatchAllPlatforms') || undefined}
 		/>
 	</SettingsRow>
 

@@ -78,7 +78,7 @@
 			<Switch
 				id="follow-project-symlinks"
 				bind:checked={formInputs.followProjectSymlinks.value}
-				data-mixed={mixed('followProjectSymlinks') || undefined}
+				data-mixed={!!mixed('followProjectSymlinks') || undefined}
 			/>
 		</SettingsRow>
 	</SettingsSection>
