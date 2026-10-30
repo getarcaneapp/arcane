@@ -21,4 +21,14 @@ func RegisterRoutes(api huma.API, h *Handler) {
 		Tags:        []string{"System"},
 		Security:    handlerutil.DefaultOperationSecurity(),
 	}, authz.PermSystemPrune, h.PruneAll)
+
+	middleware.RegisterWithPermission(api, huma.Operation{
+		OperationID: "df",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/system/df",
+		Summary:     "Get reclaimable disk usage",
+		Description: "Get the disk space held by unused images, build cache, unused volumes, and stopped containers",
+		Tags:        []string{"System"},
+		Security:    handlerutil.DefaultOperationSecurity(),
+	}, authz.PermSystemRead, h.GetDiskUsage)
 }

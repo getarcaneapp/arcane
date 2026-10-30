@@ -302,6 +302,40 @@ func TestUpdateUserPersistsTimeFormatAndMapsToDto(t *testing.T) {
 	}
 }
 
+func TestUpdateUserNormalizesDashboardLayout(t *testing.T) {
+	userSvc, _ := setupUserAndRoleServices(t)
+	ctx := t.Context()
+
+	u := createTestUser(t, userSvc, "user-1", "dashboard-layout-user")
+	u.Preferences.DashboardLayout = &[]types.DashboardWidgetLayout{
+		{ID: "attention", Span: 20},
+		{ID: "unknown", Span: 6},
+		{ID: "healthy", Span: 1},
+		{ID: "attention", Span: 4},
+		{ID: "jobs"},
+		{
+			ID:     "memory",
+			Span:   5,
+			Hidden: true,
+		},
+	}
+	_, err := userSvc.UpdateUser(ctx, u, nil)
+	require.NoError(t, err)
+
+	reloaded, err := userSvc.GetUserByID(ctx, u.ID)
+	require.NoError(t, err)
+	require.Equal(t, &[]types.DashboardWidgetLayout{
+		{ID: "attention", Span: 12},
+		{ID: "healthy", Span: 2},
+		{ID: "jobs", Span: 4},
+		{
+			ID:     "memory",
+			Span:   5,
+			Hidden: true,
+		},
+	}, reloaded.Preferences.DashboardLayout)
+}
+
 func TestUpdateUserRejectsNonAdminActorEditingAdmin(t *testing.T) {
 	userSvc, roleSvc := setupUserAndRoleServices(t)
 	ctx := t.Context()

@@ -29,6 +29,7 @@
 		runningContainers: 0,
 		stoppedContainers: 0,
 		totalContainers: 0,
+		unhealthyContainers: 0,
 		updatesAvailable: 0
 	};
 

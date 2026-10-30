@@ -2,7 +2,7 @@ import { m } from '#lib/paraglide/messages.js';
 import type { Activity, ActivityGroup, ActivityStatus } from '#lib/types/activity.type.js';
 import { formatDate, plainDateFromInstant } from '#lib/utils/formatting.js';
 
-import { activityTypeLabel } from './activity-labels';
+import { activityTitle } from './activity-labels';
 
 export type ActivitySection = {
 	id: string;
@@ -30,7 +30,7 @@ export function activityGroupStatus(group: ActivityGroup): ActivityStatus {
 }
 
 export function activityGroupTitle(group: ActivityGroup): string {
-	return activityTypeLabel(activityGroupLead(group).type);
+	return activityTitle(activityGroupLead(group));
 }
 
 export function activityGroupTarget(group: ActivityGroup): string {

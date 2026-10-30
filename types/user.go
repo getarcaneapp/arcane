@@ -29,8 +29,15 @@ type UserPreferences struct {
 	DefaultProjectEditorLayout *string `json:"defaultProjectEditorLayout,omitempty" enum:"auto,classic,tree" doc:"Initial layout of the project editor; auto keeps workspace detection"`
 	ToastPosition              *string `json:"toastPosition,omitempty" enum:"auto,top-left,top-right,top-center,bottom-left,bottom-right,bottom-center" doc:"Toast notification position"`
 	// A pointer so the merge-only preferences update replaces the whole map.
-	EnvironmentColors     *map[string]string `json:"environmentColors,omitempty" doc:"Environment label color by environment ID"`
-	EnvironmentLabelStyle *string            `json:"environmentLabelStyle,omitempty" enum:"name,dot" doc:"How resource lists label environments"`
+	EnvironmentColors     *map[string]string       `json:"environmentColors,omitempty" doc:"Environment label color by environment ID"`
+	EnvironmentLabelStyle *string                  `json:"environmentLabelStyle,omitempty" enum:"name,dot" doc:"How resource lists label environments"`
+	DashboardLayout       *[]DashboardWidgetLayout `json:"dashboardLayout,omitempty" doc:"Ordered dashboard widgets with their width and visibility"`
+}
+
+type DashboardWidgetLayout struct {
+	ID     string `json:"id" doc:"Dashboard widget identifier"`
+	Span   int    `json:"span" doc:"Widget width in columns of the 12-column dashboard grid"`
+	Hidden bool   `json:"hidden,omitempty" doc:"Whether the widget is hidden"`
 }
 
 // RoleAssignmentSummary is a compact form of a user's role assignment used

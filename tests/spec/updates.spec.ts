@@ -707,6 +707,7 @@ test.describe('Arcane upgrades', () => {
 			});
 			await page.goto('/dashboard');
 			await dashboardUpgradeCheck;
+			await page.getByRole('button', { name: 'Card view', exact: true }).click();
 			const versionBadge = page
 				.locator('main')
 				.getByRole('button', { name: 'v1.0.0', exact: true });
