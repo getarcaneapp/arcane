@@ -276,16 +276,6 @@
 	const effectiveName = $derived(composeYamlName ?? inputs.name.value);
 	const nameHasChanges = $derived(!composeYamlName && inputs.name.value !== serverName);
 
-	let hasChanges = $derived(
-		nameHasChanges ||
-			inputs.composeContent.value !== serverComposeContent ||
-			inputs.overrideContent.value !== serverOverrideContent ||
-			(!configurationError && inputs.envContent.value !== serverEnvContent) ||
-			Object.entries(includeFilesState).some(([relativePath, content]) => content !== serverIncludeFiles[relativePath]) ||
-			projectWorkspaceChanges.length > 0 ||
-			changedProjectWorkspacePaths.length > 0
-	);
-
 	let isGitOpsManaged = $derived(!!project?.gitOpsManagedBy);
 	let hasBuildDirective = $derived(!!project?.hasBuildDirective);
 
@@ -458,6 +448,16 @@
 	let changedIncludeFilePaths = $derived.by(() =>
 		Object.keys(includeFilesState).filter((relativePath) => includeFilesState[relativePath] !== serverIncludeFiles[relativePath])
 	);
+	const dirtyFileKeys = $derived(
+		new Set([
+			...(composeHasChanges ? ['compose'] : []),
+			...(overrideHasChanges ? ['override'] : []),
+			...(envHasChanges ? ['env'] : []),
+			...changedIncludeFilePaths.map((relativePath) => `file:${relativePath}`),
+			...changedProjectWorkspacePaths.map((relativePath) => `file:${relativePath}`)
+		])
+	);
+	let hasChanges = $derived(nameHasChanges || dirtyFileKeys.size > 0 || projectWorkspaceChanges.length > 0);
 
 	let hasAnyErrors = $derived(
 		(composeHasChanges && (!composeValidationReady || composeHasErrors)) ||
@@ -1059,15 +1059,10 @@
 	}
 
 	function treeTabPending(key: string): boolean {
-		if (key === 'compose') return composeHasChanges;
-		if (key === 'override') return overrideHasChanges;
-		if (key === 'env') return envHasChanges;
+		if (dirtyFileKeys.has(key)) return true;
 		if (!key.startsWith('file:')) return false;
 		const relativePath = key.slice(5);
-		return (
-			changedProjectWorkspacePaths.includes(relativePath) ||
-			projectWorkspaceEntries.find((file) => file.relativePath === relativePath)?.pending === true
-		);
+		return projectWorkspaceEntries.find((file) => file.relativePath === relativePath)?.pending === true;
 	}
 
 	function selectProjectWorkspaceFile(key: string) {
@@ -1342,11 +1337,17 @@
 			(value) => value.length > 0
 		);
 	});
-	const codeEditorContext = $derived({
-		envContent: inputs.envContent.value,
-		composeContents: allComposeContents,
-		globalVariables: globalVariableMap
-	});
+	const codeEditorContext = {
+		get envContent() {
+			return inputs.envContent.value;
+		},
+		get composeContents() {
+			return allComposeContents;
+		},
+		get globalVariables() {
+			return globalVariableMap;
+		}
+	};
 
 	async function refreshProjectDetails(options: RefreshProjectDetailsOptions = {}) {
 		if (!projectId) return;

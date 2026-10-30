@@ -665,9 +665,9 @@
 			message: m.common_save_failed(),
 			setLoadingState: (value) => (isLoading.save = value),
 			onSuccess: async (workspace) => {
-				queryClient.setQueryData(queryKeys.volumes.workspace(environmentId, volumeName), workspace);
 				clearVolumeWorkspaceDrafts();
 				toast.success(m.volumes_workspace_save_success(), activityToastOptions(workspace.activityId));
+				await queryClient.invalidateQueries({ queryKey: queryKeys.volumes.workspace(environmentId, volumeName) });
 			}
 		});
 	}
