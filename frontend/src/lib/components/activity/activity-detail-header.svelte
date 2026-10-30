@@ -7,7 +7,7 @@
 	import ActivityActions from './activity-actions.svelte';
 	import ActivityElapsed from './activity-elapsed.svelte';
 	import { isActiveActivityStatus } from './activity-groups';
-	import { activityDurationLabel, activityRunStatusLabel, activityStatusLabel, activityTypeLabel } from './activity-labels';
+	import { activityDurationLabel, activityRunStatusLabel, activityStatusLabel, activityTitle } from './activity-labels';
 	import ActivityStatusGlyph from './activity-status-glyph.svelte';
 
 	let {
@@ -47,7 +47,7 @@
 	</div>
 
 	<h3 class={cn('leading-tight font-semibold text-foreground', compact ? 'text-base' : 'text-2xl')}>
-		{activityTypeLabel(activity.type)}
+		{activityTitle(activity)}
 		{#if target}<span class="font-normal text-muted-foreground">{target}</span>{/if}
 	</h3>
 	{#if activity.error}

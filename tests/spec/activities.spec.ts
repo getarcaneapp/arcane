@@ -608,7 +608,7 @@ test.describe('Activity Center', () => {
 
 			const activityItem = activityRow(activityCenter, networkName);
 			await expect(activityItem).toBeVisible();
-			await expect(activityItem).toContainText('Resource Action');
+			await expect(activityItem).toContainText('Create Network');
 			await expect(activityItem.getByRole('img', { name: 'Success' })).toBeVisible();
 			await expect(activityItem.getByText(environment.name, { exact: true })).toBeVisible();
 

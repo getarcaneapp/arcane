@@ -429,6 +429,8 @@ type ContainerStatusCounts struct {
 	// Required: true
 	TotalContainers int `json:"totalContainers"`
 
+	UnhealthyContainers int `json:"unhealthyContainers" doc:"Containers whose healthcheck reports unhealthy"`
+
 	UpdatesAvailable int `json:"updatesAvailable" doc:"Standalone containers with a pending image update"`
 }
 

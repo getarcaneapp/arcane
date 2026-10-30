@@ -1723,11 +1723,14 @@ func (s *ContainerService) GetContainerStatusCounts(ctx context.Context, include
 		return types.ContainerStatusCounts{}, err
 	}
 	containers = FilterExcludedContainers(containers, includeInternal, includeHidden)
-	running := 0
+	running, unhealthy := 0, 0
 	standalone := make([]container.Summary, 0, len(containers))
 	for _, c := range containers {
 		if c.State == "running" {
 			running++
+		}
+		if strings.Contains(c.Status, "(unhealthy)") {
+			unhealthy++
 		}
 		if docker.ComposeProjectLabel(c.Labels) == "" {
 			standalone = append(standalone, c)
@@ -1738,10 +1741,11 @@ func (s *ContainerService) GetContainerStatusCounts(ctx context.Context, include
 		slog.WarnContext(ctx, "Failed to count pending container updates", "error", updatesErr)
 	}
 	return types.ContainerStatusCounts{
-		RunningContainers: running,
-		StoppedContainers: len(containers) - running,
-		TotalContainers:   len(containers),
-		UpdatesAvailable:  updates,
+		RunningContainers:   running,
+		StoppedContainers:   len(containers) - running,
+		TotalContainers:     len(containers),
+		UnhealthyContainers: unhealthy,
+		UpdatesAvailable:    updates,
 	}, nil
 }
 
@@ -1767,10 +1771,11 @@ func (s *ContainerService) AggregateContainerCounts(ctx context.Context) (types.
 		var counts types.ContainerStatusCounts
 		for _, environment := range environments {
 			counts = types.ContainerStatusCounts{
-				RunningContainers: counts.RunningContainers + environment.Data.RunningContainers,
-				StoppedContainers: counts.StoppedContainers + environment.Data.StoppedContainers,
-				TotalContainers:   counts.TotalContainers + environment.Data.TotalContainers,
-				UpdatesAvailable:  counts.UpdatesAvailable + environment.Data.UpdatesAvailable,
+				RunningContainers:   counts.RunningContainers + environment.Data.RunningContainers,
+				StoppedContainers:   counts.StoppedContainers + environment.Data.StoppedContainers,
+				TotalContainers:     counts.TotalContainers + environment.Data.TotalContainers,
+				UnhealthyContainers: counts.UnhealthyContainers + environment.Data.UnhealthyContainers,
+				UpdatesAvailable:    counts.UpdatesAvailable + environment.Data.UpdatesAvailable,
 			}
 		}
 		return counts
@@ -1784,7 +1789,7 @@ func (s *ContainerService) AggregateContainers(ctx context.Context, params pagin
 	}
 
 	pages := make([]pagination.EnvironmentPage[types.ContainerSummary], 0, len(collection.Results))
-	running, stopped, total := 0, 0, 0
+	running, stopped, total, unhealthy := 0, 0, 0, 0
 	resourceSortSupported := true
 	for _, result := range collection.Results {
 		pages = append(pages, pagination.EnvironmentPage[types.ContainerSummary]{
@@ -1795,6 +1800,7 @@ func (s *ContainerService) AggregateContainers(ctx context.Context, params pagin
 		running += result.Value.Counts.RunningContainers
 		stopped += result.Value.Counts.StoppedContainers
 		total += result.Value.Counts.TotalContainers
+		unhealthy += result.Value.Counts.UnhealthyContainers
 		resourceSortSupported = resourceSortSupported && result.Value.ResourceSortSupported
 	}
 
@@ -1804,9 +1810,10 @@ func (s *ContainerService) AggregateContainers(ctx context.Context, params pagin
 			Success: true,
 			Data:    data,
 			Counts: types.ContainerStatusCounts{
-				RunningContainers: running,
-				StoppedContainers: stopped,
-				TotalContainers:   total,
+				RunningContainers:   running,
+				StoppedContainers:   stopped,
+				TotalContainers:     total,
+				UnhealthyContainers: unhealthy,
 			},
 			Pagination:            handlerutil.PaginationResponse(resp),
 			ResourceSortSupported: resourceSortSupported,
@@ -1830,9 +1837,10 @@ func (s *ContainerService) AggregateContainers(ctx context.Context, params pagin
 		Data:    flattenContainerProjectGroups(groups),
 		Groups:  groups,
 		Counts: types.ContainerStatusCounts{
-			RunningContainers: running,
-			StoppedContainers: stopped,
-			TotalContainers:   total,
+			RunningContainers:   running,
+			StoppedContainers:   stopped,
+			TotalContainers:     total,
+			UnhealthyContainers: unhealthy,
 		},
 		Pagination:            handlerutil.PaginationResponse(groupedResp),
 		ResourceSortSupported: resourceSortSupported,
@@ -2159,16 +2167,20 @@ func lowestContainerPortSortValue(ports []types.ContainerPort) (bool, int) {
 }
 
 func (s *ContainerService) CalculateStatusCounts(items []types.ContainerSummary) types.ContainerStatusCounts {
-	running := 0
+	running, unhealthy := 0, 0
 	for _, c := range items {
 		if c.State == "running" {
 			running++
 		}
+		if strings.Contains(c.Status, "(unhealthy)") {
+			unhealthy++
+		}
 	}
 	return types.ContainerStatusCounts{
-		RunningContainers: running,
-		StoppedContainers: len(items) - running,
-		TotalContainers:   len(items),
+		RunningContainers:   running,
+		StoppedContainers:   len(items) - running,
+		TotalContainers:     len(items),
+		UnhealthyContainers: unhealthy,
 	}
 }
 

@@ -34,10 +34,10 @@ const NETWORK_DOMAINS = ['networks', 'network'];
 const MANAGER_GLOBAL_DOMAINS = new Set(['users', 'roles', 'federated-credentials', 'api-keys']);
 
 export const KIND_QUERY_DOMAINS: Record<string, readonly string[]> = {
-	container: [...CONTAINER_DOMAINS, 'images', 'image', 'volumes', 'volume', ...NETWORK_DOMAINS],
-	image: IMAGE_DOMAINS,
+	container: [...CONTAINER_DOMAINS, 'images', 'image', 'volumes', 'volume', ...NETWORK_DOMAINS, 'system'],
+	image: [...IMAGE_DOMAINS, 'system'],
 	project: ['projects', 'project', 'containers', 'container', 'gitops-syncs'],
-	volume: VOLUME_DOMAINS,
+	volume: [...VOLUME_DOMAINS, 'system'],
 	network: [...NETWORK_DOMAINS, 'containers', 'container'],
 	system: ['system', ...CONTAINER_DOMAINS, ...IMAGE_DOMAINS, ...VOLUME_DOMAINS, ...NETWORK_DOMAINS, 'build-workspace'],
 	user: ['users', 'roles'],
@@ -50,9 +50,9 @@ export const KIND_QUERY_DOMAINS: Record<string, readonly string[]> = {
 	gitops: ['gitops-syncs', 'projects', 'project'],
 	event: [],
 	activity: ['backup-activities', 'volume-backups', 'environment-jobs', 'job-runs', 'job-run'],
-	build: ['images', 'image', 'build-workspace'],
+	build: ['images', 'image', 'build-workspace', 'system'],
 	vulnerability: ['vulnerabilities', 'images', 'image'],
-	image_update: ['containers', 'container', 'projects', 'project', 'images', 'image', 'image-update']
+	image_update: ['containers', 'container', 'projects', 'project', 'images', 'image', 'image-update', 'vulnerabilities']
 };
 
 const ALL_DOMAINS = [...new Set([...Object.values(KIND_QUERY_DOMAINS).flat(), ...MANAGER_GLOBAL_DOMAINS])];

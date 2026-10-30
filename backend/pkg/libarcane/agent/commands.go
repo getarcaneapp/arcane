@@ -188,6 +188,7 @@ var commandRoutes = []commandRoute{
 
 	{Method: http.MethodHead, PathPattern: "/api/environments/{id}/system/health", CommandName: "system.health"},
 	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/system/docker/info", CommandName: "system.docker_info"},
+	{Method: http.MethodGet, PathPattern: "/api/environments/{id}/system/df", CommandName: "system.df"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/system/prune", CommandName: "system.prune"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/system/containers", CommandName: "system.containers.action"},
 	{Method: http.MethodPost, PathPattern: "/api/environments/{id}/system/convert", CommandName: "system.convert"},

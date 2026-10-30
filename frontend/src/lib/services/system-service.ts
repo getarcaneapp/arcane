@@ -1,5 +1,6 @@
 import type { SystemPruneRequest } from '#lib/types/automation.js';
 import type { DockerInfo } from '#lib/types/docker.js';
+import type { SystemDiskUsage } from '#lib/types/shared.js';
 
 import BaseAPIService from './api-service';
 
@@ -28,6 +29,10 @@ class SystemService extends BaseAPIService {
 
 	async getDockerInfoForEnvironment(environmentId: string): Promise<DockerInfo> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/system/docker/info`));
+	}
+
+	async getDiskUsage(environmentId: string): Promise<SystemDiskUsage> {
+		return this.handleResponse(this.api.get(`/environments/${environmentId}/system/df`));
 	}
 
 	async convert(dockerRunCommand: string, environmentId: string): Promise<ConvertedDockerRun> {

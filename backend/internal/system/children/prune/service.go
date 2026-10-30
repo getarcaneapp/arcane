@@ -558,6 +558,52 @@ func (s *Service) PruneScheduled(ctx context.Context, environmentID string, req 
 	return result, true, err
 }
 
+func (s *Service) GetDiskUsage(ctx context.Context) (types.SystemDiskUsage, error) {
+	usage, err := s.dockerService.Call(ctx, func(ctx context.Context, cli *client.Client) (client.DiskUsageResult, error) {
+		return cli.DiskUsage(ctx, client.DiskUsageOptions{
+			Containers: true,
+			Images:     true,
+			Volumes:    true,
+			BuildCache: true,
+			Verbose:    true,
+		})
+	})
+	if err != nil {
+		return types.SystemDiskUsage{}, err
+	}
+	req := types.PruneAllRequest{
+		Containers: &types.PruneContainersOptions{Mode: types.PruneContainerModeStopped},
+		Images:     &types.PruneImagesOptions{Mode: types.PruneImageModeAll},
+		Volumes:    &types.PruneVolumesOptions{Mode: types.PruneVolumeModeAll},
+		BuildCache: &types.PruneBuildCacheOptions{Mode: types.PruneBuildCacheModeUnused},
+	}
+	containers, err := s.selectPruneContainers(req, usage)
+	if err != nil {
+		return types.SystemDiskUsage{}, err
+	}
+	images, err := s.selectPruneImages(req, usage, nil)
+	if err != nil {
+		return types.SystemDiskUsage{}, err
+	}
+	buildCache, err := s.selectPruneBuildCache(req, usage)
+	if err != nil {
+		return types.SystemDiskUsage{}, err
+	}
+	total := func(resources []pruneResource) int64 {
+		var sum int64
+		for _, resource := range resources {
+			sum += resource.Size
+		}
+		return sum
+	}
+	return types.SystemDiskUsage{
+		UnusedImagesBytes:      total(images),
+		BuildCacheBytes:        total(buildCache),
+		UnusedVolumesBytes:     total(s.selectPruneVolumes(req, usage, nil)),
+		StoppedContainersBytes: total(containers),
+	}, nil
+}
+
 func (s *Service) preparePrunePlan(ctx context.Context, req types.PruneAllRequest) (prunePlan, error) {
 	if req.Volumes != nil {
 		if _, reapErr := s.volumeService.ReapIdleHelpers(ctx, 0); reapErr != nil {
