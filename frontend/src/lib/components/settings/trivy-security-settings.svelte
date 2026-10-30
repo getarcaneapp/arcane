@@ -15,7 +15,7 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { networkService } from '#lib/services/network-service.js';
 	import { featureStore } from '#lib/stores/features.store.svelte.js';
-	import type { SettingKey, Settings } from '#lib/types/settings.js';
+	import type { MixedSettingValue, SettingKey, Settings } from '#lib/types/settings.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { arcaneImageRegistryOptions, arcaneTrivyDbImages } from '#lib/utils/registry.js';
@@ -55,7 +55,7 @@
 	}: {
 		formInputs: TrivySecurityFormInputs;
 		environmentId: string;
-		mixed: (key: SettingKey) => boolean;
+		mixed: (key: SettingKey) => MixedSettingValue[] | undefined;
 	} = $props();
 
 	type TrivyNetworkOption = {
@@ -180,7 +180,7 @@
 				<Switch
 					id="trivyIgnoreUnfixedSwitch"
 					bind:checked={formInputs.trivyIgnoreUnfixed.value}
-					data-mixed={mixed('trivyIgnoreUnfixed') || undefined}
+					data-mixed={!!mixed('trivyIgnoreUnfixed') || undefined}
 				/>
 			</SettingsRow>
 
@@ -194,7 +194,7 @@
 				<Switch
 					id="vulnerabilityThreatIntelEnabledSwitch"
 					bind:checked={formInputs.vulnerabilityThreatIntelEnabled.value}
-					data-mixed={mixed('vulnerabilityThreatIntelEnabled') || undefined}
+					data-mixed={!!mixed('vulnerabilityThreatIntelEnabled') || undefined}
 				/>
 			</SettingsRow>
 
@@ -265,7 +265,7 @@
 					}))}
 					bind:value={formInputs.trivyNetwork.value}
 					onSelect={(value) => (formInputs.trivyNetwork.value = value)}
-					placeholder={mixed('trivyNetwork')}
+					placeholder={!!mixed('trivyNetwork')}
 					displayText={mixed('trivyNetwork') ? m.mixed() : undefined}
 					class="w-full justify-between"
 				/>
@@ -300,7 +300,7 @@
 				<Switch
 					id="trivyPrivilegedSwitch"
 					bind:checked={formInputs.trivyPrivileged.value}
-					data-mixed={mixed('trivyPrivileged') || undefined}
+					data-mixed={!!mixed('trivyPrivileged') || undefined}
 				/>
 			</SettingsRow>
 		</SettingsSection>
@@ -316,7 +316,7 @@
 				<Switch
 					id="trivyServerEnabledSwitch"
 					bind:checked={formInputs.trivyServerEnabled.value}
-					data-mixed={mixed('trivyServerEnabled') || undefined}
+					data-mixed={!!mixed('trivyServerEnabled') || undefined}
 				/>
 			</SettingsRow>
 			{#if formInputs.trivyServerEnabled.value}
@@ -368,7 +368,7 @@
 					id="trivyResourceLimitsEnabledSwitch"
 					bind:checked={formInputs.trivyResourceLimitsEnabled.value}
 					onCheckedChange={handleTrivyResourceLimitsChange}
-					data-mixed={mixed('trivyResourceLimitsEnabled') || undefined}
+					data-mixed={!!mixed('trivyResourceLimitsEnabled') || undefined}
 				/>
 			</SettingsRow>
 			{#if formInputs.trivyResourceLimitsEnabled.value}

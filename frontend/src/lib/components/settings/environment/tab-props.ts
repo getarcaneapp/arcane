@@ -1,5 +1,5 @@
 import type { FormInputs } from '#lib/types/form.js';
-import type { ResolvedSettings, SettingKey, SettingState } from '#lib/types/settings.js';
+import type { MixedSettingValue, ResolvedSettings, SettingKey, SettingState } from '#lib/types/settings.js';
 
 import type { EnvironmentSettingsValues } from './environment-form-schema';
 
@@ -7,7 +7,7 @@ export type EnvironmentSettingsFormInputs = FormInputs<EnvironmentSettingsValues
 
 export interface FormTabProps {
 	formInputs: EnvironmentSettingsFormInputs;
-	mixed: (key: SettingKey) => boolean;
+	mixed: (key: SettingKey) => MixedSettingValue[] | undefined;
 }
 
 export interface LockableFormTabProps extends FormTabProps {

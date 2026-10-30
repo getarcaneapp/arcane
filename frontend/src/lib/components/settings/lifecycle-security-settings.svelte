@@ -6,7 +6,7 @@
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { AlertIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { SettingKey } from '#lib/types/settings.js';
+	import type { MixedSettingValue, SettingKey } from '#lib/types/settings.js';
 
 	type LifecycleSecurityFormValues = {
 		lifecycleEnabled: boolean;
@@ -23,8 +23,10 @@
 		[K in keyof LifecycleSecurityFormValues]: FormField<LifecycleSecurityFormValues[K]>;
 	};
 
-	let { formInputs = $bindable(), mixed }: { formInputs: LifecycleSecurityFormInputs; mixed: (key: SettingKey) => boolean } =
-		$props();
+	let {
+		formInputs = $bindable(),
+		mixed
+	}: { formInputs: LifecycleSecurityFormInputs; mixed: (key: SettingKey) => MixedSettingValue[] | undefined } = $props();
 </script>
 
 <SettingsSection title={m.security_lifecycle_hooks_heading()}>
@@ -45,7 +47,7 @@
 		<Switch
 			id="lifecycleEnabledSwitch"
 			bind:checked={formInputs.lifecycleEnabled.value}
-			data-mixed={mixed('lifecycleEnabled') || undefined}
+			data-mixed={!!mixed('lifecycleEnabled') || undefined}
 		/>
 	</SettingsRow>
 

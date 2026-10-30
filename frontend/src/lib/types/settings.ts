@@ -154,6 +154,12 @@ export interface SettingState {
 	envName: string;
 }
 
+export type MixedSettingValue = {
+	label: string;
+	environments: string[];
+	apply: () => void;
+};
+
 export interface SettingsRuntime {
 	frontendTracingEnabled?: boolean;
 	frontendMetricsEnabled?: boolean;

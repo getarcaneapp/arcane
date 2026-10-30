@@ -6,7 +6,7 @@
 
 	import type { useEnvironmentSettingsScope } from '#lib/hooks/use-environment-settings-scope.svelte.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { SettingKey } from '#lib/types/settings.js';
+	import type { MixedSettingValue, SettingKey } from '#lib/types/settings.js';
 	import { changedFields } from '#lib/utils/payload.js';
 	import { createSettingsForm } from '#lib/utils/settings-form.js';
 
@@ -71,9 +71,27 @@
 		onReset: () => toast.info(m.changes_reset())
 	});
 
-	function mixed(key: SettingKey): boolean {
+	function mixed(key: SettingKey): MixedSettingValue[] | undefined {
 		const formKey = key as SettingsFormKey;
-		return mixedKeys.includes(formKey) && formInputs[formKey]?.value === currentSettings[formKey];
+		if (!mixedKeys.includes(formKey) || formInputs[formKey]?.value !== currentSettings[formKey]) return undefined;
+		const groups = new Map<unknown, string[]>();
+		for (const { environment, settings: environmentSettings } of scope.entries) {
+			const value = environmentSettings.values[key];
+			groups.set(value, [...(groups.get(value) ?? []), environment.name]);
+		}
+		return [...groups].map(([value, environments]) => {
+			let label = String(value ?? '') || m.not_set();
+			if (typeof value === 'boolean') label = value ? m.common_enabled() : m.common_disabled();
+			if (settings.meta[key]?.sensitive) label = m.hidden();
+			return {
+				label,
+				environments,
+				apply: () => {
+					const input = formInputs[formKey];
+					if (input) input.value = value as never;
+				}
+			};
+		});
 	}
 </script>
 
