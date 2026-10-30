@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { z } from 'zod/v4';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -33,16 +34,16 @@
 		permissions: z.array(z.string()).min(1, m.pick_at_least_one_permission())
 	});
 
-	const formData = $derived({
-		name: role?.name ?? '',
-		description: role?.description ?? '',
-		permissions: normalizePermissionSelection(manifest, role?.permissions ?? [])
-	});
+	const form = createForm<typeof formSchema>(
+		formSchema,
+		untrack(() => ({
+			name: role?.name ?? '',
+			description: role?.description ?? '',
+			permissions: normalizePermissionSelection(manifest, role?.permissions ?? [])
+		}))
+	);
 
-	const form = $derived(createForm<typeof formSchema>(formSchema, formData));
-	let inputs = $derived(form.inputs);
-
-	const selectedCount = $derived(inputs.permissions?.value?.length ?? 0);
+	const selectedCount = $derived(form.inputs.permissions?.value?.length ?? 0);
 
 	function handleSubmit() {
 		if (isBuiltIn) return;
@@ -61,30 +62,30 @@
 		{#snippet actions()}
 			<Badge variant={isBuiltIn ? 'blue' : 'green'} size="sm">{isBuiltIn ? m.roles_built_in() : m.custom()}</Badge>
 		{/snippet}
-		<SettingsRow for="role-name" label={m.common_name()} error={inputs.name.error}>
+		<SettingsRow for="role-name" label={m.common_name()} error={form.inputs.name.error}>
 			<Input
 				id="role-name"
 				placeholder={m.roles_name_placeholder()}
 				disabled={isBuiltIn || isLoading}
-				bind:value={inputs.name.value}
-				aria-invalid={!!inputs.name.error}
+				bind:value={form.inputs.name.value}
+				aria-invalid={!!form.inputs.name.error}
 			/>
 		</SettingsRow>
-		<SettingsRow for="role-description" label={m.common_description()} error={inputs.description.error}>
+		<SettingsRow for="role-description" label={m.common_description()} error={form.inputs.description.error}>
 			<Input
 				id="role-description"
 				placeholder={m.roles_description_placeholder()}
 				disabled={isBuiltIn || isLoading}
-				bind:value={inputs.description.value}
-				aria-invalid={!!inputs.description.error}
+				bind:value={form.inputs.description.value}
+				aria-invalid={!!form.inputs.description.error}
 			/>
 		</SettingsRow>
 		<div class="flex flex-col gap-3 px-5 py-4">
 			<p class="text-xs text-muted-foreground">
 				{m.roles_permissions_count({ count: selectedCount, total: totalPermissions })}
 			</p>
-			{#if inputs.permissions?.error}
-				<p class="text-xs font-medium text-destructive">{inputs.permissions.error}</p>
+			{#if form.inputs.permissions?.error}
+				<p class="text-xs font-medium text-destructive">{form.inputs.permissions.error}</p>
 			{/if}
 			{#if isBuiltIn}
 				<p class="text-xs text-muted-foreground">{m.roles_built_in_note()}</p>
@@ -116,6 +117,6 @@
 	</SettingsSection>
 
 	<div>
-		<PermissionPicker {manifest} bind:selected={inputs.permissions.value} disabled={isBuiltIn || isLoading} />
+		<PermissionPicker {manifest} bind:selected={form.inputs.permissions.value} disabled={isBuiltIn || isLoading} />
 	</div>
 </form>

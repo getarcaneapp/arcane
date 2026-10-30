@@ -8,7 +8,7 @@ export const LOCAL_DOCKER_ENVIRONMENT_ID = '0';
 export type EnvironmentRef = Pick<Environment, 'id' | 'name'>;
 
 function createEnvironmentManagementStore() {
-	let _availableEnvironments = $state<Environment[]>([]);
+	let _availableEnvironments = $state.raw<Environment[]>([]);
 	let _initialized = false;
 	const _availableListeners = new Set<(environments: Environment[]) => void>();
 

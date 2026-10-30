@@ -89,7 +89,6 @@
 	async function completeUserEdit(username: string) {
 		toast.success(m.common_update_success({ resource: `${m.resource_user()} "${username}"` }));
 		isDialogOpen.edit = false;
-		userToEdit = null;
 		await queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
 	}
 
@@ -296,15 +295,17 @@
 			isLoading={isLoading.creating}
 		/>
 
-		<UserFormSheet
-			bind:open={isDialogOpen.edit}
-			bind:userToEdit
-			roles={data.roles}
-			environments={data.environments}
-			availableRoleAssignments={editingAssignments}
-			onSubmit={handleUserSubmit}
-			isLoading={isLoading.editing}
-			allowUsernameEdit={true}
-		/>
+		{#key userToEdit?.id ?? 'new'}
+			<UserFormSheet
+				bind:open={isDialogOpen.edit}
+				{userToEdit}
+				roles={data.roles}
+				environments={data.environments}
+				availableRoleAssignments={editingAssignments}
+				onSubmit={handleUserSubmit}
+				isLoading={isLoading.editing}
+				allowUsernameEdit={true}
+			/>
+		{/key}
 	{/snippet}
 </SettingsPageLayout>

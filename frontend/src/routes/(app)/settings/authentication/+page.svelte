@@ -98,7 +98,6 @@
 					toast.success(m.common_update_success({ resource: m.resource_oidc_mapping_cap() }));
 					await queryClient.invalidateQueries({ queryKey: queryKeys.oidcMappings.all });
 					mappingSheetOpen = false;
-					editingMapping = null;
 				}
 			});
 		} else {
@@ -585,13 +584,15 @@
 			</AlertDialog.Content>
 		</AlertDialog.Root>
 
-		<OidcMappingFormSheet
-			bind:open={mappingSheetOpen}
-			mappingToEdit={editingMapping}
-			isLoading={mappingSaving}
-			roles={data.roles}
-			environments={data.environments}
-			onSubmit={submitMapping}
-		/>
+		{#key editingMapping?.id ?? 'new'}
+			<OidcMappingFormSheet
+				bind:open={mappingSheetOpen}
+				mappingToEdit={editingMapping}
+				isLoading={mappingSaving}
+				roles={data.roles}
+				environments={data.environments}
+				onSubmit={submitMapping}
+			/>
+		{/key}
 	{/snippet}
 </SettingsPageLayout>

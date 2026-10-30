@@ -5,6 +5,7 @@ import { clientStream } from '#lib/stores/client-stream.svelte.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import type { Environment } from '#lib/types/environment.js';
+import { createAbortLifecycle } from '#lib/utils/abort-lifecycle.js';
 
 type EnvironmentStreamEvent = {
 	type: string;
@@ -20,10 +21,7 @@ type EnvironmentStreamEvent = {
  * frozen at whatever the root layout load happened to see.
  */
 function createEnvironmentStatusStoreInternal() {
-	let started = false;
-	let lifecycleGeneration = 0;
-
-	let unsubscribeChannels: (() => void)[] = [];
+	const lifecycle = createAbortLifecycle();
 
 	return {
 		get streamConnected(): boolean {
@@ -32,40 +30,43 @@ function createEnvironmentStatusStoreInternal() {
 		get streamFailed(): boolean {
 			return clientStream.streamFailed;
 		},
-		async start() {
-			if (!browser || started) {
+		start() {
+			if (!browser || lifecycle.active) {
 				return;
 			}
-			started = true;
-			const generation = ++lifecycleGeneration;
-			// The first snapshot replaces the list, so wait for the load-time
-			// list to land or the two would race on an empty store.
-			await environmentStore.ready;
-			if (generation !== lifecycleGeneration) {
-				return;
-			}
-			unsubscribeChannels = [
-				clientStream.subscribe(STREAM_CHANNEL_ENVIRONMENTS, {
-					onEvent: (payload) => {
-						const event = payload as EnvironmentStreamEvent;
-						if (event.type !== 'snapshot' || !event.environments) {
-							return;
-						}
-						for (const environmentId of environmentStore.applyLiveEnvironments(event.environments)) {
-							void featureStore.refresh(environmentId);
-							clientStream.invalidateEnvironment(environmentId);
-						}
+			lifecycle.start((signal) => {
+				void environmentStore.ready.then(() => {
+					if (signal.aborted) {
+						return;
 					}
-				}),
-				clientStream.watchChanges()
-			];
+					const unsubscribers = [
+						clientStream.subscribe(STREAM_CHANNEL_ENVIRONMENTS, {
+							onEvent: (payload) => {
+								const event = payload as EnvironmentStreamEvent;
+								if (event.type !== 'snapshot' || !event.environments) {
+									return;
+								}
+								for (const environmentId of environmentStore.applyLiveEnvironments(event.environments)) {
+									void featureStore.refresh(environmentId);
+									clientStream.invalidateEnvironment(environmentId);
+								}
+							}
+						}),
+						clientStream.watchChanges()
+					];
+					signal.addEventListener(
+						'abort',
+						() => {
+							for (const unsubscribe of unsubscribers) unsubscribe();
+						},
+						{ once: true }
+					);
+				});
+			});
 		},
 		stop() {
-			const wasStarted = started;
-			started = false;
-			lifecycleGeneration += 1;
-			for (const unsubscribe of unsubscribeChannels) unsubscribe();
-			unsubscribeChannels = [];
+			const wasStarted = lifecycle.active;
+			lifecycle.stop();
 			return wasStarted;
 		}
 	};

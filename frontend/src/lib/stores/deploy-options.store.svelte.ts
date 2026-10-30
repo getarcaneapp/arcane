@@ -51,23 +51,23 @@ function persistState() {
 	};
 }
 
-settingsStore.onChange((settings) => {
-	if (!settings || userOverrodePullPolicy.current) {
-		return;
+const pullPolicy = $derived.by((): DeployPullPolicy => {
+	const settingsDefault = settingsStore.current?.defaultDeployPullPolicy;
+	if (userOverrodePullPolicy.current || !isDeployPullPolicy(settingsDefault)) {
+		return state.pullPolicy;
 	}
-
-	if (isDeployPullPolicy(settings.defaultDeployPullPolicy)) {
-		state.pullPolicy = settings.defaultDeployPullPolicy;
-		persistState();
-	}
+	return settingsDefault;
 });
 
 export const deployOptionsStore = {
 	get current(): DeployOptionsState {
-		return state;
+		return {
+			...state,
+			pullPolicy
+		};
 	},
 	get pullPolicy(): DeployPullPolicy {
-		return state.pullPolicy;
+		return pullPolicy;
 	},
 	get forceRecreate(): boolean {
 		return state.forceRecreate;
@@ -107,7 +107,7 @@ export const deployOptionsStore = {
 	// deploying a batch must take one snapshot for the whole batch.
 	takeRequestOptions(): DeployOptionsState {
 		const options = {
-			pullPolicy: state.pullPolicy,
+			pullPolicy,
 			forceRecreate: state.forceRecreate,
 			removeOrphans: state.removeOrphans,
 			recreateVolumes: state.recreateVolumes

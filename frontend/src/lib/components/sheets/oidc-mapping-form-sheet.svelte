@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { z } from 'zod/v4';
 
 	import FormInput from '#lib/components/form/form-input.svelte';
@@ -37,14 +38,15 @@
 		environmentId: z.string()
 	});
 
-	const formData = $derived({
-		claimValue: mappingToEdit?.claimValue ?? '',
-		roleId: mappingToEdit?.roleId ?? roles[0]?.id ?? '',
-		environmentId: mappingToEdit?.environmentId ?? GLOBAL_ENVIRONMENT_OPTION_ID
-	});
+	function formValues() {
+		return {
+			claimValue: mappingToEdit?.claimValue ?? '',
+			roleId: mappingToEdit?.roleId ?? roles[0]?.id ?? '',
+			environmentId: mappingToEdit?.environmentId ?? GLOBAL_ENVIRONMENT_OPTION_ID
+		};
+	}
 
-	const form = $derived(createForm<typeof formSchema>(formSchema, formData));
-	let inputs = $derived(form.inputs);
+	const form = createForm<typeof formSchema>(formSchema, untrack(formValues));
 
 	function handleSubmit() {
 		const data = form.validate();
@@ -58,6 +60,9 @@
 
 	function handleOpenChange(newOpenState: boolean) {
 		open = newOpenState;
+		if (!newOpenState) {
+			form.reset(formValues());
+		}
 	}
 </script>
 
@@ -76,7 +81,7 @@
 				type="text"
 				placeholder={m.oidc_mappings_claim_placeholder()}
 				disabled={isLoading}
-				bind:input={inputs.claimValue}
+				bind:input={form.inputs.claimValue}
 			/>
 
 			<RoleScopeSelects
@@ -85,9 +90,9 @@
 				scopeLabel={m.oidc_mappings_scope_label()}
 				{roles}
 				{envOptions}
-				bind:roleValue={inputs.roleId.value}
-				bind:environmentValue={inputs.environmentId.value}
-				roleError={inputs.roleId.error}
+				bind:roleValue={form.inputs.roleId.value}
+				bind:environmentValue={form.inputs.environmentId.value}
+				roleError={form.inputs.roleId.error}
 				roleSelectedLabel={selectedLabel.role}
 				envSelectedLabel={selectedLabel.environment}
 				disabled={isLoading}
@@ -99,6 +104,7 @@
 	{#snippet footer()}
 		<SheetFooterActions
 			bind:open
+			onCancel={() => handleOpenChange(false)}
 			cancelDisabled={isLoading}
 			submitAction={isEditMode ? 'save' : 'create'}
 			submitDisabled={isLoading}

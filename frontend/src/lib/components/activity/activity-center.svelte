@@ -20,9 +20,13 @@
 
 	const isMobile = new IsMobile();
 
-	// "Open full view" from the tray shows the inspector until the center closes.
-	let expanded = $state(false);
-	let anchor = $state<Anchor>(FALLBACK_ANCHOR);
+	let expanded = $derived.by(() => {
+		void activityStore.open;
+		return false;
+	});
+	const anchor: Anchor = {
+		getBoundingClientRect: () => (visibleTriggerInternal() ?? FALLBACK_ANCHOR).getBoundingClientRect()
+	};
 
 	const layout = $derived.by(() => {
 		if (isMobile.current) return 'drawer';
@@ -33,14 +37,6 @@
 	onMount(() => {
 		void activityStore.start();
 		return () => activityStore.stop();
-	});
-
-	$effect(() => {
-		if (!activityStore.open) {
-			expanded = false;
-			return;
-		}
-		anchor = visibleTriggerInternal() ?? FALLBACK_ANCHOR;
 	});
 
 	function visibleTriggerInternal(): HTMLElement | null {

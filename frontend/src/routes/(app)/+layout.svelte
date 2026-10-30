@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/env';
 	import { goto, afterNavigate } from '$app/navigation';
-	import { page } from '$app/state';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -16,13 +15,11 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import BaseAPIService from '#lib/services/api-service.js';
 	import { environmentStatusStore } from '#lib/stores/environment-status.store.svelte.js';
-	import { featureStore } from '#lib/stores/features.store.svelte.js';
 	import { upgradeJobStore } from '#lib/stores/upgrade-job.store.svelte.js';
 	import userStore, { userHasPermissionInAnyEnvironment } from '#lib/stores/user-store.svelte.js';
 	import { versionStore } from '#lib/stores/version.store.svelte.js';
 	import { cn } from '#lib/utils.js';
-	import { getAuthRedirectPath } from '#lib/utils/auth.js';
-	import { getEffectiveLandingPage, getEffectiveNavigationSettings, setMobileNavigation } from '#lib/utils/navigation.js';
+	import { getEffectiveNavigationSettings, setMobileNavigation } from '#lib/utils/navigation.js';
 	import { isEditableTarget, matchesShortcutEvent } from '#lib/utils/navigation.js';
 
 	import type { LayoutProps } from './$types';
@@ -31,7 +28,6 @@
 	const versionInformation = $derived(versionStore.current ?? data.versionInformation);
 	const user = $derived(data.user);
 	const permissionsManifest = $derived(data.permissionsManifest);
-	const permissionsManifestLoadFailed = $derived(data.permissionsManifestLoadFailed);
 	const swarmEnabled = $derived(data.swarmEnabled);
 	const podmanStatuses = $derived(data.podmanStatuses);
 	const canReadActivities = $derived(userHasPermissionInAnyEnvironment(user, 'activities:read'));
@@ -101,16 +97,6 @@
 		});
 	});
 
-	const authRedirectPath = $derived(
-		getAuthRedirectPath(page.url.pathname, user, permissionsManifest, permissionsManifestLoadFailed, getEffectiveLandingPage())
-	);
-
-	$effect(() => {
-		if (authRedirectPath) {
-			goto(authRedirectPath!);
-		}
-	});
-
 	if (browser) {
 		afterNavigate((event) => {
 			if (!event.from) {
@@ -141,11 +127,7 @@
 	}
 </script>
 
-<svelte:window
-	onkeydown={handleNavigationShortcut}
-	onfocus={() => void featureStore.refreshKnown()}
-	ononline={() => void featureStore.refreshKnown()}
-/>
+<svelte:window onkeydown={handleNavigationShortcut} />
 
 <Sidebar.Provider class={isMobile.current ? 'h-auto min-h-dvh' : undefined}>
 	{#if !isMobile.current}

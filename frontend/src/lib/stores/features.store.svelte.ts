@@ -1,13 +1,24 @@
-import type { QueryClient } from '@tanstack/svelte-query';
+import { QueryObserver, type QueryClient } from '@tanstack/svelte-query';
 
+import { queryKeys } from '#lib/query/query-keys.js';
 import { settingsService } from '#lib/services/settings-service.js';
 import type { EnvironmentFeatures, FeatureID } from '#lib/types/features.js';
+import type { ResolvedSettings } from '#lib/types/settings.js';
 import { isFeatureEnabled, isSwarmFeatureEnabled, isVulnerabilityQuery, resolveFeatures } from '#lib/utils/features.js';
 
 let environments = $state.raw<Record<string, EnvironmentFeatures>>({});
-const requests = new Map<string, Promise<void>>();
-const controllers = new Map<string, AbortController>();
+const unsubscribers = new Map<string, () => void>();
+const appliedAt = new Map<string, number>();
 let queryClient: QueryClient | undefined;
+
+function featureQuery(environmentId: string) {
+	return {
+		queryKey: queryKeys.settings.public(environmentId),
+		queryFn: ({ signal }: { signal: AbortSignal }) => settingsService.getPublicSettingsForEnvironment(environmentId, signal),
+		retry: false,
+		retryOnMount: false
+	};
+}
 
 async function clearVulnerabilityQueries(environmentId: string): Promise<void> {
 	if (!queryClient) return;
@@ -16,59 +27,55 @@ async function clearVulnerabilityQueries(environmentId: string): Promise<void> {
 	queryClient.removeQueries(filters);
 }
 
-async function markUnavailable(environmentId: string): Promise<void> {
-	controllers.get(environmentId)?.abort();
-	controllers.delete(environmentId);
-	requests.delete(environmentId);
+async function setUnavailable(environmentId: string): Promise<void> {
 	environments = { ...environments, [environmentId]: { status: 'unavailable', features: {} } };
 	await clearVulnerabilityQueries(environmentId);
 }
 
-async function load(environmentId: string, force = false): Promise<void> {
-	if (!force) {
-		const pending = requests.get(environmentId);
-		if (pending) return pending;
-		// An unavailable environment stays settled until a forced refresh, such as its reconnect.
-		const status = environments[environmentId]?.status;
-		if (status === 'ready' || status === 'unavailable') return;
+async function markUnavailable(environmentId: string): Promise<void> {
+	await queryClient?.cancelQueries({ queryKey: queryKeys.settings.public(environmentId), exact: true });
+	await setUnavailable(environmentId);
+}
+
+async function apply(environmentId: string): Promise<void> {
+	const state = queryClient?.getQueryState<ResolvedSettings>(queryKeys.settings.public(environmentId));
+	const updatedAt = Math.max(state?.dataUpdatedAt ?? 0, state?.errorUpdatedAt ?? 0);
+	if (!state || updatedAt === 0 || appliedAt.get(environmentId) === updatedAt) return;
+	appliedAt.set(environmentId, updatedAt);
+	if (state.status === 'error' || !state.data) {
+		await setUnavailable(environmentId);
+		return;
 	}
-	controllers.get(environmentId)?.abort();
-	const controller = new AbortController();
-	controllers.set(environmentId, controller);
-	if (!environments[environmentId]) {
+	const features = resolveFeatures(state.data.values);
+	environments = { ...environments, [environmentId]: features };
+	if (!isFeatureEnabled(features, 'vulnerabilityManagement')) await clearVulnerabilityQueries(environmentId);
+}
+
+function observe(client: QueryClient, environmentId: string) {
+	if (unsubscribers.has(environmentId)) return;
+	const observer = new QueryObserver(client, featureQuery(environmentId));
+	unsubscribers.set(
+		environmentId,
+		observer.subscribe(() => void apply(environmentId))
+	);
+}
+
+async function load(environmentId: string, force = false): Promise<void> {
+	const status = environments[environmentId]?.status;
+	if (!force && (status === 'ready' || status === 'unavailable')) return;
+	if (!queryClient) return;
+	if (!status) {
 		environments = { ...environments, [environmentId]: { status: 'loading', features: {} } };
 	}
-	const request = (async () => {
-		try {
-			const settings = await settingsService.getPublicSettingsForEnvironment(environmentId, controller.signal);
-			if (controller.signal.aborted) return;
-			const state = resolveFeatures(settings.values);
-			environments = { ...environments, [environmentId]: state };
-			if (!isFeatureEnabled(state, 'vulnerabilityManagement')) await clearVulnerabilityQueries(environmentId);
-		} catch {
-			if (controller.signal.aborted) return;
-			await markUnavailable(environmentId);
-		} finally {
-			if (controllers.get(environmentId) === controller) {
-				requests.delete(environmentId);
-				controllers.delete(environmentId);
-			}
-		}
-	})();
-	requests.set(environmentId, request);
-	await request;
-	while (controller.signal.aborted) {
-		const replacement = requests.get(environmentId);
-		if (!replacement || replacement === request) break;
-		await replacement;
-	}
+	await queryClient.query({ ...featureQuery(environmentId), ...(force ? { staleTime: 0 } : {}) }).catch(() => undefined);
+	observe(queryClient, environmentId);
+	await apply(environmentId);
 }
 
 export const featureStore = {
 	load,
 	markUnavailable,
 	refresh: (environmentId: string) => load(environmentId, true),
-	refreshKnown: () => Promise.all(Object.keys(environments).map((id) => load(id, true))),
 	status: (environmentId: string) => environments[environmentId]?.status ?? 'loading',
 	isEnabled: (id: FeatureID, environmentId: string) => isFeatureEnabled(environments[environmentId], id),
 	isSwarmEnabled: (environmentId: string, swarmActive: boolean) =>
@@ -79,9 +86,9 @@ export const featureStore = {
 		queryClient = client;
 	},
 	clear() {
-		for (const controller of controllers.values()) controller.abort();
-		controllers.clear();
-		requests.clear();
+		for (const unsubscribe of unsubscribers.values()) unsubscribe();
+		unsubscribers.clear();
+		appliedAt.clear();
 		environments = {};
 	}
 };

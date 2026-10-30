@@ -100,9 +100,7 @@
 		name: z.string().min(1, m.common_field_required({ field: m.common_name() }))
 	});
 
-	let formData = $derived({ name: '' });
-	let form = $derived(createForm<typeof formSchema>(formSchema, formData));
-	let inputs = $derived(form.inputs);
+	const form = createForm<typeof formSchema>(formSchema, { name: '' });
 
 	async function loadTargetOptions(type: WebhookTargetType, envId: string) {
 		if (type === 'updater') {
@@ -210,7 +208,7 @@
 				type="text"
 				placeholder={m.webhook_name_placeholder()}
 				description={m.webhook_name_description()}
-				bind:input={inputs.name}
+				bind:input={form.inputs.name}
 			/>
 
 			<SelectWithLabel

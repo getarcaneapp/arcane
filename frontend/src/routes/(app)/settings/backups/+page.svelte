@@ -397,7 +397,10 @@
 	}
 	onMount(() => {
 		mounted = true;
-		return userStore.onChange(() => {
+	});
+	$effect(() => {
+		userStore.current;
+		untrack(() => {
 			void discoverStoredBackups();
 		});
 	});

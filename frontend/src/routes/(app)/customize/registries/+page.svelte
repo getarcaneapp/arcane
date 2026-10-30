@@ -160,12 +160,14 @@
 	{/snippet}
 
 	{#snippet additionalContent()}
-		<ContainerRegistryFormSheet
-			bind:open={isRegistryDialogOpen}
-			bind:registryToEdit
-			onSubmit={handleRegistryDialogSubmit}
-			isLoading={saveRegistryMutation.isPending}
-		/>
+		{#key registryToEdit?.id ?? 'new'}
+			<ContainerRegistryFormSheet
+				bind:open={isRegistryDialogOpen}
+				{registryToEdit}
+				onSubmit={handleRegistryDialogSubmit}
+				isLoading={saveRegistryMutation.isPending}
+			/>
+		{/key}
 
 		<Dialog.Root bind:open={isInfoDialogOpen}>
 			<Dialog.Content class="max-w-2xl">

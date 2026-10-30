@@ -538,16 +538,6 @@
 
 	$effect(() => {
 		const environmentsToLoad = loadableEnvironmentCards.map(({ environment }) => environment);
-
-		untrack(() => {
-			for (const environment of environmentsToLoad) {
-				ensureEnvironmentLiveStats(environment);
-				void featureStore.load(environment.id);
-			}
-		});
-	});
-
-	$effect(() => {
 		const activeEnvironmentIds = liveStatsEnvironmentIds;
 
 		untrack(() => {
@@ -555,6 +545,10 @@
 				if (!activeEnvironmentIds.has(environmentId)) {
 					removeEnvironmentLiveStats(environmentId);
 				}
+			}
+			for (const environment of environmentsToLoad) {
+				ensureEnvironmentLiveStats(environment);
+				void featureStore.load(environment.id);
 			}
 		});
 	});

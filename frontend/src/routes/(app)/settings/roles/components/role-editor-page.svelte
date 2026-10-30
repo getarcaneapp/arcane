@@ -19,6 +19,8 @@
 
 <SettingsPageLayout {title} description={m.roles_subtitle()} icon={ShieldAlertIcon} pageType="form">
 	{#snippet mainContent()}
-		<RoleEditor {role} {manifest} {isLoading} {onSubmit} {onClone} />
+		{#key role?.id ?? 'new'}
+			<RoleEditor {role} {manifest} {isLoading} {onSubmit} {onClone} />
+		{/key}
 	{/snippet}
 </SettingsPageLayout>
