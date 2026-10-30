@@ -402,6 +402,7 @@ var expectedSettingKeys = []string{
 	"updateCheckEnabled",
 	"updateCheckRegistry",
 	"upgradeLogRetentionDays",
+	"upgradeMaxParallelAgents",
 	"volumeHelperIdleTimeout",
 	"volumeWorkspaceMaxDepth",
 	"volumeWorkspaceMaxEntries",
