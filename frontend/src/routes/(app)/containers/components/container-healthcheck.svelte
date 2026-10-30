@@ -2,6 +2,8 @@
 	import { KeyValueCard } from '#lib/components/resource-detail/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
+	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
+	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { HealthIcon, SettingsIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { ContainerDetailsDto, ContainerHealthLogEntry, ContainerHealthcheckDto } from '#lib/types/docker.js';
@@ -68,6 +70,11 @@
 		if (head === 'CMD') return { type: 'cmd', text: rest.join(' ') };
 		return { type: 'cmd', text: test.join(' ') };
 	});
+
+	const testCommandLines = useHighlightedCode(
+		() => testCommand.text,
+		() => 'shell'
+	);
 
 	// Estimate the next probe time: lastProbe.end + interval (clamped to "now" if overdue).
 	const nextCheck = $derived.by<{ at: Temporal.Instant; overdue: boolean } | null>(() => {
@@ -176,9 +183,13 @@
 							{m.health_disabled_in_image()}
 						</div>
 					{:else}
-						<pre
-							class="cursor-pointer rounded-md bg-black/5 p-2 font-mono text-sm break-all whitespace-pre-wrap text-foreground select-all dark:bg-white/5"
-							title={m.common_click_to_select()}>{testCommand.text}</pre>
+						<CodeBlock.Root>
+							<CodeBlock.Content wrap class="cursor-pointer select-all" title={m.common_click_to_select()}>
+								{#each testCommandLines.current as line, index (index)}
+									<CodeBlock.Line code={line} />
+								{/each}
+							</CodeBlock.Content>
+						</CodeBlock.Root>
 					{/if}</KeyValueCard
 				>
 
@@ -253,8 +264,9 @@
 										{/if}
 									</div>
 									{#if probe.output && expanded[key]}
-										<pre
-											class="max-h-64 overflow-auto rounded-md bg-black/5 p-2 font-mono text-xs whitespace-pre-wrap text-foreground dark:bg-white/5">{probe.output}</pre>
+										<CodeBlock.Root size="sm">
+											<CodeBlock.Content wrap code={probe.output} class="max-h-64" />
+										</CodeBlock.Root>
 									{/if}
 								</div>
 							</Card.Content>

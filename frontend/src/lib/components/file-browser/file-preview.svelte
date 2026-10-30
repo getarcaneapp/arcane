@@ -1,10 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 
+	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import * as Sheet from '#lib/components/ui/sheet/index.js';
+	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { LoadingSpinnerIcon } from '#lib/icons/index.js';
 	import type { FileEntry } from '#lib/types/shared.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
+	import { workspaceFileLanguage } from '#lib/utils/workspace-files.js';
 
 	let { file, fetchContent, onClose }: { file: FileEntry; fetchContent: (path: string) => Promise<string>; onClose: () => void } =
 		$props();
@@ -12,6 +15,11 @@
 	let content = $state<string | null>(null);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
+
+	const contentLines = useHighlightedCode(
+		() => content ?? '',
+		() => workspaceFileLanguage(file.path)
+	);
 
 	function b64DecodeUnicode(str: string) {
 		try {
@@ -66,7 +74,13 @@
 					{error}
 				</div>
 			{:else}
-				<pre class="w-full rounded bg-muted p-4 font-mono text-xs break-all whitespace-pre-wrap">{content}</pre>
+				<CodeBlock.Root size="sm">
+					<CodeBlock.Content wrap>
+						{#each contentLines.current as line, index (index)}
+							<CodeBlock.Line code={line} />
+						{/each}
+					</CodeBlock.Content>
+				</CodeBlock.Root>
 			{/if}
 		</div>
 	</Sheet.Content>

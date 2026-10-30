@@ -10,8 +10,10 @@
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import { TabBar, type TabItem } from '#lib/components/tab-bar/index.js';
 	import * as Card from '#lib/components/ui/card/index.js';
+	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
+	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
 	import { LayersIcon, DockIcon, JobsIcon, TrashIcon, EditIcon, FileTextIcon } from '#lib/icons/index.js';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
@@ -65,6 +67,10 @@
 			iconClass: key === 'compose' ? 'text-info' : 'text-success',
 			pending: false
 		}))
+	);
+	const sourceLines = useHighlightedCode(
+		() => (activeSourceTab === 'compose' ? (source?.composeContent ?? '') : (source?.envContent ?? '')),
+		() => (activeSourceTab === 'compose' ? 'yaml' : 'env')
 	);
 	const sourceWorkspaceLeadingRows = [
 		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-info', locked: true },
@@ -335,39 +341,19 @@
 												onClose={closeSourceTab}
 											/>
 											<div class="relative min-h-0 flex-1">
-												{#await import('#lib/components/code-editor/editor.svelte')}
-													<p class="p-4 text-sm text-muted-foreground">{m.common_loading()}</p>
-												{:then { default: CodeEditor }}
-													{#key activeSourceTab}
-														{#if activeSourceTab === 'compose'}
-															<div class="absolute inset-0 min-h-0 w-full min-w-0">
-																<CodeEditor
-																	value={stackSource.composeContent}
-																	language="yaml"
-																	readOnly={true}
-																	fontSize="13px"
-																	fileId={`swarm-stack-source:${stackName}:compose.yaml`}
-																/>
-															</div>
-														{:else if stackSource.envContent?.trim()}
-															<div class="absolute inset-0 min-h-0 w-full min-w-0">
-																<CodeEditor
-																	value={stackSource.envContent}
-																	language="env"
-																	readOnly={true}
-																	fontSize="13px"
-																	fileId={`swarm-stack-source:${stackName}:.env`}
-																/>
-															</div>
-														{:else}
-															<div class="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
-																No saved `.env` file was stored for this stack.
-															</div>
-														{/if}
-													{/key}
-												{:catch}
-													<p class="p-4 text-sm text-destructive">{m.code_editor_load_failed()}</p>
-												{/await}
+												{#if activeSourceTab === 'compose' || stackSource.envContent?.trim()}
+													<CodeBlock.Root variant="ghost" class="absolute inset-0">
+														<CodeBlock.Content lineNumbers class="flex-1">
+															{#each sourceLines.current as line, index (index)}
+																<CodeBlock.Line code={line} />
+															{/each}
+														</CodeBlock.Content>
+													</CodeBlock.Root>
+												{:else}
+													<div class="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
+														No saved `.env` file was stored for this stack.
+													</div>
+												{/if}
 											</div>
 										</div>
 									{/snippet}
