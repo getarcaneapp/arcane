@@ -1,7 +1,6 @@
 package user
 
 import (
-	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -69,18 +68,20 @@ var (
 	ErrInsufficientPrivilege = errors.New("insufficient privilege to modify this user")
 )
 
-var dashboardWidgetSpans = map[string]struct{ minSpan, maxSpan, defaultSpan int }{
-	"healthy":          {minSpan: 2, maxSpan: 12, defaultSpan: 3},
-	"attentionCount":   {minSpan: 2, maxSpan: 12, defaultSpan: 3},
-	"updates":          {minSpan: 2, maxSpan: 12, defaultSpan: 2},
-	"risk":             {minSpan: 2, maxSpan: 12, defaultSpan: 2},
-	"reclaimableTotal": {minSpan: 2, maxSpan: 12, defaultSpan: 2},
-	"environments":     {minSpan: 6, maxSpan: 12, defaultSpan: 12},
-	"attention":        {minSpan: 4, maxSpan: 12, defaultSpan: 6},
-	"activity":         {minSpan: 4, maxSpan: 12, defaultSpan: 6},
-	"jobs":             {minSpan: 3, maxSpan: 12, defaultSpan: 4},
-	"reclaimable":      {minSpan: 3, maxSpan: 12, defaultSpan: 4},
-	"memory":           {minSpan: 3, maxSpan: 12, defaultSpan: 4},
+const dashboardColumns = 12
+
+var dashboardWidgetSizes = map[string]struct{ minW, minH, maxH int }{
+	"healthy":          {minW: 2, minH: 2, maxH: 4},
+	"attentionCount":   {minW: 2, minH: 2, maxH: 4},
+	"updates":          {minW: 2, minH: 2, maxH: 4},
+	"risk":             {minW: 2, minH: 2, maxH: 4},
+	"reclaimableTotal": {minW: 2, minH: 2, maxH: 4},
+	"environments":     {minW: 6, minH: 3, maxH: 12},
+	"attention":        {minW: 4, minH: 4, maxH: 12},
+	"activity":         {minW: 4, minH: 4, maxH: 12},
+	"jobs":             {minW: 3, minH: 3, maxH: 12},
+	"reclaimable":      {minW: 3, minH: 3, maxH: 12},
+	"memory":           {minW: 3, minH: 3, maxH: 12},
 }
 
 func NewUserService(db *database.DB, roleService *role.RoleService, revokeSessionsExcept func(context.Context, *gorm.DB, string, string) error) *UserService {
@@ -320,18 +321,22 @@ func (s *UserService) UpdateUser(ctx context.Context, localUser *User, actorPerm
 		return nil, err
 	}
 	if layout := localUser.Preferences.DashboardLayout; layout != nil {
-		widgets := make([]types.DashboardWidgetLayout, 0, len(dashboardWidgetSpans))
+		widgets := make([]types.DashboardWidgetLayout, 0, len(dashboardWidgetSizes))
 		for _, widget := range *layout {
-			spans, known := dashboardWidgetSpans[widget.ID]
+			sizes, known := dashboardWidgetSizes[widget.ID]
 			duplicate := slices.ContainsFunc(widgets, func(existing types.DashboardWidgetLayout) bool {
 				return existing.ID == widget.ID
 			})
 			if !known || duplicate {
 				continue
 			}
+			width := min(max(widget.W, sizes.minW), dashboardColumns)
 			widgets = append(widgets, types.DashboardWidgetLayout{
 				ID:     widget.ID,
-				Span:   min(max(cmp.Or(widget.Span, spans.defaultSpan), spans.minSpan), spans.maxSpan),
+				X:      min(max(widget.X, 0), dashboardColumns-width),
+				Y:      max(widget.Y, 0),
+				W:      width,
+				H:      min(max(widget.H, sizes.minH), sizes.maxH),
 				Hidden: widget.Hidden,
 			})
 		}
