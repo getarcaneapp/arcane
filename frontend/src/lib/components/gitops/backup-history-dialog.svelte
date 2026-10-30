@@ -2,6 +2,8 @@
 	import { createQuery } from '@tanstack/svelte-query';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
+	import type { CodeBlockLineVariant } from '#lib/components/ui/code-block/index.js';
 	import ResponsiveDialog from '#lib/components/ui/responsive-dialog/responsive-dialog.svelte';
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { m } from '#lib/paraglide/messages.js';
@@ -35,6 +37,21 @@
 	}));
 
 	const entries = $derived<GitOpsBackupHistoryEntry[]>(history.data?.entries ?? []);
+
+	function diffLines(patch: string): { code: string; variant: CodeBlockLineVariant }[] {
+		return (patch.endsWith('\n') ? patch.slice(0, -1) : patch).split('\n').map((line) => {
+			if (line.startsWith('+++') || line.startsWith('---')) {
+				return { code: line, variant: 'default' };
+			}
+			if (line.startsWith('+')) {
+				return { code: line.slice(1), variant: 'added' };
+			}
+			if (line.startsWith('-')) {
+				return { code: line.slice(1), variant: 'removed' };
+			}
+			return { code: line.startsWith(' ') ? line.slice(1) : line, variant: 'default' };
+		});
+	}
 
 	function firstLine(message: string): string {
 		return message.split('\n')[0] ?? message;
@@ -98,8 +115,13 @@
 										{#each revision.data?.diffs ?? [] as diff (diff.path)}
 											<div class="space-y-1">
 												<p class="font-mono text-xs font-medium break-all">{diff.path}</p>
-												<pre
-													class="overflow-x-auto rounded-md border border-border/50 bg-background p-3 font-mono text-xs leading-relaxed whitespace-pre">{diff.patch}</pre>
+												<CodeBlock.Root size="sm">
+													<CodeBlock.Content>
+														{#each diffLines(diff.patch) as line, index (index)}
+															<CodeBlock.Line code={line.code} variant={line.variant} />
+														{/each}
+													</CodeBlock.Content>
+												</CodeBlock.Root>
 											</div>
 										{/each}
 									</div>

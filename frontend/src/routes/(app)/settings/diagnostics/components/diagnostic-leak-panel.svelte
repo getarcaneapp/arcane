@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
 	import { AlertTriangleIcon, DownloadIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { GoroutineLeakReport } from '#lib/types/diagnostics.js';
@@ -128,8 +129,9 @@
 	{/if}
 
 	{#if profileText}
-		<pre
-			class="max-h-96 overflow-auto rounded-lg border border-border/60 bg-background p-3 font-mono text-2xs leading-relaxed">{profileText}</pre>
+		<CodeBlock.Root size="sm">
+			<CodeBlock.Content code={profileText} class="max-h-96" />
+		</CodeBlock.Root>
 	{:else if hasScan && count === 0}
 		<p class="text-sm text-muted-foreground">{m.diagnostics_leaks_empty()}</p>
 	{/if}

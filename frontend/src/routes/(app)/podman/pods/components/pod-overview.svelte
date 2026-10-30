@@ -7,6 +7,8 @@
 		type DetailMetaItem
 	} from '#lib/components/resource-detail/index.js';
 	import { Badge } from '#lib/components/ui/badge/index.js';
+	import * as CodeBlock from '#lib/components/ui/code-block/index.js';
+	import { useHighlightedCode } from '#lib/hooks/use-highlighted-code.svelte.js';
 	import { BoxIcon, ClockIcon, ContainersIcon, InfoIcon, RestartIcon, TagIcon, TerminalIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import type { PodmanPodInspect } from '#lib/types/podman.js';
@@ -44,6 +46,10 @@
 
 	const labels = $derived(Object.entries(pod.labels ?? {}));
 	const createCommand = $derived(pod.createCommand?.join(' ') ?? '');
+	const createCommandLines = useHighlightedCode(
+		() => createCommand,
+		() => 'shell'
+	);
 </script>
 
 <div class="space-y-6">
@@ -71,9 +77,13 @@
 
 	{#if createCommand}
 		<DetailSection title={m.podman_pod_create_command()} icon={TerminalIcon}>
-			<pre class="overflow-auto rounded-lg bg-muted/40 p-4 font-mono text-xs leading-relaxed whitespace-pre-wrap"><code
-					>{createCommand}</code
-				></pre>
+			<CodeBlock.Root size="sm">
+				<CodeBlock.Content wrap>
+					{#each createCommandLines.current as line, index (index)}
+						<CodeBlock.Line code={line} />
+					{/each}
+				</CodeBlock.Content>
+			</CodeBlock.Root>
 		</DetailSection>
 	{/if}
 </div>
