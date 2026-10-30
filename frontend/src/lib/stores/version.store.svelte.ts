@@ -34,7 +34,7 @@ function createVersionStoreInternal() {
 		},
 		seed(info: AppVersionInformation) {
 			loaded ??= info;
-			current = info;
+			if (snapshots === 0) current = info;
 		},
 		start() {
 			if (!browser || started) {
