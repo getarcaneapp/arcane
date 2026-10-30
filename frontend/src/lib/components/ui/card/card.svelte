@@ -64,7 +64,7 @@
 		onclick
 			? 'cursor-pointer [&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:bg-muted/60 [&:not(:has(button:hover,a:hover,[role=button]:hover))]:hover:shadow-sm'
 			: '',
-		interactive && 'transition hover:border-primary/30 hover:shadow-md',
+		interactive && 'hover-glow-card',
 		selected && 'border-primary/40 bg-primary/5',
 		className
 	)}
