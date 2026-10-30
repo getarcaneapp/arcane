@@ -1,10 +1,8 @@
 import { error } from '@sveltejs/kit';
 
-import { queryKeys } from '#lib/query/query-keys.js';
-import { imageService } from '#lib/services/image-service.js';
+import { imageDetailQuery } from '#lib/query/images.js';
 import { featureStore } from '#lib/stores/features.store.svelte.js';
 import type { ImageDetailSummaryDto } from '#lib/types/docker.js';
-import { parseImageRef } from '#lib/utils/docker.js';
 import { resolveDetailEnvironmentId } from '#lib/utils/environments.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -12,44 +10,16 @@ import type { PageLoad } from './$types';
 
 type ImageDetailData = {
 	envId: string;
+	imageId: string;
 	image: ImageDetailSummaryDto;
 	error?: string;
 };
 
 export const load: PageLoad = async ({ params, parent, url }): Promise<ImageDetailData> => {
-	const { queryClient } = await parent();
-	const envId = await resolveDetailEnvironmentId(url);
-
-	await featureStore.load(envId);
-	const { imageId } = params;
+	const [{ queryClient }, envId] = await Promise.all([parent(), resolveDetailEnvironmentId(url)]);
 
 	const operationResult = await tryCatch(
-		(async () => {
-			const image = await queryClient.query({
-				queryKey: queryKeys.images.detail(envId, imageId),
-				queryFn: () => imageService.getImageForEnvironment(envId, imageId)
-			});
-
-			if (!image) {
-				throw error(404, 'Image not found');
-			}
-
-			let repo = '<none>';
-			let tag = '<none>';
-			const rawTags = image.repoTags ?? image.RepoTags;
-			if (rawTags && rawTags.length > 0 && rawTags[0] !== '<none>:<none>') {
-				({ repo, tag } = parseImageRef(rawTags[0]));
-			}
-
-			return {
-				envId,
-				image: {
-					...image,
-					repo,
-					tag
-				}
-			};
-		})()
+		Promise.all([queryClient.query(imageDetailQuery(envId, params.imageId)), featureStore.load(envId)])
 	);
 	if (operationResult.error !== null) {
 		const err = operationResult.error;
@@ -59,7 +29,10 @@ export const load: PageLoad = async ({ params, parent, url }): Promise<ImageDeta
 			throw err;
 		}
 		throw error(500, err.message || 'Failed to load image details');
-	} else {
-		return operationResult.data;
 	}
+
+	const [image] = operationResult.data;
+	if (!image) throw error(404, 'Image not found');
+
+	return { envId, imageId: params.imageId, image };
 };

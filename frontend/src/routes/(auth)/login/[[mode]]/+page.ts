@@ -2,6 +2,7 @@ import { browser } from '$app/env';
 import { error as httpError, redirect } from '@sveltejs/kit';
 
 import { passkeyService } from '#lib/services/passkey-service.js';
+import { isInAppPath } from '#lib/utils/auth.js';
 import { getEffectiveLandingPage } from '#lib/utils/navigation.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -19,10 +20,10 @@ export const load: PageLoad = async ({ parent, url, params }) => {
 	// user is signed in — the post-login handlers fall back to it themselves.
 	const rawRedirect = url.searchParams.get('redirect');
 	// Guard against open redirects — only allow same-origin relative paths
-	const redirectTo = rawRedirect?.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '';
+	const redirectTo = isInAppPath(rawRedirect) ? rawRedirect : null;
 
 	if (data.user) {
-		throw redirect(302, redirectTo || getEffectiveLandingPage());
+		throw redirect(302, redirectTo ?? getEffectiveLandingPage());
 	}
 
 	const passkeyAvailability = await tryCatch(passkeyService.getLoginAvailability()).then((result) =>

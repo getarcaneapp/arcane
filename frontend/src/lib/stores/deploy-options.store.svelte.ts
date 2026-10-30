@@ -36,7 +36,7 @@ function isDeployPullPolicy(value: unknown): value is DeployPullPolicy {
 
 const persistedCurrent = persistedOptions.current;
 
-let state = $state<DeployOptionsState>({
+const state = $state<DeployOptionsState>({
 	pullPolicy: isDeployPullPolicy(persistedCurrent?.pullPolicy) ? persistedCurrent.pullPolicy : defaultDeployOptions.pullPolicy,
 	forceRecreate: persistedCurrent?.forceRecreate === true,
 	removeOrphans: persistedCurrent?.removeOrphans === true,

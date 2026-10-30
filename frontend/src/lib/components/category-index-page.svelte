@@ -130,6 +130,7 @@
 				{@const Icon = category.icon}
 				<Card interactive class="h-full">
 					<button
+						type="button"
 						onclick={() => navigate(category.href)}
 						class="relative flex h-full w-full cursor-pointer items-center gap-3 p-4 text-left focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none focus-visible:ring-inset sm:gap-4 sm:p-5"
 					>

@@ -1,7 +1,8 @@
 import { m } from '#lib/paraglide/messages.js';
 import type { DeployProjectOptions } from '#lib/types/project-deployment.js';
 import type { ProjectWorkspaceFileDraft } from '#lib/types/project-workspace.js';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { MessageResponse, Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { OperationStreamFrame } from '#lib/types/stream.js';
 import type {
 	Project,
 	ProjectStatusCounts,
@@ -132,16 +133,26 @@ class ProjectService extends BaseAPIService {
 
 	private async readProjectStream(
 		body: ReadableStream<Uint8Array>,
-		onLine?: (data: any) => void,
-		onMessage?: (data: any) => boolean | void
+		onLine: ((data: unknown) => void) | undefined,
+		streamFailed: () => string
 	): Promise<void> {
-		await readNdjsonStream(body, onMessage, onLine);
+		await readNdjsonStream(
+			body,
+			(frame: OperationStreamFrame) => {
+				if (frame?.error) {
+					throw new Error(typeof frame.error === 'string' ? frame.error : frame.error.message || streamFailed());
+				}
+				// The terminal frame marks success; don't wait on the network EOF.
+				return frame?.done === true;
+			},
+			onLine
+		);
 	}
 
 	private async postProjectStream(
 		url: string,
 		body: unknown,
-		onLine: ((data: any) => void) | undefined,
+		onLine: ((data: unknown) => void) | undefined,
 		messages: { startFailed: (status: string) => string; streamFailed: () => string }
 	): Promise<void> {
 		const res = await fetch(url, {
@@ -156,13 +167,7 @@ class ProjectService extends BaseAPIService {
 			throw new Error(messages.startFailed(String(res.status)));
 		}
 
-		await this.readProjectStream(res.body, onLine, (obj) => {
-			if (obj?.error) {
-				throw new Error(typeof obj.error === 'string' ? obj.error : obj.error?.message || messages.streamFailed());
-			}
-			// The terminal frame marks success; don't wait on the network EOF.
-			return obj?.done === true;
-		});
+		await this.readProjectStream(res.body, onLine, messages.streamFailed);
 	}
 
 	async getProjectStatusCountsForEnvironment(environmentId: string, config?: APIRequestConfig): Promise<ProjectStatusCounts> {
@@ -190,7 +195,7 @@ class ProjectService extends BaseAPIService {
 		return this.handleResponse(this.api.patch(`/environments/${environmentId}/projects/${projectId}`, project));
 	}
 
-	async restartProject(projectId: string, services: string[] | undefined, environmentId: string): Promise<unknown> {
+	async restartProject(projectId: string, services: string[] | undefined, environmentId: string): Promise<MessageResponse> {
 		const params = new URLSearchParams({ action: 'restart' });
 		for (const service of services ?? []) {
 			params.append('services', service);
@@ -210,7 +215,7 @@ class ProjectService extends BaseAPIService {
 		);
 	}
 
-	async pullProjectImages(projectId: string, onLine: (data: any) => void, environmentId: string): Promise<void> {
+	async pullProjectImages(projectId: string, onLine: (data: unknown) => void, environmentId: string): Promise<void> {
 		const url = `/api/environments/${environmentId}/projects/${projectId}/deploy?action=pull`;
 
 		const res = await fetch(url, { method: 'POST', signal: withSessionSignal() });
@@ -218,18 +223,13 @@ class ProjectService extends BaseAPIService {
 			throw new Error(`Failed to start project image pull (${res.status})`);
 		}
 
-		await this.readProjectStream(res.body, onLine, (obj) => {
-			if (obj?.error) {
-				throw new Error(typeof obj.error === 'string' ? obj.error : obj.error?.message || m.images_pull_failed());
-			}
-			return obj?.done === true;
-		});
+		await this.readProjectStream(res.body, onLine, () => m.images_pull_failed());
 	}
 
 	async buildProjectImages(
 		projectId: string,
 		options: { services?: string[]; provider?: 'local' | 'depot'; push?: boolean; load?: boolean } | undefined,
-		onLine: ((data: any) => void) | undefined,
+		onLine: ((data: unknown) => void) | undefined,
 		environmentId: string
 	): Promise<void> {
 		const url = `/api/environments/${environmentId}/projects/${projectId}/build`;

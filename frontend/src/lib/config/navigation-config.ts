@@ -1,3 +1,6 @@
+import { resolve } from '$app/paths';
+import type { ResolvedPathname } from '$app/types';
+
 import {
 	ApiKeyIcon,
 	UsersIcon,
@@ -40,14 +43,10 @@ import type { ShortcutKey } from '#lib/utils/navigation.js';
 
 export type NavigationItem = {
 	title: string;
-	url: string;
+	url: ResolvedPathname;
 	icon: any;
 	shortcut?: ShortcutKey[];
 	items?: NavigationItem[];
-	/**
-	 * Backend-owned access-surface ID that gates this item. Omit to make the
-	 * item visible to every authenticated user.
-	 */
 	accessSurfaceId?: string;
 	adminOnly?: boolean;
 	requiredFeature?: FeatureID;
@@ -66,28 +65,28 @@ export const navigationItems: NavigationSections = {
 	overviewItems: [
 		{
 			title: m.dashboard_title(),
-			url: '/dashboard',
+			url: resolve('/(app)/dashboard'),
 			icon: DashboardIcon,
 			shortcut: ['mod', '1'],
 			accessSurfaceId: 'route.dashboard'
 		},
 		{
 			title: m.updates(),
-			url: '/updates',
+			url: resolve('/(app)/updates'),
 			icon: UpdateIcon,
 			shortcut: ['mod', 'u'],
 			accessSurfaceId: 'route.updates'
 		},
 		{
 			title: m.security(),
-			url: '/security',
+			url: resolve('/(app)/security'),
 			requiredFeature: 'vulnerabilityManagement',
 			icon: ShieldAlertIcon,
 			accessSurfaceId: 'route.images.vulnerabilities'
 		},
 		{
 			title: m.events_title(),
-			url: '/events',
+			url: resolve('/(app)/events'),
 			icon: EventsIcon,
 			shortcut: ['mod', '9'],
 			accessSurfaceId: 'route.events'
@@ -96,20 +95,20 @@ export const navigationItems: NavigationSections = {
 	deployItems: [
 		{
 			title: m.projects_title(),
-			url: '/projects',
+			url: resolve('/(app)/projects'),
 			icon: ProjectsIcon,
 			shortcut: ['mod', '2'],
 			accessSurfaceId: 'route.projects',
 			items: [
 				{
 					title: m.templates_title(),
-					url: '/customize/templates',
+					url: resolve('/(app)/customize/templates'),
 					icon: TemplateIcon,
 					accessSurfaceId: 'customize.category.templates'
 				},
 				{
 					title: m.variables_title(),
-					url: '/customize/variables',
+					url: resolve('/(app)/customize/variables'),
 					icon: VariableIcon,
 					accessSurfaceId: 'customize.category.variables'
 				}
@@ -117,14 +116,14 @@ export const navigationItems: NavigationSections = {
 		},
 		{
 			title: m.git_syncs_title(),
-			url: '/gitops',
+			url: resolve('/(app)/gitops'),
 			icon: GitBranchIcon,
 			shortcut: ['mod', 'g'],
 			accessSurfaceId: 'route.gitops',
 			items: [
 				{
 					title: m.git_repositories_title(),
-					url: '/customize/git-repositories',
+					url: resolve('/(app)/customize/git-repositories'),
 					icon: GitBranchIcon,
 					accessSurfaceId: 'customize.category.git-repositories'
 				}
@@ -134,22 +133,22 @@ export const navigationItems: NavigationSections = {
 	resourceItems: [
 		{
 			title: m.containers(),
-			url: '/containers',
+			url: resolve('/(app)/containers'),
 			icon: ContainersIcon,
 			shortcut: ['mod', '5'],
 			accessSurfaceId: 'route.containers'
 		},
 		{
 			title: m.images(),
-			url: '/images',
+			url: resolve('/(app)/images'),
 			icon: ImagesIcon,
 			shortcut: ['mod', '6'],
 			accessSurfaceId: 'route.images',
 			items: [
-				{ title: m.builds(), url: '/images/builds', icon: HammerIcon, accessSurfaceId: 'route.images.builds' },
+				{ title: m.builds(), url: resolve('/(app)/images/builds'), icon: HammerIcon, accessSurfaceId: 'route.images.builds' },
 				{
 					title: m.registries_title(),
-					url: '/customize/registries',
+					url: resolve('/(app)/customize/registries'),
 					icon: RegistryIcon,
 					accessSurfaceId: 'customize.category.registries'
 				}
@@ -157,15 +156,15 @@ export const navigationItems: NavigationSections = {
 		},
 		{
 			title: m.resource_networks_cap(),
-			url: '/networks',
+			url: resolve('/(app)/networks'),
 			icon: NetworksIcon,
 			shortcut: ['mod', '7'],
 			accessSurfaceId: 'route.networks',
 			items: [
-				{ title: m.common_ports(), url: '/networks/ports', icon: HashIcon, accessSurfaceId: 'route.ports' },
+				{ title: m.common_ports(), url: resolve('/(app)/networks/ports'), icon: HashIcon, accessSurfaceId: 'route.ports' },
 				{
 					title: m.networks_topology_button(),
-					url: '/networks/topology',
+					url: resolve('/(app)/networks/topology'),
 					icon: GitBranchIcon,
 					accessSurfaceId: 'route.networks.topology'
 				}
@@ -173,29 +172,39 @@ export const navigationItems: NavigationSections = {
 		},
 		{
 			title: m.resource_volumes_cap(),
-			url: '/volumes',
+			url: resolve('/(app)/volumes'),
 			icon: VolumesIcon,
 			shortcut: ['mod', '8'],
 			accessSurfaceId: 'route.volumes'
 		}
 	],
 	swarmItems: [
-		{ title: 'Services', url: '/swarm/services', icon: DockIcon, accessSurfaceId: 'route.swarm.services' },
-		{ title: 'Nodes', url: '/swarm/nodes', icon: UsersIcon, accessSurfaceId: 'route.swarm.nodes' },
-		{ title: 'Tasks', url: '/swarm/tasks', icon: JobsIcon, accessSurfaceId: 'route.swarm.tasks' },
-		{ title: 'Stacks', url: '/swarm/stacks', icon: LayersIcon, accessSurfaceId: 'route.swarm.stacks' },
-		{ title: 'Cluster', url: '/swarm/cluster', icon: SettingsIcon, accessSurfaceId: 'route.swarm.cluster' },
-		{ title: 'Configs', url: '/swarm/configs', icon: TemplateIcon, accessSurfaceId: 'route.swarm.configs' },
-		{ title: 'Secrets', url: '/swarm/secrets', icon: LockIcon, accessSurfaceId: 'route.swarm.secrets' }
+		{ title: 'Services', url: resolve('/(app)/swarm/services'), icon: DockIcon, accessSurfaceId: 'route.swarm.services' },
+		{ title: 'Nodes', url: resolve('/(app)/swarm/nodes'), icon: UsersIcon, accessSurfaceId: 'route.swarm.nodes' },
+		{ title: 'Tasks', url: resolve('/(app)/swarm/tasks'), icon: JobsIcon, accessSurfaceId: 'route.swarm.tasks' },
+		{ title: 'Stacks', url: resolve('/(app)/swarm/stacks'), icon: LayersIcon, accessSurfaceId: 'route.swarm.stacks' },
+		{ title: 'Cluster', url: resolve('/(app)/swarm/cluster'), icon: SettingsIcon, accessSurfaceId: 'route.swarm.cluster' },
+		{ title: 'Configs', url: resolve('/(app)/swarm/configs'), icon: TemplateIcon, accessSurfaceId: 'route.swarm.configs' },
+		{ title: 'Secrets', url: resolve('/(app)/swarm/secrets'), icon: LockIcon, accessSurfaceId: 'route.swarm.secrets' }
 	],
 	podmanItems: [
-		{ title: m.podman_pods_title(), url: '/podman/pods', icon: BoxIcon, accessSurfaceId: 'route.podman' },
-		{ title: m.podman_quadlets_title(), url: '/podman/quadlets', icon: FileTextIcon, accessSurfaceId: 'route.podman.quadlets' },
-		{ title: m.podman_kube_title(), url: '/podman/kube', icon: LayersIcon, accessSurfaceId: 'route.podman.kube' },
-		{ title: m.podman_secrets_title(), url: '/podman/secrets', icon: LockIcon, accessSurfaceId: 'route.podman.secrets' },
+		{ title: m.podman_pods_title(), url: resolve('/(app)/podman/pods'), icon: BoxIcon, accessSurfaceId: 'route.podman' },
+		{
+			title: m.podman_quadlets_title(),
+			url: resolve('/(app)/podman/quadlets'),
+			icon: FileTextIcon,
+			accessSurfaceId: 'route.podman.quadlets'
+		},
+		{ title: m.podman_kube_title(), url: resolve('/(app)/podman/kube'), icon: LayersIcon, accessSurfaceId: 'route.podman.kube' },
+		{
+			title: m.podman_secrets_title(),
+			url: resolve('/(app)/podman/secrets'),
+			icon: LockIcon,
+			accessSurfaceId: 'route.podman.secrets'
+		},
 		{
 			title: m.auto_update(),
-			url: '/podman/autoupdate',
+			url: resolve('/(app)/podman/autoupdate'),
 			icon: UpdateIcon,
 			accessSurfaceId: 'route.podman.autoupdate'
 		}
@@ -203,68 +212,68 @@ export const navigationItems: NavigationSections = {
 	adminItems: [
 		{
 			title: m.environments_title(),
-			url: '/environments',
+			url: resolve('/(app)/environments'),
 			icon: EnvironmentsIcon,
 			shortcut: ['mod', '3'],
 			accessSurfaceId: 'route.environments'
 		},
 		{
 			title: m.settings(),
-			url: '/settings',
+			url: resolve('/(app)/settings'),
 			icon: SettingsIcon,
 			shortcut: ['mod', '0'],
 			accessSurfaceId: 'landing.settings',
 			items: [
 				{
 					title: m.api_key_page_title(),
-					url: '/settings/api-keys',
+					url: resolve('/(app)/settings/api-keys'),
 					icon: ApiKeyIcon,
 					shortcut: ['mod', 'shift', '1'],
 					accessSurfaceId: 'settings.category.apikeys'
 				},
 				{
 					title: m.webhook_page_title(),
-					url: '/settings/webhooks',
+					url: resolve('/(app)/settings/webhooks'),
 					icon: GlobeIcon,
 					accessSurfaceId: 'settings.category.webhooks'
 				},
 				{
 					title: m.authentication(),
-					url: '/settings/authentication',
+					url: resolve('/(app)/settings/authentication'),
 					icon: LockIcon,
 					shortcut: ['mod', 'shift', '3'],
 					accessSurfaceId: 'settings.category.authentication'
 				},
 				{
 					title: m.notifications_title(),
-					url: '/settings/notifications',
+					url: resolve('/(app)/settings/notifications'),
 					icon: NotificationsIcon,
 					shortcut: ['mod', 'shift', '4'],
 					accessSurfaceId: 'settings.category.notifications'
 				},
 				{
 					title: m.system_backups_title(),
-					url: '/settings/backups',
+					url: resolve('/(app)/settings/backups'),
 					icon: BackupIcon,
 					accessSurfaceId: 'settings.category.systembackups',
 					adminOnly: true
 				},
 				{
 					title: m.users_title(),
-					url: '/settings/users',
+					url: resolve('/(app)/settings/users'),
 					icon: UsersIcon,
 					shortcut: ['mod', 'shift', '8'],
 					accessSurfaceId: 'settings.category.users'
 				},
 				{
 					title: m.roles_title(),
-					url: '/settings/roles',
+					url: resolve('/(app)/settings/roles'),
 					icon: ShieldAlertIcon,
 					accessSurfaceId: 'settings.category.roles'
 				},
 				{
 					title: m.diagnostics(),
-					url: '/settings/diagnostics',
+					url: resolve('/(app)/settings/diagnostics'),
 					icon: ActivityIcon,
 					accessSurfaceId: 'settings.category.diagnostics'
 				}
@@ -273,27 +282,13 @@ export const navigationItems: NavigationSections = {
 	]
 };
 
-// Keep the settings sub-navigation alphabetical regardless of the order
-// entries are declared in the literal above. The sidebar and mobile nav render it;
-// the settings landing page uses it for card order and for Roles/Diagnostics cards.
 {
-	const settingsParent = navigationItems.adminItems.find((item) => item.url === '/settings');
+	const settingsParent = navigationItems.adminItems.find((item) => item.url === resolve('/(app)/settings'));
 	if (settingsParent?.items) {
 		settingsParent.items.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
 	}
 }
 
-// ---------- Permission-based filtering ----------
-
-/**
- * Filter a navigation tree to entries the user can reach. Empty parent groups
- * (i.e. those whose children were all filtered out and which themselves have
- * no access surface) are preserved; empty parent groups whose own access
- * surface check fails are removed.
- *
- * @param items navigation items to filter
- * @param user the current user (or null when unauthenticated)
- */
 export function filterByPermissions(
 	items: NavigationItem[] | undefined,
 	user: User | null,
@@ -348,7 +343,7 @@ export function getNavigationTitleForPath(pathname: string): string | undefined 
 }
 
 export function getSettingsSubpageUrlsInNavOrder(): string[] {
-	const entry = navigationItems.adminItems.find((item) => item.url === '/settings');
+	const entry = navigationItems.adminItems.find((item) => item.url === resolve('/(app)/settings'));
 	return entry?.items?.map((item) => item.url) ?? [];
 }
 
@@ -364,7 +359,11 @@ const defaultMobilePinnedItems: NavigationItem[] = [
 	...navigationItems.overviewItems,
 	...navigationItems.deployItems,
 	...navigationItems.resourceItems
-].filter((item) => ['/dashboard', '/projects', '/containers', '/images'].includes(item.url));
+].filter((item) =>
+	[resolve('/(app)/dashboard'), resolve('/(app)/projects'), resolve('/(app)/containers'), resolve('/(app)/images')].includes(
+		item.url
+	)
+);
 
 export function getSwarmNavigationItems(swarmEnabled: boolean | undefined): NavigationItem[] {
 	if (swarmEnabled) {
@@ -374,24 +373,19 @@ export function getSwarmNavigationItems(swarmEnabled: boolean | undefined): Navi
 		return [];
 	}
 
-	return navigationItems.swarmItems.filter((item) => item.url === '/swarm/cluster');
+	return navigationItems.swarmItems.filter((item) => item.url === resolve('/(app)/swarm/cluster'));
 }
 
 export function getPodmanNavigationItems(statuses: Record<string, PodmanStatus>): NavigationItem[] {
 	const shown = environmentStore.shown.flatMap((env) => statuses[env.id] ?? []);
 	if (shown.length === 0) return [];
 	return navigationItems.podmanItems.filter(
-		(item) => item.url !== '/podman/quadlets' || shown.some((status) => status.quadletsSupported)
+		(item) => item.url !== resolve('/(app)/podman/quadlets') || shown.some((status) => status.quadletsSupported)
 	);
 }
 
-export const DEFAULT_LANDING_PAGE = '/dashboard';
+export const DEFAULT_LANDING_PAGE = resolve('/(app)/dashboard');
 
-/**
- * Top-level pages selectable as the post-login landing page. Derived from the
- * sidebar sections so the option list stays in sync with the nav. /settings
- * is not selectable (category landing, not a resource page).
- */
 export function getLandingPageNavItems(): NavigationItem[] {
 	return [
 		...navigationItems.overviewItems,

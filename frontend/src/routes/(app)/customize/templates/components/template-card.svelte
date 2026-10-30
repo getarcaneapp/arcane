@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import IconImage from '#lib/components/icon-image.svelte';
@@ -49,7 +50,7 @@
 		/>
 		<div class="min-w-0 flex-1">
 			<a
-				href="/customize/templates/{template.id}"
+				href={resolve('/(app)/customize/templates/[id]', { id: template.id })}
 				class="block truncate font-medium after:absolute after:inset-0 hover:underline"
 			>
 				{template.name}
@@ -60,13 +61,13 @@
 		</div>
 		<div class="relative z-10 -mt-1 -mr-1 shrink-0">
 			<RowActionsMenu>
-				<DropdownMenu.Item onclick={() => goto(`/customize/templates/${template.id}`)}>
+				<DropdownMenu.Item onclick={() => goto(resolve('/(app)/customize/templates/[id]', { id: template.id }))}>
 					<InspectIcon class="size-4" />
 					{m.common_view_details()}
 				</DropdownMenu.Item>
 
 				<IfPermitted perm="projects:create">
-					<DropdownMenu.Item onclick={() => goto(`/projects/new?templateId=${template.id}`)}>
+					<DropdownMenu.Item onclick={() => goto(resolve(`/(app)/projects/new?templateId=${encodeURIComponent(template.id)}`))}>
 						<MoveToFolderIcon class="size-4" />
 						{m.compose_create_project()}
 					</DropdownMenu.Item>

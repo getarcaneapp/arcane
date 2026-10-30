@@ -117,6 +117,14 @@ export type ContainerWritable = keyof Container;
 
 export type ContainerCreate = CreateRequest<Container, ContainerWritable, 'name' | 'image'>;
 
+export interface ContainerCreated {
+	id: string;
+	name: string;
+	image: string;
+	status: string;
+	created: string;
+}
+
 export interface ContainerHostConfigEdit {
 	binds?: string[];
 	mounts?: MountDto[];
@@ -698,6 +706,15 @@ export interface ImagePatchTargetDto {
 	lastPatchScan?: ImagePatchScanSummaryDto;
 }
 
+export interface ImagePruneReport {
+	imagesDeleted: string[];
+	spaceReclaimed: number;
+}
+
+export interface ImageLoadResult {
+	stream: string;
+}
+
 export type ImageBuildStatus = 'running' | 'success' | 'failed';
 
 export interface ImageBuildRecord {
@@ -736,6 +753,32 @@ export interface ImageBuildRecord {
 	createdAt: string;
 }
 
+export type ImageBuildRequest = {
+	provider: 'local' | 'depot';
+} & Pick<
+	ImageBuildRecord,
+	| 'contextDir'
+	| 'dockerfile'
+	| 'tags'
+	| 'target'
+	| 'buildArgs'
+	| 'labels'
+	| 'cacheFrom'
+	| 'cacheTo'
+	| 'noCache'
+	| 'pull'
+	| 'network'
+	| 'isolation'
+	| 'shmSize'
+	| 'ulimits'
+	| 'entitlements'
+	| 'privileged'
+	| 'extraHosts'
+	| 'platforms'
+	| 'push'
+	| 'load'
+>;
+
 // --- Networks ---
 
 export interface IPAMConfig {
@@ -771,6 +814,12 @@ export interface Network {
 export type NetworkWritable = keyof Network;
 
 export type NetworkCreate = CreateRequest<Network, NetworkWritable, 'name'>;
+
+export interface NetworkCreateResponse {
+	id: string;
+	warning?: string;
+	activityId?: string;
+}
 
 export interface NetworkUsageCounts {
 	inuse: number;

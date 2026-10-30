@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
+	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
 
@@ -12,10 +12,13 @@
 	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { AgentConnectionIcon, DownloadIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { environmentDeploymentSnippetsQuery } from '#lib/query/environments.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
-	import { isSessionCancelledError, withSessionSignal } from '#lib/services/api-service.js';
+	import { isSessionCancelledError } from '#lib/services/api-service.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { EnvironmentCreate, DeploymentSnippetFile } from '#lib/types/environment.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { downloadTextFile } from '#lib/utils/formatting.js';
 	import { createForm, preventDefault } from '#lib/utils/settings.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -28,67 +31,35 @@
 	let { open = $bindable(false), onEnvironmentCreated }: NewEnvironmentSheetProps = $props();
 	const queryClient = useQueryClient();
 
-	let createdEnvironment = $state<{
-		id: string;
-		apiKey: string;
-		name: string;
-		mtlsEnabled: boolean;
-		mtlsFiles?: DeploymentSnippetFile[];
-		dockerRun?: string;
-		dockerCompose?: string;
-	} | null>(null);
+	let createdEnvironment = $state<{ id: string; apiKey: string; useMTLS: boolean } | null>(null);
 
-	let isLoadingSnippets = $state(false);
+	const snippetsQuery = createQuery(() => ({
+		...environmentDeploymentSnippetsQuery(createdEnvironment?.id ?? ''),
+		enabled: createdEnvironment !== null
+	}));
+	const mtlsAssetsUnavailable = $derived(!!createdEnvironment?.useMTLS && !!snippetsQuery.data && !snippetsQuery.data.mtls);
+	const generatedMTLS = $derived(createdEnvironment?.useMTLS ? snippetsQuery.data?.mtls : undefined);
+	const createdSnippets = $derived(generatedMTLS ?? snippetsQuery.data);
+
 	const createEnvironmentMutation = createMutation(() => ({
 		mutationFn: (variables: { dto: EnvironmentCreate; useMTLS: boolean }) => environmentManagementService.create(variables.dto),
 		onSuccess: async (created, variables) => {
+			await environmentStore.initialize([...environmentStore.available, created]);
 			await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
 
 			if (created.apiKey) {
 				createdEnvironment = {
 					id: created.id,
 					apiKey: created.apiKey,
-					name: created.name,
-					mtlsEnabled: false
+					useMTLS: variables.useMTLS
 				};
-
-				isLoadingSnippets = true;
-				try {
-					const operationResult1 = await tryCatch(
-						(async () => {
-							const snippets = await queryClient.query({
-								queryKey: queryKeys.environments.deploymentSnippets(created.id),
-								queryFn: () => environmentManagementService.getDeploymentSnippets(created.id),
-								staleTime: 0
-							});
-							const useGeneratedMTLS = variables.useMTLS && !!snippets.mtls;
-							if (variables.useMTLS && !snippets.mtls) {
-								toast.warning(m.environments_new_agent_mtls_assets_unavailable());
-							}
-
-							createdEnvironment.dockerRun = useGeneratedMTLS ? snippets.mtls!.dockerRun : snippets.dockerRun;
-							createdEnvironment.dockerCompose = useGeneratedMTLS ? snippets.mtls!.dockerCompose : snippets.dockerCompose;
-							createdEnvironment.mtlsEnabled = useGeneratedMTLS;
-							createdEnvironment.mtlsFiles = useGeneratedMTLS ? snippets.mtls!.files : [];
-						})()
-					);
-					if (operationResult1.error !== null) {
-						const err = operationResult1.error;
-
-						console.error('Failed to fetch deployment snippets:', err);
-					}
-				} finally {
-					isLoadingSnippets = false;
-				}
-
 				toast.success(m.environments_created_success());
 			} else {
 				toast.error(m.environments_api_key_error());
 			}
 		},
 		onError: (error) => {
-			toast.error(m.environments_create_failed());
-			console.error(error);
+			toast.error(m.environments_create_failed(), { description: extractApiErrorMessage(error) });
 		}
 	}));
 	const isSubmittingNewAgent = $derived(createEnvironmentMutation.isPending);
@@ -117,7 +88,7 @@
 	}
 
 	function findCreatedMTLSFile(fileName: string): DeploymentSnippetFile | undefined {
-		return createdEnvironment?.mtlsFiles?.find((file) => file.name === fileName);
+		return generatedMTLS?.files?.find((file) => file.name === fileName);
 	}
 
 	async function downloadCreatedMTLSFile(fileName: string) {
@@ -135,11 +106,7 @@
 		const downloadUrl = file.downloadUrl;
 		const operationResult2 = await tryCatch(
 			(async () => {
-				const response = await fetch(downloadUrl, { credentials: 'include', signal: withSessionSignal() });
-				if (!response.ok) {
-					throw new Error(`HTTP ${response.status}`);
-				}
-				const blob = await response.blob();
+				const blob = await environmentManagementService.downloadDeploymentFile(downloadUrl);
 				const url = URL.createObjectURL(blob);
 				const a = document.createElement('a');
 				a.href = url;
@@ -188,7 +155,7 @@
 						<p class="text-xs text-muted-foreground">{m.environments_api_key_warning()}</p>
 					</div>
 
-					{#if createdEnvironment.mtlsEnabled}
+					{#if generatedMTLS}
 						<div class="space-y-3 rounded-lg border border-info/25 bg-info/8 p-4">
 							<div class="space-y-1">
 								<p class="text-sm font-medium">{m.environments_new_agent_mtls_enabled()}</p>
@@ -219,16 +186,22 @@
 						</div>
 					{/if}
 
-					{#if isLoadingSnippets}
+					{#if mtlsAssetsUnavailable}
+						<p class="text-sm text-warning">{m.environments_new_agent_mtls_assets_unavailable()}</p>
+					{/if}
+
+					{#if snippetsQuery.isPending}
 						<div class="flex items-center justify-center py-8">
 							<Spinner class="size-6" />
 						</div>
-					{:else if createdEnvironment.dockerRun && createdEnvironment.dockerCompose}
+					{:else if snippetsQuery.isError}
+						<p class="text-sm text-destructive">{extractApiErrorMessage(snippetsQuery.error)}</p>
+					{:else if createdSnippets?.dockerRun && createdSnippets.dockerCompose}
 						<AgentCommandBlock
 							dockerRunLabel={m.docker_run_command()}
-							dockerRun={createdEnvironment.dockerRun}
+							dockerRun={createdSnippets.dockerRun}
 							dockerComposeLabel={m.common_docker_compose()}
-							dockerCompose={createdEnvironment.dockerCompose}
+							dockerCompose={createdSnippets.dockerCompose}
 						/>
 					{/if}
 

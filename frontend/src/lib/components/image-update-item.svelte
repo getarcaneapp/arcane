@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { createQuery } from '@tanstack/svelte-query';
+	import { createMutation } from '@tanstack/svelte-query';
 	import { mergeProps } from 'bits-ui';
 	import type { Component } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -27,9 +27,9 @@
 	import { imageService } from '#lib/services/image-service.js';
 	import type { ImageUpdateData, ImageUpdateInfoDto } from '#lib/types/docker.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
+	import { extractApiErrorMessage } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { formatRelativeTime, instantEpochMilliseconds, nowInstantString } from '#lib/utils/formatting.js';
-	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	interface Props {
 		updateInfo?: ImageUpdateData;
@@ -71,38 +71,7 @@
 		return instantEpochMilliseconds(info.checkTime) ?? 0;
 	}
 
-	const imageUpdateQuery = createQuery<ImageUpdateData>(() => {
-		const target = { imageId, containerId, imageRef, tagUpdates };
-		let key = target.imageId || target.imageRef || '';
-		if (target.containerId) key = `container:${target.containerId}`;
-		return {
-			queryKey: queryKeys.images.updateCheck(environmentId, key),
-			queryFn: async () => {
-				let result: ImageUpdateInfoDto | undefined;
-				if (target.imageId && !(target.containerId && target.imageRef)) {
-					result = await imageService.checkImageUpdateByID(target.imageId, environmentId);
-				} else {
-					const ref = target.imageRef ?? '';
-					result = (await imageService.checkMultipleImages([ref], environmentId))[ref];
-				}
-				if (!result) throw new Error(m.images_update_check_failed());
-				if (target.containerId) {
-					if (target.tagUpdates) {
-						const scopedResult = result.containerUpdates?.[target.containerId];
-						if (!scopedResult) throw new Error(result.error || m.images_update_check_failed());
-						return { ...scopedResult, activityId: scopedResult.activityId ?? result.activityId };
-					}
-					return result.imageUpdate ?? result;
-				}
-				return result;
-			},
-			enabled: false,
-			retry: false
-		};
-	});
-
-	const errorFromQuery = $derived.by((): ImageUpdateData | undefined => {
-		if (!imageUpdateQuery.error) return undefined;
+	function errorUpdateInfo(message: string): ImageUpdateData {
 		return {
 			hasUpdate: false,
 			updateType: 'error',
@@ -112,18 +81,62 @@
 			latestDigest: '',
 			checkTime: nowInstantString(),
 			responseTimeMs: 0,
-			error: imageUpdateQuery.error instanceof Error ? imageUpdateQuery.error.message : m.images_update_check_failed()
+			error: message
 		};
-	});
+	}
+
+	const checkKey = $derived(containerId ? `container:${containerId}` : imageId || imageRef || '');
+
+	const updateCheckMutation = createMutation(() => ({
+		mutationKey: queryKeys.images.updateCheck(environmentId, checkKey),
+		mutationFn: async (_key: string): Promise<ImageUpdateData> => {
+			let result: ImageUpdateInfoDto | undefined;
+			if (imageId && !(containerId && imageRef)) {
+				result = await imageService.checkImageUpdateByID(imageId, environmentId);
+			} else {
+				const ref = imageRef ?? '';
+				result = (await imageService.checkMultipleImages([ref], environmentId))[ref];
+			}
+			if (!result) throw new Error(m.images_update_check_failed());
+			if (containerId) {
+				if (tagUpdates) {
+					const scopedResult = result.containerUpdates?.[containerId];
+					if (!scopedResult) throw new Error(result.error || m.images_update_check_failed());
+					return { ...scopedResult, activityId: scopedResult.activityId ?? result.activityId };
+				}
+				return result.imageUpdate ?? result;
+			}
+			return result;
+		},
+		onSuccess: (data) => {
+			onUpdated?.(data);
+			const toastOptions = activityToastOptions(extractActivityId(data));
+			if (data.error) {
+				toast.error(data.error, toastOptions);
+				return;
+			}
+			toast.success(m.images_update_check_completed(), toastOptions);
+		},
+		onError: (error) => {
+			const message = extractApiErrorMessage(error);
+			onUpdated?.(errorUpdateInfo(message));
+			toast.error(m.images_update_check_failed(), { description: message });
+		}
+	}));
+
+	const checkMatches = $derived(updateCheckMutation.variables === checkKey);
+	const errorFromCheck = $derived(
+		checkMatches && updateCheckMutation.error ? errorUpdateInfo(extractApiErrorMessage(updateCheckMutation.error)) : undefined
+	);
 
 	const resolvedUpdateInfo = $derived.by((): ImageUpdateData | undefined => {
-		const queryInfo = imageUpdateQuery.data;
+		const checkInfo = checkMatches ? updateCheckMutation.data : undefined;
 		const propInfo = updateInfo;
 
-		if (!queryInfo) return propInfo ?? errorFromQuery;
-		if (!propInfo) return queryInfo;
+		if (!checkInfo) return propInfo ?? errorFromCheck;
+		if (!propInfo) return checkInfo;
 
-		return getCheckTimeValue(propInfo) > getCheckTimeValue(queryInfo) ? propInfo : queryInfo;
+		return getCheckTimeValue(propInfo) > getCheckTimeValue(checkInfo) ? propInfo : checkInfo;
 	});
 
 	// If debug is enabled, override hasUpdate to true
@@ -135,7 +148,7 @@
 		return resolvedUpdateInfo;
 	});
 
-	const isChecking = $derived(imageUpdateQuery.isFetching);
+	const isChecking = $derived(updateCheckMutation.isPending);
 	let isOpen = $state(false);
 	let releaseNotesOpen = $state(false);
 	let releaseNotesTarget = $state<{ imageRef: string; version?: string; digest?: string } | null>(null);
@@ -187,62 +200,9 @@
 		return null;
 	});
 
-	async function checkImageUpdate() {
-		if (!canCheckUpdate || imageUpdateQuery.isFetching) return;
-
-		const requestResult1 = await tryCatch(
-			(async () => {
-				const result = await imageUpdateQuery.refetch();
-				if (result.data) {
-					onUpdated?.(result.data);
-					const toastOptions = activityToastOptions(extractActivityId(result.data));
-
-					if (result.data.error) {
-						toast.error(result.data.error || m.images_update_check_failed(), toastOptions);
-					} else {
-						toast.success(m.images_update_check_completed(), toastOptions);
-					}
-					return;
-				}
-
-				if (result.error) {
-					const message = result.error instanceof Error ? result.error.message : m.images_update_check_failed();
-					onUpdated?.({
-						hasUpdate: false,
-						updateType: 'error',
-						currentVersion: tag || '',
-						currentDigest: '',
-						latestVersion: '',
-						latestDigest: '',
-						checkTime: nowInstantString(),
-						responseTimeMs: 0,
-						error: message
-					});
-					toast.error(message);
-					return;
-				}
-
-				toast.error(m.images_update_check_failed());
-			})()
-		);
-		if (requestResult1.error !== null) {
-			const error = requestResult1.error;
-
-			console.error('Error checking update:', error);
-			const errorInfo: ImageUpdateData = {
-				hasUpdate: false,
-				updateType: 'error',
-				currentVersion: tag || '',
-				currentDigest: '',
-				latestVersion: '',
-				latestDigest: '',
-				checkTime: nowInstantString(),
-				responseTimeMs: 0,
-				error: (error as Error)?.message || m.images_update_check_failed()
-			};
-			onUpdated?.(errorInfo);
-			toast.error(errorInfo.error);
-		}
+	function checkImageUpdate() {
+		if (!canCheckUpdate || updateCheckMutation.isPending) return;
+		updateCheckMutation.mutate(checkKey);
 	}
 
 	function openReleaseNotes() {
@@ -312,6 +272,7 @@
 		<div class="flex flex-col gap-1 px-2 pb-2">
 			{#if canShowReleaseNotes}
 				<button
+					type="button"
 					onclick={openReleaseNotes}
 					class="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-sidebar-accent text-xs font-medium text-sidebar-accent-foreground transition-colors hover:bg-sidebar-accent/80"
 				>
@@ -321,6 +282,7 @@
 			{/if}
 			{#if effectiveUpdateInfo?.hasUpdate && onUpdateContainer}
 				<button
+					type="button"
 					onclick={handleUpdateContainer}
 					class="flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-sidebar-primary text-xs font-medium text-sidebar-primary-foreground transition-colors hover:bg-sidebar-primary/90"
 				>
@@ -329,6 +291,7 @@
 				</button>
 			{:else}
 				<button
+					type="button"
 					onclick={checkImageUpdate}
 					disabled={isChecking}
 					class="group flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-sidebar-accent text-xs font-medium text-sidebar-accent-foreground transition-colors hover:bg-sidebar-accent/80 disabled:cursor-not-allowed disabled:opacity-50"

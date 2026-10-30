@@ -231,7 +231,7 @@
 		};
 	}
 
-	let form = $state<ServiceEditorFormState>(untrack(() => createFormState(parseInitialSpec(initialSpec))));
+	const form = $state<ServiceEditorFormState>(untrack(() => createFormState(parseInitialSpec(initialSpec))));
 
 	function ensureRecord(parent: Record<string, unknown>, key: string): Record<string, unknown> {
 		const existing = asRecord(parent[key]);

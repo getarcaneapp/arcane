@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -28,14 +30,16 @@
 		AlertTriangleIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { gitOpsSyncService } from '#lib/services/gitops-sync-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { GitOpsSync, GitOpsSyncCounts } from '#lib/types/automation.js';
 	import type { FilterMap, Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { cn } from '#lib/utils.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions.js';
-	import { environmentHref, rowKey, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
+	import { rowKey, type EnvironmentPage, type EnvironmentRow } from '#lib/utils/environments.js';
 	import { formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { toGitRouteUrl } from '#lib/utils/navigation.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
@@ -48,13 +52,13 @@
 		syncs,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
-		onRefresh,
+		onRetry,
 		onEditSync
 	}: {
 		syncs: SyncPage;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
-		onRefresh: (options: SearchPaginationSortRequest) => Promise<SyncPage>;
+		onRetry: () => Promise<unknown>;
 		onEditSync: (sync: GitOpsSync) => void;
 	} = $props();
 
@@ -63,7 +67,7 @@
 	const canRunBackup = (sync: SyncRow) => canBackup(sync) && hasPermission('gitops:sync', sync.environmentId);
 	const canEditBackup = (sync: SyncRow) => canBackup(sync) && hasPermission('gitops:update', sync.environmentId);
 
-	let isLoading = $state({
+	const isLoading = $state({
 		removing: false,
 		syncing: false
 	});
@@ -80,29 +84,22 @@
 
 	const activeMode = $derived(String(requestOptions?.filters?.['mode'] ?? ''));
 
-	async function reloadSyncs(options: SearchPaginationSortRequest = requestOptions) {
-		await handleApiResultWithCallbacks({
-			result: await tryCatch(onRefresh(options)),
-			message: m.common_refresh_failed({ resource: m.git_syncs_title() }),
-			setLoadingState: () => {},
-			onSuccess: () => {}
-		});
+	const queryClient = useQueryClient();
+
+	async function invalidateSyncs() {
+		await queryClient.invalidateQueries({ queryKey: queryKeys.gitOpsSyncs.listPrefix(environmentStore.shownKey) });
 	}
 
-	async function selectMode(mode: string) {
+	function selectMode(mode: string) {
 		const filters: FilterMap = { ...requestOptions?.filters };
 		if (mode) filters['mode'] = mode;
 		else delete filters['mode'];
 
-		await reloadSyncs({
+		requestOptions = {
 			...requestOptions,
 			filters: Object.keys(filters).length > 0 ? filters : undefined,
 			pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? 20 }
-		});
-	}
-
-	function getProjectDetailsUrl(sync: SyncRow, projectId: string): string {
-		return environmentHref(`/projects/${projectId}?from=gitops`, sync.environmentId);
+		};
 	}
 
 	function isBackup(sync: GitOpsSync): boolean {
@@ -138,7 +135,7 @@
 				toast.error(m.common_delete_failed({ resource: sync?.name ?? m.common_unknown() }));
 			},
 			onComplete: async (result) => {
-				if (result.success > 0) await reloadSyncs();
+				if (result.success > 0) await invalidateSyncs();
 			},
 			clearSelection: () => (selectedIds = []),
 			sequential: true
@@ -157,7 +154,7 @@
 			failureMessage: m.common_delete_failed({ resource: safeName }),
 			onSuccess: async () => {
 				toast.success(m.common_delete_success({ resource: `${m.resource_sync()} "${safeName}"` }));
-				await reloadSyncs();
+				await invalidateSyncs();
 			}
 		});
 	}
@@ -173,7 +170,7 @@
 			failureMessage: m.disconnect_backup_failed(),
 			onSuccess: async () => {
 				toast.success(m.disconnect_backup_success());
-				await reloadSyncs();
+				await invalidateSyncs();
 			}
 		});
 	}
@@ -187,7 +184,7 @@
 			setLoadingState: () => {},
 			onSuccess: async () => {
 				toast.success(isBackup(sync) ? m.backup_completed() : m.git_sync_success());
-				await reloadSyncs();
+				await invalidateSyncs();
 			}
 		});
 		isLoading.syncing = false;
@@ -275,7 +272,12 @@
 {#snippet NameCell({ item }: { item: SyncRow })}
 	<span class="inline-flex items-center gap-1.5">
 		{#if item.projectId}
-			<a class="font-medium hover:underline" href={getProjectDetailsUrl(item, item.projectId)}>
+			<a
+				class="font-medium hover:underline"
+				href={resolve(`/(app)/projects/[projectId]?from=gitops&env=${encodeURIComponent(item.environmentId)}`, {
+					projectId: item.projectId
+				})}
+			>
 				{item.name}
 			</a>
 		{:else}
@@ -316,7 +318,7 @@
 			<a
 				href={fileUrl}
 				target="_blank"
-				rel="noopener noreferrer"
+				rel="external noopener noreferrer"
 				class="min-w-0 truncate rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
 			>
 				{path}
@@ -355,6 +357,7 @@
 				<a
 					href={commitUrl}
 					target="_blank"
+					rel="external"
 					class="min-w-0 truncate rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
 				>
 					{item.lastSyncCommit}
@@ -501,7 +504,7 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
-	{onRefresh}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	customToolbarActions={ModeFilter}
@@ -512,10 +515,5 @@
 {#if backupDialogSync}
 	<BackupHistoryDialog bind:open={backupHistoryOpen} environmentId={backupDialogSync.environmentId} sync={backupDialogSync} />
 
-	<BackupResolveDialog
-		bind:open={backupResolveOpen}
-		environmentId={backupDialogSync.environmentId}
-		sync={backupDialogSync}
-		onResolved={() => reloadSyncs()}
-	/>
+	<BackupResolveDialog bind:open={backupResolveOpen} environmentId={backupDialogSync.environmentId} sync={backupDialogSync} />
 {/if}

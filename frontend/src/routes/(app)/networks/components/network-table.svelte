@@ -1,4 +1,6 @@
 <script module lang="ts">
+	import { resolve } from '$app/paths';
+
 	import type { NetworkSummaryDto } from '#lib/types/docker.js';
 
 	function ipamValues(item: NetworkSummaryDto, key: 'subnet' | 'gateway'): string[] {
@@ -8,6 +10,7 @@
 
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -22,19 +25,14 @@
 	import { DEFAULT_NETWORK_NAMES } from '#lib/constants.js';
 	import { NetworksIcon, GlobeIcon, InspectIcon, TrashIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { networkService, type NetworksPaginatedResponse } from '#lib/services/network-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions.js';
-	import {
-		environmentHref,
-		type EnvironmentPage,
-		type EnvironmentRow,
-		fetchAcrossEnvironments,
-		readableEnvironments,
-		rowKey
-	} from '#lib/utils/environments.js';
+	import { type EnvironmentPage, type EnvironmentRow, rowKey } from '#lib/utils/environments.js';
 	import { capitalizeFirstLetter } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -43,36 +41,22 @@
 	type NetworkPage = EnvironmentPage<NetworksPaginatedResponse>;
 
 	let {
-		networks = $bindable(),
+		networks,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
-		onNetworksChange,
-		onRefreshData
+		onRetry
 	}: {
 		networks: NetworkPage;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
-		onNetworksChange?: (networks: NetworkPage) => void;
-		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
+		onRetry: () => Promise<unknown>;
 	} = $props();
 
-	let isLoading = $state({
+	const queryClient = useQueryClient();
+
+	const isLoading = $state({
 		remove: false
 	});
-
-	async function refreshNetworks(options: SearchPaginationSortRequest = requestOptions) {
-		if (onRefreshData) {
-			await onRefreshData(options);
-			if (onNetworksChange) {
-				onNetworksChange(networks);
-			}
-			return;
-		}
-		networks = await fetchAcrossEnvironments(readableEnvironments('networks:list'), options, (id, request, config) =>
-			networkService.getNetworksForEnvironment(id, request, config)
-		);
-		onNetworksChange?.(networks);
-	}
 
 	async function handleDeleteNetwork(id: string, name: string, environmentId: string) {
 		const safeName = name?.trim() || m.common_unknown();
@@ -97,7 +81,7 @@
 								m.common_delete_success({ resource: `${m.resource_network()} "${safeName}"` }),
 								activityToastOptions(extractActivityId(data))
 							);
-							await refreshNetworks();
+							await queryClient.invalidateQueries({ queryKey: queryKeys.networks.listPrefix(environmentStore.shownKey) });
 						}
 					});
 				}
@@ -130,7 +114,8 @@
 			},
 			setLoading: (loading) => (isLoading.remove = loading),
 			onComplete: async (result) => {
-				if (result.success > 0) await refreshNetworks();
+				if (result.success > 0)
+					await queryClient.invalidateQueries({ queryKey: queryKeys.networks.listPrefix(environmentStore.shownKey) });
 			},
 			clearSelection: () => (selectedIds = [])
 		});
@@ -208,7 +193,11 @@
 </script>
 
 {#snippet NameCell({ item }: { item: NetworkRow })}
-	<a class="font-medium hover:underline" href={environmentHref(`/networks/${item.id}`, item.environmentId)}>{item.name}</a>
+	<a
+		class="font-medium hover:underline"
+		href={resolve(`/(app)/networks/[networkId]?env=${encodeURIComponent(item.environmentId)}`, { networkId: item.id })}
+		>{item.name}</a
+	>
 {/snippet}
 
 {#snippet IdCell({ item }: { item: NetworkRow })}
@@ -304,13 +293,18 @@
 			}
 		]}
 		rowActions={RowActions}
-		onclick={() => goto(environmentHref(`/networks/${item.id}`, item.environmentId))}
+		onclick={() =>
+			goto(resolve(`/(app)/networks/[networkId]?env=${encodeURIComponent(item.environmentId)}`, { networkId: item.id }))}
 	/>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: NetworkRow })}
 	<RowActionsMenu>
-		<DropdownMenu.Item onclick={() => goto(environmentHref(`/networks/${item.id}`, item.environmentId))} disabled={isAnyLoading}>
+		<DropdownMenu.Item
+			onclick={() =>
+				goto(resolve(`/(app)/networks/[networkId]?env=${encodeURIComponent(item.environmentId)}`, { networkId: item.id }))}
+			disabled={isAnyLoading}
+		>
 			<InspectIcon class="size-4" />
 			{m.common_inspect()}
 		</DropdownMenu.Item>
@@ -335,11 +329,7 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
-	onRefresh={async (options) => {
-		requestOptions = options;
-		await refreshNetworks(options);
-		return networks;
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

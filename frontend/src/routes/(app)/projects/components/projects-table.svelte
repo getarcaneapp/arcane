@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { mode } from 'mode-watcher';
 	import type { Snippet } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -22,7 +24,9 @@
 	import { AlertIcon, BoxIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon } from '#lib/icons/index.js';
 	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { projectService } from '#lib/services/project-service.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import type { Project, ProjectTagColor, ProjectTagOption } from '#lib/types/swarm.js';
 	import { hasPermission } from '#lib/utils/auth.js';
@@ -34,15 +38,7 @@
 		getProjectUpdateTooltip,
 		getProjectUpdateVariant
 	} from '#lib/utils/docker.js';
-	import {
-		environmentHref,
-		type EnvironmentPage,
-		type EnvironmentRow,
-		fetchAcrossEnvironments,
-		hasShownPermission,
-		readableEnvironments,
-		rowKey
-	} from '#lib/utils/environments.js';
+	import { type EnvironmentPage, type EnvironmentRow, hasShownPermission, rowKey } from '#lib/utils/environments.js';
 	import { capitalizeFirstLetter, formatDateTimeShort } from '#lib/utils/formatting.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { summarizeUpdateCheckResult } from '#lib/utils/update-actions.js';
@@ -53,13 +49,13 @@
 	type ProjectRow = EnvironmentRow<Project>;
 
 	let {
-		projects = $bindable(),
+		projects,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
 		withoutFilters = false,
 		showArchived = false,
 		onToggleArchived,
-		onRefreshData,
+		onRetry,
 		availableTags = [],
 		emptyState
 	}: {
@@ -69,30 +65,26 @@
 		withoutFilters?: boolean;
 		showArchived?: boolean;
 		onToggleArchived?: (checked: boolean) => void | Promise<void>;
-		onRefreshData?: (options: SearchPaginationSortRequest) => Promise<void>;
+		onRetry: () => Promise<unknown>;
 		availableTags?: ProjectTagOption[];
 		emptyState?: Snippet;
 	} = $props();
 
-	let actionStatus = $state<Record<string, ActionStatus>>({});
+	const actionStatus = $state<Record<string, ActionStatus>>({});
 	let checkingProjectIds = $state<Record<string, boolean>>({});
 	let tagCatalog = $derived(availableTags);
 
-	let isBulkLoading = $state({
+	const isBulkLoading = $state({
 		up: false,
 		down: false,
 		redeploy: false,
 		archive: false
 	});
 
-	async function refreshProjects(options: SearchPaginationSortRequest = requestOptions) {
-		if (onRefreshData) {
-			await onRefreshData(options);
-			return;
-		}
-		projects = await fetchAcrossEnvironments(readableEnvironments('projects:list'), options, (id, request, config) =>
-			projectService.getProjectsForEnvironment(id, request, config)
-		);
+	const queryClient = useQueryClient();
+
+	async function refreshProjects() {
+		await queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(environmentStore.shownKey) });
 	}
 
 	async function handleCheckProjectUpdates(project: ProjectRow) {
@@ -110,7 +102,7 @@
 				(async () => {
 					const result = await projectService.checkUpdates(project.id, project.environmentId);
 					summarizeUpdateCheckResult(result);
-					await refreshProjects(requestOptions);
+					await refreshProjects();
 				})()
 			);
 			if (operationResult.error !== null) {
@@ -129,10 +121,7 @@
 		if (attached && !tagCatalog.some((tag) => tag.name === name)) {
 			tagCatalog = [...tagCatalog, { name, color }].sort((a, b) => a.name.localeCompare(b.name));
 		}
-		projects = {
-			...projects,
-			data: projects.data.map((item) => (rowKey(item) === rowKey(project) ? { ...item, tags: response.tags } : item))
-		};
+		await refreshProjects();
 		return response.tags;
 	}
 
@@ -312,7 +301,11 @@
 			class="size-6"
 			containerClass="size-8"
 		/>
-		<a class="font-medium hover:underline" href={environmentHref(`/projects/${item.id}`, item.environmentId)}>{item.name}</a>
+		<a
+			class="font-medium hover:underline"
+			href={resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(item.environmentId)}`, { projectId: item.id })}
+			>{item.name}</a
+		>
 		{#if item.isArchived}
 			<span class="rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">{m.projects_archived_badge()}</span>
 		{/if}
@@ -336,7 +329,7 @@
 	<div class="flex items-center gap-2">
 		{#if item.gitOpsManagedBy}
 			<GitBranchIcon class="size-4" />
-			<a class="font-medium hover:underline" href={environmentHref('/gitops', item.environmentId)}>
+			<a class="font-medium hover:underline" href={resolve(`/(app)/gitops?env=${encodeURIComponent(item.environmentId)}`)}>
 				{m.git()}
 			</a>
 		{:else}
@@ -478,7 +471,8 @@
 				}
 			: undefined}
 		rowActions={RowActions}
-		onclick={() => goto(environmentHref(`/projects/${item.id}`, item.environmentId))}
+		onclick={() =>
+			goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(item.environmentId)}`, { projectId: item.id }))}
 	/>
 {/snippet}
 
@@ -489,7 +483,10 @@
 	{@const lifecycleDisabled = item.isArchived || isAnyLoading || configurationBlocked}
 	{@const archivedTitle = getRowArchivedTitle(item, configurationBlocked)}
 	<RowActionsMenu>
-		<DropdownMenu.Item onclick={() => goto(environmentHref(`/projects/${item.id}`, envId))} disabled={isAnyLoading}>
+		<DropdownMenu.Item
+			onclick={() => goto(resolve(`/(app)/projects/[projectId]?env=${encodeURIComponent(envId)}`, { projectId: item.id }))}
+			disabled={isAnyLoading}
+		>
 			<EditIcon class="size-4" />
 			{m.common_edit()}
 		</DropdownMenu.Item>
@@ -620,11 +617,7 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{withoutFilters}
-	onRefresh={async (options) => {
-		requestOptions = options;
-		await refreshProjects(options);
-		return projects;
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	{bulkActions}

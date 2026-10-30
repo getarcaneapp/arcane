@@ -26,9 +26,9 @@
 	import { bytes, formatDateTimeShort } from '#lib/utils/formatting.js';
 
 	let {
-		backups = $bindable(),
+		backups,
 		requestOptions = $bindable(),
-		onChanged,
+		onRetry,
 		onRestore,
 		onRestoreFiles,
 		onRestoreVolume,
@@ -39,7 +39,7 @@
 	}: {
 		backups: Paginated<BackupHistoryEntry>;
 		requestOptions: SearchPaginationSortRequest;
-		onChanged: (options: SearchPaginationSortRequest) => Promise<Paginated<BackupHistoryEntry>>;
+		onRetry: () => Promise<unknown>;
 		onRestore: (backup: BackupHistoryEntry) => void;
 		onRestoreFiles: (backup: BackupHistoryEntry) => void;
 		onRestoreVolume?: (backup: BackupHistoryEntry) => void;
@@ -145,11 +145,7 @@
 	items={backups}
 	bind:requestOptions
 	bind:mobileFieldVisibility
-	onRefresh={async (options) => {
-		requestOptions = options;
-		backups = await onChanged(options);
-		return backups;
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}

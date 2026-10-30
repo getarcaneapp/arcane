@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -17,7 +18,7 @@
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { containerService } from '#lib/services/container-service.js';
 	import { applyApiFieldError, extractApiErrorMessage } from '#lib/utils/api.js';
-	import { destinationEnvironmentId, environmentHref } from '#lib/utils/environments.js';
+	import { destinationEnvironmentId } from '#lib/utils/environments.js';
 	import { createForm } from '#lib/utils/settings.svelte.js';
 
 	const queryClient = useQueryClient();
@@ -33,7 +34,7 @@
 		onSuccess: async (created, { destination }) => {
 			toast.success(m.common_create_success({ resource: m.resource_container() }));
 			await queryClient.invalidateQueries({ queryKey: queryKeys.containers.all });
-			goto(environmentHref(`/containers/${created.id}`, destination));
+			goto(resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(destination)}`, { containerId: created.id }));
 		},
 		onError: (error) => {
 			applyApiFieldError(form.inputs, error);

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -39,7 +40,7 @@
 			await queryClient.invalidateQueries({ queryKey: queryKeys.containers.all });
 			queryClient.removeQueries({ queryKey: queryKeys.containers.detail(data.envId, data.containerId) });
 			queryClient.removeQueries({ queryKey: queryKeys.containers.editConfig(data.envId, data.containerId) });
-			goto(environmentHref(`/containers/${details.id}`, data.envId));
+			goto(resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(data.envId)}`, { containerId: details.id }));
 		},
 		onError: (error) => {
 			applyApiFieldError(form.inputs, error);

@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { roleService } from '#lib/services/role-service.js';
 	import type { Role, RoleCreate, RoleWritable } from '#lib/types/auth.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
@@ -12,6 +15,7 @@
 	import RoleEditorPage from '../components/role-editor-page.svelte';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
 	let isLoading = $state(false);
 
@@ -25,8 +29,9 @@
 			message: m.common_update_failed({ resource: `${m.resource_role()} "${safeName}"` }),
 			setLoadingState: (value) => (isLoading = value),
 			onSuccess: async () => {
+				await queryClient.invalidateQueries({ queryKey: queryKeys.roles.root });
 				toast.success(m.common_update_success({ resource: `${m.resource_role()} "${safeName}"` }));
-				await goto('/settings/roles');
+				await goto(resolve('/(app)/settings/roles'));
 			}
 		});
 	}
@@ -45,8 +50,9 @@
 			message: m.roles_clone_failed(),
 			setLoadingState: (value) => (isLoading = value),
 			onSuccess: async (newRole) => {
+				await queryClient.invalidateQueries({ queryKey: queryKeys.roles.root });
 				toast.success(m.roles_clone_success({ name: newRole.name }));
-				await goto(`/settings/roles/${newRole.id}`);
+				await goto(resolve('/(app)/settings/roles/[id]', { id: newRole.id }));
 			}
 		});
 	}

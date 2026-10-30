@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -56,7 +57,7 @@
 	setSettingsFormContext(formContext);
 
 	function goBackToSettings() {
-		goto('/settings');
+		goto(resolve('/(app)/settings'));
 	}
 
 	async function handleSave() {

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 
 	import CategoryIndexPage from '#lib/components/category-index-page.svelte';
@@ -25,7 +26,7 @@
 	import { settingsSearchService } from '#lib/services/settings-search.js';
 	import type { SettingsCategory } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
-	import { canReachAccessSurfaceUrl } from '#lib/utils/auth.js';
+	import { canReachAccessSurfaceUrl, isInAppPath } from '#lib/utils/auth.js';
 	import { normalizeCategory, orderCategoriesByNav } from '#lib/utils/category-page.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
@@ -119,7 +120,7 @@
 	});
 
 	function navigateToCategory(categoryUrl: string) {
-		goto(categoryUrl);
+		if (isInAppPath(categoryUrl)) goto(categoryUrl);
 	}
 
 	function isAccessibleCategory(category: SettingsCategory) {
@@ -152,7 +153,7 @@
 	};
 	const navOnlyCategories = $derived(
 		filterByPermissions(
-			navigationItems.adminItems.find((item) => item.url === '/settings')?.items,
+			navigationItems.adminItems.find((item) => item.url === resolve('/(app)/settings'))?.items,
 			user ?? null,
 			permissionsManifest
 		).flatMap((item): NormalizedCategory[] => {

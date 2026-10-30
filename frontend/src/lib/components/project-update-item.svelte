@@ -152,6 +152,7 @@
 	{#if canCheck}
 		<div class="px-2 pb-2">
 			<button
+				type="button"
 				onclick={handleCheckClick}
 				disabled={checking}
 				class="group flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-sidebar-accent text-xs font-medium text-sidebar-accent-foreground transition-colors hover:bg-sidebar-accent/80 disabled:cursor-not-allowed disabled:opacity-50"

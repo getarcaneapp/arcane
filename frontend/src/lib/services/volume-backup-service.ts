@@ -6,7 +6,7 @@ import type {
 	UpdateVolumeBackupPolicy,
 	VolumeBackupPolicyCollection
 } from '#lib/types/shared.js';
-import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest, Paginated, MessageResponse } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService from './api-service';
@@ -50,7 +50,7 @@ class VolumeBackupService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/volumes/backups/discover`, { s3DestinationId }));
 	}
 
-	async restoreBackup(volumeName: string, backupId: string, environmentId: string): Promise<unknown> {
+	async restoreBackup(volumeName: string, backupId: string, environmentId: string): Promise<MessageResponse> {
 		return this.handleResponse(
 			this.api.post(`/environments/${environmentId}/volumes/${volumeName}/backups/${backupId}`, undefined, {
 				params: { action: 'restore' }
@@ -63,7 +63,7 @@ class VolumeBackupService extends BaseAPIService {
 		backupId: string,
 		selection: BackupRestoreSelection,
 		environmentId: string
-	): Promise<unknown> {
+	): Promise<MessageResponse> {
 		return this.handleResponse(
 			this.api.post(
 				`/environments/${environmentId}/volumes/${volumeName}/backups/${backupId}`,
@@ -110,7 +110,7 @@ class VolumeBackupService extends BaseAPIService {
 		link.remove();
 	}
 
-	async deleteBackup(backupId: string, environmentId: string): Promise<unknown> {
+	async deleteBackup(backupId: string, environmentId: string): Promise<MessageResponse> {
 		return this.handleResponse(this.api.delete(`/environments/${environmentId}/volumes/backups/${backupId}`));
 	}
 
@@ -125,7 +125,7 @@ class VolumeBackupService extends BaseAPIService {
 		file: File,
 		environmentId: string,
 		onProgress?: UploadProgressCallback
-	): Promise<unknown> {
+	): Promise<MessageResponse> {
 		const uploadId = await uploadService.uploadFile(environmentId, 'volume-backup', file, onProgress);
 		return this.handleResponse(
 			this.api.post(`/environments/${environmentId}/volumes/${volumeName}/backups/upload`, { uploadId })

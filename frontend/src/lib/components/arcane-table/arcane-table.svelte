@@ -64,7 +64,7 @@
 		selectionDisabled = false,
 		loading = false,
 		unstyled = false,
-		onRefresh,
+		onRetry,
 		onPageSizeChangeRequest,
 		columns,
 		rowActions,
@@ -99,7 +99,7 @@
 		selectionDisabled?: boolean;
 		loading?: boolean;
 		unstyled?: boolean;
-		onRefresh: (requestOptions: SearchPaginationSortRequest) => Promise<Paginated<TData>>;
+		onRetry?: () => Promise<unknown>;
 		onPageSizeChangeRequest?: (limit: number, apply: () => void) => void;
 		columns: ColumnSpec<TData>[];
 		rowActions?: Snippet<[{ row: ArcaneRow<TData>; item: TData; view: TableViewMode }]>;
@@ -313,7 +313,6 @@
 		const restoredOptions = restoreTableRequestOptions(requestOptions, snapshot, getEffectiveLimit());
 		if (restoredOptions !== requestOptions) {
 			requestOptions = restoredOptions;
-			onRefresh(requestOptions);
 		}
 
 		if (mobileFields.length && !Object.keys(mobileFieldVisibility).length) {
@@ -341,7 +340,6 @@
 		if (mobileScrollEl) mobileScrollEl.scrollTop = 0;
 		const next = { ...prev, ...patch };
 		requestOptions = { ...requestOptions, pagination: next };
-		onRefresh(requestOptions);
 	}
 
 	function setPage(page: number) {
@@ -576,7 +574,6 @@
 					limit: requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 10
 				}
 			};
-			onRefresh(requestOptions);
 		},
 		onColumnFiltersChange: (updater) => {
 			let next: ColumnFiltersState;
@@ -593,7 +590,6 @@
 					limit: requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 10
 				}
 			};
-			onRefresh(requestOptions);
 		},
 		onColumnVisibilityChange: (updater) => {
 			let nextVisibility: ColumnVisibilityState;
@@ -619,7 +615,6 @@
 				if (enablePersist && prefs) {
 					prefs.current = { ...prefs.current, s: encodeSort(hiddenSortFallback) };
 				}
-				onRefresh(requestOptions);
 			}
 		},
 		onGlobalFilterChange: (updater) => {
@@ -635,7 +630,6 @@
 			if (enablePersist && prefs) {
 				prefs.current = { ...prefs.current, g: globalFilter() };
 			}
-			onRefresh(requestOptions);
 		}
 	});
 
@@ -841,13 +835,16 @@
 									.join(', ')
 							})}
 						</Alert.Description>
-						<ArcaneButton
-							action="refresh"
-							size="sm"
-							customLabel={m.common_retry()}
-							onClickPromise={async () =>
-								handleApiResultWithCallbacks({ result: await tryCatch(onRefresh(requestOptions)), message: m.common_failed() })}
-						/>
+						{#if onRetry}
+							{@const retry = onRetry}
+							<ArcaneButton
+								action="refresh"
+								size="sm"
+								customLabel={m.common_retry()}
+								onClickPromise={async () =>
+									handleApiResultWithCallbacks({ result: await tryCatch(retry()), message: m.common_failed() })}
+							/>
+						{/if}
 					</div>
 				</Alert.Root>
 			</div>

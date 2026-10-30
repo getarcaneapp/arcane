@@ -56,7 +56,7 @@
 					<a
 						href={linkHref}
 						target="_blank"
-						rel="noopener noreferrer"
+						rel="external noopener noreferrer"
 						class="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
 					>
 						{linkLabel}

@@ -1,6 +1,5 @@
-import { queryKeys } from '#lib/query/query-keys.js';
-import { apiKeyService } from '#lib/services/api-key-service.js';
-import { roleService } from '#lib/services/role-service.js';
+import { apiKeyListQuery } from '#lib/query/api-keys.js';
+import { permissionsManifestQuery } from '#lib/query/roles.js';
 import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { resolveInitialTableRequest } from '#lib/utils/tables.js';
 
@@ -21,15 +20,8 @@ export const load: PageLoad = async ({ parent }) => {
 	} satisfies SearchPaginationSortRequest);
 
 	const [apiKeys, permissionsManifest] = await Promise.all([
-		queryClient.query({
-			queryKey: queryKeys.apiKeys.list(apiKeyRequestOptions),
-			queryFn: () => apiKeyService.getApiKeys(apiKeyRequestOptions)
-		}),
-		queryClient.query({
-			queryKey: queryKeys.roles.permissionsManifest(),
-			queryFn: () => roleService.getPermissionsManifest(),
-			staleTime: Infinity
-		})
+		queryClient.query(apiKeyListQuery(apiKeyRequestOptions)),
+		queryClient.query({ ...permissionsManifestQuery(), staleTime: Infinity })
 	]);
 
 	return {

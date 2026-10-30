@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
@@ -10,25 +12,31 @@
 	import { UsersIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { userListQuery } from '#lib/query/users.js';
 	import { roleService } from '#lib/services/role-service.js';
 	import { userService } from '#lib/services/user-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 	import type { User, UserCreate, UserUpdate } from '#lib/types/auth.js';
 	import type { Settings } from '#lib/types/settings.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import UserTable from './components/user-table.svelte';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
-	let users = $derived(data.users);
-	let selectedIds = $state<string[]>([]);
-	let requestOptions = $derived<SearchPaginationSortRequest>(data.userRequestOptions);
+	const pageState = new ResourceListPageState(untrack(() => data.userRequestOptions));
+	const usersQuery = createQuery(() => ({
+		...userListQuery(pageState.requestOptions),
+		placeholderData: (previous) => previous
+	}));
+	const users = $derived(usersQuery.data ?? data.users);
 
-	let isDialogOpen = $state({
+	const isDialogOpen = $state({
 		create: false,
 		edit: false
 	});
@@ -62,7 +70,7 @@
 		);
 	}
 
-	let isLoading = $state({
+	const isLoading = $state({
 		creating: false,
 		editing: false,
 		refresh: false
@@ -78,21 +86,11 @@
 		isDialogOpen.edit = true;
 	}
 
-	async function refreshUsers() {
-		await handleApiResultWithCallbacks({
-			result: await tryCatch(userService.getUsers(requestOptions)),
-			message: m.common_refresh_failed({ resource: m.users_title() }),
-			onSuccess: (list) => {
-				users = list;
-			}
-		});
-	}
-
 	async function completeUserEdit(username: string) {
 		toast.success(m.common_update_success({ resource: `${m.resource_user()} "${username}"` }));
 		isDialogOpen.edit = false;
 		userToEdit = null;
-		await refreshUsers();
+		await queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
 	}
 
 	async function handleUserSubmit({
@@ -185,7 +183,7 @@
 						toast.success(m.common_create_success({ resource: `${m.resource_user()} "${safeUsername}"` }));
 					}
 					isDialogOpen.create = false;
-					await refreshUsers();
+					await queryClient.invalidateQueries({ queryKey: queryKeys.users.all });
 				}
 			});
 			return !result.error;
@@ -278,11 +276,11 @@
 		</SettingsSection>
 
 		<UserTable
-			bind:users
-			bind:selectedIds
-			bind:requestOptions
+			{users}
+			bind:selectedIds={pageState.selectedIds}
+			bind:requestOptions={pageState.requestOptions}
 			roles={data.roles}
-			onUsersChanged={refreshUsers}
+			onRetry={() => usersQuery.refetch()}
 			onEditUser={openEditDialog}
 		/>
 	{/snippet}

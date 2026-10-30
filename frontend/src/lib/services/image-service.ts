@@ -2,6 +2,11 @@ import { m } from '#lib/paraglide/messages.js';
 import type { AutoUpdateCheck, AutoUpdateResult } from '#lib/types/automation.js';
 import type { PruneImagesOptions } from '#lib/types/automation.js';
 import type {
+	ContainerRegistryCredential,
+	ImageBuildRequest,
+	ImageDetailSummaryDto,
+	ImageLoadResult,
+	ImagePruneReport,
 	ImageSummaryDto,
 	ImageUsageCounts,
 	ImageUpdateInfoDto,
@@ -16,12 +21,18 @@ import type {
 	ImagePatchRecordDto,
 	ImagePatchTargetDto
 } from '#lib/types/docker.js';
-import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared.js';
+import type { SearchPaginationSortRequest, Paginated, MessageResponse } from '#lib/types/shared.js';
+import type { OperationStreamFrame } from '#lib/types/stream.js';
 import { readNdjsonStream } from '#lib/utils/streaming.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 import { tryCatch } from '#lib/utils/try-catch.js';
 
-import BaseAPIService, { type APIRequestConfig, isSessionCancelledError, withSessionSignal } from './api-service';
+import BaseAPIService, {
+	type APIRequestConfig,
+	extractServerMessage,
+	isSessionCancelledError,
+	withSessionSignal
+} from './api-service';
 import { uploadService, type UploadProgressCallback } from './upload-service';
 
 export type ImagePullResult = {
@@ -53,7 +64,7 @@ class ImageService extends BaseAPIService {
 		return res.data.data;
 	}
 
-	async getImageForEnvironment(environmentId: string, imageId: string): Promise<any> {
+	async getImageForEnvironment(environmentId: string, imageId: string): Promise<ImageDetailSummaryDto> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/images/${imageId}`));
 	}
 
@@ -86,7 +97,7 @@ class ImageService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/images/updates/releasenotes`, { params }));
 	}
 
-	async tagImage(imageId: string, request: ImageTagRequest, environmentId: string): Promise<any> {
+	async tagImage(imageId: string, request: ImageTagRequest, environmentId: string): Promise<MessageResponse> {
 		return this.handleResponse(
 			this.api.post(`/environments/${environmentId}/images/${encodeURIComponent(imageId)}/tag`, request)
 		);
@@ -106,42 +117,22 @@ class ImageService extends BaseAPIService {
 
 	async pullImageStream(
 		imageName: string,
-		onLine: ((data: any) => void) | undefined,
+		onLine: ((data: unknown) => void) | undefined,
 		environmentId: string
 	): Promise<ImagePullResult> {
 		const operationResult = await tryCatch(
 			(async () => {
-				const response = await fetch(`/api/environments/${environmentId}/images/pull`, {
-					method: 'POST',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ imageName }),
-					signal: withSessionSignal()
-				});
-
-				if (!response.ok || !response.body) {
-					const errorData = await tryCatch(response.json()).then((result) => {
-						if (result.error !== null) {
-							return {
-								data: { message: m.images_pull_server_error() }
-							};
-						} else {
-							return result.data;
-						}
-					});
-					const errorMessage =
-						errorData.data?.message ||
-						errorData.error ||
-						errorData.message ||
-						`${m.images_pull_server_error()}: HTTP ${response.status}`;
-					throw new Error(errorMessage);
-				}
-
-				await readNdjsonStream(response.body, (parsed) => {
+				const body = await this.postStreamInternal(
+					`/api/environments/${environmentId}/images/pull`,
+					{ imageName },
+					(status) => `${m.images_pull_server_error()}: HTTP ${status}`
+				);
+				await readNdjsonStream(body, (parsed: OperationStreamFrame) => {
 					onLine?.(parsed);
 					if (parsed?.error) {
-						const message =
-							typeof parsed.error === 'string' ? parsed.error : parsed.error.message || m.images_pull_stream_failed();
-						throw new Error(message);
+						throw new Error(
+							typeof parsed.error === 'string' ? parsed.error : parsed.error.message || m.images_pull_stream_failed()
+						);
 					}
 					// The terminal frame marks success; don't wait on the network EOF.
 					return parsed?.done === true;
@@ -164,7 +155,56 @@ class ImageService extends BaseAPIService {
 		}
 	}
 
-	async pullImage(imageName: string, tag: string = 'latest', auth: any, environmentId: string): Promise<any> {
+	async buildImageStream(request: ImageBuildRequest, environmentId: string, onLine: (line: string) => boolean): Promise<void> {
+		const body = await this.postStreamInternal(`/api/environments/${environmentId}/images/build`, request, (status) =>
+			m.build_request_failed_http({ status })
+		);
+		const reader = body.getReader();
+		const decoder = new TextDecoder();
+		let buffer = '';
+		let streamComplete = false;
+
+		while (!streamComplete) {
+			const { done, value } = await reader.read();
+			if (done) {
+				break;
+			}
+
+			buffer += decoder.decode(value, { stream: true });
+			const lines = buffer.split('\n');
+			buffer = lines.pop() || '';
+
+			streamComplete = lines.some(onLine);
+		}
+		if (streamComplete) {
+			await tryCatch(reader.cancel());
+		}
+	}
+
+	private async postStreamInternal(
+		url: string,
+		body: unknown,
+		failedMessage: (status: number) => string
+	): Promise<ReadableStream<Uint8Array>> {
+		const response = await fetch(url, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+			signal: withSessionSignal()
+		});
+		if (response.ok && response.body) {
+			return response.body;
+		}
+		const errorBody = await tryCatch(response.json());
+		throw new Error(extractServerMessage(errorBody.data, true) ?? failedMessage(response.status));
+	}
+
+	async pullImage(
+		imageName: string,
+		tag: string = 'latest',
+		auth: ContainerRegistryCredential | undefined,
+		environmentId: string
+	): Promise<string> {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/images/pull`, { imageName, tag, auth }));
 	}
 
@@ -172,11 +212,11 @@ class ImageService extends BaseAPIService {
 		imageId: string,
 		options: { force?: boolean; noprune?: boolean } | undefined,
 		environmentId: string
-	): Promise<any> {
+	): Promise<MessageResponse> {
 		return this.handleResponse(this.api.delete(`/environments/${environmentId}/images/${imageId}`, { params: options }));
 	}
 
-	async pruneImages(options: PruneImagesOptions, environmentId: string): Promise<any> {
+	async pruneImages(options: PruneImagesOptions, environmentId: string): Promise<ImagePruneReport> {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/images/prune`, options));
 	}
 
@@ -216,7 +256,7 @@ class ImageService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/updater/run`, options));
 	}
 
-	async uploadImage(file: File, environmentId: string, onProgress?: UploadProgressCallback): Promise<any> {
+	async uploadImage(file: File, environmentId: string, onProgress?: UploadProgressCallback): Promise<ImageLoadResult> {
 		const uploadId = await uploadService.uploadFile(environmentId, 'image', file, onProgress);
 		return this.handleResponse(this.api.post(`/environments/${environmentId}/images/upload`, { uploadId }));
 	}

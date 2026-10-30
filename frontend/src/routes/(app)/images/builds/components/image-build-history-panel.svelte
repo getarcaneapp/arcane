@@ -27,12 +27,13 @@
 		TerminalIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { imageBuildListQuery } from '#lib/query/images.js';
 	import { queryKeys } from '#lib/query/query-keys.js';
 	import { imageService } from '#lib/services/image-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import type { ImageBuildRecord, ImageBuildStatus } from '#lib/types/docker.js';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
-	import { type EnvironmentRow, fetchAcrossEnvironments, readableEnvironments } from '#lib/utils/environments.js';
+	import { type EnvironmentRow, readableEnvironments } from '#lib/utils/environments.js';
 
 	import {
 		buildHistoryStatusLabel,
@@ -70,12 +71,9 @@
 
 	const historyQuery = createQuery(() => {
 		const scope = environmentStore.shownKey;
-		const environments = readableEnvironments('images:list');
-		const options = requestOptions;
 		return {
-			queryKey: queryKeys.images.buildsList(scope, options),
-			queryFn: () =>
-				fetchAcrossEnvironments(environments, options, (id, request, config) => imageService.getImageBuilds(request, id, config))
+			...imageBuildListQuery(scope, readableEnvironments('images:list'), requestOptions),
+			placeholderData: (previous, query) => (query?.queryKey[1] === scope ? previous : undefined)
 		};
 	});
 
@@ -176,12 +174,6 @@
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true },
 		{ id: 'durationMs', label: m.duration(), defaultVisible: false }
 	];
-
-	async function loadHistory(options: SearchPaginationSortRequest = requestOptions) {
-		requestOptions = options;
-		const result = await historyQuery.refetch();
-		return result.data ?? historyQuery.data ?? EMPTY_BUILD_HISTORY;
-	}
 
 	function openDetails(build: BuildRow) {
 		selectedId = build.id;
@@ -303,7 +295,7 @@
 		bind:requestOptions
 		bind:selectedIds
 		bind:mobileFieldVisibility
-		onRefresh={loadHistory}
+		onRetry={() => historyQuery.refetch()}
 		selectionDisabled={true}
 		{columns}
 		{mobileFields}

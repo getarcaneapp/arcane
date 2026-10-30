@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { mode } from 'mode-watcher';
@@ -200,10 +201,12 @@
 		if (!updateViewMounted || environmentId !== currentEnvId || containerId !== container.id) return;
 		if (result.error instanceof APIError && result.error.status === 404) {
 			await Promise.all(
-				listScopes([environmentId]).map((scope) => queryClient.invalidateQueries({ queryKey: ['containers', scope] }))
+				listScopes([environmentId]).map((scope) =>
+					queryClient.invalidateQueries({ queryKey: queryKeys.containers.listPrefix(scope) })
+				)
 			);
 			if (!updateViewMounted || environmentId !== currentEnvId || containerId !== container.id) return;
-			await goto('/containers');
+			await goto(resolve('/(app)/containers'));
 			return;
 		}
 		if (result.error !== null) {
@@ -214,8 +217,8 @@
 		}
 		await Promise.all([
 			...listScopes([environmentId]).flatMap((scope) => [
-				queryClient.invalidateQueries({ queryKey: ['containers', scope] }),
-				queryClient.invalidateQueries({ queryKey: ['projects', scope] })
+				queryClient.invalidateQueries({ queryKey: queryKeys.containers.listPrefix(scope) }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.projects.listPrefix(scope) })
 			]),
 			queryClient.invalidateQueries({ queryKey: queryKeys.containers.detail(environmentId, containerId) }),
 			queryClient.invalidateQueries({ queryKey: queryKeys.projects.environment(environmentId) })
@@ -389,7 +392,9 @@
 				label: m.common_edit(),
 				icon: EditIcon,
 				group: 'manage',
-				href: environmentHref(`/containers/${container.id}/edit`, currentEnvId)
+				href: resolve(`/(app)/containers/[containerId]/edit?env=${encodeURIComponent(currentEnvId)}`, {
+					containerId: container.id
+				})
 			});
 		}
 		if (canConvertToCompose) {

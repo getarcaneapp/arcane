@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { ResolvedPathname } from '$app/types';
 	import type { Snippet } from 'svelte';
 
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -12,7 +13,7 @@
 	import { useJobActions } from '#lib/hooks/use-job-actions.svelte.js';
 	import { AlertTriangleIcon, CheckIcon, ClockIcon, CloseIcon, EditIcon, RestartIcon, StartIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type { JobStatus } from '#lib/types/settings.js';
+	import type { JobPrerequisite, JobStatus } from '#lib/types/settings.js';
 	import { formatDateTimeShort, formatRelativeTime } from '#lib/utils/formatting.js';
 
 	import JobRunHistory from './job-run-history.svelte';
@@ -31,7 +32,7 @@
 		enableControl,
 		onScheduleUpdate
 	}: {
-		job: JobStatus;
+		job: JobStatus & { prerequisites?: (JobPrerequisite & { settingsUrl?: ResolvedPathname })[] };
 		environmentId: string;
 		isAgent?: boolean;
 		durableRuns?: boolean;

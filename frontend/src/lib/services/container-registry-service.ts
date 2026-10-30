@@ -6,7 +6,7 @@ import type {
 	RegistryTag
 } from '#lib/types/docker.js';
 import type { ContainerRegistry } from '#lib/types/docker.js';
-import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
+import type { MessageResponse, Paginated, SearchPaginationSortRequest } from '#lib/types/shared.js';
 import { transformPaginationParams } from '#lib/utils/tables.js';
 
 import BaseAPIService from './api-service';
@@ -38,7 +38,7 @@ class ContainerRegistryService extends BaseAPIService {
 		return this.handleResponse(this.api.delete(`/registries/${id}`));
 	}
 
-	async testRegistry(id: string): Promise<unknown> {
+	async testRegistry(id: string): Promise<MessageResponse> {
 		return this.handleResponse(this.api.post(`/registries/${id}`, undefined, { params: { action: 'test' } }));
 	}
 

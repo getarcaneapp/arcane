@@ -1,41 +1,22 @@
-import { queryKeys } from '#lib/query/query-keys.js';
-import { portService } from '#lib/services/port-service.js';
+import { portListQuery } from '#lib/query/networks.js';
+import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 import { throwPageLoadError } from '#lib/utils/api.js';
-import { fetchAcrossEnvironments, readableEnvironments } from '#lib/utils/environments.js';
-import { resolveListPageLoadContext } from '#lib/utils/tables.js';
-import { tryCatch } from '#lib/utils/try-catch.js';
+import { readableEnvironments } from '#lib/utils/environments.js';
+import { resolveInitialListPageRequest } from '#lib/utils/tables.js';
 
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {
-	const {
-		queryClient,
-		scope,
-		requestOptions: portRequestOptions
-	} = await resolveListPageLoadContext(parent, 'arcane-ports-table', {
+	const [{ queryClient }] = await Promise.all([parent(), environmentStore.ready]);
+	const scope = environmentStore.shownKey;
+	const portRequestOptions = resolveInitialListPageRequest('arcane-ports-table', {
 		column: 'hostPort',
 		direction: 'asc'
 	});
-	const environments = readableEnvironments('containers:list');
 
-	let ports;
-	const operationResult = await tryCatch(
-		(async () =>
-			queryClient.query({
-				queryKey: queryKeys.ports.list(scope, portRequestOptions),
-				queryFn: () =>
-					fetchAcrossEnvironments(environments, portRequestOptions, (id, request, config) =>
-						portService.getPortsForEnvironment(id, request, config)
-					)
-			}))()
-	);
-	if (operationResult.error !== null) {
-		const err = operationResult.error;
-
-		throwPageLoadError(err, 'Failed to load ports');
-	} else {
-		ports = operationResult.data;
-	}
+	const ports = await queryClient
+		.query(portListQuery(scope, readableEnvironments('containers:list'), portRequestOptions))
+		.catch((err: unknown) => throwPageLoadError(err, 'Failed to load ports'));
 
 	return {
 		scope,

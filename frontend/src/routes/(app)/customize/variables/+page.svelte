@@ -1,10 +1,13 @@
 <script lang="ts">
+	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import VariableFormSheet from '#lib/components/sheets/variable-form-sheet.svelte';
 	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
+	import { variableListQuery } from '#lib/query/variables.js';
 	import { variableService } from '#lib/services/variable-service.js';
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
 	import type { GlobalVariable, GlobalVariableCreate, GlobalVariableUpdate, VariableEnvSyncResult } from '#lib/types/variable.js';
@@ -21,11 +24,13 @@
 
 	let { data } = $props();
 
-	let variables = $derived(data.variables);
+	const queryClient = useQueryClient();
+
+	const variablesQuery = createQuery(() => variableListQuery());
+	const variables = $derived(variablesQuery.data ?? data.variables);
 	let isSheetOpen = $state(false);
 	let variableSession = $state(0);
 	let variableToEdit = $state<GlobalVariable | null>(null);
-	let isSubmitting = $state(false);
 
 	const canCreateVariables = $derived(hasPermission('variables:create', GLOBAL_SCOPE));
 
@@ -52,53 +57,56 @@
 		isSheetOpen = true;
 	}
 
-	async function handleSheetSubmit(payload: VariableFormPayload): Promise<Error | null> {
-		isSubmitting = true;
-		try {
-			const operationResult = await tryCatch(
-				(async () => {
-					let response;
-					if (payload.mode === 'edit') {
-						response = await variableService.update(payload.id, payload.variable);
-					} else if (payload.mode === 'bulk') {
-						response = await variableService.createMany(payload.variables);
-					} else {
-						response = await variableService.create(payload.variable);
-					}
-
-					variables = await variableService.list();
-
-					if (payload.mode === 'bulk') {
-						toast.success(m.count_variables_created({ count: payload.variables.length }));
-					} else if (payload.mode === 'edit') {
-						toast.success(m.common_update_success({ resource: m.variable() }));
-					} else {
-						toast.success(m.common_create_success({ resource: m.variable() }));
-					}
-					reportSyncResults(response?.syncResults);
-
-					isSheetOpen = false;
-				})()
-			);
-			if (operationResult.error !== null) {
-				const error = operationResult.error;
-
-				toast.error(
-					payload.mode === 'edit'
-						? m.common_update_failed({ resource: m.variable() })
-						: m.common_create_failed({ resource: m.variable() }),
-					{ description: extractApiErrorMessage(error) }
-				);
-				// A bulk create can partially succeed before the failing entry, so
-				// refresh even on error to keep the table and duplicate-key
-				// validation in sync with what was actually persisted.
-				await refreshVariables();
-				return error;
+	const saveVariableMutation = createMutation(() => ({
+		mutationFn: (payload: VariableFormPayload) => {
+			switch (payload.mode) {
+				case 'edit':
+					return variableService.update(payload.id, payload.variable);
+				case 'bulk':
+					return variableService.createMany(payload.variables);
+				default:
+					return variableService.create(payload.variable);
 			}
-			return null;
-		} finally {
-			isSubmitting = false;
+		},
+		onSuccess: async (response, payload) => {
+			await queryClient.invalidateQueries({ queryKey: queryKeys.variables.all });
+			if (payload.mode === 'bulk') {
+				toast.success(m.count_variables_created({ count: payload.variables.length }));
+			} else if (payload.mode === 'edit') {
+				toast.success(m.common_update_success({ resource: m.variable() }));
+			} else {
+				toast.success(m.common_create_success({ resource: m.variable() }));
+			}
+			reportSyncResults(response?.syncResults);
+			isSheetOpen = false;
+		},
+		onError: async (error, payload) => {
+			toast.error(
+				payload.mode === 'edit'
+					? m.common_update_failed({ resource: m.variable() })
+					: m.common_create_failed({ resource: m.variable() }),
+				{ description: extractApiErrorMessage(error) }
+			);
+			await queryClient.invalidateQueries({ queryKey: queryKeys.variables.all });
 		}
+	}));
+
+	const deleteVariableMutation = createMutation(() => ({
+		mutationFn: (variable: GlobalVariable) => variableService.delete(variable.id),
+		onSuccess: async (response) => {
+			await queryClient.invalidateQueries({ queryKey: queryKeys.variables.all });
+			toast.success(m.common_delete_success({ resource: m.variable() }));
+			reportSyncResults(response?.syncResults);
+		},
+		onError: async (error) => {
+			toast.error(m.common_delete_failed({ resource: m.variable() }), { description: extractApiErrorMessage(error) });
+			await queryClient.invalidateQueries({ queryKey: queryKeys.variables.all });
+		}
+	}));
+
+	async function handleSheetSubmit(payload: VariableFormPayload): Promise<Error | null> {
+		const result = await tryCatch(saveVariableMutation.mutateAsync(payload));
+		return result.error;
 	}
 
 	function handleDelete(variable: GlobalVariable) {
@@ -109,21 +117,7 @@
 				label: m.common_delete(),
 				destructive: true,
 				action: async () => {
-					const operationResult = await tryCatch(
-						(async () => {
-							const response = await variableService.delete(variable.id);
-							variables = await variableService.list();
-							toast.success(m.common_delete_success({ resource: m.variable() }));
-							reportSyncResults(response?.syncResults);
-						})()
-					);
-					if (operationResult.error !== null) {
-						const error = operationResult.error;
-
-						console.error('Error deleting variable:', error);
-						toast.error(m.common_delete_failed({ resource: m.variable() }));
-						await refreshVariables();
-					}
+					await tryCatch(deleteVariableMutation.mutateAsync(variable));
 				}
 			}
 		});
@@ -142,15 +136,11 @@
 				]
 			: []
 	);
-
-	async function refreshVariables() {
-		variables = await tryCatch(variableService.list()).then((result) => (result.error ? variables : result.data));
-	}
 </script>
 
 <ResourcePageLayout title={m.variables_title()} subtitle={m.variables_subtitle()} {actionButtons}>
 	{#snippet mainContent()}
-		<VariableTable bind:variables environments={data.environments} onEdit={openEditSheet} onDelete={handleDelete} />
+		<VariableTable {variables} environments={data.environments} onEdit={openEditSheet} onDelete={handleDelete} />
 	{/snippet}
 
 	{#snippet additionalContent()}
@@ -161,7 +151,7 @@
 					bind:variableToEdit
 					environments={data.environments}
 					existingVariables={variables}
-					isLoading={isSubmitting}
+					isLoading={saveVariableMutation.isPending}
 					onSubmit={handleSheetSubmit}
 				/>
 			{/key}

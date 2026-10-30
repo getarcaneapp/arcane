@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { useQueryClient } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
@@ -23,6 +25,7 @@
 		ConnectionIcon
 	} from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
 	import { environmentStore } from '#lib/stores/environment.store.svelte.js';
 	import { GLOBAL_SCOPE } from '#lib/types/auth.js';
@@ -43,19 +46,20 @@
 		environments,
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
-		onRefreshData,
+		onRetry,
 		onDeleteSelected,
 		bulkDeleteLoading = false
 	}: {
 		environments: Paginated<Environment>;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
-		onRefreshData: (options: SearchPaginationSortRequest) => Promise<void>;
+		onRetry: () => Promise<unknown>;
 		onDeleteSelected: (ids: string[]) => void;
 		bulkDeleteLoading?: boolean;
 	} = $props();
 
-	let isLoading = $state({ removing: false, testing: false, upgrading: false, toggling: false });
+	const queryClient = useQueryClient();
+	const isLoading = $state({ removing: false, testing: false, upgrading: false, toggling: false });
 	let showUpgradeDialog = $state(false);
 	let selectedEnvironmentForUpgrade = $state<Environment | null>(null);
 	let selectedVersionInfoForUpgrade = $state<AppVersionInformation | null>(null);
@@ -118,8 +122,8 @@
 						setLoadingState: () => {},
 						onSuccess: async () => {
 							toast.success(m.common_delete_success({ resource: `${m.resource_environment()} "${hostname}"` }));
-							await onRefreshData(requestOptions);
-							await environmentStore.initialize(environments.data);
+							await environmentStore.initialize(environmentStore.available.filter((environment) => environment.id !== id));
+							await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
 						}
 					});
 					isLoading.removing = false;
@@ -139,9 +143,7 @@
 				const status = (resp as { status: string; message?: string }).status;
 				if (status === 'online') toast.success(m.environments_test_connection_success());
 				else toast.error(m.environments_test_connection_error());
-				// Refresh to get updated status from backend
-				await onRefreshData(requestOptions);
-				await environmentStore.initialize(environments.data);
+				await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
 			}
 		});
 		isLoading.testing = false;
@@ -163,14 +165,16 @@
 			result,
 			message: m.common_update_failed({ resource: m.resource_environment() }),
 			setLoadingState: () => {},
-			onSuccess: async () => {
+			onSuccess: async (updated) => {
 				toast.success(
 					m.common_update_success({
 						resource: `${m.resource_environment()} "${environment.name}"`
 					})
 				);
-				await onRefreshData(requestOptions);
-				await environmentStore.initialize(environments.data);
+				await environmentStore.initialize(
+					environmentStore.available.map((available) => (available.id === updated.id ? updated : available))
+				);
+				await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
 			}
 		});
 
@@ -257,8 +261,9 @@
 		</div>
 		<div class="flex flex-col gap-0.5 leading-tight">
 			<button
+				type="button"
 				class="h-auto min-h-0 cursor-pointer p-0 text-left text-sm leading-tight font-medium text-foreground hover:underline"
-				onclick={() => goto(`/environments/${item.id}`)}
+				onclick={() => goto(resolve('/(app)/environments/[id]', { id: item.id }))}
 			>
 				{item.name}
 			</button>
@@ -323,13 +328,13 @@
 			}
 		]}
 		rowActions={RowActions}
-		onclick={(item: Environment) => goto(`/environments/${item.id}`)}
+		onclick={(item: Environment) => goto(resolve('/(app)/environments/[id]', { id: item.id }))}
 	/>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Environment })}
 	<RowActionsMenu>
-		<DropdownMenu.Item onclick={() => goto(`/environments/${item.id}`)}>
+		<DropdownMenu.Item onclick={() => goto(resolve('/(app)/environments/[id]', { id: item.id }))}>
 			<InspectIcon class="size-4" />
 			{m.common_view_details()}
 		</DropdownMenu.Item>
@@ -384,12 +389,7 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	{bulkActions}
-	onRefresh={async (options) => {
-		requestOptions = options;
-		await onRefreshData(options);
-		await environmentStore.initialize(environments.data);
-		return environments;
-	}}
+	{onRetry}
 	{columns}
 	{mobileFields}
 	rowActions={RowActions}
@@ -399,8 +399,7 @@
 <UpdateCenterDialog
 	bind:open={showUpgradeDialog}
 	onFinished={async () => {
-		await onRefreshData(requestOptions);
-		await environmentStore.initialize(environments.data);
+		await queryClient.invalidateQueries({ queryKey: queryKeys.environments.all });
 	}}
 	versionInformation={selectedVersionInfoForUpgrade ?? undefined}
 	canInstall={canInstallUpdates}

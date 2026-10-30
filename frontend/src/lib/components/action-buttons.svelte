@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { toast } from 'svelte-sonner';
 
@@ -16,12 +17,12 @@
 	import { operationWatchStore } from '#lib/stores/operation-watch.store.svelte.js';
 	import type { ContainerDetailsDto } from '#lib/types/docker.js';
 	import type { DeployProjectOptions } from '#lib/types/project-deployment.js';
+	import type { MessageResponse } from '#lib/types/shared.js';
 	import type { Project } from '#lib/types/swarm.js';
 	import { activityToastOptions, activityIdFromStreamFrame, extractActivityId } from '#lib/utils/activity-toast.js';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api.js';
 	import { hasPermission } from '#lib/utils/auth.js';
 	import { isDepotBuildAvailable } from '#lib/utils/build-provider.js';
-	import { environmentHref } from '#lib/utils/environments.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 	import { attachProjectLogsToWatch } from '#lib/utils/watch-logs.js';
 
@@ -84,7 +85,7 @@
 
 	const environmentSettings = useEnvironmentSettings(() => environmentId);
 
-	let isLoading = $state<LoadingStates>({
+	const isLoading = $state<LoadingStates>({
 		start: false,
 		stop: false,
 		restart: false,
@@ -119,7 +120,7 @@
 	const startMutation = createMutation(() => ({
 		mutationKey: ['action', 'start', type, id],
 		mutationFn: () =>
-			tryCatch(
+			tryCatch<MessageResponse | Project>(
 				type === 'container'
 					? containerService.startContainer(id, environmentId)
 					: projectService.deployProject(id, 'up', deployOptionsStore.takeRequestOptions(), environmentId)
@@ -131,7 +132,7 @@
 	const stopMutation = createMutation(() => ({
 		mutationKey: ['action', 'stop', type, id],
 		mutationFn: (target: ActionTarget = actionTarget()) =>
-			tryCatch(
+			tryCatch<MessageResponse | Project>(
 				type === 'container'
 					? containerService.stopContainer(target.id, target.environmentId)
 					: projectService.downProject(target.id, target.environmentId)
@@ -187,7 +188,7 @@
 	const removeMutation = createMutation(() => ({
 		mutationKey: ['action', 'remove', type, id],
 		mutationFn: ({ removeVolumes, target }: { removeVolumes: boolean; target: ActionTarget }) =>
-			tryCatch(
+			tryCatch<MessageResponse | void>(
 				type === 'container'
 					? containerService.deleteContainer(target.id, { volumes: removeVolumes, environmentId: target.environmentId })
 					: projectService.destroyProject(target.id, removeVolumes, target.environmentId)
@@ -271,7 +272,7 @@
 									);
 								}
 								await refreshAll();
-								goto(type === 'project' ? '/projects' : '/containers');
+								goto(type === 'project' ? resolve('/(app)/projects') : resolve('/(app)/containers'));
 							}
 						});
 					}
@@ -353,10 +354,13 @@
 				}
 				const containerData = data as ContainerDetailsDto;
 				if (type === 'container' && containerData?.id) {
-					const path = `/containers/${containerData.id}`;
-					goto(environmentHref(path, target.environmentId));
+					goto(
+						resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(target.environmentId)}`, {
+							containerId: containerData.id
+						})
+					);
 				} else if (type === 'container') {
-					goto('/containers');
+					goto(resolve('/(app)/containers'));
 				} else {
 					onActionComplete('running');
 				}

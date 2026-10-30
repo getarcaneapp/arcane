@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import {
 		browserSupportsWebAuthn,
 		startAuthentication,
@@ -68,7 +69,11 @@
 	// Only an explicit redirect is handed to the OIDC flow. Resolving the account
 	// landing page here would bake the signed-out default into the OIDC round
 	// trip, where it would then outrank the user's saved preference.
-	const oidcLoginHref = $derived(data.redirectTo ? `/oidc/login?redirect=${encodeURIComponent(data.redirectTo)}` : '/oidc/login');
+	const oidcLoginHref = $derived(
+		data.redirectTo
+			? resolve(`/(auth)/oidc/login?redirect=${encodeURIComponent(data.redirectTo)}`)
+			: resolve('/(auth)/oidc/login')
+	);
 
 	const oidcLoginMutation = createMutation(() => ({
 		mutationFn: async () => {
@@ -84,7 +89,7 @@
 			await queryClient.invalidateQueries({
 				queryKey: queryKeys.auth.all
 			});
-			const redirectTo = data.redirectTo || getEffectiveLandingPage();
+			const redirectTo = data.redirectTo ?? getEffectiveLandingPage();
 			await goto(redirectTo, { replace: true });
 		},
 		onError: (err) => {
@@ -115,7 +120,7 @@
 			await queryClient.invalidateQueries({
 				queryKey: queryKeys.auth.all
 			});
-			await goto(data.redirectTo || getEffectiveLandingPage(), {
+			await goto(data.redirectTo ?? getEffectiveLandingPage(), {
 				replace: true
 			});
 		},
@@ -168,7 +173,7 @@
 		await authService.completeAuthentication(response);
 		await refreshAll();
 		await queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });
-		await goto(data.redirectTo || getEffectiveLandingPage(), {
+		await goto(data.redirectTo ?? getEffectiveLandingPage(), {
 			replace: true
 		});
 	}

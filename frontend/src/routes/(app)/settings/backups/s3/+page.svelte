@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
@@ -7,20 +9,28 @@
 	import { CloudStorageIcon, RemoteEnvironmentIcon } from '#lib/icons/index.js';
 	import { SettingsPageLayout } from '#lib/layouts/index.js';
 	import * as m from '#lib/paraglide/messages.js';
+	import { s3DestinationListQuery } from '#lib/query/backups.js';
+	import { queryKeys } from '#lib/query/query-keys.js';
 	import { s3DestinationService } from '#lib/services/s3-destination-service.js';
 	import settingsStore from '#lib/stores/config-store.svelte.js';
 	import type { S3DestinationCreate, S3Destination } from '#lib/types/s3-destination.js';
-	import type { SearchPaginationSortRequest } from '#lib/types/shared.js';
 	import { discoverDestinationBackups } from '#lib/utils/backups.js';
 	import { changedFields } from '#lib/utils/payload.js';
+	import { ResourceListPageState } from '#lib/utils/resource-list-page.svelte.js';
 	import { tryCatch } from '#lib/utils/try-catch.js';
 
 	import S3DestinationDialog from './components/s3-destination-dialog.svelte';
 	import S3DestinationTable from './components/s3-destination-table.svelte';
 
 	let { data } = $props();
-	let destinations = $derived(data.destinations);
-	let requestOptions = $derived<SearchPaginationSortRequest>(data.requestOptions);
+	const queryClient = useQueryClient();
+
+	const pageState = new ResourceListPageState(untrack(() => data.requestOptions));
+	const destinationsQuery = createQuery(() => ({
+		...s3DestinationListQuery(pageState.requestOptions),
+		placeholderData: (previous) => previous
+	}));
+	const destinations = $derived(destinationsQuery.data ?? data.destinations);
 	let selected = $state<S3Destination | null>(null);
 	let dialogOpen = $state(false);
 	let destinationSession = $state(0);
@@ -56,7 +66,7 @@
 						created = await s3DestinationService.create(input);
 						toast.success(m.s3_destination_created({ name: input.name }));
 					}
-					destinations = await s3DestinationService.list(requestOptions);
+					await queryClient.invalidateQueries({ queryKey: queryKeys.s3Destinations.all });
 					dialogOpen = false;
 					selected = null;
 					if (created) await discoverDestinationBackups(created.id);
@@ -83,7 +93,7 @@
 					const operationResult = await tryCatch(
 						(async () => {
 							await s3DestinationService.delete(destination.id);
-							destinations = await s3DestinationService.list(requestOptions);
+							await queryClient.invalidateQueries({ queryKey: queryKeys.s3Destinations.all });
 							toast.success(m.s3_destination_deleted({ name: destination.name }));
 						})()
 					);
@@ -131,9 +141,9 @@
 	{#snippet mainContent()}
 		<S3DestinationTable
 			emptyState={destinationsEmptyState}
-			bind:destinations
-			bind:requestOptions
-			onDestinationsChanged={(options) => s3DestinationService.list(options)}
+			{destinations}
+			bind:requestOptions={pageState.requestOptions}
+			onRetry={() => destinationsQuery.refetch()}
 			onEdit={openEdit}
 			onDelete={deleteDestination}
 		/>
