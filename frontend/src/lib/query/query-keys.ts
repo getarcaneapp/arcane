@@ -45,6 +45,7 @@ export const queryKeys = {
 	podman: {
 		environment: (environmentId: string) => ['podman', environmentId] as const,
 		status: (environmentId: string) => ['podman', environmentId, 'status'] as const,
+		info: (environmentId: string) => ['podman', environmentId, 'info'] as const,
 		podsAll: ['podman-pods'] as const,
 		podsPrefix: (scope: string) => ['podman-pods', scope] as const,
 		pods: (scope: string, options: SearchPaginationSortRequest) => ['podman-pods', scope, stableSerialize(options)] as const,

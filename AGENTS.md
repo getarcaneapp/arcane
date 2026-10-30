@@ -222,6 +222,7 @@ A thrown `APIError.message` already contains the server's message. Surface that 
 - Put every rendered string behind Paraglide messages.
 - Reuse a matching key from `frontend/messages/en.json` before adding one.
 - Add new keys only to `en.json`. Crowdin manages every other locale.
+- Name each key after its English text in snake_case, with no domain prefix: `"apply": "Apply"`, `"view_details": "View Details"`. Only full sentences get a short descriptive key, such as `"engine_info_description": "Detailed information about your container installation"`. Append new keys at the end of `en.json`. Existing keys keep their names until they are touched.
 - Generate Paraglide output through the existing tooling. Do not edit generated files by hand.
 
 ## Environments and authorization
