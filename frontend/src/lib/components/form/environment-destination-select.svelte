@@ -16,19 +16,24 @@
 		permission,
 		environments,
 		variant = 'toolbar',
-		size = 'default'
+		size = 'default',
+		allOption = false
 	}: {
 		value?: string;
 		permission?: string;
 		environments?: EnvironmentRef[];
 		variant?: 'toolbar' | 'field';
 		size?: 'sm' | 'default';
+		allOption?: boolean;
 	} = $props();
 
 	const permitted = $derived(
 		(environments ?? environmentStore.shown).filter((env) => !permission || hasPermission(permission, env.id))
 	);
-	const options = $derived(permitted.map((env) => ({ value: env.id, label: env.name })));
+	const options = $derived([
+		...(allOption ? [{ value: '', label: m.all_environments() }] : []),
+		...permitted.map((env) => ({ value: env.id, label: env.name }))
+	]);
 	const currentId = $derived(value ?? options[0]?.value ?? '');
 	const current = $derived(permitted.find((env) => env.id === currentId));
 
@@ -61,12 +66,21 @@
 					{#if current}
 						{@render environmentGlyph(current.id)}
 						<span class="hidden max-w-48 truncate sm:inline">{current.name}</span>
+					{:else if allOption}
+						<EnvironmentsIcon class="size-4 text-muted-foreground" />
+						<span class="hidden max-w-48 truncate sm:inline">{m.all_environments()}</span>
 					{/if}
 					<ArrowDownIcon class="size-3.5 opacity-60" />
 				</ArcaneButton>
 			{/snippet}
 		</SelectPrimitive.Trigger>
 		<Select.Content class="w-auto max-w-72 min-w-48">
+			{#if allOption}
+				<Select.Item value="" label={m.all_environments()}>
+					<EnvironmentsIcon class="size-4 text-muted-foreground" />
+					<span class="truncate">{m.all_environments()}</span>
+				</Select.Item>
+			{/if}
 			{#each permitted as env (env.id)}
 				<Select.Item value={env.id} label={env.name}>
 					{@render environmentGlyph(env.id)}

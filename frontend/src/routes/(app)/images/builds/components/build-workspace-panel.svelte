@@ -66,7 +66,7 @@
 					showLabel={false}
 					customLabel={m.build_workspace_open_settings()}
 					title={m.build_workspace_open_settings()}
-					onclick={() => goto(resolve('/(app)/environments/[id]?tab=builds', { id: environmentId }))}
+					onclick={() => goto(resolve(`/(app)/settings/builds?env=${encodeURIComponent(environmentId)}`))}
 					class="hover:bg-white/5"
 				/>
 			</div>

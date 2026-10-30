@@ -446,7 +446,7 @@ test.describe('Workspace restore', () => {
 		);
 		if (!openPage) return;
 
-		await page.goto('/settings/backups');
+		await page.goto('/system/backups');
 		await openSystemRestoreDialog(page);
 	}
 
@@ -671,7 +671,7 @@ test.describe('Workspace restore', () => {
 				},
 				false
 			);
-			await navigateInApp(page, '/settings/backups');
+			await navigateInApp(page, '/system/backups');
 			await openSystemRestoreDialog(page);
 
 			const dialog = page.getByRole('dialog', { name: 'Restore files' });
@@ -1093,7 +1093,7 @@ test.describe('S3 storage', () => {
 			let destinationId: string | undefined;
 
 			try {
-				await page.goto('/settings/backups/s3');
+				await page.goto('/system/backups/s3');
 				await page.getByRole('button', { name: 'Add destination', exact: true }).first().click();
 
 				let dialog = page.getByRole('dialog');
@@ -1523,7 +1523,7 @@ test.describe('System and volume restore', () => {
 				]
 			);
 
-			await page.goto('/settings/backups');
+			await page.goto('/system/backups');
 			const systemCard = page.getByTestId('backup-policy-system-system-nightly');
 			const volumeCard = page.getByTestId('backup-policy-volume-volume-nightly');
 			await expect(systemCard.getByText('System')).toHaveClass(/(^|\s)text-purple(\s|$)/);
@@ -1615,7 +1615,7 @@ test.describe('System and volume restore', () => {
 					[],
 					[historyEntry('central-volume', 'system'), historyEntry(volumeName, 'volume')]
 				);
-				await page.goto('/settings/backups');
+				await page.goto('/system/backups');
 
 				await page.getByTestId('facet-type-trigger').click();
 				await page.getByTestId('facet-type-option-system').click();

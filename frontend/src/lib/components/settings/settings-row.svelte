@@ -1,10 +1,13 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import { SettingLock } from '#lib/components/badges/index.js';
 	import * as Alert from '#lib/components/ui/alert/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
 	import { Label } from '#lib/components/ui/label/index.js';
-	import { AlertTriangleIcon } from '#lib/icons/index.js';
+	import { AlertTriangleIcon, LayersIcon } from '#lib/icons/index.js';
+	import { m } from '#lib/paraglide/messages.js';
 	import type { SettingState } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
 
@@ -22,6 +25,7 @@
 		layout?: 'default' | 'switch' | 'wide';
 		labelExtra?: Snippet;
 		lock?: SettingState;
+		mixed?: boolean;
 		/** Extra content under the row (e.g. fields revealed by a switch), indented. */
 		expanded?: Snippet;
 		contentClass?: string;
@@ -39,6 +43,7 @@
 		layout = 'default',
 		labelExtra,
 		lock,
+		mixed = false,
 		expanded,
 		contentClass,
 		class: className,
@@ -76,6 +81,17 @@
 				<Label for={htmlFor}>{label}</Label>
 				{#if lock?.locked}
 					<SettingLock {lock} />
+				{/if}
+				{#if mixed}
+					<ArcaneTooltip.Root>
+						<ArcaneTooltip.Trigger>
+							<Badge variant="gray">
+								<LayersIcon />
+								{m.mixed()}
+							</Badge>
+						</ArcaneTooltip.Trigger>
+						<ArcaneTooltip.Content side="bottom">{m.mixed_across_selected_environments()}</ArcaneTooltip.Content>
+					</ArcaneTooltip.Root>
 				{/if}
 			</div>
 			{#if description}

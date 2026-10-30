@@ -30,7 +30,12 @@ import {
 	ActivityIcon,
 	BackupIcon,
 	BoxIcon,
-	FileTextIcon
+	FileTextIcon,
+	DockerBrandIcon,
+	SecurityIcon,
+	ClockIcon,
+	CodeIcon,
+	MonitorIcon
 } from '#lib/icons/index.js';
 import { m } from '#lib/paraglide/messages.js';
 import { environmentStore } from '#lib/stores/environment.store.svelte.js';
@@ -225,55 +230,105 @@ export const navigationItems: NavigationSections = {
 			accessSurfaceId: 'landing.settings',
 			items: [
 				{
+					title: m.storage_limits(),
+					url: resolve('/(app)/settings/storage'),
+					icon: VolumesIcon,
+					accessSurfaceId: 'settings.category.storage'
+				},
+				{
+					title: m.docker_title(),
+					url: resolve('/(app)/settings/docker'),
+					icon: DockerBrandIcon,
+					accessSurfaceId: 'settings.category.docker'
+				},
+				{
+					title: m.security(),
+					url: resolve('/(app)/settings/security'),
+					icon: SecurityIcon,
+					accessSurfaceId: 'settings.category.security'
+				},
+				{
+					title: m.timeouts_settings(),
+					url: resolve('/(app)/settings/timeouts'),
+					icon: ClockIcon,
+					accessSurfaceId: 'settings.category.timeouts'
+				},
+				{
+					title: m.activity(),
+					url: resolve('/(app)/settings/activity'),
+					icon: ActivityIcon,
+					accessSurfaceId: 'settings.category.activity'
+				},
+				{
+					title: m.builds(),
+					url: resolve('/(app)/settings/builds'),
+					icon: CodeIcon,
+					accessSurfaceId: 'settings.category.build'
+				},
+				{
+					title: m.automations(),
+					url: resolve('/(app)/settings/automations'),
+					icon: JobsIcon,
+					accessSurfaceId: 'settings.category.jobschedule'
+				}
+			]
+		},
+		{
+			title: m.system(),
+			url: resolve('/(app)/system'),
+			icon: MonitorIcon,
+			accessSurfaceId: 'landing.system',
+			items: [
+				{
 					title: m.api_key_page_title(),
-					url: resolve('/(app)/settings/api-keys'),
+					url: resolve('/(app)/system/api-keys'),
 					icon: ApiKeyIcon,
 					shortcut: ['mod', 'shift', '1'],
 					accessSurfaceId: 'settings.category.apikeys'
 				},
 				{
 					title: m.webhook_page_title(),
-					url: resolve('/(app)/settings/webhooks'),
+					url: resolve('/(app)/system/webhooks'),
 					icon: GlobeIcon,
 					accessSurfaceId: 'settings.category.webhooks'
 				},
 				{
 					title: m.authentication(),
-					url: resolve('/(app)/settings/authentication'),
+					url: resolve('/(app)/system/authentication'),
 					icon: LockIcon,
 					shortcut: ['mod', 'shift', '3'],
 					accessSurfaceId: 'settings.category.authentication'
 				},
 				{
 					title: m.notifications_title(),
-					url: resolve('/(app)/settings/notifications'),
+					url: resolve('/(app)/system/notifications'),
 					icon: NotificationsIcon,
 					shortcut: ['mod', 'shift', '4'],
 					accessSurfaceId: 'settings.category.notifications'
 				},
 				{
 					title: m.system_backups_title(),
-					url: resolve('/(app)/settings/backups'),
+					url: resolve('/(app)/system/backups'),
 					icon: BackupIcon,
 					accessSurfaceId: 'settings.category.systembackups',
 					adminOnly: true
 				},
 				{
 					title: m.users_title(),
-					url: resolve('/(app)/settings/users'),
+					url: resolve('/(app)/system/users'),
 					icon: UsersIcon,
 					shortcut: ['mod', 'shift', '8'],
 					accessSurfaceId: 'settings.category.users'
 				},
 				{
 					title: m.roles_title(),
-					url: resolve('/(app)/settings/roles'),
+					url: resolve('/(app)/system/roles'),
 					icon: ShieldAlertIcon,
 					accessSurfaceId: 'settings.category.roles'
 				},
 				{
 					title: m.diagnostics(),
-					url: resolve('/(app)/settings/diagnostics'),
+					url: resolve('/(app)/system/diagnostics'),
 					icon: ActivityIcon,
 					accessSurfaceId: 'settings.category.diagnostics'
 				}
@@ -282,10 +337,9 @@ export const navigationItems: NavigationSections = {
 	]
 };
 
-{
-	const settingsParent = navigationItems.adminItems.find((item) => item.url === resolve('/(app)/settings'));
-	if (settingsParent?.items) {
-		settingsParent.items.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+for (const parent of navigationItems.adminItems) {
+	if (parent.url === resolve('/(app)/settings') || parent.url === resolve('/(app)/system')) {
+		parent.items?.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
 	}
 }
 

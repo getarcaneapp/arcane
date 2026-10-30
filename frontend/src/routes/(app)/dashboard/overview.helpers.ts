@@ -197,7 +197,7 @@ function failedJobHref(environmentId: string, jobId: string): string {
 			volumeName: target.join(':')
 		});
 	}
-	return resolve('/(app)/environments/[id]?tab=jobs', { id: environmentId });
+	return resolve(`/(app)/settings/automations?env=${encodeURIComponent(environmentId)}`);
 }
 
 export function collapseActivities(activities: Activity[]): CollapsedActivity[] {
@@ -225,7 +225,7 @@ function failingActivityHref(activity: Activity, environmentId: string): string 
 		case 'image_patch':
 			return resolve('/(app)/security');
 		case 'job_run':
-			return resolve('/(app)/environments/[id]?tab=jobs', { id: environmentId });
+			return resolve(`/(app)/settings/automations?env=${encodeURIComponent(environmentId)}`);
 	}
 	if (activity.resourceId && activity.type.startsWith('container_')) {
 		return resolve(`/(app)/containers/[containerId]?env=${encodeURIComponent(environmentId)}`, {
@@ -352,7 +352,7 @@ export function buildAttentionItems(sources: AttentionSources): AttentionItem[] 
 						detail: soonestKeyExpiry ? m.expires_time({ time: formatRelativeTime(soonestKeyExpiry) }) : '',
 						timestamp: null,
 						actionLabel: m.manage(),
-						target: { kind: 'link', href: resolve('/(app)/settings/api-keys') }
+						target: { kind: 'link', href: resolve('/(app)/system/api-keys') }
 					}
 				]
 			: [];

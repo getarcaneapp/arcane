@@ -416,7 +416,7 @@
 			</Alert.Root>
 		{/if}
 
-		<div class="overflow-hidden rounded-xl border border-border/60 bg-card/30">
+		<div class="overflow-hidden rounded-xl border border-border/70 bg-card/10">
 			{#if loading}
 				<div class="p-6 text-center text-sm text-muted-foreground">{m.common_loading()}</div>
 			{:else if passkeys.length === 0}

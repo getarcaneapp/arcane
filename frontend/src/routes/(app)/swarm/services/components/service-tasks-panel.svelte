@@ -65,7 +65,7 @@
 		{:else}
 			<div class="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
 				{#each tasks as task (task.id)}
-					<Card.Root variant="subtle">
+					<Card.Root>
 						<Card.Content>
 							<div class="mb-3 flex items-center justify-between border-b border-border pb-3">
 								<div class="min-w-0 flex-1">

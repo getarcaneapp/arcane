@@ -226,7 +226,7 @@
 				{#each repositories as name (name)}
 					<button
 						type="button"
-						class="group flex items-center gap-3 rounded-xl border border-border/50 bg-card/30 p-4 text-left transition-colors hover:bg-muted/40"
+						class="group flex items-center gap-3 rounded-xl border border-border/70 bg-card/10 p-4 text-left transition-colors hover:bg-muted/40"
 						onclick={() => navigate({ repository: name, search: '', page: 1 })}
 					>
 						<span

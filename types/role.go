@@ -104,7 +104,7 @@ type PermissionPreset struct {
 type AccessSurface struct {
 	ID            string   `json:"id" doc:"Stable surface identifier" example:"settings.category.webhooks"`
 	Kind          string   `json:"kind" enum:"route,settings-category,customize-category,landing" doc:"Surface type"`
-	URL           string   `json:"url,omitempty" doc:"Route URL or prefix represented by this surface" example:"/settings/webhooks"`
+	URL           string   `json:"url,omitempty" doc:"Route URL or prefix represented by this surface" example:"/system/webhooks"`
 	Label         string   `json:"label" doc:"Human-readable surface label" example:"Webhooks"`
 	AccessMode    string   `json:"accessMode" enum:"permissions,any-child" doc:"How reachability is evaluated"`
 	MatchMode     string   `json:"matchMode" enum:"any-of,all-of" doc:"How permissions are combined when accessMode is permissions"`

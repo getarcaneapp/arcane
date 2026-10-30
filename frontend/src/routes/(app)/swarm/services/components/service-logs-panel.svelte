@@ -72,7 +72,7 @@
 		</div>
 	</Card.Header>
 	<div>
-		<div class="rounded-lg border bg-card/90 p-0 backdrop-blur-sm">
+		<div class="rounded-lg border border-border/70 bg-card/10 p-0">
 			<LogViewer
 				searchTerm={logSearchTerm}
 				bind:this={viewer}

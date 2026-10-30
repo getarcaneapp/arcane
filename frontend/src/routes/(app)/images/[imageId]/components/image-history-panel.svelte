@@ -38,7 +38,7 @@
 	}
 </script>
 
-<Card.Root variant="subtle">
+<Card.Root>
 	<Card.Header>
 		<Card.Title>{m.images_history_title()}</Card.Title>
 		<Card.Description>{m.images_history_description()}</Card.Description>

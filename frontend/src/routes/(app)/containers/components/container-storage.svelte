@@ -33,7 +33,7 @@
 			{#if container.mounts && container.mounts.length > 0}
 				<div class="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
 					{#each container.mounts as mount (mount.destination)}
-						<Card.Root variant="subtle">
+						<Card.Root>
 							<Card.Content>
 								<div class="mb-4 flex items-center justify-between border-b border-border pb-4">
 									<div class="flex items-center gap-3">
@@ -67,7 +67,7 @@
 								</div>
 
 								<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-									<Card.Root variant="outlined" class="sm:col-span-2" size="sm">
+									<Card.Root class="sm:col-span-2" size="sm">
 										<Card.Content class="flex flex-col">
 											<div class="mb-2 text-xs font-semibold text-muted-foreground">
 												{m.containers_mount_label_container()}
@@ -81,7 +81,7 @@
 										</Card.Content>
 									</Card.Root>
 
-									<Card.Root variant="outlined" class="sm:col-span-2" size="sm">
+									<Card.Root class="sm:col-span-2" size="sm">
 										<Card.Content class="flex flex-col">
 											<div class="mb-2 text-xs font-semibold text-muted-foreground">
 												{#if mount.type === 'volume'}
@@ -102,7 +102,7 @@
 									</Card.Root>
 
 									{#if mount.type === 'volume' && mount.driver}
-										<Card.Root variant="outlined" size="sm">
+										<Card.Root size="sm">
 											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.common_driver()}</div>
 												<div class="text-sm font-medium text-foreground">
@@ -113,7 +113,7 @@
 									{/if}
 
 									{#if mount.propagation}
-										<Card.Root variant="outlined" size="sm">
+										<Card.Root size="sm">
 											<Card.Content class="flex flex-col">
 												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.container_propagation()}</div>
 												<div class="text-sm font-medium text-foreground">

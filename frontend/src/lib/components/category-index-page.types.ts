@@ -20,3 +20,9 @@ export interface NormalizedCategory {
 	href: string;
 	matchingItems?: CategoryMatchingItem[];
 }
+
+export interface CategoryGroup {
+	id: string;
+	title?: string;
+	categories: NormalizedCategory[];
+}

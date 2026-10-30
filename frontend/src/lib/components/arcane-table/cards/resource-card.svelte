@@ -36,7 +36,6 @@
 </script>
 
 <Card.Root
-	variant="transparent"
 	interactive="subtle"
 	{selected}
 	{onclick}
