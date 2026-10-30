@@ -227,7 +227,6 @@ export type JobPrerequisite = {
 	settingKey: string;
 	label: string;
 	isMet: boolean;
-	settingsUrl?: string;
 };
 
 export type JobStatus = {
