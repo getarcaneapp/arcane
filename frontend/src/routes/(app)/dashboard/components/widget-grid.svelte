@@ -185,15 +185,15 @@
 			{/if}
 			<div
 				inert={editing}
-				class={cn('grid min-w-0 flex-1', editing && 'pointer-events-none select-none')}
-				style:zoom={editing ? editZoom(item.id) : undefined}
+				class={cn('grid min-w-0 flex-1', editing && 'pointer-events-none zoom-widget select-none')}
+				style:--widget-zoom={editing ? editZoom(item.id) : undefined}
 			>
 				{@render widget(item.id)}
 			</div>
 			{#if resizing?.id === item.id}
 				<div
-					class="pointer-events-none absolute inset-y-0 left-0 z-20 rounded-xl bg-primary/10 outline-2 outline-primary transition-all duration-100 ease-out outline-dashed"
-					style:width="{resizing.span * resizing.columnWidth - resizing.gap}px"
+					class="pointer-events-none absolute inset-y-0 left-0 z-20 w-(--widget-preview-width) rounded-xl bg-primary/10 outline-2 outline-primary transition-all duration-100 ease-out outline-dashed"
+					style:--widget-preview-width="{resizing.span * resizing.columnWidth - resizing.gap}px"
 				>
 					<span
 						class="absolute right-2 bottom-2 rounded-md bg-primary px-1.5 py-0.5 text-xs font-medium text-primary-foreground tabular-nums"
