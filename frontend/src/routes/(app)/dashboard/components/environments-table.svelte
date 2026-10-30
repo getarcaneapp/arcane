@@ -23,6 +23,7 @@
 	import { resolve } from '$app/paths';
 
 	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import MemoryRing from '#lib/components/memory-ring.svelte';
 	import MetricRing, { type MetricRingVariant } from '#lib/components/metric-ring.svelte';
 	import { Badge } from '#lib/components/ui/badge/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
@@ -64,7 +65,13 @@
 	</a>
 {/snippet}
 
-{#snippet metric(value: number | null, variant: MetricRingVariant, status: DashboardLiveStatsStatus)}
+{#snippet metric(
+	value: number | null,
+	variant: MetricRingVariant,
+	status: DashboardLiveStatsStatus,
+	memoryUsed?: number,
+	memoryTotal?: number
+)}
 	{#if status === 'loading'}
 		<div class="ml-auto size-9.5 animate-pulse rounded-full bg-muted"></div>
 	{:else if status === 'denied'}
@@ -76,9 +83,13 @@
 			class={cn('flex justify-end', status === 'stale' && 'opacity-60')}
 			title={status === 'stale' ? m.stats_stale() : undefined}
 		>
-			<MetricRing percent={value} {variant} size={38} stroke={3}>
-				<span class="text-2xs font-medium text-foreground tabular-nums">{Math.round(value)}%</span>
-			</MetricRing>
+			{#if memoryUsed !== undefined}
+				<MemoryRing used={memoryUsed} total={memoryTotal} />
+			{:else}
+				<MetricRing percent={value} {variant} size={38} stroke={3}>
+					<span class="text-2xs font-medium text-foreground tabular-nums">{Math.round(value)}%</span>
+				</MetricRing>
+			{/if}
 		</span>
 	{/if}
 {/snippet}
@@ -164,7 +175,9 @@
 							</Table.Cell>
 						{/if}
 						<Table.Cell class="text-right">{@render metric(getCpuMetric(stats), 'cpu', statsStatus)}</Table.Cell>
-						<Table.Cell class="text-right">{@render metric(getMemoryMetric(stats), 'memory', statsStatus)}</Table.Cell>
+						<Table.Cell class="text-right"
+							>{@render metric(getMemoryMetric(stats), 'memory', statsStatus, stats?.memoryUsage, stats?.memoryTotal)}</Table.Cell
+						>
 						<Table.Cell class="text-right">{@render metric(getDiskMetric(stats), 'disk', statsStatus)}</Table.Cell>
 					{/if}
 					<Table.Cell class="text-right">
