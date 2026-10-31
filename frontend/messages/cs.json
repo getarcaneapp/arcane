@@ -1534,6 +1534,8 @@
   "environments_config_description": "Konfigurace tohoto prostředí",
   "environments_api_url_help": "Základní URL pro API daného prostředí",
   "environments_warning_disabled": "Toto prostředí je zakázáno. Můžete upravit jeho konfiguraci, ale nebudete moci přistupovat k jeho prostředkům, dokud nebude znovu povoleno.",
+  "environments_warning_direct_deprecated": "Přímá připojení agentů jsou zastaralá a ve verzi v3 budou odstraněna. Přepněte toto prostředí na okrajového agenta.",
+  "environments_direct_deprecated_badge": "Zastaralé",
   "environments_warning_no_settings": "Nelze načíst nastavení pro toto prostředí. Může být offline, deaktivováno nebo mít neplatnou URL. Stále můžete upravit základní údaje o prostředí.",
   "environments_local_setting_disabled": "Toto nastavení nelze změnit pro lokální prostředí",
   "environments_use_environment": "Použít prostředí",
