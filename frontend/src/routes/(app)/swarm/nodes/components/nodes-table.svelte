@@ -404,7 +404,7 @@
 		{#if canManageNode(item)}
 			<button
 				type="button"
-				class="inline-flex items-center gap-1 rounded border border-dashed border-border px-2 py-0.5 text-2xs font-medium transition-colors hover:border-primary hover:text-primary"
+				class="inline-flex items-center gap-1 rounded-xl border border-dashed border-border px-2 py-0.5 text-2xs font-medium transition-colors hover:border-primary hover:text-primary"
 				onclick={() => openAddLabelDialog(item)}
 			>
 				<AddIcon class="size-3" />

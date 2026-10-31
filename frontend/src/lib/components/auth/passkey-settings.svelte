@@ -371,7 +371,7 @@
 				<Alert.Description>
 					<p>{m.account_passkey_mfa_recovery_codes_description()}</p>
 					<p class="mt-2 font-medium">{m.account_passkey_mfa_codes_warning()}</p>
-					<ul class="mt-3 grid gap-1 rounded border bg-background p-3 font-mono text-xs leading-6 sm:grid-cols-2">
+					<ul class="mt-3 grid gap-1 rounded-xl border bg-background p-3 font-mono text-xs leading-6 sm:grid-cols-2">
 						{#each recoveryCodes as code (code)}
 							<li>{code}</li>
 						{/each}

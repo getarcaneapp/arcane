@@ -98,7 +98,7 @@
 			<div class="flex items-center gap-1.5">
 				<span class="truncate font-medium">{result.environmentName}</span>
 				{#if isManager}
-					<span class="shrink-0 rounded border px-1 text-3xs text-muted-foreground">{m.manager()}</span>
+					<span class="shrink-0 rounded-xl border px-1 text-3xs text-muted-foreground">{m.manager()}</span>
 				{/if}
 			</div>
 			{#if result.status === 'failed' && result.error}
@@ -117,7 +117,7 @@
 
 		<button
 			type="button"
-			class="flex shrink-0 items-center gap-0.5 rounded px-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+			class="flex shrink-0 items-center gap-0.5 rounded-xl px-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
 			aria-expanded={showLogs}
 			onclick={() => (showLogs = !showLogs)}
 		>

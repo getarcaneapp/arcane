@@ -833,7 +833,7 @@
 						</div>
 						<div class="w-full pl-0 sm:w-2/3 sm:pl-4">
 							<code
-								class="cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
+								class="cursor-pointer rounded-xl bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
 								title={m.common_click_to_select()}
 							>
 								{truncateString(c.id, 48)}
@@ -943,7 +943,7 @@
 			<Alert.Description>{m.volumes_backup_safety_info()}</Alert.Description>
 		</Alert.Root>
 		{#if workspaceRestorePath}
-			<code class="block rounded bg-muted/40 px-2 py-1 font-mono text-xs break-all">/{workspaceRestorePath}</code>
+			<code class="block rounded-xl bg-muted/40 px-2 py-1 font-mono text-xs break-all">/{workspaceRestorePath}</code>
 		{/if}
 		{#if loadingWorkspaceBackups}
 			<div class="flex items-center gap-2 text-sm text-muted-foreground">

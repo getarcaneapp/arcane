@@ -209,13 +209,14 @@ html.reduce-effects *::after {
 }
 
 @theme inline {
-	--radius-sm: calc(var(--radius) * 0.6);
-	--radius-md: calc(var(--radius) * 0.8);
-	--radius-lg: var(--radius);
 	--radius-xl: calc(var(--radius) * 1.4);
-	--radius-2xl: calc(var(--radius) * 1.8);
-	--radius-3xl: calc(var(--radius) * 2.2);
-	--radius-4xl: calc(var(--radius) * 2.6);
+	--radius-xs: var(--radius-xl);
+	--radius-sm: var(--radius-xl);
+	--radius-md: var(--radius-xl);
+	--radius-lg: var(--radius-xl);
+	--radius-2xl: var(--radius-xl);
+	--radius-3xl: var(--radius-xl);
+	--radius-4xl: var(--radius-xl);
 
 	--color-background: var(--background);
 	--color-row-hover: color-mix(in oklab, var(--primary) 6%, var(--background));

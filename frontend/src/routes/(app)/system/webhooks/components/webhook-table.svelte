@@ -189,17 +189,17 @@
 
 {#snippet TokenPrefixCell({ item }: { item: WebhookRow })}
 	<div class="flex items-center gap-2">
-		<code class="rounded bg-muted px-2 py-1 text-xs">{item.tokenPrefix}...</code>
+		<code class="rounded-xl bg-muted px-2 py-1 text-xs">{item.tokenPrefix}...</code>
 		<CopyButton text={item.tokenPrefix} class="size-6" />
 	</div>
 {/snippet}
 
 {#snippet TargetTypeCell({ item }: { item: WebhookRow })}
-	<span class="rounded bg-muted px-2 py-1 text-xs font-medium">{targetTypeLabel(item.targetType)}</span>
+	<span class="rounded-xl bg-muted px-2 py-1 text-xs font-medium">{targetTypeLabel(item.targetType)}</span>
 {/snippet}
 
 {#snippet ActionTypeCell({ item }: { item: WebhookRow })}
-	<span class="rounded bg-muted px-2 py-1 text-xs font-medium">{actionTypeLabel(item.actionType)}</span>
+	<span class="rounded-xl bg-muted px-2 py-1 text-xs font-medium">{actionTypeLabel(item.actionType)}</span>
 {/snippet}
 
 {#snippet TargetNameCell({ item }: { item: WebhookRow })}

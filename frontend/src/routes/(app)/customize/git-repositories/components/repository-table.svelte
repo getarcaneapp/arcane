@@ -179,7 +179,7 @@
 {/snippet}
 
 {#snippet UrlCell({ value }: { value: unknown })}
-	<code class="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">{value}</code>
+	<code class="rounded-xl bg-muted px-2 py-1 text-xs text-muted-foreground">{value}</code>
 {/snippet}
 
 {#snippet AuthTypeCell({ value }: { value: unknown })}
