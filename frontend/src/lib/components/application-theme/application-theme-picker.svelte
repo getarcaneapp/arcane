@@ -97,14 +97,12 @@
 		return themeCopy[theme.id]?.description ?? theme.description ?? '';
 	}
 
-	async function importTheme(theme: ThemeDefinition) {
+	async function importTheme(theme: ThemeDefinition): Promise<boolean> {
 		await saveUserPreferences({
 			customThemes: [...customThemes, theme],
 			applicationTheme: theme.id
 		});
-		if (customThemes.some((item) => item.id === theme.id)) {
-			importOpen = false;
-		}
+		return customThemes.some((item) => item.id === theme.id);
 	}
 	const selectedDescription = $derived.by(() => {
 		const selected = themeOptions.find((theme) => theme.id === selectedTheme);

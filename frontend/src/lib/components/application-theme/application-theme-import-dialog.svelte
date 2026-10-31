@@ -26,19 +26,12 @@
 	}: {
 		open: boolean;
 		customThemes: readonly ThemeDefinition[];
-		onSubmit: (theme: ThemeDefinition) => Promise<void>;
+		onSubmit: (theme: ThemeDefinition) => Promise<boolean>;
 	} = $props();
 
 	let jsonContent = $state('');
 	let errors = $state<Partial<Record<ThemeField, string[]>>>({});
 	let isLoading = $state(false);
-
-	$effect(() => {
-		if (!open) {
-			jsonContent = '';
-			errors = {};
-		}
-	});
 
 	const atLimit = $derived(customThemes.length >= MAX_CUSTOM_THEMES);
 	const fieldLabels: Record<ThemeField, string> = {
@@ -148,6 +141,12 @@
 		};
 	}
 
+	function close() {
+		open = false;
+		jsonContent = '';
+		errors = {};
+	}
+
 	async function handleSubmit() {
 		const theme = parseTheme();
 		if (!theme) {
@@ -155,8 +154,11 @@
 		}
 
 		isLoading = true;
-		await onSubmit(theme);
+		const saved = await onSubmit(theme);
 		isLoading = false;
+		if (saved) {
+			close();
+		}
 	}
 
 	const onUpload: FileDropZoneProps['onUpload'] = async (files) => {
@@ -174,7 +176,11 @@
 
 <ResponsiveDialog
 	{open}
-	onOpenChange={(nextOpen) => (open = nextOpen)}
+	onOpenChange={(nextOpen) => {
+		if (!nextOpen) {
+			close();
+		}
+	}}
 	title={m.import_theme()}
 	description={m.import_theme_description()}
 	contentClass="sm:max-w-2xl"
@@ -222,7 +228,7 @@
 	{/snippet}
 
 	{#snippet footer()}
-		<GitopsDialogFooter cancelLabel={m.common_cancel()} {isLoading} onCancel={() => (open = false)}>
+		<GitopsDialogFooter cancelLabel={m.common_cancel()} {isLoading} onCancel={close}>
 			{#snippet primary()}
 				<Button onclick={handleSubmit} class="flex-1" disabled={atLimit || isLoading}>
 					{#if isLoading}
