@@ -1,6 +1,6 @@
 <script lang="ts">
+	import AutomationsTab from '#lib/components/settings/environment/automations-tab.svelte';
 	import EnvironmentSettingsPage from '#lib/components/settings/environment/environment-settings-page.svelte';
-	import JobsTab from '#lib/components/settings/environment/jobs-tab.svelte';
 	import { JobsIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 </script>
@@ -24,7 +24,7 @@
 		'autoHealRestartWindow'
 	]}
 >
-	{#snippet content({ formInputs, mixed, environmentId })}
-		<JobsTab {formInputs} {mixed} {environmentId} />
+	{#snippet content({ formInputs, mixed, lock }, scope)}
+		<AutomationsTab {formInputs} {mixed} {lock} environments={scope.entries.map(({ environment }) => environment)} />
 	{/snippet}
 </EnvironmentSettingsPage>

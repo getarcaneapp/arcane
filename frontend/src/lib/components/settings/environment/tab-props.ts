@@ -1,3 +1,4 @@
+import type { EnvironmentRef } from '#lib/stores/environment.store.svelte.js';
 import type { FormInputs } from '#lib/types/form.js';
 import type { MixedSettingValue, ResolvedSettings, SettingKey, SettingState } from '#lib/types/settings.js';
 
@@ -22,8 +23,8 @@ export interface DockerTabProps extends FormTabProps {
 	environmentId: string;
 }
 
-export interface JobsTabProps extends FormTabProps {
-	environmentId: string;
+export interface AutomationsTabProps extends LockableFormTabProps {
+	environments: EnvironmentRef[];
 }
 
 export interface EnvironmentSettingsContent extends LockableFormTabProps {

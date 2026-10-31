@@ -30,12 +30,19 @@
 	const isReadOnly = $derived(settingsStore.readOnly);
 
 	let formState = $state.raw<SettingsFormState>();
+	let registeredForm: SettingsFormState | undefined;
 	const formContext: SettingsFormContext = {
 		get activeForm() {
 			return formState;
 		},
-		set activeForm(form) {
+		register(form) {
+			registeredForm = form;
 			formState = form;
+		},
+		release(form) {
+			if (registeredForm !== form) return;
+			registeredForm = undefined;
+			formState = undefined;
 		}
 	};
 	setSettingsFormContext(formContext);

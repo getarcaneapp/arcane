@@ -201,6 +201,16 @@ test.describe('Settings', () => {
 			).toBeVisible();
 		});
 
+		test('should show job run history on the History tab', async ({ page }) => {
+			await page.goto(`/environments/${LOCAL_ENV_ID}?tab=history&job=event-cleanup`);
+			await expect(page.getByRole('tab', { name: 'History', exact: true })).toHaveAttribute(
+				'data-state',
+				'active'
+			);
+			await expect(page.getByRole('heading', { name: 'Run history', exact: true })).toBeVisible();
+			await expect(page.locator('#job-history-job')).toContainText('Event Cleanup');
+		});
+
 		test('should update and save environment details', async ({ page, registerCleanup }) => {
 			test.setTimeout(120_000); // 120 seconds timeout for this lengthy UI workflow
 			const envName = `settings-ui-${Date.now().toString().slice(-5)}`;
