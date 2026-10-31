@@ -22,7 +22,7 @@ import (
 )
 
 // legacyDrops remove the Francis schema that lived in the Arcane SQLite database
-// before v2.16. That schema never changes again, so the list is final.
+// before v2.16.
 // Remove this in v3.0.0
 var legacyDrops = []string{
 	"DROP VIEW IF EXISTS " + TablePrefix + "_host_active_actor_count",
@@ -30,7 +30,9 @@ var legacyDrops = []string{
 	"DROP TABLE IF EXISTS " + TablePrefix + "_active_actors",
 	"DROP TABLE IF EXISTS " + TablePrefix + "_consumed_join_tokens",
 	"DROP TABLE IF EXISTS " + TablePrefix + "_hosts",
+	"DROP TABLE IF EXISTS " + TablePrefix + "_runtimes",
 	"DROP TABLE IF EXISTS " + TablePrefix + "_actor_state",
+	"DROP TABLE IF EXISTS " + TablePrefix + "_workflow_events",
 	"DROP TABLE IF EXISTS " + TablePrefix + "_alarms",
 	"DROP TABLE IF EXISTS " + TablePrefix + "_cluster_config",
 	"DROP TABLE IF EXISTS " + TablePrefix + "_terminal_jobs",

@@ -482,6 +482,13 @@ func (a *executorActor) Job(ctx context.Context, _ string, data actor.Envelope) 
 	persistCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
 	defer context.AfterFunc(ctx, func() { time.AfterFunc(outcomePersistGrace, cancel) })()
+	go func() {
+		select {
+		case <-actor.HaltingFromContext(ctx):
+			cancel()
+		case <-persistCtx.Done():
+		}
+	}()
 	return cmp.Or(q.persistOutcome(persistCtx, claim.Run, outcome), ctx.Err())
 }
 
