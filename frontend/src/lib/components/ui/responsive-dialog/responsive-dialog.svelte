@@ -70,7 +70,7 @@
 				</div>
 				{#if footer}
 					<div class="border-t bg-background p-4">
-						<Sheet.Footer class="mt-0 p-0 sm:justify-end">
+						<Sheet.Footer class="mt-0 flex-row justify-end p-0">
 							{@render footer()}
 						</Sheet.Footer>
 					</div>
