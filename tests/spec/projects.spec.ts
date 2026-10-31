@@ -180,11 +180,13 @@ async function createProjectViaUI(
 		})
 		.toBe(composeContent.trimEnd());
 
+	const createButton = createProjectButton(page);
+	await expect(createButton).toBeEnabled();
+
 	const envEditor = await addEnvFile(page);
 	await setCodeMirrorValue(envEditor, envFile);
 	await expect(envEditor).toContainText(containerName);
 
-	const createButton = createProjectButton(page);
 	await expect(createButton).toBeEnabled();
 	const createResponsePromise = page.waitForResponse(
 		(response) =>
@@ -562,6 +564,7 @@ test.describe('New Compose Project Page', () => {
 
 		await setCodeMirrorValue(composeEditor, TEST_COMPOSE_YAML);
 		const createButton = createProjectButton(page);
+		await expect(createButton).toBeEnabled();
 		const envEditor = await addEnvFile(page);
 		await setCodeMirrorValue(envEditor, 'NOT VALID LINE');
 		await expect(createButton).toBeVisible();
@@ -596,6 +599,9 @@ test.describe('New Compose Project Page', () => {
 				})
 				.toBe(TEST_COMPOSE_YAML.trimEnd());
 
+			const createButton = createProjectButton(page);
+			await expect(createButton).toBeEnabled();
+
 			const envEditor = await addEnvFile(page);
 			await setCodeMirrorValue(envEditor, envFile);
 			await expect(envEditor).toContainText('nginx');
@@ -622,7 +628,7 @@ test.describe('New Compose Project Page', () => {
 				}
 			});
 
-			const createButton = createProjectButton(page);
+			await expect(createButton).toBeEnabled();
 			const createResponsePromise = page.waitForResponse(
 				(response) =>
 					response.request().method() === 'POST' &&
