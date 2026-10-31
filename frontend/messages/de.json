@@ -1534,6 +1534,8 @@
   "environments_config_description": "Konfiguration für diese Umgebung",
   "environments_api_url_help": "Die Basis-URL für die API dieser Umgebung",
   "environments_warning_disabled": "Diese Umgebung ist deaktiviert. Du kannst die Konfiguration bearbeiten, aber du kannst erst wieder auf Ressourcen zugreifen, wenn sie reaktiviert wurde.",
+  "environments_warning_direct_deprecated": "Direkte Agent-Verbindungen sind veraltet und werden in Version 3 entfernt. Stellen Sie diese Umgebung auf einen Edge-Agenten um.",
+  "environments_direct_deprecated_badge": "Veraltet",
   "environments_warning_no_settings": "Einstellungen für diese Umgebung konnten nicht geladen werden. Sie ist möglicherweise offline, deaktiviert oder hat eine ungültige URL. Du kannst grundlegende Umgebungsdetails trotzdem bearbeiten.",
   "environments_local_setting_disabled": "Diese Einstellung kann für die lokale Umgebung nicht geändert werden",
   "environments_use_environment": "Umgebung verwenden",
