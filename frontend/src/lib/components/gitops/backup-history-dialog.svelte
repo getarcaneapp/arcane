@@ -91,7 +91,7 @@
 							onclick={() => (selectedCommit = isSelected ? null : entry.commit)}
 						>
 							<span class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-								<code class="rounded bg-muted px-1.5 py-0.5 font-mono">{entry.commit.slice(0, 7)}</code>
+								<code class="rounded-xl bg-muted px-1.5 py-0.5 font-mono">{entry.commit.slice(0, 7)}</code>
 								<span>{formatDateTimeShort(entry.date)}</span>
 								<span>{entry.author}</span>
 								<span>{m.changed_files_count({ count: entry.files.length })}</span>

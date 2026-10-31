@@ -111,7 +111,7 @@
 						<button
 							{...props}
 							type="button"
-							class="inline-flex shrink-0 items-center gap-1 rounded border border-transparent px-1 py-0.5 text-muted-foreground outline-none hover:bg-white/4 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+							class="inline-flex shrink-0 items-center gap-1 rounded-xl border border-transparent px-1 py-0.5 text-muted-foreground outline-none hover:bg-white/4 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
 						>
 							{#if expanded}
 								<ArrowDownIcon class="size-4" />

@@ -107,7 +107,7 @@
 				<div class="truncate text-sm font-semibold">{m.api_key_created_title()}: {createdKey.name}</div>
 				<p class="mt-1 text-xs text-muted-foreground">{m.api_key_save_warning()}</p>
 			</div>
-			<code class="block truncate rounded border bg-background px-3 py-2 font-mono text-xs">
+			<code class="block truncate rounded-xl border bg-background px-3 py-2 font-mono text-xs">
 				{createdKey.key}
 			</code>
 			<div class="flex flex-wrap justify-end gap-2">
@@ -163,7 +163,7 @@
 							/>
 						</div>
 						<div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-							<code class="rounded bg-muted/40 px-1.5 py-0.5 font-mono">{key.keyPrefix}…</code>
+							<code class="rounded-xl bg-muted/40 px-1.5 py-0.5 font-mono">{key.keyPrefix}…</code>
 							{#if formatDate(key.createdAt)}
 								<span>{m.common_created()} {formatDate(key.createdAt)}</span>
 								<span aria-hidden="true">·</span>

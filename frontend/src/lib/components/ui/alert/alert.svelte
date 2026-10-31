@@ -3,7 +3,7 @@
 
 	// Without a title the icon centers on the description's first 20px line: 1rem of padding plus 2px.
 	export const alertVariants = tv({
-		base: 'group/alert [&>svg]:text-foreground relative w-full rounded-md border p-4 backdrop-blur-sm bg-card/80 [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&:has(>svg+[data-slot=alert-description])>svg]:top-[1.125rem] [&>svg~*]:pl-7',
+		base: 'group/alert [&>svg]:text-foreground relative w-full rounded-xl border p-4 backdrop-blur-sm bg-card/80 [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&:has(>svg+[data-slot=alert-description])>svg]:top-[1.125rem] [&>svg~*]:pl-7',
 		variants: {
 			variant: {
 				default: 'text-foreground',

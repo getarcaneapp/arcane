@@ -683,8 +683,8 @@
 								<button
 									type="button"
 									class={action.destructive
-										? 'inline-flex size-6 items-center justify-center rounded text-destructive hover:bg-destructive/10'
-										: 'inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10'}
+										? 'inline-flex size-6 items-center justify-center rounded-xl text-destructive hover:bg-destructive/10'
+										: 'inline-flex size-6 items-center justify-center rounded-xl text-foreground hover:bg-foreground/10'}
 									aria-label={action.label}
 									disabled={action.disabled}
 									onclick={action.onclick}
@@ -752,7 +752,7 @@
 {#snippet workspaceDestination(option: FolderDestinationOption)}
 	<div
 		class={cn(
-			'flex w-full items-center gap-2 rounded px-2 py-1.5 pl-(--indent) text-left text-sm',
+			'flex w-full items-center gap-2 rounded-xl px-2 py-1.5 pl-(--indent) text-left text-sm',
 			dialogDestinationPath === option.relativePath && !option.disabled && 'bg-accent',
 			option.disabled ? 'opacity-45' : 'hover:bg-accent'
 		)}
@@ -761,7 +761,7 @@
 		{#if option.relativePath && option.hasChildren}
 			<button
 				type="button"
-				class="inline-flex size-4 shrink-0 items-center justify-center rounded hover:bg-muted"
+				class="inline-flex size-4 shrink-0 items-center justify-center rounded-xl hover:bg-muted"
 				aria-label={destinationOpenFolders[option.relativePath]
 					? m.workspace_file_collapse_folder({ name: option.label })
 					: m.workspace_file_expand_folder({ name: option.label })}

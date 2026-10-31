@@ -60,7 +60,7 @@
 
 {#snippet envFileBadge(entry: WorkspaceDisplayEntry)}
 	{#if !entry.isDirectory && isEnvFile(entry.name)}
-		<span class="shrink-0 rounded bg-warning/10 px-1.5 py-0.5 text-3xs text-warning">
+		<span class="shrink-0 rounded-xl bg-warning/10 px-1.5 py-0.5 text-3xs text-warning">
 			{m.environment_file()}
 		</span>
 	{/if}

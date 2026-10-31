@@ -70,7 +70,7 @@
 					<LoadingSpinnerIcon class="h-8 w-8 text-muted-foreground" />
 				</div>
 			{:else if error}
-				<div class="rounded border border-destructive/20 bg-destructive/10 p-4 text-destructive">
+				<div class="rounded-xl border border-destructive/20 bg-destructive/10 p-4 text-destructive">
 					{error}
 				</div>
 			{:else}

@@ -522,7 +522,7 @@
 
 {#snippet composeBadge(file: FileTreeNode)}
 	{#if composeFileFilter(file)}
-		<span class="ml-auto rounded bg-primary/10 px-2 py-0.5 text-xs text-primary">
+		<span class="ml-auto rounded-xl bg-primary/10 px-2 py-0.5 text-xs text-primary">
 			{m.compose()}
 		</span>
 	{/if}

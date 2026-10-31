@@ -181,19 +181,19 @@
 						<div class="space-y-2 text-sm">
 							<div class="flex justify-between">
 								<span class="text-muted-foreground">{m.registry_docker_hub()}</span>
-								<code class="rounded bg-muted px-2 py-1 text-xs">{m.registry_docker_hub_url()}</code>
+								<code class="rounded-xl bg-muted px-2 py-1 text-xs">{m.registry_docker_hub_url()}</code>
 							</div>
 							<div class="flex justify-between">
 								<span class="text-muted-foreground">{m.registry_github_container_registry()}</span>
-								<code class="rounded bg-muted px-2 py-1 text-xs">{m.registry_github_url()}</code>
+								<code class="rounded-xl bg-muted px-2 py-1 text-xs">{m.registry_github_url()}</code>
 							</div>
 							<div class="flex justify-between">
 								<span class="text-muted-foreground">{m.registry_google_container_registry()}</span>
-								<code class="rounded bg-muted px-2 py-1 text-xs">{m.registry_google_url()}</code>
+								<code class="rounded-xl bg-muted px-2 py-1 text-xs">{m.registry_google_url()}</code>
 							</div>
 							<div class="flex justify-between">
 								<span class="text-muted-foreground">{m.registry_quay_io()}</span>
-								<code class="rounded bg-muted px-2 py-1 text-xs">{m.registry_quay_url()}</code>
+								<code class="rounded-xl bg-muted px-2 py-1 text-xs">{m.registry_quay_url()}</code>
 							</div>
 						</div>
 					</div>

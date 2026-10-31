@@ -79,7 +79,7 @@
 		<h1 class="m-0 w-full">
 			<button
 				type="button"
-				class="min-h-8 w-full rounded bg-transparent px-1 py-1 text-center text-base font-semibold transition-colors hover:bg-muted/50 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 {error
+				class="min-h-8 w-full rounded-xl bg-transparent px-1 py-1 text-center text-base font-semibold transition-colors hover:bg-muted/50 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 {error
 					? 'border border-destructive'
 					: ''}"
 				title={canEdit ? `${shownValue || placeholder} (tap to edit)` : shownValue || placeholder}
@@ -114,7 +114,7 @@
 					class={cn(
 						'w-full truncate bg-transparent px-0 py-0 text-left text-lg font-semibold',
 						!shownValue && placeholder && 'text-muted-foreground',
-						error && 'rounded border border-destructive px-1'
+						error && 'rounded-xl border border-destructive px-1'
 					)}
 					title={shownValue || placeholder}
 					onclick={beginEdit}
