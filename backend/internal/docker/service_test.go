@@ -471,7 +471,7 @@ func TestDockerClientService_ListContainersCachedUntilInvalidated(t *testing.T) 
 		return listErr == nil && listCalls.Load() == 3
 	}, time.Second, time.Millisecond)
 
-	_, err = svc.Client.ContainerRemove(t.Context(), "abc", client.ContainerRemoveOptions{})
+	_, err = svc.ContainerRemove(t.Context(), "abc", client.ContainerRemoveOptions{})
 	require.NoError(t, err)
 	_, err = svc.ListContainers(t.Context(), false)
 	require.NoError(t, err)
