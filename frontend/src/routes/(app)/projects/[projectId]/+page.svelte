@@ -12,12 +12,12 @@
 	import type { ActionButton } from '#lib/components/action-button-group/types.js';
 	import ActionButtons from '#lib/components/action-buttons.svelte';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
-	import EnvironmentCell from '#lib/components/arcane-table/cells/environment-cell.svelte';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip/index.js';
 	import CodePanel from '#lib/components/code-panel.svelte';
 	import ComposeFileEditorPanel from '#lib/components/compose-file-editor-panel.svelte';
 	import { openConfirmDialog } from '#lib/components/confirm-dialog/index.js';
 	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
+	import EnvironmentDestinationSelect from '#lib/components/form/environment-destination-select.svelte';
 	import ProjectGitBackupSummary from '#lib/components/gitops/project-git-backup-summary.svelte';
 	import IconImage from '#lib/components/icon-image.svelte';
 	import ProjectTagEditor from '#lib/components/project-tag-editor.svelte';
@@ -2245,20 +2245,22 @@
 		/>
 		<div class="min-w-0 flex-1">
 			<div class="flex min-h-9 min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-				<EditableName
-					bind:value={inputs.name.value}
-					displayValue={effectiveName}
-					bind:ref={nameInputRef}
-					variant="inline"
-					error={inputs.name.error ?? undefined}
-					originalValue={serverName}
-					canEdit={canEditName}
-					disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
-					onCommit={saveNameIfChanged}
-					class="max-w-40 min-w-0 sm:max-w-56 md:max-w-72 lg:max-w-88"
-				/>
+				<div class="flex min-w-0 items-center">
+					<EnvironmentDestinationSelect value={envId} variant="prefix" readonly />
+					<EditableName
+						bind:value={inputs.name.value}
+						displayValue={effectiveName}
+						bind:ref={nameInputRef}
+						variant="inline"
+						error={inputs.name.error ?? undefined}
+						originalValue={serverName}
+						canEdit={canEditName}
+						disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
+						onCommit={saveNameIfChanged}
+						class="max-w-40 min-w-0 sm:max-w-56 md:max-w-72 lg:max-w-88"
+					/>
+				</div>
 				{@render projectStatus(project)}
-				<EnvironmentCell value={envId} plain />
 				{#if project.isArchived}
 					<Badge variant="gray" minWidth="20">{m.projects_archived_badge()}</Badge>
 				{/if}
