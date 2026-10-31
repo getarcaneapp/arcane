@@ -97,7 +97,10 @@ func (h *requestLogHandler) Handle(ctx context.Context, r slog.Record) error {
 	for _, a := range requestAttrs {
 		a.Value = a.Value.Resolve()
 		switch a.Key {
-		case "method", "path":
+		case "method":
+			condensedAttrs = append(condensedAttrs, a)
+		case "path":
+			a.Value = slog.StringValue(redactSecrets(a.Value.String()))
 			condensedAttrs = append(condensedAttrs, a)
 		case "host", "route":
 			if debug {
@@ -260,9 +263,7 @@ func SetupSlogLogger(cfg *config.Config, telemetryHandler slog.Handler) {
 		h = slog.NewMultiHandler(h, &telemetryLogHandler{handler: telemetryHandler, level: lv})
 	}
 
-	h = &requestLogHandler{handler: h}
-
-	slog.SetDefault(slog.New(logs.NewSlogHandler(h, ws.LogBroadcaster())))
+	slog.SetDefault(slog.New(&requestLogHandler{handler: logs.NewSlogHandler(h, ws.LogBroadcaster())}))
 }
 
 func BuildGormLogger(cfg *config.Config) logger.Interface {
