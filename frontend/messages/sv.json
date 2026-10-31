@@ -1534,6 +1534,8 @@
   "environments_config_description": "Konfiguration för den här miljön",
   "environments_api_url_help": "Basadressen till miljöns API",
   "environments_warning_disabled": "Den här miljön är inaktiverad. Du kan ändra konfigurationen men kommer inte åt resurserna förrän miljön aktiveras igen.",
+  "environments_warning_direct_deprecated": "Direkta agentanslutningar är föråldrade och kommer att tas bort i version 3. Byt denna miljö till en edge-agent.",
+  "environments_direct_deprecated_badge": "Föråldrat",
   "environments_warning_no_settings": "Det gick inte att läsa in miljöns inställningar. Miljön kan vara frånkopplad, inaktiverad eller ha en ogiltig adress. Du kan fortfarande ändra grundläggande miljöuppgifter.",
   "environments_local_setting_disabled": "Den här inställningen kan inte ändras för den lokala miljön",
   "environments_use_environment": "Använd miljö",

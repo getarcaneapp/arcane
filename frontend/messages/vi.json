@@ -1534,6 +1534,8 @@
   "environments_config_description": "Cấu hình cho môi trường này",
   "environments_api_url_help": "Base URL cho API của môi trường",
   "environments_warning_disabled": "Môi trường này đang bị tắt. Bạn có thể sửa cấu hình nhưng sẽ không truy cập được tài nguyên cho đến khi bật lại.",
+  "environments_warning_direct_deprecated": "Kết nối trực tiếp với tác nhân đã không còn được khuyến nghị và sẽ bị loại bỏ trong phiên bản v3. Hãy chuyển môi trường này sang sử dụng tác nhân biên.",
+  "environments_direct_deprecated_badge": "Đã bị loại bỏ",
   "environments_warning_no_settings": "Không thể tải cài đặt cho môi trường này. Có thể nó đang ngoại tuyến, bị tắt hoặc URL không hợp lệ. Bạn vẫn có thể sửa các chi tiết cơ bản.",
   "environments_local_setting_disabled": "Cài đặt này không thể thay đổi đối với môi trường Local",
   "environments_use_environment": "Sử dụng môi trường",

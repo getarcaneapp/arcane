@@ -1534,6 +1534,8 @@
   "environments_config_description": "此环境的配置",
   "environments_api_url_help": "环境 API 的基础 URL",
   "environments_warning_disabled": "此环境已禁用。您可以编辑其配置，但重新启用前无法访问其资源。",
+  "environments_warning_direct_deprecated": "直接代理连接已弃用，并将在 v3 版本中移除。请将此环境切换为边缘代理。",
+  "environments_direct_deprecated_badge": "已弃用",
   "environments_warning_no_settings": "无法加载此环境的设置。它可能离线、已禁用或 URL 无效。您仍可编辑基本环境信息。",
   "environments_local_setting_disabled": "此设置在本地环境中不可更改",
   "environments_use_environment": "使用环境",

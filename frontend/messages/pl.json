@@ -1534,6 +1534,8 @@
   "environments_config_description": "Konfiguracja dla tego środowiska",
   "environments_api_url_help": "Podstawowy adres URL interfejsu API tego środowiska",
   "environments_warning_disabled": "This environment is disabled. You can edit its configuration, but you won't be able to access its resources until it's re-enabled.",
+  "environments_warning_direct_deprecated": "Bezpośrednie połączenia z agentami są przestarzałe i zostaną usunięte w wersji 3. Należy przestawić to środowisko na agenta brzegowego.",
+  "environments_direct_deprecated_badge": "Przestarzałe",
   "environments_warning_no_settings": "Unable to load settings for this environment. It may be offline, disabled, or have an invalid URL. You can still edit basic environment details.",
   "environments_local_setting_disabled": "This setting cannot be changed for the local environment",
   "environments_use_environment": "Use Environment",
