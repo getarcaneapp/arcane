@@ -400,6 +400,84 @@ func TestDockerClientService_EngineCachesUntilClientChanges(t *testing.T) {
 	assert.Equal(t, int32(3), versionCalls.Load())
 }
 
+func TestDockerClientService_ListContainersCachedUntilInvalidated(t *testing.T) {
+	var listCalls atomic.Int32
+	daemonEvents := make(chan events.Message)
+	server := newDockerPingTestServerWithHandler(t, func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case path.Base(r.URL.Path) == "_ping":
+			w.Header().Set("Api-Version", "1.41")
+			w.WriteHeader(http.StatusOK)
+		case path.Base(r.URL.Path) == "events":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			assert.NoError(t, http.NewResponseController(w).Flush())
+			for {
+				select {
+				case <-r.Context().Done():
+					return
+				case message := <-daemonEvents:
+					assert.NoError(t, json.NewEncoder(w).Encode(message))
+					assert.NoError(t, http.NewResponseController(w).Flush())
+				}
+			}
+		case path.Base(r.URL.Path) == "json":
+			listCalls.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[{"Id":"abc","State":"running"}]`))
+		case r.Method == http.MethodDelete:
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	svc := newDockerClientServiceForTest(t, server.URL)
+	t.Cleanup(svc.Close)
+
+	_, err := svc.ListContainers(t.Context(), false)
+	require.NoError(t, err)
+	_, err = svc.ListContainers(t.Context(), false)
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), listCalls.Load(), "lists are not cached before the event stream is live")
+
+	stop, err := concurrency.StartSupervised(t.Context(), "Docker event watcher", func(ctx context.Context) error {
+		svc.WatchEvents(ctx)
+		return nil
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = stop(context.WithoutCancel(t.Context())) })
+	require.Eventually(t, func() bool { return svc.inventory.Load() != nil }, time.Second, time.Millisecond)
+
+	listCalls.Store(0)
+	for range 3 {
+		containers, listErr := svc.ListContainers(t.Context(), false)
+		require.NoError(t, listErr)
+		require.Len(t, containers, 1)
+	}
+	assert.Equal(t, int32(1), listCalls.Load())
+
+	_, err = svc.ListContainers(t.Context(), true)
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), listCalls.Load())
+
+	daemonEvents <- events.Message{Type: events.ContainerEventType, Action: "exec_start: sh", TimeNano: 1}
+	_, err = svc.ListContainers(t.Context(), false)
+	require.NoError(t, err)
+	assert.Equal(t, int32(2), listCalls.Load(), "exec events do not change the container list")
+
+	daemonEvents <- events.Message{Type: events.ContainerEventType, Action: events.ActionDie, TimeNano: 2}
+	require.Eventually(t, func() bool {
+		_, listErr := svc.ListContainers(t.Context(), false)
+		return listErr == nil && listCalls.Load() == 3
+	}, time.Second, time.Millisecond)
+
+	_, err = svc.Client.ContainerRemove(t.Context(), "abc", client.ContainerRemoveOptions{})
+	require.NoError(t, err)
+	_, err = svc.ListContainers(t.Context(), false)
+	require.NoError(t, err)
+	assert.Equal(t, int32(4), listCalls.Load(), "an Arcane write drops the cached list before its event arrives")
+}
+
 func TestCountImageUsage_UsesContainerImageIDs(t *testing.T) {
 	images := []image.Summary{
 		{ID: "sha256:image-a", Containers: -1, Size: 100},

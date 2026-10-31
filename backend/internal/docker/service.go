@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
@@ -56,6 +58,7 @@ type DockerClientService struct {
 	engineClient    *client.Client
 	eventBus        *bus.DockerEventBus
 	streamConnected *concurrency.Signal[struct{}]
+	inventory       atomic.Pointer[dockerInventory]
 
 	engine        compat.EngineCompatibilityInfo
 	clientVersion string
@@ -149,7 +152,22 @@ func (s *DockerClientService) RefreshClient(ctx context.Context) error {
 	}
 	s.mu.Unlock()
 
-	cli, err := client.New(client.WithHost(host), client.WithAPIVersion(apiVersion))
+	dropInventoryOnWrite := func(method string) {
+		if inventory := s.inventory.Load(); inventory != nil && method != http.MethodGet && method != http.MethodHead {
+			s.inventory.CompareAndSwap(inventory, &dockerInventory{})
+		}
+	}
+	cli, err := client.New(
+		client.WithHost(host),
+		client.WithAPIVersion(apiVersion),
+		client.WithHTTPRequestHook(func(req *http.Request) error {
+			dropInventoryOnWrite(req.Method)
+			return nil
+		}),
+		client.WithHTTPResponseHook(func(resp *http.Response) {
+			dropInventoryOnWrite(kit.FromPtr(resp.Request).Method)
+		}),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to refresh Docker client: failed to configure Docker client API version %s: %w", apiVersion, err)
 	}
@@ -223,6 +241,7 @@ func (s *DockerClientService) Close() {
 	s.Client = nil
 	s.engineClient = nil
 	s.mu.Unlock()
+	s.inventory.Store(nil)
 
 	closeDockerClient(context.Background(), oldClient, "cached") //nolint:forbidigo // Shutdown close runs without a request context.
 }
@@ -255,6 +274,7 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 				Since: kit.Ternary(lastEventNano == 0, "", fmt.Sprintf("%d.%09d", (lastEventNano+1)/int64(time.Second), (lastEventNano+1)%int64(time.Second))),
 			})
 			streamStart := time.Now()
+			s.inventory.Store(&dockerInventory{})
 			s.streamConnected.Publish(struct{}{})
 			var streamErr error
 		stream:
@@ -271,12 +291,16 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 						msg.TimeNano = time.Now().UnixNano()
 					}
 					lastEventNano = msg.TimeNano
+					if !strings.HasPrefix(string(msg.Action), "exec_") {
+						s.inventory.Store(&dockerInventory{})
+					}
 					s.EventBus().Publish(msg)
 				case recvErr, ok := <-result.Err:
 					streamErr = kit.Ternary(ok, recvErr, nil)
 					break stream
 				}
 			}
+			s.inventory.Store(nil)
 			if streamErr != nil && !errors.Is(streamErr, context.Canceled) && !errors.Is(streamErr, io.EOF) {
 				slog.WarnContext(ctx, "Docker event stream stopped", "error", streamErr)
 			}
@@ -303,10 +327,10 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 // ListCoalesced shares one detached Call among concurrent callers; each waiter stops on its own
 // context, nothing is cached, and the shared result must be treated as immutable.
 // Streaming calls (logs, events, attach, pull, exec, stats, wait) must not use it because Call applies a deadline.
-func (s *DockerClientService) ListCoalesced[T any](ctx context.Context, group *singleflight.Group, op func(context.Context, *client.Client) (T, error)) (T, error) {
+func (s *DockerClientService) ListCoalesced[T any](ctx context.Context, group *singleflight.Group, key string, op func(context.Context, *client.Client) (T, error)) (T, error) {
 	var zero T
 
-	ch := group.DoChan("list", func() (any, error) {
+	ch := group.DoChan(key, func() (any, error) {
 		return s.Call(context.WithoutCancel(ctx), op)
 	})
 
@@ -342,28 +366,46 @@ func (s *DockerClientService) Call[T any](ctx context.Context, op func(context.C
 	return op(apiCtx, dockerClient)
 }
 
-func (s *DockerClientService) ListContainers(ctx context.Context) ([]container.Summary, error) {
-	return s.ListCoalesced(ctx, &s.containerListFlight, func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
+func (s *DockerClientService) ListContainers(ctx context.Context, live bool) ([]container.Summary, error) {
+	inventory := s.inventory.Load()
+	if inventory != nil && !live {
+		if cached := inventory.containers.Load(); cached != nil {
+			return *cached, nil
+		}
+	}
+	return s.ListCoalesced(ctx, &s.containerListFlight, fmt.Sprintf("%p", inventory), func(ctx context.Context, dockerClient *client.Client) ([]container.Summary, error) {
 		containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 		if err != nil {
 			return nil, fmt.Errorf("failed to list Docker containers: %w", err)
+		}
+		if inventory != nil {
+			inventory.containers.Store(&containerList.Items)
 		}
 		return containerList.Items, nil
 	})
 }
 
 func (s *DockerClientService) ListImages(ctx context.Context) ([]image.Summary, error) {
-	return s.ListCoalesced(ctx, &s.imageListFlight, func(ctx context.Context, dockerClient *client.Client) ([]image.Summary, error) {
+	inventory := s.inventory.Load()
+	if inventory != nil {
+		if cached := inventory.images.Load(); cached != nil {
+			return *cached, nil
+		}
+	}
+	return s.ListCoalesced(ctx, &s.imageListFlight, fmt.Sprintf("%p", inventory), func(ctx context.Context, dockerClient *client.Client) ([]image.Summary, error) {
 		imageList, err := dockerClient.ImageList(ctx, client.ImageListOptions{All: true})
 		if err != nil {
 			return nil, fmt.Errorf("failed to list Docker images: %w", err)
+		}
+		if inventory != nil {
+			inventory.images.Store(&imageList.Items)
 		}
 		return imageList.Items, nil
 	})
 }
 
 func (s *DockerClientService) GetDiskUsage(ctx context.Context) (client.DiskUsageResult, error) {
-	return s.ListCoalesced(ctx, &s.diskUsageFlight, func(ctx context.Context, dockerClient *client.Client) (client.DiskUsageResult, error) {
+	return s.ListCoalesced(ctx, &s.diskUsageFlight, "", func(ctx context.Context, dockerClient *client.Client) (client.DiskUsageResult, error) {
 		return dockerClient.DiskUsage(ctx, client.DiskUsageOptions{
 			Containers: true,
 			Images:     true,
@@ -386,7 +428,7 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*t
 		defer utils.RecoverToError(&workerErr, "docker snapshot worker")
 
 		var err error
-		containers, err = s.ListContainers(groupCtx)
+		containers, err = s.ListContainers(groupCtx, false)
 		return err
 	})
 	g.Go(func() (workerErr error) {
@@ -441,7 +483,7 @@ func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*t
 }
 
 func (s *DockerClientService) GetAllContainers(ctx context.Context) ([]container.Summary, int, int, int, error) {
-	containers, err := s.ListContainers(ctx)
+	containers, err := s.ListContainers(ctx, false)
 	if err != nil {
 		return nil, 0, 0, 0, err
 	}
@@ -478,7 +520,7 @@ func (s *DockerClientService) GetAllImages(ctx context.Context) ([]image.Summary
 		defer utils.RecoverToError(&workerErr, "docker container list worker")
 
 		var err error
-		containers, err = s.ListContainers(groupCtx)
+		containers, err = s.ListContainers(groupCtx, false)
 		return err
 	})
 	if err := g.Wait(); err != nil {
@@ -520,7 +562,7 @@ func (s *DockerClientService) GetAllNetworks(ctx context.Context) ([]network.Sum
 	g.Go(func() (workerErr error) {
 		defer utils.RecoverToError(&workerErr, "network container list worker")
 		var err error
-		containers, err = s.ListContainers(groupCtx)
+		containers, err = s.ListContainers(groupCtx, false)
 		return err
 	})
 	g.Go(func() (workerErr error) {
@@ -558,4 +600,9 @@ func CountNetworkUsage(networks []network.Summary, containers []container.Summar
 		}
 	}
 	return inuse, unused, total
+}
+
+type dockerInventory struct {
+	containers atomic.Pointer[[]container.Summary]
+	images     atomic.Pointer[[]image.Summary]
 }

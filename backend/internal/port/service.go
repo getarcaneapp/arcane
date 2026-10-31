@@ -26,7 +26,7 @@ func NewPortService(dockerService *dockerInternal.DockerClientService) *PortServ
 }
 
 func (s *PortService) ListPortsPaginated(ctx context.Context, params pagination.QueryParams) ([]types.PortMapping, pagination.Response, error) {
-	containers, err := s.dockerService.ListContainers(ctx)
+	containers, err := s.dockerService.ListContainers(ctx, false)
 	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to list containers: %w", err)
 	}

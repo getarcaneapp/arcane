@@ -285,7 +285,7 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*types.Im
 	g.Go(func() (workerErr error) {
 		defer utils.RecoverToError(&workerErr, "image worker")
 
-		containerList, listContainersErr := s.dockerService.ListContainers(gctx)
+		containerList, listContainersErr := s.dockerService.ListContainers(gctx, false)
 		if listContainersErr != nil {
 			slog.DebugContext(gctx, "failed to list containers for image detail pinned references", "id", id, "error", listContainersErr)
 			return nil
@@ -1001,7 +1001,7 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	g.Go(func() (workerErr error) {
 		defer utils.RecoverToError(&workerErr, "image worker")
 
-		containerList, err := s.dockerService.ListContainers(groupCtx)
+		containerList, err := s.dockerService.ListContainers(groupCtx, false)
 		if err != nil {
 			return fmt.Errorf("failed to list containers: %w", err)
 		}

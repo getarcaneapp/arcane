@@ -55,7 +55,7 @@ func New(db *database.DB, dockerService *dockerInternal.DockerClientService, ima
 
 // ComposeContainers derives Compose containers from the coalesced full inventory.
 func (s *Service) ComposeContainers(ctx context.Context) ([]container.Summary, error) {
-	containers, err := s.dockerService.ListContainers(ctx)
+	containers, err := s.dockerService.ListContainers(ctx, false)
 	if err != nil {
 		return nil, err
 	}

@@ -1584,7 +1584,7 @@ func (s *ContainerService) SampleResources(ctx context.Context, ids []string, ma
 		return map[string]*types.ContainerResourceSample{}, nil
 	}
 
-	dockerContainers, err := s.dockerService.ListContainers(ctx)
+	dockerContainers, err := s.dockerService.ListContainers(ctx, false)
 	if err != nil {
 		return nil, err
 	}
@@ -1605,7 +1605,7 @@ func (s *ContainerService) ListContainersPaginated(
 	includeHidden bool,
 	groupBy string,
 ) (ContainerListResult, error) {
-	dockerContainers, err := s.dockerService.ListContainers(ctx)
+	dockerContainers, err := s.dockerService.ListContainers(ctx, true)
 	if err != nil {
 		return ContainerListResult{}, err
 	}

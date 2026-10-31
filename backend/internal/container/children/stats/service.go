@@ -263,7 +263,7 @@ func (s *Service) fetch(ctx context.Context, containerID string, maxAge time.Dur
 
 // ObserveResources reports arcane.container.* metrics for running containers from list, sharing the
 // sample cache and flights with Collect so overlapping collections reuse Docker calls.
-func (s *Service) ObserveResources(meter metric.Meter, list func(context.Context) ([]container.Summary, error)) error {
+func (s *Service) ObserveResources(meter metric.Meter, list func(context.Context, bool) ([]container.Summary, error)) error {
 	cpuTime, cpuTimeErr := meter.Float64ObservableCounter("arcane.container.cpu.time",
 		metric.WithDescription("Cumulative CPU time consumed by a running container"), metric.WithUnit("s"))
 	cpuUtilization, cpuUtilizationErr := meter.Float64ObservableGauge("arcane.container.cpu.utilization",
@@ -298,7 +298,7 @@ func (s *Service) ObserveResources(meter metric.Meter, list func(context.Context
 	}
 
 	_, err := meter.RegisterCallback(func(ctx context.Context, o metric.Observer) error {
-		containers, err := list(ctx)
+		containers, err := list(ctx, false)
 		if err != nil {
 			slog.DebugContext(ctx, "Skipping container resource metrics", "error", err)
 			return nil

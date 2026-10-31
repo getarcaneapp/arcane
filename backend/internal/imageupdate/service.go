@@ -515,7 +515,7 @@ func (s *ImageUpdateService) getImageRefByID(ctx context.Context, imageID string
 	// Fallback: if the image was pruned, look up the image reference from
 	// running containers that were started from this image ID.
 	if imageRef, ok := func() (string, bool) {
-		containers, listErr := s.dockerService.ListContainers(ctx)
+		containers, listErr := s.dockerService.ListContainers(ctx, false)
 		if listErr != nil {
 			return "", false
 		}
@@ -541,7 +541,7 @@ func (s *ImageUpdateService) getAllImageRefs(ctx context.Context, limit int) ([]
 		return nil, fmt.Errorf("failed to list Docker images: %w", err)
 	}
 
-	containers, err := s.dockerService.ListContainers(ctx)
+	containers, err := s.dockerService.ListContainers(ctx, false)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to list Docker containers; continuing without update-check opt-out filtering", "error", err.Error())
 	}
@@ -1321,7 +1321,7 @@ func (s *ImageUpdateService) CheckImages(ctx context.Context, request types.Imag
 
 // MonitoredImageRefs keeps the refs whose containers still permit update checks.
 func (s *ImageUpdateService) MonitoredImageRefs(ctx context.Context, imageRefs []string) ([]string, error) {
-	listed, err := s.dockerService.ListContainers(ctx)
+	listed, err := s.dockerService.ListContainers(ctx, false)
 	if err != nil {
 		return nil, fmt.Errorf("list containers for update-check eligibility: %w", err)
 	}
@@ -1594,7 +1594,7 @@ func (s *ImageUpdateService) SendBatchUpdateNotifications(ctx context.Context) e
 		// Records for resources that opted out of monitoring since the check, or
 		// whose container is gone, stay unnotified: they resurface if monitoring
 		// is re-enabled and are otherwise removed by orphan cleanup.
-		listed, listErr := s.dockerService.ListContainers(notifCtx)
+		listed, listErr := s.dockerService.ListContainers(notifCtx, false)
 		if listErr != nil {
 			return records, fmt.Errorf("list containers for update-check eligibility: %w", listErr)
 		}
@@ -1697,7 +1697,7 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 		return fmt.Errorf("failed to delete orphaned records: %w", imageResult.Error)
 	}
 
-	containers, err := s.dockerService.ListContainers(ctx)
+	containers, err := s.dockerService.ListContainers(ctx, false)
 	if err != nil {
 		return err
 	}
@@ -1780,7 +1780,7 @@ func (s *ImageUpdateService) checkContainerTagUpdates(ctx context.Context, image
 	if len(wanted) == 0 {
 		return map[string]*types.ImageUpdateResponse{}, nil
 	}
-	listed, err := s.dockerService.ListContainers(ctx)
+	listed, err := s.dockerService.ListContainers(ctx, false)
 	if err != nil {
 		return map[string]*types.ImageUpdateResponse{}, fmt.Errorf("list containers for tag update checks: %w", err)
 	}
