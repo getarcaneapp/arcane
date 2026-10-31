@@ -78,7 +78,7 @@ async function globalSetup() {
 		const staticProjectDir = path.join(projectsDir, 'test-project-static');
 		fs.accessSync(path.join(staticProjectDir, 'compose.yaml'), fs.constants.R_OK);
 		const staticEnvFile = path.join(staticProjectDir, '.env');
-		if (!fs.existsSync(staticEnvFile)) fs.writeFileSync(staticEnvFile, '');
+		fs.writeFileSync(staticEnvFile, '', { flag: 'a' });
 		for (const image of [
 			'public.ecr.aws/docker/library/busybox:1.37',
 			'public.ecr.aws/docker/library/alpine:3.20',
