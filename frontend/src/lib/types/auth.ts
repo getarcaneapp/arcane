@@ -2,7 +2,7 @@ import type { ToasterProps } from 'svelte-sonner';
 
 import type { Locale } from '#lib/paraglide/runtime.js';
 import type { Environment } from '#lib/types/environment.js';
-import type { AppVersionInformation, ApplicationTheme, IconCatalog } from '#lib/types/settings.js';
+import type { AppVersionInformation, ApplicationTheme, IconCatalog, ThemeDefinition } from '#lib/types/settings.js';
 import type { CreateRequest, Paginated, UpdateRequest } from '#lib/types/shared.js';
 
 // --- RBAC: roles, permissions, assignments ---
@@ -164,6 +164,7 @@ export type ToastPosition = 'auto' | NonNullable<ToasterProps['position']>;
 export type UserPreferences = {
 	themeMode?: 'light' | 'dark' | 'system';
 	applicationTheme?: ApplicationTheme;
+	customThemes?: ThemeDefinition[];
 	accentColor?: string;
 	iconCatalog?: IconCatalog;
 	oledMode?: boolean;

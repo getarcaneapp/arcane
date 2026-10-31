@@ -320,6 +320,9 @@ func (s *UserService) UpdateUser(ctx context.Context, localUser *User, actorPerm
 	if err := normalization.Normalize(localUser); err != nil {
 		return nil, err
 	}
+	if err := validateCustomThemes(kit.FromPtr(localUser.Preferences.CustomThemes)); err != nil {
+		return nil, err
+	}
 	if layout := localUser.Preferences.DashboardLayout; layout != nil {
 		widgets := make([]types.DashboardWidgetLayout, 0, len(dashboardWidgetSizes))
 		for _, widget := range *layout {

@@ -11,7 +11,8 @@ import {
 	applyGlassEffects,
 	applyInterfaceAnimations,
 	applyOledMode,
-	FONT_SIZE_DEFAULT
+	FONT_SIZE_DEFAULT,
+	setCustomThemes
 } from '#lib/utils/theme.svelte.js';
 
 let current = $state.raw<User | null>(null);
@@ -31,13 +32,12 @@ const setUser = async (user: User) => {
 	timeFormatStore.set(user.timeFormat ?? 'auto');
 
 	const preferences = user.preferences ?? {};
+	setCustomThemes(preferences.customThemes ?? []);
 	applyApplicationTheme(preferences.applicationTheme);
 	applyAccentColor(preferences.accentColor ?? 'default');
 	applyOledMode(preferences.oledMode ?? false);
 	applyGlassEffects(preferences.glassEffectsEnabled ?? true);
 	applyInterfaceAnimations(preferences.animationsEnabled ?? true);
-	// Only override the device-local mode when the account carries an explicit
-	// choice, so a browser that has never synced keeps its own light/dark mode.
 	if (preferences.themeMode) {
 		setMode(preferences.themeMode);
 	}
@@ -48,23 +48,15 @@ const setUser = async (user: User) => {
 const clearUser = () => {
 	applyFontSize(FONT_SIZE_DEFAULT);
 	timeFormatStore.reset();
+	setCustomThemes([]);
 	applyApplicationTheme('default');
 	applyAccentColor('default');
 	applyOledMode(false);
 	applyGlassEffects(true);
 	applyInterfaceAnimations(true);
-	// Light/dark mode is deliberately left alone on logout: it is a device-local
-	// preference and flipping it mid-session is jarring.
 	current = null;
 };
 
-/**
- * Build the effective permission Set for the given environment. Includes
- * global permissions plus permissions scoped to `envId`.
- *
- * Pass `undefined` for `envId` to get only the global set (use this for
- * checking org-level permissions, or as a fallback before an env is selected).
- */
 const permissions = (envId?: string): Set<string> => {
 	const user = current;
 	if (!user?.permissionsByEnv) return new Set();
@@ -78,14 +70,12 @@ const permissions = (envId?: string): Set<string> => {
 	return out;
 };
 
-/** Returns true if the caller may perform `perm`. Sudo callers (`*` in global) always return true. */
 const hasPermission = (perm: string, envId?: string): boolean => {
 	const set = permissions(envId);
 	if (set.has(SUDO_PERMISSION)) return true;
 	return set.has(perm);
 };
 
-/** Returns true if the caller has ANY of the supplied permissions. */
 const hasAnyPermission = (perms: string[], envId?: string): boolean => {
 	if (perms.length === 0) return true;
 	const set = permissions(envId);
@@ -93,12 +83,10 @@ const hasAnyPermission = (perms: string[], envId?: string): boolean => {
 	return perms.some((p) => set.has(p));
 };
 
-/** Returns true if the caller may perform `perm` in at least one effective environment scope. */
 const hasPermissionInAnyEnvironment = (perm: string): boolean => {
 	return userHasPermissionInAnyEnvironment(current, perm);
 };
 
-/** Returns true if the caller effectively holds global administrator access. */
 const isGlobalAdmin = (): boolean => {
 	const user = current;
 	if (!user) return false;
