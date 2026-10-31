@@ -20,7 +20,8 @@
 			<h2 class="truncate text-sm font-medium">{title}</h2>
 			{@render actions?.()}
 		</div>
-		<div class="-mx-2 min-h-0 flex-1 overflow-y-auto px-2">
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+		<div class="-mx-2 min-h-0 flex-1 overflow-y-auto px-2" tabindex={0}>
 			{@render children()}
 		</div>
 	</div>
