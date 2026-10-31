@@ -158,7 +158,6 @@
 					key: 'env',
 					label: '.env',
 					iconClass: 'text-success',
-					locked: true,
 					menuItems: [{ id: 'remove', label: m.common_delete(), icon: TrashIcon, destructive: true, onSelect: handleRemoveEnv }]
 				}
 			: { key: 'add-env', label: m.add_env_file(), action: true, onSelect: handleAddEnv }
