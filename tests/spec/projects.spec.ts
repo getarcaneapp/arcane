@@ -126,7 +126,9 @@ function getProjectIdFromPageUrl(url: string): string {
 }
 
 function createProjectButton(page: Page) {
-	return page.getByRole('button', { name: 'Create Project', exact: true });
+	return page
+		.getByRole('button', { name: 'Create Project', exact: true })
+		.and(page.locator('button'));
 }
 
 async function addEnvFile(page: Page) {
