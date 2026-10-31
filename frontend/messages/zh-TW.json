@@ -1534,6 +1534,8 @@
   "environments_config_description": "環境設定",
   "environments_api_url_help": "環境 API 的基底網址",
   "environments_warning_disabled": "此環境已停用。您可以編輯該環境設定，但除非重新啟用，您無法存取資源。",
+  "environments_warning_direct_deprecated": "直接代理連線已不再推薦使用，並將於 v3 版本中移除。請將此環境切換至邊緣代理。",
+  "environments_direct_deprecated_badge": "已廢棄",
   "environments_warning_no_settings": "無法載入此環境的設定。可能為離線、被停用或網址無效。您仍可以編輯基本環境資訊。",
   "environments_local_setting_disabled": "本機環境無法變更此設定",
   "environments_use_environment": "使用環境",
