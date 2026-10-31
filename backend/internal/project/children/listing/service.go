@@ -334,6 +334,7 @@ func ApplyPresentation(ctx context.Context, projectsDir, catalog string, records
 			EnvContent:         d.EnvContent,
 			OverrideContent:    d.OverrideContent,
 			OverrideFileName:   d.OverrideFileName,
+			EnvFileExists:      d.EnvFileExists,
 			Name:               d.Name,
 			GitRepositoryURL:   d.GitRepositoryURL,
 			IconLightURL:       icon.IconLightURL,

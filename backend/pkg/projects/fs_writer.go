@@ -215,45 +215,16 @@ func RemoveProjectFile(ctx context.Context, projectsRoot, dirPath, fileName stri
 	return nil
 }
 
-func EnsureEnvFile(ctx context.Context, projectsRoot, dirPath string) error {
-	if _, err := acfs.LogicalPath(projectsRoot, dirPath); err != nil {
-		return fmt.Errorf("refusing to create env file: path outside projects root: %w", err)
-	}
-
-	exists, err := acfs.Exists(ctx, dirPath, "/.env")
-	if err != nil {
-		return fmt.Errorf("failed to stat env file: %w", err)
-	}
-	if exists {
-		return nil
-	}
-
-	return WriteProjectFile(ctx, projectsRoot, dirPath, ".env", "")
-}
-
-// WriteProjectFiles writes both compose and env files to a project directory.
-// An empty .env file is always created to prevent compose-go from failing when
-// the compose file references env_file: .env
-// projectsRoot is the allowed root directory to prevent path traversal attacks
 func WriteProjectFiles(ctx context.Context, projectsRoot, dirPath, composeContent string, envContent *string) error {
 	if err := WriteComposeFile(ctx, projectsRoot, dirPath, composeContent); err != nil {
 		return err
 	}
 
-	// If envContent is nil, we check if .env already exists.
-	// We only create an empty one if it doesn't exist, to satisfy
-	// compose-go from failing when the compose file references env_file: .env
-	if envContent != nil {
-		if err := WriteProjectFile(ctx, projectsRoot, dirPath, ".env", *envContent); err != nil {
-			return err
-		}
-	} else {
-		if err := EnsureEnvFile(ctx, projectsRoot, dirPath); err != nil {
-			return err
-		}
+	if strings.TrimSpace(kit.FromPtr(envContent)) == "" {
+		return nil
 	}
 
-	return nil
+	return WriteProjectFile(ctx, projectsRoot, dirPath, ".env", *envContent)
 }
 
 // WriteTemplateFile writes a template file (like .compose.template or .env.template)

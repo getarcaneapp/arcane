@@ -608,6 +608,11 @@ type Project struct {
 	//
 	// Required: false
 	RedeployDisabled bool `json:"redeployDisabled,omitempty" readOnly:"true"`
+
+	// EnvFileExists reports whether the project .env file is present.
+	//
+	// Required: false
+	EnvFileExists bool `json:"envFileExists,omitempty" readOnly:"true"`
 }
 
 // ProjectDestroy is used to destroy a project.

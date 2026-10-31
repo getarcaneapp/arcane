@@ -91,6 +91,7 @@
 
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
+	let envActive = $state(untrack(() => (data.envTemplate || '').trim().length > 0));
 	let nameInputRef = $state<HTMLInputElement | null>(null);
 	let overrideContent = $state(untrack(() => data.overrideTemplate || ''));
 	let overrideActive = $state(untrack(() => (data.overrideTemplate || '').trim().length > 0));
@@ -131,7 +132,7 @@
 		pendingEntries: false,
 		allowBinary: false,
 		isFixedTab: (key) => key === 'compose' || key === 'env' || key === 'override',
-		isTabAvailable: (key) => key !== 'override' || overrideActive,
+		isTabAvailable: (key) => (key !== 'override' || overrideActive) && (key !== 'env' || envActive),
 		planCreate: planWorkspaceFileCreate,
 		planRename: planWorkspaceFileRename,
 		planMove: planWorkspaceFileMove
@@ -140,9 +141,33 @@
 	const stackWorkspaceLeadingRows = $derived.by(() => [
 		{ key: 'compose', label: 'compose.yaml', iconClass: 'text-info', locked: true },
 		...(overrideActive
-			? [{ key: 'override', label: 'compose.override.yaml', iconClass: 'text-purple', locked: true }]
+			? [
+					{
+						key: 'override',
+						label: 'compose.override.yaml',
+						iconClass: 'text-purple',
+						locked: true,
+						menuItems: [
+							{
+								id: 'remove',
+								label: m.compose_override_remove(),
+								icon: TrashIcon,
+								destructive: true,
+								onSelect: removeOverride
+							}
+						]
+					}
+				]
 			: [{ key: 'add-override', label: m.compose_override_add(), action: true, onSelect: addOverride }]),
-		{ key: 'env', label: '.env', iconClass: 'text-success', locked: true }
+		envActive
+			? {
+					key: 'env',
+					label: '.env',
+					iconClass: 'text-success',
+					locked: true,
+					menuItems: [{ id: 'remove', label: m.common_delete(), icon: TrashIcon, destructive: true, onSelect: removeEnv }]
+				}
+			: { key: 'add-env', label: m.add_env_file(), action: true, onSelect: addEnv }
 	]);
 
 	let stackTreeWidth = $state<number | null>(null);
@@ -173,6 +198,17 @@
 	function addOverride() {
 		overrideActive = true;
 		stackWorkspace.openTab('override');
+	}
+
+	function addEnv() {
+		envActive = true;
+		stackWorkspace.openTab('env');
+	}
+
+	function removeEnv() {
+		form.setValue('envContent', '');
+		envActive = false;
+		stackWorkspace.closeTab('env');
 	}
 
 	function removeOverride() {
@@ -266,7 +302,10 @@
 
 	const { composeHandlers, handleCreateTemplate } = createComposeTemplateDialogFlow({
 		getInputs: () => inputs,
-		setInputValue: (key, value) => form.setValue(key, value),
+		setInputValue: (key, value) => {
+			if (key === 'envContent' && value.trim()) envActive = true;
+			form.setValue(key, value);
+		},
 		closeTemplateDialog: () => (ui.showTemplateDialog = false),
 		validate: form.validate,
 		setLoading: (value) => (ui.creatingTemplate = value)

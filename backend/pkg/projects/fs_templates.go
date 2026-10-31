@@ -185,8 +185,6 @@ func getDefaultComposeTemplate() string {
   nginx:
     image: nginx:alpine
     container_name: nginx_service
-    env_file:
-      - .env
     ports:
       - "${NGINX_HOST_PORT:-8080}:80"
     volumes:
@@ -267,7 +265,7 @@ STACK_RESTART_DELAY=5s
 
 func getDefaultEnvTemplate() string {
 	return `# Project variables
-# These values are interpolated into compose.yaml and passed to services via env_file.
+# These values are interpolated into compose.yaml.
 # Example syntax in compose.yaml:
 #   ports:
 #     - "${NGINX_HOST_PORT:-8080}:80"

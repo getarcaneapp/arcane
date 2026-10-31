@@ -23,8 +23,10 @@
 	import { keymap, hoverTooltip, EditorView, ViewPlugin, closeHoverTooltips, hasHoverTooltips } from '@codemirror/view';
 	import { mode } from 'mode-watcher';
 	import CodeMirror from 'svelte-codemirror-editor';
+	import { toast } from 'svelte-sonner';
 
 	import * as Command from '#lib/components/ui/command/index.js';
+	import * as ContextMenu from '#lib/components/ui/context-menu/index.js';
 	import { m } from '#lib/paraglide/messages.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
 
@@ -381,6 +383,40 @@
 				goToLine();
 				break;
 		}
+	}
+
+	async function copySelection(cut: boolean) {
+		if (!activeView) return;
+		const view = activeView;
+		const { from, to } = view.state.selection.main;
+		if (from === to) return;
+		try {
+			await navigator.clipboard.writeText(view.state.sliceDoc(from, to));
+		} catch (error) {
+			toast.error(m.common_copy_failed(), { description: error instanceof Error ? error.message : undefined });
+			return;
+		}
+		if (cut && !readOnly) view.dispatch({ changes: { from, to, insert: '' } });
+		view.focus();
+	}
+
+	async function pasteClipboard() {
+		if (!activeView || readOnly) return;
+		const view = activeView;
+		try {
+			const text = await navigator.clipboard.readText();
+			view.dispatch(view.state.replaceSelection(text));
+		} catch (error) {
+			toast.error(m.failed_to_paste(), { description: error instanceof Error ? error.message : undefined });
+			return;
+		}
+		view.focus();
+	}
+
+	function selectAllContent() {
+		if (!activeView) return;
+		activeView.dispatch({ selection: { anchor: 0, head: activeView.state.doc.length } });
+		activeView.focus();
 	}
 
 	const commandItems = $derived.by(() => {
@@ -778,43 +814,74 @@
 </script>
 
 <div class="arcane-code-editor {autoHeight ? 'auto-height' : 'full-height'}">
-	<div class="editor-main">
-		{#if isDiffActive}
-			<div class="merge-shell">
-				<div class="merge-pane-header">
-					<div class="merge-pane-label merge-pane-label-new">New (editable)</div>
-					<div class="merge-pane-label merge-pane-label-old">Original (read-only)</div>
-				</div>
-				<div class="merge-legend">
-					<span class="merge-badge merge-badge-add">+ Added</span>
-					<span class="merge-badge merge-badge-del">- Removed</span>
-				</div>
-				<div class="merge-host" {@attach mergeHostAttachment}></div>
-			</div>
-		{:else}
-			<CodeMirror bind:value {extensions} {styles} {placeholder} readonly={readOnly} nodebounce={true} onready={wireNormalView} />
-		{/if}
+	<ContextMenu.Root>
+		<ContextMenu.Trigger>
+			{#snippet child({ props })}
+				<div {...props} class="editor-main">
+					{#if isDiffActive}
+						<div class="merge-shell">
+							<div class="merge-pane-header">
+								<div class="merge-pane-label merge-pane-label-new">New (editable)</div>
+								<div class="merge-pane-label merge-pane-label-old">Original (read-only)</div>
+							</div>
+							<div class="merge-legend">
+								<span class="merge-badge merge-badge-add">+ Added</span>
+								<span class="merge-badge merge-badge-del">- Removed</span>
+							</div>
+							<div class="merge-host" {@attach mergeHostAttachment}></div>
+						</div>
+					{:else}
+						<CodeMirror
+							bind:value
+							{extensions}
+							{styles}
+							{placeholder}
+							readonly={readOnly}
+							nodebounce={true}
+							onready={wireNormalView}
+						/>
+					{/if}
 
-		{#if outlineOpen && activeOutlineItems.length > 0}
-			<div
-				class="absolute top-2 right-2 z-(--arcane-z-sticky) max-h-full-inset w-64 overflow-hidden rounded-sm border bg-popover text-popover-foreground shadow-lg"
-			>
-				<div class="border-b px-3 py-2 text-xs font-bold">Outline</div>
-				<div class="max-h-80 overflow-auto p-1">
-					{#each activeOutlineItems as item (item.id)}
-						<button
-							type="button"
-							class="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-primary/18"
-							class:pl-4={item.level === 1}
-							onclick={() => jumpToOutlineItem(item)}
+					{#if outlineOpen && activeOutlineItems.length > 0}
+						<div
+							class="absolute top-2 right-2 z-(--arcane-z-sticky) max-h-full-inset w-64 overflow-hidden rounded-sm border bg-popover text-popover-foreground shadow-lg"
 						>
-							{item.label}
-						</button>
-					{/each}
+							<div class="border-b px-3 py-2 text-xs font-bold">Outline</div>
+							<div class="max-h-80 overflow-auto p-1">
+								{#each activeOutlineItems as item (item.id)}
+									<button
+										type="button"
+										class="w-full rounded-sm px-2 py-1 text-left text-xs hover:bg-primary/18"
+										class:pl-4={item.level === 1}
+										onclick={() => jumpToOutlineItem(item)}
+									>
+										{item.label}
+									</button>
+								{/each}
+							</div>
+						</div>
+					{/if}
 				</div>
-			</div>
-		{/if}
-	</div>
+			{/snippet}
+		</ContextMenu.Trigger>
+		<ContextMenu.Content class="w-56">
+			<ContextMenu.Item disabled={readOnly} onSelect={() => void copySelection(true)}>{m.cut()}</ContextMenu.Item>
+			<ContextMenu.Item onSelect={() => void copySelection(false)}>{m.common_copy()}</ContextMenu.Item>
+			<ContextMenu.Item disabled={readOnly} onSelect={() => void pasteClipboard()}>{m.paste()}</ContextMenu.Item>
+			<ContextMenu.Item onSelect={selectAllContent}>{m.common_select_all()}</ContextMenu.Item>
+			<ContextMenu.Separator />
+			{#each commandItems as item (item.id)}
+				<ContextMenu.Item onSelect={() => executeCommand(item.id)}>
+					<span class="flex-1">{item.label}</span>
+					{#if item.shortcut}
+						<ContextMenu.Shortcut>{item.shortcut}</ContextMenu.Shortcut>
+					{/if}
+				</ContextMenu.Item>
+			{/each}
+			<ContextMenu.Separator />
+			<ContextMenu.Item onSelect={() => (commandPaletteOpen = true)}>{m.compose_editor_command_palette()}</ContextMenu.Item>
+		</ContextMenu.Content>
+	</ContextMenu.Root>
 
 	{#if statusBar}
 		<div class="editor-status">

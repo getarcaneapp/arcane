@@ -2590,8 +2590,7 @@ func TestProjectService_UpdateProject_AllowsMissingEnvFileDuringComposeValidatio
 	require.NoError(t, err)
 	require.NotNil(t, updated)
 
-	_, statErr := os.Stat(filepath.Join(projectPath, ".env"))
-	require.NoError(t, statErr)
+	assert.NoFileExists(t, filepath.Join(projectPath, ".env"))
 }
 
 func TestProjectService_UpdateProject_EnvRetargetWritesExplicitIdenticalComposeToSelectedBase(t *testing.T) {
