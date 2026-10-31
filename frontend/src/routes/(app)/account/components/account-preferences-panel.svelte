@@ -16,7 +16,7 @@
 	import { m } from '#lib/paraglide/messages.js';
 	import { getLayoutMode, layoutModeStore, type LayoutMode } from '#lib/stores/layout-mode.store.svelte.js';
 	import userStore from '#lib/stores/user-store.svelte.js';
-	import type { ProjectEditorLayout, ToastPosition, UserPreferences } from '#lib/types/auth.js';
+	import type { EditorTabWidth, ProjectEditorLayout, ToastPosition, UserPreferences } from '#lib/types/auth.js';
 	import type { ApplicationTheme, IconCatalog } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
 	import { getMobileNavigation } from '#lib/utils/navigation.js';
@@ -53,6 +53,7 @@
 			description: m.icon_catalog_dashboard_icons_description()
 		}
 	]);
+	const editorTabWidthOptions = $derived([2, 4, 8].map((count) => ({ value: String(count), label: m.spaces_count({ count }) })));
 	const projectEditorLayoutOptions = $derived([
 		{ value: 'auto', label: m.automatic(), description: m.project_editor_layout_auto_description() },
 		{ value: 'classic', label: m.classic(), description: m.project_editor_layout_classic_description() },
@@ -119,6 +120,19 @@
 					value={projectEditorLayoutValue}
 					options={projectEditorLayoutOptions}
 					onValueChange={(value) => void saveUserPreferences({ defaultProjectEditorLayout: value as ProjectEditorLayout })}
+				/>
+			</div>
+		</SettingsRow>
+		<SettingsRow label={m.editor_tab_width()} description={m.editor_tab_width_description()} layout="switch">
+			<div class="w-52">
+				<SelectWithLabel
+					id="account-editor-tab-width"
+					label={m.editor_tab_width()}
+					hideLabel
+					triggerSize="sm"
+					value={String(preferences.editorTabWidth ?? 2)}
+					options={editorTabWidthOptions}
+					onValueChange={(value) => void saveUserPreferences({ editorTabWidth: Number(value) as EditorTabWidth })}
 				/>
 			</div>
 		</SettingsRow>

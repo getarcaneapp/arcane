@@ -111,7 +111,7 @@
 	let envOpen = $state(false);
 	let envRequested = $state(formData.envContent.trim() !== '');
 	let layoutMode = $state<ProjectEditorLayoutMode>(resolveProjectEditorLayout('tree'));
-	let treePaneWidth = $state(280);
+	let treePaneWidth = $state<number | null>(null);
 	const workspaceDraft = new WorkspaceDraftState({
 		fallbackTab: 'compose',
 		initialOpenTabs: ['compose'],
@@ -364,18 +364,25 @@
 {/snippet}
 
 {#snippet projectNameField(variant: 'inline' | 'block')}
-	<EditableName
-		bind:value={inputs.name.value}
-		displayValue={effectiveName}
-		bind:ref={nameInputRef}
-		{variant}
-		error={inputs.name.error ?? undefined}
-		originalValue=""
-		placeholder={m.compose_project_name_placeholder()}
-		canEdit={!ui.saving && !ui.isLoadingTemplateContent && !composeYamlName}
-		disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
-		class={variant === 'inline' ? 'hidden sm:block' : undefined}
-	/>
+	<div class="flex min-w-0 items-center">
+		<EnvironmentDestinationSelect
+			bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
+			permission="projects:create"
+			variant="prefix"
+		/>
+		<EditableName
+			bind:value={inputs.name.value}
+			displayValue={effectiveName}
+			bind:ref={nameInputRef}
+			{variant}
+			error={inputs.name.error ?? undefined}
+			originalValue=""
+			placeholder={m.compose_project_name_placeholder()}
+			canEdit={!ui.saving && !ui.isLoadingTemplateContent && !composeYamlName}
+			disabledMessage={composeYamlName ? m.compose_project_name_defined_in_yaml() : undefined}
+			class={variant === 'inline' ? 'hidden sm:block' : undefined}
+		/>
+	</div>
 {/snippet}
 
 <div class="flex h-full min-h-0 flex-col bg-background">
@@ -417,10 +424,6 @@
 						}}
 					/>
 				</div>
-				<EnvironmentDestinationSelect
-					bind:value={() => environmentId, (value) => (pickedEnvironmentId = value)}
-					permission="projects:create"
-				/>
 				<ComposeCreateMenu
 					tooltipOpen={!effectiveName && !createMenuBusy ? undefined : false}
 					tooltipVisible={effectiveName === ''}

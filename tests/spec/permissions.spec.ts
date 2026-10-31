@@ -755,7 +755,7 @@ test('administers scoped identities and enforces their browser access immediatel
 			environmentAdminPage.on('request', recordOptionalRequest);
 			await environmentAdminPage.goto('/projects/new?templateId=missing-template');
 			await expect(
-				environmentAdminPage.getByText('Docker Compose File', { exact: true })
+				environmentAdminPage.getByText('Workspace Files', { exact: true })
 			).toBeVisible();
 			await expect(
 				environmentAdminPage.getByText(
@@ -769,7 +769,9 @@ test('administers scoped identities and enforces their browser access immediatel
 				.filter({ visible: true })
 				.first();
 			await setCodeMirrorValue(composeEditor, TEST_COMPOSE_YAML);
-			await expect(environmentAdminPage.locator('button[data-action="create"]')).toBeVisible();
+			await expect(
+				environmentAdminPage.getByRole('button', { name: 'Create Project', exact: true })
+			).toBeVisible();
 			environmentAdminPage.off('request', recordOptionalRequest);
 			expect(optionalRequests).toEqual([]);
 
