@@ -66,6 +66,7 @@ export const queryKeys = {
 	},
 	jobs: {
 		list: (environmentId: string) => ['environment-jobs', environmentId] as const,
+		schedules: (environmentId: string) => ['environment-jobs', environmentId, 'schedules'] as const,
 		runs: (environmentId: string, jobId: string, page: number) => ['job-runs', environmentId, jobId, page] as const,
 		run: (environmentId: string, jobId: string, runId: string | undefined) => ['job-run', environmentId, jobId, runId] as const
 	},

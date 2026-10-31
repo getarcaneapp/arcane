@@ -18,7 +18,7 @@
 	import { featureDefinitions } from '#lib/config/features.js';
 	import { useEasyJoinCandidates } from '#lib/hooks/use-easy-join-candidates.svelte.js';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte.js';
-	import { AlertIcon, ResetIcon, ConnectionIcon, SettingsIcon, InfoIcon } from '#lib/icons/index.js';
+	import { AlertIcon, ResetIcon, ConnectionIcon, SettingsIcon, InfoIcon, JobsIcon } from '#lib/icons/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { m } from '#lib/paraglide/messages.js';
 	import { environmentDeploymentSnippetsQuery, environmentDetailQuery } from '#lib/query/environments.js';
@@ -46,6 +46,7 @@
 		environmentUpdateSchema,
 		type EnvironmentFormValues
 	} from './components/environment-form-schema';
+	import EnvironmentJobHistoryTab from './components/environment-job-history-tab.svelte';
 	import EnvironmentStatusSummary from './components/environment-status-summary.svelte';
 
 	let { data } = $props();
@@ -101,6 +102,7 @@
 
 	let showSettingsAction = $derived(runtimeEnvironment.enabled && hasPermission('settings:read', environment.id));
 	let showEngineTab = $derived(runtimeEnvironment.enabled && hasPermission('system:read', environment.id));
+	let showHistoryTab = $derived(runtimeEnvironment.enabled && hasPermission('jobs:manage', environment.id));
 	const podmanStatus = $derived(hasPermission('podman:read', environment.id) ? data.podmanStatuses?.[environment.id] : undefined);
 	let hasMTLSAssets = $derived(Boolean(runtimeEnvironment.agentMTLSCertificate));
 	let canPairEnvironments = $derived(hasPermission('environments:pair', environment.id));
@@ -208,6 +210,10 @@
 
 		if (showEngineTab) {
 			items.push({ value: 'engine', label: m.engine(), icon: InfoIcon });
+		}
+
+		if (showHistoryTab) {
+			items.push({ value: 'history', label: m.history(), icon: JobsIcon });
 		}
 
 		return items;
@@ -625,6 +631,12 @@
 				{:else}
 					{@render settingsOffline()}
 				{/if}
+			</Tabs.Content>
+		{/if}
+
+		{#if showHistoryTab}
+			<Tabs.Content value="history">
+				<EnvironmentJobHistoryTab environmentId={environment.id} />
 			</Tabs.Content>
 		{/if}
 

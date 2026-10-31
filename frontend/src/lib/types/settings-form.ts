@@ -6,5 +6,7 @@ export interface SettingsFormState {
 }
 
 export interface SettingsFormContext {
-	activeForm: SettingsFormState | undefined;
+	readonly activeForm: SettingsFormState | undefined;
+	register(form: SettingsFormState): void;
+	release(form: SettingsFormState): void;
 }

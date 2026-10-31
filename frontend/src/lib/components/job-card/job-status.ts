@@ -54,12 +54,8 @@ export function jobNameLabel(job: JobStatus): string {
 	return target.length ? m.jobs_dynamic_job_name({ name: label, target: target.join(':') }) : label;
 }
 
-export type JobPanelSection = 'overview' | 'history';
-
-export type JobStatusTone = 'green' | 'red' | 'amber' | 'blue' | 'gray';
-
 /** Badge tone for a run or worker status. */
-export function jobStatusTone(status: string | undefined): JobStatusTone {
+export function jobStatusTone(status: string | undefined): 'green' | 'red' | 'amber' | 'blue' | 'gray' {
 	switch (status) {
 		case 'succeeded':
 		case 'healthy':

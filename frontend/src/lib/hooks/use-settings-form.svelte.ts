@@ -33,11 +33,7 @@ export class UseSettingsForm<
 		this.formContext = hasSettingsFormContext() ? getSettingsFormContext() : undefined;
 
 		if (this.formContext) {
-			onDestroy(() => {
-				if (this.formContext?.activeForm === this) {
-					this.formContext.activeForm = undefined;
-				}
-			});
+			onDestroy(() => this.formContext?.release(this));
 		}
 	}
 
@@ -67,7 +63,7 @@ export class UseSettingsForm<
 	registerFormActions(saveFunction: () => Promise<void> | void, resetFunction: () => void) {
 		this.#saveFunction = saveFunction;
 		this.#resetFunction = resetFunction;
-		if (this.formContext) this.formContext.activeForm = this;
+		this.formContext?.register(this);
 	}
 
 	setLoading(loading: boolean) {

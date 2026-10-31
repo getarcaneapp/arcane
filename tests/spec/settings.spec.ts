@@ -201,7 +201,7 @@ test.describe('Diagnostics', () => {
 			await page.goto('/system/diagnostics?tab=logs');
 			await page.waitForLoadState('domcontentloaded');
 
-			await expect(page).toHaveURL(/\/settings\/diagnostics/);
+			await expect(page).toHaveURL(/\/system\/diagnostics/);
 			await expect(page.getByText('duplicate diagnostic entry', { exact: true })).toHaveCount(2);
 		});
 	});
@@ -219,6 +219,21 @@ test.describe('Environment settings pages', () => {
 			await expect(page.getByRole('heading', { name, exact: true, level: 1 })).toBeVisible();
 			expect(new URL(page.url()).searchParams.get('env')).toBe('0');
 		}
+	});
+
+	test('shows automation settings without job status', async ({ page }) => {
+		await page.goto('/settings/automations?env=0');
+		await expect(
+			page.getByRole('switch', { name: 'Image Update Watcher', exact: true })
+		).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Run Now' })).toHaveCount(0);
+
+		await page
+			.getByRole('button', { name: /^Schedule:/ })
+			.first()
+			.click();
+		const sheet = page.getByRole('dialog', { name: 'Edit Schedule' });
+		await expect(sheet.getByLabel('Cron Expression')).not.toHaveValue('');
 	});
 });
 
