@@ -7,10 +7,7 @@
 	import { Label } from '#lib/components/ui/label/index.js';
 	import { AlertTriangleIcon, LayersIcon } from '#lib/icons/index.js';
 	import { m } from '#lib/paraglide/messages.js';
-	import type {
-		MixedSettingValue,
-		SettingState,
-	} from '#lib/types/settings.js';
+	import type { MixedSettingValue, SettingState } from '#lib/types/settings.js';
 	import { cn } from '#lib/utils.js';
 
 	import MixedValuesPopover from './mixed-values-popover.svelte';
@@ -46,7 +43,7 @@
 		expanded,
 		contentClass,
 		class: className,
-		children,
+		children
 	}: Props = $props();
 </script>
 
@@ -62,11 +59,7 @@
 		<p class="mt-1.5 text-xs text-muted-foreground">{helpText}</p>
 	{/if}
 	{#if warningText}
-		<Alert.Root
-			variant="warning-subtle"
-			size="sm"
-			class="mt-2 w-fit max-w-full"
-		>
+		<Alert.Root variant="warning-subtle" size="sm" class="mt-2 w-fit max-w-full">
 			<AlertTriangleIcon class="size-4" />
 			<Alert.Description>{warningText}</Alert.Description>
 		</Alert.Root>
@@ -78,7 +71,7 @@
 		class={cn(
 			'grid gap-x-8 gap-y-2',
 			layout === 'default' && 'md:grid-cols-settings-row md:items-start',
-			layout === 'switch' && 'grid-cols-content-action items-center',
+			layout === 'switch' && 'grid-cols-content-action items-center'
 		)}
 	>
 		<div class="min-w-0">
@@ -111,13 +104,7 @@
 				{@render notes()}
 			{/if}
 		</div>
-		<div
-			class={cn(
-				'min-w-0',
-				layout === 'switch' && 'flex justify-end',
-				contentClass,
-			)}
-		>
+		<div class={cn('min-w-0', layout === 'switch' && 'flex justify-end', contentClass)}>
 			<fieldset disabled={lock?.locked} class="contents">
 				{@render children()}
 			</fieldset>

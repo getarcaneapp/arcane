@@ -353,7 +353,6 @@
 					key: 'env',
 					label: '.env',
 					iconClass: 'text-success',
-					locked: true,
 					menuItems: [
 						{
 							visible: canRemoveEnv,
