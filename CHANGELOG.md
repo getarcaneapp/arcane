@@ -1,3 +1,22 @@
+## v2.17.2
+
+### Bug fixes
+
+- allow selecting .tar.gz and .tar.xz image uploads in Safari ([3bf2c36](https://github.com/getarcaneapp/arcane/commit/3bf2c362f56439b19853d0576d96b87b0aafa7bb) by @kmendell)
+- link vulnerability IDs to their advisory database ([\#4583](https://github.com/getarcaneapp/arcane/pull/4583) by @kmendell)
+- skip local Rustic prune when no local backups exist ([\#4584](https://github.com/getarcaneapp/arcane/pull/4584) by @kmendell)
+- warn when running deprecated Arcane images ([\#4585](https://github.com/getarcaneapp/arcane/pull/4585) by @kmendell)
+- snapshot service spec before saving in service editor ([\#4603](https://github.com/getarcaneapp/arcane/pull/4603) by @kmendell)
+- return 4xx for build workspace path errors ([\#4595](https://github.com/getarcaneapp/arcane/pull/4595) by @jmrplens)
+- return 4xx instead of 500 for unknown records and invalid requests ([\#4596](https://github.com/getarcaneapp/arcane/pull/4596) by @jmrplens)
+- skip stored update state for digest-pinned images ([\#4610](https://github.com/getarcaneapp/arcane/pull/4610) by @kmendell)
+- return 404 for manager-side routes of an unknown environment ([\#4597](https://github.com/getarcaneapp/arcane/pull/4597) by @jmrplens)
+- build project images before redeploying after Git sync ([\#4611](https://github.com/getarcaneapp/arcane/pull/4611) by @kmendell)
+- map Docker not-found and conflict errors to 4xx on more routes ([\#4598](https://github.com/getarcaneapp/arcane/pull/4598) by @jmrplens)
+- serve Scalar API reference from the frontend instead of CDN ([\#4613](https://github.com/getarcaneapp/arcane/pull/4613) by @kmendell)
+- keep proxied request bodies readable while the agent answers ([\#4592](https://github.com/getarcaneapp/arcane/pull/4592) by @jmrplens)
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.17.1...v2.17.2
 ## v2.17.1
 
 ### Bug fixes
