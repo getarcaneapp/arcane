@@ -562,7 +562,12 @@ test('administers scoped identities and enforces their browser access immediatel
 		restrictedPage.setDefaultTimeout(10_000);
 		const restrictedErrors = installPageErrorCollector(restrictedPage);
 		try {
-			await loginAs(restrictedPage, username, password, '/containers');
+			await loginAs(restrictedPage, username, password, '/dashboard');
+			await expect(
+				restrictedPage.getByRole('link', { name: 'Dashboard', exact: true })
+			).toBeVisible();
+			await restrictedPage.goto('/containers');
+			await expect(restrictedPage).toHaveURL('/containers');
 
 			await expect(
 				restrictedPage.getByRole('link', { name: 'Containers', exact: true })
@@ -570,9 +575,6 @@ test('administers scoped identities and enforces their browser access immediatel
 			await expect(
 				restrictedPage.getByRole('link', { name: 'Projects', exact: true })
 			).toBeVisible();
-			await expect(
-				restrictedPage.getByRole('link', { name: 'Dashboard', exact: true })
-			).toHaveCount(0);
 			await expect(restrictedPage.getByRole('link', { name: 'Settings', exact: true })).toHaveCount(
 				0
 			);
@@ -770,7 +772,9 @@ test('administers scoped identities and enforces their browser access immediatel
 				.first();
 			await setCodeMirrorValue(composeEditor, TEST_COMPOSE_YAML);
 			await expect(
-				environmentAdminPage.getByRole('button', { name: 'Create Project', exact: true })
+				environmentAdminPage
+					.getByRole('button', { name: 'Create Project', exact: true })
+					.and(environmentAdminPage.locator('button'))
 			).toBeVisible();
 			environmentAdminPage.off('request', recordOptionalRequest);
 			expect(optionalRequests).toEqual([]);

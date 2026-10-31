@@ -915,7 +915,9 @@ test.describe('Lifecycle', () => {
 			await expect(page).toHaveURL(`/projects/new?fromContainers=${containerId}&fromEnv=0`);
 			await expect(page.locator('.cm-editor').first()).toContainText(containerName);
 
-			const createButton = page.getByRole('button', { name: 'Create Project', exact: true });
+			const createButton = page
+				.getByRole('button', { name: 'Create Project', exact: true })
+				.and(page.locator('button'));
 			await expect(createButton).toBeEnabled({ timeout: 15_000 });
 			const responsePromise = page.waitForResponse(
 				(response) =>
