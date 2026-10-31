@@ -1534,6 +1534,8 @@
   "environments_config_description": "Configuratie voor deze omgeving",
   "environments_api_url_help": "De basis-URL voor de API van de omgeving",
   "environments_warning_disabled": "Deze omgeving is uitgeschakeld. U kunt de configuratie wijzigen, maar u heeft geen toegang tot de bronnen totdat deze opnieuw is ingeschakeld.",
+  "environments_warning_direct_deprecated": "Directe agentverbindingen worden niet meer ondersteund en zullen in versie 3 worden verwijderd. Schakel deze omgeving over naar een edge-agent.",
+  "environments_direct_deprecated_badge": "Verouderd",
   "environments_warning_no_settings": "Niet in staat om instellingen voor deze omgeving te laden. Het is mogelijk dat deze offline is, uitgeschakeld of een ongeldige URL heeft. U kunt nog steeds de basis omgeving details bewerken.",
   "environments_local_setting_disabled": "Deze instelling kan niet worden gewijzigd voor de lokale omgeving",
   "environments_use_environment": "Gebruik omgeving",
